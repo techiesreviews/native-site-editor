@@ -1,4 +1,4 @@
-import { rootRoute, sitePathPrefix, withSitePrefix } from "../../shared/site-path-prefix";
+import { rootRoute, sitePathPrefix, routeAddress } from "../../shared/site-path-prefix";
 import { selectionAfterRemove } from "./remove";
 // Cards: grids of repeated items in the editor (docs/page-builder/cards.md).
 // Add card places a blank card first. Component cards and collection items
@@ -195,7 +195,7 @@ export function createCards(deps: CardsDeps) {
     const copy = element && itemCopy(tree, element, {
       noun: grid.noun,
       title: page?.title,
-      href: item.route ? page ? withSitePrefix(page.route, prefix(reads)) : "" : undefined,
+      href: item.route ? page ? routeAddress(page.route, prefix(reads)) : "" : undefined,
       isLinked: (href) => linkRoute(href, context(reads, route)) === item.route,
       fallbacks: slots.fallbacks,
     });
@@ -405,7 +405,7 @@ export function createCards(deps: CardsDeps) {
     const title = pageTitle(page, route).title;
     // Plain cards map the same facts onto their first body paragraph and image.
     let rows = cardFill({ template: text ?? '<slot name="title"><h3>Title</h3></slot><slot name="body"><p></p></slot><slot name="image"><img src="" alt=""></slot><slot name="link"></slot>', page: { route, source: page }, siteUrl: nativeSiteSettings(reads.source(NATIVE_CONFIG_PATH)).url }).rows.map(row => text === undefined ? { ...row, slot: undefined } : row);
-    const plain = text === undefined ? itemPageFill(from, grid!.noun, title, withSitePrefix(route, prefix(reads)), rows) : undefined;
+    const plain = text === undefined ? itemPageFill(from, grid!.noun, title, routeAddress(route, prefix(reads)), rows) : undefined;
     if (plain) rows = plain.rows;
     const filled = text !== undefined ? cardFillMarkup(from, text, rows) : plain?.markup;
     if (filled === undefined) return undefined;

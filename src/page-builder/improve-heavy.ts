@@ -1,4 +1,5 @@
 import { readMediaPrefix } from "./media-prefix";
+import { NATIVE_CONFIG_PATH, nativeSiteSettings } from "../../shared/native-project";
 import { sitePathPrefix } from "../../shared/site-path-prefix";
 import { MEDIA_RECORDS_PATH, parseMediaRecords, serializeMediaRecords, type MediaRecords } from "../../shared/media-records";
 import { encodeSharingJpeg, isSharingImage, sharingJpegPath, sharingImageDetail, sharingMetaName } from "./sharing-jpeg";
@@ -57,6 +58,10 @@ export async function prepareImproveHeavy(ctx: MediaWorkspaceContext, request: I
   const batch: MediaWorkspaceBatch = { label: "", expectedPaths: paths, expectedSources: new Map(), expectedAssets: versions,
     edits: new Map(), moves: [], deletes: [], restores: [], uploads: [], live: holds };
   const prefix = await readMediaPrefix(ctx, batch.expectedSources); guard();
+  if (request.siteUrl !== undefined && sitePathPrefix(request.siteUrl) !== prefix)
+    throw new Error("The site address changed. Try again.");
+  // The proven address; a batch that did not read the settings keeps the request's (its prefix matched above).
+  const siteUrl = nativeSiteSettings(batch.expectedSources.get(NATIVE_CONFIG_PATH)).url ?? request.siteUrl;
   const sources: Record<string, string | undefined> = {};
   for (const file of new Set([...paths.filter(isMediaTextFile), MEDIA_RECORDS_PATH, "_redirects"])) {
     const text = await ctx.read(file); guard();
@@ -244,7 +249,7 @@ export async function prepareImproveHeavy(ctx: MediaWorkspaceContext, request: I
           const copy = sharing.get(main);
           if (name.startsWith("og:")) og = copy;
           if (copy) {
-            const address = socialImageAddress(request.siteUrl, copy.path);
+            const address = socialImageAddress(siteUrl, copy.path);
             content = address.address;
             if (address.missingAddress && !result.notes.includes(SOCIAL_IMAGE_NOTE)) result.notes.push(SOCIAL_IMAGE_NOTE);
           }
@@ -290,14 +295,14 @@ export async function prepareImproveHeavy(ctx: MediaWorkspaceContext, request: I
     const locate = ports.tree ? (text: string, node: number[]) => treeFor(text).at(node) : locateNativeElementRange;
     const safe = measured && { ...measured, images: measured.images.filter(item => !protectedNodes.has(JSON.stringify(item.node)) && !targets.some(target => target.svg && JSON.stringify(target.node) === JSON.stringify(item.node))) };
     const { edits, placement } = mediaPageEdits(source, safe, target.node, locate);
-    let text = mediaImageMarkup(image, existing, placement, true, sitePathPrefix(request.siteUrl));
+    let text = mediaImageMarkup(image, existing, placement, true, prefix);
     if (target.adopted) {
       const srcset = startTagAttribute(existing, startTags(existing)[0], "srcset")?.value;
       // A written picture/source set stays as written; a name-based family gets one srcset.
       const originalElement = tree.at(target.node);
       const originalTag = originalElement && sources[row.file]!.slice(originalElement.tag.start, originalElement.tag.end);
       const hasWrittenSet = !!originalTag && !!startTagAttribute(originalTag, startTags(originalTag)[0], "srcset") || currentTreeHasPictureSet(source, range.tag.start);
-      text = mediaAttributes(text, { srcset: srcset ?? (hasWrittenSet ? undefined : mediaSrcset(image, sitePathPrefix(request.siteUrl))), sizes: placement.sizes });
+      text = mediaAttributes(text, { srcset: srcset ?? (hasWrittenSet ? undefined : mediaSrcset(image, prefix)), sizes: placement.sizes });
     }
     // No description is introduced when the old place had no alt attribute either.
     if (!startTagAttribute(existing, startTags(existing)[0], "alt")) text = mediaAttributes(text, { alt: undefined });

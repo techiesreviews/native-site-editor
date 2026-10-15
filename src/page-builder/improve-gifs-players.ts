@@ -1,4 +1,5 @@
 import { readMediaPrefix } from "./media-prefix";
+import { NATIVE_CONFIG_PATH, nativeSiteSettings } from "../../shared/native-project";
 import { sitePathPrefix } from "../../shared/site-path-prefix";
 // On-demand only: never import from boot.
 import { MEDIA_RECORDS_PATH, parseMediaRecords, serializeMediaRecords, type OnlineVideoRecord } from "../../shared/media-records";
@@ -54,6 +55,10 @@ export async function prepareImproveGifsAndPlayers(ctx: MediaWorkspaceContext, r
   const batch: MediaWorkspaceBatch = { label: "", expectedPaths: paths, expectedSources: new Map(), expectedAssets: new Map(),
     edits: new Map(), moves: [], deletes: [], restores: [], uploads: [], live: holds };
   const prefix = await readMediaPrefix(ctx, batch.expectedSources); guard();
+  if (request.siteUrl !== undefined && sitePathPrefix(request.siteUrl) !== prefix)
+    throw new Error("The site address changed. Try again.");
+  // The proven address; a batch that did not read the settings keeps the request's (its prefix matched above).
+  const siteUrl = nativeSiteSettings(batch.expectedSources.get(NATIVE_CONFIG_PATH)).url ?? request.siteUrl;
   const sources: Record<string, string | undefined> = {};
   for (const file of new Set([...paths.filter(isMediaTextFile), MEDIA_RECORDS_PATH])) {
     const text = await ctx.read(file); guard();
@@ -136,7 +141,7 @@ export async function prepareImproveGifsAndPlayers(ctx: MediaWorkspaceContext, r
         }
         const spot = node.parent?.name === "picture" ? node.parent : node;
         const written = gifLoopingVideo(source, { tag: spot.tag, start: spot.start, end: spot.end, close: spot.close },
-          { path: video.video, still: video.still, width: video.width, height: video.height }, { linked: picture.link !== undefined }, sitePathPrefix(request.siteUrl));
+          { path: video.video, still: video.still, width: video.width, height: video.height }, { linked: picture.link !== undefined }, prefix);
         edits.push({ start: spot.start, end: spot.end, text: written.markup });
         result.converted.push({ key: picture.key, path: video.video }); kinds.add("looping-video");
       } else if (picture.changes.includes("first-frame") && row.kind === "page") {
@@ -154,7 +159,7 @@ export async function prepareImproveGifsAndPlayers(ctx: MediaWorkspaceContext, r
           records.files[path] = { sharing: true, trimmedFrom: { source: old, trim } };
         }
         const content = mediaAttribute(source, node.tag, "content")!;
-        const address = socialImageAddress(request.siteUrl, path); note(address.note);
+        const address = socialImageAddress(siteUrl, path); note(address.note);
         // Change only the attribute's value, keeping the tag's original whitespace and quotes.
         edits.push({ start: content.valueStart, end: content.valueEnd, text: mediaEscape(address.address).replace(/'/g, "&#39;") });
         result.converted.push({ key: picture.key, path });
@@ -186,7 +191,7 @@ export async function prepareImproveGifsAndPlayers(ctx: MediaWorkspaceContext, r
         records = upsertOnlineVideo(records, stored);
         // Slice 67's saved "Show Vimeo's own bar" choice follows every placement.
         const written = onlineVideoMarkup({ video, title: record.title || attribute("title"), serviceBar: record.serviceBar,
-          still: record.still ? { path: record.still, width: width ?? files[record.still]?.width, height: height ?? files[record.still]?.height } : undefined }, sitePathPrefix(request.siteUrl));
+          still: record.still ? { path: record.still, width: width ?? files[record.still]?.width, height: height ?? files[record.still]?.height } : undefined }, prefix);
         written.notes.forEach(note);
         let markup = written.markup;
         const classes = attribute("class");
@@ -207,7 +212,7 @@ export async function prepareImproveGifsAndPlayers(ctx: MediaWorkspaceContext, r
   for (const edit of edits.sort((a, b) => b.start - a.start)) rewritten = rewritten.slice(0, edit.start) + edit.text + rewritten.slice(edit.end);
   if (rewritten !== source) batch.edits.set(row.file, rewritten);
   if (kinds.size) {
-    const input = { prefix: sitePathPrefix(request.siteUrl), pages: row.pages, sources: Object.fromEntries(Object.entries(sources).filter((entry): entry is [string, string] => entry[1] !== undefined)),
+    const input = { prefix, pages: row.pages, sources: Object.fromEntries(Object.entries(sources).filter((entry): entry is [string, string] => entry[1] !== undefined)),
       exists: (path: string) => reserved.has(path), kinds: [...kinds] };
     input.sources[row.file] = rewritten;
     let player = mediaPlayerPlan(input);

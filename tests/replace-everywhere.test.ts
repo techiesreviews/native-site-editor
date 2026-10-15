@@ -428,3 +428,21 @@ test("sub-folder Replace finds both root spellings and writes the prefixed repla
   });
   assert.equal(planned.edits.get("index.html"), '<img src="/my-site/media/a.webp?v=new"><img src="/my-site/media/a.webp?v=new">');
 });
+
+test("Replace leaves full own-host addresses outside the folder untouched", async () => {
+  const outside = `<img src="https://user.github.io/${path}"><img src="https://user.github.io/other-site/${path}">`;
+  const p = await plan({ "index.html": outside + `<img src="https://user.github.io/my-site/${path}">`, "notes.md": `https://user.github.io/${path}` },
+    { request: { path, result: result("webp") }, site: { origins: ["https://user.github.io"], prefix: "/my-site" } });
+  assert.ok(p.edits.get("index.html")?.startsWith(outside));
+  assert.ok(p.edits.get("index.html")?.includes(`https://user.github.io/my-site/media/images/photo.webp?v=${await mainHash}`));
+  assert.equal(p.edits.has("notes.md"), false);
+});
+
+
+test("Unicode Replace keeps literal mentions and encoded redirect addresses at the domain root", async () => {
+  const path = "media/京都.jpg";
+  const p = await plan({ "index.html": `<img src="/${path}">` }, { paths: [path], records: { version: 2, collections: [], files: {} }, versions: new Map(),
+    request: { path, result: result("webp"), keepOldAddress: true } });
+  assert.ok(p.edits.get("index.html")?.includes('src="/media/京都.webp"'));
+  assert.ok(p.edits.get("_redirects")?.includes(`/media/${encodeURIComponent("京都.jpg")} /media/${encodeURIComponent("京都.webp")}`));
+});

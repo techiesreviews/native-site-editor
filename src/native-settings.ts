@@ -9,7 +9,7 @@ import { NATIVE_CONFIG_PATH, nativeSiteSettings, type NativeSite } from "../shar
 import type { Reads, Outcome, PlanResult, Stamp, GuardedEdits } from "./guarded-edit";
 import type { AppStore } from "./app-store";
 import { socialImageAddress, socialImagePath, SOCIAL_IMAGE_NOTE } from "./page-builder/social-image";
-import { siteAddress, sitePathPrefix, withSitePrefix, sitePathOf } from "../shared/site-path-prefix";
+import { siteAddress, sitePathPrefix, routeAddress, sitePathOf } from "../shared/site-path-prefix";
 import { MEDIA_RECORDS_PATH, parseMediaRecords, type MediaRecords, type MediaTrim } from "../shared/media-records";
 import type { SocialSharingRequest } from "./page-builder/social-sharing";
 import type { UrlPlan } from "./components/url-change";
@@ -170,7 +170,7 @@ export function createNativeSettings(ports: SettingsPorts) {
           let source = nativePageTemplate(template, "Page not found");
           source = withPageField(source, "description", "There is nothing at this address. Try the home page.");
           source = upsertHeadTag(source, "robots", "noindex");
-          source = source.replace(/(<main\b[^>]*>)[\s\S]*?(<\/main>)/i, `$1\n    <section>\n      <h1>Page not found</h1>\n      <p>There is nothing at this address. <a href="${withSitePrefix("/", sitePathPrefix(nativeSiteSettings(r.source(NATIVE_CONFIG_PATH)).url))}">Go to the home page</a>.</p>\n    </section>\n  $2`);
+          source = source.replace(/(<main\b[^>]*>)[\s\S]*?(<\/main>)/i, `$1\n    <section>\n      <h1>Page not found</h1>\n      <p>There is nothing at this address. <a href="${routeAddress("/", sitePathPrefix(nativeSiteSettings(r.source(NATIVE_CONFIG_PATH)).url))}">Go to the home page</a>.</p>\n    </section>\n  $2`);
           return { creates: [{ path: "404.html", content: source }], open: "404.html", done: "Created the 404 page as a draft.", undone: "Undid creating the 404 page." };
         }, { since }));
       },

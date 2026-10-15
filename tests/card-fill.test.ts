@@ -408,3 +408,10 @@ test("card fills write prefixed link slots and added title links", () => {
   assert.equal(cardFillMarkup('<card-x><h3 slot="title"><a href="#">Old</a></h3></card-x>', titleOnly, titleFacts), '<card-x><h3 slot="title"><a href="/my-site/about/">About</a></h3></card-x>');
   assert.equal(itemPageFill('<article><h3>Title</h3></article>', "card", "About", "/my-site/about/", titleFacts)?.markup, '<article><h3><a href="/my-site/about/">About</a></h3></article>');
 });
+
+test("card fill always prefixes an internal route named like the site folder", () => {
+  const template = '<article><slot name="title"><h3>Title</h3></slot><slot name="link"><a href="#">Read</a></slot></article>';
+  const rows = cardFill({ template, page: { route: "/my-site/", source: "<h1>Nested</h1>" }, siteUrl: "https://user.github.io/my-site/" }).rows;
+  assert.equal(rows.find(row => row.role === "link")?.href, "/my-site/my-site/");
+  assert.ok(cardFillMarkup('<card-x></card-x>', template, rows).includes('href="/my-site/my-site/"'));
+});

@@ -50,7 +50,12 @@ export function mediaMentions(input: { media: readonly string[]; sources: Readon
       let value = match[0];
       if (/^(?:https?:)?\/\//i.test(value)) {
         if (!mediaOwnAddress(value, input.site)) continue;
-        try { value = new URL(value.startsWith("//") ? "https:" + value : value).pathname; } catch { continue; }
+        try {
+          const address = value.startsWith("//") ? "https:" + value : value;
+          const url = new URL(address);
+          if (input.site?.prefix && sitePathOf(restore(address), { prefix: input.site.prefix, origins: [url.origin] }) === undefined) continue;
+          value = url.pathname;
+        } catch { continue; }
       }
       value = value.split(/[?#]/)[0];
       if (!names.has(restore(value).split("/").at(-1)!)) value = value.replace(/[.!:]+$/, "");

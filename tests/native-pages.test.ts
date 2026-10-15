@@ -173,3 +173,7 @@ test("page chooser values carry the site prefix while route lookups stay unprefi
   ]);
   assert.deepEqual(seen, ["/", "/about/", "/blog/post.html"]);
 });
+
+test("suggestions always prefix an internal route named like the site folder", () => {
+  assert.deepEqual(nativeLinkSuggestions(["/my-site/"], () => "Nested", "/my-site"), [{ label: "Nested (/my-site/)", value: "/my-site/my-site/" }]);
+});

@@ -1,4 +1,4 @@
-import { sitePathPrefix, withSitePrefix } from "../../shared/site-path-prefix";
+import { sitePathPrefix, routeAddress } from "../../shared/site-path-prefix";
 // A card's fill plan, read from source without a DOM. Writing it is a
 // separate operation: these rows describe each slot's source and mapping.
 // An empty unnamed fallback has no row; text or image fallbacks still do.
@@ -111,7 +111,7 @@ export function cardRoles(slots: TemplateSlot[]) {
 /** Map a chosen page's facts to a card's slots; missing facts keep fallbacks. */
 export function cardFill(input: { template: string; page: { route: string; source: string }; siteUrl?: string }): CardFill {
   const { template, page: { source, route }, siteUrl } = input;
-  const href = withSitePrefix(route, sitePathPrefix(siteUrl));
+  const href = routeAddress(route, sitePathPrefix(siteUrl));
   const tree = readSource(source);
   const document = tree.elements() as SourceElement[];
   const templateTree = readSource(template);

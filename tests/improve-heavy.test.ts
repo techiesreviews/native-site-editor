@@ -109,7 +109,7 @@ test("hand-made srcset and picture sources adopted, only main descriptor changes
 });
 
 for (const preset of ["balanced", "smallest"] as const) test(`${preset}: sharing JPEG uses full address, same dimensions, one batch and Undo`, async () => {
-  const meta = '<meta property="og:image" content="https://own.example/images/heavy.jpg"><meta name="og:image:type" content="image/png"><meta property="og:image:width" content="3000"><meta property="og:image:height" content="2000"><meta name="og:image:url" content="/images/heavy.jpg"><meta property="og:image:secure_url" content="/images/heavy.jpg"><meta name="twitter:image" content="/images/heavy.jpg">';
+  const meta = '<meta property="og:image" content="https://own.example/site/images/heavy.jpg"><meta name="og:image:type" content="image/png"><meta property="og:image:width" content="3000"><meta property="og:image:height" content="2000"><meta name="og:image:url" content="/images/heavy.jpg"><meta property="og:image:secure_url" content="/images/heavy.jpg"><meta name="twitter:image" content="/images/heavy.jpg">';
   const f = fixture('<img src="/images/heavy.jpg">' + meta);
   f.text.set(MEDIA_RECORDS_PATH, serializeMediaRecords({ version: 2, collections: [], files: {}, adding: { image: preset, keepOriginal: true } }));
   const encode = f.ports.encode!;
@@ -121,6 +121,7 @@ for (const preset of ["balanced", "smallest"] as const) test(`${preset}: sharing
     return encode(file, options, ...rest);
   };
   const progress: string[] = [];
+  f.text.set(".editor/config.json", JSON.stringify({ site: { url: "https://own.example/site/" } }));
   const result = await f.improve({ siteUrl: "https://own.example/site/", progress: state => progress.push(state) });
   const main = `images/heavy.${preset === "smallest" ? "avif" : "webp"}`;
   assert.ok(f.bytes.has(main)); assert.equal(result.notes.length, 0);
@@ -339,8 +340,26 @@ test("a sharing-only mention keeps the lighter family used and Always keep prote
 
 test("Improve images writes the requested prefix into the main and responsive copies", async () => {
   const f = fixture();
+  f.text.set(".editor/config.json", JSON.stringify({ site: { url: "https://user.github.io/my-site/" } }));
   await f.improve({ siteUrl: "https://user.github.io/my-site/" });
   const html = f.text.get("index.html")!;
   assert.ok(html.includes('src="/my-site/images/heavy.webp"'));
   assert.ok(html.includes('srcset="/my-site/images/heavy-480.webp 480w, /my-site/images/heavy-960.webp 960w, /my-site/images/heavy.webp 1200w"'));
+});
+
+test("improve-heavy refuses a stale request prefix captured before config reads", async () => {
+  const f = fixture();
+  f.text.set(".editor/config.json", JSON.stringify({ site: { url: "https://own.example/old/" } }));
+  const read = f.ctx.read.bind(f.ctx);
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  let reached!: () => void;
+  const reading = new Promise<void>(resolve => { reached = resolve; });
+  f.ctx.read = async path => { if (path === ".editor/config.json") { reached(); await held; } return read(path); };
+  const pending = f.improve({ siteUrl: "https://own.example/old/" });
+  await reading;
+  f.text.set(".editor/config.json", JSON.stringify({ site: { url: "https://own.example/new/" } }));
+  release();
+  await assert.rejects(pending, /The site address changed. Try again./);
+  assert.equal(f.batches.length, 0);
 });

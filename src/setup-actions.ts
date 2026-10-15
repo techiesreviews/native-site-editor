@@ -3,7 +3,7 @@ import type { CreateChoice, CreateOutcome } from "./components/get-started";
 import type { WizardCreateOutcome } from "./components/setup-wizard";
 import type { WizardRepo } from "./setup-wizard";
 import { createConfirmDialog } from "./components/confirm-dialog";
-import { siteNameFromRepository, blankSiteFiles, type StartingPoint } from "../shared/starting-point";
+import { siteNameFromRepository, blankSiteFiles, startingConfig, type StartingPoint } from "../shared/starting-point";
 import { nativePageBody, nativePageStylesheets, nativeSiteSettings, NATIVE_CONFIG_PATH } from "../shared/native-project";
 import { expandStyleImports, resolveImportPath, rewriteCssUrls } from "../shared/css-imports";
 import { assetType } from "../shared/asset-types";
@@ -278,7 +278,7 @@ export function createSetupActions(ports: SetupPorts) {
     const siteName = siteNameFromRepository(repo.name);
     let starting: StarterFile[];
     try {
-      starting = point === "blank" ? blankSiteFiles(siteName, sitePathPrefix(nativeSiteSettings(ports.guardedEdits.peek.source(NATIVE_CONFIG_PATH)).url)) : (await ports.api<{ files: StarterFile[] }>("starter", { name: siteName })).files;
+      starting = point === "blank" ? blankSiteFiles(siteName, "") : (await ports.api<{ files: StarterFile[] }>("starter", { name: siteName })).files;
     } catch (error) {
       return error instanceof Error ? error.message : "The Starter site could not be loaded. Try again.";
     }
@@ -330,6 +330,13 @@ export function createSetupActions(ports: SetupPorts) {
       if (!answer.value) return "Nothing was added.";
       replace = answer.value === "replace";
       if (!bound()) return "The repository changed meanwhile. Try again.";
+    }
+    // The overwrite choice determines which configuration will survive.
+    if (point === "blank") {
+      const keptConfig = (state.get(NATIVE_CONFIG_PATH) === "taken" && !replace) || partial?.committed.includes(NATIVE_CONFIG_PATH);
+      const config = keptConfig ? ports.guardedEdits.peek.source(NATIVE_CONFIG_PATH) : startingConfig(siteName);
+      const files = blankSiteFiles(siteName, sitePathPrefix(nativeSiteSettings(config).url));
+      starting = partial ? files.filter(file => !partial.committed.includes(file.path)) : files;
     }
     const problems: string[] = [];
     const skipped = new Map<string, string[]>();

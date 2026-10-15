@@ -20,6 +20,11 @@ export function rootRoute(path: string): string {
   return "/" + path.replace(/^\/+/, "");
 }
 
+/** Publish an internal rootRoute key: even a route named like the prefix gets the folder. */
+export function routeAddress(route: string, prefix: string): string {
+  return prefix + route;
+}
+
 /** Prefix an encoded root address once, preserving its query, fragment and trailing slash. */
 export function withSitePrefix(rootAddress: string, prefix: string): string {
   if (!prefix || !rootAddress.startsWith("/") || rootAddress.startsWith("//")) return rootAddress;

@@ -88,3 +88,12 @@ test("prefixed navigation keeps encoded path punctuation, query and fragment", (
   assert.equal(list.links[0].href, "/files/a%23b%3Fc%25.pdf?x=1&y=2#page=2");
   assert.ok(editNavigation(source, list, list.links, "/my-site").includes('<a href="/my-site/files/a%23b%3Fc%25.pdf?x=1&amp;y=2#page=2">Download</a>'));
 });
+
+test("navigation round trip keeps a route named like the site prefix", () => {
+  const source = '<header><nav><a href="/my-site/my-site/">Nested</a><a href="https://other.test/my-site/">Other</a></nav></header>';
+  const list = readNavigation(source, false, "/my-site")!;
+  assert.equal(list.links[0].href, "/my-site/");
+  const next = editNavigation(source, list, list.links, "/my-site");
+  assert.ok(next.includes('<a href="/my-site/my-site/">Nested</a>'));
+  assert.ok(next.includes('<a href="https://other.test/my-site/">Other</a>'));
+});

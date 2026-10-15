@@ -1,4 +1,4 @@
-import { siteAddress, sitePathPrefix } from "../../shared/site-path-prefix";
+import { rootRoute, siteAddress, sitePathPrefix } from "../../shared/site-path-prefix";
 import { NATIVE_CONFIG_PATH, nativeSiteSettings } from "../../shared/native-project";
 import { MEDIA_RECORDS_PATH, parseMediaRecords, renameMediaRecord, serializeMediaRecords, type MediaRecords } from "../../shared/media-records";
 import { editNativeRedirects } from "../native-page-moves";
@@ -90,12 +90,15 @@ function rewriteText(file: string, source: string, input: RenameInput, moves: Ma
     const pathStart = mapped.starts[prefix.length], pathEnd = mapped.ends[prefix.length + address.length - 1];
     if (pathStart === undefined || pathEnd === undefined) return;
     const rawPath = raw.slice(pathStart, pathEnd);
-    let next = path === to && !template && !(input.site?.prefix && (full || address.startsWith("/"))) ? address : full || address.startsWith("/") || template ? siteAddress(to, input.site?.prefix ?? "") : relativePath(file, to);
+    let next = path === to && !template && !(input.site?.prefix && (full || address.startsWith("/"))) ? address : full || address.startsWith("/") || template ? (input.site?.prefix ?? "") + rootRoute(to) : relativePath(file, to);
     // A unique unresolved suffix keeps its abbreviated spelling when its folder is unchanged.
     if (path !== to && !known.has(mediaResolvePath(value, file, input.site ?? { origins: [] }) ?? "") && !full && !template && !address.startsWith("/") && path.slice(0, path.lastIndexOf("/")) === to.slice(0, to.lastIndexOf("/"))) {
       next = address.slice(0, address.lastIndexOf("/") + 1) + to.split("/").at(-1)!;
     } else if (address.startsWith("./") && !next.startsWith(".")) next = "./" + next;
-    if (path !== to && !full && !address.startsWith("/") && !template && /%[\da-f]{2}/i.test(rawPath)) next = next.split("/").map(part => encodeURIComponent(part)).join("/");
+    if (path !== to && /%[\da-f]{2}/i.test(rawPath)) {
+      const folder = full || address.startsWith("/") || template ? input.site?.prefix ?? "" : "";
+      next = folder + next.slice(folder.length).split("/").map(part => encodeURIComponent(part)).join("/");
+    }
     // Keep every unchanged character's original spelling, including mixed literal and escaped slashes.
     let left = 0, right = 0;
     while (left < address.length && left < next.length && address[left] === next[left]) left++;

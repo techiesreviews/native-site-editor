@@ -211,3 +211,13 @@ test("new-page navigation writes prefixed links into the home and new page in on
   assert.equal(h.memory.workspace.source("index.html"), home);
   assert.equal(h.memory.workspace.source("news/index.html"), undefined);
 });
+
+
+test("new-page navigation always prefixes a route named like the site folder", async () => {
+  const h = fixture();
+  h.memory.writeDraft(".editor/config.json", '{"site":{"url":"https://user.github.io/my-site/"}}');
+  assert.equal(await h.controller.createNew({ parent: "/", title: "Nested", slug: "my-site", addToNavigation: true }), undefined);
+  for (const path of ["index.html", "my-site/index.html"]) {
+    assert.ok(h.memory.workspace.source(path)?.includes('<a href="/my-site/my-site/">Nested</a>'));
+  }
+});

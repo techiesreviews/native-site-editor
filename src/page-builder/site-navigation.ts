@@ -1,7 +1,8 @@
-import { siteRouteOf, withSitePrefix } from "../../shared/site-path-prefix";
+import { routeAddress, siteRouteOf } from "../../shared/site-path-prefix";
 import { elementEnd, startTagAttribute, startTags } from "../../shared/html-source";
 import { decodeText, escapeText, withAttribute } from "./site-head";
 
+/** Root hrefs are internal route keys; full addresses retain their spelling. */
 export interface NavigationLink { href: string; label: string; source?: string }
 export interface NavigationList { start: number; end: number; links: NavigationLink[]; indent: string; newline: string; pattern?: string }
 export function safeNavigationHref(value: string): boolean {
@@ -49,21 +50,22 @@ export function readNavigation(html: string, component = false, prefix = ""): Na
   if (html.slice(cursor, list.close.start).trim()) return undefined;
   const first = items[0];
   const indent = first ? /^[ \t]*$/.test(html.slice(html.lastIndexOf("\n", first.start - 1) + 1, first.start)) ? html.slice(html.lastIndexOf("\n", first.start - 1) + 1, first.start) : "    " : "    ";
-  return { start: list.tag.end, end: list.close.start, links, indent, newline: html.includes("\r\n") ? "\r\n" : "\n", pattern: links[0]?.source ?? (listIndex >= 0 ? `<li><a href="${withSitePrefix("/", prefix)}">Page</a></li>` : `<a href="${withSitePrefix("/", prefix)}">Page</a>`) };
+  return { start: list.tag.end, end: list.close.start, links, indent, newline: html.includes("\r\n") ? "\r\n" : "\n", pattern: links[0]?.source ?? (listIndex >= 0 ? `<li><a href="${routeAddress("/", prefix)}">Page</a></li>` : `<a href="${routeAddress("/", prefix)}">Page</a>`) };
 }
 
 export function editNavigation(html: string, list: NavigationList, links: NavigationLink[], prefix = ""): string {
   const items = links.map((link) => {
     if (!link.label.trim()) throw new Error("Every navigation link needs a label.");
     if (!safeNavigationHref(link.href)) throw new Error("Use a page URL, https:// link, mailto: or tel: address.");
-    let source = link.source ?? list.pattern ?? `<a href="${withSitePrefix("/", prefix)}">Page</a>`;
+    let source = link.source ?? list.pattern ?? `<a href="${routeAddress("/", prefix)}">Page</a>`;
     const tags = startTags(source);
     const index = tags.findIndex((tag) => tag.name === "a");
     const anchor = elementEnd(source, tags, index, source.length);
     if (!anchor?.close) throw new Error("This navigation item is incomplete.");
     if (decodeText(source.slice(anchor.tag.end, anchor.close.start)) !== link.label.trim())
       source = source.slice(0, anchor.tag.end) + escapeText(link.label.trim()) + source.slice(anchor.close.start);
-    const href = withSitePrefix(link.href.trim(), prefix);
+    const address = link.href.trim();
+    const href = address.startsWith("/") && !address.startsWith("//") ? routeAddress(address, prefix) : address;
     const originalHref = startTagAttribute(source, startTags(source)[index], "href")?.value ?? "";
     if (decodeText(originalHref, true) !== href)
       source = withAttribute(source, startTags(source)[index], "href", href);

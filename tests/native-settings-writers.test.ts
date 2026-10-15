@@ -60,3 +60,11 @@ test("navigation settings write page choices with the prefix from the guarded co
     assert.equal(f.workspace.workspace.source("index.html"), `<header><nav>\n    <a href="${prefix}/">Home</a>\n    <a href="${prefix}/about/">About</a>\n  </nav></header>`);
   }
 });
+
+
+test("navigation settings apply internal routes named like the prefix", async () => {
+  const source = '<header><nav><a href="/my-site/my-site/">Nested</a></nav></header>';
+  const f = await fixture("/my-site", source);
+  assert.equal(await f.handlers.applyNavigation("index.html", source, [{ href: "/my-site/", label: "Nested" }]), undefined);
+  assert.ok(f.workspace.workspace.source("index.html")?.includes('href="/my-site/my-site/"'));
+});

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mediaUsageFor, mediaUsageRecords, mediaUsageState } from "../src/page-builder/media-usage";
-import { mediaUsageIndex } from "../src/page-builder/media-references";
+import { mediaResolvePath, mediaUsageIndex } from "../src/page-builder/media-references";
 
 test("distinct pages count repeated mentions and responsive members once, in input order", () => {
   const records = mediaUsageRecords({
@@ -221,4 +221,32 @@ test("raw prefixed mentions decode a literal percent escape only once", () => {
   const records = mediaUsageRecords({ media: ["media/a%20b.webp"], pages: [],
     sources: { "notes.md": '/my-site/media/a%2520b.webp' }, site: { prefix: "/my-site", origins: [] } });
   assert.deepEqual(mediaUsageFor(records, "media/a%20b.webp").otherUses, [{ file: "notes.md", kind: "notes" }]);
+});
+
+test("full own-host usage requires the site folder while root links still count", () => {
+  const site = { prefix: "/my-site", origins: ["https://user.github.io"] };
+  const sources = Object.fromEntries(["/media/a.webp", "/other-site/media/a.webp", "/my-site/media/a.webp"].flatMap((path, index) => [
+    [`page${index}.html`, `<img src="https://user.github.io${path}">`],
+    [`notes${index}.md`, `https://user.github.io${path}`],
+  ]));
+  sources["root.html"] = '<img src="/media/a.webp">';
+  const usage = mediaUsageRecords({ media: ["media/a.webp"], sources, pages: ["page0.html", "page1.html", "page2.html", "root.html"], site });
+  const family = mediaUsageFor(usage, "media/a.webp");
+  assert.deepEqual(family.pages, ["page2.html", "root.html"]);
+  assert.deepEqual(family.otherUses, [{ file: "notes2.md", kind: "notes" }]);
+});
+
+
+test("folder checks preserve media ownership rules including empty origins", () => {
+  for (const origins of [[], ["https://user.github.io"]]) {
+    const site = { origins, prefix: "/my-site" };
+    for (const address of ["http://www.user.github.io/my-site/media/a.webp", "//user.github.io/my-site/media/a.webp"]) {
+      assert.equal(mediaResolvePath(address, "index.html", site), "media/a.webp");
+    }
+    assert.equal(mediaResolvePath("https://user.github.io/media/a.webp", "index.html", site), undefined);
+    const records = mediaUsageRecords({ media: ["media/a.webp"], pages: [], site,
+      sources: { "outside.md": "https://user.github.io/media/a.webp", "inside.md": "http://www.user.github.io/my-site/media/a.webp" } });
+    assert.deepEqual(mediaUsageFor(records, "media/a.webp").otherUses, [{ file: "inside.md", kind: "notes" }]);
+  }
+  assert.equal(mediaResolvePath("https://user.github.io/my-site/media/a.webp", "index.html", undefined, "/my-site"), undefined);
 });

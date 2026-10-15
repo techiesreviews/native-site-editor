@@ -150,3 +150,27 @@ test("sub-folder rename finds both root spellings and writes prefixed root addre
   assert.equal(renamed.edits.get("styles/site.css"), 'a{background:url(/my-site/media/b.webp)}');
   assert.equal(renamed.edits.get("data.json"), '{"image":"/my-site/media/b.webp"}');
 });
+
+test("Rename leaves full own-host addresses outside the folder untouched", () => {
+  const outside = '<img src="https://user.github.io/media/a.webp"><img src="https://user.github.io/other-site/media/a.webp">';
+  const p = plan({ "index.html": outside + '<img src="https://user.github.io/my-site/media/a.webp">', "notes.md": 'https://user.github.io/media/a.webp' },
+    { from: "media/a.webp", to: "media/b.webp", paths: ["media/a.webp"], site: { origins: ["https://user.github.io"], prefix: "/my-site" } });
+  assert.equal(p.edits.get("index.html"), outside + '<img src="https://user.github.io/my-site/media/b.webp">');
+  assert.equal(p.edits.has("notes.md"), false);
+});
+
+test("Unicode Rename keeps literal and encoded root and full path spelling", () => {
+  for (const prefix of ["", "/my-site"]) {
+    const old = "media/京都.webp", next = "media/東京.webp";
+    const source = `<img src="${prefix}/${old}"><img src="${prefix}/media/${encodeURIComponent("京都.webp")}"><img src="https://site.test${prefix}/${old}"><img src="https://site.test${prefix}/media/${encodeURIComponent("京都.webp")}">`;
+    const p = plan({ "index.html": source }, { from: old, to: next, paths: [old], site: { origins: ["https://site.test"], prefix } });
+    assert.equal(p.edits.get("index.html"), `<img src="${prefix}/${next}"><img src="${prefix}/media/${encodeURIComponent("東京.webp")}"><img src="https://site.test${prefix}/${next}"><img src="https://site.test${prefix}/media/${encodeURIComponent("東京.webp")}">`);
+  }
+});
+
+
+test("encoded folder prefixes survive Unicode Rename without double encoding", () => {
+  const old = "media/京都.webp", to = "media/東京.webp";
+  const p = plan({ "index.html": `<img src="/caf%C3%A9/${old}">` }, { from: old, to, paths: [old], site: { origins: [], prefix: "/caf%C3%A9" } });
+  assert.equal(p.edits.get("index.html"), `<img src="/caf%C3%A9/media/${encodeURIComponent("東京.webp")}">`);
+});

@@ -100,6 +100,7 @@ test("sharing copy encodes GIF bytes to one JPEG and preserves other meta bytes;
     assert.equal(options.sharing, true); assert.equal(options.format, "jpeg"); assert.equal(options.responsive, false);
     return { outputs: [{ blob: blob("image/jpeg"), extension: "jpg", width: 1200, height: 630 }], trim: { x: 0, y: 0, width: 1, height: 1 }, before: 100, after: 10 };
   });
+  f.text.set(".editor/config.json", JSON.stringify({ site: { url: "https://own.example" } }));
   await f.run({ siteUrl: "https://own.example" }); await f.run({ row: "other.html", siteUrl: "https://own.example" });
   const frameless = fixture(meta); frameless.ports.social = async () => ({ outputs: [{ blob: blob("image/jpeg"), extension: "jpg" }], before: 1, after: 1 });
   assert.deepEqual((await frameless.run()).left.map(x => x.note), ["The sharing image has no frame."]); assert.equal(frameless.batches.length, 0);
@@ -209,6 +210,24 @@ test("a recorded video's saved service bar choice is kept on the switched player
 
 test("Improve GIF and online writers receive the project prefix including player links", async () => {
   const f = fixture();
+  f.text.set(".editor/config.json", JSON.stringify({ site: { url: "https://user.github.io/my-site/" } }));
   await f.run({ siteUrl: "https://user.github.io/my-site/" });
   assert.equal(f.text.get("index.html"), '<html><head><title>Test</title>\n<link rel="stylesheet" href="/my-site/styles/media-player.css">\n<script type="module" src="/my-site/scripts/media-player.js"></script>\n</head><body><video src="/my-site/media/videos/a.mp4" poster="/my-site/media/videos/a.webp" controls muted loop playsinline width="800" height="450"></video></body></html>');
+});
+
+test("improve-gifs-players refuses a stale request prefix captured before config reads", async () => {
+  const f = fixture();
+  f.text.set(".editor/config.json", JSON.stringify({ site: { url: "https://own.example/old/" } }));
+  const read = f.ctx.read.bind(f.ctx);
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  let reached!: () => void;
+  const reading = new Promise<void>(resolve => { reached = resolve; });
+  f.ctx.read = async path => { if (path === ".editor/config.json") { reached(); await held; } return read(path); };
+  const pending = f.run({ siteUrl: "https://own.example/old/" });
+  await reading;
+  f.text.set(".editor/config.json", JSON.stringify({ site: { url: "https://own.example/new/" } }));
+  release();
+  await assert.rejects(pending, /The site address changed. Try again./);
+  assert.equal(f.batches.length, 0);
 });

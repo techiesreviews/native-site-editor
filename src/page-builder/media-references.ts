@@ -11,7 +11,13 @@ export interface MediaUsage { files: string[]; pages: string[]; alts: string[] }
 export function mediaResolvePath(value: string, file: string, site?: MediaSite, prefix = site?.prefix ?? ""): string | undefined {
   let decoded = value.trim();
   if (site && /^(?:https?:)?\/\//i.test(decoded) && mediaOwnAddress(decoded, site)) {
-    try { decoded = new URL(decoded.startsWith("//") ? "https:" + decoded : decoded).pathname; } catch { return undefined; }
+    try {
+      const address = decoded.startsWith("//") ? "https:" + decoded : decoded;
+      const url = new URL(address);
+      // Ownership follows mediaOwnAddress (including empty origins); only folder validation is shared.
+      if (prefix) return sitePathOf(address, { prefix, origins: [url.origin] });
+      decoded = url.pathname;
+    } catch { return undefined; }
   }
   if (!decoded || /^(?:[a-z][\w+.-]*:|\/\/|#)/i.test(decoded)) return undefined;
   if (prefix) {
