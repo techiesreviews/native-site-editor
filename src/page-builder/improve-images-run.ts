@@ -1,9 +1,9 @@
 import { MEDIA_RECORDS_PATH, parseMediaRecords, removeMediaRecords, serializeMediaRecords, setPictureLeftAsIs, type MediaRecords, type PictureLeftAsIs } from "../../shared/media-records";
 import { startTags } from "../../shared/html-source";
 import { improveImagesPlan, type ImproveImagesPlan, type ImproveImagesRow } from "./improve-images";
-import { improveHeavy } from "./improve-heavy";
-import { improveGifsAndPlayers, type ConvertedGif, type PreparedOnlineVideo } from "./improve-gifs-players";
-import { bringInOutsidePictures, type OutsidePictureRead } from "./outside-pictures";
+import { improveHeavy, type ImprovePorts } from "./improve-heavy";
+import { improveGifsAndPlayers, type ConvertedGif, type ImproveGifsPlayersPorts, type PreparedOnlineVideo } from "./improve-gifs-players";
+import { bringInOutsidePictures, type BringInOutsidePicturesInput, type OutsidePictureRead } from "./outside-pictures";
 import { isMediaTextFile, mediaMentions } from "./media-mentions";
 import type { MediaMeasured } from "./media-markup";
 import { readPage } from "../native-source-location";
@@ -36,6 +36,8 @@ export interface ImproveRowRequest {
   measure?: Measure; siteUrl?: string; fetch?: typeof fetch;
 }
 
+/** Test seams: the engines' encoders and page readers. */
+export interface ImproveRowPorts { heavy?: ImprovePorts; gifs?: ImproveGifsPlayersPorts; prepare?: BringInOutsidePicturesInput["prepare"]; probe?: BringInOutsidePicturesInput["probe"] }
 const cancelled = () => new DOMException("Improve images cancelled.", "AbortError");
 const facts = (ctx: MediaWorkspaceContext, known: KnownSizes): Facts =>
   Object.fromEntries(ctx.items.map(item => [item.path, { size: item.size, ...known[item.path] }]));
@@ -118,7 +120,7 @@ function nodeAt(source: string, start: number): number[] | undefined {
 
 /** One row: outside pictures, then heavy files and size details, then GIFs and players, each on
  * what the step before prepared; saved as one change labelled with the row. */
-export async function improveRow(real: MediaWorkspaceContext, request: ImproveRowRequest): Promise<RowOutcome> {
+export async function improveRow(real: MediaWorkspaceContext, request: ImproveRowRequest, ports: ImproveRowPorts = {}): Promise<RowOutcome> {
   const live = () => !request.signal.aborted;
   const guard = () => { real.assertLive(); if (!live()) throw cancelled(); };
   const stage = stagingContext(real);
@@ -140,20 +142,20 @@ export async function improveRow(real: MediaWorkspaceContext, request: ImproveRo
     const result = await bringInOutsidePictures({
       row, source: original, records, paths: stage.ctx.paths, workspace: createMediaWorkspace(async () => stage.ctx),
       assertLive: () => stage.ctx.assertLive(), live, brought: maps.brought, cache: request.maps.reads, own: request.own,
-      by: "lex", siteUrl: request.siteUrl, signal: request.signal, fetch: request.fetch,
+      by: "lex", siteUrl: request.siteUrl, signal: request.signal, fetch: request.fetch, prepare: ports.prepare, probe: ports.probe,
       measure: measure && (async (picture, size) => { const node = nodeAt(original, picture.tag.start); return node && measure(row.file, node, size); }),
     });
     outcome.left.push(...result.left); outcome.notes.push(...result.notes);
     guard();
   }
   if (wants("lighten", "copies", "size", "sizes", "loading")) {
-    const result = await improveHeavy(stage.ctx, { row: row.file, files: files(), measure, live, signal: request.signal });
+    const result = await improveHeavy(stage.ctx, { row: row.file, files: files(), measure, live, signal: request.signal }, ports.heavy);
     outcome.notes.push(...result.notes);
     guard();
   }
   if (wants("loop", "first-frame", "player")) {
     const result = await improveGifsAndPlayers(stage.ctx, { row: row.file, files: files(), by: "lex", fetch: request.fetch, siteUrl: request.siteUrl,
-      converted: maps.converted, videos: maps.videos, live, signal: request.signal });
+      converted: maps.converted, videos: maps.videos, live, signal: request.signal }, ports.gifs);
     outcome.left.push(...result.left); outcome.notes.push(...result.notes);
     guard();
   }
