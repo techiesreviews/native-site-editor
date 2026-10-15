@@ -64,7 +64,7 @@ for (const colorScheme of ["light", "dark"] as const) {
     const panel = page.getByRole("dialog", { name: "Add to the page" });
     await expect(panel).toBeVisible();
     await expect(panel.locator('[data-tag^="native:"]')).toHaveCount(0);
-    await expect(panel.getByRole("option", { name: /^(Section|Div|Heading|Paragraph|Image|Button) HTML$/ })).toHaveCount(0);
+    await expect(panel.getByRole("option", { name: /^(Section|Div|Heading|Paragraph|Media|Image|Button) HTML$/ })).toHaveCount(0);
     // The panel slides in; its settled left edge is the sidebar's.
     await expect.poll(async () => (await panel.boundingBox())!.x).toBe(sidebarBox.x);
     await page.keyboard.press("Escape");
