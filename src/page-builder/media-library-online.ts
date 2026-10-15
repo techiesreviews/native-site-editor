@@ -4,11 +4,11 @@
 // which never contacts the service and leaves pages as they are. Loaded when such details open.
 import { button, node } from "../ui/dom";
 import { icon } from "../icons";
-import { check, input } from "./media-library-fields";
+import { input } from "./media-library-fields";
 import { onlineServiceName, onlineVideoName } from "./media-library-filter";
 import { pageButton } from "./media-library-usage";
 import { onlineVideoHref } from "./online-video";
-import { moreButton, type DetailHost } from "./media-library-details";
+import { detailSection, moreButton, switchRow, type DetailHost } from "./media-library-details";
 import type { LibrarySheet } from "./media-library-sheet";
 import type { MediaOnlineVideo } from "./media-picker";
 
@@ -36,8 +36,12 @@ export function showOnlineVideoDetail(sheet: LibrarySheet, h: DetailHost, key: s
     back.setAttribute("aria-label", "Back"); back.append(icon("arrow-left", 20));
     head.append(back, node("h3", "", "Video details"));
     const layout = node("div", "media-detail"), info = node("div", "media-detail__info");
-    layout.append(preview(h, video, current), info);
-    info.append(...facts(video), uses(h, video));
+    // As File details (slice 123): the stage on the left; the name, facts, actions and sections on the right.
+    layout.append(preview(h, video), info);
+    info.append(facts(video));
+    const actions = videoActions(h, video, current);
+    if (actions) info.append(actions);
+    info.append(uses(h, video));
     if (!h.modal && video.service === "vimeo" && h.adapter.onlineVideoServiceBar) info.append(serviceBar(h, video, current));
     element.replaceChildren(head, layout);
     h.sync();
@@ -47,9 +51,8 @@ export function showOnlineVideoDetail(sheet: LibrarySheet, h: DetailHost, key: s
   render(true);
 }
 
-/** The still picture (a clean surface without one) and, in the pane, the video's actions under it. */
-function preview(h: DetailHost, video: MediaOnlineVideo, current: () => boolean) {
-  const { adapter, task, tell, done, refresh } = h, title = onlineVideoName(video);
+/** The still picture on the stage (a clean surface without one). */
+function preview(h: DetailHost, video: MediaOnlineVideo) {
   const view = node("div", "media-detail__view"), figure = node("figure", "media-detail__preview");
   figure.dataset.type = "video";
   const surface = () => {
@@ -64,7 +67,13 @@ function preview(h: DetailHost, video: MediaOnlineVideo, current: () => boolean)
     figure.append(image);
   } else surface();
   view.append(figure);
-  if (h.modal) return view;
+  return view;
+}
+
+/** In the pane, the video's actions in one row: Choose picture…, then ⋯ with Remove… in red. */
+function videoActions(h: DetailHost, video: MediaOnlineVideo, current: () => boolean) {
+  if (h.modal) return undefined;
+  const { adapter, task, tell, done, refresh } = h, title = onlineVideoName(video);
   const actions = node("div", "media-detail__actions");
   const key = { service: video.service, id: video.id };
   if (adapter.onlineVideoStill) actions.append(button("Choose picture…", () => void task(async () => {
@@ -101,8 +110,7 @@ function preview(h: DetailHost, video: MediaOnlineVideo, current: () => boolean)
     } }]);
     actions.append(more);
   }
-  if (actions.childElementCount) view.append(actions);
-  return view;
+  return actions.childElementCount ? actions : undefined;
 }
 
 /** Its name, then one muted line (slice 108): the service and the address it plays from. */
@@ -112,7 +120,9 @@ function facts(video: MediaOnlineVideo) {
   link.href = onlineVideoHref({ service: video.service, id: video.id, ...video.hash ? { hash: video.hash } : {} });
   link.target = "_blank"; link.rel = "noopener noreferrer";
   line.append(`${service} video · `, link);
-  return [node("p", "media-detail__name", onlineVideoName(video)), line];
+  const summary = node("div", "media-detail__summary");
+  summary.append(node("p", "media-detail__name", onlineVideoName(video)), line);
+  return summary;
 }
 
 /** The pages (and component templates) that show it; each opens its page. */
@@ -131,12 +141,12 @@ function uses(h: DetailHost, video: MediaOnlineVideo) {
     }
     section.append(list);
   }
-  return part;
+  return detailSection("Usage", undefined, part);
 }
 
 /** Vimeo only (slice 61): the video's own bar for owners whose plan cannot hide it. Off by default. */
 function serviceBar(h: DetailHost, video: MediaOnlineVideo, current: () => boolean) {
-  const part = node("div", "media-detail__part"), box = input("Show Vimeo's own bar", "checkbox");
+  const box = input("Show Vimeo's own bar", "checkbox");
   box.checked = Boolean(video.serviceBar);
   box.addEventListener("change", () => {
     const on = box.checked;
@@ -146,7 +156,6 @@ function serviceBar(h: DetailHost, video: MediaOnlineVideo, current: () => boole
       if (current()) { await h.refresh(); h.done(on ? "Vimeo's own bar shows everywhere the video is used." : "The site's bar shows everywhere the video is used."); }
     });
   });
-  part.append(node("h4", "", "Player"), check("Show Vimeo's own bar", box,
+  return detailSection("Player", undefined, switchRow("Show Vimeo's own bar", box,
     "Turn on when the video's Vimeo plan cannot hide Vimeo's bar. Applies everywhere it is used."));
-  return part;
 }

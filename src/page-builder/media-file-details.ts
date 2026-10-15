@@ -117,3 +117,18 @@ export function canReplaceEverywhere(path: string, paths: string[], metadata: Me
   return /\.(?:png|jpe?g|gif|webp|avif|bmp)$/i.test(path) && !/^media\/originals\//i.test(path) &&
     !metadata[path]?.trimmedFrom && Boolean(mediaFamilyOf(path, paths));
 }
+
+/** What File details' fields hold, as one comparable value (slice 123): the Save bar shows while it
+ * differs from the value the screen opened with. A tick box counts by its tick, a field by its words. */
+export function mediaDetailFormState(controls: { checkbox: boolean; checked: boolean; value: string }[]): string {
+  return JSON.stringify(controls.map(control => control.checkbox ? control.checked : control.value));
+}
+
+/** The ⋯ menu of a file in File details (slices 108, 123): Copy path, Download, then Remove… last, in red. */
+export function mediaFileMenu(run: { copy: () => void; download: () => void; remove: () => void }) {
+  return [
+    { label: "Copy path", run: run.copy },
+    { label: "Download", run: run.download },
+    { label: "Remove…", run: run.remove, danger: true },
+  ];
+}

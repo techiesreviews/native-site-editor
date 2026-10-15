@@ -129,3 +129,26 @@ test("a recorded length reaches File details and tiles; a wrong one is left out,
   const view = mediaMetadataView(records);
   assert.deepEqual(["a.mp4", "b.mp4", "c.mp3", "d.mp3"].map(path => view[path].duration), [12.35, undefined, undefined, undefined]);
 });
+
+test("File details' Save bar follows what the fields hold: words and ticks, back to unchanged when undone (slice 123)", async () => {
+  const { mediaDetailFormState } = await import("../src/page-builder/media-file-details");
+  const opened = [{ checkbox: false, checked: false, value: "desk.svg" }, { checkbox: true, checked: false, value: "on" }, { checkbox: false, checked: false, value: "" }];
+  const saved = mediaDetailFormState(opened);
+  assert.equal(mediaDetailFormState(opened.map(control => ({ ...control }))), saved);
+  assert.notEqual(mediaDetailFormState([opened[0], { ...opened[1], checked: true }, opened[2]]), saved);
+  assert.notEqual(mediaDetailFormState([opened[0], opened[1], { ...opened[2], value: "A desk" }]), saved);
+  // A tick box counts by its tick only; its value never changes the state.
+  assert.equal(mediaDetailFormState([opened[0], { ...opened[1], value: "Brand" }, opened[2]]), saved);
+  // Words that only move between fields still differ.
+  assert.notEqual(mediaDetailFormState([{ ...opened[0], value: "" }, opened[1], { ...opened[2], value: "desk.svg" }]), saved);
+});
+
+test("A file's ⋯ menu: Copy path, Download, then Remove… last and in red (slices 108, 123)", async () => {
+  const { mediaFileMenu } = await import("../src/page-builder/media-file-details");
+  const ran: string[] = [];
+  const menu = mediaFileMenu({ copy: () => ran.push("copy"), download: () => ran.push("download"), remove: () => ran.push("remove") });
+  assert.deepEqual(menu.map(item => item.label), ["Copy path", "Download", "Remove…"]);
+  assert.deepEqual(menu.map(item => Boolean((item as { danger?: boolean }).danger)), [false, false, true]);
+  for (const item of menu) item.run();
+  assert.deepEqual(ran, ["copy", "download", "remove"]);
+});

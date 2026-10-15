@@ -58,6 +58,8 @@ async function expectActionsInView(page: Page) {
   await expect(pane(page).getByRole("button", { name: "New collection", exact: true })).toBeInViewport({ ratio: 1 });
   await pane(page).getByRole("button", { name: "Back", exact: true }).click();
   await pane(page).getByRole("button", { name: "Details for images/spare-1.svg", exact: true }).click();
+  // Save details shows once something changed (slice 123).
+  await pane(page).getByRole("checkbox", { name: "Always keep", exact: true }).check();
   await expect(pane(page).getByRole("button", { name: "Save details", exact: true })).toBeInViewport({ ratio: 1 });
   await pane(page).getByRole("button", { name: "Back", exact: true }).first().click();
   await pane(page).getByRole("button", { name: "More", exact: true }).click();

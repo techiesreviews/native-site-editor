@@ -402,7 +402,7 @@ test("Decorative clears and locks the description, and is stored for the file", 
   await expect(description).toBeDisabled();
 });
 
-test("Always keep stays after reload, and Cancel leaves without saving", async ({ page, baseURL }) => {
+test("Always keep stays after reload, and Discard puts the saved details back", async ({ page, baseURL }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await open(page, baseURL);
   await details(page, "images/studio-desk.svg");
@@ -417,8 +417,15 @@ test("Always keep stays after reload, and Cancel leaves without saving", async (
   await details(page, "images/studio-desk.svg");
   const keep = library.getByRole("checkbox", { name: "Always keep", exact: true });
   await expect(keep).toBeChecked();
+  // The Save bar shows only while something differs from what is saved (slice 123).
+  await expect(library.getByRole("button", { name: "Save details", exact: true })).toBeHidden();
   await keep.uncheck();
-  await library.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(library.getByText("Unsaved changes", { exact: true })).toBeVisible();
+  await library.getByRole("button", { name: "Discard", exact: true }).click();
+  await expect(library.getByRole("checkbox", { name: "Always keep", exact: true })).toBeChecked();
+  await expect(library.getByRole("button", { name: "Save details", exact: true })).toBeHidden();
+  await expect(library.getByRole("button", { name: "Back", exact: true })).toBeFocused();
+  await library.getByRole("button", { name: "Back", exact: true }).click();
   await expect(library.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true })).toBeFocused();
   expect(await records(page)).toContain('"alwaysKeep": true');
 });
@@ -445,12 +452,13 @@ test("on a phone, File details is its own screen with Back, the preview first an
   expect(shape.height).toBeLessThanOrEqual(844 / 2 + 1);
   await library.getByRole("button", { name: "More for this file", exact: true }).tap();
   const menu = page.getByRole("menu", { name: "More for this file", exact: true });
-  await expect(menu.getByRole("menuitem")).toHaveText(["Copy path", "Remove…"]);
+  await expect(menu.getByRole("menuitem")).toHaveText(["Copy path", "Download", "Remove…"]);
   await expect(menu.getByRole("menuitem", { name: "Remove…", exact: true })).toHaveClass(/row-menu__danger/);
   await page.keyboard.press("Escape");
   await expect(menu).toBeHidden();
   await expect(library.getByRole("checkbox", { name: "Always keep", exact: true })).toHaveAccessibleDescription("Never suggested for clean-up. For files used outside the site.");
-  // Save stays pinned in view (slice 104); scrolled to the end, the buttons follow the fields and cover none of them.
+  // After a change, Save stays pinned in view (slices 104, 123); scrolled to the end, the buttons follow the fields and cover none of them.
+  await library.getByRole("checkbox", { name: "Always keep", exact: true }).check();
   const save = library.getByRole("button", { name: "Save details", exact: true });
   await expect(save).toBeInViewport({ ratio: 1 });
   await library.evaluate(element => { element.scrollTop = element.scrollHeight; });

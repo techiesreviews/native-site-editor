@@ -52,7 +52,7 @@ export function showAddingSettings(sheet: LibrarySheet, h: AddingSettingsHost) {
     group.append(node("legend", "", legend), card);
     form.append(group);
   }
-  const keep = node("input", "media-settings__switch"); keep.type = "checkbox"; keep.name = "keep-original";
+  const keep = node("input", "media-switch"); keep.type = "checkbox"; keep.name = "keep-original";
   keep.addEventListener("change", () => save({ keepOriginal: keep.checked }));
   const keepCard = node("div", "media-settings__card");
   const keepRow = choiceRow(keep, "Keep original", "Also keeps each changed file as you added it, in media/originals. Anyone can download it by its address.");

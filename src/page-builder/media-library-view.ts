@@ -24,6 +24,7 @@ import {
   dismissRefreshingDelete, pruneLibrarySelection,
 } from "./media-library-refresh";
 import "./media-picker.css";
+import "./media-detail.css";
 import { say, type ToastAction } from "../components/toast";
 import type { MediaCleanUpMount, MediaHeldFiles, MediaImportRequest, MediaLibrary, MediaPickerHost, MediaPickerOptions } from "./media-picker";
 const CANCELLED = "This file was cancelled. Choose another image.";

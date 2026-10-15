@@ -3,10 +3,10 @@ import { siteAddress } from "../../shared/site-path-prefix";
 import { button, node } from "../ui/dom";
 import { icon } from "../icons";
 import { formatBytes, uploadImageType } from "../uploads";
-import { input, field, check } from "./media-library-fields";
+import { input, check } from "./media-library-fields";
 import { detailCollections, mediaCollectionNameMessage } from "./media-collection-choices";
 import { basename, formatMediaLength, mediaKind, mediaTileLook, mediaTileStills } from "./media-library-filter";
-import { canReplaceEverywhere, formatMediaAdded, mediaDetailChanges, mediaDetailFacts, mediaMadeFrom, mediaFamilyRows, mediaNameCheck, mediaRenamedPath, type MediaNameCheck } from "./media-file-details";
+import { canReplaceEverywhere, formatMediaAdded, mediaDetailChanges, mediaDetailFormState, mediaFileMenu, mediaDetailFacts, mediaMadeFrom, mediaFamilyRows, mediaNameCheck, mediaRenamedPath, type MediaNameCheck } from "./media-file-details";
 import { isRenamableMedia, MediaNameTakenError } from "./media-names";
 import { keepPageFocus, usageSections } from "./media-library-usage";
 import { mediaUsageBadge, mediaUsageFor } from "./media-usage-text";
@@ -93,10 +93,13 @@ export async function showMediaDetail(sheet: LibrarySheet, h: DetailHost, path: 
       if (current()) await replaceEverywhere(sheet, { ...h, details: to => showMediaDetail(sheet, h, to) }, path);
     }) : undefined;
   const still = mediaTileStills(library.items.map(item => item.path), library.metadata).get(path);
-  layout.append(renderPreview(h, path, data, meta, still, current, replace), info);
+  const view = renderPreview(h, path, data, meta, still);
+  layout.append(view, info);
   element.replaceChildren(head, layout);
-  const facts = renderInformation(form, sheet, h, path, data, meta, current);
-  const player = layout.querySelector<HTMLMediaElement>("video, audio");
+  const player = view.querySelector<HTMLVideoElement | HTMLAudioElement>("video, audio") ?? undefined;
+  const kind = mediaKind(path);
+  const parts = (kind === "video" || kind === "audio") && !h.modal ? mediaDetailParts(h, path, meta, player, still, current) : [];
+  const facts = renderInformation(form, sheet, h, path, data, meta, current, fileActions(h, path, data, replace), parts);
   if (player) {
     const length = () => {
       if (!current() || !Number.isFinite(player.duration) || player.duration <= 0) return;
@@ -122,13 +125,10 @@ export async function showMediaDetail(sheet: LibrarySheet, h: DetailHost, path: 
   if (sheet.focus?.path === path) sheet.focus = undefined;
 }
 
-/** The complete picture (a clean surface with its type's picture when there is none to draw), a
- * playable video or audio file, a PDF's first page, and the file's actions under it: in the Media
- * pane a video's still picture and a video's or audio file's subtitles first (slice 66). */
-function renderPreview(
-  h: DetailHost, path: string, data: MediaBytes, meta: MediaMetadata, still: string | undefined, current: () => boolean, replace?: () => void,
-) {
-  const { optimise, remove, task, done, cache } = h;
+/** The complete picture on the stage (a clean surface with its type's picture when there is none to
+ * draw), a playable video or audio file, or a PDF's first page (slice 123: the actions moved to the inspector). */
+function renderPreview(h: DetailHost, path: string, data: MediaBytes, meta: MediaMetadata, still: string | undefined) {
+  const { cache } = h;
   const view = node("div", "media-detail__view"), preview = node("figure", "media-detail__preview");
   const look = mediaTileLook(path, still, meta.duration), kind = mediaKind(path);
   preview.dataset.type = look.icon;
@@ -165,22 +165,35 @@ function renderPreview(
     stillUrl(url => { image.src = url; }, surface);
     preview.append(image);
   } else surface();
-  // Slice 108 (Klaviyo, Apple Photos): Replace everywhere… and Optimise… beside the ⋯ menu, which
-  // holds Copy path and, last in red, Remove….
+  view.append(preview);
+  return view;
+}
+
+/** The file's actions in one row (slices 108, 123; Magnific, Apple Photos): Replace everywhere… and
+ * Optimise…, then ⋯ with Copy path, Download and, last in red, Remove…. */
+function fileActions(h: DetailHost, path: string, data: MediaBytes, replace?: () => void) {
+  const { optimise, remove, task, done } = h;
   const actions = node("div", "media-detail__actions");
   if (replace) actions.append(button("Replace everywhere…", replace));
   if (uploadImageType(path)) actions.append(button("Optimise…", () => optimise(
     [new File([data.blob], path, { type: data.blob.type || uploadImageType(path) })], true, new Map([[path, data.version]]),
   )));
-  actions.append(moreButton(h, () => [
-    { label: "Copy path", run: () => void task(async () => {
+  actions.append(moreButton(h, () => mediaFileMenu({
+    copy: () => void task(async () => {
       await navigator.clipboard.writeText(siteAddress(path, h.library().prefix ?? "")); done("Path copied.");
-    }) },
-    { label: "Remove…", run: () => remove([path]), danger: true },
-  ]));
-  const player = preview.querySelector<HTMLVideoElement | HTMLAudioElement>("video, audio") ?? undefined;
-  view.append(preview, actions, ...(kind === "video" || kind === "audio") && !h.modal ? mediaDetailParts(h, path, meta, player, still, current) : []);
-  return view;
+    }),
+    download: () => { const link = node("a"); link.href = data.url; link.download = basename(path); link.click(); },
+    remove: () => remove([path]),
+  })));
+  return actions;
+}
+
+/** A section of the inspector: a small heading with an optional muted value at its end. */
+export function detailSection(title: string, value?: HTMLElement | string, ...content: (HTMLElement | string)[]) {
+  const section = node("div", "media-detail__section"), head = node("div", "media-detail__section-head");
+  head.append(node("h4", "", title), ...value ? [typeof value === "string" ? node("span", "", value) : value] : []);
+  section.append(head, ...content);
+  return section;
 }
 
 /** Expand/collapse section with its summary words; it stays open across background refreshes. */
@@ -191,17 +204,26 @@ function disclosure(part: string, title: string, summary: HTMLElement, body: HTM
   return section;
 }
 
+/** A setting as a row with a switch at its end (slice 123, Frame.io); still a tick box underneath. */
+export function switchRow(label: string, box: HTMLInputElement, hint?: string) {
+  box.classList.add("media-switch");
+  const row = check(label, box, hint); row.classList.add("media-detail__switch");
+  return row;
+}
+
 let fieldIds = 0;
 
-/** Name, facts, usage, the Image family, collections, description, Always keep, then Save and Cancel.
+/** The inspector (slice 123): the name as the heading, the facts, the actions, then Description (with
+ * Decorative), Usage, Copies and original, a video's or audio file's parts, Collections as pills and
+ * Settings; a Save bar appears once something differs from what is saved.
  * Returns the facts line's painter, for the dimensions and length a player reads later. */
 function renderInformation(
   form: HTMLFormElement, sheet: LibrarySheet, h: DetailHost,
-  path: string, data: MediaBytes, meta: MediaMetadata, current: () => boolean,
+  path: string, data: MediaBytes, meta: MediaMetadata, current: () => boolean, actions: HTMLElement, parts: HTMLElement[],
 ) {
   const { adapter, task, refresh, done, cache } = h, library = h.library(), image = mediaKind(path) === "image";
   const item = library.items.find(entry => entry.path === path);
-  const name = input("File name", "text"); name.value = basename(path); name.autocomplete = "off";
+  const name = input("File name", "text"); name.value = basename(path); name.autocomplete = "off"; name.classList.add("media-detail__title");
   name.autocapitalize = "none"; name.spellcheck = false;
   // Renaming renames the whole family and every mention (slice 52); kinds Media does not rename stay as they are.
   if (!isRenamableMedia(path)) name.disabled = true;
@@ -220,9 +242,34 @@ function renderInformation(
   if (item?.date !== undefined) notes.push(node("p", "media-detail__note", formatMediaAdded(item.date)));
   const madeFrom = mediaMadeFrom(meta);
   if (madeFrom) notes.push(node("p", "media-detail__note", madeFrom));
-  form.append(field("File name", name), naming.element, facts, ...notes);
+  // The name is the heading (slice 123, Air): its rename notes, the facts and notes under it.
+  const summary = node("div", "media-detail__summary");
+  summary.append(name, naming.element, facts, ...notes);
   // The Always keep mark (slice 49): on for this file, or for a copy or original in its family.
-  if (library.keep?.includes(path)) form.append(node("p", "media-library__keep-note", "Always keep: Clean up never suggests this file."));
+  if (library.keep?.includes(path)) summary.append(node("p", "media-library__keep-note", "Always keep: Clean up never suggests this file."));
+  form.append(summary, actions);
+  const description = node("textarea"); description.name = "description"; description.setAttribute("aria-label", "Description");
+  description.value = meta.alt; description.rows = 3;
+  const decorative = input("Decorative", "checkbox"); decorative.checked = Boolean(meta.decorative);
+  if (image) {
+    // Decorative has no description; the words come back if it is unticked before saving. They are
+    // held on the field, so a background refresh carries them (media-library-refresh.ts).
+    const sync = () => { description.disabled = decorative.checked; };
+    decorative.addEventListener("change", () => {
+      if (decorative.checked) { if (description.value) description.dataset.kept = description.value; description.value = ""; }
+      else if (!description.value) description.value = description.dataset.kept ?? "";
+      sync();
+    });
+    description.addEventListener("input", () => { if (description.value) { decorative.checked = false; sync(); } });
+    sync();
+    // One short help line (WordPress); Decorative sits with the words it empties.
+    const words = detailSection("Description", !meta.alt && !meta.decorative ? node("span", "media-library__hint", "Not described yet") : undefined,
+      description, node("p", "media-library__hint", "Read aloud to people who can't see the picture."));
+    // By agent (ticket 13) until Looks right in To check, or Lex's own words saved here.
+    if (meta.byAgent) words.append(node("span", "media-library__by-agent", "By agent: press Looks right in To check, or change the words here."));
+    words.append(switchRow("Decorative", decorative, "No description: screen readers skip it."));
+    form.append(words);
+  }
   // Usage from the site's usage check; newer results repaint it in place.
   const usageBody = node("div", "media-detail__uses"), usageWords = node("span");
   const usage = disclosure("usage", "Usage", usageWords, [usageBody]);
@@ -255,57 +302,51 @@ function renderInformation(
     });
     form.append(disclosure("family", image ? "Copies and original" : "Files with it", node("span", "", String(family.length)), rows));
   }
-  // Collections work like tags (ticket 15, slice 16): tick the ones the file is in, or name a new one.
-  const group = node("fieldset", "media-library__memberships media-detail__group");
+  // A video's Still picture and a video's or audio file's Subtitles (slice 66), as sections.
+  form.append(...parts);
+  // Collections work like tags (ticket 15, slice 16), drawn as pills (slice 123, Air and Midday):
+  // tick the ones the file is in, or name a new one at the row's end.
+  const group = node("fieldset", "media-library__memberships media-detail__section");
   group.append(node("legend", "", "Collections"));
+  const chips = node("div", "media-detail__chips");
   const ticks = library.collections.map(collection => {
     const box = input(collection, "checkbox"); box.checked = meta.tags.includes(collection); box.name = "media-collection-member";
     box.value = collection; box.dataset.formKey = `collection:${collection}`;
-    group.append(check(collection, box)); return box;
+    const chip = node("label", "media-detail__chip"); chip.append(box, node("span", "", collection));
+    chips.append(chip); return box;
   });
-  if (!library.collections.length) group.append(node("p", "media-library__muted", "No collections yet."));
-  const fresh = input("New collection", "text"); fresh.placeholder = "Name a new collection"; fresh.autocomplete = "off";
+  const fresh = input("New collection", "text"); fresh.placeholder = "+ New collection"; fresh.autocomplete = "off";
+  fresh.classList.add("media-detail__new");
   const problem = node("p", "media-library__problem"); problem.id = `media-detail-collection-${++fieldIds}`;
   problem.setAttribute("aria-live", "polite"); fresh.setAttribute("aria-describedby", problem.id);
   fresh.addEventListener("input", () => {
     problem.textContent = fresh.value.trim() ? mediaCollectionNameMessage(library.collections, fresh.value) ?? "" : "";
   });
-  group.append(field("New collection", fresh), problem);
+  chips.append(fresh);
+  group.append(chips, problem);
   form.append(group);
-  const description = node("textarea"); description.name = "description"; description.setAttribute("aria-label", "Description");
-  description.value = meta.alt; description.rows = 3;
-  const decorative = input("Decorative", "checkbox"); decorative.checked = Boolean(meta.decorative);
-  if (image) {
-    // Decorative has no description; the words come back if it is unticked before saving. They are
-    // held on the field, so a background refresh carries them (media-library-refresh.ts).
-    const sync = () => { description.disabled = decorative.checked; };
-    decorative.addEventListener("change", () => {
-      if (decorative.checked) { if (description.value) description.dataset.kept = description.value; description.value = ""; }
-      else if (!description.value) description.value = description.dataset.kept ?? "";
-      sync();
-    });
-    description.addEventListener("input", () => { if (description.value) { decorative.checked = false; sync(); } });
-    sync();
-    const words = field("Description", description);
-    if (!meta.alt && !meta.decorative) words.append(node("span", "media-library__hint", "Not described yet"));
-    // By agent (ticket 13) until Looks right in To check, or Lex's own words saved here.
-    if (meta.byAgent) words.append(node("span", "media-library__by-agent", "By agent: press Looks right in To check, or change the words here."));
-    form.append(words, node("p", "media-library__hint", "Places using this description are updated. Places with their own words are kept."),
-      check("Decorative", decorative));
-  }
   const keep = input("Always keep", "checkbox"); keep.checked = Boolean(meta.alwaysKeep);
   // "Keep the old address working" is ticked for Always keep files (ticket 15) until Lex chooses.
   const memberKept = Boolean(library.keep?.includes(path)) && !meta.alwaysKeep;
   naming.follow(() => keep.checked || memberKept);
   keep.addEventListener("change", () => naming.follow(() => keep.checked || memberKept));
-  form.append(check("Always keep", keep, "Never suggested for clean-up. For files used outside the site."));
+  form.append(detailSection("Settings", undefined, switchRow("Always keep", keep, "Never suggested for clean-up. For files used outside the site.")));
+  // Save bar ★ (slice 123, Shopify): there only while something differs from what is saved;
+  // Discard draws the saved details again. Saving is still one step and one Undo.
   const footer = node("footer", "media-detail__foot");
   const save = button("Save details", () => undefined, "button primary"); save.type = "submit";
-  const cancel = button("Cancel", () => backToGrid(sheet, h, path)); cancel.type = "button";
-  footer.append(cancel, save);
+  const discard = button("Discard", () => void showMediaDetail(sheet, h, path));
+  footer.append(node("p", "", "Unsaved changes"), discard, save);
   form.append(footer);
+  const state = () => mediaDetailFormState([...form.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("input, textarea")]
+    .map(control => ({ checkbox: control.type === "checkbox", checked: control instanceof HTMLInputElement && control.checked, value: control.value })));
+  const saved = state(), changed = () => state() !== saved;
+  const paintFoot = () => { footer.hidden = !changed(); };
+  form.addEventListener("input", paintFoot); form.addEventListener("change", paintFoot);
+  paintFoot();
   form.addEventListener("submit", event => {
     event.preventDefault();
+    if (!changed()) return;
     const checked = naming.paint();
     if (checked.state === "problem" || checked.state === "taken") { name.focus(); return; }
     const rename = checked.state === "free" ? { name: name.value.trim() } : undefined, forward = naming.forward();

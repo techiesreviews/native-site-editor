@@ -37,7 +37,9 @@ test("metadata Undo and Redo refresh open detail fields while preserving query",
   await pane(page).getByRole("button", { name: "Save details", exact: true }).click();
   await expect.poll(async () => (await storedDraft(page, ".editor/media.json"))?.content).toContain("Host refresh portrait");
   await expect(pane(page)).not.toHaveAttribute("aria-busy", "true");
-  await expect(pane(page).getByRole("button", {name:"Save details",exact:true})).toBeFocused();
+  // Saved, the Save bar goes (slice 123) and focus stays on the screen, on Back.
+  await expect(pane(page).getByRole("button", {name:"Save details",exact:true})).toBeHidden();
+  await expect(pane(page).getByRole("button", {name:"Back",exact:true})).toBeFocused();
   await pane(page).getByLabel("Description", {exact:true}).focus();
   await page.evaluate(async () => { await (await import("/src/components/code-editor.ts")).runVisualHistory("undo", "index.html"); });
   await expect(pane(page).getByLabel("Description", { exact: true })).toHaveValue(before);
@@ -155,7 +157,7 @@ test("changed image usage rebuilds detail references while retaining unfinished 
   await expect(pane(page).getByLabel("New collection",{exact:true})).toHaveValue("unfinished usage tags");
   await expect(pane(page).getByRole("checkbox",{name:"Always keep",exact:true})).toBeChecked();
 });
-test("busy image action explains blocked controls and keeps Save focus after its refresh", async ({page,baseURL}) => {
+test("busy image action explains blocked controls and keeps focus on the screen after its refresh", async ({page,baseURL}) => {
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await expect(page.locator("#current-page")).toHaveAttribute("data-path","index.html");
   await page.evaluate(async () => {
@@ -178,7 +180,8 @@ test("busy image action explains blocked controls and keeps Save focus after its
   await expect(library.locator(".media-library__message")).toContainText("image change is in progress");
   expect(await page.evaluate(() => (window as any).busyImageProbe.state())).toBe(0);
   await page.evaluate(() => (window as any).releaseImageWrite());await expect(library).not.toHaveAttribute("aria-busy","true");
-  await expect(library.getByRole("button",{name:"Save details",exact:true})).toBeFocused();
+  await expect(library.getByRole("button",{name:"Save details",exact:true})).toBeHidden();
+  await expect(library.getByRole("button",{name:"Back",exact:true})).toBeFocused();
   await expect(library.getByLabel("Description",{exact:true})).toHaveValue("Saved pending alt");
   await page.evaluate(() => (window as any).busyImageProbe.dispose());
 });

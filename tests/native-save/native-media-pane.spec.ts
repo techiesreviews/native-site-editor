@@ -130,8 +130,12 @@ test("refresh after real metadata Undo restores detail fields and cannot save un
   await expect.poll(async () => (await storedDraft(page, ".editor/media.json"))?.content ?? "").not.toContain("Undone pane alt");
   await page.evaluate(async () => { await (window as typeof window & { mediaPaneHarness: { view: { refresh(): Promise<void> } } }).mediaPaneHarness.view.refresh(); });
   await expect(alt).toHaveValue(originalAlt); await expect(keep).not.toBeChecked();
+  // Nothing differs from what is saved, so there is nothing to save (slice 123); a new change saves only itself.
+  await expect(panel.getByRole("button", { name: "Save details", exact: true })).toBeHidden();
+  await alt.fill("Fresh pane alt");
   await panel.getByRole("button", { name: "Save details", exact: true }).click();
   await expect(page.locator(".editor-toast__text")).toContainText("saved as a draft");
+  await expect.poll(async () => (await storedDraft(page, ".editor/media.json"))?.content ?? "").toContain("Fresh pane alt");
   expect((await storedDraft(page, ".editor/media.json"))?.content ?? "").not.toContain("Undone pane alt");
   expect((await storedDraft(page, ".editor/media.json"))?.content ?? "").not.toContain("alwaysKeep");
 });

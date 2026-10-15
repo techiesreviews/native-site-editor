@@ -31,21 +31,8 @@
 .media-settings__tick { flex: none; color: var(--link); visibility: hidden; }
 .media-settings__choice:has(input:checked) .media-settings__tick { visibility: visible; }
 
-/* Keep original: the same row with a switch at its end (still a checkbox for assistive tech). */
-.media-library .media-settings__keep input.media-settings__switch {
-  appearance: none; position: relative; flex: none; order: 1; inline-size: 36px; block-size: 20px; margin: 0;
-  border-radius: 999px; background: var(--control-line); cursor: pointer;
-}
-.media-library .media-settings__switch::before {
-  content: ""; position: absolute; inset-block-start: 2px; inset-inline-start: 2px; inline-size: 16px; block-size: 16px;
-  border-radius: 50%; background: oklch(100% 0 none); box-shadow: 0 1px 2px var(--semantic-shadow);
-}
-.media-library .media-settings__keep input.media-settings__switch:checked { background: var(--primary); }
-.media-library .media-settings__switch:checked::before { translate: 16px 0; }
-.media-library .media-settings__keep input.media-settings__switch:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
-@media (prefers-reduced-motion: no-preference) {
-  .media-settings__switch, .media-library .media-settings__switch::before { transition: background-color 140ms ease-out, translate 140ms ease-out; }
-}
+/* Keep original: the same row with the shared switch (media-picker.css) at its end. */
+.media-settings__keep .media-switch { order: 1; }
 
 /* Reset to defaults: a quiet text button, there only when a choice differs from the defaults. */
 .media-library .media-settings__reset { align-self: start; min-block-size: 44px; padding-block: 0; }

@@ -1,0 +1,176 @@
+/* File details and Video details (slice 123, from Lex's review; design note in ticket 123):
+   the file whole on a calm stage on the left, an inspector on the right (Air, Shopify, WordPress):
+   the name as the heading, one line of facts, the actions in one row, then short sections under
+   thin dividers. Stacked on phones, the preview first. Loaded with the Media screen. */
+.media-detail__head { display: flex; align-items: center; gap: 4px; min-inline-size: 0; }
+.media-detail__head h3 { font-size: var(--type-title); }
+.media-detail {
+  --stage-block: clamp(320px, 100dvh - 240px, 860px);
+  /* The stage: a step from the panel, never near-black in dark mode (Lex: no black bands). */
+  --stage: color-mix(in oklch, var(--panel-surface), var(--surface-subtle));
+  display: grid; gap: 16px; align-items: start;
+}
+
+/* The preview. On a phone the picture keeps its own shape, at most half the screen (slice 108). */
+.media-detail__preview { margin: 0; display: grid; place-items: center; overflow: clip; border-radius: var(--radius-dialog); background: var(--stage); }
+.media-detail__preview:not(.is-file) { inline-size: fit-content; max-inline-size: 100%; margin-inline: auto; }
+.media-detail__preview :is(img, video) { display: block; inline-size: auto; block-size: auto; max-inline-size: 100%; max-block-size: 50dvh; }
+.media-detail__preview audio { inline-size: min(100% - 32px, 420px); }
+/* Files without a picture (audio, ZIP, a PDF without its first page): the type's picture and format. */
+.media-detail__preview.is-file { min-block-size: 160px; padding-block: 20px; align-content: center; gap: 8px; color: var(--muted); }
+.media-detail__preview .media-library__format { position: static; font-weight: 600; color: var(--text); }
+.media-detail__preview .media-library__type-picture { inline-size: 40px; block-size: 40px; }
+
+/* Wide: the stage fills the left and stays put while the inspector scrolls; the file sits whole in
+   its middle, never enlarged, on the stage colour (never black). */
+@container media-detail (min-width: 720px) {
+  .media-detail { grid-template-columns: minmax(0, 1fr) clamp(300px, 34cqi, 400px); gap: 24px; }
+  .media-detail__view { position: sticky; inset-block-start: 8px; }
+  .media-detail__preview, .media-detail__preview:not(.is-file) {
+    inline-size: auto; margin-inline: 0; block-size: var(--stage-block); padding: 24px; box-sizing: border-box;
+  }
+  .media-detail__preview :is(img, video) { max-block-size: calc(var(--stage-block) - 48px); }
+  .media-detail__preview .media-library__type-picture { inline-size: 56px; block-size: 56px; }
+}
+
+/* The inspector. */
+.media-detail__info, .media-detail__form { display: flex; flex-direction: column; min-inline-size: 0; }
+.media-detail__info :is(h4, p, ul, dl) { margin: 0; }
+.media-detail__summary { display: grid; gap: 4px; min-inline-size: 0; padding-block-end: 4px; }
+/* The name is the heading: a field with no box until it is hovered or focused (Air, mymind). */
+.media-library input.media-detail__title {
+  min-block-size: 36px; margin-inline: -8px; padding-inline: 8px; border-color: transparent; background: transparent;
+  font-size: var(--type-title); font-weight: 600; text-overflow: ellipsis;
+}
+.media-library input.media-detail__title:is(:focus, :focus-visible) { border-color: var(--control-line); background: var(--surface-input); }
+.media-library input.media-detail__title:disabled { opacity: 1; color: var(--text); }
+@media (hover: hover) and (pointer: fine) { .media-library input.media-detail__title:enabled:hover { border-color: var(--control-line); } }
+.media-detail__name { font-size: var(--type-title); font-weight: 600; overflow-wrap: anywhere; }
+/* The facts as one muted line (slice 108), then when it was added and what it was made from. */
+.media-detail__facts { color: var(--muted); overflow-wrap: anywhere; }
+.media-detail__note { color: var(--muted); font-size: var(--type-small); overflow-wrap: anywhere; }
+.media-detail__facts a { color: var(--link); }
+.media-detail__summary .media-library__keep-note { margin-block-start: 4px; font-size: var(--type-small); }
+/* Renaming (ticket 15): the taken name with the next free one, the tidied name, Keep the old address working. */
+.media-detail__naming { display: grid; gap: 2px; }
+.media-detail__naming:not(:has(> :not([hidden], :empty))) { display: none; }
+.media-library .media-detail__suggest { justify-self: start; min-block-size: 44px; padding: 0; text-decoration: underline; }
+.media-detail__forward { display: grid; }
+.media-detail__forward[hidden] { display: none; }
+
+/* The file's actions, in one row: Replace everywhere…, Optimise…, then ⋯ (slice 108's menu). */
+.media-detail__actions { display: flex; flex-wrap: wrap; gap: 8px; padding-block: 12px 16px; }
+.media-library :is(.media-detail__actions, .media-detail__part-actions, .media-detail__confirm) button {
+  position: relative; min-block-size: 36px; padding-block: 0; padding-inline: 14px; border-radius: 18px;
+}
+.media-library :is(.media-detail__actions, .media-detail__part-actions) button::after { content: ""; position: absolute; inset: min(0px, (100% - 44px) / 2) 0; }
+.media-library .media-detail__actions .media-detail__more { min-inline-size: 36px; padding: 0; display: inline-grid; place-items: center; }
+.media-library .media-detail__actions .media-detail__more::after { inset: min(0px, (100% - 44px) / 2); }
+.media-detail__confirm { display: grid; gap: 8px; padding-block: 12px 16px; }
+.media-detail__confirm p { margin: 0; }
+.media-detail__confirm > div { display: flex; flex-wrap: wrap; gap: 8px; }
+.media-library .media-detail__confirm button.primary { border-color: transparent; }
+
+/* Sections: a thin line above (--control-line: --line matches the light panel), 16 px around, a 13 px heading with an optional muted value at its end. */
+:is(.media-detail__section, .media-detail__part) { display: grid; gap: 8px; min-inline-size: 0; margin: 0; padding: 16px 0; border: 0; border-block-start: 1px solid var(--control-line); }
+.media-detail__section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; min-inline-size: 0; }
+:is(.media-detail__section-head, .media-detail__part) h4, .media-detail__section > legend { font-size: var(--type-base); font-weight: 600; }
+.media-detail__section-head > span { color: var(--muted); font-size: var(--type-small); text-align: end; }
+/* A fieldset's legend sits in the section like a heading. */
+.media-detail__section > legend { float: inline-start; inline-size: 100%; padding: 0 0 8px; }
+.media-detail__section > legend + * { clear: both; }
+
+/* Description: the box grows with its words; one help line; Decorative under it. */
+.media-detail__form textarea { line-height: 1.5; }
+@supports (field-sizing: content) {
+  .media-detail__form textarea { field-sizing: content; min-block-size: calc(3lh + 18px); max-block-size: calc(8lh + 18px); resize: none; }
+}
+.media-detail__form textarea:disabled { opacity: .55; }
+
+/* Usage and Copies and original: one 44 px row with its count and a chevron; opens to its list. */
+.media-detail__disclosure { border-block-start: 1px solid var(--control-line); }
+.media-detail__disclosure > summary {
+  min-block-size: 48px; display: grid; grid-template-columns: minmax(0, 1fr) auto 16px; align-items: center; gap: 8px;
+  cursor: pointer; list-style: none; border-radius: var(--radius);
+}
+.media-detail__disclosure > summary::-webkit-details-marker { display: none; }
+.media-detail__disclosure > summary::after {
+  content: ""; inline-size: 16px; block-size: 16px; background: var(--muted);
+  mask: url("@phosphor-icons/core/regular/caret-down.svg") center / contain no-repeat;
+}
+.media-detail__disclosure[open] > summary::after { rotate: 180deg; }
+.media-detail__disclosure > summary > strong { font-size: var(--type-base); font-weight: 600; }
+.media-detail__disclosure > summary > span { color: var(--muted); font-size: var(--type-small); text-align: end; }
+.media-detail__disclosure[open] { padding-block-end: 12px; }
+.media-detail__uses { display: grid; gap: 8px; }
+.media-detail__uses section { padding: 10px 12px; border-radius: var(--radius-panel); background: var(--surface-card); }
+.media-detail__uses h3 { margin-block-end: 4px; font-size: var(--type-small); color: var(--muted); }
+.media-detail__uses ul { padding: 0; list-style: none; }
+.media-detail__uses li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; min-block-size: 32px; overflow-wrap: anywhere; }
+.media-detail__uses .media-library__page { min-block-size: 44px; padding: 0; text-align: start; overflow-wrap: anywhere; }
+/* Copies and original (slice 108): the name with its size on the first line, what it is under it. */
+.media-detail__row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 2px 10px; padding-block: 8px; border-block-end: 1px solid var(--control-line); }
+.media-detail__row:last-child { border-block-end: 0; }
+.media-detail__row-name { overflow-wrap: anywhere; }
+.media-detail__row-size { color: var(--muted); font-size: var(--type-small); font-variant-numeric: tabular-nums; }
+.media-detail__row-kind { grid-column: 1; color: var(--muted); font-size: var(--type-small); }
+/* The kept original's name downloads it: a text link the size of its line, with a 44 px tap area. */
+.media-library .media-detail__original { position: relative; min-block-size: 0; padding: 0; border: 0; background: none; color: var(--link); font-size: inherit; text-align: start; text-decoration: underline; }
+.media-detail__original::after { content: ""; position: absolute; inset: min(0px, (100% - 44px) / 2) 0; }
+
+/* A video's Still picture and a video's or audio file's Subtitles (slice 66), now sections. */
+.media-detail__part :is(h4, p) { margin: 0; }
+.media-detail__part-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-inline-size: 0; }
+.media-detail__part-row > span { flex: 1; min-inline-size: 0; overflow-wrap: anywhere; }
+.media-detail__part-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.media-detail__still { inline-size: 72px; block-size: 44px; flex: none; object-fit: cover; border-radius: var(--radius-small); background: var(--surface-subtle); }
+
+/* Collections as pills (Air, Midday): the file's own are filled with ✓. Each is still a tick box,
+   invisible over its pill, so keyboards and screen readers work as before. */
+.media-detail__chips { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.media-detail__chip {
+  position: relative; display: inline-flex; align-items: center; gap: 6px; min-block-size: 32px; max-inline-size: 100%;
+  padding-inline: 12px; border: 1px solid var(--control-line); border-radius: 999px; background: var(--surface-card);
+  cursor: pointer; overflow-wrap: anywhere;
+}
+/* The invisible tick box covers the pill and reaches a 44 px target above and below it. */
+.media-library .media-detail__chip input[type="checkbox"] {
+  appearance: none; position: absolute; inset: min(0px, (100% - 44px) / 2) 0; z-index: 1;
+  inline-size: auto; block-size: auto; margin: 0; border-radius: inherit; opacity: 0; cursor: pointer;
+}
+.media-detail__chip:has(input:checked) { border-color: transparent; background: var(--current); font-weight: 600; }
+.media-detail__chip:has(input:checked)::before {
+  content: ""; flex: none; inline-size: 14px; block-size: 14px; background: currentColor;
+  mask: url("@phosphor-icons/core/regular/check.svg") center / contain no-repeat;
+}
+.media-detail__chip:has(input:focus-visible) { outline: var(--focus-ring); outline-offset: 2px; }
+.media-detail__chip:active { background: var(--hover); }
+@media (hover: hover) and (pointer: fine) { .media-detail__chip:hover { background: var(--hover); } }
+/* New collection: a pill-shaped field at the end of the row. */
+.media-library input.media-detail__new {
+  inline-size: 18ch; max-inline-size: 100%; min-block-size: 32px; padding-inline: 12px;
+  border-style: dashed; border-radius: 999px; background: transparent;
+}
+.media-library input.media-detail__new:focus { border-style: solid; background: var(--surface-input); }
+@media (pointer: coarse) { .media-detail__chip, .media-library input.media-detail__new { min-block-size: 36px; } }
+
+/* Decorative, Always keep and Vimeo's bar: a switch at the row's end, the helper as its second line (Frame.io). */
+.media-detail__switch.media-library__check {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 2px 12px; min-block-size: 44px; cursor: pointer;
+}
+.media-detail__switch > .media-switch { grid-column: 2; grid-row: 1 / span 2; }
+.media-detail__switch > span:not(.media-library__hint) { grid-column: 1; grid-row: 1; }
+.media-detail__switch > .media-library__hint { grid-column: 1; grid-row: 2; }
+
+/* Saving: a bar pinned to the bottom, only while something differs from what is saved (Shopify). */
+.media-detail__foot {
+  position: sticky; inset-block-end: 0; z-index: 4; display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  padding-block: 12px; border-block-start: 1px solid var(--control-line); background: var(--panel-surface);
+}
+.media-detail__foot[hidden] { display: none; }
+.media-detail__foot > p { flex: 1; min-inline-size: 0; font-weight: 600; }
+.media-library .media-detail__foot button { min-inline-size: 96px; min-block-size: 36px; border-radius: 18px; }
+@container media-detail (max-width: 479px) {
+  .media-detail__foot > p { flex-basis: 100%; }
+  .media-library .media-detail__foot button { flex: 1; min-block-size: 44px; border-radius: 22px; }
+}

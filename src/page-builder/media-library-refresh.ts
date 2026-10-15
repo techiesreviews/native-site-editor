@@ -49,7 +49,9 @@ export function restoreDetailForm(sheet: HTMLElement, savedForm: ReturnType<type
   // Metadata Undo changes values, but it must not strand keyboard focus.
   // A user who focused elsewhere during the read keeps that focus.
   if (focus && document.activeElement === document.body && !active?.isConnected) {
-    const controls = [...sheet.querySelectorAll<HTMLElement>("input,textarea,button,summary")];
+    // Only controls still shown: Save details hides once the saved values match (slice 123), so focus
+    // falls back to the first shown control (Back) rather than to nothing.
+    const controls = [...sheet.querySelectorAll<HTMLElement>("input,textarea,button,summary")].filter(control => control.getClientRects().length);
     const control = controls.find(control => focus.label
       ? formKey(control) === focus.label
       : (control instanceof HTMLButtonElement || control.localName === "summary") && control.textContent === focus.text) ?? controls[0];

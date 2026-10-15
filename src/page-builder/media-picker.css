@@ -56,6 +56,22 @@
   .media-library button { min-height: 44px; } .media-library input[type="checkbox"] { width: 24px; height: 24px; }
   .media-library__keys { display: none; }
 }
+/* A setting's switch (Adding settings' Keep original, File details' Decorative and Always keep,
+   Vimeo's own bar): still a tick box for keyboards and assistive tech. */
+.media-library input.media-switch {
+  appearance: none; position: relative; flex: none; inline-size: 36px; block-size: 20px; margin: 0;
+  border-radius: 999px; background: var(--control-line); cursor: pointer;
+}
+.media-library input.media-switch::before {
+  content: ""; position: absolute; inset-block-start: 2px; inset-inline-start: 2px; inline-size: 16px; block-size: 16px;
+  border-radius: 50%; background: oklch(100% 0 none); box-shadow: 0 1px 2px var(--semantic-shadow);
+}
+.media-library input.media-switch:checked { background: var(--primary); }
+.media-library input.media-switch:checked::before { translate: 16px 0; }
+.media-library input.media-switch:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+@media (prefers-reduced-motion: no-preference) {
+  .media-library input.media-switch, .media-library input.media-switch::before { transition: background-color 140ms ease-out, translate 140ms ease-out; }
+}
 
 /* Explorer hosts own pane dimensions; the library never opens a dialog here. */
 .media-library--pane {
@@ -477,88 +493,15 @@
 }
 .media-library :is(.media-check__actions > button, .media-improve__top > .secondary)::after { content: ""; position: absolute; inset: min(0px, (100% - 44px) / 2); }
 .media-library .media-check__actions > .text-button { padding-inline: 8px; }
-.media-detail__head { display: flex; align-items: center; gap: 4px; min-width: 0; }
-.media-detail__head h3 { font-size: var(--type-title); }
+/* Back and a row's ⋯: 44 px round icon buttons. */
 .media-library :is(.media-detail__back, .media-library__row-more) { flex: none; width: 44px; height: 44px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 50%; background: none; color: var(--text); }
 .media-library :is(.media-detail__back, .media-library__row-more):active { background: var(--hover); }
 @media (hover: hover) and (pointer: fine) { .media-library :is(.media-detail__back, .media-library__row-more):hover { background: var(--hover); } }
-.media-detail { display: grid; gap: 16px; align-items: start; }
-@container media-detail (min-width: 680px) {
-  .media-detail { grid-template-columns: minmax(0, 1.4fr) minmax(280px, 1fr); gap: 28px; }
-  .media-detail__view { position: sticky; top: 8px; }
-}
-/* The complete picture in its own shape (slice 108): as wide as the column allows, at most half the
-   screen tall, never enlarged past its own size and with no empty bands around it. */
-.media-detail__preview { margin: 0; display: grid; place-items: center; overflow: clip; border-radius: 12px; background: var(--surface-subtle); }
-.media-detail__preview:not(.is-file) { inline-size: fit-content; max-inline-size: 100%; margin-inline: auto; }
-.media-detail__preview :is(img, video) { display: block; inline-size: auto; block-size: auto; max-inline-size: 100%; max-block-size: 50dvh; }
-.media-detail__preview audio { width: min(100% - 32px, 420px); }
-/* Files without a picture (audio, ZIP, a PDF without its first page) get a short surface. */
-.media-detail__preview.is-file { min-block-size: 160px; padding-block: 20px; align-content: center; gap: 8px; color: var(--muted); }
-.media-detail__preview .media-library__format { position: static; font-weight: 600; color: var(--text); }
-.media-detail__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-.media-library .media-detail__actions button { border: 1px solid var(--line); border-radius: 22px; background: var(--surface); padding: 0 14px; }
-.media-library .media-detail__actions .media-detail__more { min-inline-size: 44px; padding: 0; display: inline-grid; place-items: center; }
-/* On a phone the two buttons and ⋯ share one row. */
-@container media-detail (max-width: 479px) { .media-library .media-detail__actions button:not(.media-detail__more) { padding-inline: 12px; } }
-/* A video's still picture and a video's or audio file's subtitles (slice 66), under the player. */
-.media-detail__part { display: grid; gap: 6px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
-.media-detail__part :is(h4, p) { margin: 0; }
-.media-detail__part h4 { font-size: var(--type-base); font-weight: 600; }
-.media-detail__part-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0; }
-.media-detail__part-row > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-.media-detail__part-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.media-library .media-detail__part-actions button { border: 1px solid var(--line); border-radius: 22px; background: var(--surface); padding: 0 14px; }
-.media-detail__still { width: 72px; height: 44px; flex: none; object-fit: cover; border-radius: var(--radius-small); background: var(--surface-subtle); }
-.media-detail__info, .media-detail__form { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-.media-detail__info :is(h4, p, ul, dl) { margin: 0; }
-/* The facts as one muted line, then when it was added (slice 108, Shopify and Squarespace). */
-.media-detail__facts, .media-detail__note { color: var(--muted); overflow-wrap: anywhere; }
-:is(.media-detail__facts, .media-detail__note) + .media-detail__note, .media-detail__name + .media-detail__facts { margin-block-start: -10px; }
-.media-detail__name { font-size: var(--type-title); font-weight: 600; overflow-wrap: anywhere; }
-.media-detail__facts a { color: var(--link); }
-.media-detail__disclosure { border-top: 1px solid var(--line); }
-.media-detail__disclosure + .media-detail__disclosure { margin-top: -12px; }
-.media-detail__disclosure > summary {
-  min-height: 48px; display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 8px;
-  cursor: pointer; list-style: none;
-}
-.media-detail__disclosure > summary::-webkit-details-marker { display: none; }
-.media-detail__disclosure > summary::before { content: "+"; font-size: 18px; color: var(--primary); }
-.media-detail__disclosure[open] > summary::before { content: "−"; }
-.media-detail__disclosure > summary > span { color: var(--muted); font-size: var(--type-small); text-align: right; }
-.media-detail__disclosure[open] { padding-bottom: 8px; }
-.media-detail__uses { display: grid; gap: 8px; }
-.media-detail__uses section { padding: 12px 14px; border-radius: 10px; background: var(--surface-card); }
-.media-detail__uses h3 { margin-bottom: 4px; }
-.media-detail__uses ul { padding: 0; list-style: none; }
-.media-detail__uses li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; min-height: 32px; overflow-wrap: anywhere; }
-.media-detail__uses .media-library__page { min-height: 44px; padding: 0; text-align: left; overflow-wrap: anywhere; }
-/* Copies and original (slice 108): the name with its size on the first line, what it is under it. */
-.media-detail__row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 2px 10px; padding-block: 8px; border-block-end: 1px solid var(--line); }
-.media-detail__row-name { overflow-wrap: anywhere; }
-.media-detail__row-size { color: var(--muted); font-size: var(--type-small); font-variant-numeric: tabular-nums; }
-.media-detail__row-kind { grid-column: 1; color: var(--muted); font-size: var(--type-small); }
-/* The kept original's name downloads it: a text link the size of its line, with a 44 px tap area. */
-.media-library .media-detail__original { position: relative; min-block-size: 0; padding: 0; border: 0; background: none; color: var(--link); font-size: inherit; text-align: start; text-decoration: underline; }
-.media-detail__original::after { content: ""; position: absolute; inset: min(0px, (100% - 44px) / 2) 0; }
-.media-detail__group { display: grid; gap: 8px; padding-top: 12px; border-top: 1px solid var(--line); }
-.media-detail__group h4 { font-size: var(--type-base); font-weight: 600; }
-/* Collections in details (slice 16) sit as a group like the others. */
-.media-detail__form .media-library__memberships { gap: 0; padding: 12px 0 0; border: 0; border-top: 1px solid var(--line); border-radius: 0; }
-.media-detail__form .media-library__memberships legend { float: left; width: 100%; padding: 0 0 4px; }
-.media-detail__form > .media-library__field > span:first-child { font-weight: 600; }
+/* File details' Description and To check's words. */
 .media-detail__form textarea, .media-check__field {
   box-sizing: border-box; width: 100%; min-height: 92px; resize: vertical; padding: 8px 10px; font: inherit;
   border: 1px solid var(--control-line); border-radius: var(--radius); background: var(--surface-input); color: var(--text);
 }
-.media-detail__form textarea:disabled { opacity: .55; }
-.media-detail__form .media-library__check { min-height: 44px; cursor: pointer; }
-/* Decorative and Always keep: 44 px rows, one under the other. */
-.media-detail__form > .media-library__check + .media-library__check { margin-block-start: -12px; }
-.media-detail__foot { display: flex; justify-content: flex-end; gap: 8px; padding-top: 16px; border-top: 1px solid var(--line); }
-.media-library .media-detail__foot button { min-width: 96px; border-radius: 22px; }
-@container media-detail (max-width: 479px) { .media-library .media-detail__foot button { flex: 1; } }
 @media (max-width: 700px) { .media-detail__form textarea, .media-check__field { font-size: 16px; } }
 
 /* By agent (ticket 13): a mark on the tile beside Always keep, and a line under Description. */
@@ -606,11 +549,6 @@
 
 /* Renaming in File details (ticket 15): the taken name with the next free one, the tidied name, and
    "Keep the old address working". Replace everywhere's confirmation reuses Remove file's screen. */
-.media-detail__naming { display: grid; gap: 4px; margin-top: -6px; }
-.media-detail__naming:not(:has(> :not([hidden], :empty))) { display: none; }
-.media-library .media-detail__suggest { justify-self: start; min-height: 44px; padding: 0; text-decoration: underline; }
-.media-detail__forward { display: grid; }
-.media-detail__forward[hidden] { display: none; }
 .media-replace__label { color: var(--muted); font-size: var(--type-small); }
 .media-library :is(.media-replace__shows, .media-replace__line) { max-width: 760px; line-height: 1.5; }
 /* The box names the pages as links (slice 113): inline in the sentence, so no button height. */
@@ -689,7 +627,6 @@
 /* Every kind (ticket 12 "In the editor"): a file with no picture shows its type's picture; a video's
    length, or the type of a picture that is not an image (a PDF's first page), sits in the corner. */
 .media-library__type-picture { width: 28px; height: 28px; background: currentColor; mask: var(--type-picture, url("@phosphor-icons/core/regular/file.svg")) center / contain no-repeat; }
-.media-detail__preview .media-library__type-picture { width: 40px; height: 40px; }
 [data-type="video"] { --type-picture: url("@phosphor-icons/core/regular/film-strip.svg"); }
 [data-type="audio"] { --type-picture: url("@phosphor-icons/core/regular/waveform.svg"); }
 [data-type="pdf"] { --type-picture: url("@phosphor-icons/core/regular/file-pdf.svg"); }
@@ -720,12 +657,6 @@
 .media-library__online-note:empty { display: none; }
 .media-library:has(.media-library__sheet:not([hidden])) .media-library__online { display: none; }
 @media (max-width: 580px) { .media-library--picker .media-library__online { padding: 4px 12px; } }
-/* An online video's Remove from Media asks in place, under its picture. */
-.media-detail__confirm { display: grid; gap: 8px; margin-block-start: 10px; }
-.media-detail__confirm p { margin: 0; }
-.media-detail__confirm > div { display: flex; flex-wrap: wrap; gap: 8px; }
-.media-library .media-detail__confirm button { border: 1px solid var(--line); border-radius: 22px; padding: 0 14px; }
-.media-library .media-detail__confirm button.primary { border-color: transparent; }
 
 /* A picture with see-through parts (marked by media-transparency.ts) sits on the light checkerboard in
    tiles, details and the picker, in both themes (slice 106). */

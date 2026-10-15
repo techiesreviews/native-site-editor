@@ -28,18 +28,17 @@ async function controls(file: string, symbol: string) {
 }
 
 test("media details Copy path copies the encoded site address under the current library prefix", async () => {
-  const { renderPreview } = await controls("src/page-builder/media-library-details.ts", "renderPreview");
+  const { fileActions } = await controls("src/page-builder/media-library-details.ts", "fileActions");
   const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator"), copied: string[] = [];
   Object.defineProperty(globalThis, "navigator", { configurable: true, value: { clipboard: { writeText: async (text: string) => { copied.push(text); } } } });
   try {
     for (const prefix of ["", "/my-site"]) {
       let entries: { label: string; run: () => Promise<void> }[] = [];
       const menu = (_opener: unknown, items: typeof entries) => { entries = items; };
-      const preview = renderPreview({ library: () => ({ prefix }), task: (work: () => Promise<void>) => work(), tell() {}, done() {}, cache: {}, menu }, "media/a b.webp", { url: "blob:picture" }, { alt: "" }, undefined, () => true);
-      // Copy path sits in the ⋯ menu after the preview, before Remove… (slice 108).
-      const actions = preview.children.find((child: { className?: string }) => child.className === "media-detail__actions");
+      const actions = fileActions({ library: () => ({ prefix }), task: (work: () => Promise<void>) => work(), tell() {}, done() {}, cache: {}, menu }, "media/a b.webp", { url: "blob:picture" });
+      // Copy path leads the file's ⋯ menu, then Download, then Remove… (slices 108, 123).
       actions.children.find((button: Record<string, string>) => button["aria-label"] === "More for this file").click();
-      assert.deepEqual(entries.map(entry => entry.label), ["Copy path", "Remove…"]);
+      assert.deepEqual(entries.map(entry => entry.label), ["Copy path", "Download", "Remove…"]);
       await entries[0].run();
       assert.equal(copied.at(-1), `${prefix}/media/a%20b.webp`);
     }
