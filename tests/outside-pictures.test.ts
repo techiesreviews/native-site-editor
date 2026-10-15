@@ -94,7 +94,8 @@ test("only the img tag changes, link and other bytes survive, outside srcset rep
   const written = f.written();
   assert.ok(written.startsWith('prefix\n<a href="' + address + '">')); assert.ok(written.endsWith("</a>\nsuffix"));
   assert.match(written, /alt=Logo class="hero"/); assert.match(written, /width="1200" height="600"/);
-  assert.match(written, /sizes="auto, 100vw"/); assert.match(written, /loading="lazy"/);
+  // Not measured: the safe size hint, and a picture that may be on the first screen is never made lazy.
+  assert.match(written, /sizes="100vw"/); assert.ok(!written.includes("loading=")); assert.ok(!written.includes("auto,"));
   assert.match(written, /srcset="\/media\/images\/mobbin-og-image-480.webp 480w, \/media\/images\/mobbin-og-image.webp 1200w"/);
   assert.ok(!written.includes("other.test"));
 });
@@ -233,4 +234,26 @@ test("a <picture> around an outside picture loses its wrapper and sources; the l
     assert.match(f.written(), /src="\/media\/images\/mobbin-og-image\.webp"/);
     assert.deepEqual(result.notes.includes("The brought-in picture is now used on all screens."), artDirected);
   }
+});
+
+test("measured places: a first-screen hero stays eager, a narrow lower picture is lazy with auto sizes", async () => {
+  const source = '<img src="' + address + '" alt=Hero><p>Text</p><img src="https://other.test/small.png" alt=Small>';
+  const f = fixture(source);
+  const lower = { ...picture(source, 1), key: "https://other.test/small.png", address: "https://other.test/small.png" };
+  f.input.pictures = [picture(source, 0), lower];
+  const asked: { width?: number; height?: number }[] = [];
+  f.input.measure = async (item, size) => {
+    asked.push(size);
+    return item === lower ? { sizes: "(min-width: 800px) 300px, 40vw", firstScreen: false } : { sizes: "100vw", firstScreen: true };
+  };
+  await bringInOutsidePictures(f.input);
+  const [hero, small] = startTags(f.written()).filter(tag => tag.name === "img").map(tag => f.written().slice(tag.start, tag.end));
+  assert.deepEqual(asked, [{ width: 1200, height: 600 }, { width: 1200, height: 600 }]);
+  assert.match(hero, /sizes="100vw"/); assert.ok(!hero.includes("loading=")); assert.ok(!hero.includes("auto,"));
+  assert.match(small, /sizes="auto, \(min-width: 800px\) 300px, 40vw"/); assert.match(small, /loading="lazy"/);
+});
+test("a failed measurement falls back to the safe markup", async () => {
+  const f = fixture(); f.input.measure = async () => { throw new Error("preview shows another page"); };
+  await bringInOutsidePictures(f.input);
+  assert.match(f.written(), /sizes="100vw"/); assert.ok(!f.written().includes("loading="));
 });

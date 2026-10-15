@@ -4,7 +4,7 @@ import { startTags } from "../../shared/html-source";
 import type { ImproveImagesRow, ImprovePicture } from "./improve-images";
 import type { MediaImportRequest, MediaPlacement } from "./media-picker";
 import { mediaAttribute, mediaUrl } from "./media-attributes";
-import { mediaAttributes, mediaPictureUnwrap, mediaSrcset, mediaImageForPlacement, type MediaImage } from "./media-markup";
+import { mediaAttributes, mediaPictureUnwrap, mediaPlacement, mediaSrcset, mediaImageForPlacement, type MediaImage, type MediaMeasured } from "./media-markup";
 import { mediaStorageName, mediaCopyName } from "./media-storage";
 import { mediaAddingSettings } from "./media-settings";
 import { prepareMediaFile } from "./media-prepare";
@@ -110,7 +110,10 @@ export async function readOutsidePicture(address: string, deps: OutsidePictureRe
     cache.set(url, Promise.resolve(result)); return result;
   }
 }
-export interface OutsidePictureReplacement { picture: ImprovePicture; image: MediaImage }
+/** Without a measurement the size hint is the safe "100vw" and loading is left as written, so a
+ * first-screen picture never becomes lazy; slice 74 passes the preview's measurement (slice 33). */
+export type OutsidePictureMeasured = Pick<MediaMeasured, "sizes" | "firstScreen">;
+export interface OutsidePictureReplacement { picture: ImprovePicture; image: MediaImage; measured?: OutsidePictureMeasured }
 export const OUTSIDE_PICTURE_ALL_SCREENS = "The brought-in picture is now used on all screens.";
 interface Edit { start: number; end: number; text: string }
 /** Rewrite only planned opening tags. A <picture> around one loses its wrapper and sources (ticket 08);
@@ -118,7 +121,7 @@ interface Edit { start: number; end: number; text: string }
 export function rewriteOutsidePicturesPlan(source: string, replacements: OutsidePictureReplacement[], siteUrl?: string): { text: string; artDirected: boolean } {
   const edits: Edit[] = [], tree = readSource(source);
   let artDirected = false;
-  for (const { picture, image } of replacements) {
+  for (const { picture, image, measured } of replacements) {
     const existing = source.slice(picture.tag.start, picture.tag.end);
     const tag = startTags(existing)[0];
     if (!tag || !["img", "meta"].includes(tag.name)) throw new Error("The picture changed. Scan this row again.");
@@ -129,9 +132,11 @@ export function rewriteOutsidePicturesPlan(source: string, replacements: Outside
     const srcset = mediaSrcset(image);
     const attributes: Record<string, string | undefined> = { src: mediaUrl(image.path), srcset, width: image.width ? String(image.width) : undefined, height: image.height ? String(image.height) : undefined };
     if (srcset && !mediaAttribute(existing, tag, "sizes")) {
-      const authoredLoading = mediaAttribute(existing, tag, "loading"), priority = mediaAttribute(existing, tag, "fetchpriority");
-      attributes.sizes = authoredLoading || priority ? "100vw" : "auto, 100vw";
-      if (!authoredLoading && !priority) attributes.loading = "lazy";
+      const authored = mediaAttribute(existing, tag, "loading") || mediaAttribute(existing, tag, "fetchpriority");
+      const placement = mediaPlacement(measured);
+      // Hand-written loading choices stay; "auto" sizes are valid only on lazy pictures.
+      if (!measured || authored) attributes.sizes = measured?.sizes || "100vw";
+      else { attributes.sizes = placement.sizes; if (placement.lazy) attributes.loading = "lazy"; }
     }
     const element = tree.elements().find(node => node.type === "element" && node.name === "img" && tree.range(node)?.tag.start === picture.tag.start);
     const range = element && tree.range(element), wrapper = element?.parent?.name === "picture" ? tree.range(element.parent) : undefined;
@@ -155,6 +160,8 @@ export interface BringInOutsidePicturesInput extends OutsidePictureReadDeps {
   workspace: { import(requests: MediaImportRequest[], place?: MediaPlacement): Promise<string[]> };
   prepare?: typeof prepareMediaFile; assertLive(): void; live?: () => boolean;
   brought?: Map<string, string>; own?: Map<string, File>; by: "lex" | "agent"; siteUrl?: string;
+  /** The preview's measurement of a picture's place with the new size standing in (slice 33). */
+  measure?(picture: ImprovePicture, size: { width?: number; height?: number }): Promise<OutsidePictureMeasured | undefined>;
 }
 export interface OutsidePicturesResult {
   brought: { key: string; path: string }[];
@@ -223,6 +230,15 @@ export async function bringInOutsidePictures(input: BringInOutsidePicturesInput)
   live();
   const file = input.row?.file ?? input.file;
   if (!file) throw new Error("Choose a page or component file.");
+  const measured = new Map<ImprovePicture, OutsidePictureMeasured>();
+  if (input.measure) for (const item of ready) {
+    const output = item.index === undefined ? images.get(item.path!) : requests[item.index].result?.outputs[0];
+    try {
+      const found = output && item.picture.kind !== "sharing" ? await input.measure(item.picture, { width: output.width, height: output.height }) : undefined;
+      if (found) measured.set(item.picture, found);
+    } catch { /* Nothing measured: the safe fallback markup. */ }
+    live();
+  }
   let replacements: OutsidePictureReplacement[] = [], artDirected = false;
   const paths = await input.workspace.import(requests, {
     path: file, source: input.source, label: "Bring in outside pictures", expectedPaths: existingPaths,
@@ -235,7 +251,7 @@ export async function bringInOutsidePictures(input: BringInOutsidePicturesInput)
         const output = request?.result?.outputs[0];
         const family = request?.result?.outputs.flatMap(copy => copy.variantWidth ? [mediaCopyName(path, copy.variantWidth)] : []) ?? [];
         const image = (item.index === undefined ? images.get(path) : undefined) ?? mediaImageForPlacement(path, output ?? {}, [path, ...family, ...existingPaths]);
-        return { picture: item.picture, image };
+        return { picture: item.picture, image, measured: measured.get(item.picture) };
       });
       const plan = rewriteOutsidePicturesPlan(input.source, replacements, input.siteUrl);
       artDirected = plan.artDirected;
