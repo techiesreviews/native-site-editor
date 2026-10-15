@@ -103,8 +103,8 @@ export interface MediaWorkspaceContext {
 // The site's prefix as `prepare` captured it through the batch's reader (media-prefix.ts).
 const batchPrefix = (batch: MediaWorkspaceBatch) => sitePathPrefix(nativeSiteSettings(batch.expectedSources.get(NATIVE_CONFIG_PATH)).url);
 
-function wideUsage(paths: string[], text: Record<string, string>, ctx: MediaWorkspaceContext) {
-  const site = { origins: ctx.origins ?? [] };
+function wideUsage(paths: string[], text: Record<string, string>, ctx: MediaWorkspaceContext, prefix: string) {
+  const site = { prefix, origins: ctx.origins ?? [] };
   const usage = mediaUsageIndex(paths, text, ctx.pages, ctx.components, site);
   for (const [path, mentions] of mediaMentions({ media: paths, sources: text, site })) for (const { file } of mentions) if (!usage[path].files.includes(file)) usage[path].files.push(file);
   return usage;
@@ -279,7 +279,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
         const original = batch.edits.get(page) ?? source;
         const edited = descriptionPlaceEdits(records, file, page, original,
           { text: before?.description?.text ?? "", decorative: Boolean(before?.decorative) },
-          { text: after?.description?.text ?? "", decorative: Boolean(after?.decorative) });
+          { text: after?.description?.text ?? "", decorative: Boolean(after?.decorative) }, batchPrefix(batch));
         if (edited !== original) batch.edits.set(page, edited);
       }
     }
@@ -302,7 +302,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     const sources: Record<string, string | undefined> = { ...text, _redirects: redirects };
     for (const [file, source] of batch.edits) if (file !== MEDIA_RECORDS_PATH) sources[file] = source;
     const plan = planMediaRename({ from: path, to, paths: batch.expectedPaths, sources, records,
-      site: { origins: ctx.origins ?? [], pages: ctx.pages, components: ctx.components },
+      site: { prefix: batchPrefix(batch), origins: ctx.origins ?? [], pages: ctx.pages, components: ctx.components },
       keepOldAddress: options?.keepOldAddress ?? familyPaths(path, ctx.paths).some(member => Boolean(records.files[member]?.alwaysKeep)) });
     if ("taken" in plan) throw new MediaNameTakenError(plan.taken, plan.suggestion);
     batch.moves.push(...plan.moves);
@@ -495,7 +495,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
           if (!batch.expectedAssets.has(file)) batch.expectedSources.set(file, value);
         }
       }
-      const usage = wideUsage(members, text, ctx);
+      const usage = wideUsage(members, text, ctx, batchPrefix(batch));
       previousStillUsed = !complete || members.some(member => usage[member].files.length > 0);
     }
     const plan = planTrimmedCopy({ records: metadata, source, trim, path, previous, previousStillUsed, paths: batch.expectedPaths });
@@ -549,7 +549,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     }
     // A provisional pure plan validates names and outputs before hashing or preserving browser bytes.
     const input = { request, paths: batch.expectedPaths, sources: { ...text, _redirects: redirects }, records: metadata,
-      dimensions, siteUrl, site: { origins: [...ctx.origins ?? [], ...mediaOwnOrigins(siteUrl)], pages: ctx.pages, components: ctx.components } };
+      dimensions, siteUrl, site: { prefix: sitePathPrefix(siteUrl), origins: [...ctx.origins ?? [], ...mediaOwnOrigins(siteUrl)], pages: ctx.pages, components: ctx.components } };
     let provisional = planMediaReplace({ ...input, versions: new Map() });
     let sharing: { blob: Blob } | undefined;
     if (provisional.sharingNeeded) {
@@ -583,7 +583,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     const edited = { ...text, ...Object.fromEntries(plan.edits) };
     const removed = [...plan.family];
     for (const trim of plan.trims) {
-      const usage = wideUsage(trim.members, edited, ctx);
+      const usage = wideUsage(trim.members, edited, ctx, batchPrefix(batch));
       if (!trim.kept && !trim.members.some(member => usage[member].files.length)) {
         removed.push(...trim.members); batch.deletes.push(...trim.members);
       }
@@ -660,7 +660,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
         }
       }
       for (const [file, value] of batch.edits) if (file !== MEDIA_RECORDS_PATH) text[file] = value;
-      const usage = wideUsage(members, text, ctx);
+      const usage = wideUsage(members, text, ctx, batchPrefix(batch));
       if (complete && !members.some(member => usage[member].files.length || metadata.files[member]?.alwaysKeep)) {
         batch.deletes.push(...members);
         removes = members;
@@ -688,15 +688,15 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
         else if (metadata.files[file]?.description?.byAgent) next = { ...next, files: { ...next.files, [file]: { ...next.files[file], description: metadata.files[file].description } } };
       } else {
         const page = change.page, source = text[page];
-        if (source === undefined || !pageUsesFile(source, page, file)) throw new Error(`${file} is not used on ${page}.`);
+        if (source === undefined || !pageUsesFile(source, page, file, batchPrefix(batch))) throw new Error(`${file} is not used on ${page}.`);
         const node = change.element === undefined ? undefined : parseOutlineId(change.element);
         if (change.element !== undefined && !node) throw new Error("Give an image element id.");
         const range = node && locateNativeElementRange(source, node);
-        const images = startTags(source).filter(tag => tag.name === "img" && mediaResolvePath(decodeHtmlEntities(startTagAttribute(source, tag, "src")?.value ?? "", true), page) === file);
+        const images = startTags(source).filter(tag => tag.name === "img" && mediaResolvePath(decodeHtmlEntities(startTagAttribute(source, tag, "src")?.value ?? "", true), page, undefined, batchPrefix(batch)) === file);
         if (node && (!range || range.tag.name !== "img" || !images.some(tag => tag.start === range.tag.start))) throw new Error("That element is not an image showing this file.");
         // One by-agent mark per file on a page: other words for one of its images would leave
         // the agent's unchecked words on another image unmarked, so that is refused.
-        if (range && words !== undefined && strandsAgentWords(source, file, page, range.tag.start, metadata.files[file]?.places?.[page]?.agentText, words))
+        if (range && words !== undefined && strandsAgentWords(source, file, page, range.tag.start, metadata.files[file]?.places?.[page]?.agentText, words, batchPrefix(batch)))
           throw new Error(`Another image of ${file} on ${page} still shows unchecked agent words. Describe the place without element to give every use the same words, or ask the user to check them in To check first.`);
         let edited = source;
         if (words !== undefined || change.decorative) {
@@ -729,10 +729,10 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       const online = records.onlineVideos?.length ? (await import("./online-video")).mediaOnlineVideos(records, text, ctx.paths) : undefined;
       const prefix = await readMediaPrefix(ctx, new Map());
       ctx.assertLive();
-      return { key: ctx.key, prefix, ...online ? { onlineVideos: online } : {}, removed, collections: [...records.collections], items: ctx.items.map((item) => ({ ...item, version: ctx.assetVersion(item.path) })), metadata, usage: wideUsage(ctx.items.map((item) => item.path), text, ctx),
+      return { key: ctx.key, prefix, ...online ? { onlineVideos: online } : {}, removed, collections: [...records.collections], items: ctx.items.map((item) => ({ ...item, version: ctx.assetVersion(item.path) })), metadata, usage: wideUsage(ctx.items.map((item) => item.path), text, ctx, prefix),
         // Folded over every path: a kept original the library does not list still marks its main.
         keep: [...alwaysKeptFiles(ctx.paths, new Set(Object.keys(records.files).filter(path => records.files[path].alwaysKeep)))],
-        toCheck: mediaToCheck(records, ctx.items.map(item => item.path), text),
+        toCheck: mediaToCheck(records, ctx.items.map(item => item.path), text, prefix),
         ...records.adding ? { adding: records.adding } : {}, ...ctx.repoSize === undefined ? {} : { repoSize: ctx.repoSize } };
     },
     async blob(path) { return active().blob(path); },
@@ -880,7 +880,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       const ctx = active();
       const words = text?.trim();
       const { batch, text: sources, metadata } = await prepare(ctx, subtitles ? "Subtitles checked" : "Description checked", true);
-      const row = mediaToCheck(metadata, [file], sources).find(entry => entry.page === page && entry.subtitles === subtitles);
+      const row = mediaToCheck(metadata, [file], sources, batchPrefix(batch)).find(entry => entry.page === page && entry.subtitles === subtitles);
       if (!row || row.text !== seen) throw new Error("These words changed meanwhile. Look at To check again.");
       if (words === "") throw new Error(subtitles ? "Write the subtitles, or press OK to keep them." : "Write the description, or press OK to keep these words.");
       const edit = words !== undefined && words !== row.text.trim();
@@ -904,7 +904,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
         // A place's own words: the page's alt and the record's mark change in one step.
         next = setMediaPlaceAgentText(metadata, file, page, undefined);
         if (edit) {
-          const edited = placeWordsEdits(sources[page], file, page, row.text, words);
+          const edited = placeWordsEdits(sources[page], file, page, row.text, words, batchPrefix(batch));
           if (edited !== sources[page]) batch.edits.set(page, edited);
         }
       }
@@ -938,7 +938,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
         assetGuard(batch, [path]);
         if (mediaKind(path) !== "image") throw new Error("Choose a picture for the still.");
       }
-      const site = { origins: ctx.origins ?? [] };
+      const site = { prefix: batchPrefix(batch), origins: ctx.origins ?? [] };
       for (const [page, source] of Object.entries(text)) {
         if (!/\.html$/i.test(page)) continue;
         const next = setPosterInPage(source, page, video, path, site, batchPrefix(batch));
@@ -958,7 +958,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       const { subtitles: before, subtitlesByAgent: _, ...record } = metadata.files[media] ?? {};
       const family = mediaFamilyOf(media, batch.expectedPaths)?.subtitles ?? [];
       const current = before && batch.expectedPaths.includes(before) ? before : family.find(path => /\.vtt$/i.test(path));
-      const site = { origins: ctx.origins ?? [] };
+      const site = { prefix: batchPrefix(batch), origins: ctx.origins ?? [] };
       const pages = (edit: (source: string, page: string) => string) => {
         for (const [page, source] of Object.entries(text)) {
           if (!/\.html$/i.test(page)) continue;
@@ -1009,13 +1009,13 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
         if (online) throw new Error(online);
         const kept = rules.agentKeptRemovalProblem(unique, ctx.paths, metadata);
         if (kept) throw new Error(kept);
-        const usage = wideUsage(unique, text, ctx);
+        const usage = wideUsage(unique, text, ctx, batchPrefix(batch));
         const used = unique.filter(path => usage[path].files.length || usage[path].pages.length);
         if (used.length) throw new Error("These files are still used; swap them out of every mention first: " +
           used.map(path => `${path}: ${[...new Set([...usage[path].pages, ...usage[path].files])].join(", ")}`).join("; "));
       }
       if (unusedOnly) {
-        const usage = wideUsage(unique, text, ctx);
+        const usage = wideUsage(unique, text, ctx, batchPrefix(batch));
         if (unique.some((path) => usage[path].files.length)) throw new Error("Some selected images are now referenced. Refresh the library before deleting unused images.");
         // Clean up never removes a family with an Always keep member, even one marked during a recheck.
         const kept = unique.find(path => metadata.files[path]?.alwaysKeep);

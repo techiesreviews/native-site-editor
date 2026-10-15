@@ -1,3 +1,5 @@
+import { NATIVE_CONFIG_PATH, nativeSiteSettings } from "../../shared/native-project";
+import { sitePathPrefix } from "../../shared/site-path-prefix";
 // The image popup (media-manager ticket 09 "Entry point and popup", build slice 39), opened by
 // the edit bar's Image button: the whole picture with the shape menu and the focus dot, Replace,
 // small phone and computer previews, the one-line message and Done. The page shows each change
@@ -63,9 +65,9 @@ export async function openImagePopup(options: ImagePopupOptions) {
   let records: MediaRecords | undefined;
   try { records = parseMediaRecords(ports.source(MEDIA_RECORDS_PATH)); } catch { /* Read without the trim. */ }
   const component = componentPicture(source, target.node, path => ports.source(path));
-  const read = componentFrame(expected, records, target.path, component);
+  const read = componentFrame(expected, records, target.path, component, sitePathPrefix(nativeSiteSettings(ports.source(NATIVE_CONFIG_PATH)).url));
   const tag = startTags(expected)[0], src = tag && startTagAttribute(expected, tag, "src");
-  const placed = src ? mediaResolvePath(decodeHtmlEntities(src.value, true), target.path) ?? decodeHtmlEntities(src.value, true) : "";
+  const placed = src ? mediaResolvePath(decodeHtmlEntities(src.value, true), target.path, undefined, sitePathPrefix(nativeSiteSettings(ports.source(NATIVE_CONFIG_PATH)).url)) ?? decodeHtmlEntities(src.value, true) : "";
   const start = { shape: read.shape as PopupShape, focus: read.focus };
   // A trimmed spot re-opens on the full original with the earlier trim put back (an original that
   // is gone leaves the trimmed copy as the picture).

@@ -196,3 +196,29 @@ test("wide kinds and own-domain sharing stay distinct from page uses", () => {
   assert.deepEqual(records.families[0].otherUses.map(use => use.kind), ["sharing", "script", "data", "feed", "notes", "settings"]);
   assert.equal(records.families[0].checked, true);
 });
+
+test("sub-folder usage follows stylesheet imports and component images through both root spellings", () => {
+  const site = { prefix: "/my-site", origins: ["https://user.github.io"] };
+  const sources = {
+    "index.html": '<link rel="stylesheet" href="/my-site/styles/site.css"><site-card></site-card>',
+    "about/index.html": '<img src="/media/a.webp">',
+    "components/site-card/site-card.html": '<img src="/my-site/media/a.webp">',
+    "styles/site.css": '@import "/my-site/styles/images.css";',
+    "styles/images.css": 'a{background:url(/my-site/media/a.webp)}',
+    "notes.md": '/my-site/media/a.webp',
+  };
+  const pages = ["index.html", "about/index.html"], components = { "site-card": "components/site-card/site-card.html" };
+  const usage = mediaUsageIndex(["media/a.webp"], sources, pages, components, site);
+  assert.deepEqual(usage["media/a.webp"].pages, pages);
+  const records = mediaUsageRecords({ media: ["media/a.webp"], sources, pages, components, site });
+  const family = mediaUsageFor(records, "media/a.webp");
+  assert.deepEqual(family.pages, pages);
+  assert.ok(family.otherUses.some(use => use.file === "notes.md"));
+  assert.ok(family.otherUses.some(use => use.file === "styles/images.css"));
+});
+
+test("raw prefixed mentions decode a literal percent escape only once", () => {
+  const records = mediaUsageRecords({ media: ["media/a%20b.webp"], pages: [],
+    sources: { "notes.md": '/my-site/media/a%2520b.webp' }, site: { prefix: "/my-site", origins: [] } });
+  assert.deepEqual(mediaUsageFor(records, "media/a%20b.webp").otherUses, [{ file: "notes.md", kind: "notes" }]);
+});

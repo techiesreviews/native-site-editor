@@ -1245,3 +1245,29 @@ test("a changed site address refuses an optimise rewrite before committing files
   assert.equal(f.bytes.has("media/images/a.webp"), false);
   assert.equal(f.text.get("index.html"), '<head></head><body><img src="/images/a.png" alt="Keep this alt"></body>');
 });
+
+test("sub-folder workspace usage, rename and descriptions use the batch config", async () => {
+  const f = fixture(), config = JSON.stringify({ site: { url: "https://user.github.io/my-site/" } });
+  f.text.set(".editor/config.json", config); f.paths.add(".editor/config.json");
+  f.text.set("index.html", '<img src="/my-site/images/a.png"><img src="/images/a.png">');
+  const loaded = await f.host.load();
+  assert.deepEqual(loaded.usage["images/a.png"].pages, ["index.html"]);
+  await f.host.metadata({ "images/a.png": { alt: "Garden" } });
+  assert.equal(f.text.get("index.html"), '<img alt="Garden" src="/my-site/images/a.png"><img alt="Garden" src="/images/a.png">');
+  await f.host.rename("images/a.png", "b.png");
+  assert.equal(f.text.get("index.html"), '<img alt="Garden" src="/my-site/images/b.png"><img alt="Garden" src="/my-site/images/b.png">');
+  assert.equal(f.batches.at(-1)!.expectedSources.get(".editor/config.json"), config);
+});
+
+test("sub-folder workspace Replace reads both root spellings and writes the new prefixed file", async () => {
+  const f = fixture(), config = JSON.stringify({ site: { url: "https://user.github.io/my-site/" } });
+  f.text.set(".editor/config.json", config); f.paths.add(".editor/config.json");
+  f.text.set("index.html", '<img src="/my-site/images/a.png"><img src="/images/a.png">');
+  await f.host.load();
+  const blob = new Blob(["new"]), version = (await gitBlobSha(new Uint8Array(await blob.arrayBuffer()))).slice(0, 8);
+  await f.host.replace({ path: "images/a.png", result: { before: 10, after: 3, outputs: [
+    { blob, extension: "webp", width: 20, height: 10 },
+  ] } });
+  assert.equal(f.text.get("index.html"), `<img src="/my-site/images/a.webp?v=${version}"><img src="/my-site/images/a.webp?v=${version}">`);
+  assert.equal(f.batches.at(-1)!.expectedSources.get(".editor/config.json"), config);
+});

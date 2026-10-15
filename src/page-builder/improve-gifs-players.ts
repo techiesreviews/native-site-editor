@@ -53,7 +53,7 @@ export async function prepareImproveGifsAndPlayers(ctx: MediaWorkspaceContext, r
   const paths = [...ctx.paths];
   const batch: MediaWorkspaceBatch = { label: "", expectedPaths: paths, expectedSources: new Map(), expectedAssets: new Map(),
     edits: new Map(), moves: [], deletes: [], restores: [], uploads: [], live: holds };
-  await readMediaPrefix(ctx, batch.expectedSources); guard();
+  const prefix = await readMediaPrefix(ctx, batch.expectedSources); guard();
   const sources: Record<string, string | undefined> = {};
   for (const file of new Set([...paths.filter(isMediaTextFile), MEDIA_RECORDS_PATH])) {
     const text = await ctx.read(file); guard();
@@ -65,7 +65,7 @@ export async function prepareImproveGifsAndPlayers(ctx: MediaWorkspaceContext, r
   let records = parseMediaRecords(sources[MEDIA_RECORDS_PATH]);
   const files = Object.fromEntries(paths.map(path => [path, request.files[path] ?? {}]));
   const plan = improveImagesPlan({ sources, pages: ctx.pages, components: ctx.components, files, records,
-    site: ctx.origins?.length ? { origins: ctx.origins } : undefined });
+    site: ctx.origins?.length ? { origins: ctx.origins } : undefined, prefix });
   const row = plan.rows.find(row => row.file === request.row);
   const result: ImproveGifsPlayersResult = { label: row?.label ?? request.row, changed: false, converted: [], switched: [], left: [], notes: [] };
   if (!row) return { batch, result };

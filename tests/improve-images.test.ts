@@ -233,3 +233,14 @@ test("protected ranges survive a file with no work row, including its picture so
   assert.ok(plan.protectedRanges["index.html"].some(range => source.slice(range.start, range.end) === '<picture><source srcset="/a.jpg 1200w"><img id="swap" src="/a.jpg"></picture>'));
   assert.ok(plan.protectedRanges["index.html"].some(range => source.slice(range.start, range.end) === '<code><img src="/a.jpg"></code>'));
 });
+
+test("sub-folder Improve images resolves local pictures and keeps route labels unprefixed", () => {
+  const plan = improveImagesPlan({
+    sources: { "about/index.html": '<img src="/my-site/media/a.webp">' }, pages: ["about/index.html"], components: {},
+    files: { "media/a.webp": { size: 500000, width: 2000, height: 1000 } }, records: parseMediaRecords(undefined),
+    site: { prefix: "/my-site", origins: [] },
+  });
+  assert.equal(plan.rows[0].label, "/about/");
+  assert.equal(plan.rows[0].pictures[0].path, "media/a.webp");
+  assert.ok(plan.rows[0].pictures[0].changes.includes("lighten"));
+});

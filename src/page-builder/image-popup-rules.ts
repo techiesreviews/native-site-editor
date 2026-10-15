@@ -36,8 +36,8 @@ export function frameBadge(frame: { shape: PopupShape; trimmed: boolean }) {
 }
 
 /** The badge of an image tag on `page`; records name a trimmed copy. */
-export function placeBadge(tag: string, records: MediaRecords | undefined, page: string) {
-  return frameBadge(readPlaceFrame(tag, records, page));
+export function placeBadge(tag: string, records: MediaRecords | undefined, page: string, prefix = "") {
+  return frameBadge(readPlaceFrame(tag, records, page, false, prefix));
 }
 
 /** Whether the focus dot means anything: a shape that crops (Original shows the whole picture). */

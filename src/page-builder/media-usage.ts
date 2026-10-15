@@ -67,7 +67,7 @@ export function mediaUsageRecords(input: {
   walkMediaReferencePages(sources, references, input.pages, components, (page, ref) => {
     const family = byMember.get(ref.path);
     if (family && !family.pages.includes(page)) family.pages.push(page);
-  });
+  }, input.site?.prefix ?? "");
   for (const [path, uses] of mediaMentions({ media: input.media, sources: input.sources, site: input.site })) {
     const family = byMember.get(path);
     if (!family) continue;

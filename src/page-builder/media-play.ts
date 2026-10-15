@@ -44,7 +44,7 @@ export function playable(source: string, range: ElementRange, file: string, site
   }
   if (!src) return { kind: "none", reason: `This ${name} has no file to play.` };
   // A full address counts only when it is one of the site's known addresses.
-  const path = mediaResolvePath(src, file, site?.origins.length ? site : undefined);
+  const path = mediaResolvePath(src, file, site?.origins.length ? site : undefined, site?.prefix ?? "");
   if (!path) return { kind: "none", reason: `This ${name} is not one of the site's files, so it cannot play here.` };
   const type = MEDIA_TYPES[/\.([a-z\d]+)$/i.exec(path)?.[1].toLowerCase() ?? ""] ?? (name === "audio" ? "audio/mpeg" : "video/mp4");
   return { kind: "file", path, type };

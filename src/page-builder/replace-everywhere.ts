@@ -1,3 +1,4 @@
+import { siteAddress, sitePathPrefix } from "../../shared/site-path-prefix";
 import { isSharingImage, sharingJpegPath, sharingMetaName, sharingImageDetail } from "./sharing-jpeg";
 import { socialImageAddress, SOCIAL_IMAGE_NOTE } from "./social-image";
 import { mediaPictureUnwrap, mediaEscape } from "./media-markup";
@@ -251,7 +252,7 @@ export function planMediaReplace(input: ReplaceInput) {
   // Existing destinations are mentions too: a visitor forwarded to the same address must get the new bytes.
   // New forwarding lines (type change) point at addresses no browser has cached, so they stay plain.
   let redirects = rewriteMediaRedirects(renameInput, mapping, { versions });
-  const address = (path: string) => "/" + path.split("/").map(encodeURIComponent).join("/");
+  const address = (path: string) => siteAddress(path, site?.prefix ?? sitePathPrefix(input.siteUrl));
   // Always keep on any family member (a kept copy protects the family) forwards every old address.
   const keepOld = request.keepOldAddress ?? family.some(member => Boolean(records.files[member]?.alwaysKeep));
   // An address the new picture keeps (an overwritten sharing JPEG) serves its new bytes; forwarding it would hide them.

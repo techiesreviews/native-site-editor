@@ -81,7 +81,7 @@ export function insertedImagePage(source: string, place: MediaInsertPlace, image
   const node = insertedNode(place), range = virtual === undefined ? undefined : locatePageElement(virtual, node);
   if (virtual === undefined || range?.tag.name !== "img") return undefined;
   const { swap } = mediaPlaceSwap(virtual, { node }, virtual.slice(range.tag.start, range.tag.end), image, undefined, locatePageElement, undefined, prefix);
-  const after = swapPlaceImage(records, place.path, undefined, image.path, image.alt, swap(undefined).page);
+  const after = swapPlaceImage(records, place.path, undefined, image.path, image.alt, swap(undefined).page, prefix);
   return { page: swap(after.alt).page, records: after.records };
 }
 

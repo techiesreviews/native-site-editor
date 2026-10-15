@@ -1,3 +1,6 @@
+import { NATIVE_CONFIG_PATH, nativeSiteSettings } from "../../shared/native-project";
+import { sitePathPrefix } from "../../shared/site-path-prefix";
+import { readMediaPrefix } from "./media-prefix";
 import { MEDIA_RECORDS_PATH, parseMediaRecords, removeMediaRecords, serializeMediaRecords, setPictureLeftAsIs, type MediaRecords, type PictureLeftAsIs } from "../../shared/media-records";
 import { startTags } from "../../shared/html-source";
 import { improveImagesPlan, type ImproveImagesPlan, type ImproveImagesRow } from "./improve-images";
@@ -57,7 +60,7 @@ async function readSources(ctx: MediaWorkspaceContext) {
 async function readPlan(ctx: MediaWorkspaceContext, files: Facts) {
   const sources = await readSources(ctx);
   const records = parseMediaRecords(sources[MEDIA_RECORDS_PATH]);
-  const plan = improveImagesPlan({ sources, pages: ctx.pages, components: ctx.components, files, records, site: { origins: ctx.origins ?? [] } });
+  const plan = improveImagesPlan({ sources, pages: ctx.pages, components: ctx.components, files, records, site: { prefix: sitePathPrefix(nativeSiteSettings(sources[NATIVE_CONFIG_PATH]).url), origins: ctx.origins ?? [] } });
   return { plan, sources, records };
 }
 
@@ -231,7 +234,7 @@ export async function undoRows(real: MediaWorkspaceContext, outcomes: readonly R
   // A file stays while something outside the added files reaches it, directly or through added
   // files that stay (the player's script loads media-online.js); added files that only mention
   // each other go together.
-  const mentioned = mediaMentions({ media: added, sources, site: { origins: real.origins ?? [] } });
+  const mentioned = mediaMentions({ media: added, sources, site: { prefix: await readMediaPrefix(real, batch.expectedSources), origins: real.origins ?? [] } });
   const staying = new Set<string>(), from = new Set(added);
   for (let grew = true; grew;) {
     grew = false;

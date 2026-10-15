@@ -103,8 +103,8 @@ export function componentPopupShape(tag: string, component?: ComponentPicture): 
   if (!component || hasPlaceShape(tag)) return undefined;
   return { kind: "component", value: component.shape.value, label: `${component.label}'s shape (${component.shape.label})`, badge: `${component.label}'s shape` };
 }
-export function componentFrame(tag: string, records: Parameters<typeof readPlaceFrame>[1], page: string, component?: ComponentPicture) {
-  const frame = readPlaceFrame(tag, records, page, !!component);
+export function componentFrame(tag: string, records: Parameters<typeof readPlaceFrame>[1], page: string, component?: ComponentPicture, prefix = "") {
+  const frame = readPlaceFrame(tag, records, page, !!component, prefix);
   return { ...frame, shape: componentPopupShape(tag, component) ?? frame.shape };
 }
 export function componentShapeEntry(component?: ComponentPicture) {
@@ -115,8 +115,8 @@ export function componentShapeNotice(shape: PopupShape, component?: ComponentPic
 }
 
 /** frame_image's read (slice 92): the popup's frame, and the component's shape whenever one is available. */
-export function agentComponentRead(tag: string, records: Parameters<typeof readPlaceFrame>[1], page: string, component?: ComponentPicture) {
-  return { ...componentFrame(tag, records, page, component),
+export function agentComponentRead(tag: string, records: Parameters<typeof readPlaceFrame>[1], page: string, component?: ComponentPicture, prefix = "") {
+  return { ...componentFrame(tag, records, page, component, prefix),
     ...(component ? { component: { name: component.label, shape: component.shape.label, value: component.shape.value } } : {}) };
 }
 /** frame_image's change as the popup's Done writes it: Original undoes the component's crop; its shape needs one. */
@@ -126,8 +126,8 @@ export function agentComponentChange(change: PlaceFrameChange, component?: Compo
 }
 
 /** Decide the agent's trim focus after encoding, using the shape the place will show. */
-export function agentTrimRequest(request: import("./place-trim").PlaceTrimRequest, tag: string, page: string, component?: ComponentPicture): import("./place-trim").PlaceTrimRequest {
-  const start = componentFrame(tag, undefined, page, component);
+export function agentTrimRequest(request: import("./place-trim").PlaceTrimRequest, tag: string, page: string, component?: ComponentPicture, prefix = ""): import("./place-trim").PlaceTrimRequest {
+  const start = componentFrame(tag, undefined, page, component, prefix);
   let shape = request.frame?.shape;
   if (shape === undefined) {
     if (typeof start.shape === "string") shape = start.shape === "free" ? undefined : start.shape;
@@ -136,6 +136,6 @@ export function agentTrimRequest(request: import("./place-trim").PlaceTrimReques
     if (shape === "original" && request.frame?.focus) shape = undefined;
   }
   const frame = agentComponentChange({ ...request.frame, ...(shape ? { shape } : {}) }, component);
-  const kept = componentFrame(writePlaceFrame(tag, frame), undefined, page, component);
+  const kept = componentFrame(writePlaceFrame(tag, frame), undefined, page, component, prefix);
   return { ...request, frame, focusAfterTrim: { ratio: shapeRatio(kept.shape), focus: start.focus } };
 }

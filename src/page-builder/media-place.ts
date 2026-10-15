@@ -75,14 +75,14 @@ export async function placeMediaImage(
     const saved = await held.save({ path: target.path, source: latest, stale: changed, live: () => !cancelled(), records: { text: metadata }, expectedSources: prefixSources,
       ...copies?.uploads.length ? { uploads: copies.uploads, expectedAssets, expectedPaths } : {},
       apply: (paths, _requests, current) => {
-        const selected = held.image(paths), picked = copies?.uploads.length ? { ...selected, variants: copies.variants } : selected, after = rules.swapPlaceImage(current, target.path, from, picked.path, initialAlt, swap(undefined, picked).page);
+        const selected = held.image(paths), picked = copies?.uploads.length ? { ...selected, variants: copies.variants } : selected, after = rules.swapPlaceImage(current, target.path, from, picked.path, initialAlt, swap(undefined, picked).page, prefix);
         return { page: swap(after.alt, picked).page, records: after.records };
       } });
     ports.announce(saved.placed ? `Image replaced${note ? "." + note : ""}${saved.note ? "." + saved.note : ""}` : `Added ${saved.paths.join(", ")}.${saved.note}`);
     return;
   }
   // Whether the old file stays on the page does not depend on the alt, only on the new src.
-  const after = rules.swapPlaceImage(records, target.path, from, image.path, initialAlt, swap(undefined).page);
+  const after = rules.swapPlaceImage(records, target.path, from, image.path, initialAlt, swap(undefined).page, prefix);
   const { page, edits } = swap(after.alt);
   // Cancel while the records were read: the placement stays.
   if (cancelled()) return;

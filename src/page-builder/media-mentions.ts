@@ -1,3 +1,4 @@
+import { sitePathOf } from "../../shared/site-path-prefix";
 import { decodeHtmlEntities } from "./html-entities";
 import type { MediaOtherUseKind } from "./media-usage";
 import { mediaOwnAddress, type MediaSite } from "./media-origins";
@@ -53,7 +54,9 @@ export function mediaMentions(input: { media: readonly string[]; sources: Readon
       }
       value = value.split(/[?#]/)[0];
       if (!names.has(restore(value).split("/").at(-1)!)) value = value.replace(/[.!:]+$/, "");
-      try { value = decodeURIComponent(value); } catch { /* Keep malformed encodings as written. */ }
+      const path = value.startsWith("/") && input.site?.prefix ? sitePathOf(restore(value), input.site) : undefined;
+      if (path !== undefined) value = path;
+      else try { value = decodeURIComponent(value); } catch { /* Keep malformed encodings as written. */ }
       value = restore(value);
       // Dot segments resolve as in a URL; leading ones are dropped, so the rest is compared as a path suffix.
       const parts: string[] = [];

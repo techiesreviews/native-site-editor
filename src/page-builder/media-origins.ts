@@ -1,4 +1,4 @@
-export interface MediaSite { origins: string[] }
+export interface MediaSite { origins: string[]; prefix?: string }
 
 export function mediaOwnOrigins(url?: string, cname?: string): string[] {
   const origins = new Set<string>();

@@ -416,3 +416,15 @@ for (const amp of ["&#38;", "&#x26;"]) test(`review round 2: numeric ampersand $
   });
   assert.ok(p.edits.get("index.html")!.includes('content="https://site.test/media/images/photo-sharing.jpg?v=12345678&amp;w=1&amp;q=2#hi"'));
 });
+
+test("sub-folder Replace finds both root spellings and writes the prefixed replacement", () => {
+  const planned = planMediaReplace({
+    request: { path: "media/a.webp", result: { before: 20, after: 10, outputs: [
+      { extension: "webp", blob: new Blob(["new"]), width: 20, height: 10 },
+    ] } },
+    paths: ["media/a.webp"], sources: { "index.html": '<img src="/my-site/media/a.webp"><img src="/media/a.webp">' },
+    records: parseMediaRecords(undefined), versions: new Map([["media/a.webp", "new"]]),
+    site: { prefix: "/my-site", origins: [] },
+  });
+  assert.equal(planned.edits.get("index.html"), '<img src="/my-site/media/a.webp?v=new"><img src="/my-site/media/a.webp?v=new">');
+});

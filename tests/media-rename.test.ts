@@ -136,3 +136,17 @@ test("redirect destinations in literal Unicode or lowercase escapes follow witho
   assert.ok(!("taken" in result));
   assert.equal(result.redirects, "/a /media/kyoto.webp 301\n/b /media/kyoto.webp?x=1 301\n");
 });
+
+test("sub-folder rename finds both root spellings and writes prefixed root addresses", () => {
+  const sources = {
+    "index.html": '<img src="/my-site/media/a.webp?x=1#pic"><img src="/media/a.webp">',
+    "styles/site.css": 'a{background:url(/my-site/media/a.webp)}',
+    "data.json": '{"image":"/my-site/media/a.webp"}',
+  };
+  const renamed = planMediaRename({ from: "media/a.webp", to: "media/b.webp", paths: ["media/a.webp"], sources,
+    records: parseMediaRecords(undefined), site: { prefix: "/my-site", origins: [] } });
+  assert.ok(!("taken" in renamed));
+  assert.equal(renamed.edits.get("index.html"), '<img src="/my-site/media/b.webp?x=1#pic"><img src="/my-site/media/b.webp">');
+  assert.equal(renamed.edits.get("styles/site.css"), 'a{background:url(/my-site/media/b.webp)}');
+  assert.equal(renamed.edits.get("data.json"), '{"image":"/my-site/media/b.webp"}');
+});

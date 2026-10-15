@@ -125,7 +125,7 @@ function readFocus(raw: string | undefined): PlaceFocus | undefined {
   return x === undefined || y === undefined ? undefined : { x, y };
 }
 
-export function readPlaceFrame(tagText: string, records?: MediaRecords, pagePath = "index.html", underComponent = false) {
+export function readPlaceFrame(tagText: string, records?: MediaRecords, pagePath = "index.html", underComponent = false, prefix = "") {
   const values = styleValues(inlineStyle(tagText)), raw = values("aspect-ratio");
   let shape: PlaceShape | { kind: "other"; value: string } = "original";
   if (raw !== undefined && !(underComponent && raw.toLowerCase() === "auto")) {
@@ -139,7 +139,7 @@ export function readPlaceFrame(tagText: string, records?: MediaRecords, pagePath
   }
   const focusRaw = values("object-position"), focus = readFocus(focusRaw);
   const src = mediaAttribute(tagText, startTags(tagText)[0], "src");
-  const path = src && mediaResolvePath(decodeHtmlEntities(src.value, true), pagePath);
+  const path = src && mediaResolvePath(decodeHtmlEntities(src.value, true), pagePath, undefined, prefix);
   const trimmedFrom = path && records?.files[path]?.trimmedFrom;
   return { file: path || undefined, shape, focus, ...(focus === undefined ? { focusRaw } : {}), trimmed: !!trimmedFrom, ...(trimmedFrom ? { source: trimmedFrom.source, trim: structuredClone(trimmedFrom.trim) } : {}) };
 }

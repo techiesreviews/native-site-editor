@@ -3,11 +3,12 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { starterLoader } from "../src/page-builder/starter-loader";
 import { NATIVE_STARTER_VERSION } from "../worker/starter";
-import { addComponentLoaderScript, componentLoaderPlan, COMPONENT_LOADER_PATH, COMPONENT_LOADER_RULE, COMPONENT_LOADER_SCRIPT, pageLoadsComponentLoader, stylesheetHasUndefinedRule, type ComponentLoaderInput } from "../src/page-builder/component-loader";
+import { addComponentLoaderScript, componentLoaderPlan, COMPONENT_LOADER_PATH, COMPONENT_LOADER_RULE, componentLoaderScript, pageLoadsComponentLoader, stylesheetHasUndefinedRule, type ComponentLoaderInput } from "../src/page-builder/component-loader";
 
+const COMPONENT_LOADER_SCRIPT = componentLoaderScript("");
 const page = (script = "", href = "/styles/site.css") => `<html>\n<head>\n  <link rel="stylesheet" href="${href}">\n${script ? `  ${script}\n` : ""}</head>\n<body></body>\n</html>\n`;
 function input(sources: Record<string, string>, exists = false): ComponentLoaderInput {
-  return { pages: Object.keys(sources).filter(path => path.endsWith(".html")), sources, exists: path => path === COMPONENT_LOADER_PATH && exists, loader: "loader bytes\n" };
+  return { prefix: "", pages: Object.keys(sources).filter(path => path.endsWith(".html")), sources, exists: path => path === COMPONENT_LOADER_PATH && exists, loader: "loader bytes\n" };
 }
 
 test("missing loader file only: preserve page scripts, create exact bytes, append the rule", () => {
@@ -149,4 +150,28 @@ test("a headless page still reports the omitted script when the loader already e
   assert.equal(plan?.edits.size, 0);
   assert.equal(plan?.added, "");
   assert.match(plan!.notes[0], /index.html.*left out/);
+});
+
+test("sub-folder loader is inserted once and either root spelling counts as loaded", () => {
+  const prefix = "/my-site";
+  const installed = '<script type="module" src="/my-site/components/components.js"></script>';
+  assert.equal(componentLoaderScript(prefix), installed);
+  const sources = { "index.html": page("", "/my-site/styles/site.css"), "styles/site.css": "body {}" };
+  const planned = componentLoaderPlan({ ...input(sources), prefix })!;
+  assert.equal(planned.edits.get("index.html"), page(installed, "/my-site/styles/site.css"));
+  assert.equal(planned.edits.get("styles/site.css"), `body {}\n\n${COMPONENT_LOADER_RULE}\n`);
+  for (const script of [installed, COMPONENT_LOADER_SCRIPT]) {
+    assert.equal(pageLoadsComponentLoader(page(script), "index.html", prefix), true);
+    assert.equal(componentLoaderPlan({ ...input({ ...sources, "index.html": page(script), "styles/site.css": COMPONENT_LOADER_RULE }, true), prefix }), undefined);
+  }
+});
+
+test("sub-folder stylesheet imports supply the existing loader rule", () => {
+  const planned = componentLoaderPlan({ ...input({
+    "index.html": page("", "/my-site/styles/site.css"),
+    "styles/site.css": '@import "/my-site/styles/components.css";',
+    "styles/components.css": COMPONENT_LOADER_RULE,
+  }), prefix: "/my-site" })!;
+  assert.equal(planned.edits.has("styles/site.css"), false);
+  assert.equal(planned.edits.has("styles/components.css"), false);
 });

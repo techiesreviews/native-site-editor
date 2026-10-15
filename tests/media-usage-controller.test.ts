@@ -98,3 +98,15 @@ test("a file with no held source is read again on every check, so a replacement 
   assert.equal(controller.usageRecords()?.families[0].checked, true);
   controller.dispose();
 });
+
+test("usage controller reads the live site address for prefixed references", async () => {
+  const f = fixture();
+  f.sources["index.html"] = '<img src="/my-site/images/a.png">';
+  f.ports.url = () => "https://user.github.io/my-site/";
+  const controller = createMediaUsageController(f.ports);
+  f.gate.resolve();
+  controller.refresh();
+  for (let i = 0; i < 10 && !f.updates.some(records => records?.families[0]?.pages.length); i++) await turn();
+  assert.deepEqual(f.updates.at(-1)?.families[0].pages, ["index.html"]);
+  controller.dispose();
+});

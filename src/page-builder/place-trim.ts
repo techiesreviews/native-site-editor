@@ -97,7 +97,7 @@ export async function trimPlace(
           variants: result.outputs.flatMap(output => output.variantWidth ? [{ path: mediaCopyName(path, output.variantWidth), width: output.variantWidth }] : []) };
         const { swap, note: swapNote } = mediaPlaceSwap(proof.source, target, proof.expected, image, measured, locate, framed, prefix);
         note = swapNote;
-        const after = swapPlaceImage(records, target.path, file, path, mediaExistingAlt(proof.expected), swap(undefined).page);
+        const after = swapPlaceImage(records, target.path, file, path, mediaExistingAlt(proof.expected), swap(undefined).page, prefix);
         // The original's record, like its pixels, stays unchanged; place marks carry to the copy.
         if (records.files[source]) after.records = { ...after.records, files: { ...after.records.files, [source]: records.files[source] } };
         return { page: swap(after.alt).page, records: after.records };

@@ -1212,3 +1212,9 @@ test("fixed slot names resolve to the default plan's paths, including unnamed an
   assert.doesNotMatch(fixed.instance, /slot="title"/);
   assert.match(fixed.template, /<h2>Title<\/h2>/);
 });
+
+test("component image-slot choices publish encoded addresses under the site folder", async () => {
+  const { componentImageChoices } = await import("../src/page-builder/component-model");
+  assert.deepEqual(componentImageChoices(["media/a.webp", "media/a b.webp"], "/my-site"), ["/my-site/media/a.webp", "/my-site/media/a%20b.webp"]);
+  assert.deepEqual(componentImageChoices(["media/a.webp"], ""), ["/media/a.webp"]);
+});

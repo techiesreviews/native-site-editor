@@ -138,3 +138,8 @@ test("rename recognises both root spellings and writes a prefixed new address wi
     '<img src="/my-site/media/new%20photo.png?x=1&amp;y=2#photo"><img srcset="/my-site/media/new%20photo.png 1x, /my-site/media/new%20photo.png 2x">');
   assert.equal(rewriteMediaReferences("styles/site.css", '.hero{background:url(/my-site/media/a.png)}', "media/a.png", "media/b.png", "/my-site"), '.hero{background:url(/my-site/media/b.png)}');
 });
+
+test("a prefix without a site does not make outside hosts local files", () => {
+  assert.deepEqual(scanMediaReferences("index.html", '<iframe src="https://youtube.com/embed/aqz-KE-bpKQ"></iframe>', undefined, "/my-site"), []);
+  assert.deepEqual(scanMediaReferences("index.html", '<img src="https://user.github.io/my-site/media/a.webp">', { prefix: "/my-site", origins: ["https://user.github.io"] }).map(ref => ref.path), ["media/a.webp"]);
+});

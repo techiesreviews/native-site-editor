@@ -494,7 +494,7 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
         try {
           const { assetInUseProblem, assetUsers } = await import("../page-builder/asset-references");
           const site = r.site();
-          const inUse = assetInUseProblem(assetUsers(snap.sources, found.map(file => file.path), { origins: ports.origins?.() ?? [], pages: Object.values(site?.routes ?? {}), components: site?.components }));
+          const inUse = assetInUseProblem(assetUsers(snap.sources, found.map(file => file.path), { prefix: sitePathPrefix(nativeSiteSettings(r.source(NATIVE_CONFIG_PATH)).url), origins: ports.origins?.() ?? [], pages: Object.values(site?.routes ?? {}), components: site?.components }));
           if (inUse) return { refuse: inUse };
         } catch (error) { return { refuse: error instanceof Error ? error.message : "The files that use this could not be checked, so nothing was deleted." }; }
       }

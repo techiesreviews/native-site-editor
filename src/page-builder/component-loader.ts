@@ -1,10 +1,11 @@
+import { siteAddress } from "../../shared/site-path-prefix";
 import { expandStyleImports, resolveImportPath } from "../../shared/css-imports";
 import { nativePageStylesheets } from "../../shared/native-project";
 import { blockEnd, preludeEnd, skipSpace, withoutComments } from "../../shared/slotted-css";
 import { descendants, parseSource, startTagAttributes, type SourceElement } from "./component-model";
 
 export const COMPONENT_LOADER_PATH = "components/components.js";
-export const COMPONENT_LOADER_SCRIPT = '<script type="module" src="/components/components.js"></script>';
+export const componentLoaderScript = (prefix: string) => `<script type="module" src="${siteAddress(COMPONENT_LOADER_PATH, prefix)}"></script>`;
 export const COMPONENT_LOADER_RULE = `/* Components stay hidden until components.js has defined them, so a page
    never shows them unstyled. Only with scripting on: without JS, their
    content still shows. :not(:defined) matches custom elements only (every
@@ -24,6 +25,7 @@ export interface ComponentLoaderPlan {
   notes: string[];
 }
 export interface ComponentLoaderInput {
+  prefix: string;
   pages: readonly string[];
   sources: Record<string, string>;
   exists: (path: string) => boolean;
@@ -41,20 +43,20 @@ const headElements = (head: SourceElement) =>
  * Only a module script of the head's own counts (the loader uses `import.meta`, so a classic
  * script fails); comments, body scripts and scripts in `<noscript>` or `<template>` do not.
  */
-export function pageLoadsComponentLoader(source: string, path: string): boolean {
+export function pageLoadsComponentLoader(source: string, path: string, prefix = ""): boolean {
   const head = headOf(source);
   return Boolean(head && headElements(head).some(element => element.name === "script" &&
     (attribute(source, element, "type") ?? "").trim().toLowerCase() === "module" &&
-    resolveImportPath(path, attribute(source, element, "src") ?? "") === COMPONENT_LOADER_PATH));
+    resolveImportPath(path, attribute(source, element, "src") ?? "", prefix) === COMPONENT_LOADER_PATH));
 }
 
 /** Keeps the document's line endings and the indentation of the preceding line. */
-export function addComponentLoaderScript(source: string): string | undefined {
+export function addComponentLoaderScript(source: string, prefix = ""): string | undefined {
   const head = headOf(source);
   if (!head?.close) return;
   const link = headElements(head).filter(element => element.name === "link" &&
     (attribute(source, element, "rel") ?? "").toLowerCase().split(/\s+/).includes("stylesheet")).at(-1);
-  return insertHeadLine(source, head, COMPONENT_LOADER_SCRIPT, link);
+  return insertHeadLine(source, head, componentLoaderScript(prefix), link);
 }
 
 /** Inserts one head line using the document’s line endings and surrounding indentation. */
@@ -102,14 +104,14 @@ export function stylesheetHasUndefinedRule(source: string): boolean {
 
 /** Adds the site's own loader only alongside a component action, never a rule-only repair. */
 export function componentLoaderPlan(input: ComponentLoaderInput): ComponentLoaderPlan | undefined {
-  const { sources, loader, exists } = input;
+  const { sources, loader, exists, prefix } = input;
   const pages = [...new Set(input.pages)];
   const creates = exists(COMPONENT_LOADER_PATH) ? [] : [{ path: COMPONENT_LOADER_PATH, content: loader }];
   const edits = new Map<string, string>(), addedPages: string[] = [], notes: string[] = [];
   for (const path of pages) {
     const source = sources[path];
-    if (source !== undefined && pageLoadsComponentLoader(source, path)) continue;
-    const next = source === undefined ? undefined : addComponentLoaderScript(source);
+    if (source !== undefined && pageLoadsComponentLoader(source, path, prefix)) continue;
+    const next = source === undefined ? undefined : addComponentLoaderScript(source, prefix);
     if (next === undefined) notes.push(source === undefined
       ? `${path} could not be read, so the component loader was not added to it.`
       : `${path} has no head to place the component loader in; the page was left out.`);
@@ -117,9 +119,9 @@ export function componentLoaderPlan(input: ComponentLoaderInput): ComponentLoade
   }
   if (!creates.length && !addedPages.length)
     return notes.length ? { creates, edits, pages: [], added: "", notes } : undefined;
-  const linked = pages.map(path => nativePageStylesheets(sources[path] ?? "", path));
+  const linked = pages.map(path => nativePageStylesheets(sources[path] ?? "", path, prefix));
   const all = [...new Set(linked.flat())];
-  const hasRule = expandStyleImports(all, path => sources[path]).sheets.some(sheet =>
+  const hasRule = expandStyleImports(all, path => sources[path], undefined, prefix).sheets.some(sheet =>
     stylesheetHasUndefinedRule(sheet.source));
   const home = pages.indexOf("index.html");
   const main = all.includes("styles/site.css") ? "styles/site.css" :

@@ -8,7 +8,7 @@ export interface MediaUrlToken { file: string; start: number; end: number; value
 export interface MediaReference extends MediaUrlToken { path: string }
 export interface MediaUsage { files: string[]; pages: string[]; alts: string[] }
 
-export function mediaResolvePath(value: string, file: string, site?: MediaSite, prefix = ""): string | undefined {
+export function mediaResolvePath(value: string, file: string, site?: MediaSite, prefix = site?.prefix ?? ""): string | undefined {
   let decoded = value.trim();
   if (site && /^(?:https?:)?\/\//i.test(decoded) && mediaOwnAddress(decoded, site)) {
     try { decoded = new URL(decoded.startsWith("//") ? "https:" + decoded : decoded).pathname; } catch { return undefined; }
@@ -178,7 +178,7 @@ export function scanMediaUrlTokens(file: string, source: string): MediaUrlToken[
   return out;
 }
 
-export function scanMediaReferences(file: string, source: string, site?: MediaSite, prefix = ""): MediaReference[] {
+export function scanMediaReferences(file: string, source: string, site?: MediaSite, prefix = site?.prefix ?? ""): MediaReference[] {
   return scanMediaUrlTokens(file, source).flatMap(({ file, start, end, value, alt, attribute, tag, attributeQuote, cssQuote }) => {
     const path = mediaResolvePath(value, file, site, prefix);
     return path ? [{ file, start, end, value, path, alt, attribute, tag, attributeQuote, cssQuote }] : [];
@@ -192,6 +192,7 @@ export function walkMediaReferencePages(
   pages: string[],
   components: Record<string, string>,
   visitReference: (page: string, reference: MediaReference) => void,
+  prefix = "",
 ): void {
   const templates = new Set(Object.values(components));
   for (const page of pages) {
@@ -201,7 +202,7 @@ export function walkMediaReferencePages(
       visited.add(file);
       const refs = (references.get(file) ?? []).map(ref => {
         if (!templates.has(file) || /^(?:[a-z][\w+.-]*:|\/|#)/i.test(ref.value.trim())) return ref;
-        const path = mediaResolvePath(ref.value, page);
+        const path = mediaResolvePath(ref.value, page, undefined, prefix);
         return path ? { ...ref, path } : ref;
       });
       for (const ref of refs) visitReference(page, ref);
@@ -237,7 +238,7 @@ export function mediaUsageIndex(paths: string[], sources: Record<string, string 
       if (!out[ref.path].pages.includes(page)) out[ref.path].pages.push(page);
       if (!out[ref.path].files.includes(ref.file)) out[ref.path].files.push(ref.file);
     }
-  });
+  }, site?.prefix ?? "");
   return out;
 }
 

@@ -1,3 +1,4 @@
+import { siteAddress } from "../../shared/site-path-prefix";
 // Components as the page builder sees them, read from source and edited as
 // source (docs/page-builder/components.md). No DOM here, so it runs in the
 // unit tests as it does in the editor.
@@ -1761,4 +1762,9 @@ function cardFrom(html: string, items: { el: SourceElement; path: number[] }[], 
     card: { tag: cardTag, slot, template, css, slots, notes, instances: chosen.map(({ item }) => item.path) },
     markup: new Map(chosen.map(({ item, plan }) => [item.el, plan.instance])),
   };
+}
+
+/** Published addresses offered by both component image-slot editors. */
+export function componentImageChoices(images: readonly string[], prefix: string): string[] {
+  return images.map(image => siteAddress(image, prefix));
 }

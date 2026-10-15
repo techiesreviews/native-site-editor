@@ -78,3 +78,12 @@ test("file moves recognise prefixed root uses and write the new prefixed address
   const result = planAssetReferenceRewrites({ "index.html": '<img src="/my-site/images/a.svg"><img src="/images/a.svg">' }, move, new Map(), "/my-site");
   assert.equal(result.get("index.html"), '<img src="/my-site/images/b.svg"><img src="/my-site/images/b.svg">');
 });
+
+test("sub-folder in-use checks and rewrites recognise prefixed and legacy root addresses", () => {
+  const sources = { "index.html": '<img src="/my-site/media/a.webp"><img src="/media/a.webp">', "notes.md": '/my-site/media/a.webp' };
+  const users = assetUsers(sources, ["media/a.webp"], { prefix: "/my-site", origins: [] });
+  assert.deepEqual(users.get("media/a.webp"), ["index.html", "notes.md"]);
+  assert.match(assetInUseProblem(users)!, /media\/a.webp is used by index.html, notes.md/);
+  const edits = planAssetReferenceRewrites(sources, [{ from: "media/a.webp", to: "media/b.webp" }], new Map(), "/my-site");
+  assert.equal(edits.get("index.html"), '<img src="/my-site/media/b.webp"><img src="/my-site/media/b.webp">');
+});

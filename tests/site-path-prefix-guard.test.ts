@@ -32,15 +32,7 @@ const rootAttributes: Detector = (source, file) => {
 };
 const detectors = [rootTemplates, rootConcatenations, mediaBuilders, rootAttributes];
 // Temporary migration inventory: slices 78–79 must remove every entry, including readers.
-const allowlist: AllowlistEntry[] = [
-  { file: "src/page-builder/component-loader.ts", match: { rule: "root-attribute", function: "<top-level>" }, reason: "Slice 78: component-loader script address follows the site prefix.", count: 1 },
-  { file: "src/page-builder/components.ts", match: { rule: "root-template", function: "slotRow" }, reason: "Slice 78: media, preview and page-link addresses use the shared site-prefix helper.", count: 1 },
-  { file: "src/page-builder/components.ts", match: { rule: "root-template", function: "structure" }, reason: "Slice 78: media, preview and page-link addresses use the shared site-prefix helper.", count: 1 },
-  { file: "src/page-builder/improve-images.ts", match: { rule: "root-concatenation", function: "improveImagesPlan" }, reason: "Read/display page-route labels; slice 78 aligns prefix interpretation with sitePathOf.", count: 1 },
-  { file: "src/page-builder/media-rename.ts", match: { rule: "root-concatenation", function: "add" }, reason: "Slice 78: renamed media addresses follow the site prefix.", count: 1 },
-  { file: "src/page-builder/media-rename.ts", match: { rule: "root-concatenation", function: "address" }, reason: "Slice 78: media, preview and page-link addresses use the shared site-prefix helper.", count: 1 },
-  { file: "src/page-builder/replace-everywhere.ts", match: { rule: "root-concatenation", function: "address" }, reason: "Slice 78: media, preview and page-link addresses use the shared site-prefix helper.", count: 1 },
-];
+const allowlist: AllowlistEntry[] = [];
 const files = [...sourceFiles("src"), ...sourceFiles("shared")].filter(file => /\.(?:ts|js)$/.test(file) && file !== "shared/site-path-prefix.ts");
 const hits = files.flatMap(file => detectors.flatMap(detect => detect(readSource(file), file)));
 

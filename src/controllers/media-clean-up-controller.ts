@@ -1,3 +1,4 @@
+import { sitePathPrefix } from "../../shared/site-path-prefix";
 import { MEDIA_RECORDS_PATH, parseMediaRecords, type MediaRecords } from "../../shared/media-records";
 import { mediaCleanUpSuggestions, type MediaCleanUpSuggestions } from "../page-builder/media-clean-up";
 import { badgeKeys, cleanUpMenuItem, improveMenuItem, mediaBadge, readDismissed, type MediaBadge } from "../page-builder/media-badge";
@@ -58,7 +59,7 @@ export function createMediaCleanUpController(ports: MediaCleanUpPorts) {
     const files = ports.files(), sources: Record<string, string | undefined> = {};
     for (const path of files) if (isMediaTextFile(path)) sources[path] = ports.source(path);
     const facts = Object.fromEntries(files.filter(isMediaFile).map(path => [path, { size: ports.size?.(path), width: 0, ...known.get(path) }]));
-    return improveImagesPlan({ sources, pages, components, files: facts, records, site: { origins: mediaOwnOrigins(ports.url?.()) } })
+    return improveImagesPlan({ sources, pages, components, files: facts, records, site: { prefix: sitePathPrefix(ports.url?.()), origins: mediaOwnOrigins(ports.url?.()) } })
       .rows.filter(row => row.count).map(row => row.file);
   }
   async function records(): Promise<MediaRecords | null> {

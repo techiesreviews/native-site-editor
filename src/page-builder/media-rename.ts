@@ -1,3 +1,5 @@
+import { siteAddress, sitePathPrefix } from "../../shared/site-path-prefix";
+import { NATIVE_CONFIG_PATH, nativeSiteSettings } from "../../shared/native-project";
 import { MEDIA_RECORDS_PATH, parseMediaRecords, renameMediaRecord, serializeMediaRecords, type MediaRecords } from "../../shared/media-records";
 import { editNativeRedirects } from "../native-page-moves";
 import { mediaFamilyOf, renamedFamily, familyMembers } from "./media-families";
@@ -88,12 +90,12 @@ function rewriteText(file: string, source: string, input: RenameInput, moves: Ma
     const pathStart = mapped.starts[prefix.length], pathEnd = mapped.ends[prefix.length + address.length - 1];
     if (pathStart === undefined || pathEnd === undefined) return;
     const rawPath = raw.slice(pathStart, pathEnd);
-    let next = path === to && !template ? address : full || address.startsWith("/") || template ? "/" + to : relativePath(file, to);
+    let next = path === to && !template && !(input.site?.prefix && (full || address.startsWith("/"))) ? address : full || address.startsWith("/") || template ? siteAddress(to, input.site?.prefix ?? "") : relativePath(file, to);
     // A unique unresolved suffix keeps its abbreviated spelling when its folder is unchanged.
     if (path !== to && !known.has(mediaResolvePath(value, file, input.site ?? { origins: [] }) ?? "") && !full && !template && !address.startsWith("/") && path.slice(0, path.lastIndexOf("/")) === to.slice(0, to.lastIndexOf("/"))) {
       next = address.slice(0, address.lastIndexOf("/") + 1) + to.split("/").at(-1)!;
     } else if (address.startsWith("./") && !next.startsWith(".")) next = "./" + next;
-    if (path !== to && /%[\da-f]{2}/i.test(rawPath)) next = next.split("/").map(part => encodeURIComponent(part)).join("/");
+    if (path !== to && !full && !address.startsWith("/") && !template && /%[\da-f]{2}/i.test(rawPath)) next = next.split("/").map(part => encodeURIComponent(part)).join("/");
     // Keep every unchanged character's original spelling, including mixed literal and escaped slashes.
     let left = 0, right = 0;
     while (left < address.length && left < next.length && address[left] === next[left]) left++;
@@ -156,7 +158,7 @@ export function rewriteMediaMentions(input: RenameInput, mapping: Map<string, st
       if (!Object.values(site.components!).includes(ref.file)) return;
       const file = templates.get(ref.file) ?? new Map<number, Set<string>>();
       const targets = file.get(ref.start) ?? new Set<string>(); targets.add(ref.path); file.set(ref.start, targets); templates.set(ref.file, file);
-    });
+    }, site.prefix ?? "");
   }
   for (const [file, source] of Object.entries(sources)) {
     if (source === undefined || file === "_redirects" || !isMediaTextFile(file) || options.only && options.only !== file) continue;
@@ -193,7 +195,7 @@ export function planMediaRename(input: RenameInput): { taken: string; suggestion
   // full address on the site's own host); sources are old addresses and stay.
   let redirects = rewriteMediaRedirects(input, mapping);
   // Forwarding lines name addresses as browsers request them: spaces and other characters encoded.
-  const address = (path: string) => "/" + path.split("/").map(encodeURIComponent).join("/");
+  const address = (path: string) => siteAddress(path, input.site?.prefix ?? "");
   for (const move of moves) redirects = editNativeRedirects(redirects, address(move.from), address(move.to), input.keepOldAddress ? [address(move.from)] : [], false);
   if (redirects === (sources._redirects ?? "")) redirects = undefined;
   const records = moves.reduce((records, move) => renameMediaRecord(records, move.from, move.to), input.records);
@@ -227,7 +229,7 @@ export function filesMediaRenamePlan(input: {
   const kept = (family ? familyMembers(family) : [from]).some(path => Boolean(records.files[path]?.alwaysKeep));
   sources._redirects = input.source("_redirects");
   const plan = planMediaRename({ from, to, paths, sources, records,
-    site: { origins: input.origins, pages: Object.values(site?.routes ?? {}), components: site?.components },
+    site: { prefix: sitePathPrefix(nativeSiteSettings(input.source(NATIVE_CONFIG_PATH)).url), origins: input.origins, pages: Object.values(site?.routes ?? {}), components: site?.components },
     keepOldAddress: input.keepOldAddress ?? kept });
   if ("taken" in plan) return { refuse: `${plan.taken} is taken. Try ${plan.suggestion}.` };
   if (serializeMediaRecords(records) !== serializeMediaRecords(plan.records)) plan.edits.set(MEDIA_RECORDS_PATH, serializeMediaRecords(plan.records));

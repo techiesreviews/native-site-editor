@@ -760,7 +760,7 @@ async function nativeComponentLoaderPlan(path: string, nextPageText: string, r: 
   try {
     const { componentLoaderPlan } = await import("./page-builder/component-loader");
     // The first pass avoids loading the vendored bytes when the site already has its loader.
-    const input = { pages: Object.values(site.routes), sources: { ...sources, [path]: nextPageText }, exists: (file: string) => r.exists(file), loader: "" };
+    const input = { prefix: sitePathPrefix(nativeSiteSettings(r.source(NATIVE_CONFIG_PATH)).url), pages: Object.values(site.routes), sources: { ...sources, [path]: nextPageText }, exists: (file: string) => r.exists(file), loader: "" };
     const needed = componentLoaderPlan(input);
     if (!needed?.creates.length) return needed;
     const { starterLoader } = await import("./page-builder/starter-loader");

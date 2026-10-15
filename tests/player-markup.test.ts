@@ -2,10 +2,11 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { NATIVE_STARTER_VERSION } from "../shared/native-starter-version";
-import { COMPONENT_LOADER_SCRIPT } from "../src/page-builder/component-loader";
+import { componentLoaderScript } from "../src/page-builder/component-loader";
 import { addMediaPlayerLinks, audioMarkup, downloadCardMarkup, mediaPlayerPlan, pageMediaLanguage, pageMediaPlayer, videoMarkup, type MediaPlayerInput } from "../src/page-builder/player-markup";
 import { starterPlayerFiles } from "../src/page-builder/starter-loader";
 
+const COMPONENT_LOADER_SCRIPT = componentLoaderScript("");
 const style = '<link rel="stylesheet" href="/styles/media-player.css">';
 const script = '<script type="module" src="/scripts/media-player.js"></script>';
 const both = { stylesheet: true, script: true };

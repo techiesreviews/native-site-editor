@@ -1,3 +1,4 @@
+import { sitePathPrefix } from "../../shared/site-path-prefix";
 import { isMediaFile, isMediaTextFile, mediaOwnOrigins } from "../page-builder/media-mentions";
 import { mediaUsageRecords, type MediaUsageRecords } from "../page-builder/media-usage";
 
@@ -41,7 +42,7 @@ export function createMediaUsageController(ports: MediaUsageCheckPorts) {
       if (source !== undefined) sources[file] = source;
     }
     const emit = () => publish(mediaUsageRecords({ media: ports.media?.() ?? files.filter(isMediaFile), files: text, sources,
-      pages: ports.pages(), components: ports.components(), site: { origins: mediaOwnOrigins(ports.url(), sources.CNAME) } }));
+      pages: ports.pages(), components: ports.components(), site: { prefix: sitePathPrefix(ports.url()), origins: mediaOwnOrigins(ports.url(), sources.CNAME) } }));
     emit();
     const pending = text.filter(file => !Object.hasOwn(sources, file));
     for (let index = 0; index < pending.length; index += 12) {

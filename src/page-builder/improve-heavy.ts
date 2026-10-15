@@ -56,7 +56,7 @@ export async function prepareImproveHeavy(ctx: MediaWorkspaceContext, request: I
   const paths = [...ctx.paths], versions = new Map(paths.map(path => [path, ctx.assetVersion(path)]));
   const batch: MediaWorkspaceBatch = { label: "", expectedPaths: paths, expectedSources: new Map(), expectedAssets: versions,
     edits: new Map(), moves: [], deletes: [], restores: [], uploads: [], live: holds };
-  await readMediaPrefix(ctx, batch.expectedSources); guard();
+  const prefix = await readMediaPrefix(ctx, batch.expectedSources); guard();
   const sources: Record<string, string | undefined> = {};
   for (const file of new Set([...paths.filter(isMediaTextFile), MEDIA_RECORDS_PATH, "_redirects"])) {
     const text = await ctx.read(file); guard();
@@ -66,7 +66,7 @@ export async function prepareImproveHeavy(ctx: MediaWorkspaceContext, request: I
   }
   const records = parseMediaRecords(sources[MEDIA_RECORDS_PATH]);
   const files = Object.fromEntries(paths.map(path => [path, request.files[path] ?? {}]));
-  const site = { origins: ctx.origins ?? [], pages: ctx.pages, components: ctx.components };
+  const site = { prefix, origins: ctx.origins ?? [], pages: ctx.pages, components: ctx.components };
   const plan = improveImagesPlan({ sources, pages: ctx.pages, components: ctx.components, files, records, site });
   const row = plan.rows.find(row => row.file === request.row);
   const result: ImproveResult = { label: row?.label ?? request.row, changed: false, notes: [] };
@@ -256,7 +256,7 @@ export async function prepareImproveHeavy(ctx: MediaWorkspaceContext, request: I
       if (content !== undefined) sharingEdits.set(index, mediaAttributes(source.slice(tag.start, tag.end), { content }));
     }
     const component = Object.values(ctx.components).includes(file);
-    const input = { from: "", to: "", paths, sources: component ? sources : { [file]: source }, records, site: component ? site : { origins: site.origins } };
+    const input = { from: "", to: "", paths, sources: component ? sources : { [file]: source }, records, site: component ? site : { prefix, origins: site.origins } };
     const rewritten = new Set<string>();
     const options = { only: file, skip: { [file]: skip }, widths: descriptorWidths, reference: (referenceFile: string, _start: number, _end: number, path: string) => {
       if (referenceFile === file) rewritten.add(path);

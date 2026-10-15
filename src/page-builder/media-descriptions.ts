@@ -68,11 +68,11 @@ export function confirmMediaDescription(records: MediaRecords, file: string, pag
 }
 export interface DescriptionValue { text: string; decorative: boolean }
 /** Rewrite only matching img alt attributes; all other source spelling survives. */
-export function descriptionPlaceEdits(records: MediaRecords, file: string, page: string, source: string, before: DescriptionValue, after: DescriptionValue): string {
+export function descriptionPlaceEdits(records: MediaRecords, file: string, page: string, source: string, before: DescriptionValue, after: DescriptionValue, prefix = ""): string {
   if (!/\.html$/i.test(page) || before.text === after.text && before.decorative === after.decorative) return source;
   const target = after.decorative ? "" : after.text;
   const placeDecorative = Boolean(records.files[file]?.places?.[page]?.decorative);
-  const edits = placeImages(source, file, page).flatMap(({ tag, attribute, alt }) => {
+  const edits = placeImages(source, file, page, prefix).flatMap(({ tag, attribute, alt }) => {
     // Places using the description follow it; own words and Decorative places stay.
     // Not described yet (absent, or empty without a Decorative mark) takes new text;
     // an emptied, undecorated description never writes alt="" over an absent alt.
@@ -95,11 +95,11 @@ export function descriptionPlaceEdits(records: MediaRecords, file: string, page:
 export interface MediaToCheckRow { file: string; page?: string; subtitles?: string; text: string }
 
 /** The img tags on `page` that show `file`, with their decoded alt. */
-function placeImages(source: string, file: string, page: string) {
+function placeImages(source: string, file: string, page: string, prefix: string) {
   return startTags(source).flatMap(tag => {
     if (tag.name !== "img" || source[tag.end - 1] !== ">") return [];
     const src = startTagAttribute(source, tag, "src");
-    if (!src || mediaResolvePath(decodeHtmlEntities(src.value, true), page) !== file) return [];
+    if (!src || mediaResolvePath(decodeHtmlEntities(src.value, true), page, undefined, prefix) !== file) return [];
     const attribute = startTagAttribute(source, tag, "alt");
     return [{ tag, attribute, alt: attribute ? decodeHtmlEntities(attribute.value, true) : undefined }];
   });
@@ -108,7 +108,7 @@ function placeImages(source: string, file: string, page: string) {
 /** To check, in file order: each listed file whose description an agent wrote, then each
  * place where the agent's own words are still on the page (`sources` holds the pages), then
  * subtitles an agent wrote for it (`sources` holds the subtitles file too). */
-export function mediaToCheck(records: MediaRecords, files: string[], sources: Record<string, string>): MediaToCheckRow[] {
+export function mediaToCheck(records: MediaRecords, files: string[], sources: Record<string, string>, prefix = ""): MediaToCheckRow[] {
   const rows: MediaToCheckRow[] = [];
   for (const file of [...files].sort()) {
     const record = records.files[file];
@@ -116,7 +116,7 @@ export function mediaToCheck(records: MediaRecords, files: string[], sources: Re
     if (record.description?.byAgent && record.description.text) rows.push({ file, text: record.description.text });
     for (const [page, place] of Object.entries(record.places ?? {}).sort(([a], [b]) => a.localeCompare(b))) {
       const text = place.agentText, source = sources[page];
-      if (text && source !== undefined && /\.html$/i.test(page) && placeImages(source, file, page).some(image => image.alt === text))
+      if (text && source !== undefined && /\.html$/i.test(page) && placeImages(source, file, page, prefix).some(image => image.alt === text))
         rows.push({ file, page, text });
     }
     const subtitles = record.subtitlesByAgent && record.subtitles ? sources[record.subtitles] : undefined;
@@ -137,8 +137,8 @@ export function subtitlesWords(vtt: string): string {
 }
 
 /** Lex's words for a place replace the agent's wherever they still show `file` on the page. */
-export function placeWordsEdits(source: string, file: string, page: string, from: string, to: string): string {
-  const edits = placeImages(source, file, page).filter(image => image.alt === from && image.attribute)
+export function placeWordsEdits(source: string, file: string, page: string, from: string, to: string, prefix = ""): string {
+  const edits = placeImages(source, file, page, prefix).filter(image => image.alt === from && image.attribute)
     .map(image => ({ start: image.attribute!.start, end: image.attribute!.end, text: ` alt="${mediaEscape(to)}"` }));
   for (const edit of edits.reverse()) source = source.slice(0, edit.start) + edit.text + source.slice(edit.end);
   return source;
@@ -146,15 +146,15 @@ export function placeWordsEdits(source: string, file: string, page: string, from
 
 /** One by-agent mark per file on a page: whether other words for the image at `target` (its start
  * tag's offset) would leave the agent's unchecked `marked` words on another image of `file` unmarked. */
-export function strandsAgentWords(source: string, file: string, page: string, target: number, marked: string | undefined, words: string) {
-  return Boolean(marked && marked !== words && placeImages(source, file, page).some(image => image.tag.start !== target && image.alt === marked));
+export function strandsAgentWords(source: string, file: string, page: string, target: number, marked: string | undefined, words: string, prefix = "") {
+  return Boolean(marked && marked !== words && placeImages(source, file, page, prefix).some(image => image.tag.start !== target && image.alt === marked));
 }
 
 export { mediaNameAlt };
 
 /** Whether `page`'s source still shows `file` in one of its images. */
-export function pageUsesFile(source: string, page: string, file: string) {
-  return placeImages(source, file, page).length > 0;
+export function pageUsesFile(source: string, page: string, file: string, prefix = "") {
+  return placeImages(source, file, page, prefix).length > 0;
 }
 
 /**
@@ -166,14 +166,14 @@ export function pageUsesFile(source: string, page: string, file: string) {
  * `after` is the page's source once swapped: the old file's mark goes only if it left the page.
  */
 export function swapPlaceImage(
-  records: MediaRecords, page: string, from: string | undefined, to: string, alt: string | undefined, after: string,
+  records: MediaRecords, page: string, from: string | undefined, to: string, alt: string | undefined, after: string, prefix = "",
 ): { alt: string | undefined; records: MediaRecords } {
   const old = from ? records.files[from] : undefined, target = fileDescriptionState(records.files[to]);
   if (from && old?.places?.[page]?.decorative) {
     let next = records;
     if (from !== to) {
       next = setMediaPlaceDecorative(records, to, page, true);
-      if (!pageUsesFile(after, page, from)) next = setMediaPlaceDecorative(next, from, page, false);
+      if (!pageUsesFile(after, page, from, prefix)) next = setMediaPlaceDecorative(next, from, page, false);
     }
     return { alt: alt === undefined ? "" : undefined, records: next };
   }
@@ -187,7 +187,7 @@ export function swapPlaceImage(
   // this page (the old file keeps it only while it still shows on the page), so To check keeps them.
   if (from && from !== to && alt && old?.places?.[page]?.agentText === alt) {
     let next = setMediaPlaceAgentText(records, to, page, alt);
-    if (!pageUsesFile(after, page, from)) next = setMediaPlaceAgentText(next, from, page, undefined);
+    if (!pageUsesFile(after, page, from, prefix)) next = setMediaPlaceAgentText(next, from, page, undefined);
     return { alt: undefined, records: next };
   }
   return { alt: undefined, records };

@@ -1,3 +1,6 @@
+import { componentImageChoices } from "./component-model";
+import { sitePathPrefix } from "../../shared/site-path-prefix";
+import { NATIVE_CONFIG_PATH, nativeSiteSettings } from "../../shared/native-project";
 import type { MediaPathPlacement } from "./media-picker";
 import { componentRenameStep, madeFiles, madeMessage, makeComponentStep, newComponentStep, slotChipPlan, templateRemovalPlan, type LoaderPlanner, type MadePlanned, type NewPlanned, type RenamePlanned, type SlotChipPlanned } from "./component-plans";
 import { STALE_MESSAGE, type GuardedEdits, type Outcome, type Stamp } from "../guarded-edit";
@@ -1170,7 +1173,7 @@ export function createComponentTools(deps: ComponentDeps) {
     const fields = node("div", "component-slot__fields");
     if (value.kind === "image") {
       fields.append(
-        textField(at, slot, "src", "Address", value.src ?? "", "Image in this repository or web address", deps.images().map((image) => `/${image}`)),
+        textField(at, slot, "src", "Address", value.src ?? "", "Image in this repository or web address", componentImageChoices(deps.images(), sitePathPrefix(nativeSiteSettings(deps.sources()[NATIVE_CONFIG_PATH]).url))),
         chooseButton(slot),
         textField(at, slot, "alt", "Alt text", value.alt ?? "", "What the image shows; empty for decorative"),
       );
@@ -1888,7 +1891,7 @@ export function createComponentTools(deps: ComponentDeps) {
         if (!at || !attributeSourceSafe(at) || at.instance.attributes.filter(item => item.name === name).length !== 1) return false;
         return change(path, [attributeEdit(at.source, at.range.tag, name, undefined)], `${name} removed`, at.node);
       },
-      images: deps.images().map(image => `/${image}`),
+      images: componentImageChoices(deps.images(), sitePathPrefix(nativeSiteSettings(deps.sources()[NATIVE_CONFIG_PATH]).url)),
       links: deps.links(),
       openImageChoice(name) {
         const at = read(), slot = at?.slots.find(item => item.name === name);

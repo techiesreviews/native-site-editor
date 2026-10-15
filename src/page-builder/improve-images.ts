@@ -1,3 +1,4 @@
+import { rootRoute } from "../../shared/site-path-prefix";
 import { parseOnlineVideoAddress } from "./online-video";
 import type { MediaRecords } from "../../shared/media-records";
 import { startTags } from "../../shared/html-source";
@@ -32,6 +33,8 @@ interface Input {
   sources: Readonly<Record<string, string | undefined>>; pages: readonly string[];
   components: Readonly<Record<string, string>>; files: Readonly<Record<string, Facts>>;
   records: MediaRecords; site?: MediaSite;
+  /** The site's path prefix; `site` alone decides which full addresses are its own. */
+  prefix?: string;
 }
 const counts = (): Counts => ({ "bring-in": 0, lighten: 0, copies: 0, size: 0, sizes: 0, loading: 0, loop: 0, "first-frame": 0, player: 0 });
 const inert = new Set(["pre", "code", "samp", "kbd", "xmp", "textarea", "template", "noscript"]);
@@ -82,6 +85,7 @@ function summary(row: ImproveImagesRow): string {
 /** Read-only source plan. Import only from an on-demand Improve images entry. */
 export function improveImagesPlan(input: Input): ImproveImagesPlan {
   const { sources, components, files, records, site } = input;
+  const prefix = input.prefix ?? site?.prefix ?? "";
   const paths = Object.keys(files), families = mediaFamilies(paths);
   const maxWidth = mediaImageRecipe(mediaAddingSettings(records.adding).image).maxWidth;
   const parsed = new Map(Object.entries(sources).filter(([file]) => /\.html$/i.test(file)).map(([file, source]) => [file, elements(parseSource(source ?? ""))]));
@@ -96,18 +100,18 @@ export function improveImagesPlan(input: Input): ImproveImagesPlan {
     };
     visit(page);
   }
-  const references = new Map(Object.entries(sources).map(([file, source]) => [file, scanMediaReferences(file, source ?? "", site)]));
+  const references = new Map(Object.entries(sources).map(([file, source]) => [file, scanMediaReferences(file, source ?? "", site, prefix)]));
   const resolved = new Map<string, Set<string>>();
   walkMediaReferencePages({ ...sources }, references, [...input.pages], { ...components }, (page, ref) => {
     if (reach.has(ref.file) && !reach.get(ref.file)!.includes(page)) return;
     const key = `${ref.file}:${ref.start}`;
     if (!resolved.has(key)) resolved.set(key, new Set());
     resolved.get(key)!.add(ref.path);
-  });
+  }, prefix);
   const scriptMemo = new Map<string, string>();
   const pageScripts = (page: string) => scriptMemo.get(page) ?? scriptMemo.set(page, (parsed.get(page) ?? []).filter(n => n.name === "script" && !ancestry(n).some(p => inert.has(p.name))).map(n => {
     const src = attribute(sources[page] ?? "", n, "src");
-    return src ? sources[mediaResolvePath(src, page, site) ?? ""] ?? "" : (sources[page] ?? "").slice(n.tag.end, n.close?.start ?? n.end);
+    return src ? sources[mediaResolvePath(src, page, site, prefix) ?? ""] ?? "" : (sources[page] ?? "").slice(n.tag.end, n.close?.start ?? n.end);
   }).join("\n")).get(page)!;
   const protectedRanges: Record<string, { start: number; end: number }[]> = {};
   const rows: ImproveImagesRow[] = [], missingFacts = new Set<string>();
@@ -118,7 +122,7 @@ export function improveImagesPlan(input: Input): ImproveImagesPlan {
     const pages = component ? reach.get(file) ?? [] : [file];
     const title = nodes.find(n => n.name === "title");
     const text = title ? decodeHtmlEntities(source.slice(title.tag.end, title.close?.start ?? title.end)).replace(/\s+/g, " ").trim().split(/ · | \| | - /)[0] : "";
-    const label = component ? component.replace(/-/g, " ").replace(/^./, char => char.toUpperCase()) : text || (file === "index.html" ? "Home" : "/" + file.replace(/index\.html$/, ""));
+    const label = component ? component.replace(/-/g, " ").replace(/^./, char => char.toUpperCase()) : text || (file === "index.html" ? "Home" : rootRoute(file.replace(/index\.html$/, "")));
     const row: ImproveImagesRow = { kind: component ? "component" : "page", file, label, ...(component ? { reach: pages.length } : {}), pages, pictures: [], leftAlone: [], count: 0, counts: counts(), summary: "" };
     const protect = (node: SourceElement) => (protectedRanges[file] ??= []).push({ start: node.start, end: node.end });
     for (const node of nodes) if (inert.has(node.name) || component && node.name === "slot") protect(node);
@@ -156,7 +160,7 @@ export function improveImagesPlan(input: Input): ImproveImagesPlan {
       if (reason) { protect(node.parent?.name === "picture" ? node.parent : node); for (const token of candidates) leave(token.value, reason); continue; }
       const video = node.name === "iframe" ? onlineVideo(address) : undefined;
       if (node.name === "iframe" && !video) continue;
-      const local = mediaResolvePath(address, file, site);
+      const local = mediaResolvePath(address, file, site, prefix);
       const localPaths = local ? [...resolved.get(`${file}:${main.start}`) ?? [local]] : [undefined];
       for (const path of localPaths) {
         if (path && !Object.hasOwn(files, path)) { leave(address, "missing"); continue; }
@@ -170,7 +174,7 @@ export function improveImagesPlan(input: Input): ImproveImagesPlan {
         // An existing set is adopted: the family's copies, the <img>'s own srcset and its <picture> sources.
         const setSources = node.parent?.name === "picture" ? node.parent.children.filter((n): n is SourceElement => n.type === "element" && n.name === "source") : [];
         const written = tokens.filter(t => t.attribute === "srcset" && (t.start >= node.tag.start && t.end <= node.tag.end || setSources.some(n => t.start >= n.tag.start && t.end <= n.tag.end)))
-          .map(t => mediaResolvePath(t.value, file, site) ?? t.value).filter(other => other !== path);
+          .map(t => mediaResolvePath(t.value, file, site, prefix) ?? t.value).filter(other => other !== path);
         const adopted = path ? [...new Set([...families.find(f => f.main === path || f.copies.some(c => c.path === path))?.copies.map(c => c.path) ?? [], ...written])] : undefined;
         if (video) changes.push("player");
         else if (node.name === "meta") changes.push("first-frame");
