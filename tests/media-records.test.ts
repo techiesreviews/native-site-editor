@@ -261,3 +261,10 @@ test("setPictureLeftAsIs adds/removes exact scope immutably, no-ops reuse record
   assert.deepEqual(renameMediaRecord(scoped, "a.jpg", "b.jpg").leftAsIs, [{ picture: "b.jpg" }, { picture: "b.jpg", row: "index.html" }]);
   assert.equal(records.leftAsIs, undefined);
 });
+
+test("lighterFrom validates, round trips and follows the original's rename", () => {
+  const records = parseMediaRecords('{"version":2,"collections":[],"files":{"a.webp":{"lighterFrom":"a.jpg"}}}');
+  assert.equal(parseMediaRecords(serializeMediaRecords(records)).files["a.webp"].lighterFrom, "a.jpg");
+  assert.equal(renameMediaRecord(records, "a.jpg", "renamed.jpg").files["a.webp"].lighterFrom, "renamed.jpg");
+  assert.throws(() => parseMediaRecords('{"version":2,"collections":[],"files":{"a.webp":{"lighterFrom":123}}}'), /lighterFrom must be a string/);
+});

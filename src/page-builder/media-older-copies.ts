@@ -32,7 +32,7 @@ export function olderCopyFormat(main: string, widths: number[], extension: strin
 }
 
 /** Read and encode existing pixels without ever returning or uploading the main. */
-export async function makeOlderCopies(ctx: MediaWorkspaceContext, image: MediaImage, quality: MediaImageQuality = "balanced") {
+export async function makeOlderCopies(ctx: MediaWorkspaceContext, image: MediaImage, quality: MediaImageQuality = "balanced", signal?: AbortSignal) {
   const widths = olderCopyWidths({ path: image.path, width: image.width, paths: ctx.paths });
   const options = mediaImageRecipe(quality), extension = olderCopyFormat(image.path, widths, options.format, ctx.paths);
   if (!widths.length) return undefined;
@@ -41,7 +41,7 @@ export async function makeOlderCopies(ctx: MediaWorkspaceContext, image: MediaIm
   const version = ctx.assetVersion(image.path), blob = await ctx.blob(image.path);
   ctx.assertLive();
   const format = extension === "jpg" || extension === "jpeg" ? "jpeg" : extension as "png" | "webp" | "avif";
-  const result = await optimiseMedia(new File([blob], image.path, { type: blob.type }), options, undefined, undefined, false, { widths, format });
+  const result = await optimiseMedia(new File([blob], image.path, { type: blob.type }), options, signal, undefined, false, { widths, format });
   ctx.assertLive();
   const uploads: { path: string; blob: Blob }[] = [], variants: { path: string; width: number }[] = [];
   // Transparency and the AVIF fallback may choose WebP. Validate the actual output as well.

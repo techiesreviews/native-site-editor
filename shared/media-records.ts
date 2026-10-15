@@ -16,7 +16,7 @@ export interface MediaFileRecord {
   description?: { text: string; byAgent?: true; [key: string]: unknown };
   decorative?: true; alwaysKeep?: true; sharing?: true;
   trimmedFrom?: { source: string; trim: MediaTrim; [key: string]: unknown };
-  still?: string; subtitles?: string; fromGif?: true;
+  still?: string; subtitles?: string; lighterFrom?: string; fromGif?: true;
   /** A video's or audio file's length in seconds, recorded when it was added. */
   duration?: number;
   [key: string]: unknown;
@@ -124,7 +124,7 @@ function fileRecord(value: unknown, field: string): MediaFileRecord {
     if (Object.keys(places).length) out.places = places; else delete out.places;
   }
   flags(out, ["decorative", "alwaysKeep", "sharing", "fromGif"], field);
-  optionalStrings(out, ["still", "subtitles"], field);
+  optionalStrings(out, ["still", "subtitles", "lighterFrom"], field);
   if (out.trimmedFrom !== undefined) {
     const from = { ...object(out.trimmedFrom, `${field}.trimmedFrom`) };
     string(from.source, `${field}.trimmedFrom.source`);
@@ -257,7 +257,7 @@ export function renameMediaRecord(records: MediaRecords, from: string, to: strin
   for (const [path, record] of Object.entries(records.files)) {
     let next = record;
     if (record.trimmedFrom?.source === from) { next = { ...next, trimmedFrom: { ...record.trimmedFrom, source: to } }; changed = true; }
-    for (const key of ["still", "subtitles"] as const) if (record[key] === from) { next = { ...next, [key]: to }; changed = true; }
+    for (const key of ["still", "subtitles", "lighterFrom"] as const) if (record[key] === from) { next = { ...next, [key]: to }; changed = true; }
     if (path === to) continue;
     files[path === from ? to : path] = next;
     if (path === from) changed = true;

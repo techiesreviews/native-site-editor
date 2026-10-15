@@ -25,7 +25,7 @@ export interface ImproveImagesRow {
   pictures: ImprovePicture[]; leftAlone: { address: string; reason: LeftReason }[];
   count: number; counts: Counts; summary: string;
 }
-export interface ImproveImagesPlan { rows: ImproveImagesRow[]; count: number; totals: Counts; missingFacts: string[] }
+export interface ImproveImagesPlan { rows: ImproveImagesRow[]; count: number; totals: Counts; missingFacts: string[]; protectedRanges: Record<string, { start: number; end: number }[]> }
 interface Facts { size?: number; width?: number; height?: number; animated?: boolean }
 interface Input {
   sources: Readonly<Record<string, string | undefined>>; pages: readonly string[];
@@ -119,6 +119,7 @@ export function improveImagesPlan(input: Input): ImproveImagesPlan {
     const src = attribute(sources[page] ?? "", n, "src");
     return src ? sources[mediaResolvePath(src, page, site) ?? ""] ?? "" : (sources[page] ?? "").slice(n.tag.end, n.close?.start ?? n.end);
   }).join("\n")).get(page)!;
+  const protectedRanges: Record<string, { start: number; end: number }[]> = {};
   const rows: ImproveImagesRow[] = [], missingFacts = new Set<string>();
   const templates = new Map<string, string>();
   for (const [tag, file] of Object.entries(components)) if (!templates.has(file)) templates.set(file, tag);
@@ -129,11 +130,14 @@ export function improveImagesPlan(input: Input): ImproveImagesPlan {
     const text = title ? decodeHtmlEntities(source.slice(title.tag.end, title.close?.start ?? title.end)).replace(/\s+/g, " ").trim().split(/ · | \| | - /)[0] : "";
     const label = component ? component.replace(/-/g, " ").replace(/^./, char => char.toUpperCase()) : text || (file === "index.html" ? "Home" : "/" + file.replace(/index\.html$/, ""));
     const row: ImproveImagesRow = { kind: component ? "component" : "page", file, label, ...(component ? { reach: pages.length } : {}), pages, pictures: [], leftAlone: [], count: 0, counts: counts(), summary: "" };
+    const protect = (node: SourceElement) => (protectedRanges[file] ??= []).push({ start: node.start, end: node.end });
+    for (const node of nodes) if (inert.has(node.name) || component && node.name === "slot") protect(node);
     const scripts = [pageScripts(file), ...pages.map(pageScripts)].join("\n");
     const tokens = scanMediaUrlTokens(file, source);
     const leave = (address: string, reason: LeftReason) => row.leftAlone.push({ address, reason });
     for (const node of nodes) {
       if (node.name === "script" && attribute(source, node, "type") === "application/ld+json" && !ancestry(node).some(n => inert.has(n.name))) {
+        protect(node);
         const collect = (value: unknown, image = false) => {
           if (typeof value === "string" && image) leave(value, "structured-data");
           else if (Array.isArray(value)) value.forEach(v => collect(v, image));
@@ -159,7 +163,7 @@ export function improveImagesPlan(input: Input): ImproveImagesPlan {
       const address = main.value;
       const parents = ancestry(node);
       const reason = parents.some(n => inert.has(n.name)) ? "sample-code" : component && parents.some(n => n.name === "slot") ? "template-fallback" : scriptDriven(source, node, scripts) ? "script" : undefined;
-      if (reason) { for (const token of candidates) leave(token.value, reason); continue; }
+      if (reason) { protect(node.parent?.name === "picture" ? node.parent : node); for (const token of candidates) leave(token.value, reason); continue; }
       const video = node.name === "iframe" ? onlineVideo(address) : undefined;
       if (node.name === "iframe" && !video) continue;
       const local = mediaResolvePath(address, file, site);
@@ -196,6 +200,7 @@ export function improveImagesPlan(input: Input): ImproveImagesPlan {
           }
         }
         const key = path ?? url!;
+        if (records.leftAsIs?.some(item => item.picture === key && (item.row === undefined || item.row === file))) protect(node.parent?.name === "picture" ? node.parent : node);
         row.pictures.push({ key, address, ...(path ? { path } : { url, host: new URL(url!).host }), kind: video?.kind ?? (node.name === "meta" ? "sharing" : svg ? "svg" : path ? gif ? "gif" : "image" : "outside"), tag: { start: node.tag.start, end: node.tag.end }, link: parents.find(n => n.name === "a") ? attribute(source, parents.find(n => n.name === "a")!, "href") : undefined, ...(adopted?.length ? { adopted } : {}), ...(video ? { videoId: video.videoId } : {}), changes, ticked: !records.leftAsIs?.some(item => item.picture === key && (item.row === undefined || item.row === file)) });
       }
     }
@@ -214,5 +219,5 @@ export function improveImagesPlan(input: Input): ImproveImagesPlan {
   for (const row of rows) {
     for (const change of Object.keys(totals) as ImproveChange[]) totals[change] += row.counts[change];
   }
-  return { rows, count: rows.filter(r => r.count > 0).length, totals, missingFacts: [...missingFacts].sort() };
+  return { rows, count: rows.filter(r => r.count > 0).length, totals, missingFacts: [...missingFacts].sort(), protectedRanges };
 }

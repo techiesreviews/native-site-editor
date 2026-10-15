@@ -190,3 +190,11 @@ test("a picture whose own class a script selects is swapped in by script; a cont
   const kept = single(`${image}<script>document.querySelector(".media").classList.add("ready"); document.querySelector(".hero-title");</script>`, files);
   assert.deepEqual(kept.rows[0].pictures[0].changes, ["lighten", "sizes"]);
 });
+
+test("protected ranges survive a file with no work row, including its picture sources", () => {
+  const source = '<picture><source srcset="/a.jpg 1200w"><img id="swap" src="/a.jpg"></picture><script>document.getElementById("swap").src = next;</script><code><img src="/a.jpg"></code>';
+  const plan = single(source, { "a.jpg": { size: 300000, width: 1200, height: 800 } });
+  assert.deepEqual(plan.rows, []);
+  assert.ok(plan.protectedRanges["index.html"].some(range => source.slice(range.start, range.end) === '<picture><source srcset="/a.jpg 1200w"><img id="swap" src="/a.jpg"></picture>'));
+  assert.ok(plan.protectedRanges["index.html"].some(range => source.slice(range.start, range.end) === '<code><img src="/a.jpg"></code>'));
+});

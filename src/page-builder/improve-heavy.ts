@@ -1,0 +1,287 @@
+import { MEDIA_RECORDS_PATH, parseMediaRecords, serializeMediaRecords, type MediaRecords } from "../../shared/media-records";
+import { improveImagesPlan } from "./improve-images";
+import { isMediaTextFile } from "./media-mentions";
+import { rewriteMediaMentions, rewriteMediaRedirects } from "./media-rename";
+import { mediaFamilyOf } from "./media-families";
+import { suggestMediaName } from "./media-names";
+import { mediaCopyName } from "./media-storage";
+import { mediaResolvePath } from "./media-references";
+import { mediaAddingSettings } from "./media-settings";
+import { mediaImageRecipe, optimiseMedia } from "./media-optimise";
+import { makeOlderCopies } from "./media-older-copies";
+import { mediaAttributes, mediaImageMarkup, mediaSrcset, type MediaImage, type MediaMeasured } from "./media-markup";
+import { mediaPageEdits } from "./media-page-markup";
+import { readSource, parseSource, type SourceTree } from "./source-tree";
+import { readPage, locateNativeElementRange } from "../native-source-location";
+import { startTags, startTagAttribute } from "../../shared/html-source";
+import { replacementImageSize } from "./replace-everywhere";
+import { uploadImageType, uploadProblem } from "../uploads";
+import type { MediaWorkspaceBatch, MediaWorkspaceContext } from "./media-workspace";
+
+export interface ImproveRequest {
+  row: string;
+  files: Parameters<typeof improveImagesPlan>[0]["files"];
+  measure?(file: string, node: number[], image: MediaImage): Promise<MediaMeasured | undefined>;
+  live?: () => boolean;
+  signal?: AbortSignal;
+  progress?: (state: string) => void;
+}
+export interface ImproveResult { label: string; changed: boolean; notes: string[] }
+/** Seams for tests: production uses the adding recipe's worker and the browser's page reader (node paths match the preview). */
+export interface ImprovePorts { encode?: typeof optimiseMedia; copies?: typeof makeOlderCopies; tree?: (source: string) => SourceTree<unknown> }
+function locations<N>(tree: SourceTree<N>) {
+  return {
+    elements: () => tree.elements().map(element => ({ range: tree.range(element), node: tree.path(element) })),
+    at: (node: number[]) => { const element = tree.at(node); return element ? tree.range(element) : undefined; },
+  };
+}
+const apply = (source: string, edits: { start: number; end: number; text: string }[]) => edits.sort((a, b) => b.start - a.start)
+  .reduce((text, edit) => text.slice(0, edit.start) + edit.text + text.slice(edit.end), source);
+const ownChanges = new Set(["lighten", "copies", "size", "sizes", "loading"]);
+
+/** Prepare one row completely before handing its single draft batch to the host. */
+export async function prepareImproveHeavy(ctx: MediaWorkspaceContext, request: ImproveRequest, ports: ImprovePorts = {}): Promise<{ batch: MediaWorkspaceBatch; result: ImproveResult }> {
+  const holds = () => !request.signal?.aborted && (request.live?.() ?? true);
+  const guard = () => {
+    ctx.assertLive();
+    if (!holds()) throw new DOMException("Improve images cancelled.", "AbortError");
+  };
+  guard();
+  const paths = [...ctx.paths], versions = new Map(paths.map(path => [path, ctx.assetVersion(path)]));
+  const batch: MediaWorkspaceBatch = { label: "", expectedPaths: paths, expectedSources: new Map(), expectedAssets: versions,
+    edits: new Map(), moves: [], deletes: [], restores: [], uploads: [], live: holds };
+  const sources: Record<string, string | undefined> = {};
+  for (const file of new Set([...paths.filter(isMediaTextFile), MEDIA_RECORDS_PATH, "_redirects"])) {
+    const text = await ctx.read(file); guard();
+    if (paths.includes(file) && text === undefined) throw new Error(`Could not read ${file}; image usage is incomplete. Refresh and try again.`);
+    sources[file] = text; if (!ctx.items.some(item => item.path === file)) batch.expectedSources.set(file, text);
+  }
+  const records = parseMediaRecords(sources[MEDIA_RECORDS_PATH]);
+  const files = Object.fromEntries(paths.map(path => [path, request.files[path] ?? {}]));
+  const site = { origins: ctx.origins ?? [], pages: ctx.pages, components: ctx.components };
+  const plan = improveImagesPlan({ sources, pages: ctx.pages, components: ctx.components, files, records, site });
+  const row = plan.rows.find(row => row.file === request.row);
+  const result: ImproveResult = { label: row?.label ?? request.row, changed: false, notes: [] };
+  if (!row) return { batch, result };
+  batch.label = `Improve images: ${row.label}`;
+  if (new Set(row.pictures.map(p => p.tag.start)).size < row.pictures.length)
+    throw new Error("This component picture resolves to different files on its pages. Use a site-root address before improving it.");
+  const quality = mediaAddingSettings(records.adding).image;
+  const next = structuredClone(records);
+  const images = new Map<string, MediaImage>();
+  const created = new Map<string, string>(), reused = new Map<string, string>();
+  const descriptorWidths = new Map<string, number>();
+  const targets: { node: number[]; key: string; svg: boolean; adopted: boolean }[] = [];
+  const treeFor = (source: string) => locations(ports.tree ? ports.tree(source) : readPage(source));
+  const tree = treeFor(sources[row.file]!);
+  const usable = row.pictures.filter(p => p.ticked && p.path && p.changes.length && p.changes.every(c => ownChanges.has(c)));
+  for (const picture of usable) {
+    guard();
+    const old = picture.path!, family = mediaFamilyOf(old, paths);
+    const standard = (family?.copies ?? []).filter(copy => /-(?:480|960|1600|\d+w)\.[^./]+$/i.test(copy.path));
+    const adopted = plan.rows.flatMap(row => row.pictures).filter(p => p.path === old).some(p => (p.adopted ?? []).some(path => !standard.some(copy => copy.path === path)));
+    let image = images.get(old);
+    if (!image) {
+      image = { path: old, ...files[old], alt: "", variants: family?.copies };
+      if (picture.changes.includes("lighten")) {
+        request.progress?.(quality === "smallest" ? "Preparing (slower)…" : "Preparing…"); guard();
+        const existing = Object.entries(next.files).find(([path, record]) => record.lighterFrom === old && paths.includes(path) && path !== old);
+        let main: string | undefined, width: number | undefined, height: number | undefined;
+        if (existing) {
+          main = existing[0];
+          const blob = await ctx.blob(main); guard();
+          const oldBlob = await ctx.blob(old); guard();
+          if (blob.size >= oldBlob.size) main = undefined;
+          else {
+            const bytes = await blob.arrayBuffer(); guard();
+            const size = replacementImageSize(new Uint8Array(bytes));
+            width = size?.width ?? files[main]?.width; height = size?.height ?? files[main]?.height;
+            if (!width || !height) throw new Error(`Could not read ${main}'s dimensions. Nothing was improved.`);
+          }
+        }
+        if (!main) {
+          const blob = await ctx.blob(old); guard();
+          const encoded = await (ports.encode ?? optimiseMedia)(new File([blob], old.split("/").at(-1)!, { type: blob.type || uploadImageType(old) }),
+            { ...mediaImageRecipe(quality), responsive: !adopted }, request.signal); guard();
+          if (encoded.note) result.notes.push(encoded.note);
+          const primary = encoded.outputs.find(output => output.variantWidth === undefined);
+          if (!primary || !primary.width || !primary.height) throw new Error(`${old} could not be prepared. Nothing was improved.`);
+          if (primary.blob.size >= blob.size) result.notes.push(`${old} was left at its address because the new file was not lighter.`);
+          else {
+            const outputs = adopted ? [primary] : encoded.outputs;
+            const candidate = old.replace(/\.[^./]+$/, "." + primary.extension);
+            const taken = (name: string) => {
+              // Reserve omitted standard widths too: existing copies must never join the new main.
+              const stem = name.replace(/\.[^./]+$/, ""), extension = name.slice(stem.length);
+              if ([...paths, ...batch.uploads.map(upload => upload.path)].some(path => {
+                const suffix = path.slice(stem.length);
+                return path.startsWith(stem) && /^-(?:\d+w?|\d+x\d+)\.[^./]+$/i.test(suffix) && suffix.toLowerCase().endsWith(extension.toLowerCase());
+              })) return true;
+              return outputs.some(output => {
+              const target = output.variantWidth === undefined ? name : mediaCopyName(name, output.variantWidth);
+              return [...paths, ...batch.uploads.map(upload => upload.path)].some(path => path.toLowerCase() === target.toLowerCase()
+                || path.toLowerCase().startsWith(target.toLowerCase() + "/") || target.toLowerCase().startsWith(path.toLowerCase() + "/"));
+              });
+            };
+            main = taken(candidate) ? suggestMediaName(candidate, taken) : candidate;
+            width = primary.width; height = primary.height;
+            for (const output of outputs) {
+              const path = output.variantWidth === undefined ? main : mediaCopyName(main, output.variantWidth);
+              const problem = uploadProblem({ name: path, size: output.blob.size });
+              if (problem) throw new Error(problem);
+              batch.uploads.push({ path, blob: output.blob });
+              files[path] = { size: output.blob.size, width: output.width ?? output.variantWidth, height: output.height };
+            }
+            const previous = records.files[old];
+            next.files[main] = { lighterFrom: old, ...previous?.description ? { description: previous.description } : {},
+              ...previous?.decorative ? { decorative: previous.decorative } : {}, ...previous?.collections ? { collections: previous.collections } : {} };
+          }
+        }
+        if (main) {
+          const mapping = batch.uploads.some(upload => upload.path === main) ? created : reused;
+          mapping.set(old, main);
+          const newPaths = [...paths, ...batch.uploads.map(upload => upload.path)];
+          const variants = mediaFamilyOf(main, newPaths)?.copies ?? [];
+          if (!adopted) for (const copy of standard) {
+            mapping.set(copy.path, variants.find(v => v.width === copy.width)?.path ?? main);
+            if (!variants.some(v => v.width === copy.width)) descriptorWidths.set(copy.path, width!);
+          }
+          descriptorWidths.set(old, width!);
+          image = { path: main, width, height, alt: "", variants: adopted ? family?.copies : variants };
+          if (/\.avif$/i.test(main)) result.notes.push(`Sharing pictures keep ${old} because many sharing services cannot read AVIF.`);
+        }
+      }
+      if (image.path === old && picture.changes.includes("copies")) {
+        request.progress?.(quality === "smallest" ? "Preparing (slower)…" : "Preparing…"); guard();
+        const guardedContext = { ...ctx, paths, assertLive: guard };
+        const copies = await (ports.copies ?? makeOlderCopies)(guardedContext, image, quality, request.signal); guard();
+        if (copies?.uploads.length) { batch.uploads.push(...copies.uploads); image = { ...image, variants: copies.variants }; }
+        else result.notes.push(`Smaller copies were not made for ${old}.`);
+      }
+      images.set(old, image);
+    }
+    const element = tree.elements().find(element => element.range?.tag.start === picture.tag.start);
+    if (element) targets.push({ node: element.node, key: old, svg: picture.kind === "svg", adopted });
+  }
+  // Creation owns outside mentions. Other heavy rows retain their own source and Undo boundary.
+  for (const [file, source] of Object.entries(sources)) {
+    if (source === undefined || file === MEDIA_RECORDS_PATH) continue;
+    const mapping = new Map(created);
+    if (file === row.file) for (const entry of reused) mapping.set(...entry);
+    else for (const other of plan.rows.filter(other => other.file === file)) for (const picture of other.pictures)
+      if (picture.ticked && picture.changes.includes("lighten") && picture.path) {
+        mapping.delete(picture.path);
+        for (const copy of mediaFamilyOf(picture.path, paths)?.copies ?? []) mapping.delete(copy.path);
+      }
+    if (!mapping.size) continue;
+    const skip = [...plan.protectedRanges[file] ?? []];
+    if (/\.html?$/i.test(file)) {
+      const visit = (nodes: ReturnType<typeof parseSource>) => { for (const node of nodes) if (node.type === "element") {
+        if (["pre", "code", "samp", "kbd", "xmp", "textarea", "template", "noscript"].includes(node.name)
+          || node.name === "script" && startTagAttribute(source, node.tag, "type")?.value === "application/ld+json") skip.push({ start: node.start, end: node.end });
+        else visit(node.children);
+      } };
+      visit(parseSource(source));
+    }
+    for (const tag of startTags(source)) if (tag.name === "meta") {
+      const name = startTagAttribute(source, tag, "property")?.value ?? startTagAttribute(source, tag, "name")?.value;
+      const address = startTagAttribute(source, tag, "content")?.value;
+      const old = address && mediaResolvePath(address, file, site);
+      if (/^(?:og:image|twitter:image)(?::|$)/i.test(name ?? "") && old && /\.avif$/i.test(mapping.get(old) ?? "")) skip.push(tag);
+    }
+    const component = Object.values(ctx.components).includes(file);
+    const input = { from: "", to: "", paths, sources: component ? sources : { [file]: source }, records, site: component ? site : { origins: site.origins } };
+    const rewritten = new Set<string>();
+    const options = { only: file, skip: { [file]: skip }, widths: descriptorWidths, reference: (referenceFile: string, _start: number, _end: number, path: string) => {
+      if (referenceFile === file) rewritten.add(path);
+    } };
+    const edited = file === "_redirects" ? rewriteMediaRedirects(input, mapping, options) : rewriteMediaMentions(input, mapping, options).get(file);
+    if (edited !== undefined && edited !== source) batch.edits.set(file, edited);
+    for (const [old, main] of mapping) movePlaces(next, old, main, file, rewritten.has(old));
+  }
+  let source = batch.edits.get(row.file) ?? sources[row.file]!;
+  const protectedNodes = new Set(tree.elements().filter(element => {
+    const tag = element.range?.tag;
+    return tag && (plan.protectedRanges[row.file]?.some(range => tag.start >= range.start && tag.end <= range.end)
+      || row.pictures.some(picture => picture.tag.start === tag.start && (picture.kind === "svg" || picture.changes.some(change => !ownChanges.has(change)))));
+  }).map(element => JSON.stringify(element.node)));
+  for (const target of targets) {
+    const image = images.get(target.key)!;
+    const range = treeFor(source).at(target.node);
+    if (!range || range.tag.name !== "img") continue;
+    const existing = source.slice(range.tag.start, range.tag.end);
+    if (target.svg) {
+      const text = mediaAttributes(existing, { ...image.width ? { width: String(image.width) } : {}, ...image.height ? { height: String(image.height) } : {} });
+      source = apply(source, [{ start: range.tag.start, end: range.tag.end, text }]); continue;
+    }
+    let measured: MediaMeasured | undefined;
+    try { measured = await request.measure?.(row.file, target.node, image); } catch { /* Unshown pages and templates use the placement fallback. */ }
+    guard();
+    const locate = ports.tree ? (text: string, node: number[]) => treeFor(text).at(node) : locateNativeElementRange;
+    const safe = measured && { ...measured, images: measured.images.filter(item => !protectedNodes.has(JSON.stringify(item.node)) && !targets.some(target => target.svg && JSON.stringify(target.node) === JSON.stringify(item.node))) };
+    const { edits, placement } = mediaPageEdits(source, safe, target.node, locate);
+    let text = mediaImageMarkup(image, existing, placement, true);
+    if (target.adopted) {
+      const srcset = startTagAttribute(existing, startTags(existing)[0], "srcset")?.value;
+      // A written picture/source set stays as written; a name-based family gets one srcset.
+      const originalElement = tree.at(target.node);
+      const originalTag = originalElement && sources[row.file]!.slice(originalElement.tag.start, originalElement.tag.end);
+      const hasWrittenSet = !!originalTag && !!startTagAttribute(originalTag, startTags(originalTag)[0], "srcset") || currentTreeHasPictureSet(source, range.tag.start);
+      text = mediaAttributes(text, { srcset: srcset ?? (hasWrittenSet ? undefined : mediaSrcset(image)), sizes: placement.sizes });
+    }
+    // No description is introduced when the old place had no alt attribute either.
+    if (!startTagAttribute(existing, startTags(existing)[0], "alt")) text = mediaAttributes(text, { alt: undefined });
+    edits.push({ start: range.tag.start, end: range.tag.end, text });
+    source = apply(source, edits);
+  }
+  if (source !== sources[row.file]) batch.edits.set(row.file, source);
+  if (serializeMediaRecords(next) !== serializeMediaRecords(records)) batch.edits.set(MEDIA_RECORDS_PATH, serializeMediaRecords(next));
+  guard();
+  result.changed = batch.edits.size > 0 || batch.uploads.length > 0;
+  return { batch, result };
+}
+
+/** Future own-file, outside-picture and video planners can extend the prepared row before this one commit. */
+export async function improveHeavy(ctx: MediaWorkspaceContext, request: ImproveRequest, ports: ImprovePorts = {}): Promise<ImproveResult> {
+  const { batch, result } = await prepareImproveHeavy(ctx, request, ports);
+  ctx.assertLive();
+  if (!batch.live?.()) throw new DOMException("Improve images cancelled.", "AbortError");
+  if (result.changed) await ctx.applyBatch(batch);
+  return result;
+}
+
+function currentTreeHasPictureSet(source: string, start: number): boolean {
+  const tree = readSource(source, { page: true });
+  const element = tree.elements().find(element => tree.range(element)?.tag.start === start);
+  return element?.type === "element" && element.parent?.name === "picture" && element.parent.children.some(child => child.type === "element" && child.name === "source" && tree.attribute(child, "srcset") !== undefined) || false;
+}
+
+function movePlaces(records: MediaRecords, old: string, main: string, file: string, changed: boolean) {
+  const place = records.files[old]?.places?.[file];
+  if (!changed || !place || !records.files[main]) return;
+  records.files[main].places = { ...records.files[main].places, [file]: place };
+  delete records.files[old].places![file];
+}
+
+export interface ImproveRowProgress { row: string; index: number; total: number; state: string }
+export type ImproveRowResult = { row: string; state: "done" | "unchanged"; result: ImproveResult } | { row: string; state: "failed"; message: string } | { row: string; state: "not started" };
+/** Sequential rows are independent Undo steps. Abort never rolls back completed rows. */
+export async function improveRows(workspace: { improve(request: ImproveRequest): Promise<ImproveResult> }, rows: readonly string[],
+  options: Omit<ImproveRequest, "row" | "progress"> & { onProgress?(progress: ImproveRowProgress): void }): Promise<ImproveRowResult[]> {
+  const results: ImproveRowResult[] = rows.map(row => ({ row, state: "not started" }));
+  for (let index = 0; index < rows.length; index++) {
+    if (options.signal?.aborted || options.live?.() === false) break;
+    const row = rows[index], progress = (state: string) => options.onProgress?.({ row, index, total: rows.length, state });
+    progress("Preparing…");
+    try {
+      const result = await workspace.improve({ ...options, row, progress });
+      const state = result.changed ? "done" : "unchanged";
+      results[index] = { row, state, result }; progress(state);
+    } catch (error) {
+      if (options.signal?.aborted || options.live?.() === false || error instanceof DOMException && error.name === "AbortError") break;
+      const message = error instanceof Error ? error.message : "This row could not be improved.";
+      results[index] = { row, state: "failed", message }; progress("failed");
+    }
+  }
+  return results;
+}

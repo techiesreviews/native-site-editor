@@ -40,7 +40,10 @@ function relativePath(file: string, to: string): string {
   return "../".repeat(folder.length) + target.join("/");
 }
 export interface MediaRewriteOptions {
+  only?: string;
   versions?: ReadonlyMap<string, string>;
+  widths?: ReadonlyMap<string, number>;
+  skip?: Readonly<Record<string, readonly { start: number; end: number }[]>>;
   reference?: (file: string, start: number, end: number, path: string, attribute?: string) => void;
 }
 function rewriteText(file: string, source: string, input: RenameInput, moves: Map<string, string>, templatePaths: Map<number, Set<string>>, options: MediaRewriteOptions = {}): string {
@@ -49,6 +52,7 @@ function rewriteText(file: string, source: string, input: RenameInput, moves: Ma
   const decoded = decodedSource(source, /\.(?:html?|xml|rss|atom|svg)$/i.test(file));
   const known = new Set(input.paths);
   const add = (value: string, start: number, end: number, structuredStart?: number, css = false) => {
+    if (options.skip?.[file]?.some(range => start < range.end && end > range.start)) return;
     const full = /^(?:https?:)?\/\//i.test(value);
     if (full && (!input.site?.origins.length || !mediaOwnAddress(value, input.site))) return;
     if (!full && /^[a-z][\w+.-]*:/i.test(value)) return;
@@ -75,6 +79,10 @@ function rewriteText(file: string, source: string, input: RenameInput, moves: Ma
     const to = moves.get(path);
     if (!to) return;
     options.reference?.(file, start, end, path, structured.find(token => token.start === structuredStart)?.attribute);
+    const token = structured.find(token => token.start === structuredStart);
+    const width = options.widths?.get(path);
+    const descriptor = token?.attribute?.endsWith("srcset") && width ? /^(\s+)\d+w\b/.exec(source.slice(end)) : undefined;
+    if (descriptor) edits.push({ start: end + descriptor[1].length, end: end + descriptor[0].length, text: `${width}w` });
     const raw = source.slice(start, end);
     const mapped = decodedSource(raw, /\.(?:html?|xml|rss|atom|svg)$/i.test(file), css, structuredStart !== undefined);
     const pathStart = mapped.starts[prefix.length], pathEnd = mapped.ends[prefix.length + address.length - 1];
@@ -151,18 +159,23 @@ export function rewriteMediaMentions(input: RenameInput, mapping: Map<string, st
     });
   }
   for (const [file, source] of Object.entries(sources)) {
-    if (source === undefined || file === "_redirects" || !isMediaTextFile(file)) continue;
-    const text = rewriteText(file, source, input, mapping, templates.get(file) ?? new Map(), file === "_headers" ? {} : options);
+    if (source === undefined || file === "_redirects" || !isMediaTextFile(file) || options.only && options.only !== file) continue;
+    const text = rewriteText(file, source, input, mapping, templates.get(file) ?? new Map(), file === "_headers" ? { skip: options.skip } : options);
     if (text !== source) edits.set(mapping.get(file) ?? file, text);
   }
   return edits;
 }
 
 /** Redirect sources remain request paths; only destinations follow (with version marks when replacing). */
-export function rewriteMediaRedirects(input: RenameInput, mapping: Map<string, string>, options: Pick<MediaRewriteOptions, "versions"> = {}): string | undefined {
+export function rewriteMediaRedirects(input: RenameInput, mapping: Map<string, string>, options: MediaRewriteOptions = {}): string | undefined {
+  let offset = 0;
   const redirects = input.sources._redirects?.split(/(\r?\n)/).map(line => {
+    const start = offset; offset += line.length;
     const match = /^(\s*[^#\s]\S*\s+)((?:https?:)?\/\S+)/i.exec(line);
-    return match ? match[1] + rewriteText("_redirects", match[2], input, mapping, new Map(), options) + line.slice(match[0].length) : line;
+    if (!match) return line;
+    const at = start + match[1].length;
+    const skip = options.skip?._redirects?.map(range => ({ start: range.start - at, end: range.end - at }));
+    return match[1] + rewriteText("_redirects", match[2], input, mapping, new Map(), { ...options, skip: { _redirects: skip ?? [] } }) + line.slice(match[0].length);
   }).join("");
   return redirects;
 }
