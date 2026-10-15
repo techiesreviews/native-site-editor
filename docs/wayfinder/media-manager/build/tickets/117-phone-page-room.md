@@ -1,8 +1,8 @@
 ---
 title: More room for the page on phones
 type: task (AFK)
-status: open
-assignee:
+status: in-progress
+assignee: claude (mm-117 runner)
 blocked_by: [104-media-panel-size]
 builder: claude
 phase: 8
