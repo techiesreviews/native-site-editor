@@ -119,7 +119,8 @@
   height: 196px;
   border-radius: var(--radius);
   background: var(--image-popup-well);
-  touch-action: none;
+  /* A vertical swipe on the picture scrolls the sheet; the dot, the Free frame and its corners take the finger. */
+  touch-action: pan-y;
   user-select: none;
   -webkit-user-select: none;
 }
@@ -283,19 +284,41 @@
 /* The Social image's fixed shape: named, not a menu. */
 .image-popup__shape--fixed { padding: 0 10px; }
 .image-popup__shape--fixed:hover { background: rgb(1 9 37 / 0.78); }
+/* The shape menu is a manual popover on the top layer: no scrolling row clips it and the phone
+   sheet's pinned message and Done never cover it. It hangs under the Shape button, above it when
+   there is no room below, and as a last resort scrolls within the screen, clear of the safe area.
+   Without anchor positioning it opens in the middle of the screen, still whole. */
+.image-popup__shape { anchor-name: --image-popup-shape; }
 .image-popup__menu {
-  position: absolute;
-  top: 40px;
-  left: 50%;
-  z-index: 5;
+  --image-popup-menu-edge: max(8px, env(safe-area-inset-bottom));
+  box-sizing: border-box;
   min-width: 190px;
+  max-block-size: calc(100dvh - 8px - var(--image-popup-menu-edge));
+  margin: auto;
   padding: 4px;
+  border: 0;
   border-radius: var(--radius-panel);
   background: var(--panel-surface);
+  color: var(--text);
   box-shadow: var(--shadow);
-  transform: translateX(-50%);
+  overflow: auto;
+  overscroll-behavior: contain;
 }
-.image-popup__menu[hidden] { display: none; }
+@supports (position-area: block-end) {
+  .image-popup__menu {
+    position-anchor: --image-popup-shape;
+    position-area: block-end span-all;
+    margin: 4px 0 var(--image-popup-menu-edge);
+    max-block-size: none;
+    position-try-fallbacks: flip-block, --image-popup-menu-fit;
+  }
+}
+@position-try --image-popup-menu-fit {
+  position-area: span-all;
+  align-self: center;
+  margin: 8px 0 var(--image-popup-menu-edge);
+  max-block-size: calc(100% - 8px - var(--image-popup-menu-edge));
+}
 .image-popup__item {
   display: flex;
   align-items: center;
@@ -487,7 +510,6 @@
   .image-popup__row { min-height: 56px; padding: 6px 14px; }
   .image-popup__well { height: 180px; }
   .image-popup__shape { top: 4px; height: 44px; padding: 0 12px 0 14px; font-size: var(--type-base); }
-  .image-popup__menu { top: 52px; }
   .image-popup__item,
   .image-popup__link { min-height: 44px; }
   .image-popup__range { height: 44px; }

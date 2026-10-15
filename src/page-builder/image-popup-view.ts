@@ -1,7 +1,8 @@
 // The image popup's window (crop-popup.html): compact rows with a label on the left, in the
 // edit bar's colours, light or dark with the editor. Beside the picture on wide screens (below
 // the bar when there is no room), a bottom sheet with 44 px targets on phones. It does not trap
-// Tab (as Brizy's); Escape closes the shape menu first, then the popup. A picture that can be
+// Tab (as Brizy's); Escape closes the shape menu (anchored to its button, above it when there is
+// no room below) first, then the popup. A picture that can be
 // trimmed gets Free (four corners), Zoom and Turn (slice 41), and Open large editor (slice 42).
 // Fixed to one shape (Settings' Social image, slice 44): its label instead of the shape menu, Zoom
 // only, a link card for the preview, under the button that opened it (inside its dialog).
@@ -89,7 +90,9 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
   shapeButton.setAttribute("aria-haspopup", "menu");
   const shapeText = node("span");
   shapeButton.append(shapeText, icon("caret-down", 13));
-  const menu = node("div", "image-popup__menu"); menu.setAttribute("role", "menu"); menu.setAttribute("aria-label", "Shape"); menu.hidden = true;
+  const menu = node("div", "image-popup__menu"); menu.setAttribute("role", "menu"); menu.setAttribute("aria-label", "Shape");
+  // On the top layer (a manual popover), so the sheet's scrolling rows and pinned Done never cover it (slice 94).
+  menu.setAttribute("popover", "manual");
   const componentEntry = componentShapeEntry(state.component);
   const items = [...(componentEntry ? [componentEntry] : []), ...POPUP_SHAPES, { id: "free" as const, label: "Free" }].map(shape => {
     const item = actionButton("image-popup__item", () => { toggleMenu(false); shapeButton.focus(); events.shape(shape.id); });
@@ -158,7 +161,8 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
 
   let menuOpen = false;
   function toggleMenu(open: boolean) {
-    menuOpen = open; menu.hidden = !open;
+    menuOpen = open;
+    if (open !== menu.matches(":popover-open")) menu.togglePopover();
     shapeButton.setAttribute("aria-expanded", String(open));
     if (open) (items.find(item => item.getAttribute("aria-checked") === "true") ?? items[0]).focus();
   }
@@ -262,9 +266,10 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
     else root.style.setProperty("--nub-y", `${clamp(target.top + target.height / 2 - at.top - 7, size.height - 26)}px`);
   }
 
-  // Dragging: a press on the picture puts the dot there; a press on the dot keeps where it was held.
+  // Dragging: a press on the picture puts the dot there (a finger's on release); a press on the dot keeps where it was held.
   // Free: a corner sizes the trim, the frame moves it.
   let drag: { id: number; dx: number; dy: number; corner?: string; from?: TrimRect; x?: number; y?: number } | undefined;
+  let tap: number | undefined;
   well.addEventListener("pointerdown", event => {
     const target = event.target as Element;
     if (target.closest(".image-popup__shape, .image-popup__menu")) return;
@@ -280,9 +285,12 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
       return;
     }
     if (!dotApplies(state.shape, state.cut)) return;
+    const onDot = target.closest(".image-popup__dot");
+    // A finger on the picture (not the dot) moves the dot on release, so a swipe there scrolls the sheet (slice 94).
+    if (event.pointerType === "touch" && !onDot) { tap = event.pointerId; return; }
     event.preventDefault();
     well.setPointerCapture(event.pointerId);
-    const held = target.closest(".image-popup__dot") ? dot.getBoundingClientRect() : undefined;
+    const held = onDot ? dot.getBoundingClientRect() : undefined;
     drag = { id: event.pointerId, dx: held ? event.clientX - (held.left + held.width / 2) : 0, dy: held ? event.clientY - (held.top + held.height / 2) : 0 };
     dot.focus({ preventScroll: true });
     follow(event);
@@ -299,7 +307,15 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
     if (next.x !== state.focus.x || next.y !== state.focus.y) events.focus(next);
   };
   well.addEventListener("pointermove", follow);
-  const release = (event: PointerEvent) => { if (drag?.id === event.pointerId) drag = undefined; };
+  const release = (event: PointerEvent) => {
+    if (drag?.id === event.pointerId) drag = undefined;
+    if (tap !== event.pointerId) return;
+    tap = undefined;
+    if (event.type !== "pointerup" || !dotApplies(state.shape, state.cut)) return;
+    const next = focusAt({ x: event.clientX, y: event.clientY }, picbox.getBoundingClientRect());
+    if (next.x !== state.focus.x || next.y !== state.focus.y) events.focus(next);
+    dot.focus({ preventScroll: true });
+  };
   well.addEventListener("pointerup", release);
   well.addEventListener("pointercancel", release);
 

@@ -157,6 +157,72 @@ const quarters = (page: Page) => page.evaluate(() => {
   [["#d22", 0, 0], ["#2a2", 400, 0], ["#22d", 0, 200], ["#dd2", 400, 200]].forEach(([colour, x, y]) => { context.fillStyle = colour as string; context.fillRect(x as number, y as number, 400, 200); });
   return canvas.toDataURL("image/jpeg", 0.9).split(",")[1];
 });
+// Slice 94: on a phone the shape menu stands clear of the sheet's pinned message and Done strip.
+test("a phone's shape menu is whole on screen, uncovered, and Free can be pressed", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await open(page, baseURL);
+  await openPopup(page);
+  // A photo, so Free is offered (an SVG cannot be trimmed).
+  await popup(page).getByRole("button", { name: "Replace", exact: true }).click();
+  await picker(page).locator('input[name="media-upload"]').setInputFiles({ name: "Phone.jpg", mimeType: "image/jpeg", buffer: Buffer.from(await quarters(page), "base64") });
+  await expect(picker(page).getByRole("button", { name: "Choose Phone.jpg", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await picker(page).getByRole("button", { name: "Use image", exact: true }).click();
+  await expect(popup(page).getByRole("slider", { name: "Zoom" })).toBeVisible();
+  const entries = popup(page).getByRole("menuitemradio");
+  const wholeAndOnTop = async () => {
+    await popup(page).getByRole("button", { name: /^Shape:/ }).click();
+    await expect(entries).toHaveCount(6);
+    for (const entry of await entries.all()) {
+      await expect(entry).toBeInViewport({ ratio: 1 });
+      const box = (await entry.boundingBox())!;
+      expect(box.height).toBeGreaterThanOrEqual(44);
+      // Nothing (the message, Done) covers it.
+      expect(await entry.evaluate((item, at) => item.contains(document.elementFromPoint(at.x, at.y)), { x: box.x + box.width / 2, y: box.y + box.height / 2 })).toBe(true);
+    }
+  };
+  await wholeAndOnTop();
+  await popup(page).getByRole("menuitemradio", { name: "Free", exact: true }).click();
+  await expect(popup(page).getByRole("group", { name: /^Trim area/ })).toBeVisible();
+  await expect(popup(page).getByRole("button", { name: "Shape: Free", exact: true })).toBeVisible();
+  // The smallest phones too.
+  await page.setViewportSize({ width: 320, height: 568 });
+  await wholeAndOnTop();
+  await popup(page).getByRole("menuitemradio", { name: "Square", exact: true }).click();
+  await expect(popup(page).getByRole("button", { name: "Shape: Square", exact: true })).toBeVisible();
+  await expect(popup(page).getByRole("button", { name: "Done", exact: true })).toBeInViewport({ ratio: 1 });
+});
+
+test.describe("on a touch phone", () => {
+  test.use({ hasTouch: true });
+  test("a swipe on the picture scrolls the short sheet without moving the dot; a tap moves it", async ({ page, baseURL }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await open(page, baseURL);
+    await openPopup(page);
+    await chooseShape(page, "Square");
+    // The smallest phones: the picture fills what the sheet shows between its head and its pinned Done.
+    await page.setViewportSize({ width: 320, height: 568 });
+    const rows = popup(page).locator(".image-popup__rows");
+    await expect.poll(() => rows.evaluate(element => element.scrollHeight > element.clientHeight)).toBe(true);
+    const where = await dot(page).getAttribute("aria-valuetext");
+    // A finger swipes up from the picture's visible part (its lower half sits under the pinned Done).
+    const well = (await popup(page).locator(".image-popup__picbox").boundingBox())!, shown = (await rows.boundingBox())!;
+    const x = Math.round(well.x + well.width * 0.2), y = Math.round(Math.min(well.y + well.height, shown.y + shown.height) - 12);
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y }] });
+    for (let step = 1; step <= 10; step++) await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x, y: y - step * 10 }] });
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await expect.poll(() => rows.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
+    await expect(dot(page)).toHaveAttribute("aria-valuetext", where!);
+    await expect(popup(page).getByRole("button", { name: "Done", exact: true })).toBeInViewport({ ratio: 1 });
+    // A tap on the picture still puts the dot there.
+    await rows.evaluate(element => element.scrollTo(0, 0));
+    const picture = (await popup(page).locator(".image-popup__picbox").boundingBox())!;
+    await page.touchscreen.tap(picture.x + picture.width * 0.1, picture.y + picture.height * 0.15);
+    await expect(dot(page)).not.toHaveAttribute("aria-valuetext", where!);
+    await expect(dot(page)).toBeFocused();
+  });
+});
+
 // A corner of the trim dragged by a share of the picture's size.
 async function dragCorner(page: Page, corner: "nw" | "se", dx: number, dy: number) {
   const box = (await popup(page).locator(".image-popup__picbox").boundingBox())!;

@@ -1,7 +1,7 @@
 ---
 title: The shape menu fits on a phone
 type: task (AFK)
-status: in progress
+status: open
 assignee: claude (mm-94 runner)
 blocked_by: [44-social-image-popup]
 builder: claude
