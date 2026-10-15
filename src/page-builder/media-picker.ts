@@ -66,6 +66,8 @@ export interface MediaPlacement {
   label?: string;
   uploads?: { path: string; blob: Blob }[];
   expectedAssets?: Map<string, string | undefined>;
+  /** Other text files the placement was decided on (a component's template): newer ones refuse. */
+  expectedSources?: Map<string, string | undefined>;
   expectedPaths?: string[];
   path: string; source: string;
   /** The refusal when the page changed before the batch; a generic one otherwise. */

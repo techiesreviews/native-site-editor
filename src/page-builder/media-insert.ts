@@ -14,6 +14,7 @@ import { mediaFamilyOf } from "./media-families";
 import { mediaStorageName } from "./media-storage";
 import { readSiteMediaRecords } from "./media-collections";
 import { applyGuardedSourceEdit, nativeMarkupInsertEdit, type ItemsSlotRule } from "./native-operations";
+import { itemsSlotRule } from "./block-insert";
 import { readSource } from "./source-tree";
 import { mediaEscape, mediaUrl } from "./media-attributes";
 import { mediaPlaceSwap } from "./media-place-swap";
@@ -120,7 +121,8 @@ async function pictureSize(ctx: MediaWorkspaceContext, path: string) {
 }
 
 export type MediaPlaceTarget =
-  | { kind: "insert"; place: MediaInsertPlace; items?: ItemsSlotRule }
+  /** `templates`: a component's template by tag (its path and text), for instances' items slots. */
+  | { kind: "insert"; place: MediaInsertPlace; templates?: (tag: string) => { path: string; source?: string } | undefined }
   | { kind: "spot"; path: string; node: number[] };
 export type MediaInsertPorts = Pick<MediaControllerPorts, "stamp" | "source" | "viewingVersion" | "openFile" | "restoreFile" | "announce" | "select" | "locateElement">;
 const NOUNS = { image: "Image", video: "Video", audio: "Audio", document: "Download" } as const;
@@ -141,6 +143,15 @@ export async function placeChosenMedia(
   const current = () => proof.stamp.holds() && !ports.viewingVersion() && ports.source(path) === proof.source;
   const assert = () => { if (!current()) throw new Error(changed); };
   assert();
+  // The templates whose items slots the place goes through, read once and proved at the write.
+  const templates = new Map<string, string | undefined>();
+  const items = target.kind === "insert" && target.templates ? itemsSlotRule(tag => {
+    const template = target.templates!(tag);
+    if (template) templates.set(template.path, template.source);
+    return template?.source;
+  }) : undefined;
+  // Walking to the place now reads them (the file's own markup is checked when it is built).
+  if (target.kind === "insert") insertAtPlace(proof.source, target.place, "<span></span>", items);
   if (ports.openFile() !== path) { await ports.restoreFile(path, proof.epoch); assert(); }
   const ctx = await workspaceContext(isMediaLibraryPath); assert(); ctx.assertLive();
   // A file added in the picker is saved with this step; an existing one must stay as chosen.
@@ -166,12 +177,12 @@ export async function placeChosenMedia(
     }
     const node = insertedNode(target.place);
     if (kind === "image") {
-      const placed = insertedImagePage(page, target.place, file, now, target.items);
+      const placed = insertedImagePage(page, target.place, file, now, items);
       if (!placed) throw new Error(refused);
       return { page: placed.page, records: placed.records, node, notes: [] as string[] };
     }
     const markup = playerMediaMarkup(file.path, facts, page);
-    const next = markup && insertAtPlace(page, target.place, markup.markup, target.items);
+    const next = markup && insertAtPlace(page, target.place, markup.markup, items);
     if (!next) throw new Error(refused);
     return { page: next, node, notes: markup.notes };
   };
@@ -197,34 +208,49 @@ export async function placeChosenMedia(
   const facts = added ? undefined : siteFacts(chosen.path, records, ctx.paths, ctx.items.find(item => item.path === chosen.path)?.size);
   // The still's own size gives a video or a PDF card its shape before anything loads.
   if (facts?.still && kind !== "image") { facts.still = { ...facts.still, ...await pictureSize(ctx, facts.still.path) }; assert(); ctx.assertLive(); }
+  // A picture without copies for older browsers gets them now, as Replace does (slice 35).
+  let copies: { uploads: { path: string; blob: Blob }[]; variants: { path: string; width: number }[] } | undefined, copyNote = "";
+  if (kind === "image" && !added && !cancelled()) {
+    const older = await import("./media-older-copies");
+    if (older.olderCopyWidths({ path: chosen.path, width: chosen.width, paths: ctx.paths }).length) {
+      try { copies = await older.makeOlderCopies(ctx, chosen, older.olderCopiesQuality(records.adding)); }
+      catch (error) {
+        if (cancelled() || error instanceof DOMException && error.name === "AbortError") return;
+        copyNote = older.OLDER_COPIES_FAILED.trim();
+      }
+      assert(); ctx.assertLive(); unchanged();
+    }
+  }
+  if (copies?.uploads.length) chosen = { ...chosen, variants: copies.variants };
   const creates = await playerFiles();
   assert(); ctx.assertLive(); unchanged();
   if (cancelled()) return;
   const expectedAssets = new Map<string, string | undefined>(added ? [] : [[chosen.path, version]]);
+  const copyUploads = copies?.uploads ?? [];
   // Files added in the picker are saved with the placement and its records: one Undo step.
   if (held) {
     let placed: ReturnType<typeof build> | undefined;
     const saved = await held.save({ label, path, source: proof.source, stale: changed, live: () => !cancelled() && current(), records: { text: metadata },
-      expectedPaths: ctx.paths, expectedAssets,
-      uploads: creates?.map(file => ({ path: file.path, blob: new Blob([file.content], { type: file.path.endsWith(".css") ? "text/css" : "text/javascript" }) })),
+      expectedPaths: ctx.paths, expectedAssets, expectedSources: templates,
+      uploads: [...copyUploads, ...(creates ?? []).map(file => ({ path: file.path, blob: new Blob([file.content], { type: file.path.endsWith(".css") ? "text/css" : "text/javascript" }) }))],
       apply: (paths, requests, now) => {
-        const file = held.image(paths), at = paths.indexOf(file.path);
+        const picked = held.image(paths), file = added ? picked : chosen, at = paths.indexOf(file.path);
         placed = build(proof.source, file, facts ?? addedFacts(file.path, now, [...ctx.paths, ...paths], requests[at]), now);
         return { page: linked(placed.page), records: placed.records };
       } });
     if (!saved.placed || !placed) { ports.announce(`Added ${saved.paths.join(", ")}.${saved.note}`); return; }
     ports.select?.(path, placed.node);
-    say([...placed.notes, ...saved.note ? [saved.note.trim()] : []]);
+    say([...placed.notes, ...copyNote ? [copyNote] : [], ...saved.note ? [saved.note.trim()] : []]);
     return;
   }
   const placed = build(proof.source, chosen, facts!, records);
   const edits = new Map([[path, linked(placed.page)]]);
-  const expectedSources = new Map<string, string | undefined>([[path, proof.source], [MEDIA_RECORDS_PATH, metadata]]);
+  const expectedSources = new Map<string, string | undefined>([...templates, [path, proof.source], [MEDIA_RECORDS_PATH, metadata]]);
   if (readable && placed.records && placed.records !== records) edits.set(MEDIA_RECORDS_PATH, serializeMediaRecords(placed.records));
   for (const file of creates ?? []) { expectedSources.set(file.path, undefined); edits.set(file.path, file.content); }
   await ctx.applyBatch({ label, expectedPaths: ctx.paths, expectedSources, expectedAssets, edits,
-    live: () => !cancelled() && current(), moves: [], deletes: [], restores: [], uploads: [] });
+    live: () => !cancelled() && current(), moves: [], deletes: [], restores: [], uploads: copyUploads });
   ctx.assertLive();
   ports.select?.(path, placed.node);
-  say(placed.notes);
+  say([...placed.notes, ...copyNote ? [copyNote] : []]);
 }

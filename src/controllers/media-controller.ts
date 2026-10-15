@@ -317,7 +317,9 @@ export function createMediaController(ports: MediaControllerPorts) {
     await openMediaPicker({ files, accept: spot ? `image/*,${VIDEO_ACCEPT}` : "image/*", place, report: ports,
       chosenNote: spot ? name => isVideoName(name) ? "loops silently here" : undefined : undefined,
       onPick: async (image: MediaImage, cancelled, held) => {
-        const chosen = held?.chosen?.()?.request.file.name ?? image.path;
+        // A file added here is routed by what it became (a GIF becomes a looping MP4), not its own name.
+        const added = held?.chosen?.()?.request, output = added?.result?.outputs[0]?.extension;
+        const chosen = added ? output ? `added.${output}` : added.file.name : image.path;
         if (spot && isVideoName(chosen)) {
           const { placeChosenMedia } = await import("../page-builder/media-insert");
           await placeChosenMedia(ports, workspaceContext, { kind: "spot", path: target.path, node: target.node }, image, { stamp, epoch, source: source! }, cancelled, held);
@@ -331,15 +333,17 @@ export function createMediaController(ports: MediaControllerPorts) {
 
   /** Add → Media: the picker with every kind; Use inserts the chosen file at `place` (a gap the block
    * rail or the Add panel found on the page's bytes now), with its markup and the site's player, as one
-   * Undo step. Cancel adds nothing. `templateOf` opens component instances' items slots. */
-  async function insertMedia(place: import("../page-builder/media-insert").MediaInsertPlace, templateOf: (tag: string) => string | undefined) {
+   * Undo step. Cancel adds nothing. */
+  async function insertMedia(place: import("../page-builder/media-insert").MediaInsertPlace) {
     const stamp = ports.stamp(), epoch = ports.generation(), source = ports.source(place.path);
     if (source === undefined || ports.viewingVersion()) return;
     const { openMediaPicker } = await load();
     if (!stamp.holds() || ports.source(place.path) !== source) return;
     await openMediaPicker({ place: `${ports.placeLabel?.(place.path) ?? place.path} · Add media`, report: ports, onPick: async (file, cancelled, held) => {
-      const [{ placeChosenMedia }, { itemsSlotRule }] = await Promise.all([import("../page-builder/media-insert"), import("../page-builder/block-insert")]);
-      await placeChosenMedia(ports, workspaceContext, { kind: "insert", place, items: itemsSlotRule(templateOf) }, file, { stamp, epoch, source }, cancelled, held);
+      const { placeChosenMedia } = await import("../page-builder/media-insert");
+      // Component templates (their items slots) by path, so the step can prove the ones it read.
+      const templates = (tag: string) => { const path = ports.workspace()?.site?.components[tag]; return path === undefined ? undefined : { path, source: ports.source(path) }; };
+      await placeChosenMedia(ports, workspaceContext, { kind: "insert", place, templates }, file, { stamp, epoch, source }, cancelled, held);
     } }).catch((error: unknown) => ports.error(error));
   }
 

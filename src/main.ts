@@ -783,7 +783,7 @@ async function insertNativeComponent(point: InsertPoint, choice: InsertChoice) {
   // Media opens the Media picker for that gap; Use inserts the chosen file (the bytes must hold).
   if (choice.tag === "native:media") {
     if (captured && nativeEffectiveSource(path) !== captured.source) errorMessage(new Error(moved));
-    else void mediaController.insertMedia({ path, parent: point.parent, index: point.index }, tag => guardedEdits.peek.template(tag)?.source);
+    else void mediaController.insertMedia({ path, parent: point.parent, index: point.index });
     return;
   }
   const selected = appStore.selection.value;
@@ -904,7 +904,7 @@ const blockInsertPorts: BlockInsertPorts = {
     return selection?.path === path ? { path, node: selection.node, painted: selection.paintedSource } : { path, node: host?.node, painted: host?.paintedSource };
   },
   edits: guardedEdits,
-  media: place => void mediaController.insertMedia(place, tag => guardedEdits.peek.template(tag)?.source),
+  media: place => void mediaController.insertMedia(place),
   refuse: (reason, pointer) => {
     if (pointer) { refuse(reason, { pointer }); return; }
     nativePreview?.flashRefusal(reason);

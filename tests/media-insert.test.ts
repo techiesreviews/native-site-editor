@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { insertAtPlace, insertedImagePage, insertedNode, locatePageElement, playerMediaMarkup, spotVideoPage } from "../src/page-builder/media-insert";
 import { parseMediaRecords } from "../shared/media-records";
 import { pickerFileWord, pickerNoun, chosenNoun } from "../src/page-builder/media-library-filter";
+import type { MediaWorkspaceBatch, MediaWorkspaceContext } from "../src/page-builder/media-workspace";
 
 const page = (body: string) => `<!doctype html>\n<html lang="en">\n<head><title>T</title></head>\n<body>\n<main>\n<section class="flow"><h1>Hi</h1></section>\n</main>${body}\n</body>\n</html>`;
 const place = { path: "index.html", parent: [0, 0], index: 1 };
@@ -79,4 +80,32 @@ test("the picker's words follow what it lists and what is chosen", () => {
   assert.equal(pickerFileWord("image/*"), "image");
   assert.equal(pickerFileWord("image/*,.mp4"), "file");
   assert.deepEqual(["a.webp", "a.mp4", "a.mp3", "a.pdf", "a.zip"].map(chosenNoun), ["image", "video", "audio", "file", "file"]);
+});
+
+test("placing into a component's items slot proves the template it read; the new element is selected", async () => {
+  const { placeChosenMedia } = await import("../src/page-builder/media-insert");
+  const template = '<div class="list"><slot></slot></div>';
+  const source = '<html><head><link rel="stylesheet" href="/styles/media-player.css"><script type="module" src="/scripts/media-player.js"></script></head><body><main><card-list><p>One</p></card-list></main></body></html>';
+  const batches: MediaWorkspaceBatch[] = [], selected: unknown[] = [];
+  // eslint-disable-next-line no-restricted-syntax -- placing reads only these; the rest of a context is the browser's media workspace
+  const ctx = {
+    paths: ["index.html", "media/song.mp3", "components/card-list/card-list.html", "styles/media-player.css", "scripts/media-player.js", "scripts/media-online.js"],
+    items: [{ path: "media/song.mp3", size: 10 }], assertLive() {},
+    assetVersion: (path: string) => path === "media/song.mp3" ? "sha-1" : undefined,
+    read: async () => undefined,
+    applyBatch: async (batch: MediaWorkspaceBatch) => { batches.push(batch); },
+  } as unknown as MediaWorkspaceContext;
+  // eslint-disable-next-line no-restricted-syntax -- placing uses only these ports; the rest are the editor's
+  const ports = {
+    stamp: () => ({ holds: () => true }), source: (path: string) => path === "index.html" ? source : undefined, viewingVersion: () => false,
+    openFile: () => "index.html", restoreFile: async () => undefined, announce() {}, select: (path: string, node: number[]) => { selected.push({ path, node }); },
+  } as unknown as Parameters<typeof placeChosenMedia>[0];
+  await placeChosenMedia(ports, async () => ctx, { kind: "insert", place: { path: "index.html", parent: [0, 0], index: 1, slot: "" },
+    templates: tag => tag === "card-list" ? { path: "components/card-list/card-list.html", source: template } : undefined },
+  { path: "media/song.mp3", alt: "" }, { stamp: { holds: () => true } as never, epoch: 1, source }, () => false);
+  assert.equal(batches.length, 1);
+  assert.equal(batches[0].expectedSources.get("components/card-list/card-list.html"), template);
+  assert.equal(batches[0].expectedAssets.get("media/song.mp3"), "sha-1");
+  assert.match(batches[0].edits.get("index.html")!, /<card-list><p>One<\/p>\s*<audio src="\/media\/song.mp3" controls preload="none"><\/audio><\/card-list>/);
+  assert.deepEqual(selected, [{ path: "index.html", node: [0, 0, 1] }]);
 });

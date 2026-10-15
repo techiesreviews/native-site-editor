@@ -649,3 +649,37 @@ test("page slot placement batches older copies while component fallback stays un
     documentDescriptor ? Object.defineProperty(globalThis, "document", documentDescriptor) : Reflect.deleteProperty(globalThis, "document");
   }
 });
+
+test("a picture spot's picker lists videos too; a GIF added there becomes a looping video in the spot, one save", async () => {
+  const { locatePageElement } = await import("../src/page-builder/media-insert");
+  const page = '<html><head><title>T</title></head><body><main><section><img slot="photo" class="shot" src="/images/old.png" alt="Old"></section></main></body></html>';
+  const player = ["styles/media-player.css", "scripts/media-player.js", "scripts/media-online.js"];
+  const told: string[] = [];
+  const f = fixture({ locateElement: locatePageElement, announce: text => { told.push(text); } });
+  const base = f.ports.workspace.bind(f.ports);
+  f.ports.workspace = () => ({ ...base()!, nativePaths: ["index.html", "images/old.png", ...player] });
+  f.sources.set("index.html", page);
+  await f.controller.chooseImage({ path: "index.html", node: [0, 0, 0] });
+  assert.match(f.pick()!.accept!, /^image\/\*,.*\.mp4/);
+  assert.equal(f.pick()!.chosenNote!("clip.mp4"), "loops silently here");
+  assert.equal(f.pick()!.chosenNote!("photo.webp"), undefined);
+  // The added file keeps its own name until saved; what it became (an MP4) decides the place.
+  const request = { file: new File(["gif"], "cat.gif", { type: "image/gif" }), folder: "media", result: { outputs: [{ blob: new Blob(["mp4"]), extension: "mp4", width: 320, height: 240 }] } };
+  let saved: string | undefined;
+  // eslint-disable-next-line no-restricted-syntax -- a held addition needs only these; its prepared result is the browser's
+  const held = {
+    chosen: () => ({ request, take() {} }),
+    image: (paths: string[]) => ({ path: paths[0], alt: "", variants: [] }),
+    save: async (place?: Parameters<MediaHeldFiles["save"]>[0]) => {
+      const result = place!.apply(["media/cat.mp4"], [request] as never, { version: 2, collections: [], files: { "media/cat.mp4": { fromGif: true, still: "media/cat.webp" } } });
+      saved = typeof result === "string" ? result : result.page;
+      return { paths: ["media/cat.mp4"], placed: true, note: "" };
+    },
+  } as unknown as MediaHeldFiles;
+  await f.pick()!.onPick!({ path: "pending:1", alt: "", variants: [] }, () => false, held);
+  assert.deepEqual(f.errors, []);
+  assert.match(saved!, /<section><video src="\/media\/cat.mp4" poster="\/media\/cat.webp" controls muted loop playsinline slot="photo" class="shot" width="320" height="240" aria-label="Old"><\/video><\/section>/);
+  assert.match(saved!, /<script type="module" src="\/scripts\/media-player.js"><\/script>/);
+  assert.equal(f.changes.length, 0);
+  assert.deepEqual(told, ["Looping video added."]);
+});

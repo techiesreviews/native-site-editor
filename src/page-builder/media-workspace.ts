@@ -312,6 +312,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     const { batch, text, metadata } = await prepare(ctx, place?.label ?? (requests[0]?.onlineVideo ? `Add ${requests[0].onlineVideo.service === "youtube" ? "YouTube" : "Vimeo"} video` : "Add images"), requests.some((item) => item.replaceFrom));
     if (place?.expectedPaths) batch.expectedPaths = place.expectedPaths;
     for (const [path, version] of place?.expectedAssets ?? []) batch.expectedAssets.set(path, version);
+    for (const [path, text] of place?.expectedSources ?? []) batch.expectedSources.set(path, text);
     const reserved = new Set(batch.expectedPaths);
     for (const upload of place?.uploads ?? []) {
       reserved.add(upload.path); batch.uploads.push(upload);
