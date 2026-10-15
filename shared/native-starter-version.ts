@@ -1,2 +1,2 @@
 /** One pinned vendored starter version, used by the worker and lazy editor assets. */
-export const NATIVE_STARTER_VERSION = "v2bff35d";
+export const NATIVE_STARTER_VERSION = "vc5de395";

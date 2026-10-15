@@ -348,6 +348,15 @@ async function connectVimeo(Vimeo, frame, player) {
 
 const done = new WeakSet();
 
+/** promise, or a refusal when it has not settled within 10 s. */
+function within10s(promise) {
+  let timer = 0;
+  const late = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error("the player did not answer")), 10000);
+  });
+  return Promise.race([promise, late]).finally(() => clearTimeout(timer));
+}
+
 function setUp(link, video, kit) {
   const service = SERVICES[video.service];
   const own = link.dataset.controls !== "service";
@@ -410,6 +419,12 @@ function setUp(link, video, kit) {
     start.before(frame);
     if (!own) {
       handOver();
+      // Its own bar needs no API; loading it tells whether the service can
+      // be reached (Vimeo's comes from the player's host, and its ready
+      // answer from the player itself).
+      within10s(loadApi(video.service).then((lib) => video.service === "vimeo" && new lib.Player(frame).ready())).catch(() => {
+        if (box.dataset.state === "service") blocked();
+      });
       return;
     }
     // The site's bar is the way to control it; the frame is only the picture.
@@ -424,24 +439,18 @@ function setUp(link, video, kit) {
     const serviceAddress = playerAddress(video, false);
     player.addEventListener("error", () => handOver(serviceAddress));
     let parts;
-    let deadline = 0;
     try {
-      // Never stays loading: after 10 s the service's own player takes over.
-      parts = await Promise.race([
+      // Never stays loading: after 10 s without an answer it counts as blocked.
+      parts = await within10s(
         loadApi(video.service).then((lib) => {
           if (player.closed) throw new Error("handed over meanwhile");
           return (video.service === "youtube" ? connectYouTube : connectVimeo)(lib, frame, player);
         }),
-        new Promise((_, reject) => {
-          deadline = setTimeout(() => reject(new Error("the player did not answer")), 10000);
-        }),
-      ]);
+      );
     } catch {
       // An error already handed over; otherwise the API did not load or answer.
       if (box.dataset.state !== "service") blocked();
       return;
-    } finally {
-      clearTimeout(deadline);
     }
     if (box.dataset.state === "service") return; // an error came first
     bar = kit.videoBar(box, player, { start, surface, cc: parts.cc });
