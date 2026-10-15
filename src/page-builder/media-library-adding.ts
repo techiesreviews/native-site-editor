@@ -102,10 +102,19 @@ export function createMediaAdding(grid: HTMLElement, tray: HTMLElement, h: Media
     entry.tile.addEventListener("focusout", event => { if (event.relatedTarget) focused = undefined; });
   }
   function set(entry: Entry, state: MediaAddingState) {
+    // A held file is the picker's new file once ready: the same brief ring as a saved one (slice 103).
+    if (h.hold && state === "ready" && entry.state !== "ready") ring(entry.tile);
     entry.state = state; entry.tile.dataset.state = state;
     const choose = entry.tile.querySelector<HTMLButtonElement>(".media-library__pending-select");
     if (choose) choose.disabled = state !== "ready"; entry.words.textContent = mediaAddingWords(state, entry.quality);
     paint();
+  }
+  function ring(tile: HTMLElement) {
+    tile.classList.add("is-new");
+    tile.addEventListener("animationend", function done(event) {
+      if (event.animationName !== "media-new") return;
+      tile.classList.remove("is-new"); tile.removeEventListener("animationend", done);
+    });
   }
   function stop(entry: Entry) {
     entry.work?.abort(); entry.state = "cancelled"; entry.tile.remove();
@@ -217,7 +226,8 @@ export function createMediaAdding(grid: HTMLElement, tray: HTMLElement, h: Media
         tile(entry); entry.tile.dataset.state = "waiting"; entry.words.textContent = WORDS.waiting!;
         return entry;
       });
-      run = h.hold ? { entries: [...previous, ...mine.entries], collection: mine.collection } : mine;
+      // Newest first (slice 103): a later addition in the picker leads the files already held.
+      run = h.hold ? { entries: [...mine.entries, ...previous], collection: mine.collection } : mine;
       paint();
       // The new tiles lead the grid (slice 103): bring them into view, even from far down.
       mine.entries.find(entry => entry.tile.isConnected)?.tile.scrollIntoView({ block: "nearest" });

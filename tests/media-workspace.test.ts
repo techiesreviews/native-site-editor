@@ -1274,3 +1274,15 @@ test("sub-folder workspace Replace reads both root spellings and writes the new 
   assert.equal(f.text.get("index.html"), `<img src="/my-site/images/a.webp?v=${version}"><img src="/my-site/images/a.webp?v=${version}">`);
   assert.equal(f.batches.at(-1)!.expectedSources.get(".editor/config.json"), config);
 });
+
+test("Media lists a file by the date it was added; a lighter version (Optimise) keeps that date (slice 103)", async () => {
+  const f = fixture();
+  f.text.set(MEDIA_RECORDS_PATH, JSON.stringify({ version: 2, collections: [], files: { "images/a.png": { added: "2026-01-02T03:04:05.000Z" } } }));
+  const first = await f.host.load();
+  assert.equal(first.items.find(item => item.path === "images/a.png")?.date, Date.parse("2026-01-02T03:04:05.000Z"));
+  assert.equal(first.items.find(item => item.path === "images/unused.png")?.date, undefined);
+  await f.host.import([{ file: new File(["new"], "a.webp"), folder: "media/images", replaceFrom: "images/a.png", expectedAssetVersion: "a-v1" }]);
+  assert.equal(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["media/images/a.webp"].added, "2026-01-02T03:04:05.000Z");
+  const after = await f.host.load();
+  assert.equal(after.items.find(item => item.path === "media/images/a.webp")?.date, Date.parse("2026-01-02T03:04:05.000Z"));
+});

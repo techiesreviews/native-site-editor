@@ -371,6 +371,7 @@
 }
 /* Just added (slice 103): a ring that holds a moment, then fades (a colour fade, so no reduced-motion variant). */
 .media-library__card.is-new::after { animation: media-new 2.4s var(--ease-out, ease-out) var(--new-delay, 0ms) backwards; }
+.media-library__pending.is-new::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; animation: media-new 2.4s var(--ease-out, ease-out) backwards; }
 @keyframes media-new { 0%, 60% { box-shadow: inset 0 0 0 3px var(--primary); } }
 @keyframes media-adding { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
 @media (prefers-reduced-motion: reduce) {

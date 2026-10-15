@@ -80,4 +80,13 @@ test("in the picker a file just added leads the grid, in view and chosen, so Use
   await expect(first).toBeInViewport();
   await expect(picker.getByRole("button", { name: "Choose zebra.svg", exact: true })).toHaveAttribute("aria-pressed", "true");
   await expect(picker.getByRole("button", { name: "Use image", exact: true })).toBeEnabled();
+  // Ready, it wears the brief ring, which then goes.
+  await expect(first).toHaveClass(/\bis-new\b/);
+  await expect(first).not.toHaveClass(/\bis-new\b/, { timeout: 5_000 });
+  // A second addition in the same picker leads the first and is the one chosen.
+  await picker.locator('input[name="media-upload"]').setInputFiles([file("apple.svg", "olive")]);
+  await expect(picker.locator(".media-library__grid > *").first()).toContainText("apple.svg");
+  await expect(picker.locator(".media-library__grid > *").nth(1)).toContainText("zebra.svg");
+  await expect(picker.getByRole("button", { name: "Choose apple.svg", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(picker.locator(".media-library__grid > *").first()).toBeInViewport();
 });
