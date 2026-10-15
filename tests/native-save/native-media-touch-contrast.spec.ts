@@ -87,6 +87,24 @@ test.describe("on a touch screen", () => {
     await select.tap(); await expect(select.locator("input")).not.toBeChecked();
     expect(await lit(page)).toEqual([]);
   });
+
+  test("a press on the image popup's footer buttons shows on a touch screen, where no hover can, and clears on release", async ({ page, baseURL }) => {
+    await open(page, baseURL);
+    // Hover rules cannot match here, so what a press paints comes from the :active rules alone.
+    expect(await page.evaluate(() => matchMedia("(hover: none)").matches)).toBe(true);
+    const looks = await popupButtons(page);
+    for (const [id, rest] of [["#probe-plain", looks.rest], ["#probe-done", looks.doneRest]] as const) {
+      const box = (await page.locator(id).boundingBox())!;
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      expect(await background(page.locator(id)), `${id} under the pointer, not pressed`).toBe(rest);
+      await page.mouse.down();
+      const pressed = await background(page.locator(id));
+      await page.mouse.up();
+      expect(pressed, id).not.toBe(rest);
+      if (id === "#probe-done") expect(pressed).toBe(looks.pressedBlue);
+      await expect.poll(() => background(page.locator(id)), id).toBe(rest);
+    }
+  });
 });
 
 test("a mouse still lights the row under it, and a disabled filled button is plain, not a pale colour", async ({ page, baseURL }) => {
@@ -183,8 +201,10 @@ test("a see-through picture is marked and sits on the light checkerboard in both
       const blob = await new Promise<Blob>(resolve => canvas.toBlob(blob => resolve(blob!), "image/png"));
       const image = document.createElement("img"); image.alt = ""; image.dataset.probe = path;
       document.querySelector(".media-library")!.append(image);
-      markTransparency(image, path); image.src = URL.createObjectURL(blob); await image.decode();
-      await new Promise(requestAnimationFrame);
+      // The mark is set on load; this listener, added after the helper's, runs after it.
+      markTransparency(image, path);
+      const loaded = new Promise(resolve => image.addEventListener("load", resolve, { once: true }));
+      image.src = URL.createObjectURL(blob); await loaded;
       return image.hasAttribute("data-transparent");
     };
     return { logo: await picture(0.5, "images/logo.png"), photo: await picture(1, "images/photo.png"), jpeg: await picture(0.5, "images/named.jpg") };
@@ -233,20 +253,19 @@ test("a see-through picture added to Media sits on the checkerboard on its tile,
   const chosen = picker.locator(".media-library__chosen-thumb img");
   await expect(chosen).toHaveAttribute("data-transparent", "");
   expect(await board(chosen)).toContain("conic-gradient");
+  // A file added inside the picker is held and chosen: its footer thumbnail is marked too.
+  await picker.locator('input[name="media-upload"]').setInputFiles({ name: "Mark.png", mimeType: "image/png", buffer: Buffer.from(logo, "base64") });
+  await expect(picker.getByRole("button", { name: "Choose Mark.png", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(chosen).toHaveAttribute("data-transparent", "");
+  for (const scheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme: scheme });
+    expect(await board(chosen), scheme).toContain("conic-gradient");
+  }
 });
 
 test("the image popup's footer buttons give press feedback; Done keeps its own darker blue", async ({ page, baseURL }) => {
   await open(page, baseURL);
-  const looks = await page.evaluate(async () => {
-    await import("/src/page-builder/image-popup-view.ts");
-    const root = document.createElement("div"); root.className = "image-popup"; root.style.cssText = "position:fixed;inset:0 auto auto 0;z-index:10000";
-    const plain = document.createElement("button"), done = document.createElement("button");
-    plain.className = "image-popup__button"; plain.textContent = "Open large editor"; plain.id = "probe-plain";
-    done.className = "image-popup__button image-popup__button--primary"; done.textContent = "Done"; done.id = "probe-done";
-    const probe = document.createElement("span"); probe.style.background = "var(--primary-hover)";
-    root.append(plain, done, probe); document.body.append(root);
-    return { rest: getComputedStyle(plain).backgroundColor, doneRest: getComputedStyle(done).backgroundColor, pressedBlue: getComputedStyle(probe).backgroundColor };
-  });
+  const looks = await popupButtons(page);
   for (const [id, rest] of [["#probe-plain", looks.rest], ["#probe-done", looks.doneRest]] as const) {
     const box = (await page.locator(id).boundingBox())!;
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await page.mouse.down();
@@ -257,3 +276,17 @@ test("the image popup's footer buttons give press feedback; Done keeps its own d
     await expect.poll(() => background(page.locator(id))).toBe(rest);
   }
 });
+
+/** The image popup's two footer buttons (its stylesheet loaded), top left, and their resting colours. */
+function popupButtons(page: Page) {
+  return page.evaluate(async () => {
+    await import("/src/page-builder/image-popup-view.ts");
+    const root = document.createElement("div"); root.className = "image-popup"; root.style.cssText = "position:fixed;inset:0 auto auto 0;z-index:10000";
+    const plain = document.createElement("button"), done = document.createElement("button");
+    plain.className = "image-popup__button"; plain.textContent = "Open large editor"; plain.id = "probe-plain";
+    done.className = "image-popup__button image-popup__button--primary"; done.textContent = "Done"; done.id = "probe-done";
+    const probe = document.createElement("span"); probe.style.background = "var(--primary-hover)";
+    root.append(plain, done, probe); document.body.append(root);
+    return { rest: getComputedStyle(plain).backgroundColor, doneRest: getComputedStyle(done).backgroundColor, pressedBlue: getComputedStyle(probe).backgroundColor };
+  });
+}
