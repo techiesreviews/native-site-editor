@@ -2,7 +2,7 @@
 title: GIFs and YouTube or Vimeo players
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-73 runner)
 blocked_by: [70-improve-images-scan, 57-video-preparation, 67-online-video-records]
 builder: sol
 phase: 6
