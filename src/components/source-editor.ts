@@ -474,6 +474,11 @@ export function getMountedSource(path: string) {
   const editor = mounted.get(path);
   return editor && docText(editor.doc);
 }
+/** The id of the step Undo takes back next in the mounted, editable `path`'s history, when no step is newer. */
+export function latestUndo(path: string) {
+  const editor = mounted.get(path);
+  return editor && !editor.readOnly ? sourceStore().latestUndo(editor.session) : undefined;
+}
 /** Undo or Redo in the history of `fallbackPath`'s pane (else the last mounted one). */
 export async function runVisualHistory(direction: "undo" | "redo", fallbackPath?: string) {
   const fallback = fallbackPath ? mounted.get(fallbackPath) : undefined;

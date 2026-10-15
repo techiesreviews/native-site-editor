@@ -222,7 +222,7 @@ export function showImproveImages(sheet: LibrarySheet, h: ImproveHost) {
         const stopped = abort.signal.aborted;
         running = undefined;
         if (sheet.work === abort) sheet.work = undefined;
-        h.tell(improveRunMessage(changed, stopped, failed));
+        h.done(improveRunMessage(changed, stopped, failed));
         if (h.alive()) { await load(); if (shown()) draw(m.outcomes.length ? "undo-all" : "fix-all"); }
       }
     }, true, true);
@@ -234,7 +234,7 @@ export function showImproveImages(sheet: LibrarySheet, h: ImproveHost) {
       m.kept = await session!.undo(outcomes, m.kept);
       m.outcomes = m.outcomes.filter(outcome => !undone.has(outcome));
       for (const outcome of undone) m.states.delete(outcome.file);
-      h.tell(outcomes.length === 1 ? `Undone: ${outcomes[0].label}.` : "Undone.");
+      h.done(outcomes.length === 1 ? `Undone: ${outcomes[0].label}.` : "Undone.");
       await load();
       if (shown()) draw();
     });

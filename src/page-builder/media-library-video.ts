@@ -26,7 +26,7 @@ export function mediaDetailParts(h: DetailHost, path: string, meta: MediaMetadat
   still: string | undefined, current: () => boolean): HTMLElement[] {
   const { adapter, task, tell, refresh, cache } = h, library = h.library(), video = mediaKind(path) === "video";
   const parts: HTMLElement[] = [];
-  const done = async (message: string) => { if (!current()) return; await refresh(); tell(message); };
+  const done = async (message: string) => { if (!current()) return; await refresh(); h.done(message); };
   if (video && adapter.still) {
     const picture = node("img", "media-detail__still"); picture.alt = ""; picture.hidden = true;
     if (still) void cache.get(still).then(bytes => { picture.src = bytes.url; picture.hidden = false; }, () => undefined);
@@ -43,7 +43,7 @@ export function mediaDetailParts(h: DetailHost, path: string, meta: MediaMetadat
       if (!current()) return;
       // Inside the explorer popover the picker keeps it open, as Replace everywhere does.
       await openMediaPicker({ adapter, accept: "image/*", place: `${basename(path)} · Still picture`, within: h.dialog.closest<HTMLElement>("[popover]") ?? undefined,
-        report: { announce: tell, error: error => tell(String(error)) },
+        report: { announce: h.done, error: error => tell(String(error)) },
         onPick: async (image, cancelled, held) => {
           let chosen = image.path;
           // A picture added inside the picker is saved first, then becomes the still.

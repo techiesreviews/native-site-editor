@@ -130,7 +130,7 @@ test("refresh after real metadata Undo restores detail fields and cannot save un
   await page.evaluate(async () => { await (window as typeof window & { mediaPaneHarness: { view: { refresh(): Promise<void> } } }).mediaPaneHarness.view.refresh(); });
   await expect(alt).toHaveValue(originalAlt); await expect(keep).not.toBeChecked();
   await panel.getByRole("button", { name: "Save details", exact: true }).click();
-  await expect(panel.getByRole("status").last()).toContainText("saved as a draft");
+  await expect(page.locator(".editor-toast__text")).toContainText("saved as a draft");
   expect((await storedDraft(page, ".editor/media.json"))?.content ?? "").not.toContain("Undone pane alt");
   expect((await storedDraft(page, ".editor/media.json"))?.content ?? "").not.toContain("alwaysKeep");
 });
@@ -279,7 +279,7 @@ for (const lastImage of [false, true]) {
     await expect(panel.getByRole("status").last()).not.toContainText("Reopen Delete");
     expect(await page.evaluate(() => (window as any).deleteRace.loads())).toBe(1);
     await page.evaluate(() => (window as any).releaseImageDelete());
-    await expect(panel.getByRole("status").last()).toContainText("Removed a.svg. Restore it from More → Recently removed.");
+    await expect(page.locator(".editor-toast__text")).toContainText("Removed a.svg. Restore it from More → Recently removed.");
     await expect(lastImage ? panel.locator(".media-library__grid") : panel.getByRole("button", { name: "Details for images/b.svg", exact: true })).toBeFocused();
     await expect(panel.getByRole("status").last()).not.toContainText("Reopen Delete");
     await page.evaluate(() => (window as any).deleteRace.view.dispose());

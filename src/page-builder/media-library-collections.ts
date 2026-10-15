@@ -89,7 +89,7 @@ export function showCollectionName(sheet: LibrarySheet, h: CollectionScreensHost
       } else await h.adapter.collections({ kind: "new", name: chosen, paths });
       await h.refresh();
       if (version === sheet.version) done(chosen);
-      h.tell(renaming ? `Renamed the collection "${renaming}" to "${chosen}".`
+      h.done(renaming ? `Renamed the collection "${renaming}" to "${chosen}".`
         : paths.length ? `Added ${filesLabel(paths.length)} to the new collection "${chosen}".` : `Created the collection "${chosen}".`);
     });
   };
@@ -120,7 +120,7 @@ export function showCollectionDelete(sheet: LibrarySheet, h: CollectionScreensHo
     await h.adapter.collections({ kind: "delete", name });
     await h.refresh();
     if (version === sheet.version) done();
-    h.tell(`Deleted the collection "${name}". Its files stay in Media.`);
+    h.done(`Deleted the collection "${name}". Its files stay in Media.`);
   }), "button primary"), button("Cancel", done));
   element.append(actions);
   h.sync();

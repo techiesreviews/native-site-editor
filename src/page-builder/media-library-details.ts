@@ -121,7 +121,7 @@ export async function showMediaDetail(sheet: LibrarySheet, h: DetailHost, path: 
 function renderPreview(
   h: DetailHost, path: string, data: MediaBytes, meta: MediaMetadata, still: string | undefined, current: () => boolean, replace?: () => void,
 ) {
-  const { optimise, remove, task, tell, cache } = h;
+  const { optimise, remove, task, done, cache } = h;
   const view = node("div", "media-detail__view"), preview = node("figure", "media-detail__preview");
   const look = mediaTileLook(path, still, meta.duration), kind = mediaKind(path);
   preview.dataset.type = look.icon;
@@ -161,7 +161,7 @@ function renderPreview(
   )));
   if (replace) actions.append(button("Replace everywhere…", replace));
   actions.append(button("Copy path", () => void task(async () => {
-    await navigator.clipboard.writeText(siteAddress(path, h.library().prefix ?? "")); tell("Path copied.");
+    await navigator.clipboard.writeText(siteAddress(path, h.library().prefix ?? "")); done("Path copied.");
   })), button("Remove file…", () => remove([path])));
   const player = preview.querySelector<HTMLVideoElement | HTMLAudioElement>("video, audio") ?? undefined;
   view.append(preview, ...(kind === "video" || kind === "audio") && !h.modal ? mediaDetailParts(h, path, meta, player, still, current) : [], actions);
@@ -183,7 +183,7 @@ function renderInformation(
   form: HTMLFormElement, sheet: LibrarySheet, h: DetailHost,
   path: string, data: MediaBytes, meta: MediaMetadata, current: () => boolean,
 ) {
-  const { adapter, task, refresh, tell, cache } = h, library = h.library(), image = mediaKind(path) === "image";
+  const { adapter, task, refresh, done, cache } = h, library = h.library(), image = mediaKind(path) === "image";
   const item = library.items.find(entry => entry.path === path);
   const name = input("File name", "text"); name.value = basename(path); name.autocomplete = "off";
   name.autocapitalize = "none"; name.spellcheck = false;
@@ -300,11 +300,11 @@ function renderInformation(
         if (!(error instanceof MediaNameTakenError) || !current()) throw error;
         naming.taken(error.taken, error.suggestion); name.focus(); return;
       }
-      if (!rename) { await refresh(); tell("Details saved as a draft."); return; }
+      if (!rename) { await refresh(); done("Details saved as a draft."); return; }
       cache.clear(); await refresh();
       const to = mediaRenamedPath(path, rename.name);
       if (h.alive() && h.library().items.some(entry => entry.path === to)) await showMediaDetail(sheet, h, to);
-      tell(`Details saved and the file renamed, with its uses updated, as drafts.${forward ? " Its old address forwards to the new one." : ""}`);
+      done(`Details saved and the file renamed, with its uses updated, as drafts.${forward ? " Its old address forwards to the new one." : ""}`);
     });
   });
 }

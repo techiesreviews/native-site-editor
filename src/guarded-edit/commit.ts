@@ -181,7 +181,7 @@ export function createCommit(ws: EditorWorkspace) {
       }
       op.recorded();
       ws.afterFileChanges();
-      ws.announce(done);
+      ws.announce(done, { undo: anchor });
       return undefined;
     }
 
@@ -272,7 +272,9 @@ export function createCommit(ws: EditorWorkspace) {
           keep();
           ws.afterFileChanges();
           ws.showRow(initial && op.focus ? op.focus : path ? { file: path } : undefined);
-          if (message && structuralLive() && receipt.isCurrent() && ws.status() === previousStatus) ws.announce(message);
+          // The step's first announcement offers its Undo, from the page it reopened, once a page (anchor) records it.
+          const undo = initial && anchor !== undefined ? ws.openFile() : undefined;
+          if (message && structuralLive() && receipt.isCurrent() && ws.status() === previousStatus) ws.announce(message, undo === undefined ? undefined : { undo });
           return true;
         } finally { end(); }
       };

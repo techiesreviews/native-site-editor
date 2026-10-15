@@ -80,7 +80,7 @@ export function showToCheck(sheet: LibrarySheet, h: ToCheckHost) {
           if (version !== sheet.version) return;
           await h.adapter.check!(row);
           await h.refresh();
-          h.tell(`Checked the ${what} of ${name}${where}.`);
+          h.done(`Checked the ${what} of ${name}${where}.`);
           // Focus moves on to the next row's OK, or to the heading when nothing is left.
           if (version !== sheet.version && sheet.element.dataset.mode === "to-check") focusAfter(next);
         }), "button primary");
@@ -104,7 +104,7 @@ export function showToCheck(sheet: LibrarySheet, h: ToCheckHost) {
             await h.adapter.check!({ ...row, text: open.seen }, area.value);
             editing.delete(key);
             await h.refresh();
-            h.tell(`Saved the ${what} of ${name}${where} as a draft.`);
+            h.done(`Saved the ${what} of ${name}${where} as a draft.`);
             if (version !== sheet.version && sheet.element.dataset.mode === "to-check") focusAfter(next);
           });
         }, "button primary");

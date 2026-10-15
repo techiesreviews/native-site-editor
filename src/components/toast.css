@@ -1,0 +1,73 @@
+/* The editor toast (components/toast.ts): an inverse surface, dark on the
+   light theme and light on the dark one. Bottom-centre, 16 px above the edge
+   on a computer and tablet; on a phone it fills the width less 8 px a side
+   (its minimum width is wider than the phone's), 8 px above the edge.
+   --toast-lift raises it above a pinned action row. */
+.editor-toast {
+  --toast-edge: clamp(8px, 4vw - 8px, 16px);
+  inset: auto 8px calc(var(--toast-edge) + env(safe-area-inset-bottom, 0px) + var(--toast-lift, 0px));
+  margin: 0 auto;
+  box-sizing: border-box;
+  inline-size: fit-content;
+  min-inline-size: min(400px, 100% - 16px);
+  max-inline-size: min(640px, 100% - 16px);
+  min-block-size: 44px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: var(--radius-panel);
+  background: var(--text);
+  color: var(--surface);
+  box-shadow: var(--shadow);
+  font-size: var(--type-base);
+  line-height: 1.4;
+  overflow: visible;
+  opacity: 0;
+  transition:
+    opacity 0.2s ease-out,
+    translate 0.2s ease-out,
+    display 0.2s allow-discrete,
+    overlay 0.2s allow-discrete;
+}
+.editor-toast:popover-open {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  opacity: 1;
+}
+/* An action sits at the end; the toast's padding there is the button's own. */
+.editor-toast:has(.editor-toast__action:not([hidden])) {
+  padding-inline-end: 4px;
+}
+.editor-toast__text {
+  flex: 1;
+  padding-block: 12px;
+  overflow-wrap: anywhere;
+}
+.editor-toast__action {
+  flex: none;
+  min-block-size: 36px;
+  background: transparent;
+  color: color-mix(in oklch, var(--primary) 45%, var(--surface));
+}
+.editor-toast__action:focus-visible {
+  outline-color: currentColor;
+  outline-offset: -2px;
+}
+.editor-toast__action:active {
+  background: color-mix(in oklch, var(--surface) 20%, transparent);
+}
+@media (hover: hover) and (pointer: fine) {
+  .editor-toast__action:hover {
+    background: color-mix(in oklch, var(--surface) 12%, transparent);
+  }
+}
+@starting-style {
+  .editor-toast:popover-open { opacity: 0; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .editor-toast { translate: 0 8px; }
+  .editor-toast:popover-open { translate: 0 0; }
+  @starting-style {
+    .editor-toast:popover-open { translate: 0 8px; }
+  }
+}

@@ -5,7 +5,7 @@ import { basename, mediaKind } from "./media-library-filter";
 import { removalNotice, removedMessage } from "./media-recently-removed";
 import { takeSheet, type LibrarySheet, type LibrarySheetContext } from "./media-library-sheet";
 
-type DeleteContext = Pick<LibrarySheetContext, "alive" | "library" | "loading" | "tell" | "task" | "refresh" | "adapter" | "cache"> & {
+type DeleteContext = Pick<LibrarySheetContext, "alive" | "library" | "loading" | "tell" | "done" | "task" | "refresh" | "adapter" | "cache"> & {
   /** Opens a page that uses the file, so Lex can swap its picture first. */
   openPage?: (page: string) => void;
   /** A page's title in the Pages tab. */
@@ -80,7 +80,7 @@ export function confirmMediaDelete(sheet: LibrarySheet, grid: HTMLElement, c: De
         if (target === grid) grid.tabIndex = -1;
         target.focus();
       }
-      tell(removedMessage(paths));
+      c.done(removedMessage(paths));
     }), "button primary"));
   element.append(node("p", "media-library__muted", notice.note), actions);
   title.focus();

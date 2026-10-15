@@ -1,4 +1,5 @@
 import { componentImageChoices } from "./component-model";
+import type { AnnounceAs } from "../components/toast-rules";
 import type { MediaPathPlacement } from "./media-picker";
 import { componentRenameStep, madeFiles, madeMessage, makeComponentStep, newComponentStep, slotChipPlan, templateRemovalPlan, type LoaderPlanner, type MadePlanned, type NewPlanned, type RenamePlanned, type SlotChipPlanned } from "./component-plans";
 import { STALE_MESSAGE, type GuardedEdits, type Outcome, type Stamp } from "../guarded-edit";
@@ -124,7 +125,8 @@ export interface ComponentDeps {
   selection: () => NativePreviewSelection | undefined;
   /** Opens a file in the code pane; resolves once it is mounted (true) or not. */
   openFile: (path: string) => Promise<boolean>;
-  announce: (text: string) => void;
+  /** Said and shown as the toast; mode notes the component bar already shows are "quiet". */
+  announce: (text: string, as?: AnnounceAs) => void;
   error: (error: unknown) => void;
   /** Images of the repository, as root paths' suggestions. */
   images: () => string[];
@@ -635,7 +637,7 @@ export function createComponentTools(deps: ComponentDeps) {
       deps.editor()?.focusEditor?.(level.template);
       // Back selects the instance we opened from, ready to offer Open again.
       deps.preview()?.selectNode({ path: level.template, node: index === undefined ? [0] : [...(before.chain[index + 1]?.node ?? [0])] });
-      deps.announce(`Editing the ${componentLabel(level.tag)} component: changes apply to ${usageSummary(usage(level.tag))}.`);
+      deps.announce(`Editing the ${componentLabel(level.tag)} component: changes apply to ${usageSummary(usage(level.tag))}.`, "quiet");
     }
     barKey = "";
     renderBar();
@@ -691,7 +693,7 @@ export function createComponentTools(deps: ComponentDeps) {
         deps.editor()?.revealRange(template.path, target.element.start, target.element.tag.end);
         return;
       }
-      deps.announce(`Editing the ${componentLabel(tag)} component: changes apply to ${usageSummary(usage(tag))}.`);
+      deps.announce(`Editing the ${componentLabel(tag)} component: changes apply to ${usageSummary(usage(tag))}.`, "quiet");
       if (!target) return;
       // Once the preview has selected the part (and marked its tag), the slot's own tag is selected.
       reveal = (async () => {
@@ -994,7 +996,7 @@ export function createComponentTools(deps: ComponentDeps) {
     if (!target) return;
     deps.preview()?.selectNode(target.request);
     // Shown through another component: its instance on the page holds this one.
-    if (target.holder !== tag) deps.announce(`${componentLabel(tag)} is inside ${componentLabel(target.holder)} on this page: ${componentLabel(target.holder)} selected.`);
+    if (target.holder !== tag) deps.announce(`${componentLabel(tag)} is inside ${componentLabel(target.holder)} on this page: ${componentLabel(target.holder)} selected.`, "quiet");
   }
 
   /** The tag on a page that shows `tag`: itself, else the first component whose template does (through others too). */

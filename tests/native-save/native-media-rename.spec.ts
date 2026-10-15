@@ -90,7 +90,7 @@ test("rename a used image in File details: the page still shows it, and the old 
   await forward.check();
   await media.getByRole("button", { name: "Save details", exact: true }).click();
   await expect(name).toHaveValue("lisbon-tram.webp");
-  await expect(media.locator(".media-library__message")).toContainText("Its old address forwards to the new one.");
+  await expect(page.locator(".editor-toast__text")).toContainText("Its old address forwards to the new one.");
   await expect.poll(() => text(page, "_redirects")).toBe("/images/tram.webp /images/lisbon-tram.webp 301\n");
   await expect.poll(async () => (await text(page, "about/index.html")) ?? "").toContain('src="/images/lisbon-tram.webp"');
   await expect.poll(() => pageText(page, "index.html")).toContain('src="/images/lisbon-tram.webp"');
@@ -166,7 +166,7 @@ test("Replace everywhere with a picture in Media changes it on two pages with th
   expect(await storedDraft(page, "index.html")).toBeUndefined();
   await media.getByRole("button", { name: "Back", exact: true }).click();
   await replaceWithNext(page);
-  await expect(media.locator(".media-library__message")).toContainText("Replaced tram.webp everywhere on 2 pages, as a draft. The old picture is in More → Recently removed.");
+  await expect(page.locator(".editor-toast__text")).toContainText("Replaced tram.webp everywhere on 2 pages, as a draft. The old picture is in More → Recently removed.");
   // The same mark on both pages; the prepared picture brought its own 480 px copy.
   await expect.poll(async () => marked.exec((await text(page, "index.html")) ?? "")?.[1]).toBeTruthy();
   const version = marked.exec((await text(page, "index.html"))!)![1];
@@ -212,7 +212,7 @@ test("replacing a picture an art-directed <picture> shows says it is now used on
   await seed(page, baseURL, { "about/index.html": { content: about.replace('<section class="prose"',
     '<picture><source media="(max-width: 600px)" srcset="/images/lisbon.webp"><img src="/images/tram.webp" alt="Tram"></picture>\n  <section class="prose"') } });
   await replaceWithNext(page);
-  await expect(pane(page).locator(".media-library__message")).toContainText("The new picture is now used on all screens.");
+  await expect(page.locator(".editor-toast__text")).toContainText("The new picture is now used on all screens.");
   await expect.poll(async () => (await text(page, "about/index.html")) ?? "").not.toContain("<picture");
 });
 

@@ -1004,6 +1004,12 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
     redo: (history: string) => run(history, "redo"),
     canUndo: (history: string) => canRun(history, "undo"),
     canRedo: (history: string) => canRun(history, "redo"),
+    /** The id of the step Undo takes back next when it is the newest step of all; none while typing is open on top of it. */
+    latestUndo(history: string) {
+      if ([...typing.values()].some(session => session.history === history && session.start)) return undefined;
+      const id = journals.get(history)?.undo.at(-1)?.id;
+      return id === steps ? id : undefined;
+    },
     /** The label of the step Undo or Redo would run next. */
     peek: (history: string, direction: "undo" | "redo") => journals.get(history)?.[direction].at(-1)?.label,
     hold,

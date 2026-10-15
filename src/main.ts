@@ -116,6 +116,7 @@ import { writeNewDrafts } from "./new-drafts";
 import { createAgentSiteHost } from "./agent-site-host";
 import { createGuardedEdits, type Reads, type PlanResult, type Stamp } from "./guarded-edit";
 import { createEditorWorkspace } from "./editor-workspace";
+import type { AnnounceAs } from "./components/toast-rules";
 import type {
   EditorContext,
   Directory,
@@ -3842,8 +3843,27 @@ let confirmDialog: ReturnType<typeof createConfirmDialog> | undefined;
 let discardDialog: ReturnType<typeof createConfirmDialog> | undefined;
 let pagePicker: ReturnType<typeof createPagePicker> | undefined;
 
-function announce(text: string) {
+type Toast = typeof import("./components/toast");
+let toast: Toast | undefined, toastLoad: Promise<Toast> | undefined;
+// Said in #status and shown as the toast (slice 105, loaded on first use).
+function announce(text: string, as?: AnnounceAs) {
   element("status").textContent = text;
+  if (as === "quiet") return;
+  const action = as?.undo === undefined ? undefined : undoAction(as.undo);
+  if (toast) toast.showToast(text, action);
+  else void (toastLoad ??= import("./components/toast")).then(loaded => {
+    toast = loaded;
+    // Said over meanwhile (a refusal, a newer announcement): not shown.
+    if (element("status").textContent === text) loaded.showToast(text, action);
+  });
+}
+// The toast's Undo takes back the step it names, the newest one: once another is newer, it refuses.
+function undoAction(path: string) {
+  const step = editorModule.latestUndo(path);
+  return step === undefined ? undefined : { label: "Undo", run() {
+    if (editorModule.latestUndo(path) === step) void editorModule.runVisualHistory("undo", path);
+    else refuse("Newer changes came after this one. Use Undo at the top to take them back first.");
+  } };
 }
 
 const parentOf = (path: string) => (path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "");

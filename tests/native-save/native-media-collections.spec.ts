@@ -53,7 +53,7 @@ test("create a collection, add two files, view it, take one out (it stays under 
   await expect(bar.getByRole("button", { name: "Remove file", exact: true })).toBeVisible();
   await bar.getByRole("button", { name: "Take out of Studio picks", exact: true }).click();
   await expect.poll(() => tileNames(page)).toEqual(["images/studio-desk.svg"]);
-  await expect(library.locator(".media-library__message")).toHaveText("Took 1 file out of \"Studio picks\". It stays in Media under All.");
+  await expect(page.locator(".editor-toast__text")).toHaveText("Took 1 file out of \"Studio picks\". It stays in Media under All.");
   await collections.selectOption("");
   await expect.poll(() => tileNames(page)).toEqual(["images/placeholder.svg", "images/studio-desk.svg"]);
   expect((await storedDraft(page, "images/placeholder.svg"))?.deleted).toBeUndefined();

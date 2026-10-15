@@ -87,7 +87,7 @@ export function showAddingSettings(sheet: LibrarySheet, h: AddingSettingsHost) {
       if (version !== sheet.version) return;
       await h.adapter.adding!(change);
       await h.refresh();
-      if (version === sheet.version) h.tell(onReset ? "Adding settings are back to the defaults." : "Adding settings saved as a draft.");
+      if (version === sheet.version) h.done(onReset ? "Adding settings are back to the defaults." : "Adding settings saved as a draft.");
     }).then(() => {
       if (version !== sheet.version) return;
       paint();

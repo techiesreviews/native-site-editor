@@ -33,7 +33,7 @@ export async function replaceEverywhere(sheet: LibrarySheet, c: ReplaceContext, 
   await openMediaPicker({
     place: `Replace everywhere · ${basename(path)}`, accept: REPLACE_ACCEPT,
     within: c.dialog.closest<HTMLElement>("[popover]") ?? undefined,
-    report: { announce: c.tell, error: error => c.tell(error instanceof Error ? error.message : String(error)) },
+    report: { announce: c.done, error: error => c.tell(error instanceof Error ? error.message : String(error)) },
     onPick: async (image, cancelled, held) => {
       const chosen = held?.chosen?.();
       let next: NewPicture;
@@ -111,7 +111,7 @@ function confirmReplace(sheet: LibrarySheet, c: ReplaceContext, path: string, ne
     next.release(); c.cache.clear(); await c.refresh();
     if (c.alive() && c.library().items.some(item => item.path === to)) await c.details(to);
     else if (c.alive() && version === sheet.version) { sheet.version++; element.hidden = true; delete element.dataset.mode; element.replaceChildren(); }
-    c.tell([replacedMessage(to, pages), ...notices].join(" "));
+    c.done([replacedMessage(to, pages), ...notices].join(" "));
   }), "button primary"));
   element.append(actions);
   title.focus();

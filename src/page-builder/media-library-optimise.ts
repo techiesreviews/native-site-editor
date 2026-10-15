@@ -9,7 +9,7 @@ import { mediaImageRecipe, mediaSavings, optimiseMedia, type MediaOptimiseResult
 import { askToAddUnchanged, keptOriginal } from "./media-prepare";
 import type { MediaImportRequest } from "./media-picker";
 
-type OptimiseContext = Pick<LibrarySheetContext, "alive" | "library" | "task" | "adapter" | "cache" | "refresh" | "tell">;
+type OptimiseContext = Pick<LibrarySheetContext, "alive" | "library" | "task" | "adapter" | "cache" | "refresh" | "tell" | "done">;
 
 /** The Optimise sheet; `folder` is the folder filter, the default destination for new files,
  * which join `collection` (the one being viewed when they were dropped). */
@@ -17,7 +17,7 @@ export function showMediaOptimise(
   sheet: LibrarySheet, c: OptimiseContext, folder: string,
   files: File[], existing = false, receipts = new Map<string, string | undefined>(), collection = "",
 ) {
-  const { element } = sheet, { task, cache, tell } = c;
+  const { element } = sheet, { task, cache, done } = c;
   if (!c.alive()) return;
   takeSheet(sheet);
   delete element.dataset.mode;
@@ -48,7 +48,7 @@ export function showMediaOptimise(
       prepared, existing, destination.value, c.library().metadata, update.checked, receipts, collection,
     );
     await c.adapter.import(requests);
-    cache.clear(); await c.refresh(); element.hidden = true; tell("Images added as drafts. Choose an image to use it on the page.");
+    cache.clear(); await c.refresh(); element.hidden = true; done("Images added as drafts. Choose an image to use it on the page.");
   }), "button"); add.disabled = true;
   const prepare = button("Preview optimisation", () => void task(async () => {
     if (!width.checkValidity() || !quality.checkValidity()) throw new Error("Enter a width from 1 to 10000 (or none for full size) and quality from 1 to 100.");

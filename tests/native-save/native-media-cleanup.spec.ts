@@ -148,7 +148,7 @@ test("removing a used file warns with its page, then allows; after publishing, R
   await expect(pane(page).getByRole("button", { name: "Remove file…", exact: true })).toBeVisible();
   await pane(page).getByRole("button", { name: "Remove file…", exact: true }).click();
   await pane(page).getByRole("button", { name: "Remove file", exact: true }).click();
-  await expect(pane(page).locator(".media-library__message")).toContainText("Removed placeholder.svg. Restore it from More → Recently removed.");
+  await expect(page.locator(".editor-toast__text")).toContainText("Removed placeholder.svg. Restore it from More → Recently removed.");
   await expect(pane(page).locator('.media-library__card[data-path="images/placeholder.svg"]')).toHaveCount(0);
 
   await publishButton(page).click();
@@ -167,7 +167,7 @@ test("removing a used file warns with its page, then allows; after publishing, R
   await expect(row).toContainText("Removed today · 30 days left");
   await expect.poll(() => row.locator("img").evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
   await row.getByRole("button", { name: "Restore placeholder.svg", exact: true }).click();
-  await expect(pane(page).locator(".media-library__message")).toContainText("Restored placeholder.svg to images/placeholder.svg.");
+  await expect(page.locator(".editor-toast__text")).toContainText("Restored placeholder.svg to images/placeholder.svg.");
   await expect(row).toHaveCount(0);
   await expect(pane(page).getByText(/^Nothing removed in the last 30 days\./)).toBeVisible();
   await expect.poll(shown).toBeGreaterThan(0);
@@ -217,7 +217,7 @@ test("unused images appear in Clean up; removing them puts them in Recently remo
   await pane(page).getByRole("button", { name: "Remove 2 files", exact: true }).click();
   await expect(pane(page).getByRole("heading", { name: "Clean up", exact: true })).toBeFocused();
   await expect(pane(page).locator(".media-cleanup__notice")).toHaveText("Removed 2 files.Undo");
-  await expect(pane(page).locator(".media-library__message")).toContainText("Removed 2 files. They stay in Recently removed for 30 days.");
+  await expect(page.locator(".editor-toast__text")).toContainText("Removed 2 files. They stay in Recently removed for 30 days.");
   await expect(pane(page).locator('.media-library__card[data-path="images/spare.svg"]')).toHaveCount(0);
   await expect(toggleCount(page)).toBeHidden();
 
@@ -230,7 +230,7 @@ test("unused images appear in Clean up; removing them puts them in Recently remo
   // With nothing left to suggest, Clean up still opens for Undo, which brings both back to their addresses.
   await more("Clean up");
   await pane(page).getByRole("button", { name: "Undo", exact: true }).click();
-  await expect(pane(page).locator(".media-library__message")).toContainText("Brought back 2 files to their addresses.");
+  await expect(page.locator(".editor-toast__text")).toContainText("Brought back 2 files to their addresses.");
   await expect(pane(page).getByRole("button", { name: "Undo", exact: true })).toHaveCount(0);
   await expect(toggleCount(page)).toHaveText("2");
   await pane(page).getByRole("button", { name: "Back", exact: true }).click();

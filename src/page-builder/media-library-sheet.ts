@@ -23,7 +23,10 @@ export interface LibrarySheetContext {
   alive: () => boolean;
   library: () => MediaLibrary;
   loading: () => boolean;
+  /** A warning or refusal, inline under the screen. */
   tell: (text: string) => void;
+  /** A result: the editor's toast. */
+  done: (text: string) => void;
   task: (work: () => Promise<void>, lock?: boolean, canCancel?: boolean) => Promise<void>;
   refresh: () => Promise<void>;
   adapter: MediaPickerHost;

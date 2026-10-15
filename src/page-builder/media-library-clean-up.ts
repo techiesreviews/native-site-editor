@@ -92,7 +92,7 @@ export function showCleanUp(sheet: LibrarySheet, h: CleanUpHost) {
           await h.adapter.restore!(entries);
           h.memory.undo = undefined;
           await h.refresh();
-          h.tell(undoneMessage(removed));
+          h.done(undoneMessage(removed));
           if (sheet.element.dataset.mode === "clean-up") draw();
         }), "button secondary");
         again.dataset.focusKey = "undo";
@@ -193,7 +193,7 @@ export function showCleanUp(sheet: LibrarySheet, h: CleanUpHost) {
         await h.refresh();
         // Recorded once the library lists the removed entries, so a redraw in between cannot drop it.
         h.memory.undo = mains;
-        h.tell(cleanedMessage(mains));
+        h.done(cleanedMessage(mains));
         if (h.alive() && sheet.element.dataset.mode === "clean-up") draw();
       }), "button primary");
       remove.disabled = !actionable;

@@ -49,7 +49,7 @@ export function showOnlineVideoDetail(sheet: LibrarySheet, h: DetailHost, key: s
 
 /** The still picture (a clean surface without one) and, in the pane, the video's actions under it. */
 function preview(h: DetailHost, video: MediaOnlineVideo, current: () => boolean) {
-  const { adapter, task, tell, refresh } = h, title = onlineVideoName(video);
+  const { adapter, task, tell, done, refresh } = h, title = onlineVideoName(video);
   const view = node("div", "media-detail__view"), figure = node("figure", "media-detail__preview");
   figure.dataset.type = "video";
   const surface = () => {
@@ -72,14 +72,14 @@ function preview(h: DetailHost, video: MediaOnlineVideo, current: () => boolean)
     if (!current()) return;
     // Inside the explorer popover the picker keeps it open, as Video details' Choose picture… does.
     await openMediaPicker({ adapter, accept: "image/*", place: `${title} · Still picture`, within: h.dialog.closest<HTMLElement>("[popover]") ?? undefined,
-      report: { announce: tell, error: error => tell(String(error)) },
+      report: { announce: done, error: error => tell(String(error)) },
       onPick: async (image, cancelled, held) => {
         let chosen = image;
         // A picture added inside the picker is saved first, then becomes the still.
         if (held) { const saved = await held.save(); chosen = held.image(saved.paths); }
         if (cancelled() || !h.alive()) return;
         await adapter.onlineVideoStill!(key, { path: chosen.path, width: chosen.width, height: chosen.height });
-        if (current()) { await refresh(); tell("Still picture changed everywhere the video is used."); }
+        if (current()) { await refresh(); done("Still picture changed everywhere the video is used."); }
       } });
   })));
   if (adapter.removeOnlineVideo) {
@@ -93,7 +93,7 @@ function preview(h: DetailHost, video: MediaOnlineVideo, current: () => boolean)
       row.append(cancel, button("Remove", () => void task(async () => {
         await adapter.removeOnlineVideo!(key);
         if (!h.alive()) return;
-        await refresh(); tell(`${title} was removed from Media.`);
+        await refresh(); done(`${title} was removed from Media.`);
       }), "button primary"));
       box.append(node("strong", "", `Remove ${title} from Media?`), words, row);
       actions.replaceWith(box); cancel.focus();
@@ -145,7 +145,7 @@ function serviceBar(h: DetailHost, video: MediaOnlineVideo, current: () => boole
     void h.task(async () => {
       try { await h.adapter.onlineVideoServiceBar!({ service: video.service, id: video.id }, on); }
       catch (error) { box.checked = !on; throw error; }
-      if (current()) { await h.refresh(); h.tell(on ? "Vimeo's own bar shows everywhere the video is used." : "The site's bar shows everywhere the video is used."); }
+      if (current()) { await h.refresh(); h.done(on ? "Vimeo's own bar shows everywhere the video is used." : "The site's bar shows everywhere the video is used."); }
     });
   });
   part.append(node("h4", "", "Player"), check("Show Vimeo's own bar", box),

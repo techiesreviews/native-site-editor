@@ -23,6 +23,7 @@ import {
   dismissRefreshingDelete, pruneLibrarySelection, rebuildLibraryCollections,
 } from "./media-library-refresh";
 import "./media-picker.css";
+import { say } from "../components/toast";
 import type { MediaCleanUpMount, MediaHeldFiles, MediaImportRequest, MediaLibrary, MediaPickerHost, MediaPickerOptions } from "./media-picker";
 const CANCELLED = "This file was cancelled. Choose another image.";
 /** How long a just-added tile wears its ring (the CSS animation's length). */
@@ -61,7 +62,7 @@ export function createMediaLibraryView(
       if (!name || !paths.length) return;
       await adapter.collections({ kind: "take-out", name, paths });
       selected.clear(); await refresh(); keepFocus();
-      tell(`Took ${filesLabel(paths.length)} out of "${name}". ${paths.length === 1 ? "It stays" : "They stay"} in Media under All.`);
+      done(`Took ${filesLabel(paths.length)} out of "${name}". ${paths.length === 1 ? "It stays" : "They stay"} in Media under All.`);
     }),
     remove: () => remove([...selected], () => { if (!shell.removeFiles.hidden) shell.removeFiles.focus(); }),
     more: opener => openMenu(opener, "More for selected files", [
@@ -96,7 +97,9 @@ export function createMediaLibraryView(
   /** The picker's chosen file, placed by Use. */
   let chosen: string | undefined;
   let library: MediaLibrary, refreshedKey: string | undefined;
-  const sheet: LibrarySheet = { element: shell.sheet, version: 0 };
+  // Each new screen bumps the version; it also clears the last screen's inline line (slice 105).
+  let screen = 0;
+  const sheet: LibrarySheet = { element: shell.sheet, get version() { return screen; }, set version(next) { screen = next; message.textContent = ""; } };
   // More's menu sits outside the pane, whose size containment would place the fixed menu against it.
   const more = createRowMenu(modal ?? container);
   // Clean up (slices 49, 50): More's item after Add new file opens the review; it redraws with each check.
@@ -110,7 +113,7 @@ export function createMediaLibraryView(
     version: path => library.items.find(item => item.path === path)?.version, alive: () => alive });
   const context: LibrarySheetContext = {
     alive: () => alive, library: () => library, loading: () => loadingLibrary,
-    tell, task, refresh, adapter, cache, sync: () => busyLock.sync(),
+    tell, done, task, refresh, adapter, cache, sync: () => busyLock.sync(),
   };
   // From File details, Cancel and Back return to them.
   const detailHost = { ...context, dialog, grid, modal: Boolean(modal), close: shell.close, optimise,
@@ -189,7 +192,7 @@ export function createMediaLibraryView(
       const paths = [...selected];
       await adapter.collections({ kind: "add", name, paths });
       selected.clear(); await refresh(); keepFocus();
-      tell(`Added ${filesLabel(paths.length)} to "${name}".`);
+      done(`Added ${filesLabel(paths.length)} to "${name}".`);
     });
   }
   /** Closing the picker (Cancel, Close, Escape) saves its ready files without placing them: one Undo
@@ -208,7 +211,10 @@ export function createMediaLibraryView(
   }
   const closed = () => dispose(true);
   modal?.addEventListener("close", closed, { once: true });
+  /** A warning or refusal, inline under the screen it is about. */
   function tell(text: string) { if (alive) message.textContent = text; }
+  /** A result: said and shown as the editor's toast, which outlasts the screen. */
+  function done(text: string) { message.textContent = ""; say(text); }
   function task(work: () => Promise<void>, lock = true, canCancel = false) {
     return busyLock.task(work, lock, canCancel);
   }

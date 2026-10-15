@@ -22,6 +22,7 @@
 // workspace port below is the editor's primitives; the commit's rules (branch
 // reads, drafts each side, history, the page reopened) live in this module.
 
+import type { AnnounceAs } from "./components/toast-rules";
 import type { NativeSite } from "../shared/native-project";
 import type { DraftScope } from "./drafts";
 import type { DraftAccess, MovableFile } from "./file-changes";
@@ -192,7 +193,8 @@ export interface EditorWorkspace {
   status(): string;
   /** Selects `request` once the preview renders it (flashed with `flash`, revealed centred with `reveal`); undefined cancels. */
   select(request: (NodeRef & { source?: string }) | undefined, flash?: string, reveal?: boolean): void;
-  announce(message: string): void;
+  /** Said and shown as the toast; `undo` adds Undo for the step just recorded in that file's history, "quiet" is said only. */
+  announce(message: string, as?: AnnounceAs): void;
   /** A refusal said on screen (`history`: an Undo or Redo refused). */
   refuse(message: string, history?: "undo" | "redo"): void;
   error(error: unknown): void;
@@ -385,7 +387,8 @@ export function createGuardedEdits(workspace: EditorWorkspace): GuardedEdits {
       return refused(error instanceof Error ? error.message : "The change could not be made.");
     }
     group = key === undefined ? undefined : { key, path };
-    ws.announce(planned.done);
+    // A typing group says each keystroke's step; only a whole step shows, with its Undo.
+    ws.announce(planned.done, key === undefined ? { undo: path } : "quiet");
     return { ok: true, status: "applied" };
   }
 

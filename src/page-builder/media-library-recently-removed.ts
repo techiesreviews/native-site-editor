@@ -60,7 +60,7 @@ export function showRecentlyRemoved(sheet: LibrarySheet, h: RecentlyRemovedHost)
         try { await h.adapter.restore!([{ path: row.path, id: row.id }]); }
         catch (error) { h.tell(restoreRefusal(error, row.path)); return; }
         await h.refresh();
-        h.tell(`Restored ${row.name} to ${row.path}. Pages that used it show it again.`);
+        h.done(`Restored ${row.name} to ${row.path}. Pages that used it show it again.`);
         // Focus moves on to the next row's Restore, or to the heading when nothing is left.
         if (version !== sheet.version && sheet.element.dataset.mode === "recently-removed") {
           const after = next && sheet.element.querySelector<HTMLElement>(`.media-check__row[data-path="${CSS.escape(next.path)}"] button`);
