@@ -216,7 +216,8 @@ test("starting collections from named folders appear in Collections; dated and s
   await filterTo(library, "Logos");
   await expect.poll(() => tileNames(page)).toEqual(["images/logos/techies.png"]);
   await filterTo(library, "Manage collections…");
-  await expect(filterButton(library)).toHaveAccessibleName("Filter: Logos");
+  // Manage collections may hide the One bar; Filter keeps the viewed collection.
+  await expect(library.locator(".media-library__filter")).toHaveAttribute("aria-label", "Filter: Logos");
   await expect(library.locator(".media-library__collection-row")).toHaveText([/Logos\s*1 file/, /Brand assets\s*1 file/]);
   await page.evaluate(() => (window as any).startingProbe.dispose());
 });

@@ -96,7 +96,7 @@ scripts/agents/review.sh "$PWD" .scratch/review-brief.md .scratch/review
 ### Phase 1: The new Media screen
 
 - **Media replaces Images** ([06](../tickets/06-prototype-media-manager-look.md#resolution-2026-10-12)): opens on All, a dense square Tiles grid (3 across on phones, 4 on tablets, 6 wide), one tile per Image family, names on hover/focus/selection and always on touch.
-- **One bar**: search, a native Collections select with customizable-select styling and Phosphor icons (plain select where unsupported), and More (Add new file first, kinds, grid/list, Manage collections). No heading, no separate Add button.
+- **One bar**: search, a native Collections select with customizable-select styling and Phosphor icons (plain select where unsupported), and More (Add new file first, kinds, grid/list, Manage collections). No heading, no separate Add button. *Changed by slice 116 (Lex, 2026-10-15): search, then Filter (collections and Manage collections, Show, View), + (Add files) and More (the five tools) as one group.*
 - **Usage badges**: distinct pages; hover/focus expands "Used on X pages"; tap shows pages; `0` "No uses found"; other uses and **Not checked yet** shown apart. No usage filter.
 - **Details**: big preview, name, Description and Decorative, collections, usage, family, Always keep; on phones its own screen with Back.
 - **Collections like tags** ([15](../tickets/15-collections-and-file-names.md#resolution-2026-10-14)): Take out of vs Remove file; Manage collections (rename, delete, new); taken names refused, no combine; starting collections from named folders and old tags.
@@ -195,7 +195,7 @@ Once per stage (decision 4), when the whole phase is on preview: one set on the 
 
 | Stage | Screenshot set | Lex's iPhone list |
 | --- | --- | --- |
-| 1 Media screen | All grid, a collection, search with no results, usage badge open, details, Manage collections, the picker, To check | Media shows 3 across with names; tap a usage badge; open details and Back; Collections dropdown opens and picks; Add new file from More opens the photo library; the picker is full-screen with Cancel/Use reachable |
+| 1 Media screen | All grid, a collection, search with no results, usage badge open, details, Manage collections, the picker, To check | Media shows 3 across with names; tap a usage badge; open details and Back; Filter opens and picks (slice 116; was the Collections dropdown); + opens the photo library (slice 116; was Add new file in More); the picker is full-screen with Cancel/Use reachable |
 | 2 Adding | Adding progress, Adding settings in More, a Large download note, a placed image's details | Add a HEIC photo from the camera roll; check it arrives as `.webp` and is small (Safari WebP); add 5 photos at once and cancel one; a page with a big photo loads quickly on the phone |
 | 3 Image popup | Popup with each shape, focus dot, yellow message, large editor, the component shape note, Social image popup | Open the popup by touch; it is a bottom sheet; drag the focus dot; pinch to zoom; swipe down to close; large editor's icon row |
 | 4 Clean-up | Media tab badge, Clean up review, Recently removed, the used-file warning, Rename with taken name, Replace everywhere | Run Clean up and Undo; restore a file from Recently removed; rename a file with the phone keyboard |

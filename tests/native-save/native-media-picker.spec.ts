@@ -104,6 +104,33 @@ test("Use leaves an undescribed file missing until File details supplies its des
   await expect(bar(page).getByRole("button", { name: "Not described yet", exact: true })).toHaveCount(0);
 });
 
+test("a phone picker with 30 collections keeps Filter's menu inside the screen; Escape closes only the menu and keeps the choice", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(baseURL!);
+  const collections = Array.from({ length: 30 }, (_, at) => `Trip ${at + 1}`);
+  expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: ".editor/media.json", content: JSON.stringify({ version: 2, collections, files: {} }) } })).status()).toBe(204);
+  await open(page, baseURL);
+  // Opened wide (the edit bar can cover a phone's hero image), then the phone's full-screen picker.
+  await openPicker(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await picker(page).getByRole("button", { name: "Choose images/studio-desk.svg", exact: true }).click();
+  await picker(page).getByRole("button", { name: /^Filter/ }).click();
+  const menu = page.getByRole("menu", { name: "Filter", exact: true });
+  const box = await menu.boundingBox();
+  expect(box!.y).toBeGreaterThanOrEqual(0);
+  expect(box!.y + box!.height).toBeLessThanOrEqual(844);
+  const list = menu.getByRole("menuitemradio", { name: "List", exact: true });
+  await list.scrollIntoViewIfNeeded(); await expect(list).toBeInViewport();
+  await page.keyboard.press("Escape");
+  await expect(menu).toBeHidden();
+  await expect(picker(page)).toBeVisible();
+  await expect(picker(page).getByRole("button", { name: "Choose images/studio-desk.svg", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await picker(page).getByRole("button", { name: /^Filter/ }).click();
+  await list.click();
+  await expect(picker(page).locator(".media-library__grid")).toHaveClass(/media-library__grid--list/);
+  await expect(picker(page).getByRole("button", { name: "Use image", exact: true })).toBeEnabled();
+});
+
 test("the picker has the pane's Filter, + and More, shows only images, and keeps its choice through File details", async ({ page, baseURL }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await open(page, baseURL);
