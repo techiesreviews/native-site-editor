@@ -2,7 +2,7 @@
 title: Every root address follows the prefix
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-78 runner)
 blocked_by: [77-canvas-sub-folder]
 builder: sol
 phase: 7
