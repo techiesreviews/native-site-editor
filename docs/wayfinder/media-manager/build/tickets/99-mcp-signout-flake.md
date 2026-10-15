@@ -1,7 +1,7 @@
 ---
 title: Make the MCP sign-out smoke test reliable on CI
 type: task (AFK)
-status: in progress
+status: open
 assignee: claude (mm-99 runner)
 blocked_by: []
 builder: claude
