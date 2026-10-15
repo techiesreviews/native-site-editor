@@ -8,7 +8,7 @@ its own assets by setting `STARTER_SOURCE`:
 | `STARTER_SOURCE` | Starter site |
 | --- | --- |
 | unset | template repository tarball (production and generic deploys) |
-| `native-static` | `public/native-static-starter/vc5de395/`, read through `ASSETS` only |
+| `native-static` | `public/native-static-starter/vefc3188/`, read through `ASSETS` only |
 | anything else | Create site and Start your site fail with a clear error |
 
 Both entry points, Create site (`POST /api/repositories` with
@@ -24,7 +24,7 @@ npx wrangler dev --var STARTER_SOURCE:native-static
 
 ## The vendored files
 
-`vc5de395` is starter commit `c5de395` (its `dev` branch): six ready routes
+`vefc3188` is starter commit `efc3188` (its `dev` branch): six ready routes
 (`index.html`, `about/`, three `work/` pages, `404.html`), `styles/` (including
 `tones.css` and `media-player.css`), `scripts/` (the media player, which no
 page links yet), `images/`, `robots.txt`, `components/` (templates, CSS and

@@ -60,16 +60,16 @@ export function onlineVideo(address) {
 }
 
 /** The address of the service's player for a video: hiding the service's
-    bar and taking commands when the site's bar drives it (own), with the
-    service's bar otherwise. Starts playing as it loads. */
+    bar when the site's bar drives it (own), with the service's bar
+    otherwise. It takes commands either way (with its own bar it only says
+    it is ready) and starts playing as it loads. */
 export function playerAddress(video, own, origin = location.origin) {
   if (video.service === "youtube") {
-    const query = new URLSearchParams({ autoplay: "1", playsinline: "1", rel: "0", iv_load_policy: "3" });
+    const query = new URLSearchParams({ autoplay: "1", playsinline: "1", rel: "0", iv_load_policy: "3", enablejsapi: "1" });
+    if (origin && origin !== "null") query.set("origin", origin);
     if (own) {
       query.set("controls", "0");
       query.set("disablekb", "1");
-      query.set("enablejsapi", "1");
-      if (origin && origin !== "null") query.set("origin", origin);
     }
     if (video.start) query.set("start", String(video.start));
     return `https://www.youtube-nocookie.com/embed/${video.id}?${query}`;
@@ -419,10 +419,13 @@ function setUp(link, video, kit) {
     start.before(frame);
     if (!own) {
       handOver();
-      // Its own bar needs no API; loading it tells whether the service can
-      // be reached (Vimeo's comes from the player's host, and its ready
-      // answer from the player itself).
-      within10s(loadApi(video.service).then((lib) => video.service === "vimeo" && new lib.Player(frame).ready())).catch(() => {
+      // Its own bar needs no API; the player's ready answer through it
+      // tells that the service could be reached.
+      const ready = (lib) =>
+        video.service === "vimeo"
+          ? new lib.Player(frame).ready()
+          : new Promise((answer) => new lib.Player(frame, { events: { onReady: answer } }));
+      within10s(loadApi(video.service).then(ready)).catch(() => {
         if (box.dataset.state === "service") blocked();
       });
       return;

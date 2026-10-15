@@ -1,8 +1,8 @@
-Byte-identical snapshot of `native-site-editor-starter` at commit `c5de395`
+Byte-identical snapshot of `native-site-editor-starter` at commit `efc3188`
 on the starter's `dev` branch: media manager slice 120's player touch-ups
 (subtitles clear the video bar, a blocked Online video keeps its still with a
 link, also with the service's own bar, and To check's Looks right in
-`AGENTS.md`; `2bff35d` and `c5de395`), on top of `c597698`, slice 81's `.nojekyll` and the
+`AGENTS.md`; `2bff35d`, `c5de395` and `efc3188`), on top of `c597698`, slice 81's `.nojekyll` and the
 sub-folder rules in `AGENTS.md` (root links and the Media chapter), on top of
 `561da7c`, slice 75's Media chapter rules
 (agents run Improve images), on top of `8f55ecc`, slice 69's Media chapter rules
@@ -34,7 +34,7 @@ archive from a starter checkout (`<starter>`):
 
 ```sh
 find fixtures/actual-starter -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
-git -C <starter> archive c5de395 | tar -x -C fixtures/actual-starter
+git -C <starter> archive efc3188 | tar -x -C fixtures/actual-starter
 ```
 
 When updating the snapshot, replace the commit in this provenance and command.

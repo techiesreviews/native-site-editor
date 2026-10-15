@@ -1,6 +1,6 @@
 {
-  "version": "c5de395",
-  "source": "techiesreviews/native-site-editor-starter@c5de395",
+  "version": "efc3188",
+  "source": "techiesreviews/native-site-editor-starter@efc3188",
   "files": [
     {
       "path": "404.html",
@@ -149,8 +149,8 @@
     },
     {
       "path": "scripts/media-online.js",
-      "size": 19441,
-      "sha256": "1d3aa77bd7d8f0b0b8250f53fddae6a28622a80fc81bba60fb7f5b55f3fe012d"
+      "size": 19549,
+      "sha256": "06d793001263f9b5b847aaabe6fda992b1bb6c85062ee9da3f8008de4a335611"
     },
     {
       "path": "scripts/media-player.js",
