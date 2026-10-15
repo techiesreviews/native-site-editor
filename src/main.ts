@@ -72,7 +72,7 @@ import { siteNameFromRepository, type StartingPoint } from "../shared/starting-p
 import { createPagePicker } from "./components/page-picker";
 import type { UrlPlan } from "./components/url-change";
 import type { MenuItem } from "./components/row-menu";
-import { deleteFile, duplicateFile, listChanges, restoreFile as restoreDraftFile, type FileChange } from "./file-changes";
+import { duplicateFile, listChanges, restoreFile as restoreDraftFile, type FileChange } from "./file-changes";
 import { formatBytes, pickFiles, sweepUploads, uploadBytes, uploadDataUrl, uploadKey } from "./uploads";
 import { firstHeadingText, nativeLinkSuggestions, nativePageLabel } from "./native-pages";
 import { elementPathAt, locateNativeElement, locateNativeElementRange, startTagAttribute, textRangeInSource, wrapperAround, type ElementRange } from "./native-source-location";
@@ -2354,13 +2354,18 @@ async function uploadFilesTo(folder: string, files: File[]): Promise<string[]> {
   } catch (error) { errorMessage(error); return []; }
 }
 
-// An upload's Discard: its draft goes, and its bytes with it.
-function discardUpload(path: string) {
-  const scope = draftScope();
+// An upload and its per-file records leave together, through the lazy media rules.
+async function discardUpload(path: string) {
+  const scope = draftScope(), since = guardedEdits.stamp();
   if (!scope || !draftStore().get(scope, path)?.upload) return;
-  deleteFile(draftStore(), scope, { path });
-  afterFileChanges();
-  announce(`Discarded ${path}.`);
+  const draft = draftStore().get(scope, path), records = draftStore().get(scope, ".editor/media.json");
+  const { discardUploadDraft } = await import("./page-builder/media-upload-discard");
+  if (!since.holds() || draftStore().get(scope, path) !== draft || draftStore().get(scope, ".editor/media.json") !== records) return;
+  try {
+    let discarded = false;
+    batch(() => { discarded = discardUploadDraft(draftStore(), scope, path); });
+    if (discarded) { afterFileChanges(); announce(`Discarded ${path}.`); }
+  } catch (error) { errorMessage(error); }
 }
 
 // Text read for usage (scripts, data, notes…) is kept out of the preview source map and out of
@@ -2494,7 +2499,7 @@ effect(() => {
   mediaUsageTimer = setTimeout(() => mediaController.refreshUsage(), 400);
 });
 function mediaIdentity() { return `${generation}:${setupScope()}`; }
-function chooseMediaForImage(target: { path: string; node: number[]; width?: number }, files?: File[]) {
+function chooseMediaForImage(target: { path: string; node: number[]; width?: number; paintedSource?: string }, files?: File[]) {
   return mediaController.chooseImage(target, files);
 }
 
@@ -4068,8 +4073,8 @@ function undoFileChanges(what: { restore?: string[]; moveBack?: string[] }) {
 }
 
 // A change's Restore (a deletion), Move back (a rename) or Discard (an edit, a new file) in the Save panel.
-function discardFileChange(change: FileChange) {
-  if (change.kind === "A" && change.drafts[0]?.upload) discardUpload(change.path);
+async function discardFileChange(change: FileChange) {
+  if (change.kind === "A" && change.drafts[0]?.upload) await discardUpload(change.path);
   else if (change.kind === "D") undoFileChanges({ restore: [change.path] });
   else if (change.kind === "R") undoFileChanges({ moveBack: [change.path] });
   else if (savePublish.discard([change.path])) announce(`Discarded the changes to ${change.path}.`);
@@ -4657,7 +4662,7 @@ function showUpload(draft: SavedDraft) {
     void uploadDataUrl(uploadBytes(), scope, draft).then((url) => { if (url) image.src = url; });
     panel.append(image);
   }
-  const discard = button("Discard", () => { discardUpload(draft.path); void openAfter(undefined); }, "button secondary");
+  const discard = button("Discard", () => { void discardUpload(draft.path).then(() => openAfter(undefined)); }, "button secondary");
   discard.setAttribute("aria-label", `Discard ${draft.path}`);
   panel.append(discard);
   content.replaceChildren(panel);

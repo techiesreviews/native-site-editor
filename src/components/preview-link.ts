@@ -58,6 +58,7 @@ export function createPreviewLink(port: FramePort) {
   let version = 0, token = "", lastId = 0, load = 0;
   // The sources of the last render posted, under the token it was asked with.
   let painted: { token: string; sources: Painted } | undefined;
+  const imageSources = new Map<string, Painted>();
   // A click reported against an older render: the next fresh selection counts as it.
   let staleClick = false;
   const pending = new Map<number, Pending>();
@@ -100,6 +101,7 @@ export function createPreviewLink(port: FramePort) {
       deliver(message);
       return;
     }
+    if (message.type === "image-edit") return deliver(message, imageSources.get(message.context ?? ""));
     if (kind !== "render") return deliver(message);
     if (message.context !== token) {
       if (message.type === "select" && message.reason === "click") staleClick = true;
@@ -152,6 +154,9 @@ export function createPreviewLink(port: FramePort) {
     /** Post a render (`update`) of `sources`, showing `shows` (the route `ack` reports). */
     render(payload: UpdatePayload, sources: Painted, shows: string) {
       painted = { token, sources: { ...sources } };
+      // A delayed image action needs the source it named, even after selection re-rendered.
+      imageSources.set(token, painted.sources);
+      if (imageSources.size > 8) imageSources.delete(imageSources.keys().next().value!);
       posted.set(++lastId, shows);
       send({ type: "update", id: lastId, payload });
     },
@@ -177,6 +182,7 @@ export function createPreviewLink(port: FramePort) {
     reload() {
       end(() => true);
       posted.clear();
+      imageSources.clear();
       return ++load;
     },
     /** Stop listening; pending asks answer undefined. */

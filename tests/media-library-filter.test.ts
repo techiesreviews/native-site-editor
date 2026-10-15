@@ -166,7 +166,7 @@ test("Media lists every kind and leaves the site's own files out", () => {
 });
 
 test("a length reads as a player shows it", () => {
-  assert.deepEqual([0.2, 4.6, 59.5, 61, 754, 3723].map(formatMediaLength), ["0:01", "0:04", "0:59", "1:01", "12:34", "1:02:03"]);
+  assert.deepEqual([0.2, 1.6, 41.9, 59.99, 3600, 4.6, 59.5, 61, 754, 3723].map(formatMediaLength), ["0:01", "0:01", "0:41", "0:59", "1:00:00", "0:04", "0:59", "1:01", "12:34", "1:02:03"]);
 });
 
 test("each kind's tile: a still and length, a sound picture and length, a first page, a type picture", () => {

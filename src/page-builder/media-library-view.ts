@@ -116,7 +116,15 @@ export function createMediaLibraryView(
   const detailHost = { ...context, dialog, grid, modal: Boolean(modal), close: shell.close, optimise,
     remove: (paths: string[]) => remove(paths, () => void details(paths[0])) };
   // Each newer usage result repaints the badges and an open usage dialog.
-  const stopCleanUp = cleanUp?.onChange(() => { if (alive && shell.sheet.dataset.mode === "clean-up") sheet.redraw?.(); });
+  const stopCleanUp = cleanUp?.onChange(() => {
+    if (!alive) return;
+    if (shell.sheet.dataset.mode === "clean-up") sheet.redraw?.();
+    // The width check finishes after Clean up: an already-open More must show its new count too.
+    if (more.isOpen() && more.opener === shell.more && cleanUp.improve) {
+      const item = [...more.element.querySelectorAll("[role=menuitem]")].find(item => item.firstElementChild?.textContent?.startsWith("Improve images"));
+      if (item?.firstElementChild) item.firstElementChild.textContent = cleanUp.improve.item().label;
+    }
+  });
   const stopUsage = adapter.usage?.onChange(() => {
     if (!alive) return;
     repaintUsageBadges(grid, adapter.usage?.records()); usageDialog?.refresh(); sheet.repaint?.();

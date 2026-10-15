@@ -20,6 +20,9 @@ export interface MediaCleanUpPorts {
   components?(): Record<string, string>;
   url?(): string | undefined;
   size?(path: string): number | undefined;
+  blob?(path: string): Promise<Blob>;
+  /** The Git blob SHA of a path's present bytes, when known: a width read is reused while it holds. */
+  version?(path: string): string | undefined;
 }
 
 const notChecked = (): MediaCleanUpSuggestions => ({ state: "not-checked", blockedBy: [], groups: [], count: 0, size: 0 });
@@ -50,17 +53,35 @@ export function createMediaCleanUpController(ports: MediaCleanUpPorts) {
   }
   /** Picture widths Improve images read from the bytes, so the count matches its screen. */
   const known = new Map<string, { width?: number; height?: number }>();
-  /** The rows Improve images would list. Without read widths a picture is judged by its bytes alone. */
+  /** Widths this controller read, by the bytes they were read from: each check reads only new bytes. */
+  const readSizes = new Map<string, { version: string; size: { width?: number; height?: number } }>();
+  /** Read the same missing facts as the screen, after Clean up has published. */
   async function improveRows(records: MediaRecords | null): Promise<string[] | undefined> {
     const pages = ports.pages?.(), components = ports.components?.();
     if (!pages || !components || !records) return undefined;
-    const [{ improveImagesPlan }, { isMediaFile, isMediaTextFile }, { mediaOwnOrigins }] = await Promise.all([
-      import("../page-builder/improve-images"), import("../page-builder/media-mentions"), import("../page-builder/media-origins")]);
+    const [{ improveImagesPlan }, { isMediaFile, isMediaTextFile }, { mediaOwnOrigins }, { planWithPictureSizes }, { decodeImage }] = await Promise.all([
+      import("../page-builder/improve-images"), import("../page-builder/media-mentions"), import("../page-builder/media-origins"), import("../page-builder/improve-images-facts"), import("../page-builder/media-byte-cache")]);
     const files = ports.files(), sources: Record<string, string | undefined> = {};
     for (const path of files) if (isMediaTextFile(path)) sources[path] = ports.source(path);
-    const facts = Object.fromEntries(files.filter(isMediaFile).map(path => [path, { size: ports.size?.(path), width: 0, ...known.get(path) }]));
-    return improveImagesPlan({ sources, pages, components, files: facts, records, site: { prefix: sitePathPrefix(ports.url?.()), origins: mediaOwnOrigins(ports.url?.()) } })
-      .rows.filter(row => row.count).map(row => row.file);
+    // Each check owns its facts: replacing bytes at the same path or switching sites cannot
+    // leave a cached width behind. The screen's sizes remain a fallback for older ports.
+    const sizes: Record<string, { width?: number; height?: number }> = ports.blob ? Object.fromEntries(files.flatMap(path => {
+      const version = ports.version?.(path), hit = readSizes.get(path);
+      return version && hit?.version === version ? [[path, hit.size]] : [];
+    })) : Object.fromEntries(known);
+    const plan = await planWithPictureSizes({ plan: async widths => {
+      const facts = Object.fromEntries(files.filter(isMediaFile).map(path => [path, { size: ports.size?.(path), ...ports.blob ? {} : { width: 0 }, ...widths[path] }]));
+      return improveImagesPlan({ sources, pages, components, files: facts, records, site: { prefix: sitePathPrefix(ports.url?.()), origins: mediaOwnOrigins(ports.url?.()) } });
+    } }, sizes, async path => {
+      if (!ports.blob) return {};
+      const version = ports.version?.(path), blob = await ports.blob(path), url = URL.createObjectURL(blob);
+      try {
+        const size = await decodeImage(url);
+        if (version && size.width) readSizes.set(path, { version, size });
+        return size;
+      } finally { URL.revokeObjectURL(url); }
+    });
+    return plan.rows.filter(row => row.count).map(row => row.file);
   }
   async function records(): Promise<MediaRecords | null> {
     let text = ports.source(MEDIA_RECORDS_PATH);
@@ -73,7 +94,7 @@ export function createMediaCleanUpController(ports: MediaCleanUpPorts) {
   async function update(usage: MediaUsageRecords | undefined) {
     if (disposed) return;
     const request = ++epoch, place = ports.place();
-    if (place !== current.place) known.clear();
+    if (place !== current.place) { known.clear(); readSizes.clear(); }
     const read = usage && await records();
     const suggestions = usage ? mediaCleanUpSuggestions({ usage, records: read ?? null }) : notChecked();
     if (disposed || request !== epoch || place !== ports.place()) return;

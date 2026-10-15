@@ -136,7 +136,7 @@ export async function prepareImproveGifsAndPlayers(ctx: MediaWorkspaceContext, r
           const imported = importPrepared(prepared.request);
           video = { video: imported.path, still: imported.still, width: imported.width, height: imported.height };
           records.files[video.video] = { still: video.still, fromGif: true,
-            ...prepared.request.result.duration && Number.isFinite(prepared.request.result.duration) && prepared.request.result.duration > 0 ? { duration: Math.round(prepared.request.result.duration * 100) / 100 } : {} };
+            ...prepared.request.result.duration && Number.isFinite(prepared.request.result.duration) && prepared.request.result.duration > 0 ? { duration: prepared.request.result.duration } : {} };
           converted.set(old, video); note(prepared.warning);
         }
         const spot = node.parent?.name === "picture" ? node.parent : node;

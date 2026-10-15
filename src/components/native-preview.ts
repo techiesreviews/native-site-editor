@@ -245,7 +245,7 @@ export interface NativePreviewHandlers {
   onTextEdit?: (edit: NativeTextEdit) => void;
   onImageDrop?: (target: { path: string; node: number[]; width?: number }, files: File[]) => void;
   // A double-click on an image of the page (or of the template open for editing): choose its image.
-  onImageEdit?: (target: { path: string; node: number[]; width?: number }) => void;
+  onImageEdit?: (target: { path: string; node: number[]; width?: number; paintedSource?: string }) => void;
   // A page block pressed and moved 7 px: its name in the edit bar (`moving`
   // none: the selection) or the block in the page (`moving`: the block the
   // runtime picked, on the bytes it shows). The drag it starts, or none.
@@ -724,9 +724,9 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     if (!site || !nativeSitePaths(site).includes(message.path)) return;
     handlers.onImageDrop?.({ path: message.path, node: message.node, width: message.width }, message.files);
   });
-  link.on("image-edit", (message) => {
-    if (!site || viewing || !nativeSitePaths(site).includes(message.path)) return;
-    handlers.onImageEdit?.({ path: message.path, node: message.node, width: message.width });
+  link.on("image-edit", (message, painted) => {
+    if (!site || viewing || !nativeSitePaths(site).includes(message.path) || painted?.[message.path] === undefined) return;
+    handlers.onImageEdit?.({ path: message.path, node: message.node, width: message.width, paintedSource: painted[message.path] });
   });
   // Typed text is checked against the current source, so it counts even
   // when a render was requested since.

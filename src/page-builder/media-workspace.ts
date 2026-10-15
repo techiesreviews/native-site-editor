@@ -382,7 +382,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       // A new file's date; a lighter version (Optimise) keeps the date it inherits below.
       if (!replaceFrom) previews[primary] = { ...previews[primary], added };
       if (result?.duration && Number.isFinite(result.duration) && result.duration > 0 && /^(?:video|audio)$/.test(mediaKind(primary)))
-        previews[primary] = { ...previews[primary], duration: Math.round(result.duration * 100) / 100 };
+        previews[primary] = { ...previews[primary], duration: result.duration };
       if (request.original) {
         const { blob, extension } = request.original;
         const problem = uploadProblem({ name: file.name, size: blob.size }) ??

@@ -58,7 +58,7 @@ test("one row commits GIF, still, records, page and player together; old GIF sta
   for (const [path, text] of [["styles/media-player.css", "/* player */"], ["scripts/media-player.js", "// player"], ["scripts/media-online.js", "// online"]]) {
     assert.equal(batch.edits.get(path), text); assert.ok(batch.expectedSources.has(path)); assert.equal(batch.expectedSources.get(path), undefined);
   }
-  assert.deepEqual(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["media/videos/a.mp4"], { still: "media/videos/a.webp", fromGif: true, duration: 2.35 });
+  assert.deepEqual(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["media/videos/a.mp4"], { still: "media/videos/a.webp", fromGif: true, duration: 2.345 });
   assert.match(html, /controls muted loop playsinline/); assert.doesNotMatch(html, /autoplay/);
   for (const attribute of ['class="shape"', 'style="object-position:30% 70%"', 'slot="hero"', 'width="320"', 'height="180"', 'aria-label="A &amp; B"']) assert.ok(html.includes(attribute));
   assert.match(html, /href="\/styles\/media-player.css"/); assert.match(html, /src="\/scripts\/media-player.js"/);

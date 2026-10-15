@@ -386,7 +386,7 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
       catch (error) { return { refuse: error instanceof Error ? error.message : "The files could not be read." }; }
       if (!found.length) return { refuse: `${target.path} has no files to delete.` };
       for (const file of found) { r.exists(file.path); r.source(file.path); }
-      let recordsPlan: { edits?: Map<string, string>; creates?: { path: string; content: string }[]; keep?: () => Promise<void> } = {};
+      let recordsPlan: { deletes?: string[]; edits?: Map<string, string>; creates?: { path: string; content: string }[]; keep?: () => Promise<void> } = {};
       if (agent || found.some(file => isRenamableMedia(file.path))) {
         const { filesRemovalPlan } = await import("../page-builder/media-file-removal");
         const plan = await filesRemovalPlan(ports, r, found, since, ports.removalStores, agent);
@@ -428,7 +428,7 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
       // Browser copies for Recently removed are written only once Delete is confirmed.
       const { keep, ...recorded } = recordsPlan;
       try { await keep?.(); } catch { return { refuse: "This browser could not keep a copy for Recently removed, so nothing was deleted." }; }
-      return { ...recorded, deletes: found.map(file => file.path),
+      return { ...recorded, deletes: [...found.map(file => file.path), ...recordsPlan.deletes ?? []],
         done: target.folder ? `Deleted the folder ${target.path} and its ${count} ${count === 1 ? "file" : "files"}.` : `Deleted ${target.path}.`,
         undone: `Undid deleting ${target.path}.` };
     }, { since, guard: () => ports.nativeFiles().sort().join("\n") === key && targetDrafts(target) === drafts && opaqueDrafts() === opaque });

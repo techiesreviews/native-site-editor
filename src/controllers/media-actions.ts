@@ -85,13 +85,14 @@ export function createMediaActions(ports: MediaControllerPorts, load: () => Prom
     };
   }
 
-  async function chooseImage(target: { path: string; node: number[]; width?: number }, files?: File[]) {
+  async function chooseImage(target: { path: string; node: number[]; width?: number; paintedSource?: string }, files?: File[]) {
     const stamp = ports.stamp(), epoch = ports.generation();
     const source = ports.source(target.path);
     const locate = ports.locateElement ?? locateNativeElementRange;
     const initial = source === undefined ? undefined : locate(source, target.node);
     if (!initial || initial.tag.name !== "img" || ports.viewingVersion()) return;
     const expected = source!.slice(initial.tag.start, initial.tag.end);
+    if (target.paintedSource !== undefined && !sameImageTarget(target.paintedSource, source!, target.node, locate)) return;
     const initialAlt = mediaExistingAlt(expected);
     const { openMediaPicker } = await load();
     if (!stamp.holds() || ports.source(target.path) !== source) return;
@@ -346,4 +347,11 @@ export function createMediaActions(ports: MediaControllerPorts, load: () => Prom
   }
   return { workspaceContext, chooseImage, insertMedia, choosePath, placeState, changePlace, prepareFrame, records, ensureGallery, reviewInGallery, requestGalleryRefresh, disposeGallery,
     busy: () => gallery?.element.getAttribute("aria-busy") === "true" };
+}
+
+/** A delayed gesture must still name the exact image start tag at its reported node. */
+export function sameImageTarget(before: string, source: string, node: number[], locate: NonNullable<MediaControllerPorts["locateElement"]> = locateNativeElementRange): boolean {
+  const old = locate(before, node), current = locate(source, node);
+  return old?.tag.name === "img" && current?.tag.name === "img" &&
+    before.slice(old.tag.start, old.tag.end) === source.slice(current.tag.start, current.tag.end);
 }

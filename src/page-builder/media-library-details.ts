@@ -2,10 +2,10 @@ import { GITHUB_PAGES_REDIRECT_NOTE } from "../../shared/github-pages";
 import { siteAddress } from "../../shared/site-path-prefix";
 import { button, node } from "../ui/dom";
 import { icon } from "../icons";
-import { uploadImageType } from "../uploads";
+import { formatBytes, uploadImageType } from "../uploads";
 import { input, field, check } from "./media-library-fields";
 import { detailCollections, mediaCollectionNameMessage } from "./media-collection-choices";
-import { basename, mediaKind, mediaTileLook, mediaTileStills } from "./media-library-filter";
+import { basename, formatMediaLength, mediaKind, mediaTileLook, mediaTileStills } from "./media-library-filter";
 import { canReplaceEverywhere, mediaDetailChanges, mediaDetailFacts, mediaMadeFrom, mediaFamilyRows, mediaNameCheck, mediaRenamedPath, type MediaNameCheck } from "./media-file-details";
 import { isRenamableMedia, MediaNameTakenError } from "./media-names";
 import { keepPageFocus, usageSections } from "./media-library-usage";
@@ -84,6 +84,28 @@ export async function showMediaDetail(sheet: LibrarySheet, h: DetailHost, path: 
   layout.append(renderPreview(h, path, data, meta, still, current, replace), info);
   element.replaceChildren(head, layout);
   renderInformation(form, sheet, h, path, data, meta, current);
+  const player = layout.querySelector<HTMLMediaElement>("video, audio");
+  if (player) {
+    const length = () => {
+      if (!current() || !Number.isFinite(player.duration) || player.duration <= 0) return;
+      let row = [...form.querySelectorAll(".media-detail__facts div")].find(row => row.querySelector("dt")?.textContent === "Length");
+      if (!row) {
+        row = node("div"); row.append(node("dt", "", "Length"), node("dd"));
+        form.querySelector(".media-detail__facts")?.append(row);
+      }
+      const value = formatMediaLength(player.duration);
+      row.querySelector("dd")!.textContent = value;
+      meta.duration = player.duration;
+      const card = h.grid.querySelector<HTMLElement>(`[data-path="${CSS.escape(path)}"]`);
+      const fact = card?.querySelector(".media-library__fact"), size = card?.querySelector(".media-library__size");
+      if (fact) fact.textContent = value;
+      if (size) size.textContent = `${formatBytes(data.blob.size)} · ${value}`;
+      card?.querySelector(".media-library__thumbnail")?.setAttribute("aria-label", `${h.modal ? "Choose" : "Details for"} ${path}, ${value}`);
+    };
+    player.addEventListener("loadedmetadata", length);
+    player.addEventListener("durationchange", length);
+    length();
+  }
   h.sync();
   const requestedFocus = background ? sheet.focus?.path === path ? sheet.focus.active : undefined : initiatingFocus;
   if (requestedFocus !== undefined && (document.activeElement === requestedFocus ||

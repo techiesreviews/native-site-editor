@@ -75,11 +75,22 @@ test("a heavy JPEG is listed, fixed to a lighter WebP with copies, and Undo rest
   // Nothing goes live until published: the lighter files are drafts.
   expect((await storedDraft(page, "images/photos.webp"))?.path).toBe("images/photos.webp");
 
+  // The menu counts the current screen after Fix, without waiting for the screen to lend widths.
+  const remaining = await pane(page).locator(".media-improve__row").count();
+  await pane(page).getByRole("button", { name: "Back", exact: true }).click();
+  await pane(page).getByRole("button", { name: "More", exact: true }).click();
+  const menu = page.getByRole("menuitem", { name: /^Improve images/ });
+  await expect(menu).toHaveText(remaining ? `Improve images (${remaining})` : "Improve images");
+  await menu.click();
   await pane(page).getByRole("button", { name: "Undo Photos", exact: true }).click();
   await expect(pane(page).locator(".media-improve__changed")).toHaveCount(0);
   await expect.poll(async () => (await storedDraft(page, "photos/index.html"))?.content ?? pageHtml("Photos", "images/photos.jpg")).toBe(pageHtml("Photos", "images/photos.jpg"));
   await expect.poll(async () => await storedDraft(page, "images/photos.webp")).toBeUndefined();
   await expect(row(page, "Photos")).toContainText("1 heavy picture");
+  const restored = await pane(page).locator(".media-improve__row").count();
+  await pane(page).getByRole("button", { name: "Back", exact: true }).click();
+  await pane(page).getByRole("button", { name: "More", exact: true }).click();
+  await expect(page.getByRole("menuitem", { name: /^Improve images/ })).toHaveText(`Improve images (${restored})`);
 });
 
 // Nightly: an unticked picture is remembered and skipped; Cancel stops with the rest listed; Undo all.

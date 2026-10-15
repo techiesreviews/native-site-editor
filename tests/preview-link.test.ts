@@ -273,3 +273,17 @@ test("image measurements match request and render, and settle when the render ch
   assert.equal(await stale, undefined);
   link.close();
 });
+
+
+test("an image action survives selection re-render with its own source proof; reload forgets it", () => {
+  const { frame, link, hear, heard, render } = setup();
+  hear("image-edit");
+  const old = frame.context();
+  render({ "index.html": '<img src="new.png">' });
+  frame.emit("image-edit", { path: "index.html", node: [0], width: 100 }, { context: old });
+  assert.equal(heard.length, 1);
+  assert.deepEqual(heard[0].painted, sources);
+  link.reload();
+  frame.emit("image-edit", { path: "index.html", node: [0], width: 100 }, { context: old });
+  assert.equal(heard[1].painted, undefined);
+});

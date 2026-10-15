@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { expect, test, type Page } from "@playwright/test";
+import { storedDraft } from "./drafts";
 import { openPickerOn } from "./open-picker";
 import { publishButton, showPublish } from "./publish";
 import { onePagePdf } from "./pdf-fixture";
@@ -168,10 +169,11 @@ test("a file dropped on the Media picker is added and chosen; Discard in the Sav
   await expect(status(page)).toHaveText("Image replaced");
 
   await showPublish(page);
-  // The page, the file and the media records holding its date (slice 103); the records stay after Discard.
+  // The page, the file and its date; discarding the only upload removes its records draft too.
   await expect(panel(page).locator(".publish-menu__file")).toHaveCount(3);
   await panel(page).getByRole("button", { name: "Discard media/images/placeholder.svg" }).click();
-  await expect(panel(page).locator(".publish-menu__file")).toHaveText([/\.editor\/media\.json/, /index\.html/]);
+  await expect.poll(() => storedDraft(page, ".editor/media.json")).toBeUndefined();
+  await expect(panel(page).locator(".publish-menu__file")).toHaveText([/index\.html/]);
   await page.keyboard.press("Escape");
   // The page still names it, but nothing is there to show.
   await expect(frame(page).locator(".hero img")).toHaveAttribute("src", "/media/images/placeholder.svg");
@@ -179,7 +181,7 @@ test("a file dropped on the Media picker is added and chosen; Discard in the Sav
   await page.reload();
   await expect(frame(page).locator(".hero h1")).toBeVisible({ timeout: 30_000 });
   await showPublish(page);
-  await expect(panel(page).locator(".publish-menu__file")).toHaveText([/\.editor\/media\.json/, /index\.html/]);
+  await expect(panel(page).locator(".publish-menu__file")).toHaveText([/index\.html/]);
 });
 
 test("Upload files… in a folder's menu and files dropped on a folder upload there; too large files are refused", async ({ page, baseURL }) => {

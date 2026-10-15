@@ -287,7 +287,7 @@ test("video quality routes lazily and saves a numbered still with its record in 
   assert.deepEqual(await f.host.import([prepared.request]), ["media/videos/holiday-2.mp4"]);
   assert.deepEqual(f.batches[0].uploads.map(upload => upload.path), ["media/videos/holiday-2.mp4", "media/videos/holiday-2.webp"]);
   const { added, ...record } = parseMediaRecords(f.text().get(MEDIA_RECORDS_PATH)).files["media/videos/holiday-2.mp4"];
-  assert.deepEqual(record, { still: "media/videos/holiday-2.webp", fromGif: true, duration: 12.35 });
+  assert.deepEqual(record, { still: "media/videos/holiday-2.webp", fromGif: true, duration: 12.345 });
   assert.ok(Number.isFinite(Date.parse(added!)), "the new video is dated (slice 103)");
   assert.equal(f.history.length, 1); f.history[0].undo();
   assert.equal(f.paths().has("media/videos/holiday-2.mp4"), false); assert.equal(f.paths().has("media/videos/holiday-2.webp"), false);

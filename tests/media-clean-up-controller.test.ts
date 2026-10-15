@@ -2,7 +2,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createMediaCleanUpController, type MediaCleanUpPorts, type MediaCleanUpState } from "../src/controllers/media-clean-up-controller";
 import { mediaUsageRecords } from "../src/page-builder/media-usage";
-import { MEDIA_RECORDS_PATH } from "../shared/media-records";
+import { improveImagesPlan } from "../src/page-builder/improve-images";
+import { planWithPictureSizes } from "../src/page-builder/improve-images-facts";
+import { parseMediaRecords, MEDIA_RECORDS_PATH } from "../shared/media-records";
 
 const unused = (media: string[], pending: string[] = []) => ({
   ...mediaUsageRecords({ media, sources: { "index.html": "<p>Hello</p>" }, pages: ["index.html"] }), pending,
@@ -181,4 +183,76 @@ test("pages with pictures to improve join the count; read widths sharpen it; dis
   f.setPlace("lex:2:main");
   await controller.update(usage());
   assert.deepEqual(controller.state().improve, ["index.html"]);
+});
+
+
+test("More reads widths before the screen opens, matching its rows after Fix and Undo", async t => {
+  const image = Object.getOwnPropertyDescriptor(globalThis, "Image");
+  let width = 4000;
+  Object.defineProperty(globalThis, "Image", { configurable: true, value: class {
+    src = "";
+    naturalWidth = width;
+    naturalHeight = 3000;
+    async decode() {}
+  } });
+  t.after(() => { if (image) Object.defineProperty(globalThis, "Image", image); else Reflect.deleteProperty(globalThis, "Image"); });
+  const f = fixture();
+  const original = '<img src="/images/wide.png" width="10" height="10" loading="lazy">';
+  f.sources["index.html"] = original;
+  f.setFiles(["index.html", "images/wide.png"]);
+  let release!: () => void;
+  let gate = new Promise<void>(resolve => { release = resolve; });
+  const ports = { ...f.ports, pages: () => ["index.html"], components: () => ({}), size: () => 1000,
+    blob: async () => { await gate; return new Blob(["picture"]); } } satisfies MediaCleanUpPorts;
+  const controller = createMediaCleanUpController(ports);
+  const usage = () => mediaUsageRecords({ media: ["images/wide.png", "unused.png"], sources: { "index.html": f.sources["index.html"]! }, pages: ["index.html"] });
+  const pending = controller.update(usage());
+  // Clean up publishes without waiting for picture bytes.
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(controller.state().suggestions.count, 1);
+  assert.equal(controller.state().improve, undefined);
+  release(); await pending;
+  gate = Promise.resolve();
+  const agree = async () => {
+    const plan = await planWithPictureSizes({ plan: async known => improveImagesPlan({ sources: f.sources,
+      pages: ["index.html"], components: {}, files: { "images/wide.png": { size: 1000, ...known["images/wide.png"] } }, records: parseMediaRecords(undefined) }) }, {}, async () => ({ width, height: 3000 }));
+    assert.deepEqual(controller.state().improve, plan.rows.filter(row => row.count).map(row => row.file));
+  };
+  await agree();
+  assert.deepEqual(controller.improveItem(), { label: "Improve images (1)" });
+  // Fixed bytes at the same path, then Undo: widths must be read afresh in both directions.
+  width = 10;
+  await controller.update(usage()); await agree();
+  assert.deepEqual(controller.state().improve, []);
+  width = 4000;
+  await controller.update(usage()); await agree();
+  assert.deepEqual(controller.state().improve, ["index.html"]);
+});
+
+test("a picture's width is read once per version of its bytes", async t => {
+  const image = Object.getOwnPropertyDescriptor(globalThis, "Image");
+  let width = 4000;
+  Object.defineProperty(globalThis, "Image", { configurable: true, value: class {
+    src = "";
+    naturalWidth = width;
+    naturalHeight = 3000;
+    async decode() {}
+  } });
+  t.after(() => { if (image) Object.defineProperty(globalThis, "Image", image); else Reflect.deleteProperty(globalThis, "Image"); });
+  const f = fixture();
+  f.sources["index.html"] = '<img src="/images/wide.png" width="10" height="10" loading="lazy">';
+  f.setFiles(["index.html", "images/wide.png"]);
+  let reads = 0, version = "sha-1";
+  const controller = createMediaCleanUpController({ ...f.ports, pages: () => ["index.html"], components: () => ({}), size: () => 1000,
+    version: () => version, blob: async () => { reads++; return new Blob(["picture"]); } });
+  const usage = () => mediaUsageRecords({ media: ["images/wide.png"], sources: { "index.html": f.sources["index.html"]! }, pages: ["index.html"] });
+  await controller.update(usage());
+  await controller.update(usage());
+  assert.equal(reads, 1);
+  assert.deepEqual(controller.state().improve, ["index.html"]);
+  // New bytes at the same path are read again.
+  width = 10; version = "sha-2";
+  await controller.update(usage());
+  assert.equal(reads, 2);
+  assert.deepEqual(controller.state().improve, []);
 });

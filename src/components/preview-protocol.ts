@@ -116,7 +116,7 @@ type PressPhase = Extract<FrameMessage, { type: "press-drag" }>["phase"];
 
 // A press drag's start names a block in one render's DOM; its later steps belong to the drag.
 export const FRESHNESS: { [T in FrameMessage["type"]]: T extends "press-drag" ? Record<PressPhase, Freshness> : Freshness } = {
-  "typing-finished": "reply", "image-drop": "render", "image-edit": "render", patched: "reply", "text-edit": "action",
+  "typing-finished": "reply", "image-drop": "render", "image-edit": "action", patched: "reply", "text-edit": "action",
   route: "action", format: "action", move: "action", "press-drag": { start: "render", move: "action", end: "action", cancel: "action" },
   "canvas-clear": "action", "pin-rects": "whole", "drop-containers": "reply", "dismiss-context-menu": "action",
   "slot-ghosts": "render", "inspect-result": "reply", "image-measured": "reply", ack: "reply", ready: "lifecycle", error: "render", "clear-error": "render",

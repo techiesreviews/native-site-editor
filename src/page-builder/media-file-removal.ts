@@ -8,7 +8,7 @@ import { isAgentMediaPath } from "../agent-media";
 import { familyMembers, mediaFamilyOf } from "./media-families";
 import * as records from "../../shared/media-records";
 
-type RemovalPlan = { edits?: Map<string, string>; creates?: { path: string; content: string }[]; keep?: () => Promise<void> } | { refuse: string };
+type RemovalPlan = { deletes?: string[]; edits?: Map<string, string>; creates?: { path: string; content: string }[]; keep?: () => Promise<void> } | { refuse: string };
 export interface RemovalStores { uploads: UploadBytes; removed: UploadBytes }
 
 /**
@@ -66,9 +66,14 @@ export async function filesRemovalPlan(ports: FileOperationsPorts, r: Reads, fou
       files.push({ path: file.path, browserKey: key });
       copies.push({ key, blob });
     }
-    const next = removed.recordFileRemovals(before, files, paths, date, path => current.get(path));
-    const content = records.serializeMediaRecords(next);
-    if (content === records.serializeMediaRecords(before)) return {};
+    const discarded = found.filter(file => draft(file.path)?.baseSha === null && draft(file.path)?.upload).map(file => file.path);
+    const next = records.removeMediaRecords(removed.recordFileRemovals(before, files, paths, date, path => current.get(path)), discarded);
+    const serialized = records.serializeMediaRecords(next);
+    if (serialized === records.serializeMediaRecords(before)) return {};
+    const held = draft(path);
+    const content = held && serialized === records.serializeMediaRecords(records.parseMediaRecords(held.original || undefined)) ? held.original : serialized;
+    if (content === source) return {};
+    if (held?.baseSha === null && content === "") return { deletes: [path] };
     const keep = copies.length ? async () => { for (const copy of copies) await stores().removed.put(copy.key, copy.blob); } : undefined;
     return { ...exists ? { edits: new Map([[path, content]]) } : { creates: [{ path, content }] }, ...keep ? { keep } : {} };
   } catch (error) { return { refuse: error instanceof Error ? error.message : "Media records could not be read." }; }

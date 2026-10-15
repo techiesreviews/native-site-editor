@@ -699,3 +699,16 @@ test("zoom on a component's own shape saves a copy the component still crops; Re
   await expect(popup(page)).toHaveCount(0);
   expect(await source(page)).toBe(zoomed);
 });
+
+// Re-select another element each time, so selecting the image requests a new render.
+test("an immediate double-click after selecting opens the picker 20 times", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  for (let attempt = 0; attempt < 20; attempt++) {
+    await frame(page).locator(".hero h1").click();
+    await frame(page).locator(".hero img").click();
+    await frame(page).locator(".hero img").dblclick();
+    await expect(picker(page)).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(picker(page)).toHaveCount(0);
+  }
+});

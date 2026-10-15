@@ -119,6 +119,8 @@ export function createMediaController(ports: MediaControllerPorts, loadActions: 
         if (marks && cleanUpModule && view) {
           cleanUpView = view;
           cleanUp = cleanUpModule.createMediaCleanUpController({ ...check, place: () => marks.place(), storage: () => localStorage, changed: drawCleanUp,
+            blob: async path => (await workspaceContext()).blob(path),
+            version: path => { const at = ports.workspace(), draft = at?.drafts.get(at.scope, path); return draft ? draft.deleted ? undefined : draft.sourceSha : ports.entry(path)?.sha; },
             size: path => { const at = ports.workspace(), draft = at?.drafts.get(at.scope, path); return draft ? draft.upload?.size : ports.entry(path)?.size; } });
         }
         usage = createMediaUsageController({ ...check, changed: records => {
