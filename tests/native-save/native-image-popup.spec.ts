@@ -12,7 +12,7 @@ const bar = (page: Page) => page.getByRole("toolbar", { name: "Edit bar" });
 const popup = (page: Page) => page.getByRole("dialog", { name: "Image", exact: true });
 const picker = (page: Page) => page.getByRole("dialog", { name: "Choose image", exact: true });
 // Named "Image" with its badge (the bar's name chip is "Image" too).
-const imageButton = (page: Page) => bar(page).locator(".edit-bar__image");
+const imageButton = (page: Page) => bar(page).locator(".edit-bar__media");
 const dot = (page: Page) => popup(page).getByRole("slider", { name: "Focus dot" });
 const source = (page: Page) => page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html")!);
 const heroTag = async (page: Page) => (await source(page)).match(/<img\b[^>]*class="hero-image"[^>]*>/)?.[0] ?? "";

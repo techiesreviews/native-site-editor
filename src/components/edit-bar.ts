@@ -37,11 +37,13 @@ export type EditBarControl =
       disabled?: boolean;
       // A toggle, reflected as aria-pressed.
       pressed?: boolean;
-      // Drawn before the label (the Image button), with a small state badge after it.
+      // Drawn before the label (the Media button), with a small state badge after it.
       leading?: IconName;
       badge?: string;
-      // Opens a popup of its own (the image popup): aria-haspopup, and whether it is open.
+      // Opens a popup of its own (the Media button's): aria-haspopup, and whether it is open.
       expanded?: boolean;
+      // Stands for the selection itself (a media spot's Media button): as first button, its plain name is not repeated above.
+      names?: boolean;
       className?: string;
       onPress: () => void;
     }
@@ -931,10 +933,10 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
       label.append(model.chip.element);
       chipCaret?.();
     }
-    // A plain name the first button already says (an image's Image button) is not repeated above
-    // the panel (media slice 109); a block that drags keeps its handle as a grip at the panel's start.
+    // A plain name the first button already stands for (a media spot's Media button) is not repeated
+    // above the panel (media slices 109, 119); a block that drags keeps its handle as a grip at the panel's start.
     const first = model.controls[0];
-    label.hidden = !onEdit && !model.context && !model.chip && !model.component && first?.kind === "button" && first.label === model.kind;
+    label.hidden = !onEdit && !model.context && !model.chip && !model.component && first?.kind === "button" && (first.label === model.kind || Boolean(first.names));
     if (label.hidden && chip) {
       chip.replaceChildren(phosphorIcon("dots-six-vertical", 16, "edit-bar__icon"));
       chip.setAttribute("aria-label", `Move ${model.kind.toLowerCase()}`);

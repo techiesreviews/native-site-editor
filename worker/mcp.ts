@@ -792,7 +792,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
   });
 
   server.registerTool("place_media", {
-    description: "Place a picture into an existing image, or video, audio or a download where Add → Media would place it with element selected. Picture spots take silent Looping video. YouTube/Vimeo addresses must already be recorded in Media; new addresses stay with the user. Unsaved until the user saves. Follow the Media chapter of native-site://conventions.",
+    description: "Place a picture into an existing image, or video, audio or a download where Add → Media would place it with element selected. Picture spots take silent Looping video; a spot showing one takes another video or a picture in its place, keeping the spot. YouTube/Vimeo addresses must already be recorded in Media; new addresses stay with the user. Unsaved until the user saves. Follow the Media chapter of native-site://conventions.",
     inputSchema: z.object({ path: mediaPath, element: mediaPath, file: mediaPath, requestId, waitSeconds }),
     annotations: editing,
   }, async ({ path, element, file, requestId, waitSeconds }) => {

@@ -7,6 +7,8 @@ import { mediaPlaceSwap } from "./media-place-swap";
 import type { MediaHeldFiles } from "./media-picker";
 import { locateNativeElementRange } from "../native-source-location";
 import type { PlaceFrameChange } from "./place-frame";
+import { mediaExistingAlt } from "./media-attributes";
+import type { ElementRange } from "../../shared/html-source";
 
 /** The picker's Use, agent placement and the image popup's Replace share this exact swap and
  * transaction. `frame`: the popup's shape and focus, written in the same Undo step. */
@@ -16,15 +18,16 @@ export async function placeMediaImage(
   proof: { stamp: Stamp; epoch: number; source: string; expected: string; initialAlt?: string; asset?: { path: string; version?: string } },
   cancelled: () => boolean, held?: MediaHeldFiles, frame?: PlaceFrameChange,
 ) {
-  const { stamp, epoch, source, expected, initialAlt } = proof;
+  const { stamp, epoch, source, expected } = proof;
   const locate = ports.locateElement ?? locateNativeElementRange;
   const changed = "This image changed while the picker was open. Select it again.";
   if (!stamp.holds()) throw new Error("The repository changed. Choose an image again.");
   if (ports.openFile() !== target.path) await ports.restoreFile(target.path, epoch);
-  const [rules, io, references, html, entities, ctx, collections, frames] = await Promise.all([
+  const [rules, io, references, html, entities, ctx, collections, frames, looping] = await Promise.all([
     import("./media-descriptions"), import("../../shared/media-records"),
     import("./media-references"), import("../../shared/html-source"),
     import("./html-entities"), workspaceContext(), import("./media-collections"), frame && import("./place-frame"),
+    import("./looping-video"),
   ]);
   const expectedPaths = [...ctx.paths];
   const mainVersion = ctx.assetVersion(image.path);
@@ -39,11 +42,17 @@ export async function placeMediaImage(
   try { measured = await (style === undefined ? ports.measureImage?.(target.path, target.node, image) : ports.measureImage?.(target.path, target.node, image, undefined, style)); } catch { /* Measurement failure must never block placement. */ }
   ctx.assertLive();
   const latest = ports.source(target.path);
-  const range = latest === undefined ? undefined : locate(latest, target.node);
+  const range = latest === undefined ? undefined : locate(latest, target.node) as ElementRange | undefined;
+  // A looping video in a picture spot (ticket 119's Replace) takes a picture too: its spot's <img> stands in.
+  const spotVideo = range?.tag.name === "video" && range.close && looping.isPictureSpot(expected);
   // The alt decision rests on the records read: a newer records draft refuses, as a newer page does.
-  if (!stamp.holds() || latest === undefined || latest !== source || !range || range.tag.name !== "img" || latest.slice(range.tag.start, range.tag.end) !== expected
+  if (!stamp.holds() || latest === undefined || latest !== source || !range || range.tag.name !== "img" && !spotVideo || latest.slice(range.tag.start, range.tag.end) !== expected
     || ports.source(io.MEDIA_RECORDS_PATH) !== metadata) throw new Error(changed);
-  const tag = html.startTags(expected)[0], src = tag && html.startTagAttribute(expected, tag, "src");
+  const standIn = spotVideo ? looping.spotPictureTag(latest.slice(range.start, range.end)) : expected;
+  const base = spotVideo ? latest.slice(0, range.start) + standIn + latest.slice(range.end) : latest;
+  // The video's name becomes the picture's words, as the editor and agents both write it.
+  const initialAlt = spotVideo ? mediaExistingAlt(standIn) : proof.initialAlt;
+  const tag = html.startTags(expected)[0], src = !spotVideo && tag && html.startTagAttribute(expected, tag, "src");
   const from = src ? references.mediaResolvePath(entities.decodeHtmlEntities(src.value, true), target.path, undefined, prefix) : undefined;
   // Unreadable records never block a swap, and are never overwritten (slice 13).
   let records = io.parseMediaRecords(undefined), readable = true;
@@ -66,7 +75,7 @@ export async function placeMediaImage(
   const expectedAssets = new Map(proof.asset ? [[proof.asset.path, proof.asset.version]] : []);
   // New copies were made from this revision of the main: a newer one refuses the whole step.
   if (copies?.uploads.length && !expectedAssets.has(image.path)) expectedAssets.set(image.path, mainVersion);
-  const placement = mediaPlaceSwap(latest, target, expected, image, measured, locate, framed, prefix);
+  const placement = mediaPlaceSwap(base, target, standIn, image, measured, locate, framed, prefix);
   const { swap, next } = placement;
   const note = placement.note + copyNote;
   // Files added in the picker are saved with the placement and its records: one Undo step.
@@ -88,7 +97,7 @@ export async function placeMediaImage(
   if (cancelled()) return;
   // Agent decoding captures the file revision before its first await.
   if ([...expectedAssets].some(([path, version]) => ctx.assetVersion(path) !== version)) throw new Error("The image changed while preparing placement. Try again.");
-  if (!copies?.uploads.length && (after.records === records || !readable)) {
+  if (!spotVideo && !copies?.uploads.length && (after.records === records || !readable)) {
     if ([...prefixSources].some(([path, source]) => ports.source(path) !== source)) throw new Error("The site address changed. Try again.");
     if (!ports.change(target.path, latest, edits, next, "Image replaced")) throw new Error("The image could not be replaced.");
     if (note) ports.announce(`Image replaced.${note}`);

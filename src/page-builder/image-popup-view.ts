@@ -79,7 +79,7 @@ const HINTS_KEY = "ase.image-popup.hints";
 
 export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost, events: ImagePopupEvents, fixed?: ImagePopupFixed) {
   const frameView = mountMediaPopupFrame(host, {
-    title: fixed ? "Social image" : "Image", opener: ".edit-bar__image", className: fixed ? "image-popup--fixed" : undefined,
+    title: fixed ? "Social image" : "Image", opener: ".edit-bar__media", className: fixed ? "image-popup--fixed" : undefined,
     cancel: () => events.cancel(),
     escape: () => { if (!shapes.open) return false; shapes.toggle(false); shapeButton.focus(); return true; },
     resized: () => layoutPicture(),

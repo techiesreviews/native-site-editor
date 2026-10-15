@@ -62,22 +62,36 @@ export function pictureSpotVideo(spotText: string, video: PlayerVideo, prefix = 
   if (!isPictureSpot(spotText)) throw new Error("Choose a picture spot.");
   return pictureVideo(spotText, video, prefix);
 }
+/** The attributes a picture spot keeps whatever it shows: its slot, id, class, style (shape and focus) and size. */
+const SPOT_KEEPS = ["slot", "id", "class", "style", "width", "height"] as const;
 function pictureVideo(spotText: string, video: PlayerVideo, prefix: string): PlayerMarkup {
   const spot = first(spotText);
-  if (!spot || !["img", "picture"].includes(spot.name)) throw new Error("Choose a picture spot.");
-  const image = spot.name === "img" ? spot : startTags(spotText).find(tag => tag.name === "img");
+  if (!spot || !["img", "picture", "video"].includes(spot.name)) throw new Error("Choose a picture spot.");
+  // A video already in the spot (ticket 119's Replace): the new one keeps its attributes and name.
+  const image = spot.name === "img" || spot.name === "video" ? spot : startTags(spotText).find(tag => tag.name === "img");
   let markup = loopingVideoMarkup({ ...video, width: undefined, height: undefined, name: undefined }, prefix).markup;
   const tag = first(markup)!;
   let kept = "";
-  for (const name of ["slot", "id", "class", "style", "width", "height"]) {
+  for (const name of SPOT_KEEPS) {
     const owner = mediaAttribute(spotText, spot, name) ?? (image && mediaAttribute(spotText, image, name));
     if (owner) kept += spotText.slice(owner.start, owner.end);
     else if (name === "width" || name === "height") kept += attr(name, positive(video[name]));
   }
-  const alt = image && mediaAttribute(spotText, image, "alt");
+  const alt = image && mediaAttribute(spotText, image, spot.name === "video" ? "aria-label" : "alt");
   if (alt?.value) kept += attr("aria-label", decodeHtmlEntities(alt.value, true));
   markup = markup.slice(0, tag.end - 1) + kept + markup.slice(tag.end - 1);
   return { markup, notes: [] };
+}
+/** A picture spot's video as the `<img>` it held before (ticket 119's Replace with a picture): the
+ * spot's slot, id, class, style and size kept, and the video's name as the picture's words. The
+ * picture's own file and copies are written over it by the placed-image rules. */
+export function spotPictureTag(videoText: string): string {
+  const video = first(videoText);
+  if (video?.name !== "video" || !has(videoText, "slot")) throw new Error("Choose a picture spot.");
+  let kept = "";
+  for (const name of SPOT_KEEPS) { const owner = mediaAttribute(videoText, video, name); if (owner) kept += videoText.slice(owner.start, owner.end); }
+  const name = mediaAttribute(videoText, video, "aria-label");
+  return `<img src=""${kept}${name ? attr("alt", decodeHtmlEntities(name.value, true)) : ""}>`;
 }
 /** Replace the whole picture wrapper, preserving its presentation attributes. */
 export function gifLoopingVideo(source: string, range: ElementRange, video: PlayerVideo, options: { linked?: boolean } = {}, prefix = ""): PlayerMarkup {

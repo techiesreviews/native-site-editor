@@ -32,6 +32,8 @@ export interface MediaInsertPlace {
   wrap?: boolean;
   /** `parent` is a component instance: the items slot it goes in. */
   slot?: string;
+  /** The media element at `index` is replaced (ticket 119's Replace), not added beside. */
+  replaces?: boolean;
 }
 /** What else a chosen file's markup needs to know: its records, its still picture and its sizes. */
 export interface PlacedFacts {
@@ -55,6 +57,11 @@ export const insertedNode = (place: Pick<MediaInsertPlace, "parent" | "index" | 
 
 /** The page with `markup` at the place (in a new Section with `wrap`); undefined where HTML refuses it. */
 export function insertAtPlace(source: string, place: MediaInsertPlace, markup: string, items?: ItemsSlotRule): string | undefined {
+  if (place.replaces) {
+    // The whole element (its children and end tag too) gives way to the new markup, in its line.
+    const old = locatePageElement(source, [...place.parent, place.index]);
+    return old && source.slice(0, old.start) + markup + source.slice(old.end);
+  }
   const text = place.wrap ? `<section class="flow">\n  ${markup}\n</section>` : markup;
   const edit = nativeMarkupInsertEdit(source, place.parent, place.index, text, items, place.slot);
   return edit && applyGuardedSourceEdit(source, edit);
@@ -89,6 +96,9 @@ export function insertedImagePage(source: string, place: MediaInsertPlace, image
  * keeping its slot, shape and focus; undefined when `node` is no picture spot. */
 export function spotVideoPage(source: string, node: number[], video: { path: string; still?: string; width?: number; height?: number }, locate: Locate, prefix = "") {
   const image = locate(source, node);
+  // A video already in the spot gives way to the new one, keeping the spot's attributes (ticket 119).
+  if (image?.tag.name === "video" && image.close && isPictureSpot(source.slice(image.tag.start, image.tag.end)))
+    return { page: source.slice(0, image.start) + pictureSpotVideo(source.slice(image.start, image.end), video, prefix).markup + source.slice(image.end), node };
   if (image?.tag.name !== "img") return undefined;
   let spot = image, at = node;
   if (!isPictureSpot(source.slice(image.tag.start, image.tag.end))) {
@@ -204,7 +214,9 @@ export async function placeChosenMedia(
     return plan?.creates ?? [];
   };
   const linked = (page: string) => player ? mediaPlayerPlan({ prefix, pages: [path], sources: { [path]: page }, exists: () => true, kinds: [player] })?.edits.get(path) ?? page : page;
-  const label = `${target.kind === "spot" ? "Looping video" : NOUNS[kind]} added`;
+  // Replace (ticket 119): a video already in a picture spot, or any media element, gives way.
+  const replacing = target.kind === "insert" ? Boolean(target.place.replaces) : ((ports.locateElement as Locate | undefined) ?? locatePageElement)(proof.source, target.node)?.tag.name === "video";
+  const label = replacing ? "Media replaced" : `${target.kind === "spot" ? "Looping video" : NOUNS[kind]} added`;
   const say = (notes: string[]) => ports.announce([`${label}.`, ...notes].join(" "));
 
   // An existing file's facts are read now; a file added in the picker has them once it is saved.

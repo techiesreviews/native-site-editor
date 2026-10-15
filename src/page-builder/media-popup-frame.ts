@@ -1,5 +1,5 @@
 // The media popup's frame (slice 109): the window a media spot's popup lives in, so the Image
-// popup and later ones for video and audio (ticket 119's one Media button) look and behave alike.
+// popup and the Media popup for video, audio, downloads and Online videos (slice 119) look and behave alike.
 // A head (title, file name, tools, ✕), a line for notes, compact rows (label left on computer,
 // above on phones) and a bottom strip: one quiet message line beside Done on computer, above the
 // buttons on phones. Beside the selected spot, level with the edit bar, its nub towards the bar's
@@ -26,6 +26,8 @@ export interface MediaPopupFrameOptions {
   className?: string;
   /** Leaving without Done: ✕, Escape, a press outside, the bar gone. */
   cancel(): void;
+  /** ✕'s name: "Close without changes" unless each change already applied (the Media popup's). */
+  closeLabel?: string;
   /** Escape inside the popup: true when the content used it (a menu closed). */
   escape?(): boolean;
   /** The window was resized or the bar moved: the content lays itself out again. */
@@ -59,7 +61,8 @@ export function mountMediaPopupFrame(host: MediaPopupHost, options: MediaPopupFr
   /** Icon tools before ✕ (the Image popup's Open large editor). */
   const tools = node("span", "image-popup__tools");
   const close = actionButton("image-popup__icon", () => options.cancel());
-  close.append(icon("x", 18)); close.setAttribute("aria-label", "Close without changes"); close.title = "Close without changes (Esc)";
+  const closeLabel = options.closeLabel ?? "Close without changes";
+  close.append(icon("x", 18)); close.setAttribute("aria-label", closeLabel); close.title = `${closeLabel} (Esc)`;
   tools.append(close);
   const head = node("div", "image-popup__head"); head.append(title, where, tools);
   const notice = node("p", "image-popup__notice"); notice.setAttribute("role", "status"); notice.hidden = true;

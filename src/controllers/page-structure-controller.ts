@@ -55,6 +55,8 @@ export interface PageStructurePorts {
   readonly chooseMediaForImage: (target: { path: string; node: number[]; width?: number; }, files?: File[]) => Promise<void>;
   /** Lazy video and section-background controls. */
   readonly mediaVideoControls?: (page: string, node: number[], source: string) => EditBarControl[];
+  /** The Media button on a video, audio, a download or an Online video (slice 119). */
+  readonly mediaButton?: (page: string, node: number[], source: string) => EditBarControl | undefined;
   /** The Image button's badge ("Square", "Trimmed") and whether its popup is open on this image. */
   readonly mediaPlaceFrame?: (page: string, node: number[], tag: string) => { badge?: string; open: boolean } | undefined;
   /** The image popup (shape, focus, Replace) for an image on a page. */
@@ -455,7 +457,8 @@ export function createPageStructureController(ports: PageStructurePorts) {
     // each write is a guarded edit from the bytes the field last read or wrote,
     // while typing one undo step per field (`group`).
     if (range && node) {
-      const fields = nativeElementFields(source, range.tag);
+      // A video's file, still picture and title live in its Media popup (slice 119), not in the bar.
+      const fields = range.tag.name === "video" ? [] : nativeElementFields(source, range.tag);
       const painted = { source, since: ports.edits.stamp(), model: modelNow(path) };
       const writeField = (property: string, value: string, grouped: boolean) => {
         const key = `${path}:${node.join(".")}:${property}`;
@@ -524,10 +527,11 @@ export function createPageStructureController(ports: PageStructurePorts) {
     if (range && selection.tag === "img") {
       const src = attribute("src");
       const alt = attribute("alt");
-      // One Image button opens the image popup: picture, shape, focus and Replace (media ticket 09).
+      // One Media button (slice 119; the Image button of media ticket 09) opens the image popup: picture,
+      // shape, focus and Replace; on an empty picture spot, the picker adds media.
       const frame = node && ports.mediaPlaceFrame?.(path, node, source.slice(range.tag.start, range.tag.end));
-      controls.push({ kind: "button", label: "Image", leading: "image", badge: frame?.badge, expanded: Boolean(frame?.open), className: "edit-bar__image",
-        title: `Picture, shape and focus${frame?.badge ? ` · ${frame.badge}` : ""}`,
+      controls.push({ kind: "button", label: "Media", leading: "image", badge: frame?.badge, expanded: Boolean(frame?.open), className: "edit-bar__media", names: true,
+        title: `Picture: shape, focus and Replace${frame?.badge ? ` · ${frame.badge}` : ""}`,
         onPress: () => { if (node) { if (ports.editImage) ports.editImage({ path, node }); else void ports.chooseMediaForImage({ path, node, width: selection.rect?.width }); } } });
       const description = ports.mediaPlaceState?.(path, src?.value ?? "", alt?.value);
       controls.push({
@@ -623,7 +627,10 @@ export function createPageStructureController(ports: PageStructurePorts) {
         onPress: () => change([duplicateEdit(source, range)], [...parent, index + 1], `${kind} duplicated`),
       });
     }
-    // Play on a video, audio or Online video (slice 65); Looping video on a video; Background video
+    // The Media button on a video, audio, a download or an Online video leads the bar (slice 119).
+    const media = range && node && ["video", "audio", "a"].includes(range.tag.name) ? ports.mediaButton?.(path, node, source) : undefined;
+    if (media) controls.unshift(media);
+    // Play on a video, audio or Online video (slice 65); Background video
     // on a section (lazy, media slice 64), after the move controls.
     if (range && node && ["video", "audio", "a", "section"].includes(range.tag.name)) controls.push(...ports.mediaVideoControls?.(path, node, source) ?? []);
     // An item of a card grid, or anything inside one: Duplicate, Remove, Add card, Open page, Select card.

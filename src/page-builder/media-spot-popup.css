@@ -1,0 +1,93 @@
+/* The Media popup (slice 119) inside the media popup frame (image-popup.css): the file in the
+   frame's well, then compact rows with the frame's tokens. Only what the frame has no rule for. */
+.media-spot__well {
+  display: grid;
+  place-items: center;
+  gap: 4px;
+  overflow: clip;
+  touch-action: auto;
+  user-select: auto;
+  -webkit-user-select: auto;
+}
+.media-spot__player,
+.media-spot__still {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: contain;
+  background: oklch(0% 0 none);
+}
+.media-spot__well:has(> .media-spot__audio),
+.media-spot__well:has(> .media-spot__name) {
+  block-size: auto;
+  min-block-size: 64px;
+  padding: 10px;
+  color: var(--muted);
+}
+.media-spot__audio { inline-size: 100%; }
+.media-spot__well > .media-spot__name {
+  max-inline-size: 100%;
+  overflow: clip;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.media-spot__still[hidden],
+.media-spot__thumb[hidden] { display: none; }
+
+/* A row's controls on one line: a thumbnail or name, then its actions; wraps when narrow. */
+.media-spot__line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  min-inline-size: 0;
+}
+.media-spot__line > .image-popup__link { margin-inline-start: 0; }
+.media-spot__thumb {
+  inline-size: 48px;
+  block-size: 28px;
+  border-radius: 4px;
+  object-fit: cover;
+  background: var(--image-popup-well);
+}
+.media-spot__name {
+  min-inline-size: 0;
+  overflow: clip;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.media-spot__note {
+  color: var(--muted);
+  font-size: var(--type-small);
+}
+label.media-spot__line { cursor: pointer; }
+.media-spot__switch {
+  flex: none;
+  inline-size: 18px;
+  block-size: 18px;
+  margin: 0;
+  accent-color: var(--primary);
+}
+.media-spot__switch:disabled,
+.media-spot__switch:disabled + .media-spot__note { cursor: default; }
+.media-spot__field {
+  box-sizing: border-box;
+  inline-size: 100%;
+  min-block-size: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--control-line);
+  border-radius: var(--radius);
+  background: var(--image-popup-surface);
+  color: var(--text);
+  font: inherit;
+}
+.media-spot__field::placeholder { color: var(--muted); }
+.media-spot__field:focus-visible { outline: var(--focus-ring); outline-offset: 1px; }
+.media-spot-popup[aria-busy="true"] .image-popup__rows { cursor: progress; }
+
+@media (max-width: 700px) {
+  .media-spot__field { min-block-size: 44px; }
+  /* A 44 px target around the small switch. */
+  label.media-spot__line { min-block-size: 44px; }
+}

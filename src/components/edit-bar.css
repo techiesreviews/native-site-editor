@@ -265,10 +265,10 @@
   font-weight: 600;
   line-height: 1.2;
 }
-.edit-bar__image[aria-expanded="true"] .edit-bar__badge {
+.edit-bar__media[aria-expanded="true"] .edit-bar__badge {
   background: color-mix(in oklch, var(--on-pressed) 24%, transparent);
 }
-.edit-bar__image[aria-expanded="true"],
+.edit-bar__media[aria-expanded="true"],
 .edit-bar__address[aria-expanded="true"] {
   background: var(--pressed);
   color: var(--on-pressed);

@@ -26,6 +26,8 @@ import { trimGeometry } from "./trim-geometry";
 import { componentFrame, componentPicture } from "./component-shapes";
 import { loadPicture, mountImagePopupView, trimmedPreview, type ImagePopupState } from "./image-popup-view";
 import type { MediaPopupHost } from "./media-popup-frame";
+import { isPictureSpot } from "./looping-video";
+import { SPOT_ACCEPT, pickedVideo, placeSpotVideo, spotNote } from "./media-spot-pick";
 
 /** What the editor lends the popup: where it stands, and the page's live look. */
 export interface ImagePopupHost extends MediaPopupHost {
@@ -198,8 +200,17 @@ export async function openImagePopup(options: ImagePopupOptions) {
     const { openMediaPicker } = await options.load();
     if (closed) return;
     const words = mediaExistingAlt(expected)?.trim();
-    await openMediaPicker({ accept: "image/*", report: ports, place: `${ports.placeLabel?.(target.path) ?? target.path} · ${words || "Image"}`,
+    // A picture spot also takes a video, which loops silently there: placed at once, closing the popup (slice 119).
+    const parent = (ports.locateElement ?? locateNativeElementRange)(source!, target.node.slice(0, -1));
+    const spot = isPictureSpot(expected) || parent?.tag.name === "picture" && isPictureSpot(source!.slice(parent.tag.start, parent.tag.end));
+    await openMediaPicker({ accept: spot ? SPOT_ACCEPT : "image/*", chosenNote: spot ? spotNote : undefined, report: ports, place: `${ports.placeLabel?.(target.path) ?? target.path} · ${words || "Image"}`,
       onPick: async (image, cancelled, held) => {
+        if (spot && pickedVideo(image, held)) {
+          if (closed) return;
+          close();
+          await placeSpotVideo(ports, options.workspaceContext, target, image, { stamp, epoch, source: source! }, cancelled, held);
+          return;
+        }
         // Files added in the picker are kept in Media now; the place changes only on Done.
         let picked = image;
         if (held) { const saved = await held.save(); picked = held.image(saved.paths); }

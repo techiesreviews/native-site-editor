@@ -1885,6 +1885,36 @@ test("agent video, audio, download and picture-spot placement equal Add → Medi
   }
 });
 
+test("agent replaces a video in a picture spot with another video, then a picture, as the Media button's Replace writes it", async () => {
+  const before = Object.getOwnPropertyDescriptor(globalThis, "Image");
+  Object.defineProperty(globalThis, "Image", { configurable: true, value: class { src = ""; naturalWidth = 2400; naturalHeight = 1600; async decode() {} } });
+  try {
+    const spot = '<section><photo-card><video slot="media" src="/media/film.mp4" poster="/media/film.webp" controls muted loop playsinline class="shot" style="aspect-ratio:1/1;object-fit:cover;object-position:20% 70%" width="800" height="800" aria-label="Old &amp; film"></video></photo-card></section>';
+    const editor = agentVideoFixture(spot), agent = agentVideoFixture(spot);
+    for (const f of [editor, agent]) { f.paths.push("media/clip.mp4"); f.bytes.set("media/clip.mp4", new Blob(["clip"])); }
+    const node = [0, 0, 0, 0], original = agent.text.get("index.html");
+    // Another video: the spot's slot, class, style, size and name stay; still and player follow the new file.
+    await editor.controller.chooseImage({ path: "index.html", node });
+    await editor.pick()!.onPick!({ path: "media/clip.mp4", alt: "" }, () => false);
+    await applySiteCommand(agent.actions, mediaCommand("place_media", { file: "media/clip.mp4", element: "0.0.0.0" }));
+    assert.deepEqual(agent.text, editor.text);
+    assert.match(agent.text.get("index.html")!, /<video src="\/media\/clip\.mp4" controls muted loop playsinline slot="media" class="shot" style="aspect-ratio:1\/1;object-fit:cover;object-position:20% 70%" width="800" height="800" aria-label="Old &amp; film"><\/video>/);
+    // Then a picture: an <img> in the same spot by the placed-image rules, the video's name as its words.
+    await editor.controller.chooseImage({ path: "index.html", node });
+    await editor.pick()!.onPick!(mediaImageForPlacement(editor.file, { width: 2400, height: 1600 }, editor.paths), () => false);
+    await applyAgentMedia(await agent.controller.workspaceContext(isAgentMediaPath), mediaCommand("place_media", { file: agent.file, element: "0.0.0.0" }), target => agent.controller.preparePlacement(target));
+    assert.deepEqual(agent.text, editor.text);
+    const img = /<img\b[^>]*>/.exec(agent.text.get("index.html")!)![0];
+    for (const kept of ['slot="media"', 'class="shot"', 'alt="Old &amp; film"', 'src="/media/images/photo.webp"', 'decoding="async"']) assert.ok(img.includes(kept), `${kept} in ${img}`);
+    assert.match(img, /style="aspect-ratio:1\/1;object-fit:cover;object-position:20% 70%"/);
+    assert.doesNotMatch(agent.text.get("index.html")!, /<video|<\/video>/);
+    assert.equal(agent.history.length, 2);
+    agent.history.pop()!(); agent.history.pop()!(); assert.equal(agent.text.get("index.html"), original);
+  } finally {
+    if (before) Object.defineProperty(globalThis, "Image", before); else Reflect.deleteProperty(globalThis, "Image");
+  }
+});
+
 test("agent recorded Online video placement uses the picker engine, keeps start time and never fetches", async () => {
   const f = agentVideoFixture(), editor = agentVideoFixture();
   const original = f.text.get("index.html")!;

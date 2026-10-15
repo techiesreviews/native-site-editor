@@ -1653,6 +1653,7 @@ const pageStructureController = createPageStructureController({
   get chooseMediaForImage() { return chooseMediaForImage; },
   mediaPlaceState: (page, src, alt) => mediaController.placeState(page, src, alt),
   mediaVideoControls: (page, node, source) => mediaController.videoControls(page, node, source),
+  mediaButton: (page, node, source) => mediaController.mediaButton(page, node, source),
   mediaPlaceFrame: (page, node, tag) => mediaController.placeFrame(page, node, tag),
   editImage: target => void mediaController.editImage(target),
   changeMediaPlace: (page, node, decorative) => mediaController.changePlace(page, node, decorative),

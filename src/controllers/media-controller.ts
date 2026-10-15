@@ -282,14 +282,8 @@ export function createMediaController(ports: MediaControllerPorts, loadActions: 
     const tag = source.slice(range.tag.start, range.tag.end);
     if (range.tag.name === "audio") return playControl(path, node, source);
     if (range.tag.name === "a") return /(?:^|\s)online-video(?:\s|$)/.test(mediaAttribute(tag, startTags(tag)[0], "class")?.value ?? "") ? playControl(path, node, source) : [];
-    if (range.tag.name === "video") {
-      if (has(tag, "data-background")) return playControl(path, node, source);
-      // Looping: muted and loop; in a picture spot (a slot) a video always loops silently.
-      const checked = has(tag, "muted") && has(tag, "loop"), disabled = checked && has(tag, "slot");
-      return [...playControl(path, node, source), { kind: "checkbox", label: "Looping video", checked, disabled,
-        title: disabled ? "A video in a picture spot always loops silently." : "Plays silently by itself, over and over, with a small pause button",
-        onChange: on => { void loadVideos().then(() => videos!.toggleLooping(path, node, source, on)).catch(fail); } }];
-    }
+    // Looping video is in the Media popup now (slice 119).
+    if (range.tag.name === "video") return playControl(path, node, source);
     if (range.tag.name !== "section") return [];
     // A background video is the section's first child.
     const after = source.slice(range.tag.end), first = /^\s*<video\b/i.test(after) ? source.slice(range.tag.end).trimStart() : "";
@@ -297,6 +291,20 @@ export function createMediaController(ports: MediaControllerPorts, loadActions: 
     return [{ kind: "button", label: "Background video", onPress: () => { void chooseBackground({ path, node }).catch(fail); } },
       ...hasBackground ? [{ kind: "button" as const, label: "Remove background video",
         onPress: () => { void loadVideos().then(() => videos!.removeBackground(path, node, source)).catch(fail); } }] : []];
+  }
+  /** The edit bar's Media button on a video (a picture spot's too), audio, a download card or an Online
+   * video (slice 119; a picture's is drawn with its badge): opens the Media popup for what it holds. */
+  function mediaButton(path: string, node: number[], source: string): EditBarControl | undefined {
+    const range = (ports.locateElement ?? locateNativeElementRange)(source, node);
+    if (!range) return undefined;
+    const tag = source.slice(range.tag.start, range.tag.end), first = startTags(tag)[0];
+    const names = ` ${mediaAttribute(tag, first, "class")?.value ?? ""} `.replace(/\s+/g, " ");
+    const what = range.tag.name === "video" ? mediaAttribute(tag, first, "data-background") ? undefined : mediaAttribute(tag, first, "slot") ? "Looping video" : "Video"
+      : range.tag.name === "audio" ? "Audio" : range.tag.name === "a" ? names.includes(" download-card ") ? "Download" : names.includes(" online-video ") ? "Online video" : undefined : undefined;
+    if (!what) return undefined;
+    if (!popups) void loadPopups().catch(() => {});
+    return { kind: "button", label: "Media", leading: "image", names: true, expanded: popups?.open(path, node) ?? false, className: "edit-bar__media",
+      title: `${what}: change or replace it`, onPress: () => { void editImage({ path, node }); } };
   }
   async function chooseBackground(target: { path: string; node: number[] }) {
     const source = ports.source(target.path), stamp = ports.stamp();
@@ -345,6 +353,6 @@ export function createMediaController(ports: MediaControllerPorts, loadActions: 
         url: () => ports.usage?.url(),
       };
     },
-    workspaceContext, preparePlacement, prepareLoop, prepareFrame, chooseImage, insertMedia, choosePath, chooseBackground, videoControls, placeState, placeFrame, editImage, changePlace, ensureGallery, reviewInGallery, requestGalleryRefresh, disposeGallery,
+    workspaceContext, preparePlacement, prepareLoop, prepareFrame, chooseImage, insertMedia, choosePath, chooseBackground, videoControls, mediaButton, placeState, placeFrame, editImage, changePlace, ensureGallery, reviewInGallery, requestGalleryRefresh, disposeGallery,
     closePicker: () => loaded?.closeMediaPicker(), galleryVisible: () => ports.galleryVisible() };
 }

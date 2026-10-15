@@ -98,7 +98,8 @@ test("inline, empty and nested sections: only the selected section's first child
 });
 test("refuse non-video, background toggles, non-picture spots and non-sections", () => {
   for (const text of ['<img>', '<video data-background muted loop>']) assert.throws(() => writeLooping(text, true), /Choose a video/);
-  for (const text of ['<img>', '<video slot="image" muted loop>', '<section slot="image">']) assert.throws(() => pictureSpotVideo(text, { path: "v.mp4" }), /Choose a picture spot/);
+  // A video already in a picture spot gives way to another (slice 119's Replace); a slotless one is no spot.
+  for (const text of ['<img>', '<video muted loop>', '<section slot="image">']) assert.throws(() => pictureSpotVideo(text, { path: "v.mp4" }), /Choose a picture spot/);
   const source = '<div></div>', tags = startTags(source), div = elementEnd(source, tags, 0, source.length)!;
   assert.throws(() => sectionBackgroundEdits(source, div, { path: "v.mp4" }), /Choose a section/);
   assert.throws(() => readSectionBackground(source, div), /Choose a section/);

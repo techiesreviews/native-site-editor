@@ -97,7 +97,7 @@ test("images use the Image button and Alt while real hyperlinks retain Address",
     editor.replaceActiveRange({ path: "index.html", start, end: start, expected: "", text: '<img src="/images/studio-desk.svg" alt="Studio desk"><a href="/about/">Real hyperlink</a>\n' });
   });
   await frame(page).locator('img[alt="Studio desk"]').click();
-  await expect(bar(page).locator(".edit-bar__image")).toHaveAttribute("aria-haspopup", "dialog");
+  await expect(bar(page).locator(".edit-bar__media")).toHaveAttribute("aria-haspopup", "dialog");
   await expect(bar(page).getByRole("button", { name: "Alt text", exact: true })).toBeVisible();
   await expect(bar(page).getByRole("button", { name: "Address", exact: true })).toHaveCount(0);
   await frame(page).getByRole("link", { name: "Real hyperlink", exact: true }).click();

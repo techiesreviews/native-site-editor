@@ -12,8 +12,7 @@ import type { MediaImage } from "../page-builder/media-markup";
 type MediaLibraryView = ReturnType<typeof import("../page-builder/media-picker")["mountMediaLibrary"]>;
 
 /** The videos a picture spot's picker lists beside its pictures: those browsers play. */
-const VIDEO_ACCEPT = ".mp4,.m4v,.webm,.mov,.ogv";
-const isVideoName = (name: string) => /\.(?:mp4|m4v|webm|mov|ogv|mkv|avi|mpe?g)$/i.test(name);
+import { SPOT_ACCEPT, pickedVideo, placeSpotVideo, spotNote } from "../page-builder/media-spot-pick";
 
 /** Action-only workspace reads and picker sessions; boot retains the badge and edit-bar hooks. */
 export function createMediaActions(ports: MediaControllerPorts, load: () => Promise<MediaModule>, mountCleanUp: MediaCleanUpMount) {
@@ -92,27 +91,25 @@ export function createMediaActions(ports: MediaControllerPorts, load: () => Prom
     const source = ports.source(target.path);
     const locate = ports.locateElement ?? locateNativeElementRange;
     const initial = source === undefined ? undefined : locate(source, target.node);
-    if (!initial || initial.tag.name !== "img" || ports.viewingVersion()) return;
-    const expected = source!.slice(initial.tag.start, initial.tag.end);
+    const expected = initial ? source!.slice(initial.tag.start, initial.tag.end) : "";
+    // A picture spot's looping video is replaced the same way, with a picture or another video (slice 119).
+    const spotVideo = initial?.tag.name === "video" && Boolean(mediaAttribute(expected, startTags(expected)[0], "slot"));
+    if (!initial || initial.tag.name !== "img" && !spotVideo || ports.viewingVersion()) return;
     if (target.paintedSource !== undefined && !sameImageTarget(target.paintedSource, source!, target.node, locate)) return;
-    const initialAlt = mediaExistingAlt(expected);
+    const initialAlt = spotVideo ? mediaAttribute(expected, startTags(expected)[0], "aria-label")?.value : mediaExistingAlt(expected);
     const { openMediaPicker } = await load();
     if (!stamp.holds() || ports.source(target.path) !== source) return;
     // The place: its page, and the picture by its words ("Home · Studio desk").
-    const place = `${ports.placeLabel?.(target.path) ?? target.path} · ${initialAlt?.trim() || "Image"}`;
+    const place = `${ports.placeLabel?.(target.path) ?? target.path} · ${initialAlt?.trim() || (spotVideo ? "Looping video" : "Image")}`;
     // A picture spot (a component's slot picture) also takes a video, which loops silently there (slice 64).
     const spotted = (text: string) => Boolean(mediaAttribute(text, startTags(text)[0], "slot"));
     const parent = locate(source!, target.node.slice(0, -1));
     const spot = spotted(expected) || parent?.tag.name === "picture" && spotted(source!.slice(parent.tag.start, parent.tag.end));
-    await openMediaPicker({ files, accept: spot ? `image/*,${VIDEO_ACCEPT}` : "image/*", place, report: ports,
-      chosenNote: spot ? name => isVideoName(name) ? "loops silently here" : undefined : undefined,
+    await openMediaPicker({ files, accept: spot ? SPOT_ACCEPT : "image/*", place, report: ports,
+      chosenNote: spot ? spotNote : undefined,
       onPick: async (image: MediaImage, cancelled, held) => {
-        // A file added here is routed by what it became (a GIF becomes a looping MP4), not its own name.
-        const added = held?.chosen?.()?.request, output = added?.result?.outputs[0]?.extension;
-        const chosen = added ? output ? `added.${output}` : added.file.name : image.path;
-        if (spot && isVideoName(chosen)) {
-          const { placeChosenMedia } = await import("../page-builder/media-insert");
-          await placeChosenMedia(ports, workspaceContext, { kind: "spot", path: target.path, node: target.node }, image, { stamp, epoch, source: source! }, cancelled, held);
+        if (spot && pickedVideo(image, held)) {
+          await placeSpotVideo(ports, workspaceContext, { path: target.path, node: target.node }, image, { stamp, epoch, source: source! }, cancelled, held);
           return;
         }
         const { placeMediaImage } = await import("../page-builder/media-place");

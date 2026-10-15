@@ -22,7 +22,10 @@ export async function placeAgentMedia(
 ): Promise<number[] | undefined> {
   const online = parseOnlineVideoAddress(image.path), kind = mediaKind(image.path);
   if (!online && kind === "image") {
-    if ((ports.locateElement ?? locatePageElement)(proof.source, target.node)?.tag.name !== "img") throw new Error("That element is not an image; place_media fills an existing image. Add a section or component with an image first.");
+    // A picture spot's looping video takes a picture back, as the Media popup's Replace writes it (ticket 119).
+    const at = (ports.locateElement ?? locatePageElement)(proof.source, target.node);
+    const spotVideo = at?.tag.name === "video" && isPictureSpot(proof.source.slice(at.tag.start, at.tag.end));
+    if (at?.tag.name !== "img" && !spotVideo) throw new Error("That element is not an image; place_media fills an existing image. Add a section or component with an image first.");
     await placeMediaImage(ports, context, target, image, proof, () => false);
     return target.node;
   }
