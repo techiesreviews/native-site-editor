@@ -96,7 +96,8 @@ test("a check running again keeps the badge's count but offers nothing unchecked
     assert.deepEqual(badge(f.states), { count: 1, show: true });
     assert.equal(controller.state().suggestions.state, "not-checked");
     assert.deepEqual(controller.state().suggestions.groups, []);
-    assert.deepEqual(controller.item(), { label: "Clean up", disabled: "Still checking which files are used." });
+    // The count stays the badge's (slice 121); only opening waits for the check.
+    assert.deepEqual(controller.item(), { label: "Clean up (1)", disabled: "Still checking which files are used." });
     controller.dismiss();
     assert.deepEqual(badge(f.states), { count: 1, show: true });
   }
@@ -333,6 +334,17 @@ test("the badge and More's counts come from one settled check: never Clean up al
   release(); await second;
   assert.deepEqual(badge(f.states), { count: 2, show: true, improve: 1 });
   assert.equal(sum(), 2);
+  // Clean up dropping to nothing while rows are read (review): More still adds up to the badge.
+  gate = new Promise<void>(resolve => { release = resolve; });
+  const third = controller.update(usage(["images/wide.png"]));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(controller.state().suggestions.count, 0);
+  assert.equal(controller.item().disabled, "Nothing to clean up: every file is used or marked Always keep.");
+  assert.equal(sum(), badge(f.states)?.count);
+  release(); await third;
+  assert.deepEqual(badge(f.states), { count: 1, show: true, improve: 1 });
+  assert.equal(sum(), 1);
+  await controller.update(usage(["images/wide.png", "a.png"]));
   // Rows that cannot be read keep the last ones rather than dropping to Clean up alone.
   pagesFail = true;
   await controller.update(usage(["images/wide.png", "a.png", "c.png"]));

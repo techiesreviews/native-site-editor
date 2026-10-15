@@ -42,14 +42,16 @@ export function improveMenuItem(rows: number | undefined): { label: string } {
   return { label: rows ? `Improve images (${rows})` : "Improve images" };
 }
 
-/** Clean up in More: why there is nothing to open yet, or the badge's Clean up count (`counted`,
- * the check the badge shows; none until that check has Improve images' count too, slice 121). */
+/** Clean up in More. Its count is the badge's (`counted`, the last check with Improve images' count
+ * too; none before there is one, slice 121), so More always adds up to the badge; the newest check
+ * (`suggestions`) only says whether it opens, and why not. */
 export function cleanUpMenuItem(suggestions: MediaCleanUpSuggestions, counted: MediaCleanUpSuggestions | null = suggestions): { label: string; disabled?: string } {
-  if (suggestions.state === "not-checked") return { label: "Clean up", disabled: "Still checking which files are used." };
+  const label = counted?.state === "ready" && counted.count ? `Clean up (${counted.count})` : "Clean up";
+  if (suggestions.state === "not-checked") return { label, disabled: "Still checking which files are used." };
   if (suggestions.state === "blocked") {
     const files = suggestions.blockedBy.slice(0, 3).join(", ") + (suggestions.blockedBy.length > 3 ? ` and ${suggestions.blockedBy.length - 3} more` : "");
-    return { label: "Clean up", disabled: `Nothing is suggested until every file can be read: ${files}.` };
+    return { label, disabled: `Nothing is suggested until every file can be read: ${files}.` };
   }
-  if (!suggestions.count) return { label: "Clean up", disabled: "Nothing to clean up: every file is used or marked Always keep." };
-  return { label: counted?.state === "ready" && counted.count ? `Clean up (${counted.count})` : "Clean up" };
+  if (!suggestions.count) return { label, disabled: "Nothing to clean up: every file is used or marked Always keep." };
+  return { label };
 }
