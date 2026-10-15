@@ -2,7 +2,7 @@
 title: UX and UI audit of the whole media manager, against Mobbin and Brizy
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-89 runner)
 blocked_by: [82-media-docs]
 builder: claude
 phase: 8
