@@ -337,7 +337,11 @@ test("a replaced see-through picture is on the checkerboard and an opaque one is
   // The visible circle is 12 px; a press outside the picture, inside the grab area, takes the corner.
   expect(await corner.evaluate(element => getComputedStyle(element, "::after").width)).toBe("12px");
   const outside = { x: picture.x - 15, y: picture.y - 15 };
-  expect(await corner.evaluate((element, at) => element.contains(document.elementFromPoint(at.x, at.y)), outside)).toBe(true);
+  // Every corner takes a press 15 px past the picture's edge.
+  for (const [name, dx, dy] of [["nw", -15, -15], ["ne", 15, -15], ["se", 15, 15], ["sw", -15, 15]] as const) {
+    const at = { x: (dx < 0 ? picture.x : picture.x + picture.width) + dx, y: (dy < 0 ? picture.y : picture.y + picture.height) + dy };
+    expect(await popup(page).locator(`.image-popup__corner--${name}`).evaluate((element, point) => element.contains(document.elementFromPoint(point.x, point.y)), at)).toBe(true);
+  }
   const before = (await popup(page).locator(".image-popup__frame").boundingBox())!;
   await page.mouse.move(outside.x, outside.y);
   await page.mouse.down();
@@ -345,6 +349,15 @@ test("a replaced see-through picture is on the checkerboard and an opaque one is
   await page.mouse.up();
   const after = (await popup(page).locator(".image-popup__frame").boundingBox())!;
   expect(after.width).toBeLessThan(before.width - 20);
+  // The opposite corner, pressed past the picture's bottom right, sizes it from there.
+  const se = { x: picture.x + picture.width + 15, y: picture.y + picture.height + 15 };
+  await page.mouse.move(se.x, se.y);
+  await page.mouse.down();
+  await page.mouse.move(se.x - 60, se.y - 40, { steps: 6 });
+  await page.mouse.up();
+  const smaller = (await popup(page).locator(".image-popup__frame").boundingBox())!;
+  expect(smaller.width).toBeLessThan(after.width - 20);
+  expect(Math.round(smaller.x)).toBe(Math.round(after.x));
   await expect(popup(page).locator(".image-popup__message")).toHaveText("Saves a new picture for this spot");
 });
 

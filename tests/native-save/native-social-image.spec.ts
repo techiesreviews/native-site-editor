@@ -290,6 +290,11 @@ test("a press on the Social image layer's backdrop closes it unchanged; Site set
   const popup = page.getByRole("dialog", { name: "Social image", exact: true });
   const dot = popup.getByRole("slider", { name: "Focus dot" });
   await expect(dot).toBeFocused();
+  // The fixture's picture is see-through around its green square: the picture and the link card sit on
+  // slice 106's checkerboard.
+  await expect(popup.locator(".image-popup__pic[data-transparent]")).toHaveCount(1);
+  await expect(popup.locator(".image-popup__card-image[data-transparent]")).toHaveCount(1);
+  expect(await popup.locator(".image-popup__picbox").evaluate(element => getComputedStyle(element).backgroundImage)).toContain("conic-gradient");
   await page.keyboard.press("Shift+ArrowUp");
   // Settings are under the layer: inert until it closes.
   await expect(panel(page).getByRole("button", { name: "Apply site settings", exact: true })).toBeVisible();
