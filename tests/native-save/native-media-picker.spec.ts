@@ -114,7 +114,11 @@ test("a phone picker with 30 collections keeps Filter's menu inside the screen; 
   await openPicker(page);
   await page.setViewportSize({ width: 390, height: 844 });
   await picker(page).getByRole("button", { name: "Choose images/studio-desk.svg", exact: true }).click();
-  await picker(page).getByRole("button", { name: /^Filter/ }).click();
+  // The phone picker's Filter reads as a muted "Filter" and its choice too (slice 122).
+  const filter = picker(page).getByRole("button", { name: /^Filter/ });
+  await expect(filter.locator(".media-library__filter-name")).toBeVisible();
+  await expect(filter.locator(".media-library__filter-label")).toHaveText("All");
+  await filter.click();
   const menu = page.getByRole("menu", { name: "Filter", exact: true });
   const box = await menu.boundingBox();
   expect(box!.y).toBeGreaterThanOrEqual(0);

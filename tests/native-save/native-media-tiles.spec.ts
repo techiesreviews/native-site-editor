@@ -116,13 +116,13 @@ test("phones: search keeps most of the One bar, and the selection bar is one row
     const [search, whole] = await Promise.all([library.locator(".media-library__search").boundingBox(), bar.boundingBox()]);
     return search!.width / (whole!.width - 24);
   };
-  // Filter shows its choice on phones too (slice 122); search keeps at least half the bar.
-  expect(await share()).toBeGreaterThanOrEqual(0.5);
-  // Filter (slices 116, 122) is the funnel and its choice; the word "Filter" is for wider screens.
+  // Filter shows "Filter" and its choice on phones too (slice 122); search keeps at least 45 % of the bar.
+  expect(await share()).toBeGreaterThanOrEqual(0.45);
+  // Filter (slices 116, 122) is a muted "Filter" and its choice, as on wider screens.
   await expect(filterButton(library)).toHaveAccessibleName("Filter: All");
   await expect(filterButton(library).locator(".media-library__filter-label")).toHaveText("All");
   await expect(filterButton(library).locator(".media-library__filter-label")).toBeVisible();
-  await expect(filterButton(library).locator(".media-library__filter-name")).toBeHidden();
+  await expect(filterButton(library).locator(".media-library__filter-name")).toBeVisible();
   await expect(library.getByRole("button", { name: "Add files", exact: true })).toBeVisible();
   // Typed words stay whole.
   await library.getByLabel("Search media", { exact: true }).fill("studio desk");
@@ -188,7 +188,7 @@ test("phones: inside a collection, ⋯ offers Take out before Remove, and Take o
   await open(page, baseURL);
   const library = pane(page);
   await filterTo(library, "Picks");
-  // Narrowed, Filter shows its words whole beside the funnel; search keeps at least 40 %.
+  // Narrowed, Filter shows its words whole after "Filter"; search keeps at least 40 %.
   const label = filterButton(library).locator(".media-library__filter-label");
   await expect(label).toHaveText("Picks");
   expect(await label.evaluate(words => words.scrollWidth <= words.clientWidth)).toBe(true);

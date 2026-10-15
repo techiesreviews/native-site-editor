@@ -502,24 +502,28 @@ test("One bar: search, then Filter, + and More as one 44 px group at every width
         Math.round(f.x - a.x - a.width), Math.round(p.x - f.x - f.width), Math.round(m.x - p.x - p.width), m.x + m.width <= width];
     }, `width ${width}`).toEqual([44, 44, 44, 44, 44, 44, 0, 0, 8, -1, -1, true]);
   }
-  // Filter reads as a label and its value (Lex, slice 122): phones show the funnel and the choice,
-  // wider screens a muted "Filter" between them; the choice is in the text colour, not bold.
-  await page.setViewportSize({ width: 390, height: 900 });
-  await expect(filter.locator(".media-library__filter-label")).toHaveText("All");
-  await expect(filter.locator(".media-library__filter-name")).toBeHidden();
+  // Lex (slice 122): at every width Filter reads as a muted "Filter" and its choice, in the text colour and
+  // not bold, both whole; and 16 px separate search from the first tiles.
+  for (const width of [390, 768, 1280]) {
+    await page.setViewportSize({ width, height: 900 });
+    await expect(filter.locator(".media-library__filter-name"), `width ${width}`).toHaveText("Filter");
+    await expect(filter.locator(".media-library__filter-label"), `width ${width}`).toHaveText("All");
+    const looks = await filter.evaluate(button => {
+      const look = (selector: string) => {
+        const part = button.querySelector<HTMLElement>(selector)!, style = getComputedStyle(part);
+        return { color: style.color, weight: Number(style.fontWeight), whole: part.checkVisibility() && part.scrollWidth <= part.clientWidth };
+      };
+      const probe = document.createElement("span"); probe.style.color = "var(--muted)"; button.append(probe);
+      const muted = getComputedStyle(probe).color; probe.remove();
+      return { name: look(".media-library__filter-name"), value: look(".media-library__filter-label"), muted, text: getComputedStyle(button).color };
+    });
+    expect(looks, `width ${width}`).toEqual({ name: { color: looks.muted, weight: looks.name.weight, whole: true }, value: { color: looks.text, weight: looks.value.weight, whole: true }, muted: looks.muted, text: looks.text });
+    expect(looks.value.color, `width ${width}`).not.toBe(looks.name.color);
+    expect(looks.value.weight, `width ${width}`).toBeLessThanOrEqual(500);
+    const [field, card] = await Promise.all([search.boundingBox(), library.locator(".media-library__card").first().boundingBox()]);
+    expect(Math.round(card!.y - field!.y - field!.height), `width ${width}: search to tiles`).toBe(16);
+  }
   await page.setViewportSize({ width: 1280, height: 900 });
-  await expect(filter.locator(".media-library__filter-name")).toHaveText("Filter");
-  await expect(filter.locator(".media-library__filter-label")).toHaveText("All");
-  const looks = await filter.evaluate(button => {
-    const look = (selector: string) => { const style = getComputedStyle(button.querySelector(selector)!); return { color: style.color, weight: Number(style.fontWeight) }; };
-    const probe = document.createElement("span"); probe.style.color = "var(--muted)"; button.append(probe);
-    const muted = getComputedStyle(probe).color; probe.remove();
-    return { name: look(".media-library__filter-name"), value: look(".media-library__filter-label"), muted, text: getComputedStyle(button).color };
-  });
-  expect(looks.name.color).toBe(looks.muted);
-  expect(looks.value.color).toBe(looks.text);
-  expect(looks.value.color).not.toBe(looks.name.color);
-  expect(looks.value.weight).toBeLessThanOrEqual(500);
   await search.focus(); await page.keyboard.press("Tab"); await expect(filter).toBeFocused();
   await page.keyboard.press("Enter");
   const choices = page.getByRole("menu", { name: "Filter", exact: true });

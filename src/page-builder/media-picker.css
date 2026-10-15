@@ -236,20 +236,17 @@
 .media-library .media-library__tools > button:focus-visible { position: relative; z-index: 1; }
 .media-library .media-library__tools > button:is(:active, [aria-expanded="true"]) { background: var(--hover); }
 @media (hover: hover) and (pointer: fine) { .media-library .media-library__tools > button:hover { background: var(--hover); } }
-/* Filter reads as a label and its value (Dropbox's "Sort by: Most relevant"; Lex, slice 122): the funnel
-   and "Filter" muted, then the choice ("All", "Garden · Video") in the text colour at normal weight. */
-.media-library .media-library__tools > .media-library__filter { flex: 0 1 auto; width: auto; min-width: 44px; gap: 6px; padding: 0 14px 0 12px; font-weight: 500; }
+/* Filter reads as a label and its value at every width (Dropbox's "Sort by: Most relevant"; Lex, slice 122):
+   "Filter" muted, then the choice ("All", "Garden · Video") in the text colour at normal weight. */
+.media-library .media-library__tools > .media-library__filter { flex: 0 1 auto; width: auto; min-width: 44px; gap: 5px; padding: 0 14px; font-weight: 500; }
 /* While it narrows the view, Filter wears the chosen colour, as an active filter does in Apple Photos. */
 .media-library .media-library__tools > .media-library__filter[data-narrowed] { background: var(--current); }
-.media-library__filter::before { content: ""; flex: none; width: 1.25em; height: 1.25em; background: var(--muted); mask: url("@phosphor-icons/core/regular/funnel-simple.svg") center / contain no-repeat; }
 .media-library__filter-name { flex: none; color: var(--muted); font-weight: 400; }
 .media-library__filter-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* Phones: the funnel stands for the word, so search keeps most of the bar; the choice always shows,
-   in at most 55 % with + and More. */
+/* Phones: Filter, + and More take at most 60 %, so "Filter" and a short choice stay whole; a long one shortens. */
 @container (max-width: 540px) {
-  .media-library--pane .media-library__bar { grid-template-columns: minmax(0, 1fr) fit-content(55%); }
-  .media-library--pane .media-library__tools > .media-library__filter { gap: 4px; padding: 0 10px 0 8px; }
-  .media-library--pane .media-library__filter-name { display: none; }
+  .media-library--pane .media-library__bar { grid-template-columns: minmax(0, 1fr) fit-content(60%); }
+  .media-library--pane .media-library__tools > .media-library__filter { gap: 4px; padding: 0 10px; }
 }
 /* Filter's and More's menu: long collection names wrap, and many collections scroll, inside the window. */
 .media-library__menu { max-width: min(320px, 100vw - 16px); max-height: calc(100dvh - 16px); overflow-y: auto; overscroll-behavior: contain; box-sizing: border-box; }
@@ -612,11 +609,10 @@
 @media (max-width: 580px) {
   .media-library--picker { width: 100%; height: 100%; max-width: 100%; max-height: 100%; margin: 0; border: 0; border-radius: 0; box-shadow: none; }
   .media-library--picker .media-library__header { padding: 8px 4px 4px 16px; }
-  .media-library--picker .media-library__bar { grid-template-columns: minmax(0, 1fr) fit-content(55%); padding: 4px 12px; }
-  .media-library--picker .media-library__tools > .media-library__filter { gap: 4px; padding: 0 10px 0 8px; }
-  .media-library--picker .media-library__filter-name { display: none; }
+  .media-library--picker .media-library__bar { grid-template-columns: minmax(0, 1fr) fit-content(60%); padding: 4px 12px; }
+  .media-library--picker .media-library__tools > .media-library__filter { gap: 4px; padding: 0 10px; }
   .media-library--picker .media-library__browse { padding: 8px 12px; }
-  .media-library--picker .media-library__bar:has(> .media-library__paste) { grid-template-columns: minmax(0, 1fr) fit-content(55%); }
+  .media-library--picker .media-library__bar:has(> .media-library__paste) { grid-template-columns: minmax(0, 1fr) fit-content(60%); }
   .media-library .media-library__paste { grid-column: 1 / -1; grid-row: 2; justify-self: start; }
   /* Cancel and Use share one 56 px row; the chosen file's line shows above it once there is one. */
   .media-library__choice { flex-direction: column; align-items: stretch; gap: 8px; padding: 5px 12px max(6px, env(safe-area-inset-bottom)); }
