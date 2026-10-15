@@ -940,9 +940,6 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     if (label.hidden && chip) {
       chip.replaceChildren(phosphorIcon("dots-six-vertical", 16, "edit-bar__icon"));
       chip.setAttribute("aria-label", `Move ${model.kind.toLowerCase()}`);
-      const grip = node("span", "edit-bar__group");
-      grip.append(chip);
-      panel.append(grip);
       // The hidden label keeps the name.
       label.replaceChildren(kindName);
     }
@@ -950,6 +947,8 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     // rule between neighbours, so the bar reads as a few clusters, not a row.
     let group = "name";
     let target: HTMLElement = panel;
+    // The grip leads the first group (not a group of its own), so a narrow bar wraps beside it, never under it alone.
+    let lead = label.hidden ? chip : undefined;
     const groupOf = (control: EditBarControl) =>
       control.kind === "select" || control.kind === "checkbox" || control.kind === "fields" ? "style"
       : control.kind === "menu" || (control.kind === "button" && control.icon && arrangeIcons.has(control.icon)) ? "arrange"
@@ -963,6 +962,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
         const rule = node("span", "edit-bar__rule");
         rule.setAttribute("aria-hidden", "true");
         target.append(rule);
+        if (lead) { target.append(lead); lead = undefined; }
         panel.append(target);
         group = next;
       }
