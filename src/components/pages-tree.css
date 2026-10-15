@@ -1,51 +1,67 @@
-/* The explorer's Pages tab: the site by URL. */
+/* The explorer's Pages tab: the site by URL (look: media ticket 125, after Framer, Squarespace and Notion). */
 .pages { display: flex; flex-direction: column; min-height: 0; flex: 1; }
 /* Pages and Files open the same way under their tabs. */
 .pages-heading, .explorer .files-heading { margin: 12px 0 8px; }
+/* A calm head: "Pages 11" in sentence case, and a quiet New page button. */
+.pages-heading { margin-block: 8px 6px; letter-spacing: 0; text-transform: none; }
+.pages-heading__start { display: inline-flex; align-items: baseline; gap: 6px; min-width: 0; }
+.pages-total { font-weight: 400; font-variant-numeric: tabular-nums; }
 .pages-new {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  min-height: var(--size-icon);
-  padding: 0 8px;
-  border: 0;
+  min-height: var(--size-compact);
+  padding: 0 10px;
+  border: 1px solid var(--control-line);
   border-radius: var(--radius);
   background: transparent;
-  color: var(--link);
+  color: var(--text);
   font: inherit;
   font-size: var(--type-small);
-  letter-spacing: 0;
-  text-transform: none;
   font-weight: 600;
   cursor: pointer;
 }
-.pages-new:hover, .pages-new[aria-expanded="true"] { background: var(--hover); }
+.pages-new[aria-expanded="true"], .pages-new:active { background: var(--hover); }
 .pages-new:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
 .pages-tree, .pages-group { list-style: none; margin: 0; padding: 0; }
 .pages-tree > li + li, .pages-group > li + li, .pages-group { margin-top: 2px; }
-.pages-tree { flex: 1; min-height: 60px; overflow: auto; margin: 0 -8px; padding: 2px; }
+.pages-tree {
+  /* One step of nesting, and where the URL column starts on a wide list. */
+  --pages-indent: 20px;
+  --pages-url-at: clamp(14rem, 50cqi, 28rem);
+  container-type: inline-size;
+  flex: 1;
+  min-height: 60px;
+  overflow: auto;
+  margin: 0 -8px;
+  padding: 2px;
+}
 .pages-group[hidden] { display: none; }
+/* A thin guide line under an open row's chevron, down the length of its subpages. */
+.pages-group {
+  background: linear-gradient(var(--control-line), var(--control-line)) no-repeat
+    calc((var(--level, 1) - 1) * var(--pages-indent) + 12px) 0 / 1px 100%;
+}
 .pages-item { outline: none; }
 .pages-row {
   display: flex;
   align-items: center;
   gap: 6px;
   min-height: var(--size-control);
-  padding: 0 4px 0 calc((var(--level, 1) - 1) * 16px + 4px);
+  padding: 0 6px 0 calc((var(--level, 1) - 1) * var(--pages-indent) + 4px);
   border-radius: var(--radius);
   font-size: var(--type-base);
   white-space: nowrap;
   cursor: pointer;
 }
-.pages-row:hover { background: var(--hover); }
+.pages-row:active { background: var(--hover); }
 .pages-row.is-current { background: var(--current); font-weight: 600; }
+.pages-row.is-current > .pages-icon { color: var(--link); }
 .pages-item:focus-visible > .pages-row { background: var(--hover); outline: var(--focus-ring); outline-offset: -2px; }
-.pages-twisty { width: 12px; flex-shrink: 0; color: var(--muted); text-align: center; }
-.pages-icon { width: 14px; flex-shrink: 0; color: var(--muted); text-align: center; }
-.pages-row--empty .pages-label, .pages-row--empty .pages-icon { color: var(--muted); }
+.pages-twisty, .pages-icon { display: inline-grid; place-items: center; width: 16px; flex-shrink: 0; color: var(--muted); }
+.pages-row--empty .pages-label { color: var(--muted); }
 .pages-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .pages-count, .pages-note { flex-shrink: 0; color: var(--muted); }
-.pages-note { font-size: var(--type-small); font-style: italic; }
+.pages-note { font-size: var(--type-small); }
 .pages-url {
   flex-shrink: 1;
   min-width: 0;
@@ -72,7 +88,7 @@
   cursor: pointer;
 }
 .pages-more:focus-visible, .pages-add:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
-.pages-more:hover, .pages-add:hover { background: var(--hover); color: var(--text); }
+.pages-more:active, .pages-add:active { background: var(--hover); color: var(--text); }
 .pages-url--button {
   border: 0;
   border-radius: var(--radius-small);
@@ -80,14 +96,43 @@
   cursor: text;
   text-align: right;
 }
-.pages-url--button:hover { color: var(--text); text-decoration: underline dotted; text-underline-offset: 3px; }
-.pages-url-change {
-  margin: 2px 0;
-  padding: 6px 6px 8px calc((var(--level, 1) - 1) * 16px + 22px);
+@media (hover: hover) and (pointer: fine) {
+  .pages-new:hover, .pages-row:not(.is-current):hover { background: var(--hover); }
+  .pages-more:hover, .pages-add:hover { background: var(--hover); color: var(--text); }
+  .pages-url--button:hover { color: var(--text); text-decoration: underline dotted; text-underline-offset: 3px; }
+  /* A wide list: URLs line up in one column beside the titles, not at the far end. */
+  @container (width >= 30rem) {
+    .pages-row:has(> .pages-url) { padding-inline-end: calc(100cqi - var(--pages-url-at) + 12px); }
+    .pages-row > .pages-url {
+      position: absolute;
+      inset-block: 0;
+      inset-inline: var(--pages-url-at) 8px;
+      margin: 0;
+      padding: 0;
+      line-height: var(--size-control);
+      text-align: start;
+    }
+  }
+}
+/* A narrow list (a phone) shows names only; ⋯ → Change URL… shows the URL. */
+@container (width < 30rem) { .pages-row > .pages-url { display: none; } }
+/* Touch: one ⋯ per row (Add subpage is in it); New page reachable by thumb. */
+@media (hover: none), (pointer: coarse) {
+  .pages-add { display: none; }
+  .pages-row > .row-action-overlay { margin-inline-start: auto; }
+  .pages-new { min-height: 44px; }
+}
+/* Change URL and New page open as a card under the row, aligned with the titles. */
+.pages-url-change, .pages-edit {
+  max-inline-size: 40rem;
+  margin: 4px 0 6px calc((var(--level, 1) - 1) * var(--pages-indent) + 4px);
+  padding: 8px 10px 10px 6px;
+  border: 1px solid var(--control-line);
   border-radius: var(--radius);
   background: var(--surface-subtle);
   cursor: default;
 }
+.pages-url-change { padding-inline-start: 26px; }
 .pages-url-change .url-change__input { height: var(--size-compact); }
 /* Dragging a page: onto a row (a subpage), or on the line above or below it (that level). */
 .pages-row.is-dragging { opacity: 0.5; }
@@ -97,15 +142,7 @@
 .pages-empty { padding: 8px; font-size: var(--type-small); }
 
 /* A new page typed in place. */
-.pages-edit {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin: 2px 0;
-  padding: 6px 6px 8px calc((var(--level, 1) - 1) * 16px + 22px);
-  border-radius: var(--radius);
-  background: var(--surface-subtle);
-}
+.pages-edit { display: flex; flex-direction: column; gap: 4px; }
 .pages-edit__line { display: flex; align-items: center; gap: 6px; }
 .pages-edit__title, .pages-edit__slug {
   box-sizing: border-box;
@@ -122,7 +159,7 @@
 .pages-edit__slug { width: 16ch; min-width: 0; font-family: var(--font-mono); font-size: var(--type-small); }
 .pages-edit__title:focus-visible, .pages-edit__slug:focus-visible { outline: var(--focus-ring); outline-offset: -1px; }
 .pages-edit__title[aria-invalid="true"], .pages-edit__slug[aria-invalid="true"] { border-color: var(--warning-fg); }
-.pages-edit__url { padding-left: 20px; font-family: var(--font-mono); font-size: var(--type-small); color: var(--muted); }
+.pages-edit__url { padding-left: 22px; font-family: var(--font-mono); font-size: var(--type-small); color: var(--muted); }
 .pages-edit__url-button {
   padding: 1px 4px;
   margin-left: -4px;
@@ -140,7 +177,7 @@
 .pages-edit__url-button[hidden], .pages-edit__slug-box[hidden] { display: none; }
 .pages-edit__slug-text { color: var(--text); }
 .pages-edit__slug-box { display: inline-flex; align-items: center; gap: 1px; }
-.pages-edit__message { margin: 0; padding-left: 20px; font-size: var(--type-small); line-height: 1.4; color: var(--muted); overflow-wrap: anywhere; }
+.pages-edit__message { margin: 0; padding-left: 22px; font-size: var(--type-small); line-height: 1.4; color: var(--muted); overflow-wrap: anywhere; }
 .pages-edit__message:empty { display: none; }
 .pages-edit__message.is-error { color: var(--warning-fg); }
 .pages-edit__action {
@@ -203,7 +240,7 @@
 
 /* The action strip overlays text only while it is in use. */
 .pages-row.row-action-host { overflow: hidden; --row-action-background: var(--panel-surface); --row-action-base: var(--panel-surface); }
-.pages-row.row-action-host:hover { --row-action-background: var(--hover); }
+@media (hover: hover) and (pointer: fine) { .pages-row.row-action-host:hover { --row-action-background: var(--hover); } }
 .pages-row.row-action-host.is-current { --row-action-background: var(--current); }
 .pages-item:focus-visible > .pages-row.row-action-host { --row-action-background: var(--hover); }
 .pages-row.row-action-host.is-drop-target { --row-action-background: var(--current); }

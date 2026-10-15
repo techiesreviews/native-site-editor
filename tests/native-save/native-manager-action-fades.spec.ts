@@ -38,6 +38,8 @@ async function painted(overlay: Locator, opacity: "0" | "1") {
   const buttons = await overlay.locator("> *").all();
   expect(buttons.length).toBeGreaterThan(0);
   for (const button of buttons) {
+    // Touch rows hide + (Add subpage is in ⋯, ticket 125).
+    if (!(await button.isVisible())) continue;
     await expect(button).toHaveCSS("opacity", opacity);
     await expect(button).toHaveCSS("pointer-events", opacity === "1" ? "auto" : "none");
     const hit = await hitAt(overlay, button);
@@ -120,7 +122,8 @@ test.describe("touch", () => {
     expect(await current.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
     // Name and URL are never covered: they end where the actions begin.
     for (const text of [current.locator(".pages-label"), current.locator(".pages-url")]) {
-      if (!(await text.count())) continue;
+      // A narrow list shows names only (ticket 125): the URL is in ⋯ → Change URL….
+      if (!(await text.count()) || !(await text.isVisible())) continue;
       const box = (await text.boundingBox())!;
       expect(box.width).toBeGreaterThan(0);
       expect(box.x + box.width).toBeLessThanOrEqual(strip.x + 0.5);
@@ -319,6 +322,8 @@ for (const scheme of ["light", "dark"] as const) {
     // The text index replaces the initial route-labelled rows when titles
     // arrive. Wait for that replacement before marking a row for pixel shots.
     await expect(other.locator(".pages-label")).toHaveText("About this project");
+    // URLs sit in a column after the titles (ticket 125): long ones run beneath the actions.
+    for (const row of [other, current]) await row.locator(".pages-url").evaluate((el) => { el.textContent = `${el.textContent}${"long-part/".repeat(30)}`; });
     await other.hover();
     await fadeCheck(page, other, `${scheme} pages hover`);
     await current.hover();

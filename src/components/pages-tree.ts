@@ -1,7 +1,7 @@
 import { refuse } from "./refusal-note";
 import { button, node } from "../ui/dom";
 import { setIcon, type IconName } from "../icons";
-import { nativeSubpageCount, slugify, type NativePageNode, type NativeSiteTree } from "../native-pages";
+import { nativeSubpageCount, nativeTreePages, slugify, type NativePageNode, type NativeSiteTree } from "../native-pages";
 import type { Checked } from "../native-create";
 import { parentRoute } from "../native-page-moves";
 import { isFolderRoute, nativePageRoute } from "../../shared/native-routes";
@@ -9,6 +9,7 @@ import { createRowMenu, type MenuItem } from "./row-menu";
 import { createUrlChange, type UrlPlan } from "./url-change";
 import "./pages-tree.css";
 import { rowActions } from "./row-actions";
+import { sharedTitleEnding, withoutTitleEnding } from "./page-title-ending";
 
 /** A new page, as typed in the tree. */
 export interface NativeNewRequest {
@@ -94,11 +95,14 @@ export function createPagesTree(options: {
 }) {
   const root = node("section", "pages");
   const heading = node("div", "files-heading pages-heading");
-  const title = node("span", "", "PAGES");
+  const title = node("span", "pages-title", "Pages");
   title.id = "pages-heading";
+  // How many pages the site has, beside the heading (not part of the tree's name).
+  const total = node("span", "pages-total");
   const newButton = button("+ New page", () => startEditing("/", newButton), "pages-new");
   newButton.title = "New page at the top of the site";
-  heading.append(title, newButton);
+  heading.append(node("span", "pages-heading__start"), newButton);
+  heading.firstElementChild!.append(title, total);
   const tree = node("ul", "pages-tree");
   tree.setAttribute("role", "tree");
   tree.setAttribute("aria-labelledby", "pages-heading");
@@ -109,6 +113,8 @@ export function createPagesTree(options: {
   const expanded = new Map<string, boolean>();
   let model: NativeSiteTree | undefined;
   let current: string | undefined;
+  // The site's name most titles end with (" · Larkspur Studio"), left off the rows.
+  let ending: string | undefined;
   // The row with the tab stop, by key.
   let active: string | undefined;
 
@@ -568,7 +574,7 @@ export function createPagesTree(options: {
     ].filter(Boolean).join(", "));
     const row = node("div", `pages-row row-action-host${selected ? " is-current" : ""}${page.file ? "" : " pages-row--empty"}`);
     row.style.setProperty("--level", String(level));
-    row.title = page.file ?? `${page.route.slice(1)} has pages but no page of its own`;
+    row.title = page.file ? (ending && page.label.endsWith(ending) ? `${page.label}\n${page.file}` : page.file) : `${page.route.slice(1)} has pages but no page of its own`;
     const twisty = node("span", "pages-twisty");
     if (hasChildren) setIcon(twisty, open ? "caret-down" : "caret-right", 12);
     twisty.setAttribute("aria-hidden", "true");
@@ -579,7 +585,8 @@ export function createPagesTree(options: {
         item.focus();
         setOpen(item, page.route, item.getAttribute("aria-expanded") !== "true");
       });
-    row.append(twisty, pageIcon(page.special === "home" ? "house" : page.file ? "file" : "file-dashed"), label(page.label));
+    const icon = page.special === "home" ? "house" : page.special === "notFound" ? "link-break" : page.file ? "file" : open ? "folder-open" : "folder";
+    row.append(twisty, pageIcon(icon), label(withoutTitleEnding(page.label, ending)));
     if (!page.file) row.append(node("span", "pages-note", "(no page)"));
     if (page.isNew && page.file) row.append(node("span", "file-new", "New"));
     if (page.file && page.special !== "home" && options.changeUrl) {
@@ -637,6 +644,8 @@ export function createPagesTree(options: {
     wireDrag(item, row, page);
     const group = node("ul", "pages-group");
     group.setAttribute("role", "group");
+    // Its guide line runs under this row's chevron.
+    group.style.setProperty("--level", String(level));
     group.hidden = !open;
     for (const child of page.children) group.append(pageRow(child, level + 1));
     item.append(group);
@@ -676,6 +685,9 @@ export function createPagesTree(options: {
     if (item.hasAttribute("aria-expanded") || group.children.length) item.setAttribute("aria-expanded", String(open));
     const twisty = item.querySelector(":scope > .pages-row > .pages-twisty");
     if (twisty && group.querySelector("[role='treeitem']")) setIcon(twisty, open ? "caret-down" : "caret-right", 12);
+    // A URL with no page of its own is a folder, shown open while its pages show.
+    const folder = item.querySelector(":scope > .pages-row--empty > .pages-icon");
+    if (folder) setIcon(folder, open ? "folder-open" : "folder", 14);
   }
 
   // A page opens; a URL with no page opens or closes.
@@ -764,6 +776,10 @@ export function createPagesTree(options: {
     render(site: NativeSiteTree, currentFile: string | undefined, focus?: { file?: string; route?: string }) {
       model = site;
       current = currentFile;
+      const pages = nativeTreePages(site).filter((page) => page.file);
+      ending = sharedTitleEnding(pages.filter((page) => page.special !== "home").map((page) => page.label));
+      total.textContent = pages.length ? String(pages.length) : "";
+      total.title = `${pages.length} ${pages.length === 1 ? "page" : "pages"}`;
       menu.close(false);
       cancelRename(false);
       cancelUrl(false);
