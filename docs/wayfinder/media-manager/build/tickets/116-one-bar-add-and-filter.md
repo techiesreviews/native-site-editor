@@ -1,7 +1,7 @@
 ---
 title: "Media's One bar: a + button and one Filter menu"
 type: task (AFK)
-status: in progress
+status: open
 assignee: claude (mm-116 runner)
 blocked_by: [107-tiles-list-phone-bar]
 builder: claude
