@@ -116,9 +116,9 @@ export function mediaTileStills(paths: string[], metadata: Record<string, { stil
   return stills;
 }
 
-/** A length as the browser's player shows it: 0:05, 12:34, 1:02:03 (whole seconds counted down, at least 1). */
+/** A length as the browser's player shows it: 0:00, 0:05, 12:34, 1:02:03 (whole seconds counted down). */
 export function formatMediaLength(seconds: number): string {
-  const total = Math.max(1, Math.floor(seconds)), s = String(total % 60).padStart(2, "0"), m = Math.floor(total / 60) % 60, h = Math.floor(total / 3600);
+  const total = Math.max(0, Math.floor(seconds)), s = String(total % 60).padStart(2, "0"), m = Math.floor(total / 60) % 60, h = Math.floor(total / 3600);
   return h ? `${h}:${String(m).padStart(2, "0")}:${s}` : `${m}:${s}`;
 }
 

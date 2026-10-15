@@ -56,7 +56,7 @@ export function createMediaCleanUpController(ports: MediaCleanUpPorts) {
   /** Widths this controller read, by the bytes they were read from: each check reads only new bytes. */
   const readSizes = new Map<string, { version: string; size: { width?: number; height?: number } }>();
   /** Read the same missing facts as the screen, after Clean up has published. */
-  async function improveRows(records: MediaRecords | null): Promise<string[] | undefined> {
+  async function improveRows(records: MediaRecords | null, holds: () => boolean): Promise<string[] | undefined> {
     const pages = ports.pages?.(), components = ports.components?.();
     if (!pages || !components || !records) return undefined;
     const [{ improveImagesPlan }, { isMediaFile, isMediaTextFile }, { mediaOwnOrigins }, { planWithPictureSizes }, { decodeImage }] = await Promise.all([
@@ -77,7 +77,8 @@ export function createMediaCleanUpController(ports: MediaCleanUpPorts) {
       const version = ports.version?.(path), blob = await ports.blob(path), url = URL.createObjectURL(blob);
       try {
         const size = await decodeImage(url);
-        if (version && size.width) readSizes.set(path, { version, size });
+        // Bytes replaced (or another check begun) while reading: the width is used once, never kept.
+        if (version && size.width && holds() && ports.version?.(path) === version) readSizes.set(path, { version, size });
         return size;
       } finally { URL.revokeObjectURL(url); }
     });
@@ -107,7 +108,7 @@ export function createMediaCleanUpController(ports: MediaCleanUpPorts) {
     }
     publish(place, suggestions, undefined, false);
     // Improve images' rows follow: Clean up never waits for them.
-    const improve = await improveRows(read ?? null).catch(() => undefined);
+    const improve = await improveRows(read ?? null, () => !disposed && request === epoch && place === ports.place()).catch(() => undefined);
     if (disposed || request !== epoch || place !== ports.place()) return;
     // Published again only when the rows changed, or a dismiss is to be forgotten with nothing left.
     const empty = suggestions.state === "ready" && !suggestions.count && !improve?.length && dismissed(place);

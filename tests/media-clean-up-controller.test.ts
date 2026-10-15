@@ -256,3 +256,35 @@ test("a picture's width is read once per version of its bytes", async t => {
   assert.equal(reads, 2);
   assert.deepEqual(controller.state().improve, []);
 });
+
+test("a width read while the bytes are replaced is never kept under the old version", async t => {
+  const image = Object.getOwnPropertyDescriptor(globalThis, "Image");
+  let width = 4000;
+  Object.defineProperty(globalThis, "Image", { configurable: true, value: class {
+    src = "";
+    naturalWidth = width;
+    naturalHeight = 3000;
+    async decode() {}
+  } });
+  t.after(() => { if (image) Object.defineProperty(globalThis, "Image", image); else Reflect.deleteProperty(globalThis, "Image"); });
+  const f = fixture();
+  f.sources["index.html"] = '<img src="/images/wide.png" width="10" height="10" loading="lazy">';
+  f.setFiles(["index.html", "images/wide.png"]);
+  let reads = 0, version = "sha-wide", release!: () => void;
+  let gate = new Promise<void>(resolve => { release = resolve; });
+  const controller = createMediaCleanUpController({ ...f.ports, pages: () => ["index.html"], components: () => ({}), size: () => 1000,
+    version: () => version, blob: async () => { reads++; await gate; return new Blob(["picture"]); } });
+  const usage = () => mediaUsageRecords({ media: ["images/wide.png"], sources: { "index.html": f.sources["index.html"]! }, pages: ["index.html"] });
+  // The read starts on the wide bytes; they are replaced by small ones before it decodes.
+  const pending = controller.update(usage());
+  await new Promise(resolve => setImmediate(resolve));
+  width = 10; version = "sha-small";
+  release(); await pending;
+  gate = Promise.resolve();
+  // Undo brings the wide bytes back: their width is read afresh, not taken from the replaced read.
+  width = 4000; version = "sha-wide";
+  await controller.update(usage());
+  assert.equal(reads, 2);
+  assert.deepEqual(controller.state().improve, ["index.html"]);
+  assert.deepEqual(controller.improveItem(), { label: "Improve images (1)" });
+});

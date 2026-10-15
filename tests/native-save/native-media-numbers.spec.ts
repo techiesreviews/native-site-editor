@@ -12,7 +12,7 @@ const wav = () => {
   return buffer;
 };
 const length = (seconds: number) => {
-  const value = Math.max(1, Math.floor(seconds));
+  const value = Math.floor(seconds);
   return `${Math.floor(value / 60)}:${String(value % 60).padStart(2, "0")}`;
 };
 
