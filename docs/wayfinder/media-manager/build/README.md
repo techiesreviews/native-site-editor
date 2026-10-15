@@ -184,6 +184,14 @@ Lex asked for a final UX and UI audit of every media screen against current Mobb
 | [120 Starter player and agent-guide touch-ups](tickets/120-starter-touchups.md) | claude | 111, 115 |
 | [121 Media tab count matches Clean up; Flip shows when it's on](tickets/121-count-and-flip.md) | claude | 114, 110 |
 
+### Phase 9: Lex's review (2026-10-15)
+
+Lex reviewed the editor on the preview and asked for these touch-ups.
+
+| Slice | Builder | Blocked by |
+| --- | --- | --- |
+| [125 The Pages tab looks better (Mobbin-led redesign)](tickets/125-pages-tab.md) | claude | 104 |
+
 ## Finding the frontier
 
 A slice is takeable when its ticket has `status: open`, an empty `assignee:`, and every ticket in `blocked_by` is `status: closed`. Take the lowest phase first, then the lowest number; slices on the frontier run in parallel, each in its own worktree, at most five Claude subagents at a time. Claim a slice by filling in `assignee:` before any work.
