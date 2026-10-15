@@ -171,13 +171,13 @@
 .media-library__name::after { background: linear-gradient(transparent, rgb(10 18 32 / .64) 55%, rgb(10 18 32 / .82)); }
 /* A tile is just the picture (Lex, slice 122). With a mouse, its top band, usage number, select
    circle and name come in on hover, keyboard focus or selection, and on every tile while any is
-   selected (Google Photos). Touch has no hover: the number and circle stay, the name goes (details
+   selected (Google Photos), even one search or Filter hides: the selection bar shows exactly then. Touch has no hover: the number and circle stay, the name goes (details
    has it); keyboard focus still shows it. --chrome drives the top controls, --label the name. */
 .media-library__card { --chrome: 1; --label: 0; }
 .media-library__card:has(:focus-visible) { --label: 1; }
 @media (hover: hover) and (pointer: fine) {
   .media-library__card { --label: var(--chrome); }
-  .media-library__browse > .media-library__grid:not(.media-library__grid--list, :has(.media-library__select input:checked))
+  .media-library__browse:not(:has(> .media-library__bulk:not([hidden]))) > .media-library__grid:not(.media-library__grid--list)
     > .media-library__card:not(:hover, :has(:focus-visible), .is-chosen) { --chrome: 0; }
 }
 .media-library__card > :is(.media-library__shade, .media-library__usage, .media-library__select) { opacity: var(--chrome); }

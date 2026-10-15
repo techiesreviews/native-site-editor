@@ -464,8 +464,17 @@ test("Media tiles: one per Image family, names on hover or keyboard focus, a cle
   await page.evaluate(() => (document.activeElement as HTMLElement).blur());
   await page.mouse.move(1270, 890);
   await expect.poll(() => chrome(photo)).toBe("1 1 1 1");
-  // While any file is selected every tile shows its circle, so more can be added at a glance.
+  // While any file is selected every tile shows its circle, so more can be added at a glance,
+  // also when search hides the selected one (review).
   await expect.poll(() => chrome(scan)).toBe("1 1 1 1");
+  const search = library.getByLabel("Search media", { exact: true });
+  await search.fill("scan");
+  await expect(photo).toHaveCount(0);
+  await page.evaluate(() => (document.activeElement as HTMLElement).blur());
+  await page.mouse.move(1270, 890);
+  await expect.poll(() => chrome(scan)).toBe("1 1 1 1");
+  await search.fill("");
+  await expect(photo).toHaveCount(1);
   await photo.getByRole("checkbox", { name: "Select images/photo.webp", exact: true }).uncheck();
   await page.evaluate(() => (document.activeElement as HTMLElement).blur());
   await page.mouse.move(1270, 890);
