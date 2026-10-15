@@ -192,7 +192,7 @@ function tilePicture(input: {
       if (!h.alive() || !card.isConnected) return;
       input.loaded?.(data);
       // A heavy picture shows a small copy; a banner wider than 2:1 shows whole (slice 107).
-      const url = await tilePictureUrl(data, h.objectUrl);
+      const url = await tilePictureUrl(data, h.objectUrl, h.alive);
       if (!h.alive() || !card.isConnected) return;
       image.toggleAttribute("data-whole", mediaTileWhole(data.width, data.height));
       image.src = url;

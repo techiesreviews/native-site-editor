@@ -75,6 +75,13 @@ test("see-through and wider-than-2:1 pictures show whole; photos fill the square
   await expect(tile(page, "images/mark.webp").locator("img")).toHaveAttribute("data-transparent", "");
   await expect.poll(() => drawn(page, "images/square.webp")).toMatchObject({ width: 300 });
   expect(await fit("images/square.webp")).toBe("cover");
+  // Their dark number and circle are for the tile's light backing only: list rows keep the theme's words.
+  await page.emulateMedia({ colorScheme: "dark" });
+  await pane(page).getByRole("button", { name: "More", exact: true }).click();
+  await page.getByRole("menuitemradio", { name: "List", exact: true }).click();
+  const words = (path: string) => tile(page, path).locator(".media-library__usage").evaluate(usage => getComputedStyle(usage).color);
+  await expect.poll(() => words("images/mark.webp")).toBe(await words("images/square.webp"));
+  expect(await words("images/banner.webp")).toBe(await words("images/square.webp"));
 });
 
 test("list rows line their names up whether or not a file has a picture, and say their usage once", async ({ page, baseURL }) => {
@@ -138,6 +145,25 @@ test("phones: search keeps most of the One bar, and the selection bar is one row
   await clear.click();
   await expect(selection).toBeHidden();
   await expect(library.getByLabel("Select images/studio-desk.svg", { exact: true })).not.toBeChecked();
+});
+
+test("phones: inside a collection, ⋯ offers Take out before Remove, and Take out keeps the file", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await seed(page, baseURL, [{ path: ".editor/media.json", content: JSON.stringify({ version: 2, collections: ["Picks"],
+    files: { "images/studio-desk.svg": { collections: ["Picks"] } } }) }]);
+  await open(page, baseURL);
+  const library = pane(page);
+  await library.getByLabel("Collections", { exact: true }).selectOption("Picks");
+  await library.getByLabel("Select images/studio-desk.svg", { exact: true }).check();
+  const selection = library.getByRole("group", { name: "Selected files", exact: true });
+  await expect(selection.getByRole("button", { name: "Take out of Picks", exact: true })).toBeHidden();
+  await selection.getByRole("button", { name: "More for selected files", exact: true }).click();
+  const items = page.getByRole("menu", { name: "More for selected files", exact: true }).getByRole("menuitem");
+  await expect(items).toHaveText(["Select all shown", "Optimise heavy images", "Take out of Picks", "Remove file…"]);
+  await items.filter({ hasText: "Take out of Picks" }).click();
+  await expect(page.locator(".editor-toast__text")).toHaveText("Took 1 file out of \"Picks\". It stays in Media under All.");
+  await library.getByLabel("Collections", { exact: true }).selectOption("");
+  await expect(tile(page, "images/studio-desk.svg")).toBeVisible();
 });
 
 test("wider screens keep one selection row with every action in view", async ({ page, baseURL }) => {

@@ -127,7 +127,7 @@
    Both sit on a light backing in either theme, so their number and circle turn dark and lose the band. */
 .media-library__thumbnail img:is([data-transparent], [data-whole]) { object-fit: contain; }
 .media-library__thumbnail img[data-whole]:not([data-transparent]) { background: oklch(97% 0 none); }
-.media-library__card:has(.media-library__thumbnail img:is([data-transparent], [data-whole])) {
+.media-library__grid:not(.media-library__grid--list) .media-library__card:has(.media-library__thumbnail img:is([data-transparent], [data-whole])) {
   .media-library__shade { display: none; }
   .media-library__usage, .media-library__select { color: oklch(20% 0.03 262); text-shadow: none; }
   .media-library__select input:not(:checked) { background: transparent; box-shadow: none; }

@@ -17,6 +17,8 @@ export const MANAGE_COLLECTIONS = " manage";
 export function allCollectionsOption() {
   const option = new Option("All", ""), rest = document.createElement("span");
   rest.className = "media-library__long"; rest.textContent = " collections"; option.append(rest);
+  // A native select shows only an option's label, the same at every width: the short one.
+  if (!CSS.supports("appearance", "base-select")) option.label = "All";
   return option;
 }
 

@@ -138,6 +138,27 @@ test("GET /api/blob streams a heavy picture raw from GitHub and refuses one over
   assert.equal(refused.headers.get("Cache-Control"), "no-store");
 });
 
+test("a heavy stream with no length is cut off at 20 MB and GitHub's stream is cancelled", async () => {
+  const limit = 20 * 1024 * 1024, chunk = new Uint8Array(1024 * 1024);
+  let sent = 0, cancelled = false;
+  const base = github().fetcher;
+  const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const path = new URL(String(input)).pathname;
+    if (path !== `/repos/lex/site/git/blobs/${sha}`) return base(input, init);
+    if (new Headers(init?.headers).get("Accept") !== "application/vnd.github.raw+json") return new Response("x".repeat(9 * 1024 * 1024));
+    return new Response(new ReadableStream<Uint8Array>({
+      pull(controller) { sent += chunk.length; controller.enqueue(chunk); },
+      cancel() { cancelled = true; },
+    }));
+  }) as typeof fetch;
+  const response = await handle(get(`/api/blob?repo=lex/site&sha=${sha}&type=jpg`), environment(), fetcher);
+  assert.equal(response.status, 200, "the headers go before the size is known");
+  assert.equal(response.headers.get("Content-Length"), null);
+  await assert.rejects(() => response.arrayBuffer());
+  assert.ok(sent <= limit + 2 * chunk.length, `stopped reading near the limit (${sent} bytes)`);
+  assert.ok(cancelled, "GitHub's stream is cancelled");
+});
+
 test("a 2.1 MB picture is read like a small one", async () => {
   const { fetcher, asked, heavy } = heavyGithub(2_200_000);
   const response = await handle(get(`/api/blob?repo=lex/site&sha=${sha}&type=jpg`), environment(), fetcher);

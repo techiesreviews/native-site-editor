@@ -18,8 +18,9 @@ const copies = new WeakMap<MediaBytes, Promise<string>>();
 
 /** The address a tile shows: a heavy picture (over 1 MB) gets a small copy made once, so a grid of
  * large photos never keeps every full-size picture decoded (slice 107). Anything that cannot be
- * copied (an SVG, a format the browser cannot draw) shows as it is. */
-export function tilePictureUrl(data: MediaBytes, objectUrl: (blob: Blob) => string): Promise<string> {
+ * copied (an SVG, a format the browser cannot draw) shows as it is. A copy made once its view has
+ * closed gets no address. */
+export function tilePictureUrl(data: MediaBytes, objectUrl: (blob: Blob) => string, alive: () => boolean): Promise<string> {
   if (data.blob.size <= LARGE_IMAGE_BYTES || /svg/i.test(data.blob.type) || !data.width || !data.height) return Promise.resolve(data.url);
   const size = mediaTileCopySize(data.width, data.height);
   if (!size) return Promise.resolve(data.url);
@@ -32,7 +33,9 @@ export function tilePictureUrl(data: MediaBytes, objectUrl: (blob: Blob) => stri
         if (!context) return data.url;
         context.imageSmoothingQuality = "high";
         context.drawImage(bitmap, 0, 0, size.width, size.height);
-        return objectUrl(await canvas.convertToBlob({ type: "image/webp", quality: 0.82 }));
+        const copy = await canvas.convertToBlob({ type: "image/webp", quality: 0.82 });
+        // A view closed meanwhile has released its addresses: make none it would never release.
+        return alive() ? objectUrl(copy) : data.url;
       } finally { bitmap.close(); }
     })().catch(() => data.url);
     copies.set(data, copy);
