@@ -58,7 +58,7 @@ export function createFilesTreeController(ports: FilesTreePorts) {
   // Listings being read, by tree sha: a row drawn again while its folder loads waits for the same read.
   const folderReads = new Map<string, Promise<TreeEntry[] | undefined>>();
   // Bumped by reset: a read started before it writes nothing after it.
-  let listingsGeneration = 0;
+  let listingResets = 0;
   // The changes the tree was last drawn with.
   let drawnNewFiles = "";
   // Icons by file type, loaded once the tree is shown; until then files show the plain icon.
@@ -241,12 +241,12 @@ export function createFilesTreeController(ports: FilesTreePorts) {
       const read = async () => {
         const repo = ports.repo();
         if (!repo) return undefined;
-        const generation = listingsGeneration;
+        const resetsAtStart = listingResets;
         const result = await ports.load({
           repo: repo.full_name,
           sha: entry.sha,
         });
-        if (generation === listingsGeneration) folderListings.set(entry.sha, result.entries);
+        if (resetsAtStart === listingResets) folderListings.set(entry.sha, result.entries);
         return result.entries;
       };
       const load = () => {
@@ -353,5 +353,5 @@ export function createFilesTreeController(ports: FilesTreePorts) {
   return { render: renderFileTree, refresh: renderDraftFiles, row: fileRow, signature: treeSignature,
     openFolder: (path: string) => { openFolders.add(path); },
     listings: () => folderListings, visible: () => ports.visible(), shown,
-    reset: () => { openFolders.clear(); folderListings.clear(); folderReads.clear(); listingsGeneration++; } };
+    reset: () => { openFolders.clear(); folderListings.clear(); folderReads.clear(); listingResets++; } };
 }
