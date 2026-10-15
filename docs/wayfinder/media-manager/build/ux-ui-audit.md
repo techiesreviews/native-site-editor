@@ -306,7 +306,16 @@ Each ticket is in `tickets/104-…` to `tickets/115-…`. Every visible slice en
 
 ## Questions for Lex
 
-These change how something **works**, not just how it looks, so they wait for Lex. No slices exist for them yet.
+These change how something **works**, not just how it looks, so they waited for Lex.
+
+**Lex's answers (2026-10-15):**
+
+- Q1: **B**, a visible "+" button → [116](tickets/116-one-bar-add-and-filter.md).
+- Q2: **B**, Show and View move into the Collections menu ("Filter") → [116](tickets/116-one-bar-add-and-filter.md).
+- Q3: **B**, more room for the page on phones → [117](tickets/117-phone-page-room.md).
+- Q4: **B**, "Leave alone everywhere" → [118](tickets/118-improve-leave-alone-everywhere.md).
+- Q5: **B**, Replace for a video in a picture spot → [119](tickets/119-media-button.md).
+- Q6: neither as asked. Lex: "Instead of thinking about an image button, it is a media button. So a way to add, change media." The edit bar's Image button becomes one **Media** button for every media spot → [119](tickets/119-media-button.md).
 
 ### Q1. A visible Add button in Media
 

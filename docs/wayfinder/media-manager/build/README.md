@@ -160,7 +160,7 @@ The build plan for the [media-manager map](../map.md). Requirements, flow per sl
 
 ### Phase 8: UX and UI audit (Lex, 2026-10-14)
 
-Lex asked for a final UX and UI audit of every media screen against current Mobbin references and the Brizy popup Lex shared, aiming for minimal and easy. Fix slices from the audit are added here; the findings are in [ux-ui-audit.md](ux-ui-audit.md), and its Questions for Lex wait for answers before any slice is made for them.
+Lex asked for a final UX and UI audit of every media screen against current Mobbin references and the Brizy popup Lex shared, aiming for minimal and easy. Fix slices from the audit are added here; the findings are in [ux-ui-audit.md](ux-ui-audit.md), and Lex answered its Questions on 2026-10-15 (slices 116–119).
 
 | Slice | Builder | Blocked by |
 | --- | --- | --- |
@@ -177,6 +177,10 @@ Lex asked for a final UX and UI audit of every media screen against current Mobb
 | [113 Picker, Replace everywhere and Site settings: less text, pages named](tickets/113-picker-replace-settings-text.md) | claude | 104, 105 |
 | [114 Numbers that agree, a double-click that always opens, tidy dates](tickets/114-numbers-double-click-dates.md) | sol | 89 |
 | [115 Placed video, audio and downloads in the editor: plain words, real times](tickets/115-placed-media-editor.md) | claude | 105 |
+| [116 Media's One bar: a + button and one Filter menu](tickets/116-one-bar-add-and-filter.md) | claude | 107 |
+| [117 More room for the page on phones](tickets/117-phone-page-room.md) | claude | 104 |
+| [118 Improve images: leave a picture alone everywhere](tickets/118-improve-leave-alone-everywhere.md) | claude | 111 |
+| [119 One Media button for every media spot](tickets/119-media-button.md) | claude | 109, 115 |
 
 ## Finding the frontier
 
