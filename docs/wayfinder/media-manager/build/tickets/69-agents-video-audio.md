@@ -2,7 +2,7 @@
 title: Agents place video, loop, stills, subtitles
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-69 runner)
 blocked_by: [64-looping-video, 66-video-details, 68-online-videos-in-picker, 55-agents-tidy]
 builder: sol
 phase: 5
