@@ -49,7 +49,7 @@ export function drawLibraryGrid(shell: LibraryShell, library: MediaLibrary, stat
     usage: active.classList.contains("media-library__usage"),
   } : undefined;
   observers.forEach((observer) => observer.disconnect()); observers.clear();
-  const tiles = mediaLibraryTiles(library.items), stills = mediaTileStills(library.items.map(item => item.path), library.metadata);
+  const tiles = mediaLibraryTiles(library.items, library.onlineVideos), stills = mediaTileStills(library.items.map(item => item.path), library.metadata);
   const filter: MediaLibraryFilter = { query: search.value, collection: collections.value, kind: state.kind, accept: state.accept };
   const filtered = filterMediaLibrary({ ...library, items: tiles }, filter);
   const online = state.online ? filterOnlineVideos(library.onlineVideos, filter) : [], onlineCount = state.online ? library.onlineVideos?.length ?? 0 : 0;

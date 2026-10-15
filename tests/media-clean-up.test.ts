@@ -207,3 +207,21 @@ test("the on-open check counts subtitles as media: a page using only the subtitl
   assert.equal(mediaCleanUpSuggestions({ usage: unusedUsage(media), records: kept }).count, 0);
   assert.equal(mediaCleanUpSuggestions({ usage: unusedUsage(media), records: emptyRecords() }).count, 1);
 });
+
+
+test("an online record keeps its copied still family without page uses; own stills remain unused", () => {
+  const members = ["media/videos/film.webp", "media/videos/film-480.webp", "media/videos/film-960w.webp", "media/originals/film.jpg"];
+  const usage = unusedUsage([...members, "media/own.jpg"]);
+  const records = emptyRecords();
+  records.onlineVideos = [
+    { service: "youtube", id: "dQw4w9WgXcQ", still: members[0], stillCopied: true },
+    { service: "vimeo", id: "42", still: "media/own.jpg" },
+  ];
+  const result = mediaCleanUpSuggestions({ usage, records });
+  assert.equal(result.count, 1);
+  assert.deepEqual(result.groups[0].items, [{ main: "media/own.jpg", members: ["media/own.jpg"], size: 0 }]);
+  const withoutRecord = mediaCleanUpSuggestions({ usage, records: emptyRecords() });
+  assert.equal(withoutRecord.count, 2);
+  assert.equal(withoutRecord.groups[0].kind, "unused");
+  assert.deepEqual(withoutRecord.groups[0].items.find(item => item.main === members[0]), { main: members[0], members, size: 0 });
+});

@@ -100,7 +100,7 @@ export function mediaOnlineVideos(records: MediaRecords, sources: Record<string,
   return (records.onlineVideos ?? []).map(video => ({
     key: `online:${video.service}:${video.id}`, service: video.service, id: video.id,
     ...video.hash ? { hash: video.hash } : {}, ...video.title ? { title: video.title } : {},
-    ...video.still && present.has(video.still) ? { still: video.still } : {}, ...video.serviceBar ? { serviceBar: true } : {},
+    ...video.still && present.has(video.still) ? { still: video.still } : {}, ...video.stillCopied ? { stillCopied: true } : {}, ...video.serviceBar ? { serviceBar: true } : {},
     uses: (uses[`${video.service}:${video.id}`] ?? []).sort((a, b) => a.localeCompare(b)),
   }));
 }

@@ -1,7 +1,7 @@
 ---
 title: Online video stills join their video
 type: task (AFK)
-status: in-progress
+status: open
 assignee: claude (mm-100 runner)
 blocked_by: [68-online-videos-in-picker]
 builder: sol

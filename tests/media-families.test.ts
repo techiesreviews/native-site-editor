@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { familyMembers, alwaysKeptFiles, isLeftoverCopy, mediaFamilies, mediaFamilyOf, renamedFamily } from "../src/page-builder/media-families";
+import { familyMembers, onlineStillMembers, alwaysKeptFiles, isLeftoverCopy, mediaFamilies, mediaFamilyOf, renamedFamily } from "../src/page-builder/media-families";
 import { mediaVariants } from "../src/page-builder/media-markup";
 
 test("a leftover copy is a responsive copy name with no image at its base name", () => {
@@ -188,4 +188,19 @@ test("a main with a sharing picture stays a picture family beside a PDF", () => 
   const paths = ["x.webp", "x-sharing.jpg", "x.pdf"];
   assert.equal(mediaFamilyOf("x.webp", paths)?.sharing, "x-sharing.jpg");
   assert.equal(mediaFamilyOf("x.pdf", paths)?.still, undefined);
+});
+
+
+test("only present copied online stills own their existing image family", () => {
+  const copied = ["media/videos/film.webp", "media/videos/film-480.webp", "media/videos/film-960w.webp", "media/originals/film.jpg"];
+  const own = ["media/own.webp", "media/own-480.webp"];
+  const paths = [...copied, ...own];
+  const videos = [{ still: copied[0], stillCopied: true }, { still: own[0] }];
+  assert.deepEqual(onlineStillMembers(paths, videos), new Set(copied));
+  assert.deepEqual(onlineStillMembers(paths, [{ still: own[0], stillCopied: false }]), new Set());
+  assert.deepEqual(onlineStillMembers(paths, [{ still: "media/videos/missing.webp", stillCopied: true }, { stillCopied: true }]), new Set());
+  assert.deepEqual(onlineStillMembers(paths, undefined), new Set());
+  assert.deepEqual(onlineStillMembers(paths, []), new Set());
+  // A member that is not a main owns only itself, never its siblings.
+  assert.deepEqual(onlineStillMembers(paths, [{ still: copied[1], stillCopied: true }]), new Set([copied[1]]));
 });

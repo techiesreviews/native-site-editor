@@ -17,7 +17,7 @@ export { isMediaLibraryPath } from "./media-library-filter";
 /** A YouTube or Vimeo video recorded in Media (slices 67, 68): `key` is "online:<service>:<id>";
  * `uses` the HTML files that show it; `still` its picture while that is in the site. */
 export interface MediaOnlineVideo {
-  key: string; service: "youtube" | "vimeo"; id: string; hash?: string; title?: string; still?: string; serviceBar?: boolean; uses: string[];
+  key: string; service: "youtube" | "vimeo"; id: string; hash?: string; title?: string; still?: string; stillCopied?: boolean; serviceBar?: boolean; uses: string[];
 }
 export interface MediaLibraryItem { path: string; size?: number; date?: number; draft?: boolean; version?: string }
 export interface MediaLibrary {

@@ -299,6 +299,16 @@ test("Add → Media places a pasted YouTube address with its still and play butt
   const tile = library.locator(".media-library__card.is-online");
   await expect(tile.locator(".media-library__service")).toHaveText("YouTube");
   await expect(tile.getByRole("button", { name: "Used on 1 page", exact: true })).toBeVisible();
+  // The copied still belongs to the online tile under All and Video.
+  const stillTile = library.locator('.media-library__card[data-path="media/videos/stub-film.webp"]');
+  await library.getByRole("button", { name: "More", exact: true }).click();
+  await page.getByRole("menuitemradio", { name: "All", exact: true }).click();
+  await expect(tile).toBeVisible();
+  await expect(stillTile).toHaveCount(0);
+  await library.getByRole("button", { name: "More", exact: true }).click();
+  await page.getByRole("menuitemradio", { name: "Video", exact: true }).click();
+  await expect(tile).toBeVisible();
+  await expect(stillTile).toHaveCount(0);
   await library.getByRole("button", { name: "Details for YouTube video Stub film", exact: true }).click();
   await expect(library.getByRole("heading", { name: "Video details", exact: true })).toBeVisible();
   await expect(library.getByRole("heading", { name: "Pages · 1", exact: true })).toBeVisible();

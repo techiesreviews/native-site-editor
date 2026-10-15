@@ -11,9 +11,9 @@ export function mediaCollectionNameMessage(collections: string[], name: string, 
 }
 
 /** How many tiles (one per Image family) each collection holds, in the library's order. */
-export function mediaCollectionSizes(library: Pick<MediaLibrary, "collections" | "items" | "metadata">): Map<string, number> {
+export function mediaCollectionSizes(library: Pick<MediaLibrary, "collections" | "items" | "metadata" | "onlineVideos">): Map<string, number> {
   const sizes = new Map(library.collections.map(name => [name, 0]));
-  for (const item of mediaLibraryTiles(library.items))
+  for (const item of mediaLibraryTiles(library.items, library.onlineVideos))
     for (const name of library.metadata[item.path]?.tags ?? []) if (sizes.has(name)) sizes.set(name, sizes.get(name)! + 1);
   return sizes;
 }

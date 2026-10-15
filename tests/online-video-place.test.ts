@@ -28,7 +28,7 @@ test("Media lists each recorded video with the HTML files that show it and a sti
   const link = `<a class="online-video" href="https://youtu.be/${ID}">Film</a>`;
   const videos = mediaOnlineVideos(records, { "b.html": link, "a.html": `${link}${link}`, "styles/site.css": link, "c.html": "<p></p>" }, ["media/videos/film.webp"]);
   assert.deepEqual(videos, [
-    { key: `online:youtube:${ID}`, service: "youtube", id: ID, title: "Film", still: "media/videos/film.webp", uses: ["a.html", "b.html"] },
+    { key: `online:youtube:${ID}`, service: "youtube", id: ID, title: "Film", still: "media/videos/film.webp", stillCopied: true, uses: ["a.html", "b.html"] },
     { key: "online:vimeo:42", service: "vimeo", id: "42", hash: "abc", serviceBar: true, uses: [] },
   ]);
 });

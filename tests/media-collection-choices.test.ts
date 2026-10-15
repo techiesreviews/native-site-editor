@@ -41,3 +41,16 @@ test("details keep the ticked collections and add a new one only when its name i
   // A name no longer in the library is not kept by a stale tick.
   assert.deepEqual(detailCollections(collections, ["Old"], ""), { tags: [] });
 });
+
+
+test("collection sizes exclude copied online stills but count chosen own pictures", () => {
+  const sizes = mediaCollectionSizes({
+    collections: ["Films"], items: ["media/film.webp", "media/film-480.webp", "media/own.jpg"].map(path => ({ path })),
+    metadata: { "media/film.webp": { tags: ["Films"], alt: "" }, "media/own.jpg": { tags: ["Films"], alt: "" } },
+    onlineVideos: [
+      { key: "online:youtube:film", service: "youtube", id: "film", still: "media/film.webp", stillCopied: true, uses: [] },
+      { key: "online:vimeo:42", service: "vimeo", id: "42", still: "media/own.jpg", uses: [] },
+    ],
+  });
+  assert.equal(sizes.get("Films"), 1);
+});

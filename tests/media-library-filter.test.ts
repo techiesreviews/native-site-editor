@@ -198,3 +198,16 @@ test("MPEG is video and AIFF audio, as agents see them; they own stills and subt
   assert.equal(mediaTileStills(["a.mpg", "a.webp"]).get("a.mpg"), "a.webp");
   assert.deepEqual(mediaFamilyOf("a.aiff", ["a.aiff", "a.vtt"])?.subtitles, ["a.vtt"]);
 });
+
+
+test("online copied still families have no tile; own stills and unrelated pictures keep theirs", () => {
+  const items = ["media/videos/film.webp", "media/videos/film-480.webp", "media/originals/film.jpg",
+    "media/own.webp", "media/own-480.webp", "media/other.jpg"].map(path => ({ path }));
+  const onlineVideos = [
+    { key: "online:youtube:film", service: "youtube", id: "film", still: items[0].path, stillCopied: true, uses: [] },
+    { key: "online:vimeo:42", service: "vimeo", id: "42", still: "media/own.webp", uses: [] },
+  ] satisfies NonNullable<MediaLibrary["onlineVideos"]>;
+  assert.deepEqual(mediaLibraryTiles(items, onlineVideos).map(item => item.path), ["media/own.webp", "media/other.jpg"]);
+  assert.deepEqual(mediaLibraryTiles(items).map(item => item.path), ["media/videos/film.webp", "media/own.webp", "media/other.jpg"]);
+  assert.deepEqual(mediaLibraryTiles(items, []), mediaLibraryTiles(items));
+});

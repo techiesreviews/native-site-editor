@@ -118,6 +118,15 @@ export function mediaFamilyOf(path: string, paths: string[]): MediaFamily | unde
   return mediaFamilies(paths).find(family => family.main === path);
 }
 
+/** Only a service-copied still belongs to its online video; an absent still owns nothing. */
+export function onlineStillMembers(paths: string[], videos: readonly { still?: string; stillCopied?: boolean }[] | undefined): Set<string> {
+  return new Set(videos?.flatMap(video => {
+    if (!video.stillCopied || !video.still || !paths.includes(video.still)) return [];
+    const family = mediaFamilyOf(video.still, paths);
+    return family ? familyMembers(family) : [video.still];
+  }));
+}
+
 export function renamedFamily(family: MediaFamily, toMain: string): { from: string; to: string }[] {
   return [
     { from: family.main, to: toMain },

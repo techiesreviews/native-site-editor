@@ -1,6 +1,6 @@
 import { mediaKind as fileKind, TEXT_PATH } from "../../shared/agent";
 import { uploadImageType } from "../uploads";
-import { mediaFamilies, familyMembers } from "./media-families";
+import { mediaFamilies, familyMembers, onlineStillMembers } from "./media-families";
 import type { MediaLibrary } from "./media-picker";
 
 export function accepts(path: string, accept?: string) {
@@ -83,9 +83,10 @@ export function mediaLibraryRecovery(options: MediaLibraryFilter): { label: stri
 }
 
 /** One tile per Image family: each family's copies and kept originals are left out,
- * its main stays. Files outside any family (not images) pass through. */
-export function mediaLibraryTiles<T extends { path: string }>(items: T[]): T[] {
-  const members = new Set(mediaFamilies(items.map(item => item.path)).flatMap(family => familyMembers(family).slice(1)));
+ * its main stays. Copied online-video still families belong to their video, so have no tile. */
+export function mediaLibraryTiles<T extends { path: string }>(items: T[], onlineVideos?: MediaLibrary["onlineVideos"]): T[] {
+  const paths = items.map(item => item.path);
+  const members = new Set([...onlineStillMembers(paths, onlineVideos), ...mediaFamilies(paths).flatMap(family => familyMembers(family).slice(1))]);
   return items.filter(item => !members.has(item.path));
 }
 

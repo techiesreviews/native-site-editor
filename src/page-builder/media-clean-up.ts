@@ -1,5 +1,5 @@
 import { MEDIA_RECORDS_PATH, type MediaRecords } from "../../shared/media-records";
-import { isLeftoverCopy } from "./media-families";
+import { isLeftoverCopy, onlineStillMembers } from "./media-families";
 import { mediaUsageState, type MediaUsageRecords } from "./media-usage";
 
 export type MediaCleanUpKind = "unused" | "trimmed" | "leftover";
@@ -32,8 +32,9 @@ export function mediaCleanUpSuggestions(input: {
 
   const items: Record<MediaCleanUpKind, MediaCleanUpItem[]> = { unused: [], trimmed: [], leftover: [] };
   const paths = usage.families.flatMap(family => family.members);
+  const onlineStills = onlineStillMembers(paths, records.onlineVideos);
   for (const family of usage.families) {
-    if (mediaUsageState(family) !== "no-uses-found" || family.members.some(path => records.files[path]?.alwaysKeep)) continue;
+    if (mediaUsageState(family) !== "no-uses-found" || family.members.some(path => records.files[path]?.alwaysKeep || onlineStills.has(path))) continue;
     if (family.members.length === 1 && /^media\/originals\//i.test(family.main)) continue;
     const kind = records.files[family.main]?.trimmedFrom ? "trimmed"
       : family.members.length === 1 && isLeftoverCopy(family.main, paths) ? "leftover" : "unused";
