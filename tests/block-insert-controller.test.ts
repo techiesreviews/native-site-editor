@@ -6,7 +6,7 @@ import { createMemoryWorkspace } from "./fakes/memory-workspace.ts";
 import { PLACEHOLDER_IMAGE_PATH, placeholderImageSvg } from "../src/page-builder/native-elements.ts";
 
 const page = '<!doctype html><html><head><title>Home</title></head><body><main><section class="flow"><h2>Work</h2></section></main></body></html>';
-function setup(overrides: Partial<Pick<BlockInsertPorts, "target">> = {}, files: Record<string, string> = { "index.html": page }) {
+function setup(overrides: Partial<Pick<BlockInsertPorts, "target" | "media">> = {}, files: Record<string, string> = { "index.html": page }) {
   const components = Object.fromEntries(Object.keys(files).filter(path => path.startsWith("components/")).map(path => [path.split("/").at(-1)!.replace(/\.html$/, ""), path]));
   const m = createMemoryWorkspace({ branch: files, open: "index.html", site: { routes: { "/": "index.html" }, components } });
   const edits = createGuardedEdits(m.workspace);
@@ -23,9 +23,23 @@ const selected = (m: ReturnType<typeof createMemoryWorkspace>) => {
   return request && { path: request.path, node: request.node };
 };
 
-test("the first Image writes the placeholder in the same step; later ones reuse it, whatever it holds", async () => {
+test("Media on a page writes nothing: the picker opens for the spot the click or drop found", async () => {
+  const places: unknown[] = [];
+  const { controller, m } = setup({ media: place => { places.push(place); } });
+  await controller.click("media");
+  await controller.drop("media", { parent: [0, 0], index: 0, where: "Into Section › before Heading" }, page);
+  assert.deepEqual(places, [{ path: "index.html", parent: [0, 0], index: 1, wrap: false, slot: undefined }, { path: "index.html", parent: [0, 0], index: 0, slot: undefined }]);
+  assert.equal(m.steps().length, 0);
+  assert.equal(m.source(PLACEHOLDER_IMAGE_PATH), undefined);
+  // A drop measured on bytes the page no longer has opens nothing.
+  await controller.drop("media", { parent: [0, 0], index: 0, where: "" }, page.replace("<main>", "<main><p>Gone</p>"));
+  assert.equal(places.length, 2);
+  assert.match(m.refusals.at(-1)!, /still updating/);
+});
+
+test("Media in a component's template (and without a picker) writes the stand-in picture in the same step; later ones reuse it", async () => {
   const { controller, m } = setup();
-  await controller.click("image");
+  await controller.click("media");
   assert.equal(m.steps().length, 1);
   assert.equal(m.source(PLACEHOLDER_IMAGE_PATH), placeholderImageSvg);
   assert.match(m.source("index.html")!, /<h2>Work<\/h2>\s*<img src="\/images\/placeholder.svg" alt="" width="640" height="400">/);
@@ -34,11 +48,11 @@ test("the first Image writes the placeholder in the same step; later ones reuse 
   assert.equal(m.source("index.html"), page);
   assert.equal(m.source(PLACEHOLDER_IMAGE_PATH), undefined);
   assert.deepEqual(selected(m), { path: "index.html", node: [0, 0, 0] });
-  assert.equal(m.announced.at(-1), "Undid adding the Image.");
+  assert.equal(m.announced.at(-1), "Undid adding the Media.");
   assert.equal(m.redo(), true);
   assert.deepEqual(selected(m), { path: "index.html", node: [0, 0, 1] });
   m.writeDraft(PLACEHOLDER_IMAGE_PATH, "<svg>mine</svg>");
-  await controller.click("image");
+  await controller.click("media");
   assert.equal(m.steps().length, 2);
   assert.equal(m.files().length, 2);
   assert.equal(m.source(PLACEHOLDER_IMAGE_PATH), "<svg>mine</svg>");
@@ -146,7 +160,7 @@ test("a template the click read (its items slot), edited before the insert write
   const hold = m.holdBranchRead();
   // Image creates the placeholder, forcing commit's branch read after
   // clickTarget chose the component's items slot through its template.
-  const pending = controller.click("image", undefined, since);
+  const pending = controller.click("media", undefined, since);
   await hold.reached;
   m.writeDraft(path, template.replace("Title", "Changed"));
   hold.release();
@@ -200,7 +214,7 @@ test("direct insert plans one step, while an unreadable place refuses", async ()
 test("a recorded image insert with a failed refresh shows its message and keeps the step and selection", async () => {
   const { controller, m } = setup();
   m.failRefresh();
-  await controller.click("image");
+  await controller.click("media");
   assert.equal(m.steps().length, 1);
   assert.match(m.source("index.html")!, /<img /);
   assert.equal(m.source(PLACEHOLDER_IMAGE_PATH), placeholderImageSvg);

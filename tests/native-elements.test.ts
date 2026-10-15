@@ -16,7 +16,7 @@ test("six blocks join components and write exact portable HTML", () => {
     ["div", "Div", '<div class="flow"></div>'],
     ["heading", "Heading", '<h2>Heading</h2>'],
     ["paragraph", "Paragraph", '<p>Text</p>'],
-    ["image", "Image", '<img src="/images/placeholder.svg" alt="" width="640" height="400">'],
+    ["media", "Media", '<img src="/images/placeholder.svg" alt="" width="640" height="400">'],
     ["button", "Button", '<a class="btn" href="#">Button</a>'],
   ];
   assert.deepEqual(nativeElementChoices.map(({ tag, label, group, kind }) => [tag, label, group, kind]), blocks.map(([kind, label]) => [`native:${kind}`, label, "Blocks", "native"]));
@@ -37,10 +37,10 @@ test("heading levels and block options validate and escape", () => {
   assert.equal(nativeElementMarkup("heading", { text: '<img onerror="x"> &' }), '<h2>&lt;img onerror=&quot;x&quot;&gt; &amp;</h2>');
   assert.equal(nativeElementMarkup("paragraph", { text: "<Text>" }), '<p>&lt;Text&gt;</p>');
   assert.equal(nativeElementMarkup("button", { href: '/contact?a=1&b="x"', text: "<'&" }), '<a class="btn" href="/contact?a=1&amp;b=&quot;x&quot;">&lt;&#39;&amp;</a>');
-  assert.equal(nativeElementMarkup("image", { src: '/photo?a=1&b=2', alt: '<"&' }), '<img src="/photo?a=1&amp;b=2" alt="&lt;&quot;&amp;">');
+  assert.equal(nativeElementMarkup("media", { src: '/photo?a=1&b=2', alt: '<"&' }), '<img src="/photo?a=1&amp;b=2" alt="&lt;&quot;&amp;">');
   for (const url of ["java\nscript:alert(1)", "data:text/html,x", "javascript:alert(1)"]) {
     assert.throws(() => nativeElementMarkup("button", { href: url }));
-    assert.throws(() => nativeElementMarkup("image", { src: url }));
+    assert.throws(() => nativeElementMarkup("media", { src: url }));
   }
 });
 test("placeholder site SVG defines matching intrinsic dimensions and a neutral image mark", () => {
@@ -51,7 +51,7 @@ test("placeholder site SVG defines matching intrinsic dimensions and a neutral i
   assert.match(placeholderImageSvg, /<path\b/);
   assert.match(placeholderImageSvg, /<\/svg>$/);
   assert.doesNotMatch(placeholderImageSvg, /PROTOTYPE|prefers-color-scheme|<script|&/);
-  assert.match(nativeElementMarkup("image"), new RegExp(`width="${PLACEHOLDER_IMAGE_WIDTH}" height="${PLACEHOLDER_IMAGE_HEIGHT}"`));
+  assert.match(nativeElementMarkup("media"), new RegExp(`width="${PLACEHOLDER_IMAGE_WIDTH}" height="${PLACEHOLDER_IMAGE_HEIGHT}"`));
 });
 test("markup insertion preserves text, comments, neighbours and exact bounds", () => {
   const source = '<main><section>intro <!--keep--><p>A</p> between <p>B</p> tail</section></main>';

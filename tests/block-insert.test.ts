@@ -14,7 +14,7 @@ test("a selected Section or Div takes the block inside, at the end", () => {
   assert.deepEqual(at(clickTarget(home, "paragraph", [1, 1])), { parent: [1, 1], index: 4, wrap: false });
   assert.deepEqual(at(clickTarget(home, "div", [1, 1])), { parent: [1, 1], index: 4, wrap: false });
   assert.deepEqual(at(clickTarget(home, "heading", [1, 1, 2])), { parent: [1, 1, 2], index: 1, wrap: false });
-  const target = ok(clickTarget(home, "image", [1, 2]));
+  const target = ok(clickTarget(home, "media", [1, 2]));
   assert.equal(target.where, "Into Section “Contact” › after Heading");
   assert.deepEqual(target.select, [1, 2, 1]);
 });
@@ -25,7 +25,7 @@ test("a selected leaf takes the block right after it, in its container", () => {
   assert.equal(target.where, "Into Section “Recent work” › after Heading");
   // Inside a list or inline text: after the element that sits in the Section.
   assert.deepEqual(at(clickTarget(home, "button", [1, 1, 3, 0])), { parent: [1, 1], index: 4, wrap: false });
-  assert.deepEqual(at(clickTarget(page('<section><p>Hi <a class="btn" href="#">Go</a></p></section>'), "image", [1, 0, 0, 0])), { parent: [1, 0], index: 1, wrap: false });
+  assert.deepEqual(at(clickTarget(page('<section><p>Hi <a class="btn" href="#">Go</a></p></section>'), "media", [1, 0, 0, 0])), { parent: [1, 0], index: 1, wrap: false });
   // Blocks go only into a Section or a Div (ticket 10): a figure's image takes the block after the figure.
   assert.deepEqual(at(clickTarget(page('<section><figure><img src="/a.png" alt=""></figure><p>B</p></section>'), "paragraph", [1, 0, 0, 0])), { parent: [1, 0], index: 1, wrap: false });
 });
@@ -82,7 +82,7 @@ test("components refuse blocks with the reason; so do bands that are no Section 
 test("Heading levels follow the place: h2 in a Section, one below per Div", () => {
   assert.equal(blockMarkup(home, "heading", [1, 2]), "<h2>Heading</h2>");
   assert.equal(blockMarkup(home, "heading", [1, 1, 2]), "<h3>Heading</h3>");
-  assert.equal(blockMarkup(home, "image", [1, 2]), '<img src="/images/placeholder.svg" alt="" width="640" height="400">');
+  assert.equal(blockMarkup(home, "media", [1, 2]), '<img src="/images/placeholder.svg" alt="" width="640" height="400">');
 });
 
 test("clicking Section, Div, Heading, Paragraph in turn builds a nested page, selecting each", () => {
@@ -139,12 +139,12 @@ test("a selected instance takes the block in its first items slot, after that sl
 
 test("a selected child of an items slot takes the block right after it, in that slot; a Div in it takes blocks inside", () => {
   const more = page('<section-work><p slot="more">M</p><p>N</p></section-work>');
-  const named = ok(clickTarget(more, "image", [1, 0, 0], templateOf));
+  const named = ok(clickTarget(more, "media", [1, 0, 0], templateOf));
   assert.deepEqual([named.parent, named.index, named.slot], [[1, 0], 1, "more"]);
   assert.equal(named.where, "Into Section work › “more” slot › after Paragraph");
-  assert.match(insert(more, "image", named), /<p slot="more">M<\/p><img slot="more" src="\/images\/placeholder.svg"[^>]*><p>N<\/p>/);
+  assert.match(insert(more, "media", named), /<p slot="more">M<\/p><img slot="more" src="\/images\/placeholder.svg"[^>]*><p>N<\/p>/);
   // A card in an items slot is an instance: its own items slot, or the reason (card-project here has none).
-  assert.equal(clickTarget(work, "image", [1, 0, 2], templateOf).ok, false);
+  assert.equal(clickTarget(work, "media", [1, 0, 2], templateOf).ok, false);
   const withDiv = page('<section-work><div class="flow"><p>In</p></div></section-work>');
   const inner = ok(clickTarget(withDiv, "paragraph", [1, 0, 0], templateOf));
   assert.deepEqual([inner.parent, inner.index, inner.slot], [[1, 0, 0], 1, undefined]);
@@ -227,7 +227,7 @@ test("in a template, an items slot's placeholder takes blocks; a named slot's pa
   assert.deepEqual([target.parent, target.index], [[0, 1, 0], 1]);
   assert.equal(target.where, "Into Section work › items › after Card project");
   // The title's heading: after the title slot, in the section.
-  const title = ok(inWork("image", [0, 0, 0]));
+  const title = ok(inWork("media", [0, 0, 0]));
   assert.deepEqual([title.parent, title.index], [[0], 1]);
   assert.equal(title.where, "Into Section › after “title” slot");
   // A Div in a named slot's placeholder does not take blocks: the slot is filled by each page.
