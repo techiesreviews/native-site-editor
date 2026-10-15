@@ -2,7 +2,7 @@
 title: Large editor: fits at every width, one shape menu, labelled phone tools
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-110 runner)
 blocked_by: [109-image-popup-shorter]
 builder: claude
 phase: 8
