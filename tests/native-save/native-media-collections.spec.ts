@@ -33,7 +33,7 @@ test("create a collection, add two files, view it, take one out (it stays under 
   await open(page, baseURL);
   const library = pane(page), collections = library.getByLabel("Collections", { exact: true });
   await newCollectionFromManage(page, "Studio picks");
-  await library.getByRole("button", { name: "Back to grid", exact: true }).click();
+  await library.getByRole("button", { name: "Back", exact: true }).click();
   await expect(collections).toBeFocused();
   // The selection bar: Add to collection lists the collections, then New collection.
   await select(page, "images/placeholder.svg"); await select(page, "images/studio-desk.svg");
@@ -75,7 +75,7 @@ test("More renames and deletes the viewed collection: a taken name is refused, d
   await library.getByLabel("Collection name", { exact: true }).fill("Brand");
   await library.getByRole("button", { name: "Create", exact: true }).click();
   await expect(library.locator(".media-library__collection-row")).toHaveCount(2);
-  await library.getByRole("button", { name: "Back to grid", exact: true }).click();
+  await library.getByRole("button", { name: "Back", exact: true }).click();
   await select(page, "images/studio-desk.svg");
   await library.getByRole("button", { name: "Add to collection", exact: true }).click();
   await page.getByRole("menu", { name: "Add to collection", exact: true }).getByRole("menuitem", { name: "Logos", exact: true }).click();
@@ -125,11 +125,23 @@ test("Manage collections lists every collection with Rename and Delete, and refu
   await expect(library.getByLabel("Collection name", { exact: true })).toBeVisible();
   await library.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(library.locator(".media-library__collection-row")).toHaveCount(1);
-  await library.getByRole("button", { name: "Rename Team", exact: true }).click();
+  // One ⋯ menu per row (audit slice 111): Rename, then Delete last in red.
+  await library.getByRole("button", { name: "More for Team", exact: true }).click();
+  const rowMenu = page.getByRole("menu", { name: "More for Team", exact: true });
+  await expect(rowMenu.getByRole("menuitem")).toHaveText(["Rename…", "Delete…"]);
+  await expect(rowMenu.getByRole("menuitem", { name: "Delete…" })).toHaveClass(/row-menu__danger/);
+  await rowMenu.getByRole("menuitem", { name: "Rename…", exact: true }).click();
+  await expect(library.getByRole("heading", { name: "Rename \"Team\"", exact: true })).toBeVisible();
   await library.getByLabel("Collection name", { exact: true }).fill("People");
   await library.getByRole("button", { name: "Rename", exact: true }).click();
-  await expect(library.getByRole("button", { name: "Rename People", exact: true })).toBeFocused();
-  await library.getByRole("button", { name: "Delete People", exact: true }).click();
+  await expect(library.getByRole("button", { name: "More for People", exact: true })).toBeFocused();
+  // Back on the Delete screen leaves the collection, focus on its ⋯.
+  await library.getByRole("button", { name: "More for People", exact: true }).click();
+  await page.getByRole("menu", { name: "More for People", exact: true }).getByRole("menuitem", { name: "Delete…", exact: true }).click();
+  await library.getByRole("button", { name: "Back", exact: true }).click();
+  await expect(library.getByRole("button", { name: "More for People", exact: true })).toBeFocused();
+  await library.getByRole("button", { name: "More for People", exact: true }).click();
+  await page.getByRole("menu", { name: "More for People", exact: true }).getByRole("menuitem", { name: "Delete…", exact: true }).click();
   await expect(library.locator(".media-library__sheet")).toContainText("It has no files.");
   await library.getByRole("button", { name: "Delete collection", exact: true }).click();
   await expect(library.locator(".media-library__sheet")).toContainText("No collections yet.");
@@ -143,7 +155,7 @@ test("details show and edit a file's collections; a new name there must be free"
   await open(page, baseURL);
   const library = pane(page);
   await newCollectionFromManage(page, "Desk");
-  await library.getByRole("button", { name: "Back to grid", exact: true }).click();
+  await library.getByRole("button", { name: "Back", exact: true }).click();
   await library.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true }).click();
   const memberships = library.getByRole("group", { name: "Collections", exact: true });
   await expect(memberships.getByRole("checkbox", { name: "Desk", exact: true })).not.toBeChecked();
@@ -306,7 +318,7 @@ test("dropping two images while viewing a collection adds both to it in one Undo
   await open(page, baseURL);
   const library = pane(page), collections = library.getByLabel("Collections", { exact: true });
   await newCollectionFromManage(page, "Studio picks");
-  await library.getByRole("button", { name: "Back to grid", exact: true }).click();
+  await library.getByRole("button", { name: "Back", exact: true }).click();
   await collections.selectOption("Studio picks");
   await expect.poll(() => tileNames(page)).toEqual([]);
   await dropOnMedia(page, [{ name: "red-dot.svg", text: svg("red") }, { name: "blue-dot.svg", text: svg("blue") }]);
@@ -378,7 +390,7 @@ test("renaming the collection while its files are prepared: they join it under i
   await open(page, baseURL);
   const library = pane(page), collections = library.getByLabel("Collections", { exact: true });
   await newCollectionFromManage(page, "Studio");
-  await library.getByRole("button", { name: "Back to grid", exact: true }).click();
+  await library.getByRole("button", { name: "Back", exact: true }).click();
   await collections.selectOption("Studio");
   const hold = await holdFirstPreparation(page);
   await dropOnMedia(page, [{ name: "late.png", text: svg("green") }]);
@@ -398,7 +410,7 @@ test("Review… stops automatic adding and opens Optimise for the files not adde
   await open(page, baseURL);
   const library = pane(page);
   await newCollectionFromManage(page, "Studio picks");
-  await library.getByRole("button", { name: "Back to grid", exact: true }).click();
+  await library.getByRole("button", { name: "Back", exact: true }).click();
   await library.getByLabel("Collections", { exact: true }).selectOption("Studio picks");
   const hold = await holdFirstPreparation(page);
   await dropOnMedia(page, [{ name: "first.png", text: svg("red") }, { name: "second.svg", text: svg("blue") }]);
@@ -421,7 +433,7 @@ test("a file that cannot be prepared stays in the tray with its reason and Revie
   await open(page, baseURL);
   const library = pane(page);
   await newCollectionFromManage(page, "Studio picks");
-  await library.getByRole("button", { name: "Back to grid", exact: true }).click();
+  await library.getByRole("button", { name: "Back", exact: true }).click();
   await library.getByLabel("Collections", { exact: true }).selectOption("Studio picks");
   await pane(page).evaluate((element, good) => {
     const transfer = new DataTransfer();

@@ -178,6 +178,7 @@ export function createMediaLibraryView(
   const collectionHost: CollectionScreensHost = {
     ...context, close: () => closeSheet(collections),
     follow: (from, to) => { if (viewing === from) followed = to; adding.renamed(from, to); },
+    menu: openMenu,
   };
   /** Close a collection screen and return focus to what opened it (or to Collections). */
   function closeSheet(opener: HTMLElement) {
@@ -466,7 +467,7 @@ export function createMediaLibraryView(
         const { showRecentlyRemoved } = await import("./media-library-recently-removed");
         if (alive && library) showRecentlyRemoved(sheet, { ...context, close: () => closeSheet(shell.more) });
       }, false) }] : [],
-      // To check (ticket 13), with its count: agent-written descriptions waiting for OK or Edit.
+      // To check (ticket 13), with its count: agent-written descriptions waiting for Looks right or Edit.
       ...!modal && adapter.check ? [{ label: toCheckLabel(library?.toCheck), run: () => {
         if (library) showToCheck(sheet, { ...context, close: () => closeSheet(shell.more), pageLabel: page => adapter.usage?.pageLabel?.(page) });
       } }] : [],
@@ -480,7 +481,7 @@ export function createMediaLibraryView(
       // While viewing a collection (ticket 15).
       ...name ? [
         { label: "Rename collection", section: "This collection", run: () => showCollectionName(sheet, collectionHost, { renaming: name, done: () => closeSheet(shell.more) }) },
-        { label: "Delete collection", section: "This collection", run: () => showCollectionDelete(sheet, collectionHost, name, () => closeSheet(shell.more)) },
+        { label: "Delete collection", section: "This collection", danger: true, run: () => showCollectionDelete(sheet, collectionHost, name, () => closeSheet(shell.more)) },
       ] : [],
     ], undefined, "More");
   }, { signal: listeners.signal });

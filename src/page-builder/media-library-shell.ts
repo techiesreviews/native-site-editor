@@ -103,7 +103,9 @@ export function createMediaLibraryShell(
   const sheet = node("aside", "media-library__sheet"); sheet.hidden = true;
   browse.append(summary, adding, grid, bulk); body.append(browse, sheet);
   const message = node("p", "media-library__message"); message.setAttribute("role", "status");
-  const footer = modal ? node("footer", "media-library__choice") : node("footer", "media-library__footer", "Drop files anywhere here · Enter opens details · Arrow keys browse");
+  const footer = modal ? node("footer", "media-library__choice") : node("footer", "media-library__footer", "Drop files anywhere here");
+  // Keyboard hints only where there is likely a keyboard: touch screens hide them (media-picker.css).
+  if (!modal) footer.append(node("span", "media-library__keys", " · Enter opens details · Arrow keys browse"));
   // The picker's status above one row of Cancel and Use (phones), beside it on wider screens.
   const choice = node("div", "media-library__chosen"), chosenName = node("span", "media-library__chosen-name");
   const chosenThumb = node("span", "media-library__chosen-thumb");

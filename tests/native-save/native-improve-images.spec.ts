@@ -59,11 +59,15 @@ const row = (page: Page, title: string) => pane(page).locator(".media-improve__r
 test("a heavy JPEG is listed, fixed to a lighter WebP with copies, and Undo restores it", { tag: "@smoke" }, async ({ page, baseURL }) => {
   await openImprove(page, baseURL, ["Photos"]);
   const photos = row(page, "Photos");
-  await expect(photos).toContainText("1 heavy picture");
+  await expect(photos).toContainText("1 picture · lighter files");
   // The row opens to its picture, ticked.
   await photos.getByRole("button", { name: /Photos/ }).first().click();
   await expect(photos.getByRole("checkbox", { name: "Improve photos.jpg", exact: true })).toBeChecked();
   await expect(photos).toContainText("Heavy: a lighter file");
+  // Fix is a 36 px secondary with an edge, so Fix all stays the one primary; ticks are 20 px.
+  const fix = pane(page).getByRole("button", { name: "Fix Photos", exact: true });
+  expect(await fix.evaluate(button => [button.getBoundingClientRect().height, getComputedStyle(button).borderTopStyle, button.classList.contains("primary")])).toEqual([36, "solid", false]);
+  expect(await photos.getByRole("checkbox").first().evaluate(box => box.getBoundingClientRect().width)).toBe(20);
 
   await pane(page).getByRole("button", { name: "Fix Photos", exact: true }).click();
   await expect(pane(page).locator(".media-improve__changed")).toContainText("Photos");
@@ -86,7 +90,7 @@ test("a heavy JPEG is listed, fixed to a lighter WebP with copies, and Undo rest
   await expect(pane(page).locator(".media-improve__changed")).toHaveCount(0);
   await expect.poll(async () => (await storedDraft(page, "photos/index.html"))?.content ?? pageHtml("Photos", "images/photos.jpg")).toBe(pageHtml("Photos", "images/photos.jpg"));
   await expect.poll(async () => await storedDraft(page, "images/photos.webp")).toBeUndefined();
-  await expect(row(page, "Photos")).toContainText("1 heavy picture");
+  await expect(row(page, "Photos")).toContainText("1 picture · lighter files");
   const restored = await pane(page).locator(".media-improve__row").count();
   await pane(page).getByRole("button", { name: "Back", exact: true }).click();
   await pane(page).getByRole("button", { name: "More", exact: true }).click();

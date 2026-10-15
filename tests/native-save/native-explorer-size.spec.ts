@@ -55,7 +55,7 @@ async function expectActionsInView(page: Page) {
   await tab(page, "Media");
   await pane(page).getByLabel("Collections", { exact: true }).selectOption({ label: "Manage collections…" });
   await expect(pane(page).getByRole("button", { name: "New collection", exact: true })).toBeInViewport({ ratio: 1 });
-  await pane(page).getByRole("button", { name: "Back to grid", exact: true }).click();
+  await pane(page).getByRole("button", { name: "Back", exact: true }).click();
   await pane(page).getByRole("button", { name: "Details for images/spare-1.svg", exact: true }).click();
   await expect(pane(page).getByRole("button", { name: "Save details", exact: true })).toBeInViewport({ ratio: 1 });
   await pane(page).getByRole("button", { name: "Back", exact: true }).first().click();

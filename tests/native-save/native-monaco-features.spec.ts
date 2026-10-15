@@ -440,9 +440,9 @@ test("cursor undo and existing editing actions stay available", async ({ page, b
 });
 
 test("dropping a Files row inserts its plain path into editable source", async ({ page, baseURL }) => {
-  // The explorer is one centred 1040px box for every tab (slice 104), so the code's first
-  // line shows beside it only in a wide window.
-  await page.setViewportSize({ width: 2000, height: 900 });
+  // At 1280 the explorer (one centred 1040px box, slice 104) covers the code. Once the drag
+  // leaves the box it steps aside, so the code under it takes the drop (slice 111).
+  await page.setViewportSize({ width: 1280, height: 800 });
   await open(page, baseURL, "robots.txt");
   await setSource(page, "end");
   const explorer = page.locator("#explorer");
@@ -455,7 +455,19 @@ test("dropping a Files row inserts its plain path into editable source", async (
   // Dropping at the first rendered character inserts before it without a
   // Monaco test API or synthetic DataTransfer bypassing the source widget.
   const firstLine = page.locator(`${HOST} .view-line`).first();
-  await file.dragTo(firstLine, { targetPosition: { x: 1, y: 8 } });
+  const box = (await explorer.boundingBox())!, line = (await firstLine.boundingBox())!;
+  expect(line.x).toBeGreaterThan(box.x); expect(line.y + 8).toBeLessThan(box.y + box.height);
+  await file.hover();
+  await page.mouse.down();
+  await page.mouse.move(box.x + 40, box.y + box.height / 2, { steps: 4 });
+  // Still inside the box: rows take drops to move files, so it stays.
+  await expect(explorer).not.toHaveClass(/is-stepping-aside/);
+  await page.mouse.move(box.x - 30, box.y + box.height / 2, { steps: 4 });
+  await expect(explorer).toHaveClass(/is-stepping-aside/);
+  await expect(explorer).toHaveCSS("pointer-events", "none");
+  await page.mouse.move(line.x + 1, line.y + 8, { steps: 6 });
+  await page.mouse.up();
+  await expect(explorer).not.toHaveClass(/is-stepping-aside/);
   await expect.poll(() => source(page)).toBe("index.htmlend");
   await lines(page).click();
   await page.keyboard.press("ControlOrMeta+z");

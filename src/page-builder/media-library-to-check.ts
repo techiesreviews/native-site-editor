@@ -1,7 +1,7 @@
 import { button, node } from "../ui/dom";
 import { icon } from "../icons";
 import { basename, mediaKind } from "./media-library-filter";
-import { takeSheet, type LibrarySheet, type LibrarySheetContext } from "./media-library-sheet";
+import { sheetHead, takeSheet, type LibrarySheet, type LibrarySheetContext } from "./media-library-sheet";
 import { subtitlesWords, type MediaToCheckRow } from "./media-descriptions";
 
 /** What To check needs beyond the sheet context. */
@@ -19,7 +19,7 @@ const rowKey = (row: MediaToCheckRow) => `${row.file}\n${row.page ?? ""}\n${row.
 export const toCheckLabel = (rows: MediaToCheckRow[] | undefined) => rows?.length ? `To check (${rows.length})` : "To check";
 
 /** To check (ticket 13): each description an agent wrote, with its picture or file, its words,
- * OK (the words stay, the mark goes) and Edit (Lex's words replace them, which clears it too).
+ * Looks right (the words stay, the mark goes) and Edit (Lex's words replace them, which clears it too).
  * Its own screen with Back, like File details; it redraws after every refresh, keeping open edits. */
 export function showToCheck(sheet: LibrarySheet, h: ToCheckHost) {
   /** Open edits: the agent's words Lex saw when pressing Edit, and the words typed so far. */
@@ -41,16 +41,10 @@ export function showToCheck(sheet: LibrarySheet, h: ToCheckHost) {
       draw(active instanceof HTMLElement && element.contains(active) ? active.getAttribute("aria-label") ?? active.textContent ?? "" : null);
     };
     const version = sheet.version;
-    const head = node("header", "media-detail__head");
-    const back = button("", h.close, "media-detail__back");
-    back.setAttribute("aria-label", "Back"); back.append(icon("arrow-left", 20));
-    const title = node("h3", "", "To check"); title.tabIndex = -1;
-    head.append(back, title);
-    element.append(head);
+    const { title } = sheetHead(element, "To check", h.close, rows.length ? "An agent wrote these. Check they read right." : undefined);
     if (!rows.length) {
-      element.append(node("p", "media-check__empty", "Nothing to check. Descriptions an agent writes wait here until you press OK or edit them."));
+      element.append(node("p", "media-check__empty", "Nothing to check. Words an agent writes wait here until you check them."));
     } else {
-      element.append(node("p", "media-library__muted", `An agent wrote these ${rows.some(row => row.subtitles) ? "words" : "descriptions"}. Press OK if they read right, or Edit to change them.`));
       const list = node("ul", "media-check__list");
       rows.forEach((row, index) => list.append(drawRow(row, rows[index + 1])));
       element.append(list);
@@ -76,19 +70,20 @@ export function showToCheck(sheet: LibrarySheet, h: ToCheckHost) {
       const open = editing.get(key);
       if (!open) {
         text.append(node("p", "media-check__words", row.subtitles ? subtitlesWords(row.text) : row.text));
-        const ok = button("OK", () => void h.task(async () => {
+        // A review list, not a form: neither action is filled (audit C4).
+        const ok = button("Looks right", () => void h.task(async () => {
           if (version !== sheet.version) return;
           await h.adapter.check!(row);
           await h.refresh();
           h.done(`Checked the ${what} of ${name}${where}.`);
-          // Focus moves on to the next row's OK, or to the heading when nothing is left.
+          // Focus moves on to the next row's Looks right, or to the heading when nothing is left.
           if (version !== sheet.version && sheet.element.dataset.mode === "to-check") focusAfter(next);
-        }), "button primary");
-        ok.setAttribute("aria-label", `OK ${name}${where}`);
+        }));
+        ok.setAttribute("aria-label", `Looks right ${name}${where}`);
         const edit = button("Edit", () => {
           editing.set(key, { seen: row.text, value: row.text });
           draw(`${row.subtitles ? "Subtitles" : "Description"} for ${name}${where}`);
-        });
+        }, "text-button");
         edit.setAttribute("aria-label", `Edit ${name}${where}`);
         actions.append(ok, edit);
       } else {
@@ -97,7 +92,7 @@ export function showToCheck(sheet: LibrarySheet, h: ToCheckHost) {
         area.addEventListener("input", () => { open.value = area.value; });
         text.append(area);
         const save = button("Save", () => {
-          if (!area.value.trim()) { h.tell(row.subtitles ? "Write the subtitles, or press OK to keep them." : "Write the description, or press OK to keep these words."); area.focus(); return; }
+          if (!area.value.trim()) { h.tell(row.subtitles ? "Write the subtitles, or press Cancel to keep them." : "Write the description, or press Cancel to keep these words."); area.focus(); return; }
           void h.task(async () => {
             if (version !== sheet.version) return;
             // The words Lex was editing: if an agent changed them meanwhile, the host refuses.
@@ -107,9 +102,9 @@ export function showToCheck(sheet: LibrarySheet, h: ToCheckHost) {
             h.done(`Saved the ${what} of ${name}${where} as a draft.`);
             if (version !== sheet.version && sheet.element.dataset.mode === "to-check") focusAfter(next);
           });
-        }, "button primary");
+        });
         save.setAttribute("aria-label", `Save ${name}${where}`);
-        const cancel = button("Cancel", () => { editing.delete(key); draw(`Edit ${name}${where}`); });
+        const cancel = button("Cancel", () => { editing.delete(key); draw(`Edit ${name}${where}`); }, "text-button");
         cancel.setAttribute("aria-label", `Cancel ${name}${where}`);
         actions.append(save, cancel);
       }

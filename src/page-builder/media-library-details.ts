@@ -288,8 +288,8 @@ function renderInformation(
     sync();
     const words = field("Description", description);
     if (!meta.alt && !meta.decorative) words.append(node("span", "media-library__hint", "Not described yet"));
-    // By agent (ticket 13) until OK in To check, or Lex's own words saved here.
-    if (meta.byAgent) words.append(node("span", "media-library__by-agent", "By agent: press OK in To check, or change the words here."));
+    // By agent (ticket 13) until Looks right in To check, or Lex's own words saved here.
+    if (meta.byAgent) words.append(node("span", "media-library__by-agent", "By agent: press Looks right in To check, or change the words here."));
     form.append(words, node("p", "media-library__hint", "Places using this description are updated. Places with their own words are kept."),
       check("Decorative", decorative));
   }

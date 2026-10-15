@@ -114,7 +114,7 @@ test("an agent describes and places a picture already in Media; To check lists i
     await expect(image).toHaveAttribute("width", "24");
     await expect(image).toHaveAttribute("height", "16");
     await expect(image).toHaveAttribute("alt", words);
-    // To check lists the agent's words until Lex presses OK or edits them.
+    // To check lists the agent's words until Lex presses Looks right or edits them.
     await page.locator("#explorer-toggle").click();
     await page.getByRole("tab", { name: "Media", exact: true }).click();
     await library.getByRole("button", { name: "More", exact: true }).click();

@@ -52,7 +52,10 @@
   .media-library input:not([type="checkbox"]), .media-library select { font-size: 16px; }
   .media-library__footer { padding: 12px; }
 }
-@media (pointer: coarse) { .media-library button { min-height: 44px; } .media-library input[type="checkbox"] { width: 24px; height: 24px; } }
+@media (pointer: coarse) {
+  .media-library button { min-height: 44px; } .media-library input[type="checkbox"] { width: 24px; height: 24px; }
+  .media-library__keys { display: none; }
+}
 
 /* Explorer hosts own pane dimensions; the library never opens a dialog here. */
 .media-library--pane {
@@ -117,8 +120,6 @@
   position: sticky; inset-block-end: 0; z-index: 4; margin-block-start: 4px; padding-block: 12px;
   border-block-start: 1px solid var(--line); background: var(--panel-surface);
 }
-/* The collection screens keep the side sheet's own surface. */
-.media-library--pane .media-library__sheet > .media-library__sheet-actions { background: var(--surface-subtle); }
 
 .media-library__card { position: relative; min-width: 0; aspect-ratio: 1; overflow: hidden; border-radius: var(--radius-small); background: var(--surface-subtle); color: #fff; }
 .media-library .media-library__thumbnail { position: absolute; inset: 0; width: 100%; height: 100%; padding: 0; border: 0; border-radius: 0; background: none; color: inherit; }
@@ -384,8 +385,8 @@
 .media-library__collection-list { display: grid; margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
 .media-library__collection-row { display: flex; align-items: center; gap: 8px; min-height: 52px; padding: 4px 0; border-bottom: 1px solid var(--line); }
 .media-library__collection-name { flex: 1; min-width: 0; display: grid; overflow-wrap: anywhere; }
-.media-library__collection-row button, .media-library__sheet-actions button { min-height: 44px; }
-.media-library__sheet-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.media-library__sheet-actions button { min-height: 44px; border-radius: 22px; }
+.media-library__sheet-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 
 /* Always keep: a pin in the tile's corner (the name leaves it room) and a line in details. */
 .media-library__keep { position: absolute; right: 6px; bottom: 6px; z-index: 2; width: 24px; height: 24px; border-radius: 999px; background: rgb(10 18 32 / .62); pointer-events: none; }
@@ -456,23 +457,32 @@
   text-decoration-color: color-mix(in oklch, currentColor 45%, transparent);
 }
 
-/* File details (media-manager ticket 06, tiles.html): its own screen with Back. A large,
+/* Every sub-screen (any sheet with a mode: File details, To check, Clean up, Manage collections…)
+   is its own screen with Back over the whole pane (audit slice 111). File details puts a large,
    complete preview beside grouped information on wide screens, stacked on phones; Save and
    Cancel follow the fields and never cover them. */
-.media-library__body:has(> .media-library__sheet:is([data-mode="details"], [data-mode="to-check"], [data-mode="delete"], [data-mode="replace"], [data-mode="recently-removed"]):not([hidden])) .media-library__browse,
-.media-library:has(.media-library__sheet:is([data-mode="details"], [data-mode="to-check"], [data-mode="delete"], [data-mode="replace"], [data-mode="recently-removed"]):not([hidden])) :is(.media-library__bar, .media-library__footer),
-.media-library--pane:has(.media-library__sheet:is([data-mode="details"], [data-mode="to-check"], [data-mode="delete"], [data-mode="replace"], [data-mode="recently-removed"]):not([hidden])) .media-library__header { display: none; }
-.media-library .media-library__sheet:is([data-mode="details"], [data-mode="to-check"], [data-mode="delete"], [data-mode="replace"], [data-mode="recently-removed"]) {
+.media-library__body:has(> .media-library__sheet[data-mode]:not([hidden])) .media-library__browse,
+.media-library:has(.media-library__sheet[data-mode]:not([hidden])) :is(.media-library__bar, .media-library__footer),
+.media-library--pane:has(.media-library__sheet[data-mode]:not([hidden])) .media-library__header { display: none; }
+.media-library .media-library__sheet[data-mode] {
   flex: 1; width: 100%; min-width: 0; border-left: 0; background: transparent; padding: 8px 24px 24px; gap: 8px;
   container: media-detail / inline-size;
 }
-.media-library--pane .media-library__sheet:is([data-mode="details"], [data-mode="to-check"], [data-mode="delete"], [data-mode="replace"], [data-mode="recently-removed"]) { padding: 8px 12px 20px; }
-.media-library .media-library__sheet:is([data-mode="details"], [data-mode="to-check"], [data-mode="delete"], [data-mode="replace"], [data-mode="recently-removed"]) button { align-self: auto; }
+.media-library--pane .media-library__sheet[data-mode] { padding: 8px 12px 20px; }
+.media-library .media-library__sheet[data-mode] button { align-self: auto; }
+/* A sub-screen's secondary buttons keep an edge on any surface (cards are the surface's colour). */
+.media-library__sheet .secondary { border: 1px solid var(--control-line); }
+/* Row actions: 36 px secondary or text buttons at the row's end, each a 44 px target. */
+.media-library :is(.media-check__actions > button, .media-improve__top > .secondary) {
+  position: relative; min-height: 36px; padding-block: 0; padding-inline: 14px; border-radius: 18px;
+}
+.media-library :is(.media-check__actions > button, .media-improve__top > .secondary)::after { content: ""; position: absolute; inset: min(0px, (100% - 44px) / 2); }
+.media-library .media-check__actions > .text-button { padding-inline: 8px; }
 .media-detail__head { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .media-detail__head h3 { font-size: var(--type-title); }
-.media-library .media-detail__back { flex: none; width: 44px; height: 44px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 50%; background: none; color: var(--text); }
-.media-library .media-detail__back:active { background: var(--hover); }
-@media (hover: hover) and (pointer: fine) { .media-library .media-detail__back:hover { background: var(--hover); } }
+.media-library :is(.media-detail__back, .media-library__row-more) { flex: none; width: 44px; height: 44px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 50%; background: none; color: var(--text); }
+.media-library :is(.media-detail__back, .media-library__row-more):active { background: var(--hover); }
+@media (hover: hover) and (pointer: fine) { .media-library :is(.media-detail__back, .media-library__row-more):hover { background: var(--hover); } }
 .media-detail { display: grid; gap: 16px; align-items: start; }
 @container media-detail (min-width: 680px) {
   .media-detail { grid-template-columns: minmax(0, 1.4fr) minmax(280px, 1fr); gap: 28px; }
@@ -565,9 +575,9 @@
 .media-library__by-agent { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: var(--type-small); }
 .media-library__by-agent::before, .media-check__text > span:nth-child(2)::before { content: ""; flex: none; width: 16px; height: 16px; background: currentColor; mask: url("@phosphor-icons/core/regular/robot.svg") center / contain no-repeat; }
 
-/* To check: its own screen with Back, like File details; one row per description, with the
-   picture, the words, and OK and Edit (a field with Save and Cancel while editing). */
-.media-check__list { display: grid; max-width: 760px; margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
+/* To check: its own screen with Back, like File details; full-width rows with the picture, the
+   words, and Looks right and Edit at the row's end (a field with Save and Cancel while editing). */
+.media-check__list { display: grid; margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
 .media-check__row { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; align-items: start; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
 .media-check__preview { width: 64px; height: 64px; display: grid; place-items: center; overflow: hidden; border-radius: var(--radius-small); background: var(--surface-subtle); }
 .media-check__preview img { width: 100%; height: 100%; object-fit: cover; }
@@ -577,13 +587,12 @@
 .media-check__text > span:nth-child(2) { display: flex; align-items: center; gap: 6px; }
 .media-library .media-check__words { margin-top: 4px; white-space: pre-wrap; }
 .media-check__field { margin-top: 6px; }
-.media-check__actions { display: flex; gap: 8px; }
-.media-library .media-check__actions button { min-width: 64px; min-height: 44px; border-radius: 22px; }
+.media-check__actions { display: flex; justify-content: flex-end; gap: 8px; }
 .media-check__empty { padding: 24px 0; color: var(--muted); }
 @container media-detail (max-width: 479px) {
   .media-check__row { grid-template-columns: 56px minmax(0, 1fr); }
   .media-check__preview { width: 56px; height: 56px; }
-  .media-check__actions { grid-column: 2; }
+  .media-check__actions { grid-column: 2; flex-wrap: wrap; }
 }
 
 /* Remove file and Recently removed (ticket 10): own screens like File details, with To check's rows
@@ -593,7 +602,7 @@
 .media-remove__pages { display: grid; max-width: 760px; margin: 0; padding: 0; list-style: none; }
 .media-remove__pages li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 0; }
 .media-remove__page { display: grid; min-width: 0; overflow-wrap: anywhere; }
-.media-remove__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.media-remove__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 4px; }
 .media-library :is(.media-remove__pages, .media-remove__actions) button { flex: none; min-height: 44px; border-radius: 22px; }
 
 /* Renaming in File details (ticket 15): the taken name with the next free one, the tidied name, and

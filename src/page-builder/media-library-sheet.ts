@@ -1,3 +1,5 @@
+import { button, node } from "../ui/dom";
+import { icon } from "../icons";
 import type { MediaBytes } from "./media-byte-cache";
 import type { MediaLibrary, MediaPickerHost } from "./media-picker";
 
@@ -42,4 +44,17 @@ export function takeSheet(sheet: LibrarySheet) {
   sheet.focus = undefined;
   sheet.work?.abort(); sheet.redraw = undefined; sheet.repaint = undefined; delete sheet.element.dataset.mode;
   sheet.version++; sheet.path = undefined; sheet.element.hidden = false; sheet.element.replaceChildren();
+}
+
+/** Every sub-screen's header (audit, slice 111): a ← Back icon button and the title, then at most
+ * one helper sentence. Appended to the sheet; the title takes focus when the screen opens. */
+export function sheetHead(element: HTMLElement, text: string, back: () => void, helper?: string) {
+  const head = node("header", "media-detail__head");
+  const backButton = button("", back, "media-detail__back");
+  backButton.setAttribute("aria-label", "Back"); backButton.dataset.focusKey = "back"; backButton.append(icon("arrow-left", 20));
+  const title = node("h3", "", text); title.tabIndex = -1;
+  head.append(backButton, title);
+  element.append(head);
+  if (helper) element.append(node("p", "media-library__muted", helper));
+  return { back: backButton, title };
 }

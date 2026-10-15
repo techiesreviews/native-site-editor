@@ -895,7 +895,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       const { batch, text: sources, metadata } = await prepare(ctx, subtitles ? "Subtitles checked" : "Description checked", true);
       const row = mediaToCheck(metadata, [file], sources, batchPrefix(batch)).find(entry => entry.page === page && entry.subtitles === subtitles);
       if (!row || row.text !== seen) throw new Error("These words changed meanwhile. Look at To check again.");
-      if (words === "") throw new Error(subtitles ? "Write the subtitles, or press OK to keep them." : "Write the description, or press OK to keep these words.");
+      if (words === "") throw new Error(subtitles ? "Write the subtitles, or press Cancel to keep them." : "Write the description, or press Cancel to keep these words.");
       const edit = words !== undefined && words !== row.text.trim();
       if (edit) batch.label = subtitles ? "Edit subtitles" : "Edit description";
       let next: MediaRecords;

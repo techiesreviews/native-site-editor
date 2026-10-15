@@ -26,6 +26,19 @@ export interface FileRowTarget {
  * the computer are uploaded to the folder they are dropped on. What each action does
  * is the caller's; this only wires the rows.
  */
+/** Once a drag leaves the explorer, the box steps aside so the code under it can take the
+ * dropped path (it covers the code below about 1700 px of window width); drop or cancel brings
+ * it back. Inside the box, rows still take drops to move files between folders. */
+function stepAsideWhenOut(explorer: HTMLElement) {
+  const done = new AbortController(), options = { capture: true, signal: done.signal };
+  document.addEventListener("dragover", (event) => {
+    if (!explorer.contains(event.target as Node)) explorer.classList.add("is-stepping-aside");
+  }, options);
+  const back = () => { explorer.classList.remove("is-stepping-aside"); done.abort(); };
+  document.addEventListener("drop", back, options);
+  document.addEventListener("dragend", back, options);
+}
+
 export function createFileRowActions(options: {
   /** Where the menu lives (inside the explorer popover, so it shows over it). */
   host: HTMLElement;
@@ -104,6 +117,8 @@ export function createFileRowActions(options: {
       event.dataTransfer?.setData("text/plain", target.path);
       if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
       line.classList.add("is-dragging");
+      const explorer = row.closest<HTMLElement>(".explorer");
+      if (explorer) stepAsideWhenOut(explorer);
     });
     row.addEventListener("dragend", (event) => {
       line.classList.remove("is-dragging");

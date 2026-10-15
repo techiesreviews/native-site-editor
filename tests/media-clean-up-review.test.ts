@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { parseMediaRecords, type RemovedMedia } from "../shared/media-records";
 import { mediaCleanUpSuggestions } from "../src/page-builder/media-clean-up";
 import {
-  bytesText, cleanedMessage, groupLine, itemLine, keepSelected, selectionLine, sizedSuggestions, undoEntries, undoneMessage,
+  bytesText, cleanedMessage, cleanUpTitle, groupLine, itemLine, keepSelected, selectionLine, sizedSuggestions, undoEntries, undoneMessage,
 } from "../src/page-builder/media-clean-up-review";
 import { mediaUsageRecords } from "../src/page-builder/media-usage";
 
@@ -24,6 +24,15 @@ test("sizes come from the library: a family's copies count with its main, groups
   assert.equal(sized.size, 3372);
   assert.equal(sized.count, 2);
   assert.equal(groupLine(sized.groups[0]), "2 files · 3 KB");
+});
+
+test("the groups screen's title names what all groups free together, counting a file once", () => {
+  const sized = sizedSuggestions(suggestions, { "media/hero.jpg": 2048, "media/hero-480.webp": 1024, "media/spare.svg": 300 });
+  assert.equal(cleanUpTitle(sized.groups), "Clean up · 3 KB");
+  assert.equal(cleanUpTitle([...sized.groups, sized.groups[0]]), "Clean up · 3 KB");
+  assert.equal(cleanUpTitle(sizedSuggestions(suggestions, { "media/hero.jpg": 2048 }).groups), "Clean up · at least 2 KB");
+  assert.equal(cleanUpTitle(sizedSuggestions(suggestions, {}).groups), "Clean up");
+  assert.equal(cleanUpTitle([]), "Clean up");
 });
 
 test("unknown sizes are never shown as exact: nothing when none is listed, at least when some are", () => {

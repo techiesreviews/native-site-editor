@@ -1,11 +1,20 @@
-import type { ImproveImagesRow, ImprovePicture } from "./improve-images";
+import type { ImproveChange, ImproveImagesRow, ImprovePicture } from "./improve-images";
 
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
 
-/** A row's second line: where it shows and what would change ("On 97 pages · 2 heavy pictures"). */
+/** A row's second line, in plain words: where it shows, how many pictures change and what they
+ * get ("On 97 pages · 4 pictures · lighter copies for phones"). Size details only count alone. */
 export function improveRowLine(row: ImproveImagesRow): string {
-  const what = row.summary.slice(row.summary.indexOf(": ", row.label.length) + 2);
-  return row.kind === "component" ? `On ${plural(row.reach ?? 0, "page")} · ${what}` : what;
+  const changing = row.pictures.filter(picture => picture.ticked && picture.changes.length);
+  const has = (...changes: ImproveChange[]) => changing.some(picture => picture.changes.some(change => changes.includes(change)));
+  const what = ([
+    [["bring-in"], "copies from other websites"], [["lighten"], "lighter files"], [["copies"], "lighter copies for phones"],
+    [["loop", "first-frame"], "lighter GIFs"], [["player"], "videos load on tap"],
+  ] as const).filter(([changes]) => has(...changes)).map(([, words]) => words as string);
+  if (!what.length && has("size", "sizes", "loading")) what.push("faster loading");
+  const count = new Set(changing.map(picture => picture.key)).size;
+  const line = count ? `${plural(count, "picture")} · ${what.join(", ")}` : "Every picture left as it is";
+  return row.kind === "component" ? `On ${plural(row.reach ?? 0, "page")} · ${line}` : line;
 }
 
 /** A picture's name in an opened row. */
@@ -25,8 +34,7 @@ export function improvePictureLine(picture: ImprovePicture): string {
     : has("first-frame") ? "GIF: sharing uses its first frame"
     : has("player") ? "Shows a picture until tapped"
     : has("copies") ? "Copies for smaller screens" : "";
-  const details = ["size", "sizes", "loading"].some(has) && !has("bring-in") && !has("lighten") ? "size details" : "";
-  return main && details ? `${main}, ${details}` : main || "Add size details";
+  return main || "Faster loading";
 }
 
 export type ImproveRowState = "done" | "unchanged" | "failed";

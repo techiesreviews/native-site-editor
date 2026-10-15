@@ -3,7 +3,7 @@ import { icon } from "../icons";
 import { mediaKind } from "./media-library-filter";
 import { removedMembersLabel, removedRows, restoreRefusal, type RemovedRow } from "./media-recently-removed";
 import { removedToday, RECENTLY_REMOVED_DAYS } from "./recently-removed";
-import { takeSheet, type LibrarySheet, type LibrarySheetContext } from "./media-library-sheet";
+import { sheetHead, takeSheet, type LibrarySheet, type LibrarySheetContext } from "./media-library-sheet";
 
 /** What Recently removed needs beyond the sheet context. */
 export interface RecentlyRemovedHost extends LibrarySheetContext {
@@ -27,16 +27,10 @@ export function showRecentlyRemoved(sheet: LibrarySheet, h: RecentlyRemovedHost)
       draw(active instanceof HTMLElement && element.contains(active) ? active.getAttribute("aria-label") ?? active.textContent ?? "" : null);
     };
     const version = sheet.version;
-    const head = node("header", "media-detail__head");
-    const back = button("", h.close, "media-detail__back");
-    back.setAttribute("aria-label", "Back"); back.append(icon("arrow-left", 20));
-    const title = node("h3", "", "Recently removed"); title.tabIndex = -1;
-    head.append(back, title);
-    element.append(head);
+    const { title } = sheetHead(element, "Recently removed", h.close, `Removed files stay here for ${RECENTLY_REMOVED_DAYS} days.`);
     if (!rows.length) {
-      element.append(node("p", "media-check__empty", `Nothing removed in the last ${RECENTLY_REMOVED_DAYS} days. Files you remove wait here for ${RECENTLY_REMOVED_DAYS} days.`));
+      element.append(node("p", "media-check__empty", `Nothing removed in the last ${RECENTLY_REMOVED_DAYS} days.`));
     } else {
-      element.append(node("p", "media-library__muted", `Removed files stay here for ${RECENTLY_REMOVED_DAYS} days. Restore puts a file back at its address, so pages that used it show it again.`));
       const list = node("ul", "media-check__list media-removed__list");
       rows.forEach((row, index) => list.append(drawRow(row, rows[index + 1])));
       element.append(list);
@@ -66,7 +60,7 @@ export function showRecentlyRemoved(sheet: LibrarySheet, h: RecentlyRemovedHost)
           const after = next && sheet.element.querySelector<HTMLElement>(`.media-check__row[data-path="${CSS.escape(next.path)}"] button`);
           (after ?? sheet.element.querySelector<HTMLElement>("h3"))?.focus();
         }
-      }), "button primary");
+      }));
       restore.setAttribute("aria-label", `Restore ${row.name}`);
       const actions = node("div", "media-check__actions");
       actions.append(restore);

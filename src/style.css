@@ -903,6 +903,15 @@ dd {
 .explorer.dropdown-panel:popover-open {
   display: flex;
 }
+/* A Files row dragged out of the explorer: the box steps aside (faded, and the pointer passes
+   through it) so the code under it takes the drop; it comes back on drop or cancel. */
+.explorer.is-stepping-aside {
+  pointer-events: none;
+  opacity: 0.15;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .explorer.dropdown-panel { transition: opacity 150ms ease-out; }
+}
 /* The shown tab fills the box; its own list scrolls inside. */
 .explorer-panel:not([hidden]) {
   flex: 1;

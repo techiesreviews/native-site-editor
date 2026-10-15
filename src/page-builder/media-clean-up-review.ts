@@ -50,8 +50,14 @@ export function itemLine(item: SizedItem) {
   return `${bytes ? `${bytes} · ` : ""}No uses found${copies ? ` · with its ${copies} ${copies === 1 ? "copy" : "copies"}` : ""}`;
 }
 
-/** The limit of any check, the groups screen's one line. */
-export const cleanUpLimit = "Files used only from outside the site (a shared PDF, a newsletter picture) or by addresses a script builds can't be seen. Mark them Always keep.";
+/** The limit of any check, the groups screen's one helper line. */
+export const cleanUpLimit = "Files used only from outside the site? Mark them Always keep.";
+
+/** The groups screen's title names what every group frees together: "Clean up · 271 KB". */
+export function cleanUpTitle(groups: readonly SizedGroup[]) {
+  const items = [...new Map(groups.flatMap(group => group.items).map(item => [item.main, item])).values()];
+  return items.length ? withBytes("Clean up", items) : "Clean up";
+}
 
 /** The review's footer: "2 selected · 3 KB". */
 export function selectionLine(items: readonly SizedItem[], selected: ReadonlySet<string>) {

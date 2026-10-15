@@ -536,7 +536,7 @@ test("To check lists an agent's description; OK clears the mark, and it stays cl
   await expect(agentMark(page, "images/placeholder.svg")).toBeVisible();
   await expect(agentMark(page, "images/studio-desk.svg")).toHaveCount(0);
   await details(page, "images/placeholder.svg");
-  await expect(library.getByText("By agent: press OK in To check, or change the words here.", { exact: true })).toBeVisible();
+  await expect(library.getByText("By agent: press Looks right in To check, or change the words here.", { exact: true })).toBeVisible();
   await library.getByRole("button", { name: "Back", exact: true }).click();
 
   await toCheck(page, "To check (1)");
@@ -544,7 +544,7 @@ test("To check lists an agent's description; OK clears the mark, and it stays cl
   await expect(row).toHaveCount(1);
   await expect(row).toContainText("placeholder.svg");
   await expect(row.locator(".media-check__words")).toHaveText("A green placeholder, by an agent");
-  await row.getByRole("button", { name: "OK placeholder.svg", exact: true }).click();
+  await row.getByRole("button", { name: "Looks right placeholder.svg", exact: true }).click();
   await expect(library.getByText(/^Nothing to check\./)).toBeVisible();
   await expect(library.getByRole("heading", { name: "To check", exact: true })).toBeFocused();
   await expect.poll(() => records(page)).not.toContain("byAgent");
@@ -591,7 +591,7 @@ test("To check edits an agent's own words for a place on the page, in one Undo s
   // Blank words are refused and the field stays; Cancel writes nothing.
   await words.fill(" ");
   await library.getByRole("button", { name: "Save placeholder.svg on Home", exact: true }).click();
-  await expect(library.getByRole("status").last()).toContainText("Write the description, or press OK to keep these words.");
+  await expect(library.getByRole("status").last()).toContainText("Write the description, or press Cancel to keep these words.");
   await expect(words).toBeFocused();
   await library.getByRole("button", { name: "Cancel placeholder.svg on Home", exact: true }).click();
   await expect(row.getByRole("button", { name: "Edit placeholder.svg on Home", exact: true })).toBeFocused();

@@ -6,7 +6,7 @@ import { OUTSIDE_PICTURE_LABELS } from "./outside-pictures";
 import type { ImproveImagesPlan, ImproveImagesRow, ImprovePicture } from "./improve-images";
 import { runMaps, type ImproveImagesSession, type LeftPicture, type RowOutcome } from "./improve-images-run";
 import { improvePictureLine, improvePictureName, improveProgress, improveRowLine, improveRowStatus, improveRunMessage, type ImproveRowState } from "./improve-images-words";
-import { takeSheet, type LibrarySheet, type LibrarySheetContext } from "./media-library-sheet";
+import { sheetHead, takeSheet, type LibrarySheet, type LibrarySheetContext } from "./media-library-sheet";
 import type { MediaImproveEntry } from "./media-picker";
 import "./media-clean-up-review.css";
 import "./media-improve.css";
@@ -67,12 +67,7 @@ export function showImproveImages(sheet: LibrarySheet, h: ImproveHost) {
       const active = document.activeElement;
       draw(active instanceof HTMLElement && element.contains(active) ? active.dataset.focusKey ?? false : false);
     };
-    const head = node("header", "media-detail__head");
-    const back = button("", () => h.close(), "media-detail__back");
-    back.setAttribute("aria-label", "Back"); back.dataset.focusKey = "back"; back.append(icon("arrow-left", 20));
-    const title = node("h3", "", "Improve images"); title.tabIndex = -1;
-    head.append(back, title);
-    element.append(head);
+    const { title } = sheetHead(element, "Improve images", () => h.close(), plan?.rows.length ? "Open a row to choose which pictures change." : undefined);
     drawUndo();
     if (running) {
       const progress = node("div", "media-cleanup__notice media-improve__progress");
@@ -111,7 +106,6 @@ export function showImproveImages(sheet: LibrarySheet, h: ImproveHost) {
     }
 
     function drawRows(rows: ImproveImagesRow[]) {
-      element.append(node("p", "media-library__muted", "Lighter files, copies for every screen and size details. Open a row to leave a picture as it is."));
       const list = node("ul", "media-improve__rows");
       for (const row of rows) list.append(drawRow(row));
       const fix = rows.filter(row => row.count);

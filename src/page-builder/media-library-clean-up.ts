@@ -4,12 +4,12 @@ import { icon } from "../icons";
 import { cleanUpMenuItem } from "./media-badge";
 import type { MediaCleanUpKind } from "./media-clean-up";
 import {
-  cleanedMessage, cleanUpGroupNames, cleanUpLimit, groupLine, itemLine, keepSelected,
+  bytesText, cleanedMessage, cleanUpGroupNames, cleanUpLimit, cleanUpTitle, groupLine, itemLine, keepSelected,
   selectionLine, sizedSuggestions, undoEntries, undoneMessage, type SizedItem, type SizedSuggestions,
 } from "./media-clean-up-review";
 import { basename, mediaKind } from "./media-library-filter";
 import { removalNotice } from "./media-recently-removed";
-import { takeSheet, type LibrarySheet, type LibrarySheetContext } from "./media-library-sheet";
+import { sheetHead, takeSheet, type LibrarySheet, type LibrarySheetContext } from "./media-library-sheet";
 import type { MediaCleanUpEntry } from "./media-picker";
 import "./media-clean-up-review.css";
 
@@ -25,10 +25,12 @@ const checking = "Checking which files are used again. Removing waits until it i
 
 type Phase = { at: "groups" } | { at: "review"; kind: MediaCleanUpKind } | { at: "confirm"; kind: MediaCleanUpKind };
 
+let pickIds = 0;
+
 /** The Clean up review (ticket 10, the Tiles mockup): groups with preview collages, count and size;
- * a group's files as larger pictures, each chosen on its own; a confirmation with Keep files; then
- * Undo. Removed files go to Recently removed. Its own screen with Back; it redraws when the library
- * refreshes or the use check publishes. */
+ * a group's files as tiles of the media grid with their size, each chosen on its own (audit slice
+ * 111); a confirmation with Keep files; then Undo. Removed files go to Recently removed. Its own
+ * screen with Back; it redraws when the library refreshes or the use check publishes. */
 export function showCleanUp(sheet: LibrarySheet, h: CleanUpHost) {
   let phase: Phase = { at: "groups" };
   let selected = new Set<string>();
@@ -57,12 +59,7 @@ export function showCleanUp(sheet: LibrarySheet, h: CleanUpHost) {
     const { live, badge, steady } = current();
     // While the site is checked again the open review stays, but nothing can be removed until it is done.
     const actionable = live?.state === "ready";
-    const head = node("header", "media-detail__head");
-    const back = button("", () => phase.at === "groups" ? h.close() : go(phase.at === "confirm" ? { at: "review", kind: phase.kind } : { at: "groups" }), "media-detail__back");
-    back.setAttribute("aria-label", "Back"); back.dataset.focusKey = "back"; back.append(icon("arrow-left", 20));
-    const title = node("h3", "", ""); title.tabIndex = -1;
-    head.append(back, title);
-    element.append(head);
+    const { title } = sheetHead(element, "", () => phase.at === "groups" ? h.close() : go(phase.at === "confirm" ? { at: "review", kind: phase.kind } : { at: "groups" }));
 
     if (phase.at === "groups") drawGroups();
     else {
@@ -79,7 +76,9 @@ export function showCleanUp(sheet: LibrarySheet, h: CleanUpHost) {
     (target || title).focus();
 
     function drawGroups() {
-      title.textContent = "Clean up";
+      const ready = live?.state === "ready" && live.count > 0;
+      title.textContent = ready ? cleanUpTitle(live.groups) : "Clean up";
+      if (ready) element.append(node("p", "media-library__muted", cleanUpLimit));
       // Undo is offered while the files Clean up removed last are all still in Recently removed.
       const removed = h.memory.undo;
       if (removed && undoEntries(h.library().removed, removed).length !== removed.length) h.memory.undo = undefined;
@@ -99,7 +98,6 @@ export function showCleanUp(sheet: LibrarySheet, h: CleanUpHost) {
         notice.append(node("span", "", cleanedMessage(removed).split(". ")[0] + "."), again);
         element.append(notice);
       }
-      const ready = live?.state === "ready" && live.count > 0;
       if (!ready) element.append(node("p", "media-check__empty", live ? cleanUpMenuItem(live).disabled ?? "" : "Still checking which files are used."));
       else {
         const list = node("ul", "media-cleanup__groups");
@@ -116,7 +114,6 @@ export function showCleanUp(sheet: LibrarySheet, h: CleanUpHost) {
         }
         element.append(list);
       }
-      element.append(node("p", "media-cleanup__limit", cleanUpLimit));
       if (ready && badge?.show) {
         const dismiss = button("Dismiss", () => { h.cleanUp.dismiss(); draw(); }, "button secondary");
         const row = node("div", "media-cleanup__dismiss");
@@ -131,25 +128,24 @@ export function showCleanUp(sheet: LibrarySheet, h: CleanUpHost) {
         selected = items.every(item => selected.has(item.main)) ? new Set() : new Set(items.map(item => item.main)); draw("select-all");
       }, "button secondary media-cleanup__select-all");
       toggle.dataset.focusKey = "select-all";
-      element.append(node("p", "media-library__muted", "Choose the files to remove. Copies of an image go with it."), toggle);
-      const grid = node("ul", "media-cleanup__photos");
+      element.append(node("p", "media-library__muted", "Choose the files to remove; their copies go with them."), toggle);
+      // The media grid's tiles: 3 across on phones, the size on each, an inset ring when ticked.
+      const grid = node("ul", "media-library__grid media-cleanup__photos");
       for (const item of items) {
-        const card = node("li", "media-cleanup__photo"); card.dataset.path = item.main;
-        const label = node("label", "media-cleanup__pick");
+        const card = node("li", "media-library__card media-cleanup__photo"); card.dataset.path = item.main;
         const check = input(`Select ${basename(item.main)}`, "checkbox"); check.checked = selected.has(item.main);
-        check.dataset.focusKey = `pick:${item.main}`;
+        check.id = `media-cleanup-pick-${++pickIds}`; check.dataset.focusKey = `pick:${item.main}`;
         check.addEventListener("change", () => {
           if (check.checked) selected.add(item.main); else selected.delete(item.main);
-          card.classList.toggle("is-selected", check.checked);
           paintFooter();
         });
-        card.classList.toggle("is-selected", check.checked);
-        const round = node("span", "media-cleanup__check"); round.append(check);
-        const name = node("strong", "", basename(item.main)); name.title = item.main;
-        const text = node("span", "media-cleanup__photo-text");
-        text.append(name, node("span", "media-library__muted", itemLine(item)));
-        label.append(preview(item.main, true), round, text);
-        card.append(label);
+        const round = node("label", "media-library__select"); round.append(check);
+        const picture = node("label", "media-library__thumbnail"); picture.htmlFor = check.id;
+        const name = node("span", "media-library__name");
+        name.append(node("span", "media-library__name-head", basename(item.main)), node("span", "media-cleanup__size", bytesText([item])));
+        name.title = item.main;
+        picture.append(...tilePicture(card, item.main), name);
+        card.append(node("span", "media-library__shade"), picture, round);
         grid.append(card);
       }
       const footer = node("div", "media-cleanup__footer");
@@ -203,12 +199,23 @@ export function showCleanUp(sheet: LibrarySheet, h: CleanUpHost) {
     }
   }
 
+  /** A review tile's picture, or (like the media grid) the file's type on a clean surface. */
+  function tilePicture(card: HTMLElement, path: string): Node[] {
+    const surface = () => [icon("file", 28), node("span", "media-library__format", path.split(".").pop()?.toUpperCase() ?? "FILE")];
+    if (mediaKind(path) !== "image") { card.classList.add("is-file"); return surface(); }
+    const image = node("img"); image.alt = ""; image.decoding = "async";
+    image.addEventListener("error", () => { card.classList.add("is-file"); image.replaceWith(...surface()); }, { once: true });
+    void h.cache.get(path).then(data => { if (h.alive() && image.isConnected) image.src = data.url; })
+      .catch(() => { if (image.isConnected) { card.classList.add("is-file"); image.replaceWith(...surface()); } });
+    return [image];
+  }
+
   /** The picture, or a clean surface with the file's type. */
-  function preview(path: string, large = false) {
-    const frame = node("span", large ? "media-cleanup__preview" : "media-check__preview");
+  function preview(path: string) {
+    const frame = node("span", "media-check__preview");
     const surface = () => {
       frame.classList.add("is-file");
-      frame.replaceChildren(icon("file", large ? 28 : 20), node("span", "media-library__format", path.split(".").pop()?.toUpperCase() ?? "FILE"));
+      frame.replaceChildren(icon("file", 20), node("span", "media-library__format", path.split(".").pop()?.toUpperCase() ?? "FILE"));
     };
     if (mediaKind(path) !== "image") { surface(); return frame; }
     const image = node("img"); image.alt = ""; image.decoding = "async";

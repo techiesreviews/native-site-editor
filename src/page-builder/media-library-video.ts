@@ -82,8 +82,8 @@ export function mediaDetailParts(h: DetailHost, path: string, meta: MediaMetadat
     line.append(node("span", file ? "" : "media-library__muted", file ? basename(file) : "None yet"), buttons, chooser);
     const hint = node("p", "media-library__hint", video ? "A .vtt or .srt file. Visitors get a CC button." : "A .vtt or .srt file. Visitors get a Transcript button.");
     const part = row("Subtitles", line, hint);
-    // Written by an agent (ticket 13) until OK in To check.
-    if (file && meta.subtitlesByAgent && meta.subtitles === file) part.append(node("p", "media-library__by-agent", "By agent: press OK in To check, or replace them here."));
+    // Written by an agent (ticket 13) until Looks right in To check.
+    if (file && meta.subtitlesByAgent && meta.subtitles === file) part.append(node("p", "media-library__by-agent", "By agent: press Looks right in To check, or replace them here."));
     parts.push(part);
   }
   return parts;

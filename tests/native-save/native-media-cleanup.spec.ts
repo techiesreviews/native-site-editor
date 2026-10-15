@@ -53,10 +53,11 @@ test("the Media tab counts unused files from anywhere; Dismiss hides the count u
   // Clean up in More shows the same count and opens the review; the Always keep file is not suggested.
   await pane(page).getByRole("button", { name: "More", exact: true }).click();
   await page.getByRole("menuitem", { name: "Clean up (2)", exact: true }).click();
-  await expect(pane(page).getByRole("heading", { name: "Clean up", exact: true })).toBeFocused();
-  await expect(pane(page).getByText(/^Files used only from outside the site .* Mark them Always keep\.$/)).toBeVisible();
+  await expect(pane(page).getByRole("heading", { name: /^Clean up( · .+)?$/ })).toBeFocused();
+  await expect(pane(page).getByRole("heading", { name: /^Clean up · \d+ B$/ })).toBeVisible();
+  await expect(pane(page).getByText("Files used only from outside the site? Mark them Always keep.", { exact: true })).toBeVisible();
   await pane(page).getByRole("button", { name: /^Nothing uses these 2 files · / }).click();
-  await expect(pane(page).locator(".media-cleanup__photo strong")).toHaveText(["spare.svg", "studio-desk.svg"]);
+  await expect(pane(page).locator(".media-cleanup__photo .media-library__name-head")).toHaveText(["spare.svg", "studio-desk.svg"]);
   // Each file is chosen on its own; Select all and Clear selection follow what is checked now.
   const pick = (name: string) => pane(page).getByRole("checkbox", { name: `Select ${name}`, exact: true });
   const sum = pane(page).locator(".media-cleanup__sum");
@@ -77,13 +78,13 @@ test("the Media tab counts unused files from anywhere; Dismiss hides the count u
 
   // Dismiss hides the count everywhere, also after a reload; Clean up keeps its count.
   await pane(page).getByRole("button", { name: "Dismiss", exact: true }).click();
-  await expect(pane(page).getByRole("heading", { name: "Clean up", exact: true })).toBeFocused();
+  await expect(pane(page).getByRole("heading", { name: /^Clean up( · .+)?$/ })).toBeFocused();
   await expect(tab(page).locator(".media-count")).toBeHidden();
   await expect(toggleCount(page)).toBeHidden();
   await expect(tab(page)).toHaveAccessibleDescription("");
   await expect(pane(page).getByRole("button", { name: "Dismiss", exact: true })).toHaveCount(0);
   await pane(page).getByRole("button", { name: "Back", exact: true }).click();
-  await expect(pane(page).getByRole("heading", { name: "Clean up", exact: true })).toHaveCount(0);
+  await expect(pane(page).getByRole("heading", { name: /^Clean up( · .+)?$/ })).toHaveCount(0);
   await expect(pane(page).getByRole("button", { name: "More", exact: true })).toBeFocused();
   await reopen(page);
   await page.locator("#explorer-toggle").click();
@@ -202,7 +203,8 @@ test("unused images appear in Clean up; removing them puts them in Recently remo
   await expect(pane(page).getByRole("heading", { name: "Nothing uses these", exact: true })).toBeFocused();
   const spare = pane(page).locator('.media-cleanup__photo[data-path="images/spare.svg"]');
   await expect.poll(() => spare.locator("img").evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
-  await expect(spare).toContainText("No uses found");
+  // A tile names the file and the size it frees; the confirmation says what the check found.
+  await expect(spare.locator(".media-cleanup__size")).toHaveText(/^\d+ B$/);
   const review = pane(page).getByRole("button", { name: "Review removal", exact: true });
   await expect(review).toBeDisabled();
   await pane(page).getByRole("checkbox", { name: "Select spare.svg", exact: true }).check();
@@ -213,11 +215,12 @@ test("unused images appear in Clean up; removing them puts them in Recently remo
   await review.click();
   await expect(pane(page).getByRole("heading", { name: "Remove 2 files?", exact: true })).toBeFocused();
   await expect(pane(page).getByText("Nothing on the site uses these files.", { exact: true })).toBeVisible();
+  await expect(pane(page).locator('.media-cleanup__confirm [data-path="images/spare.svg"]')).toContainText("No uses found");
   await pane(page).getByRole("button", { name: "Keep files", exact: true }).click();
   await expect(pane(page).getByRole("checkbox", { name: "Select spare.svg", exact: true })).toBeChecked();
   await review.click();
   await pane(page).getByRole("button", { name: "Remove 2 files", exact: true }).click();
-  await expect(pane(page).getByRole("heading", { name: "Clean up", exact: true })).toBeFocused();
+  await expect(pane(page).getByRole("heading", { name: /^Clean up( · .+)?$/ })).toBeFocused();
   await expect(pane(page).locator(".media-cleanup__notice")).toHaveText("Removed 2 files.Undo");
   await expect(page.locator(".editor-toast__text")).toContainText("Removed 2 files. They stay in Recently removed for 30 days.");
   await expect(pane(page).locator('.media-library__card[data-path="images/spare.svg"]')).toHaveCount(0);
@@ -239,4 +242,30 @@ test("unused images appear in Clean up; removing them puts them in Recently remo
   await expect(pane(page).locator('.media-library__card[data-path="images/spare.svg"]')).toBeVisible();
   await more("Recently removed");
   await expect(pane(page).getByText(/^Nothing removed in the last 30 days\./)).toBeVisible();
+});
+
+test("on a phone the Clean up review is the media grid: three tiles a row, a ticked tile keeps its whole picture in a 3 px ring", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(baseURL!);
+  await commit(page, baseURL, [...["a", "b", "c", "d"].map(name => [`images/spare-${name}.svg`, svg(name)] as [string, string]), [".editor/media.json", quiet]]);
+  await open(page, baseURL);
+  await page.locator("#explorer-toggle").click();
+  await tab(page).click();
+  await pane(page).getByRole("button", { name: "More", exact: true }).click();
+  await page.getByRole("menuitem", { name: /^Clean up/ }).click();
+  await pane(page).getByRole("button", { name: /^Nothing uses these/ }).click();
+  const tiles = pane(page).locator(".media-cleanup__photo");
+  await expect(tiles).toHaveCount(5);
+  const boxes = await tiles.evaluateAll(cards => cards.map(card => { const box = card.getBoundingClientRect(); return { top: Math.round(box.top), width: box.width, height: box.height }; }));
+  expect(boxes.slice(0, 3).map(box => box.top)).toEqual([boxes[0].top, boxes[0].top, boxes[0].top]);
+  expect(boxes[3].top).toBeGreaterThan(boxes[0].top);
+  for (const box of boxes) expect(Math.abs(box.width - box.height)).toBeLessThanOrEqual(1);
+  const first = tiles.first();
+  await first.locator(".media-library__thumbnail").click();
+  await expect(first.getByRole("checkbox")).toBeChecked();
+  expect(await first.evaluate(card => getComputedStyle(card, "::after").boxShadow)).toMatch(/0px 0px 0px 3px inset$/);
+  // The picture still fills the tile: no band above or below it.
+  const [card, picture] = await Promise.all([first.boundingBox(), first.locator("img").boundingBox()]);
+  expect(picture).toEqual(card);
+  await expect(pane(page).getByRole("button", { name: "Review removal", exact: true })).toBeInViewport({ ratio: 1 });
 });
