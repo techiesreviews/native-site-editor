@@ -192,6 +192,7 @@ Lex reviewed the editor on the preview and asked for these touch-ups.
 | --- | --- | --- |
 | [122 Gallery polish from Lex's review](tickets/122-gallery-polish.md) | claude | 121 |
 | [123 File details redesign: a modern asset detail view](tickets/123-file-details-redesign.md) | claude | 108 |
+| [124 The Files tab, redesigned](tickets/124-files-tab.md) | claude | 104 |
 | [125 The Pages tab looks better (Mobbin-led redesign)](tickets/125-pages-tab.md) | claude | 104 |
 
 ## Finding the frontier
