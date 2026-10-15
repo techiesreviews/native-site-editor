@@ -8,7 +8,7 @@ its own assets by setting `STARTER_SOURCE`:
 | `STARTER_SOURCE` | Starter site |
 | --- | --- |
 | unset | template repository tarball (production and generic deploys) |
-| `native-static` | `public/native-static-starter/v561da7c/`, read through `ASSETS` only |
+| `native-static` | `public/native-static-starter/vc597698/`, read through `ASSETS` only |
 | anything else | Create site and Start your site fail with a clear error |
 
 Both entry points, Create site (`POST /api/repositories` with
@@ -24,11 +24,12 @@ npx wrangler dev --var STARTER_SOURCE:native-static
 
 ## The vendored files
 
-`v561da7c` is starter commit `561da7c` (its `dev` branch): six ready routes
+`vc597698` is starter commit `c597698` (its `dev` branch): six ready routes
 (`index.html`, `about/`, three `work/` pages, `404.html`), `styles/` (including
 `tones.css` and `media-player.css`), `scripts/` (the media player, which no
 page links yet), `images/`, `robots.txt`, `components/` (templates, CSS and
-`components.js`) and `AGENTS.md` (with the Components and Media chapters),
+`components.js`), `AGENTS.md` (with the Components and Media chapters) and an empty `.nojekyll`
+(inline in the manifest, with `.editor/config.json`),
 copied byte for byte.
 Each route loads `<script type="module" src="/components/components.js"></script>`;
 the site loader fetches component templates and CSS without a build step.
@@ -44,5 +45,5 @@ template.
 To move to a new starter version, add a new `v<sha>` folder from the
 starter's tracked website files (everything except `.assetsignore`,
 `CLAUDE.md`, `.gitignore`, `README.md`, `wrangler.jsonc` and `.github/`;
-`.editor/config.json` goes inline in the manifest), remove the old folder and
+`.editor/config.json` and `.nojekyll` go inline in the manifest), remove the old folder and
 update `NATIVE_STARTER_VERSION`.

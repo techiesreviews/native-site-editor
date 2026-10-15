@@ -1,5 +1,7 @@
-Byte-identical snapshot of `native-site-editor-starter` at commit `561da7c`
-on the starter's `dev` branch: media manager slice 75's Media chapter rules
+Byte-identical snapshot of `native-site-editor-starter` at commit `c597698`
+on the starter's `dev` branch: media manager slice 81's `.nojekyll` and the
+sub-folder rules in `AGENTS.md` (root links and the Media chapter), on top of
+`561da7c`, slice 75's Media chapter rules
 (agents run Improve images), on top of `8f55ecc`, slice 69's Media chapter rules
 (agents place video, audio, downloads and Online videos; loop, stills,
 subtitles), on top of `3aa1b13`, slice 96's player fix (a looping
@@ -29,7 +31,7 @@ archive from a starter checkout (`<starter>`):
 
 ```sh
 find fixtures/actual-starter -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
-git -C <starter> archive 561da7c | tar -x -C fixtures/actual-starter
+git -C <starter> archive c597698 | tar -x -C fixtures/actual-starter
 ```
 
 When updating the snapshot, replace the commit in this provenance and command.

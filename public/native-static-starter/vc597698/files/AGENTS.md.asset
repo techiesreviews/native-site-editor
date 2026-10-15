@@ -20,13 +20,14 @@ media/<kind>/                        files added in the editor's Media (images, 
 scripts/media-player.js              the video and audio player (pages with media load it)
 styles/media-player.css              the players' and download cards' look
 robots.txt                           served as is
-_redirects                           optional: `/old/ /new/ 301` lines (the editor writes it when a page moves)
+_redirects                           optional: `/old/ /new/ 301` lines (the editor writes it when a page moves; GitHub Pages ignores it)
+.nojekyll                            empty; tells GitHub Pages to publish every file as is
 .editor/config.json                  editor-only: { "site": { "name", "url" } }; the site never loads it
 ```
 
 - Every `.html` file is a page, except under `components/` and files or folders whose name starts with `.` or `_`. `a/b/index.html` is `/a/b/`; any other `x.html` is `/x.html`. Prefer folders with `index.html`.
-- Links and asset paths are root links: `href="/about/"`, `href="/about/#contact"`, `src="/images/studio-desk.svg"`. A section on the same page is `href="#work"`. They work on any host at a domain root and through any local server, not from `file://`.
-- The starter's images live in `images/`; files added in the editor's Media go to `media/images/`, `media/videos/`, `media/audio/` or `media/downloads/` (see Media). Reference both with root links (`/images/<file>`, `/media/images/<file>`).
+- Links and asset paths are root links: `href="/about/"`, `href="/about/#contact"`, `src="/images/studio-desk.svg"`. A section on the same page is `href="#work"`. They work on any host at a domain root and through any local server, not from `file://`. When the site's address (`site.url` in `.editor/config.json`) is in a sub-folder, such as `https://user.github.io/my-site/`, every root link starts with that folder: `href="/my-site/about/"`, `src="/my-site/images/studio-desk.svg"`. The editor writes it, and changing the address in Site settings moves every link.
+- The starter's images live in `images/`; files added in the editor's Media go to `media/images/`, `media/videos/`, `media/audio/` or `media/downloads/` (see Media). Reference both with root links (`/images/<file>`, `/media/images/<file>`, with the site's folder first when it has one).
 
 ## Pages
 
@@ -182,6 +183,7 @@ Media work goes through the open editor tab, like every agent edit. Each change 
 
 ### Folders and names
 - The editor stores files the user adds by kind in `media/images/`, `media/videos/`, `media/audio/` or `media/downloads/`; a folder chosen in Files wins. Existing files keep where they are.
+- Media addresses on a sub-folder site start with its folder, for example `/my-site/media/images/holiday-photo.webp`. place_media and the other media tools write these addresses; do not hand-write them.
 - Names are tidy, lowercase and hyphenated: `Holiday Photo.JPG` becomes `media/images/holiday-photo.webp`, then `holiday-photo-2.webp` if the name is taken.
 - A picture's smaller copies sit beside it as `holiday-photo-480.webp`, `holiday-photo-960.webp` and `holiday-photo-1600.webp`, forming its Image family with any kept original in `media/originals/`.
 - Place the main file. Never place, link or hand-pick a copy or an original; place_media chooses the copies.

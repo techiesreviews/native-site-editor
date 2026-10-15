@@ -1,6 +1,6 @@
 {
-  "version": "561da7c",
-  "source": "techiesreviews/native-site-editor-starter@561da7c",
+  "version": "c597698",
+  "source": "techiesreviews/native-site-editor-starter@c597698",
   "files": [
     {
       "path": "404.html",
@@ -9,8 +9,8 @@
     },
     {
       "path": "AGENTS.md",
-      "size": 37646,
-      "sha256": "d747d7fa9b44c2cb53bb26cd09af70c4f30199fdaa54fc02136934ea58de8c81"
+      "size": 38326,
+      "sha256": "91805b8a23303eeeb991703de20cc45bbd8caa40248275704c882a5bd0bb1562"
     },
     {
       "path": "about/index.html",
@@ -217,6 +217,10 @@
     {
       "path": ".editor/config.json",
       "content": "{\n  \"site\": {\n    \"name\": \"Larkspur Studio\",\n    \"url\": \"https://native-site-editor-starter-test.lexvd.workers.dev\"\n  }\n}\n"
+    },
+    {
+      "path": ".nojekyll",
+      "content": ""
     }
   ]
 }
