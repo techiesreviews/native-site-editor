@@ -24,7 +24,6 @@ export interface MediaBatchPorts {
 }
 
 /** Atomic staging keeps the host's source receipts, upload rollback and single Undo step. */
-// Atomic staging, source receipts, upload rollback and one Undo remain host-owned.
 // Undo is recorded on the page open when the batch was asked for (`openAtStart`); a switch while loading refuses.
 export async function applyMediaBatch(ports: MediaBatchPorts, scope: DraftScope, stamp: Stamp, batch: MediaWorkspaceBatch, openAtStart: string | undefined) {
   const [{ applyMediaWorkspaceBatch }, { mediaDraftTransaction }, { MEDIA_RECORDS_PATH }] = await ports.load();

@@ -1,5 +1,5 @@
 import { mediaFamilyOf, renamedFamily, familyMembers } from "../page-builder/media-families";
-import { isRenamableMedia, suggestMediaName } from "../page-builder/media-names";
+import { isRenamableMedia, mediaFileName, suggestMediaName } from "../page-builder/media-names";
 import { pageLinkSources } from "./pages-controller";
 import { filesLinkingTo, linkNote, protectedPathProblem, type FileOperation } from "../native-files";
 import { nativePageRoute } from "../../shared/native-routes";
@@ -124,13 +124,23 @@ export function createLazyFileOperationsController(ports: FileOperationsPorts, l
   return {
     ...checks,
     async moveFileTarget(this: void, ...args: Parameters<FileOperationsController["moveFileTarget"]>) {
-      const proof = capture(args[0]);
+      // What is refused without asking GitHub is refused at once, as before, without the chunk.
+      const [source, value, operation] = args;
+      const to = checks.isMediaTarget(source) && operation === "rename" ? value.slice(0, value.lastIndexOf("/") + 1) + mediaFileName(source.path, value.split("/").at(-1)!) : value;
+      const problem = checks.fileMoveProblem(source, to, operation);
+      if (problem) return problem;
+      if (to === source.path) return undefined;
+      const proof = capture(source);
       const actions = await get();
       if (!proof.holds()) return changed;
       return actions.moveFileTarget(...args);
     },
     async deleteFileTarget(this: void, ...args: Parameters<FileOperationsController["deleteFileTarget"]>) {
-      const proof = capture(args[0]);
+      const target = args[0];
+      if (target.gone) return `${target.path} is deleted already.`;
+      const guarded = checks.protectedProblem(target, "delete");
+      if (guarded) { ports.errorMessage(new Error(guarded)); ports.refuse(guarded); return guarded; }
+      const proof = capture(target);
       // Keep the original index wait and refusal order even when the action chunk is still loading.
       const [actions, indexed] = await Promise.all([get(), ports.ensureNativeTextIndex()]);
       if (indexed && proof.since.holds()) { ports.errorMessage(new Error(indexed)); return indexed; }
@@ -141,6 +151,7 @@ export function createLazyFileOperationsController(ports: FileOperationsPorts, l
       return actions.deleteFileTarget(...args);
     },
     async duplicateFileTarget(this: void, ...args: Parameters<FileOperationsController["duplicateFileTarget"]>) {
+      if (!ports.draftScope() || args[0].folder || args[0].gone) return;
       const since = ports.edits.stamp();
       const actions = await get();
       if (!since.holds()) { ports.errorMessage(new Error(changed)); ports.refuse(changed); return; }

@@ -602,3 +602,21 @@ test("lazy Delete keeps the source-change notice when the same branch resyncs", 
   assert.equal(await pending, "The repository or source changed meanwhile. Try again.");
   assert.deepEqual(f.errors, ["The repository or source changed meanwhile. Try again."]);
 });
+
+test("lazy Files actions refuse what needs no GitHub at once, without the chunk or the index", async () => {
+  const f = fixture(true);
+  let loads = 0, indexed = 0;
+  f.ports.ensureNativeTextIndex = async () => { indexed++; return undefined; };
+  const controller = createLazyFileOperationsController(f.ports, () => { loads++; return new Promise(() => {}); });
+  const home = { path: "index.html", name: "index.html", folder: false };
+  const refusal = await controller.deleteFileTarget(home);
+  assert.ok(refusal);
+  assert.deepEqual(f.errors, [refusal]);
+  assert.deepEqual(f.refused, [refusal]);
+  assert.equal(await controller.deleteFileTarget({ ...home, path: "gone.html", name: "gone.html", gone: true }), "gone.html is deleted already.");
+  assert.match((await controller.moveFileTarget({ path: "style.css", name: "style.css", folder: false }, "about", "rename"))!, /already exists/);
+  assert.equal(await controller.moveFileTarget({ path: "style.css", name: "style.css", folder: false }, "style.css", "rename"), undefined);
+  await controller.duplicateFileTarget({ path: "about", name: "about", folder: true });
+  assert.equal(loads, 0);
+  assert.equal(indexed, 0);
+});
