@@ -48,12 +48,12 @@ test("heavy JPEGs show a small copy of their picture, never the document icon", 
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto(baseURL!);
   // About 2.2 MB (read whole, once refused over 2 MB) and about 6 MB (streamed raw from GitHub).
-  const [middle, large] = [await noisyJpeg(page, 1150, 1150), await noisyJpeg(page, 2000, 1700)];
+  const [middle, large] = [await noisyJpeg(page, 1620, 1620), await noisyJpeg(page, 2400, 2100)];
   expect(middle.length * 3 / 4).toBeGreaterThan(2.1 * 1024 * 1024);
-  expect(large.length * 3 / 4).toBeGreaterThan(4 * 1024 * 1024);
+  expect(large.length * 3 / 4, "its base64 JSON is over the 4 MB read").toBeGreaterThan(3.2 * 1024 * 1024);
   await seed(page, baseURL, [{ path: "images/allotment-harvest.jpg", base64: middle }, { path: "images/workshop-panorama.jpg", base64: large }]);
   await open(page, baseURL);
-  for (const [path, size] of [["images/allotment-harvest.jpg", { width: 480, height: 480 }], ["images/workshop-panorama.jpg", { width: 565, height: 480 }]] as const) {
+  for (const [path, size] of [["images/allotment-harvest.jpg", { width: 480, height: 480 }], ["images/workshop-panorama.jpg", { width: 549, height: 480 }]] as const) {
     await tile(page, path).scrollIntoViewIfNeeded();
     await expect.poll(() => drawn(page, path), { timeout: 30_000 }).toMatchObject({ ...size, src: expect.stringMatching(/^blob:/) });
     await expect(tile(page, path)).not.toHaveClass(/is-file/);
@@ -129,7 +129,7 @@ test("phones: search keeps most of the One bar, and the selection bar is one row
   for (const path of ["images/studio-desk.svg", "images/placeholder.svg"]) await library.getByLabel(`Select ${path}`, { exact: true }).check();
   const selection = library.getByRole("group", { name: "Selected files", exact: true });
   const clear = selection.getByRole("button", { name: "2 selected. Clear selection", exact: true });
-  await expect(clear).toHaveText("2");
+  expect(await clear.innerText()).toBe("2");
   const box = await selection.boundingBox();
   expect(box!.height).toBeLessThanOrEqual(56.5);
   const controls = await selection.getByRole("button").evaluateAll(buttons => buttons.filter(b => b.checkVisibility()).map(b => ({ label: b.getAttribute("aria-label") ?? b.textContent, top: Math.round(b.getBoundingClientRect().top) })));
@@ -140,7 +140,7 @@ test("phones: search keeps most of the One bar, and the selection bar is one row
   await expect(items.last()).toHaveText("Remove files…");
   await items.last().click();
   await expect(library.getByRole("heading", { name: /^Remove 2 files\?$/ })).toBeVisible();
-  await library.getByRole("button", { name: "Keep files", exact: true }).click();
+  await library.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(selection.getByRole("button", { name: "More for selected files", exact: true })).toBeFocused();
   await clear.click();
   await expect(selection).toBeHidden();

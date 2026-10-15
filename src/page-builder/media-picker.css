@@ -291,7 +291,7 @@
 .media-library .media-library__grid--list .media-library__thumbnail { position: static; }
 .media-library__grid--list .media-library__select { grid-column: 1; grid-row: 1; }
 .media-library .media-library__grid--list .media-library__thumbnail {
-  grid-column: 2; grid-row: 1; display: grid; grid-template-columns: 48px minmax(0, 1fr) auto; align-items: center; justify-items: start; place-content: normal; column-gap: 10px;
+  grid-column: 2; grid-row: 1; display: grid; grid-template-columns: 48px minmax(0, 1fr) auto; align-items: center; justify-items: normal; place-content: normal; column-gap: 10px;
   min-width: 0; height: auto; min-height: 56px; padding: 6px 0; text-align: left;
 }
 .media-library__grid--list .media-library__thumbnail > :is(img, svg, .media-library__type-picture) { grid-column: 1; grid-row: 1 / span 2; justify-self: center; }
