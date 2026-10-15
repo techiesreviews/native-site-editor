@@ -181,6 +181,7 @@ Lex asked for a final UX and UI audit of every media screen against current Mobb
 | [117 More room for the page on phones](tickets/117-phone-page-room.md) | claude | 104 |
 | [118 Improve images: leave a picture alone everywhere](tickets/118-improve-leave-alone-everywhere.md) | claude | 111 |
 | [119 One Media button for every media spot](tickets/119-media-button.md) | claude | 109, 115 |
+| [120 Starter player and agent-guide touch-ups](tickets/120-starter-touchups.md) | claude | 111, 115 |
 
 ## Finding the frontier
 
