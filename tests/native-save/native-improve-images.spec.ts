@@ -1,0 +1,110 @@
+import { expect, test, type Page } from "@playwright/test";
+import { storedDraft } from "./drafts";
+
+// Improve images (slice 74): Media's More lists pages with pictures to improve; a row is fixed in
+// one change, Undo puts it back. Default fixture group (the frozen native starter).
+test.beforeEach(({ page }) => page.setDefaultTimeout(20_000));
+
+const pane = (page: Page) => page.getByRole("region", { name: "Media", exact: true });
+const tab = (page: Page) => page.getByRole("tab", { name: "Media", exact: true });
+
+/** A 2000 × 1000 JPEG of noise: well over 200 KB, so it is heavy. */
+async function heavyJpeg(page: Page, seed: number) {
+  return page.evaluate(start => {
+    const canvas = document.createElement("canvas"); canvas.width = 2000; canvas.height = 1000;
+    const context = canvas.getContext("2d")!, pixels = context.createImageData(canvas.width, canvas.height);
+    let value = start;
+    for (let i = 0; i < pixels.data.length; i += 4) {
+      value = (Math.imul(value, 1664525) + 1013904223) >>> 0;
+      pixels.data[i] = value & 255; pixels.data[i + 1] = value >>> 8 & 255; pixels.data[i + 2] = value >>> 16 & 255; pixels.data[i + 3] = 255;
+    }
+    context.putImageData(pixels, 0, 0);
+    return canvas.toDataURL("image/jpeg", .95).split(",")[1];
+  }, seed);
+}
+async function commit(page: Page, baseURL: string | undefined, data: { path: string; content?: string; base64?: string }) {
+  expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data })).status()).toBe(204);
+}
+const pageHtml = (title: string, picture: string) =>
+  `<!doctype html>\n<html lang="en">\n<head><meta charset="utf-8"><title>${title}</title></head>\n<body>\n<main><h1>${title}</h1>\n<img src="/${picture}" alt="${title} photo">\n</main>\n</body>\n</html>\n`;
+
+/** Pages, each with its own heavy JPEG, then Media → More → Improve images. */
+async function openImprove(page: Page, baseURL: string | undefined, titles: string[]) {
+  await page.goto(baseURL!);
+  for (const [index, title] of titles.entries()) {
+    const slug = title.toLowerCase();
+    await commit(page, baseURL, { path: `images/${slug}.jpg`, base64: await heavyJpeg(page, 35 + index) });
+    await commit(page, baseURL, { path: `${slug}/index.html`, content: pageHtml(title, `images/${slug}.jpg`) });
+  }
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect(page.locator("#status")).toContainText("Up to date with main");
+  await page.locator("#explorer-toggle").click();
+  await tab(page).click();
+  await pane(page).getByRole("button", { name: "More", exact: true }).click();
+  await page.getByRole("menuitem", { name: /^Improve images/ }).click();
+  await expect(pane(page).getByRole("heading", { name: "Improve images", exact: true })).toBeVisible();
+  for (const title of titles) await expect(row(page, title)).toBeVisible();
+}
+const row = (page: Page, title: string) => pane(page).locator(".media-improve__row").filter({ has: page.getByText(title, { exact: true }) });
+
+test("a heavy JPEG is listed, fixed to a lighter WebP with copies, and Undo restores it", { tag: "@smoke" }, async ({ page, baseURL }) => {
+  await openImprove(page, baseURL, ["Photos"]);
+  const photos = row(page, "Photos");
+  await expect(photos).toContainText("1 heavy picture");
+  // The row opens to its picture, ticked.
+  await photos.getByRole("button", { name: /Photos/ }).first().click();
+  await expect(photos.getByRole("checkbox", { name: "Improve photos.jpg", exact: true })).toBeChecked();
+  await expect(photos).toContainText("Heavy: a lighter file");
+
+  await pane(page).getByRole("button", { name: "Fix Photos", exact: true }).click();
+  await expect(pane(page).locator(".media-improve__changed")).toContainText("Photos");
+  const fixed = await storedDraft(page, "photos/index.html");
+  expect(fixed?.content).toContain('src="/images/photos.webp"');
+  expect(fixed?.content).toMatch(/srcset="[^"]*\/images\/photos-480\.webp 480w/);
+  expect(fixed?.content).toMatch(/width="\d+" height="\d+"/);
+  expect(fixed?.content).toContain('alt="Photos photo"');
+  // Nothing goes live until published: the lighter files are drafts.
+  expect((await storedDraft(page, "images/photos.webp"))?.path).toBe("images/photos.webp");
+
+  await pane(page).getByRole("button", { name: "Undo Photos", exact: true }).click();
+  await expect(pane(page).locator(".media-improve__changed")).toHaveCount(0);
+  await expect.poll(async () => (await storedDraft(page, "photos/index.html"))?.content ?? pageHtml("Photos", "images/photos.jpg")).toBe(pageHtml("Photos", "images/photos.jpg"));
+  await expect.poll(async () => await storedDraft(page, "images/photos.webp")).toBeUndefined();
+  await expect(row(page, "Photos")).toContainText("1 heavy picture");
+});
+
+// Nightly: an unticked picture is remembered and skipped; Cancel stops with the rest listed; Undo all.
+test("untick a picture, Cancel mid-run, then Undo all", async ({ page, baseURL }) => {
+  await openImprove(page, baseURL, ["Alpha", "Beta", "Gamma", "Delta"]);
+  const alpha = row(page, "Alpha");
+  await alpha.getByRole("button", { name: /Alpha/ }).first().click();
+  await alpha.getByRole("checkbox", { name: "Improve alpha.jpg", exact: true }).uncheck();
+  // Remembered in the site's records as left as is; the row has nothing left to fix.
+  await expect.poll(async () => (await storedDraft(page, ".editor/media.json"))?.content ?? "").toContain('"picture": "images/alpha.jpg"');
+  await expect(alpha.getByRole("checkbox", { name: "Improve alpha.jpg", exact: true })).not.toBeChecked();
+  await expect(pane(page).getByRole("button", { name: "Fix Alpha", exact: true })).toBeDisabled();
+
+  await pane(page).getByRole("button", { name: "Fix all", exact: true }).click();
+  const cancel = pane(page).getByRole("button", { name: "Cancel", exact: true });
+  await expect(pane(page).locator(".media-improve__progress")).toContainText(/Improving 1 of \d/);
+  await cancel.click();
+  await expect(pane(page).locator(".media-library__message")).toContainText("Stopped. The rest are still listed.");
+  await expect(pane(page).locator(".media-improve__progress")).toHaveCount(0);
+  // Rows not reached are still listed; finished ones stay done.
+  const left = await pane(page).locator(".media-improve__row").count();
+  expect(left).toBeGreaterThan(1);
+  expect((await storedDraft(page, "alpha/index.html"))?.content ?? "").not.toContain("alpha.webp");
+
+  // Fix the rest, then Undo all puts every page back in one change.
+  await pane(page).getByRole("button", { name: "Fix all", exact: true }).click();
+  // The second run's message replaces the first one's "Stopped".
+  await expect(pane(page).locator(".media-library__message")).toHaveText(/^Changed \d pages?\.$/);
+  await expect(pane(page).locator(".media-improve__progress")).toHaveCount(0);
+  for (const name of ["beta", "gamma", "delta"]) expect((await storedDraft(page, `${name}/index.html`))?.content).toContain(`${name}.webp`);
+  await pane(page).getByRole("button", { name: "Undo all", exact: true }).click();
+  await expect(pane(page).locator(".media-improve__changed")).toHaveCount(0);
+  for (const name of ["beta", "gamma", "delta"]) {
+    await expect.poll(async () => (await storedDraft(page, `${name}/index.html`))?.content ?? "").not.toContain(`${name}.webp`);
+    await expect.poll(async () => await storedDraft(page, `images/${name}.webp`)).toBeUndefined();
+  }
+});

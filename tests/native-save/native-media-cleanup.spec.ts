@@ -7,7 +7,11 @@ import { publishButton } from "./publish";
 test.beforeEach(({ page }) => page.setDefaultTimeout(10_000));
 
 const svg = (label: string) => `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><title>${label}</title><rect width="40" height="40" fill="#4a7"/></svg>`;
-const records = JSON.stringify({ version: 2, collections: [], files: { "images/kept.svg": { alwaysKeep: true } } });
+// The starter's placeholder.svg lacks width and height, which Improve images would count on the tab
+// too (slice 74); it is left as is here, so these tests count Clean up alone.
+const leftAsIs = [{ picture: "images/placeholder.svg" }];
+const quiet = JSON.stringify({ version: 2, collections: [], files: {}, leftAsIs });
+const records = JSON.stringify({ version: 2, collections: [], files: { "images/kept.svg": { alwaysKeep: true } }, leftAsIs });
 const pane = (page: Page) => page.getByRole("region", { name: "Media", exact: true });
 const toggleCount = (page: Page) => page.locator("#explorer-toggle > .media-count");
 const tab = (page: Page) => page.getByRole("tab", { name: "Media", exact: true });
@@ -98,7 +102,7 @@ test("the Media tab counts unused files from anywhere; Dismiss hides the count u
 
 test("using the unused file on a page takes it out of the count", async ({ page, baseURL }) => {
   await page.goto(baseURL!);
-  await commit(page, baseURL, [["images/spare.svg", svg("Spare")]]);
+  await commit(page, baseURL, [["images/spare.svg", svg("Spare")], [".editor/media.json", quiet]]);
   await open(page, baseURL);
   await expect(toggleCount(page)).toHaveText("2");
   await page.evaluate(async () => {
@@ -106,7 +110,7 @@ test("using the unused file on a page takes it out of the count", async ({ page,
     const model = editor.getMountedSource("index.html");
     if (model === undefined) throw new Error("Missing source model");
     const at = model.indexOf("</main>");
-    editor.replaceActiveRange({ path: "index.html", start: at, end: at, expected: "", text: '<img src="/images/spare.svg" alt="Spare">' });
+    editor.replaceActiveRange({ path: "index.html", start: at, end: at, expected: "", text: '<img src="/images/spare.svg" alt="Spare" width="40" height="40">' });
   });
   await expect(toggleCount(page)).toHaveText("1");
   // With nothing to suggest, Clean up in More says why.
@@ -114,7 +118,7 @@ test("using the unused file on a page takes it out of the count", async ({ page,
     const editor = await import("/src/components/code-editor.ts");
     const model = editor.getMountedSource("index.html")!;
     const at = model.indexOf("</main>");
-    editor.replaceActiveRange({ path: "index.html", start: at, end: at, expected: "", text: '<img src="/images/studio-desk.svg" alt="Desk">' });
+    editor.replaceActiveRange({ path: "index.html", start: at, end: at, expected: "", text: '<img src="/images/studio-desk.svg" alt="Desk" width="40" height="40">' });
   });
   await expect(toggleCount(page)).toBeHidden();
   await page.locator("#explorer-toggle").click();
@@ -178,7 +182,7 @@ test("removing a used file warns with its page, then allows; after publishing, R
 
 test("unused images appear in Clean up; removing them puts them in Recently removed, and Undo brings them back", { tag: "@smoke" }, async ({ page, baseURL }) => {
   await page.goto(baseURL!);
-  await commit(page, baseURL, [["images/spare.svg", svg("Spare")]]);
+  await commit(page, baseURL, [["images/spare.svg", svg("Spare")], [".editor/media.json", quiet]]);
   await open(page, baseURL);
   await expect(toggleCount(page)).toHaveText("2");
   await page.locator("#explorer-toggle").click();

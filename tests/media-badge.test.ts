@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cleanUpMenuItem, mediaBadge, mediaBadgeLabel, readDismissed, suggestedFiles } from "../src/page-builder/media-badge";
+import { badgeKeys, cleanUpMenuItem, improveMenuItem, mediaBadge, mediaBadgeLabel, readDismissed, suggestedFiles } from "../src/page-builder/media-badge";
 import type { MediaCleanUpSuggestions } from "../src/page-builder/media-clean-up";
 
 const item = (main: string) => ({ main, members: [main], size: 0 });
@@ -48,4 +48,18 @@ test("Clean up in More carries the same count, or says why it cannot open", () =
   assert.deepEqual(cleanUpMenuItem({ state: "not-checked", blockedBy: [], groups: [], count: 0, size: 0 }), { label: "Clean up", disabled: "Still checking which files are used." });
   assert.deepEqual(cleanUpMenuItem({ state: "blocked", blockedBy: ["a.txt"], groups: [], count: 0, size: 0 }).disabled, "Nothing is suggested until every file can be read: a.txt.");
   assert.deepEqual(cleanUpMenuItem({ state: "blocked", blockedBy: ["a", "b", "c", "d", "e"], groups: [], count: 0, size: 0 }).disabled, "Nothing is suggested until every file can be read: a, b, c and 2 more.");
+});
+
+test("Improve images' rows join the count; a dismiss remembers them, a new row brings it back", () => {
+  assert.deepEqual(mediaBadge(ready(["a.png"]), undefined, ["index.html", "components/site-header.html"]), { count: 3, show: true, improve: 2 });
+  assert.deepEqual(mediaBadge(ready([]), undefined, ["index.html"]), { count: 1, show: true, improve: 1 });
+  const dismissed = badgeKeys(ready(["a.png"]), ["index.html"]);
+  assert.deepEqual(dismissed, ["a.png", "improve:index.html"]);
+  assert.equal(mediaBadge(ready(["a.png"]), dismissed, ["index.html"]).show, false);
+  assert.equal(mediaBadge(ready(["a.png"]), dismissed, ["index.html", "about/index.html"]).show, true);
+  assert.equal(mediaBadgeLabel(3, 2), "1 file to clean up and 2 pages with pictures to improve");
+  assert.equal(mediaBadgeLabel(1, 1), "1 page with pictures to improve");
+  assert.deepEqual(improveMenuItem(4), { label: "Improve images (4)" });
+  assert.deepEqual(improveMenuItem(0), { label: "Improve images" });
+  assert.deepEqual(improveMenuItem(undefined), { label: "Improve images" });
 });

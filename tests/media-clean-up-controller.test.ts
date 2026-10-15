@@ -158,3 +158,27 @@ test("a draft change invalidates a records read in flight, so its old answer nei
   await controller.update(unused(["a.png"]));
   assert.deepEqual(badge(f.states), { count: 1, show: false });
 });
+
+test("pages with pictures to improve join the count; read widths sharpen it; dismiss covers them", async () => {
+  const f = fixture();
+  f.setFiles(["index.html", "about/index.html", "images/wide.png"]);
+  f.sources["index.html"] = '<img src="https://mobbin.com/og.png" width="10" height="10" loading="lazy">';
+  f.sources["about/index.html"] = '<img src="/images/wide.png" width="10" height="10" loading="lazy">';
+  const ports = { ...f.ports, pages: () => ["index.html", "about/index.html"], components: () => ({}), url: () => "https://own.example/", size: () => 1000 } satisfies MediaCleanUpPorts;
+  const controller = createMediaCleanUpController(ports);
+  const usage = () => mediaUsageRecords({ media: ["images/wide.png"], sources: { "index.html": f.sources["index.html"]!, "about/index.html": f.sources["about/index.html"]! }, pages: ["index.html", "about/index.html"] });
+  await controller.update(usage());
+  assert.deepEqual(controller.state().improve, ["index.html"]);
+  assert.deepEqual(badge(f.states), { count: 1, show: true, improve: 1 });
+  assert.deepEqual(controller.improveItem(), { label: "Improve images (1)" });
+  // The screen read the picture: wider than any screen needs, so it gets copies.
+  controller.known({ "images/wide.png": { width: 4000, height: 3000 } });
+  await controller.update(usage());
+  assert.deepEqual(controller.state().improve?.sort(), ["about/index.html", "index.html"]);
+  controller.dismiss();
+  assert.equal(badge(f.states)?.show, false);
+  // Another repository forgets the read widths.
+  f.setPlace("lex:2:main");
+  await controller.update(usage());
+  assert.deepEqual(controller.state().improve, ["index.html"]);
+});

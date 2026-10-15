@@ -41,9 +41,9 @@ export function createMediaCleanUpController(ports: MediaCleanUpPorts) {
     memory.set(place, files);
     storage(store => files ? store.setItem(storageKey(place), JSON.stringify(files)) : store.removeItem(storageKey(place)));
   }
-  function publish(place: string, suggestions: MediaCleanUpSuggestions, improve = current.place === place ? current.improve : undefined) {
+  function publish(place: string, suggestions: MediaCleanUpSuggestions, improve = current.place === place ? current.improve : undefined, settled = true) {
     // With nothing left, a later suggestion is new even if it was dismissed before.
-    if (place && suggestions.state === "ready" && !suggestions.count && !improve?.length && dismissed(place)) remember(place, undefined);
+    if (settled && place && suggestions.state === "ready" && !suggestions.count && !improve?.length && dismissed(place)) remember(place, undefined);
     current = { place, suggestions, badge: mediaBadge(suggestions, dismissed(place), improve), ...improve ? { improve } : {} };
     ports.changed(current);
   }
@@ -75,7 +75,6 @@ export function createMediaCleanUpController(ports: MediaCleanUpPorts) {
     if (place !== current.place) known.clear();
     const read = usage && await records();
     const suggestions = usage ? mediaCleanUpSuggestions({ usage, records: read ?? null }) : notChecked();
-    const improve = usage ? await improveRows(read ?? null).catch(() => undefined) : undefined;
     if (disposed || request !== epoch || place !== ports.place()) return;
     // While the same site is checked again, the badge keeps its last count (no flicker), but
     // nothing unchecked is offered: Clean up waits until the check is done.
@@ -84,7 +83,13 @@ export function createMediaCleanUpController(ports: MediaCleanUpPorts) {
       ports.changed(current);
       return;
     }
-    publish(place, suggestions, improve);
+    publish(place, suggestions, undefined, false);
+    // Improve images' rows follow: Clean up never waits for them.
+    const improve = await improveRows(read ?? null).catch(() => undefined);
+    if (disposed || request !== epoch || place !== ports.place()) return;
+    // Published again only when the rows changed, or a dismiss is to be forgotten with nothing left.
+    const empty = suggestions.state === "ready" && !suggestions.count && !improve?.length && dismissed(place);
+    if (empty || JSON.stringify(improve) !== JSON.stringify(current.improve)) publish(place, suggestions, improve);
   }
   /** Hides the count until a file not suggested now is suggested. */
   function dismiss() {

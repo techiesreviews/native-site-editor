@@ -17,10 +17,12 @@ export interface ImproveMemory {
   /** Pictures a run could not bring in, by row file then picture key. */
   left: Map<string, Map<string, LeftPicture>>;
   own: Map<string, File>;
+  /** Files an Undo kept because another changed row still used them. */
+  kept: string[];
   maps: ReturnType<typeof runMaps>;
   known: Record<string, { width?: number; height?: number }>;
 }
-export const improveMemory = (): ImproveMemory => ({ outcomes: [], states: new Map(), left: new Map(), own: new Map(), maps: runMaps(), known: {} });
+export const improveMemory = (): ImproveMemory => ({ outcomes: [], states: new Map(), left: new Map(), own: new Map(), kept: [], maps: runMaps(), known: {} });
 
 export interface ImproveHost extends LibrarySheetContext {
   improve: MediaImproveEntry;
@@ -38,24 +40,26 @@ export function showImproveImages(sheet: LibrarySheet, h: ImproveHost) {
   let reading = "Checking the pictures on your pages…";
   let running: { abort: AbortController; line: string } | undefined;
   const open = new Set<string>();
+  /** Still this screen: Back or another screen ends its redraws (a run or Undo still finishes). */
+  const shown = () => h.alive() && sheet.element.dataset.mode === "improve";
 
   async function load() {
     session ??= await h.adapter.improveImages!();
-    plan = await session.plan(m.known);
+    const first = await session.plan(m.known);
     // Widths come from the pictures themselves; the listing only knows file sizes.
-    const missing = plan.missingFacts.filter(path => !m.known[path]);
+    const missing = first.missingFacts.filter(path => !m.known[path]);
     if (missing.length) {
       let done = 0;
       const read = async (path: string) => {
         try { const bytes = await h.cache.get(path); m.known[path] = { width: bytes.width, height: bytes.height }; } catch { m.known[path] = {}; }
-        reading = `Reading pictures: ${++done} of ${missing.length}`; draw(false);
+        reading = `Reading pictures: ${++done} of ${missing.length}`; if (shown() && !plan) draw(false);
       };
       for (let index = 0; index < missing.length; index += 4) await Promise.all(missing.slice(index, index + 4).map(read));
       plan = await session.plan(m.known);
-    }
+    } else plan = first;
     h.improve.known(m.known);
   }
-  const reload = () => h.task(async () => { await load(); draw(false); }, false);
+  const reload = () => h.task(async () => { await load(); if (shown()) draw(false); }, false);
 
   function draw(focus: boolean | string = true) {
     const { element } = sheet;
@@ -160,7 +164,7 @@ export function showImproveImages(sheet: LibrarySheet, h: ImproveHost) {
         tick.dataset.focusKey = `tick:${row.file}:${picture.key}`;
         tick.addEventListener("change", () => void h.task(async () => {
           await session!.leftAsIs({ picture: picture.key, row: row.file }, !tick.checked);
-          await load(); draw(tick.dataset.focusKey!);
+          await load(); if (shown()) draw(tick.dataset.focusKey!);
         }));
         const check = node("label", "media-improve__tick"); check.append(tick);
         line.append(preview(picture), words, check);
@@ -202,7 +206,7 @@ export function showImproveImages(sheet: LibrarySheet, h: ImproveHost) {
         for (const [index, file] of files.entries()) {
           if (abort.signal.aborted || !h.alive()) break;
           const row = plan?.rows.find(item => item.file === file);
-          running!.line = improveProgress(index, files.length, row?.label ?? file); draw("cancel");
+          running!.line = improveProgress(index, files.length, row?.label ?? file); if (shown()) draw("cancel");
           // A page is shown so its pictures are measured there; a component's template uses the safe sizes.
           if (row?.kind === "page") await h.improve.show(file);
           if (abort.signal.aborted) break;
@@ -222,7 +226,7 @@ export function showImproveImages(sheet: LibrarySheet, h: ImproveHost) {
         const stopped = abort.signal.aborted;
         running = undefined;
         h.tell(improveRunMessage(changed, stopped, failed));
-        if (h.alive()) { await load(); if (sheet.element.dataset.mode === "improve") draw(m.outcomes.length ? "undo-all" : "fix-all"); }
+        if (h.alive()) { await load(); if (shown()) draw(m.outcomes.length ? "undo-all" : "fix-all"); }
       }
     }, true, true);
   }
@@ -230,12 +234,12 @@ export function showImproveImages(sheet: LibrarySheet, h: ImproveHost) {
   async function undoRows(outcomes: RowOutcome[]) {
     const undone = new Set(outcomes);
     await h.task(async () => {
-      await session!.undo(outcomes);
+      m.kept = await session!.undo(outcomes, m.kept);
       m.outcomes = m.outcomes.filter(outcome => !undone.has(outcome));
       for (const outcome of undone) m.states.delete(outcome.file);
       h.tell(outcomes.length === 1 ? `Undone: ${outcomes[0].label}.` : "Undone.");
       await load();
-      if (sheet.element.dataset.mode === "improve") draw();
+      if (shown()) draw();
     });
   }
 

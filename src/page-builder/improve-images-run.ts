@@ -149,7 +149,7 @@ export async function improveRow(real: MediaWorkspaceContext, request: ImproveRo
     guard();
   }
   if (wants("lighten", "copies", "size", "sizes", "loading")) {
-    const result = await improveHeavy(stage.ctx, { row: row.file, files: files(), measure, live, signal: request.signal }, ports.heavy);
+    const result = await improveHeavy(stage.ctx, { row: row.file, files: files(), measure, live, signal: request.signal, siteUrl: request.siteUrl }, ports.heavy);
     outcome.notes.push(...result.notes);
     guard();
   }
@@ -182,8 +182,10 @@ export function revertJson(before: Json | undefined, after: Json | undefined, no
 }
 
 /** Undo for rows of a run, in any order: their pages go back to the text before, records field by
- * field, and the files they added go once nothing mentions them. One change (Undo all: one too). */
-export async function undoRows(real: MediaWorkspaceContext, outcomes: readonly RowOutcome[]) {
+ * field, and the files they added go once nothing mentions them. One change (Undo all: one too).
+ * `kept`: files an earlier Undo kept because a row not undone still used them; they are checked
+ * again. Returns the files kept this time, for the next Undo. */
+export async function undoRows(real: MediaWorkspaceContext, outcomes: readonly RowOutcome[], kept: readonly string[] = []): Promise<string[]> {
   const texts = new Map<string, string | undefined>();
   const batch: MediaWorkspaceBatch = { label: outcomes.length === 1 ? `Undo Improve images: ${outcomes[0].label}` : "Undo Improve images",
     expectedPaths: [...real.paths], expectedSources: new Map(), expectedAssets: new Map(), edits: new Map(), moves: [], deletes: [], restores: [], uploads: [] };
@@ -201,10 +203,11 @@ export async function undoRows(real: MediaWorkspaceContext, outcomes: readonly R
   }
   const sources = await readSources(real);
   for (const [path, text] of texts) sources[path] = text;
-  const added = [...new Set(outcomes.flatMap(outcome => outcome.added))].filter(path => real.paths.includes(path));
+  const added = [...new Set([...outcomes.flatMap(outcome => outcome.added), ...kept])].filter(path => real.paths.includes(path));
   const mentioned = mediaMentions({ media: added, sources, site: { origins: real.origins ?? [] } });
   batch.deletes = added.filter(path => !mentioned.get(path)?.some(mention => mention.file !== path));
   for (const path of batch.deletes) batch.expectedAssets.set(path, real.assetVersion(path));
+  if (batch.deletes.length && real.paths.includes(MEDIA_RECORDS_PATH)) await current(MEDIA_RECORDS_PATH);
   if (texts.has(MEDIA_RECORDS_PATH)) {
     // An added file a later row still uses keeps its record; removed ones lose theirs.
     const now = parseMediaRecords(batch.expectedSources.get(MEDIA_RECORDS_PATH)), next = parseMediaRecords(texts.get(MEDIA_RECORDS_PATH));
@@ -213,6 +216,7 @@ export async function undoRows(real: MediaWorkspaceContext, outcomes: readonly R
   }
   for (const [path, text] of texts) if (text !== undefined && text !== batch.expectedSources.get(path)) batch.edits.set(path, text);
   if (batch.edits.size || batch.deletes.length) await real.applyBatch(batch);
+  return added.filter(path => !batch.deletes.includes(path));
 }
 
 /** What the Improve images screen asks of the workspace; each call reads the site afresh. */
@@ -223,7 +227,7 @@ export function improveImagesSession(context: () => Promise<MediaWorkspaceContex
       return (await readPlan(ctx, facts(ctx, known))).plan;
     },
     async row(request: ImproveRowRequest) { return improveRow(await context(), request); },
-    async undo(outcomes: readonly RowOutcome[]) { await undoRows(await context(), outcomes); },
+    async undo(outcomes: readonly RowOutcome[], kept?: readonly string[]) { return undoRows(await context(), outcomes, kept); },
     /** Untick (left as is) or tick a picture again; remembered in the site's records. */
     async leftAsIs(item: PictureLeftAsIs, on: boolean) {
       const ctx = await context();
