@@ -725,6 +725,13 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       await commit(ctx, batch);
     },
     import: importMedia,
+    async improveGifsAndPlayers(request: import("./improve-gifs-players").ImproveGifsPlayersRequest, ports?: import("./improve-gifs-players").ImproveGifsPlayersPorts) {
+      const ctx = await context();
+      ctx.assertLive();
+      const module = await import("./improve-gifs-players");
+      ctx.assertLive();
+      return module.improveGifsAndPlayers(ctx, request, ports);
+    },
     async onlineVideo(record: OnlineVideoRecord, place?: MediaPlacement) {
       session?.assertLive();
       const ctx = await context(); session?.assertLive(); ctx.assertLive();
@@ -906,5 +913,5 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       return type && blob.type !== type ? new Blob([blob], { type }) : blob;
     },
     async openPage(path) { await active().openPage(path); },
-  } satisfies MediaPickerHost & { improve(request: import("./improve-heavy").ImproveRequest, ports?: import("./improve-heavy").ImprovePorts): Promise<import("./improve-heavy").ImproveResult>; onlineVideo(record: OnlineVideoRecord, place?: MediaPlacement): Promise<void>; onlineVideoStill(key: import("./online-video").OnlineVideoKey, still: import("./online-video").OnlineVideoStill): Promise<void>; onlineVideoServiceBar(key: import("./online-video").OnlineVideoKey, enabled: boolean): Promise<void>; removeOnlineVideo(key: import("./online-video").OnlineVideoKey): Promise<void>; share(request: MediaShareRequest): Promise<string>; replace(request: MediaReplaceRequest, agent?: boolean): Promise<string>; trim(request: MediaTrimRequest): Promise<string>; describe(file: string, change: { text?: string; decorative?: boolean; page?: string; element?: string }): Promise<void> };
+  } satisfies MediaPickerHost & { improve(request: import("./improve-heavy").ImproveRequest, ports?: import("./improve-heavy").ImprovePorts): Promise<import("./improve-heavy").ImproveResult>; improveGifsAndPlayers(request: import("./improve-gifs-players").ImproveGifsPlayersRequest, ports?: import("./improve-gifs-players").ImproveGifsPlayersPorts): Promise<import("./improve-gifs-players").ImproveGifsPlayersResult>; onlineVideo(record: OnlineVideoRecord, place?: MediaPlacement): Promise<void>; onlineVideoStill(key: import("./online-video").OnlineVideoKey, still: import("./online-video").OnlineVideoStill): Promise<void>; onlineVideoServiceBar(key: import("./online-video").OnlineVideoKey, enabled: boolean): Promise<void>; removeOnlineVideo(key: import("./online-video").OnlineVideoKey): Promise<void>; share(request: MediaShareRequest): Promise<string>; replace(request: MediaReplaceRequest, agent?: boolean): Promise<string>; trim(request: MediaTrimRequest): Promise<string>; describe(file: string, change: { text?: string; decorative?: boolean; page?: string; element?: string }): Promise<void> };
 }

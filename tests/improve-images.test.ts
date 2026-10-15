@@ -4,6 +4,10 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { improveImagesPlan, IMPROVE_HEAVY_BYTES } from "../src/page-builder/improve-images";
 import { parseMediaRecords } from "../shared/media-records";
+import { gifLoopingVideo } from "../src/page-builder/looping-video";
+import { descendants, parseSource } from "../src/page-builder/source-tree";
+import { improveGifsAndPlayers } from "../src/page-builder/improve-gifs-players";
+import type { MediaWorkspaceContext } from "../src/page-builder/media-workspace";
 
 type Input = Parameters<typeof improveImagesPlan>[0];
 const root = join(import.meta.dirname, "fixtures/improve-images");
@@ -69,7 +73,7 @@ test("all change kinds, adopted sets, affiliate links and must-not-touch cases",
   assert.match(resources.summary, /^Resources: 3 pictures from other websites/);
   const stacking = rowAt(plan, "articles/stacking-cards/index.html");
   assert.deepEqual(stacking.pictures.filter(p => p.key === "images/animation.gif").map(p => p.changes), [["loop"], ["first-frame"]]);
-  assert.deepEqual(stacking.pictures.filter(p => p.videoId).map(p => p.videoId), ["abc_123", "123456?h=secret"]);
+  assert.deepEqual(stacking.pictures.filter(p => p.videoId).map(p => p.videoId), ["aqz-KE-bpKQ", "123456?h=a1b2c3d4e5"]);
   assert.equal(stacking.pictures.some(p => p.address.includes("maps.google")), false);
   assert.equal(stacking.pictures.some(p => p.address.includes("youtu.be/done")), false);
   for (const value of Object.values(plan.totals)) assert.ok(value > 0);
@@ -111,12 +115,43 @@ test("heavy threshold, recipes, BMP/TIFF, static and unknown GIF facts, missing 
 });
 
 test("YouTube address forms, Vimeo hash, outside SVG, picture sources and video sources", () => {
-  const addresses = ["https://youtube.com/embed/abc", "https://youtube.com/watch?v=abc", "https://youtu.be/abc", "https://youtube.com/shorts/abc", "//youtube-nocookie.com/embed/abc"];
-  for (const address of addresses) assert.equal(single(`<iframe src="${address}"></iframe>`).rows[0].pictures[0].videoId, "abc");
+  const addresses = ["https://youtube.com/embed/aqz-KE-bpKQ", "https://youtube.com/watch?v=aqz-KE-bpKQ", "https://youtu.be/aqz-KE-bpKQ", "https://youtube.com/shorts/aqz-KE-bpKQ", "//youtube-nocookie.com/embed/aqz-KE-bpKQ"];
+  for (const address of addresses) assert.equal(single(`<iframe src="${address}"></iframe>`).rows[0].pictures[0].videoId, "aqz-KE-bpKQ");
   const plan = single('<img src="https://other.example/icon.svg"><picture><source srcset="https://other.example/a.webp 400w, https://other.example/b.webp 800w"><img srcset="https://other.example/c.jpg 800w"></picture><video><source src="https://other.example/clip.mp4"></video>');
   assert.deepEqual(plan.rows[0].pictures.map(p => p.key), ["https://other.example/icon.svg", "https://other.example/c.jpg"]);
   assert.deepEqual(plan.rows[0].pictures[0].changes, ["size"]);
   assert.ok(plan.rows[0].pictures[1].changes.includes("bring-in"));
+});
+
+test("GIF writer preserves presentation, picture slot and link bytes without linked controls", () => {
+  const video = { path: "media/videos/a.mp4", still: "media/videos/a.webp", width: 800, height: 450 };
+  for (const source of ['<img src="/a.gif">', '<img id="hero" class="shape" style="object-fit:cover" slot="photo" width="20" height="10" alt="A &amp; B" src="/a.gif" srcset="/a.gif 2x" sizes="100vw" loading="lazy" decoding="async" fetchpriority="high">', '<picture slot="photo"><source srcset="/a.gif"><img alt="" src="/a.gif"></picture>']) {
+    const spot = [...descendants(parseSource(source))][0];
+    const markup = gifLoopingVideo(source, { tag: spot.tag, start: spot.start, end: spot.end, close: spot.close }, video).markup;
+    assert.match(markup, /controls muted loop playsinline/); assert.doesNotMatch(markup, /autoplay|srcset|sizes|loading|decoding|fetchpriority|<picture|<source/);
+    if (source.includes('id="hero"')) for (const kept of ['id="hero"', 'class="shape"', 'style="object-fit:cover"', 'slot="photo"', 'width="20"', 'height="10"', 'aria-label="A &amp; B"']) assert.ok(markup.includes(kept));
+    else { assert.match(markup, /width="800" height="450"/); assert.doesNotMatch(markup, /aria-label/); }
+    const linked = gifLoopingVideo(source, { tag: spot.tag, start: spot.start, end: spot.end, close: spot.close }, video, { linked: true });
+    const open = "<a href='/same' data-x='keep'>";
+    assert.ok((open + linked.markup + "</a>").startsWith(open + "<video")); assert.doesNotMatch(linked.markup, / controls/);
+  }
+});
+
+test("all supported iframe forms switch whole; other embeds stay byte for byte", async () => {
+  const addresses = ["https://youtube.com/embed/aqz-KE-bpKQ?start=42", "https://youtube-nocookie.com/embed/aqz-KE-bpKQ", "https://youtube.com/watch?v=aqz-KE-bpKQ&t=90", "https://youtube.com/shorts/aqz-KE-bpKQ?t=1m", "https://player.vimeo.com/video/123456?h=a1b2c3d4e5"];
+  const other = ['<iframe src="https://maps.google.com/maps"></iframe>', '<iframe src="https://youtube.com/embed/videoseries?list=PL123"></iframe>', '<iframe src="https://youtube.com/embed/live_stream?channel=UC123"></iframe>'].join("");
+  const source = '<html><head></head><body>' + addresses.map(src => `<iframe id="keep" class="wide" slot="film" style="width:100%" title="Written title" src="${src}">fallback</iframe>`).join("") + other + '</body></html>';
+  // Only the read/plan/apply ports are used by this pure preparation fixture.
+  // eslint-disable-next-line no-restricted-syntax -- host services outside these ports are not used
+  const ctx = { paths: ["index.html", "styles/media-player.css", "scripts/media-player.js", "scripts/media-online.js"], pages: ["index.html"], components: {}, assertLive() {}, items: [], assetVersion: () => undefined,
+    read: async (path: string) => path === "index.html" ? source : path.endsWith(".css") || path.endsWith(".js") ? "" : undefined,
+    applyBatch: async (batch: { edits: Map<string, string> }) => { written = batch.edits.get("index.html")!; },
+  } as unknown as MediaWorkspaceContext;
+  let written = "";
+  const result = await improveGifsAndPlayers(ctx, { row: "index.html", files: {}, by: "lex" }, { read: async () => ({ note: "Blocked" }) });
+  assert.equal(result.switched.length, 5, JSON.stringify(result)); assert.ok(written.includes(other)); assert.doesNotMatch(written, /fallback/);
+  assert.equal((written.match(/class="online-video wide"/g) ?? []).length, 5);
+  for (const kept of ['id="keep"', 'slot="film"', 'style="width:100%"', 'Written title', 't=42', 't=90', 't=60', '/123456/a1b2c3d4e5']) assert.ok(written.includes(kept), kept);
 });
 
 test("hand-made sets in <picture> sources or an unrecognised srcset are adopted, never given copies", () => {

@@ -1,3 +1,4 @@
+import { parseOnlineVideoAddress } from "./online-video";
 import type { MediaRecords } from "../../shared/media-records";
 import { startTags } from "../../shared/html-source";
 import { decodeHtmlEntities } from "./html-entities";
@@ -42,19 +43,8 @@ const attribute = (source: string, node: SourceElement, name: string) => {
   return found && decodeHtmlEntities(found.value, true);
 };
 function onlineVideo(address: string): { kind: "youtube" | "vimeo"; videoId: string } | undefined {
-  try {
-    const url = new URL(address.startsWith("//") ? "https:" + address : address);
-    const host = url.hostname.replace(/^www\./, "");
-    if (!["https:", "http:"].includes(url.protocol)) return;
-    if (["youtube.com", "youtube-nocookie.com", "youtu.be"].includes(host)) {
-      const id = host === "youtu.be" ? url.pathname.split("/")[1] : /^\/(?:embed|shorts)\/([^/]+)/.exec(url.pathname)?.[1] ?? (url.pathname === "/watch" ? url.searchParams.get("v") : undefined);
-      if (id && /^[\w-]+$/.test(id)) return { kind: "youtube", videoId: id };
-    }
-    if (["player.vimeo.com", "vimeo.com"].includes(host)) {
-      const id = /^\/(?:video\/)?(\d+)(?:\/|$)/.exec(url.pathname)?.[1];
-      if (id) return { kind: "vimeo", videoId: id + (url.searchParams.has("h") ? `?h=${url.searchParams.get("h")}` : "") };
-    }
-  } catch { /* Other iframe addresses are not online videos. */ }
+  const video = parseOnlineVideoAddress(address.startsWith("//") ? "https:" + address : address);
+  return video ? { kind: video.service, videoId: video.id + (video.service === "vimeo" && video.hash ? `?h=${video.hash}` : "") } : undefined;
 }
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 function scriptDriven(source: string, node: SourceElement, scripts: string): boolean {

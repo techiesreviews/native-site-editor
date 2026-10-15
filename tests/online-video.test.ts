@@ -12,6 +12,9 @@ import type { prepareMediaFile } from "../src/page-builder/media-prepare";
 const youtube = { service: "youtube", id: "dQw4w9WgXcQ" } as const;
 const vimeo = { service: "vimeo", id: "123456", hash: "a1b2cf" } as const;
 const empty = () => parseMediaRecords(undefined);
+test("playlist and channel live embeds are not individual videos", () => {
+  for (const id of ["videoseries", "live_stream"]) assert.equal(parseOnlineVideoAddress(`https://youtube.com/embed/${id}?list=PL123`), undefined);
+});
 for (const address of ["www.youtube.com/watch?v=", "m.youtube.com/watch?v=", "youtube.com/watch?v=", "youtu.be/", "youtube.com/embed/", "youtube.com/shorts/", "youtube.com/live/", "youtube.com/v/", "youtube-nocookie.com/embed/"]) {
   test(`parse YouTube ${address}`, () => {
     assert.deepEqual(parseOnlineVideoAddress(`https://${address}${youtube.id}`), youtube);

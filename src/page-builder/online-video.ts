@@ -18,7 +18,7 @@ export function parseOnlineVideoAddress(text: string): OnlineVideo | undefined {
   if (!["https:", "http:"].includes(url.protocol) || url.username || url.password || url.port) return;
   const host = url.hostname.toLowerCase().replace(/^(?:www|m)\./, ""), parts = url.pathname.split("/").filter(Boolean);
   const start = seconds(url.searchParams.get("t") ?? url.searchParams.get("start") ?? /(?:^|&)t=([^&]+)/.exec(url.hash.slice(1))?.[1]);
-  const youtube = (id?: string | null): OnlineVideo | undefined => id && /^[\w-]{11}$/.test(id) ? { service: "youtube", id, ...start ? { start } : {} } : undefined;
+  const youtube = (id?: string | null): OnlineVideo | undefined => id && !["videoseries", "live_stream"].includes(id) && /^[\w-]{11}$/.test(id) ? { service: "youtube", id, ...start ? { start } : {} } : undefined;
   if (host === "youtu.be") return youtube(parts[0]);
   if (["youtube.com", "youtube-nocookie.com"].includes(host)) {
     if (parts[0] === "watch") return youtube(url.searchParams.get("v"));

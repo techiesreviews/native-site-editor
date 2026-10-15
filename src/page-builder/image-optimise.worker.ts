@@ -56,14 +56,15 @@ export function installMediaOptimiser(codecs: MediaCodecs = { loadHeicDecoder, l
       }
       const extension = file.name.split(".").pop()?.toLowerCase() ?? "png";
       if (svg) {
-        if (trim || options.sharing) throw new Error("This picture cannot be trimmed. Use a still raster picture.");
+        if (trim) throw new Error("This picture cannot be trimmed. Use a still raster picture.");
         const { cleanSvg, svgDimensions } = await codecs.loadSvgCleaner();
         const cleaned = cleanSvg(bytes), blob = new Blob([new Uint8Array(cleaned)], { type: "image/svg+xml" });
         self.postMessage({ result: { outputs: [{ blob, extension: "svg", ...svgDimensions(cleaned) }], before: file.size, after: blob.size } satisfies MediaOptimiseResult });
         return;
       }
-      if (mediaUntouched(file.name, bytes)) {
-        if (trim || options.sharing) throw new Error("This picture cannot be trimmed. Use a still raster picture.");
+      // A sharing copy deliberately decodes the first frame of an animated GIF.
+      if (!options.sharing && mediaUntouched(file.name, bytes)) {
+        if (trim) throw new Error("This picture cannot be trimmed. Use a still raster picture.");
         self.postMessage({ result: { outputs: [{ blob: file, extension }], before: file.size, after: file.size, note: "Animated GIFs are kept untouched, including their metadata." } satisfies MediaOptimiseResult });
         return;
       }

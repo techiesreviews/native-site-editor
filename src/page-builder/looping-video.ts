@@ -58,8 +58,12 @@ export function writeLooping(tagText: string, on: boolean): string {
   return text;
 }
 export function pictureSpotVideo(spotText: string, video: PlayerVideo): PlayerMarkup {
+  if (!isPictureSpot(spotText)) throw new Error("Choose a picture spot.");
+  return pictureVideo(spotText, video);
+}
+function pictureVideo(spotText: string, video: PlayerVideo): PlayerMarkup {
   const spot = first(spotText);
-  if (!spot || !isPictureSpot(spotText) || !["img", "picture"].includes(spot.name)) throw new Error("Choose a picture spot.");
+  if (!spot || !["img", "picture"].includes(spot.name)) throw new Error("Choose a picture spot.");
   const image = spot.name === "img" ? spot : startTags(spotText).find(tag => tag.name === "img");
   let markup = loopingVideoMarkup({ ...video, width: undefined, height: undefined, name: undefined }).markup;
   const tag = first(markup)!;
@@ -73,6 +77,11 @@ export function pictureSpotVideo(spotText: string, video: PlayerVideo): PlayerMa
   if (alt?.value) kept += attr("aria-label", decodeHtmlEntities(alt.value, true));
   markup = markup.slice(0, tag.end - 1) + kept + markup.slice(tag.end - 1);
   return { markup, notes: [] };
+}
+/** Replace the whole picture wrapper, preserving its presentation attributes. */
+export function gifLoopingVideo(source: string, range: ElementRange, video: PlayerVideo, options: { linked?: boolean } = {}): PlayerMarkup {
+  const written = pictureVideo(source.slice(range.start, range.end), video);
+  return options.linked ? { ...written, markup: without(written.markup, ["controls"]) } : written;
 }
 function sectionAt(source: string, range: ElementRange) {
   const section = [...descendants(parseSource(source))].find(el => el.start === range.tag.start);

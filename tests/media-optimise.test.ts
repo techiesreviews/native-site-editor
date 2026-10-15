@@ -283,6 +283,17 @@ test("worker encodes only needed fallbacks, keeps copies in the chosen format, a
     assert.deepEqual([sharing.outputs[0].width, sharing.outputs[0].height], [1200, 630]);
     assert.deepEqual(draws[0], { width: 1200, height: 630, args: [47.61904761904767, 0, 1904.7619047619046, 1000, 0, 0, 1200, 630] });
     assert.notDeepEqual(new Uint8Array(await sharing.outputs[0].blob.arrayBuffer()), strippedImageSource(png(), "image/png", true));
+    const gif = new Uint8Array([71, 73, 70, 56, 57, 97, 1, 0, 1, 0, 0, 0, 0, 44, 0, 0, 0, 0, 1, 0, 1, 0, 0, 2, 2, 68, 1, 0, 44, 0, 0, 0, 0, 1, 0, 1, 0, 0, 2, 2, 68, 1, 0, 59]);
+    assert.equal(gifIsAnimated(gif), true);
+    const moving = new File([gif], "moving.gif", { type: "image/gif" });
+    const firstFrame = await run(moving, { ...SOCIAL_IMAGE_OPTIONS, sharing: true });
+    assert.equal(firstFrame.outputs.length, 1);
+    assert.equal(firstFrame.outputs[0].extension, "jpg");
+    assert.equal(firstFrame.outputs[0].blob.type, "image/jpeg");
+    assert.deepEqual(calls, [{ width: 1200, type: "image/jpeg", quality: .85 }]);
+    const ordinaryGif = await run(moving);
+    assert.equal(ordinaryGif.outputs[0].extension, "gif");
+    assert.equal(calls.length, 0);
     const full = await run(undefined, { ...SOCIAL_IMAGE_OPTIONS, sharing: true }, { x: 0, y: 0, width: 1, height: 1 });
     assert.equal(full.outputs[0].extension, "jpg");
 
