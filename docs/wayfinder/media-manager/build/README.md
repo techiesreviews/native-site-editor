@@ -94,6 +94,7 @@ The build plan for the [media-manager map](../map.md). Requirements, flow per sl
 | [45 Agents set shape and focus, and trim](tickets/45-agents-frame-and-trim.md) | sol | 38, 40, 37 |
 | [90 Undo of removing an unsaved file brings its picture back too](tickets/90-undo-retrim-bytes.md) | sol | 41 |
 | [92 Agents' frame_image knows component shapes](tickets/92-agent-frame-component-shapes.md) | sol | 43 |
+| [94 The shape menu fits on a phone](tickets/94-phone-shape-menu.md) | claude | 44 |
 
 ### Phase 4: Clean-up, renaming, Replace everywhere
 
