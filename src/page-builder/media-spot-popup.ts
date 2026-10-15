@@ -27,6 +27,7 @@ import { PICTURE_SPOT_MESSAGE, readLooping } from "./looping-video";
 import { mediaResolvePath } from "./media-references";
 import { decodeHtmlEntities } from "./html-entities";
 import { mediaAttribute } from "./media-attributes";
+import { isMediaLibraryPath } from "./media-library-filter";
 
 export interface MediaSpotPopupOptions {
   ports: MediaControllerPorts;
@@ -88,7 +89,7 @@ export async function openMediaSpotPopup(options: MediaSpotPopupOptions) {
   /** The Media host's file changes (still, subtitles, Vimeo's bar): each one Undo step, everywhere. */
   const workspace = async () => {
     const { createMediaWorkspace } = await import("./media-workspace");
-    const media = createMediaWorkspace(() => options.workspaceContext());
+    const media = createMediaWorkspace(() => options.workspaceContext(isMediaLibraryPath));
     await media.load();
     return media;
   };
@@ -121,7 +122,7 @@ export async function openMediaSpotPopup(options: MediaSpotPopupOptions) {
   void (async () => {
     if (!file || !player) return;
     try {
-      const ctx = await options.workspaceContext();
+      const ctx = await options.workspaceContext(isMediaLibraryPath);
       const url = URL.createObjectURL(await ctx.blob(file));
       if (closed) { URL.revokeObjectURL(url); return; }
       urls.push(url); player.src = url;
@@ -130,7 +131,7 @@ export async function openMediaSpotPopup(options: MediaSpotPopupOptions) {
   const replaceButton = actionButton("image-popup__link", () => void replace());
   replaceButton.append(svg(imageIcon), "Replace");
   replaceButton.title = spot ? "Choose a picture or another video for this spot" : `Choose other media for this place`;
-  const hint = node("p", "image-popup__hint", kind === "video" ? spot ? "Loops silently in this picture spot." : "Pause at a moment for its still picture." : "");
+  const hint = node("p", "image-popup__hint", kind === "video" ? spot ? "Replace takes a picture or another video." : "Pause at a moment for its still picture." : "");
   const under = node("div", "image-popup__under"); under.append(hint, replaceButton);
   const fileCell = node("div"); fileCell.append(well, under);
   const fileRow = popupRow(TITLES[kind] === "Online video" ? "Video" : kind === "download" ? "File" : TITLES[kind], fileCell, "image-popup__row--picture");
@@ -240,7 +241,7 @@ export async function openMediaSpotPopup(options: MediaSpotPopupOptions) {
       list.push(popupRow("Loop silently", loopLine));
     }
     if (kind === "video" && file) {
-      const ctx = await options.workspaceContext().catch(() => undefined);
+      const ctx = await options.workspaceContext(isMediaLibraryPath).catch(() => undefined);
       if (closed) return;
       const paths = ctx?.paths ?? [];
       const recorded = facts?.files[file]?.subtitles;

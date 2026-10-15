@@ -37,6 +37,13 @@ async function save(page: Page) {
   await expect(page.locator("#status")).toHaveText(/Up to date with main|Selected files saved to GitHub\./, { timeout: 30_000 });
   await expect(publishButton(page)).toBeDisabled();
 }
+/** The selected video's Media popup (slice 119) and its Loop silently switch. */
+async function loopSwitch(page: Page) {
+  await bar(page).getByRole("button", { name: "Media", exact: true }).click();
+  const popup = page.getByRole("dialog", { name: "Video", exact: true });
+  await expect(popup).toBeVisible();
+  return popup.getByRole("switch", { name: "Loop silently", exact: true });
+}
 /** Add → Media (the blocks beside the Add panel), after the section's words: the picker lists every kind. */
 async function addMedia(page: Page, file: string, use: string) {
   await frame(page).locator("#scene p").click();
@@ -61,7 +68,7 @@ test("Add → Media places a video with its still and the player; the canvas kee
   await expect(video).toBeVisible();
   await expect(video).not.toHaveAttribute("controls");
   expect(await video.evaluate(element => (element as HTMLVideoElement).paused)).toBe(true);
-  await expect(bar(page).getByRole("checkbox", { name: "Looping video", exact: true })).toBeVisible();
+  await expect(bar(page).getByRole("button", { name: "Media", exact: true })).toBeVisible();
   // One Undo takes back the video, the head links and the player files.
   await page.locator(".code-editor__undo").first().click();
   await expect.poll(() => mounted(page)).toBe(before);
@@ -104,14 +111,14 @@ test("a picture spot's picker offers videos too: a chosen video loops silently t
   expect(await mounted(page)).toContain('<script type="module" src="/scripts/media-player.js"></script>');
   // In a picture spot the video always loops silently.
   await frame(page).locator("#scene video").click();
-  await expect(bar(page).getByRole("checkbox", { name: "Looping video", exact: true })).toBeDisabled();
+  await expect(await loopSwitch(page)).toBeDisabled();
 });
 test("selected video loops silently, saves with player, then returns to play with sound on tap", async ({ page, baseURL }) => {
   await open(page, baseURL);
   const video = frame(page).locator("#scene > video");
   await expect(video).not.toHaveAttribute("controls");
   await video.click();
-  const loop = bar(page).getByRole("checkbox", { name: "Looping video", exact: true });
+  const loop = await loopSwitch(page);
   await expect(loop).not.toBeChecked();
   const before = await mounted(page);
   await loop.check();
@@ -121,7 +128,7 @@ test("selected video loops silently, saves with player, then returns to play wit
   await expect.poll(() => mounted(page)).toBe(before);
   for (const path of ["scripts/media-player.js", "scripts/media-online.js", "styles/media-player.css"]) expect(await storedDraft(page, path)).toBeUndefined();
   await video.click();
-  await bar(page).getByRole("checkbox", { name: "Looping video", exact: true }).check();
+  await (await loopSwitch(page)).check();
   await expect.poll(() => mounted(page)).toContain("muted loop");
   await save(page);
   const on = await saved(page, baseURL);
@@ -132,7 +139,7 @@ test("selected video loops silently, saves with player, then returns to play wit
   expect(on).toContain('<script type="module" src="/scripts/media-player.js"></script>');
   expect(await saved(page, baseURL, "scripts/media-player.js")).toContain("Looping video");
   await video.click();
-  await bar(page).getByRole("checkbox", { name: "Looping video", exact: true }).uncheck();
+  await (await loopSwitch(page)).uncheck();
   await expect.poll(() => mounted(page)).toContain('preload="none"');
   await save(page);
   const off = await saved(page, baseURL);

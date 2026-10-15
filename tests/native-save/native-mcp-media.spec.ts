@@ -193,7 +193,7 @@ test("an agent sets Square and focus, then trims that place; Media shows the cop
     await expect(image).toHaveCSS("aspect-ratio", "1 / 1");
     await expect(image).toHaveCSS("object-position", "20% 70%");
     await image.click();
-    await expect(page.getByRole("toolbar", { name: "Edit bar" }).locator(".edit-bar__media")).toHaveText("ImageSquare");
+    await expect(page.getByRole("toolbar", { name: "Edit bar" }).locator(".edit-bar__media")).toHaveText("MediaSquare");
     const square = await source();
     const trimmed = await call("frame_image", { path: indexPath, element, trim: { zoom: 2 } });
     expect(trimmed.state).toBe("applied"); expect(trimmed.result.path).toMatch(/agent-frame-crop\.(webp|png)$/);

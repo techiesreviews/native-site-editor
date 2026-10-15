@@ -17,16 +17,19 @@ test.beforeEach(async ({ page, baseURL }) => {
   await expect(frame(page).locator("video")).toBeVisible();
 });
 
-test("existing video attributes preserve native HTML and one Undo restores a field edit", async ({ page }) => {
+test("a video's title from its Media popup keeps the other attributes, and one Undo restores it", async ({ page }) => {
   const before = await source(page);
   await frame(page).locator("video").click({ position: { x: 5, y: 5 } });
-  await bar(page).getByRole("button", { name: "Video file", exact: true }).click();
-  await page.getByRole("textbox", { name: "Video file", exact: true }).fill("/media/new.mp4?a=1&b=2");
-  await expect.poll(() => source(page)).toContain('src="/media/new.mp4?a=1&amp;b=2" title="Original video"');
+  // The video's file, still picture and title left the bar for the Media popup (slice 119).
+  for (const name of ["Video file", "Still picture", "Title"]) await expect(bar(page).getByRole("button", { name, exact: true })).toHaveCount(0);
+  await bar(page).getByRole("button", { name: "Media", exact: true }).click();
+  const title = page.getByRole("dialog", { name: "Video", exact: true }).getByRole("textbox", { name: "Title", exact: true });
+  await title.fill("New & title");
+  await title.press("Enter");
+  await expect.poll(() => source(page)).toContain('<video aria-label="New &amp; title" controls width="320" height="180" src="/media/old.mp4" title="Original video"></video>');
   await page.keyboard.press("Escape");
   expect(await page.evaluate(async () => (await import("/src/components/code-editor.ts")).runVisualHistory("undo", "index.html"))).toBe(true);
   await expect.poll(() => source(page)).toBe(before);
-  await expect(frame(page).locator("video")).toHaveAttribute("src", "/media/old.mp4");
 });
 
 test("form method and input name use native fields without changing other attributes", async ({ page }) => {

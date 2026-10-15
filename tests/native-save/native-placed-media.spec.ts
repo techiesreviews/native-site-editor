@@ -67,10 +67,12 @@ test("the canvas audio shows its real length, and Play then Stop keeps it", asyn
   await expect.poll(() => audio.evaluate((el: HTMLAudioElement) => el.duration || 0)).toBeCloseTo(41.9, 1);
 });
 
-test("the video's edit bar names its fields in plain words", async ({ page }) => {
+test("the video's edit bar leads with Media; its file, still and title live in the Media popup", async ({ page }) => {
   await choose(page, /^Video/);
-  for (const name of ["Video file", "Still picture", "Title"]) await expect(bar(page).getByRole("button", { name, exact: true })).toBeVisible();
-  for (const name of ["Video URL", "Poster URL"]) await expect(bar(page).getByRole("button", { name, exact: true })).toHaveCount(0);
+  await expect(bar(page).locator(".edit-bar__media")).toHaveText("Media");
+  // Media leads the controls: nothing but the drag grip stands before it.
+  expect(await bar(page).locator(".edit-bar__button:not(.edit-bar__handle)").first().textContent()).toBe("Media");
+  for (const name of ["Video file", "Still picture", "Title", "Video URL", "Poster URL"]) await expect(bar(page).getByRole("button", { name, exact: true })).toHaveCount(0);
 });
 
 test("the hover tag over any part of a download card says Download", async ({ page }) => {
