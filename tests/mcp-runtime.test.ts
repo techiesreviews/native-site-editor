@@ -1357,6 +1357,22 @@ test("agent trim focus and page text equal popup Done for matching shapes, aroun
   }, row.size);
 });
 
+test("an agent trim's explicit focus is written on a place without a shape", () => withTrimWorker(async () => {
+  const { trimPlace } = await import("../src/page-builder/place-trim");
+  const tag = '<img src="/media/images/photo.webp" alt="Photo" style="color:red">', source = `<section>${tag}</section>`;
+  const target = { path: "index.html", node: [0, 0] }, focus = { x: 30, y: 60 };
+  const popup = agentMediaFixture(source), agent = agentMediaFixture(source);
+  await trimPlace(popup.ports, () => popup.controller.workspaceContext(), target,
+    { trim: { x: 0.25, y: 0.25, width: 0.5, height: 0.5 }, frame: { focus } }, { stamp: popup.ports.stamp(), epoch: 1, source, expected: tag });
+  await applyAgentMedia(await agent.controller.workspaceContext(), mediaCommand("frame_image", { element: "0.0", focus, trim: { zoom: 2 } }),
+    target => agent.controller.preparePlacement(target), target => agent.controller.prepareFrame(target));
+  assert.deepEqual(agent.text, popup.text);
+  assert.match(agent.text.get("index.html")!, /object-position: 30% 60%/);
+  assert.deepEqual((await agent.controller.prepareFrame(target).read()).focus, focus);
+  assert.equal(agent.history.length, 1);
+  agent.history.pop()!(); assert.equal(agent.text.get("index.html"), source);
+}));
+
 test("a component's files changed while framing or trimming refuse the agent's change without writing", () => withTrimWorker(async () => {
   for (const [args, change] of [
     [{ shape: "component" as const }, "::slotted(img){object-fit:cover}"],

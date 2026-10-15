@@ -132,6 +132,8 @@ export function agentTrimRequest(request: import("./place-trim").PlaceTrimReques
   if (shape === undefined) {
     if (typeof start.shape === "string") shape = start.shape === "free" ? undefined : start.shape;
     else if (start.shape.kind === "component") shape = "component";
+    // Original would drop an explicit focus: the place keeps its inline style around it instead.
+    if (shape === "original" && request.frame?.focus) shape = undefined;
   }
   const frame = agentComponentChange({ ...request.frame, ...(shape ? { shape } : {}) }, component);
   const kept = componentFrame(writePlaceFrame(tag, frame), undefined, page, component);
