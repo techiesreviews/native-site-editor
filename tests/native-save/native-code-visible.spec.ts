@@ -127,6 +127,8 @@ test('palette code actions hide completely and restore source', async ({ page, b
 
 test('narrow short viewport hides source, preserves canvas and restores both source surfaces', async ({ page, baseURL }) => {
   await page.setViewportSize({ width: 390, height: 650 });
+  // Upright phones keep the code in the sheet under the page (slice 117): open it first.
+  await page.addInitScript(() => sessionStorage.setItem('ase.phone-sheet', JSON.stringify({ open: true, size: 300 })));
   await load(page, baseURL);
   await grip(page).click();
   await hiddenSource(page);
@@ -153,6 +155,8 @@ test('narrow short viewport hides source, preserves canvas and restores both sou
 for (const viewport of [{ width: 844, height: 390 }, { width: 568, height: 320 }, { width: 844, height: 180 }]) {
   test(`landscape ${viewport.width}x${viewport.height} hides source with truthful resize bounds and restores it`, async ({ page, baseURL }) => {
     await page.setViewportSize(viewport);
+    // At 650 px tall the narrow window is an upright phone, whose code is in the sheet under the page (slice 117), open here.
+    await page.addInitScript(() => sessionStorage.setItem('ase.phone-sheet', JSON.stringify({ open: true, size: 300 })));
     await load(page, baseURL);
     const before = await grip(page).getAttribute('aria-valuenow');
     const source = await page.evaluate(async () => (await import('/src/components/code-editor.ts')).getMountedSource('index.html'));

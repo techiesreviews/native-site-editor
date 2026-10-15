@@ -1,4 +1,5 @@
-/* Phones (the column layout): while a page is on the canvas, Page structure and
+/* Phones upright (the column layout, at least 500 px tall; a phone on its side keeps
+   the plain column): while a page is on the canvas, Page structure and
    the code fold into a sheet under it, so the page gets most of the screen.
    The handle pulls it up and down (phone-sheet.ts, loaded on phones only); it
    stays folded until then. --sheet-size is the sheet's height under its handle,
@@ -13,7 +14,7 @@
 .sheet-handle {
   display: none;
 }
-@media (max-width: 650px) {
+@media (max-width: 650px) and (min-height: 500px) {
   @supports (grid-template-rows: subgrid) {
     .workspace:has(> main.has-preview) {
       display: grid;

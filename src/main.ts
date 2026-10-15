@@ -411,7 +411,7 @@ function mountWorkspace() {
     app.querySelector<HTMLElement>(".sidebar")!,
   );
   // Phones: Page structure and the code fold into a sheet under the page (phone-sheet.css); its handle loads on the first phone-wide window.
-  const phone = matchMedia("(max-width: 650px)");
+  const phone = matchMedia("(max-width: 650px) and (min-height: 500px)");
   const sheet = () => {
     if (!phone.matches) return;
     phone.removeEventListener("change", sheet);

@@ -82,7 +82,7 @@ for (const colorScheme of ["light", "dark"] as const) {
   });
 }
 
-test("rail leaves preview space when resizing and becomes a row above the narrow sidebar", async ({ page, baseURL }) => {
+test("rail leaves preview space when resizing and becomes a row above the page on a phone", async ({ page, baseURL }) => {
   await open(page, baseURL);
   await page.setViewportSize({ width: 800, height: 900 });
   const handle = page.locator(".sidebar-resize");
@@ -90,12 +90,14 @@ test("rail leaves preview space when resizing and becomes a row above the narrow
   await expect(handle).toHaveAttribute("aria-valuenow", "392");
   await page.setViewportSize({ width: 600, height: 900 });
   await expect(handle).toHaveAttribute("aria-orientation", "horizontal");
+  // Upright phones fold Page structure into the sheet under the page (slice 117): the rail is a row right above the page.
   const blocks = (await rail(page).boundingBox())!;
-  const side = (await page.locator("#structure-sidebar").boundingBox())!;
-  expect(blocks.y + blocks.height).toBe(side.y);
+  const canvas = (await page.locator(".native-preview-pane").boundingBox())!;
+  expect(blocks.y + blocks.height).toBe(canvas.y);
   const buttons = await rail(page).getByRole("button").all();
   const rows = await Promise.all(buttons.map(async (button) => (await button.boundingBox())!.y));
   expect(new Set(rows).size).toBe(1);
+  await page.getByRole("button", { name: "Page structure and code" }).click();
   await handle.press("Enter");
   await expect(rail(page)).toBeVisible();
   await expect(page.getByRole("tree", { name: "Page structure" })).toBeHidden();

@@ -34,6 +34,8 @@ async function gripInside(page: Page, handle: Locator) {
 for (const width of [1440, 390]) {
   test(`code collapses to zero and its edge grip restores at ${width}px`, async ({ page, baseURL }) => {
     await page.setViewportSize({ width, height: 1000 });
+    // On a phone the code is in the sheet under the page (slice 117), open here; the sheet's handle sizes it.
+    if (width < 650) await page.addInitScript(() => sessionStorage.setItem("ase.phone-sheet", JSON.stringify({ open: true, size: 500 })));
     await load(page, baseURL);
     const before = await page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html"));
     const drafts = await storedDrafts(page);
@@ -58,7 +60,7 @@ for (const width of [1440, 390]) {
     await code(page).click();
     await expect.poll(() => metric(split, "height")).toBe(draggedHeight);
     await code(page).press("End");
-    expect(await metric(split, "height")).toBeGreaterThan(draggedHeight);
+    if (width > 650) expect(await metric(split, "height")).toBeGreaterThan(draggedHeight);
 
     await code(page).press("Home");
     await load(page, baseURL);
@@ -102,7 +104,10 @@ test("Hide code command returns focused Monaco to the visible restore grip", asy
 test("touch restore grips use centred 44px targets and reopen code", async ({ browser, baseURL }) => {
   const context = await browser.newContext({ viewport: { width: 390, height: 1000 }, isMobile: true, hasTouch: true, reducedMotion: "reduce" });
   try {
-    const page = await context.newPage(); await load(page, baseURL);
+    const page = await context.newPage();
+    // The code is in the phone's sheet under the page (slice 117), open here.
+    await page.addInitScript(() => sessionStorage.setItem("ase.phone-sheet", JSON.stringify({ open: true, size: 500 })));
+    await load(page, baseURL);
     await code(page).tap();
     await expect(code(page)).toHaveAttribute("aria-valuenow", "0");
     expect(await metric(code(page), "height")).toBe(44);
