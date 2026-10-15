@@ -29,10 +29,15 @@ async function tab(page: Page, name: "Pages" | "Media" | "Files") {
   if (name === "Media") await expect(pane(page).getByRole("button", { name: "Details for images/spare-1.svg", exact: true })).toBeVisible();
 }
 
-/** Every tab shows the same box, reaching 16 px above the window's bottom, under the top bar. */
+/** The shown list's bottom edge, which fills the box down to its 12px padding. */
+const listBottom = (page: Page, selector: string) => page.locator(selector).evaluate(element => element.getBoundingClientRect().bottom);
+
+/** Every tab shows the same box, reaching 16 px above the window's bottom, under the top bar;
+ * the Pages and Files lists fill it and scroll inside. */
 async function expectOneBox(page: Page) {
   await tab(page, "Pages");
   const pages = await box(page);
+  expect(await listBottom(page, ".pages-tree")).toBeGreaterThanOrEqual(pages.bottom - 13);
   expect(pages.bottom).toBe(pages.viewport - 16);
   const bar = await page.locator(".topbar").evaluate(element => element.getBoundingClientRect().bottom);
   expect(pages.top).toBeGreaterThanOrEqual(Math.floor(bar) - 1);
@@ -40,11 +45,17 @@ async function expectOneBox(page: Page) {
   expect(await box(page)).toEqual(pages);
   await tab(page, "Files");
   expect(await box(page)).toEqual(pages);
+  expect(await listBottom(page, "#files")).toBeGreaterThanOrEqual(pages.bottom - 13);
+  const files = await page.locator("#files").evaluate(element => ({ overflow: getComputedStyle(element).overflowY, fits: element.getBoundingClientRect().bottom <= innerHeight }));
+  expect(files).toEqual({ overflow: "auto", fits: true });
 }
 
-/** File details' Save row, and Clean up's Remove row, are inside the window. */
+/** File details' Save row, Manage collections' New collection, and Clean up's Remove row are inside the window. */
 async function expectActionsInView(page: Page) {
   await tab(page, "Media");
+  await pane(page).getByLabel("Collections", { exact: true }).selectOption({ label: "Manage collections…" });
+  await expect(pane(page).getByRole("button", { name: "New collection", exact: true })).toBeInViewport({ ratio: 1 });
+  await pane(page).getByRole("button", { name: "Back to grid", exact: true }).click();
   await pane(page).getByRole("button", { name: "Details for images/spare-1.svg", exact: true }).click();
   await expect(pane(page).getByRole("button", { name: "Save details", exact: true })).toBeInViewport({ ratio: 1 });
   await pane(page).getByRole("button", { name: "Back", exact: true }).first().click();

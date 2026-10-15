@@ -9,6 +9,9 @@ export function mountDropdown(options: {
   /** Position against a joined control rather than one of its buttons. */
   anchorElement?: HTMLElement;
   align?: "start" | "end";
+  /** Without CSS anchor positioning: hang from this element's bottom edge, centred in the
+   * window (the explorer under the top bar; its CSS does the same with anchors). */
+  below?: HTMLElement;
   anchor: string;
   closeOnAction?: boolean;
   /** A click runs this, with the panel held open, instead of toggling the panel. */
@@ -46,9 +49,9 @@ export function mountDropdown(options: {
     if (!CSS.supports("position-area", "bottom")) {
       const rect = anchorElement.getBoundingClientRect();
       const width = parseFloat(getComputedStyle(panel).width) || 480;
-      const left = options.align === "end" ? rect.right - width : rect.left;
+      const left = options.below ? (innerWidth - width) / 2 : options.align === "end" ? rect.right - width : rect.left;
       panel.style.left = `${Math.max(16, Math.min(left, innerWidth - width - 16))}px`;
-      panel.style.top = `${rect.bottom + 6}px`;
+      panel.style.top = `${options.below ? options.below.getBoundingClientRect().bottom : rect.bottom + 6}px`;
     }
     if (!isOpen()) panel.showPopover();
   }

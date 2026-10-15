@@ -436,6 +436,7 @@ function mountWorkspace() {
   explorerDropdown = mountDropdown({
     trigger: element<HTMLButtonElement>("explorer-toggle"),
     panel: element("explorer"),
+    below: app.querySelector<HTMLElement>(".topbar")!,
     anchor: "--explorer",
   });
   createDialog = createCreateDialog({

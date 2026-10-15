@@ -431,9 +431,10 @@ test("on a phone, File details is its own screen with Back, the preview first an
   await expect(library.locator(".media-library__grid")).toBeHidden();
   const [preview, name] = await Promise.all([library.locator(".media-detail__preview").boundingBox(), library.getByLabel("File name", { exact: true }).boundingBox()]);
   expect(preview!.y + preview!.height).toBeLessThanOrEqual(name!.y);
-  // The buttons follow the fields and cover none of them.
+  // Save stays pinned in view (slice 104); scrolled to the end, the buttons follow the fields and cover none of them.
   const save = library.getByRole("button", { name: "Save details", exact: true });
-  await save.scrollIntoViewIfNeeded();
+  await expect(save).toBeInViewport({ ratio: 1 });
+  await library.evaluate(element => { element.scrollTop = element.scrollHeight; });
   const [saveBox, keepBox] = await Promise.all([save.boundingBox(), library.getByText("Never suggested for clean-up", { exact: false }).boundingBox()]);
   expect(saveBox!.y).toBeGreaterThanOrEqual(keepBox!.y + keepBox!.height);
   expect(saveBox!.height).toBeGreaterThanOrEqual(44);

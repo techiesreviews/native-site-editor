@@ -112,7 +112,8 @@ for (const colorScheme of ["light", "dark"] as const) {
       return { height: box.height, scrollHeight: element.scrollHeight, nestedScrollers: [...element.querySelectorAll("*")].filter(child => ["auto", "scroll"].includes(getComputedStyle(child).overflowY) && child.scrollHeight > child.clientHeight).length };
     });
     await test.info().attach("pane-geometry", { body: JSON.stringify(bounds), contentType: "application/json" });
-    expect(bounds.height).toBeLessThanOrEqual(429);
+    // The explorer runs to 16px above the window's bottom (slice 104), so the pane ends inside it.
+    expect(await pane(page).evaluate(element => element.getBoundingClientRect().bottom)).toBeLessThanOrEqual(780 - 16);
     expect(bounds.scrollHeight).toBeGreaterThan(bounds.height);
     expect(bounds.nestedScrollers).toBe(0);
     await pane(page).getByRole("button", { name: "Remove file…", exact: true }).scrollIntoViewIfNeeded();
@@ -234,13 +235,16 @@ test("background image loads preserve typing, the chosen collection and details"
 });
 
 for (const colorScheme of ["light", "dark"] as const) {
-  test(`Media leaves canvas and code visible on desktop in ${colorScheme}`, async ({ page, baseURL }) => {
+  test(`Media fills the height under the top bar on desktop in ${colorScheme}`, async ({ page, baseURL }) => {
     await page.setViewportSize({ width: 1440, height: 900 }); await page.emulateMedia({ colorScheme }); await open(page, baseURL);
     await expect.poll(() => pane(page).locator(".media-library__card img").first().evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
     const box = await page.locator("#explorer-media").boundingBox();
     await test.info().attach("pane-geometry", { body: JSON.stringify(box), contentType: "application/json" });
-    expect(box?.height).toBeLessThanOrEqual(495);
-    expect((box?.y ?? 900) + (box?.height ?? 900)).toBeLessThan(700);
+    // Slice 104 (audit C1): a library is a full-height surface; the explorer stops 16px above the bottom.
+    const explorer = await page.locator("#explorer").boundingBox();
+    expect(explorer!.y + explorer!.height).toBeCloseTo(900 - 16, 0);
+    expect(box!.y + box!.height).toBeLessThanOrEqual(900 - 16);
+    expect(box!.height).toBeGreaterThan(650);
     await page.screenshot({ path: `.scratch/t3-continuation/media-manager-desktop-${colorScheme}.png` });
     await pane(page).getByRole("button", { name: "Details for images/studio-desk.svg", exact: true }).click();
     await expect(pane(page).getByRole("button", { name: "Back", exact: true })).toBeFocused();
