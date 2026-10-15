@@ -470,7 +470,28 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     const end = parseFloat(style.paddingRight) + parseFloat(style.borderRightWidth);
     panel.style.width = `${Math.ceil(Math.max(...rects.map((r) => r.right)) - panel.getBoundingClientRect().left + end)}px`;
   }
-  const resize = new ResizeObserver(() => position());
+  // On a phone-wide window a selection the bar covers is scrolled clear (roomScroll): when it
+  // is chosen, after a double-click's second press could land, and when the canvas changes
+  // height (the phone sheet) and has settled; never on a scroll. Still covered (the page
+  // could not scroll that way), the other way once.
+  function room(key: string) {
+    if (!scroll || !matchMedia("(max-width: 650px)").matches) return;
+    clearTimeout(roomTimer);
+    const nudge = (tried: number) => {
+      const dy = pinned && shownKey === key ? roomScroll(pinned, tried) : 0;
+      if (!dy) return;
+      scroll(dy);
+      if (!tried) roomTimer = window.setTimeout(() => nudge(dy), 500);
+    };
+    roomTimer = window.setTimeout(() => nudge(0), 400);
+  }
+  let frameHeight = 0;
+  const resize = new ResizeObserver(() => {
+    position();
+    const height = frame.getBoundingClientRect().height;
+    if (frameHeight && height !== frameHeight && shownKey) room(shownKey);
+    frameHeight = height;
+  });
   resize.observe(frame);
   resize.observe(pane);
   resize.observe(bar);
@@ -1077,17 +1098,7 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     rect = at;
     position();
     const key = model.origin ? `${model.origin.path} ${model.origin.node?.join(".")}` : model.kind;
-    if (key !== shownKey && scroll && matchMedia("(max-width: 650px)").matches) {
-      clearTimeout(roomTimer);
-      // Then, still covered (the page could not scroll that way), the other way once.
-      const nudge = (tried: number) => {
-        const dy = pinned && shownKey === key ? roomScroll(pinned, tried) : 0;
-        if (!dy) return;
-        scroll(dy);
-        if (!tried) roomTimer = window.setTimeout(() => nudge(dy), 500);
-      };
-      roomTimer = window.setTimeout(() => nudge(0), 400);
-    }
+    if (key !== shownKey) room(key);
     shownKey = key;
     // A field asked to open does so once the bar is in place, and keeps the focus.
     if (opening) {

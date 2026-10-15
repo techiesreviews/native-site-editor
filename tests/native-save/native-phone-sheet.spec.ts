@@ -2,6 +2,7 @@
 // phone width, while a page is on the canvas, Page structure and the code fold
 // into a pull-up sheet under the page; the edit bar never covers the selection.
 // Default fixture: index.html's hero image is images/placeholder.svg.
+import { readFileSync } from "node:fs";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
@@ -119,6 +120,50 @@ test.describe("phone", () => {
     await expect(handle(page)).toHaveAttribute("aria-expanded", "false");
     await expect.poll(() => sheetSize(page)).toBe(0);
     await expect(structure(page)).toBeHidden();
+  });
+
+  test("at the page's top, a covered selection is scrolled the other way; opening the sheet keeps it clear", async ({ page, baseURL }) => {
+    await open(page, baseURL);
+    // The hero picture tall enough that the bar fits neither above nor below it, with the page at its top.
+    const canvas = await box(page.locator(".native-preview-frame"));
+    const picture = frame(page).locator(".hero img");
+    await picture.evaluate((el, height) => { el.style.height = `${height}px`; el.style.display = "block"; window.scrollTo(0, 0); }, Math.round(canvas.height * 0.62));
+    await picture.tap();
+    await expect(bar(page)).toBeVisible();
+    await expect.poll(() => clearOfBar(page, picture)).toBe(0);
+    // Back to a normal picture, chosen; the sheet opens and the page gets shorter: still clear.
+    await picture.evaluate((el) => { el.style.height = "260px"; });
+    await expect.poll(() => clearOfBar(page, picture)).toBe(0);
+    await handle(page).tap();
+    await expect(structure(page)).toBeVisible();
+    await expect.poll(() => clearOfBar(page, picture)).toBe(0);
+  });
+
+  test("a video plays from its bar on a phone, in view and clear of the bar", async ({ page, baseURL }) => {
+    await page.goto(baseURL!);
+    const seed = async (data: { path: string; content?: string; base64?: string }) => {
+      expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data })).ok()).toBe(true);
+    };
+    await seed({ path: "media/clip.mp4", base64: readFileSync("tests/native-save/clip.mp4").toString("base64") });
+    await seed({ path: "index.html", content: `<!doctype html><html lang="en"><head><title>Video</title></head><body><main><h1>Video</h1><p style="height:500px">Words.</p>
+<video src="/media/clip.mp4" controls preload="none" playsinline width="640" height="360" title="Clip" style="display:block;width:100%;height:auto"></video><p style="height:900px">More.</p></main></body></html>` });
+    await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+    await page.reload();
+    await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
+    const video = frame(page).locator("video");
+    await video.scrollIntoViewIfNeeded();
+    await video.tap({ position: { x: 30, y: 20 } });
+    const play = bar(page).getByRole("button", { name: "Play", exact: true });
+    await expect(play).toBeVisible();
+    await expect.poll(() => clearOfBar(page, video)).toBe(0);
+    await play.click();
+    await expect(bar(page).getByRole("button", { name: "Stop", exact: true })).toBeVisible();
+    await expect.poll(() => video.evaluate((el: HTMLVideoElement) => !el.paused || el.ended)).toBe(true);
+    const canvas = await box(page.locator(".native-preview-frame"));
+    const shown = await box(video);
+    expect(shown.y).toBeGreaterThanOrEqual(canvas.y - 1);
+    expect(shown.y + shown.height).toBeLessThanOrEqual(canvas.y + canvas.height + 1);
+    await expect.poll(() => clearOfBar(page, video)).toBe(0);
   });
 
   test("a drag cancelled from folded folds the panes again", async ({ page, baseURL }) => {
