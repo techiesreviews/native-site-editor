@@ -519,3 +519,19 @@
   .image-popup__foot { padding: 10px 14px 14px; }
   .image-popup__button--primary { flex: 1; }
 }
+/* Short phones (a small phone on its side): 56 % is all head, note and Done, so the sheet takes
+   the height and scrolls as one, its message and Done stuck to its foot (slice 94). */
+@media (max-width: 700px) and (max-height: 480px) {
+  .image-popup {
+    max-height: calc(100dvh - 16px);
+    overflow: auto;
+    overscroll-behavior: contain;
+  }
+  .image-popup__rows { flex-shrink: 0; overflow: visible; }
+  .image-popup__bottom {
+    position: sticky;
+    bottom: 0;
+    z-index: 6;
+    background: var(--panel-surface);
+  }
+}

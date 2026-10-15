@@ -190,6 +190,18 @@ test("a phone's shape menu is whole on screen, uncovered, and Free can be presse
   await popup(page).getByRole("menuitemradio", { name: "Square", exact: true }).click();
   await expect(popup(page).getByRole("button", { name: "Shape: Square", exact: true })).toBeVisible();
   await expect(popup(page).getByRole("button", { name: "Done", exact: true })).toBeInViewport({ ratio: 1 });
+  // Room neither under nor over the button (a phone on its side): the menu stays on screen and scrolls.
+  await page.setViewportSize({ width: 320, height: 280 });
+  await popup(page).getByRole("button", { name: /^Shape:/ }).click();
+  const menu = popup(page).getByRole("menu", { name: "Shape" });
+  await expect(menu).toBeInViewport({ ratio: 1 });
+  expect(await menu.evaluate(element => element.scrollHeight > element.clientHeight)).toBe(true);
+  const free = popup(page).getByRole("menuitemradio", { name: "Free", exact: true });
+  await free.scrollIntoViewIfNeeded();
+  await expect(free).toBeInViewport({ ratio: 1 });
+  expect((await free.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  await free.click();
+  await expect(popup(page).getByRole("button", { name: "Shape: Free", exact: true })).toBeAttached();
 });
 
 test.describe("on a touch phone", () => {
