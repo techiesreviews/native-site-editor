@@ -123,6 +123,7 @@ const cases: Record<FrameMessage["type"], Case> = {
   "component-styles": { valid: { tags: ["x-card", 3] }, read: { tags: ["x-card"] }, malformed: [] },
   shortcut: { valid: { name: "palette" }, malformed: [{ name: 1 }] },
   "refusal-note-action": { valid: {}, malformed: [] },
+  "media-ended": { valid: { id: 4 }, malformed: [{ id: "4" }, { id: 1.5 }, { id: undefined }] },
 };
 
 const message = (type: string, fields: Record<string, unknown>) => ({ source: FRAME_SOURCE, type, context, ...fields });
