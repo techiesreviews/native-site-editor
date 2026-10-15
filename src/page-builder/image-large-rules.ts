@@ -87,6 +87,13 @@ export function rulerValue(start: number, dx: number) {
   return Math.abs(value) < 0.75 ? 0 : value;
 }
 
+/** A degree label on the ruler (6 px a degree, the current value in the middle of a `width` px ruler):
+ * shown whole inside the ruler, and not under the current value's own reading (slice 110). */
+export function rulerLabelShown(degrees: number, value: number, width: number) {
+  const apart = Math.abs(degrees - value);
+  return apart >= 6 && apart * 6 + 14 <= width / 2;
+}
+
 /** Reset: the original picture, unturned and whole, in the place's own shape, centred. */
 export function resetEdit(shape: PopupShape): PopupEdit {
   return { shape: shape === "free" ? "original" : shape, focus: { x: 50, y: 50 }, cut: uncut() };

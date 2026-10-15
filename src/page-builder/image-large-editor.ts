@@ -1,9 +1,10 @@
 // The large editor (media build slice 42; ticket 09 "Large editor"; the large window in
 // crop-wordpress-style.html, laid out as WordPress 7.1's Media Editor): the picture area with the
 // frame's handles and a straighten ruler, a side panel with Turn, Flip, Zoom, Shape, the live
-// message and previews, Reset, Undo and Redo, Cancel and Done. It edits the image popup's own
+// previews, Reset, Undo and Redo, the message and Cancel and Done. It edits the image popup's own
 // state: Done is the popup's Done (saving closes both); Cancel, ✕ and Escape go back to the popup
-// as it was. On phones: one row of icons with the shape menu, and the previews behind Preview.
+// as it was. Shape is the popup's shape menu (slice 110). On phones: one row of labelled tools
+// ending with Shape, and the previews behind Preview.
 import "./image-large-editor.css";
 import { node } from "../ui/dom";
 import { icon } from "../icons";
@@ -17,11 +18,13 @@ import shapeIcon from "@phosphor-icons/core/regular/crop.svg?raw";
 import eyeIcon from "@phosphor-icons/core/regular/eye.svg?raw";
 import checkCircleIcon from "@phosphor-icons/core/regular/check-circle.svg?raw";
 import infoIcon from "@phosphor-icons/core/regular/info.svg?raw";
-import { POPUP_SHAPES, popupMessage, shapeLabel, type PopupShape } from "./image-popup-rules";
-import { componentShapeEntry, componentShapeNotice } from "./component-shapes";
+import { popupMessage, type PopupShape } from "./image-popup-rules";
+import { componentShapeNotice } from "./component-shapes";
 import { cutArea, makesNewPicture, nudgeFree, shownTrim, turnBy, turnedSize, type TrimRect } from "./image-popup-trim";
-import { canZoomOut, chooseShape, editKey, fitView, flipEdit, moveArea, resetEdit, resizeArea, rulerValue, straightenEdit, zoomArea, type PopupEdit } from "./image-large-rules";
+import { canZoomOut, chooseShape, editKey, fitView, flipEdit, moveArea, resetEdit, resizeArea, rulerLabelShown, rulerValue, straightenEdit, zoomArea, type PopupEdit } from "./image-large-rules";
 import { mountPreviews, paintTrim, type ImagePopupState, type PreviewDevice } from "./image-popup-view";
+import { mountShapeMenu } from "./shape-menu";
+import { isSeeThrough } from "./media-transparency";
 
 export interface LargeEditorEvents {
   change(edit: PopupEdit): void;
@@ -30,7 +33,6 @@ export interface LargeEditorEvents {
 }
 
 const DEVICES: readonly PreviewDevice[] = [{ name: "Phone", viewport: 390, width: 92, height: 184 }, { name: "Computer", viewport: 1280, width: 196, height: 122 }];
-const SHAPES: readonly PopupShape[] = [...POPUP_SHAPES.map(shape => shape.id), "free"];
 const HANDLES = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
 const phone = () => matchMedia("(max-width: 700px)").matches;
 const svg = (raw: string, size = 20) => {
@@ -41,7 +43,7 @@ const svg = (raw: string, size = 20) => {
 
 /** Opens the large editor on the popup's `state`; `own` is the place's shape when the popup opened (Reset goes back to it). */
 export function mountLargeEditor(state: ImagePopupState, own: PopupShape, events: LargeEditorEvents) {
-  const size = state.size!, componentShape = componentShapeEntry(state.component)?.id;
+  const size = state.size!;
   const edit = (): PopupEdit => ({ shape: state.shape, focus: state.focus, cut: state.cut, around: state.around, aroundFocus: state.aroundFocus });
   const dialog = node("dialog", "image-large");
   dialog.setAttribute("aria-labelledby", "image-large-title");
@@ -68,8 +70,9 @@ export function mountLargeEditor(state: ImagePopupState, own: PopupShape, events
   }));
   const stage = node("div", "image-large__stage"); stage.append(picture, frame);
 
-  // The straighten ruler: −45° to 45°, its strip moving under a fixed pointer.
-  const strip = node("div", "image-large__strip");
+  // The straighten ruler: −45° to 45°, its strips moving under a fixed pointer. The ticks fade at
+  // the ends; the degree labels do not (they show only where they fit whole, slice 110).
+  const strip = node("div", "image-large__strip"), numbers = node("div", "image-large__strip");
   for (let degrees = -45; degrees <= 45; degrees += 1.5) {
     const tick = node("span", `image-large__tick${degrees % 15 === 0 ? " image-large__tick--big" : degrees % 7.5 === 0 ? " image-large__tick--mid" : ""}`);
     tick.style.left = `${(degrees + 45) * 6}px`;
@@ -77,7 +80,7 @@ export function mountLargeEditor(state: ImagePopupState, own: PopupShape, events
     if (degrees % 15 === 0) {
       const number = node("span", "image-large__degrees", `${degrees}°`);
       number.style.left = `${(degrees + 45) * 6}px`; number.dataset.degrees = String(degrees);
-      strip.append(number);
+      numbers.append(number);
     }
   }
   const straighten = node("input", "image-large__straighten");
@@ -85,24 +88,27 @@ export function mountLargeEditor(state: ImagePopupState, own: PopupShape, events
   straighten.setAttribute("aria-label", "Straighten");
   const reading = node("span", "image-large__reading");
   const window_ = node("div", "image-large__window"); window_.append(strip);
+  const labels = node("div", "image-large__labels"); labels.append(numbers); labels.setAttribute("aria-hidden", "true");
   const pointer = node("span", "image-large__pointer");
-  const ruler = node("div", "image-large__ruler"); ruler.append(window_, pointer, reading, straighten);
+  const ruler = node("div", "image-large__ruler"); ruler.append(window_, labels, pointer, reading, straighten);
   const rulerRow = node("div", "image-large__ruler-row"); rulerRow.append(ruler);
   const area = node("div", "image-large__area"); area.append(stage, rulerRow);
 
-  // Turn, Flip and Zoom: labelled groups in the side panel; one row of icons on phones.
-  const tools = (className: string) => {
-    const make = (label: string, raw: string, key: string, action: () => void) => {
+  // Turn, Flip and Zoom: labelled groups in the side panel; on phones one row of tools, each an
+  // icon over a short label (Apple Photos' and Google Photos' tool rows).
+  const tools = (className: string, phoneRow = false) => {
+    const make = (label: string, short: string, raw: string, key: string, action: () => void) => {
       const item = iconButton(label, svg(raw, 22), action);
       item.title = `${label} (${key})`;
+      if (phoneRow) { item.classList.add("image-large__tool"); item.append(node("span", "image-large__tool-label", short)); }
       return item;
     };
-    const turnLeft = make("Turn left", turnLeftIcon, "Shift+R", () => act(turn(-1)));
-    const turnRight = make("Turn right", turnRightIcon, "R", () => act(turn(1)));
-    const flipX = make("Flip side to side", flipXIcon, "H", () => act(flipEdit(edit(), "x")));
-    const flipY = make("Flip upside down", flipYIcon, "V", () => act(flipEdit(edit(), "y")));
-    const zoomOut = make("Zoom out", zoomOutIcon, "−", () => act(zoomArea(edit(), 1 / 1.25)));
-    const zoomIn = make("Zoom in", zoomInIcon, "+", () => act(zoomArea(edit(), 1.25)));
+    const turnLeft = make("Turn left", "Turn", turnLeftIcon, "Shift+R", () => act(turn(-1)));
+    const turnRight = make("Turn right", "Turn", turnRightIcon, "R", () => act(turn(1)));
+    const flipX = make("Flip side to side", "Flip", flipXIcon, "H", () => act(flipEdit(edit(), "x")));
+    const flipY = make("Flip upside down", "Flip", flipYIcon, "V", () => act(flipEdit(edit(), "y")));
+    const zoomOut = make("Zoom out", "Zoom −", zoomOutIcon, "−", () => act(zoomArea(edit(), 1 / 1.25)));
+    const zoomIn = make("Zoom in", "Zoom +", zoomInIcon, "+", () => act(zoomArea(edit(), 1.25)));
     const group = (label: string, ...items: HTMLButtonElement[]) => {
       const box = node("div", "image-large__group"); box.setAttribute("role", "group"); box.setAttribute("aria-label", label);
       const row = node("div", "image-large__buttons"); row.append(...items);
@@ -113,37 +119,30 @@ export function mountLargeEditor(state: ImagePopupState, own: PopupShape, events
     element.append(group("Turn", turnLeft, turnRight), group("Flip", flipX, flipY), group("Zoom", zoomOut, zoomIn));
     return { element, zoomOut };
   };
-  const shapeSelect = (className: string) => {
-    const select = node("select", className);
-    select.setAttribute("aria-label", "Shape");
-    select.addEventListener("change", () => {
-      const shape = select.value === "component" ? componentShape : SHAPES.find(item => item === select.value);
-      if (shape) act(chooseShape(size, edit(), shape));
-    });
-    return select;
-  };
-  const sideTools = tools("image-large__tools"), phoneTools = tools("image-large__tools image-large__iconrow");
-  const sideShape = shapeSelect("image-large__select"), phoneShape = shapeSelect("image-large__select image-large__select--icon");
-  const shapeHolder = node("span", "image-large__shape-icon"); shapeHolder.append(phoneShape, svg(shapeIcon, 22));
-  phoneTools.element.append(shapeHolder);
-  const phoneMessage = node("div", "image-large__message image-large__phone-only");
-  const sideMessage = node("div", "image-large__message");
-  const main = node("div", "image-large__main"); main.append(area, phoneTools.element, phoneMessage);
+  // Shape: the popup's shape menu, the button naming the current shape ("16:9 ▾" in the side panel;
+  // the crop icon over "16:9" at the end of the phone's row).
+  const choose = (shape: PopupShape) => act(chooseShape(size, edit(), shape));
+  const sideShapeButton = button("image-large__shape", () => undefined), sideShapeText = node("span");
+  sideShapeButton.append(sideShapeText, icon("caret-down", 14));
+  const phoneShapeButton = button("image-large__icon image-large__tool", () => undefined), phoneShapeText = node("span", "image-large__tool-label");
+  phoneShapeButton.append(svg(shapeIcon, 22), phoneShapeText);
+  const shapeMenus = [mountShapeMenu(sideShapeButton, sideShapeText, state.component, choose), mountShapeMenu(phoneShapeButton, phoneShapeText, state.component, choose)];
+  const sideTools = tools("image-large__tools"), phoneTools = tools("image-large__tools image-large__iconrow", true);
+  phoneTools.element.append(phoneShapeButton, shapeMenus[1].menu);
+  const main = node("div", "image-large__main"); main.append(area, phoneTools.element);
 
   const shapeBox = node("div", "image-large__desk-only");
-  const shapeLabelElement = node("span", "image-large__label", "Shape");
-  shapeBox.append(shapeLabelElement, sideShape);
+  shapeBox.append(node("span", "image-large__label", "Shape"), sideShapeButton, shapeMenus[0].menu);
   const previews = mountPreviews(DEVICES);
   const previewBox = node("div", "image-large__previews");
   previewBox.append(node("span", "image-large__label", "Preview"), previews.element);
-  const sideMessageBox = node("div", "image-large__desk-only"); sideMessageBox.append(sideMessage);
   sideTools.element.classList.add("image-large__desk-only");
   const side = node("aside", "image-large__side"); side.id = "image-large-side";
   side.setAttribute("aria-label", "Side panel");
-  side.append(sideTools.element, shapeBox, sideMessageBox, previewBox);
+  side.append(sideTools.element, shapeBox, previewBox);
   const body = node("div", "image-large__body"); body.append(main, side);
 
-  // Footer: Reset, Undo, Redo; Cancel and Done.
+  // Footer: Reset, Undo, Redo; the popup's quiet message line (slice 109) by Cancel and Done (above them on phones).
   const reset = button("image-large__text", () => act(resetEdit(own)));
   reset.textContent = "Reset"; reset.title = "Start again from the original";
   const undo = iconButton("Undo", icon("undo", 22), () => step(-1)); undo.title = "Undo (Ctrl+Z)";
@@ -152,7 +151,8 @@ export function mountLargeEditor(state: ImagePopupState, own: PopupShape, events
   const done = button("image-large__primary", () => { events.done(); draw(); }); done.textContent = "Done";
   const left = node("div", "image-large__foot-group"); left.append(reset, undo, redo);
   const right = node("div", "image-large__foot-group"); right.append(cancel, done);
-  const foot = node("footer", "image-large__foot"); foot.append(left, right);
+  const message = node("p", "image-popup__message image-large__message"); message.setAttribute("role", "status");
+  const foot = node("footer", "image-large__foot"); foot.append(left, message, right);
   dialog.append(head, body, foot);
   document.body.append(dialog);
 
@@ -195,6 +195,8 @@ export function mountLargeEditor(state: ImagePopupState, own: PopupShape, events
     Object.assign(shown, { width, height });
     const { turn: t, straighten: s, flipX, flipY } = state.cut, key = `${state.url}|${t}|${s}|${flipX}|${flipY}`;
     if (state.image && key !== painted) {
+      // A see-through picture sits on slice 106's light checkerboard, not the dark area.
+      if (!painted.startsWith(`${state.url}|`)) picture.toggleAttribute("data-transparent", isSeeThrough(state.image, state.file));
       painted = key;
       paintTrim(picture, state.image, shownTrim(size, state.cut), Math.min(2048, Math.max(width, height)));
     }
@@ -217,36 +219,23 @@ export function mountLargeEditor(state: ImagePopupState, own: PopupShape, events
   function draw() {
     const now = edit(), free = state.shape === "free";
     where.textContent = state.file.split("/").pop() ?? ""; where.title = state.file;
-    for (const select of [sideShape, phoneShape]) {
-      // A shaped component's own shape is always offered first (slice 43); a hand-written ratio only while the place has it.
-      const other = [...(componentShape ? [componentShape] : []), ...(typeof state.shape === "object" && state.shape.kind !== "component" ? [state.shape] : [])];
-      const options = [...other, ...SHAPES].map(shape => {
-        const option = node("option", "", shapeLabel(shape));
-        option.value = typeof shape === "string" ? shape : shape.kind === "component" ? "component" : "";
-        option.selected = shape === state.shape || typeof shape === "object" && shape.kind === "component" && typeof state.shape === "object" && state.shape.kind === "component";
-        return option;
-      });
-      if (select.options.length !== options.length || [...select.options].some((option, index) => option.value !== options[index].value)) select.replaceChildren(...options);
-      else for (const [index, option] of [...select.options].entries()) option.selected = options[index].selected;
-    }
-    phoneShape.title = `Shape: ${shapeLabel(state.shape)}`;
+    // A shaped component's own shape is always offered first (slice 43); a hand-written ratio only while the place has it.
+    for (const menu of shapeMenus) menu.draw(state.shape, true);
     const said = popupMessage({ newPicture: makesNewPicture(state.shape, state.cut), recrop: state.recrop });
     // Another shape than a shaped component's own: this item will look different (slice 43).
     const note = componentShapeNotice(state.shape, state.component);
-    for (const message of [sideMessage, phoneMessage]) {
-      message.classList.toggle("image-large__message--new", said.tone === "new");
-      message.setAttribute("role", "status");
-      const text = node("span", "", said.text);
-      if (note) text.append(node("span", "image-large__note", note));
-      message.replaceChildren(svg(said.tone === "new" ? infoIcon : checkCircleIcon, 18), text);
-    }
+    message.className = `image-popup__message image-popup__message--${said.tone} image-large__message`;
+    message.title = said.tip;
+    const text = node("span", "", said.text);
+    if (note) text.append(node("span", "image-large__note", note));
+    message.replaceChildren(svg(said.tone === "new" ? infoIcon : checkCircleIcon, 14), text);
     for (const zoomOut of [sideTools.zoomOut, phoneTools.zoomOut]) zoomOut.disabled = !canZoomOut(now);
     const degrees = state.cut.straighten ?? 0;
     straighten.value = String(degrees);
     straighten.setAttribute("aria-valuetext", `${degrees} degrees`);
     reading.textContent = `${degrees}°`;
-    strip.style.transform = `translateX(${ruler.clientWidth / 2 - (degrees + 45) * 6}px)`;
-    for (const number of strip.querySelectorAll<HTMLElement>(".image-large__degrees")) number.style.visibility = Math.abs(Number(number.dataset.degrees) - degrees) < 6 ? "hidden" : "";
+    for (const moving of [strip, numbers]) moving.style.transform = `translateX(${ruler.clientWidth / 2 - (degrees + 45) * 6}px)`;
+    for (const number of numbers.querySelectorAll<HTMLElement>(".image-large__degrees")) number.style.visibility = rulerLabelShown(Number(number.dataset.degrees), degrees, ruler.clientWidth) ? "" : "hidden";
     frame.classList.toggle("image-large__frame--free", free);
     frame.setAttribute("aria-label", free ? "Trim area. Arrow keys move it. Alt and arrow keys change its size." : "What stays in view. Arrow keys move it.");
     reset.disabled = editKey(now) === editKey(resetEdit(own));
@@ -312,6 +301,14 @@ export function mountLargeEditor(state: ImagePopupState, own: PopupShape, events
   ruler.addEventListener("pointercancel", leave);
   straighten.addEventListener("input", () => { events.change(straightenEdit(edit(), Number(straighten.value))); later(); });
 
+  // A press outside an open shape menu closes it; a press on the picture or the ruler does nothing else.
+  dialog.addEventListener("pointerdown", event => {
+    const target = event.target as Element, at = shapeMenus.findIndex(item => item.open);
+    if (at < 0 || target.closest(".image-popup__menu") || [sideShapeButton, phoneShapeButton][at].contains(target)) return;
+    shapeMenus[at].toggle(false);
+    if (target.closest(".image-large__stage, .image-large__ruler")) { event.stopPropagation(); event.preventDefault(); }
+  }, { capture: true });
+
   // Escape is Cancel (below); a window the browser closes all the same is a Cancel too.
   let removed = false;
   dialog.addEventListener("cancel", event => event.preventDefault());
@@ -320,6 +317,8 @@ export function mountLargeEditor(state: ImagePopupState, own: PopupShape, events
     const target = event.target as HTMLElement, key = event.key;
     if (key === "Escape") {
       event.preventDefault(); event.stopPropagation();
+      const menu = shapeMenus.findIndex(item => item.open);
+      if (menu >= 0) { shapeMenus[menu].toggle(false); [sideShapeButton, phoneShapeButton][menu].focus(); return; }
       if (sheetOpen) { toggleSheet(false); previewToggle.focus(); return; }
       events.cancel();
       return;
@@ -339,7 +338,7 @@ export function mountLargeEditor(state: ImagePopupState, own: PopupShape, events
       later();
       return;
     }
-    if (target.closest("select") || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (target.closest(".image-popup__menu") || event.ctrlKey || event.metaKey || event.altKey) return;
     const next = key === "+" || key === "=" ? zoomArea(edit(), 1.25) : key === "-" || key === "_" ? canZoomOut(edit()) && zoomArea(edit(), 1 / 1.25)
       : key.toLowerCase() === "r" ? turn(event.shiftKey ? -1 : 1) : key.toLowerCase() === "h" ? flipEdit(edit(), "x") : key.toLowerCase() === "v" ? flipEdit(edit(), "y") : undefined;
     if (next === undefined) return;

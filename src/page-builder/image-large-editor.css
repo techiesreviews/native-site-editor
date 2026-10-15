@@ -1,5 +1,5 @@
 /* The large editor (crop-wordpress-style.html's large window, WordPress 7.1's Media Editor layout)
-   in the editor's colours, light or dark. Phones: full screen, one row of icons, the previews in a sheet. */
+   in the editor's colours, light or dark. Phones: full screen, one row of labelled tools, the previews in a sheet. */
 .image-large {
   --image-large-area: color-mix(in oklch, var(--text) 10%, var(--surface));
   --image-large-line: color-mix(in oklch, var(--text) 14%, transparent);
@@ -22,8 +22,7 @@
 .image-large[open] { display: flex; flex-direction: column; }
 .image-large::backdrop { background: oklch(from var(--semantic-shadow) l c h / 0.35); }
 .image-large :focus-visible { outline: var(--focus-ring); outline-offset: 1px; }
-.image-large button,
-.image-large select { font: inherit; color: inherit; }
+.image-large button { font: inherit; color: inherit; }
 .image-large .icon { margin-inline: 0; }
 
 .image-large__head {
@@ -126,6 +125,8 @@
   transform-origin: 0 0;
   pointer-events: none;
 }
+/* A see-through picture on slice 106's light checkerboard, as in the popup. */
+.image-large__pic[data-transparent] { background: var(--checkerboard); }
 .image-large__frame {
   position: absolute;
   box-sizing: border-box;
@@ -226,11 +227,19 @@
 }
 .image-large__tick--mid { height: 9px; }
 .image-large__tick--big { height: 14px; background: var(--text); }
+/* The degree labels are not faded with the ticks: they show only where they fit whole (slice 110). */
+.image-large__labels {
+  position: absolute;
+  inset: 0;
+  overflow: clip;
+  pointer-events: none;
+}
 .image-large__degrees {
   position: absolute;
-  top: 2px;
+  top: 1px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
   transform: translateX(-50%);
 }
@@ -290,46 +299,43 @@
   gap: 8px 24px;
 }
 .image-large__buttons { display: flex; gap: 4px; }
-.image-large__select {
+/* Shape: the popup's shape menu on a field-like button naming the current shape ("16:9 ▾"). */
+.image-large__shape {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   width: 100%;
   height: 40px;
-  padding: 0 10px;
+  padding: 0 10px 0 12px;
   border: 1px solid var(--control-line);
   border-radius: var(--radius);
   background: var(--surface-input);
+  text-align: start;
 }
-.image-large__message {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-radius: var(--radius);
-  background: color-mix(in oklch, var(--primary) 12%, var(--surface));
-  box-shadow: inset 3px 0 0 var(--primary);
-  font-size: var(--type-small);
-  font-weight: 600;
-  line-height: 1.3;
+.image-large__shape:active { background: var(--hover); }
+@media (hover: hover) and (pointer: fine) { .image-large__shape:hover { background: var(--hover); } }
+.image-large__shape[aria-expanded="true"] { border-color: var(--primary); }
+/* The message: the popup's quiet line (slice 109), by Cancel and Done. */
+.image-large__message { justify-content: flex-end; }
+.image-large__note { display: block; }
+/* Two equal columns; each screen is at most its device's size and scales down whole to fit. */
+.image-large .image-popup__previews {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: end;
+  gap: 12px;
 }
-.image-large__note {
-  display: block;
-  margin-top: 2px;
-  font-size: 0.92em;
-}
-.image-large__message--new {
-  background: var(--warning-bg);
-  color: var(--warning-fg);
-  box-shadow: inset 3px 0 0 var(--color-warning);
-}
-.image-large .image-popup__previews { gap: 12px; }
+.image-large .image-popup__screen { max-width: 100%; }
 
 .image-large__foot {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
   padding: 14px 24px 20px;
 }
 .image-large__foot-group { display: flex; align-items: center; gap: 4px; }
+.image-large__foot-group:last-child { margin-inline-start: auto; }
 .image-large__phone-only,
 .image-large__iconrow { display: none; }
 
@@ -356,38 +362,36 @@
   .image-large__main { padding: 0 12px; }
   .image-large__ruler-row { height: 52px; }
   .image-large__desk-only { display: none; }
+  /* One row of seven tools, each an icon over an 11 px label; Shape names the current shape. */
   .image-large__iconrow {
-    display: flex;
-    flex-wrap: nowrap;
-    justify-content: center;
-    gap: 2px;
-    padding: 8px 0 4px;
-  }
-  .image-large__iconrow .image-large__group { display: contents; }
-  .image-large__iconrow .image-large__label { display: none; }
-  .image-large__iconrow .image-large__buttons { gap: 2px; }
-  .image-large__shape-icon {
-    position: relative;
     display: grid;
-    flex: none;
-    place-items: center;
-    width: 44px;
-    height: 44px;
-    border-radius: var(--radius);
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 2px;
+    padding: 6px 0 2px;
   }
-  .image-large__shape-icon .icon { pointer-events: none; }
-  .image-large__select--icon {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    padding: 0;
-    border: 0;
-    background: transparent;
-    opacity: 0;
+  .image-large__iconrow .image-large__group,
+  .image-large__iconrow .image-large__buttons { display: contents; }
+  .image-large__iconrow .image-large__label { display: none; }
+  .image-large__tool {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    width: auto;
+    height: 56px;
+    min-width: 0;
   }
-  .image-large__shape-icon:focus-within { outline: var(--focus-ring); }
-  .image-large__phone-only.image-large__message { margin-top: 6px; }
+  .image-large__tool-label {
+    max-width: 100%;
+    overflow: clip;
+    color: var(--muted);
+    font-size: 11px;
+    line-height: 1.2;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .image-large__tool[aria-expanded="true"] { background: var(--current); }
   /* The previews: a sheet over the picture, opened by Preview. */
   .image-large__side {
     position: absolute;
@@ -405,7 +409,8 @@
     transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1), visibility 0s 0.25s;
   }
   .image-large__side.is-open { transform: none; visibility: visible; transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1); }
-  .image-large__foot { padding: 8px 8px 12px; gap: 4px; }
+  .image-large__foot { flex-wrap: wrap; padding: 8px 8px 12px; gap: 4px; }
+  .image-large__foot .image-large__message { flex-basis: 100%; order: -1; justify-content: flex-start; padding: 2px 8px 4px; }
   .image-large__foot-group { gap: 0; }
   .image-large__text { padding: 0 10px; }
   .image-large__primary { padding: 0 16px; }

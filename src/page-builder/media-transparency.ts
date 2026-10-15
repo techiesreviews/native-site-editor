@@ -11,21 +11,23 @@ export function hasSeeThroughPixel(rgba: ArrayLike<number>) {
 
 const sampleSize = 32;
 
+/** True when a loaded picture has see-through parts. A small copy is sampled; an SVG that cannot be
+ * read is taken as see-through, as SVGs usually are; a format that cannot hold them never is. */
+export function isSeeThrough(image: HTMLImageElement, path: string) {
+  if (!mediaMayBeTransparent(path)) return false;
+  try {
+    const canvas = document.createElement("canvas"); canvas.width = canvas.height = sampleSize;
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    if (!context) return false;
+    context.drawImage(image, 0, 0, sampleSize, sampleSize);
+    return hasSeeThroughPixel(context.getImageData(0, 0, sampleSize, sampleSize).data);
+  } catch { return /\.svg$/i.test(path); }
+}
+
 /** Mark a picture with see-through parts (`data-transparent`) once it has loaded, so it sits on the
- * light checkerboard in tiles, details and the picker (slice 106). A small copy is sampled; an
- * SVG that cannot be read is taken as see-through, as SVGs usually are. */
+ * light checkerboard in tiles, details and the picker (slice 106). */
 export function markTransparency(image: HTMLImageElement, path: string) {
   if (!mediaMayBeTransparent(path)) return;
-  const check = () => {
-    let transparent: boolean;
-    try {
-      const canvas = document.createElement("canvas"); canvas.width = canvas.height = sampleSize;
-      const context = canvas.getContext("2d", { willReadFrequently: true });
-      if (!context) return;
-      context.drawImage(image, 0, 0, sampleSize, sampleSize);
-      transparent = hasSeeThroughPixel(context.getImageData(0, 0, sampleSize, sampleSize).data);
-    } catch { transparent = /\.svg$/i.test(path); }
-    image.toggleAttribute("data-transparent", transparent);
-  };
+  const check = () => image.toggleAttribute("data-transparent", isSeeThrough(image, path));
   if (image.complete && image.naturalWidth) check(); else image.addEventListener("load", check, { once: true });
 }

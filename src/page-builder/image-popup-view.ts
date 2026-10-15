@@ -22,12 +22,13 @@ import type { MediaTrim } from "../../shared/media-records";
 import type { MediaBox } from "./media-markup";
 import type { PlaceFocus } from "./place-frame";
 import type { ImagePopupHost } from "./image-popup";
-import { componentShapeEntry, componentShapeNotice, type ComponentPicture } from "./component-shapes";
-import { POPUP_SHAPES, focusAt, nudgeFocus, pictureHint, popupMessage, seenHints, shapeLabel, shapeRatio, sheetScroll, type PopupShape } from "./image-popup-rules";
+import { componentShapeNotice, type ComponentPicture } from "./component-shapes";
+import { focusAt, nudgeFocus, pictureHint, popupMessage, seenHints, shapeRatio, sheetScroll, type PopupShape } from "./image-popup-rules";
 import { MAX_ZOOM, cutArea, dotApplies, makesNewPicture, moveFree, placeShape, nudgeFree, resizeFree, shownTrim, turnText, turnedSize, zoomPercent, type PictureSize, type PopupCut, type TrimRect } from "./image-popup-trim";
 import { trimGeometry } from "./trim-geometry";
 import { markTransparency } from "./media-transparency";
 import { actionButton, mountMediaPopupFrame, phonePopup, popupRow } from "./media-popup-frame";
+import { mountShapeMenu } from "./shape-menu";
 
 export interface ImagePopupState {
   component?: ComponentPicture;
@@ -77,32 +78,20 @@ const DEVICES: readonly PreviewDevice[] = [{ name: "Phone", viewport: 390, width
 const HINTS_KEY = "ase.image-popup.hints";
 
 export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost, events: ImagePopupEvents, fixed?: ImagePopupFixed) {
-  let menuOpen = false;
   const frameView = mountMediaPopupFrame(host, {
     title: fixed ? "Social image" : "Image", opener: ".edit-bar__image", className: fixed ? "image-popup--fixed" : undefined,
     cancel: () => events.cancel(),
-    escape: () => { if (!menuOpen) return false; toggleMenu(false); shapeButton.focus(); return true; },
+    escape: () => { if (!shapes.open) return false; shapes.toggle(false); shapeButton.focus(); return true; },
     resized: () => layoutPicture(),
   });
   const { root, where, notice, rows, message, foot, place } = frameView;
 
   // The picture: the shape menu over it, the place's frame and the focus dot on it.
-  const shapeButton = actionButton("image-popup__shape", () => toggleMenu(!menuOpen));
-  shapeButton.setAttribute("aria-haspopup", "menu");
+  const shapeButton = node("button", "image-popup__shape"); shapeButton.type = "button";
   const shapeText = node("span");
   shapeButton.append(shapeText, icon("caret-down", 13));
-  const menu = node("div", "image-popup__menu"); menu.setAttribute("role", "menu"); menu.setAttribute("aria-label", "Shape");
-  // On the top layer (a manual popover), so the sheet's scrolling rows and pinned Done never cover it (slice 94).
-  menu.setAttribute("popover", "manual");
-  const componentEntry = componentShapeEntry(state.component);
-  const items = [...(componentEntry ? [componentEntry] : []), ...POPUP_SHAPES, { id: "free" as const, label: "Free" }].map(shape => {
-    const item = actionButton("image-popup__item", () => { toggleMenu(false); shapeButton.focus(); events.shape(shape.id); });
-    item.setAttribute("role", "menuitemradio");
-    item.append(node("span", "", shape.label), icon("check", 16));
-    item.dataset.shape = typeof shape.id === "string" ? shape.id : "component";
-    return item;
-  });
-  menu.append(...items);
+  const shapes = mountShapeMenu(shapeButton, shapeText, state.component, shape => events.shape(shape));
+  const menu = shapes.menu;
   const picture = node("img", "image-popup__pic"); picture.alt = ""; picture.draggable = false;
   // A turned (or straightened, flipped) picture is drawn.
   const turned = node("canvas", "image-popup__pic"); turned.hidden = true;
@@ -162,13 +151,6 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
   if (!fixed) frameView.tools.prepend(largeButton);
   foot.append(doneButton);
 
-  function toggleMenu(open: boolean) {
-    menuOpen = open;
-    if (open !== menu.matches(":popover-open")) menu.togglePopover();
-    shapeButton.setAttribute("aria-expanded", String(open));
-    if (open) (items.find(item => item.getAttribute("aria-checked") === "true") ?? items[0]).focus();
-  }
-
   // The picture (turned as it will be) fits the well under the shape menu; the frame shows what the place shows.
   const size = () => state.size ?? { width: picture.naturalWidth || 4, height: picture.naturalHeight || 3 };
   let drawn = "";
@@ -200,12 +182,7 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
     // Replace's note and a component's "looks different" note can both stand.
     const saidNotice = [state.notice, componentShapeNotice(state.shape, state.component)].filter(Boolean).join(" ") || undefined;
     notice.hidden = !saidNotice; notice.textContent = saidNotice ?? "";
-    shapeText.textContent = shapeLabel(state.shape);
-    shapeButton.setAttribute("aria-label", `Shape: ${shapeLabel(state.shape)}`);
-    for (const item of items) {
-      item.setAttribute("aria-checked", String(item.dataset.shape === (typeof state.shape === "string" ? state.shape : state.shape.kind)));
-      if (item.dataset.shape === "free") item.hidden = !state.trimmable;
-    }
+    shapes.draw(state.shape, state.trimmable);
     // A see-through picture sits on 106's light checkerboard (the well is dark).
     if (state.url && picture.getAttribute("src") !== state.url) showPicture(picture, state.url, state.file);
     const applies = dotApplies(state.shape, state.cut), free = state.shape === "free";
@@ -258,7 +235,7 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
   well.addEventListener("pointerdown", event => {
     const target = event.target as Element;
     if (target.closest(".image-popup__shape, .image-popup__menu")) return;
-    if (menuOpen) { toggleMenu(false); return; }
+    if (shapes.open) { shapes.toggle(false); return; }
     if (event.button !== 0) return;
     if (state.shape === "free") {
       const corner = (target.closest(".image-popup__corner") as HTMLElement | null)?.dataset.corner;
@@ -305,14 +282,7 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
   well.addEventListener("pointercancel", release);
 
   root.addEventListener("keydown", event => {
-    if (menuOpen && (event.target as Element).closest(".image-popup__menu")) {
-      const index = items.indexOf(event.target as HTMLButtonElement);
-      const next = event.key === "ArrowDown" ? (index + 1) % items.length : event.key === "ArrowUp" ? (index - 1 + items.length) % items.length
-        : event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : undefined;
-      if (next !== undefined) { event.preventDefault(); items[next].focus(); return; }
-      if (event.key === "Tab") { event.preventDefault(); toggleMenu(false); shapeButton.focus(); }
-      return;
-    }
+    if ((event.target as Element).closest(".image-popup__menu")) return;
     if (event.target === dot) {
       const next = nudgeFocus(state.focus, event.key, event.shiftKey);
       if (next) { event.preventDefault(); events.focus(next); }
@@ -357,14 +327,15 @@ function readHints() { try { return localStorage.getItem(HINTS_KEY); } catch { r
 function writeHints(hints: string[]) { try { localStorage.setItem(HINTS_KEY, JSON.stringify(hints)); } catch { /* private mode: hints show again */ } }
 
 export interface PreviewDevice { name: "Phone" | "Computer"; viewport: number; width: number; height: number }
-/** The live previews: the spot in a phone's and a computer's screen at the widths the page is measured at. */
+/** The live previews: the spot in a phone's and a computer's screen at the widths the page is measured at; the spot is sized in shares of its screen. */
 export function mountPreviews(devices: readonly PreviewDevice[]) {
   const element = node("div", "image-popup__previews");
   const shown = devices.map(device => {
     const figure = node("figure", `image-popup__device image-popup__device--${device.name.toLowerCase()}`);
     const caption = node("figcaption"); caption.append(svg(device.name === "Phone" ? mobileIcon : desktopIcon, 12), device.name);
     const screen = node("div", "image-popup__screen");
-    screen.style.width = `${device.width}px`; screen.style.height = `${device.height}px`;
+    // At most the device's size, in its proportions: a narrower column scales the screen down whole (slice 110).
+    screen.style.width = `${device.width}px`; screen.style.aspectRatio = `${device.width} / ${device.height}`;
     const spot = node("div", "image-popup__spot"), image = node("img"); image.alt = "";
     spot.append(image); screen.append(spot); figure.append(caption, screen); element.append(figure);
     return { device, spot, image };
@@ -379,7 +350,7 @@ export function mountPreviews(devices: readonly PreviewDevice[]) {
       let h = box ? box.height * scale : ratio ? w / ratio : w * height / width;
       const fit = Math.min(1, (device.width - 6) / w, (device.height - 6) / h);
       w = Math.max(2, w * fit); h = Math.max(2, h * fit);
-      spot.style.width = `${w}px`; spot.style.height = `${h}px`;
+      spot.style.width = `${(w / device.width) * 100}%`; spot.style.aspectRatio = `${w} / ${h}`;
       if (url && image.getAttribute("src") !== url) showPicture(image, url, state.file);
       image.style.objectFit = box?.fit ?? (ratio ? "cover" : "fill");
       image.style.objectPosition = cut ? state.aroundFocus ? `${state.aroundFocus.x}% ${state.aroundFocus.y}%` : ""

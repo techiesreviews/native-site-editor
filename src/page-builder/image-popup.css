@@ -308,8 +308,8 @@
 /* The shape menu is a manual popover on the top layer: no scrolling row clips it and the phone
    sheet's pinned message and Done never cover it. It hangs under the Shape button, above it when
    there is no room below, and as a last resort scrolls within the screen, clear of the safe area.
-   Without anchor positioning it opens in the middle of the screen, still whole. */
-.image-popup__shape { anchor-name: --image-popup-shape; }
+   Without anchor positioning it opens in the middle of the screen, still whole. The same menu
+   serves the large editor (shape-menu.ts sets each button's anchor name). */
 .image-popup__menu {
   --image-popup-menu-top: max(8px, env(safe-area-inset-top));
   --image-popup-menu-bottom: max(8px, env(safe-area-inset-bottom));
@@ -331,7 +331,6 @@
 }
 @supports (position-area: block-end) {
   .image-popup__menu {
-    position-anchor: --image-popup-shape;
     position-area: block-end span-all;
     inset: auto;
     margin: 4px 0 var(--image-popup-menu-edge);
@@ -359,7 +358,7 @@
 }
 .image-popup__item:active { background: var(--hover); }
 @media (hover: hover) and (pointer: fine) { .image-popup__item:hover { background: var(--hover); } }
-.image-popup .image-popup__item .icon {
+.image-popup__menu .image-popup__item .icon {
   margin-left: auto;
   visibility: hidden;
 }

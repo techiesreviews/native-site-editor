@@ -265,7 +265,7 @@ test.describe("on a touch phone", () => {
   });
 });
 
-test("on a phone the large editor's Shape is the phone's own menu; Free can be chosen and Done stays on screen", async ({ page, baseURL }) => {
+test("on a phone the large editor's Shape ends a row of labelled tools and opens the popup's menu; Done stays on screen", async ({ page, baseURL }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await open(page, baseURL);
   await openPopup(page);
@@ -275,15 +275,37 @@ test("on a phone the large editor's Shape is the phone's own menu; Free can be c
   await picker(page).getByRole("button", { name: "Use image", exact: true }).click();
   await popup(page).getByRole("button", { name: "Open large editor", exact: true }).click();
   const editor = page.getByRole("dialog", { name: "Edit image", exact: true });
+  // Slice 110: seven tools, each an icon over an 11 px label, 56 px tall; Shape names the current shape.
+  const row = editor.locator(".image-large__iconrow");
+  await expect(row.locator(".image-large__tool-label")).toHaveText(["Turn", "Turn", "Flip", "Flip", "Zoom −", "Zoom +", "Original"]);
+  for (const tool of await row.locator(".image-large__tool").all()) {
+    expect(Math.round((await tool.boundingBox())!.height)).toBe(56);
+    expect(await tool.locator(".image-large__tool-label").evaluate(element => getComputedStyle(element).fontSize)).toBe("11px");
+  }
   for (const [width, height] of [[390, 844], [320, 568]]) {
     await page.setViewportSize({ width, height });
-    const shape = editor.getByRole("combobox", { name: "Shape" });
+    const shape = editor.getByRole("button", { name: /^Shape:/ });
     await expect(shape).toBeInViewport({ ratio: 1 });
     expect((await shape.boundingBox())!.height).toBeGreaterThanOrEqual(44);
-    await shape.selectOption(width === 390 ? "free" : "square");
-    await expect(shape).toHaveValue(width === 390 ? "free" : "square");
+    const label = width === 390 ? "Free" : "Square";
+    await shape.click();
+    const item = editor.getByRole("menuitemradio", { name: label, exact: true });
+    await expect(item).toBeInViewport({ ratio: 1 });
+    await item.click();
+    await expect(shape).toHaveAccessibleName(`Shape: ${label}`);
+    await expect(shape.locator(".image-large__tool-label")).toHaveText(label);
+    await expect(shape).toBeFocused();
     await expect(editor.getByRole("button", { name: "Done", exact: true })).toBeInViewport({ ratio: 1 });
+    // The message is one quiet line above the buttons, with no box.
+    const message = editor.getByRole("status");
+    await expect(message).toBeInViewport({ ratio: 1 });
+    expect((await message.boundingBox())!.y + (await message.boundingBox())!.height).toBeLessThanOrEqual((await editor.getByRole("button", { name: "Done", exact: true }).boundingBox())!.y);
+    expect(await message.evaluate(element => getComputedStyle(element).backgroundColor)).toBe("rgba(0, 0, 0, 0)");
   }
+  // The previews in the phone's sheet sit whole inside the screen.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await editor.getByRole("button", { name: "Preview", exact: true }).click();
+  for (const screen of await editor.locator(".image-popup__screen").all()) await expect(screen).toBeInViewport({ ratio: 1 });
 });
 
 // A corner of the trim dragged by a share of the picture's size.
@@ -555,6 +577,13 @@ test("Zoom and Turn save a trimmed copy; back at 100 % and unturned only the spo
 
 const large = (page: Page) => page.getByRole("dialog", { name: "Edit image", exact: true });
 // The large editor's own Undo (the editor toast, slice 105, can stand in the dialog with its Undo).
+// The large editor's Shape: the popup's shape menu on a button naming the current shape (slice 110).
+const largeShape = (page: Page) => large(page).getByRole("button", { name: /^Shape:/ });
+async function chooseLargeShape(page: Page, label: string) {
+  await largeShape(page).click();
+  await large(page).getByRole("menuitemradio", { name: label, exact: true }).click();
+  await expect(largeShape(page)).toHaveAccessibleName(`Shape: ${label}`);
+}
 const largeUndo = (page: Page) => large(page).getByRole("button", { name: "Undo", exact: true }).and(page.locator(":not(.editor-toast *)"));
 
 test("the large editor carries the popup's state; Cancel returns to the popup unchanged; straighten and flip save a trimmed copy", async ({ page, baseURL }) => {
@@ -576,7 +605,7 @@ test("the large editor carries the popup's state; Cancel returns to the popup un
   await chooseShape(page, "16:9");
   await popup(page).getByRole("button", { name: "Open large editor", exact: true }).click();
   await expect(large(page)).toBeVisible();
-  await expect(large(page).getByRole("combobox", { name: "Shape" })).toHaveValue("16:9");
+  await expect(largeShape(page)).toHaveAccessibleName("Shape: 16:9");
   const message = large(page).getByRole("status");
   await expect(message).toHaveText("Only changes this spot");
   // Flip and Cancel: back to the popup as it was.
@@ -587,7 +616,7 @@ test("the large editor carries the popup's state; Cancel returns to the popup un
   // Both previews show the flipped picture at once.
   for (const index of [0, 1]) await expect(previews.nth(index)).not.toHaveAttribute("src", unflipped);
   // Undo, Redo and Reset (the whole original in the place's own shape, Original).
-  const shape = large(page).getByRole("combobox", { name: "Shape" });
+  const shape = largeShape(page);
   await largeUndo(page).click();
   await expect(message).toHaveText("Only changes this spot");
   await expect(previews.first()).toHaveAttribute("src", unflipped);
@@ -595,9 +624,9 @@ test("the large editor carries the popup's state; Cancel returns to the popup un
   await expect(message).toHaveText("Saves a new picture for this spot");
   await large(page).getByRole("button", { name: "Reset", exact: true }).click();
   await expect(message).toHaveText("Only changes this spot");
-  await expect(shape).toHaveValue("original");
+  await expect(shape).toHaveAccessibleName("Shape: Original");
   await largeUndo(page).click();
-  await expect(shape).toHaveValue("16:9");
+  await expect(shape).toHaveAccessibleName("Shape: 16:9");
   await expect(message).toHaveText("Saves a new picture for this spot");
   await large(page).getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(large(page)).toHaveCount(0);
@@ -628,6 +657,55 @@ test("the large editor carries the popup's state; Cancel returns to the popup un
   expect(saved.trim.width * 800 / (saved.trim.height * 400)).toBeCloseTo(16 / 9, 2);
   await page.locator(".code-editor__undo").first().click();
   await expect.poll(() => source(page)).toBe(before);
+});
+
+// Slice 110: at 768 both previews sit inside the dialog (light and dark); the message is the popup's quiet
+// line by Cancel and Done; the ruler's labels show whole and unfaded; a see-through picture is on the checkerboard.
+test("at 768 the large editor's previews fit, its message is one quiet line and a see-through picture is on the checkerboard", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 768, height: 1024 });
+  await open(page, baseURL);
+  await openPopup(page);
+  await replaceWith(page, "Wide.jpg", "image/jpeg", await quarters(page));
+  await chooseShape(page, "16:9");
+  await popup(page).getByRole("button", { name: "Open large editor", exact: true }).click();
+  for (const scheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme: scheme });
+    const dialog = (await large(page).boundingBox())!;
+    const screens = large(page).locator(".image-popup__screen");
+    await expect(screens).toHaveCount(2);
+    for (const screen of await screens.all()) {
+      const box = (await screen.boundingBox())!;
+      expect(box.x).toBeGreaterThanOrEqual(dialog.x);
+      expect(box.x + box.width).toBeLessThanOrEqual(dialog.x + dialog.width - 8);
+    }
+  }
+  await page.emulateMedia({ colorScheme: "light" });
+  // The ruler's labels are not under the fading mask, and each shown one is whole inside the ruler.
+  const ruler = (await large(page).locator(".image-large__ruler").boundingBox())!;
+  const shown = large(page).locator(".image-large__degrees").filter({ visible: true });
+  expect(await shown.count()).toBeGreaterThanOrEqual(2);
+  for (const label of await shown.all()) {
+    const box = (await label.boundingBox())!;
+    expect(box.x).toBeGreaterThanOrEqual(ruler.x);
+    expect(box.x + box.width).toBeLessThanOrEqual(ruler.x + ruler.width);
+    expect(await label.evaluate(element => getComputedStyle(element.closest(".image-large__labels")!).maskImage)).toBe("none");
+  }
+  // The message shares the buttons' line, plain (no box), in the muted colour.
+  await large(page).getByRole("button", { name: "Flip side to side", exact: true }).click();
+  const message = large(page).getByRole("status");
+  await expect(message).toHaveText("Saves a new picture for this spot");
+  await expect(large(page).locator(".image-large__foot").getByRole("status")).toHaveCount(1);
+  const done = (await large(page).getByRole("button", { name: "Done", exact: true }).boundingBox())!, line = (await message.boundingBox())!;
+  expect(Math.abs((line.y + line.height / 2) - (done.y + done.height / 2))).toBeLessThan(4);
+  expect(await message.evaluate(element => getComputedStyle(element).backgroundColor)).toBe("rgba(0, 0, 0, 0)");
+  // A see-through logo sits on the checkerboard in the large editor too; an opaque photo does not.
+  const picture = large(page).locator(".image-large__pic");
+  await expect(picture).not.toHaveAttribute("data-transparent");
+  await large(page).getByRole("button", { name: "Cancel", exact: true }).click();
+  await replaceWith(page, "Logo.png", "image/png", await seeThrough(page));
+  await popup(page).getByRole("button", { name: "Open large editor", exact: true }).click();
+  await expect(picture).toHaveAttribute("data-transparent", "");
+  expect(await picture.evaluate(element => getComputedStyle(element).backgroundImage)).toContain("conic-gradient");
 });
 
 // A component whose CSS gives its picture a fixed 4:3 shape (slice 43), with one filled instance and one showing its fallback.
@@ -756,26 +834,29 @@ test("zoom on a component's own shape saves a copy the component still crops; Re
   await expect(popup(page).getByRole("status").filter({ hasText: "will look different" })).toHaveCount(0);
   // The large editor opens on the component's shape and always offers it back.
   await popup(page).getByRole("button", { name: "Open large editor", exact: true }).click();
-  const largeShape = large(page).getByRole("combobox", { name: "Shape" });
-  await expect(largeShape).toHaveValue("component");
-  await expect(largeShape.locator("option").first()).toHaveText("Photo card's shape (4:3)");
+  const componentShape = "Shape: Photo card's shape (4:3)";
+  await expect(largeShape(page)).toHaveAccessibleName(componentShape);
+  await largeShape(page).click();
+  await expect(large(page).getByRole("menuitemradio").first()).toHaveText("Photo card's shape (4:3)");
+  await expect(large(page).getByRole("menuitemradio").first()).toHaveAttribute("aria-checked", "true");
+  await page.keyboard.press("Escape");
+  await expect(large(page).getByRole("menu", { name: "Shape" })).toBeHidden();
+  await expect(large(page)).toBeVisible();
   const largeNote = large(page).locator(".image-large__note").filter({ visible: true });
   await expect(largeNote).toHaveCount(0);
-  await largeShape.selectOption("square");
-  await expect(largeShape).toHaveValue("square");
+  await chooseLargeShape(page, "Square");
   await expect(largeNote).toHaveText("This Photo card will look different from the others.");
   // Undo and Redo keep the component's shape through the editor's history; Reset returns to it.
   await largeUndo(page).click();
-  await expect(largeShape).toHaveValue("component");
+  await expect(largeShape(page)).toHaveAccessibleName(componentShape);
   await expect(largeNote).toHaveCount(0);
   await large(page).getByRole("button", { name: "Redo", exact: true }).click();
-  await expect(largeShape).toHaveValue("square");
+  await expect(largeShape(page)).toHaveAccessibleName("Shape: Square");
   await large(page).getByRole("button", { name: "Reset", exact: true }).click();
-  await expect(largeShape).toHaveValue("component");
-  await largeShape.selectOption("square");
-  await largeShape.selectOption("component");
-  await expect(largeShape).toHaveValue("component");
-  await largeShape.selectOption("square");
+  await expect(largeShape(page)).toHaveAccessibleName(componentShape);
+  await chooseLargeShape(page, "Square");
+  await chooseLargeShape(page, "Photo card's shape (4:3)");
+  await chooseLargeShape(page, "Square");
   // Cancel with Square chosen: back to the popup as it was, on the component's shape.
   await large(page).getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(large(page)).toHaveCount(0);

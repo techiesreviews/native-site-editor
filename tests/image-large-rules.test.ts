@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  canZoomOut, chooseShape, editKey, fitView, flipEdit, moveArea, resetEdit, resizeArea, rulerValue, straightenEdit, zoomArea, type PopupEdit,
+  canZoomOut, chooseShape, editKey, fitView, flipEdit, moveArea, resetEdit, resizeArea, rulerLabelShown, rulerValue, straightenEdit, zoomArea, type PopupEdit,
 } from "../src/page-builder/image-large-rules";
 import { MAX_ZOOM, coverScale, cutArea, popupTrim, restoreCut, sameTrim, shownTrim, uncut, type PopupCut } from "../src/page-builder/image-popup-trim";
 import { trimGeometry } from "../src/page-builder/trim-geometry";
@@ -150,4 +150,16 @@ test("Reset is the whole original in the place's own shape; an edit's key ignore
   const a = edit({ cut: { flipX: true, straighten: 3 } }), b = { ...a, cut: { straighten: 3, flipX: true as const, rect: a.cut.rect, zoom: 1, turn: 0 as const } };
   assert.equal(editKey(a), editKey(b));
   assert.notEqual(editKey(a), editKey(flipEdit(a, "y")));
+});
+
+// Slice 110: a degree label shows whole inside the ruler (6 px a degree), and not under the current value's reading.
+test("ruler labels show whole inside the ruler and clear of the reading", () => {
+  assert.equal(rulerLabelShown(15, 0, 360), true);
+  assert.equal(rulerLabelShown(-15, -4, 360), true);
+  // −30° at 0° stands 180 px left of the middle: half of it would be past the edge of a 360 px ruler.
+  assert.equal(rulerLabelShown(-30, 0, 360), false);
+  assert.equal(rulerLabelShown(-30, 0, 400), true);
+  assert.equal(rulerLabelShown(-30, -4, 360), true);
+  assert.equal(rulerLabelShown(0, 4, 360), false);
+  assert.equal(rulerLabelShown(0, 6, 360), true);
 });
