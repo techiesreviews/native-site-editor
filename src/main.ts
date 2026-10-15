@@ -3476,9 +3476,10 @@ const filesTreeController = createFilesTreeController({
   create: openCreate, actions: () => fileActions,
   visible: () => !!explorerDropdown?.isOpen() && pagesController.explorerTab() === "files",
   count: (total) => {
-    const count = element("files-count"), version = element("revision").textContent ?? "";
+    // The commit the tree shows, in full (set on the hidden #revision before each draw).
+    const count = element("files-count"), commit = element("revision").title;
     count.textContent = total === undefined ? "" : `${total} ${total === 1 ? "file" : "files"}`;
-    count.title = /^[0-9a-f]{7}$/.test(version) ? `Version ${version}` : "";
+    count.title = /^[0-9a-f]{40}$/.test(commit) ? `Version ${commit}` : "";
   },
 });
 function renderFileTree() { filesTreeController.render(); }

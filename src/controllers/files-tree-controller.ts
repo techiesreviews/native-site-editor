@@ -57,6 +57,8 @@ export function createFilesTreeController(ports: FilesTreePorts) {
   const folderListings = new Map<string, TreeEntry[]>();
   // Listings being read, by tree sha: a row drawn again while its folder loads waits for the same read.
   const folderReads = new Map<string, Promise<TreeEntry[] | undefined>>();
+  // Bumped by reset: a read started before it writes nothing after it.
+  let listingsGeneration = 0;
   // The changes the tree was last drawn with.
   let drawnNewFiles = "";
   // Icons by file type, loaded once the tree is shown; until then files show the plain icon.
@@ -65,7 +67,28 @@ export function createFilesTreeController(ports: FilesTreePorts) {
   function warm() {
     if (types || typesLoading) return;
     typesLoading = true;
-    void import("../components/file-type-icons").then((loaded) => { types = loaded; renderFileTree(); }, () => { typesLoading = false; });
+    void import("../components/file-type-icons").then((loaded) => {
+      types = loaded;
+      // In place, not by drawing the tree again: a rename being typed or a folder loading stays as it is.
+      for (const icon of ports.root().querySelectorAll<HTMLElement>(".file-icon[data-type-pending]")) {
+        const row = icon.closest<HTMLElement>(".file-row");
+        if (row?.dataset.path) showType(icon, row, row.dataset.path);
+      }
+    }, () => { typesLoading = false; });
+  }
+  // A plain file's type icon and, for a wide panel, its type word (before any change letter);
+  // marked pending while the icons are not loaded yet.
+  function showType(icon: HTMLElement, row: HTMLElement, path: string) {
+    if (!types) { icon.dataset.typePending = ""; return; }
+    const type = types.fileType(path);
+    delete icon.dataset.typePending;
+    icon.dataset.type = type;
+    icon.replaceChildren(types.fileTypeIcon(type));
+    const label = types.fileTypeLabel(type);
+    if (!label) return;
+    const word = node("span", "file-type", label);
+    word.setAttribute("aria-hidden", "true");
+    row.insertBefore(word, row.querySelector(":scope > .file-status"));
   }
 
   const treeSignature = (state: TreeState) => [...state.changes.values()].map((change) => `${change.kind} ${change.from ?? ""} ${change.path}`).join("\n");
@@ -175,21 +198,10 @@ export function createFilesTreeController(ports: FilesTreePorts) {
       const item = node("li");
       const row = button("", () => {}, "file-row");
       const icon = node("span", `file-icon ${directory ? "folder" : ""}`);
-      const plain = entry.type === "blob" && entry.mode !== "120000";
-      const type = plain && types ? types.fileType(entry.path) : undefined;
-      if (type) {
-        icon.dataset.type = type;
-        icon.replaceChildren(types!.fileTypeIcon(type));
-      } else setIcon(icon, directory ? "folder" : entry.type === "commit" ? "package" : entry.mode === "120000" ? "link-simple" : "file", 16);
+      setIcon(icon, directory ? "folder" : entry.type === "commit" ? "package" : entry.mode === "120000" ? "link-simple" : "file", 16);
       icon.setAttribute("aria-hidden", "true");
       row.append(icon, node("span", "filename", entry.path));
-      // A wide panel says what the file is, quietly, after its name.
-      const label = type ? types!.fileTypeLabel(type) : "";
-      if (label) {
-        const kind = node("span", "file-type", label);
-        kind.setAttribute("aria-hidden", "true");
-        row.append(kind);
-      }
+      if (entry.type === "blob" && entry.mode !== "120000") showType(icon, row, path);
       // A new file, or a folder only new files are in, is not on GitHub yet;
       // a renamed, edited or deleted one is marked as git marks it.
       const change = directory ? undefined : state.changes.get(path);
@@ -221,19 +233,21 @@ export function createFilesTreeController(ports: FilesTreePorts) {
       const read = async () => {
         const repo = ports.repo();
         if (!repo) return undefined;
+        const generation = listingsGeneration;
         const result = await ports.load({
           repo: repo.full_name,
           sha: entry.sha,
         });
-        folderListings.set(entry.sha, result.entries);
+        if (generation === listingsGeneration) folderListings.set(entry.sha, result.entries);
         return result.entries;
       };
       const load = () => {
-        let reading = folderReads.get(entry.sha);
-        if (!reading) {
-          reading = read().finally(() => folderReads.delete(entry.sha));
-          folderReads.set(entry.sha, reading);
-        }
+        const shared = folderReads.get(entry.sha);
+        if (shared) return shared;
+        const reading = read();
+        folderReads.set(entry.sha, reading);
+        const done = () => { if (folderReads.get(entry.sha) === reading) folderReads.delete(entry.sha); };
+        reading.then(done, done);
         return reading;
       };
       row.addEventListener("click", async () => {
@@ -263,12 +277,16 @@ export function createFilesTreeController(ports: FilesTreePorts) {
           openFolders.add(path);
           try {
             const children = await load();
-            if (epoch !== ports.epoch() || !children) { openFolders.delete(path); return; }
-            if (row.isConnected) show(children);
+            // Stale work writes nothing: the folder state now belongs to the current tree.
+            if (epoch !== ports.epoch()) return;
+            if (!children) { openFolders.delete(path); return; }
+            // A row drawn again meanwhile, or opened by its redraw, shows the children itself.
+            if (row.isConnected && !childList) show(children);
             ports.status(`Opened ${path}.`);
           } catch (error) {
+            if (epoch !== ports.epoch()) return;
             openFolders.delete(path);
-            if (epoch === ports.epoch()) ports.error(error);
+            ports.error(error);
           } finally {
             row.disabled = false;
           }
@@ -315,7 +333,7 @@ export function createFilesTreeController(ports: FilesTreePorts) {
         else
           void load().then(
             (children) => { if (children && epoch === ports.epoch() && !childList && row.isConnected) show(children); },
-            () => openFolders.delete(path),
+            () => { if (epoch === ports.epoch()) openFolders.delete(path); },
           );
       }
     }
@@ -325,5 +343,5 @@ export function createFilesTreeController(ports: FilesTreePorts) {
   return { render: renderFileTree, refresh: renderDraftFiles, row: fileRow, signature: treeSignature,
     openFolder: (path: string) => { openFolders.add(path); },
     listings: () => folderListings, visible: () => ports.visible(), warm,
-    reset: () => { openFolders.clear(); folderListings.clear(); folderReads.clear(); } };
+    reset: () => { openFolders.clear(); folderListings.clear(); folderReads.clear(); listingsGeneration++; } };
 }

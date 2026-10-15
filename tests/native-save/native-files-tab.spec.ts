@@ -24,7 +24,7 @@ test("the header names the tab and counts the files; rows are one height with na
   const heading = explorer(page).locator("#explorer-files > .files-heading");
   await expect(heading.getByRole("heading", { name: "Files", exact: true })).toHaveCSS("text-transform", "none");
   await expect(page.locator("#files-count")).toHaveText(/^\d+ files$/);
-  await expect(page.locator("#files-count")).toHaveAttribute("title", /^Version [0-9a-f]{7}$/);
+  await expect(page.locator("#files-count")).toHaveAttribute("title", /^Version [0-9a-f]{40}$/);
   await expect(page.locator("#revision")).toBeHidden();
 
   // Icons by type arrive with the explorer (the tree is drawn again then); the wide panel says the type.
@@ -47,6 +47,28 @@ test("the header names the tab and counts the files; rows are one height with na
   const more = (await line(page, "images").getByRole("button", { name: "Actions for images", exact: true }).boundingBox())!;
   const word = await row(page, "index.html").locator(".file-type").evaluate(element => element.getBoundingClientRect().right);
   expect(word).toBeLessThan(more.x);
+});
+
+test("the type icons arriving leave a rename being typed as it is", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  let release = () => {};
+  const held = new Promise<void>(resolve => { release = resolve; });
+  await page.route("**/file-type-icons*", async route => { await held; await route.continue(); });
+  await openFiles(page, baseURL);
+  await expect(row(page, "robots.txt").locator(".file-icon")).not.toHaveAttribute("data-type", /./);
+  await row(page, "robots.txt").focus();
+  await page.keyboard.press("F2");
+  const field = explorer(page).getByRole("textbox", { name: "New name for robots.txt", exact: true });
+  await expect(field).toBeFocused();
+  await page.keyboard.press("End");
+  await page.keyboard.type("-old");
+  release();
+  await expect(row(page, "index.html").locator(".file-icon")).toHaveAttribute("data-type", "page");
+  await expect(field).toBeFocused();
+  await expect(field).toHaveValue("robots.txt-old");
+  await page.keyboard.press("Escape");
+  await expect(field).toHaveCount(0);
+  await expect(row(page, "robots.txt").locator(".file-type")).toHaveText("Text");
 });
 
 test.describe("touch", () => {

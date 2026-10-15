@@ -175,3 +175,32 @@ test("a tree drawn again while a folder loads opens that folder from the same re
   assert.equal(h.row("folder").attributes.get("aria-expanded"), "true");
   assert.ok(h.row("folder/child.txt"));
 });
+test("a folder clicked again while its redraw reads it opens once and closes whole", async () => {
+  const h = harness([entry("folder", "tree")]); let reads = 0, release = () => {};
+  h.load(() => { reads++; return new Promise(resolve => { release = () => resolve({ entries: [entry("child.txt")] }); }); });
+  h.controller.render(); const first = h.row("folder").click();
+  while (!reads) await Promise.resolve();
+  h.controller.render(); const second = h.row("folder").click();
+  for (let i = 0; i < 5; i++) await Promise.resolve();
+  release(); await first; await second; for (let i = 0; i < 5; i++) await Promise.resolve();
+  assert.equal(reads, 1);
+  assert.equal(h.root.querySelectorAll(".file-row").filter(row => row.dataset.path === "folder/child.txt").length, 1);
+  await h.row("folder").click();
+  assert.equal(h.row("folder").attributes.get("aria-expanded"), "false");
+});
+for (const outcome of ["resolve", "reject"] as const) test(`a folder read that ${outcome}s after the tree changed leaves the current folder open`, async () => {
+  const h = harness([entry("folder", "tree")]); let finish = (_ok: boolean) => {}, reads = 0;
+  h.load(() => { reads++; return reads === 1
+    ? new Promise((resolve, reject) => { finish = ok => (ok ? resolve({ entries: [entry("old.txt")] }) : reject(new Error("gone"))); })
+    : Promise.resolve({ entries: [entry("child.txt")] }); });
+  h.controller.render(); const stale = h.row("folder").click();
+  while (!reads) await Promise.resolve();
+  h.epoch(); h.controller.reset(); h.controller.render();
+  await h.row("folder").click();
+  assert.equal(h.row("folder").attributes.get("aria-expanded"), "true");
+  finish(outcome === "resolve"); await stale;
+  h.controller.render();
+  assert.equal(h.row("folder").attributes.get("aria-expanded"), "true");
+  assert.ok(h.row("folder/child.txt"));
+  assert.equal(h.calls.includes("error"), false);
+});
