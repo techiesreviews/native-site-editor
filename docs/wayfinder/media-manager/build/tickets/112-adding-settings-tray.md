@@ -1,8 +1,8 @@
 ---
 title: Adding: settings as choice cards, shorter tray messages
 type: task (AFK)
-status: open
-assignee:
+status: in-progress
+assignee: claude (mm-112 runner)
 blocked_by: [105-editor-toast, 106-touch-dark-fixes]
 builder: claude
 phase: 8
