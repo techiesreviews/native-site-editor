@@ -17,7 +17,7 @@ import { nativeElementMarkup, templateSectionRefusal, templateSlotRefusal, type 
 import { nativeHeadingLevel, nativeOutline, type ItemsSlotRule, type NativeOutline } from "./native-operations";
 import { TEMPLATE_BLOCK_TAGS } from "./rules/template-blocks";
 
-export const blockNames: Record<NativeElementKind, string> = { section: "Section", div: "Div", heading: "Heading", paragraph: "Paragraph", image: "Image", button: "Button" };
+export const blockNames: Record<NativeElementKind, string> = { section: "Section", div: "Div", heading: "Heading", paragraph: "Paragraph", media: "Media", button: "Button" };
 
 export type BlockTarget =
   | { ok: true; parent: number[]; index: number; wrap: boolean; where: string; select: number[]; slot?: string }

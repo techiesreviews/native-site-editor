@@ -2,7 +2,7 @@
 import { decodeHtmlEntities } from "./html-entities";
 import type { AddChoice } from "./add-catalog";
 
-export type NativeElementKind = "section" | "div" | "heading" | "paragraph" | "image" | "button";
+export type NativeElementKind = "section" | "div" | "heading" | "paragraph" | "media" | "button";
 export interface NativeElementOptions {
   text?: string;
   level?: 1 | 2 | 3 | 4 | 5 | 6;
@@ -45,7 +45,7 @@ function url(value: string) {
 }
 export const nativeElementChoices: readonly AddChoice[] = [
   ["section", "Section"], ["div", "Div"], ["heading", "Heading"],
-  ["paragraph", "Paragraph"], ["image", "Image"], ["button", "Button"],
+  ["paragraph", "Paragraph"], ["media", "Media"], ["button", "Button"],
 ].map(([kind, label]) => ({ tag: `native:${kind}`, label, group: "Blocks", kind: "native" }));
 
 /** Portable HTML styled by the site's own flow and btn classes. */
@@ -59,7 +59,9 @@ export function nativeElementMarkup(kind: NativeElementKind, options: NativeElem
       return `<h${level}>${escape(options.text ?? "Heading")}</h${level}>`;
     }
     case "paragraph": return `<p>${escape(options.text ?? "Text")}</p>`;
-    case "image": {
+    // Media on a page opens the Media picker and inserts the chosen file (media-insert.ts); this stand-in
+    // picture is what the Add panel previews and what a component's template takes.
+    case "media": {
       // The placeholder's own size; another src has its size set when it is chosen.
       const size = options.src === undefined ? ` width="${PLACEHOLDER_IMAGE_WIDTH}" height="${PLACEHOLDER_IMAGE_HEIGHT}"` : "";
       return `<img src="${url(options.src ?? `/${PLACEHOLDER_IMAGE_PATH}`)}" alt="${escape(options.alt ?? "")}"${size}>`;

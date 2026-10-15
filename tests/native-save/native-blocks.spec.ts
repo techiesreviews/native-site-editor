@@ -69,32 +69,27 @@ test("a rail click immediately after typing keeps the text and inserts after the
   await expect(lead).toHaveText(originalText!);
 });
 
-test("the first Image drafts images/placeholder.svg in its undo step; a second writes no file", async ({ page, baseURL }) => {
+test("Media opens the Media picker for that spot: Cancel adds nothing; Use adds the picture there, one undo step", async ({ page, baseURL }) => {
   await open(page, baseURL, 540, ".hero h1");
   const original = await source(page);
-  expect(await storedDraft(page, "images/placeholder.svg")).toBeUndefined();
   await frame(page).locator(".hero h1").click();
-  const image = rail(page).getByRole("button", { name: "Image", exact: true });
-  await image.click();
-  await expect(page.locator(".pb-flash")).toBeVisible();
-  await expect(label(page)).toBeHidden();
-  await expect.poll(async () => (await storedDraft(page, "images/placeholder.svg"))?.content).toContain("<svg");
-  const first = await source(page);
-  expect(flat(first)).toContain('<h1>Small websites that stay yours</h1><img src="/images/placeholder.svg" alt="" width="640" height="400"><p class="lead">');
-  // The preview shows the drafted placeholder.
-  await expect.poll(() => frame(page).locator(".hero img").evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBe(640);
-  const svg = (await storedDraft(page, "images/placeholder.svg"))!;
-  await image.click();
-  await expect.poll(async () => (await source(page)) !== first).toBe(true);
-  expect((await source(page)).match(/placeholder\.svg/g)).toHaveLength(2);
-  // The same draft, not rewritten (its stamp included).
-  expect(await storedDraft(page, "images/placeholder.svg")).toEqual(svg);
-  await undo(page);
-  await expect.poll(() => source(page)).toBe(first);
-  expect(await storedDraft(page, "images/placeholder.svg")).toEqual(svg);
+  const media = rail(page).getByRole("button", { name: "Media", exact: true });
+  await media.click();
+  const picker = page.getByRole("dialog", { name: "Choose media", exact: true });
+  await picker.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(picker).toHaveCount(0);
+  expect(await source(page)).toBe(original);
+  await media.click();
+  await picker.getByRole("button", { name: /^Choose images\/.+\.svg$/ }).first().click();
+  await picker.getByRole("button", { name: "Use image", exact: true }).click();
+  await expect(picker).toHaveCount(0);
+  await expect.poll(async () => flat(await source(page))).toMatch(/<h1>Small websites that stay yours<\/h1><img [^>]*src="\/images\/[^"]+\.svg"[^>]*><p class="lead">/);
+  // No stand-in picture is written; the new picture shows and is selected.
+  expect(await storedDraft(page, "images/placeholder.svg")).toBeUndefined();
+  await expect(frame(page).locator(".hero h1 + img")).toBeVisible();
+  await expect(page.getByRole("toolbar", { name: "Edit bar", exact: true }).locator(".edit-bar__kind")).toHaveText("Image");
   await undo(page);
   await expect.poll(() => source(page)).toBe(original);
-  await expect.poll(() => storedDraft(page, "images/placeholder.svg")).toBeUndefined();
 });
 
 test("a selected instance takes a click-insert in its items slot, one undo step; one without an items slot refuses in red", async ({ page, baseURL }) => {

@@ -14,6 +14,9 @@ import { locateNativeElementRange } from "../native-source-location";
 import { isImagePath } from "../native-structure";
 import { removedCopies, uploadImageType } from "../uploads";
 
+/** The videos a picture spot's picker lists beside its pictures: those browsers play. */
+const VIDEO_ACCEPT = ".mp4,.m4v,.webm,.mov,.ogv";
+const isVideoName = (name: string) => /\.(?:mp4|m4v|webm|mov|ogv|mkv|avi|mpe?g)$/i.test(name);
 export interface MediaWorkspaceSnapshot {
   repo: string;
   /** The repository's size in KiB (GitHub); absent for local folders. */
@@ -64,6 +67,8 @@ export interface MediaControllerPorts {
   gallerySignature(): string;
   observeBusy?(element: HTMLElement, changed: () => void): { disconnect(): void };
   refreshDescriptions(): void;
+  /** Selects (and flashes) an element just placed, once the preview shows it. */
+  select?(path: string, node: number[]): void;
   /** The place's name in the picker's heading: the page as the Pages tab names it. */
   placeLabel?(page: string): string | undefined;
   /** Where the image popup stands and what it shows on the page before Done. */
@@ -305,10 +310,36 @@ export function createMediaController(ports: MediaControllerPorts) {
     if (!stamp.holds() || ports.source(target.path) !== source) return;
     // The place: its page, and the picture by its words ("Home · Studio desk").
     const place = `${ports.placeLabel?.(target.path) ?? target.path} · ${initialAlt?.trim() || "Image"}`;
-    await openMediaPicker({ files, accept: "image/*", place, report: ports, onPick: async (image: MediaImage, cancelled, held) => {
-      const { placeMediaImage } = await import("../page-builder/media-place");
-      await placeMediaImage(ports, workspaceContext, target, image,
-        { stamp, epoch, source: source!, expected, initialAlt }, cancelled, held);
+    // A picture spot (a component's slot picture) also takes a video, which loops silently there (slice 64).
+    const spotted = (text: string) => Boolean(mediaAttribute(text, startTags(text)[0], "slot"));
+    const parent = locate(source!, target.node.slice(0, -1));
+    const spot = spotted(expected) || parent?.tag.name === "picture" && spotted(source!.slice(parent.tag.start, parent.tag.end));
+    await openMediaPicker({ files, accept: spot ? `image/*,${VIDEO_ACCEPT}` : "image/*", place, report: ports,
+      chosenNote: spot ? name => isVideoName(name) ? "loops silently here" : undefined : undefined,
+      onPick: async (image: MediaImage, cancelled, held) => {
+        const chosen = held?.chosen?.()?.request.file.name ?? image.path;
+        if (spot && isVideoName(chosen)) {
+          const { placeChosenMedia } = await import("../page-builder/media-insert");
+          await placeChosenMedia(ports, workspaceContext, { kind: "spot", path: target.path, node: target.node }, image, { stamp, epoch, source: source! }, cancelled, held);
+          return;
+        }
+        const { placeMediaImage } = await import("../page-builder/media-place");
+        await placeMediaImage(ports, workspaceContext, target, image,
+          { stamp, epoch, source: source!, expected, initialAlt }, cancelled, held);
+      } }).catch((error: unknown) => ports.error(error));
+  }
+
+  /** Add → Media: the picker with every kind; Use inserts the chosen file at `place` (a gap the block
+   * rail or the Add panel found on the page's bytes now), with its markup and the site's player, as one
+   * Undo step. Cancel adds nothing. `templateOf` opens component instances' items slots. */
+  async function insertMedia(place: import("../page-builder/media-insert").MediaInsertPlace, templateOf: (tag: string) => string | undefined) {
+    const stamp = ports.stamp(), epoch = ports.generation(), source = ports.source(place.path);
+    if (source === undefined || ports.viewingVersion()) return;
+    const { openMediaPicker } = await load();
+    if (!stamp.holds() || ports.source(place.path) !== source) return;
+    await openMediaPicker({ place: `${ports.placeLabel?.(place.path) ?? place.path} · Add media`, report: ports, onPick: async (file, cancelled, held) => {
+      const [{ placeChosenMedia }, { itemsSlotRule }] = await Promise.all([import("../page-builder/media-insert"), import("../page-builder/block-insert")]);
+      await placeChosenMedia(ports, workspaceContext, { kind: "insert", place, items: itemsSlotRule(templateOf) }, file, { stamp, epoch, source }, cancelled, held);
     } }).catch((error: unknown) => ports.error(error));
   }
 
@@ -518,6 +549,6 @@ export function createMediaController(ports: MediaControllerPorts) {
       (await import("../page-builder/social-sharing")).shareImage(workspaceContext, request, message => ports.announce(message)),
     /** The canvas stopped the edit bar's play `id`. */
     mediaEnded: (id: number) => player?.ended(id),
-    workspaceContext, preparePlacement, prepareFrame, chooseImage, choosePath, chooseBackground, videoControls, placeState, placeFrame, editImage, changePlace, ensureGallery, reviewInGallery, requestGalleryRefresh, disposeGallery,
+    workspaceContext, preparePlacement, prepareFrame, chooseImage, insertMedia, choosePath, chooseBackground, videoControls, placeState, placeFrame, editImage, changePlace, ensureGallery, reviewInGallery, requestGalleryRefresh, disposeGallery,
     closePicker: () => loaded?.closeMediaPicker(), galleryVisible: () => ports.galleryVisible() };
 }

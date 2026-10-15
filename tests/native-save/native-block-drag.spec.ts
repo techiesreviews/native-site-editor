@@ -132,10 +132,14 @@ test("an empty Div shows its drop area, and a Section snaps between page bands",
   await frame(page).locator("#services ul").click();
   await rail(page).getByRole("button", { name: "Div", exact: true }).click();
   await expect(frame(page).locator("#services > div.flow:empty")).toBeVisible();
-  await dragFromRail(page, "Image", await pointIn(page, "#services > div.flow"));
+  await dragFromRail(page, "Media", await pointIn(page, "#services > div.flow"));
   await expect(ghost(page)).toHaveAttribute("data-where", "Into Div (stack) › empty");
   await expect(page.locator(".pb-drop__area")).toHaveText("Drop into the empty Div (stack)");
   await page.mouse.up();
+  // Media dropped opens the Media picker for that spot; Use puts the picture there.
+  const picker = page.getByRole("dialog", { name: "Choose media", exact: true });
+  await picker.getByRole("button", { name: /^Choose images\/.+\.svg$/ }).first().click();
+  await picker.getByRole("button", { name: "Use image", exact: true }).click();
   await expect(frame(page).locator("#services > div.flow > img")).toBeVisible();
   // A Section over a card goes between bands: after #work when below its middle.
   await dragFromRail(page, "Section", await pointIn(page, "#work .cards card-project", 0.5, 0.9));

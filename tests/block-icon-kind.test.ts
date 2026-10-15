@@ -8,7 +8,7 @@ test("Structure and drag labels choose native, Button and component icons", () =
     ["a", "Button", "button"], ["a", "Link", "a"], ["button", "Button", "button"],
     ["card-project", "Card project", "component"], ["section-hero", "Hero", "component"],
     ["native:section", "Section", "section"], ["native:paragraph", "Paragraph", "p"],
-    ["native:heading", "Heading", "h2"], ["native:image", "Image", "img"],
+    ["native:heading", "Heading", "h2"], ["native:media", "Media", "img"],
     ["native:button", "Button", "button"], ["unknown", "Unknown", "unknown"],
   ]) assert.equal(blockIconKind(tag, name), expected);
 });

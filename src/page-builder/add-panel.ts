@@ -267,7 +267,7 @@ export function createAddPanel(handlers: AddPanelHandlers) {
     }, "pb-add-item__option") as HTMLButtonElement;
     option.setAttribute("role", "option");
     const thumb = createThumbnail("pb-add-item__thumb", isElement(item) ? 0.45 : undefined, isElement(item) ? 320 : 640);
-    if (item.tag === "native:image") {
+    if (item.tag === "native:media") {
       const fallback = node("span", "pb-add-item__image-fallback");
       fallback.innerHTML = '<svg viewBox="0 0 48 40" fill="none" aria-hidden="true"><rect x="2" y="2" width="44" height="36" rx="3"/><circle cx="15" cy="13" r="4"/><path d="m3 32 12-12 8 8 9-13 13 17"/></svg>';
       thumb.root.append(fallback);

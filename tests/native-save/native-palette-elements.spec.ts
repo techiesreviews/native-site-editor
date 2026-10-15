@@ -44,11 +44,11 @@ test('native command uses source-safe inside, after and main placement and calls
   const {nativePaletteCommands}=await import('/src/page-builder/palette-catalog.ts');const {state,deps}=(window as any).nativePaletteTest;
   await nativePaletteCommands(deps).find(c=>c.id==='native.add:native:heading')!.run();
   state.selection={path:'index.html',node:[0,0],tag:'section'};await nativePaletteCommands(deps).find(c=>c.id==='native.add:native:paragraph')!.run();
-  state.selection={path:'index.html',node:[0,0,0],tag:'p'};await nativePaletteCommands(deps).find(c=>c.id==='native.add:native:image')!.run();
+  state.selection={path:'index.html',node:[0,0,0],tag:'p'};await nativePaletteCommands(deps).find(c=>c.id==='native.add:native:media')!.run();
   return state.calls;
  });
  expect(result.map((call:any)=>call.point)).toEqual([{path:'index.html',parent:[0],index:1},{path:'index.html',parent:[0,0],index:1},{path:'index.html',parent:[0,0],index:1}]);
- expect(result.map((call:any)=>call.choice.tag)).toEqual(['native:heading','native:paragraph','native:image']);
+ expect(result.map((call:any)=>call.choice.tag)).toEqual(['native:heading','native:paragraph','native:media']);
 });
 test('captured commands refuse source, selection, path, scope and callback changes with zero writes',async({page})=>{
  const result=await page.evaluate(async()=>{

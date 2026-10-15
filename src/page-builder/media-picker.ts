@@ -125,7 +125,9 @@ export interface MediaPickerOptions {
   onClose?: () => void;
   /** The place being filled, under the picker's title ("Home · Studio desk"). */
   place?: string;
-  /** MIME types, extensions or image/*, like a native file input's accept. */
+  /** A few words after the chosen file's name ("Loops silently here"), when choosing it means more. */
+  chosenNote?: (name: string) => string | undefined;
+  /** MIME types, extensions or image/*, like a native file input's accept; none: every kind (Add → Media). */
   accept?: string;
   files?: File[];
   /** Where the picker's window is placed; inside an open popover (the explorer) it keeps that open. */

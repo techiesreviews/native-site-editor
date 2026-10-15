@@ -780,6 +780,12 @@ async function insertNativeComponent(point: InsertPoint, choice: InsertChoice) {
   const captured = nativeAddPoints.get(point), moved = "The insertion source changed. Choose the destination again.";
   if (captured && (captured.epoch !== generation || captured.scope !== setupScope() || versionView)) { errorMessage(new Error(moved)); return; }
   if (!nativePreview || !nativeSite || !Object.values(nativeSite.routes).includes(path)) return;
+  // Media opens the Media picker for that gap; Use inserts the chosen file (the bytes must hold).
+  if (choice.tag === "native:media") {
+    if (captured && nativeEffectiveSource(path) !== captured.source) errorMessage(new Error(moved));
+    else void mediaController.insertMedia({ path, parent: point.parent, index: point.index }, tag => guardedEdits.peek.template(tag)?.source);
+    return;
+  }
   const selected = appStore.selection.value;
   const before = selected?.node ? { path: selected.path, node: [...selected.node] } : undefined;
   // The page opens first when another file is in the editor (Edit component mode on a template it
@@ -898,6 +904,7 @@ const blockInsertPorts: BlockInsertPorts = {
     return selection?.path === path ? { path, node: selection.node, painted: selection.paintedSource } : { path, node: host?.node, painted: host?.paintedSource };
   },
   edits: guardedEdits,
+  media: place => void mediaController.insertMedia(place, tag => guardedEdits.peek.template(tag)?.source),
   refuse: (reason, pointer) => {
     if (pointer) { refuse(reason, { pointer }); return; }
     nativePreview?.flashRefusal(reason);
@@ -2446,6 +2453,7 @@ const mediaController = createMediaController({
   applyBatch: applyMediaBatch,
   refreshDescriptions: () => { if (appStore.selection.value) renderNativeEditBar(appStore.selection.value); },
   placeLabel: nativePageLabelOf,
+  select: (path, node) => { nativePreview?.selectAfterUpdate({ path, node }); nativePreview?.flashInsert({ path, node }); },
   imagePopup: {
     image: () => nativePreview?.selectionBox(),
     bar: () => document.querySelector<HTMLElement>(".edit-bar"),

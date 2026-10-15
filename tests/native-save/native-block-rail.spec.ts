@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 // Default fixture group; nightly coverage for the boot block controls.
-const names = ["Section", "Div", "Heading", "Paragraph", "Image", "Button"];
+const names = ["Section", "Div", "Heading", "Paragraph", "Media", "Button"];
 const rail = (page: Page) => page.getByRole("navigation", { name: "Blocks" });
 const tip = (page: Page) => page.locator(".block-rail__tip");
 async function open(page: Page, baseURL: string | undefined) {

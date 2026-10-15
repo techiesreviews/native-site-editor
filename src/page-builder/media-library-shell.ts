@@ -2,6 +2,7 @@ import { button, node } from "../ui/dom";
 import { setIcon } from "../icons";
 import { mediaSelectionActions } from "./media-collection-choices";
 import type { MediaPickerOptions } from "./media-picker";
+import { pickerFileWord, pickerNoun } from "./media-library-filter";
 
 export type LibraryShell = ReturnType<typeof createMediaLibraryShell>;
 
@@ -19,7 +20,7 @@ export function createMediaLibraryShell(
   const close = () => { if (modal) modal.close(); };
   const header = node("header", "media-library__header");
   const heading = node("div");
-  const title = node("h2", "", modal ? "Choose image" : "Media");
+  const title = node("h2", "", modal ? `Choose ${pickerNoun(options.accept)}` : "Media");
   title.id = `media-library-title-${id}`;
   dialog.setAttribute("aria-labelledby", title.id);
   if (!modal) dialog.setAttribute("role", "region");
@@ -88,7 +89,7 @@ export function createMediaLibraryShell(
   const choice = node("div", "media-library__chosen"), chosenName = node("span", "media-library__chosen-name");
   const chosenThumb = node("span", "media-library__chosen-thumb");
   const detailsButton = button("File details", actions.details, "media-library__chosen-details");
-  const use = button("Use image", actions.use, "button primary media-library__use");
+  const use = button(`Use ${pickerFileWord(options.accept)}`, actions.use, "button primary media-library__use");
   if (modal) {
     const status = node("div", "media-library__chosen-text"); status.setAttribute("role", "status");
     status.append(chosenName);

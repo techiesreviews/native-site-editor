@@ -120,11 +120,11 @@ test('six catalogue blocks insert into the real starter and undo exactly; placeh
     if (svg.querySelector('parsererror')) throw new Error('Invalid placeholder SVG');
     const root = svg.documentElement;
     if (root.localName !== 'svg' || root.namespaceURI !== 'http://www.w3.org/2000/svg' || root.getAttribute('width') !== String(PLACEHOLDER_IMAGE_WIDTH) || root.getAttribute('height') !== String(PLACEHOLDER_IMAGE_HEIGHT) || root.getAttribute('viewBox') !== `0 0 ${PLACEHOLDER_IMAGE_WIDTH} ${PLACEHOLDER_IMAGE_HEIGHT}`) throw new Error('Placeholder dimensions or namespace mismatch');
-    const image = new DOMParser().parseFromString(nativeChoiceMarkup('native:image')!, 'text/html').querySelector('img')!;
+    const image = new DOMParser().parseFromString(nativeChoiceMarkup('native:media')!, 'text/html').querySelector('img')!;
     if (image.getAttribute('src') !== `/${PLACEHOLDER_IMAGE_PATH}` || image.width !== PLACEHOLDER_IMAGE_WIDTH || image.height !== PLACEHOLDER_IMAGE_HEIGHT || image.alt !== '') throw new Error('Image placeholder mismatch');
     return nativeElementChoices.map(choice => ({ key: choice.tag, markup: nativeChoiceMarkup(choice.tag)! }));
   });
-  expect(blocks.map(block => block.key)).toEqual(['native:section', 'native:div', 'native:heading', 'native:paragraph', 'native:image', 'native:button']);
+  expect(blocks.map(block => block.key)).toEqual(['native:section', 'native:div', 'native:heading', 'native:paragraph', 'native:media', 'native:button']);
   for (const block of blocks) {
     expect(await page.evaluate(markup => (window as any).elementCompat.insert([1], 6, markup), block.markup)).toBe(true);
     const last = page.frameLocator('.native-preview-frame').locator('#page > main > :last-child');

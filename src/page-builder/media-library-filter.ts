@@ -26,6 +26,22 @@ export function isMediaLibraryPath(path: string) {
     (fileKind(path) !== "other" || !TEXT_PATH.test(path) && /\.[^/]+$/.test(path) && !/\.(?:[cm]?ts|tsx|jsx|cjs|map|lock|ya?ml|toml|jsonc|json5|ini|env|sh|ps1|py|rb|php|vue|svelte|astro|s[ac]ss|less|njk|liquid|hbs|woff2?|ttf|otf|eot)$/i.test(path));
 }
 
+/** What a picker's words call its files: "image" for pictures only (the long-standing wording),
+ * "video" for videos only, "image or video" for a picture spot, else "media" (Add → Media). */
+export function pickerNoun(accept?: string): string {
+  const parts = accept?.split(",").map(part => part.trim().toLowerCase()).filter(Boolean) ?? [];
+  const video = (part: string) => part.startsWith("video/") || part.startsWith(".") && mediaKind(`x${part}`) === "video";
+  const image = (part: string) => part.startsWith("image/") || part.startsWith(".") && mediaKind(`x${part}`) === "image";
+  if (!parts.length) return "media";
+  if (parts.every(image)) return "image";
+  if (parts.every(video)) return "video";
+  return parts.every(part => image(part) || video(part)) ? "image or video" : "media";
+}
+/** One file of a picker's kind before anything is chosen: "image", "video" or "file". */
+export const pickerFileWord = (accept?: string) => { const noun = pickerNoun(accept); return noun === "image" || noun === "video" ? noun : "file"; };
+/** Use's word for a chosen file: "Use image", "Use video", "Use audio", "Use file". */
+export const chosenNoun = (path: string) => ({ image: "image", video: "video", audio: "audio", document: "file" } as const)[mediaKind(path)];
+
 export interface MediaLibraryFilter {
   query: string;
   /** A collection's name; empty for All collections. */

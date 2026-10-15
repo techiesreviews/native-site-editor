@@ -122,7 +122,7 @@ test("the rail builds in the template: a Paragraph clicked into the items slot, 
   await expect.poll(async () => flat(await mounted(page, TEMPLATE))).toContain(`</slot><h2>Heading</h2><div class="cards">`);
   await expect(work.locator("section > h2").filter({ visible: true })).toHaveText("Heading");
   // An Image dragged into the items slot, after the new paragraph; one undo takes it out again.
-  await dragFromRail(page, "Image", await pointIn(page, ".cards > slot > p", 0.8, 0.9));
+  await dragFromRail(page, "Media", await pointIn(page, ".cards > slot > p", 0.8, 0.9));
   await expect(ghost(page)).toHaveAttribute("data-where", "Into Section work › items › after Paragraph");
   await page.mouse.up();
   await expect(ghost(page)).toHaveCount(0);

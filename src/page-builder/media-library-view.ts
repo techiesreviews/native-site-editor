@@ -10,7 +10,7 @@ import { confirmMediaDelete } from "./media-library-delete";
 import { showMediaOptimise } from "./media-library-optimise";
 import { wireMediaLibraryInput } from "./media-library-input";
 import { createMediaAdding } from "./media-library-adding";
-import { basename, filterMediaLibrary, mediaFamilyUsage, type MediaKindChoice, type MediaLibraryFilter } from "./media-library-filter";
+import { basename, chosenNoun, filterMediaLibrary, mediaFamilyUsage, mediaKind, pickerFileWord, type MediaKindChoice, type MediaLibraryFilter } from "./media-library-filter";
 import { mediaImageForPlacement, mediaNameAlt, mediaVariantName, mediaVariants, type MediaImage } from "./media-markup";
 import { node } from "../ui/dom";
 import { createRowMenu, type MenuItem } from "../components/row-menu";
@@ -248,7 +248,10 @@ export function createMediaLibraryView(
       card.querySelector(".media-library__thumbnail, .media-library__pending-select")?.setAttribute("aria-pressed", String(on));
     }
     const held = chosen ? heldFile(chosen) : undefined;
-    name.textContent = held ? basename(held.request.file.name) : chosen ? basename(chosen) : "Choose one image";
+    const file = held ? held.request.file.name : chosen, note = file && options.chosenNote?.(file);
+    name.textContent = file ? `${basename(file)}${note ? ` · ${note}` : ""}` : `Choose one ${pickerFileWord(options.accept)}`;
+    // Use says what it places: "Use image", "Use video", "Use audio" or "Use file".
+    use.textContent = `Use ${file ? chosenNoun(file) : pickerFileWord(options.accept)}`;
     thumb.replaceChildren(); details.hidden = !chosen || Boolean(held);
     use.disabled = !chosen;
     if (!chosen) return;
@@ -280,11 +283,12 @@ export function createMediaLibraryView(
         // A held file's size is its main output's, or (stored as it is: SVG, GIF) read from its bytes.
         const primary = held.request.result?.outputs[0];
         let size: { width?: number; height?: number } | undefined = primary?.width ? primary : undefined;
-        if (!size) { const url = URL.createObjectURL(primary?.blob ?? held.request.file); try { size = await decodeImage(url); } finally { URL.revokeObjectURL(url); } }
-        image = { path, width: size.width, height: size.height, alt: "", variants: [] };
+        if (!size && mediaKind(held.request.file.name) === "image") { const url = URL.createObjectURL(primary?.blob ?? held.request.file); try { size = await decodeImage(url); } finally { URL.revokeObjectURL(url); } }
+        image = { path, width: size?.width, height: size?.height, alt: "", variants: [] };
       } else {
         if (path.startsWith("pending:")) throw new Error(CANCELLED);
-        const data = await cache.get(path);
+        // Videos, audio and downloads are placed by their address: their bytes are never read here.
+        const data = mediaKind(path) === "image" ? await cache.get(path) : {};
         image = mediaImageForPlacement(path, data, library.items.map(item => item.path));
         const meta = library.metadata[path];
         // Component and settings pickers have their own Alt field; page placement resolves descriptions.
@@ -379,8 +383,8 @@ export function createMediaLibraryView(
       ...!modal && adapter.check ? [{ label: toCheckLabel(library?.toCheck), run: () => {
         if (library) showToCheck(sheet, { ...context, close: () => closeSheet(shell.more), pageLabel: page => adapter.usage?.pageLabel?.(page) });
       } }] : [],
-      // The picker shows only files that fit the place, so it has no kinds to choose.
-      ...modal ? [] : kinds.map(([value, label]) => ({ label, section: "Show", checked: kind === value, run: () => {
+      // A picker shows only files that fit the place; Add → Media's (every kind) can narrow to one.
+      ...modal && options.accept ? [] : kinds.map(([value, label]) => ({ label, section: "Show", checked: kind === value, run: () => {
         kind = value; draw(); shell.more.focus();
       } })),
       ...([["grid", "Grid"], ["list", "List"]] as const).map(([value, label]) => ({ label, section: "View", checked: layout === value, run: () => {

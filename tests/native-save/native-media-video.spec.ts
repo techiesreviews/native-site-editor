@@ -3,7 +3,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import { publishButton } from "./publish";
 import { storedDraft } from "./drafts";
 
-// Default fixture group: native-starter. Nightly only; slice 63 adds placement smoke coverage.
+// Default fixture group: native-starter. Add → Media placement is @smoke; the rest nightly.
 const bar = (page: Page) => page.getByRole("toolbar", { name: "Edit bar" });
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const mounted = (page: Page) => page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html")!);
@@ -14,12 +14,12 @@ const saved = async (page: Page, baseURL: string | undefined, path = "index.html
 const VIDEO = '<video src="/media/clip.mp4" poster="/images/placeholder.svg" controls preload="none" playsinline width="400" height="240" aria-label="Clip"><track kind="subtitles" src="/media/clip.vtt" srclang="en"></video>';
 // A real two-second VP9 clip in MP4 (Playwright's Chromium has no H.264), shared with native-media-policy.spec.ts.
 const CLIP = readFileSync("tests/native-save/clip.mp4").toString("base64");
-async function open(page: Page, baseURL: string | undefined, video: boolean | string = true) {
+async function open(page: Page, baseURL: string | undefined, video: boolean | string = true, extra: Record<string, string> = {}, files: Record<string, object> = {}) {
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
   const body = typeof video === "string" ? video : video ? VIDEO : "<p>Section words</p>";
-  const source = `<!doctype html>\n<html lang="en">\n<head><title>Video page</title></head>\n<body>\n  <section id="scene">\n    <h1>Video page</h1>\n    ${body}\n  </section>\n</body>\n</html>`;
-  for (const [path, content] of Object.entries({ "index.html": source, ".editor/media.json": JSON.stringify({ version: 2, collections: [], files: { "media/clip.mp4": { still: "images/placeholder.svg" } } }) })) {
+  const source = `<!doctype html>\n<html lang="en">\n<head><title>Video page</title></head>\n<body>\n<main>\n  <section id="scene">\n    <h1>Video page</h1>\n    ${body}\n  </section>\n</main>\n</body>\n</html>`;
+  for (const [path, content] of Object.entries({ "index.html": source, ...extra, ".editor/media.json": JSON.stringify({ version: 2, collections: [], files: { "media/clip.mp4": { still: "images/placeholder.svg" }, ...files } }) })) {
     const response = await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path, content } });
     expect(response.ok()).toBe(true);
   }
@@ -36,6 +36,57 @@ async function save(page: Page) {
   await expect(page.locator("#status")).toHaveText(/Up to date with main|Selected files saved to GitHub\./, { timeout: 30_000 });
   await expect(publishButton(page)).toBeDisabled();
 }
+/** Add → Media from the Add panel, after the section's words: the picker lists every kind. */
+async function addMedia(page: Page, file: string, use: string) {
+  await frame(page).locator("#scene p").click();
+  await page.getByRole("complementary", { name: "Page structure" }).getByRole("button", { name: "Add", exact: true }).click();
+  await page.getByRole("dialog", { name: "Add to the page", exact: true }).getByRole("option", { name: "Media HTML", exact: true }).click();
+  const picker = page.getByRole("dialog", { name: "Choose media", exact: true });
+  await expect(picker.locator(".media-library__place")).toContainText("Add media");
+  await picker.getByRole("button", { name: `Choose ${file}`, exact: true }).click();
+  await picker.getByRole("button", { name: use, exact: true }).click();
+  await expect(picker).toHaveCount(0);
+}
+test("Add → Media places a video with its still and the player; the canvas keeps it still; one Undo", { tag: "@smoke" }, async ({ page, baseURL }) => {
+  await open(page, baseURL, false);
+  const before = await mounted(page);
+  await addMedia(page, "media/clip.mp4", "Use video");
+  await expect.poll(() => mounted(page)).toContain('<video src="/media/clip.mp4" poster="/images/placeholder.svg" controls preload="none" playsinline width="640" height="400"></video>');
+  const source = await mounted(page);
+  expect(source).toContain('<script type="module" src="/scripts/media-player.js"></script>');
+  expect(source).toContain('<link rel="stylesheet" href="/styles/media-player.css">');
+  expect(await storedDraft(page, "scripts/media-player.js")).toBeDefined();
+  // The canvas shows it still and selected: no controls, never playing.
+  const video = frame(page).locator("#scene > video");
+  await expect(video).toBeVisible();
+  await expect(video).not.toHaveAttribute("controls");
+  expect(await video.evaluate(element => (element as HTMLVideoElement).paused)).toBe(true);
+  await expect(bar(page).getByRole("checkbox", { name: "Looping video", exact: true })).toBeVisible();
+  // One Undo takes back the video, the head links and the player files.
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(() => mounted(page)).toBe(before);
+  for (const path of ["scripts/media-player.js", "scripts/media-online.js", "styles/media-player.css"]) expect(await storedDraft(page, path)).toBeUndefined();
+});
+test("Add → Media places an audio file with its length and a PDF card that opens; both stay still on the canvas", async ({ page, baseURL }) => {
+  await open(page, baseURL, false, { "media/song.mp3": "seeded audio bytes", "media/price-list.pdf": "%PDF-1.4 seeded" },
+    { "media/song.mp3": { duration: 75.4, description: { text: "Opening song" } }, "media/price-list.pdf": { still: "images/placeholder.svg" } });
+  await addMedia(page, "media/song.mp3", "Use audio");
+  await expect.poll(() => mounted(page)).toContain('<audio src="/media/song.mp3" controls preload="none" data-duration="75" aria-label="Opening song"></audio>');
+  const audio = frame(page).locator("#scene > audio");
+  await expect(audio).toBeVisible();
+  await audio.click();
+  expect(await audio.evaluate(element => (element as HTMLAudioElement).paused)).toBe(true);
+  await addMedia(page, "media/price-list.pdf", "Use file");
+  await expect.poll(() => mounted(page)).toContain('<a class="download-card" href="/media/price-list.pdf"><img src="/images/placeholder.svg" alt="" width="640" height="400" loading="lazy" decoding="async"><span class="download-card-name">price-list</span><span class="download-card-meta">PDF · ');
+  const source = await mounted(page);
+  expect(source).toContain('<span class="download-card-action">Open</span></a>');
+  expect(source).not.toMatch(/download-card"[^>]*\sdownload[\s>]/);
+  expect(source.match(/src="\/scripts\/media-player.js"/g)).toHaveLength(1);
+  expect(source.match(/href="\/styles\/media-player.css"/g)).toHaveLength(1);
+  await expect(frame(page).locator("#scene .download-card")).toBeVisible();
+  await save(page);
+  expect(await saved(page, baseURL)).toContain('class="download-card"');
+});
 test("selected video loops silently, saves with player, then returns to play with sound on tap", async ({ page, baseURL }) => {
   await open(page, baseURL);
   const video = frame(page).locator("#scene > video");
@@ -80,10 +131,10 @@ test("section background picked from Media saves as first child with player; Rem
   await frame(page).locator("#scene p").click();
   await page.keyboard.press("Escape");
   await bar(page).getByRole("button", { name: "Background video", exact: true }).click();
-  const picker = page.getByRole("dialog", { name: "Choose image", exact: true });
+  const picker = page.getByRole("dialog", { name: "Choose video", exact: true });
   await expect(picker.locator(".media-library__place")).toContainText("Background video");
   await picker.getByRole("button", { name: "Choose media/clip.mp4", exact: true }).click();
-  await picker.getByRole("button", { name: "Use image", exact: true }).click();
+  await picker.getByRole("button", { name: "Use video", exact: true }).click();
   await expect(picker).toHaveCount(0);
   await expect.poll(() => mounted(page)).toContain('<video data-background src="/media/clip.mp4"');
   await save(page);

@@ -33,7 +33,7 @@ export function mountBlockRail(workspace: HTMLElement, addButton: HTMLButtonElem
     if (focused) showTip(focused);
     else hideTip();
   };
-  const tags: Partial<Record<NativeElementKind, string>> = { heading: "h2", paragraph: "p", image: "img" };
+  const tags: Partial<Record<NativeElementKind, string>> = { heading: "h2", paragraph: "p", media: "img" };
   for (const choice of nativeElementChoices) {
     const kind = choice.tag.slice(7) as NativeElementKind;
     const button = document.createElement("button");

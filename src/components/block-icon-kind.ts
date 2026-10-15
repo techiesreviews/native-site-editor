@@ -1,4 +1,4 @@
-const nativeTags: Record<string, string> = { heading: "h2", paragraph: "p", image: "img" };
+const nativeTags: Record<string, string> = { heading: "h2", paragraph: "p", media: "img" };
 
 /**
  * Structure and drag labels share the icon for a block's tag and displayed

@@ -156,6 +156,16 @@ import { domView } from "../page-builder/rules/tree.ts";
       if (el.localName === "video") el.removeAttribute("controls");
       el.setAttribute("preload", "none");
       el.pause();
+      // Its still picture shows, read like the page's images.
+      var poster = el.getAttribute("poster"), still = poster && assetFor(poster);
+      if (still) el.setAttribute("poster", still);
+    });
+    // Audio keeps its bar (without it, it would not show to be selected), but stays silent: a press
+    // on the bar selects it (see the capture listener below).
+    fragment.querySelectorAll("audio").forEach(function (el) {
+      el.removeAttribute("autoplay");
+      el.setAttribute("preload", "none");
+      el.pause();
     });
     fragment.querySelectorAll("img[srcset],source[srcset]").forEach(function (el) {
       el.setAttribute("srcset", el.getAttribute("srcset").replace(/([^,\s]+)(\s+[^,]+)?/g, function (all, url, descriptor) {
@@ -2949,6 +2959,12 @@ import { domView } from "../page-builder/rules/tree.ts";
     // The second press of a double-click would select a word: the double-click puts the caret there instead.
     if (!inside && e.detail > 1 && target && !target.closest("input, textarea, select")) e.preventDefault();
   }, true);
+  // The canvas stays still: a press on an audio bar selects it; the browser's own bar never plays.
+  ["mousedown", "click", "dblclick"].forEach(function (type) {
+    document.addEventListener(type, function (e) {
+      if (e.target && e.target.localName === "audio") e.preventDefault();
+    }, true);
+  });
   // An image the page (or the template open in Edit component mode) holds.
   function editableImage(el) {
     if (!el || el.localName !== "img" || !state) return false;
