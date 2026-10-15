@@ -32,7 +32,7 @@ const next = png(600, 400, [0, 0, 0], true);
 
 /** Home and About show images/tram.webp (40 × 30); About also shows images/old.png; images/next.png and
  * images/lisbon.webp are other pictures in Media. */
-async function seed(page: Page, baseURL: string | undefined, extra: Record<string, { content: string }> = {}) {
+async function seed(page: Page, baseURL: string | undefined, extra: Record<string, { content?: string; base64?: string }> = {}) {
   await page.goto(baseURL!);
   const webp = await page.evaluate(async () => {
     const canvas = new OffscreenCanvas(40, 30), context = canvas.getContext("2d")!;
@@ -283,4 +283,23 @@ test("a new format with Keep the old address working off writes no forwarding, a
   await expect(media.getByLabel("File name", { exact: true })).toHaveValue("old.webp");
   await expect.poll(async () => (await text(page, "about/index.html")) ?? "").toMatch(/src="\/images\/old\.webp\?v=[0-9a-f]{8}"/);
   expect(await storedDraft(page, "_redirects")).toBeUndefined();
+});
+
+test("a page that shows only a Trimmed copy is named in the confirm and the toast, with the focus line", async ({ page, baseURL }) => {
+  const record = { version: 2, collections: [], files: { "images/tram-crop.png": { trimmedFrom: { source: "images/tram.webp", trim: { x: 0, y: 0, width: 1, height: 1 } } } } };
+  await seed(page, baseURL, {
+    "images/tram-crop.png": { base64: png(20, 15, [200, 40, 40]).toString("base64") },
+    "about/index.html": { content: about.replace('<section class="prose"', '<img class="about-image" src="/images/tram-crop.png" alt="Tram">\n  <section class="prose"') },
+    ".editor/media.json": { content: JSON.stringify(record) },
+  });
+  const media = pane(page);
+  await media.getByRole("button", { name: "Details for images/tram.webp", exact: true }).click();
+  await media.getByRole("button", { name: "Replace everywhere…", exact: true }).click();
+  await picker(page).getByRole("button", { name: "Choose images/next.png", exact: true }).click();
+  await picker(page).getByRole("button", { name: "Use image", exact: true }).click();
+  await expect(media.locator(".media-replace__shows")).toHaveText("Shows on: Home, About this project");
+  await expect(media.getByText("Focus points go back to the middle.", { exact: true })).toBeVisible();
+  await expect(media.getByText("1 trimmed copy of it is replaced by the new picture in the same shape.", { exact: true })).toBeVisible();
+  await media.getByRole("button", { name: "Replace everywhere", exact: true }).click();
+  await expect(page.locator(".editor-toast__text")).toHaveText("tram.webp now shows the next picture on Home and About this project.", { timeout: 30_000 });
 });

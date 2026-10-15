@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { REPLACE_ACCEPT, pageList, replaceChoiceProblem, replaceNotice, replacedMessage, shownPages, trimsOf } from "../src/page-builder/media-replace-rules";
+import { REPLACE_ACCEPT, pageList, replaceChoiceProblem, replaceNotice, replacedMessage, replacedPages, shownPages, trimmedCopiesOf, trimsOf } from "../src/page-builder/media-replace-rules";
 import { accepts } from "../src/page-builder/media-library-filter";
 
 const paths = ["images/tram.webp", "images/tram-480.webp", "media/originals/tram.jpg", "images/new.jpg", "images/new-960.jpg", "logo.svg", "a.gif"];
@@ -77,4 +77,10 @@ test("trimmed copies made from any member of the family are counted", () => {
     "images/t3.webp": { tags: [], alt: "", trimmedFrom: { source: "images/new.jpg", trim } },
   };
   assert.equal(trimsOf("images/tram.webp", paths, metadata), 2);
+  assert.deepEqual(trimmedCopiesOf("images/tram.webp", paths, metadata), ["images/t1.webp", "images/t2.webp"]);
+  // The confirm and the toast name pages that show only a Trimmed copy too, once each (review of slice 113).
+  const usage = { "images/tram.webp": { pages: ["index.html"] }, "images/t1.webp": { pages: ["index.html", "about/index.html"] },
+    "images/t2.webp": { pages: ["work/index.html"] }, "images/t3.webp": { pages: ["contact/index.html"] } };
+  assert.deepEqual(replacedPages("images/tram.webp", paths, metadata, usage), ["index.html", "about/index.html", "work/index.html"]);
+  assert.deepEqual(replacedPages("logo.svg", paths, metadata, usage), []);
 });

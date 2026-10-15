@@ -5,7 +5,7 @@ import { basename } from "./media-library-filter";
 import { check, input } from "./media-library-fields";
 import { openMediaPicker } from "./media-picker";
 import { takeSheet, type LibrarySheet, type LibrarySheetContext } from "./media-library-sheet";
-import { REPLACE_ACCEPT, replaceChoiceProblem, replaceNotice, replacedMessage, shownPages, trimsOf } from "./media-replace-rules";
+import { REPLACE_ACCEPT, replaceChoiceProblem, replaceNotice, replacedMessage, replacedPages, shownPages, trimsOf } from "./media-replace-rules";
 import { askToAddUnchanged } from "./media-prepare";
 import { prepareMediaReplacement } from "./media-replace-prepare";
 import type { MediaReplaceRequest } from "./media-workspace";
@@ -73,7 +73,8 @@ function confirmReplace(sheet: LibrarySheet, c: ReplaceContext, path: string, ne
   const { element } = sheet, version = sheet.version;
   element.dataset.mode = "replace";
   const library = c.library(), paths = library.items.map(item => item.path);
-  const used = library.usage[path]?.pages ?? [], pages = used.length;
+  // Pages that show the picture or a Trimmed copy of it: the replacement changes both.
+  const used = replacedPages(path, paths, library.metadata, library.usage), pages = used.length;
   const label = (page: string) => c.adapter.usage?.pageLabel?.(page)?.trim() || page;
   const notice = replaceNotice({ path, pages, trims: trimsOf(path, paths, library.metadata), kept: Boolean(library.keep?.includes(path)),
     next: { extension: next.result!.outputs[0].extension } });
@@ -121,11 +122,12 @@ function confirmReplace(sheet: LibrarySheet, c: ReplaceContext, path: string, ne
     const notices: string[] = [];
     const to = await c.adapter.replace!({ path, result: next.result, ...next.original ? { original: next.original } : {},
       ...keep ? { keepOldAddress: keep.checked } : {}, notice: text => notices.push(text) });
+    // The toast names the pages and carries Undo for this step (slice 113). It is said before any
+    // further await, so its Undo is bound to this step on the page that recorded it.
+    c.done([replacedMessage(to, next.name, used.map(label)), ...notices].join(" "), true);
     next.release(); c.cache.clear(); await c.refresh();
     if (c.alive() && c.library().items.some(item => item.path === to)) await c.details(to);
     else if (c.alive() && version === sheet.version) { sheet.version++; element.hidden = true; delete element.dataset.mode; element.replaceChildren(); }
-    // The toast names the pages and carries Undo for this step (slice 113).
-    c.done([replacedMessage(to, next.name, used.map(label)), ...notices].join(" "), true);
   }), "button primary"));
   element.append(actions);
   title.focus();

@@ -79,9 +79,19 @@ export function replacedMessage(path: string, newName: string, pages: string[]):
   return `${basename(path)} now shows the ${picture} picture${pages.length ? ` on ${pageList(pages)}` : ""}.`;
 }
 
-/** How many Trimmed copies were made from the old picture's family. */
-export function trimsOf(path: string, paths: string[], metadata: MediaMetadataMap): number {
+/** The Trimmed copies made from the old picture's family; Replace everywhere replaces them too. */
+export function trimmedCopiesOf(path: string, paths: string[], metadata: MediaMetadataMap): string[] {
   const family = mediaFamilyOf(path, paths);
   const members = new Set(family ? familyMembers(family) : [path]);
-  return Object.values(metadata).filter(meta => meta.trimmedFrom && members.has(meta.trimmedFrom.source)).length;
+  return Object.entries(metadata).filter(([, meta]) => meta.trimmedFrom && members.has(meta.trimmedFrom.source)).map(([copy]) => copy);
+}
+
+/** How many Trimmed copies were made from the old picture's family. */
+export function trimsOf(path: string, paths: string[], metadata: MediaMetadataMap): number {
+  return trimmedCopiesOf(path, paths, metadata).length;
+}
+
+/** Every page that shows the picture or one of its Trimmed copies, once each: the pages the replacement changes. */
+export function replacedPages(path: string, paths: string[], metadata: MediaMetadataMap, usage: Record<string, { pages: string[] }>): string[] {
+  return [...new Set([path, ...trimmedCopiesOf(path, paths, metadata)].flatMap(file => usage[file]?.pages ?? []))];
 }
