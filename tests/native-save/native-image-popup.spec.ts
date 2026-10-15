@@ -708,6 +708,71 @@ test("at 768 the large editor's previews fit, its message is one quiet line and 
   expect(await picture.evaluate(element => getComputedStyle(element).backgroundImage)).toContain("conic-gradient");
 });
 
+// Slice 110 (review): the shared shape menu offers a hand-written ratio while the place has it, in the popup and
+// the large editor; a press outside the open menu only closes it, and the next gesture edits as usual.
+test("a hand-written ratio is offered while the place has it; a press outside the shape menu only closes it", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await open(page, baseURL);
+  const response = await page.request.get(`${baseURL}/__demo/file?path=index.html`);
+  const seeded = (await response.text()).replace(/<img\b([^>]*class="hero-image"[^>]*)>/, '<img$1 style="aspect-ratio: 3 / 2; object-fit: cover">');
+  expect(seeded).toContain("aspect-ratio: 3 / 2");
+  expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "index.html", content: seeded } })).ok()).toBe(true);
+  await page.locator(".repository-menu__trigger").click();
+  await page.locator('.repository-menu__repo[aria-current="true"]').hover();
+  await page.getByRole("menu", { name: "Branches" }).getByRole("menuitem", { name: "Refresh from GitHub" }).click();
+  await expect.poll(() => heroTag(page)).toContain("aspect-ratio: 3 / 2");
+  await openPopup(page);
+  await replaceWith(page, "Ratio.jpg", "image/jpeg", await quarters(page));
+  const custom = "Custom (3 / 2)";
+  // The popup: the ratio is named and checked; choosing it again keeps it.
+  await expect(popup(page).getByRole("button", { name: `Shape: ${custom}`, exact: true })).toBeVisible();
+  await popup(page).getByRole("button", { name: /^Shape:/ }).click();
+  await expect(popup(page).getByRole("menuitemradio", { name: custom, exact: true })).toHaveAttribute("aria-checked", "true");
+  await popup(page).getByRole("menuitemradio", { name: custom, exact: true }).click();
+  await expect(popup(page).getByRole("button", { name: `Shape: ${custom}`, exact: true })).toBeVisible();
+
+  // The large editor: the same, then Square hides it and Undo brings it back.
+  await popup(page).getByRole("button", { name: "Open large editor", exact: true }).click();
+  await expect(largeShape(page)).toHaveAccessibleName(`Shape: ${custom}`);
+  await largeShape(page).click();
+  await expect(large(page).getByRole("menuitemradio", { name: custom, exact: true })).toHaveAttribute("aria-checked", "true");
+  await large(page).getByRole("menuitemradio", { name: custom, exact: true }).click();
+  await expect(largeShape(page)).toHaveAccessibleName(`Shape: ${custom}`);
+  await expect(largeUndo(page)).toBeDisabled();
+  await chooseLargeShape(page, "Square");
+  await largeShape(page).click();
+  await expect(large(page).getByRole("menuitemradio", { name: custom, exact: true })).toBeHidden();
+  await page.keyboard.press("Escape");
+  await largeUndo(page).click();
+  await expect(largeShape(page)).toHaveAccessibleName(`Shape: ${custom}`);
+
+  // A press and drag on the ruler or the picture with the menu open only closes the menu.
+  const menu = large(page).getByRole("menu", { name: "Shape" });
+  const straighten = large(page).getByRole("slider", { name: "Straighten" });
+  const frameBox = () => large(page).locator(".image-large__frame").boundingBox();
+  const drag = async (selector: string, dx: number) => {
+    const box = (await large(page).locator(selector).boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + dx, box.y + box.height / 2, { steps: 5 });
+    await page.mouse.up();
+  };
+  await largeShape(page).click();
+  await expect(menu).toBeVisible();
+  await drag(".image-large__ruler", -60);
+  await expect(menu).toBeHidden();
+  await expect(straighten).toHaveAttribute("aria-valuetext", "0 degrees");
+  const before = await frameBox();
+  await largeShape(page).click();
+  await drag(".image-large__stage", 80);
+  await expect(menu).toBeHidden();
+  expect(await frameBox()).toEqual(before);
+  await expect(large(page).getByRole("status")).toHaveText("Only changes this spot");
+  // The next gesture edits as usual.
+  await drag(".image-large__ruler", -60);
+  await expect(straighten).not.toHaveAttribute("aria-valuetext", "0 degrees");
+});
+
 // A component whose CSS gives its picture a fixed 4:3 shape (slice 43), with one filled instance and one showing its fallback.
 async function seedPhotoCard(page: Page, baseURL: string | undefined) {
   for (const [path, content] of [
