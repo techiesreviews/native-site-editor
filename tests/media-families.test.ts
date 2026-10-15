@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { alwaysKeptFiles, isLeftoverCopy, mediaFamilies, mediaFamilyOf, renamedFamily } from "../src/page-builder/media-families";
+import { familyMembers, alwaysKeptFiles, isLeftoverCopy, mediaFamilies, mediaFamilyOf, renamedFamily } from "../src/page-builder/media-families";
 import { mediaVariants } from "../src/page-builder/media-markup";
 
 test("a leftover copy is a responsive copy name with no image at its base name", () => {
@@ -171,4 +171,21 @@ test("renaming a video takes its still and subtitles beside it, with the new nam
   ]);
   // Always keep on the still marks the video's tile.
   assert.deepEqual([...alwaysKeptFiles(familyMembers(family), new Set(["media/videos/holiday.webp"]))].sort(), ["media/videos/holiday.mp4", "media/videos/holiday.webp"]);
+});
+
+for (const extension of ["avif", "webp", "jpg", "png"]) test(`sharing JPEG family rule for ${extension}`, () => {
+  const main = `images/x.${extension}`, sharing = "images/x-sharing.jpg", social = "images/x-social.jpg";
+  const paths = [main, sharing, social], family = mediaFamilyOf(main, paths)!;
+  if (["avif", "webp"].includes(extension)) {
+    assert.equal(family.sharing, sharing); assert.ok(familyMembers(family).includes(sharing));
+    assert.ok(renamedFamily(family, `new/y.${extension}`).some(move => move.from === sharing && move.to === "new/y-sharing.jpg"));
+    assert.ok(alwaysKeptFiles(paths, new Set([sharing])).has(main));
+  } else { assert.equal(family.sharing, undefined); assert.ok(mediaFamilyOf(sharing, paths)); }
+  assert.ok(mediaFamilyOf(social, paths));
+});
+
+test("a main with a sharing picture stays a picture family beside a PDF", () => {
+  const paths = ["x.webp", "x-sharing.jpg", "x.pdf"];
+  assert.equal(mediaFamilyOf("x.webp", paths)?.sharing, "x-sharing.jpg");
+  assert.equal(mediaFamilyOf("x.pdf", paths)?.still, undefined);
 });

@@ -504,6 +504,7 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
       const members = family ? [
         ...(family.copies.length ? [`${family.copies.length} smaller ${family.copies.length === 1 ? "copy" : "copies"}`] : []),
         ...(family.originals.length ? [`${family.originals.length} kept ${family.originals.length === 1 ? "original" : "originals"}`] : []),
+        ...(family.sharing ? ["sharing picture"] : []),
         ...(family.still ? [/\.pdf$/i.test(family.main) ? "first-page picture" : "still picture"] : []),
         ...(family.subtitles.length ? [family.subtitles.length === 1 ? "subtitles file" : `${family.subtitles.length} subtitles files`] : []),
       ] : [];

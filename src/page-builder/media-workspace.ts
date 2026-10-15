@@ -14,7 +14,7 @@ import type { DraftScope } from "../drafts";
 import type { DraftAccess } from "../file-changes";
 import { setMediaDescription, MEDIA_RECORDS_PATH, serializeMediaRecords, type MediaRecords, type OnlineVideoRecord, type MediaTrim } from "../../shared/media-records";
 import { applyMediaMetadata, mediaMetadataView, type MediaMetadata } from "./media-metadata";
-import { alwaysKeptFiles, mediaFamilyOf, familyMembers } from "./media-families";
+import { alwaysKeptFiles, mediaFamilies, mediaFamilyOf, familyMembers } from "./media-families";
 import { mediaEscape } from "./media-markup";
 import { planMediaRename, tidyMediaName, MediaNameTakenError } from "./media-rename";
 import { mediaOriginalPath, mediaOriginalProblem } from "./media-originals";
@@ -601,7 +601,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     let next: MediaRecords = { ...metadata, files: { ...metadata.files,
       [path]: { sharing: true, trimmedFrom: { source, trim: structuredClone(trim) } } } };
     let removes: string[] = [];
-    if (previous && !metadata.files[previous]?.alwaysKeep) {
+    if (previous && !metadata.files[previous]?.alwaysKeep && !mediaFamilies(ctx.paths).some(family => family.sharing === previous)) {
       const members = familyPaths(previous, batch.expectedPaths), text: Record<string, string> = {};
       let complete = true;
       const files = batch.expectedPaths.filter(file => file !== MEDIA_RECORDS_PATH && isMediaTextFile(file));

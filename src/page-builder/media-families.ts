@@ -5,13 +5,15 @@ export interface MediaFamily {
   originals: string[];
   /** A video's still picture or a PDF's first-page picture: a picture beside it with the same name. */
   still?: string;
+  /** A full-picture JPEG for sharing an AVIF or WebP main. */
+  sharing?: string;
   /** A video's or audio file's subtitles: `.vtt`/`.srt` beside it with the same name. */
   subtitles: string[];
 }
 
 /** Every file of a family, the main first: removing, restoring or renaming it takes them all. */
 export const familyMembers = (family: MediaFamily): string[] =>
-  [family.main, ...family.copies.map(copy => copy.path), ...family.originals, ...family.still ? [family.still] : [], ...family.subtitles];
+  [family.main, ...family.copies.map(copy => copy.path), ...family.originals, ...family.sharing ? [family.sharing] : [], ...family.still ? [family.still] : [], ...family.subtitles];
 
 /** The widths responsive copies are made at when an image is added (ticket 07). */
 export const RESPONSIVE_COPY_WIDTHS = [480, 960, 1600] as const;
@@ -75,6 +77,12 @@ export function mediaFamilies(paths: string[]): MediaFamily[] {
     families.get(main)!.copies.push({ path, width: copy.width });
     families.delete(path);
   }
+  for (const [path, family] of families) {
+    if (!/\.(?:avif|webp)$/i.test(path)) continue;
+    const sharing = stem(path) + "-sharing.jpg";
+    const owners = (byStem.get(stem(path)) ?? []).filter(main => families.has(main) && /\.(?:avif|webp)$/i.test(main));
+    if (owners.length === 1 && families.has(sharing)) { family.sharing = sharing; families.delete(sharing); }
+  }
   const byBase = new Map<string, MediaFamily[]>();
   for (const family of families.values()) byBase.set(base(family.main), [...(byBase.get(base(family.main)) ?? []), family]);
   for (const path of new Set(paths.filter(originalPath))) {
@@ -91,7 +99,7 @@ export function mediaFamilies(paths: string[]): MediaFamily[] {
   const stills = new Map<string, string[]>();
   for (const [path, family] of families) {
     const owner = ownersByStem.get(stem(path))?.filter(main => stillOwner.test(main));
-    if (owner?.length === 1 && !family.copies.length && !family.originals.length) stills.set(owner[0], [...stills.get(owner[0]) ?? [], path]);
+    if (owner?.length === 1 && !family.copies.length && !family.originals.length && !family.sharing) stills.set(owner[0], [...stills.get(owner[0]) ?? [], path]);
   }
   // Two pictures beside one owner: neither is its still.
   for (const [main, [still, ...others]] of stills) if (!others.length) { attached.get(main)!.still = still; families.delete(still); }
@@ -120,6 +128,7 @@ export function renamedFamily(family: MediaFamily, toMain: string): { from: stri
     ...family.originals.map(from => ({
       from, to: from.slice(0, from.lastIndexOf("/") + 1) + base(toMain) + extension(from),
     })),
+    ...family.sharing ? [{ from: family.sharing, to: stem(toMain) + "-sharing.jpg" }] : [],
     // A still and subtitles stay beside the main, with its new name.
     ...[...family.still ? [family.still] : [], ...family.subtitles].map(from => ({ from, to: stem(toMain) + extension(from) })),
   ];

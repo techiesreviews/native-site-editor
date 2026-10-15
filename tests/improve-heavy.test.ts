@@ -7,6 +7,8 @@ import { applyMediaWorkspaceBatch, createMediaWorkspace, type MediaWorkspaceCont
 import { parseMediaRecords, serializeMediaRecords, MEDIA_RECORDS_PATH } from "../shared/media-records";
 import { mediaCleanUpSuggestions } from "../src/page-builder/media-clean-up";
 import { mediaUsageRecords } from "../src/page-builder/media-usage";
+import { SOCIAL_IMAGE_NOTE } from "../src/page-builder/social-image";
+import { memoryUploadBytes } from "../src/uploads";
 import { readSource } from "../src/page-builder/source-tree";
 
 function imageBlob(size = 1000, width = 1200, height = 800) {
@@ -22,7 +24,7 @@ function fixture(html = '<img src="/images/heavy.jpg" alt="Keep &amp; this" clas
   const history: (() => void)[] = [], batches: MediaWorkspaceBatch[] = [];
   let hook: (() => void) | undefined;
   const ctx: MediaWorkspaceContext = {
-    key: "test", scope: { account: "test", repoId: 1, repo: "test/test", branch: "main" }, history: false,
+    removedCopies: memoryUploadBytes(), key: "test", scope: { account: "test", repoId: 1, repo: "test/test", branch: "main" }, history: false,
     drafts: { get: () => undefined, save: () => { throw new Error("Direct write"); }, remove: () => { throw new Error("Direct write"); } },
     get paths() { return [...new Set([...text.keys(), ...bytes.keys()])]; },
     get items() { return [...bytes.keys()].map(path => ({ path })); }, pages: ["index.html"], components: {}, origins: ["https://own.example"],
@@ -35,6 +37,7 @@ function fixture(html = '<img src="/images/heavy.jpg" alt="Keep &amp; this" clas
         async stage() { hook?.(); },
         commit(batch, state) {
           batches.push(batch);
+          for (const path of batch.deletes) { bytes.delete(path); versions.delete(path); }
           for (const [path, source] of batch.edits) text.set(path, source);
           for (const upload of batch.uploads) { bytes.set(upload.path, upload.blob); versions.set(upload.path, "new:" + upload.path); }
           history.push(() => { text.clear(); bytes.clear(); versions.clear(); state.text.forEach((v, k) => text.set(k, v)); state.bytes.forEach((v, k) => bytes.set(k, v)); state.versions.forEach((v, k) => versions.set(k, v)); });
@@ -45,8 +48,8 @@ function fixture(html = '<img src="/images/heavy.jpg" alt="Keep &amp; this" clas
   let encodes = 0;
   const ports: ImprovePorts = { tree: source => readSource(source, { page: true }), async encode(_file, options) {
     encodes++;
-    const extension = options.format === "avif" ? "avif" : "webp";
-    const outputs = [{ blob: imageBlob(), width: 1200, height: 800, extension },
+    const extension = options.format === "jpeg" ? "jpg" : options.format === "avif" ? "avif" : "webp";
+    const outputs = [{ blob: extension === "jpg" ? new Blob([imageBlob()], { type: "image/jpeg" }) : imageBlob(), width: 1200, height: 800, extension },
       ...options.responsive ? [480, 960].map(width => ({ blob: imageBlob(100, width, Math.round(width * 2 / 3)), width, height: Math.round(width * 2 / 3), extension, variantWidth: width })) : []];
     return { outputs, before: 300000, after: 1200 };
   } };
@@ -68,9 +71,9 @@ test("heavy family rewritten across text kinds; later row reuses one file and on
   f.text.set(MEDIA_RECORDS_PATH, serializeMediaRecords({ version: 2, collections: ["Photos"], files: { "images/heavy.jpg": { description: { text: "Default" }, collections: ["Photos"], places: { "index.html": { decorative: true }, "other.html": { agentText: "own" } } } } }));
   const original = f.bytes.get("images/heavy.jpg");
   assert.equal((await f.improve()).changed, true);
-  assert.equal(f.encodes, 1); assert.equal(f.history.length, 1);
+  assert.equal(f.encodes, 2); assert.equal(f.history.length, 1);
   assert.deepEqual([...f.bytes.keys()].filter(path => path.endsWith("webp")), ["images/heavy.webp", "images/heavy-480.webp", "images/heavy-960.webp"]);
-  for (const file of ["share.html", "site.css", "site.js", "data.json", "sitemap.xml", "readme.md", "_redirects"]) assert.ok(f.text.get(file)!.includes("heavy.webp"), file);
+  for (const file of ["site.css", "site.js", "data.json", "sitemap.xml", "readme.md", "_redirects"]) assert.ok(f.text.get(file)!.includes("heavy.webp"), file);
   const html = f.text.get("index.html")!;
   assert.match(html, /heavy-480.webp 480w/); assert.match(html, /heavy.webp 1200w/);
   for (const value of ['width="1200"', 'height="800"', 'sizes="auto, 100vw"', 'loading="lazy"', 'decoding="async"', 'alt="Keep &amp; this"', 'class="photo"']) assert.ok(html.includes(value), value);
@@ -78,7 +81,7 @@ test("heavy family rewritten across text kinds; later row reuses one file and on
   assert.match(f.text.get("other.html")!, /heavy.jpg/);
   assert.equal(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["images/heavy.webp"].lighterFrom, "images/heavy.jpg");
   await f.improve({ row: "other.html" });
-  assert.equal(f.encodes, 1); assert.equal(f.batches[1].uploads.length, 0);
+  assert.equal(f.encodes, 2); assert.equal(f.batches[1].uploads.length, 0);
   assert.deepEqual([...f.batches[1].edits.keys()].sort(), [MEDIA_RECORDS_PATH, "other.html"].sort());
   f.history.pop()!(); assert.match(f.text.get("other.html")!, /heavy.jpg/); assert.ok(f.bytes.has("images/heavy.webp"));
   f.history.pop()!(); assert.equal(f.bytes.has("images/heavy.webp"), false); assert.match(f.text.get("index.html")!, /heavy.jpg/);
@@ -105,16 +108,72 @@ test("hand-made srcset and picture sources adopted, only main descriptor changes
   assert.match(html, /srcset="\/images\/panel-400.webp 400w, \/images\/heavy.webp 1200w"/);
 });
 
-test("AVIF setting preserves sharing tags, reports slower preparation and fallback note", async () => {
-  const f = fixture('<img src="/images/heavy.jpg"><meta property="og:image" content="https://own.example/images/heavy.jpg"><meta name="twitter:image" content="/images/heavy.jpg">');
-  f.text.set(MEDIA_RECORDS_PATH, '{"version":2,"collections":[],"files":{},"adding":{"image":"smallest","keepOriginal":true}}');
+for (const preset of ["balanced", "smallest"] as const) test(`${preset}: sharing JPEG uses full address, same dimensions, one batch and Undo`, async () => {
+  const meta = '<meta property="og:image" content="https://own.example/images/heavy.jpg"><meta name="og:image:type" content="image/png"><meta property="og:image:width" content="3000"><meta property="og:image:height" content="2000"><meta name="og:image:url" content="/images/heavy.jpg"><meta property="og:image:secure_url" content="/images/heavy.jpg"><meta name="twitter:image" content="/images/heavy.jpg">';
+  const f = fixture('<img src="/images/heavy.jpg">' + meta);
+  f.text.set(MEDIA_RECORDS_PATH, serializeMediaRecords({ version: 2, collections: [], files: {}, adding: { image: preset, keepOriginal: true } }));
+  const encode = f.ports.encode!;
+  f.ports.encode = async (file, options, ...rest) => {
+    if (options.format === "jpeg") {
+      assert.equal(file.size, 300000);
+      assert.deepEqual(options, { maxWidth: 2400, quality: 82, format: "jpeg", responsive: false, keepOriginal: false });
+    }
+    return encode(file, options, ...rest);
+  };
   const progress: string[] = [];
-  const result = await f.improve({ progress: state => progress.push(state) });
-  assert.ok(f.bytes.has("images/heavy.avif")); assert.ok(progress.includes("Preparing (slower)…")); assert.ok(result.notes.some(note => note.includes("sharing services")));
-  assert.match(f.text.get("index.html")!, /content="https:\/\/own.example\/images\/heavy.jpg"/);
-  assert.match(f.text.get("index.html")!, /content="\/images\/heavy.jpg"/); assert.ok(![...f.bytes.keys()].some(path => path.includes("originals")));
-  const fallback = fixture(); fallback.ports.encode = async () => ({ outputs: [{ blob: imageBlob(), width: 1200, height: 800, extension: "webp" }], before: 300000, after: 1000, note: "AVIF failed; Balanced WebP used." });
-  assert.ok((await fallback.improve()).notes.includes("AVIF failed; Balanced WebP used."));
+  const result = await f.improve({ siteUrl: "https://own.example/site/", progress: state => progress.push(state) });
+  const main = `images/heavy.${preset === "smallest" ? "avif" : "webp"}`;
+  assert.ok(f.bytes.has(main)); assert.equal(result.notes.length, 0);
+  if (preset === "smallest") assert.ok(progress.includes("Preparing (slower)…"));
+  const html = f.text.get("index.html")!;
+  assert.equal((html.match(/content="https:\/\/own.example\/site\/images\/heavy-sharing.jpg"/g) ?? []).length, 4);
+  for (const content of ["image/jpeg", "1200", "800"]) assert.ok(html.includes(`content="${content}"`));
+  assert.equal(f.bytes.get("images/heavy-sharing.jpg")!.type, "image/jpeg");
+  assert.equal(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["images/heavy-sharing.jpg"].sharing, true);
+  assert.equal(f.batches.length, 1); assert.equal(f.history.length, 1);
+  assert.ok(f.batches[0].uploads.some(upload => upload.path === "images/heavy-sharing.jpg"));
+  const usage = mediaUsageRecords({ media: [...f.bytes.keys()], sources: Object.fromEntries(f.text), pages: f.ctx.pages, site: { origins: ["https://own.example"] } });
+  assert.ok(mediaCleanUpSuggestions({ usage, records: parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)) }).groups.some(group => group.items.some(item => item.main === "images/heavy.jpg")));
+  f.history.pop()!(); assert.equal(f.bytes.has(main), false); assert.equal(f.bytes.has("images/heavy-sharing.jpg"), false);
+  assert.equal(f.text.get("index.html"), '<img src="/images/heavy.jpg">' + meta);
+});
+
+test("no site address gives sharing root link and note; existing social and outside links survive", async () => {
+  const f = fixture('<img src="/images/heavy.jpg"><meta property="og:image" content="/images/heavy.jpg"><meta name="twitter:image" content="https://outside.example/images/heavy.jpg"><meta property="og:image" content="/images/heavy-social.jpg"><pre><meta property="og:image" content="/images/heavy.jpg"></pre>');
+  const result = await f.improve();
+  assert.ok(result.notes.includes(SOCIAL_IMAGE_NOTE));
+  assert.match(f.text.get("index.html")!, /content="\/images\/heavy-sharing.jpg"/);
+  assert.ok(f.text.get("index.html")!.includes('content="https://outside.example/images/heavy.jpg"'));
+  assert.ok(f.text.get("index.html")!.includes('content="/images/heavy-social.jpg"'));
+  assert.ok(f.text.get("index.html")!.includes('<pre><meta property="og:image" content="/images/heavy.jpg"></pre>'));
+});
+
+test("JPEG main needs no sharing copy; encoder fallback note survives", async () => {
+  const f = fixture('<img src="/images/heavy.jpg"><meta property="og:image" content="/images/heavy.jpg">');
+  f.ports.encode = async () => ({ outputs: [{ blob: imageBlob(), width: 1200, height: 800, extension: "jpg" }], before: 300000, after: 1000, note: "JPEG fallback used." });
+  const result = await f.improve();
+  assert.ok(result.notes.includes("JPEG fallback used."));
+  assert.equal(f.batches[0].uploads.length, 1); assert.match(f.text.get("index.html")!, /content="\/images\/heavy-2.jpg"/);
+});
+
+test("later row reuses sharing JPEG or creates it only when first needed", async () => {
+  for (const firstShares of [false, true]) {
+    const f = fixture('<img src="/images/heavy.jpg">' + (firstShares ? '<meta property="og:image" content="/images/heavy.jpg">' : ""));
+    f.text.set("other.html", '<img src="/images/heavy.jpg"><meta property="og:image" content="/images/heavy.jpg">'); f.ctx.pages.push("other.html");
+    await f.improve(); assert.equal(f.encodes, firstShares ? 2 : 1);
+    await f.improve({ row: "other.html" });
+    assert.equal(f.encodes, 2); assert.equal(f.batches[1].uploads.length, firstShares ? 0 : 1);
+    assert.match(f.text.get("other.html")!, /content="\/images\/heavy-sharing.jpg"/);
+  }
+});
+
+test("JPEG that is not lighter keeps old sharing picture and metadata with a note", async () => {
+  const meta = '<meta property="og:image" content="/images/heavy.jpg"><meta property="og:image:type" content="image/png">';
+  const f = fixture('<img src="/images/heavy.jpg">' + meta), encode = f.ports.encode!;
+  f.ports.encode = async (file, options, ...rest) => options.format === "jpeg" ? { outputs: [{ blob: new Blob([new Uint8Array(300000)], { type: "image/jpeg" }), extension: "jpg", width: 1200, height: 800 }], before: 300000, after: 300000 } : encode(file, options, ...rest);
+  const result = await f.improve();
+  assert.ok(result.notes.some(note => note.includes("Sharing pictures keep") && note.includes("not lighter")));
+  assert.ok(f.text.get("index.html")!.includes(meta)); assert.equal(f.bytes.has("images/heavy-sharing.jpg"), false);
 });
 
 test("not lighter keeps main but writes other details; family collision gets numbered name", async () => {
@@ -234,4 +293,46 @@ test("a hand-made set written on one page serves the same picture's plain places
   assert.match(f.text.get("index.html")!, /srcset="\/images\/odd-small.webp 400w, \/images\/heavy.webp 1200w"/);
   await f.improve({ row: "other.html" });
   assert.match(f.text.get("other.html")!, /srcset="\/images\/odd-small.webp 400w, \/images\/heavy.webp 1200w"/);
+});
+
+test("lighter family sharing JPEG removes and restores together", async () => {
+  const f = fixture('<img src="/images/heavy.jpg"><meta property="og:image" content="/images/heavy.jpg">');
+  await f.improve();
+  const workspace = createMediaWorkspace(async () => f.ctx); await workspace.load();
+  const members = ["images/heavy.webp", "images/heavy-480.webp", "images/heavy-960.webp", "images/heavy-sharing.jpg"];
+  const originals = members.map(path => f.bytes.get(path));
+  await workspace.remove(["images/heavy.webp"]);
+  assert.deepEqual(f.batches[1].deletes.sort(), [...members].sort());
+  for (const path of members) assert.equal(f.bytes.has(path), false);
+  const removed = (await workspace.load()).removed!.find(item => item.path === "images/heavy.webp")!;
+  assert.ok(removed.family!.some(member => member.path === "images/heavy-sharing.jpg"));
+  await workspace.restore([{ path: removed.path, id: removed.browserKey! }]);
+  for (const [index, path] of members.entries()) assert.deepEqual(await f.bytes.get(path)!.arrayBuffer(), await originals[index]!.arrayBuffer());
+  assert.equal(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["images/heavy-sharing.jpg"].sharing, true);
+});
+
+test("sharing name collision numbers the main so JPEG remains in its family", async () => {
+  const f = fixture('<img src="/images/heavy.jpg"><meta property="og:image" content="/images/heavy.jpg">');
+  const occupied = imageBlob(); f.bytes.set("images/heavy-sharing.jpg", occupied);
+  await f.improve();
+  assert.ok(f.bytes.has("images/heavy-2.webp")); assert.ok(f.bytes.has("images/heavy-2-sharing.jpg"));
+  assert.equal(f.bytes.get("images/heavy-sharing.jpg"), occupied);
+});
+
+test("sharing tags on old responsive addresses use the main's one JPEG", async () => {
+  const f = fixture('<img src="/images/heavy.jpg"><meta property="og:image" content="/images/heavy-480.jpg"><meta name="twitter:image" content="/images/heavy.jpg">');
+  f.bytes.set("images/heavy-480.jpg", imageBlob(10000, 480, 320));
+  f.versions.set("images/heavy-480.jpg", "old-copy"); f.facts["images/heavy-480.jpg"] = { size: 10000, width: 480, height: 320 };
+  await f.improve(); assert.equal(f.encodes, 2);
+  assert.equal((f.text.get("index.html")!.match(/content="\/images\/heavy-sharing.jpg"/g) ?? []).length, 2);
+});
+
+test("a sharing-only mention keeps the lighter family used and Always keep protects its old family", async () => {
+  const f = fixture('<img src="/images/heavy.jpg"><meta property="og:image" content="/images/heavy.jpg">');
+  await f.improve();
+  const records = parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH));
+  const usage = mediaUsageRecords({ media: [...f.bytes.keys()], sources: { "index.html": '<meta property="og:image" content="/images/heavy-sharing.jpg">' }, pages: f.ctx.pages });
+  const offered = () => mediaCleanUpSuggestions({ usage, records }).groups.flatMap(group => group.items.map(item => item.main));
+  assert.ok(offered().includes("images/heavy.jpg")); assert.ok(!offered().includes("images/heavy.webp"));
+  records.files["images/heavy.jpg"] = { alwaysKeep: true }; assert.ok(!offered().includes("images/heavy.jpg"));
 });

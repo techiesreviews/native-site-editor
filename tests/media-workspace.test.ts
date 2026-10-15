@@ -1006,3 +1006,23 @@ test("a video's still and subtitles are removed and renamed with it, in one Undo
   f.history.pop()!();
   for (const path of [video, ...members]) assert.ok(f.bytes.has(path));
 });
+
+test("choosing another Social image leaves a previous family sharing JPEG beside its main", async () => {
+  for (const extension of ["avif", "webp"]) {
+    const f = shareFixture(), previous = "media/images/hero-sharing.jpg", main = `media/images/hero.${extension}`;
+    f.paths.add(previous); f.bytes.set(previous, new Blob(["JPEG"], { type: "image/jpeg" })); f.versions.set(previous, "sharing-v1");
+    f.paths.add(main); f.bytes.set(main, new Blob(["main"])); f.versions.set(main, "main-v1");
+    f.text.set("index.html", `<meta property="og:image" content="/${previous}">`);
+    f.text.set(".editor/config.json", JSON.stringify({ site: { socialImage: "/" + previous } }));
+    const records = parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)); records.files[previous] = { sharing: true };
+    f.text.set(MEDIA_RECORDS_PATH, JSON.stringify(records));
+    const request = f.request(); request.previous = previous;
+    request.edits = path => new Map(["index.html", ".editor/config.json"].map(file => {
+      const source = f.text.get(file)!; return [file, { source, text: source.replace(previous, path) }];
+    }));
+    await f.host.share(request);
+    assert.ok(f.paths.has(previous)); assert.ok(f.paths.has(main));
+    assert.deepEqual(f.batches[0].deletes, []);
+    assert.equal(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files[previous].sharing, true);
+  }
+});

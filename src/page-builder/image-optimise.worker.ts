@@ -113,6 +113,10 @@ export function installMediaOptimiser(codecs: MediaCodecs = { loadHeicDecoder, l
           if (!ctx) throw new Error("Canvas image encoding is unavailable. Keep the original instead.");
           ctx.imageSmoothingEnabled = true;
           ctx.imageSmoothingQuality = "high";
+          if (options.format === "jpeg") {
+            ctx.fillStyle = "#fff";
+            ctx.fillRect(0, 0, width, height);
+          }
           ctx.drawImage(picture, 0, 0, width, height);
           return { canvas, ctx, height };
         };
@@ -120,7 +124,7 @@ export function installMediaOptimiser(codecs: MediaCodecs = { loadHeicDecoder, l
         const pixels = ctx.getImageData(0, 0, size.width, height).data;
         let transparent = false;
         for (let index = 3; index < pixels.length; index += 4) if (pixels[index] !== 255) { transparent = true; break; }
-        if (transparent) {
+        if (transparent && options.format !== "jpeg") {
           settings = mediaTransparentOptions(options);
           // An ambiguous recipe name may require the main's own format; keep that safe plan.
           if (copies && copies.format !== options.format) settings = { ...settings, format: copies.format };
@@ -151,14 +155,14 @@ export function installMediaOptimiser(codecs: MediaCodecs = { loadHeicDecoder, l
         // A failed AVIF encoder used Balanced; its copies must use that recipe too.
         if (settings.format === "avif" && blob.type !== "image/avif") settings = mediaImageRecipe();
         // Native WebP or its on-demand encoder shares the same comparison and copy path.
-        const png = transparent ? await encode(canvas, "image/png", settings.quality) : undefined;
+        const png = transparent && options.format !== "jpeg" ? await encode(canvas, "image/png", settings.quality) : undefined;
         if (png) blob = mediaChooseEncoding(blob, png);
         // Transparent pictures already compared WebP with lossless PNG above.
         const type = sourceType(file, bytes);
         // Original bytes never represent trimmed pixels, even for a full-frame turn or flip.
         // A HEIC's own bytes never become the website file.
         const stripped = trim || heic ? undefined : strippedImageSource(bytes, type, bitmap.width === size.width && bitmap.height === height);
-        blob = await mediaSmallerMain(blob, { size: file.size, stripped: stripped && new Blob([new Uint8Array(stripped)], { type }),
+        if (options.format !== "jpeg") blob = await mediaSmallerMain(blob, { size: file.size, stripped: stripped && new Blob([new Uint8Array(stripped)], { type }),
           transparent, lossless: !heic && (/^image\/(?:png|gif|bmp)$/.test(type) || /\.(?:png|gif|bmp)$/i.test(file.name)) }, type => encode(canvas, type, settings.quality));
         blob = await squeeze(blob);
         const output = (blob: Blob, width: number, height: number): MediaOutput => ({ blob, width, height,

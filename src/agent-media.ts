@@ -40,7 +40,7 @@ export function mediaListReport(input: MediaListInput) {
       path: family.main, kind: mediaKind(family.main),
       ...(item?.size !== undefined ? { size: item.size } : {}),
       ...(paths.length > 1 ? { family: { copies: family.copies.map(copy => copy.path), originals: family.originals,
-        ...family.still ? { still: family.still } : {}, ...family.subtitles.length ? { subtitles: family.subtitles } : {} },
+        ...family.sharing ? { sharing: family.sharing } : {}, ...family.still ? { still: family.still } : {}, ...family.subtitles.length ? { subtitles: family.subtitles } : {} },
         ...(sizes.every(size => size !== undefined) ? { totalSize: sizes.reduce((total, size) => total + size, 0) } : {}) } : {}),
       uses: { checked: usage.checked, state: mediaUsageState(usage), ...(usage.pages.length ? { pages: usage.pages } : {}), ...(usage.otherUses.length ? { other: usage.otherUses } : {}) },
       ...(description.state === "decorative" ? { decorative: true } : description.state === "described" ? { description: { text: description.text, ...(description.byAgent ? { byAgent: true } : {}) } } : { described: false }),

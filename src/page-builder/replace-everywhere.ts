@@ -110,6 +110,7 @@ export function planMediaReplace(input: ReplaceInput) {
       if (!widths.includes(copy.width)) missing.add(copy.path);
       if (isTrim) trimmed.set(copy.path, source);
     }
+    if (f?.sharing) mapping.set(f.sharing, main);
     for (const kept of f?.originals ?? []) mapping.set(kept, original ? mediaOriginalPath(main, original.extension) : main);
   };
   mapFamily(path, false);
@@ -191,7 +192,7 @@ export function planMediaReplace(input: ReplaceInput) {
   const address = (path: string) => "/" + path.split("/").map(encodeURIComponent).join("/");
   // Always keep on any family member (a kept copy protects the family) forwards every old address.
   const keepOld = request.keepOldAddress ?? family.some(member => Boolean(records.files[member]?.alwaysKeep));
-  if (main !== path) for (const member of [old.main, ...old.copies.map(copy => copy.path)])
+  if (main !== path) for (const member of [old.main, ...old.copies.map(copy => copy.path), ...old.sharing ? [old.sharing] : []])
     redirects = editNativeRedirects(redirects, address(member), address(mapping.get(member)!), keepOld ? [address(member)] : [], false);
   if ((redirects ?? "") !== (input.sources._redirects ?? "")) edits.set("_redirects", redirects ?? "");
   const next = structuredClone(records);

@@ -40,6 +40,7 @@ export function mediaFamilyRows(path: string, items: { path: string; size?: numb
   };
   return [
     ...family.copies.map(copy => ({ path: copy.path, label: `Smaller copy · ${copy.width} px wide`, ...size(copy.path) })),
+    ...family.sharing ? [{ path: family.sharing, label: "Sharing picture", ...size(family.sharing) }] : [],
     ...family.originals.map(original => ({ path: original, label: "Original, kept", original: true as const, ...size(original) })),
     ...family.still ? [{ path: family.still, label: /\.pdf$/i.test(path) ? "First page picture" : "Still picture", ...size(family.still) }] : [],
     ...family.subtitles.map(subtitles => ({ path: subtitles, label: "Subtitles", ...size(subtitles) })),

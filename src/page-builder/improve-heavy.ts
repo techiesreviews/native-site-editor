@@ -1,4 +1,5 @@
 import { MEDIA_RECORDS_PATH, parseMediaRecords, serializeMediaRecords, type MediaRecords } from "../../shared/media-records";
+import { socialImageAddress, SOCIAL_IMAGE_NOTE } from "./social-image";
 import { improveImagesPlan } from "./improve-images";
 import { isMediaTextFile } from "./media-mentions";
 import { rewriteMediaMentions, rewriteMediaRedirects } from "./media-rename";
@@ -21,6 +22,7 @@ import type { MediaWorkspaceBatch, MediaWorkspaceContext } from "./media-workspa
 
 export interface ImproveRequest {
   row: string;
+  siteUrl?: string;
   files: Parameters<typeof improveImagesPlan>[0]["files"];
   measure?(file: string, node: number[], image: MediaImage): Promise<MediaMeasured | undefined>;
   live?: () => boolean;
@@ -71,6 +73,7 @@ export async function prepareImproveHeavy(ctx: MediaWorkspaceContext, request: I
   const next = structuredClone(records);
   const images = new Map<string, MediaImage>();
   const created = new Map<string, string>(), reused = new Map<string, string>();
+  const sharing = new Map<string, { path: string; width: number; height: number } | undefined>();
   const descriptorWidths = new Map<string, number>();
   const targets: { node: number[]; key: string; svg: boolean; adopted: boolean }[] = [];
   const treeFor = (source: string) => locations(ports.tree ? ports.tree(source) : readPage(source));
@@ -121,6 +124,9 @@ export async function prepareImproveHeavy(ctx: MediaWorkspaceContext, request: I
                 const suffix = path.slice(stem.length);
                 return path.startsWith(stem) && /^-(?:\d+w?|\d+x\d+)\.[^./]+$/i.test(suffix) && suffix.toLowerCase().endsWith(extension.toLowerCase());
               })) return true;
+              if (/\.(?:avif|webp)$/i.test(name) && [...paths, ...batch.uploads.map(upload => upload.path)].some(path =>
+                [stem + "-sharing.jpg", stem + ".avif", stem + ".webp"].some(target => path.toLowerCase() === target.toLowerCase()
+                  || path.toLowerCase().startsWith(target.toLowerCase() + "/") || target.toLowerCase().startsWith(path.toLowerCase() + "/")))) return true;
               return outputs.some(output => {
               const target = output.variantWidth === undefined ? name : mediaCopyName(name, output.variantWidth);
               return [...paths, ...batch.uploads.map(upload => upload.path)].some(path => path.toLowerCase() === target.toLowerCase()
@@ -152,7 +158,6 @@ export async function prepareImproveHeavy(ctx: MediaWorkspaceContext, request: I
           }
           descriptorWidths.set(old, width!);
           image = { path: main, width, height, alt: "", variants: adopted ? handMade : variants };
-          if (/\.avif$/i.test(main)) result.notes.push(`Sharing pictures keep ${old} because many sharing services cannot read AVIF.`);
         }
       }
       // A main that could not be made lighter still gets the copies a heavy picture lacks.
@@ -189,11 +194,62 @@ export async function prepareImproveHeavy(ctx: MediaWorkspaceContext, request: I
       } };
       visit(parseSource(source));
     }
-    for (const tag of startTags(source)) if (tag.name === "meta") {
-      const name = startTagAttribute(source, tag, "property")?.value ?? startTagAttribute(source, tag, "name")?.value;
+    const tags = /\.html?$/i.test(file) ? startTags(source) : [], sharingEdits = new Map<number, string>();
+    let og: { path: string; width: number; height: number } | undefined;
+    for (const [index, tag] of tags.entries()) if (tag.name === "meta") {
+      if (skip.some(range => tag.start < range.end && tag.end > range.start)) continue;
+      const name = (startTagAttribute(source, tag, "property")?.value ?? startTagAttribute(source, tag, "name")?.value ?? "").toLowerCase();
       const address = startTagAttribute(source, tag, "content")?.value;
-      const old = address && mediaResolvePath(address, file, site);
-      if (/^(?:og:image|twitter:image)(?::|$)/i.test(name ?? "") && old && /\.avif$/i.test(mapping.get(old) ?? "")) skip.push(tag);
+      const old = address && mediaResolvePath(decodeHtmlEntities(address, true), file, site);
+      const mapped = old && mapping.get(old);
+      const lighter = mapped ? [...images].find(([, image]) => image.path === mapped || image.variants?.some(copy => copy.path === mapped)) : undefined;
+      const main = lighter ? lighter[1].path : mapped;
+      let content: string | undefined;
+      if (/^(?:og:image(?::url|:secure_url)?|twitter:image)$/.test(name)) {
+        if (name === "og:image") og = undefined;
+        if (old && main && /\.(?:avif|webp)$/i.test(main)) {
+          skip.push(tag);
+          if (!sharing.has(main)) {
+            sharing.set(main, undefined);
+            // Old responsive addresses can map to this main too; encode its original picture once.
+            const [original, image] = lighter!;
+            const existing = mediaFamilyOf(main, [...paths, ...batch.uploads.map(upload => upload.path)])?.sharing;
+            if (existing) {
+              sharing.set(main, { path: existing, width: image.width!, height: image.height! });
+              next.files[existing] = { ...next.files[existing], sharing: true };
+            } else {
+              const blob = await ctx.blob(original); guard();
+              const encoded = await (ports.encode ?? optimiseMedia)(new File([blob], original.split("/").at(-1)!, { type: blob.type || uploadImageType(original) }),
+                { maxWidth: reused.has(original) ? image.width! : mediaImageRecipe(quality).maxWidth, quality: 82, format: "jpeg", responsive: false, keepOriginal: false }, request.signal); guard();
+              const jpeg = encoded.outputs.find(output => output.variantWidth === undefined);
+              if (!jpeg || jpeg.extension !== "jpg" || jpeg.blob.type !== "image/jpeg" || jpeg.width !== image.width || jpeg.height !== image.height)
+                throw new Error(`${old}'s sharing picture could not be prepared as a JPEG at the lighter picture's size. Nothing was improved.`);
+              if (jpeg.blob.size >= blob.size) result.notes.push(`Sharing pictures keep ${old} because the JPEG was not lighter.`);
+              else {
+                const path = main.replace(/\.[^./]+$/, "-sharing.jpg");
+                if (paths.some(taken => taken.toLowerCase() === path.toLowerCase() || taken.toLowerCase().startsWith(path.toLowerCase() + "/") || path.toLowerCase().startsWith(taken.toLowerCase() + "/")))
+                  throw new Error(`${path} is taken. Nothing was improved.`);
+                const problem = uploadProblem({ name: path, size: jpeg.blob.size });
+                if (problem) throw new Error(problem);
+                batch.uploads.push({ path, blob: jpeg.blob });
+                next.files[path] = { sharing: true };
+                sharing.set(main, { path, width: jpeg.width!, height: jpeg.height! });
+              }
+            }
+          }
+          const copy = sharing.get(main);
+          if (name.startsWith("og:")) og = copy;
+          if (copy) {
+            const address = socialImageAddress(request.siteUrl, copy.path);
+            content = address.address;
+            if (address.missingAddress && !result.notes.includes(SOCIAL_IMAGE_NOTE)) result.notes.push(SOCIAL_IMAGE_NOTE);
+          }
+        } else if (name.startsWith("og:")) og = undefined;
+      } else if (og && /^og:image:(?:type|width|height)$/.test(name)) {
+        content = name.endsWith(":type") ? "image/jpeg" : String(name.endsWith(":width") ? og.width : og.height);
+        skip.push(tag);
+      }
+      if (content !== undefined) sharingEdits.set(index, mediaAttributes(source.slice(tag.start, tag.end), { content }));
     }
     const component = Object.values(ctx.components).includes(file);
     const input = { from: "", to: "", paths, sources: component ? sources : { [file]: source }, records, site: component ? site : { origins: site.origins } };
@@ -201,7 +257,11 @@ export async function prepareImproveHeavy(ctx: MediaWorkspaceContext, request: I
     const options = { only: file, skip: { [file]: skip }, widths: descriptorWidths, reference: (referenceFile: string, _start: number, _end: number, path: string) => {
       if (referenceFile === file) rewritten.add(path);
     } };
-    const edited = file === "_redirects" ? rewriteMediaRedirects(input, mapping, options) : rewriteMediaMentions(input, mapping, options).get(file);
+    let edited = file === "_redirects" ? rewriteMediaRedirects(input, mapping, options) : rewriteMediaMentions(input, mapping, options).get(file);
+    if (sharingEdits.size) {
+      const text = edited ?? source, rewrittenTags = startTags(text);
+      edited = apply(text, [...sharingEdits].map(([index, text]) => ({ ...rewrittenTags[index], text })));
+    }
     if (edited !== undefined && edited !== source) batch.edits.set(file, edited);
     for (const [old, main] of mapping) movePlaces(next, old, main, file, rewritten.has(old));
   }
