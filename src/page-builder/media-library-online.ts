@@ -12,11 +12,11 @@ import { moreButton, type DetailHost } from "./media-library-details";
 import type { LibrarySheet } from "./media-library-sheet";
 import type { MediaOnlineVideo } from "./media-picker";
 
-/** Back to the grid, focusing the video's tile (or Collections once it is gone). */
+/** Back to the grid, focusing the video's tile (or Filter once it is gone). */
 function leave(sheet: LibrarySheet, h: DetailHost, key: string) {
   sheet.version++; sheet.redraw = undefined;
   sheet.element.hidden = true; delete sheet.element.dataset.mode; sheet.element.replaceChildren();
-  (h.grid.querySelector<HTMLElement>(`[data-id="${CSS.escape(key)}"] button`) ?? h.dialog.querySelector<HTMLElement>(".media-library__collections"))?.focus();
+  (h.grid.querySelector<HTMLElement>(`[data-id="${CSS.escape(key)}"] button`) ?? h.dialog.querySelector<HTMLElement>(".media-library__filter"))?.focus();
   if (!h.modal) h.dialog.scrollTop = 0;
 }
 

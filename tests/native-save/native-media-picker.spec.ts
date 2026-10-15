@@ -104,16 +104,22 @@ test("Use leaves an undescribed file missing until File details supplies its des
   await expect(bar(page).getByRole("button", { name: "Not described yet", exact: true })).toHaveCount(0);
 });
 
-test("the picker has the pane's Collections and More, shows only images, and keeps its choice through File details", async ({ page, baseURL }) => {
+test("the picker has the pane's Filter, + and More, shows only images, and keeps its choice through File details", async ({ page, baseURL }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await open(page, baseURL);
   await openPicker(page);
-  await expect(picker(page).getByLabel("Collections", { exact: true }).locator("option")).toContainText(["All collections", "Manage collections…"]);
-  await picker(page).getByRole("button", { name: "More", exact: true }).click();
-  await expect(page.getByRole("menuitem", { name: "Add new file", exact: true })).toBeVisible();
-  await expect(page.getByRole("menuitemradio", { name: "List", exact: true })).toBeVisible();
+  await expect(picker(page).getByRole("button", { name: "Add files", exact: true })).toBeVisible();
+  await picker(page).getByRole("button", { name: /^Filter/ }).click();
+  const filter = page.getByRole("menu", { name: "Filter", exact: true });
+  await expect(filter.getByRole("group", { name: "Collections", exact: true }).getByRole("menuitem")).toHaveText(["Manage collections…"]);
+  await expect(filter.getByRole("menuitemradio", { name: "All collections", exact: true })).toBeVisible();
+  await expect(filter.getByRole("menuitemradio", { name: "List", exact: true })).toBeVisible();
   // Only compatible files: no kinds to choose.
-  await expect(page.getByRole("menuitemradio", { name: "Video", exact: true })).toHaveCount(0);
+  await expect(filter.getByRole("menuitemradio", { name: "Video", exact: true })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  // More keeps the one tool a picker has.
+  await picker(page).getByRole("button", { name: "More", exact: true }).click();
+  await expect(page.getByRole("menu", { name: "More", exact: true }).getByRole("menuitem")).toHaveText(["Adding settings"]);
   await page.keyboard.press("Escape");
   await expect(picker(page)).toBeVisible();
   // There is no selecting many in the picker.

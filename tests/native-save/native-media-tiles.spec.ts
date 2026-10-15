@@ -1,5 +1,6 @@
 // Tiles, the list, the phone One bar and the phone selection bar (slice 107, UX audit).
 import { test, expect, type Page } from "@playwright/test";
+import { filterButton, filterTo } from "./media-filter";
 
 const pane = (page: Page) => page.getByRole("region", { name: "Media", exact: true });
 const tile = (page: Page, path: string) => pane(page).locator(`.media-library__card[data-path="${path}"]`);
@@ -77,7 +78,7 @@ test("see-through and wider-than-2:1 pictures show whole; photos fill the square
   expect(await fit("images/square.webp")).toBe("cover");
   // Their dark number and circle are for the tile's light backing only: list rows keep the theme's words.
   await page.emulateMedia({ colorScheme: "dark" });
-  await pane(page).getByRole("button", { name: "More", exact: true }).click();
+  await pane(page).getByRole("button", { name: /^Filter/ }).click();
   await page.getByRole("menuitemradio", { name: "List", exact: true }).click();
   const words = (path: string) => tile(page, path).locator(".media-library__usage").evaluate(usage => getComputedStyle(usage).color);
   await expect.poll(() => words("images/mark.webp")).toBe(await words("images/square.webp"));
@@ -91,7 +92,7 @@ test("list rows line their names up whether or not a file has a picture, and say
     // A JPEG that is not a picture falls back to its icon.
     await seed(page, baseURL, [{ path: "images/broken.jpg", content: "not a picture" }]);
     await open(page, baseURL);
-    await pane(page).getByRole("button", { name: "More", exact: true }).click();
+    await pane(page).getByRole("button", { name: /^Filter/ }).click();
     await page.getByRole("menuitemradio", { name: "List", exact: true }).click();
     await expect(tile(page, "images/broken.jpg")).toHaveClass(/is-file/);
     const rows = await pane(page).locator(".media-library__card").evaluateAll(cards => cards.map(card => ({
@@ -116,11 +117,10 @@ test("phones: search keeps most of the One bar, and the selection bar is one row
     return search!.width / (whole!.width - 24);
   };
   expect(await share()).toBeGreaterThanOrEqual(0.55);
-  const collections = library.getByLabel("Collections", { exact: true });
-  await expect(collections).toHaveValue("");
-  // Where the select takes the editor's look, its closed button shows the short name.
-  if (await collections.evaluate(select => CSS.supports("appearance", "base-select") && Boolean(select.querySelector("selectedcontent"))))
-    expect(await collections.locator("selectedcontent").innerText()).toBe("All");
+  // Filter (slice 116) is the funnel alone while it shows everything; + and More sit beside it.
+  await expect(filterButton(library)).toHaveAccessibleName("Filter: All");
+  await expect(filterButton(library).locator(".media-library__filter-label")).toBeHidden();
+  await expect(library.getByRole("button", { name: "Add files", exact: true })).toBeVisible();
   // Typed words stay whole.
   await library.getByLabel("Search media", { exact: true }).fill("studio desk");
   expect(await library.getByLabel("Search media", { exact: true }).evaluate(input => input.scrollWidth <= input.clientWidth)).toBe(true);
@@ -153,7 +153,13 @@ test("phones: inside a collection, ⋯ offers Take out before Remove, and Take o
     files: { "images/studio-desk.svg": { collections: ["Picks"] } } }) }]);
   await open(page, baseURL);
   const library = pane(page);
-  await library.getByLabel("Collections", { exact: true }).selectOption("Picks");
+  await filterTo(library, "Picks");
+  // Narrowed, Filter shows its words whole in place of the funnel; search keeps at least 40 %.
+  const label = filterButton(library).locator(".media-library__filter-label");
+  await expect(label).toHaveText("Picks");
+  expect(await label.evaluate(words => words.scrollWidth <= words.clientWidth)).toBe(true);
+  const [search, whole] = await Promise.all([library.locator(".media-library__search").boundingBox(), library.locator(".media-library__bar").boundingBox()]);
+  expect(search!.width / (whole!.width - 24)).toBeGreaterThanOrEqual(0.4);
   await library.getByLabel("Select images/studio-desk.svg", { exact: true }).check();
   const selection = library.getByRole("group", { name: "Selected files", exact: true });
   await expect(selection.getByRole("button", { name: "Take out of Picks", exact: true })).toBeHidden();
@@ -162,7 +168,7 @@ test("phones: inside a collection, ⋯ offers Take out before Remove, and Take o
   await expect(items).toHaveText(["Select all shown", "Optimise heavy images", "Take out of Picks", "Remove file…"]);
   await items.filter({ hasText: "Take out of Picks" }).click();
   await expect(page.locator(".editor-toast__text")).toHaveText("Took 1 file out of \"Picks\". It stays in Media under All.");
-  await library.getByLabel("Collections", { exact: true }).selectOption("");
+  await filterTo(library, "All collections");
   await expect(tile(page, "images/studio-desk.svg")).toBeVisible();
 });
 

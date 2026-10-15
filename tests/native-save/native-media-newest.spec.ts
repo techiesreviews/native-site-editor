@@ -60,7 +60,7 @@ test("a file added on a phone leads Media and comes into view from far down the 
 test("a file added while the kind hides it is one tap away: Show new files brings it in, first and ringed", async ({ page, baseURL }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await open(page, baseURL);
-  await pane(page).getByRole("button", { name: "More", exact: true }).click();
+  await pane(page).getByRole("button", { name: /^Filter/ }).click();
   await page.getByRole("menuitemradio", { name: "Video", exact: true }).click();
   await add(page, [file("zebra.svg")]);
   await expect(tray(page).getByRole("status")).toHaveText("Added 1 file");

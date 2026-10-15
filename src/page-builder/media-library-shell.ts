@@ -3,7 +3,6 @@ import { setIcon } from "../icons";
 import { mediaSelectionActions } from "./media-collection-choices";
 import type { MediaPickerOptions } from "./media-picker";
 import { pickerNoun } from "./media-library-filter";
-import { allCollectionsOption } from "./media-library-refresh";
 
 export type LibraryShell = ReturnType<typeof createMediaLibraryShell>;
 
@@ -34,7 +33,7 @@ export function createMediaLibraryShell(
   heading.append(title);
   header.append(heading);
   // The Media picker (ticket 06, tiles.html): a compact header naming the place, and Close.
-  // Adding is the first action in More, as in the Media pane.
+  // Adding is the One bar's +, as in the Media pane.
   if (modal) {
     if (options.place) heading.append(node("p", "media-library__muted media-library__place", options.place));
     // Close and Cancel stay usable while a change runs; neither places anything.
@@ -43,26 +42,30 @@ export function createMediaLibraryShell(
     header.append(shut);
   }
   header.append(uploadInput);
-  // One bar (media-manager ticket 06, tiles.html): search, Collections and More on one row.
+  // One bar (media-manager ticket 06, slice 116): search, then Filter, + and More as one group.
   const toolbar = node("div", "media-library__bar");
   const searchField = node("div", "media-library__search");
   const search = node("input"); search.type = "search"; search.name = "media-search";
   search.placeholder = "Search"; search.setAttribute("aria-label", "Search media");
   searchField.append(search);
-  const collections = node("select", "media-library__collections");
-  collections.name = "media-collection"; collections.setAttribute("aria-label", "Collections");
-  // A customizable select shows the chosen option in this button; other browsers keep the native control.
-  const chosen = node("button"); chosen.type = "button";
-  chosen.append(document.createElement("selectedcontent"));
-  collections.append(chosen, allCollectionsOption());
-  toolbar.append(searchField, collections);
-  // Add → Media (slices 68, 113): a quiet text button in the One bar reveals the link field (Notion's Link tab).
-  const paste = modal && actions.address ? button("Paste a YouTube or Vimeo link", () => revealOnline(), "text-button media-library__paste") : undefined;
-  if (paste) { paste.setAttribute("aria-expanded", "false"); toolbar.append(paste); }
+  // Filter: collections, then Show and View; its button names the choice in short ("Garden · Video").
+  const filter = node("button", "media-library__filter"); filter.type = "button";
+  filter.setAttribute("aria-haspopup", "menu"); filter.setAttribute("aria-expanded", "false");
+  const filterLabel = node("span", "media-library__filter-label");
+  filter.append(filterLabel);
+  // + opens the file chooser; dropping files anywhere adds them too.
+  const add = button("", () => uploadInput.click(), "media-library__add");
+  add.setAttribute("aria-label", "Add files"); setIcon(add, "plus", 22);
   const more = node("button", "media-library__more"); more.type = "button";
   more.setAttribute("aria-label", "More"); more.setAttribute("aria-haspopup", "menu"); more.setAttribute("aria-expanded", "false");
   setIcon(more, "dots-three", 24);
-  toolbar.append(more);
+  const tools = node("div", "media-library__tools");
+  tools.append(filter, add, more);
+  toolbar.append(searchField);
+  // Add → Media (slices 68, 113): a quiet text button in the One bar reveals the link field (Notion's Link tab).
+  const paste = modal && actions.address ? button("Paste a YouTube or Vimeo link", () => revealOnline(), "text-button media-library__paste") : undefined;
+  if (paste) { paste.setAttribute("aria-expanded", "false"); toolbar.append(paste); }
+  toolbar.append(tools);
   // Revealed: one field, its own Use and one helper line; a problem shows inline under the field.
   let online: { form: HTMLFormElement; field: HTMLInputElement; note: HTMLElement } | undefined;
   if (paste) {
@@ -138,7 +141,7 @@ export function createMediaLibraryShell(
   container.append(dialog);
   if (modal) { modal.showModal(); search.focus(); }
   return {
-    dialog, close, search, collections, more, browse, summary, adding, bulk, bulkCount, bulkMore, addTo, takeOut, removeFiles, grid, sheet, message, uploadInput,
+    dialog, close, search, filter, filterLabel, add, more, browse, summary, adding, bulk, bulkCount, bulkMore, addTo, takeOut, removeFiles, grid, sheet, message, uploadInput,
     choice: { thumb: chosenThumb, name: chosenName, details: detailsButton, use }, online,
   };
 }

@@ -9,7 +9,7 @@ with the [code map](../agents/code-map.md).
 ## Adding files
 
 Every adding route uses `prepareMediaFile` in `src/page-builder/media-prepare.ts`:
-Media drops and More → Add new file; Files drops and Upload files; the Media picker;
+Media drops and + (Add files); Files drops and Upload files; the Media picker;
 canvas image drops; Structure and component image fields; and Site settings image
 fields. Preparation runs in the browser before storage. A failed file does not stop
 the other files. The shared progress summary in `src/page-builder/media-adding-summary.ts`

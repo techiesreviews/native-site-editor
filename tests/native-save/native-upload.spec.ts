@@ -9,7 +9,7 @@ import { onePagePdf } from "./pdf-fixture";
 const require = createRequire(import.meta.url);
 
 // Uploading images and other binary files (src/uploads.ts): the Media
-// picker's Add new file and drop, the Files tab's Upload files… and drop
+// picker's + (Add files) and drop, the Files tab's Upload files… and drop
 // on a folder. An upload is an A draft whose bytes this browser keeps in
 // IndexedDB; the preview shows it at once; Save sends the bytes as a GitHub
 // blob (worker/blobs.ts) and commits it, byte for byte, to the fake GitHub
@@ -112,12 +112,11 @@ async function committed(page: Page, path: string) {
   return response.ok() ? Buffer.from(await response.body()) : undefined;
 }
 
-test("Add new file in the Media picker adds to media/images/ and chooses it; Use places it; it survives a reload and saves the cleaned SVG", async ({ page, baseURL }) => {
+test("+ in the Media picker adds to media/images/ and chooses it; Use places it; it survives a reload and saves the cleaned SVG", async ({ page, baseURL }) => {
   await open(page, baseURL);
   await openChooser(page);
   const upload = page.waitForEvent("filechooser");
-  await chooser(page).getByRole("button", { name: "More", exact: true }).click();
-  await page.getByRole("menuitem", { name: "Add new file", exact: true }).click();
+  await chooser(page).getByRole("button", { name: "Add files", exact: true }).click();
   // SVGs are minified on the way in: the square becomes the same square drawn as a path.
   const cleaned = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"><path fill="#c03" d="M0 0h1v1H0z"/></svg>');
   await (await upload).setFiles({ name: "Team Photo.svg", mimeType: "image/svg+xml", buffer: svg });

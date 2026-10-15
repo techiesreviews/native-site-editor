@@ -1,6 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { openPickerOn } from "./open-picker";
 import { storedDraft } from "./drafts";
+import { collectionChoices, filterButton, filterTo } from "./media-filter";
 const pane = (page: Page) => page.getByRole("region", { name: "Media", exact: true });
 async function open(page: Page, baseURL: string | undefined) {
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
@@ -224,13 +225,13 @@ test("background image loads preserve typing, the chosen collection and details"
   await expect(library).not.toHaveAttribute("aria-busy", "true");
   await page.evaluate(() => { void (window as any).loadImageProbe.refresh(); });
   await expect(library).toHaveAttribute("aria-busy", "true");
-  await library.getByLabel("Collections", { exact: true }).selectOption("Studio");
+  await filterTo(library, "Studio");
   await search.fill("a"); await expect(search).toHaveValue("a");
   await library.getByRole("button", { name: "Details for images/a.svg", exact: true }).click();
   await expect(library.locator(".media-library__sheet")).toContainText("Loading file");
   await page.evaluate(() => (window as any).releaseImageLoad());
   await expect(library.getByLabel("Description", { exact: true })).toBeVisible();
-  await expect(library.getByLabel("Collections", { exact: true })).toHaveValue("Studio");
+  await expect(filterButton(library)).toHaveAccessibleName("Filter: Studio");
   await expect(library.locator(".media-library__message")).toBeEmpty();
   await page.evaluate(() => (window as any).loadImageProbe.dispose());
 });
@@ -258,7 +259,7 @@ test("compact details reveal metadata and return to the same browse filters", as
   await page.setViewportSize({ width: 390, height: 844 }); await open(page, baseURL);
   const library = pane(page);
   await library.getByLabel("Search media", { exact: true }).fill("studio-desk");
-  await library.getByRole("button", { name: "More", exact: true }).click();
+  await library.getByRole("button", { name: /^Filter/ }).click();
   await page.getByRole("menuitemradio", { name: "Images", exact: true }).click();
   await library.getByLabel("Select images/studio-desk.svg", { exact: true }).check();
   const details = library.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true });
@@ -271,7 +272,7 @@ test("compact details reveal metadata and return to the same browse filters", as
   await page.keyboard.press("Enter");
   await expect(details).toBeFocused();
   await expect(library.getByLabel("Search media", { exact: true })).toHaveValue("studio-desk");
-  await library.getByRole("button", { name: "More", exact: true }).click();
+  await library.getByRole("button", { name: /^Filter/ }).click();
   await expect(page.getByRole("menuitemradio", { name: "Images", exact: true })).toHaveAttribute("aria-checked", "true");
   await page.keyboard.press("Escape");
   await expect(library.getByLabel("Select images/studio-desk.svg", { exact: true })).toBeChecked();
@@ -312,7 +313,7 @@ test("refresh keeps thumbnail, Collections and usage focus and completes a keybo
   const back = library.getByRole("button", { name: "Back", exact: true });
   await expect(back).toBeFocused();
   await page.keyboard.press("Enter"); await expect(thumb).toBeFocused();
-  for (const target of [thumb, library.getByLabel("Collections", { exact: true }), library.getByRole("button", { name: "Not checked yet", exact: true })]) {
+  for (const target of [thumb, filterButton(library), library.getByRole("button", { name: "Not checked yet", exact: true })]) {
     await target.focus();
     await page.evaluate(() => (window as any).focusProbe.refresh());
     await expect(library).toHaveAttribute("aria-busy", "true");
@@ -469,37 +470,47 @@ test("touch shows every Media tile name without hover", async ({ browser, baseUR
   await context.close();
 });
 
-test("One bar: search, Collections and More share one 44 px row at every width, with adding in More", async ({ page, baseURL }) => {
+test("One bar: search, then Filter, + and More as one 44 px group at every width; + opens the chooser; More holds the five tools", async ({ page, baseURL }) => {
   await page.setViewportSize({ width: 1280, height: 900 }); await open(page, baseURL);
   const library = pane(page);
-  const search = library.getByLabel("Search media", { exact: true }), collections = library.getByLabel("Collections", { exact: true });
-  const more = library.getByRole("button", { name: "More", exact: true });
-  // No Media heading and no separate Add button: the tab names the pane, adding is in More.
+  const search = library.getByLabel("Search media", { exact: true }), filter = filterButton(library);
+  const add = library.getByRole("button", { name: "Add files", exact: true }), more = library.getByRole("button", { name: "More", exact: true });
+  // No Media heading: the tab names the pane.
   await expect(library.getByRole("heading", { name: "Media", exact: true })).toBeHidden();
-  await expect(library.getByRole("button", { name: /Upload|Add/ })).toHaveCount(0);
+  await expect(filter).toHaveAccessibleName("Filter: All");
   for (const width of [390, 768, 1280]) {
     await page.setViewportSize({ width, height: 900 });
     await expect.poll(async () => {
-      const [a, b, c] = await Promise.all([search, collections, more].map(control => control.boundingBox()));
-      return a && b && c && [a.height, b.height, c.height, Math.round(b.y - a.y), Math.round(c.y - a.y), Math.round(b.x - a.x - a.width), Math.round(c.x - b.x - b.width), c.x + c.width <= width];
-    }, `width ${width}`).toEqual([44, 44, 44, 0, 0, 8, 8, true]);
+      const [a, f, p, m] = await Promise.all([search, filter, add, more].map(control => control.boundingBox()));
+      return a && f && p && m && [a.height, f.height, p.height, m.height, p.width, m.width, Math.round(f.y - a.y), Math.round(m.y - a.y),
+        Math.round(f.x - a.x - a.width), Math.round(p.x - f.x - f.width), Math.round(m.x - p.x - p.width), m.x + m.width <= width];
+    }, `width ${width}`).toEqual([44, 44, 44, 44, 44, 44, 0, 0, 8, -1, -1, true]);
   }
-  await search.focus(); await page.keyboard.press("Tab"); await expect(collections).toBeFocused();
-  // Escape closes the open list only; the explorer stays.
-  await page.keyboard.press("Enter"); await page.keyboard.press("Escape");
-  await expect(page.locator("#explorer")).toBeVisible(); await expect(collections).toBeFocused();
+  // Phones show the funnel alone; wider screens its words too.
+  await page.setViewportSize({ width: 390, height: 900 });
+  await expect(filter.locator(".media-library__filter-label")).toBeHidden();
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await expect(filter.locator(".media-library__filter-label")).toHaveText("All");
+  await search.focus(); await page.keyboard.press("Tab"); await expect(filter).toBeFocused();
+  await page.keyboard.press("Enter");
+  const choices = page.getByRole("menu", { name: "Filter", exact: true });
+  await expect(choices.getByRole("menuitemradio").first()).toHaveText("All collections");
+  await expect(choices.getByRole("menuitemradio").first()).toBeFocused();
+  await expect(choices.getByRole("group", { name: "Show", exact: true }).getByRole("menuitemradio")).toHaveText(["All", "Images", "Video", "Audio", "Documents"]);
+  await expect(choices.getByRole("group", { name: "View", exact: true }).getByRole("menuitemradio")).toHaveText(["Grid", "List"]);
+  await expect(choices.getByRole("menuitemradio", { name: "All", exact: true })).toHaveAttribute("aria-checked", "true");
+  // Escape closes the menu only; the explorer stays.
+  await page.keyboard.press("Escape"); await expect(choices).toBeHidden(); await expect(filter).toBeFocused();
+  await expect(page.locator("#explorer")).toBeVisible();
+  await page.keyboard.press("Tab"); await expect(add).toBeFocused();
   await page.keyboard.press("Tab"); await expect(more).toBeFocused();
   await page.keyboard.press("Enter");
   const menu = page.getByRole("menu", { name: "More", exact: true });
-  await expect(menu.getByRole("menuitem").first()).toHaveText("Add new file");
-  await expect(menu.getByRole("menuitem").first()).toBeFocused();
-  await expect(menu.getByRole("group", { name: "Show", exact: true }).getByRole("menuitemradio")).toHaveText(["All", "Images", "Video", "Audio", "Documents"]);
-  await expect(menu.getByRole("menuitemradio", { name: "All", exact: true })).toHaveAttribute("aria-checked", "true");
+  await expect(menu.getByRole("menuitem")).toHaveText([/^Clean up/, /^Improve images/, /^To check/, "Recently removed", "Adding settings"]);
+  await expect(menu.getByRole("menuitemradio")).toHaveCount(0);
   await page.keyboard.press("Escape"); await expect(menu).toBeHidden(); await expect(more).toBeFocused();
-  await expect(page.locator("#explorer")).toBeVisible();
-  await more.click();
   const chooser = page.waitForEvent("filechooser");
-  await menu.getByRole("menuitem", { name: "Add new file", exact: true }).click();
+  await add.click();
   expect((await chooser).isMultiple()).toBe(true);
 });
 
@@ -528,19 +539,20 @@ async function mountMixedLibrary(page: Page, baseURL: string | undefined) {
 }
 const tileNames = (page: Page) => pane(page).locator(".media-library__card").evaluateAll(cards => cards.map(card => (card as HTMLElement).dataset.path));
 
-test("search narrows, a kind in More narrows the search, and no results offer all media", async ({ page, baseURL }) => {
+test("search narrows, a kind in Filter narrows the search, and no results offer all media", async ({ page, baseURL }) => {
   await mountMixedLibrary(page, baseURL);
   const library = pane(page), search = library.getByLabel("Search media", { exact: true });
-  const more = library.getByRole("button", { name: "More", exact: true }), menu = page.getByRole("menu", { name: "More", exact: true });
+  const filter = filterButton(library), menu = page.getByRole("menu", { name: "Filter", exact: true });
   // Files with no date list by name, whatever their folder (slice 103).
   await expect.poll(() => tileNames(page)).toEqual(["images/beach.svg", "media/studio-guide.pdf", "media/studio-tour.mp4", "images/studio.svg"]);
   await search.fill("studio");
   await expect.poll(() => tileNames(page)).toEqual(["media/studio-guide.pdf", "media/studio-tour.mp4", "images/studio.svg"]);
   await expect(library.locator(".media-library__browse > [role=status]")).toHaveText("3 of 4 files");
-  await more.click(); await menu.getByRole("menuitemradio", { name: "Video", exact: true }).click();
-  await expect(more).toBeFocused();
+  await filter.click(); await menu.getByRole("menuitemradio", { name: "Video", exact: true }).click();
+  await expect(filter).toBeFocused();
+  await expect(filter).toHaveAccessibleName("Filter: Video");
   await expect.poll(() => tileNames(page)).toEqual(["media/studio-tour.mp4"]);
-  await more.click(); await menu.getByRole("menuitemradio", { name: "Documents", exact: true }).click();
+  await filter.click(); await menu.getByRole("menuitemradio", { name: "Documents", exact: true }).click();
   await expect.poll(() => tileNames(page)).toEqual(["media/studio-guide.pdf"]);
   // A search the kind hides offers the way back to all media, keeping the search.
   await search.fill("beach");
@@ -549,65 +561,51 @@ test("search narrows, a kind in More narrows the search, and no results offer al
   await library.getByRole("button", { name: "Search all media", exact: true }).click();
   await expect.poll(() => tileNames(page)).toEqual(["images/beach.svg"]);
   await expect(search).toHaveValue("beach"); await expect(search).toBeFocused();
-  await more.click();
+  await filter.click();
   await expect(menu.getByRole("menuitemradio", { name: "All", exact: true })).toHaveAttribute("aria-checked", "true");
   await expect(menu.getByRole("menuitemradio", { name: "Documents", exact: true })).toHaveAttribute("aria-checked", "false");
   await page.keyboard.press("Escape");
   // A collection narrows too, and its own no-results offers all collections.
-  await library.getByLabel("Collections", { exact: true }).selectOption("Studio");
+  await filterTo(library, "Studio");
+  await expect(filter).toHaveAccessibleName("Filter: Studio");
   await expect(library.getByRole("button", { name: "Search all collections", exact: true })).toBeVisible();
   await search.fill("");
   await expect.poll(() => tileNames(page)).toEqual(["media/studio-tour.mp4", "images/studio.svg"]);
-  await more.click(); await menu.getByRole("menuitemradio", { name: "Audio", exact: true }).click();
+  await filter.click(); await menu.getByRole("menuitemradio", { name: "Audio", exact: true }).click();
   await library.getByRole("button", { name: "Show all media", exact: true }).click();
   await expect.poll(() => tileNames(page)).toEqual(["media/studio-tour.mp4", "images/studio.svg"]);
   await page.evaluate(() => (window as any).mixedProbe.dispose());
 });
 
-test("Collections is a native select that works with arrows and Enter and shortens long names", async ({ page, baseURL }) => {
+test("Filter works with arrows and Enter, names the choice in short, and shortens a long name in its button", async ({ page, baseURL }) => {
   await mountMixedLibrary(page, baseURL);
-  const library = pane(page), collections = library.getByLabel("Collections", { exact: true });
-  await expect(collections).toHaveJSProperty("tagName", "SELECT");
-  await expect(collections.locator("option")).toHaveText(["All collections", "Studio", "Studio portraits from the spring campaign and the summer launch", "Manage collections…"]);
+  await page.setViewportSize({ width: 768, height: 900 });
+  const library = pane(page), filter = filterButton(library), menu = page.getByRole("menu", { name: "Filter", exact: true });
+  const long = "Studio portraits from the spring campaign and the summer launch";
+  await expect.poll(() => collectionChoices(library)).toEqual(["All collections", "Studio", long]);
+  // A host with no tools has no More.
+  await expect(library.getByRole("button", { name: "More", exact: true })).toBeHidden();
   await library.getByLabel("Search media", { exact: true }).focus(); await page.keyboard.press("Tab");
-  await expect(collections).toBeFocused();
+  await expect(filter).toBeFocused();
   // Open, move down one, choose.
   await page.keyboard.press("Enter"); await page.keyboard.press("ArrowDown"); await page.keyboard.press("Enter");
-  await expect(collections).toHaveValue("Studio");
+  await expect(filter).toHaveAccessibleName("Filter: Studio");
   await expect.poll(() => tileNames(page)).toEqual(["media/studio-tour.mp4", "images/studio.svg"]);
-  await expect(collections).toBeFocused();
-  await page.keyboard.press("Enter"); await page.keyboard.press("ArrowDown"); await page.keyboard.press("Enter");
-  await expect(collections).toHaveValue("Studio portraits from the spring campaign and the summer launch");
+  await expect(filter).toBeFocused();
+  await page.keyboard.press("Enter"); await page.keyboard.press("ArrowDown"); await page.keyboard.press("ArrowDown"); await page.keyboard.press("Enter");
+  await expect(filter).toHaveAccessibleName(`Filter: ${long}`);
   await expect.poll(() => tileNames(page)).toEqual(["images/studio.svg"]);
-  // The closed control keeps its width and shortens the name.
-  const box = await collections.boundingBox(); expect(box?.height).toBe(44);
-  expect(await collections.evaluate(select => {
-    const shown = select.querySelector("selectedcontent");
-    return shown ? shown.scrollWidth > shown.clientWidth : select.scrollWidth <= select.clientWidth + 1;
-  })).toBe(true);
-  await page.evaluate(() => (window as any).mixedProbe.dispose());
-});
-
-test("without customizable selects, Collections stays a plain native select with the same keys and row", async ({ page, baseURL }) => {
-  await mountMixedLibrary(page, baseURL);
-  // A browser without appearance: base-select draws the ordinary control.
-  await page.addStyleTag({ content: ".media-library .media-library__collections, .media-library__collections::picker(select) { appearance: auto !important; }" });
-  const library = pane(page), collections = library.getByLabel("Collections", { exact: true });
-  const search = library.getByLabel("Search media", { exact: true }), more = library.getByRole("button", { name: "More", exact: true });
-  await expect.poll(() => collections.evaluate(select => getComputedStyle(select).appearance)).not.toBe("base-select");
-  await expect(collections.locator("option")).toHaveText(["All collections", "Studio", "Studio portraits from the spring campaign and the summer launch", "Manage collections…"]);
-  await search.focus(); await page.keyboard.press("Tab"); await expect(collections).toBeFocused();
-  await page.keyboard.press("Tab"); await expect(more).toBeFocused();
-  const before = await collections.boundingBox();
-  expect(before?.height).toBe(44);
-  await collections.focus(); await page.keyboard.press("ArrowDown");
-  await expect(collections).toHaveValue("Studio");
-  await expect.poll(() => tileNames(page)).toEqual(["media/studio-tour.mp4", "images/studio.svg"]);
-  await page.keyboard.press("ArrowDown");
-  await expect(collections).toHaveValue("Studio portraits from the spring campaign and the summer launch");
-  await expect.poll(() => tileNames(page)).toEqual(["images/studio.svg"]);
-  // The long name stays inside the control: the row keeps its widths.
-  expect(await collections.boundingBox()).toEqual(before);
-  expect((await more.boundingBox())!.x + 44).toBeLessThanOrEqual(1280);
+  // A kind joins the collection in short; the open menu wraps the long name inside the window.
+  await filter.click(); await menu.getByRole("menuitemradio", { name: "Images", exact: true }).click();
+  await expect(filter).toHaveAccessibleName(`Filter: ${long} · Images`);
+  await filter.click();
+  const item = await menu.getByRole("menuitemradio", { name: long, exact: true }).boundingBox();
+  expect(item!.x + item!.width).toBeLessThanOrEqual(768);
+  await page.keyboard.press("Escape");
+  // The closed button keeps its row and shortens the name.
+  const box = await filter.boundingBox(); expect(box?.height).toBe(44);
+  expect(await filter.locator(".media-library__filter-label").evaluate(label => label.scrollWidth > label.clientWidth)).toBe(true);
+  const add = await library.getByRole("button", { name: "Add files", exact: true }).boundingBox();
+  expect(add!.x + add!.width).toBeLessThanOrEqual(768);
   await page.evaluate(() => (window as any).mixedProbe.dispose());
 });

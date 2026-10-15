@@ -13,9 +13,18 @@ export function accepts(path: string, accept?: string) {
   });
 }
 
-/** What a file is, from its extension: the kinds More offers. Documents are PDFs and other downloads. */
+/** What a file is, from its extension: the kinds Filter offers. Documents are PDFs and other downloads. */
 export type MediaKind = "image" | "video" | "audio" | "document";
 export type MediaKindChoice = MediaKind | "all";
+/** Filter's Show choices, in order (slice 116). */
+export const MEDIA_KIND_CHOICES: readonly (readonly [MediaKindChoice, string])[] = [
+  ["all", "All"], ["image", "Images"], ["video", "Video"], ["audio", "Audio"], ["document", "Documents"],
+];
+/** Filter's button in short: the collection and the kind shown, "All" when nothing narrows ("Garden · Video"). */
+export function filterSummary(collection: string, kind: MediaKindChoice) {
+  const shown = kind === "all" ? "" : MEDIA_KIND_CHOICES.find(([value]) => value === kind)![1];
+  return [collection, shown].filter(Boolean).join(" · ") || "All";
+}
 /** The agents' classifier (slice 20), so Media and agents agree; everything else is a download. */
 export const mediaKind = (path: string): MediaKind => { const kind = fileKind(path); return kind === "other" ? "document" : kind; };
 

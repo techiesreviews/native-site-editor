@@ -14,7 +14,7 @@ async function open(page: Page, baseURL: string | undefined, file = "index.html"
   await expect(pane(page).getByRole("button", { name: "Details for images/studio-desk.svg", exact: true })).toBeVisible();
 }
 async function view(page: Page, choice: string) {
-  await pane(page).getByRole("button", { name: "More", exact: true }).click();
+  await pane(page).getByRole("button", { name: /^Filter/ }).click();
   await page.getByRole("menuitemradio", { name: choice, exact: true }).click();
 }
 
@@ -23,7 +23,7 @@ test("Media opens on All, a used image shows its page count, hovering reads Used
   await open(page, baseURL);
   const library = pane(page);
   await expect(library.locator(".media-library__card")).toHaveCount(2);
-  await library.getByRole("button", { name: "More", exact: true }).click();
+  await library.getByRole("button", { name: /^Filter/ }).click();
   await expect(page.getByRole("menuitemradio", { name: "All", exact: true })).toHaveAttribute("aria-checked", "true");
   await expect(page.getByRole("menuitemradio", { name: "Grid", exact: true })).toHaveAttribute("aria-checked", "true");
   await page.getByRole("menuitemradio", { name: "All", exact: true }).click();
@@ -180,7 +180,7 @@ test("on a phone the list shortens a long name in the middle, keeping its end; t
   await page.setViewportSize({ width: 390, height: 844 });
   await mountUsage(page, baseURL);
   await page.evaluate(() => (window as any).usageProbe.checked());
-  await pane(page).getByRole("button", { name: "More", exact: true }).click();
+  await pane(page).getByRole("button", { name: /^Filter/ }).click();
   await page.getByRole("menuitemradio", { name: "List", exact: true }).click();
   const full = LONG.split("/").pop()!, row = tile(page, LONG), name = row.locator(".media-library__name");
   await expect(name).toHaveText(full);
@@ -214,7 +214,7 @@ test("the list's usage words stay tidy in every state and width; wide lists keep
   const paths = ["images/feed.png", "images/shared.png", "images/spare.png", LONG];
   await page.setViewportSize({ width: 320, height: 844 });
   await mountUsage(page, baseURL);
-  await pane(page).getByRole("button", { name: "More", exact: true }).click();
+  await pane(page).getByRole("button", { name: /^Filter/ }).click();
   await page.getByRole("menuitemradio", { name: "List", exact: true }).click();
   for (const row of await usageRows(page, paths)) expect(row).toMatchObject({ words: "Not checked yet", lines: 1, inside: true });
   await page.evaluate(() => (window as any).usageProbe.checked());

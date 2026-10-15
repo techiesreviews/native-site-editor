@@ -10,18 +10,18 @@ import { confirmMediaDelete } from "./media-library-delete";
 import { showMediaOptimise } from "./media-library-optimise";
 import { wireMediaLibraryInput } from "./media-library-input";
 import { createMediaAdding } from "./media-library-adding";
-import { basename, chosenNoun, filterMediaLibrary, mediaFamilyUsage, mediaKind, onlineServiceName, onlineVideoName, type MediaKindChoice, type MediaLibraryFilter } from "./media-library-filter";
+import { basename, chosenNoun, filterMediaLibrary, filterSummary, MEDIA_KIND_CHOICES, mediaFamilyUsage, mediaKind, onlineServiceName, onlineVideoName, type MediaKindChoice, type MediaLibraryFilter } from "./media-library-filter";
 import { mediaImageForPlacement, mediaNameAlt, mediaVariantName, mediaVariants, type MediaImage } from "./media-markup";
 import { node } from "../ui/dom";
 import { markTransparency } from "./media-transparency";
 import { createRowMenu, type MenuItem } from "../components/row-menu";
-import { showCollectionDelete, showCollectionName, showManageCollections, type CollectionScreensHost } from "./media-library-collections";
+import { showCollectionName, showManageCollections, type CollectionScreensHost } from "./media-library-collections";
 import { filesLabel } from "./media-collection-choices";
 import { showToCheck, toCheckLabel } from "./media-library-to-check";
 import type { LibrarySheet, LibrarySheetContext } from "./media-library-sheet";
 import {
   detailIdentity, metadataIdentity, captureDetailForm, restoreDetailForm,
-  dismissRefreshingDelete, pruneLibrarySelection, rebuildLibraryCollections,
+  dismissRefreshingDelete, pruneLibrarySelection,
 } from "./media-library-refresh";
 import "./media-picker.css";
 import { say, type ToastAction } from "../components/toast";
@@ -94,10 +94,10 @@ export function createMediaLibraryView(
     use,
     ...modal && options.onlineVideo ? { address: (text: string) => useAddress(text) } : {},
   }, modal);
-  const { dialog, grid, collections, summary, message } = shell;
+  const { dialog, grid, summary, message } = shell;
   let alive = true, kind: MediaKindChoice = "all", layout: "grid" | "list" = "grid", refreshVersion = 0, loadingLibrary = false;
   let usageDialog: ReturnType<typeof showUsageDialog> | undefined;
-  /** The collection the grid shows; a rename it follows; empty for All collections. */
+  /** The collection the grid shows (Filter); a rename it follows; empty for All collections. */
   let viewing = "", followed: string | undefined;
   /** The picker's chosen file, placed by Use. */
   let chosen: string | undefined;
@@ -105,9 +105,10 @@ export function createMediaLibraryView(
   // Each new screen bumps the version; it also clears the last screen's inline line (slice 105).
   let screen = 0;
   const sheet: LibrarySheet = { element: shell.sheet, get version() { return screen; }, set version(next) { screen = next; message.textContent = ""; } };
-  // More's menu sits outside the pane, whose size containment would place the fixed menu against it.
+  // Filter's and More's menus sit outside the pane, whose size containment would place the fixed menu against it.
   const more = createRowMenu(modal ?? container);
-  // Clean up (slices 49, 50): More's item after Add new file opens the review; it redraws with each check.
+  more.element.classList.add("media-library__menu");
+  // Clean up (slices 49, 50): More's first item opens the review; it redraws with each check.
   const cleanUp = modal ? undefined : options.cleanUp?.(), cleanUpMemory: { undo?: string[] } = {};
   // Improve images (slice 74) sits beside it; its Undo list outlives leaving the screen.
   let improveMemory: import("./media-library-improve").ImproveMemory | undefined;
@@ -161,7 +162,7 @@ export function createMediaLibraryView(
       if (!chooseNext || !fitsRequest(request)) return;
       chooseNext = false; chosen = id; paintChoice();
     },
-    alive: () => alive, library: () => library, filter: () => ({ query: shell.search.value, collection: collections.value, kind }),
+    alive: () => alive, library: () => library, filter: () => ({ query: shell.search.value, collection: viewing, kind }),
     import: requests => adapter.import(requests), task: work => task(work), idle: () => busyLock.idle(),
     refresh: async () => { cache.clear(); await refresh(); }, show: recover, tell,
     // The picker's reviewed files are held like the others.
@@ -176,19 +177,19 @@ export function createMediaLibraryView(
     },
   });
   const collectionHost: CollectionScreensHost = {
-    ...context, close: () => closeSheet(collections),
+    ...context, close: () => closeSheet(shell.filter),
     follow: (from, to) => { if (viewing === from) followed = to; adding.renamed(from, to); },
     menu: openMenu,
   };
-  /** Close a collection screen and return focus to what opened it (or to Collections). */
+  /** Close a collection screen and return focus to what opened it (or to Filter). */
   function closeSheet(opener: HTMLElement) {
     sheet.version++; sheet.redraw = undefined; shell.sheet.hidden = true; shell.sheet.replaceChildren();
     delete shell.sheet.dataset.mode;
-    (opener.isConnected && opener.getClientRects().length ? opener : collections).focus();
+    (opener.isConnected && opener.getClientRects().length ? opener : shell.filter).focus();
   }
-  /** The selection bar closes with the selection; focus moves to Collections rather than being lost. */
+  /** The selection bar closes with the selection; focus moves to Filter rather than being lost. */
   function keepFocus() {
-    if (alive && (document.activeElement === document.body || !document.activeElement?.isConnected || shell.bulk.contains(document.activeElement))) collections.focus();
+    if (alive && (document.activeElement === document.body || !document.activeElement?.isConnected || shell.bulk.contains(document.activeElement))) shell.filter.focus();
   }
   function openMenu(opener: HTMLButtonElement, label: string, items: MenuItem[]) {
     if (more.isOpen() && more.opener === opener) { more.close(true); return; }
@@ -244,8 +245,9 @@ export function createMediaLibraryView(
     library = { ...next, usage: mediaFamilyUsage(next) };
     refreshedKey = inputKey;
     pruneLibrarySelection(library.items, selected);
-    rebuildLibraryCollections(collections, library.collections, true, followed ?? collections.value);
-    followed = undefined;
+    // A vanished collection falls back to All.
+    const shown = followed ?? viewing;
+    viewing = library.collections.includes(shown) ? shown : ""; followed = undefined;
     draw();
     // Collections, To check and Adding settings redraw from the refreshed library.
     if (!shell.sheet.hidden) sheet.redraw?.();
@@ -265,10 +267,10 @@ export function createMediaLibraryView(
   }
   function draw() {
     if (!alive || !library) return;
-    viewing = collections.value;
+    paintFilter();
     // A chosen file that is gone (removed, renamed, a held file cancelled) is no longer chosen.
     if (chosen && !heldFile(chosen) && !onlineVideo(chosen) && !library.items.some(item => item.path === chosen)) chosen = undefined;
-    drawLibraryGrid(shell, library, { kind, selected, observers, accept: options.accept, modal: Boolean(modal), layout, chosen, online: !modal || Boolean(options.onlineVideo) }, {
+    drawLibraryGrid(shell, library, { kind, collection: viewing, selected, observers, accept: options.accept, modal: Boolean(modal), layout, chosen, online: !modal || Boolean(options.onlineVideo) }, {
       alive: () => alive, bytes: path => cache.get(path), objectUrl: blob => cache.objectUrl(blob), sync: () => busyLock.sync(),
       details: path => void details(path), records: () => adapter.usage?.records(), usage,
       recover, restoreFocus: !sheet.focus,
@@ -278,6 +280,13 @@ export function createMediaLibraryView(
     adding.paint();
     paintChoice();
     showFresh();
+  }
+  /** Filter's button: the choice in short, all of it for screen readers; phones show the words only when they narrow. */
+  function paintFilter() {
+    const text = filterSummary(viewing, kind);
+    shell.filterLabel.textContent = text;
+    shell.filter.setAttribute("aria-label", `Filter: ${text}`);
+    shell.filter.toggleAttribute("data-narrowed", text !== "All");
   }
   /** The picker's status: the chosen file's picture and name, or what to do. Use waits for a choice. */
   function paintChoice() {
@@ -434,24 +443,30 @@ export function createMediaLibraryView(
   }
   function recover(change: Partial<MediaLibraryFilter>) {
     if (change.kind) kind = change.kind;
-    if (change.collection !== undefined) collections.value = change.collection;
+    if (change.collection !== undefined) viewing = change.collection;
     if (change.query !== undefined) shell.search.value = change.query;
     draw(); shell.search.focus();
   }
-  // More: adding and its settings first, then the kinds, then Grid or List, then the viewed collection's Rename and Delete.
-  const kinds: [MediaKindChoice, string][] = [["all", "All"], ["image", "Images"], ["video", "Video"], ["audio", "Audio"], ["document", "Documents"]];
+  // Filter (slice 116): which collection, which kinds (Show) and how (View), as in Apple Photos' one filter menu.
+  shell.filter.addEventListener("click", () => {
+    if (more.isOpen() && more.opener === shell.filter) { more.close(true); return; }
+    const choose = (change: () => void) => () => { change(); draw(); shell.filter.focus(); };
+    more.open(shell.filter, [
+      { label: "All collections", section: "Collections", checked: !viewing, run: choose(() => { viewing = ""; }) },
+      ...(library?.collections ?? []).map(name => ({ label: name, section: "Collections", checked: viewing === name, run: choose(() => { viewing = name; }) })),
+      { label: "Manage collections…", section: "Collections", run: () => { if (library) showManageCollections(sheet, collectionHost); } },
+      // A picker shows only files that fit the place; Add → Media's (every kind) can narrow to one.
+      ...modal && options.accept ? [] : MEDIA_KIND_CHOICES.map(([value, label]) => ({ label, section: "Show", checked: kind === value, run: choose(() => { kind = value; }) })),
+      ...([["grid", "Grid"], ["list", "List"]] as const).map(([value, label]) => ({ label, section: "View", checked: layout === value, run: choose(() => { layout = value; }) })),
+    ], undefined, "Filter");
+  }, { signal: listeners.signal });
+  // More holds only the tools (slice 116): Clean up, Improve images, To check, Recently removed, Adding settings.
+  // The picker keeps Adding settings alone; with no tools there is no More.
+  shell.more.hidden = !(cleanUp || !modal && (adapter.check || adapter.restore) || adapter.adding);
   shell.more.addEventListener("click", () => {
     if (more.isOpen() && more.opener === shell.more) { more.close(true); return; }
-    const name = viewing;
     more.open(shell.more, [
-      { label: "Add new file", run: () => shell.uploadInput.click() },
-      // Adding settings (ticket 07): the choices future additions use, loaded when opened.
-      ...adapter.adding ? [{ label: "Adding settings", run: () => void task(async () => {
-        const { showAddingSettings } = await import("./media-adding-settings");
-        if (alive && library) showAddingSettings(sheet, { ...context, close: () => closeSheet(shell.more) });
-      }, false) }] : [],
-      // Clean up, with the tab's count, is an action like adding; the choices follow.
-      // While the files Clean up removed last can be brought back, it opens for their Undo.
+      // Clean up, with the tab's count. While the files Clean up removed last can be brought back, it opens for their Undo.
       ...cleanUp ? [{ ...cleanUp.item(), ...cleanUpMemory.undo?.every(path => library?.removed?.some(entry => entry.path === path)) ? { disabled: undefined } : {},
         run: () => void task(async () => {
         const { showCleanUp } = await import("./media-library-clean-up");
@@ -462,27 +477,20 @@ export function createMediaLibraryView(
         improveMemory ??= module.improveMemory();
         if (alive && library) module.showImproveImages(sheet, { ...context, improve: cleanUp.improve!, memory: improveMemory, close: () => closeSheet(shell.more) });
       }, false) }] : [],
+      // To check (ticket 13), with its count: agent-written descriptions waiting for Looks right or Edit.
+      ...!modal && adapter.check ? [{ label: toCheckLabel(library?.toCheck), run: () => {
+        if (library) showToCheck(sheet, { ...context, close: () => closeSheet(shell.more), pageLabel: page => adapter.usage?.pageLabel?.(page) });
+      } }] : [],
       // Recently removed (ticket 10): removed files for 30 days, each with Restore; loaded when opened.
       ...!modal && adapter.restore ? [{ label: "Recently removed", run: () => void task(async () => {
         const { showRecentlyRemoved } = await import("./media-library-recently-removed");
         if (alive && library) showRecentlyRemoved(sheet, { ...context, close: () => closeSheet(shell.more) });
       }, false) }] : [],
-      // To check (ticket 13), with its count: agent-written descriptions waiting for Looks right or Edit.
-      ...!modal && adapter.check ? [{ label: toCheckLabel(library?.toCheck), run: () => {
-        if (library) showToCheck(sheet, { ...context, close: () => closeSheet(shell.more), pageLabel: page => adapter.usage?.pageLabel?.(page) });
-      } }] : [],
-      // A picker shows only files that fit the place; Add → Media's (every kind) can narrow to one.
-      ...modal && options.accept ? [] : kinds.map(([value, label]) => ({ label, section: "Show", checked: kind === value, run: () => {
-        kind = value; draw(); shell.more.focus();
-      } })),
-      ...([["grid", "Grid"], ["list", "List"]] as const).map(([value, label]) => ({ label, section: "View", checked: layout === value, run: () => {
-        layout = value; draw(); shell.more.focus();
-      } })),
-      // While viewing a collection (ticket 15).
-      ...name ? [
-        { label: "Rename collection", section: "This collection", run: () => showCollectionName(sheet, collectionHost, { renaming: name, done: () => closeSheet(shell.more) }) },
-        { label: "Delete collection", section: "This collection", danger: true, run: () => showCollectionDelete(sheet, collectionHost, name, () => closeSheet(shell.more)) },
-      ] : [],
+      // Adding settings (ticket 07): the choices future additions use, loaded when opened.
+      ...adapter.adding ? [{ label: "Adding settings", run: () => void task(async () => {
+        const { showAddingSettings } = await import("./media-adding-settings");
+        if (alive && library) showAddingSettings(sheet, { ...context, close: () => closeSheet(shell.more) });
+      }, false) }] : [],
     ], undefined, "More");
   }, { signal: listeners.signal });
   function details(path: string, background = false) {
@@ -498,7 +506,6 @@ export function createMediaLibraryView(
   wireMediaLibraryInput(shell, {
     draw, loaded: () => Boolean(library), tell,
     add: files => { chooseNext = true; adding.start(files); },
-    viewing: () => viewing, manage: () => { if (library) showManageCollections(sheet, collectionHost); },
   }, listeners.signal);
   const ready = task(async () => {
     summary.textContent = "Reading repository images and references…";

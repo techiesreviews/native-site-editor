@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { filterTo } from "./media-filter";
 
 // The explorer's size (media fix slice 104, audit C1): one box for Pages, Media and Files that runs
 // from under the top bar to 16 px above the window's bottom, a sticky One bar, and action rows that
@@ -53,7 +54,7 @@ async function expectOneBox(page: Page) {
 /** File details' Save row, Manage collections' New collection, and Clean up's Remove row are inside the window. */
 async function expectActionsInView(page: Page) {
   await tab(page, "Media");
-  await pane(page).getByLabel("Collections", { exact: true }).selectOption({ label: "Manage collections…" });
+  await filterTo(pane(page), "Manage collections…");
   await expect(pane(page).getByRole("button", { name: "New collection", exact: true })).toBeInViewport({ ratio: 1 });
   await pane(page).getByRole("button", { name: "Back", exact: true }).click();
   await pane(page).getByRole("button", { name: "Details for images/spare-1.svg", exact: true }).click();

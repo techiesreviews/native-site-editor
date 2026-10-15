@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { openPickerOn } from "./open-picker";
 import { storedDraft } from "./drafts";
+import { filterTo } from "./media-filter";
 
 async function mount(page: Page, baseURL: string | undefined) {
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
@@ -42,7 +43,7 @@ test("persistent pane searches, filters, shows details and retains drafts throug
   await page.evaluate(() => { document.querySelector<HTMLElement>("#media-pane-harness")!.hidden = false; });
   await expect(panel.getByLabel("Description", { exact: true })).toHaveValue("Persistent studio");
   await page.evaluate(async () => { await (window as typeof window & { mediaPaneHarness: { remount(): Promise<void> } }).mediaPaneHarness.remount(); });
-  await panel.getByLabel("Collections", { exact: true }).selectOption("pane-tag");
+  await filterTo(panel, "pane-tag");
   await expect(panel.locator(".media-library__card")).toHaveCount(1);
   await panel.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true }).click();
   await expect(panel.getByLabel("Description", { exact: true })).toHaveValue("Persistent studio");
@@ -342,7 +343,7 @@ test("the picker searches, filters by collection, shows details and keeps drafts
   await expect(picker).toHaveCount(0);
   // A new picker reads the same records: the collection filters, details keep the words.
   picker = await choose();
-  await picker.getByLabel("Collections", { exact: true }).selectOption("picker-tag");
+  await filterTo(picker, "picker-tag");
   await expect(picker.locator(".media-library__card")).toHaveCount(1);
   await picker.getByRole("button", { name: "Choose images/studio-desk.svg", exact: true }).click();
   await picker.getByRole("button", { name: "File details", exact: true }).click();

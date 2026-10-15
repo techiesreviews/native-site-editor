@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { storedDraft } from "./drafts";
+import { collectionChoices, filterButton, filterTo } from "./media-filter";
 
 // Default native-save fixture group: images/placeholder.svg and images/studio-desk.svg, no collections yet.
 const pane = (page: Page) => page.getByRole("region", { name: "Media", exact: true });
@@ -18,7 +19,7 @@ async function open(page: Page, baseURL: string | undefined) {
 }
 async function newCollectionFromManage(page: Page, name: string) {
   const library = pane(page);
-  await library.getByLabel("Collections", { exact: true }).selectOption({ label: "Manage collections…" });
+  await filterTo(library, "Manage collections…");
   await expect(library.getByRole("heading", { name: "Manage collections", exact: true })).toBeFocused();
   await library.getByRole("button", { name: "New collection", exact: true }).click();
   await library.getByLabel("Collection name", { exact: true }).fill(name);
@@ -31,10 +32,10 @@ const select = (page: Page, path: string) => pane(page).getByLabel(`Select ${pat
 
 test("create a collection, add two files, view it, take one out (it stays under All), Undo", { tag: "@smoke" }, async ({ page, baseURL }) => {
   await open(page, baseURL);
-  const library = pane(page), collections = library.getByLabel("Collections", { exact: true });
+  const library = pane(page);
   await newCollectionFromManage(page, "Studio picks");
   await library.getByRole("button", { name: "Back", exact: true }).click();
-  await expect(collections).toBeFocused();
+  await expect(filterButton(library)).toBeFocused();
   // The selection bar: Add to collection lists the collections, then New collection.
   await select(page, "images/placeholder.svg"); await select(page, "images/studio-desk.svg");
   const bar = library.getByRole("group", { name: "Selected files", exact: true });
@@ -47,14 +48,14 @@ test("create a collection, add two files, view it, take one out (it stays under 
   await expect.poll(() => members(page, "Studio picks")).toEqual(["images/placeholder.svg", "images/studio-desk.svg"]);
   await expect(bar).toBeHidden();
   // View it; inside a collection, Take out and Remove file are separate actions.
-  await collections.selectOption("Studio picks");
+  await filterTo(library, "Studio picks");
   await expect.poll(() => tileNames(page)).toEqual(["images/placeholder.svg", "images/studio-desk.svg"]);
   await select(page, "images/placeholder.svg");
   await expect(bar.getByRole("button", { name: "Remove file", exact: true })).toBeVisible();
   await bar.getByRole("button", { name: "Take out of Studio picks", exact: true }).click();
   await expect.poll(() => tileNames(page)).toEqual(["images/studio-desk.svg"]);
   await expect(page.locator(".editor-toast__text")).toHaveText("Took 1 file out of \"Studio picks\". It stays in Media under All.");
-  await collections.selectOption("");
+  await filterTo(library, "All collections");
   await expect.poll(() => tileNames(page)).toEqual(["images/placeholder.svg", "images/studio-desk.svg"]);
   expect((await storedDraft(page, "images/placeholder.svg"))?.deleted).toBeUndefined();
   // Undo puts it back.
@@ -63,13 +64,13 @@ test("create a collection, add two files, view it, take one out (it stays under 
   await expect.poll(() => members(page, "Studio picks")).toEqual(["images/placeholder.svg", "images/studio-desk.svg"]);
   await page.locator("#explorer-toggle").click();
   await page.getByRole("tab", { name: "Media", exact: true }).click();
-  await collections.selectOption("Studio picks");
+  await filterTo(library, "Studio picks");
   await expect.poll(() => tileNames(page)).toEqual(["images/placeholder.svg", "images/studio-desk.svg"]);
 });
 
-test("More renames and deletes the viewed collection: a taken name is refused, deleting keeps its files", async ({ page, baseURL }) => {
+test("Manage collections renames and deletes the viewed collection: the view follows, a taken name is refused, deleting keeps its files", async ({ page, baseURL }) => {
   await open(page, baseURL);
-  const library = pane(page), collections = library.getByLabel("Collections", { exact: true });
+  const library = pane(page);
   await newCollectionFromManage(page, "Logos");
   await library.getByRole("button", { name: "New collection", exact: true }).click();
   await library.getByLabel("Collection name", { exact: true }).fill("Brand");
@@ -80,10 +81,15 @@ test("More renames and deletes the viewed collection: a taken name is refused, d
   await library.getByRole("button", { name: "Add to collection", exact: true }).click();
   await page.getByRole("menu", { name: "Add to collection", exact: true }).getByRole("menuitem", { name: "Logos", exact: true }).click();
   await expect.poll(() => members(page, "Logos")).toEqual(["images/studio-desk.svg"]);
-  await collections.selectOption("Logos");
-  const more = library.getByRole("button", { name: "More", exact: true }), menu = page.getByRole("menu", { name: "More", exact: true });
+  await filterTo(library, "Logos");
+  await expect(filterButton(library)).toHaveAccessibleName("Filter: Logos");
+  // More holds only the tools now; the viewed collection is renamed in Manage collections.
+  await library.getByRole("button", { name: "More", exact: true }).click();
+  await expect(page.getByRole("menu", { name: "More", exact: true }).getByRole("menuitem", { name: /collection/ })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await filterTo(library, "Manage collections…");
   // Rename to a taken name, in another case: it says so and nothing merges.
-  await more.click(); await menu.getByRole("menuitem", { name: "Rename collection", exact: true }).click();
+  await library.getByRole("button", { name: "Rename Logos", exact: true }).click();
   const name = library.getByLabel("Collection name", { exact: true });
   await expect(name).toHaveValue("Logos"); await expect(name).toBeFocused();
   await name.fill("brand");
@@ -94,24 +100,24 @@ test("More renames and deletes the viewed collection: a taken name is refused, d
   expect((await records(page)).collections).toEqual(["Logos", "Brand"]);
   await name.fill("Brand logos"); await expect(library.locator(".media-library__problem")).toBeHidden();
   await name.press("Enter");
-  await expect(collections).toHaveValue("Brand logos");
-  await expect(more).toBeFocused();
+  await expect(library.getByRole("button", { name: "Rename Brand logos", exact: true })).toBeFocused();
   await expect.poll(() => members(page, "Brand logos")).toEqual(["images/studio-desk.svg"]);
-  await expect(collections.locator("option")).toHaveText(["All collections", "Brand logos", "Brand", "Manage collections…"]);
-  // Delete the viewed collection: only the group goes.
-  await more.click(); await menu.getByRole("menuitem", { name: "Delete collection", exact: true }).click();
-  await expect(library.getByRole("heading", { name: "Delete the collection \"Brand logos\"?", exact: true })).toBeFocused();
+  // The view follows the rename.
+  await library.getByRole("button", { name: "Back", exact: true }).click();
+  await expect(filterButton(library)).toHaveAccessibleName("Filter: Brand logos");
+  expect(await collectionChoices(library)).toEqual(["All collections", "Brand logos", "Brand"]);
+  // Delete the viewed collection: only the group goes, and the view returns to All.
+  await filterTo(library, "Manage collections…");
+  await library.getByRole("button", { name: "Delete Brand logos", exact: true }).click();
   await expect(library.locator(".media-library__sheet")).toContainText("Its 1 file stays in Media, under All and any other collections.");
   await library.getByRole("button", { name: "Delete collection", exact: true }).click();
-  await expect(collections).toHaveValue("");
-  await expect(collections.locator("option")).toHaveText(["All collections", "Brand", "Manage collections…"]);
+  await expect(library.locator(".media-library__collection-row")).toHaveCount(1);
+  await library.getByRole("button", { name: "Back", exact: true }).click();
+  await expect(filterButton(library)).toHaveAccessibleName("Filter: All");
+  expect(await collectionChoices(library)).toEqual(["All collections", "Brand"]);
   await expect.poll(() => tileNames(page)).toEqual(["images/placeholder.svg", "images/studio-desk.svg"]);
   expect((await records(page)).collections).toEqual(["Brand"]);
   expect((await storedDraft(page, "images/studio-desk.svg"))?.deleted).toBeUndefined();
-  // More offers Rename and Delete only while viewing a collection.
-  await more.click();
-  await expect(menu.getByRole("menuitem", { name: "Rename collection", exact: true })).toHaveCount(0);
-  await page.keyboard.press("Escape");
 });
 
 test("Manage collections lists every collection with Rename and Delete, and refuses a taken name", async ({ page, baseURL }) => {
@@ -200,12 +206,12 @@ test("starting collections from named folders appear in Collections; dated and s
     Object.assign(window, { startingProbe: { dispose: () => { view.dispose(); host.remove(); } } });
     await view.ready;
   });
-  const library = pane(page), collections = library.getByLabel("Collections", { exact: true });
-  await expect(collections.locator("option")).toHaveText(["All collections", "Logos", "Brand assets", "Manage collections…"]);
-  await collections.selectOption("Logos");
+  const library = pane(page);
+  await expect.poll(() => collectionChoices(library)).toEqual(["All collections", "Logos", "Brand assets"]);
+  await filterTo(library, "Logos");
   await expect.poll(() => tileNames(page)).toEqual(["images/logos/techies.png"]);
-  await collections.selectOption({ label: "Manage collections…" });
-  await expect(collections).toHaveValue("Logos");
+  await filterTo(library, "Manage collections…");
+  await expect(filterButton(library)).toHaveAccessibleName("Filter: Logos");
   await expect(library.locator(".media-library__collection-row")).toHaveText([/Logos\s*1 file/, /Brand assets\s*1 file/]);
   await page.evaluate(() => (window as any).startingProbe.dispose());
 });
@@ -257,7 +263,7 @@ test("collections named like the details fields keep their own ticks across a re
 
 test("New collection from the selection bar holds both files in one Undo step; Remove file inside a collection removes the file", async ({ page, baseURL }) => {
   await open(page, baseURL);
-  const library = pane(page), collections = library.getByLabel("Collections", { exact: true });
+  const library = pane(page);
   const undo = () => page.evaluate(async () => { await (await import("/src/components/code-editor.ts")).runVisualHistory("undo", "index.html"); });
   await select(page, "images/placeholder.svg"); await select(page, "images/studio-desk.svg");
   await library.getByRole("button", { name: "Add to collection", exact: true }).click();
@@ -269,17 +275,17 @@ test("New collection from the selection bar holds both files in one Undo step; R
   await expect(library.getByRole("group", { name: "Selected files", exact: true })).toBeHidden();
   await undo();
   await expect.poll(async () => (await records(page)).collections ?? []).toEqual([]);
-  await expect(collections.locator("option")).toHaveText(["All collections", "Manage collections…"]);
+  await expect.poll(() => collectionChoices(library)).toEqual(["All collections"]);
   await page.evaluate(async () => { await (await import("/src/components/code-editor.ts")).runVisualHistory("redo", "index.html"); });
   await expect.poll(() => members(page, "Pair")).toEqual(["images/placeholder.svg", "images/studio-desk.svg"]);
   // Inside the collection, Remove file is today's delete: the file itself goes (as a draft).
-  await collections.selectOption("Pair");
+  await filterTo(library, "Pair");
   await select(page, "images/placeholder.svg");
   await library.getByRole("button", { name: "Remove file", exact: true }).click();
   await library.getByRole("button", { name: "Remove file", exact: true }).click();
   await expect.poll(async () => (await storedDraft(page, "images/placeholder.svg"))?.deleted).toBe(true);
   await expect.poll(() => tileNames(page)).toEqual(["images/studio-desk.svg"]);
-  await collections.selectOption("");
+  await filterTo(library, "All collections");
   await expect.poll(() => tileNames(page)).toEqual(["images/studio-desk.svg"]);
   await undo();
   await expect.poll(async () => (await storedDraft(page, "images/placeholder.svg"))?.deleted).toBeUndefined();
@@ -316,10 +322,10 @@ const tray = (page: Page) => pane(page).getByRole("region", { name: "Files being
 
 test("dropping two images while viewing a collection adds both to it in one Undo step", async ({ page, baseURL }) => {
   await open(page, baseURL);
-  const library = pane(page), collections = library.getByLabel("Collections", { exact: true });
+  const library = pane(page);
   await newCollectionFromManage(page, "Studio picks");
   await library.getByRole("button", { name: "Back", exact: true }).click();
-  await collections.selectOption("Studio picks");
+  await filterTo(library, "Studio picks");
   await expect.poll(() => tileNames(page)).toEqual([]);
   await dropOnMedia(page, [{ name: "red-dot.svg", text: svg("red") }, { name: "blue-dot.svg", text: svg("blue") }]);
   await expect(tray(page)).toBeVisible();
@@ -363,14 +369,13 @@ test("cancelling one file mid-way keeps the other; the grid stays usable while f
   await expect(tray(page)).toBeHidden();
 });
 
-test("files added while a search hides them offer Show new files; Add new file follows the same path and under All joins no collection", async ({ page, baseURL }) => {
+test("files added while a search hides them offer Show new files; + follows the same path and under All joins no collection", async ({ page, baseURL }) => {
   await open(page, baseURL);
   const library = pane(page), search = library.getByLabel("Search media", { exact: true });
   const recordsBefore = await storedDraft(page, ".editor/media.json");
   await search.fill("studio");
-  await library.getByRole("button", { name: "More", exact: true }).click();
   const chooser = page.waitForEvent("filechooser");
-  await page.getByRole("menu", { name: "More", exact: true }).getByRole("menuitem", { name: "Add new file", exact: true }).click();
+  await library.getByRole("button", { name: "Add files", exact: true }).click();
   await (await chooser).setFiles([{ name: "zebra.svg", mimeType: "image/svg+xml", buffer: Buffer.from(svg("black")) }]);
   await expect(tray(page).getByRole("status")).toHaveText("Added 1 file");
   await expect.poll(() => tileNames(page)).toEqual(["images/studio-desk.svg"]);
@@ -388,18 +393,19 @@ test("files added while a search hides them offer Show new files; Add new file f
 
 test("renaming the collection while its files are prepared: they join it under its new name", async ({ page, baseURL }) => {
   await open(page, baseURL);
-  const library = pane(page), collections = library.getByLabel("Collections", { exact: true });
+  const library = pane(page);
   await newCollectionFromManage(page, "Studio");
   await library.getByRole("button", { name: "Back", exact: true }).click();
-  await collections.selectOption("Studio");
+  await filterTo(library, "Studio");
   const hold = await holdFirstPreparation(page);
   await dropOnMedia(page, [{ name: "late.png", text: svg("green") }]);
   await hold.started();
-  await library.getByRole("button", { name: "More", exact: true }).click();
-  await page.getByRole("menu", { name: "More", exact: true }).getByRole("menuitem", { name: "Rename collection", exact: true }).click();
+  await filterTo(library, "Manage collections…");
+  await library.getByRole("button", { name: "Rename Studio", exact: true }).click();
   await library.getByLabel("Collection name", { exact: true }).fill("Picks");
   await library.getByRole("button", { name: "Rename", exact: true }).click();
-  await expect(collections).toHaveValue("Picks");
+  await library.getByRole("button", { name: "Back", exact: true }).click();
+  await expect(filterButton(library)).toHaveAccessibleName("Filter: Picks");
   hold.free();
   await expect(tray(page).getByRole("status")).toHaveText("Added 1 file");
   await expect.poll(() => members(page, "Picks")).toEqual(["media/images/late.png"]);
@@ -411,7 +417,7 @@ test("Review… stops automatic adding and opens Optimise for the files not adde
   const library = pane(page);
   await newCollectionFromManage(page, "Studio picks");
   await library.getByRole("button", { name: "Back", exact: true }).click();
-  await library.getByLabel("Collections", { exact: true }).selectOption("Studio picks");
+  await filterTo(library, "Studio picks");
   const hold = await holdFirstPreparation(page);
   await dropOnMedia(page, [{ name: "first.png", text: svg("red") }, { name: "second.svg", text: svg("blue") }]);
   await hold.started();
@@ -434,7 +440,7 @@ test("a file that cannot be prepared stays in the tray with its reason and Revie
   const library = pane(page);
   await newCollectionFromManage(page, "Studio picks");
   await library.getByRole("button", { name: "Back", exact: true }).click();
-  await library.getByLabel("Collections", { exact: true }).selectOption("Studio picks");
+  await filterTo(library, "Studio picks");
   await pane(page).evaluate((element, good) => {
     const transfer = new DataTransfer();
     transfer.items.add(new File([good], "good.svg", { type: "image/svg+xml" }));

@@ -10,28 +10,6 @@ export function pruneLibrarySelection(items: MediaLibrary["items"], selected: Se
   for (const path of [...selected]) if (!items.some((item) => item.path === path)) selected.delete(path);
 }
 
-/** The Collections option that opens Manage collections. Collection names are trimmed, so none starts with a space. */
-export const MANAGE_COLLECTIONS = " manage";
-
-/** "All collections"; a phone's One bar shows just "All" when it is chosen (slice 107). */
-export function allCollectionsOption() {
-  const option = new Option("All", ""), rest = document.createElement("span");
-  rest.className = "media-library__long"; rest.textContent = " collections"; option.append(rest);
-  // A native select shows only an option's label, the same at every width: the short one.
-  if (!CSS.supports("appearance", "base-select")) option.label = "All";
-  return option;
-}
-
-/** All collections, then each collection in the library's order, then (in the Media pane)
- * Manage collections; a vanished choice falls back to All. */
-export function rebuildLibraryCollections(select: HTMLSelectElement, collections: string[], manage: boolean, chosen = select.value) {
-  // The customizable select's button (showing the chosen option) stays first.
-  select.replaceChildren(...[...select.children].filter(child => child instanceof HTMLButtonElement),
-    allCollectionsOption(), ...collections.map(name => new Option(name, name)),
-    ...manage ? [document.createElement("hr"), new Option("Manage collections…", MANAGE_COLLECTIONS)] : []);
-  select.value = collections.includes(chosen) ? chosen : "";
-}
-
 /** A control's identity across redraws: membership boxes carry their own key, since a collection
  * may share its name with a field ("Decorative"). */
 const formKey = (control: Element) => control.getAttribute("data-form-key") ?? control.getAttribute("aria-label");

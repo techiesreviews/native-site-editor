@@ -9,12 +9,15 @@ The [code map](../agents/code-map.md) points to the host controllers.
 
 ## Tiles and the One bar
 
-The One bar holds Search, Collections and More in one row, including on phones.
-Search combines with the collection and kind filters. More offers Add new file,
-Adding settings, Clean up, Improve images, Recently removed, To check, Show kinds
-and Grid/List. Collection management is available in Collections and in More
-while viewing a collection. An empty result offers one way back at a time: all
-kinds, all collections, then clearing the search.
+The One bar holds Search, then Filter, + and More as one group, in one row,
+including on phones. Filter lists the collections (with Manage collections…),
+Show (All, Images, Video, Audio, Documents) and View (Grid, List); its button
+names the choice in short ("All", "Garden · Video"), and on phones shows only its
+funnel until something narrows the view. + (Add files) opens the file chooser;
+dropping files anywhere adds them too. More holds only the tools: Clean up,
+Improve images, To check, Recently removed and Adding settings. Search combines
+with the collection and kind filters. An empty result offers one way back at a
+time: all kinds, all collections, then clearing the search.
 
 Tiles show one Image family or other Media file. A picture fills the square
 without changing the stored file. Video uses its still with a duration; audio
@@ -113,7 +116,7 @@ explorer. The persistent Media screen has no modal backdrop or focus trap.
 
 ## List view, phones and refresh
 
-More → List shows selection, thumbnail, name, size, duration when known and usage.
+Filter → List shows selection, thumbnail, name, size, duration when known and usage.
 Wide rows share aligned columns and keep names complete. Below 520 px each row
 uses two lines: name with size, then the 44 px usage control. Long phone names
 shorten in the middle, keeping the end and extension; the accessible name, tooltip

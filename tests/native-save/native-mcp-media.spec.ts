@@ -73,9 +73,8 @@ test("an agent describes and places a picture already in Media; To check lists i
   await page.locator("#explorer-toggle").click();
   await page.getByRole("tab", { name: "Media", exact: true }).click();
   const library = page.getByRole("region", { name: "Media", exact: true });
-  await library.getByRole("button", { name: "More", exact: true }).click();
   const chooser = page.waitForEvent("filechooser");
-  await page.getByRole("menuitem", { name: "Add new file", exact: true }).click();
+  await library.getByRole("button", { name: "Add files", exact: true }).click();
   const png = await page.evaluate(() => {
     const canvas = document.createElement("canvas"); canvas.width = 24; canvas.height = 16;
     const ctx = canvas.getContext("2d")!; ctx.fillStyle = "#369"; ctx.fillRect(0, 0, 24, 16);
@@ -166,9 +165,8 @@ test("an agent sets Square and focus, then trims that place; Media shows the cop
   await page.locator("#explorer-toggle").click();
   await page.getByRole("tab", { name: "Media", exact: true }).click();
   const library = page.getByRole("region", { name: "Media", exact: true });
-  await library.getByRole("button", { name: "More", exact: true }).click();
   const chooser = page.waitForEvent("filechooser");
-  await page.getByRole("menuitem", { name: "Add new file", exact: true }).click();
+  await library.getByRole("button", { name: "Add files", exact: true }).click();
   const png = await page.evaluate(() => {
     const canvas = document.createElement("canvas"); canvas.width = 120; canvas.height = 80;
     const ctx = canvas.getContext("2d")!; ctx.fillStyle = "#369"; ctx.fillRect(0, 0, 120, 80);

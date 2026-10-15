@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { accepts, filterMediaLibrary, mediaFamilyUsage, mediaKind, mediaLibraryRecovery, mediaLibraryTiles, nameEnds } from "../src/page-builder/media-library-filter";
+import { accepts, filterMediaLibrary, filterSummary, MEDIA_KIND_CHOICES, mediaFamilyUsage, mediaKind, mediaLibraryRecovery, mediaLibraryTiles, nameEnds } from "../src/page-builder/media-library-filter";
 import type { MediaLibrary, MediaLibraryItem } from "../src/page-builder/media-picker";
 import type { MediaLibraryFilter } from "../src/page-builder/media-library-filter";
 
@@ -235,4 +235,14 @@ test("a record's added time is read leniently: missing or unreadable values leav
   const { mediaAddedTime } = await import("../src/page-builder/media-library-filter");
   assert.equal(mediaAddedTime({ added: "2026-10-15T08:30:00.000Z" }), Date.UTC(2026, 9, 15, 8, 30));
   for (const record of [undefined, {}, { added: "soon" }, { added: 12 }]) assert.equal(mediaAddedTime(record), undefined);
+});
+
+test("Filter's button names the active choice in short (slice 116)", () => {
+  assert.equal(filterSummary("", "all"), "All");
+  assert.equal(filterSummary("Garden", "all"), "Garden");
+  assert.equal(filterSummary("", "video"), "Video");
+  assert.equal(filterSummary("Garden", "video"), "Garden · Video");
+  assert.equal(filterSummary("Garden", "document"), "Garden · Documents");
+  // Show's choices, in Filter's order.
+  assert.deepEqual(MEDIA_KIND_CHOICES.map(([, label]) => label), ["All", "Images", "Video", "Audio", "Documents"]);
 });

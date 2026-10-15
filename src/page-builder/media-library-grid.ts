@@ -14,8 +14,10 @@ import { mediaTileWhole, tilePictureUrl } from "./media-tile-picture";
 /** What the grid keeps between draws; the view owns it. */
 export interface LibraryGridState {
   kind: MediaKindChoice; selected: Set<string>; observers: Set<IntersectionObserver>;
+  /** The collection shown (Filter); empty for All collections. */
+  collection: string;
   accept?: string; modal: boolean;
-  /** Tiles, or the list (from More) with each file's size and usage. */
+  /** Tiles, or the list (from Filter's View) with each file's size and usage. */
   layout: "grid" | "list";
   /** The picker's chosen file. */
   chosen?: string;
@@ -44,8 +46,8 @@ export interface LibraryGridHost {
 
 /** Draw the screen-reader count and one square tile (or list row) per Image family, or a way back when nothing matches. */
 export function drawLibraryGrid(shell: LibraryShell, library: MediaLibrary, state: LibraryGridState, h: LibraryGridHost) {
-  const { search, collections, summary, grid, browse, dialog } = shell;
-  const { selected, observers } = state;
+  const { search, summary, grid, browse, dialog } = shell;
+  const { selected, observers, collection } = state;
   const active = document.activeElement;
   const card = active instanceof Element ? active.closest<HTMLElement>(".media-library__card") : null;
   const browseFocus = active instanceof HTMLButtonElement && card ? {
@@ -54,19 +56,19 @@ export function drawLibraryGrid(shell: LibraryShell, library: MediaLibrary, stat
   } : undefined;
   observers.forEach((observer) => observer.disconnect()); observers.clear();
   const tiles = mediaLibraryTiles(library.items, library.onlineVideos), stills = mediaTileStills(library.items.map(item => item.path), library.metadata);
-  const filter: MediaLibraryFilter = { query: search.value, collection: collections.value, kind: state.kind, accept: state.accept };
+  const filter: MediaLibraryFilter = { query: search.value, collection, kind: state.kind, accept: state.accept };
   const filtered = filterMediaLibrary({ ...library, items: tiles }, filter);
   const online = state.online ? filterOnlineVideos(library.onlineVideos, filter) : [], onlineCount = state.online ? library.onlineVideos?.length ?? 0 : 0;
-  summary.textContent = `${filtered.length + online.length} of ${tiles.length + onlineCount} files${collections.value ? ` · ${collections.value}` : ""}`;
-  syncSelectionBar(shell, selected.size, collections.value);
+  summary.textContent = `${filtered.length + online.length} of ${tiles.length + onlineCount} files${collection ? ` · ${collection}` : ""}`;
+  syncSelectionBar(shell, selected.size, collection);
   grid.replaceChildren();
   const list = state.layout === "list";
   grid.classList.toggle("media-library__grid--list", list);
   if (!filtered.length && !online.length) {
     const empty = node("div", "media-library__empty");
     if (!library.items.length && !onlineCount) empty.textContent = state.modal
-      ? "Your images belong here. Drop one here, or choose Add new file in More."
-      : "Your media belongs here. Drop files here, or choose Add new file in More.";
+      ? "Your images belong here. Drop one here, or use + to add one."
+      : "Your media belongs here. Drop files here, or use + to add them.";
     else {
       const recovery = mediaLibraryRecovery(filter);
       empty.append(node("p", "", "No matching media"));
@@ -97,7 +99,7 @@ export function drawLibraryGrid(shell: LibraryShell, library: MediaLibrary, stat
       const checkbox = input(`Select ${item.path}`, "checkbox"); checkbox.checked = selected.has(item.path);
       checkbox.addEventListener("change", () => {
         checkbox.checked ? selected.add(item.path) : selected.delete(item.path);
-        syncSelectionBar(shell, selected.size, collections.value);
+        syncSelectionBar(shell, selected.size, collection);
       });
       selectLabel.append(checkbox);
     }
