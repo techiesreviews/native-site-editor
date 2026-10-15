@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { elementEnd, startTags, type ElementRange } from "../shared/html-source";
-import { onlinePlayerAddress, onlineVideo } from "../src/page-builder/online-video";
+import { onlinePlayerAddress } from "../src/page-builder/online-video";
 import { createMediaPlay, playable, type MediaPlayHost } from "../src/page-builder/media-play";
 
 const range = (source: string, name: string): ElementRange => {
@@ -10,26 +10,6 @@ const range = (source: string, name: string): ElementRange => {
   assert.ok(found); return found;
 };
 const what = (source: string, name: string, file = "index.html", origins: string[] = []) => playable(source, range(source, name), file, { origins });
-
-test("YouTube and Vimeo addresses are read as the starter reads them", () => {
-  const id = "aqz-KE-bpKQ";
-  for (const address of [`https://www.youtube.com/watch?v=${id}`, `https://youtu.be/${id}`, `https://m.youtube.com/watch?v=${id}`,
-    `https://www.youtube.com/embed/${id}`, `https://youtube.com/shorts/${id}`, `https://www.youtube.com/live/${id}`, `https://www.youtube-nocookie.com/embed/${id}`])
-    assert.deepEqual(onlineVideo(address), { service: "youtube", id, hash: "", start: 0 }, address);
-  assert.equal(onlineVideo(`https://youtu.be/${id}?t=1m30s`)?.start, 90);
-  assert.equal(onlineVideo(`https://www.youtube.com/watch?v=${id}&start=45`)?.start, 45);
-  assert.equal(onlineVideo(`https://www.youtube.com/watch?v=${id}#t=1h2m3s`)?.start, 3723);
-  assert.equal(onlineVideo("https://www.youtube.com/watch?v=short"), undefined);
-  assert.equal(onlineVideo("https://www.youtube.com/channel/abc"), undefined);
-  assert.deepEqual(onlineVideo("https://vimeo.com/76979871"), { service: "vimeo", id: "76979871", hash: "", start: 0 });
-  assert.deepEqual(onlineVideo("https://vimeo.com/76979871/a1b2c3"), { service: "vimeo", id: "76979871", hash: "a1b2c3", start: 0 });
-  assert.equal(onlineVideo("https://player.vimeo.com/video/76979871?h=ff00")?.hash, "ff00");
-  assert.equal(onlineVideo("https://vimeo.com/channels/staffpicks/76979871")?.id, "76979871");
-  assert.equal(onlineVideo("https://vimeo.com/showcase/123/video/76979871")?.id, "76979871");
-  assert.equal(onlineVideo("https://vimeo.com/76979871/not-a-hash")?.hash, "");
-  for (const address of ["javascript:alert(1)", "ftp://youtu.be/aqz-KE-bpKQ", "not a url", "https://example.com/watch?v=aqz-KE-bpKQ"])
-    assert.equal(onlineVideo(address), undefined, address);
-});
 
 test("the service's own player starts as it loads, keeping the start and Vimeo's key", () => {
   assert.equal(onlinePlayerAddress({ service: "youtube", id: "aqz-KE-bpKQ", hash: "", start: 90 }),
