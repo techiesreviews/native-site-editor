@@ -3,6 +3,8 @@ import { gifIsAnimated, webpIsAnimated, pngIsAnimated, strippedImageSource } fro
 import { RESPONSIVE_COPY_WIDTHS } from "./media-families";
 export interface MediaOptimiseOptions {
   maxWidth: number | null; quality: number; format: "webp" | "png" | "jpeg" | "avif"; speed?: number; responsive: boolean; keepOriginal: boolean; sharing?: boolean;
+  /** One JPEG of the whole picture on white at this size: no format switch for transparency, no smaller-source swap (slice 95). */
+  plainJpeg?: boolean;
 }
 export const DEFAULT_MEDIA_OPTIMISE: MediaOptimiseOptions = { maxWidth: 2400, quality: 80, format: "webp", responsive: true, keepOriginal: false };
 export type MediaImageQuality = "smaller" | "balanced" | "higher" | "smallest";

@@ -116,7 +116,7 @@ for (const preset of ["balanced", "smallest"] as const) test(`${preset}: sharing
   f.ports.encode = async (file, options, ...rest) => {
     if (options.format === "jpeg") {
       assert.equal(file.size, 300000);
-      assert.deepEqual(options, { maxWidth: 2400, quality: 82, format: "jpeg", responsive: false, keepOriginal: false });
+      assert.deepEqual(options, { maxWidth: 2400, quality: 82, format: "jpeg", plainJpeg: true, responsive: false, keepOriginal: false });
     }
     return encode(file, options, ...rest);
   };

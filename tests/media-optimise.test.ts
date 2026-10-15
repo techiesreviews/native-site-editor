@@ -296,13 +296,21 @@ test("worker encodes only needed fallbacks, keeps copies in the chosen format, a
     assert.equal(calls.length, 0);
     fills.length = 0; draws.length = 0;
     const jpegPicture = await run(new File([png()], "transparent.png", { type: "image/png" }),
-      { maxWidth: 2400, quality: 82, format: "jpeg", responsive: false, keepOriginal: false });
+      { maxWidth: 2400, quality: 82, format: "jpeg", plainJpeg: true, responsive: false, keepOriginal: false });
     assert.equal(jpegPicture.outputs.length, 1);
     assert.equal(jpegPicture.outputs[0].blob.type, "image/jpeg");
     assert.deepEqual([jpegPicture.outputs[0].width, jpegPicture.outputs[0].height], [2000, 1000]);
     assert.deepEqual(calls, [{ width: 2000, type: "image/jpeg", quality: .82 }]);
     assert.deepEqual(fills, [{ style: "#fff", args: [0, 0, 2000, 1000] }]);
     assert.deepEqual(draws, [{ width: 2000, height: 1000, args: [0, 0, 2000, 1000] }]);
+    // The Optimise dialog's ordinary JPEG keeps the transparency switch and the never-larger rule.
+    fills.length = 0;
+    const ordinaryJpeg = await run(new File([png()], "transparent.png", { type: "image/png" }),
+      { maxWidth: 2400, quality: 82, format: "jpeg", responsive: false, keepOriginal: false });
+    assert.notEqual(ordinaryJpeg.outputs[0].blob.type, "image/jpeg");
+    assert.deepEqual(fills, []);
+    await assert.rejects(run(new File([png()], "transparent.png", { type: "image/png" }),
+      { maxWidth: 2400, quality: 82, format: "webp", plainJpeg: true, responsive: false, keepOriginal: false }), /plain JPEG/);
     const full = await run(undefined, { ...SOCIAL_IMAGE_OPTIONS, sharing: true }, { x: 0, y: 0, width: 1, height: 1 });
     assert.equal(full.outputs[0].extension, "jpg");
 

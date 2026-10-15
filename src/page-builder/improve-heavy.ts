@@ -220,7 +220,7 @@ export async function prepareImproveHeavy(ctx: MediaWorkspaceContext, request: I
             } else {
               const blob = await ctx.blob(original); guard();
               const encoded = await (ports.encode ?? optimiseMedia)(new File([blob], original.split("/").at(-1)!, { type: blob.type || uploadImageType(original) }),
-                { maxWidth: reused.has(original) ? image.width! : mediaImageRecipe(quality).maxWidth, quality: 82, format: "jpeg", responsive: false, keepOriginal: false }, request.signal); guard();
+                { maxWidth: reused.has(original) ? image.width! : mediaImageRecipe(quality).maxWidth, quality: 82, format: "jpeg", plainJpeg: true, responsive: false, keepOriginal: false }, request.signal); guard();
               const jpeg = encoded.outputs.find(output => output.variantWidth === undefined);
               if (!jpeg || jpeg.extension !== "jpg" || jpeg.blob.type !== "image/jpeg" || jpeg.width !== image.width || jpeg.height !== image.height)
                 throw new Error(`${old}'s sharing picture could not be prepared as a JPEG at the lighter picture's size. Nothing was improved.`);
