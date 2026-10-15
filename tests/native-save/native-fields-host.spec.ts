@@ -53,7 +53,8 @@ test("form method and input name use native fields without changing other attrib
 });
 
 test("a detached native field refuses an agent source replacement", async ({ page }) => {
-  await frame(page).locator("video").click({ position: { x: 5, y: 5 } });
+  // The embed's Title (a video's fields moved to its Media popup, slice 119).
+  await page.getByRole("tree", { name: "Page structure" }).getByRole("treeitem", { name: "iframe", exact: true }).click();
   await bar(page).getByRole("button", { name: "Title", exact: true }).click();
   const field = page.getByRole("textbox", { name: "Title", exact: true });
   await field.evaluate(element => Object.assign(window, { detachedNativeField: element }));
@@ -74,7 +75,7 @@ test("a detached native field refuses an agent source replacement", async ({ pag
   await page.keyboard.press("Escape");
   await bar(page).getByRole("button", { name: "Title", exact: true }).click();
   await page.getByRole("textbox", { name: "Title", exact: true }).fill("Fresh retry");
-  await expect.poll(() => source(page)).toContain('title="Fresh retry"');
+  await expect.poll(() => source(page)).toContain('src="about:blank" title="Fresh retry"');
   expect(await source(page)).toContain("<!-- agent changed source -->");
 });
 

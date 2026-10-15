@@ -165,8 +165,11 @@ export async function openMediaSpotPopup(options: MediaSpotPopupOptions) {
   const loop = node("input", "media-spot__switch"); loop.type = "checkbox"; loop.setAttribute("role", "switch");
   loop.setAttribute("aria-label", "Loop silently");
   loop.addEventListener("change", () => run(async () => {
-    const at = now(), on = loop.checked;
+    now();
+    const on = loop.checked;
     const { createVideoPlaces } = await import("./media-video-place");
+    // The popup's proof again after the import, handed over with no await in between.
+    const at = now();
     await createVideoPlaces(ports, options.workspaceContext, options.load).toggleLooping(target.path, target.node, at.source, on);
     return on ? "Loops silently, over and over." : "Plays with sound when pressed.";
   }));
@@ -279,6 +282,7 @@ export async function openMediaSpotPopup(options: MediaSpotPopupOptions) {
     try { at = now(); } catch (error) { say((error as Error).message); return; }
     const { openMediaPicker } = await options.load();
     if (closed) return;
+    try { at = now(); } catch (error) { say((error as Error).message); return; }
     // The spot changes: the popup closes, and the picker puts the chosen file in its place as one Undo step.
     close();
     const proof = { stamp, epoch, source: at.source };

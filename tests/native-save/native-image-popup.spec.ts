@@ -10,7 +10,8 @@ import { storedDraft, storedDrafts } from "./drafts";
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const bar = (page: Page) => page.getByRole("toolbar", { name: "Edit bar" });
 const popup = (page: Page) => page.getByRole("dialog", { name: "Image", exact: true });
-const picker = (page: Page) => page.getByRole("dialog", { name: "Choose image", exact: true });
+// A picture spot's Replace also lists videos (slice 119): its picker is "Choose image or video".
+const picker = (page: Page) => page.getByRole("dialog", { name: /^Choose image( or video)?$/ });
 // Named "Image" with its badge (the bar's name chip is "Image" too).
 const imageButton = (page: Page) => bar(page).locator(".edit-bar__media");
 const dot = (page: Page) => popup(page).getByRole("slider", { name: "Focus dot" });
@@ -41,7 +42,7 @@ test("Image → Square, move the focus dot, Done: the page has the shape and obj
   const before = await source(page);
   await frame(page).locator(".hero img").click();
   // One Image button with its state badge, where Choose image… was.
-  await expect(imageButton(page)).toHaveText("ImageOriginal");
+  await expect(imageButton(page)).toHaveText("MediaOriginal");
   await expect(bar(page).getByRole("button", { name: "Choose image…" })).toHaveCount(0);
   await imageButton(page).click();
   await expect(popup(page)).toBeVisible();
@@ -62,7 +63,7 @@ test("Image → Square, move the focus dot, Done: the page has the shape and obj
   await expect.poll(() => heroTag(page)).toMatch(/style="aspect-ratio: 1 \/ 1; object-fit: cover; object-position: 20% 50%"/);
   await expect(frame(page).locator(".hero img")).toHaveCSS("object-position", "20% 50%");
   await frame(page).locator(".hero img").click();
-  await expect(imageButton(page)).toHaveText("ImageSquare");
+  await expect(imageButton(page)).toHaveText("MediaSquare");
   // Done was one step.
   await page.locator(".code-editor__undo").first().click();
   await expect.poll(() => source(page)).toBe(before);
@@ -421,7 +422,7 @@ test("Free trim saves a -crop copy for this spot only; re-opening shows the trim
   expect(paths).toContain("media/images/quarters-crop.webp");
   expect((await storedDraft(page, original))?.deleted).toBeUndefined();
   await frame(page).locator(".hero img").click();
-  await expect(imageButton(page)).toHaveText("ImageTrimmed");
+  await expect(imageButton(page)).toHaveText("MediaTrimmed");
 
   // Re-opened and left as it was, Done changes nothing.
   const trimmed = await source(page), drafts = JSON.stringify(await storedDrafts(page));
@@ -453,7 +454,7 @@ test("Free trim saves a -crop copy for this spot only; re-opening shows the trim
   expect(again.removed.map((entry: { path: string }) => entry.path)).toContain("media/images/quarters-crop.webp");
   // Replace on a trimmed spot, then zoom: the copy is cut from the new picture; the old copy, used nowhere else, goes.
   await frame(page).locator(".hero img").click();
-  await expect(imageButton(page)).toHaveText("ImageTrimmed");
+  await expect(imageButton(page)).toHaveText("MediaTrimmed");
   await imageButton(page).click();
   await popup(page).getByRole("button", { name: "Replace", exact: true }).click();
   await picker(page).locator('input[name="media-upload"]').setInputFiles({ name: "Second.jpg", mimeType: "image/jpeg", buffer: Buffer.from(await quarters(page), "base64") });
@@ -804,7 +805,7 @@ test("a slotted component image opens on its shape; other choices and restoring 
   const before = await source(page);
   const tag = async () => (await source(page)).match(/<img[^>]*slot="image"[^>]*>/)?.[0] ?? "";
   await image.click();
-  await expect(imageButton(page)).toHaveText("ImagePhoto card's shape");
+  await expect(imageButton(page)).toHaveText("MediaPhoto card's shape");
   await imageButton(page).click();
   await expect(popup(page).getByRole("button", { name: "Shape: Photo card's shape (4:3)", exact: true })).toBeVisible();
   await expect(dot(page)).toBeVisible();
