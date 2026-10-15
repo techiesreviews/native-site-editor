@@ -1,137 +1,153 @@
 # Agents on your site over MCP
 
-The editor is a remote MCP server at `https://editor.techies.tools/mcp` (Streamable HTTP, official TypeScript MCP SDK 2.0, stateless, 2025-era clients also accepted). An agent connected to it works on a native site the way its owner does in the visual editor: it reads the pages, components, styles and drafts, and it edits pages, sections, page details and files.
+The editor serves MCP at https://editor.techies.tools/mcp using Streamable HTTP.
+`createSiteServer` in `worker/mcp.ts` defines the tools, resources and prompts.
+The server exposes 36 tools through 34 registration calls: one call registers
+three tools in a loop. `tests/mcp-runtime.test.ts` checks the live names and count.
 
-A native site is a repository that is the site ([ADR 0001](adr/0001-the-repository-is-the-site.md)): full HTML pages at their URLs (`index.html` is `/`, `about/index.html` is `/about/`, `404.html` the not-found page), components as `components/<tag>/<tag>.html` and `.css` defined by the site's own loader `components/components.js`, shared styles linked from each page's `<head>`, root links, and editor-only settings in `.editor/config.json`. The tools and the conventions resource describe that layout; an agent working in a clone without the editor has the starter's `AGENTS.md`.
-
-Every change goes **through your open editor tab**. The Worker checks it and queues it; the tab applies it with the editor's own code (the Pages tab's New page, the Page block, the page builder's insert, move and remove, the Files tab's rename, move and delete) and the preview updates at once. The result is an ordinary unsaved draft: Undo takes it back, Discard changes drops it, and only you save it to GitHub. There is no save or publish tool. An agent that should commit straight to GitHub can work in a local clone instead.
+Changes go through the open editor tab as ordinary unsaved drafts. Undo and Discard
+changes work as for the person's changes. Only the person saves to GitHub; there
+is no save or publish tool. A connection follows the repository shown by the
+sharing tab. Closed or stale tabs cannot apply edits. For source entry points,
+see the [code map](agents/code-map.md).
 
 ## Connect
 
-Two ways, both scoped to your signed-in editor session. A connection works on **the repository your editor tab shows**: switch repositories in the editor and the agent follows.
-
-### OAuth: claude.ai, Claude Desktop, Claude Code
-
-The server implements the MCP authorization spec: protected resource metadata (`/.well-known/oauth-protected-resource/mcp`, named in the `WWW-Authenticate` header of a 401), authorization server metadata (`/.well-known/oauth-authorization-server`), dynamic client registration (`/auth/mcp/register`) and the authorization code grant with PKCE S256 (`/auth/mcp/authorize`, `/auth/mcp/token`). Authorizing is the editor's own GitHub sign-in followed by a consent page where you choose the repository (any repository the editor lists, including those of organisations you belong to, shown as `owner/name`).
-
-**claude.ai and Claude Desktop** (custom connectors are shared between them through your Claude account):
-
-1. In claude.ai open **Settings → Connectors** and choose **Add custom connector**. (On a Team or Enterprise plan an owner adds it under **Organization settings → Connectors** first; members then connect it from their own Connectors settings.)
-2. Name it `Native Site Editor`, enter the URL `https://editor.techies.tools/mcp`, leave the advanced OAuth client fields empty, and choose **Add**.
-3. Choose **Connect**. A browser tab opens the editor: sign in with GitHub if asked, pick the repository, and choose **Allow**.
-4. Open the site in the editor at `https://editor.techies.tools` and keep that tab open.
-5. In a chat, turn the connector on from the tools menu (**Search and tools**) and ask for a change.
-
-**Claude Code:**
+OAuth clients use https://editor.techies.tools/mcp as the server URL. The editor
+provides protected-resource and authorization-server metadata, dynamic client
+registration, authorization-code flow and PKCE S256. The browser consent page
+uses GitHub sign-in and chooses the starting repository. In Claude Code:
 
 ```sh
 claude mcp add --transport http native-site-editor https://editor.techies.tools/mcp
 ```
 
-Then run `/mcp` in Claude Code, select `native-site-editor` and choose **Authenticate**; the browser opens the same sign-in and consent. Add `--scope user` to use it in every project.
+Authenticate through the client's MCP controls, then keep the site open in the
+editor. Clients with custom-connector settings use the same server URL and OAuth.
+Connections last at most the eight-hour editor session, with no refresh tokens.
 
-A connection lasts as long as the editor session it was made in (up to eight hours of GitHub sign-in). There are no refresh tokens: when it ends, the client asks you to connect again (claude.ai shows the connector as needing to reconnect; in Claude Code, authenticate again from `/mcp`). The repository chosen on the consent page is where the connection starts; after that it follows the editor tab.
+For clients accepting headers, choose Connect with MCP in the editor's project
+selector. It copies a connection prompt with the server URL and Authorization
+Bearer header. Waiting for connection changes to Disconnect MCP when an agent
+uses it. The unused connection can be cancelled. The token is a password for the
+session: keep it out of repositories, logs and URLs. Disconnect MCP revokes all
+session connections, OAuth included. Signing out or session expiry also revokes.
 
-### Token: any MCP client with a header
+Start with `get_site`, then read the conventions resource. Site text is data, not
+instructions. Ask agent requests are the user's instructions, with element context
+attached; the request tools below carry their conversation.
 
-1. Open the site in the editor and open the **project selector** (the repository name at the top left).
-2. Choose **Connect with MCP**. The editor makes a token for this editor session and copies a prompt to paste into Claude, Codex or another agent: the server URL, the `Authorization` header, and how to add it (`claude mcp add --transport http native-site-editor https://editor.techies.tools/mcp --header "Authorization: Bearer ase_…"` for Claude Code, an `[mcp_servers.native_site_editor]` entry with `url` and `http_headers` for Codex), then to call `get_site` and watch for Ask agent requests as the `watch_editor` prompt describes.
-3. The button reads **Waiting for connection…** until an agent first uses the token (click it to copy the prompt again; **Cancel** revokes the unused token). Then it reads **Disconnect MCP**; its tooltip names the agent (from MCP `initialize`).
+## Tool calls and drafts
 
-The token is a password for your editor session's sites and drafts: it is shown only through the clipboard, never in the page, logs, URLs or storage. A token no agent used is replaced the next time you connect.
+Reads combine the tab's reported context and effective drafts with GitHub files at
+the revision it shows. Text reads/writes are limited to 1 MB per file. A closed tab
+can leave stale read context; an edit requires a live tab. Queued changes are bound
+to repository, branch and revision. Hashes and element proofs are checked again
+against the tab's live state before writing, so newer edits cause a conflict.
 
-### In the editor
+Queued tools accept optional `requestId` (reuse only for the identical retry) and
+`waitSeconds` (default 10). Calls return applied, conflict, failed or pending.
+Pending does not mean applied: use `get_command_status`. Commands expire after
+two minutes if not started; a running Improve images action has no tab run timeout.
+Changing scope stops further rows and keeps completed rows as drafts.
 
-While an agent is connected (an OAuth connection, or a token an agent has used), the tab shares its context and applies queued changes. **Disconnect MCP** revokes every connection of the session, OAuth ones included (a click on it; nothing else disconnects).
+## Media tools
 
-**Disconnect MCP** also says what the agents wait on. While agents ask you questions its dot turns orange and it carries the same orange count as the project selector's tile (whose title names the questions too). Hovering it, or focusing it from the keyboard, opens a small menu beside the project selector, as the branch menu does (after a moment, and closing a moment after the pointer left both; **ArrowRight** moves into it, **Esc** or **ArrowLeft** back): each question waiting for your answer (the connected agents are named in the item's tooltip) with its request's number, the question, the element (`<h1>`) and its page. Choosing one closes the menus and shows it: the page it is on, its element scrolled into view, and its pin's card held open with the focus in the answer box. With no question it says what the agents have instead ("2 requests: agent working", "Nothing waiting"). Of several editor tabs, the one in use shares (a tab that goes quiet for 45 seconds is replaced by a visible one), and each change is claimed by exactly one tab.
+All media work goes through the open tab and the conventions' Media chapter.
+Agents can use existing Media files, produce Trimmed copies, and run supported
+preparation changes. They cannot upload, fetch or generate new media, introduce
+new Online video addresses, remove Always keep, or approve their own To check
+marks. Direct writes to .editor/media.json are protected; read it through the
+file tools if needed, and change it through media tools.
 
-#### Ask agent and pins
+The following descriptions follow the schemas and descriptions in `worker/mcp.ts`.
+A path identifies a repository file; an element uses the id from `get_page` or
+`inspect_preview`. Read-only media calls also pass through the tab queue.
+Media path strings are non-empty and at most 1,024 characters. Unless stated
+otherwise, edits are unsaved and use one Undo step. The editor supplies the
+[preparation and markup](page-builder/media.md), [screens](page-builder/images-pane.md)
+and [reference rewriting](page-builder/asset-references.md).
 
-While an agent is connected, the edit bar of the element selected in the preview has **Ask agent**, a ✦ star button. It opens a note over the element's top-left corner (under its top edge when the preview has no room above), numbered as its pin will be: type what the agent should do, **Enter** sends it, **Shift+Enter** starts a new line and **Esc** cancels. The note grows with its text up to six lines; a problem sending shows in it. Once sent, the note shrinks into the request's pin on the same spot, and the element stays selected with its edit bar, so you can select another element and ask again at once. The request holds the text and the element: its file, the page it is on, its id (as `get_page` numbers elements), its tag, a CSS selector unique in the rendered page (for an element in a component's template, unique in the instance, with the instance's own), its source from the file (clipped at 4 KB) and the lines it spans, the component it belongs to (the instance itself, content slotted into one with the slot's name, or part of the template), and its text. You can ask several things before an agent picks them up.
-
-Each request not dismissed is a numbered pin above its element's top-left corner in the preview, its small bottom-left corner pointing at the element; several pins on one element line up left to right, and the edit bar keeps clear of the selected element's. Pins are drawn over the frame like the edit bar and follow their elements on scroll, resize and render; they are the editor's overlays, never part of the page or its drafts. A pin is light, so its number reads over any page: light blue bordered in the action colour while the request waits, with a small spinner once an agent has fetched it (its element then has a marching outline in the action colour), orange with a **?** and the question itself on one line when the agent asks the user a question (so it reads without opening anything), and grey once finished: a check when the agent is done (the outline turns solid, then fades), … when it answered without changing the site. A new pin pops in, and pops again when the agent is done, answers or asks. Focusing a pin from the keyboard shows the request's first line (a question's pin keeps to the question), and so does hovering one while another's card is held open. With reduced motion there is no movement: the states show as they end, and cards appear without fading in. A pin whose element is gone stays where it was last, dashed; requests on other pages (or whose element was never found) are listed under **requests elsewhere** in the preview's corner, with **Show page**, and so are questions scrolled out of view, with **Show**; the tray leads with an orange count of the questions, and the project selector's tile carries the same count while any wait.
-
-Hovering a pin opens its card for a look, after a moment (so passing over pins shows nothing) and without taking the focus; it closes once the pointer has left both pin and card for a moment, and hovering another pin switches to that one's card. Clicking a pin (or **Enter** or **Space** on it) holds its card open, with the focus in it, until **Esc**, a click outside the card and its pin, the pin again, or **Dismiss**/**Clear**; clicking or typing in a card looked at holds it too. The card stays with its pin: right above it, left edges aligned, so it leaves the element under the pin uncovered, or right below the pin when the preview has no room above it (a pin near the top of the preview), kept inside the preview's width. It follows its pin on scroll, resize and render; the tray's card stays by the tray. The card is a small conversation: the element and the state in its header (Waiting, Agent working, Question, Done, Agent answered), then the messages, **You** for the user's and **Agent** for the replies (one short sentence each), and **Dismiss** (**Clear** once answered), which removes it. A question is highlighted in orange, with an **Answer…** box under it that has the focus when a clicked card opens: it grows with its text, **Enter** sends, **Shift+Enter** starts a new line and **Esc** closes the card, keeping what was typed. The answer joins the request's conversation and the request waits for agents again (the pin turns back to light blue, and spins once an agent has fetched it). The card of a done or answered request is grey like its pin.
-
-An agent watches for requests with `wait_for_requests` (the `watch_editor` prompt loops over it), reads the element with `get_selection`, makes the change with the edit tools, and answers with `reply_to_request`, whose message shows on the pin: `done`, `answered`, or `question` when it needs the user's input. A question shows in the pin itself, so it is asked in a few words, at most 60 characters ("Which text should it say?", with choices as short options: "Ghost or outline?"); a longer one is refused with how to shorten it. Each request carries its `thread`, the conversation so far (`from` user or agent, `text`, `at`, and an agent's `status`), the request's text first; once the user answers a question, `wait_for_requests` returns the request again, to every connection, with the answer last in its thread.
-
-## Tools
-
-The server exposes 36 tools. Start with `get_site`. Reads come from what the editor tab last reported (pages, components, outlines, drafts) and from GitHub at the revision the tab shows. Every edit tool takes an optional `requestId` (reuse it only to retry the identical change) and `waitSeconds` (default 10): the call waits that long for the tab and returns `applied`, `conflict`, `failed` or, if the tab has not picked it up yet, `pending`; `get_command_status` checks later. Pending is not applied. Improve images can remain pending while the tab runs several rows; check `get_command_status` for the final report. The two-minute command expiry is checked before application starts. The tab has no run timeout; a branch or revision change stops further rows, keeping already saved rows.
-
-For listing, previewing, placing or describing media, changing collections, reading or changing adding settings, framing, removing, keeping, restoring, renaming and replacing media, follow the Media chapter of `native-site://conventions`.
-
-| Tool | What it does |
+| Tool | Inputs and behaviour |
 | --- | --- |
-| `get_site` | Repository, branch, revision, context age; the open file and page and the element selected in the preview; how many requests wait for an agent (`openRequests`); the settings (`.editor/config.json`: file, site name and address); pages as a tree by URL (file, and the title and description from each page's `<head>`, new); the not-found page (`404.html`); components (template, stylesheet, whether it is a section component, slot names); the stylesheets the pages link, each with the files it `@import`s; unsaved changes (A/M/R/D); pending changes. |
-| `list_files` | Every file path (optionally under a folder), with drafts applied and marked. |
-| `list_media` | Media families and recorded Online videos (title, service, address, still, uses, serviceBar) with kind, size, copies and originals (a video's or PDF's still and subtitles too), page and other uses, description (by agent or Decorative), collections, Always keep, drafts and Not checked yet. Page with `offset`/`limit` (default 100, maximum 200) and `nextOffset`; answered by the open tab. |
-| `preview_media` | A picture preview at most 512 px on its longest side, with original and preview dimensions and encoded bytes; pictures only, with a clear refusal for documents, video and audio. Answered by the open tab. |
-| `frame_image` | `path, element`, optional `shape` (original, square, 4:3, 16:9, 4:5, component), `focus {x, y}` in percent and `trim {x, y, width, height, zoom, turn, flipX, flipY, straighten}` relative to the original. With none of them it reads the place's file, visible shape, focus and trim, plus any available component shape. Original shows the whole picture even inside a shaped component; component restores the component's shape by removing the place's own shape, keeping focus (refused without a component shape). Shape and focus change only that place; a trim saves a Trimmed copy (`-crop`) from the site's own picture for that place. A trim centres focus unless the copy's proportions differ from the place's shape; give `focus` to set another. One unsaved Undo step. |
-| `place_media` | `path, element, file`: pictures fill an existing image as before; video, audio and downloads go where Add → Media would put them with element selected. Picture spots take silent Looping video. A YouTube/Vimeo address must already be recorded in Media; reuses its still and serviceBar without fetching, keeping start time. New addresses stay with the user. |
-| `improve_images` | `row?`: improve one page or component template, or all rows (components first). One unsaved Undo step per row; outside pictures and old YouTube/Vimeo players are left for the user. Returns rows (file, label, changed, notes, left), failures, totals and omission counts if the report exceeds 40 KB. |
-| `loop_video` | `path, element, looping?`: read or switch Looping video for one place. Picture spots always loop silently. |
-| `video_still` | `file`, exactly one of `moment` (seconds) or `picture` (path in Media): change a video's still everywhere; a moment uses WebP q80 at the video's size. |
-| `write_subtitles` | `file, text, format?` (`vtt` or `srt`): write WebVTT beside video or audio, attach tracks everywhere, mark by agent in To check in the same Undo step. Agents never clear the mark. |
-| `describe_media` | `file` and exactly one of `text` / `decorative`; optional `page, element` for a place. Agent words carry the by-agent mark and appear in To check. One unsaved Undo step. |
-| `change_collection` | `action: new, add, take-out, rename, delete`, `name`, optional `to, files`. Uses Media's collection rules; taken names refuse, delete keeps files. One unsaved Undo step, even without a page open. |
-| `remove_media` | Remove 1–200 unused files and their whole Image families into Recently removed in one Undo step. Refuses Always keep families, unchecked usage and remaining mentions, naming pages and other files. Returns all removed members. |
-| `keep_media` | Add Always keep to 1–200 files, one Undo step. Already-kept files do nothing; `keep: false` is refused because only the user may take it off. |
-| `restore_media` | Without `files`, read Recently removed: main paths, removed dates, days left, family members and browser-only copies. With 1–200 main paths, restore the newest entries and whole families, one Undo step. Taken addresses and missing browser copies refuse. |
-| `replace_media` | Replace picture `file` everywhere with picture `with` already in Media, prepared with the site's Adding settings. Never outside media or its own family; copies, originals, Trimmed copies and SVG refuse. Returns the new main path and notices. `keepOldUrl` defaults to Always keep. One unsaved Undo step, no dialog. |
-| `adding_settings` | Read or change the site's picture, video and audio quality and Keep original for files the user adds later. With no choices it reads; `reset: true` resets defaults and cannot be combined with choices. Returns current settings, whether they are defaults, and choices with plain hints. Changes are unsaved, labelled as the agent's and undoable. |
-| `read_file` | Any text file: a draft up to 1 MB, else GitHub (up to 1 MB); with its content hash. |
-| `export_site` | The whole site, or one folder, in one call: every text file with drafts applied and its hash, binaries by path, SHA and size. Saved texts are read from GitHub in batched GraphQL queries (100 blobs each) and kept by SHA; text past about 4 MB is listed as `omitted`. |
-| `get_page` | A page by URL (`/about/`, `/about`, `/about/index.html`, `/404.html`) or file: route, title, description, source, hash, and the outline of its `<body>`: the containers that hold sections and each section's id (`1.2`: element-child indexes from `<body>`), tag, `data-key`, heading or text, and a section component's slot text. |
-| `edit_file` | Exact text replacements in any text file (each old text once, or `all`), given the hash read. |
-| `write_file` | Create a file (the path must be free) or replace a whole file (given its hash). A new component is its files, `components/<tag>/<tag>.html` and an optional `.css`: the loader finds components by tag, so nothing else registers it; the description and conventions say so. |
-| `create_page` | The Pages tab's New page: title, optional parent URL (a folder page) and slug. Writes `<parent folder>/<slug>/index.html`, a copy of the home page's document with the new `<title>` (and `og:title`), the description cleared, `<link rel="canonical">` and `og:url` set to the site's address (`site.url` in `.editor/config.json`) plus the new URL, or removed when the site has none, and `<main>` emptied. Returns the file and URL. |
-| `set_page_details` | Title and/or description in the page's `<head>` (`<title>`, `<meta name="description">`, and `og:title`/`og:description` when present). |
-| `add_section` | A section component's new instance, with its own copy of the slot text, before or after a section (default: the end), given the page hash. |
-| `make_component` | Turn a selected whole element into a component with slots, as Make component in the editor does. |
-| `move_section` | A section before or after a sibling section, given the page hash. |
-| `remove_section` | A section removed, given the page hash. |
-| `move_file` | The Files tab's rename or move of a file or folder: a page's URL follows it (move a folder page's folder to take its subpages along), root links to it are rewritten in every page, template and stylesheet, and `keepOldUrl` adds `/old/ /new/ 301` to `_redirects` at the root (default: yes for a page already on GitHub). A media file renames or moves its whole Image family and rewrites every mention; same-folder renames keep folder and type and tidy the name. A taken name refuses with the next numbered suggestion. For media, `keepOldUrl` defaults to Always keep. |
-| `delete_file` | The Files tab's delete (a deletion the user can restore). The home page is protected as in the editor. Media families go to Recently removed; agents refuse Always keep families and still-used files, naming their mentions. |
-| `open_page` | Shows a page (or opens any file) in the editor. |
-| `inspect_preview` | Shows a page and measures elements as the editor's preview renders them (by `get_page` id, CSS selector, or the preview selection): box, computed styles, matching rules by file, and the text's contrast against the solid background behind it with WCAG AA/AAA. The preview is as wide as the editor pane. |
-| `get_command_status` | The state, message and result of a change this connection queued. |
-| `wait_for_requests` | The requests the user sent with Ask agent in the site the tab shows, not yet returned to this connection (`all`: every one still waiting), each with its id, text, time, thread and element as above; they read as seen on their pins from then on. A request the user answered is returned again, with its whole thread. With none it waits up to `waitSeconds` (default 25, at most 50), then returns an empty list and a hint to call again. |
-| `get_selection` | The element selected in the preview now, or a request's (`request`), with everything Ask agent records about it and the request's thread. |
-| `reply_to_request` | Answers a request: `done` (the change is made; optionally the `requestIds` of its edits), `answered` (a reply without a change, needing nothing from the user) or `question` (the agent needs the user's input), with a short message (at most 200 characters; a question at most 60, since the pin shows it) shown on its pin and added to its thread. A question waits for the user's answer, after which the request comes back for the next round. A dismissed request takes no reply. |
+| `list_media` | Optional `folder`, `offset` (nonnegative), `limit` (1–200). Lists families with kind, size, copies, originals, still, subtitles, uses, descriptions/Decorative, collections, Always keep and Not checked yet. Recorded Online videos include title, service, address, still, uses and service-bar choice. Copied still families belong to their Online video. Returns paging information including `nextOffset`. Answered by the open tab. |
+| `preview_media` | `path`. Returns a picture preview no wider or taller than 512 px, plus preview and original dimensions. Video, audio and documents are refused. Answered by the open tab. |
+| `place_media` | `path`, `element`, `file`. A picture fills an existing image. Video, audio and downloads go where Add → Media would place them with that element selected. Picture spots take silent Looping video. A YouTube/Vimeo address must already be recorded in Media; its still and player choice are reused without a service request. New addresses stay with the person. |
+| `frame_image` | `path`, `element`; optional `shape`, `focus`, `trim`. With none of those options, reads shape, focus, trim and available component shape. Shapes: original, square, 4:3, 16:9, 4:5, component. Focus uses x/y percentages from 0 to 100. Original shows the whole picture inside shaped components; component removes the place's own shape, keeping focus. A trim uses source-relative x/y/width/height fractions, optional zoom (1–8), turn (0/90/180/270), straighten (−45 to 45) and flips. It makes a Trimmed copy from the site's own picture for this place. Focus centres unless copy and place proportions differ; an explicit focus overrides that result. |
+| `improve_images` | Optional `row`, a page or component-template path; omitted means all rows, components first. Makes lighter files, Responsive copies, size/loading details and Looping videos. Leaves outside pictures and old YouTube/Vimeo players for the person. Each row is one Undo step. Returns row results and failures; long runs may be pending, with the final report available through `get_command_status`. |
+| `loop_video` | `path`, `element`; optional `looping`. Reads or changes one placed video's Looping video state through the edit bar's transaction. A picture spot always loops silently and cannot be switched off. |
+| `video_still` | `file`; exactly one of `moment` (finite, nonnegative seconds) or `picture` (a picture already in Media). Changes the video's still everywhere. A moment is saved as WebP. |
+| `write_subtitles` | `file`, `text` (up to 2,097,152 characters and 2 MiB UTF-8); optional `format`, vtt or srt. Writes WebVTT or converts SubRip for a video/audio file already in Media. Attaches subtitles everywhere in one change, marked by agent in To check. No upload or fetch. |
+| `describe_media` | `file`; exactly one of `text` (up to 2,000 characters) or `decorative`; optional `page` and `element` for a place. Changes file Description or a place's own words, or marks Decorative. Agent words retain the by-agent mark for To check. Following places update with the file description. |
+| `change_collection` | `action` (new, add, take-out, rename, delete), `name`; optional `to`, `files` (up to 200). Uses Media collection rules. Taking out changes membership only; deleting keeps files. Taken names refuse. |
+| `remove_media` | `files` (1–200). Removes unused whole families into Recently removed. Refuses Always keep, any remaining mention or incomplete use checks, naming pages and other files. Returns all removed members. A recorded Online video's copied still cannot be removed separately. |
+| `keep_media` | `files` (1–200); optional `keep`. Adds Always keep. Already-kept files do nothing. False is refused: only the person can take the mark off. |
+| `restore_media` | Optional `files` (1–200 main paths). Omitted reads Recently removed, with dates, days left, family members and browser-only copies. Given paths restore the newest entries and whole families. Taken addresses and missing browser copies refuse. |
+| `replace_media` | `file`, `with`; optional `keepOldUrl`. Replaces a picture everywhere with another picture already in Media, prepared using Adding settings. Keeps the old base name; a changed format changes its extension. Every rewritten mention gets a new-version mark. Outside files and the target's own family refuse. Returns the new main path and notices. Forwarding defaults to Always keep. |
+| `adding_settings` | Optional `image`, `video`, `audio`, `keepOriginal`, `reset`. With none, reads settings. Image values: smaller, balanced, higher, smallest; video: smaller, balanced, higher; audio: balanced, higher, speech. Reset cannot be combined with choices. Changes apply to files the person adds later; never adds or re-prepares files. Returns settings, default status and choices with hints. |
 
-Resources: `native-site://conventions` (how a native site is laid out, `worker/site-conventions.ts`: the repository as the site, pages as full documents at their URLs and their head details, root links, `_redirects`, components and slots, the loader and what a new component needs in it and in `site.css`, the section component pattern with optional slots and CSS without `::slotted()`, styles, the Components chapter for component rules and the Media chapter for media rules, `.editor/config.json`, no build, what the tools do) and `native-site://site` (as `get_site`). Prompts: `edit_site` (the conventions, the site now, and an optional goal) and `watch_editor` (wait for requests, carry each out with the tools, reply, and wait again until the user says stop). The server's instructions summarise the conventions and point to the Components chapter before component work and the Media chapter before media work.
+`move_file` also performs media Rename everywhere, including family members,
+records and wide text mentions. Its `keepOldUrl` defaults on for an Always keep
+family. `delete_file` expands media families and refuses remaining uses or Always
+keep. The same [Site address prefix](page-builder/asset-references.md#site-address-prefix)
+applies to media tools and page/file tools. Agents should let the tools write it.
+Changing Site address belongs to the person in Site settings; a config edit does
+not rewrite links.
 
-Every change is checked twice: by the Worker against what the tab last reported (hash of the file or page, the section ids of its outline, section components only, one waiting change per file, at most ten waiting), and by the tab against its live state just before applying (the file's hash again, the outline recomputed from the source). Typing in the editor after the agent read a file therefore makes its edit a conflict, never an overwrite.
+## Other tools
 
-## Before the site exists
+| Tool | Behaviour |
+| --- | --- |
+| `get_site` | Current settings, pages, components, stylesheets, drafts and selection; start here. |
+| `list_files` | Repository paths and file information, including effective draft changes. |
+| `read_file` | Text and content hash from effective drafts or the reported GitHub revision. |
+| `export_site` | Whole site or folder: effective texts and hashes, binaries by path/SHA/size; large text results can be omitted and reported. |
+| `get_page` | Page by route or file, with source, hash, head details and body outline. Element/section ids follow element-child positions. |
+| `edit_file` | Exact text replacements with the read hash; each old text must be unique unless all matches are requested. |
+| `write_file` | Create a free text path or replace text with its expected hash. Protected editor records and binary media writes refuse. |
+| `create_page` | Pages' New page, with title and optional folder parent/slug. Copies the home document, empties main, and sets page details and full canonical addresses when Site address is known. |
+| `set_page_details` | Changes title and/or description, with corresponding Open Graph details when present. |
+| `add_section` | Adds a section component with its slot content before/after a section, or at the end, using the page hash. |
+| `make_component` | Turns a selected whole element into a component and slots through the editor's Make component operation. |
+| `move_section` | Moves a section before/after a sibling, using the page hash. Image re-measurement can join the move's Undo step. |
+| `remove_section` | Removes a section through the edit bar's operation, using the page hash. |
+| `move_file` | Files' rename/move of a file or folder. Updates page links and optional forwarding; media uses Rename everywhere. Written addresses include the site prefix. GitHub Pages ignores forwarding in _redirects. |
+| `delete_file` | Files' guarded delete, with restore available. Protects the home page and refuses still-used files; media additionally respects Always keep and whole families. |
+| `open_page` | Shows a page in preview/source, or opens any file in the source editor. |
+| `inspect_preview` | Shows a page and measures elements by id, selector or selection: box, computed styles, matching rules and text contrast. |
+| `get_command_status` | Returns the state, message and result of a command this connection queued. |
+| `wait_for_requests` | Returns unseen Ask agent requests, or all waiting when requested. With none, waits up to the requested time (default 25 seconds, maximum 50). An answered question returns again with its thread. |
+| `get_selection` | Current preview selection or a request's element, with source, selector, component/slot context and conversation. |
+| `reply_to_request` | Replies done, answered or question, with optional edit request ids. Messages are at most 200 characters; questions at most 60. A question waits for the person's answer and returns in the request thread. |
 
-When an agent calls `get_site` and the editor tab is not sharing a site (no tab open, no repository chosen, or the user is not signed in), the response carries `available: false` and a note: the steps the agent should tell the user to take: 1) open the editor and sign in with GitHub (a free GitHub account works); 2) open a repository (choose one in the project menu, or create one on the Get started screen with the editor's Create repository form, or use `gh repo create <name> --public` yourself if you have the GitHub CLI, then give the editor access on GitHub); 3) keep the editor tab open; then call `get_site` again.
+## Resources, prompts and limits
 
-When the editor tab shows a repository but it has nothing to render—it is empty (no commits yet) or has no `index.html` at its root—the response carries `native: false` and a `start` note (plus `empty: true` when there are no commits yet). For both cases: write `index.html` and `styles/site.css` as the native-site://conventions' "Starting a site from nothing" describes (a full HTML document with its details in the head, root links, and the stylesheet link), or ask the user to choose **Starter site** on the Start your site screen in the editor, then call `get_site` again. `create_page` and the other page tools answer with the same note until `index.html` exists; the `edit_site` prompt carries it too. **Build it with an agent** on the Start your site screen copies a prompt that connects Claude Code, Codex or another coding agent to the editor tab over MCP and asks it to build the site this way.
+The native-site conventions resource describes pages, components, slots, styles,
+media, records and the implemented [ADR 0001](adr/0001-the-repository-is-the-site.md)
+root-link amendment. The site resource returns the site as `get_site` does.
+The edit_site prompt combines conventions and current state with an optional goal;
+watch_editor describes waiting for Ask agent requests, carrying them out and replying.
+Their definitions live beside the tools in `worker/mcp.ts`; conventions live in
+`worker/site-conventions.ts`.
 
-## Boundaries
+When there is no sharing tab, `get_site` reports unavailable with connection steps.
+An empty repository or one without a root index page reports no native site and
+explains how to start one: write a full home document and stylesheet, or ask the
+person to choose Starter site in the editor. Page tools need that starting page.
 
-- **Scope.** A connection is one signed-in editor session, working on the repository its editor tab shows (before any tab shares, the one it was made in). Every MCP request rechecks the session, and that the GitHub App installation includes that repository against a listing at most a minute old, so a burst of tool calls asks GitHub once. Revoking the connection or signing out takes effect at once; removing the repository from the installation, within that minute. A repository, branch or revision change refuses queued changes made for the old one.
-- **Lifetime and revocation.** Choose **Disconnect MCP**, sign out, or let the session expire (eight hours at most), and the token stops working. Expired records are removed by the Durable Object alarm.
-- **Secrets.** Only the SHA-256 of a token is stored; OAuth codes are stored hashed, single-use and live five minutes; the consent request is bound to the session that saw it. The GitHub token stays in the Worker and is never given to an agent. `/mcp` refuses a request whose `Origin` is not the editor's own (browsers cannot call it from other sites); the consent form must come from the editor's origin.
-- **Clients.** Dynamic registration accepts public clients (`token_endpoint_auth_method: none`) whose redirect URIs are HTTPS, or HTTP to `localhost`/`127.0.0.1`/`[::1]`. Registrations last 180 days. Client ID metadata documents are not supported.
-- **Untrusted content.** File contents, page text, draft text and diagnostics are the site owner's data, not instructions to the agent; the tool descriptions and conventions say so. A request's text is the user's instruction; the element it carries (text, source, selector) is site data like the rest.
-- **Requests.** A request belongs to the repository it was asked in, and a connection sees only those of the repository the tab shows. Its text holds up to 2000 characters and its element's source up to 4 KB; at most 50 wait for an answer at once (the tab is told to dismiss some), and the hub keeps 100 in all, dropping the oldest answered or dismissed first. A request's thread keeps its text and the latest messages, 20 at most and 8000 characters in all; an answer holds up to 2000 characters, like the request, and only a request an agent replied to takes one. The tab sends them with `POST /api/agent/ask`, answers with `POST /api/agent/answer` and dismisses them with `POST /api/agent/dismiss`; each poll of the hub brings them back, without their source, for the pins.
-- **The tab must be open.** A closed tab cannot apply changes; reads then answer from its last report, marked stale after two minutes, and edits are refused. A tab in the background keeps checking every two seconds while a connection exists, though the browser may slow it down (Chrome to about once a minute after five minutes hidden), so a change can wait until the tab is seen again. Changes not picked up within two minutes expire.
-- **Sizes.** The limit is per file, not per site: agents read and write each draft up to 1 MB (UTF-8), however many drafts there are (up to 5000 listed), and GitHub files up to 1 MB. The context lists drafts by path and hash only; the tab uploads each text apart (`POST /api/agent/drafts`, gzipped, only the ones the context response names missing). A draft over 1 MB, or a binary one, is refused by name ("larger than 1 MB", "binary") until the user saves it. Outlines are kept compact: at most 200 sections per page, headings and text clipped to 120 characters.
-- **Storage.** Connections, the shared context and the queue live in the existing SessionStore Durable Object (`agent:<token hash>`, `agent-hub:<session>`, `oauth-client:…`, `oauth-code:…`); no new binding, secret or paid service. In a hub (`worker/agent-store.ts`) the hub, the context, the requests (`requests`, `worker/agent-requests.ts`) and each draft text (`draft:<hash>`, also a queued write's text) are separate keys, so a hub operation rewrites only the small hub; texts nothing names any more are dropped when the tab next shares, and all of it when the session ends.
+Ask agent pins carry the request and its element, including up to 4 KB of source.
+Requests are scoped to the repository, at most 50 waiting and 100 retained.
+Conversations retain at most 20 messages and 8,000 characters. The sharing tab
+shows replies and questions; the person answers on the pin. One tab claims each
+change. Signing out, revocation or expiry takes effect on subsequent requests;
+repository installation access is rechecked with a listing cached at most a minute.
 
-## Routing
+Only token hashes and expiring authorization records are stored. GitHub credentials
+stay in the Worker. Requests with a foreign browser Origin refuse. The queue and
+draft texts live in the existing SessionStore Durable Object. There is no separate
+media service or server-side media encoder.
 
-`/.well-known/*` must reach the Worker: `run_worker_first` in `wrangler.jsonc` (and `wrangler.techies.jsonc`) includes it, next to `/api/*`, `/auth/*` and `/mcp`.
-
-## Validation
-
-- `tests/mcp-runtime.test.ts` (official MCP client against the real Worker in Miniflare, over a small site in the repository-as-site layout, `tests/mcp-harness.ts`): tool list and descriptions, `get_site` (settings, pages with head details, the not-found page, components, stylesheets with imports), the conventions resource and prompt, `list_files` and `read_file` with drafts over GitHub, `get_page` by URL in its link forms or by file, outlines, `edit_file` hash and uniqueness checks, retries by `requestId`, `write_file` rules, section checks, `create_page` under folder pages only, waiting for the tab, conflicts reported by the tab, a second tab refused a claimed change, Ask agent's requests (whose words the descriptions say they are, the preview selection whole, `wait_for_requests` returning each once and `all` again, waiting for one asked meanwhile, replies and dismissals as the tab sees them, a question over 60 characters refused with how to shorten it (and a reply over 200), a question answered through `/api/agent/answer` coming back to the connection with its thread and replied to again, the thread's limits, a request kept from before threads, requests kept to their repository, the limits on text, source and open requests), following the tab to another repository the installation includes (and refusing one it does not), installation removal, revocation and logout, and no GitHub writes.
-- `tests/agent-site.test.ts`: the stylesheets the tab reports (linked from the pages' heads, home page first, with their imports); `tests/native-project.test.ts` and `tests/native-create.test.ts`: the settings, and a new page's canonical and `og:url`.
-- `tests/mcp-oauth.test.ts`: discovery documents, CORS, registration rules, the SDK's OAuth flow (discovery, registration, sign-in that returns to the authorization, consent refusing a foreign origin, another session and Cancel, PKCE token exchange, a wrong verifier and a reused code refused), then the tools with the issued token, and revocation.
-- `tests/native-save/native-mcp.spec.ts` (Playwright, native-save server): with the editor open, an MCP client reads the site, edits the home page's heading, adds, moves and removes a section (and the user's Undo brings it back), gives the site an address, creates a page (its own canonical and `og:url`) and sets its description, and opens a page, each visible at once in the preview and as a draft, with nothing saved to GitHub; components it writes render and select as the page builder's; and a client connected by OAuth in the browser (consent page, token exchange) reaches the open tab; and Ask agent: offered only while an agent is connected, as the star button named Ask agent, its note over the element's top-left corner with the next pin's number and no hint text, Esc cancelling and Enter sending with Shift+Enter a new line, the note closing into the pin on the same spot with the element still selected, the client's `wait_for_requests` getting two requests with their elements (a heading with its source lines and selector, a card's slotted text with its component and slot), their pins turning seen (a spinner, and a marching outline on each element), done (a check) and answered as the client edits the heading and replies, a hovered pin opening its card without the focus (right below the heading's pin, near the top of the preview; right above the card's text's pin, left edges aligned), closing as the pointer leaves and switching to another hovered pin's, a clicked one held open with the pointer gone while hovering another pin shows its first line, and the reply shown on the pin until Clear; and a question: its pin orange with a ? and the question in it (the next note on the heading going after the whole pin), counted on the project selector (its tile, and Disconnect MCP, whose hover menu names the agent and lists the question with its element and page, "1 request: agent working" before it asked; choosing the question opens its card with the answer box focused), its card with the You and Agent messages, the answer box unfocused while hovered and focused once clicked, the card staying open with the pointer gone, Esc keeping the answer and Enter on the pin opening it again, Enter sending it and the pin back to open, the client getting the request again with the thread, and the pin and card grey with a check once it is done.
-
-Protocol references: [MCP transports](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports), [MCP authorization](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization), [official TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk).
+Validation covers the official MCP client against the real Worker in Miniflare
+(`tests/mcp-runtime.test.ts`), OAuth (`tests/mcp-oauth.test.ts`), and browser editor
+integration (`tests/native-save/native-mcp.spec.ts` and
+`tests/native-save/native-mcp-media.spec.ts`).

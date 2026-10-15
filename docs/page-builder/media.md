@@ -1,212 +1,316 @@
-# Media library and optimisation
+# Media files
 
-The Media tab (formerly Images) browses repository files, searches filenames/default
-alt text/collections, narrows by collection and kind, reports page usage, and offers metadata,
-rename, deletion and optimisation. Image insertion produces ordinary `<img>` markup with escaped
-alt text, intrinsic dimensions, lazy loading, async decoding and responsive sources
-when available. Existing classes, source keys, slots and styles survive replacing
-an image. No editor runtime enters the site's HTML, CSS or Web Components.
+The Media manager finds, adds, prepares, places and tidies the site's Media files.
+It writes ordinary site files and unsaved drafts. Save to GitHub saves them; Undo
+restores each completed change. The [Media screen](images-pane.md) and
+[media tools](../mcp.md#media-tools) use the same operations. Start code navigation
+with the [code map](../agents/code-map.md).
 
-Metadata is an editor-only `.editor/media.json` map keyed by image path. Existing
-page alt text is independent of the metadata's insertion default. Unknown metadata
-fields survive updates. Malformed metadata is refused rather than overwritten.
+## Adding files
 
-## Atomic host contract
+Every adding route uses `prepareMediaFile` in `src/page-builder/media-prepare.ts`:
+Media drops and More → Add new file; Files drops and Upload files; the Media picker;
+canvas image drops; Structure and component image fields; and Site settings image
+fields. Preparation runs in the browser before storage. A failed file does not stop
+the other files. The shared progress summary in `src/page-builder/media-adding-summary.ts`
+shows waiting, preparation, adding, failures, large-download notes, Cancel and Retry.
+Review opens a before/after Optimise screen; it is an optional route, not a required step.
 
-The library prepares one `MediaWorkspaceBatch` for a user action. Rename includes
-binary moves, all reference edits and metadata key moves. Delete includes binary
-removal and metadata removal. Import includes every primary image/responsive family,
-copied metadata and requested reference replacements in one batch. The adapter
-never calls the legacy per-file `write`, `rename`, `remove` or draft/upload APIs.
+Media adds automatically, into the collection viewed when adding started. Files uses
+the chosen folder, including the repository root. The picker holds ready files until
+Use, then saves them with placement in one change. Cancel or Close saves ready files
+without placing them; switching repositories drops held files. Site settings fills
+its field after adding; Apply saves the settings later.
 
-The host must provide `MediaWorkspaceContext.applyBatch` and `assetVersion` before
-mutating features can be enabled. Missing methods fail closed. Both are temporarily
-optional in TypeScript so the existing host can migrate without an unsafe fallback.
+New files normally go into media/images, media/videos, media/audio or media/downloads,
+according to the stored kind. Files' chosen folder wins. Existing files stay where
+they are. `chooseMediaPath` in `src/page-builder/media-storage.ts` reserves the whole
+family. Names become lowercase, with punctuation replaced by hyphens; letters and
+numbers in any language remain. Taken names get a number. Adding never replaces an
+existing file.
 
-Each batch contains:
+### Adding settings and limits
 
-- `expectedPaths`: the effective repository path list captured before asynchronous reads.
-- `expectedSources`: original HTML/CSS and metadata values, including absent metadata.
-- `expectedAssets`: effective binary revisions captured before asynchronous reads.
-  Reference replacements from optimisation use the earlier blob/preview receipt,
-  not the current revision at Add time.
-- `edits`: all prepared text drafts, including `.editor/media.json`.
-- `moves`, `deletes` and `uploads`: binary file mutations and output blobs.
-- `label`: one user-visible history action.
+More → Adding settings remembers choices per site. Each choice saves immediately as
+one Undo step. `mediaAddingSettings` in `src/page-builder/media-settings.ts` supplies
+Balanced defaults, with Keep original off. Reset restores these defaults. Choices
+apply to future additions; they do not re-prepare existing files.
 
-The host must validate the captured repository/account/branch/generation, path list,
-all expected sources and binary revisions immediately before the draft transaction.
-A model's effective source takes priority over drafts and branch baselines. Any
-source/path/revision change during asynchronous reading, blob hashing or byte staging
-rejects the entire batch while preserving the other edit. No partial metadata,
-reference changes or binary changes may become visible.
+| Images | Recipe |
+| --- | --- |
+| Smaller files | WebP quality 70, up to 1,600 px wide |
+| Balanced | WebP quality 80, up to 2,400 px wide |
+| Higher quality | WebP quality 90, full size |
+| Smallest files (slower) | AVIF quality 50, up to 2,400 px wide |
 
-`applyMediaWorkspaceBatch` provides this sequencing through a host transaction:
-validate, asynchronously snapshot, validate, asynchronously stage upload bytes,
-validate, then synchronously commit drafts/models/paths and register exactly one
-Undo action. The synchronous commit must contain no awaits. A host using another
-operation engine must enforce equivalent final guards after its final await.
+Pictures are never enlarged. Transparent pictures use the smaller of WebP and
+lossless PNG; the AVIF choice uses the Balanced comparison for transparency.
+A smaller, upright source can stay in its format after personal details are removed.
+Responsive copies use the main's resulting format and are kept only when smaller
+in bytes than the main. The worker in `src/page-builder/image-optimise.worker.ts`
+loads WebP/AVIF encoders only when needed; failed AVIF falls back to Balanced WebP
+with a note. PNG gets a lossless squeeze. SVG stays SVG with executable content
+removed; styled artwork is preserved where possible. Animated PNG/WebP keep their
+frames with personal details removed. Animated GIFs follow video preparation.
 
-Media changes apply even when no editable file is open. Their Undo steps are held
-under the current repository, branch and generation, then recorded oldest first
-in the next primary editable file's history (a file that opens while the change
-is prepared takes it at once). With an editable file already open, the change
-joins that file's history immediately. A change that rewrites page text still
-needs an open page: a page opened later is not proven over the step's text.
+`src/page-builder/media-limits.ts` caps each stored output at 20,971,520 bytes
+(labelled 20 MB). A larger source may be prepared below that limit first. Notes
+appear above 1,000,000 bytes for an image and 10,000,000 for other downloads.
+Adding settings also shows GitHub's repository size, with warnings from 500 MB and
+900 MB against the 1 GB Pages limit. Removing files does not shrink Git history.
 
-Snapshot/rollback and Undo must be bound to the originating draft scope. Switching
-repositories before Undo cannot direct old paths or bytes into the new repository.
-Rollback before commit must remove only staged bytes owned by this operation and
-must preserve source changes made by others during preparation. Rollback after a
-failed synchronous commit restores the operation's own source/draft/path mutations.
-Upload byte keys are content-addressed and may already exist or be shared: never
-remove pre-existing bytes or bytes referenced by another draft. A byte snapshot
-must record ownership/reference information, not only a list of upload paths.
+Failed preparation offers **Add unchanged?** only for a suitable file within the
+cap, with no required picture clean-up bypassed. Otherwise it gives conversion
+advice. A picture must also display in the browser. Safari uses its own HEIC reader.
+Chrome and Firefox have no added HEIC reader: `heicFailureMessage` in
+`src/page-builder/media-heic.ts` asks the person to save as JPEG and add again.
+The decoder branch build/mm-29-heic-decoder remains parked, not landed (Lex,
+2026-10-15). Keep original does not bypass that rule.
 
-The host owns updating paths, native routes, assets, source models, preview and change
-status after a successful transaction. Refresh must not perform a second mutation
-that can split an otherwise successful batch. Successful Undo restores binary
-moves/deletions/upload families, metadata and all reference drafts together.
+### Keep original
 
-## References and usage
+For a changed picture, Keep original can retain a full-size, upright original with
+personal details removed, under media/originals. It is not a copy of camera metadata.
+`src/page-builder/media-originals.ts` validates it and avoids duplicating the main.
+If only the original exceeds the cap, **Add without the original?** can keep the
+website version. File details offers Download original. Video, audio, PDFs and
+unchanged files do not gain a kept original.
 
-Usage follows HTML references, linked CSS/imports and nested custom components,
-including each component's conventionally paired CSS file. Cycles are visited once
-per page. An unread source refuses rename/deletion/reference changes; it is never
-reported as unused. Delete unused rescans usage before preparing deletion.
+## Image families and records
 
-HTML scanning skips comments and raw-text script content. URL and alt attributes use
-the full HTML5 character-reference decoder supplied by the site-control commit
-`e3cfcd7` (`src/page-builder/html-entities.ts`). This media commit does not duplicate
-ownership of that module. Srcset scanning handles data-URL commas and descriptors.
-CSS scanning skips comments and ordinary string lookalikes, recognises `url()` and
-quoted `@import` and `image-set()` image strings, and decodes CSS identifiers and
-URL escapes (including escaped `url` function names). Inline style attributes retain raw offsets
-through HTML entity decoding. Rewrites preserve query/fragment values and escape
-according to HTML attribute and CSS string context. Descriptive meta content is not
-an image reference; social-image metadata is.
+`mediaFamilies` and `familyMembers` in `src/page-builder/media-families.ts` group the
+main, Responsive copies and retained original. New copies use -480, -960 and -1600
+before the extension, only below the main's width. Older -480w names, WordPress
+width-by-height names and unambiguous sets in another format are recognised too.
+A numbered filename alone does not imply a copy. Ambiguous members stay separate.
+A Trimmed copy is its own Image family. An AVIF/WebP main can also own a
+-sharing.jpg picture for sharing services. A -social.jpg Trimmed copy stays separate.
 
-## Optimisation
+Video and PDF families can own a same-stem still; video/audio can own subtitles.
+A copied Online video still and its Image family belong to the recorded video and
+have no separate tile. A person's own picture chosen as a still stays independent.
+Rename, removal, restore, usage and Always keep consider file families together.
+For a recorded Online video, Media removal/restoration includes its copied still
+family. Files-tab rename/delete of that still still treats it as a picture; it
+does not act on the Online video record.
 
-Optimisation runs in a Vite-emitted, same-origin module Worker with OffscreenCanvas.
-No blob worker script or package is introduced. Resizing preserves aspect ratio and
-never upscales. WebP/JPEG/PNG encoding accepts validated width/quality options.
-Responsive widths are 480/960/1600 pixels below the primary width. Transparent WebP
-may use a smaller PNG; responsive output formats match the primary output.
-Re-encoding strips image metadata. SVG/GIF keep their bytes. Explicit Keep original
-also retains undecodable files such as HEIC; the host must make retained formats
-visible in the library if it accepts them, while clearly allowing unavailable previews.
+`shared/media-records.ts` reads and writes the editor-only .editor/media.json file.
+It migrates old tags and alt fields, preserves unknown fields, and refuses malformed
+or newer-version records rather than overwriting them. The version-2 shape is:
 
-Closing/changing the optimisation panel or changing encoding options aborts the
-Worker and invalidates prepared results. Late work cannot reactivate Add using stale
-options. Encoding itself does not mutate repository state. Adding all prepared
-families is one host transaction; originals remain when optimised copies replace
-references.
+| Location | Stored information |
+| --- | --- |
+| `version`, `collections`, `files` | Version 2, collection names, file records keyed by repository path |
+| `added`, `duration` | Per-file ISO adding time and known video/audio duration in seconds |
+| `description`, `decorative`, `alwaysKeep`, `places` | File words and by-agent mark; Decorative; Always keep; page-specific Decorative and agent words |
+| `trimmedFrom`, `sharing`, `lighterFrom`, `fromGif` | Trim source and geometry; sharing copy; lighter-file source; GIF origin |
+| `still`, `subtitles`, `subtitlesByAgent` | Related file paths and subtitle review mark |
+| `onlineVideos` | Service, id, title, still, optional Vimeo hash, service-bar choice and copied-still mark |
+| `removed` | Removal date, saved blob SHA or browser-copy key, family and former records |
+| `adding`, `leftAsIs` | Preparation choices; pictures unticked in Improve images |
 
-The workspace's library items expose `version` from the host's `assetVersion`.
-The picker captures that revision before reading a thumbnail/detail/bulk blob and
-keeps it with the cached preview bytes. Existing-image optimisation carries the
-same receipt through preparation into `MediaImportRequest.expectedAssetVersion`.
-An import with `replaceFrom` rejects a missing receipt or a changed current binary
-revision. Its final batch retains the preview receipt so the host's final guard
-also rejects replacement during byte staging. Uploads of newly selected local files
-do not require a repository binary receipt. The host must return a stable nonempty
-revision that changes for every effective binary replacement or draft state change.
+File records store description as text plus byAgent, and places keyed by page path
+with decorative and agentText. Online video records store service, id, title, still,
+hash, serviceBar and stillCopied. Each removed entry stores path, date, exactly one
+of sha/browserKey, optional family members, former file records and an optional
+onlineVideo record.
 
-## Checks
+Adding, Replace everywhere and trimming record Added. One addition shares one time.
+Optimise's lighter version keeps the original date. Media lists dated files newest
+first; undated files follow by name, then folder. Online videos follow files.
 
-`tests/media-workspace.test.ts` covers rename/delete/import grouping, one Undo,
-partial byte/draft failures, guards after asynchronous staging, preserving concurrent
-edits, and missing-host refusal. Metadata, markup, reference parsing and optimisation
-helpers have focused unit coverage. Browser tests in
-`tests/native-save/native-media-library.spec.ts` cover browsing/usage, a real
-optimisation Worker, and host integration for rename/delete/Undo. The mutation
-browser cases require the host's new atomic adapter. Use `ASE_TEST_PORT=5296` or
-`5297` to isolate media browser runs.
+## Pictures placed on pages
 
-## Persistent explorer pane API
+`placeMediaImage` in `src/page-builder/media-place.ts` serves the picker and agents.
+`mediaImageForPlacement` in `src/page-builder/media-markup.ts` builds the image data;
+`src/page-builder/media-page-markup.ts` applies measured page edits. Placing writes
+an ordinary `<img>` with intrinsic `width` and `height`, `decoding="async"`, and
+`srcset` containing smaller copies followed by the main's real width. No copies
+means no `srcset` or `sizes`. Kept originals never enter `srcset`.
 
-`mountMediaLibrary(container, options?)` from `media-picker.ts` mounts a real
-`section` with a Media region directly into a host element. It returns
-`{ element, ready, refresh, dispose }`. Await `ready` for the initial load; call
-`refresh()` after external draft/history changes, including Undo. The host owns
-its dimensions and visibility. Set the host's `hidden` property when switching
-explorer tabs; this preserves selection, filters, details and repository drafts.
-Dispose before replacing/removing a host, then mount again when needed. Remount
-reads effective drafts from the adapter rather than resetting repository state.
+A hidden preview copy measures the place at phone, tablet and computer widths and
+around site breakpoints. `src/page-builder/image-sizes.ts` turns this into `sizes`.
+The visible canvas never resizes. First-screen pictures are eager (no `loading` or
+`auto`); the first large one in document order gets `fetchpriority="high"`.
+Other placed pictures are lazy with `auto, ` before their measured size hint.
+First screen means 390 × 844 or 1280 × 800; large means at least 50,000 CSS px².
+Failed measurement uses lazy loading and `sizes="auto, 100vw"`. Add → Media uses
+that fallback because its new place has no painted element yet.
 
-The common implementation lives in `media-library-view.ts`. It serves search,
-collections, kinds, usage, metadata, selection, uploads, optimisation, rename and delete
-for both surfaces. `openMediaPicker({ onPick, accept, files })` remains the modal
-selection API and `closeMediaPicker()` closes only that modal. The pane has no
-dialog, backdrop, Close button or focus trap. Its narrow layout uses the editor's
-existing tokens and puts details in the pane's available width.
+A move re-measures through `src/page-builder/media-move-recheck.ts` and joins the
+move's Undo step. A newer edit, Undo, page change or timeout cancels the re-check.
+Shape changes re-measure before saving. Existing raster pictures without copies
+can gain missing copies on placement, without changing the main file; failures
+place the full-size picture with a note.
 
-By default mounting captures the configured adapter. An isolated host can provide
-`options.adapter` explicitly. `configureMediaPicker(nextAdapter)` disposes all
-existing panes and the active modal before installing the new adapter. Repository
-switching therefore requires mounting a new pane; detached old controls cannot
-mutate the newly configured repository. An in-flight transaction still relies on
-the host's original-scope final guards described above. Disposing aborts optimisation,
-invalidates pending loads/details, disconnects thumbnail observers, revokes generated
-Blob URLs and removes the view and its event handlers. It never clears drafts.
+Replacing an image inside `<picture>` removes the wrapper and its `<source>` tags.
+The image keeps its attributes and inherits a wrapper slot if needed. If the
+sources had screen-specific pictures, the notice says the new picture is now used
+on all screens. `mediaPictureUnwrap` in `src/page-builder/media-markup.ts` shares
+this rule with Replace everywhere.
 
-The root explorer's third-tab wiring is deliberately left to the host owner;
-this leaf module does not modify `main.ts`. The isolated native-save browser
-harness in `native-media-pane.spec.ts` mounts the API with the real editor adapter
-and verifies non-dialog rendering, filtering/details, draft persistence through
-hide/remount, atomic rename/Undo, adapter invalidation, late-load disposal and
-pending-worker cancellation. Run on free port 5366 or 5367, for example:
+Descriptions follow the file unless the place has its own words or is Decorative.
+An undescribed page picture gets empty alt without a Decorative mark and warns
+Not described yet. Legacy filename words also count as undescribed. File description
+changes reach following places in the same change. Per-place marks are per file
+and page, so two uses there share the mark. Agent descriptions and subtitles wait
+in To check until the person approves or edits them; see `src/page-builder/media-descriptions.ts`.
 
-```sh
-ASE_TEST_PORT=5366 npm run test:browser -- tests/native-save/native-media-pane.spec.ts tests/native-save/native-media-library.spec.ts tests/native-save/native-media-transaction.spec.ts
-```
+## Image popup and Social image
 
-Background loads and host refreshes expose `aria-busy` without locking Search,
-Collections or image details. Repository mutations lock controls without removing
-keyboard focus; unavailable controls are visibly dimmed. A metadata form remains
-visible during a refresh, but Save waits for the fresh repository snapshot. Cancel
-can abort browser optimisation previews and is unavailable once
-a transaction starts. Modal Close dismisses the picker without rolling back an
-already started transaction. Uploads attempted during a mutation show feedback.
+The edit bar's Image button opens `src/page-builder/image-popup.ts`. Shape and
+Focus point change only that place. Original shows the whole picture; Square,
+4:3, 16:9 and Tall 4:5 fill a frame. A shaped component offers its own shape first.
+Original overrides that component to show the whole picture; choosing the component's
+shape removes the place's override. Shape and focus write only the relevant inline
+styles through `src/page-builder/place-frame.ts`; they create no file.
 
-The persistent Media tab uses a bounded `min(55dvh, 560px)` height and one scroll
-area for its One bar, grid and details. The One bar (media-manager ticket 06) is a
-single row, even on phones, of 44 px controls 8 px apart: **Search**, the
-**Collections** dropdown and **More**. Collections is a native `<select>` (All
-collections, then each collection) that takes the editor's look, Phosphor caret and
-check where the browser supports customizable selects (`appearance: base-select`) and
-stays a plain select elsewhere; long names shorten in the closed control. More opens
-a menu: **Add new file** (the file chooser), then **Show** All, Images, Video, Audio
-or Documents (PDFs and other downloads). Search respects the chosen kind and
-collection; when nothing matches, one button steps back: to all media, then all
-collections, then clearing the search (`mediaLibraryRecovery`). The pane has no
-heading or separate Add button; the explorer's tab names it. The grid is Tiles (media-manager ticket 06):
-square crops, one per Image family (`mediaLibraryTiles`), 3 across below a 520 px
-browse width, 4 below 800 px and 6 above; the explorer widens to
-`min(1040px, 100vw - 32px)` while Media shows, so phones get 3, tablets 4 and wide
-screens 6. Each tile has its page count top left and its selection top right (44 px
-targets that never overlap); the name shows on hover, keyboard focus or selection,
-always on touch, over a blurred gradient. A file the browser cannot draw gets a
-clean surface with its type. Narrow details replace the grid, with Back
-to grid reachable in that same scroll area. The modal retains its two-column layout.
+Focus point can be dragged, pressed or moved with arrow keys. Raster pictures in
+the site also offer Free, Zoom and Turn. Done makes a Trimmed copy from the full
+original, with Responsive copies and a fresh -crop name, for this place only.
+Reopening restores the trim on the original. A superseded unused copy goes to
+Recently removed; a used or Always keep copy stays. Replace keeps the shape and
+centres focus. Cancel, Escape or an outside press discards the popup's changes.
+Phone and Computer previews show the result before Done.
 
-In explorer panes narrower than 600px, opening details hides the One bar and shows
-the Media heading as the details' title. Back to grid restores the bar with its
-search, collection, kind and selection intact. A compact image
-preview leaves the metadata heading and default alt field visible immediately;
-remaining metadata and file actions share the pane's single scroll area. The
-modal keeps its browsing tools and two-column layout.
+Open large editor loads `src/page-builder/image-large-editor.ts`: dragging, wheel
+zoom, frame handles, straighten, turn, flip, Reset and local Undo/Redo. Cancel
+returns to the popup's earlier state; Done saves and closes both. On phones it
+fills the screen with compact tools and a Preview sheet. The small popup is a
+bottom sheet with touch-sized controls and a shape menu that stays clear of its footer.
+SVGs, outside pictures and component-template fallback pictures do not get raster
+trim tools. The core trim transaction is `trimPlace` in `src/page-builder/place-trim.ts`.
 
-Refreshes restore a replaced focused thumbnail or usage button by its image path. A keyboard detail request made while loading finishes
-with focus on Back to grid, provided focus has not moved elsewhere. Refreshes
-refuse new delete confirmations and invalidate existing confirmations so current
-usage must be reviewed before deleting. Detached confirmation controls cannot
-commit a delete after their reference snapshot has been invalidated.
+Page settings' Social image and Site settings' Default social image use
+`src/page-builder/social-image-popup.ts`. It fixes the frame to the 1200 × 630 sharing
+shape, with focus, zoom, Replace and a link-card preview. Done stages the frame; settings'
+Apply saves a fresh -social.jpg sharing copy and its links in one change. The JPEG
+is never enlarged and puts transparency on white. It uses a full Site address;
+without one the editor writes a root link and warns sharing services may not show
+it. Animated pictures ask for a still picture. Unchanged sharing copies are reused.
 
-Failed background image reloads return focus to the thumbnail only when focus was
-lost from the detail sheet; Search and controls elsewhere keep focus. Failed direct
-detail loads clear the cached failure so the same image can be retried. Successful
-deletions focus the neighbouring visible thumbnail, or the empty grid when none
-remain. A refresh requested during deletion is refused until the mutation finishes; it does not invalidate the active
-delete confirmation or display a misleading Reopen Delete notice.
+## Clean up and Recently removed
+
+More → Clean up opens a review, grouped as Nothing uses these, Trimmed copies
+nothing uses, and Copies whose main image is gone. Choose files, Review removal,
+then confirm. `mediaCleanUpSuggestions` in `src/page-builder/media-clean-up.ts`
+requires a complete [site-wide use check](asset-references.md). Unknown or unreadable
+text blocks removal suggestions. A use of any family member protects the family.
+Always keep on any member also protects it. Kept originals without a main and
+copied stills belonging to recorded Online videos are never suggested alone.
+
+Removal re-checks uses and Always keep, then removes whole families in one change.
+The review offers Undo. File details' Remove file can also remove used files after
+warning which pages will break; agent removal refuses used or Always keep files.
+The Files tab's delete keeps its stricter in-use check.
+
+More → Recently removed lists the last 30 days, newest first, with Restore.
+`src/page-builder/recently-removed.ts` stores committed bytes by Git blob SHA;
+unsaved or edited bytes use IndexedDB browser copies. Those copies work only in
+that browser. Restore brings back the whole family at the same addresses with its
+records, even after saving. A taken address or missing browser copy refuses.
+Expired entries leave the list. Removal does not erase Git history.
+
+The Media tab and explorer button show a badge counting files to clean up plus
+pages/components with images to improve. Dismiss remembers the current suggestions
+per repository and branch; new suggestions bring it back. Counts wait for checks;
+a zero page count alone is not proof that a file is unused.
+
+## Video, audio, Online videos and downloads
+
+`src/page-builder/video-prepare.ts` makes H.264 MP4 and a WebP still, with the video's
+rotation applied and no copied metadata. Smaller fits 720p, Balanced 1080p, Higher
+quality keeps size; none enlarges. Animated GIFs become silent Looping videos.
+Sound becomes AAC 128 kbit/s where supported; existing AAC can pass through when
+encoding is unavailable. Sound is never silently dropped.
+
+`src/page-builder/audio-prepare.worker.ts` makes AAC-LC M4A: Balanced 96 kbit/s,
+Higher quality 128 kbit/s, Speech 64 kbit/s mono. Already compressed MP3/AAC below
+160 kbit/s can keep their bytes regardless of the setting. Firefox and Chromium
+on Linux have no AAC encoder. There is no @mediabunny/aac-encoder fallback (Lex,
+2026-10-15): unsuitable conversion falls through to Add unchanged? for suitable
+files within the cap, or advice to export a supported format. Browsers without
+video encoding can retain suitable videos with a note.
+
+`src/page-builder/player-markup.ts` writes native video/audio and download cards,
+and installs the site's player once. `writePlayerFiles` writes missing player
+scripts and stylesheet as text, never binary uploads, on every placement and
+Improve images path. Existing player files are kept. `readStyleFiles` in
+`src/native-style-files.ts` asks for each stylesheet once per pass and skips
+textless drafts, so a bad draft cannot cause a preview reload loop.
+
+The site's ordinary video player starts from its still on tap. Its bar has play,
+timeline, time, sound, subtitles, speed, picture-in-picture where supported and
+full screen. Audio has play, timeline, time and a transcript from subtitles.
+Browser controls remain the fallback. Looping video plays silently while visible,
+with a corner pause/play button; reduced motion starts paused. Section background
+video also holds its still for reduced motion or save-data. Picture spots accept
+only silent Looping video. The player starts it; markup never needs autoplay.
+A corner button inside a link toggles without following the link; the picture and
+link text still navigate.
+
+File details can choose a video's still from a moment or another Media picture,
+and add, replace or remove subtitles everywhere. SubRip becomes WebVTT beside the
+video/audio file. Changes update all placements in one Undo step. The editing
+preview stays still; the edit bar's Play/Stop temporarily checks playback without
+writing the page. Online playback uses an overlay outside the sandbox.
+
+Add → Media accepts YouTube or Vimeo addresses. `src/page-builder/online-video-add.ts`
+reads title and still once in the browser, prepares a local still and records the
+video. Blocked stills leave a titled link asking for the person's own picture.
+Recorded videos can be reused without another service request. The site's link
+shows its local still and contacts the service only on play. The shared bar falls
+back to the service's own player on failure; Vimeo details can request its own bar.
+Online videos have no picture-in-picture; YouTube has no shared-bar CC button.
+
+PDFs stay unchanged and can gain a first-page WebP preview. A failed preview does
+not stop adding. PDF cards Open; other download cards Download. Video/PDF tiles
+load their still, not the full file.
+
+## Improve images
+
+More → Improve images lists one row per page or component, with what would change,
+individual ticks, Fix and Fix all. `improveImagesPlan` in
+`src/page-builder/improve-images.ts` scans; `src/page-builder/improve-images-run.ts`
+combines engines into one change per row. Completed rows stay done on Cancel.
+Component rows cannot be measured in the page preview and use the safe loading
+fallback.
+Undo per row and Undo all are available; a page edited since refuses restoration.
+Unticked pictures are remembered in the records.
+
+It makes lighter files and missing copies, adds size/loading details, converts GIFs
+to Looping videos, brings readable outside pictures into the site, and replaces
+old YouTube/Vimeo players with Online videos. Links around pictures stay. Script
+pictures, sample code, structured data, template fallbacks and CSS backgrounds are
+left alone; descriptions are not part of this action. Outside reads can fail as
+website gone or not allowed; Use my own copy supplies a local file instead.
+Agents run the same work but leave outside pictures and old service players for
+the person.
+
+Old heavy files stay unchanged for Clean up once unused. Existing copy sets are
+adopted. AVIF/WebP replacements in sharing tags get a family -sharing.jpg at a
+full address, with matching type and size details; if that JPEG is not lighter,
+Improve images keeps the old sharing picture and reports it. Replace everywhere
+uses the same JPEG writer, with its own [replacement rules](asset-references.md#replace-everywhere).
+
+## Sub-folder sites and transactions
+
+Site settings → General → Site address stores the public address in .editor/config.json.
+Its path gives the prefix for every written media address, page link, Change URL
+forwarding line, component loader and stylesheet link. The canvas reads prefixed
+and plain root links. Changing the folder rewrites supported site addresses in
+one guarded settings change; a host-only change with the same folder does not
+trigger that rewrite. See [address rewriting](asset-references.md#site-address-prefix)
+and [ADR 0001](../adr/0001-the-repository-is-the-site.md).
+
+GitHub Pages project sites are supported. Applying a changed project-site address
+adds an empty .nojekyll when missing. GitHub Pages ignores _redirects; Keep the old
+address working warns about that limit.
+
+`createMediaWorkspace` in `src/page-builder/media-workspace.ts` prepares a
+`MediaWorkspaceBatch`; `applyMediaBatch` in `src/media-batch.ts` connects it to the
+host. Batches prove scope, file list, source text and binary revisions before
+committing files, records and references together. Newer edits refuse the whole
+change. One batch is one Undo step. With no editable file open, file-only media
+changes keep their Undo until a file opens; rewriting page text still requires an
+open page. Upload bytes needed by Undo are held until that history step is released.
