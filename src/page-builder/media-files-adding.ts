@@ -29,6 +29,8 @@ function cancel(entry: FilesAddingEntry) {
 export function addFilesTo(mount: HTMLElement, folder: string, files: File[], host: FilesAddingHost) {
   if (!section) {
     section = node("section", "media-library__adding media-files-adding"); section.hidden = true;
+    // The summary is pinned to the foot of the Files panel: the toast sits above it, never over Retry.
+    section.dataset.toastAvoid = "";
     section.setAttribute("aria-label", "Files being added");
     runs = createFilesAdding({
       prepare: (file, key, into, signal, quality, keepOriginal, videoQuality, audio) => prepareMediaFile(file, key, into, signal, undefined, askToAddUnchanged, undefined, quality, keepOriginal, videoQuality, undefined, audio),
