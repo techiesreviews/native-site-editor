@@ -160,11 +160,23 @@ The build plan for the [media-manager map](../map.md). Requirements, flow per sl
 
 ### Phase 8: UX and UI audit (Lex, 2026-10-14)
 
-Lex asked for a final UX and UI audit of every media screen against current Mobbin references and the Brizy popup Lex shared, aiming for minimal and easy. Fix slices from the audit are added here.
+Lex asked for a final UX and UI audit of every media screen against current Mobbin references and the Brizy popup Lex shared, aiming for minimal and easy. Fix slices from the audit are added here; the findings are in [ux-ui-audit.md](ux-ui-audit.md), and its Questions for Lex wait for answers before any slice is made for them.
 
 | Slice | Builder | Blocked by |
 | --- | --- | --- |
 | [89 UX and UI audit, against Mobbin and Brizy](tickets/89-ux-ui-audit.md) | claude | 82 |
+| [104 The Media panel fills the height, keeps one size, pins its actions](tickets/104-media-panel-size.md) | claude | 89 |
+| [105 One visible confirmation: a toast for the whole editor](tickets/105-editor-toast.md) | claude | 89 |
+| [106 Touch, disabled and dark-mode fixes](tickets/106-touch-dark-fixes.md) | claude | 89 |
+| [107 Tiles, list view, selection bar and the phone One bar](tickets/107-tiles-list-phone-bar.md) | claude | 104 |
+| [108 File details: one fact line, a calm preview, actions in order](tickets/108-file-details-calm.md) | claude | 105 |
+| [109 Image popup and Social image: shorter, closer to Brizy](tickets/109-image-popup-shorter.md) | claude | 106 |
+| [110 Large editor: fits at every width, one shape menu, labelled phone tools](tickets/110-large-editor-fit.md) | claude | 109 |
+| [111 The sub-screens share one layout](tickets/111-sub-screens-one-layout.md) | claude | 104, 105 |
+| [112 Adding: settings as choice cards, shorter tray messages](tickets/112-adding-settings-tray.md) | claude | 105, 106 |
+| [113 Picker, Replace everywhere and Site settings: less text, pages named](tickets/113-picker-replace-settings-text.md) | claude | 104, 105 |
+| [114 Numbers that agree, a double-click that always opens, tidy dates](tickets/114-numbers-double-click-dates.md) | sol | 89 |
+| [115 Placed video, audio and downloads in the editor: plain words, real times](tickets/115-placed-media-editor.md) | claude | 105 |
 
 ## Finding the frontier
 
