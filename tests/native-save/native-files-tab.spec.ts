@@ -78,6 +78,40 @@ test("the type icons arriving leave a rename being typed as it is", async ({ pag
   await expect(row(page, "robots.txt").locator(".file-type")).toHaveText("Text");
 });
 
+test("coming back to Files marks the file opened elsewhere, and only it", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await openFiles(page, baseURL);
+  await row(page, "about").click();
+  await expect(row(page, "about/index.html")).toBeVisible();
+  await expect(row(page, "index.html")).toHaveClass(/\bselected\b/);
+  const marked = () => explorer(page).locator(".file-row.selected");
+  const showFiles = async () => {
+    if (!(await explorer(page).isVisible())) await page.locator("#explorer-toggle").click();
+    const tab = explorer(page).getByRole("tab", { name: "Files", exact: true });
+    if ((await tab.getAttribute("aria-selected")) !== "true") await tab.click();
+  };
+
+  // Opened by its address with the explorer closed (the repository reloads, folders close).
+  await page.keyboard.press("Escape");
+  await expect(explorer(page)).toBeHidden();
+  await page.evaluate(() => { location.hash = "#repo=501&branch=main&file=about%2Findex.html"; });
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "about/index.html");
+  await showFiles();
+  await expect(marked()).toHaveCount(0);
+  if ((await row(page, "about").getAttribute("aria-expanded")) !== "true") await row(page, "about").click();
+  await expect(marked()).toHaveCount(1);
+  await expect(row(page, "about/index.html")).toHaveClass(/\bselected\b/);
+
+  // Opened from the Pages tab, both rows already drawn: choosing Files again moves the mark.
+  if (!(await explorer(page).isVisible())) await page.locator("#explorer-toggle").click();
+  await explorer(page).getByRole("tab", { name: "Pages", exact: true }).click();
+  await explorer(page).locator(".pages-row", { hasText: "Home" }).first().click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
+  await showFiles();
+  await expect(marked()).toHaveCount(1);
+  await expect(row(page, "index.html")).toHaveClass(/\bselected\b/);
+});
+
 test.describe("touch", () => {
   test.use({ hasTouch: true, viewport: { width: 390, height: 844 } });
   test("rows are 44 px with one ⋯ each; a folder's menu still adds", async ({ page, baseURL }) => {
