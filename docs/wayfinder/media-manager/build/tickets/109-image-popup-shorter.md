@@ -1,8 +1,8 @@
 ---
 title: Image popup and Social image: shorter, closer to Brizy
 type: task (AFK)
-status: open
-assignee:
+status: in progress
+assignee: claude (mm-109 runner)
 blocked_by: [106-touch-dark-fixes]
 builder: claude
 phase: 8
