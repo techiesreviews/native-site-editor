@@ -1,5 +1,7 @@
-Byte-identical snapshot of `native-site-editor-starter` at commit `3aa1b13`
-on the starter's `dev` branch: media manager slice 96's player fix (a looping
+Byte-identical snapshot of `native-site-editor-starter` at commit `8f55ecc`
+on the starter's `dev` branch: media manager slice 69's Media chapter rules
+(agents place video, audio, downloads and Online videos; loop, stills,
+subtitles), on top of `3aa1b13`, slice 96's player fix (a looping
 video's corner pause button inside a link stays on the page, `d4c2635`, and
 its review fix for unnamed videos), on top of
 `7a35988`, slice 93's Media chapter rule (the focus point after agents'
@@ -26,7 +28,7 @@ archive from a starter checkout (`<starter>`):
 
 ```sh
 find fixtures/actual-starter -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
-git -C <starter> archive 3aa1b13 | tar -x -C fixtures/actual-starter
+git -C <starter> archive 8f55ecc | tar -x -C fixtures/actual-starter
 ```
 
 When updating the snapshot, replace the commit in this provenance and command.

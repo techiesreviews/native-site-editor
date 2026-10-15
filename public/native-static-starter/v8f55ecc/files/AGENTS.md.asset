@@ -175,8 +175,9 @@ Media work goes through the open editor tab, like every agent edit. Each change 
 
 ### Seeing and placing
 - list_media reports kind, size, Image family (copies and originals), page and other uses, Description or Decorative, by agent, collections, Always keep, drafts and Not checked yet; use offset/limit and nextOffset to page through it.
+- list_media also reports recorded Online videos: title, service, address, still, uses and serviceBar.
 - preview_media returns a small preview of a picture (at most 512 px on its longest side); it refuses documents, video and audio.
-- Never upload, fetch from the web or generate media. Place only files already in Media; write_file refuses binary media paths (an SVG is text and stays writable). The user adds other media in the editor's Media.
+- Never upload, fetch from the web or generate media. Place files and Online videos already in Media; write_file refuses binary media paths (an SVG is text and stays writable). New files and new online addresses stay with the user in Add → Media. Agents may write subtitles as text.
 - place_media fills an existing `<img>` on a page with a file already in Media, or swaps the picture in it, writing exactly the markup the editor writes. For a picture somewhere new, first make its image place (a section or component with an `<img>`), then place the file in it.
 
 ### Folders and names
@@ -189,6 +190,14 @@ Media work goes through the open editor tab, like every agent edit. Each change 
 - place_media writes `src`, `srcset` (the family's copies smaller than the file, then the file), `sizes` measured in the user's preview, `width`/`height` and `decoding="async"`.
 - First-screen images are eager; the first large one gets `fetchpriority="high"`. Others get `loading="lazy"` with `sizes` starting `auto`. Replacing inside a `<picture>` removes its wrapper and sources.
 - Do not write or edit these attributes by hand on placed images, or hand-write `<img>` markup for a file in Media. Use place_media, which also keeps descriptions right.
+
+### Video, audio and downloads
+- place_media also places video, audio and downloads already in Media. With element selected, they go where Add → Media puts them: inside a Section or Div, into an items slot, after the selection or in a new Section. A picture spot (an image slot, including a picture's image) takes a browser-playable video as a silent Looping video; audio and downloads cannot fill it.
+- For an Online video, give its YouTube or Vimeo address to place_media. It must already be recorded in Media; placing it again uses its still and serviceBar, with the address's start time, without contacting the service. Only the user may paste a new address in Add → Media.
+- loop_video reads a placed video's Looping state, or sets looping to true or false. A video in a picture spot always loops silently. Looping video is written without autoplay.
+- video_still chooses a video's still everywhere: give exactly one of moment (seconds into the video) or picture (a picture already in Media). A moment saves WebP at the video's own size, beside the video.
+- write_subtitles takes file, text and optional format (vtt or srt). It writes WebVTT beside the video or audio and adds tracks everywhere. Subtitles carry the by agent mark in To check until the user checks or edits them; agents never clear that mark.
+- Never hand-write video, audio, download-card or Online-video markup, poster, track or player links. These tools call the editor's own engines and add the site's player once.
 
 ### Shape, focus and trims
 - frame_image with no changes reads a place's file, shape, focus point and trim. It reports the component's shape when that is what shows, and names any component shape available.
