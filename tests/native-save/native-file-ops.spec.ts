@@ -203,7 +203,9 @@ test("a file deleted from its menu stays struck through with Restore; Delete, Sh
   await expect(dialog).toBeHidden();
   await expect(explorer(page)).toBeVisible();
   await expect(row(page, "note.html")).toBeFocused();
+  // The dialog opens once the files that mention it are read: Enter waits for its Delete.
   await page.keyboard.press("Delete");
+  await expect(dialog.getByRole("button", { name: "Delete" })).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(row(page, "note.html")).toHaveClass(/is-deleted/);
 
