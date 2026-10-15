@@ -38,6 +38,8 @@ export interface MediaControllerPorts {
   usage?: MediaUsageCheckPorts;
   /** The clean-up count: where it is remembered (repository and branch) and the controls that show it. */
   cleanUp?: { place(): string; marks(): HTMLElement[] };
+  /** Opens a page in the canvas and waits until it is shown (Improve images measures each page there). */
+  showPage?(path: string): Promise<void>;
   origins?(): string[];
   workspace(): MediaWorkspaceSnapshot | undefined;
   identity(): string;
@@ -99,6 +101,9 @@ export function createMediaController(ports: MediaControllerPorts) {
       item: () => cleanUp?.item() ?? { label: "Clean up", disabled: "Still checking which files are used." },
       state: () => cleanUp?.state(),
       dismiss: () => cleanUp?.dismiss(),
+      improve: { item: () => cleanUp?.improveItem() ?? { label: "Improve images" }, known: (sizes: Record<string, { width?: number; height?: number }>) => cleanUp?.known(sizes),
+        measure: (path: string, node: number[], size: { width?: number; height?: number }) => ports.measureImage?.(path, node, size) ?? Promise.resolve(undefined),
+        show: (path: string) => ports.showPage?.(path), url: () => ports.usage?.url() },
       onChange: (listener: () => void) => { cleanUpListeners.add(listener); return () => { cleanUpListeners.delete(listener); }; },
     };
   }
@@ -117,7 +122,8 @@ export function createMediaController(ports: MediaControllerPorts) {
       ]).then(([{ createMediaUsageController }, cleanUpModule, view]) => {
         if (marks && cleanUpModule && view) {
           cleanUpView = view;
-          cleanUp = cleanUpModule.createMediaCleanUpController({ ...check, place: () => marks.place(), storage: () => localStorage, changed: drawCleanUp });
+          cleanUp = cleanUpModule.createMediaCleanUpController({ ...check, place: () => marks.place(), storage: () => localStorage, changed: drawCleanUp,
+            size: path => { const at = ports.workspace(), draft = at?.drafts.get(at.scope, path); return draft ? draft.upload?.size : ports.entry(path)?.size; } });
         }
         usage = createMediaUsageController({ ...check, changed: records => {
           check.changed(records);

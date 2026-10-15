@@ -2420,6 +2420,11 @@ const mediaController = createMediaController({
     settled: () => nativeTextIndexing ?? Promise.resolve(), changed: () => {},
   },
   cleanUp: { place: setupScope, marks: () => ["explorer-tab-media", "explorer-toggle"].flatMap(id => document.getElementById(id) ?? []) },
+  // Improve images opens each page so its pictures are measured; the canvas draws it a moment later (at most 5 s).
+  showPage: async path => {
+    if (appStore.openFile.value !== path) await openAfter(path, true, true);
+    for (let wait = 0; wait < 50 && nativeSite?.routes[nativePreview?.shownRoute() ?? ""] !== path; wait++) await new Promise(done => setTimeout(done, 100));
+  },
   workspace: () => {
     const repo = appStore.repository.value, scope = draftScope();
     if (!repo || !scope || !appStore.snapshot.value) return undefined;

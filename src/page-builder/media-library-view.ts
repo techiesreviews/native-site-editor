@@ -98,6 +98,8 @@ export function createMediaLibraryView(
   const more = createRowMenu(modal ?? container);
   // Clean up (slices 49, 50): More's item after Add new file opens the review; it redraws with each check.
   const cleanUp = modal ? undefined : options.cleanUp?.(), cleanUpMemory: { undo?: string[] } = {};
+  // Improve images (slice 74) sits beside it; its Undo list outlives leaving the screen.
+  let improveMemory: import("./media-library-improve").ImproveMemory | undefined;
   const listeners = new AbortController(), selected = new Set<string>(), observers = new Set<IntersectionObserver>();
   const busyLock = createBusyLock({ root: dialog, signal: listeners.signal, tell,
     alive: () => alive, loading: () => loadingLibrary });
@@ -373,6 +375,11 @@ export function createMediaLibraryView(
         run: () => void task(async () => {
         const { showCleanUp } = await import("./media-library-clean-up");
         if (alive && library) showCleanUp(sheet, { ...context, cleanUp, memory: cleanUpMemory, close: () => closeSheet(shell.more) });
+      }, false) }] : [],
+      ...cleanUp?.improve && adapter.improveImages ? [{ ...cleanUp.improve.item(), run: () => void task(async () => {
+        const module = await import("./media-library-improve");
+        improveMemory ??= module.improveMemory();
+        if (alive && library) module.showImproveImages(sheet, { ...context, improve: cleanUp.improve!, memory: improveMemory, close: () => closeSheet(shell.more) });
       }, false) }] : [],
       // Recently removed (ticket 10): removed files for 30 days, each with Restore; loaded when opened.
       ...!modal && adapter.restore ? [{ label: "Recently removed", run: () => void task(async () => {

@@ -841,6 +841,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       return improveHeavy(ctx, request, ports);
     },
     share,
+    async improveImages() { return (await import("./improve-images-run")).improveImagesSession(context); },
     async rename(path, name, options) {
       const ctx = active();
       const versions = familyVersions(ctx, familyPaths(path, ctx.paths));

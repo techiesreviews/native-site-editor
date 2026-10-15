@@ -20,5 +20,5 @@ export function drawMediaCount(marks: HTMLElement[], badge: MediaBadge) {
     if (badge.show) mark.setAttribute("aria-describedby", NOTE_ID);
     else if (mark.getAttribute("aria-describedby") === NOTE_ID) mark.removeAttribute("aria-describedby");
   }
-  note.textContent = mediaBadgeLabel(badge.count);
+  note.textContent = mediaBadgeLabel(badge.count, badge.improve);
 }

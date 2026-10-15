@@ -55,6 +55,8 @@ export interface MediaPickerHost {
   import(requests: MediaImportRequest[], place?: MediaPlacement): Promise<string[]>;
   /** Adding settings: remember changed choices for this site, or "reset" to the defaults. One Undo step. */
   adding?(change: Partial<MediaAddingChoices> | "reset"): Promise<void>;
+  /** Improve images (ticket 11): its plan, row fixes, their Undo and left-as-is pictures. */
+  improveImages?(): Promise<import("./improve-images-run").ImproveImagesSession>;
   openPage(path: string): Promise<void>;
   /** The site's usage check (checked on open); without it every file is Not checked yet. */
   usage?: MediaUsageSource;
@@ -119,10 +121,23 @@ export interface MediaCleanUpEntry {
   item(): { label: string; disabled?: string };
   state(): { suggestions: MediaCleanUpSuggestions; badge: { show: boolean } } | undefined;
   dismiss(): void;
+  /** Improve images in More (ticket 11), counted with Clean up on the Media tab. */
+  improve?: MediaImproveEntry;
   /** Called after each newer state; returns the unsubscribe. */
   onChange(listener: () => void): () => void;
 }
 export type MediaCleanUpMount = () => MediaCleanUpEntry;
+export interface MediaImproveEntry {
+  item(): { label: string };
+  /** Widths the screen read from the bytes, so the tab's count matches the screen. */
+  known(sizes: Record<string, { width?: number; height?: number }>): void;
+  /** Measures a picture's place on the shown page (slice 33); undefined when that page is not shown. */
+  measure(path: string, node: number[], size: { width?: number; height?: number }): Promise<import("./media-markup").MediaMeasured | undefined>;
+  /** Shows a page in the canvas so its pictures can be measured. */
+  show(path: string): Promise<void> | undefined;
+  /** The site's full address (sharing pictures). */
+  url(): string | undefined;
+}
 export interface MediaPickerOptions {
   /** Use: places the chosen file. The picker closes once it resolves; a thrown error keeps it open.
    * `cancelled` turns true when the picker closes meanwhile (Cancel): nothing may be placed after it. */
