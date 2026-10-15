@@ -190,6 +190,7 @@ Lex reviewed the editor on the preview and asked for these touch-ups.
 
 | Slice | Builder | Blocked by |
 | --- | --- | --- |
+| [122 Gallery polish from Lex's review](tickets/122-gallery-polish.md) | claude | 121 |
 | [123 File details redesign: a modern asset detail view](tickets/123-file-details-redesign.md) | claude | 108 |
 | [125 The Pages tab looks better (Mobbin-led redesign)](tickets/125-pages-tab.md) | claude | 104 |
 
