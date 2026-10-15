@@ -23,6 +23,10 @@
 // Leave out autoplay: the player starts it, so without JavaScript a visitor
 // who asked for less motion still sees the still picture and the browser's
 // play button. (autoplay works too; the player pauses it for less motion.)
+// Inside a link, leave out controls (a video with controls is not allowed
+// there): <a href="/story/"><video src=… muted loop playsinline></video></a>.
+// The corner button pauses and plays without following the link; the rest
+// of the picture still opens it.
 //
 // Background video, the first child of a section that it fills; no controls.
 // Shows its still for less motion or when the browser asks to save data:
@@ -487,6 +491,13 @@ function enhanceLooping(video) {
   } else {
     box = wrap(video, "loop");
     box.append(corner);
+    // Inside a link, the link is named from its content: a named group gives
+    // it the video's name instead of the corner button's "Pause video".
+    const name = nameOf(video);
+    if (name && box.closest("a[href]")) {
+      box.setAttribute("role", "group");
+      box.setAttribute("aria-label", name);
+    }
   }
 
   const calm = () => reduceMotion.matches || (background && navigator.connection?.saveData === true);
@@ -502,7 +513,16 @@ function enhanceLooping(video) {
   video.addEventListener("play", sync);
   video.addEventListener("pause", sync);
   sync();
-  corner.addEventListener("click", () => {
+  // The corner may sit inside a link (a looping video made from a linked GIF)
+  // or a clickable card: pressing it pauses or plays, and nothing else. The
+  // rest of the link still follows it.
+  const own = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+  };
+  corner.addEventListener("auxclick", own);
+  corner.addEventListener("click", (event) => {
+    own(event);
     wanted = video.paused;
     if (wanted) video.preload = "auto";
     if (wanted) play(video);
