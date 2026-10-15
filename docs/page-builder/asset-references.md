@@ -90,8 +90,9 @@ that address is free. New bytes, records and all rewritten mentions form one cha
 Every rewritten mention receives a new-version query value: the first eight hex
 digits of the file's Git blob SHA. Other query values and fragments stay. Missing
 copy entries leave `srcset`; other references to a vanished copy use the new main.
-No extra copy entries are inserted into existing sets. _redirects sources and
-_headers are left alone. Format changes can forward old addresses when requested.
+No extra copy entries are inserted into existing sets. _redirects sources are left
+alone. Paths in _headers follow the replacement but get no new-version mark.
+Format changes can forward old addresses when requested.
 
 Page shapes stay, with focus centred. Places showing a Trimmed copy switch to the
 new picture while keeping the trim's frame proportions. Unused, unkept old trimmed
