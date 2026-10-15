@@ -2,7 +2,7 @@
 title: One Media button for every media spot
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-119 runner)
 blocked_by: [109-image-popup-shorter, 115-placed-media-editor]
 builder: claude
 phase: 8
