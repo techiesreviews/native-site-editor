@@ -2,7 +2,7 @@
 title: The canvas shows sub-folder sites
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-77 runner)
 blocked_by: [76-site-path-prefix]
 builder: sol
 phase: 7
