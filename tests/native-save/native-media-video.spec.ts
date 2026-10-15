@@ -219,3 +219,44 @@ test("Play on an Online video lays YouTube's own player over its place; Stop rem
   await expect.poll(() => mounted(page)).not.toContain("online-video");
   await expect(page.locator(".media-play-layer")).toHaveCount(0);
 });
+// Video details (slice 66): a still from a moment or from Media, and subtitles, applied everywhere the video is used.
+test("video details: a moment becomes the still, an .srt adds a track, a picture from Media replaces the still", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await open(page, baseURL, '<video src="/media/clip.mp4" poster="/images/placeholder.svg" controls preload="none" playsinline width="400" height="240" aria-label="Clip"></video>');
+  await page.locator("#explorer-toggle").click();
+  await page.getByRole("tab", { name: "Media", exact: true }).click();
+  const library = page.getByRole("region", { name: "Media", exact: true });
+  await library.getByRole("button", { name: "Details for media/clip.mp4", exact: true }).click();
+  const status = library.locator(".media-library__message");
+  // A moment: the details player paused one second in.
+  const player = library.locator(".media-detail__preview video");
+  await player.evaluate(video => new Promise(resolve => {
+    const element = video as HTMLVideoElement; element.addEventListener("seeked", resolve, { once: true }); element.currentTime = 1;
+  }));
+  await library.getByRole("button", { name: "Use this moment", exact: true }).click();
+  await expect(status).toHaveText("Still picture changed everywhere the video is used.", { timeout: 20_000 });
+  await expect.poll(() => mounted(page)).toContain('<video src="/media/clip.mp4" poster="/media/clip.webp" controls');
+  await expect(library.locator(".media-detail__still")).toBeVisible();
+  // An .srt: saved as WebVTT beside the video, with a track in the page's language.
+  await library.locator('input[type="file"][accept=".vtt,.srt"]').setInputFiles({ name: "Clip.srt", mimeType: "application/x-subrip", buffer: Buffer.from("1\r\n00:00:00,100 --> 00:00:01,500\r\nHello there\r\n") });
+  await expect(status).toHaveText("Subtitles added: the player shows a CC button.", { timeout: 20_000 });
+  await expect.poll(() => mounted(page)).toContain('aria-label="Clip"><track kind="subtitles" src="/media/clip.vtt" srclang="en" label="English"></video>');
+  await expect(library.getByRole("button", { name: "Replace subtitles clip.vtt", exact: true })).toBeVisible();
+  // Any picture in Media can be the still instead.
+  await library.getByRole("button", { name: "Choose picture…", exact: true }).click();
+  const picker = page.getByRole("dialog", { name: "Choose image", exact: true });
+  await picker.getByRole("button", { name: "Choose images/studio-desk.svg", exact: true }).click();
+  await picker.getByRole("button", { name: "Use image", exact: true }).click();
+  await expect(picker).toBeHidden();
+  await expect.poll(() => mounted(page)).toContain('<video src="/media/clip.mp4" poster="/images/studio-desk.svg" controls');
+  await expect(status).toHaveText("Still picture changed everywhere the video is used.");
+  await save(page);
+  const published = await saved(page, baseURL);
+  expect(published).toContain('poster="/images/studio-desk.svg"');
+  expect(published).toContain('<track kind="subtitles" src="/media/clip.vtt" srclang="en" label="English">');
+  expect(await saved(page, baseURL, "media/clip.vtt")).toBe("WEBVTT\n\n1\n00:00:00.100 --> 00:00:01.500\nHello there\n");
+  // The moment's still stays beside the video, in its family.
+  const still = await page.request.get(`${baseURL}/__demo/file?path=media/clip.webp`);
+  expect((await still.body()).subarray(8, 12).toString()).toBe("WEBP");
+  expect(JSON.parse(await saved(page, baseURL, ".editor/media.json")).files["media/clip.mp4"]).toMatchObject({ still: "images/studio-desk.svg", subtitles: "media/clip.vtt" });
+});

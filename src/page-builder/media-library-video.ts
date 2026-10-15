@@ -57,7 +57,9 @@ export function mediaDetailParts(h: DetailHost, path: string, meta: MediaMetadat
     const choose = button("Choose picture…", () => void task(async () => {
       const { openMediaPicker } = await import("./media-picker");
       if (!current()) return;
-      await openMediaPicker({ adapter, accept: "image/*", place: `${basename(path)} · Still picture`, report: { announce: tell, error: error => tell(String(error)) },
+      // Inside the explorer popover the picker keeps it open, as Replace everywhere does.
+      await openMediaPicker({ adapter, accept: "image/*", place: `${basename(path)} · Still picture`, within: h.dialog.closest<HTMLElement>("[popover]") ?? undefined,
+        report: { announce: tell, error: error => tell(String(error)) },
         onPick: async (image, cancelled, held) => {
           let chosen = image.path;
           // A picture added inside the picker is saved first, then becomes the still.
