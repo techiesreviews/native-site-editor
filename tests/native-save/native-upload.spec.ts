@@ -126,11 +126,11 @@ test("Add new file in the Media picker adds to media/images/ and chooses it; Use
   await expect.poll(() => editorText(page)).toContain(`<img alt="" width="1" height="1" decoding="async" class="hero-image" src="/media/images/team-photo.svg" data-key="hero-image">`);
   await expect(frame(page).locator(".hero img")).toHaveAttribute("src", `data:image/svg+xml;base64,${cleaned.toString("base64")}`);
 
-  // It is an A change, uploaded, with the page's edit beside it.
+  // It is an A change, uploaded, with the page's edit and its date in the media records (slice 103) beside it.
   await showPublish(page);
   await expect(panel(page)).toBeVisible();
   const files = panel(page).locator(".publish-menu__file");
-  await expect(files).toHaveText([/index\.html/, /media\/images\/team-photo\.svg/]);
+  await expect(files).toHaveText([/\.editor\/media\.json/, /index\.html/, /media\/images\/team-photo\.svg/]);
   await expect(files.last().locator(".publish-menu__status [aria-hidden]")).toHaveText("A");
   await expect(panel(page).locator(".publish-menu__note").first()).toHaveText(`Uploaded, ${cleaned.length} B`);
   await page.keyboard.press("Escape");
@@ -168,9 +168,10 @@ test("a file dropped on the Media picker is added and chosen; Discard in the Sav
   await expect(status(page)).toHaveText("Image replaced");
 
   await showPublish(page);
-  await expect(panel(page).locator(".publish-menu__file")).toHaveCount(2);
+  // The page, the file and the media records holding its date (slice 103); the records stay after Discard.
+  await expect(panel(page).locator(".publish-menu__file")).toHaveCount(3);
   await panel(page).getByRole("button", { name: "Discard media/images/placeholder.svg" }).click();
-  await expect(panel(page).locator(".publish-menu__file")).toHaveText([/index\.html/]);
+  await expect(panel(page).locator(".publish-menu__file")).toHaveText([/\.editor\/media\.json/, /index\.html/]);
   await page.keyboard.press("Escape");
   // The page still names it, but nothing is there to show.
   await expect(frame(page).locator(".hero img")).toHaveAttribute("src", "/media/images/placeholder.svg");
@@ -178,7 +179,7 @@ test("a file dropped on the Media picker is added and chosen; Discard in the Sav
   await page.reload();
   await expect(frame(page).locator(".hero h1")).toBeVisible({ timeout: 30_000 });
   await showPublish(page);
-  await expect(panel(page).locator(".publish-menu__file")).toHaveText([/index\.html/]);
+  await expect(panel(page).locator(".publish-menu__file")).toHaveText([/\.editor\/media\.json/, /index\.html/]);
 });
 
 test("Upload files… in a folder's menu and files dropped on a folder upload there; too large files are refused", async ({ page, baseURL }) => {
@@ -233,7 +234,7 @@ test("Upload files… in a folder's menu and files dropped on a folder upload th
   await page.reload();
   await expect(frame(page).locator(".hero h1")).toBeVisible({ timeout: 30_000 });
   await showPublish(page);
-  await expect(panel(page).locator(".publish-menu__file")).toHaveCount(3);
+  await expect(panel(page).locator(".publish-menu__file")).toHaveCount(4);
   for (const box of await panel(page).locator(".publish-menu__file input").all()) await box.check();
   await publishButton(page).click();
   await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });

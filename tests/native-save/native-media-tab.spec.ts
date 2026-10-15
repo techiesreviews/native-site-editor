@@ -524,9 +524,10 @@ test("search narrows, a kind in More narrows the search, and no results offer al
   await mountMixedLibrary(page, baseURL);
   const library = pane(page), search = library.getByLabel("Search media", { exact: true });
   const more = library.getByRole("button", { name: "More", exact: true }), menu = page.getByRole("menu", { name: "More", exact: true });
-  await expect.poll(() => tileNames(page)).toEqual(["images/beach.svg", "images/studio.svg", "media/studio-guide.pdf", "media/studio-tour.mp4"]);
+  // Files with no date list by name, whatever their folder (slice 103).
+  await expect.poll(() => tileNames(page)).toEqual(["images/beach.svg", "media/studio-guide.pdf", "media/studio-tour.mp4", "images/studio.svg"]);
   await search.fill("studio");
-  await expect.poll(() => tileNames(page)).toEqual(["images/studio.svg", "media/studio-guide.pdf", "media/studio-tour.mp4"]);
+  await expect.poll(() => tileNames(page)).toEqual(["media/studio-guide.pdf", "media/studio-tour.mp4", "images/studio.svg"]);
   await expect(library.locator(".media-library__browse > [role=status]")).toHaveText("3 of 4 files");
   await more.click(); await menu.getByRole("menuitemradio", { name: "Video", exact: true }).click();
   await expect(more).toBeFocused();
@@ -548,10 +549,10 @@ test("search narrows, a kind in More narrows the search, and no results offer al
   await library.getByLabel("Collections", { exact: true }).selectOption("Studio");
   await expect(library.getByRole("button", { name: "Search all collections", exact: true })).toBeVisible();
   await search.fill("");
-  await expect.poll(() => tileNames(page)).toEqual(["images/studio.svg", "media/studio-tour.mp4"]);
+  await expect.poll(() => tileNames(page)).toEqual(["media/studio-tour.mp4", "images/studio.svg"]);
   await more.click(); await menu.getByRole("menuitemradio", { name: "Audio", exact: true }).click();
   await library.getByRole("button", { name: "Show all media", exact: true }).click();
-  await expect.poll(() => tileNames(page)).toEqual(["images/studio.svg", "media/studio-tour.mp4"]);
+  await expect.poll(() => tileNames(page)).toEqual(["media/studio-tour.mp4", "images/studio.svg"]);
   await page.evaluate(() => (window as any).mixedProbe.dispose());
 });
 
@@ -565,7 +566,7 @@ test("Collections is a native select that works with arrows and Enter and shorte
   // Open, move down one, choose.
   await page.keyboard.press("Enter"); await page.keyboard.press("ArrowDown"); await page.keyboard.press("Enter");
   await expect(collections).toHaveValue("Studio");
-  await expect.poll(() => tileNames(page)).toEqual(["images/studio.svg", "media/studio-tour.mp4"]);
+  await expect.poll(() => tileNames(page)).toEqual(["media/studio-tour.mp4", "images/studio.svg"]);
   await expect(collections).toBeFocused();
   await page.keyboard.press("Enter"); await page.keyboard.press("ArrowDown"); await page.keyboard.press("Enter");
   await expect(collections).toHaveValue("Studio portraits from the spring campaign and the summer launch");
@@ -593,7 +594,7 @@ test("without customizable selects, Collections stays a plain native select with
   expect(before?.height).toBe(44);
   await collections.focus(); await page.keyboard.press("ArrowDown");
   await expect(collections).toHaveValue("Studio");
-  await expect.poll(() => tileNames(page)).toEqual(["images/studio.svg", "media/studio-tour.mp4"]);
+  await expect.poll(() => tileNames(page)).toEqual(["media/studio-tour.mp4", "images/studio.svg"]);
   await page.keyboard.press("ArrowDown");
   await expect(collections).toHaveValue("Studio portraits from the spring campaign and the summer launch");
   await expect.poll(() => tileNames(page)).toEqual(["images/studio.svg"]);

@@ -29,7 +29,8 @@ async function addAndSee(browser: Browser, baseURL: string | undefined, phone: b
   await add(page, Array.from({ length: 14 }, (_, index) => file(`a-${String(index).padStart(2, "0")}.svg`)));
   await expect(tray(page).getByRole("status")).toHaveText("Added 14 files");
   await cards(page).last().scrollIntoViewIfNeeded();
-  await expect(cards(page).first()).not.toBeInViewport();
+  // A phone's grid is taller than its screen; a desktop shows every tile.
+  if (phone) await expect(cards(page).first()).not.toBeInViewport();
   // A name that sorts last by name still leads: it is the newest.
   await add(page, [file("zebra.svg", "black")]);
   await expect(tray(page).getByRole("status")).toHaveText("Added 1 file");
