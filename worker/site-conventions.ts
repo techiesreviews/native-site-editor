@@ -174,7 +174,7 @@ Media work goes through the open editor tab, like every agent edit. Each change 
 - frame_image with no changes reads a place's file, shape, focus point and trim. It reports the component's shape when that is what shows, and names any component shape available.
 - Original shows the whole picture even inside a shaped component. Use \`shape: "component"\` to bring the component's shape back, removing the place's own shape and keeping its focus; refused without a component shape.
 - A shape (Original, Square, 4:3, 16:9, Tall 4:5) and a focus point change only that place: inline \`aspect-ratio\`, \`object-fit: cover\` and \`object-position\`; nothing new is saved. Never hand-write these declarations on placed images; use frame_image.
-- Trim, zoom, turn, straighten or flip saves a Trimmed copy for that place only: a new file \`<name>-crop.<ext>\` (numbered) with its own copies, made from the site's own picture. Other places keep the original; the original never changes.
+- Trim, zoom, turn, straighten or flip saves a Trimmed copy for that place only: a new file \`<name>-crop.<ext>\` (numbered) with its own copies, made from the site's own picture. Other places keep the original; the original never changes. As in the image popup, the focus point goes to the middle unless the copy's proportions differ from the place's shape. Give focus to set another.
 - Re-cropping starts from the original with the earlier trim: give the whole new trim, not a delta. The earlier copy is removed when nothing else uses it. To show the whole original again, place_media the original file.
 - Trimmed copies are the only new pictures agents make; still never upload, fetch or generate.
 

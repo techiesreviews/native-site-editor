@@ -1,7 +1,7 @@
 ---
 title: Agents' trims treat the focus point as the popup does
 type: task (AFK)
-status: in progress
+status: open
 assignee: claude (mm-93 runner)
 blocked_by: [92-agent-frame-component-shapes]
 builder: sol

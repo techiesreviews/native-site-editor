@@ -1269,8 +1269,8 @@ test("component shape without a shaped component refuses frame and trim without 
   }
 });
 
-/** Runs with a fake image worker that answers every trim with an 1800 px main and three copies. */
-async function withTrimWorker(run: (requests: { file: File; trim: import("../shared/media-records").MediaTrim; options: { quality: number } }[]) => Promise<void>) {
+/** Runs with a fake image worker: an 1800 px main by default, plus responsive copies. */
+async function withTrimWorker(run: (requests: { file: File; trim: import("../shared/media-records").MediaTrim; options: { quality: number } }[]) => Promise<void>, size = { width: 1800, height: 1200 }) {
   const descriptor = Object.getOwnPropertyDescriptor(globalThis, "Worker");
   const requests: { file: File; trim: import("../shared/media-records").MediaTrim; options: { quality: number } }[] = [];
   class Worker {
@@ -1278,8 +1278,8 @@ async function withTrimWorker(run: (requests: { file: File; trim: import("../sha
     postMessage(message: typeof requests[number]) {
       requests.push(message);
       queueMicrotask(() => this.onmessage?.({ data: { result: { before: 100, after: 30,
-        outputs: [{ blob: new Blob(["trim"], { type: "image/webp" }), extension: "webp", width: 1800, height: 1200 },
-          ...[480, 960, 1600].map(width => ({ blob: new Blob(["copy"], { type: "image/webp" }), extension: "webp", variantWidth: width, width, height: width * 2 / 3 }))] } } }));
+        outputs: [{ blob: new Blob(["trim"], { type: "image/webp" }), extension: "webp", ...size },
+          ...[480, 960, 1600].map(width => ({ blob: new Blob(["copy"], { type: "image/webp" }), extension: "webp", variantWidth: width, width, height: width * size.height / size.width }))] } } }));
     }
     terminate() {}
   }
@@ -1298,21 +1298,64 @@ test("agent trims under a component keep the popup's Original, component and unc
     const popup = agentMediaFixture(source), agent = agentMediaFixture(source), target = { path: "index.html", node: [0, 0, 0] };
     const component = componentPicture(source, target.node, path => popup.ports.source(path));
     const start = componentFrame(tag, undefined, target.path, component);
-    const frame = shape === undefined ? undefined : frameChange(start, { component,
-      shape: shape === "component" ? componentPopupShape("<img>", component)! : shape, focus: start.focus! });
+    const frame = frameChange(start, { component,
+      shape: shape === "component" ? componentPopupShape("<img>", component)! : shape ?? start.shape, focus: start.focus! });
     await trimPlace(popup.ports, () => popup.controller.workspaceContext(), target,
-      { trim: { x: 0.25, y: 0.25, width: 0.5, height: 0.5 }, frame }, { stamp: popup.ports.stamp(), epoch: 1, source, expected: tag });
+      { trim: { x: 0.25, y: 0.25, width: 0.5, height: 0.5 }, frame: { shape: shape ?? "square", ...frame, focus: start.focus } }, { stamp: popup.ports.stamp(), epoch: 1, source, expected: tag });
     await applyAgentMedia(await agent.controller.workspaceContext(), mediaCommand("frame_image", { element: "0.0.0", shape, trim: { zoom: 2 } }),
       target => agent.controller.preparePlacement(target), target => agent.controller.prepareFrame(target));
     assert.deepEqual(agent.text, popup.text);
     const page = agent.text.get("index.html")!;
     if (shape === "original") assert.match(page, /aspect-ratio: auto;\s*object-fit: contain/);
-    else if (shape === "component") { assert.doesNotMatch(page, /aspect-ratio|object-fit/); assert.match(page, /object-position:20% 70%/); }
-    else assert.ok(page.includes('style="color:red;aspect-ratio:1/1;object-fit:cover;object-position:20% 70%"'));
+    else if (shape === "component") { assert.doesNotMatch(page, /aspect-ratio|object-fit/); assert.match(page, /object-position: 20% 70%/); }
+    else assert.match(page, /style="color:red;aspect-ratio: 1 \/ 1;object-fit: cover;object-position: 20% 70%;"/);
     assert.equal(agent.history.length, 1); assert.equal(agent.batches.length, 1);
     agent.history.pop()!(); assert.equal(agent.text.get("index.html"), source); assert.ok(!agent.bytes.has("media/images/photo-crop.webp"));
   }
 }));
+
+test("agent trim focus and page text equal popup Done for matching shapes, around shapes and explicit focus", async () => {
+  const { trimPlace } = await import("../src/page-builder/place-trim");
+  const { inlineStyle, writePlaceFrame } = await import("../src/page-builder/place-frame");
+  const centred = { x: 50, y: 50 }, moved = { x: 20, y: 80 };
+  const cases = [
+    { own: "aspect-ratio:1/1;object-fit:cover;", size: { width: 1200, height: 1200 }, focus: centred },
+    { own: "aspect-ratio:1/1;object-fit:cover;", shape: "square", size: { width: 1200, height: 1200 }, focus: centred },
+    { own: "aspect-ratio:1/1;object-fit:cover;", size: { width: 1200, height: 900 }, focus: moved },
+    { own: "aspect-ratio:1/1;object-fit:cover;", size: { width: 1200, height: 1200 }, explicit: { x: 30, y: 60 }, focus: { x: 30, y: 60 } },
+    { own: "aspect-ratio:1/1;object-fit:cover;", raw: "10px 20px", size: { width: 1200, height: 900 }, focus: centred },
+    { own: "", size: { width: 1200, height: 900 }, focus: centred },
+    { own: "", component: true, size: { width: 1200, height: 900 }, focus: centred },
+    { own: "", component: true, size: { width: 1200, height: 1200 }, focus: moved },
+    { own: "aspect-ratio:1/1;object-fit:cover;", component: true, shape: "component", size: { width: 1200, height: 900 }, focus: centred },
+    { own: "aspect-ratio:1/1;object-fit:cover;", component: true, shape: "original", size: { width: 1200, height: 900 }, focus: centred },
+    { own: "aspect-ratio:auto;object-fit:contain;", component: true, size: { width: 1200, height: 900 }, focus: centred },
+  ] satisfies { own: string; component?: boolean; shape?: "square" | "component" | "original"; raw?: string;
+    size: { width: number; height: number }; explicit?: { x: number; y: number }; focus: { x: number; y: number } }[];
+  for (const row of cases) await withTrimWorker(async () => {
+    const tag = `<img${row.component ? ' slot="media"' : ""} src="/media/images/photo.webp" alt="Photo" style="color:red;${row.own}object-position:${row.raw ?? "20% 80%"}">`;
+    const source = `<section>${row.component ? `<photo-card>${tag}</photo-card>` : tag}</section>`;
+    const target = { path: "index.html", node: row.component ? [0, 0, 0] : [0, 0] };
+    const popup = agentMediaFixture(source), agent = agentMediaFixture(source);
+    // Done writes the kept shape and aroundFocus (or the middle) with the trimmed copy.
+    const frame = { shape: row.shape ?? (row.own.startsWith("aspect-ratio:1/1") ? "square" as const : row.component && !row.own ? "component" as const : "original" as const),
+      ...(row.component && (row.shape === "original" || row.own.includes("auto")) ? { originalUnderComponent: true } : {}), focus: row.focus };
+    let measuredStyle: string | undefined;
+    const measure = agent.ports.measureImage;
+    agent.ports.measureImage = async (...args) => { measuredStyle = args[4]; return measure(...args); };
+    await trimPlace(popup.ports, () => popup.controller.workspaceContext(), target,
+      { trim: { x: 0.25, y: 0.25, width: 0.5, height: 0.5 }, frame }, { stamp: popup.ports.stamp(), epoch: 1, source, expected: tag });
+    await applyAgentMedia(await agent.controller.workspaceContext(), mediaCommand("frame_image", {
+      element: target.node.join("."), shape: row.shape, focus: row.explicit, trim: { zoom: 2 },
+    }), target => agent.controller.preparePlacement(target), target => agent.controller.prepareFrame(target));
+    assert.deepEqual(agent.text, popup.text, JSON.stringify(row));
+    assert.equal(measuredStyle, inlineStyle(writePlaceFrame(tag, frame)));
+    const read = await agent.controller.prepareFrame(target).read();
+    assert.deepEqual(read.focus, row.focus);
+    assert.equal(agent.history.length, 1); assert.equal(agent.batches.length, 1);
+    agent.history.pop()!(); assert.equal(agent.text.get("index.html"), source);
+  }, row.size);
+});
 
 test("a component's files changed while framing or trimming refuse the agent's change without writing", () => withTrimWorker(async () => {
   for (const [args, change] of [
@@ -1369,7 +1412,7 @@ test("agent trims and re-crops original bytes in one batch with copies, records 
   assert.match(page, /src="\/media\/images\/photo-crop.webp"/);
   assert.match(page, /srcset="\/media\/images\/photo-crop-480.webp 480w, \/media\/images\/photo-crop-960.webp 960w, \/media\/images\/photo-crop-1600.webp 1600w, \/media\/images\/photo-crop.webp 1800w"/);
   assert.match(page, /width="1800"/); assert.match(page, /height="1200"/); assert.match(page, /fetchpriority="high"/);
-  assert.match(page, /style="aspect-ratio:4\/3;object-fit:cover;object-position:20% 70%"/);
+  assert.match(page, /style="aspect-ratio: 4 \/ 3;object-fit: cover;object-position: 20% 70%;"/);
   assert.match(page, /<img src="\/media\/images\/photo.webp" alt="Photo">/);
   const saved = parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH));
   assert.deepEqual(saved.files[crop].trimmedFrom, { source: f.file, trim: { x: 0.25, y: 0.25, width: 0.5, height: 0.5 } });

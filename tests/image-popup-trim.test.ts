@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   MAX_ZOOM, cutArea, dotApplies, makesNewPicture, moveFree, nudgeFree, placeShape, popupTrim, resizeFree, restoreCut, sameTrim,
-  trimmable, turnBy, turnText, turnedSize, uncut, zoomPercent, zoomTo, type PopupCut,
+  trimmable, trimmedFocus, turnBy, turnText, turnedSize, uncut, zoomPercent, zoomTo, type PopupCut,
 } from "../src/page-builder/image-popup-trim";
 import { isTrim, validTrim } from "../src/page-builder/trim-geometry";
 import type { PopupShape } from "../src/page-builder/image-popup-rules";
@@ -144,4 +144,19 @@ test("two trims are the same within rounding", () => {
   assert.ok(!sameTrim(trim, { ...trim, flipX: true }));
   assert.ok(!sameTrim(trim, undefined));
   assert.ok(sameTrim(undefined, undefined));
+});
+
+test("a trimmed copy centres focus unless its proportions differ from the kept shape by more than 1%", () => {
+  const moved = { x: 20, y: 80 }, centred = { x: 50, y: 50 };
+  for (const width of [1000, 1009, 991]) {
+    assert.deepEqual(trimmedFocus({ width, height: 1000 }, 1, moved), centred);
+  }
+  for (const width of [1011, 989, 1500]) {
+    assert.deepEqual(trimmedFocus({ width, height: 1000 }, 1, moved), moved);
+    assert.deepEqual(trimmedFocus({ width, height: 1000 }, 1), centred);
+  }
+  assert.deepEqual(trimmedFocus({ width: 1200, height: 900 }, 4 / 3, moved), centred);
+  assert.deepEqual(trimmedFocus({ width: 900, height: 1200 }, 4 / 3, moved), moved);
+  assert.deepEqual(trimmedFocus(wide, undefined, moved), centred);
+  assert.deepEqual(moved, { x: 20, y: 80 });
 });

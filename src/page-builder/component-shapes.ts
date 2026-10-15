@@ -5,8 +5,8 @@ import { componentLabel } from "../native-insert";
 import { startTagAttributes } from "./component-model";
 import { compoundsOf, flatRulesWithLayers, hasStatePseudo, matches, type Match } from "./component-css";
 import { parseSource, readSource, tagAttribute, type SourceElement, type SourceNode } from "./source-tree";
-import { POPUP_SHAPES, type PopupShape } from "./image-popup-rules";
-import { hasPlaceShape, readPlaceFrame, type PlaceFrameChange } from "./place-frame";
+import { POPUP_SHAPES, shapeRatio, type PopupShape } from "./image-popup-rules";
+import { hasPlaceShape, readPlaceFrame, writePlaceFrame, type PlaceFrameChange } from "./place-frame";
 
 export interface ComponentPictureShape { value: string; ratio: number; label: string }
 export interface ComponentPicture { label: string; shape: ComponentPictureShape }
@@ -123,4 +123,17 @@ export function agentComponentRead(tag: string, records: Parameters<typeof readP
 export function agentComponentChange(change: PlaceFrameChange, component?: ComponentPicture): PlaceFrameChange {
   if (change.shape === "component" && !component) throw new Error("This picture has no component shape. Choose Original or another shape.");
   return change.shape === "original" && component ? { ...change, originalUnderComponent: true } : change;
+}
+
+/** Decide the agent's trim focus after encoding, using the shape the place will show. */
+export function agentTrimRequest(request: import("./place-trim").PlaceTrimRequest, tag: string, page: string, component?: ComponentPicture): import("./place-trim").PlaceTrimRequest {
+  const start = componentFrame(tag, undefined, page, component);
+  let shape = request.frame?.shape;
+  if (shape === undefined) {
+    if (typeof start.shape === "string") shape = start.shape === "free" ? undefined : start.shape;
+    else if (start.shape.kind === "component") shape = "component";
+  }
+  const frame = agentComponentChange({ ...request.frame, ...(shape ? { shape } : {}) }, component);
+  const kept = componentFrame(writePlaceFrame(tag, frame), undefined, page, component);
+  return { ...request, frame, focusAfterTrim: { ratio: shapeRatio(kept.shape), focus: start.focus } };
 }

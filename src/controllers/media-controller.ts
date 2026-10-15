@@ -353,7 +353,7 @@ export function createMediaController(ports: MediaControllerPorts) {
       async trim(request: import("../page-builder/place-trim").PlaceTrimRequest) {
         const { trimPlace } = await import("../page-builder/place-trim");
         const { shapes, component } = await context();
-        return trimPlace(ports, workspaceContext, target, { ...request, frame: request.frame && shapes.agentComponentChange(request.frame, component) }, proof);
+        return trimPlace(ports, workspaceContext, target, shapes.agentTrimRequest(request, expected, target.path, component), proof);
       },
     };
   }

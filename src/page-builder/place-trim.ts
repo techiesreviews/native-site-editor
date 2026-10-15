@@ -2,7 +2,7 @@ import type { MediaControllerPorts } from "../controllers/media-controller";
 import { MEDIA_RECORDS_PATH, type MediaTrim } from "../../shared/media-records";
 import { NOTHING_TO_TRIM } from "../../shared/agent-image-frame";
 import { locateNativeElementRange } from "../native-source-location";
-import { readPlaceFrame, writePlaceFrame, inlineStyle, type PlaceFrameChange, type PlaceFrameProof } from "./place-frame";
+import { readPlaceFrame, writePlaceFrame, inlineStyle, type PlaceFocus, type PlaceFrameChange, type PlaceFrameProof } from "./place-frame";
 import { readSiteMediaRecords } from "./media-collections";
 import { trimStart, isTrim, validTrim } from "./trimmed-copies";
 import { prepareTrimmedCopy } from "./trimmed-copy-prepare";
@@ -12,10 +12,13 @@ import { mediaPlaceSwap } from "./media-place-swap";
 import { swapPlaceImage } from "./media-descriptions";
 import { mediaCopyName } from "./media-storage";
 import type { MediaImage, MediaMeasured } from "./media-markup";
+import { trimmedFocus } from "./image-popup-trim";
 import { mediaExistingAlt } from "./media-attributes";
 
 export interface PlaceTrimRequest {
   trim: MediaTrim; frame?: PlaceFrameChange;
+  /** Agents without an explicit focus use the popup's rule once the copy's size is known. */
+  focusAfterTrim?: { ratio?: number; focus?: PlaceFocus };
   /** The image popup (slice 41): a picture chosen with Replace to trim instead of the place's own,
    * and the revision its preview showed (read before its bytes); another revision refuses. */
   source?: string; sourceVersion?: string;
@@ -63,9 +66,11 @@ export async function trimPlace(
   const result = await prepareTrimmedCopy(blob, source.split("/").pop()!, request.trim, olderCopiesQuality(records.adding)); check();
   if (cancelled()) return;
   const main = result.outputs[0];
-  if (!main || main.variantWidth) throw new Error("No primary image was encoded.");
-  const framed = request.frame ? (tag: string) => writePlaceFrame(tag, request.frame!) : (tag: string) => tag;
-  const style = request.frame?.shape !== undefined ? inlineStyle(framed(proof.expected)) : undefined;
+  if (!main || main.variantWidth || !main.width || !main.height) throw new Error("No primary image was encoded.");
+  const frame = request.focusAfterTrim && !request.frame?.focus
+    ? { ...request.frame, focus: trimmedFocus({ width: main.width, height: main.height }, request.focusAfterTrim.ratio, request.focusAfterTrim.focus) } : request.frame;
+  const framed = frame ? (tag: string) => writePlaceFrame(tag, frame) : (tag: string) => tag;
+  const style = frame ? inlineStyle(framed(proof.expected)) : undefined;
   let measured: MediaMeasured | undefined;
   try {
     measured = await (style === undefined ? ports.measureImage?.(target.path, target.node, main)

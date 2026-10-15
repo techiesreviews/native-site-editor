@@ -92,6 +92,15 @@ export function sameTrim(a: MediaTrim | undefined, b: MediaTrim | undefined) {
     && near(a.straighten ?? 0, b.straighten ?? 0) && Boolean(a.flipX) === Boolean(b.flipX) && Boolean(a.flipY) === Boolean(b.flipY);
 }
 
+/** A trimmed copy and the shape the place keeps differ in proportions (the popup's 1 % tolerance). */
+export const trimRatiosDiffer = (aspect: number, ratio: number) => Math.abs(aspect / ratio - 1) > 0.01;
+
+/** The focus after a trim (popup Done): a copy cut to the place's shape is centred; a shape kept
+ * around a copy of other proportions keeps the place's focus (centred when it has none readable). */
+export function trimmedFocus(size: { width: number; height: number }, ratio: number | undefined, focus?: PlaceFocus): PlaceFocus {
+  return ratio !== undefined && trimRatiosDiffer(size.width / size.height, ratio) && focus ? focus : { x: 50, y: 50 };
+}
+
 /**
  * A re-crop starts from the full original with the earlier trim put back: the place's shape with
  * its zoom and focus when the trim has that shape and is more than its crop, else Free with the
@@ -108,7 +117,7 @@ export function restoreCut(trim: MediaTrim, shape: PopupShape, size: PictureSize
   const kept = shape === "free" ? "original" : shape, ratio = shapeRatio(kept) ?? width / height;
   const base = cutArea(size, kept, { x: 50, y: 50 }, { ...cut, zoom: 1 }), zoom = base.w / rect.w;
   const free = { shape: "free" as const, focus: { x: 50, y: 50 }, cut, ...kept === "original" ? {} : { around: kept } };
-  if (Math.abs(aspect / ratio - 1) > 0.01 || zoom < 0.99 || zoom > MAX_ZOOM + 0.01) return free;
+  if (trimRatiosDiffer(aspect, ratio) || zoom < 0.99 || zoom > MAX_ZOOM + 0.01) return free;
   const z = clamp(zoom, 1, MAX_ZOOM), w = base.w / z, h = base.h / z;
   const at = (offset: number, room: number) => room > 1e-6 ? clamp(offset / room) * 100 : 50;
   const shaped = { shape: kept, focus: { x: at(rect.x, 1 - w), y: at(rect.y, 1 - h) }, cut: { ...cut, zoom: z, rect: { x: 0, y: 0, w: 1, h: 1 } } };
