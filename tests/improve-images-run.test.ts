@@ -108,7 +108,9 @@ test("Undo per row works in any order; Undo all removes what nothing uses any mo
 test("a row that adds the site's player saves its files as text, and its Undo removes them (slice 101)", async () => {
   const embed = '<iframe src="https://www.youtube.com/embed/abcdefghijk" title="Tour"></iframe>';
   const s = site({ "index.html": `<html><head><title>Home</title></head><body>${embed}</body></html>` });
-  const player = { "styles/media-player.css": "/* player */", "scripts/media-player.js": "// player", "scripts/media-online.js": "// online" };
+  // As the starter's player: its files name each other, and its script loads the online player on demand.
+  const player = { "styles/media-player.css": "/* The player's look (scripts/media-player.js builds the players). */",
+    "scripts/media-player.js": '// Styled by styles/media-player.css.\nimport("./media-online.js");', "scripts/media-online.js": "// Loaded by scripts/media-player.js." };
   const outcome = await improveRow(s.ctx, { row: "index.html", known: {}, maps: runMaps(), signal: new AbortController().signal, fetch: async () => new Response(null, { status: 404 }), siteUrl: "https://own.example/" },
     { gifs: { read: async () => ({ title: "Tour" }), playerFiles: async () => player } });
   assert.equal(s.batches.length, 1);
@@ -122,6 +124,26 @@ test("a row that adds the site's player saves its files as text, and its Undo re
   assert.deepEqual(await undoRows(s.ctx, [outcome]), []);
   assert.match(s.text.get("index.html")!, /youtube\.com\/embed/);
   for (const path of Object.keys(player)) assert.ok(!s.text.has(path), `${path} goes with the Undo`);
+});
+
+test("undoing one of two rows that share the player keeps every player file the other still loads; undoing both removes them", async () => {
+  const embed = '<iframe src="https://www.youtube.com/embed/abcdefghijk" title="Tour"></iframe>';
+  const html = (title: string) => `<html><head><title>${title}</title></head><body>${embed}</body></html>`;
+  const s = site({ "index.html": html("Home"), "tour.html": html("Tour") });
+  // As the starter's player: its files name each other, and its script loads the online player on demand.
+  const player = { "styles/media-player.css": "/* The player's look (scripts/media-player.js builds the players). */",
+    "scripts/media-player.js": '// Styled by styles/media-player.css.\nimport("./media-online.js");', "scripts/media-online.js": "// Loaded by scripts/media-player.js." };
+  const row = (file: string) => improveRow(s.ctx, { row: file, known: {}, maps: runMaps(), signal: new AbortController().signal, fetch: async () => new Response(null, { status: 404 }), siteUrl: "https://own.example/" },
+    { gifs: { read: async () => ({ title: "Tour" }), playerFiles: async () => player } });
+  const first = await row("index.html"), second = await row("tour.html");
+  assert.deepEqual(first.added.sort(), Object.keys(player).sort());
+  assert.deepEqual(second.added, [], "the second row finds the player in place");
+  const kept = await undoRows(s.ctx, [first]);
+  assert.match(s.text.get("index.html")!, /youtube\.com\/embed/);
+  for (const path of Object.keys(player)) assert.ok(s.text.has(path), `${path} stays for Tour`);
+  assert.deepEqual(kept.sort(), Object.keys(player).sort());
+  assert.deepEqual(await undoRows(s.ctx, [second], kept), []);
+  for (const path of Object.keys(player)) assert.ok(!s.text.has(path), `${path} goes once nothing uses the player`);
 });
 
 test("Undo refuses a page edited since and changes nothing", async () => {

@@ -120,8 +120,13 @@ test("untick a picture, Cancel mid-run, then Undo all", async ({ page, baseURL }
 
 // Slice 101: fixing a GIF row or an old YouTube embed row adds the site's player on a site that has
 // none yet. Its files went in as uploads, and the preview's stylesheet reader then re-read the
-// new media-player.css forever (the editor froze). They are text drafts now, and each row saves promptly.
-test("a GIF row and an old YouTube embed row add the site's player as text and finish promptly", async ({ page, baseURL }) => {
+// new media-player.css forever (the editor froze). They are text drafts now, and the row saves promptly.
+const PLAYER_FILES = ["styles/media-player.css", "scripts/media-player.js", "scripts/media-online.js"];
+const tourHtml = pageHtml("Tour", "images/placeholder.svg")
+  .replace(/<img [^>]*>/, '<iframe src="https://www.youtube.com/embed/aqz-KE-bpKQ" title="Studio tour" width="560" height="315"></iframe>');
+
+/** A fresh site without the player, with one row to fix: a GIF page (Loop) or an old YouTube embed (Tour). */
+async function fixPlayerRow(page: Page, baseURL: string | undefined, title: "Loop" | "Tour") {
   await page.goto(baseURL!);
   const cors = { "access-control-allow-origin": "*" }, still = Buffer.from(await stillPng(page), "base64");
   await page.route("https://www.youtube.com/oembed**", route => route.fulfill({ headers: cors, contentType: "application/json", body: JSON.stringify({ title: "Studio tour" }) }));
@@ -129,38 +134,43 @@ test("a GIF row and an old YouTube embed row add the site's player as text and f
   await page.route("https://www.youtube.com/embed/**", route => route.fulfill({ contentType: "text/html", body: "<title>Stub</title>" }));
   // The site knows its own address, so YouTube's is an outside one.
   await commit(page, baseURL, { path: "CNAME", content: "studio.example\n" });
-  await commit(page, baseURL, { path: "images/loop.gif", base64: animatedGif().toString("base64") });
-  await commit(page, baseURL, { path: "loop/index.html", content: pageHtml("Loop", "images/loop.gif") });
-  const tourHtml = pageHtml("Tour", "images/placeholder.svg")
-    .replace(/<img [^>]*>/, '<iframe src="https://www.youtube.com/embed/aqz-KE-bpKQ" title="Studio tour" width="560" height="315"></iframe>');
-  await commit(page, baseURL, { path: "tour/index.html", content: tourHtml });
+  if (title === "Loop") {
+    await commit(page, baseURL, { path: "images/loop.gif", base64: animatedGif().toString("base64") });
+    await commit(page, baseURL, { path: "loop/index.html", content: pageHtml("Loop", "images/loop.gif") });
+  } else await commit(page, baseURL, { path: "tour/index.html", content: tourHtml });
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await expect(page.locator("#status")).toContainText("Up to date with main");
+  for (const path of PLAYER_FILES) expect(await storedDraft(page, path), `${path} is not in the site yet`).toBeUndefined();
   await page.locator("#explorer-toggle").click();
   await tab(page).click();
   await pane(page).getByRole("button", { name: "More", exact: true }).click();
   await page.getByRole("menuitem", { name: /^Improve images/ }).click();
-  for (const title of ["Loop", "Tour"]) {
-    await expect(row(page, title)).toBeVisible();
-    const started = Date.now();
-    await pane(page).getByRole("button", { name: `Fix ${title}`, exact: true }).click();
-    await expect(pane(page).locator(".media-improve__changed")).toContainText(title, { timeout: 30_000 });
-    expect(Date.now() - started, `${title} saves in normal time`).toBeLessThan(30_000);
-  }
-  expect((await storedDraft(page, "loop/index.html"))?.content).toMatch(/<video[^>]*src="\/media\/videos\/loop\.mp4"/);
-  const tour = (await storedDraft(page, "tour/index.html"))?.content ?? "";
-  expect(tour).toContain('class="online-video"');
-  expect(tour).toContain('href="/styles/media-player.css"');
+  await expect(row(page, title)).toBeVisible();
+  const started = Date.now();
+  await pane(page).getByRole("button", { name: `Fix ${title}`, exact: true }).click();
+  await expect(pane(page).locator(".media-improve__changed")).toContainText(title, { timeout: 30_000 });
+  expect(Date.now() - started, `${title} saves in normal time`).toBeLessThan(30_000);
+  const fixed = (await storedDraft(page, `${title.toLowerCase()}/index.html`))?.content ?? "";
+  expect(fixed).toMatch(title === "Loop" ? /<video[^>]*src="\/media\/videos\/loop\.mp4"/ : /class="online-video"/);
+  expect(fixed).toContain('href="/styles/media-player.css"');
   // The player's files are new text drafts, not uploads.
-  for (const path of ["styles/media-player.css", "scripts/media-player.js", "scripts/media-online.js"]) {
+  for (const path of PLAYER_FILES) {
     const draft = await storedDraft(page, path);
     expect(draft?.content.length, path).toBeGreaterThan(0);
     expect(draft?.upload, path).toBeUndefined();
     expect(draft?.opaque, path).toBeUndefined();
   }
-  // The editor still answers: Undo all puts both pages back and takes the player files away again.
-  await pane(page).getByRole("button", { name: "Undo all", exact: true }).click();
+  // The editor still answers: Undo puts the page back and takes the player files away again.
+  await pane(page).getByRole("button", { name: `Undo ${title}`, exact: true }).click();
   await expect(pane(page).locator(".media-improve__changed")).toHaveCount(0);
+  for (const path of PLAYER_FILES) await expect.poll(async () => await storedDraft(page, path), path).toBeUndefined();
+}
+
+test("a GIF row adds the site's player as text and finishes promptly", async ({ page, baseURL }) => {
+  await fixPlayerRow(page, baseURL, "Loop");
+});
+
+test("an old YouTube embed row adds the site's player as text and finishes promptly", async ({ page, baseURL }) => {
+  await fixPlayerRow(page, baseURL, "Tour");
   await expect.poll(async () => (await storedDraft(page, "tour/index.html"))?.content ?? tourHtml).toBe(tourHtml);
-  for (const path of ["styles/media-player.css", "scripts/media-player.js", "scripts/media-online.js"]) await expect.poll(async () => await storedDraft(page, path), path).toBeUndefined();
 });

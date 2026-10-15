@@ -225,10 +225,19 @@ export async function undoRows(real: MediaWorkspaceContext, outcomes: readonly R
   for (const path of real.paths) if (media.has(path) && isMediaTextFile(path)) batch.expectedAssets.set(path, real.assetVersion(path));
   const sources = await readSources(real);
   for (const [path, text] of Object.entries(sources)) if (!batch.expectedSources.has(path) && !media.has(path)) batch.expectedSources.set(path, text);
-  for (const [path, text] of texts) sources[path] = text;
   const added = [...new Set([...outcomes.flatMap(outcome => outcome.added), ...kept])].filter(path => real.paths.includes(path));
+  // An added text file (the site's player) keeps its text while it may stay: what it loads stays with it.
+  for (const [path, text] of texts) if (text !== undefined || !added.includes(path)) sources[path] = text;
+  // A file stays while something outside the added files reaches it, directly or through added
+  // files that stay (the player's script loads media-online.js); added files that only mention
+  // each other go together.
   const mentioned = mediaMentions({ media: added, sources, site: { origins: real.origins ?? [] } });
-  batch.deletes = added.filter(path => !mentioned.get(path)?.some(mention => mention.file !== path));
+  const staying = new Set<string>(), from = new Set(added);
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const path of added) if (!staying.has(path) && mentioned.get(path)?.some(m => m.file !== path && (!from.has(m.file) || staying.has(m.file)))) { staying.add(path); grew = true; }
+  }
+  batch.deletes = added.filter(path => !staying.has(path));
   for (const path of batch.deletes) batch.expectedAssets.set(path, real.assetVersion(path));
   if (batch.deletes.length && real.paths.includes(MEDIA_RECORDS_PATH)) await current(MEDIA_RECORDS_PATH);
   if (texts.has(MEDIA_RECORDS_PATH)) {
