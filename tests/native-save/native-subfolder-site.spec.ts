@@ -37,12 +37,15 @@ test("a project-site address moves links, images and the component loader into i
   expect(home).toContain('src="/my-site/images/placeholder.svg"');
   expect((await storedDraft(page, "components/site-header/site-header.html"))?.content).toContain('<a href="/my-site/about/" data-key="nav-about">About</a>');
   expect((await storedDraft(page, ".editor/config.json"))?.content).toContain('"url": "https://user.github.io/my-site/"');
+  expect((await storedDraft(page, ".nojekyll"))?.content).toBe("");
+  await expect(page.locator("#status")).toHaveText("Site settings applied as drafts. Updated 9 links in 4 files to the new address. Added the .nojekyll file GitHub Pages needs. Publish to keep them.");
   // The canvas still shows the page: its image, its styles and its components.
   await expect(frame(page).locator("img.hero-image")).toHaveAttribute("src", /^data:image\/svg\+xml/);
   await expect(frame(page).locator("site-header .brand")).toHaveText("Native Studio");
   await expect(page.locator(".native-preview-error")).toBeHidden();
   await page.locator(".code-editor__undo").first().click();
   await expect.poll(async () => (await storedDrafts(page)).length).toBe(0);
+  expect(await storedDraft(page, ".nojekyll")).toBeUndefined();
   await expect(frame(page).locator("img.hero-image")).toHaveAttribute("src", /^data:image\/svg\+xml/);
 });
 

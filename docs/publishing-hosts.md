@@ -34,7 +34,7 @@ One call for the Publish panel to poll. Everything is read from GitHub at the br
     "source": { "branch": "main", "path": "/" },
     "rootServed": false,                        // root links such as /about/ work
     "rootReason": "project-path",               // or "user-site", "custom-domain"
-    "rootMessage": "GitHub Pages serves this repository at https://lex.github.io/site/, a sub-path, so root links such as /about/ break. ...",
+    "rootMessage": "GitHub Pages serves this repository at https://lex.github.io/site/, in a sub-folder. Set that as the Site address (Site settings, General) and the site works from its sub-folder.",
     "privateRepository": false                  // free accounts get Pages only for public repositories
   },
   "cloudflare": {
@@ -73,7 +73,7 @@ Serves the branch root with GitHub Pages: creates the site (`build_type: "legacy
 
 Errors: **409** the branch has no commits; **403** `The editor needs the Pages permission: ask the owner to accept it.`; **422** `GitHub Pages is free only for public repositories. Make this repository public, upgrade the GitHub plan, or publish with Cloudflare instead.` (GitHub's plan error, or a bare 422 for a private repository); **409** GitHub is already updating Pages.
 
-A **project** Pages site lives at `https://<owner>.github.io/<repo>/`, a sub-path, which breaks root links; `pages.rootServed` and `rootReason` say whether it applies (a repository named `<owner>.github.io`, or a custom domain, serves the root).
+A **project** Pages site lives at `https://<owner>.github.io/<repo>/`, a sub-folder supported by setting that URL as the Site address (Site settings, General). When that address is set, the editor writes an empty root `.nojekyll` file if missing, so GitHub Pages serves underscore files and folders. The fields `pages.rootServed` and `rootReason` still describe whether the site is at a domain root (a repository named `<owner>.github.io`, or a custom domain, serves the root).
 
 ### `POST /api/publish/pages/domain` `{ repo, domain, apex?, enforceHttps? }`
 

@@ -11,7 +11,7 @@ export type UrlPlan =
       message: string;
       warnings?: string[];
       /** Offered when the page is on the live site: keep its old URL working, checked or not by default. */
-      redirect?: { checked: boolean; label: string };
+      redirect?: { checked: boolean; label: string; hint?: string };
     }
   | { ok: false; error: string; /** The value is the page's URL now: nothing to say. */ unchanged?: boolean };
 
@@ -59,6 +59,8 @@ export function createUrlChange(options: {
   const keepText = node("span", "", "Keep the old URL working");
   keepLabel.append(keep, keepText);
   keepLabel.hidden = true;
+  const keepHint = node("p", "url-change__hint");
+  keepHint.hidden = true;
   const actions = node("div", "url-change__actions");
   actions.append(node("span", "url-change__hint", "Enter to change, Esc to cancel"));
   if (options.buttons) {
@@ -69,7 +71,7 @@ export function createUrlChange(options: {
     submit.type = "submit";
     actions.append(cancel, submit);
   }
-  details.append(message, keepLabel, actions);
+  details.append(message, keepLabel, keepHint, actions);
   form.append(field, details);
 
   let initial = options.initial;
@@ -94,6 +96,8 @@ export function createUrlChange(options: {
       message.textContent = unchanged ? "" : planned.error;
       keepLabel.hidden = true;
     }
+    keepHint.textContent = planned.ok ? planned.redirect?.hint ?? "" : "";
+    keepHint.hidden = !keepHint.textContent;
     return planned;
   }
 

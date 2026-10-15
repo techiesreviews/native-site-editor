@@ -146,7 +146,8 @@ test("MCP site tools read the site, queue guarded changes for the editor tab, re
     const conventions = JSON.stringify(await client.readResource({ uri: "native-site://conventions" }));
     assert.doesNotMatch(conventions, /add the tag to the loader|TAGS/);
     assert.match(conventions, /:not\(:defined\)/);
-    assert.match(conventions, /_redirects/);
+    assert.match(conventions, /\/my-site\/about\//);
+    assert.match(conventions, /GitHub Pages ignores.*_redirects.*old URL stops working/);
     assert.match(conventions, /\.editor\/config\.json/);
     assert.doesNotMatch(conventions, /src\/(?:pages|components|styles|public)|page comment|native\.json/);
     // The Components chapter, from its heading to the next `## `, is the one
@@ -156,6 +157,7 @@ test("MCP site tools read the site, queue guarded changes for the editor tab, re
     const servedMedia = mediaChapter(served);
     assert.ok(servedMedia?.startsWith("## Media\n"));
     assert.equal(servedMedia, mediaChapter(siteConventions));
+    assert.match(servedMedia, /\/my-site\/media\/images\/holiday-photo\.webp/);
     for (const rule of ["adding_settings", "media/images/", "srcset", "### Shape, focus and trims", "frame_image", "whole new trim", "### Removing, keeping and restoring", "### Renaming and Replace everywhere"]) assert.ok(servedMedia.includes(rule));
     assert.doesNotMatch(servedMedia.slice(1), /^## /m);
     for (const name of ["list_media", "preview_media", "place_media", "describe_media", "change_collection", "adding_settings", "frame_image", "remove_media", "keep_media", "restore_media", "replace_media", "loop_video", "video_still", "write_subtitles"])

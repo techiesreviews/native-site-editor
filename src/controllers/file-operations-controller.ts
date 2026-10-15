@@ -1,3 +1,4 @@
+import { onGithubPages, GITHUB_PAGES_REDIRECT_NOTE } from "../../shared/github-pages";
 import { createFileOperationChecks } from "./file-operation-checks";
 import { renamedFamily, familyMembers } from "../page-builder/media-families";
 import { isRenamableMedia, mediaFileName, suggestMediaName } from "../page-builder/media-names";
@@ -10,7 +11,7 @@ import type { TreeEntry } from "../../shared/types";
 import type { FileChange, MovableFile } from "../file-changes";
 import { copyPath, movedPath } from "../native-files";
 import { editNativeRedirects, groupRouteChanges, isRouteWithin, rewriteRouteLinks, type RouteChange } from "../native-page-moves";
-import { NATIVE_CONFIG_PATH, NATIVE_REDIRECTS_PATH, resolveNativeProject, nativeSitePrefix } from "../../shared/native-project";
+import { NATIVE_CONFIG_PATH, NATIVE_REDIRECTS_PATH, resolveNativeProject, nativeSitePrefix, nativeSiteSettings } from "../../shared/native-project";
 
 export interface FileOperationsTreeState {
   changes: Map<string, FileChange>;
@@ -305,6 +306,7 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
         single ? `Its URL changes from ${first.from} to ${first.to}.` : `URLs change: ${urls.changes.map((change) => `${change.from} → ${change.to}`).join(", ")}.`,
         linkText,
         ...(gone ? [gone] : []),
+        ...(redirected.length && onGithubPages(nativeSiteSettings(r.source(NATIVE_CONFIG_PATH)).url, r.exists("CNAME")) ? [GITHUB_PAGES_REDIRECT_NOTE] : []),
       ],
       actions: [{ label: verb, value: "go" }],
       option: redirected.length

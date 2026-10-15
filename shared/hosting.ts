@@ -6,6 +6,7 @@
 // The repository is the site (docs/adr/0001-the-repository-is-the-site.md), so
 // a pipeline never builds: it uploads the repository's files as they are.
 
+import { NOJEKYLL_FILE as NOJEKYLL } from "./github-pages";
 import type { ChangeStatus } from "./change-status";
 
 /** A file the editor adds as a draft; the user saves it with Publish. */
@@ -25,7 +26,8 @@ export const PIPELINE_SECRETS: Record<PipelineProvider, string[]> = {
 export const DEPLOY_WORKFLOW_PATH = ".github/workflows/deploy.yml";
 export const SPACEFAST_WORKFLOW_PATH = ".github/workflows/spacefast.yml";
 /** Without this (empty) file, GitHub Pages runs Jekyll, which drops every file and folder starting with `_`. */
-export const NOJEKYLL_FILE: PipelineFile = { path: ".nojekyll", content: "" };
+export const NOJEKYLL_FILE: PipelineFile = NOJEKYLL;
+export { githubPagesProjectSite, nojekyllNeeded } from "./github-pages";
 const COMPATIBILITY_DATE = "2026-09-17";
 
 /** A Workers script name from a repository name: lower case, letters, digits and hyphens, at most 63. */
@@ -233,9 +235,8 @@ export function dnsInstruction(record: DnsRecord): string {
 export type RootServed = "user-site" | "custom-domain" | "project-path";
 
 /**
- * Whether GitHub Pages serves the site at the root of its address, where the
- * site's root links (/about/) work. A project site lives at
- * https://owner.github.io/repo/, a sub-path, which breaks them.
+ * Whether GitHub Pages serves the site at a domain root. Project sites live
+ * in a sub-folder; setting the Site address makes the editor prefix root links.
  */
 export function pagesRoot(owner: string, repo: string, cname: string | null | undefined): { rootServed: boolean; reason: RootServed; message: string } {
   if (cname) return { rootServed: true, reason: "custom-domain", message: `Served at the root of ${cname}.` };
@@ -244,7 +245,7 @@ export function pagesRoot(owner: string, repo: string, cname: string | null | un
   return {
     rootServed: false,
     reason: "project-path",
-    message: `GitHub Pages serves this repository at https://${owner.toLowerCase()}.github.io/${repo}/, a sub-path, so root links such as /about/ break. Add a custom domain, or name the repository ${owner.toLowerCase()}.github.io.`,
+    message: `GitHub Pages serves this repository at https://${owner.toLowerCase()}.github.io/${repo}/, in a sub-folder. Set that as the Site address (Site settings, General) and the site works from its sub-folder.`,
   };
 }
 

@@ -110,7 +110,25 @@ test("a site address set in the same Apply gives the sharing copy its full addre
   const config = (await storedDraft(page, ".editor/config.json"))?.content ?? "";
   expect(config).toContain(`"socialImage": "${link}"`);
   expect(config).toContain('"url": "https://name.github.io/my-site/"');
+  await expect(page.locator("#status")).toContainText("Added the .nojekyll file GitHub Pages needs.");
+  expect((await storedDraft(page, ".nojekyll"))?.content).toBe("");
   await expect(page.locator("#status")).not.toContainText("linked without a web address");
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(async () => (await storedDrafts(page)).length).toBe(0);
+});
+
+test("a sharing copy preserves an existing .nojekyll without reading or rewriting it", async ({ page, baseURL }) => {
+  await fixture(page, baseURL, true);
+  expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: ".nojekyll", content: "keep this" } })).status()).toBe(204);
+  await page.reload();
+  await expect(frame(page).locator(".hero img")).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
+  await chooseDefault(page);
+  await panel(page).getByRole("button", { name: "Apply site settings", exact: true }).click();
+  await expect(panel(page)).toBeHidden();
+  await expect(page.locator("#status")).toContainText("Social image set as a draft.");
+  await expect(page.locator("#status")).not.toContainText("Added the .nojekyll");
+  expect(await storedDraft(page, ".nojekyll")).toBeUndefined();
   await page.locator(".code-editor__undo").first().click();
   await expect.poll(async () => (await storedDrafts(page)).length).toBe(0);
 });

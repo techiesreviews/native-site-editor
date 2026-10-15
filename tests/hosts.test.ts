@@ -35,7 +35,7 @@ test("status of a site with nothing set up", async () => {
   assert.equal(json.pages.enabled, false);
   assert.equal(json.pages.rootServed, false);
   assert.equal(json.pages.rootReason, "project-path");
-  assert.match(json.pages.rootMessage, /lex\.github\.io\/site\//);
+  assert.equal(json.pages.rootMessage, "GitHub Pages serves this repository at https://lex.github.io/site/, in a sub-folder. Set that as the Site address (Site settings, General) and the site works from its sub-folder.");
   assert.equal(json.pages.privateRepository, false);
   assert.equal(json.cloudflare.workflow, null);
   assert.deepEqual(json.cloudflare.secrets, { state: "ok", names: [] });

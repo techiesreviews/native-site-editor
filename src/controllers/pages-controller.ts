@@ -1,3 +1,4 @@
+import { onGithubPages, GITHUB_PAGES_REDIRECT_NOTE } from "../../shared/github-pages";
 import type { GuardedEdits, Reads, Stamp, PlanResult, Outcome } from "../guarded-edit";
 import { nativeNewTarget, firstHeadingText, buildNativePagesTree, nativePageLabel, type NativeNewTarget, type NativePageNode, type NativeSiteTree } from "../native-pages";
 import { nativePageTemplate, normalizeRoute, routeHeading, type Checked } from "../native-create";
@@ -304,7 +305,7 @@ export function createPagesController(ports: PagesPorts) {
       route: change.to,
       message: describeUrlChange(change),
       warnings: change.move.warnings,
-      redirect: change.redirect.length ? { checked: change.live, label: `Keep the old URL working (${change.from} redirects to ${change.to})` } : undefined,
+      redirect: change.redirect.length ? { checked: change.live, label: `Keep the old URL working (${change.from} redirects to ${change.to})`, hint: onGithubPages(ports.siteUrl(), ports.files().includes("CNAME")) ? GITHUB_PAGES_REDIRECT_NOTE : undefined } : undefined,
     };
   }
 
@@ -412,7 +413,7 @@ export function createPagesController(ports: PagesPorts) {
       const change = planned.value;
       const answer = await ports.confirmation()!.choose({
         title: `Move ${change.label} to ${to}?`,
-        notes: [`Its URL changes from ${change.from} to ${to}.`, describeUrlChange(change), ...change.move.warnings],
+        notes: [`Its URL changes from ${change.from} to ${to}.`, describeUrlChange(change), ...change.move.warnings, ...(change.redirect.length && onGithubPages(ports.siteUrl(), ports.files().includes("CNAME")) ? [GITHUB_PAGES_REDIRECT_NOTE] : [])],
         actions: [{ label: "Move", value: "move" }],
         option: change.redirect.length ? { label: `Keep the old URL working (${change.from} redirects to ${to})`, checked: change.live } : undefined,
       });

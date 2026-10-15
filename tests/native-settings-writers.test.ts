@@ -26,6 +26,7 @@ async function fixture(prefix: string, home = '<html><head><title>Home</title></
     nativeAssets: new Map([["media/a.webp", "blob:picture"]]), nativePageLabelOf: () => "Home", setupScope: () => "site", nativeUrlPlan: () => { throw new Error("Unused"); },
     changeNativeUrl: async () => undefined, restoreFile: async () => {}, nativeSiteReadForCreate: async () => undefined,
     choosePath: async () => undefined, shareImage: async () => undefined, nativeEffectiveSource: (path: string) => workspace.workspace.source(path),
+    nativeFiles: () => workspace.files(), readMediaText: async (path: string) => workspace.workspace.source(path),
     loadNativeAssets: async (sources: Record<string, string>) => { previews.push(sources); },
   } satisfies Parameters<typeof createNativeSettings>[0];
   const module = await bundled, settings = module.createNativeSettings(ports);
@@ -67,4 +68,42 @@ test("navigation settings apply internal routes named like the prefix", async ()
   const f = await fixture("/my-site", source);
   assert.equal(await f.handlers.applyNavigation("index.html", source, [{ href: "/my-site/", label: "Nested" }]), undefined);
   assert.ok(f.workspace.workspace.source("index.html")?.includes('href="/my-site/my-site/"'));
+});
+
+test("applying a project address creates .nojekyll once in the settings Undo step", async () => {
+  const f = await fixture("");
+  const values = { name: "Studio", favicon: "", socialImage: "", url: "https://user.github.io/my-site/" };
+  await f.handlers.applySite(values, async () => true);
+  assert.equal(f.workspace.workspace.source(".nojekyll"), "");
+  assert.equal(f.workspace.announced.at(-1), "Site settings applied to 2 files as drafts. Added the .nojekyll file GitHub Pages needs. Publish to keep them.");
+  const first = f.workspace.draft(".nojekyll");
+  await f.handlers.applySite({ ...values, name: "New name" });
+  assert.equal(f.workspace.draft(".nojekyll"), first, "unchanged address does not write it again");
+  assert.doesNotMatch(f.workspace.announced.at(-1)!, /Added the/);
+  assert.ok(f.workspace.undo());
+  assert.equal(f.workspace.workspace.source(".nojekyll"), "");
+  assert.ok(f.workspace.undo());
+  assert.equal(f.workspace.workspace.source(".nojekyll"), undefined);
+  assert.equal(JSON.parse(f.workspace.workspace.source(".editor/config.json")!).site.url, "https://user.github.io/");
+});
+
+test("settings preserve an existing .nojekyll and skip unchanged, root, other and removed addresses", async () => {
+  for (const url of ["https://user.github.io/", "https://example.com/folder/", ""]) {
+    const f = await fixture("");
+    await f.handlers.applySite({ name: "Studio", favicon: "", socialImage: "", url }, async () => true);
+    assert.equal(f.workspace.workspace.source(".nojekyll"), undefined, url);
+    assert.doesNotMatch(f.workspace.announced.at(-1)!, /Added the/);
+  }
+  const unchanged = await fixture("/my-site");
+  await unchanged.handlers.applySite({ name: "Studio", favicon: "", socialImage: "", url: "https://user.github.io/my-site/" });
+  assert.equal(unchanged.workspace.workspace.source(".nojekyll"), undefined);
+  const existing = await fixture("");
+  existing.workspace.writeDraft(".nojekyll", "keep this");
+  const first = existing.workspace.draft(".nojekyll");
+  await existing.handlers.applySite({ name: "Studio", favicon: "", socialImage: "", url: "https://user.github.io/my-site/" }, async () => true);
+  assert.equal(existing.workspace.draft(".nojekyll"), first);
+  assert.doesNotMatch(existing.workspace.announced.at(-1)!, /Added the/);
+  // A changed project address still leaves the existing file alone.
+  await existing.handlers.applySite({ name: "Studio", favicon: "", socialImage: "", url: "https://user.github.io/next/" }, async () => true);
+  assert.equal(existing.workspace.draft(".nojekyll"), first);
 });

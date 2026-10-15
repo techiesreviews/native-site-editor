@@ -1,3 +1,4 @@
+import { GITHUB_PAGES_REDIRECT_NOTE } from "../../shared/github-pages";
 import { siteAddress } from "../../shared/site-path-prefix";
 import { button, node } from "../ui/dom";
 import { icon } from "../icons";
@@ -166,7 +167,7 @@ function renderInformation(
   name.autocapitalize = "none"; name.spellcheck = false;
   // Renaming renames the whole family and every mention (slice 52); kinds Media does not rename stay as they are.
   if (!isRenamableMedia(path)) name.disabled = true;
-  const naming = renameField(name, path, library.items.map(entry => entry.path));
+  const naming = renameField(name, path, library.items.map(entry => entry.path), library.githubPages);
   const facts = node("dl", "media-detail__facts");
   for (const fact of [...mediaDetailFacts({ path, size: item?.size ?? data.blob.size, date: item?.date, width: data.width, height: data.height, duration: meta.duration }), ...mediaMadeFrom(meta)]) {
     const row = node("div"); row.append(node("dt", "", fact.label), node("dd", "", fact.value)); facts.append(row);
@@ -289,7 +290,7 @@ function renderInformation(
 /** Under the File name field (ticket 15 "Renaming a media file"): before saving it says a taken
  * name is taken and offers the next numbered one, shows the tidied name, and offers "Keep the old
  * address working", which follows Always keep until Lex ticks or unticks it. */
-function renameField(name: HTMLInputElement, path: string, paths: string[]) {
+function renameField(name: HTMLInputElement, path: string, paths: string[], githubPages = false) {
   const element = node("div", "media-detail__naming");
   const note = node("p", "media-library__problem"); note.id = `media-detail-name-${++fieldIds}`;
   note.setAttribute("aria-live", "polite"); name.setAttribute("aria-describedby", note.id);
@@ -299,7 +300,7 @@ function renameField(name: HTMLInputElement, path: string, paths: string[]) {
   const forward = input("Keep the old address working", "checkbox");
   const choice = node("div", "media-detail__forward");
   choice.append(check("Keep the old address working", forward),
-    node("p", "media-library__hint", "Links from other sites to the old name forward to the new one, on hosts that read the site's _redirects file."));
+    node("p", "media-library__hint", githubPages ? GITHUB_PAGES_REDIRECT_NOTE : "Links from other sites to the old name forward to the new one, on hosts that read the site's _redirects file."));
   let touched = false;
   forward.addEventListener("change", () => { touched = true; });
   const taken = (file: string, suggestion: string) => {

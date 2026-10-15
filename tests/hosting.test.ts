@@ -1,3 +1,4 @@
+import { onGithubPages } from "../shared/github-pages.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -9,6 +10,8 @@ import {
   dnsInstruction,
   dnsRecords,
   pagesRoot,
+  githubPagesProjectSite,
+  nojekyllNeeded,
   pipelineFiles,
   spacefastPipelineFiles,
   validCloudflareAccountId,
@@ -93,7 +96,7 @@ test("Pages serves the root only for a user site or a custom domain", () => {
   const project = pagesRoot("Lex", "site", null);
   assert.equal(project.rootServed, false);
   assert.equal(project.reason, "project-path");
-  assert.match(project.message, /https:\/\/lex\.github\.io\/site\//);
+  assert.equal(project.message, "GitHub Pages serves this repository at https://lex.github.io/site/, in a sub-folder. Set that as the Site address (Site settings, General) and the site works from its sub-folder.");
 });
 
 test("token formats", () => {
@@ -116,4 +119,24 @@ test("the prefilled Cloudflare token link uses the documented keys", () => {
   assert.equal(url.searchParams.get("accountId"), "*");
   assert.equal(url.searchParams.get("zoneId"), "all");
   assert.equal(url.searchParams.get("name"), "Site");
+});
+
+test("GitHub Pages project addresses need .nojekyll only when missing", () => {
+  for (const url of ["https://lex.github.io/my-site", "https://lex.github.io/my-site/", "https://lex.github.io/my-site/index.html", "https://LEX.GITHUB.IO/my-site/", "https://github.io/my-site/"]) {
+    assert.equal(githubPagesProjectSite(url), true, url);
+    assert.equal(nojekyllNeeded(url, false), true, url);
+    assert.equal(nojekyllNeeded(url, true), false, url);
+  }
+  for (const url of [undefined, "", "invalid", "https://lex.github.io/", "https://lex.github.io/index.html", "https://custom.example/my-site/", "https://github.io.example/my-site/"]) {
+    assert.equal(githubPagesProjectSite(url), false, url);
+    assert.equal(nojekyllNeeded(url, false), false, url);
+  }
+});
+
+test("GitHub Pages is known from github.io or a root CNAME", () => {
+  for (const url of ["https://github.io/", "https://LEX.GITHUB.IO/", "https://lex.github.io/my-site/"]) assert.equal(onGithubPages(url, false), true);
+  for (const url of [undefined, "", "invalid", "https://example.com/", "https://github.io.example/"]) {
+    assert.equal(onGithubPages(url, false), false);
+    assert.equal(onGithubPages(url, true), true);
+  }
 });

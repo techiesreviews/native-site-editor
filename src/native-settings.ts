@@ -1,3 +1,4 @@
+import { NOJEKYLL_FILE, nojekyllNeeded } from "../shared/github-pages";
 import { createSiteSettings, type SiteSettingsValues, type SiteLinkPreference } from "./components/site-settings";
 import { escapeText, readHeadSettings, upsertHeadTag, withPageField, type HeadField } from "./page-builder/site-head";
 import { readSiteAddress, readSiteIdentity, siteAddressInput, withSiteIdentityConfig, withSiteIdentityPage } from "./page-builder/site-identity";
@@ -13,6 +14,8 @@ import { siteAddress, sitePathPrefix, routeAddress, sitePathOf } from "../shared
 import { MEDIA_RECORDS_PATH, parseMediaRecords, type MediaRecords, type MediaTrim } from "../shared/media-records";
 import type { SocialSharingRequest } from "./page-builder/social-sharing";
 import type { UrlPlan } from "./components/url-change";
+
+const NOJEKYLL_ADDED = "Added the .nojekyll file GitHub Pages needs.";
 
 interface SettingsPorts {
   readonly nativeSite: NativeSite | undefined;
@@ -161,11 +164,13 @@ export function createNativeSettings(ports: SettingsPorts) {
           const before = readSiteIdentity(config, ports.guardedEdits.peek.source(home) ?? "");
           if (values.socialImage !== before.socialImage || values.socialImageChosen) {
             const moved = move ? move.module.siteAddressFiles(ports.nativeFiles()) : [];
-            const expected = new Map([NATIVE_CONFIG_PATH, ...new Set([...Object.values(site.routes), ...moved])].map(path => [path, ports.guardedEdits.peek.source(path)] as const));
+            const addNojekyll = values.url !== undefined && nojekyllNeeded(values.url, ports.nativeFiles().includes(NOJEKYLL_FILE.path));
+            const expected = new Map([NATIVE_CONFIG_PATH, ...addNojekyll ? [NOJEKYLL_FILE.path] : [], ...new Set([...Object.values(site.routes), ...moved])].map(path => [path, ports.guardedEdits.peek.source(path)] as const));
             let updated: string | undefined;
             const shared = await share(values.socialImage, before.socialImage, home, address => {
               const nextValues = { ...values, socialImage: address };
               const edits = new Map<string, { source: string | undefined; text: string }>();
+              if (addNojekyll) edits.set(NOJEKYLL_FILE.path, { source: expected.get(NOJEKYLL_FILE.path), text: NOJEKYLL_FILE.content });
               const pages = [...new Set(Object.values(site.routes))];
               const unread = pages.find(path => expected.get(path) === undefined);
               if (unread) throw new Error(`${unread} could not be read. No settings were applied.`);
@@ -188,7 +193,7 @@ export function createNativeSettings(ports: SettingsPorts) {
                 if (text !== source) edits.set(path, { source, text });
               }
               return edits;
-            }, [...expected.keys()], values.socialImageTrim, values.url, () => updated, () => !move || ports.nativeFiles().join("\n") === move.list);
+            }, [...expected.keys()], values.socialImageTrim, values.url, () => [updated, addNojekyll ? NOJEKYLL_ADDED : undefined].filter(Boolean).join(" "), () => !move || ports.nativeFiles().join("\n") === move.list);
             if (shared) values.socialImage = shared.address;
             if (shared && !shared.reused) return undefined;
             reused = shared?.path;
@@ -313,8 +318,12 @@ export function createNativeSettings(ports: SettingsPorts) {
     } catch (error) { return { refuse: error instanceof Error ? error.message : "Site settings could not be changed." }; }
     const creates: { path: string; content: string }[] = [];
     if (config === undefined && edits.has(NATIVE_CONFIG_PATH)) { creates.push({ path: NATIVE_CONFIG_PATH, content: edits.get(NATIVE_CONFIG_PATH)! }); edits.delete(NATIVE_CONFIG_PATH); }
-    if (plan?.count) return { creates, edits, done: move!.module.siteAddressDone(plan), undone: "Undid site settings and the links updated to the new address." };
-    return { creates, edits, done: `Site settings applied to ${edits.size + creates.length} files as drafts. Publish to keep them.`, undone: "Undid site settings on all affected pages." };
+    const count = edits.size + creates.length;
+    const added = values.url !== undefined && nojekyllNeeded(values.url, r.exists(NOJEKYLL_FILE.path));
+    if (added) creates.push({ ...NOJEKYLL_FILE });
+    const done = (message: string) => added ? message.replace(" Publish to keep them.", ` ${NOJEKYLL_ADDED} Publish to keep them.`) : message;
+    if (plan?.count) return { creates, edits, done: done(move!.module.siteAddressDone(plan)), undone: "Undid site settings and the links updated to the new address." };
+    return { creates, edits, done: done(`Site settings applied to ${count} files as drafts. Publish to keep them.`), undone: "Undid site settings on all affected pages." };
   }
 
 

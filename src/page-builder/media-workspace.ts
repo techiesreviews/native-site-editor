@@ -1,3 +1,4 @@
+import { onGithubPages } from "../../shared/github-pages";
 import { sitePathPrefix } from "../../shared/site-path-prefix";
 import { readMediaPrefix } from "./media-prefix";
 import { NATIVE_CONFIG_PATH, nativeSiteSettings, nativeSitePrefix } from "../../shared/native-project";
@@ -736,9 +737,12 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       const metadata = mediaMetadataView(records);
       // YouTube and Vimeo videos (slice 68), with the pages that show them; their code loads only when there are any.
       const online = records.onlineVideos?.length ? (await import("./online-video")).mediaOnlineVideos(records, text, ctx.paths) : undefined;
-      const prefix = await readMediaPrefix(ctx, new Map());
+      const expected = new Map<string, string | undefined>();
+      const prefix = await readMediaPrefix(ctx, expected);
       ctx.assertLive();
-      return { key: ctx.key, prefix, ...online ? { onlineVideos: online } : {}, removed, collections: [...records.collections], items: ctx.items.map((item) => ({ ...item, date: mediaAddedTime(records.files[item.path]) ?? item.date, version: ctx.assetVersion(item.path) })), metadata, usage: wideUsage(ctx.items.map((item) => item.path), text, ctx, prefix),
+      const githubPages = onGithubPages(nativeSiteSettings(expected.get(NATIVE_CONFIG_PATH)).url, ctx.paths.includes("CNAME"));
+      ctx.assertLive();
+      return { key: ctx.key, prefix, githubPages, ...online ? { onlineVideos: online } : {}, removed, collections: [...records.collections], items: ctx.items.map((item) => ({ ...item, date: mediaAddedTime(records.files[item.path]) ?? item.date, version: ctx.assetVersion(item.path) })), metadata, usage: wideUsage(ctx.items.map((item) => item.path), text, ctx, prefix),
         // Folded over every path: a kept original the library does not list still marks its main.
         keep: [...alwaysKeptFiles(ctx.paths, new Set(Object.keys(records.files).filter(path => records.files[path].alwaysKeep)))],
         toCheck: mediaToCheck(records, ctx.items.map(item => item.path), text, prefix),

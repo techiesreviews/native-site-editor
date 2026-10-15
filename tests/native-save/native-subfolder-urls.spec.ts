@@ -28,6 +28,7 @@ test("Change URL keeps the sub-folder in links and the old URL's redirect", asyn
   const url = page.getByRole("textbox", { name: "URL of The first note", exact: true });
   await url.fill("/notes/hello/");
   await expect(page.getByRole("checkbox", { name: "Keep the old URL working (/notes/first-note/ redirects to /notes/hello/)", exact: true })).toBeChecked();
+  await expect(page.getByText("GitHub Pages doesn't forward old addresses, so links to the old one will stop working.", { exact: true })).toBeVisible();
   await url.press("Enter");
   await expect(page.locator("#status")).toContainText("URL changed to /notes/hello/");
   await assertMoved(page);
