@@ -1,7 +1,7 @@
 ---
 title: One visible confirmation: a toast for the whole editor
 type: task (AFK)
-status: in progress
+status: open
 assignee: claude (mm-105 runner)
 blocked_by: [89-ux-ui-audit]
 builder: claude
