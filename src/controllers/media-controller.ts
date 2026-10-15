@@ -68,6 +68,8 @@ export interface MediaControllerPorts {
   placeLabel?(page: string): string | undefined;
   /** Where the image popup stands and what it shows on the page before Done. */
   imagePopup?: import("../page-builder/image-popup").ImagePopupHost;
+  /** The canvas and selection the edit bar's Play uses. */
+  mediaPlay?: import("../page-builder/media-play").MediaPlayHost;
   announce(message: string): void;
   error(error: unknown): void;
 }
@@ -396,18 +398,35 @@ export function createMediaController(ports: MediaControllerPorts) {
       records: () => usage?.usageRecords(), pageLabel: page => ports.placeLabel?.(page),
       onChange: listener => { usageListeners.add(listener); return () => { usageListeners.delete(listener); }; } });
   }, error => { videosLoading = undefined; throw error; });
-  /** The edit bar's video controls, decided from the source so the bar never waits for the lazy module. */
+  // The edit bar's Play (slice 65) loads with its first press.
+  let player: import("../page-builder/media-play").MediaPlay | undefined;
+  let playerLoading: Promise<void> | undefined;
+  const loadPlayer = (host: import("../page-builder/media-play").MediaPlayHost) => playerLoading ??= import("../page-builder/media-play").then(module => {
+    player = module.createMediaPlay({ host, locate: (source, node) => locateNativeElementRange(source, node), site: () => ({ origins: ports.origins?.() ?? [] }),
+      blob: async path => (await workspaceContext(() => true)).blob(path), refresh: () => ports.refreshDescriptions() });
+  }, error => { playerLoading = undefined; throw error; });
+  function playControl(path: string, node: number[], source: string): EditBarControl[] {
+    const host = ports.mediaPlay;
+    if (!host) return [];
+    const on = player?.playing(path, node) ?? false;
+    return [{ kind: "button", label: on ? "Stop" : "Play", leading: on ? "stop" : "play",
+      title: on ? "Stop and show the still picture again" : "Play it here to check it",
+      onPress: () => { void loadPlayer(host).then(() => player!.toggle(path, node, source)).catch(error => ports.error(error)); } }];
+  }
+  /** The edit bar's video, audio and Online video controls, decided from the source so the bar never waits for the lazy module. */
   function videoControls(path: string, node: number[], source: string): EditBarControl[] {
     const range = (ports.locateElement ?? locateNativeElementRange)(source, node);
     if (!range) return [];
     const has = (text: string, name: string) => Boolean(mediaAttribute(text, startTags(text)[0], name));
     const fail = (error: unknown) => ports.error(error);
+    const tag = source.slice(range.tag.start, range.tag.end);
+    if (range.tag.name === "audio") return playControl(path, node, source);
+    if (range.tag.name === "a") return /(?:^|\s)online-video(?:\s|$)/.test(mediaAttribute(tag, startTags(tag)[0], "class")?.value ?? "") ? playControl(path, node, source) : [];
     if (range.tag.name === "video") {
-      const tag = source.slice(range.tag.start, range.tag.end);
-      if (has(tag, "data-background")) return [];
+      if (has(tag, "data-background")) return playControl(path, node, source);
       // Looping: muted and loop; in a picture spot (a slot) a video always loops silently.
       const checked = has(tag, "muted") && has(tag, "loop"), disabled = checked && has(tag, "slot");
-      return [{ kind: "checkbox", label: "Looping video", checked, disabled,
+      return [...playControl(path, node, source), { kind: "checkbox", label: "Looping video", checked, disabled,
         title: disabled ? "A video in a picture spot always loops silently." : "Plays silently by itself, over and over, with a small pause button",
         onChange: on => { void loadVideos().then(() => videos!.toggleLooping(path, node, source, on)).catch(fail); } }];
     }
@@ -497,6 +516,8 @@ export function createMediaController(ports: MediaControllerPorts) {
     },
     shareImage: async (request: import("../page-builder/social-sharing").SocialSharingRequest) =>
       (await import("../page-builder/social-sharing")).shareImage(workspaceContext, request, message => ports.announce(message)),
+    /** The canvas stopped the edit bar's play `id`. */
+    mediaEnded: (id: number) => player?.ended(id),
     workspaceContext, preparePlacement, prepareFrame, chooseImage, choosePath, chooseBackground, videoControls, placeState, placeFrame, editImage, changePlace, ensureGallery, reviewInGallery, requestGalleryRefresh, disposeGallery,
     closePicker: () => loaded?.closeMediaPicker(), galleryVisible: () => ports.galleryVisible() };
 }

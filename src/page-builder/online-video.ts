@@ -115,3 +115,15 @@ export function setOnlineVideoServiceBarInPage(source: string, key: OnlineVideoK
   for (const edit of edits.sort((a, b) => b.start - a.start)) source = source.slice(0, edit.start) + edit.text + source.slice(edit.end);
   return source;
 }
+/** The service's own player for `video`, starting as it loads (the starter's `playerAddress` with the
+ * service's bar): the edit bar's Play (media-play.ts). */
+export function onlinePlayerAddress(video: OnlineVideo): string {
+  if (video.service === "youtube") {
+    const query = new URLSearchParams({ autoplay: "1", playsinline: "1", rel: "0", iv_load_policy: "3" });
+    if (video.start) query.set("start", String(video.start));
+    return `https://www.youtube-nocookie.com/embed/${video.id}?${query}`;
+  }
+  const query = new URLSearchParams({ autoplay: "1", playsinline: "1", dnt: "1", title: "0", byline: "0", portrait: "0" });
+  if (video.hash) query.set("h", video.hash);
+  return `https://player.vimeo.com/video/${video.id}?${query}${video.start ? `#t=${video.start}s` : ""}`;
+}

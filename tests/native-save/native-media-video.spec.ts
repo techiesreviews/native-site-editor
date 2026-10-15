@@ -1,4 +1,5 @@
-import { expect, test, type Page } from "@playwright/test";
+import { readFileSync } from "node:fs";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { publishButton } from "./publish";
 import { storedDraft } from "./drafts";
 
@@ -10,14 +11,19 @@ const saved = async (page: Page, baseURL: string | undefined, path = "index.html
   const response = await page.request.get(`${baseURL}/__demo/file?path=${encodeURIComponent(path)}`);
   expect(response.ok()).toBe(true); return response.text();
 };
-async function open(page: Page, baseURL: string | undefined, video = true) {
+const VIDEO = '<video src="/media/clip.mp4" poster="/images/placeholder.svg" controls preload="none" playsinline width="400" height="240" aria-label="Clip"><track kind="subtitles" src="/media/clip.vtt" srclang="en"></video>';
+// A real two-second VP9 clip in MP4 (Playwright's Chromium has no H.264), shared with native-media-policy.spec.ts.
+const CLIP = readFileSync("tests/native-save/clip.mp4").toString("base64");
+async function open(page: Page, baseURL: string | undefined, video: boolean | string = true) {
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
-  const source = `<!doctype html>\n<html lang="en">\n<head><title>Video page</title></head>\n<body>\n  <section id="scene">\n    <h1>Video page</h1>\n    ${video ? '<video src="/media/clip.mp4" poster="/images/placeholder.svg" controls preload="none" playsinline width="400" height="240" aria-label="Clip"><track kind="subtitles" src="/media/clip.vtt" srclang="en"></video>' : '<p>Section words</p>'}\n  </section>\n</body>\n</html>`;
-  for (const [path, content] of Object.entries({ "index.html": source, "media/clip.mp4": "seeded video bytes", ".editor/media.json": JSON.stringify({ version: 2, collections: [], files: { "media/clip.mp4": { still: "images/placeholder.svg" } } }) })) {
+  const body = typeof video === "string" ? video : video ? VIDEO : "<p>Section words</p>";
+  const source = `<!doctype html>\n<html lang="en">\n<head><title>Video page</title></head>\n<body>\n  <section id="scene">\n    <h1>Video page</h1>\n    ${body}\n  </section>\n</body>\n</html>`;
+  for (const [path, content] of Object.entries({ "index.html": source, ".editor/media.json": JSON.stringify({ version: 2, collections: [], files: { "media/clip.mp4": { still: "images/placeholder.svg" } } }) })) {
     const response = await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path, content } });
     expect(response.ok()).toBe(true);
   }
+  expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "media/clip.mp4", base64: CLIP } })).ok()).toBe(true);
   await page.reload();
   await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
   await expect(frame(page).locator("#scene")).toBeVisible();
@@ -91,4 +97,49 @@ test("section background picked from Media saves as first child with player; Rem
   await expect.poll(() => mounted(page)).not.toContain("data-background");
   await save(page);
   expect(await saved(page, baseURL)).not.toContain("data-background");
+});
+
+// Seconds the browser has actually played, so a clip that already ended still counts.
+const played = (media: Locator) => media.evaluate((el: HTMLMediaElement) =>
+  Array.from({ length: el.played.length }, (_, i) => el.played.end(i) - el.played.start(i)).reduce((sum, part) => sum + part, 0));
+test("Play in the edit bar plays the selected video on the canvas; Stop returns it to its still, writing nothing", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const video = frame(page).locator("#scene > video");
+  const before = await mounted(page);
+  await video.click();
+  await bar(page).getByRole("button", { name: "Play", exact: true }).click();
+  const stop = bar(page).getByRole("button", { name: "Stop", exact: true });
+  await expect(stop).toBeVisible();
+  await expect.poll(() => played(video)).toBeGreaterThan(0.2);
+  await stop.click();
+  await expect(bar(page).getByRole("button", { name: "Play", exact: true })).toBeVisible();
+  // Back to its own address, still and paused; the page is unchanged.
+  await expect(video).toHaveAttribute("src", "/media/clip.mp4");
+  await expect(video).toHaveJSProperty("paused", true);
+  expect(await mounted(page)).toBe(before);
+  // Choosing something else stops it too.
+  await bar(page).getByRole("button", { name: "Play", exact: true }).click();
+  await expect(stop).toBeVisible();
+  await frame(page).locator("#scene h1").click();
+  await expect(video).toHaveAttribute("src", "/media/clip.mp4");
+  await video.click();
+  await expect(bar(page).getByRole("button", { name: "Play", exact: true })).toBeVisible();
+});
+test("Play on an Online video lays YouTube's own player over its place; Stop removes it", async ({ page, baseURL }) => {
+  // YouTube is answered here; nothing reaches the service.
+  await page.route("https://www.youtube-nocookie.com/**", route => route.fulfill({ contentType: "text/html", body: "<title>Stub player</title><p>Stub player</p>" }));
+  await open(page, baseURL, '<a class="online-video" href="https://www.youtube.com/watch?v=aqz-KE-bpKQ&t=1m30s"><img src="/images/placeholder.svg" alt="Big Buck Bunny" width="400" height="225"></a>');
+  const link = frame(page).locator("#scene > a.online-video");
+  await link.locator("img").click();
+  await page.keyboard.press("Escape");
+  await bar(page).getByRole("button", { name: "Play", exact: true }).click();
+  const player = page.locator(".media-play-layer iframe");
+  await expect(player).toHaveAttribute("src", /^https:\/\/www\.youtube-nocookie\.com\/embed\/aqz-KE-bpKQ\?autoplay=1&.*start=90/);
+  await expect(page.frameLocator(".media-play-layer iframe").getByText("Stub player")).toBeVisible();
+  // It lies over the link's place on the canvas.
+  const [shown, place] = [await player.boundingBox(), await link.boundingBox()];
+  expect(Math.abs(shown!.x - place!.x)).toBeLessThan(2);
+  expect(Math.abs(shown!.width - place!.width)).toBeLessThan(2);
+  await bar(page).getByRole("button", { name: "Stop", exact: true }).click();
+  await expect(page.locator(".media-play-layer")).toHaveCount(0);
 });

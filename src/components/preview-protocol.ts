@@ -63,7 +63,9 @@ export type FrameMessage =
   | Frame<"default-styles", Styles>
   | Frame<"component-styles", { tags: string[] }>
   | Frame<"shortcut", { name: string }>
-  | Frame<"refusal-note-action">;
+  | Frame<"refusal-note-action">
+  // The canvas stopped play `id` (its end, an error, or the element redrawn).
+  | Frame<"media-ended", { id: number }>;
 
 type Host<T extends string, P = object> = { source: typeof HOST_SOURCE; type: T } & P;
 /** A structure field's text set in the page ahead of its render (`end`: the last), or the live patch dropped. */
@@ -75,6 +77,8 @@ export type HostMessage =
   | Host<"patch-text", PatchText>
   // The image popup's look shown before Done; `look` undefined drops it.
   | Host<"image-look", { request: NativeNodeRequest | null; look?: { style?: string; src?: string } }>
+  // The edit bar's Play: `blob` plays in the video or audio at `request`; `request` null stops (src/page-builder/media-play.ts).
+  | Host<"media-play", { id: number; request: NativeNodeRequest | null; blob?: Blob }>
   | Host<"finish-typing", { id: number }>
   | Host<"measure-image", { id: number; request: NativeNodeRequest & { image?: { width: number; height: number }; slot?: string; style?: string } }>
   | Host<"inspect", { id: number; request: { path?: string; node?: number[]; selector?: string; limit?: number } }>
@@ -118,7 +122,7 @@ export const FRESHNESS: { [T in FrameMessage["type"]]: T extends "press-drag" ? 
   "slot-ghosts": "render", "inspect-result": "reply", "image-measured": "reply", ack: "reply", ready: "lifecycle", error: "render", "clear-error": "render",
   "insert-points": "render", "section-hover": "render", "text-selection": "render", "item-grids": "render", structure: "render",
   "selection-rect": "render", select: "render", "default-styles": "render", "component-styles": "render",
-  shortcut: "action", "refusal-note-action": "action",
+  shortcut: "action", "refusal-note-action": "action", "media-ended": "action",
 };
 
 const object = (value: unknown): Record<string, unknown> | undefined =>
@@ -257,6 +261,8 @@ export function readFrameMessage(data: unknown): FrameMessage | undefined {
   switch (raw.type) {
     case "typing-finished":
       return typeof raw.id === "number" ? { ...base(raw.type), id: raw.id } : undefined;
+    case "media-ended":
+      return integer(raw.id) ? { ...base(raw.type), id: raw.id } : undefined;
     case "image-drop": {
       // Its node path has no step limit.
       const { path, node, files } = raw;

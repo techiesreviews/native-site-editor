@@ -147,10 +147,13 @@ import { domView } from "../page-builder/rules/tree.ts";
     return key in assetUrls ? assetUrls[key] : null;
   }
   function resolveAssets(fragment) {
-    // Media stays still and selectable on the canvas, including native controls.
-    fragment.querySelectorAll("video").forEach(function (el) {
+    // Media stays still and selectable on the canvas, including a video's
+    // native controls (audio keeps them: without, it has no box). Only the
+    // edit bar's Play (media-play) starts one.
+    fragment.querySelectorAll("video,audio").forEach(function (el) {
+      if (mediaPlay && mediaPlay.el === el) return;
       el.removeAttribute("autoplay");
-      el.removeAttribute("controls");
+      if (el.localName === "video") el.removeAttribute("controls");
       el.setAttribute("preload", "none");
       el.pause();
     });
@@ -3773,6 +3776,46 @@ import { domView } from "../page-builder/rules/tree.ts";
     }
     scheduleBoxes();
   }
+  // media-play: the edit bar's Play (src/page-builder/media-play.ts). The
+  // host posts the file's bytes, which play in the video or audio itself from
+  // a blob: address of this frame; Stop, its end, an error or a render that
+  // takes the element away give back its own address and still.
+  var mediaPlay = null;
+  function stopMedia(report) {
+    var old = mediaPlay;
+    mediaPlay = null;
+    if (!old) return;
+    var el = old.el;
+    el.removeEventListener("ended", old.end);
+    el.removeEventListener("error", old.end);
+    el.pause();
+    if (old.src === null) el.removeAttribute("src"); else el.setAttribute("src", old.src);
+    el.setAttribute("preload", "none");
+    el.muted = old.muted;
+    el.load();
+    URL.revokeObjectURL(old.url);
+    if (report) emit("media-ended", { id: old.id });
+  }
+  function playMedia(msg) {
+    stopMedia(false);
+    var el = msg.request && msg.blob instanceof Blob ? resolveNodePath(msg.request) : null;
+    if (!el || (el.localName !== "video" && el.localName !== "audio")) {
+      if (msg.request) emit("media-ended", { id: msg.id });
+      return;
+    }
+    var play = { id: msg.id, el: el, url: URL.createObjectURL(msg.blob), src: el.getAttribute("src"), muted: el.muted };
+    play.end = function () { if (mediaPlay === play) stopMedia(true); };
+    mediaPlay = play;
+    el.addEventListener("ended", play.end);
+    el.addEventListener("error", play.end);
+    el.setAttribute("src", play.url);
+    el.setAttribute("preload", "auto");
+    el.play().catch(function (error) {
+      // Sound refused (no allowance to start it): it still plays, silently.
+      if (mediaPlay === play && error && error.name === "NotAllowedError" && !el.muted) { el.muted = true; return el.play(); }
+      throw error;
+    }).catch(function () { if (mediaPlay === play) stopMedia(true); });
+  }
   // patch-text: a structure field's text set in place, ahead of its render;
   // "\n" becomes <br>, never markup. Only an element of text and <br>s takes it.
   var livePatch = null;
@@ -3982,10 +4025,15 @@ import { domView } from "../page-builder/rules/tree.ts";
       setImageLook(msg.request, msg.look);
       return;
     }
+    if (msg.type === "media-play") {
+      playMedia(msg);
+      return;
+    }
     if (msg.type !== "update") return;
     apply(msg.payload || {});
     if (livePatch) patchText(livePatch.request, livePatch.text);
     if (imageLook) setImageLook(imageLook.request, imageLook.look);
+    if (mediaPlay && !mediaPlay.el.isConnected) stopMedia(true);
     requestAnimationFrame(function () { emit("ack", { id: msg.id }); });
   });
   pageEl = document.getElementById("page");

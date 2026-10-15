@@ -227,6 +227,8 @@ export interface PressedBlock { node: number[]; tag: string; cls: string; band: 
 export interface NativePreviewHandlers {
   onShortcut?: (name: string) => void;
   onRefusalNoteAction?: () => void;
+  /** The canvas stopped the edit bar's play `id` (src/page-builder/media-play.ts). */
+  onMediaEnded?: (id: number) => void;
   /** A right-click in the frame selected `selection`: open its element menu at `point` (host viewport). */
   onContextMenu?: (point: { x: number; y: number }, anchor: HTMLIFrameElement, selection: NativePreviewSelection) => void;
   /** A press, scroll, re-render with other bytes or History view: close that menu. */
@@ -391,6 +393,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   // Scripts run so the runtime can render, but never same-origin: the frame
   // cannot reach the editor's origin, cookies, or storage.
   frame.setAttribute("sandbox", "allow-scripts");
+  // The edit bar's Play starts sound in the canvas (its opaque origin needs the wildcard).
+  frame.allow = "autoplay *";
   frame.setAttribute("srcdoc", runtimeDoc(0));
   frameHost.append(frame);
   // Every message to and from the frame (preview-link.ts).
@@ -767,6 +771,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   link.on("dismiss-context-menu", () => handlers.onDismissContextMenu?.());
   link.on("shortcut", (message) => handlers.onShortcut?.(message.name));
   link.on("refusal-note-action", () => handlers.onRefusalNoteAction?.());
+  link.on("media-ended", (message) => handlers.onMediaEnded?.(message.id));
   link.on("slot-ghosts", (message) => {
     const report = site && frameState.active && !viewing && readSlotGhostReport(message.report,
       { context: link.context(), pagePath: alone ? "" : site.routes[route] ?? "", components: site.components });
@@ -1174,6 +1179,9 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       return { ...result, boxes, large: answer.report.large ?? result.large, images: answer.report.images ?? [] };
     },
     /** The image popup's shape, focus or picture on the page before Done; no look drops it. */
+    playMedia(id: number, request: NativeNodeRequest | null, blob?: Blob) {
+      if (frameState.active) link.send({ type: "media-play", id, request, blob });
+    },
     imageLook(request: NativeNodeRequest, look?: { style?: string; src?: string }) {
       if (frameState.active) link.send({ type: "image-look", request: look ? request : null, look });
     },

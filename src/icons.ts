@@ -34,6 +34,7 @@ import packageIcon from "@phosphor-icons/core/regular/package.svg?raw";
 import plus from "@phosphor-icons/core/regular/plus.svg?raw";
 import play from "@phosphor-icons/core/regular/play.svg?raw";
 import sparkle from "@phosphor-icons/core/regular/sparkle.svg?raw";
+import stop from "@phosphor-icons/core/regular/stop.svg?raw";
 import listChecks from "@phosphor-icons/core/regular/list-checks.svg?raw";
 import trash from "@phosphor-icons/core/regular/trash.svg?raw";
 import undo from "@phosphor-icons/core/regular/arrow-u-up-left.svg?raw";
@@ -72,6 +73,7 @@ const icons = {
   plus,
   redo,
   sparkle,
+  stop,
   trash,
   undo,
   x,

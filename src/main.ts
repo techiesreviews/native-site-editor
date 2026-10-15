@@ -484,6 +484,7 @@ function mountWorkspace() {
   nativePreview = createNativePreview(element("main"), {
     onShortcut: name => paletteController.shortcut(name),
     onRefusalNoteAction: dismissRefusalNote,
+    onMediaEnded: (id) => mediaController.mediaEnded(id),
     ...previewSelection.handlers(),
     onDismissContextMenu: () => previewElementMenu?.close(false),
     // The right-clicked element as the edit bar takes it (a shared template's part maps to its instance).
@@ -2456,6 +2457,12 @@ const mediaController = createMediaController({
       if (!nativeAssets.has(path)) await loadNativeAssets({ [appStore.openFile.value ?? "index.html"]: `<img src="/${encodeURI(path).replace(/&/g, "&amp;")}">` });
       return nativeAssets.get(path);
     },
+  },
+  mediaPlay: {
+    send: (id, request, blob) => nativePreview?.playMedia(id, request, blob),
+    box: () => nativePreview?.selectionBox() ?? undefined,
+    frame: () => document.querySelector(".native-preview-frame")?.getBoundingClientRect(),
+    watch: (listener) => appStore.selection.subscribe(listener),
   },
   openPage: openAfter,
   load: loadMedia,
