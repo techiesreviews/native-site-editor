@@ -15,7 +15,7 @@ Lex's goal: **minimal and easy**, so the media screens feel like the modern apps
 1. **The Media panel is a short floating box.** At 1280×800 it is about 540 px tall, so two rows of tiles show and the bottom actions are cut off (Remove 3 files, Fix all, New collection, Replace everywhere). Its size also jumps between Pages, Media and Files. → slice **104**.
 2. **Nothing visible says "done".** Site settings results and many other editor messages are screen-reader only. Media's status lines appear at the bottom, out of view, in a brown warning colour, and stay on later screens. → slice **105** (one toast for the whole editor).
 3. **Touch screens keep a grey "hover" patch** wherever a tap landed, in every media screen. → slice **106**.
-4. **The image popup is twice as tall as Brizy's** (about 650 against 330 px) because of extra helper lines, a banner, and Turn and Preview rows. → slice **109**.
+4. **The image popup is taller than Brizy's** (about 630 against 490 px, and Brizy's height includes three switch rows we don't have). Brizy fits its picture and Zoom into about 265 px. Ours needs about 300 px for the same part, then adds about 280 px for a Turn row, the Preview row, a banner and the buttons. → slice **109**.
 5. **File details spreads simple facts over a 2×2 card**, shows empty "Other uses · 0" boxes, and gives "Remove file…" the same look as "Copy path". → slice **108**.
 6. **The sub-screens (Clean up, Recently removed, To check, Improve images, Manage collections) each lay out differently.** They mix filled and plain buttons, place row actions in the middle of the panel, repeat sentences, and use two kinds of Back. → slice **111**.
 7. **Phone details:** squeezed search, one giant picture per row in Clean up review, 10 px trim handles, an unlabelled icon row in the large editor. → slices **107**, **110**, **111**.
@@ -60,7 +60,7 @@ Gaps:
 - **Disabled buttons** are only `opacity: 0.5` (`src/style.css:35`), so a disabled primary looks like a pale primary (A-24 "Reset to defaults", B-13 "Use file"). Change: disabled buttons get the neutral surface (`--surface-subtle`) with `--muted` text and no fill colour. Reference: GitBook's Save stays grey until something changes (`7-gitbook-web-edit-slug-prefix.jpg`). The WordPress media editor greys Save the same way.
 - **Dark radios** in Adding settings have a muddy brown-grey fill, so unticked choices look half selected (A-23, A-24 dark). This is fixed by slice 112's choice rows, which use no radio dots.
 - **Links in dark mode:** usage page names (B-02 dark) and "Choose favicon…" (B-26 dark) are plain white. In light mode the usage-popup links are blue on lavender, at low contrast (A-10). Change: one `--link` token per theme that reaches 4.5:1 on the panel surface, used by every link in media screens.
-- **Transparent pictures on dark tiles:** the dark-lettered logo PNG almost disappears (every dark picker and grid shot). Change: tiles and previews of pictures with transparency get a light checkerboard backing (8 px squares, `--surface` and `--surface-subtle`), as Squarespace and Figma show transparent assets.
+- **Transparent pictures on dark tiles:** the dark-lettered logo PNG almost disappears (every dark picker and grid shot). Change: tiles and previews of pictures with transparency get a **light** checkerboard backing in both themes, with dedicated colours (8 px squares of `oklch(97% 0 none)` and `oklch(90% 0 none)`), because the dark theme's surface tokens are 18–22 % lightness (`src/theme.css:147-149`) and would stay dark. This is how Squarespace and Figma show transparent assets.
 - **Surface depth differs by theme.** In light mode, cards, the tray and the selection bar are white on lavender. In dark mode they are near-black on slate, darker than the panel (A-11, A-14, A-20). Change: both themes use one rule, a card one step *lighter* than the panel (dark: `color-mix(in oklch, var(--panel-surface), white 6%)`).
 
 ### C4. Wording rules
@@ -77,7 +77,7 @@ Gaps:
 Matches: Tiles as in `tiles.html`: square crops, one tile per family, 3 / 4 / 6 columns, 3 px gaps, a small radius, the page count top-left and a selection ring top-right as two 44 px targets (slice 09), names on hover with a mouse and always on touch, video lengths bottom-right as in Google Photos (`1-google-photos-ios-grid-date-pill.jpg`). The empty state is one title, one sentence and one action, like Shopify Files (`1-shopify-web-files-empty-state.jpg`). No results keeps the bar visible and offers Clear search, like Semrush (`1-semrush-web-nothing-found-clear-filters.jpg`). Newest first (slice 103) works: added files are first and highlighted (A-14). That is Lex's iPhone fix (lead's note 8), and it looks right at all widths.
 
 Gaps:
-- **Heavy JPEGs show a grey "JPG" document tile** instead of their picture (allotment-harvest.jpg and workshop-panorama.jpg, both 2.1 MB; A-01, A-09, A-13, A-14). A picture library must show pictures. Change: tiles of files over the preview limit get a downscaled thumbnail like any other picture (find the limit in the library's byte/preview path, `media-byte-cache.ts` / `media-library-grid.ts`). → 107.
+- **Heavy JPEGs show a grey "JPG" document tile** instead of their picture (allotment-harvest.jpg and workshop-panorama.jpg, both 2.1 MB; A-01, A-09, A-13, A-14). A picture library must show pictures. The tile falls back to the type icon when `h.bytes(preview)` rejects or the image errors (`tilePicture`, `media-library-grid.ts:180-190`). Both files are 2.1 MB, which points at a 1 MB read limit in the byte path; the builder confirms the cause first. Change: heavy pictures load like any other picture, downscaled for the tile. → 107.
 - **The top shade dims every tile** (a dark gradient over about the top 40 %, A-01). Reference: Google Photos and Apple Photos put white glyphs on the photo with no chip or shade (`1-google-photos-ios-grid-date-pill.jpg`). Change: shrink the shade to a 36 px band at 35 % strength (or `text-shadow` only), keeping 4.5:1 for the number. The tile then reads as a photo first. → 107.
 - **Phone One bar** (A-04, A-05, B-05 at 390): the search field is about 115 px wide, so typed words lose their start, and "All colle…" is cut. Change: in the phone container, the Collections trigger shows the short name ("All", "Garden") with `max-inline-size: 40%`, and search takes the rest (`flex: 1 1 55%`). → 107.
 - **The by-agent mark** on a tile (small dark circle bottom-right, A-01 tile 11) has no words. Change: give it the same icon and a tooltip/label "Written by an agent – check in To check", so it matches the To check row. → 107.
@@ -86,7 +86,7 @@ Gaps:
 
 Matches: thumbnail, name, size, usage, as Squarespace and Air list views do.
 
-Gaps: rows without a thumbnail (the heavy JPG, the MP3) centre their names, out of line with every other row at 768 and 1280, and indent differently at 390. Change: a fixed 48 px thumbnail column, with an icon on `--surface-subtle` when there is no picture. The count shows twice ("1" bubble and "Used on 1 page"): keep only the words, and use "Not used" for 0. → 107.
+Gaps: rows without a thumbnail (the heavy JPG, the MP3) centre their names, out of line with every other row at 768 and 1280, and indent differently at 390. Change: a fixed 48 px thumbnail column, with an icon on `--surface-subtle` when there is no picture. The count shows twice ("1" bubble and "Used on 1 page"): keep only the words. The agreed states stay distinct ("No uses found", "Other uses found", "Not checked yet"; map ticket 06), so 0 is never shortened to "Not used". → 107.
 
 ### Usage popup (A-10)
 
@@ -160,7 +160,7 @@ Gaps:
 
 ### File details: picture (B-01 to B-03), video (B-08, B-09), audio (B-10), PDF (B-11), Vimeo (B-12)
 
-Matches: the order preview → name → facts → usage → copies → collections → description → marks → actions follows Shopify's detail card (`4-shopify-web-file-detail-alt-usedin-focal.jpg`). Rename is the name field itself, and Description is one field with one helper line. Video details have Still picture (Use this moment, Choose picture…) and Subtitles, as the Mailchimp video block does (`9-mailchimp-web-video-block-source-alt.jpg`).
+Matches: the order preview → name → facts → usage → copies → collections → description → marks → actions follows Shopify's detail card (`4-shopify-web-file-detail-alt-usedin-focal.jpg`). Rename is the name field itself, and Description is one field with one helper line. Video details have Still picture (Use this moment, Choose picture…), like the thumbnail setting in Framer's YouTube panel (`9-framer-web-youtube-component-panel.jpg`), and Subtitles as one file with Replace/Remove, which visitors reach through a CC button as in Codecademy's player (`9-codecademy-web-player-captions-menu.jpg`).
 
 Gaps:
 - **Facts as a 2×2 card** (Kind, Size, Dimensions, Folder; about 120 px tall). Change: one 13 px muted line, **"WebP · 2000 × 1125 · 47 KB · media/images"**, with "Added 14 Oct" on its own line when there is a date (Shopify "JPG • 3024 × 4032 • 1.61 MB", Squarespace File Details `4-squarespace-web-file-details.jpg`). Saves about 90 px. → 108.
@@ -184,7 +184,7 @@ Gap (small): at 390 the name field sits below the preview and the four pills, so
 Matches: Now / New side by side, the action named on the button, where the old picture goes (Recently removed).
 
 Gaps:
-- **The confirm doesn't name the pages** (lead's note 7: "2 pages show red-acer.webp"). It has a tinted box plus four more sentences (B-06), and its buttons are cut off (C1). Change: the box lists the pages as links (**"Shows on: Home, About"**, up to 5, then "and 3 more"). Below it one line, "Same name and address, so links from other sites show it too.", then "The old picture goes to Recently removed for 30 days." Drop "bluebells.webp also stays in Media as it is." and "Each place keeps its shape; its focus point goes back to the middle." (the second shows as a one-time note in the image popup instead). That is 3 lines instead of 5. Reference: the iOS system delete alert is one sentence plus a thumbnail (`2-ios-system-delete-confirm-recently-deleted.jpg`). Typeform's confirm names the consequence in one bold sentence (`7-typeform-web-change-url-confirm.jpg`). → 113.
+- **The confirm doesn't name the pages** (lead's note 7: "2 pages show red-acer.webp"). It has a tinted box plus four more sentences (B-06), and its buttons are cut off (C1). Change: the box lists the pages as links (**"Shows on: Home, About"**, up to 5, then "and 3 more"). Below it the address line stays conditional, as `media-replace-rules.ts:47-54` decides today: for the same format, "Same name and address, so links from other sites show it too."; for a new format, "It's a WebP, so its address becomes /media/images/red-acer.webp. Every mention is updated." with "Keep the old address working" as now (ticket 15). Then a short "Focus points go back to the middle." when pages use it, and "The old picture goes to Recently removed for 30 days." Drop only "bluebells.webp also stays in Media as it is." Keep the trimmed-copies line when it applies. The usual case drops from 5 lines to 4, and the pages are named. Reference: the iOS system delete alert is one sentence plus a thumbnail (`2-ios-system-delete-confirm-recently-deleted.jpg`). Typeform's confirm names the consequence in one bold sentence (`7-typeform-web-change-url-confirm.jpg`). → 113.
 - **The result** ("Replaced red-acer.webp everywhere on 2 pages, as a draft…", `media-replace-rules.ts:73`) is at the very bottom of the details, out of view (B-07b), in brown. It names only the old file. Change: a toast (C2), **"red-acer.webp now shows the bluebells picture on Home and About"**, with Undo. → 113.
 - **Leftover Vimeo line** under the confirm (B-06): → C2.
 
@@ -195,7 +195,7 @@ Matches: the same tiles and One bar as Media. One "Choose image / Choose media" 
 Gaps:
 - **The YouTube/Vimeo field is always on screen** (B-13 to B-15), even when choosing a picture is the point. Change: a quiet **"Paste a YouTube or Vimeo link"** text button in the One bar row that reveals the field with **Use** and one helper line, "Works with YouTube and Vimeo". That is Notion's Link tab (`5-notion-web-image-link-tab.jpg`, `9-notion-web-video-embed-link.jpg`). The error stays inline under the field. The settled rule (pasting is allowed, ticket 12) is unchanged. → 113.
 - **Footer:** a "Choose one file" line plus Cancel and "Use file" take about 130 px on phone (B-14 at 390). Change: drop "Choose one file", and say "Use" (disabled) until a pick, then "Use image" / "Use video" as today. On phone, Cancel and Use share one 56 px row. The iOS picker sheet puts them in the header (`5-ios-system-photo-picker-sheet.jpg`). We keep the bottom for thumb reach. → 113.
-- **Empty space at 1280:** with 10 files the picker shows two rows in an 850 px window (B-13). Change: the picker's height follows its content, `block-size: min(850px, fit-content)`, with a 480 px minimum. → 113.
+- **Empty space at 1280:** with 10 files the picker shows two rows in an 850 px window (B-13). Change: the picker's height follows its content: `block-size: fit-content; min-block-size: min(480px, 100dvh - 48px); max-block-size: min(850px, 100dvh - 48px)` (the grid scrolls inside). → 113.
 - **Wide and transparent pictures** (logo, social card) crop to unreadable fragments in square tiles. Change: pictures with transparency, and those wider than 2:1, show whole (`object-fit: contain`) on the checkerboard from C3. Photos stay cropped as Tiles decided. → 107 (tile rule shared with Media).
 - **Phone double-click to open the picker** never reached the photo in three tries (B-16 skipped at 390; lead's notes 1 and 4). The stale double-click is a bug (→ 114). The phone's editing room is a behaviour question (→ [Q3](#q3-more-room-for-the-page-on-phones)). The Image button → Replace path works at every width (B-19, B-20).
 
@@ -203,7 +203,7 @@ Gaps:
 
 Matches Brizy and `crop-popup.html`: a 328 px popup (Brizy about 325 px) with label-left / control-right rows split by hairlines, the shape menu as a dark pill **on** the picture, the focus dot on the picture, Zoom as a slider with "100 %", **Done** as the one primary, and a bottom sheet with 44 px targets on phone (ticket 39). It follows the editor's look, light and dark, as Lex asked (ticket 09).
 
-Gaps (Brizy's popup is about 330 px tall for Image + Zoom + three switches; ours is about 650 px at 1280):
+Gaps (measured on the shots: Brizy's popup is about 325 × 490 px, with Image and Zoom taking about 265 px and three switch rows the rest; ours is 328 px wide and about 630 px tall at 1280, B-20):
 - **The helper line under the picture** ("The whole picture shows." / "Drag the dot to what matters most." / "Drag the corners to trim.") takes about 40 px and repeats what the dot and corners show. Change: show it only the first time a shape is chosen, then keep it as the dot's accessible name. Replace stays on that line, right-aligned. → 109.
 - **"Only changes this spot" banner**: a 36 px tinted box with a blue left stripe and a check icon, plus the yellow "Saves a new picture for this spot" box with an amber stripe. Both messages are agreed (ticket 39), but they read as alerts. Change: one 13 px muted line with a 14 px icon, left of Done on the same row (computer) or above the buttons (phone). The yellow case keeps its icon tinted amber; neither gets a box or stripe. Saves about 50 px. → 109.
 - **Turn row** shows "0°" plus two icons in a 50 px row. Brizy has no Turn. Change: put the two 44 px turn icons at the end of the Zoom row, so Zoom and Turn share one row (the degree shows in the icon's tooltip). Saves 50 px. → 109.
@@ -253,6 +253,22 @@ Gaps:
 - **The long site address is cut off** inside its field at 390 (B-26). The helper "Where your site lives, like https://name.github.io/my-site/" wraps to two lines. Change: the field wraps as a 2-line textarea-like input on phone (`field-sizing: content`), and the helper becomes "Like https://name.github.io/my-site/". → 113.
 - **"Choose favicon…"** is a text link indented 10 px differently from the fields' column (B-26, x≈413 against the fields at 561). Change: a secondary button in the field's column, with the favicon's 32 px preview in front of the field. → 113.
 
+## Coverage and what was not shot
+
+Every screen in ticket 89's scope is assessed above at 390, 768 and 1280, light and dark, except the states below. The prepared shot sets did not include them, and this audit did not retake shots (the lead prepared steps 1–2). They are assessed from the code and from neighbouring shots only, so **each fix slice that touches one of them must shoot it** in all six combinations before and after:
+
+| Not shot | Nearest evidence | Shot by |
+| --- | --- | --- |
+| File details for a generic download (not a PDF: ZIP, DOCX) | B-11 (PDF details) | 108 |
+| The picker's own adding progress, ready and error states | A-13/A-14 (Media's tray), A-25 (Files) | 112 |
+| Picker entry points: component fields and slots, section backgrounds, favicon, Image popup → Replace | B-05, B-13, B-16 to B-18 | 113 |
+| B-16 "Choose image" by double-click at 390 (skipped in both themes: the double-click never reached the photo) | lead's notes 1 and 4 | 114 (spec), Q3 |
+| Media gallery loading and load-error states; usage "Not checked yet" and "Other uses found" | A-01, A-10 | 107 |
+| Repository size warnings at 500 MB and 900 MB | A-24 (320 MB) | 112 |
+| Visitor subtitles (CC on) and the audio transcript; the looping video's corner pause button; Online video playing and its fallback when the provider is blocked | B-32, B-33 | 115 |
+
+Nothing in these states contradicts the findings above. The shared components (tray, picker, details, player) are the same, so the same changes apply.
+
 ## What is already good (keep)
 
 - Tiles: the dense square grid, 3 px gaps, names on hover, video lengths on tiles, the page count and selection ring as 44 px targets.
@@ -276,7 +292,7 @@ Gaps:
 | 104 | The Media panel fills the height, keeps one size, pins its actions | claude | 89 | C1 |
 | 105 | One visible confirmation: a toast for the whole editor | claude | 89 | C2, lead's note 6 |
 | 106 | Touch, disabled and dark-mode fixes | claude | 89 | C3 |
-| 107 | Tiles, list view, selection bar and the phone One bar | claude | 104 | Tiles, list, selection, phone bar, transparent tiles |
+| 107 | Tiles, list view, selection bar and the phone One bar | claude | 104, 106 | Tiles, list, selection, phone bar, transparent tiles |
 | 108 | File details: one fact line, a calm preview, actions in order | claude | 105 | details per kind, usage popup, rename |
 | 109 | Image popup and Social image: shorter, closer to Brizy | claude | 106 | popup, edit bar tab, Social image |
 | 110 | Large editor: fits at every width, one shape menu, labelled phone tools | claude | 109 | large editor |
@@ -318,9 +334,9 @@ Unticking a picture in Improve images leaves it alone on that page only. A pictu
 
 ### Q5. Replacing a video that sits in a picture spot
 
-A picture spot can hold a looping video (ticket 12). Today you can't swap that video for a picture or another video from the editor; you'd remove and add again.
-- **A. Not now.** *(Recommended: it is rare, and Replace everywhere already swaps a video file in every place.)*
-- **B. Add Replace for videos in picture spots.**
+A picture spot can hold a looping video (ticket 12). Today there is **no way to replace a video** anywhere: Replace everywhere works for pictures only (`replace-everywhere.ts:19`, `media-replace-rules.ts:9`), and the image popup's Replace doesn't open for a video in a picture spot (slice 69's follow-up). To swap one you remove the spot's video and add again, which can break a component's layout.
+- **A. Not now.**
+- **B. Add Replace for a video in a picture spot**: the spot's edit bar gets the same Replace as pictures, choosing a picture or another video. *(Recommended: otherwise a spot with a video is stuck, and this matches how pictures already work.)*
 
 ### Q6. A Video button like the Image button
 

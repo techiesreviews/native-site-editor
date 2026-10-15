@@ -168,7 +168,7 @@ Lex asked for a final UX and UI audit of every media screen against current Mobb
 | [104 The Media panel fills the height, keeps one size, pins its actions](tickets/104-media-panel-size.md) | claude | 89 |
 | [105 One visible confirmation: a toast for the whole editor](tickets/105-editor-toast.md) | claude | 89 |
 | [106 Touch, disabled and dark-mode fixes](tickets/106-touch-dark-fixes.md) | claude | 89 |
-| [107 Tiles, list view, selection bar and the phone One bar](tickets/107-tiles-list-phone-bar.md) | claude | 104 |
+| [107 Tiles, list view, selection bar and the phone One bar](tickets/107-tiles-list-phone-bar.md) | claude | 104, 106 |
 | [108 File details: one fact line, a calm preview, actions in order](tickets/108-file-details-calm.md) | claude | 105 |
 | [109 Image popup and Social image: shorter, closer to Brizy](tickets/109-image-popup-shorter.md) | claude | 106 |
 | [110 Large editor: fits at every width, one shape menu, labelled phone tools](tickets/110-large-editor-fit.md) | claude | 109 |

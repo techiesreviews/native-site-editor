@@ -19,6 +19,7 @@ From the [UX and UI audit](../ux-ui-audit.md#video-audio-download-and-online-vid
 
 ## Done when
 
+- Also shot (not in the audit's sets): visitor subtitles with CC on, the audio transcript, the looping video's corner pause button, and an Online video playing and its fallback when the provider is blocked.
 - Specs for the bar labels and the canvas audio duration.
 - Shots of every screen this slice touched at 390, 768 and 1280, light and dark, before and after, on the real starter (`scripts/agents/shots.sh`).
 - `npm run check`, `npm run lint`, unit tests, the touched browser specs; new code stays in the lazy media chunk (boot budget unchanged).

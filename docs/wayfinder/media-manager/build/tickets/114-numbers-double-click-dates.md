@@ -19,6 +19,7 @@ From the [UX and UI audit](../ux-ui-audit.md#improve-images-a-20-to-a-22) and th
 
 ## Done when
 
+- Shots at 390, 768 and 1280, light and dark, of More beside Improve images and of video and audio details, showing the numbers agree.
 - Unit tests for the count and the rounding; a browser spec double-clicks immediately after selecting, 20 times, and the picker opens every time, with no retry helper; a spec discards an upload and the records draft has no entry for it.
 - `npm run check`, `npm run lint`, unit tests, the touched browser specs; new code stays in the lazy media chunk (boot budget unchanged).
 - Review by GPT-6.1 Sol (read-only `codex exec`) recorded.

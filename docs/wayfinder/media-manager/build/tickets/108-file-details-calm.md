@@ -23,6 +23,7 @@ From the [UX and UI audit](../ux-ui-audit.md#file-details-picture-b-01-to-b-03-v
 
 ## Done when
 
+- Also shot (not in the audit's sets): details of a generic download (ZIP or DOCX).
 - Specs updated for the moved actions (Copy path and Remove in the ⋯ menu) and the one-line facts.
 - Shots of every screen this slice touched at 390, 768 and 1280, light and dark, before and after, on the real starter (`scripts/agents/shots.sh`).
 - `npm run check`, `npm run lint`, unit tests, the touched browser specs; new code stays in the lazy media chunk (boot budget unchanged).

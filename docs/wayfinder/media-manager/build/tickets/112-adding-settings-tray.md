@@ -19,6 +19,7 @@ From the [UX and UI audit](../ux-ui-audit.md#adding-settings-and-repository-size
 
 ## Done when
 
+- Also shot (not in the audit's sets): the picker's own adding progress, ready and error states, and the repository size line at 500 MB and 900 MB.
 - Specs for settings choices and the tray's failure line updated; keyboard arrows still move between choices.
 - Shots of every screen this slice touched at 390, 768 and 1280, light and dark, before and after, on the real starter (`scripts/agents/shots.sh`).
 - `npm run check`, `npm run lint`, unit tests, the touched browser specs; new code stays in the lazy media chunk (boot budget unchanged).
