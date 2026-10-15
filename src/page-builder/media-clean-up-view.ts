@@ -16,7 +16,8 @@ export function drawMediaCount(marks: HTMLElement[], badge: MediaBadge) {
       const title = mark.querySelector(":scope > #current-page");
       if (title) title.after(count); else mark.append(count);
     }
-    count.textContent = String(badge.count); count.hidden = !badge.show;
+    // A pointer's tooltip spells out the sum More shows ("10 files to clean up and 5 pages…").
+    count.textContent = String(badge.count); count.hidden = !badge.show; count.title = mediaBadgeLabel(badge.count, badge.improve);
     if (badge.show) mark.setAttribute("aria-describedby", NOTE_ID);
     else if (mark.getAttribute("aria-describedby") === NOTE_ID) mark.removeAttribute("aria-describedby");
   }

@@ -56,6 +56,13 @@
 .image-large__icon:active:not(:disabled) { background: var(--hover); }
 @media (hover: hover) and (pointer: fine) { .image-large__icon:hover:not(:disabled) { background: var(--hover); } }
 .image-large__icon:disabled { opacity: 0.38; }
+/* A toggle that is on (Flip) is solid, like Bold in the edit bar (slice 106's --pressed, light and dark). */
+.image-large__icon[aria-pressed="true"] { background: var(--pressed); color: var(--on-pressed); }
+.image-large__icon[aria-pressed="true"]:active { background: color-mix(in oklch, var(--pressed), var(--on-pressed) 16%); }
+@media (hover: hover) and (pointer: fine) {
+  .image-large__icon[aria-pressed="true"]:hover { background: color-mix(in oklch, var(--pressed), var(--on-pressed) 12%); }
+}
+.image-large__tool[aria-pressed="true"] .image-large__tool-label { color: inherit; }
 .image-large__text {
   display: inline-flex;
   align-items: center;

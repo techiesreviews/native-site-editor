@@ -129,10 +129,12 @@ export function createMediaLibraryView(
   const stopCleanUp = cleanUp?.onChange(() => {
     if (!alive) return;
     if (shell.sheet.dataset.mode === "clean-up") sheet.redraw?.();
-    // The width check finishes after Clean up: an already-open More must show its new count too.
-    if (more.isOpen() && more.opener === shell.more && cleanUp.improve) {
-      const item = [...more.element.querySelectorAll("[role=menuitem]")].find(item => item.firstElementChild?.textContent?.startsWith("Improve images"));
-      if (item?.firstElementChild) item.firstElementChild.textContent = cleanUp.improve.item().label;
+    // The counts settle after Clean up opens (slice 121): an already-open More shows them too.
+    if (more.isOpen() && more.opener === shell.more) {
+      for (const [name, label] of [["Clean up", cleanUp.item().label], ["Improve images", cleanUp.improve?.item().label]] as const) {
+        const item = [...more.element.querySelectorAll("[role=menuitem]")].find(item => item.firstElementChild?.textContent?.startsWith(name));
+        if (item?.firstElementChild && label) item.firstElementChild.textContent = label;
+      }
     }
   });
   const stopUsage = adapter.usage?.onChange(() => {

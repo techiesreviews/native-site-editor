@@ -21,7 +21,7 @@ import infoIcon from "@phosphor-icons/core/regular/info.svg?raw";
 import { popupMessage, type PopupShape } from "./image-popup-rules";
 import { componentShapeNotice } from "./component-shapes";
 import { cutArea, makesNewPicture, nudgeFree, shownTrim, turnBy, turnedSize, type TrimRect } from "./image-popup-trim";
-import { canZoomOut, chooseShape, editKey, fitView, flipEdit, moveArea, resetEdit, resizeArea, rulerLabelShown, rulerValue, straightenEdit, zoomArea, type PopupEdit } from "./image-large-rules";
+import { canZoomOut, chooseShape, editKey, fitView, flipEdit, moveArea, resetEdit, resizeArea, rulerLabelShown, rulerValue, shownFlips, straightenEdit, zoomArea, type PopupEdit } from "./image-large-rules";
 import { mountPreviews, paintTrim, type ImagePopupState, type PreviewDevice } from "./image-popup-view";
 import { mountShapeMenu } from "./shape-menu";
 import { isSeeThrough } from "./media-transparency";
@@ -116,8 +116,10 @@ export function mountLargeEditor(state: ImagePopupState, own: PopupShape, events
       return box;
     };
     const element = node("div", className);
+    // Flip is a toggle: each button shows whether the picture is flipped its way (slice 121).
+    for (const flip of [flipX, flipY]) flip.setAttribute("aria-pressed", "false");
     element.append(group("Turn", turnLeft, turnRight), group("Flip", flipX, flipY), group("Zoom", zoomOut, zoomIn));
-    return { element, zoomOut };
+    return { element, zoomOut, flipX, flipY };
   };
   // Shape: the popup's shape menu, the button naming the current shape ("16:9 ▾" in the side panel;
   // the crop icon over "16:9" at the end of the phone's row).
@@ -229,7 +231,12 @@ export function mountLargeEditor(state: ImagePopupState, own: PopupShape, events
     const text = node("span", "", said.text);
     if (note) text.append(node("span", "image-large__note", note));
     message.replaceChildren(svg(said.tone === "new" ? infoIcon : checkCircleIcon, 14), text);
-    for (const zoomOut of [sideTools.zoomOut, phoneTools.zoomOut]) zoomOut.disabled = !canZoomOut(now);
+    const flipped = shownFlips(now.cut);
+    for (const tools of [sideTools, phoneTools]) {
+      tools.zoomOut.disabled = !canZoomOut(now);
+      tools.flipX.setAttribute("aria-pressed", String(flipped.x));
+      tools.flipY.setAttribute("aria-pressed", String(flipped.y));
+    }
     const degrees = state.cut.straighten ?? 0;
     straighten.value = String(degrees);
     straighten.setAttribute("aria-valuetext", `${degrees} degrees`);

@@ -119,7 +119,9 @@ test("an update overtaken by a newer one, or by a place change, does not publish
   const first = controller.update(unused(["old.png"]));
   const second = controller.update(unused(["new.png"]));
   release(); await Promise.all([first, second]);
-  assert.deepEqual(f.states.map(state => state.suggestions.groups[0]?.items[0].main), ["new.png"]);
+  // Clean up's suggestions, then the settled counts: both from the newer update only.
+  assert.deepEqual([...new Set(f.states.map(state => state.suggestions.groups[0]?.items[0].main))], ["new.png"]);
+  assert.deepEqual(f.states.at(-1)?.counted?.groups[0]?.items[0].main, "new.png");
   const moved = fixture("{}");
   let open!: () => void;
   const wait = new Promise<void>(resolve => { open = resolve; });
@@ -287,4 +289,53 @@ test("a width read while the bytes are replaced is never kept under the old vers
   assert.equal(reads, 2);
   assert.deepEqual(controller.state().improve, ["index.html"]);
   assert.deepEqual(controller.improveItem(), { label: "Improve images (1)" });
+});
+
+// Slice 121: the badge said 10 (Clean up alone) on one screen and 15 (Clean up + Improve images)
+// on the next. The badge and More's two counts now come from one settled check.
+test("the badge and More's counts come from one settled check: never Clean up alone, always adding up", async t => {
+  const image = Object.getOwnPropertyDescriptor(globalThis, "Image");
+  Object.defineProperty(globalThis, "Image", { configurable: true, value: class { src = ""; naturalWidth = 4000; naturalHeight = 3000; async decode() {} } });
+  t.after(() => { if (image) Object.defineProperty(globalThis, "Image", image); else Reflect.deleteProperty(globalThis, "Image"); });
+  const f = fixture();
+  f.sources["index.html"] = '<img src="/images/wide.png" width="10" height="10" loading="lazy">';
+  f.setFiles(["index.html", "images/wide.png"]);
+  let release!: () => void, gate = new Promise<void>(resolve => { release = resolve; });
+  let pagesFail = false;
+  const ports = { ...f.ports, components: () => ({}), size: () => 1000,
+    pages: () => { if (pagesFail) throw new Error("offline"); return ["index.html"]; },
+    blob: async () => { await gate; return new Blob(["picture"]); } } satisfies MediaCleanUpPorts;
+  const controller = createMediaCleanUpController(ports);
+  const usage = (media: string[]) => mediaUsageRecords({ media, sources: { "index.html": f.sources["index.html"]! }, pages: ["index.html"] });
+  const sum = () => {
+    const clean = Number(/\((\d+)\)/.exec(controller.item().label)?.[1] ?? 0), improve = Number(/\((\d+)\)/.exec(controller.improveItem().label)?.[1] ?? 0);
+    return clean + improve;
+  };
+  // First check: Clean up opens at once, but no count shows until Improve images' rows are in.
+  const first = controller.update(usage(["images/wide.png", "a.png", "b.png"]));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(controller.state().suggestions.count, 2);
+  assert.equal(controller.item().label, "Clean up");
+  assert.equal(controller.item().disabled, undefined);
+  assert.ok(f.states.every(state => !state.badge.show), "no badge from half a check");
+  release(); await first;
+  assert.deepEqual(badge(f.states), { count: 3, show: true, improve: 1 });
+  assert.deepEqual([controller.item().label, controller.improveItem().label], ["Clean up (2)", "Improve images (1)"]);
+  assert.equal(sum(), badge(f.states)?.count);
+  // A recheck (a file removed): the last pair stands until the new one has both counts.
+  gate = new Promise<void>(resolve => { release = resolve; });
+  const seen = f.states.length;
+  const second = controller.update(usage(["images/wide.png", "a.png"]));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(controller.state().suggestions.count, 1);
+  assert.ok(f.states.slice(seen).every(state => state.badge.count === 3), "the badge holds while rows are read");
+  assert.equal(sum(), 3);
+  release(); await second;
+  assert.deepEqual(badge(f.states), { count: 2, show: true, improve: 1 });
+  assert.equal(sum(), 2);
+  // Rows that cannot be read keep the last ones rather than dropping to Clean up alone.
+  pagesFail = true;
+  await controller.update(usage(["images/wide.png", "a.png", "c.png"]));
+  assert.deepEqual(badge(f.states), { count: 3, show: true, improve: 1 });
+  assert.equal(sum(), 3);
 });

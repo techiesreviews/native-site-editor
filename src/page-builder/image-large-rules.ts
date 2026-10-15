@@ -59,13 +59,20 @@ export function zoomArea(edit: PopupEdit, factor: number): PopupEdit {
 }
 export const canZoomOut = (edit: PopupEdit) => zoomPercent(edit.shape, edit.cut) > 100;
 
+/** The stored flip that mirrors the picture along `axis` as shown: a sideways turn swaps them. */
+const flipSource = (cut: PopupCut, axis: "x" | "y") => (axis === "x") !== (cut.turn === 90 || cut.turn === 270) ? "flipX" : "flipY";
+/** Whether each Flip button is on (`aria-pressed`): pressing it again undoes what `flipEdit` did. */
+export function shownFlips(cut: PopupCut): { x: boolean; y: boolean } {
+  return { x: !!cut[flipSource(cut, "x")], y: !!cut[flipSource(cut, "y")] };
+}
+
 /**
  * Flip side to side ("x") or upside down ("y") as the picture is shown. A trim flips the picture
  * before turning it, so a turned picture flips the other way; the straighten mirrors too (a level
  * horizon stays level), and so do the frame and the focus, which keep the same part in view.
  */
 export function flipEdit(edit: PopupEdit, axis: "x" | "y"): PopupEdit {
-  const sideways = edit.cut.turn === 90 || edit.cut.turn === 270, source = (axis === "x") !== sideways ? "flipX" : "flipY";
+  const source = flipSource(edit.cut, axis);
   const { flipX, flipY, straighten, ...rest } = edit.cut, flips = { flipX, flipY, [source]: edit.cut[source] ? undefined : true as const };
   const r = edit.cut.rect;
   const cut: PopupCut = { ...rest, rect: axis === "x" ? { ...r, x: 1 - r.x - r.w } : { ...r, y: 1 - r.y - r.h },

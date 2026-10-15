@@ -4,8 +4,11 @@ import { mediaCleanUpSuggestions, type MediaCleanUpSuggestions } from "../page-b
 import { badgeKeys, cleanUpMenuItem, improveMenuItem, mediaBadge, readDismissed, type MediaBadge } from "../page-builder/media-badge";
 import type { MediaUsageRecords } from "../page-builder/media-usage";
 
-/** `improve`: the pages and components Improve images would change (ticket 11: the badge counts them). */
-export interface MediaCleanUpState { place: string; suggestions: MediaCleanUpSuggestions; badge: MediaBadge; improve?: string[] }
+/** `suggestions`: the newest check, which Clean up's screen reads. `counted` and `improve`: the last
+ * check whose Clean up suggestions and Improve images rows (the pages and components it would
+ * change) were both known. The badge and More's two counts come only from that pair, so they
+ * always add up (ticket 11: badge = Clean up + Improve images) and never show half a check. */
+export interface MediaCleanUpState { place: string; suggestions: MediaCleanUpSuggestions; badge: MediaBadge; counted?: MediaCleanUpSuggestions; improve?: string[] }
 export interface MediaCleanUpPorts {
   /** The repository and branch, "" when none is open; a dismiss is remembered per place. */
   place(): string;
@@ -45,10 +48,11 @@ export function createMediaCleanUpController(ports: MediaCleanUpPorts) {
     memory.set(place, files);
     storage(store => files ? store.setItem(storageKey(place), JSON.stringify(files)) : store.removeItem(storageKey(place)));
   }
-  function publish(place: string, suggestions: MediaCleanUpSuggestions, improve = current.place === place ? current.improve : undefined, settled = true) {
+  /** One settled check: the badge and More's counts move together, once. */
+  function publish(place: string, counted: MediaCleanUpSuggestions, improve: string[] | undefined) {
     // With nothing left, a later suggestion is new even if it was dismissed before.
-    if (settled && place && suggestions.state === "ready" && !suggestions.count && !improve?.length && dismissed(place)) remember(place, undefined);
-    current = { place, suggestions, badge: mediaBadge(suggestions, dismissed(place), improve), ...improve ? { improve } : {} };
+    if (place && counted.state === "ready" && !counted.count && !improve?.length && dismissed(place)) remember(place, undefined);
+    current = { place, suggestions: current.suggestions, counted, badge: mediaBadge(counted, dismissed(place), improve), ...improve ? { improve } : {} };
     ports.changed(current);
   }
   /** Picture widths Improve images read from the bytes, so the count matches its screen. */
@@ -99,29 +103,31 @@ export function createMediaCleanUpController(ports: MediaCleanUpPorts) {
     const read = usage && await records();
     const suggestions = usage ? mediaCleanUpSuggestions({ usage, records: read ?? null }) : notChecked();
     if (disposed || request !== epoch || place !== ports.place()) return;
-    // While the same site is checked again, the badge keeps its last count (no flicker), but
-    // nothing unchecked is offered: Clean up waits until the check is done.
+    // While the same site is checked again, the badge and More keep their last counts (no flicker),
+    // but nothing unchecked is offered: Clean up waits until the check is done.
     if (suggestions.state === "not-checked" && place === current.place) {
       current = { ...current, suggestions };
       ports.changed(current);
       return;
     }
-    publish(place, suggestions, undefined, false);
-    // Improve images' rows follow: Clean up never waits for them.
+    // Clean up's screen opens on these at once; the counts wait for Improve images' rows below,
+    // so the badge never shows Clean up's count alone (slice 121: 10, then 15 a moment later).
+    current = place === current.place ? { ...current, suggestions } : { place, suggestions, badge: { count: 0, show: false } };
+    ports.changed(current);
     const improve = await improveRows(read ?? null, () => !disposed && request === epoch && place === ports.place()).catch(() => undefined);
     if (disposed || request !== epoch || place !== ports.place()) return;
-    // Published again only when the rows changed, or a dismiss is to be forgotten with nothing left.
-    const empty = suggestions.state === "ready" && !suggestions.count && !improve?.length && dismissed(place);
-    if (empty || JSON.stringify(improve) !== JSON.stringify(current.improve)) publish(place, suggestions, improve);
+    // Rows that could not be read keep the last ones: a failed read is not "nothing to improve".
+    publish(place, suggestions, improve ?? current.improve);
   }
   /** Hides the count until a file not suggested now is suggested. */
   function dismiss() {
-    if (disposed || !current.place || current.suggestions.state !== "ready" || !current.badge.show) return;
-    remember(current.place, badgeKeys(current.suggestions, current.improve));
-    publish(current.place, current.suggestions);
+    const { place, counted, improve } = current;
+    if (disposed || !place || current.suggestions.state !== "ready" || counted?.state !== "ready" || !current.badge.show) return;
+    remember(place, badgeKeys(counted, improve));
+    publish(place, counted, improve);
   }
   return {
-    update, dismiss, state: () => current, item: () => cleanUpMenuItem(current.suggestions),
+    update, dismiss, state: () => current, item: () => cleanUpMenuItem(current.suggestions, current.counted ?? null),
     improveItem: () => improveMenuItem(current.improve?.length),
     /** Widths read by the Improve images screen; the next check counts with them. */
     known(sizes: Readonly<Record<string, { width?: number; height?: number }>>) { for (const [path, size] of Object.entries(sizes)) known.set(path, size); },

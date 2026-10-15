@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  canZoomOut, chooseShape, editKey, fitView, flipEdit, moveArea, resetEdit, resizeArea, rulerLabelShown, rulerValue, straightenEdit, zoomArea, type PopupEdit,
+  canZoomOut, chooseShape, editKey, fitView, flipEdit, moveArea, resetEdit, resizeArea, rulerLabelShown, rulerValue, shownFlips, straightenEdit, zoomArea, type PopupEdit,
 } from "../src/page-builder/image-large-rules";
 import { MAX_ZOOM, coverScale, cutArea, popupTrim, restoreCut, sameTrim, shownTrim, uncut, type PopupCut } from "../src/page-builder/image-popup-trim";
 import { trimGeometry } from "../src/page-builder/trim-geometry";
@@ -162,4 +162,18 @@ test("ruler labels show whole inside the ruler and clear of the reading", () => 
   assert.equal(rulerLabelShown(-30, -4, 360), true);
   assert.equal(rulerLabelShown(0, 4, 360), false);
   assert.equal(rulerLabelShown(0, 6, 360), true);
+});
+
+// Slice 121: each Flip button shows whether the picture is flipped its way as shown.
+test("Flip's pressed state follows the picture as shown, turned or not, and goes off when pressed again", () => {
+  const rect = { x: 0.1, y: 0.2, w: 0.3, h: 0.4 };
+  for (const turn of [0, 90, 180, 270] as const) {
+    const base = edit({ shape: "free", cut: { rect, ...turn ? { turn } : {} } as PopupCut });
+    assert.deepEqual(shownFlips(base.cut), { x: false, y: false }, `turn ${turn}`);
+    const x = flipEdit(base, "x");
+    assert.deepEqual(shownFlips(x.cut), { x: true, y: false }, `turn ${turn} x`);
+    const both = flipEdit(x, "y");
+    assert.deepEqual(shownFlips(both.cut), { x: true, y: true }, `turn ${turn} both`);
+    assert.deepEqual(shownFlips(flipEdit(flipEdit(both, "x"), "y").cut), { x: false, y: false }, `turn ${turn} off`);
+  }
 });

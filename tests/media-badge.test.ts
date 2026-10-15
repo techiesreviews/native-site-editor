@@ -44,6 +44,9 @@ test("the label counts files", () => {
 
 test("Clean up in More carries the same count, or says why it cannot open", () => {
   assert.deepEqual(cleanUpMenuItem(ready(["a.png", "b.pdf"])), { label: "Clean up (2)" });
+  // Slice 121: the count is the settled check's (the badge's), none before there is one.
+  assert.deepEqual(cleanUpMenuItem(ready(["a.png", "b.pdf"]), null), { label: "Clean up" });
+  assert.deepEqual(cleanUpMenuItem(ready(["a.png"]), ready(["a.png", "b.pdf"])), { label: "Clean up (2)" });
   assert.deepEqual(cleanUpMenuItem(ready([])), { label: "Clean up", disabled: "Nothing to clean up: every file is used or marked Always keep." });
   assert.deepEqual(cleanUpMenuItem({ state: "not-checked", blockedBy: [], groups: [], count: 0, size: 0 }), { label: "Clean up", disabled: "Still checking which files are used." });
   assert.deepEqual(cleanUpMenuItem({ state: "blocked", blockedBy: ["a.txt"], groups: [], count: 0, size: 0 }).disabled, "Nothing is suggested until every file can be read: a.txt.");
