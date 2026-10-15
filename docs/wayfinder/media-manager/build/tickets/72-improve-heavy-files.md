@@ -2,7 +2,7 @@
 title: Heavy pictures get lighter files
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-72 runner)
 blocked_by: [70-improve-images-scan]
 builder: sol
 phase: 6
