@@ -78,11 +78,13 @@ test("declared images and sniffed JPEG PNG GIF WebP AVIF BMP; SVG stays outside"
   assert.equal((await readOutsidePicture(address, { fetch: async () => new Response("image", { headers: { "content-type": "image/png" } }) })).status, "read");
   assert.equal((await readOutsidePicture(address, { fetch: async () => new Response("<svg/>", { headers: { "content-type": "image/svg+xml" } }) })).status, "failed");
 });
-test("20 MiB cap from content length and actual body", async () => {
-  for (const response of [
-    new Response(png, { headers: { "content-length": String(20 * 1024 * 1024 + 1) } }),
-    new Response(new Uint8Array(20 * 1024 * 1024 + 1), { headers: { "content-type": "image/png" } }),
-  ]) assert.equal((await readOutsidePicture(address, { fetch: async () => response })).status, "failed");
+test("a picture over 20 MiB is still read: the limit applies to the prepared files, as when adding", async () => {
+  const big = new Uint8Array(20 * 1024 * 1024 + 1); big.set(png);
+  const read = await readOutsidePicture(address, { fetch: async () => new Response(big, { headers: { "content-type": "image/png" } }) });
+  assert.equal(read.status, "read");
+  const f = fixture(); f.input.prepare = async () => { throw new Error("media/images/mobbin-og-image.webp is larger than the 20 MiB limit."); };
+  const result = await bringInOutsidePictures(f.input);
+  assert.equal(result.left[0].reason, "failed"); assert.match(result.left[0].note!, /20 MiB/); assert.equal(f.calls(), 0);
 });
 test("only the img tag changes, link and other bytes survive, outside srcset replaced", async () => {
   const source = 'prefix\n<a href="' + address + '"><img src="' + address + '" srcset="https://other.test/x.png 480w" alt=Logo class="hero"></a>\nsuffix';
@@ -144,9 +146,8 @@ test("failures, unticked pictures and outside picture sources remain byte-identi
     const result = await bringInOutsidePictures(f.input);
     assert.equal(result.left[0].reason, status === 404 ? "gone" : "not-allowed"); assert.equal(f.calls(), 0); assert.equal(f.written(), f.input.source);
   }
-  const f = fixture('<picture><source srcset="https://other.test/x.png 480w"><img src="' + address + '"></picture>');
-  const result = await bringInOutsidePictures(f.input); assert.equal(result.left[0].reason, "failed"); assert.equal(f.reads(), 0); assert.equal(f.written(), f.input.source);
-  f.input.pictures![0].ticked = false; assert.deepEqual((await bringInOutsidePictures(f.input)).left, []);
+  const f = fixture();
+  f.input.pictures![0].ticked = false; assert.deepEqual((await bringInOutsidePictures(f.input)).left, []); assert.equal(f.calls(), 0);
 });
 test("abort, live cancellation, changed repository and stale file save nothing", async () => {
   for (const mode of ["abort", "live", "repository", "stale"]) {
@@ -216,4 +217,20 @@ test("animated GIF preparation retains GIF bytes instead of making a video", asy
   };
   const result = await bringInOutsidePictures(f.input);
   assert.equal(result.brought[0].path, "media/images/mobbin-animation.gif");
+});
+
+test("a <picture> around an outside picture loses its wrapper and sources; the link stays", async () => {
+  for (const [sources, artDirected] of [
+    ['<source srcset="https://other.test/x.avif" type="image/avif">', false],
+    ['<source media="(max-width: 600px)" srcset="/media/images/local-narrow.webp">', true],
+  ] as const) {
+    const source = '<p>Hi</p><a href="' + address + '"><picture>' + sources + '<img src="' + address + '" alt=Logo></picture></a><p>End</p>';
+    const f = fixture(source);
+    const result = await bringInOutsidePictures(f.input);
+    assert.equal(f.written().startsWith('<p>Hi</p><a href="' + address + '"><img '), true, f.written());
+    assert.ok(f.written().endsWith(' alt=Logo></a><p>End</p>'), f.written());
+    assert.ok(!f.written().includes("<picture") && !f.written().includes("<source"));
+    assert.match(f.written(), /src="\/media\/images\/mobbin-og-image\.webp"/);
+    assert.deepEqual(result.notes.includes("The brought-in picture is now used on all screens."), artDirected);
+  }
 });
