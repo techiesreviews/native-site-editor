@@ -137,32 +137,42 @@ export async function improveRow(real: MediaWorkspaceContext, request: ImproveRo
     const now = await stage.ctx.read(file);
     return now !== undefined && sameShape(original, now) ? request.measure!(file, node, size) : undefined;
   });
-  const maps = { brought: new Map(request.maps.brought), converted: new Map(request.maps.converted), videos: new Map(request.maps.videos) };
-  if (wants("bring-in")) {
-    const result = await bringInOutsidePictures({
-      row, source: original, records, paths: stage.ctx.paths, workspace: createMediaWorkspace(async () => stage.ctx),
-      assertLive: () => stage.ctx.assertLive(), live, brought: maps.brought, cache: request.maps.reads, own: request.own,
-      by: "lex", siteUrl: request.siteUrl, signal: request.signal, fetch: request.fetch, prepare: ports.prepare, probe: ports.probe,
-      measure: measure && (async (picture, size) => { const node = nodeAt(original, picture.tag.start); return node && measure(row.file, node, size); }),
-    });
-    outcome.left.push(...result.left); outcome.notes.push(...result.notes);
+  // The run's memory is used as is (the outside engine keeps each picture's sizes against its map);
+  // what an Undo removed is forgotten first, and what this row adds is forgotten again if it is not saved.
+  const maps = request.maps, exists = (path?: string) => !path || real.paths.includes(path);
+  for (const [key, path] of maps.brought) if (!exists(path)) maps.brought.delete(key);
+  for (const [key, gif] of maps.converted) if (!exists(gif.video) || !exists(gif.still)) maps.converted.delete(key);
+  for (const [key, video] of maps.videos) if (!exists(video.still)) maps.videos.delete(key);
+  const known = { brought: new Set(maps.brought.keys()), converted: new Set(maps.converted.keys()), videos: new Set(maps.videos.keys()) };
+  try {
+    if (wants("bring-in")) {
+      const result = await bringInOutsidePictures({
+        row, source: original, records, paths: stage.ctx.paths, workspace: createMediaWorkspace(async () => stage.ctx),
+        assertLive: () => stage.ctx.assertLive(), live, brought: maps.brought, cache: request.maps.reads, own: request.own,
+        by: "lex", siteUrl: request.siteUrl, signal: request.signal, fetch: request.fetch, prepare: ports.prepare, probe: ports.probe,
+        measure: measure && (async (picture, size) => { const node = nodeAt(original, picture.tag.start); return node && measure(row.file, node, size); }),
+      });
+      outcome.left.push(...result.left); outcome.notes.push(...result.notes);
+      guard();
+    }
+    if (wants("lighten", "copies", "size", "sizes", "loading")) {
+      const result = await improveHeavy(stage.ctx, { row: row.file, files: files(), measure, live, signal: request.signal, siteUrl: request.siteUrl }, ports.heavy);
+      outcome.notes.push(...result.notes);
+      guard();
+    }
+    if (wants("loop", "first-frame", "player")) {
+      const result = await improveGifsAndPlayers(stage.ctx, { row: row.file, files: files(), by: "lex", fetch: request.fetch, siteUrl: request.siteUrl,
+        converted: maps.converted, videos: maps.videos, live, signal: request.signal }, ports.gifs);
+      outcome.left.push(...result.left); outcome.notes.push(...result.notes);
+      guard();
+    }
+    if (!stage.changed()) return outcome;
     guard();
+    await real.applyBatch(stage.batch(`Improve images: ${row.label}`));
+  } catch (error) {
+    for (const key of ["brought", "converted", "videos"] as const) for (const name of [...maps[key].keys()]) if (!known[key].has(name)) maps[key].delete(name);
+    throw error;
   }
-  if (wants("lighten", "copies", "size", "sizes", "loading")) {
-    const result = await improveHeavy(stage.ctx, { row: row.file, files: files(), measure, live, signal: request.signal, siteUrl: request.siteUrl }, ports.heavy);
-    outcome.notes.push(...result.notes);
-    guard();
-  }
-  if (wants("loop", "first-frame", "player")) {
-    const result = await improveGifsAndPlayers(stage.ctx, { row: row.file, files: files(), by: "lex", fetch: request.fetch, siteUrl: request.siteUrl,
-      converted: maps.converted, videos: maps.videos, live, signal: request.signal }, ports.gifs);
-    outcome.left.push(...result.left); outcome.notes.push(...result.notes);
-    guard();
-  }
-  if (!stage.changed()) return outcome;
-  await real.applyBatch(stage.batch(`Improve images: ${row.label}`));
-  // Saved: what this row brought in and converted is now the run's to reuse.
-  for (const key of ["brought", "converted", "videos"] as const) for (const [k, v] of maps[key]) (request.maps[key] as Map<string, unknown>).set(k, v);
   return { ...outcome, changed: true, ...stage.outcome() };
 }
 
@@ -201,7 +211,9 @@ export async function undoRows(real: MediaWorkspaceContext, outcomes: readonly R
     } else if (now === after) texts.set(path, before);
     else throw new Error(`${path} was edited after Improve images changed it. Undo it there with Ctrl+Z, or edit it by hand.`);
   }
+  // Every file scanned for other uses is a proof: a page that starts using an added file meanwhile refuses the Undo.
   const sources = await readSources(real);
+  for (const [path, text] of Object.entries(sources)) if (!batch.expectedSources.has(path) && !real.items.some(item => item.path === path)) batch.expectedSources.set(path, text);
   for (const [path, text] of texts) sources[path] = text;
   const added = [...new Set([...outcomes.flatMap(outcome => outcome.added), ...kept])].filter(path => real.paths.includes(path));
   const mentioned = mediaMentions({ media: added, sources, site: { origins: real.origins ?? [] } });

@@ -153,3 +153,34 @@ test("records go back field by field; a field changed since keeps its newer valu
   const records = serializeMediaRecords({ version: 2, collections: [], files: {} });
   assert.ok(records.includes('"files"'));
 });
+
+test("two rows sharing an outside picture bring it in once and both keep its size and copies; Fix after Undo brings it in again", async () => {
+  const tag = `<img src="${outside}" alt="Logo">`;
+  const s = site({ "index.html": tag, "about/index.html": tag });
+  const first = await s.row("index.html"), second = await s.row("about/index.html");
+  assert.equal(second.added.length, 0, "the second row reuses the brought-in file");
+  for (const page of ["index.html", "about/index.html"]) {
+    const html = s.text.get(page)!;
+    assert.match(html, /src="\/media\/images\/mobbin-og-image\.webp"/, page);
+    assert.match(html, /width="1200" height="600"/, page);
+    assert.match(html, /mobbin-og-image-480\.webp 480w/, page);
+  }
+  // Undo both: the brought-in files go; fixing again brings the picture in again instead of pointing at nothing.
+  await undoRows(s.ctx, [first, second]);
+  assert.equal(s.bytes.has("media/images/mobbin-og-image.webp"), false);
+  const again = await s.row("index.html");
+  assert.ok(again.added.includes("media/images/mobbin-og-image.webp"));
+  assert.ok(s.bytes.has("media/images/mobbin-og-image.webp"));
+  assert.match(s.text.get("index.html")!, /width="1200" height="600"/);
+});
+
+test("Undo proves every page it read for other uses", async () => {
+  const s = site({ "index.html": '<img src="/images/heavy.jpg">', "other.html": "<p>No pictures</p>" });
+  const outcome = await s.row("index.html");
+  const saves = s.batches.length;
+  await undoRows(s.ctx, [outcome]);
+  const undo = s.batches[saves];
+  assert.equal(undo.expectedSources.get("other.html"), "<p>No pictures</p>");
+  assert.ok(undo.deletes.includes("images/heavy.webp"));
+  assert.equal(undo.expectedSources.has("images/heavy.jpg"), false, "media files are proved by their versions");
+});
