@@ -2,7 +2,7 @@
 title: The site's path prefix
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-76 runner)
 blocked_by: [55-agents-tidy, 69-agents-video-audio, 75-agents-improve-images]
 builder: sol
 phase: 7
