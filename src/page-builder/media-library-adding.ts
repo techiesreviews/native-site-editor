@@ -10,6 +10,7 @@ import {
   mediaAddingStatus, type MediaAddingState,
 } from "./media-adding-rules";
 import { createMediaAddingSummary } from "./media-adding-summary";
+import { markTransparency } from "./media-transparency";
 import type { MediaLibrary, MediaPickerHost } from "./media-picker";
 
 export interface MediaAddingHost {
@@ -85,7 +86,7 @@ export function createMediaAdding(grid: HTMLElement, tray: HTMLElement, h: Media
     }
     const name = basename(entry.file.name), preview = node("span", "media-library__pending-preview");
     if (entry.file.type.startsWith("image/")) {
-      const image = node("img"); image.alt = ""; image.src = entry.url = URL.createObjectURL(entry.file);
+      const image = node("img"); image.alt = ""; markTransparency(image, entry.file.name); image.src = entry.url = URL.createObjectURL(entry.file);
       image.addEventListener("error", () => image.replaceWith(icon("file", 28)), { once: true });
       preview.append(image);
     } else preview.append(icon("file", 28));

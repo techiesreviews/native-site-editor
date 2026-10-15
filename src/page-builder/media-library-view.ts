@@ -13,6 +13,7 @@ import { createMediaAdding } from "./media-library-adding";
 import { basename, chosenNoun, filterMediaLibrary, mediaFamilyUsage, mediaKind, onlineServiceName, onlineVideoName, pickerFileWord, type MediaKindChoice, type MediaLibraryFilter } from "./media-library-filter";
 import { mediaImageForPlacement, mediaNameAlt, mediaVariantName, mediaVariants, type MediaImage } from "./media-markup";
 import { node } from "../ui/dom";
+import { markTransparency } from "./media-transparency";
 import { createRowMenu, type MenuItem } from "../components/row-menu";
 import { showCollectionDelete, showCollectionName, showManageCollections, type CollectionScreensHost } from "./media-library-collections";
 import { filesLabel } from "./media-collection-choices";
@@ -304,12 +305,12 @@ export function createMediaLibraryView(
     const path = chosen;
     if (held) {
       const url = held.request.file.type.startsWith("image/") && URL.createObjectURL(held.request.file);
-      if (url) { const image = node("img"); image.alt = ""; image.src = url; image.addEventListener("load", () => URL.revokeObjectURL(url), { once: true }); thumb.replaceChildren(image); }
+      if (url) { const image = node("img"); image.alt = ""; markTransparency(image, held.request.file.name); image.src = url; image.addEventListener("load", () => URL.revokeObjectURL(url), { once: true }); thumb.replaceChildren(image); }
       return;
     }
     void cache.get(path).then(data => {
       if (!alive || chosen !== path || !uploadImageType(path)) return;
-      const image = node("img"); image.alt = ""; image.src = data.url; thumb.replaceChildren(image);
+      const image = node("img"); image.alt = ""; markTransparency(image, path); image.src = data.url; thumb.replaceChildren(image);
     }).catch(() => undefined);
   }
   /** Use: place the chosen file with today's markup; the picker closes once the place has it. */

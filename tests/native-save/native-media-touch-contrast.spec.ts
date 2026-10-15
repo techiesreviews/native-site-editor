@@ -128,7 +128,7 @@ test("a mouse still lights the row under it, and a disabled filled button is pla
   }
 });
 
-test("usage page names and Choose favicon… use the link colour at 4.5:1 or more in both themes", async ({ page, baseURL }) => {
+test("usage page names (details and popup) and Choose favicon… use the link colour at 4.5:1 or more in both themes", async ({ page, baseURL }) => {
   await open(page, baseURL);
   const press = (target: Locator) => target.click();
   await openMedia(page, press);
@@ -144,6 +144,17 @@ test("usage page names and Choose favicon… use the link colour at 4.5:1 or mor
     await expect(name).toHaveCSS("color", link);
     expect(await contrast(name), `${scheme} usage page name`).toBeGreaterThanOrEqual(4.5);
   }
+  // The usage popup lists the same page names over its own surface.
+  await media(page).getByRole("button", { name: "Back", exact: true }).click();
+  await media(page).locator('.media-library__card[data-path="images/placeholder.svg"] .media-library__usage').click();
+  const popupName = page.locator("dialog.media-usage .media-library__page").first();
+  await expect(popupName).toBeVisible();
+  for (const scheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme: scheme });
+    expect(await contrast(popupName), `${scheme} usage popup page name`).toBeGreaterThanOrEqual(4.5);
+  }
+  await page.keyboard.press("Escape");
+  await expect(page.locator("dialog.media-usage")).toHaveCount(0);
   await page.emulateMedia({ colorScheme: "light" });
   await page.keyboard.press("Escape");
   if (!await page.locator("#explorer").evaluate(el => el.matches(":popover-open"))) await page.locator("#explorer-toggle").click();
@@ -186,5 +197,63 @@ test("a see-through picture is marked and sits on the light checkerboard in both
     expect(board, scheme).toContain("conic-gradient");
     // Light squares in both themes: 97 % and 90 % lightness, no hue.
     expect(board, scheme).toMatch(/oklch\(0\.97 0 none\)|oklch\(97% 0 none\)/);
+  }
+});
+
+test("a see-through picture added to Media sits on the checkerboard on its tile, in details and in the picker", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  await openMedia(page, target => target.click());
+  // Dark lettering on a see-through background, like a site's logo.
+  const logo = await page.evaluate(async () => {
+    const canvas = document.createElement("canvas"); canvas.width = 240; canvas.height = 80;
+    const context = canvas.getContext("2d")!; context.fillStyle = "rgb(24 28 48)"; context.font = "bold 48px serif"; context.fillText("Logo", 20, 60);
+    const blob = await new Promise<Blob>(resolve => canvas.toBlob(blob => resolve(blob!), "image/png"));
+    return btoa(String.fromCharCode(...new Uint8Array(await blob.arrayBuffer())));
+  });
+  await media(page).locator('input[name="media-upload"]').setInputFiles({ name: "Logo.png", mimeType: "image/png", buffer: Buffer.from(logo, "base64") });
+  const tile = media(page).locator('.media-library__card[data-path^="media/images/logo."]');
+  await expect(tile.locator("img")).toHaveAttribute("data-transparent", "", { timeout: 30_000 });
+  const path = (await tile.getAttribute("data-path"))!;
+  const board = (image: Locator) => image.evaluate(element => getComputedStyle(element).backgroundImage);
+  await page.emulateMedia({ colorScheme: "dark" });
+  expect(await board(tile.locator("img"))).toContain("conic-gradient");
+
+  await media(page).getByRole("button", { name: `Details for ${path}`, exact: true }).click();
+  const preview = media(page).locator(".media-detail__preview img");
+  await expect(preview).toHaveAttribute("data-transparent", "");
+  expect(await board(preview)).toContain("conic-gradient");
+  await media(page).getByRole("button", { name: "Back", exact: true }).click();
+
+  await page.getByRole("tab", { name: "Pages", exact: true }).click();
+  await page.getByRole("button", { name: "Site settings", exact: true }).click();
+  await page.getByRole("dialog", { name: "Site settings", exact: true }).getByRole("button", { name: "Choose favicon…", exact: true }).click();
+  const picker = page.locator("dialog.media-library--picker");
+  await expect(picker.locator(`.media-library__card[data-path="${path}"] img`)).toHaveAttribute("data-transparent", "");
+  await picker.getByRole("button", { name: `Choose ${path}`, exact: true }).click();
+  const chosen = picker.locator(".media-library__chosen-thumb img");
+  await expect(chosen).toHaveAttribute("data-transparent", "");
+  expect(await board(chosen)).toContain("conic-gradient");
+});
+
+test("the image popup's footer buttons give press feedback; Done keeps its own darker blue", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const looks = await page.evaluate(async () => {
+    await import("/src/page-builder/image-popup-view.ts");
+    const root = document.createElement("div"); root.className = "image-popup"; root.style.cssText = "position:fixed;inset:0 auto auto 0;z-index:10000";
+    const plain = document.createElement("button"), done = document.createElement("button");
+    plain.className = "image-popup__button"; plain.textContent = "Open large editor"; plain.id = "probe-plain";
+    done.className = "image-popup__button image-popup__button--primary"; done.textContent = "Done"; done.id = "probe-done";
+    const probe = document.createElement("span"); probe.style.background = "var(--primary-hover)";
+    root.append(plain, done, probe); document.body.append(root);
+    return { rest: getComputedStyle(plain).backgroundColor, doneRest: getComputedStyle(done).backgroundColor, pressedBlue: getComputedStyle(probe).backgroundColor };
+  });
+  for (const [id, rest] of [["#probe-plain", looks.rest], ["#probe-done", looks.doneRest]] as const) {
+    const box = (await page.locator(id).boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await page.mouse.down();
+    const pressed = await background(page.locator(id));
+    await page.mouse.up(); await page.mouse.move(700, 500);
+    expect(pressed, id).not.toBe(rest);
+    if (id === "#probe-done") expect(pressed).toBe(looks.pressedBlue);
+    await expect.poll(() => background(page.locator(id))).toBe(rest);
   }
 });

@@ -482,6 +482,8 @@
   background: transparent;
   font-weight: 600;
 }
+.image-popup__button:active:not(:disabled) { background: var(--hover); }
+@media (hover: hover) and (pointer: fine) { .image-popup__button:hover:not(:disabled) { background: var(--hover); } }
 .image-popup .image-popup__button--primary {
   border-color: transparent;
   background: var(--primary);
