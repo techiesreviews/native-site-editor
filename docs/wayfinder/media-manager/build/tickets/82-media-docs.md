@@ -2,7 +2,7 @@
 title: Rewrite the media docs
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-82 runner)
 blocked_by: [81-github-pages-and-rules]
 builder: sol
 phase: 7
