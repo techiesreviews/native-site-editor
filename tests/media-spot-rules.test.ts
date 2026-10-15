@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readSource } from "../src/page-builder/source-tree";
-import { inPictureSpot, mediaSpotAddress, mediaSpotFile, mediaSpotKind, mediaSpotTitle, mediaSpotTitleEdit } from "../src/page-builder/media-spot-rules";
+import { inPictureSpot, provedWorkspace, mediaSpotAddress, mediaSpotFile, mediaSpotKind, mediaSpotTitle, mediaSpotTitleEdit } from "../src/page-builder/media-spot-rules";
 import { pictureSpotVideo, spotPictureTag } from "../src/page-builder/looping-video";
 import { insertAtPlace, spotVideoPage, locatePageElement } from "../src/page-builder/media-insert";
 
@@ -63,4 +63,16 @@ test("Replace puts the new media in the element's own place, its line kept", () 
   const page = '<section>\n  <p>Before</p>\n  <audio src="/media/a.mp3" controls><track src="/media/a.vtt"></audio>\n  <p>After</p>\n</section>';
   assert.equal(insertAtPlace(page, { path: "index.html", parent: [0], index: 1, replaces: true }, '<video src="/media/b.mp4"></video>'),
     '<section>\n  <p>Before</p>\n  <video src="/media/b.mp4"></video>\n  <p>After</p>\n</section>');
+});
+
+test("a repository switched while the popup's change loads refuses before anything is read or written", async () => {
+  let switched = false, reads = 0;
+  const proof = () => { if (switched) throw new Error("This video changed. Select it again."); };
+  const context = async () => { switched = true; return { read: async () => { reads++; return undefined; } } as never; };
+  await assert.rejects(provedWorkspace(context, proof), /changed/);
+  assert.equal(reads, 0);
+  // Switched while the module loads: refused before a context is even taken.
+  let taken = 0;
+  await assert.rejects(provedWorkspace(async () => { taken++; return {} as never; }, () => { throw new Error("changed"); }), /changed/);
+  assert.equal(taken, 0);
 });

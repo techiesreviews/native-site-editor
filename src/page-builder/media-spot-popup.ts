@@ -22,7 +22,7 @@ import { locateNativeElementRange } from "../native-source-location";
 import type { ImagePopupHost } from "./image-popup";
 import type { MediaWorkspaceContext } from "./media-workspace";
 import { actionButton, mountMediaPopupFrame, popupRow } from "./media-popup-frame";
-import { inPictureSpot, mediaSpotAddress, mediaSpotFile, mediaSpotKind, mediaSpotTitle, mediaSpotTitleEdit, type MediaSpotKind } from "./media-spot-rules";
+import { inPictureSpot, provedWorkspace, mediaSpotAddress, mediaSpotFile, mediaSpotKind, mediaSpotTitle, mediaSpotTitleEdit, type MediaSpotKind } from "./media-spot-rules";
 import { PICTURE_SPOT_MESSAGE, readLooping } from "./looping-video";
 import { mediaResolvePath } from "./media-references";
 import { decodeHtmlEntities } from "./html-entities";
@@ -86,13 +86,9 @@ export async function openMediaSpotPopup(options: MediaSpotPopupOptions) {
     return at;
   };
   const records = (): MediaRecords | undefined => { try { return parseMediaRecords(ports.source(MEDIA_RECORDS_PATH)); } catch { return undefined; } };
-  /** The Media host's file changes (still, subtitles, Vimeo's bar): each one Undo step, everywhere. */
-  const workspace = async () => {
-    const { createMediaWorkspace } = await import("./media-workspace");
-    const media = createMediaWorkspace(() => options.workspaceContext(isMediaLibraryPath));
-    await media.load();
-    return media;
-  };
+  /** The Media host's file changes (still, subtitles, Vimeo's bar): each one Undo step, everywhere,
+   * in the repository the popup opened on (its proof holds after every await). */
+  const workspace = () => provedWorkspace(() => options.workspaceContext(isMediaLibraryPath), now);
 
   const frame = mountMediaPopupFrame(host, {
     title: TITLES[kind], opener: ".edit-bar__media", className: "media-spot-popup", closeLabel: "Close",

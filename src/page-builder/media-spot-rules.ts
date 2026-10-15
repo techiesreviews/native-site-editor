@@ -1,11 +1,13 @@
 // The Media button's rules (media build slice 119): what a selected media spot holds, its file and
-// its title, read from the page's bytes. Pure; loaded with the Media popup.
+// its title, read from the page's bytes, and the Media workspace its changes go through. Loaded with
+// the Media popup.
 import { startTags, type ElementRange } from "../../shared/html-source";
 import type { NativeTextEdit } from "../../shared/native-project";
 import { mediaAttribute, mediaEscape } from "./media-attributes";
 import { decodeHtmlEntities } from "./html-entities";
 import { mediaResolvePath } from "./media-references";
 import { isPictureSpot } from "./looping-video";
+import type { MediaWorkspaceContext } from "./media-workspace";
 
 /** A spot the Media popup shows (pictures keep the Image popup). */
 export type MediaSpotKind = "video" | "audio" | "download" | "online-video";
@@ -81,4 +83,16 @@ export function mediaSpotTitleEdit(source: string, range: ElementRange, kind: Me
   const text = words ? ` aria-label="${mediaEscape(words)}"` : "";
   if (found) return { start: range.tag.start + found.start, end: range.tag.start + found.end, text };
   return { start: range.tag.start + parsed.nameEnd, end: range.tag.start + parsed.nameEnd, text };
+}
+
+/** The Media workspace for one of the popup's changes. `proof` (the popup's own, taken when it opened)
+ * is checked again after the module loads, once the repository's context is taken and after the
+ * library loads, so a repository switched meanwhile refuses; the workspace's own guards hold from there. */
+export async function provedWorkspace(context: () => Promise<MediaWorkspaceContext>, proof: () => unknown) {
+  const { createMediaWorkspace } = await import("./media-workspace");
+  proof();
+  const media = createMediaWorkspace(async () => { const ctx = await context(); proof(); return ctx; });
+  await media.load();
+  proof();
+  return media;
 }

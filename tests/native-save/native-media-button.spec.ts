@@ -115,7 +115,7 @@ test("a video's Media popup: Loop silently, Title, Use this moment and Subtitles
   await expect(popup).toHaveCount(0);
 });
 
-test("audio, a download and an Online video: Title, the card's name, Vimeo's own bar and Replace", async ({ page }) => {
+test("audio, a download and an Online video: Title, the card's name, Vimeo's own bar and Replace in place", async ({ page }) => {
   const audio = await media(page, /^Audio/, "Audio");
   const title = audio.getByRole("textbox", { name: "Title", exact: true });
   await expect(title).toHaveValue("Song");
@@ -143,4 +143,17 @@ test("audio, a download and an Online video: Title, the card's name, Vimeo's own
   await choose(page, "Choose media", "media/list.pdf", "Use file");
   await expect.poll(() => mounted(page)).not.toContain("<audio");
   expect(await mounted(page)).toMatch(/<a class="download-card" href="\/media\/list\.pdf">[\s\S]*<a class="download-card" href="\/media\/list\.pdf">/);
+
+  // Replace on a download with an Online video already in Media: in the card's own place, between its neighbours; one Undo.
+  const before = await mounted(page);
+  const renamed = await media(page, /Prices 2026/, "Download");
+  await renamed.getByRole("button", { name: "Replace", exact: true }).click();
+  await choose(page, "Choose media", "Vimeo video Talk", "Use video");
+  await expect.poll(() => (mounted(page).then(source => source.match(/class="online-video"/g)?.length))).toBe(2);
+  const scene = /<section id="scene">[\s\S]*?<\/section>/.exec(await mounted(page))![0];
+  // The audio's new card ("list") stays first; the renamed card's place now holds the video, before the first Online video.
+  expect(scene).toMatch(/<h1>Media page<\/h1>\s*<video class="clip"[^>]*><\/video>\s*<a class="download-card"[^>]*><span class="download-card-name">list<\/span>[\s\S]*?<\/a>\s*<a class="online-video" href="https:\/\/vimeo\.com\/76979871"[^>]*><img[^>]*><\/a>\s*<a class="online-video"/);
+  expect(scene).not.toContain("Prices 2026");
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(() => mounted(page)).toBe(before);
 });
