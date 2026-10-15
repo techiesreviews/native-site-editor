@@ -430,6 +430,20 @@ test("Always keep stays after reload, and Discard puts the saved details back", 
   expect(await records(page)).toContain('"alwaysKeep": true');
 });
 
+test("a save that changes nothing on disk tidies the name and closes the Save bar", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await open(page, baseURL);
+  await details(page, "images/studio-desk.svg");
+  const library = pane(page), name = library.getByLabel("File name", { exact: true });
+  await name.fill("studio-desk.svg ");
+  await expect(library.getByText("Unsaved changes", { exact: true })).toBeVisible();
+  await library.getByRole("button", { name: "Save details", exact: true }).click();
+  await expect(page.locator(".editor-toast__text")).toContainText("Details saved as a draft");
+  await expect(name).toHaveValue("studio-desk.svg");
+  await expect(library.getByRole("button", { name: "Save details", exact: true })).toBeHidden();
+  await expect(library.getByRole("button", { name: "Back", exact: true })).toBeFocused();
+});
+
 test("on a phone, File details is its own screen with Back, the preview first and Save after the fields", async ({ browser, baseURL }) => {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
   const page = await context.newPage();

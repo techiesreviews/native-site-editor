@@ -340,8 +340,14 @@ function renderInformation(
   form.append(footer);
   const state = () => mediaDetailFormState([...form.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("input, textarea")]
     .map(control => ({ checkbox: control.type === "checkbox", checked: control instanceof HTMLInputElement && control.checked, value: control.value })));
-  const saved = state(), changed = () => state() !== saved;
-  const paintFoot = () => { footer.hidden = !changed(); };
+  let saved = state();
+  const changed = () => state() !== saved;
+  const paintFoot = () => {
+    const hide = !changed(), within = footer.contains(document.activeElement);
+    footer.hidden = hide;
+    // Focus never goes with the bar: it moves to Back.
+    if (hide && within) sheet.element.querySelector<HTMLElement>(".media-detail__back")?.focus();
+  };
   form.addEventListener("input", paintFoot); form.addEventListener("change", paintFoot);
   paintFoot();
   form.addEventListener("submit", event => {
@@ -367,7 +373,13 @@ function renderInformation(
         if (!(error instanceof MediaNameTakenError) || !current()) throw error;
         naming.taken(error.taken, error.suggestion); name.focus(); return;
       }
-      if (!rename) { await refresh(); done("Details saved as a draft."); return; }
+      if (!rename) {
+        await refresh();
+        // A save that changed nothing on disk keeps this screen (no redraw): the name goes back to the
+        // file's own and what is shown becomes the saved baseline, so the bar goes.
+        if (current() && form.isConnected) { name.value = basename(path); naming.paint(); saved = state(); paintFoot(); }
+        done("Details saved as a draft."); return;
+      }
       cache.clear(); await refresh();
       const to = mediaRenamedPath(path, rename.name);
       if (h.alive() && h.library().items.some(entry => entry.path === to)) await showMediaDetail(sheet, h, to);

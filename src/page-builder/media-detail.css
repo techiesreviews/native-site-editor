@@ -72,7 +72,7 @@
 .media-library .media-detail__confirm button.primary { border-color: transparent; }
 
 /* Sections: a thin line above (--control-line: --line matches the light panel), 16 px around, a 13 px heading with an optional muted value at its end. */
-:is(.media-detail__section, .media-detail__part) { display: grid; gap: 8px; min-inline-size: 0; margin: 0; padding: 16px 0; border: 0; border-block-start: 1px solid var(--control-line); }
+:is(.media-detail__section, .media-detail__part) { display: grid; gap: 8px; min-inline-size: 0; margin: 0; padding: 16px 0; border: 0; border-radius: 0; border-block-start: 1px solid var(--control-line); }
 .media-detail__section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; min-inline-size: 0; }
 :is(.media-detail__section-head, .media-detail__part) h4, .media-detail__section > legend { font-size: var(--type-base); font-weight: 600; }
 .media-detail__section-head > span { color: var(--muted); font-size: var(--type-small); text-align: end; }
