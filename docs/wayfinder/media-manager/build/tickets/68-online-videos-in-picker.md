@@ -2,7 +2,7 @@
 title: Online videos in the picker and Media
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-68 runner)
 blocked_by: [67-online-video-records, 63-place-every-kind]
 builder: claude
 phase: 5
