@@ -1,0 +1,30 @@
+/* The phone sheet handle's grip, hit area and states (loaded with phone-sheet.ts;
+   its strip and place are in phone-sheet.css, in boot). */
+/* The bar a finger takes hold of; the hit area reaches 4 px past the strip on each side (44 px). */
+.sheet-handle::before {
+  content: "";
+  position: absolute;
+  inset: -4px 0;
+}
+.sheet-handle__grip {
+  inline-size: 36px;
+  block-size: 4px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.6;
+}
+.sheet-handle:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: -3px;
+}
+.sheet-handle:active,
+.sheet-dragging > .sheet-handle {
+  background-image: linear-gradient(var(--hover), var(--hover));
+  color: var(--text);
+  cursor: grabbing;
+}
+@media (hover: hover) and (pointer: fine) {
+  .sheet-handle:hover {
+    color: var(--text);
+  }
+}

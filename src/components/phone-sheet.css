@@ -3,7 +3,7 @@
    the code fold into a sheet under it, so the page gets most of the screen.
    The handle pulls it up and down (phone-sheet.ts, loaded on phones only); it
    stays folded until then. --sheet-size is the sheet's height under its handle,
-   shared 45/55 by the structure and the code; the page row gets the rest.
+   shared 55/45 by the structure and the code; the page row gets the rest.
    Nothing moves in the DOM: <main> spans the page, handle, structure and code
    rows as a subgrid, and the sidebar lies in the structure row. */
 @property --sheet-size {
@@ -19,7 +19,9 @@
     .workspace:has(> main.has-preview) {
       display: grid;
       grid-template-columns: minmax(0, 1fr);
-      grid-template-rows: auto minmax(0, 1fr) auto calc(var(--sheet-size) * 0.45) calc(var(--sheet-size) * 0.55);
+      grid-template-rows: auto minmax(0, 1fr) auto calc(var(--sheet-size) * 0.55) calc(var(--sheet-size) * 0.45);
+      /* A folded pane keeps its padding; it must not stretch the window into a scroll. */
+      overflow: clip;
     }
     /* A hidden pane gives its share back: its restore strip stays (sidebar-resize.css, code-resize.css). */
     .workspace--sidebar-collapsed:has(> main.has-preview) {
@@ -104,33 +106,5 @@
         transition: none;
       }
     }
-  }
-}
-/* The bar a finger takes hold of; the hit area reaches 4 px past the strip on each side (44 px). */
-.sheet-handle::before {
-  content: "";
-  position: absolute;
-  inset: -4px 0;
-}
-.sheet-handle__grip {
-  inline-size: 36px;
-  block-size: 4px;
-  border-radius: 999px;
-  background: currentColor;
-  opacity: 0.6;
-}
-.sheet-handle:focus-visible {
-  outline: var(--focus-ring);
-  outline-offset: -3px;
-}
-.sheet-handle:active,
-.sheet-dragging > .sheet-handle {
-  background-image: linear-gradient(var(--hover), var(--hover));
-  color: var(--text);
-  cursor: grabbing;
-}
-@media (hover: hover) and (pointer: fine) {
-  .sheet-handle:hover {
-    color: var(--text);
   }
 }

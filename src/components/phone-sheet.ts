@@ -1,3 +1,4 @@
+import "./phone-sheet-handle.css";
 import { dragSize, firstSize, keySheet, readSheet, settleSheet, sheetBounds, type SheetState } from "./phone-sheet-rules";
 
 // The phone sheet (phone-sheet.css; loaded only on a phone-wide window): Page

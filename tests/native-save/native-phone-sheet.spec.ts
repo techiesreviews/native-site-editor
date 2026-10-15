@@ -42,6 +42,9 @@ test.describe("phone", () => {
     const strip = await box(handle(page));
     expect(strip.y + strip.height).toBeGreaterThanOrEqual(843);
     expect(strip.height).toBeGreaterThanOrEqual(36);
+    // The folded panes never stretch the window into a scroll (the top bar stays in place).
+    await frame(page).locator("site-footer, footer").last().scrollIntoViewIfNeeded();
+    expect(await page.evaluate(() => [document.scrollingElement!.scrollTop, document.scrollingElement!.scrollHeight - innerHeight])).toEqual([0, 0]);
 
     const picture = frame(page).locator(".hero img");
     await picture.tap();
