@@ -313,5 +313,8 @@ export async function openMediaSpotPopup(options: MediaSpotPopupOptions) {
   await draw();
   if (!options.live()) { close(); return undefined; }
   frame.place();
+  // Focus moves into the popup (no field, so a phone's keyboard stays closed): Escape and Tab start there.
+  root.tabIndex = -1;
+  root.focus({ preventScroll: true });
   return { cancel: close };
 }
