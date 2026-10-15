@@ -213,6 +213,7 @@ const loadSiteSettings = lazyModule(async () => {
     nativeUrlPlan, changeNativeUrl, restoreFile, nativeSiteReadForCreate,
     choosePath: (place, accept) => mediaController.choosePath(place, undefined, accept), nativeEffectiveSource, loadNativeAssets,
     shareImage: request => mediaController.shareImage(request),
+    nativeFiles: () => nativeFiles(), readMediaText,
   });
 });
 // What agents are shown and how their commands run (src/agent-site.ts), loaded when one asks.

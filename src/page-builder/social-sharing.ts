@@ -9,6 +9,8 @@ export interface SocialSharingRequest {
   expectedSources: Map<string, string | undefined>;
   trim?: MediaTrim; live(): boolean;
   edits(address: string): ReturnType<MediaShareRequest["edits"]>;
+  /** Said after the image, once its edits are planned (Site settings: links moved to a new address). */
+  note?: () => string | undefined;
 }
 
 export async function shareImage(context: () => Promise<MediaWorkspaceContext>, request: SocialSharingRequest, announce: (message: string) => void) {
@@ -43,6 +45,7 @@ export async function shareImage(context: () => Promise<MediaWorkspaceContext>, 
     edits(path) { address = socialImageAddress(request.siteUrl, path); return request.edits(address.address); } });
   // Clean-up after the commit may outlast the repository: no success is announced for another one.
   ctx.assertLive();
-  announce("Social image set as a draft." + (address.missingAddress ? " The image was linked without a web address. " + SOCIAL_IMAGE_NOTE : ""));
+  const note = request.note?.();
+  announce("Social image set as a draft." + (note ? ` ${note}` : "") + (address.missingAddress ? " The image was linked without a web address. " + SOCIAL_IMAGE_NOTE : ""));
   return { path, ...address };
 }

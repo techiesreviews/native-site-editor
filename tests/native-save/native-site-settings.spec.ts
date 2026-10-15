@@ -102,6 +102,8 @@ test("site settings set, check and undo the site address, which the Social note 
   await expect(panel).toBeVisible();
   await address.fill("name.github.io/my-site/");
   await panel.getByRole("button", { name: "Apply site settings" }).click();
+  // The site's links move into the new folder (slice 80), after a question.
+  await panel.getByRole("group", { name: /^This updates \d+ links in \d+ files to the new address\. Undo is available\.$/ }).getByRole("button", { name: "Update links", exact: true }).click();
   await expect(panel).not.toBeVisible();
   await expect.poll(async () => (await storedDraft(page, ".editor/config.json"))?.content).toContain('"url": "https://name.github.io/my-site/"');
   await openSite(page);

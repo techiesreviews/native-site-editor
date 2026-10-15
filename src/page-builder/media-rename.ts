@@ -21,7 +21,7 @@ export interface RenameInput {
 interface OffsetEdit { start: number; end: number; text: string }
 
 /** Decoding keeps original offsets: edits leave query strings and escaping outside the path intact. */
-function decodedSource(source: string, markup: boolean, css = false, attribute = false) {
+export function decodedSource(source: string, markup: boolean, css = false, attribute = false) {
   let text = "";
   const starts: number[] = [], ends: number[] = [];
   for (let at = 0; at < source.length;) {

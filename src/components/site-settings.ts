@@ -24,7 +24,8 @@ export interface SiteSettingsHandlers {
   applyPage: (path: string, fields: Partial<Record<HeadField, string>>, socialTrim?: MediaTrim) => Promise<string | undefined>;
   planUrl: (path: string, value: string) => UrlPlan;
   applyUrl: (path: string, value: string, keep: boolean) => Promise<string | undefined>;
-  applySite: (values: SiteSettingsValues) => Promise<string | undefined>;
+  /** `confirm`: asks in the dialog before Apply goes on (a new address's folder moves the site's links); false on Cancel. */
+  applySite: (values: SiteSettingsValues, confirm?: (message: string) => Promise<boolean>) => Promise<string | undefined>;
   open404: () => Promise<string | undefined>;
   applyNavigation: (path: string, source: string, links: NavigationLink[]) => Promise<string | undefined>;
   /** The Media picker for an image setting (`accept`: which files fit); resolves to the chosen file's root path, or undefined on Cancel. */
@@ -178,6 +179,33 @@ function applyButton(dialog: ReturnType<typeof settingsDialog>, label: string, r
     finally { apply.disabled = false; }
   }, "button");
   dialog.actions.append(button("Cancel", () => dialog.root.close(), "button secondary"), apply);
+}
+
+// A short question in the footer in place of its buttons, answered there; closing the dialog is No.
+function footerConfirm(dialog: ReturnType<typeof settingsDialog>, message: string, action: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const box = node("div", "site-settings__confirm");
+    box.setAttribute("role", "group");
+    const text = node("p", "site-settings__confirm-text", message);
+    text.id = `${dialog.root.getAttribute("aria-labelledby")}-confirm`;
+    box.setAttribute("aria-labelledby", text.id);
+    const finish = (answer: boolean) => {
+      dialog.root.removeEventListener("close", closed);
+      box.remove();
+      dialog.actions.hidden = false;
+      resolve(answer);
+    };
+    const closed = () => finish(false);
+    const buttons = node("div", "site-settings__actions");
+    const yes = button(action, () => finish(true), "button");
+    buttons.append(button("Cancel", () => finish(false), "button secondary"), yes);
+    box.append(text, buttons);
+    dialog.status.textContent = "";
+    dialog.actions.hidden = true;
+    dialog.actions.after(box);
+    dialog.root.addEventListener("close", closed);
+    yes.focus();
+  });
 }
 
 async function chooseInto(input: HTMLInputElement | HTMLTextAreaElement, place: string, dialog: ReturnType<typeof settingsDialog>, handlers: SiteSettingsHandlers, refresh?: () => void, accept?: string) {
@@ -421,7 +449,13 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
       applyButton(dialog, "Apply site settings", () => {
         const trim = stagedFrame(image)?.trim;
         return handlers.applySite({ name: name.value.trim(), url: address.value.trim(), favicon: favicon.value.trim(), socialImage: image.value.trim(),
-          ...image.dataset.chosen === image.value && image.value ? { socialImageChosen: true } : {}, ...trim ? { socialImageTrim: trim } : {} });
+          ...image.dataset.chosen === image.value && image.value ? { socialImageChosen: true } : {}, ...trim ? { socialImageTrim: trim } : {} },
+        async (message) => {
+          const update = await footerConfirm(dialog, message, "Update links");
+          // Cancel leaves the old address, in the field too.
+          if (!update) address.value = options.values.url;
+          return update;
+        });
       });
       dialog.show();
     },

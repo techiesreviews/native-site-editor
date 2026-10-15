@@ -100,7 +100,11 @@ test("a site address set in the same Apply gives the sharing copy its full addre
   await panel(page).getByRole("tab", { name: "General", exact: true }).click();
   await panel(page).getByLabel("Site address", { exact: true }).fill("https://name.github.io/my-site/");
   await panel(page).getByRole("button", { name: "Apply site settings", exact: true }).click();
+  // The site's links move into the new folder in the same step (slice 80).
+  await panel(page).getByRole("group", { name: /^This updates \d+ links in \d+ files to the new address\./ }).getByRole("button", { name: "Update links", exact: true }).click();
   await expect(panel(page)).not.toBeVisible();
+  await expect(page.locator("#status")).toContainText(/Social image set as a draft\. Updated \d+ links in \d+ files to the new address\./);
+  await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toMatch(/href="\/my-site\/styles\//);
   const link = "https://name.github.io/my-site/media/images/sharing-source-social.jpg";
   for (const file of ["index.html", "about/index.html"]) await expect.poll(async () => (await storedDraft(page, file))?.content).toContain(`property="og:image" content="${link}"`);
   const config = (await storedDraft(page, ".editor/config.json"))?.content ?? "";

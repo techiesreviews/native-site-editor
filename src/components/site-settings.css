@@ -53,6 +53,11 @@ textarea.site-settings__input { resize: vertical; min-height: 88px; line-height:
 .site-settings__footer:has(.site-settings__status:not(:empty)) .site-settings__draft-note { display: none; }
 .site-settings__status { margin: 0; color: var(--danger-fg); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
 .site-settings__status:empty { display: none; }
+/* Apply's question (a new address moves the site's links): in place of the buttons, then gone. */
+.site-settings__actions[hidden] { display: none; }
+.site-settings__confirm { flex: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.site-settings__confirm-text { flex: 1 1 24ch; margin: 0; color: var(--text); font-size: 13px; line-height: 1.5; text-wrap: pretty; }
+.site-settings__footer:has(.site-settings__confirm) .site-settings__draft-note { display: none; }
 .site-settings__card { overflow: hidden; border: 1px solid var(--control-line); border-radius: var(--radius-panel); margin-top: 16px; background: var(--surface-input); }
 .site-settings__card-image { width: 100%; max-height: 220px; aspect-ratio: 1200 / 630; object-fit: cover; display: block; }
 .site-settings__card-placeholder { min-height: 120px; display: grid; place-items: center; padding: 16px; background: var(--surface-subtle); color: var(--muted); text-align: center; }

@@ -32,7 +32,12 @@ interface SettingsPorts {
   shareImage: (request: SocialSharingRequest) => Promise<{ address: string; missingAddress: boolean; reused?: true; path?: string } | undefined>;
   nativeEffectiveSource: (path: string) => string | undefined;
   loadNativeAssets: (sources: Record<string, string>, changed: () => void) => Promise<void>;
+  /** Every file of the site now, and a text file read into the editor (a new Site address folder rewrites them). */
+  nativeFiles: () => string[];
+  readMediaText: (path: string) => Promise<unknown>;
 }
+
+type AddressMove = typeof import("./page-builder/site-address-rewrite");
 
 /** Settings orchestration is loaded with the first settings dialog. */
 export function createNativeSettings(ports: SettingsPorts) {
@@ -64,11 +69,11 @@ export function createNativeSettings(ports: SettingsPorts) {
     };
     // `depends`: every file the edits were planned from (Site settings: config and every page), proved through preparation.
     // `siteUrl`: the address being applied with it (Site settings), else the config's.
-    const share = async (value: string, previous: string, page: string, edits: SocialSharingRequest["edits"], depends: string[] = [], trim?: MediaTrim, siteUrl?: string) => {
+    const share = async (value: string, previous: string, page: string, edits: SocialSharingRequest["edits"], depends: string[] = [], trim?: MediaTrim, siteUrl?: string, note?: () => string | undefined) => {
       if (stale() || sourcesChanged()) throw new Error(changed);
       const stamp = since, repository = ports.guardedEdits.stamp("repository");
       const expected = new Map([...baseline, ...[NATIVE_CONFIG_PATH, ...depends].map(path => [path, ports.guardedEdits.peek.source(path)] as const)]);
-      const result = await ports.shareImage({ value, previous, page, ...trim ? { trim } : {},
+      const result = await ports.shareImage({ value, previous, page, ...trim ? { trim } : {}, ...note ? { note } : {},
         siteUrl: siteUrl ?? nativeSiteSettings(ports.nativeEffectiveSource(NATIVE_CONFIG_PATH)).url,
         canonical: readHeadSettings(ports.nativeEffectiveSource(page) ?? "").canonical,
         expectedSources: expected,
@@ -122,7 +127,7 @@ export function createNativeSettings(ports: SettingsPorts) {
         }
         return error;
       },
-      async applySite(typed) {
+      async applySite(typed, confirm) {
         const site = ports.nativeSite;
         let reused: string | undefined;
         // The address is checked and stored only when it changed: an untouched one stays byte for byte.
@@ -130,11 +135,29 @@ export function createNativeSettings(ports: SettingsPorts) {
         const address = typed.url === shownUrl ? undefined : siteAddressInput(typed.url);
         if (address && "error" in address) return address.error;
         const values = { ...typed, url: address?.url };
+        // A new folder in the address moves every root address in the site's text files, asked first.
+        let move: { module: AddressMove; from: string; to: string } | undefined;
+        if (site && address && sitePathPrefix(shownUrl) !== sitePathPrefix(address.url)) {
+          const module = await import("./page-builder/site-address-rewrite");
+          if (module.siteFolderChanges(shownUrl, address.url)) {
+            const unread = await module.readSiteAddressFiles(ports.nativeFiles(), ports.readMediaText, () => since.holds());
+            if (unread) return unread;
+            if (stale() || sourcesChanged()) return changed;
+            const plan = await module.planSiteAddressRewriteInSlices({ from: shownUrl, to: address.url, paths: ports.nativeFiles(),
+              source: path => ports.guardedEdits.peek.source(path), pause: () => new Promise(resolve => setTimeout(resolve)) });
+            if (plan.missing) return siteAddressUnread(plan.missing);
+            if (plan.count && !await confirm?.(module.siteAddressConfirm(plan))) return module.SITE_ADDRESS_KEPT;
+            if (stale() || sourcesChanged()) return changed;
+            move = { module, from: shownUrl, to: address.url };
+          }
+        }
         if (site) {
           const home = site.routes["/"], config = ports.guardedEdits.peek.source(NATIVE_CONFIG_PATH);
           const before = readSiteIdentity(config, ports.guardedEdits.peek.source(home) ?? "");
           if (values.socialImage !== before.socialImage || values.socialImageChosen) {
-            const expected = new Map([NATIVE_CONFIG_PATH, ...new Set(Object.values(site.routes))].map(path => [path, ports.guardedEdits.peek.source(path)] as const));
+            const moved = move ? move.module.siteAddressFiles(ports.nativeFiles()) : [];
+            const expected = new Map([NATIVE_CONFIG_PATH, ...new Set([...Object.values(site.routes), ...moved])].map(path => [path, ports.guardedEdits.peek.source(path)] as const));
+            let updated: string | undefined;
             const shared = await share(values.socialImage, before.socialImage, home, address => {
               const nextValues = { ...values, socialImage: address };
               const edits = new Map<string, { source: string | undefined; text: string }>();
@@ -146,14 +169,20 @@ export function createNativeSettings(ports: SettingsPorts) {
                 // Pages keeping their own image stay out of the batch.
                 if (text !== source) edits.set(path, { source, text });
               }
+              if (move) {
+                const plan = move.module.planSiteAddressRewrite({ from: move.from, to: move.to, paths: ports.nativeFiles(), source: path => edits.get(path)?.text ?? expected.get(path) });
+                if (plan.missing) throw new Error(siteAddressUnread(plan.missing));
+                for (const [path, text] of plan.edits) edits.set(path, { source: expected.get(path), text });
+                updated = plan.count ? move.module.siteAddressUpdated(plan) : undefined;
+              }
               return edits;
-            }, [...expected.keys()], values.socialImageTrim, values.url);
+            }, [...expected.keys()], values.socialImageTrim, values.url, () => updated);
             if (shared) values.socialImage = shared.address;
             if (shared && !shared.reused) return undefined;
             reused = shared?.path;
           }
         }
-        return applied(await ports.guardedEdits.run(r => checkShown(r) || reused && !r.exists(reused) ? { refuse: changed } : applyNativeSiteSettings(values, r), { since }));
+        return applied(await ports.guardedEdits.run(r => checkShown(r) || reused && !r.exists(reused) ? { refuse: changed } : applyNativeSiteSettings(values, r, move), { since }));
       },
       async open404() {
         if (stale() || sourcesChanged() || !ports.nativeSite) return changed;
@@ -230,7 +259,10 @@ export function createNativeSettings(ports: SettingsPorts) {
   }
 
 
-  function applyNativeSiteSettings(values: Omit<SiteSettingsValues, "url"> & { url?: string }, r: Reads): PlanResult {
+  const siteAddressUnread = (path: string) => `${path} could not be read, so the site's links cannot follow the new address. Nothing was applied.`;
+
+  /** `move`: the Site address's folder changes; every root address follows, in the same step. */
+  async function applyNativeSiteSettings(values: Omit<SiteSettingsValues, "url"> & { url?: string }, r: Reads, move?: { module: AddressMove; from: string; to: string }): Promise<PlanResult> {
     const site = r.site();
     if (!site) return { refuse: "Open a native site first." };
     const config = r.source(NATIVE_CONFIG_PATH);
@@ -246,8 +278,14 @@ export function createNativeSettings(ports: SettingsPorts) {
         if (next !== source) edits.set(path, next);
       }
     } catch (error) { return { refuse: error instanceof Error ? error.message : "Site settings could not be changed." }; }
+    // Every read goes through `r`, so the step is proved against the very bytes it rewrote.
+    const plan = move && await move.module.planSiteAddressRewriteInSlices({ from: move.from, to: move.to, paths: ports.nativeFiles(),
+      source: path => edits.get(path) ?? r.source(path), pause: () => new Promise(resolve => setTimeout(resolve)) });
+    if (plan?.missing) return { refuse: siteAddressUnread(plan.missing) };
+    for (const [path, text] of plan?.edits ?? []) edits.set(path, text);
     const creates: { path: string; content: string }[] = [];
     if (config === undefined && edits.has(NATIVE_CONFIG_PATH)) { creates.push({ path: NATIVE_CONFIG_PATH, content: edits.get(NATIVE_CONFIG_PATH)! }); edits.delete(NATIVE_CONFIG_PATH); }
+    if (plan?.count) return { creates, edits, done: move!.module.siteAddressDone(plan), undone: "Undid site settings and the links updated to the new address." };
     return { creates, edits, done: `Site settings applied to ${edits.size + creates.length} files as drafts. Publish to keep them.`, undone: "Undid site settings on all affected pages." };
   }
 
