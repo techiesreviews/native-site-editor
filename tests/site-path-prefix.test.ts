@@ -58,13 +58,25 @@ test("read-back accepts prefixed and legacy roots with segment boundaries", () =
 
 test("site address alone supplies own origin and prefix, including ports", () => {
   const site = { url: "https://EXAMPLE.com:8443/my-site/index.html?x#y", origins: new Set(["http://localhost:8080"]) };
-  for (const address of ["https://example.com:8443/my-site/media/x.webp?x#y", "https://example.com:8443/media/x.webp", "http://localhost:8080/my-site/media/x.webp", "http://localhost:8080/media/x.webp", "/my-site/media/x.webp"])
+  for (const address of ["https://example.com:8443/my-site/media/x.webp?x#y", "http://localhost:8080/my-site/media/x.webp", "/my-site/media/x.webp", "/media/x.webp"])
     assert.equal(sitePathOf(address, site), "media/x.webp", address);
   assert.equal(sitePathOf("https://example.com:8443/my-site/", site), "");
   assert.equal(sitePathOf("https://example.com/media/x.webp", site), undefined);
   assert.equal(sitePathOf("https://other.test/media/x.webp", site), undefined);
   assert.equal(sitePathOf("https://example.com/x", { prefix: "" }), undefined);
   assert.equal(sitePathOf("https://example.com/x", { url: "https://example.com" }), "x");
+});
+
+test("a full address on the site's host outside its folder belongs to another site there", () => {
+  const site = { url: "https://user.github.io/my-site/" };
+  for (const address of ["https://user.github.io/other-site/x.png", "https://user.github.io/x.png", "https://user.github.io/", "https://user.github.io/my-site-old/x.png", "https://user.github.io/media/x.png"])
+    assert.equal(sitePathOf(address, site), undefined, address);
+  assert.equal(sitePathOf("https://user.github.io/other-site/x.png", { prefix: "/my-site", origins: ["https://user.github.io"] }), undefined);
+  assert.equal(sitePathOf("https://user.github.io/my-site/x.png", site), "x.png");
+  assert.equal(sitePathOf("https://user.github.io/my-site", site), "");
+  // Root links stay this site's, with or without the prefix; a domain-root site reads every path on its host.
+  assert.equal(sitePathOf("/other-site/x.png", site), "other-site/x.png");
+  assert.equal(sitePathOf("https://user.github.io/other-site/x.png", { url: "https://user.github.io/" }), "other-site/x.png");
 });
 
 test("read-back rejects non-root links, malformed encoding and decoded escapes", () => {

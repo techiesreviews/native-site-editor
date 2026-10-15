@@ -22,11 +22,15 @@ export function withSitePrefix(rootAddress: string, prefix: string): string {
   return path === prefix || path.startsWith(`${prefix}/`) ? rootAddress : prefix + rootAddress;
 }
 
-/** Read a root or own-origin address as a decoded repository path; url supplies prefix and origin. */
+/**
+ * Read a root or own-origin address as a decoded repository path; url supplies prefix and origin.
+ * Root links count with or without the prefix; a full address must be inside the site's folder.
+ */
 export function sitePathOf(address: string, site: { prefix?: string; url?: string; origins?: Iterable<string> }): string | undefined {
   const prefix = site.prefix ?? sitePathPrefix(site.url);
-  let path: string;
+  let path: string, full = false;
   if (/^https?:\/\//i.test(address)) {
+    full = true;
     const url = webAddress(address);
     if (!url) return undefined;
     const origins = [site.url, ...site.origins ?? []].map(webAddress);
@@ -43,6 +47,8 @@ export function sitePathOf(address: string, site: { prefix?: string; url?: strin
   try { path = decodeURIComponent(path); folder = decodeURIComponent(prefix); } catch { return undefined; }
   if (path.includes("\\")) return undefined;
   if (folder && (path === folder || path.startsWith(`${folder}/`))) path = path.slice(folder.length);
+  // A full address on the site's host outside its folder is another site there (`user.github.io/other-site/`).
+  else if (folder && full) return undefined;
   const parts: string[] = [];
   for (const part of path.replace(/^\/+/, "").split("/")) {
     if (part === "..") {
