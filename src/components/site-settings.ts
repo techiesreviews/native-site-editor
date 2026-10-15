@@ -6,6 +6,7 @@ import { hasHeadField, readHeadSettings, withSearchHidden, type HeadField } from
 import type { NavigationLink } from "../page-builder/site-navigation";
 import type { MediaTrim } from "../../shared/media-records";
 import { SOCIAL_IMAGE_ACCEPT } from "../page-builder/social-image";
+import { previewUrl } from "./settings-preview";
 import "./site-settings.css";
 
 export interface SiteSettingsValues { name: string; favicon: string; socialImage: string;
@@ -221,17 +222,6 @@ async function chooseInto(input: HTMLInputElement | HTMLTextAreaElement, place: 
   } catch (error) {
     if (dialog.root.isConnected) dialog.status.textContent = error instanceof Error ? error.message : String(error);
   }
-}
-
-// One preview load per picture at a time: the Social image's thumbnail and the share card ask together,
-// and a second load of the editor's assets would leave the first without its picture.
-const loading = new Map<string, Promise<string | undefined>>();
-function previewUrl(handlers: SiteSettingsHandlers, value: string) {
-  const key = value.trim(), now = loading.get(key);
-  if (now) return now;
-  const next = handlers.imageUrl(value).finally(() => loading.delete(key));
-  loading.set(key, next);
-  return next;
 }
 
 // The Social image popup's frame, kept with the field until Apply; typing another value drops it.

@@ -278,6 +278,31 @@ test("the Social image popup moves the sharing copy's frame; Apply writes a fres
   await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toContain(`content="${first}"`);
 });
 
+// Slice 109: the Social image popup is its own layer above Site settings; a press on its backdrop
+// closes it unchanged and the settings stay open.
+test("a press on the Social image layer's backdrop closes it unchanged; Site settings stay open", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await fixture(page, baseURL, true);
+  await chooseDefault(page);
+  const field = panel(page).getByLabel("Default social image", { exact: true });
+  const value = await field.inputValue();
+  await panel(page).getByRole("button", { name: "Change default social image", exact: true }).click();
+  const popup = page.getByRole("dialog", { name: "Social image", exact: true });
+  const dot = popup.getByRole("slider", { name: "Focus dot" });
+  await expect(dot).toBeFocused();
+  await page.keyboard.press("Shift+ArrowUp");
+  // Settings are under the layer: inert until it closes.
+  await expect(panel(page).getByRole("button", { name: "Apply site settings", exact: true })).toBeVisible();
+  await page.mouse.click(12, 12);
+  await expect(popup).toHaveCount(0);
+  await expect(panel(page)).toBeVisible();
+  await expect(field).toHaveValue(value);
+  await expect(panel(page)).not.toContainText("Sharing frame chosen");
+  // The settings work again once the layer is gone.
+  await panel(page).getByRole("tab", { name: "General", exact: true }).click();
+  await expect(panel(page).getByLabel("Site name", { exact: true })).toBeVisible();
+});
+
 // Slice 94: on a phone the Social popup is a sheet with its fixed label (no shape menu) and Done in reach.
 test("on a phone the Social image popup shows its fixed label and keeps Done on screen", async ({ page, baseURL }) => {
   await page.setViewportSize({ width: 390, height: 844 });

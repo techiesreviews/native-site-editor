@@ -106,8 +106,12 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
   const picture = node("img", "image-popup__pic"); picture.alt = ""; picture.draggable = false;
   // A turned (or straightened, flipped) picture is drawn.
   const turned = node("canvas", "image-popup__pic"); turned.hidden = true;
+  // The frame and its wash are clipped to the picture; Free's corners stand over the frame, unclipped,
+  // so their 44 px grab areas reach past the picture's edges.
   const frame = node("div", "image-popup__frame");
-  frame.append(...["nw", "ne", "se", "sw"].map(corner => {
+  const shade = node("div", "image-popup__shade"); shade.append(frame);
+  const handles = node("div", "image-popup__handles"); handles.setAttribute("aria-hidden", "true");
+  handles.append(...["nw", "ne", "se", "sw"].map(corner => {
     const handle = node("span", `image-popup__corner image-popup__corner--${corner}`);
     handle.dataset.corner = corner;
     return handle;
@@ -115,7 +119,7 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
   const dot = node("span", "image-popup__dot");
   dot.tabIndex = 0; dot.setAttribute("role", "slider"); dot.setAttribute("aria-roledescription", "focus dot");
   dot.setAttribute("aria-label", "Focus dot"); dot.setAttribute("aria-valuemin", "0"); dot.setAttribute("aria-valuemax", "100");
-  const picbox = node("div", "image-popup__picbox"); picbox.append(picture, turned, frame, dot);
+  const picbox = node("div", "image-popup__picbox"); picbox.append(picture, turned, shade, handles, dot);
   // A fixed shape is named where the menu would be.
   const shapeHead = fixed ? node("span", "image-popup__shape image-popup__shape--fixed", fixed.label) : shapeButton;
   const well = node("div", "image-popup__well"); well.append(shapeHead, ...fixed ? [] : [menu], picbox);
@@ -183,7 +187,8 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
       paintTrim(turned, state.image!, shownTrim(size(), state.cut), Math.max(pw, ph) * (devicePixelRatio || 1));
     }
     const area = cutArea(size(), state.shape, state.focus, state.cut);
-    Object.assign(frame.style, { left: `${area.x * pw}px`, top: `${area.y * ph}px`, width: `${area.w * pw}px`, height: `${area.h * ph}px` });
+    const at = { left: `${area.x * pw}px`, top: `${area.y * ph}px`, width: `${area.w * pw}px`, height: `${area.h * ph}px` };
+    Object.assign(frame.style, at); Object.assign(handles.style, at);
     dot.style.left = `${state.focus.x}%`; dot.style.top = `${state.focus.y}%`;
   }
   const drawPreviews = () => previews.draw(state, size());
@@ -202,7 +207,7 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
       if (item.dataset.shape === "free") item.hidden = !state.trimmable;
     }
     // A see-through picture sits on 106's light checkerboard (the well is dark).
-    if (state.url && picture.getAttribute("src") !== state.url) { markTransparency(picture, state.file); picture.src = state.url; }
+    if (state.url && picture.getAttribute("src") !== state.url) showPicture(picture, state.url, state.file);
     const applies = dotApplies(state.shape, state.cut), free = state.shape === "free";
     dot.hidden = !applies;
     const across = Math.round(state.focus.x), down = Math.round(state.focus.y);
@@ -210,6 +215,7 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
     dot.setAttribute("aria-valuetext", `${across}% across, ${down}% down. Arrow keys move it.`);
     // Free: the frame is the trim, moved by dragging or arrow keys, sized by its corners or Alt and arrow keys.
     frame.classList.toggle("image-popup__frame--free", free);
+    picbox.classList.toggle("image-popup__picbox--free", free);
     if (free) {
       frame.tabIndex = 0; frame.setAttribute("role", "group"); frame.setAttribute("aria-roledescription", "trim area");
       frame.setAttribute("aria-label", "Trim area. Arrow keys move it. Alt and arrow keys change its size.");
@@ -340,6 +346,13 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
   };
 }
 
+/** A new picture in `image`: its see-through mark is for this picture, sampled once it has loaded (slice 106's checkerboard). */
+function showPicture(image: HTMLImageElement, url: string, path: string) {
+  image.removeAttribute("data-transparent");
+  image.src = url;
+  markTransparency(image, path);
+}
+
 function readHints() { try { return localStorage.getItem(HINTS_KEY); } catch { return null; } }
 function writeHints(hints: string[]) { try { localStorage.setItem(HINTS_KEY, JSON.stringify(hints)); } catch { /* private mode: hints show again */ } }
 
@@ -367,7 +380,7 @@ export function mountPreviews(devices: readonly PreviewDevice[]) {
       const fit = Math.min(1, (device.width - 6) / w, (device.height - 6) / h);
       w = Math.max(2, w * fit); h = Math.max(2, h * fit);
       spot.style.width = `${w}px`; spot.style.height = `${h}px`;
-      if (url && image.getAttribute("src") !== url) { markTransparency(image, state.file); image.src = url; }
+      if (url && image.getAttribute("src") !== url) showPicture(image, url, state.file);
       image.style.objectFit = box?.fit ?? (ratio ? "cover" : "fill");
       image.style.objectPosition = cut ? state.aroundFocus ? `${state.aroundFocus.x}% ${state.aroundFocus.y}%` : ""
         : dotApplies(state.shape, state.cut) ? `${state.focus.x}% ${state.focus.y}%` : "";
@@ -385,7 +398,7 @@ function mountCard(text: { title: string; site: string }) {
   element.append(image, caption);
   function draw(state: ImagePopupState) {
     const url = state.cutUrl ?? state.url;
-    if (url && image.getAttribute("src") !== url) { markTransparency(image, state.file); image.src = url; }
+    if (url && image.getAttribute("src") !== url) showPicture(image, url, state.file);
   }
   return { element, draw };
 }

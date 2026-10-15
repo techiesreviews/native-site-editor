@@ -298,6 +298,56 @@ async function dragCorner(page: Page, corner: "nw" | "se", dx: number, dy: numbe
 }
 const records = async (page: Page) => JSON.parse((await storedDraft(page, ".editor/media.json"))?.content ?? "{}");
 
+// A see-through picture: a dark word on nothing.
+const seeThrough = (page: Page) => page.evaluate(() => {
+  const canvas = document.createElement("canvas");
+  canvas.width = 600; canvas.height = 300;
+  const context = canvas.getContext("2d")!;
+  context.fillStyle = "#123"; context.fillRect(100, 100, 400, 100);
+  return canvas.toDataURL("image/png").split(",")[1];
+});
+async function replaceWith(page: Page, name: string, mimeType: string, base64: string) {
+  await popup(page).getByRole("button", { name: "Replace", exact: true }).click();
+  await picker(page).locator('input[name="media-upload"]').setInputFiles({ name, mimeType, buffer: Buffer.from(base64, "base64") });
+  await expect(picker(page).getByRole("button", { name: `Choose ${name}`, exact: true })).toHaveAttribute("aria-pressed", "true");
+  await picker(page).getByRole("button", { name: "Use image", exact: true }).click();
+  await expect(picker(page)).toHaveCount(0);
+}
+
+// Slice 109 (and slice 106's checkerboard): a see-through picture sits on the light checkerboard in the
+// popup and its previews, for the picture now shown; Free's corners take a 44 px press past the picture.
+test("a replaced see-through picture is on the checkerboard and an opaque one is not; Free's corners grab 44 px", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await open(page, baseURL);
+  await openPopup(page);
+  const marked = popup(page).locator(".image-popup__pic[data-transparent], .image-popup__spot img[data-transparent]");
+  await replaceWith(page, "Logo.png", "image/png", await seeThrough(page));
+  await expect(marked).toHaveCount(3);
+  expect(await popup(page).locator(".image-popup__picbox").evaluate(element => getComputedStyle(element).backgroundImage)).toContain("conic-gradient");
+  await replaceWith(page, "Quarters.jpg", "image/jpeg", await quarters(page));
+  await expect(popup(page).locator(".image-popup__where")).toHaveText(/quarters/i);
+  await expect(marked).toHaveCount(0);
+  expect(await popup(page).locator(".image-popup__picbox").evaluate(element => getComputedStyle(element).backgroundImage)).toBe("none");
+
+  await chooseShape(page, "Free");
+  const corner = popup(page).locator(".image-popup__corner--nw");
+  const box = (await corner.boundingBox())!, picture = (await popup(page).locator(".image-popup__picbox").boundingBox())!;
+  expect(Math.round(box.width)).toBe(44);
+  expect(Math.round(box.height)).toBe(44);
+  // The visible circle is 12 px; a press outside the picture, inside the grab area, takes the corner.
+  expect(await corner.evaluate(element => getComputedStyle(element, "::after").width)).toBe("12px");
+  const outside = { x: picture.x - 15, y: picture.y - 15 };
+  expect(await corner.evaluate((element, at) => element.contains(document.elementFromPoint(at.x, at.y)), outside)).toBe(true);
+  const before = (await popup(page).locator(".image-popup__frame").boundingBox())!;
+  await page.mouse.move(outside.x, outside.y);
+  await page.mouse.down();
+  await page.mouse.move(outside.x + 60, outside.y + 40, { steps: 6 });
+  await page.mouse.up();
+  const after = (await popup(page).locator(".image-popup__frame").boundingBox())!;
+  expect(after.width).toBeLessThan(before.width - 20);
+  await expect(popup(page).locator(".image-popup__message")).toHaveText("Saves a new picture for this spot");
+});
+
 test("Free trim saves a -crop copy for this spot only; re-opening shows the trim on the original; re-trimming writes a new name", async ({ page, baseURL }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await open(page, baseURL);
