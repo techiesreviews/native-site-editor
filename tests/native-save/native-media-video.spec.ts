@@ -349,3 +349,44 @@ test("an online Vimeo video's details switch Vimeo's own bar on everywhere; Remo
   expect(await mounted(page)).toBe(before);
   expect(calls).toEqual([]);
 });
+// The site's player files go in as text with a file added inside the picker (slice 68's fix): as uploads,
+// the preview's stylesheet reader looped on the new media-player.css and the editor froze.
+test("a video added inside Add → Media's picker is placed with the player as text files; the editor stays responsive; one Undo", async ({ page, baseURL }) => {
+  await open(page, baseURL, false);
+  const before = await mounted(page);
+  await frame(page).locator("#scene p").click();
+  await page.getByRole("navigation", { name: "Blocks", exact: true }).getByRole("button", { name: "Media", exact: true }).click();
+  const picker = page.getByRole("dialog", { name: "Choose media", exact: true });
+  await picker.locator(".media-library__upload-input").setInputFiles({ name: "walk.mp4", mimeType: "video/mp4", buffer: Buffer.from(CLIP, "base64") });
+  // Playwright's Chromium cannot encode it again: it is added unchanged.
+  await page.getByRole("button", { name: "Add unchanged", exact: true }).click({ timeout: 60_000 });
+  const use = picker.getByRole("button", { name: "Use video", exact: true });
+  await expect(use).toBeEnabled({ timeout: 60_000 });
+  await use.click();
+  await expect(picker).toHaveCount(0, { timeout: 30_000 });
+  await expect.poll(() => mounted(page)).toMatch(/<video src="\/media\/[^"]*walk[^"]*\.(?:mp4|webm)"/);
+  expect(await mounted(page)).toContain('<link rel="stylesheet" href="/styles/media-player.css">');
+  // Text drafts, so the canvas reads the stylesheet; the editor still answers.
+  expect(await storedDraft(page, "styles/media-player.css")).toMatchObject({ content: expect.stringContaining(".online-video") });
+  await expect(frame(page).locator("#scene video")).toBeVisible();
+  await expect(page.locator("#status")).toBeVisible();
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(() => mounted(page)).toBe(before);
+  for (const path of ["scripts/media-player.js", "scripts/media-online.js", "styles/media-player.css"]) expect(await storedDraft(page, path)).toBeUndefined();
+});
+test("a video added inside the background picker is placed with the player as text files; the editor stays responsive", async ({ page, baseURL }) => {
+  await open(page, baseURL, false);
+  await frame(page).locator("#scene p").click();
+  await page.keyboard.press("Escape");
+  await bar(page).getByRole("button", { name: "Background video", exact: true }).click();
+  const picker = page.getByRole("dialog", { name: "Choose video", exact: true });
+  await picker.locator(".media-library__upload-input").setInputFiles({ name: "walk.mp4", mimeType: "video/mp4", buffer: Buffer.from(CLIP, "base64") });
+  await page.getByRole("button", { name: "Add unchanged", exact: true }).click({ timeout: 60_000 });
+  const use = picker.getByRole("button", { name: "Use video", exact: true });
+  await expect(use).toBeEnabled({ timeout: 60_000 });
+  await use.click();
+  await expect(picker).toHaveCount(0, { timeout: 30_000 });
+  await expect.poll(() => mounted(page)).toMatch(/<video data-background src="\/media\/[^"]*walk/);
+  expect(await storedDraft(page, "styles/media-player.css")).toMatchObject({ content: expect.stringContaining(".online-video") });
+  await expect(frame(page).locator("#scene > :first-child")).toHaveJSProperty("tagName", "VIDEO");
+});

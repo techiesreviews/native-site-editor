@@ -73,7 +73,7 @@ function fixture(extra: Record<string, string> = {}) {
     return placeOnlineVideo(ports, async () => ctx, { place: { path: "index.html", parent: [0, 0], index: 1 } }, chosen, host,
       { stamp: { holds: () => true } as never, epoch: 1, source }, cancelled, service);
   };
-  return { ctx, text, batches, selected, said, place, records: () => parseMediaRecords(text.get(MEDIA_RECORDS_PATH)) };
+  return { ctx, bytes, versions, text, batches, selected, said, place, records: () => parseMediaRecords(text.get(MEDIA_RECORDS_PATH)) };
 }
 const prepare: typeof prepareMediaFile = async (file, _key, folder) => ({ request: { file, folder: folder!, result: { before: file.size, after: 9,
   outputs: [{ blob: new Blob(["main"]), extension: "webp", width: 1280, height: 720 }, { blob: new Blob(["small"]), extension: "webp", variantWidth: 480 }] } } });
@@ -145,4 +145,27 @@ test("a placement's player files are saved as text, never as uploads, expected t
   const imported = f.batches.at(-1)!;
   assert.equal(imported.edits.get("scripts/media-player.js"), "// player");
   assert.deepEqual(imported.uploads.map(upload => upload.path), ["media/film.jpg"]);
+});
+
+test("placing a recorded video again never calls the service, with no still or a still no longer in the site", async () => {
+  for (const still of [undefined, "media/videos/gone.webp"]) {
+    const records = upsertOnlineVideo(parseMediaRecords(undefined), { service: "youtube", id: ID, title: "Film", ...still ? { still, stillCopied: true as const } : {} });
+    const f = fixture({ [MEDIA_RECORDS_PATH]: serializeMediaRecords(records) }), s = service();
+    await f.place({ service: "youtube", id: ID }, { fetch: s.fetch, prepare });
+    assert.deepEqual(s.calls, []);
+    assert.equal(f.batches.length, 1); assert.equal(f.batches[0].uploads.length, 0);
+    assert.match(f.text.get("index.html")!, /<a class="online-video" href="https:\/\/www.youtube.com\/watch\?v=dQw4w9WgXcQ" aria-label="Film">Film<\/a>/);
+    assert.deepEqual(f.records().onlineVideos, records.onlineVideos);
+  }
+});
+
+test("a still replaced while the video is being placed refuses, writing nothing", async () => {
+  const still = "media/videos/film.webp";
+  const records = upsertOnlineVideo(parseMediaRecords(undefined), { service: "youtube", id: ID, title: "Film", still, stillCopied: true });
+  const f = fixture({ [MEDIA_RECORDS_PATH]: serializeMediaRecords(records) });
+  f.bytes.set(still, new Blob(["old"])); f.versions.set(still, "sha-old");
+  const blob = f.ctx.blob.bind(f.ctx);
+  f.ctx.blob = async path => { if (path === still) f.versions.set(still, "sha-new"); return blob(path); };
+  await assert.rejects(f.place({ service: "youtube", id: ID }, {}), /changed while the video was being placed/);
+  assert.equal(f.batches.length, 0);
 });

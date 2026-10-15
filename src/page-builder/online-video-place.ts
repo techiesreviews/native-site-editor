@@ -50,17 +50,22 @@ export async function placeOnlineVideo(
   const metadata = await ctx.read(MEDIA_RECORDS_PATH); live();
   const records = readSiteMediaRecords(metadata, ctx.items.map(item => item.path));
   let video: OnlineVideo | undefined;
+  // Chosen from Media: placed again as recorded, never contacting the service (with or without a still).
+  const again = "address" in chosen ? undefined : findOnlineVideo(records, chosen);
   if ("address" in chosen) video = parseOnlineVideoAddress(chosen.address);
   else {
-    const record = findOnlineVideo(records, chosen);
-    if (!record) throw new Error("This video is no longer in Media. Paste its address instead.");
-    video = { service: record.service, id: record.id, ...record.hash ? { hash: record.hash } : {} };
+    if (!again) throw new Error("This video is no longer in Media. Paste its address instead.");
+    video = { service: again.service, id: again.id, ...again.hash ? { hash: again.hash } : {} };
   }
   if (!video) throw new Error("Paste the address of a YouTube or Vimeo video.");
   const known = findOnlineVideo(records, video);
-  // A still already in the site gives the link its shape before anything loads.
-  const existing = known?.still && ctx.paths.includes(known.still) ? { path: known.still, ...await pictureSize(ctx, known.still) } : undefined;
+  // A still already in the site gives the link its shape before anything loads; its revision is
+  // captured first and proved at the write, so a still replaced meanwhile refuses.
+  const stillPath = known?.still && ctx.paths.includes(known.still) ? known.still : undefined;
+  const stillVersion = stillPath === undefined ? undefined : ctx.assetVersion(stillPath);
+  const existing = stillPath ? { path: stillPath, ...await pictureSize(ctx, stillPath) } : undefined;
   live();
+  if (stillPath !== undefined && ctx.assetVersion(stillPath) !== stillVersion) throw new Error(`${stillPath} changed while the video was being placed. Try again.`);
   // The site's player, once: its files are created only when missing, and the page's head links it.
   const input = { pages: [path], sources: { [path]: proof.source }, exists: (file: string) => ctx.paths.includes(file), kinds: ["online-video" as const] };
   let plan = mediaPlayerPlan(input);
@@ -74,7 +79,7 @@ export async function placeOnlineVideo(
   if (cancelled()) return;
   const placement: MediaPlacement = {
     label, path, source: proof.source, stale: changed, live: () => !cancelled() && current(), records: { text: metadata },
-    expectedPaths: ctx.paths, expectedSources: templates,
+    expectedPaths: ctx.paths, expectedSources: templates, ...stillPath ? { expectedAssets: new Map([[stillPath, stillVersion]]) } : {},
     files: plan?.creates,
     apply: (paths, requests, now) => {
       const record = findOnlineVideo(now, video), at = record?.still ? paths.indexOf(record.still) : -1;
@@ -87,6 +92,13 @@ export async function placeOnlineVideo(
       return mediaPlayerPlan({ pages: [path], sources: { [path]: page }, exists: () => true, kinds: ["online-video"] })?.edits.get(path) ?? page;
     },
   };
+  if (again) {
+    await host.onlineVideo(again, placement);
+    ctx.assertLive();
+    ports.select?.(path, insertedNode(place));
+    ports.announce(`${label}.`);
+    return;
+  }
   const result = await addOnlineVideo({ video, records, paths: ctx.paths, workspace: { import: (requests, at) => host.import(requests, at), onlineVideo: (record, at) => host.onlineVideo!(record, at) }, fetch: service.fetch ?? globalThis.fetch.bind(globalThis), prepare: service.prepare, place: placement, assertLive: live });
   ctx.assertLive();
   ports.select?.(path, insertedNode(place));
