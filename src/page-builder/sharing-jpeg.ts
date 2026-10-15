@@ -1,11 +1,12 @@
 import { startTagAttribute, type StartTag } from "../../shared/html-source";
 import { uploadImageType } from "../uploads";
+import { decodeHtmlEntities } from "./html-entities";
 import type { MediaOptimiseOptions, optimiseMedia } from "./media-optimise";
 
 export const isSharingImage = (name: string) => /^(?:og:image(?::url|:secure_url)?|twitter:image)$/.test(name);
 export const sharingJpegPath = (main: string) => main.replace(/\.[^./]+$/, "-sharing.jpg");
 export const sharingMetaName = (source: string, tag: StartTag) =>
-  (startTagAttribute(source, tag, "property")?.value ?? startTagAttribute(source, tag, "name")?.value ?? "").toLowerCase();
+  decodeHtmlEntities(startTagAttribute(source, tag, "property")?.value ?? startTagAttribute(source, tag, "name")?.value ?? "", true).toLowerCase();
 
 export function sharingImageDetail(name: string, image: { width: number; height: number; type?: string }) {
   if (!/^og:image:(?:type|width|height)$/.test(name)) return undefined;

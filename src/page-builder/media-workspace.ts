@@ -547,7 +547,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       };
       sharing = await encodeSharingJpeg({ blob: original?.blob ?? main.blob,
         source: original ? "original." + original.extension : provisional.main,
-        width: main.width!, height: main.height!, maxWidth: main.width!, encode, guard,
+        width: main.width!, height: main.height!, maxWidth: main.width! <= 10000 ? main.width! : null, encode, guard,
         error: "The sharing picture could not be prepared as a JPEG at the new picture's size. Nothing was replaced." });
       provisional = planMediaReplace({ ...input, sharing, versions: new Map() });
     }

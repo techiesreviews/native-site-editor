@@ -136,6 +136,11 @@ export function planMediaReplace(input: ReplaceInput) {
   }
   const sharingNeeded = sharingTags.size > 0 && /\.(?:avif|webp)$/i.test(main);
   const sharingPath = sharingJpegPath(main);
+  if (sharingNeeded) {
+    const after = [...paths.filter(file => !family.includes(file)), ...uploads.map(upload => upload.path), sharingPath];
+    if (mediaFamilyOf(main, after)?.sharing !== sharingPath)
+      throw new Error(`${sharingPath} would not belong to ${main}, because another picture shares its name. Nothing was replaced.`);
+  }
   if (sharingNeeded && input.sharing) uploads.push({ path: sharingPath, blob: input.sharing.blob });
   for (const upload of uploads) {
     const problem = uploadProblem({ name: upload.path, size: upload.blob.size });
@@ -218,7 +223,7 @@ export function planMediaReplace(input: ReplaceInput) {
     const changes: Edit[] = [];
     let og: { width: number; height: number; type: string } | undefined;
     for (const [index, tag] of replacementMetaTags(source).entries()) {
-      const name = sharingMetaName(source, tag);
+      const name = sharingMetaName(source, tag), attr = startTagAttribute(source, tag, "content");
       let content: string | undefined;
       if (isSharingImage(name)) {
         if (name.startsWith("og:")) og = undefined;
@@ -226,14 +231,19 @@ export function planMediaReplace(input: ReplaceInput) {
           const type = sharingNeeded ? "image/jpeg" : /^jpe?g$/i.test(first.extension) ? "image/jpeg" : "image/" + first.extension.toLowerCase();
           if (name.startsWith("og:")) og = { width: first.width!, height: first.height!, type };
           if (sharingNeeded) {
-            content = socialImageAddress(input.siteUrl, sharingPath).address;
+            // Slice 53 already rewrote this value: keep its other parameters and fragment, swap the address and the mark.
+            const raw = attr ? source.slice(attr.valueStart, attr.valueEnd) : "", at = raw.search(/[?#]/);
             const version = versions.get(sharingPath);
-            if (version) content += "?v=" + version;
+            let suffix = at < 0 ? "" : raw.slice(at);
+            const hash = suffix.indexOf("#"), query = hash < 0 ? suffix : suffix.slice(0, hash), fragment = hash < 0 ? "" : suffix.slice(hash);
+            const params = query.replace(/^\?/, "").split(/&amp;|&/).filter(part => part && !/^v(?:=|$)/.test(part));
+            if (version) params.unshift("v=" + version);
+            suffix = (params.length ? "?" + params.join("&amp;") : "") + fragment;
+            content = mediaEscape(socialImageAddress(input.siteUrl, sharingPath).address) + suffix;
           }
         }
-      } else if (og) content = sharingImageDetail(name, og);
-      const attr = startTagAttribute(source, tag, "content");
-      if (content !== undefined && attr) changes.push({ start: attr.valueStart, end: attr.valueEnd, text: mediaEscape(content) });
+      } else if (og) content = sharingImageDetail(name, og) && mediaEscape(sharingImageDetail(name, og)!);
+      if (content !== undefined && attr) changes.push({ start: attr.valueStart, end: attr.valueEnd, text: content });
     }
     if (changes.length) edits.set(file, apply(source, changes));
   }
@@ -243,8 +253,9 @@ export function planMediaReplace(input: ReplaceInput) {
   const address = (path: string) => "/" + path.split("/").map(encodeURIComponent).join("/");
   // Always keep on any family member (a kept copy protects the family) forwards every old address.
   const keepOld = request.keepOldAddress ?? family.some(member => Boolean(records.files[member]?.alwaysKeep));
+  // An address the new picture keeps (an overwritten sharing JPEG) serves its new bytes; forwarding it would hide them.
   if (main !== path) for (const member of [old.main, ...old.copies.map(copy => copy.path), ...old.sharing ? [old.sharing] : []])
-    redirects = editNativeRedirects(redirects, address(member), address(mapping.get(member)!), keepOld ? [address(member)] : [], false);
+    if (!uploads.some(upload => upload.path === member)) redirects = editNativeRedirects(redirects, address(member), address(mapping.get(member)!), keepOld ? [address(member)] : [], false);
   if ((redirects ?? "") !== (input.sources._redirects ?? "")) edits.set("_redirects", redirects ?? "");
   const next = structuredClone(records);
   if (main !== path) { if (next.files[path]) next.files[main] = next.files[path]; delete next.files[path]; }

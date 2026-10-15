@@ -381,3 +381,30 @@ test("a PNG replacement removes the old family's sharing JPEG and repoints its t
   assert.match(p.edits.get("index.html")!, /content="\/media\/images\/photo.png\?v=[a-f0-9]{8}"/);
   assert.match(p.edits.get("index.html")!, /content="image\/png"/);
 });
+
+test("review: an overwritten sharing JPEG is never forwarded to the new main", async () => {
+  const old = "media/images/photo.avif", sharing = "media/images/photo-sharing.jpg";
+  const p = await plan({ "index.html": `<meta property="og:image" content="/${sharing}">`, _redirects: "" }, {
+    request: { path: old, result: result("webp"), keepOldAddress: true }, paths: [old, sharing],
+    records: { version: 2, collections: [], files: { [sharing]: { sharing: true } } }, sharing: { blob: new Blob(["jpeg"], { type: "image/jpeg" }) },
+  });
+  const redirects = p.edits.get("_redirects")!;
+  assert.match(redirects, /^\/media\/images\/photo\.avif \/media\/images\/photo\.webp/m);
+  assert.doesNotMatch(redirects, /photo-sharing\.jpg/);
+  assert.ok(p.uploads.some(upload => upload.path === sharing));
+  assert.ok(!p.deletes.includes(sharing));
+});
+
+test("review: a sharing JPEG that would not join the new main's family refuses", async () => {
+  await assert.rejects(plan({ "index.html": `<meta property="og:image" content="/${path}">` }, {
+    request: { path, result: result("webp") }, paths: [...paths, "media/images/photo.avif"], sharing: { blob: new Blob(["jpeg"]) },
+  }), /photo-sharing\.jpg would not belong to media\/images\/photo\.webp, because another picture shares its name\. Nothing was replaced\./);
+});
+
+test("review: sharing tags keep other parameters and the fragment; entity-encoded names count", async () => {
+  const p = await plan({ "index.html": `<meta property="og&#58;image" content="/${path}?w=1&amp;v=old&amp;q=2#hi"><meta property="og:image:type" content="image/jpeg">` }, {
+    request: { path, result: result("avif") }, sharing: { blob: new Blob(["jpeg"], { type: "image/jpeg" }) }, siteUrl: "https://site.test/",
+    versions: new Map([["media/images/photo-sharing.jpg", "12345678"]]),
+  });
+  assert.ok(p.edits.get("index.html")!.includes('content="https://site.test/media/images/photo-sharing.jpg?v=12345678&amp;w=1&amp;q=2#hi"'));
+});
