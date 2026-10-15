@@ -6,8 +6,9 @@ import { expect, type Locator, type Page } from "@playwright/test";
  * frame reports against a render the editor has since replaced is dropped (preview-link's render
  * freshness), so it is tried again until the picker shows.
  */
-export async function openPickerOn(page: Page, image: Locator) {
-  const picker = page.getByRole("dialog", { name: "Choose image", exact: true });
+export async function openPickerOn(page: Page, image: Locator, title = "Choose image") {
+  // A picture spot's picker (an image with a slot) is "Choose image or video".
+  const picker = page.getByRole("dialog", { name: title, exact: true });
   await image.click();
   await expect(page.getByRole("toolbar", { name: "Edit bar" }).locator(".edit-bar__image")).toBeVisible();
   await expect(async () => {

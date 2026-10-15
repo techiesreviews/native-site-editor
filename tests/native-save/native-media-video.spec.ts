@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { publishButton } from "./publish";
 import { storedDraft } from "./drafts";
+import { openPickerOn } from "./open-picker";
 
 // Default fixture group: native-starter. Add → Media placement is @smoke; the rest nightly.
 const bar = (page: Page) => page.getByRole("toolbar", { name: "Edit bar" });
@@ -36,11 +37,10 @@ async function save(page: Page) {
   await expect(page.locator("#status")).toHaveText(/Up to date with main|Selected files saved to GitHub\./, { timeout: 30_000 });
   await expect(publishButton(page)).toBeDisabled();
 }
-/** Add → Media from the Add panel, after the section's words: the picker lists every kind. */
+/** Add → Media (the blocks beside the Add panel), after the section's words: the picker lists every kind. */
 async function addMedia(page: Page, file: string, use: string) {
   await frame(page).locator("#scene p").click();
-  await page.getByRole("complementary", { name: "Page structure" }).getByRole("button", { name: "Add", exact: true }).click();
-  await page.getByRole("dialog", { name: "Add to the page", exact: true }).getByRole("option", { name: "Media HTML", exact: true }).click();
+  await page.getByRole("navigation", { name: "Blocks", exact: true }).getByRole("button", { name: "Media", exact: true }).click();
   const picker = page.getByRole("dialog", { name: "Choose media", exact: true });
   await expect(picker.locator(".media-library__place")).toContainText("Add media");
   await picker.getByRole("button", { name: `Choose ${file}`, exact: true }).click();
@@ -51,7 +51,7 @@ test("Add → Media places a video with its still and the player; the canvas kee
   await open(page, baseURL, false);
   const before = await mounted(page);
   await addMedia(page, "media/clip.mp4", "Use video");
-  await expect.poll(() => mounted(page)).toContain('<video src="/media/clip.mp4" poster="/images/placeholder.svg" controls preload="none" playsinline width="640" height="400"></video>');
+  await expect.poll(() => mounted(page)).toContain('<video src="/media/clip.mp4" poster="/images/placeholder.svg" controls preload="none" playsinline width="320" height="180"></video>');
   const source = await mounted(page);
   expect(source).toContain('<script type="module" src="/scripts/media-player.js"></script>');
   expect(source).toContain('<link rel="stylesheet" href="/styles/media-player.css">');
@@ -70,14 +70,14 @@ test("Add → Media places a video with its still and the player; the canvas kee
 test("Add → Media places an audio file with its length and a PDF card that opens; both stay still on the canvas", async ({ page, baseURL }) => {
   await open(page, baseURL, false, { "media/song.mp3": "seeded audio bytes", "media/price-list.pdf": "%PDF-1.4 seeded" },
     { "media/song.mp3": { duration: 75.4, description: { text: "Opening song" } }, "media/price-list.pdf": { still: "images/placeholder.svg" } });
-  await addMedia(page, "media/song.mp3", "Use audio");
+  await addMedia(page, "media/song.mp3, 1:15", "Use audio");
   await expect.poll(() => mounted(page)).toContain('<audio src="/media/song.mp3" controls preload="none" data-duration="75" aria-label="Opening song"></audio>');
   const audio = frame(page).locator("#scene > audio");
   await expect(audio).toBeVisible();
   await audio.click();
   expect(await audio.evaluate(element => (element as HTMLAudioElement).paused)).toBe(true);
   await addMedia(page, "media/price-list.pdf", "Use file");
-  await expect.poll(() => mounted(page)).toContain('<a class="download-card" href="/media/price-list.pdf"><img src="/images/placeholder.svg" alt="" width="640" height="400" loading="lazy" decoding="async"><span class="download-card-name">price-list</span><span class="download-card-meta">PDF · ');
+  await expect.poll(() => mounted(page)).toContain('<a class="download-card" href="/media/price-list.pdf"><img src="/images/placeholder.svg" alt="" width="320" height="180" loading="lazy" decoding="async"><span class="download-card-name">price-list</span><span class="download-card-meta">PDF · ');
   const source = await mounted(page);
   expect(source).toContain('<span class="download-card-action">Open</span></a>');
   expect(source).not.toMatch(/download-card"[^>]*\sdownload[\s>]/);
@@ -86,6 +86,23 @@ test("Add → Media places an audio file with its length and a PDF card that ope
   await expect(frame(page).locator("#scene .download-card")).toBeVisible();
   await save(page);
   expect(await saved(page, baseURL)).toContain('class="download-card"');
+});
+test("a picture spot's picker offers videos too: a chosen video loops silently there, keeping the spot's slot and words", async ({ page, baseURL }) => {
+  await open(page, baseURL, false);
+  const at = (await mounted(page)).indexOf("<p>Section words</p>");
+  await page.evaluate(async ({ at }) => (await import("/src/components/code-editor.ts")).replaceActiveRange({ path: "index.html", start: at, end: at, expected: "",
+    text: '<img slot="photo" class="spot" src="/images/placeholder.svg" alt="Harbour at dawn" width="640" height="400">' }), { at });
+  const spot = frame(page).locator("#scene img.spot");
+  const picker = await openPickerOn(page, spot, "Choose image or video");
+  await picker.getByRole("button", { name: "Choose media/clip.mp4", exact: true }).click();
+  await expect(picker.locator(".media-library__chosen-name")).toHaveText("clip.mp4 · loops silently here");
+  await picker.getByRole("button", { name: "Use video", exact: true }).click();
+  await expect(picker).toHaveCount(0);
+  await expect.poll(() => mounted(page)).toContain('<video src="/media/clip.mp4" poster="/images/placeholder.svg" controls muted loop playsinline slot="photo" class="spot" width="640" height="400" aria-label="Harbour at dawn"></video>');
+  expect(await mounted(page)).toContain('<script type="module" src="/scripts/media-player.js"></script>');
+  // In a picture spot the video always loops silently.
+  await frame(page).locator("#scene video").click();
+  await expect(bar(page).getByRole("checkbox", { name: "Looping video", exact: true })).toBeDisabled();
 });
 test("selected video loops silently, saves with player, then returns to play with sound on tap", async ({ page, baseURL }) => {
   await open(page, baseURL);

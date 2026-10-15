@@ -27,7 +27,7 @@ test('real CmdK searches native groups without component template commands and p
  await page.keyboard.press('ControlOrMeta+K');
  const dialog=page.getByRole('dialog',{name:'Command palette'});const search=dialog.getByRole('combobox');
  await expect(dialog.locator('[data-command^="native.add:"]')).toHaveCount(0);
- for(const kind of ['section','div','heading','paragraph','image','button']){
+ for(const kind of ['section','div','heading','paragraph','media','button']){
   await search.fill(`Add ${kind}`);await expect(dialog.locator(`[data-command="native.add:native:${kind}"]`)).toBeVisible();
  }
  for(const kind of ['text','link-button','list','grid','columns','video','embed','divider','form','input','textarea','select','checkbox','submit']){
