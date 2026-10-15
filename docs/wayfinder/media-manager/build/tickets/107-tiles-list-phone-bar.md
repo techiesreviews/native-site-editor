@@ -2,7 +2,7 @@
 title: Tiles, list view, selection bar and the phone One bar
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-107 runner)
 blocked_by: [104-media-panel-size, 106-touch-dark-fixes]
 builder: claude
 phase: 8
