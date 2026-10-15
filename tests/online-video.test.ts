@@ -244,3 +244,17 @@ test("a title with slashes keeps every word in the still's name", async () => {
   const added = await addOnlineVideo({ video: youtube, workspace: f.workspace, records: f.records(), paths: f.ctx.paths, fetch: service.fetch, prepare: named, assertLive() {} });
   assert.equal(name, "ac-dc-live.jpg"); assert.equal(added.record.still, "media/videos/ac-dc-live.webp");
 });
+test("Keep original applies to the copied still like any added picture", async () => {
+  const f = fixture();
+  f.text.set(MEDIA_RECORDS_PATH, serializeMediaRecords({ ...empty(), adding: { image: "higher", keepOriginal: true } }));
+  const service = serviceFetch(url => url.includes("oembed") ? json({ title: "Film" }) : image());
+  let kept: boolean | undefined;
+  const keeping: typeof prepareMediaFile = async (file, key, folder, signal, encode, ask, shows, quality, keepOriginal) => {
+    kept = keepOriginal;
+    const prepared = await prepare(file, key, folder, signal, encode, ask, shows, quality);
+    return { request: { ...prepared.request, original: { blob: new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xd9])]), extension: "jpg" } } };
+  };
+  await addOnlineVideo({ video: youtube, workspace: f.workspace, records: f.records(), paths: f.ctx.paths, fetch: service.fetch, prepare: keeping, assertLive() {} });
+  assert.equal(kept, true);
+  assert.equal(f.batches.length, 1); assert.ok(f.batches[0].uploads.some(upload => upload.path.startsWith("media/originals/")));
+});

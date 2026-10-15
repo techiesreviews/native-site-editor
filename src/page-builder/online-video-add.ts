@@ -91,7 +91,9 @@ export async function addOnlineVideo(input: OnlineVideoAddInput) {
     input.assertLive();
     const extension = read.still.name.split(".").at(-1);
     const file = new File([read.still], mediaStorageName(`${read.title?.replace(/[\\/]+/g, " ") || `${video.service}-${video.id}`}.${extension}`), { type: read.still.type });
-    const prepared = await prepare(file, "online-video", "media/videos", undefined, undefined, undefined, undefined, mediaAddingSettings(input.records.adding).image);
+    // The site's remembered adding choices, as for any added picture (quality and Keep original).
+    const adding = mediaAddingSettings(input.records.adding);
+    const prepared = await prepare(file, "online-video", "media/videos", undefined, undefined, undefined, undefined, adding.image, adding.keepOriginal);
     input.assertLive();
     const paths = await input.workspace.import([{ ...prepared.request, onlineVideo: record }], input.place);
     record.still = paths[0]; record.stillCopied = true;
