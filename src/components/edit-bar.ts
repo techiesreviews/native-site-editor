@@ -3,7 +3,7 @@ import { handleChunkLoadFailure } from "../chunk-recovery";
 import { node, button } from "../ui/dom";
 import { icon as phosphorIcon, type IconName as PhosphorName } from "../icons";
 import { noteAnchor, noteTop, PIN_HEIGHT } from "./agent-pin-geometry";
-import { editBarPlacement } from "./edit-bar-placement";
+import { editBarPlacement, roomScroll, type EditBarPlacementOptions } from "./edit-bar-placement";
 import { componentIcon, mark } from "../page-builder/component-icon";
 import "./edit-bar.css";
 
@@ -220,7 +220,12 @@ interface Note {
   error: HTMLElement;
 }
 
-export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: EditBarDrag, pinRow?: PinRow) {
+/**
+ * `scroll` scrolls the page by dy px: on a phone-wide window, a new selection
+ * the bar would cover is scrolled clear of it once (after a double-click's
+ * second press could land), so the bar sits above or below it.
+ */
+export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: EditBarDrag, pinRow?: PinRow, scroll?: (dy: number) => void) {
   let suggestionRows: typeof import("./suggestion-rows") | undefined;
   let suggestionRowsLoad: Promise<void> | undefined;
   // After a failed load (said once), it is tried again only when an address field opens.
@@ -238,6 +243,10 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
   pane.append(bar);
 
   let rect: SelectionRect | undefined;
+  // The last pinned placement's geometry, and the selection shown (its source place, else its kind).
+  let pinned: Omit<EditBarPlacementOptions, "visible"> | undefined;
+  let shownKey = "";
+  let roomTimer = 0;
   let onFormat: EditBarModel["onFormat"];
   let onMove: EditBarModel["onMove"];
   // The open menu or field, under its button.
@@ -431,14 +440,15 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     const row = placeNote(rect, frameRect, frameLeft, frameTop);
     // Prefer above, then below (also under a sticky header). If neither fits,
     // pin to the canvas edge that covers less of the visible selection.
-    const { top, side } = editBarPlacement({
+    const placement = {
       selectionTop: Math.min(rect.top, row?.top ?? rect.top),
       selectionBottom: Math.max(rect.bottom, row?.bottom ?? rect.bottom),
       frameHeight: frameRect.height,
       barHeight: height,
       inset: rect.inset,
-      visible,
-    });
+    };
+    const { top, side } = editBarPlacement({ ...placement, visible });
+    pinned = side === "pinned" && visible ? placement : undefined;
     bar.dataset.side = side;
     bar.style.left = `${Math.max(frameLeft + 8, Math.min(frameLeft + rect.left, frameRight - width - 8))}px`;
     bar.style.top = `${frameTop + top}px`;
@@ -1066,6 +1076,15 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     const opening = render(model);
     rect = at;
     position();
+    const key = model.origin ? `${model.origin.path} ${model.origin.node?.join(".")}` : model.kind;
+    if (key !== shownKey && scroll && matchMedia("(max-width: 650px)").matches) {
+      clearTimeout(roomTimer);
+      roomTimer = window.setTimeout(() => {
+        const dy = pinned && shownKey === key ? roomScroll(pinned) : 0;
+        if (dy) scroll(dy);
+      }, 400);
+    }
+    shownKey = key;
     // A field asked to open does so once the bar is in place, and keeps the focus.
     if (opening) {
       openAddressField(opening.item, opening.control);
@@ -1108,11 +1127,14 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
       closePopover(false);
       closeNote(false);
       rect = undefined;
+      shownKey = "";
+      clearTimeout(roomTimer);
       delete bar.dataset.model;
       bar.hidden = true;
       bar.replaceChildren();
     },
     destroy() {
+      clearTimeout(roomTimer);
       window.removeEventListener("pointerup", release, true);
       window.removeEventListener("pointercancel", release, true);
       resize.disconnect();

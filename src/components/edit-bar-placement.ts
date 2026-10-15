@@ -40,3 +40,18 @@ export function editBarPlacement({ selectionTop, selectionBottom, frameHeight, b
   }
   return { top, side };
 }
+
+/**
+ * How far to scroll the page (px; positive scrolls down) so a selection the
+ * bar would cover gets clear room above or below it, the shorter way, with the
+ * selection still in view; 0 when it already has room or no scroll can give it.
+ */
+export function roomScroll({ selectionTop, selectionBottom, frameHeight, barHeight, inset = 0 }: Omit<EditBarPlacementOptions, "visible">): number {
+  const ceiling = Math.min(inset, Math.max(0, frameHeight - barHeight - 8)) + 4;
+  const above = selectionTop - barHeight - 8 - ceiling;
+  const below = selectionBottom + 8 - (frameHeight - barHeight - 4);
+  if (above >= 0 || below <= 0) return 0;
+  const up = selectionBottom - above <= frameHeight;
+  const down = selectionTop - below >= ceiling;
+  return up && (!down || -above <= below) ? above : down ? below : 0;
+}

@@ -431,7 +431,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   // The edit bar's name drags the selected block (src/page-builder/insert-drag.ts).
   const editBar = createEditBar(pane, frame,
     (event, chip) => handlers.onBlockPress?.({ pointerId: event.pointerId, x: event.clientX, y: event.clientY, alt: event.altKey, source: chip, hold: true }),
-    (rect) => pins?.row(rect) ?? { offset: 0, next: pinRequests.length + 1 });
+    (rect) => pins?.row(rect) ?? { offset: 0, next: pinRequests.length + 1 },
+    (dy) => link.send({ type: "scroll-by", dy, smooth: true }));
   // A block pressed in the page: the runtime keeps the pointer and relays it
   // here. A frame reloaded or gone sends no release: its drag is cancelled.
   let pressFeed: DragFeed | undefined;

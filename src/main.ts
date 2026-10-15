@@ -58,6 +58,7 @@ import { newFilePath, newFolderPath, renamedPath, type Checked } from "./native-
 import { createCreateDialog, type CreateKind, type CreateRequest } from "./components/create-dialog";
 import type { createPagesTree, NativeNewRequest, NativePagesTarget } from "./components/pages-tree";
 import "./components/pages-tree.css";
+import "./components/phone-sheet.css";
 import { createFileRowActions, type FileRowTarget } from "./components/file-row-actions";
 import { createConfirmDialog } from "./components/confirm-dialog";
 import type { FilesResult, OwnerInstallation } from "../shared/types";
@@ -331,6 +332,7 @@ function mountWorkspace() {
       </div>
     </div>
     <div class="workspace">
+      <button type="button" id="sheet-handle" class="sheet-handle" aria-expanded="false" aria-controls="structure-sidebar code-split" title="Pull up or tap for the page structure and code"><span class="sheet-handle__grip"></span>Page structure and code</button>
       <aside class="sidebar" aria-label="Page structure">
         <div class="sidebar-heading"><span class="eyebrow">PAGE STRUCTURE</span><button type="button" id="add-panel-toggle" class="structure-add" title="Add to the page" hidden>${iconMarkup("plus")} Add</button></div>
         <div id="structure" class="page-structure"></div>
@@ -408,6 +410,15 @@ function mountWorkspace() {
     app.querySelector<HTMLElement>(".workspace")!,
     app.querySelector<HTMLElement>(".sidebar")!,
   );
+  // Phones: Page structure and the code fold into a sheet under the page (phone-sheet.css); its handle loads on the first phone-wide window.
+  const phone = matchMedia("(max-width: 650px)");
+  const sheet = () => {
+    if (!phone.matches) return;
+    phone.removeEventListener("change", sheet);
+    void import("./components/phone-sheet").then((module) => module.mountPhoneSheet(app.querySelector<HTMLElement>(".workspace")!, element<HTMLButtonElement>("sheet-handle"))).catch(errorMessage);
+  };
+  phone.addEventListener("change", sheet);
+  sheet();
   branchSelect = element<HTMLSelectElement>("branch");
   refreshButton = element<HTMLButtonElement>("refresh");
   content = element<HTMLDivElement>("content");
@@ -544,10 +555,11 @@ function mountWorkspace() {
     onAnswerRequest: async (id, text) => {
       await agentController.answer(id, text);
     },
-    // The Add panel docks over the page structure sidebar.
+    // The Add panel docks over the page structure sidebar; under a phone's sheet (folded or not), over the page and sheet.
     addPanelDock: () => {
       const area = app.querySelector<HTMLElement>(".workspace")?.getBoundingClientRect();
-      const side = app.querySelector<HTMLElement>(".workspace > .sidebar")?.getBoundingClientRect();
+      const sheet = getComputedStyle(element("sheet-handle")).display !== "none";
+      const side = app.querySelector<HTMLElement>(sheet ? ".workspace > main" : ".workspace > .sidebar")?.getBoundingClientRect();
       return area && { left: side?.left ?? area.left, top: side?.top ?? area.top, bottom: Math.min(area.bottom, innerHeight), width: side?.width ?? 320 };
     },
   });

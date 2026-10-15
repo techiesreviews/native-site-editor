@@ -1,0 +1,135 @@
+/* Phones (the column layout): while a page is on the canvas, Page structure and
+   the code fold into a sheet under it, so the page gets most of the screen.
+   The handle pulls it up and down (phone-sheet.ts, loaded on phones only); it
+   stays folded until then. --sheet-size is the sheet's height under its handle,
+   shared 45/55 by the structure and the code; the page row gets the rest.
+   Nothing moves in the DOM: <main> spans the page, handle, structure and code
+   rows as a subgrid, and the sidebar lies in the structure row. */
+@property --sheet-size {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+.sheet-handle {
+  display: none;
+}
+@media (max-width: 650px) {
+  @supports (grid-template-rows: subgrid) {
+    .workspace:has(> main.has-preview) {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: auto minmax(0, 1fr) auto calc(var(--sheet-size) * 0.45) calc(var(--sheet-size) * 0.55);
+    }
+    /* A hidden pane gives its share back: its restore strip stays (sidebar-resize.css, code-resize.css). */
+    .workspace--sidebar-collapsed:has(> main.has-preview) {
+      grid-template-rows: auto minmax(0, 1fr) auto min(20px, var(--sheet-size)) max(0px, calc(var(--sheet-size) - 20px));
+    }
+    .workspace:has(> main.has-preview.code-collapsed) {
+      grid-template-rows: auto minmax(0, 1fr) auto var(--sheet-size) 0px;
+    }
+    .workspace--sidebar-collapsed:has(> main.has-preview.code-collapsed) {
+      grid-template-rows: auto minmax(0, 1fr) auto min(20px, var(--sheet-size)) 0px;
+    }
+    /* Every item names its column: the handle and sidebar lie over <main>'s rows, which
+       automatic placement would avoid by making a second column. */
+    .workspace:has(> main.has-preview) > * {
+      grid-column: 1;
+    }
+    .workspace:has(> main.has-preview) > .block-rail {
+      grid-row: 1;
+    }
+    .workspace:has(> main.has-preview) > main {
+      grid-row: 2 / -1;
+      display: grid;
+      grid-template-rows: subgrid;
+      height: auto;
+    }
+    .workspace:has(> main.has-preview) > main > .preview-pane {
+      grid-row: 1;
+    }
+    .workspace:has(> main.has-preview) > main > .code-split {
+      grid-row: 4;
+    }
+    .workspace:has(> main.has-preview) > .sidebar {
+      grid-row: 4;
+      z-index: 1;
+      min-height: 0;
+      overflow: clip;
+    }
+    .workspace:has(> main.has-preview) .page-structure {
+      max-height: none;
+    }
+    /* Folded: out of sight and out of reach (no Tab stop, no screen reader), once the sheet has closed. */
+    .workspace:not(.sheet-open):has(> main.has-preview) > .sidebar,
+    .workspace:not(.sheet-open) > main.has-preview > .code-split {
+      visibility: hidden;
+    }
+
+    .workspace:has(> main.has-preview) > .sheet-handle {
+      grid-row: 3;
+      position: relative;
+      z-index: 2;
+      display: grid;
+      place-items: center;
+      align-content: center;
+      gap: 3px;
+      min-block-size: 36px;
+      padding: 6px 16px 4px;
+      border: 0;
+      border-block-start: 1px solid var(--control-line);
+      border-start-start-radius: var(--radius-dialog);
+      border-start-end-radius: var(--radius-dialog);
+      background: var(--surface-subtle);
+      box-shadow: 0 -2px 6px var(--semantic-shadow);
+      color: var(--muted);
+      font: inherit;
+      font-size: var(--type-badge);
+      line-height: 1.2;
+      cursor: grab;
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    @media (prefers-reduced-motion: no-preference) {
+      /* The steep start of the iOS sheet curve; a drag sets the size at once. */
+      .workspace:has(> main.has-preview) {
+        transition: --sheet-size 400ms cubic-bezier(0.32, 0.72, 0, 1);
+      }
+      .workspace:not(.sheet-open):has(> main.has-preview) > .sidebar,
+      .workspace:not(.sheet-open) > main.has-preview > .code-split {
+        transition: visibility 0s linear 400ms;
+      }
+      .workspace.sheet-dragging:has(> main.has-preview) {
+        transition: none;
+      }
+    }
+  }
+}
+/* The bar a finger takes hold of; the hit area reaches 4 px past the strip on each side (44 px). */
+.sheet-handle::before {
+  content: "";
+  position: absolute;
+  inset: -4px 0;
+}
+.sheet-handle__grip {
+  inline-size: 36px;
+  block-size: 4px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.6;
+}
+.sheet-handle:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: -3px;
+}
+.sheet-handle:active,
+.sheet-dragging > .sheet-handle {
+  background-image: linear-gradient(var(--hover), var(--hover));
+  color: var(--text);
+  cursor: grabbing;
+}
+@media (hover: hover) and (pointer: fine) {
+  .sheet-handle:hover {
+    color: var(--text);
+  }
+}
