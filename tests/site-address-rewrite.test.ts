@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { moveSiteAddress, planSiteAddressRewrite, planSiteAddressRewriteInSlices, siteAddressConfirm, siteAddressDone, siteAddressFiles, siteFolderChanges } from "../src/page-builder/site-address-rewrite.ts";
+import { moveSiteAddress, siteSettingsWithMove, planSiteAddressRewrite, planSiteAddressRewriteInSlices, siteAddressConfirm, siteAddressDone, siteAddressFiles, siteFolderChanges } from "../src/page-builder/site-address-rewrite.ts";
 
 const PROJECT = "https://user.github.io/my-site/";
 const OWN = "https://example.com/";
@@ -158,4 +158,47 @@ test("Site settings' stored default image moves like the pages' copies of it", (
   assert.equal(moveSiteAddress("https://elsewhere.test/share.jpg", { from: PROJECT, to: OWN, paths }), "https://elsewhere.test/share.jpg");
   assert.equal(moveSiteAddress("/my-site/media/share.jpg", { from: PROJECT, to: "https://www.example.com/my-site/", paths }), "/my-site/media/share.jpg");
   assert.equal(moveSiteAddress("", { from: PROJECT, to: OWN, paths }), "");
+});
+
+test("the home page moves as an address field's value, never as a script's string", () => {
+  const sources = {
+    "manifest.webmanifest": `{ "start_url": "/", "scope": "/", "name": "/" }`,
+    "index.html": `<form action="/"><button formaction='/'>Go</button></form><script>const parts = path.split("/"); const home = "/";</script>`,
+  };
+  const added = plan(OWN, PROJECT, sources);
+  assert.equal(added.edits.get("manifest.webmanifest"), `{ "start_url": "/my-site/", "scope": "/my-site/", "name": "/" }`);
+  assert.equal(added.edits.get("index.html"), `<form action="/my-site/"><button formaction='/my-site/'>Go</button></form><script>const parts = path.split("/"); const home = "/";</script>`);
+  const removed = plan(PROJECT, OWN, Object.fromEntries(Object.entries(Object.fromEntries(added.edits))));
+  assert.deepEqual(Object.fromEntries(removed.edits), sources);
+  const changed = plan(PROJECT, "https://user.github.io/new/", Object.fromEntries(added.edits));
+  assert.equal(changed.edits.get("manifest.webmanifest"), `{ "start_url": "/new/", "scope": "/new/", "name": "/" }`);
+});
+
+test("settings applied with a nested folder change move every address exactly once", () => {
+  const from = PROJECT, to = "https://user.github.io/my-site/new/";
+  const head = (icon: string, image: string) => `<head>\n<link rel="icon" href="${icon}">\n<meta property="og:image" content="${image}">\n</head>\n`;
+  const old = "https://user.github.io/my-site/media/share.jpg";
+  const sources: Record<string, string> = {
+    "index.html": head("/my-site/favicon.svg", old) + `<a href="/my-site/about/">About</a>`,
+    "about/index.html": head("/my-site/favicon.svg", "https://elsewhere.test/own.jpg"),
+    ".editor/config.json": `{ "site": { "url": "${from}", "socialImage": "${old}" } }\n`,
+  };
+  const paths = [...Object.keys(sources), "favicon.svg", "media/share.jpg", "media/new-social.jpg"];
+  const input = { from, to, paths, source: (path: string) => sources[path] ?? "", config: sources[".editor/config.json"], pages: ["index.html", "about/index.html"],
+    before: { name: "Site", favicon: "/my-site/favicon.svg", socialImage: old } };
+  const plan = planSiteAddressRewrite({ from, to, paths, source: input.source });
+  // A sharing copy made for the new address is written as it is.
+  const fresh = "https://user.github.io/my-site/new/media/new-social.jpg";
+  const shared = siteSettingsWithMove({ ...input, plan, values: { name: "Site", favicon: "/my-site/favicon.svg", socialImage: fresh, url: to }, imageIsNew: true });
+  assert.equal(shared.edits.get("index.html"), head("/my-site/new/favicon.svg", fresh) + `<a href="/my-site/new/about/">About</a>`);
+  assert.equal(shared.edits.get("about/index.html"), head("/my-site/new/favicon.svg", "https://elsewhere.test/own.jpg"));
+  assert.match(shared.config, new RegExp(`"socialImage": "${fresh}"`));
+  // Typed values in the old address's form (unchanged, or a new root image) move once with the rest.
+  const typed = siteSettingsWithMove({ ...input, plan, values: { name: "Site", favicon: "/my-site/favicon.svg", socialImage: "/my-site/media/new-social.jpg", url: to } });
+  assert.equal(typed.edits.get("index.html"), head("/my-site/new/favicon.svg", "/my-site/new/media/new-social.jpg") + `<a href="/my-site/new/about/">About</a>`);
+  assert.match(typed.config, /"socialImage": "\/my-site\/new\/media\/new-social\.jpg"/);
+  assert.match(typed.config, /"url": "https:\/\/user\.github\.io\/my-site\/new\/"/);
+  const kept = siteSettingsWithMove({ ...input, plan, values: { ...input.before, url: to } });
+  assert.equal(kept.edits.get("index.html"), head("/my-site/new/favicon.svg", "https://user.github.io/my-site/new/media/share.jpg") + `<a href="/my-site/new/about/">About</a>`);
+  assert.match(kept.config, /"socialImage": "https:\/\/user\.github\.io\/my-site\/new\/media\/share\.jpg"/);
 });

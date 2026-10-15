@@ -16,6 +16,7 @@ import { sitePathPrefix } from "../../shared/site-path-prefix";
 import { decodedSource, readMediaRenameSources } from "./media-rename";
 import { isMediaTextFile } from "./media-mentions";
 import { scanMediaUrlTokens } from "./media-references";
+import { withSiteIdentityConfig, withSiteIdentityPage, type SiteIdentity } from "./site-identity";
 
 export interface SiteAddressRewrite {
   /** Changed files: path → new text. */
@@ -61,9 +62,10 @@ interface Context {
 
 /**
  * How one address (entities and CSS escapes already decoded) moves: how many of its
- * leading characters are replaced, and by what. `named`: it must name a page or file.
+ * leading characters are replaced, and by what. `named`: it must name a page or file; `"field"`: or
+ * be the home page, as the value of a field that holds an address (`"start_url": "/"`, `action="/"`).
  */
-export function movedAddress(value: string, context: Context, named = false): { head: number; text: string } | undefined {
+export function movedAddress(value: string, context: Context, named: boolean | "field" = false): { head: number; text: string } | undefined {
   const full = /^(https?:\/\/[^/?#]*)/i.exec(value)?.[1];
   if (full === undefined && (!value.startsWith("/") || value.startsWith("//"))) return undefined;
   if (full !== undefined && (!context.oldOrigin || !context.newOrigin || origin(full) !== context.oldOrigin)) return undefined;
@@ -81,7 +83,7 @@ export function movedAddress(value: string, context: Context, named = false): { 
   // A full address inside the old folder on the old host is this site's, the home page too.
   if (named && full === undefined) {
     const file = decoded(rest)?.replace(/^\/+/, "");
-    if (!file || !(context.has(file) || context.has(file.replace(/\/?$/, "/index.html")))) return undefined;
+    if (file === undefined || (file ? !(context.has(file) || context.has(file.replace(/\/?$/, "/index.html"))) : named !== "field")) return undefined;
   }
   let text = (full !== undefined ? context.newOrigin! : "") + context.newPrefix;
   // `/my-site` alone, at the domain root, is `/`.
@@ -91,6 +93,8 @@ export function movedAddress(value: string, context: Context, named = false): { 
 }
 
 interface Edit { start: number; end: number; text: string }
+// A key or attribute that holds an address, just before its quoted value.
+const ADDRESS_FIELD = /(?:^|[^\w-])[\w:-]*(?:url|href|src|action|scope|link|path|uri|icon|image)["']?\s*[:=]\s*$/i;
 
 /** One text file with its addresses moved; `count` addresses changed. */
 export function rewriteSiteAddressText(file: string, source: string, context: Context): { text: string; count: number } {
@@ -99,7 +103,7 @@ export function rewriteSiteAddressText(file: string, source: string, context: Co
   const taken: { start: number; end: number }[] = [];
   const overlaps = (start: number, end: number) => taken.some(range => start < range.end && end > range.start);
   // `start`/`end`: the value's raw range; `value`: its decoded text.
-  const add = (value: string, start: number, end: number, named: boolean, css = false, attribute = false, entities = markup) => {
+  const add = (value: string, start: number, end: number, named: boolean | "field", css = false, attribute = false, entities = markup) => {
     const lead = value.length - value.trimStart().length;
     const moved = movedAddress(value.slice(lead), context, named);
     if (!moved) return;
@@ -142,8 +146,11 @@ export function rewriteSiteAddressText(file: string, source: string, context: Co
       if (start === undefined || end === undefined || overlaps(start, end)) continue;
       // A bare root path counts only as a string, a Markdown link or a header link (`"/about/"`, `(/about/)`, `</a.css>`): in prose,
       // `work/<slug>/index.html` or a table of routes is not a link.
-      if (!/^https?:/i.test(value) && !/["'`(<]/.test(text.text[match.index! - 1] ?? "")) continue;
-      add(value, start, end, true);
+      const opener = text.text[match.index! - 1] ?? "";
+      if (!/^https?:/i.test(value) && !/["'`(<]/.test(opener)) continue;
+      // The home page (`/`) only as an address field's value: `"start_url": "/"`, `action="/"`, not `split("/")`.
+      const field = /["']/.test(opener) && ADDRESS_FIELD.test(text.text.slice(Math.max(0, match.index! - 41), match.index! - 1));
+      add(value, start, end, field ? "field" : true);
     }
   }
   let text = source, boundary = source.length;
@@ -207,6 +214,29 @@ export function moveSiteAddress(value: string, input: Pick<SiteAddressInput, "fr
   if (!siteFolderChanges(input.from, input.to)) return value;
   const moved = movedAddress(value, context(input, [...input.paths]));
   return moved ? moved.text + value.slice(moved.head) : value;
+}
+
+/**
+ * Site settings applied with a new address folder, as one set of edits: every file's addresses move
+ * first, then the settings are written in the new address's form, so nothing moves twice. `before` and
+ * typed `values` are in the old address's form; `imageIsNew`: the social image was made for the new
+ * address already (a sharing copy). `config`: the new `.editor/config.json`; `edits`: every other file.
+ */
+export function siteSettingsWithMove(input: {
+  from: string; to: string; paths: string[]; plan: SiteAddressRewrite; source: (path: string) => string | undefined;
+  config: string | undefined; pages: string[]; before: SiteIdentity; values: SiteIdentity; imageIsNew?: boolean;
+}): { config: string; edits: Map<string, string> } {
+  const move = (value: string) => moveSiteAddress(value, input);
+  const before = { ...input.before, favicon: move(input.before.favicon), socialImage: move(input.before.socialImage) };
+  const after = { ...input.values, favicon: move(input.values.favicon), socialImage: input.imageIsNew ? input.values.socialImage : move(input.values.socialImage) };
+  const edits = new Map(input.plan.edits);
+  for (const page of input.pages) {
+    const source = input.source(page);
+    if (source === undefined) continue;
+    const text = withSiteIdentityPage(edits.get(page) ?? source, before, after);
+    if (text !== source) edits.set(page, text); else edits.delete(page);
+  }
+  return { config: withSiteIdentityConfig(input.config, after), edits };
 }
 
 function step(plan: SiteAddressRewrite, file: string, source: string | undefined, moving: Context): boolean {
