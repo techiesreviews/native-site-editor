@@ -289,6 +289,9 @@ test("Add → Media places a pasted YouTube address with its still and play butt
   await expect(link.locator("img")).toBeVisible();
   await expect.poll(() => link.locator("img").evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
   expect(await link.evaluate(element => getComputedStyle(element, "::after").content)).not.toBe("none");
+  // Selected as a Video, named by its still (no name prompt).
+  await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Video");
+  await expect(bar(page).getByText("Needs a name")).toHaveCount(0);
   // Media lists it under Video with the YouTube mark and the page that shows it.
   await page.locator("#explorer-toggle").click();
   await page.getByRole("tab", { name: "Media", exact: true }).click();

@@ -547,7 +547,9 @@ export function createPageStructureController(ports: PageStructurePorts) {
     }
     // Empty links need an accessible name. Buttons expose the native accessible
     // label field above, alongside their separate form submission name.
-    if (range && selection.tag === "a" && !selection.text.trim() && !attribute("aria-label")) {
+    // An online video is named by its still's alt.
+    if (range && selection.tag === "a" && !selection.text.trim() && !attribute("aria-label")
+      && !(/(?:^|\s)online-video(?:\s|$)/.test(className ?? "") && ports.nativeNamedDescendant(source, range))) {
       controls.push({
         kind: "address",
         label: "Name",

@@ -65,7 +65,7 @@ export function createMediaLibraryShell(
     const form = node("form", "media-library__online"), field = node("input"), note = node("p", "media-library__online-note");
     form.setAttribute("aria-label", "YouTube or Vimeo video");
     field.type = "url"; field.name = "media-online-address"; field.autocomplete = "off"; field.spellcheck = false;
-    field.placeholder = "Paste a YouTube or Vimeo address"; field.setAttribute("aria-label", "YouTube or Vimeo address");
+    field.placeholder = "YouTube or Vimeo address"; field.setAttribute("aria-label", "YouTube or Vimeo address");
     note.id = `media-library-online-${id}`; note.setAttribute("role", "status"); field.setAttribute("aria-describedby", note.id);
     const submit = node("button", "", "Use"); submit.type = "submit";
     form.noValidate = true;

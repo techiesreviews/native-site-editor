@@ -14,6 +14,8 @@ export function nativeKindLabel(tag: string, className = "") {
   if (/^h[1-6]$/.test(tag)) return "Heading";
   // A PDF or other download placed from Media (slice 62's card).
   if (tag === "a" && /(?:^|\s)download-card(?:\s|$)/.test(className)) return "Download";
+  // A YouTube or Vimeo video (slices 61, 68).
+  if (tag === "a" && /(?:^|\s)online-video(?:\s|$)/.test(className)) return "Video";
   const labels: Record<string, string> = {
     p: "Paragraph", a: "Link", button: "Button", img: "Image", picture: "Image", video: "Video", audio: "Audio",
     ul: "List", ol: "List", li: "List item", section: "Section", article: "Article", header: "Header",
