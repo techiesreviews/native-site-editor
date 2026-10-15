@@ -408,3 +408,43 @@ test("placing an older 2000px JPEG adopts new copies in one Undo without changin
   await expect.poll(async () => (await stored()).filter(draft => copies.includes(draft.path)).length).toBe(0);
   expect((await stored()).some(draft => draft.path === main)).toBe(false);
 });
+
+// Default fixture group, nightly: Add → Media makes an older picture's copies in its own step, as Replace does.
+test("Add → Media with an older 2000px JPEG adds its copies and the picture in one Undo, its bytes unchanged", async ({ page, baseURL }) => {
+  await page.goto(baseURL!);
+  const base64 = await page.evaluate(() => {
+    const canvas = document.createElement("canvas"); canvas.width = 2000; canvas.height = 1000;
+    const context = canvas.getContext("2d")!, pixels = context.createImageData(canvas.width, canvas.height);
+    let seed = 63;
+    for (let i = 0; i < pixels.data.length; i += 4) {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      pixels.data[i] = seed & 255; pixels.data[i + 1] = seed >>> 8 & 255; pixels.data[i + 2] = seed >>> 16 & 255; pixels.data[i + 3] = 255;
+    }
+    context.putImageData(pixels, 0, 0);
+    return canvas.toDataURL("image/jpeg", .95).split(",")[1];
+  });
+  const main = "images/Older Photo.jpg";
+  expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: main, base64 } })).status()).toBe(204);
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect(page.locator("#status")).toContainText("Up to date with main");
+  const source = () => page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html")!);
+  const before = await source(), preview = page.frameLocator(".native-preview-frame");
+  await preview.locator(".hero h1").click();
+  await page.getByRole("navigation", { name: "Blocks", exact: true }).getByRole("button", { name: "Media", exact: true }).click();
+  const picker = page.getByRole("dialog", { name: "Choose media", exact: true });
+  await picker.getByRole("button", { name: `Choose ${main}`, exact: true }).click();
+  await picker.getByRole("button", { name: "Use image", exact: true }).click();
+  await expect(picker).toBeHidden();
+  const copies = [480, 960, 1600].map(width => `images/Older Photo-${width}.webp`);
+  const stored = async () => (await import("./drafts")).storedDrafts(page);
+  await expect.poll(async () => (await stored()).filter(draft => copies.includes(draft.path)).length).toBe(3);
+  const markup = (await source()).match(/<h1[^>]*>[^<]*<\/h1>\s*(<img\b[^>]*>)/)![1];
+  expect(markup).toContain('src="/images/Older%20Photo.jpg"');
+  for (const width of [480, 960, 1600]) expect(markup).toContain(`/images/Older%20Photo-${width}.webp ${width}w`);
+  expect((await stored()).some(draft => draft.path === main)).toBe(false);
+  const repository = await page.request.get(`${baseURL}/__demo/file?path=${encodeURIComponent(main)}`);
+  expect((await repository.body()).equals(Buffer.from(base64, "base64"))).toBe(true);
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(source).toBe(before);
+  await expect.poll(async () => (await stored()).filter(draft => copies.includes(draft.path)).length).toBe(0);
+});
