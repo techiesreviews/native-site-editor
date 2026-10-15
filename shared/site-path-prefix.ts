@@ -38,9 +38,11 @@ export function sitePathOf(address: string, site: { prefix?: string; url?: strin
     path = address.split(/[?#]/, 1)[0];
   }
   if (path.includes("\\")) return undefined;
-  if (prefix && (path === prefix || path.startsWith(`${prefix}/`))) path = path.slice(prefix.length);
-  try { path = decodeURIComponent(path); } catch { return undefined; }
+  // Compared decoded: `/café`, `/caf%C3%A9` and `/caf%c3%a9` are one prefix.
+  let folder: string;
+  try { path = decodeURIComponent(path); folder = decodeURIComponent(prefix); } catch { return undefined; }
   if (path.includes("\\")) return undefined;
+  if (folder && (path === folder || path.startsWith(`${folder}/`))) path = path.slice(folder.length);
   const parts: string[] = [];
   for (const part of path.replace(/^\/+/, "").split("/")) {
     if (part === "..") {

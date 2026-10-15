@@ -72,3 +72,14 @@ test("read-back rejects non-root links, malformed encoding and decoded escapes",
   for (const address of ["", "x.webp", "../x", "#x", "?x", "//example.com/x", "ftp://example.com/x", "mailto:a@b", "/%", "/%E0%A4%A", "/../x", "/%2e%2e/x", "/my-site/../x", "/my-site/%2e%2e/x", "/my-site/a/../../x", "/my-site//../x", "/my-site/a//../../x", "/my-site/a%2f..%2f../x", "/my-site/..%5cx", "https://example.com/my-site/../x", "https://example.com/../../x", "https://example.com/my-site/%2e%2e/x", "https://user:pass@example.com/my-site/x"])
     assert.equal(sitePathOf(address, site), undefined, address);
 });
+
+test("read-back matches a prefix however its characters are encoded", () => {
+  const url = "https://x.test/café/";
+  assert.equal(sitePathPrefix(url), "/caf%C3%A9");
+  for (const address of ["https://x.test/café/media/x.webp", "https://x.test/caf%C3%A9/media/x.webp", "https://x.test/caf%c3%a9/media/x.webp",
+    "/café/media/x.webp", "/caf%C3%A9/media/x.webp", "/caf%c3%a9/media/x.webp", "/media/x.webp"])
+    assert.equal(sitePathOf(address, { url }), "media/x.webp", address);
+  assert.equal(sitePathOf("/caf%c3%a9", { url }), "");
+  assert.equal(sitePathOf("/cafés/x.webp", { url }), "cafés/x.webp");
+  assert.equal(sitePathOf("/caf%c3%a9/../../x", { url }), undefined);
+});

@@ -94,6 +94,23 @@ for (const address of [true, false]) {
   });
 }
 
+test("a site address set in the same Apply gives the sharing copy its full address, with one Undo", async ({ page, baseURL }) => {
+  await fixture(page, baseURL, false);
+  await chooseDefault(page);
+  await panel(page).getByRole("tab", { name: "General", exact: true }).click();
+  await panel(page).getByLabel("Site address", { exact: true }).fill("https://name.github.io/my-site/");
+  await panel(page).getByRole("button", { name: "Apply site settings", exact: true }).click();
+  await expect(panel(page)).not.toBeVisible();
+  const link = "https://name.github.io/my-site/media/images/sharing-source-social.jpg";
+  for (const file of ["index.html", "about/index.html"]) await expect.poll(async () => (await storedDraft(page, file))?.content).toContain(`property="og:image" content="${link}"`);
+  const config = (await storedDraft(page, ".editor/config.json"))?.content ?? "";
+  expect(config).toContain(`"socialImage": "${link}"`);
+  expect(config).toContain('"url": "https://name.github.io/my-site/"');
+  await expect(page.locator("#status")).not.toContainText("linked without a web address");
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(async () => (await storedDrafts(page)).length).toBe(0);
+});
+
 test("page social image and other page fields share one draft batch and preview own site addresses", async ({ page, baseURL }) => {
   await fixture(page, baseURL, true);
   await pages(page); await openPageSettingsFromPages(page);
