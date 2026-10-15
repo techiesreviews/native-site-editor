@@ -9,6 +9,7 @@ import { REPLACE_ACCEPT, replaceChoiceProblem, replaceNotice, replacedMessage, r
 import { askToAddUnchanged } from "./media-prepare";
 import { prepareMediaReplacement } from "./media-replace-prepare";
 import type { MediaReplaceRequest } from "./media-workspace";
+import type { ToastAction } from "../components/toast";
 
 /** Replace everywhere from File details (media build slice 54; ticket 15): the picker chooses the new
  * picture (one in Media, or one added there and prepared as at adding), then a screen says what will
@@ -120,11 +121,11 @@ function confirmReplace(sheet: LibrarySheet, c: ReplaceContext, path: string, ne
     if (version !== sheet.version || element.dataset.mode !== "replace") { c.tell("This confirmation has expired. Open Replace everywhere again."); return; }
     // Slice 34: a replaced art-directed <picture> says so ("The new picture is now used on all screens.").
     const notices: string[] = [];
+    let undo: ToastAction | undefined;
     const to = await c.adapter.replace!({ path, result: next.result, ...next.original ? { original: next.original } : {},
-      ...keep ? { keepOldAddress: keep.checked } : {}, notice: text => notices.push(text) });
-    // The toast names the pages and carries Undo for this step (slice 113). It is said before any
-    // further await, so its Undo is bound to this step on the page that recorded it.
-    c.done([replacedMessage(to, next.name, used.map(label)), ...notices].join(" "), true);
+      ...keep ? { keepOldAddress: keep.checked } : {}, notice: text => notices.push(text), undo: action => { undo = action; } });
+    // The toast names the pages and carries Undo, bound to this step as it committed (slice 113).
+    c.done([replacedMessage(to, next.name, used.map(label)), ...notices].join(" "), undo);
     next.release(); c.cache.clear(); await c.refresh();
     if (c.alive() && c.library().items.some(item => item.path === to)) await c.details(to);
     else if (c.alive() && version === sheet.version) { sheet.version++; element.hidden = true; delete element.dataset.mode; element.replaceChildren(); }

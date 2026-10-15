@@ -2498,6 +2498,7 @@ const mediaController = createMediaController({
   mediaSelected: () => pagesController.explorerTab() === "media",
   gallerySignature: imagesSignature,
   announce,
+  undoAction,
   error: errorMessage,
 }, lazyModule(() => import("./controllers/media-actions")));
 // Typing changes drafts often; the usage check waits for a pause.

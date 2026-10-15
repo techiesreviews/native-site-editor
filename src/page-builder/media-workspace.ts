@@ -99,8 +99,8 @@ export interface MediaWorkspaceContext {
   assetVersion(path: string): string | undefined;
   applyBatch(batch: MediaWorkspaceBatch): Promise<void>;
   openPage(path: string): Promise<void>;
-  /** A result as the editor's toast, with Undo for the step just made. */
-  undoable?(text: string): void;
+  /** The toast's Undo for the step just made, bound to it now (slice 113). */
+  undoReceipt?(): import("../components/toast").ToastAction | undefined;
 }
 
 // The site's prefix as `prepare` captured it through the batch's reader (media-prefix.ts).
@@ -119,6 +119,8 @@ export interface MediaReplaceRequest {
   original?: { blob: Blob; extension: string };
   keepOldAddress?: boolean;
   notice?: (text: string) => void;
+  /** Receives the toast's Undo for this step as it commits, before any later await (slice 113). */
+  undo?: (action: import("../components/toast").ToastAction | undefined) => void;
   live?: () => boolean;
 }
 
@@ -611,6 +613,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     batch.overwrites = plan.uploads.filter(upload => batch.expectedPaths.includes(upload.path)).map(upload => upload.path);
     for (const upload of plan.uploads) if (!batch.expectedAssets.has(upload.path)) batch.expectedAssets.set(upload.path, versions.get(upload.path));
     await commit(ctx, batch);
+    request.undo?.(ctx.undoReceipt?.());
     for (const note of plan.notes) request.notice?.(note);
     if (plan.artDirected.length) request.notice?.("The new picture is now used on all screens.");
     await sweep(ctx);
@@ -1076,6 +1079,5 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       return type && blob.type !== type ? new Blob([blob], { type }) : blob;
     },
     async openPage(path) { await active().openPage(path); },
-    undoable(text) { session?.undoable?.(text); },
   } satisfies MediaPickerHost & { improve(request: import("./improve-heavy").ImproveRequest, ports?: import("./improve-heavy").ImprovePorts): Promise<import("./improve-heavy").ImproveResult>; improveGifsAndPlayers(request: import("./improve-gifs-players").ImproveGifsPlayersRequest, ports?: import("./improve-gifs-players").ImproveGifsPlayersPorts): Promise<import("./improve-gifs-players").ImproveGifsPlayersResult>; onlineVideo(record: OnlineVideoRecord, place?: MediaPlacement): Promise<void>; onlineVideoStill(key: import("./online-video").OnlineVideoKey, still: import("./online-video").OnlineVideoStill): Promise<void>; onlineVideoServiceBar(key: import("./online-video").OnlineVideoKey, enabled: boolean): Promise<void>; removeOnlineVideo(key: import("./online-video").OnlineVideoKey): Promise<void>; share(request: MediaShareRequest): Promise<string>; replace(request: MediaReplaceRequest, agent?: boolean, ports?: { encode?: typeof import("./media-optimise").optimiseMedia }): Promise<string>; trim(request: MediaTrimRequest): Promise<string>; describe(file: string, change: { text?: string; decorative?: boolean; page?: string; element?: string }): Promise<void> };
 }

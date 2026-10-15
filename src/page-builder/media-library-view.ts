@@ -24,7 +24,7 @@ import {
   dismissRefreshingDelete, pruneLibrarySelection, rebuildLibraryCollections,
 } from "./media-library-refresh";
 import "./media-picker.css";
-import { say } from "../components/toast";
+import { say, type ToastAction } from "../components/toast";
 import type { MediaCleanUpMount, MediaHeldFiles, MediaImportRequest, MediaLibrary, MediaPickerHost, MediaPickerOptions } from "./media-picker";
 const CANCELLED = "This file was cancelled. Choose another image.";
 /** How long a just-added tile wears its ring (the CSS animation's length). */
@@ -221,10 +221,7 @@ export function createMediaLibraryView(
   /** A warning or refusal, inline under the screen it is about. */
   function tell(text: string) { if (alive) message.textContent = text; }
   /** A result: said and shown as the editor's toast, which outlasts the screen. */
-  function done(text: string, undo = false) {
-    message.textContent = "";
-    if (undo && adapter.undoable) adapter.undoable(text); else say(text);
-  }
+  function done(text: string, undo?: ToastAction) { message.textContent = ""; say(text, undo); }
   function task(work: () => Promise<void>, lock = true, canCancel = false) {
     return busyLock.task(work, lock, canCancel);
   }

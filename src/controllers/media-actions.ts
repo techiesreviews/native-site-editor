@@ -82,8 +82,8 @@ export function createMediaActions(ports: MediaControllerPorts, load: () => Prom
       },
       applyBatch: async (batch) => { assertLive(); await ports.applyBatch(scope, stamp, batch); },
       openPage: async (path) => { assertLive(); await ports.openPage(path); },
-      // The step is recorded on the open page (media-batch), so the toast's Undo takes it back there.
-      undoable: (text) => { const open = ports.openFile(); ports.announce(text, open ? { undo: open } : undefined); },
+      // The step is recorded on the open page (media-batch): its Undo, captured as the step commits.
+      undoReceipt: () => { const open = ports.openFile(); return open ? ports.undoAction?.(open) : undefined; },
     };
   }
 

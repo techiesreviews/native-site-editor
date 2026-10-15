@@ -1,5 +1,6 @@
 import { button, node } from "../ui/dom";
 import { icon } from "../icons";
+import type { ToastAction } from "../components/toast";
 import type { MediaBytes } from "./media-byte-cache";
 import type { MediaLibrary, MediaPickerHost } from "./media-picker";
 
@@ -27,8 +28,8 @@ export interface LibrarySheetContext {
   loading: () => boolean;
   /** A warning or refusal, inline under the screen. */
   tell: (text: string) => void;
-  /** A result: the editor's toast; `undo` adds Undo for the step just made (slice 113). */
-  done: (text: string, undo?: boolean) => void;
+  /** A result: the editor's toast, with `undo` as its action (slice 113). */
+  done: (text: string, undo?: ToastAction) => void;
   task: (work: () => Promise<void>, lock?: boolean, canCancel?: boolean) => Promise<void>;
   refresh: () => Promise<void>;
   adapter: MediaPickerHost;
