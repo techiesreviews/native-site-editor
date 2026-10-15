@@ -149,13 +149,13 @@ export function showImproveImages(sheet: LibrarySheet, h: ImproveHost) {
 
     function drawPictures(row: ImproveImagesRow) {
       const box = node("div", "media-improve__pictures");
-      const list = node("ul", "media-check__list");
+      const list = node("ul", "media-improve__list");
       const seen = new Set<string>();
       for (const picture of row.pictures) {
         if (!picture.changes.length || seen.has(picture.key)) continue;
         seen.add(picture.key);
-        const line = node("li", "media-check__row media-improve__picture"); line.dataset.key = picture.key;
-        const words = node("div", "media-check__text");
+        const line = node("li", "media-improve__picture"); line.dataset.key = picture.key;
+        const words = node("div", "media-improve__words");
         const name = node("strong", "", improvePictureName(picture)); name.title = picture.address;
         words.append(name, node("span", "media-library__muted", improvePictureLine(picture)));
         const left = m.left.get(row.file)?.get(picture.key);
@@ -245,7 +245,7 @@ export function showImproveImages(sheet: LibrarySheet, h: ImproveHost) {
 
   /** The picture: own files from the library's bytes, outside ones from their website, players as a sign. */
   function preview(picture: ImprovePicture) {
-    const frame = node("span", "media-check__preview");
+    const frame = node("span", "media-improve__thumb");
     const sign = () => { frame.classList.add("is-file"); frame.replaceChildren(icon(picture.kind === "youtube" || picture.kind === "vimeo" ? "play" : "image-square", 20)); };
     const image = node("img"); image.alt = ""; image.decoding = "async"; image.loading = "lazy"; image.referrerPolicy = "no-referrer";
     image.addEventListener("error", sign, { once: true });
