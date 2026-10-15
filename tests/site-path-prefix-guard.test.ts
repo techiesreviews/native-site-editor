@@ -33,26 +33,13 @@ const rootAttributes: Detector = (source, file) => {
 const detectors = [rootTemplates, rootConcatenations, mediaBuilders, rootAttributes];
 // Temporary migration inventory: slices 78–79 must remove every entry, including readers.
 const allowlist: AllowlistEntry[] = [
-  { file: "src/main.ts", match: { rule: "root-template", function: "nativeFallbackPage" }, reason: "Read/compare fallback routes; slice 79 moves prefix interpretation to sitePathOf.", count: 1 },
-  { file: "src/main.ts", match: { rule: "root-attribute", function: "renderLogin" }, reason: "Slice 78: editor-shell home navigation must explicitly retain an empty prefix.", count: 1 },
-  { file: "src/main.ts", match: { rule: "root-attribute", function: "<top-level>" }, reason: "Slice 78: editor authentication navigation must explicitly retain an empty prefix.", count: 1 },
-  { file: "src/native-create.ts", match: { rule: "root-template", function: "normalizeRoute" }, reason: "Slice 79: route construction and route validation diagnostics follow the site address.", count: 3 },
-  { file: "src/native-pages.ts", match: { rule: "root-template", function: "nativeNewTarget" }, reason: "Read/compare reserved routes in a diagnostic; slice 79 aligns route interpretation with sitePathOf.", count: 1 },
-  { file: "src/page-builder/card-source.ts", match: { rule: "root-template", function: "linkRoute" }, reason: "Read/compare card routes; slice 78 moves prefix interpretation to sitePathOf.", count: 1 },
-  { file: "src/page-builder/cards.ts", match: { rule: "root-template", function: "cardPageFolders" }, reason: "Read/compare page-folder routes; slice 78 moves prefix interpretation to sitePathOf.", count: 1 },
   { file: "src/page-builder/component-loader.ts", match: { rule: "root-attribute", function: "<top-level>" }, reason: "Slice 78: component-loader script address follows the site prefix.", count: 1 },
   { file: "src/page-builder/components.ts", match: { rule: "root-template", function: "slotRow" }, reason: "Slice 78: media, preview and page-link addresses use the shared site-prefix helper.", count: 1 },
   { file: "src/page-builder/components.ts", match: { rule: "root-template", function: "structure" }, reason: "Slice 78: media, preview and page-link addresses use the shared site-prefix helper.", count: 1 },
   { file: "src/page-builder/improve-images.ts", match: { rule: "root-concatenation", function: "improveImagesPlan" }, reason: "Read/display page-route labels; slice 78 aligns prefix interpretation with sitePathOf.", count: 1 },
   { file: "src/page-builder/media-rename.ts", match: { rule: "root-concatenation", function: "add" }, reason: "Slice 78: renamed media addresses follow the site prefix.", count: 1 },
   { file: "src/page-builder/media-rename.ts", match: { rule: "root-concatenation", function: "address" }, reason: "Slice 78: media, preview and page-link addresses use the shared site-prefix helper.", count: 1 },
-  { file: "src/page-builder/native-elements.ts", match: { rule: "root-template", function: "nativeElementMarkup" }, reason: "Slice 78: media, preview and page-link addresses use the shared site-prefix helper.", count: 1 },
   { file: "src/page-builder/replace-everywhere.ts", match: { rule: "root-concatenation", function: "address" }, reason: "Slice 78: media, preview and page-link addresses use the shared site-prefix helper.", count: 1 },
-  { file: "src/page-builder/site-navigation.ts", match: { rule: "root-attribute", function: "readNavigation" }, reason: "Read/compare authored home links; slice 78 moves prefix interpretation to sitePathOf.", count: 2 },
-  { file: "src/page-builder/site-navigation.ts", match: { rule: "root-attribute", function: "editNavigation" }, reason: "Slice 78: media, preview and page-link addresses use the shared site-prefix helper.", count: 1 },
-  { file: "shared/native-routes.ts", match: { rule: "root-template", function: "nativePageRoute" }, reason: "Slice 79: page-route addresses follow the site prefix.", count: 2 },
-  { file: "shared/native-routes.ts", match: { rule: "root-template", function: "nativeLinkTarget" }, reason: "Read/compare route targets; slice 79 moves prefix interpretation to sitePathOf.", count: 1 },
-  { file: "shared/starting-point.ts", match: { rule: "root-attribute", function: "blankSiteFiles" }, reason: "Slice 78: new-site stylesheet and home links follow the site prefix.", count: 2 },
 ];
 const files = [...sourceFiles("src"), ...sourceFiles("shared")].filter(file => /\.(?:ts|js)$/.test(file) && file !== "shared/site-path-prefix.ts");
 const hits = files.flatMap(file => detectors.flatMap(detect => detect(readSource(file), file)));

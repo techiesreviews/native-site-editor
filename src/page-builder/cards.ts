@@ -1,3 +1,4 @@
+import { rootRoute, sitePathPrefix, withSitePrefix } from "../../shared/site-path-prefix";
 import { selectionAfterRemove } from "./remove";
 // Cards: grids of repeated items in the editor (docs/page-builder/cards.md).
 // Add card places a blank card first. Component cards and collection items
@@ -77,7 +78,7 @@ export function cardPageFolders(routes: Record<string, string>): string[] {
   for (const route of Object.keys(routes)) {
     const parts = route.split("/").filter(Boolean);
     const depth = route.endsWith("/") ? parts.length : parts.length - 1;
-    for (let at = 1; at <= depth; at++) out.add(`/${parts.slice(0, at).join("/")}/`);
+    for (let at = 1; at <= depth; at++) out.add(rootRoute(`${parts.slice(0, at).join("/")}/`));
   }
   return [...out].sort();
 }
@@ -145,12 +146,13 @@ export function createCards(deps: CardsDeps) {
     const site = reads.site();
     return site ? Object.entries(site.routes).find(([, file]) => file === path)?.[0] : undefined;
   };
-  const context = (reads: Reads, route: string): GridContext => ({ route, routes: reads.site()?.routes ?? {}, isSection: (tag) => tag === "section" || (tag.includes("-") && isSectionTemplate(reads.template(tag)?.source ?? "")) });
+  const prefix = (reads: Reads) => sitePathPrefix(nativeSiteSettings(reads.source(NATIVE_CONFIG_PATH)).url);
+  const context = (reads: Reads, route: string): GridContext => ({ route, prefix: prefix(reads), routes: reads.site()?.routes ?? {}, isSection: (tag) => tag === "section" || (tag.includes("-") && isSectionTemplate(reads.template(tag)?.source ?? "")) });
   const template = (reads: Reads, tag: string) => reads.template(tag)?.source;
 
   // Painting keeps the last grid read for each reported container while its page's text is the
   // same; a plan reads afresh, so the templates behind section-ness are read through its `r`.
-  const cache = new Map<string, { source: string; grid: SourceGrid | undefined }>();
+  const cache = new Map<string, { source: string; prefix: string; grid: SourceGrid | undefined }>();
   function gridFor(reads: Reads, path: string, parent: number[]): { source: string; grid: SourceGrid } | undefined {
     const source = reads.source(path), route = routeOf(reads, path);
     if (source === undefined || !route) return undefined;
@@ -160,8 +162,8 @@ export function createCards(deps: CardsDeps) {
     }
     const key = `${path}|${parent.join(".")}`;
     let entry = cache.get(key);
-    if (!entry || entry.source !== source) {
-      entry = { source, grid: gridAt(readPage(source), parent, context(reads, route)) };
+    if (!entry || entry.source !== source || entry.prefix !== prefix(reads)) {
+      entry = { source, prefix: prefix(reads), grid: gridAt(readPage(source), parent, context(reads, route)) };
       cache.set(key, entry);
       if (cache.size > 40) cache.delete(cache.keys().next().value!);
     }
@@ -193,7 +195,7 @@ export function createCards(deps: CardsDeps) {
     const copy = element && itemCopy(tree, element, {
       noun: grid.noun,
       title: page?.title,
-      href: item.route ? page?.route ?? "" : undefined,
+      href: item.route ? page ? withSitePrefix(page.route, prefix(reads)) : "" : undefined,
       isLinked: (href) => linkRoute(href, context(reads, route)) === item.route,
       fallbacks: slots.fallbacks,
     });
@@ -344,7 +346,7 @@ export function createCards(deps: CardsDeps) {
       folder: grid && pageParent(reads, grid),
       exists: path => reads.exists(path),
       own: card.path,
-      inGrid: slotCardLinks(readPage(source), card.node, (href) => nativeLinkTarget(href, route, site.routes)),
+      inGrid: slotCardLinks(readPage(source), card.node, (href) => nativeLinkTarget(href, route, site.routes, prefix(reads))),
       pages: Object.entries(site.routes).map(([route, file]) => ({ route, file, title: pageTitle(reads.source(file) ?? "", route).title })),
     };
   }
@@ -403,7 +405,7 @@ export function createCards(deps: CardsDeps) {
     const title = pageTitle(page, route).title;
     // Plain cards map the same facts onto their first body paragraph and image.
     let rows = cardFill({ template: text ?? '<slot name="title"><h3>Title</h3></slot><slot name="body"><p></p></slot><slot name="image"><img src="" alt=""></slot><slot name="link"></slot>', page: { route, source: page }, siteUrl: nativeSiteSettings(reads.source(NATIVE_CONFIG_PATH)).url }).rows.map(row => text === undefined ? { ...row, slot: undefined } : row);
-    const plain = text === undefined ? itemPageFill(from, grid!.noun, title, route, rows) : undefined;
+    const plain = text === undefined ? itemPageFill(from, grid!.noun, title, withSitePrefix(route, prefix(reads)), rows) : undefined;
     if (plain) rows = plain.rows;
     const filled = text !== undefined ? cardFillMarkup(from, text, rows) : plain?.markup;
     if (filled === undefined) return undefined;
@@ -467,13 +469,13 @@ export function createCards(deps: CardsDeps) {
     const grid = gridFor(reads, card.path, card.node.slice(0, -1))?.grid;
     const items = grid?.items.filter((item) => sameSlot(item.index));
     if (items?.some((item) => item.route)) return items.map((item) => ({ route: item.route, title: titled(tree.at([...grid!.parent, item.index])) }));
-    const links = slotCardLinks(tree, card.node, (href) => nativeLinkTarget(href, route, routes));
+    const links = slotCardLinks(tree, card.node, (href) => nativeLinkTarget(href, route, routes, prefix(reads)));
     const folder = cardFolder(links);
     const peers = children.filter((_, at) => sameSlot(at));
     return links.filter((link) => !folder || (link !== folder && link.startsWith(folder))).map((link) => {
       const item = [...peers].reverse().find(child => [child, ...tree.elements(child)].some(element => {
         const href = tree.view.name(element) === "a" ? tree.attribute(element, "href")?.value : undefined;
-        return href !== undefined && nativeLinkTarget(href, route, routes) === link;
+        return href !== undefined && nativeLinkTarget(href, route, routes, prefix(reads)) === link;
       }));
       return { route: link, title: titled(item) };
     });

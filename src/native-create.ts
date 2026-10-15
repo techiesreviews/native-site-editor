@@ -6,6 +6,7 @@
 // segment, a `/` for folders under it), the route a typed URL is, and a new
 // page's document made from the home page's. It has no DOM and no I/O;
 // whether a path is already taken is the caller's to say.
+import { rootRoute } from "../shared/site-path-prefix";
 import { asciiLower, startTagAttribute, startTags } from "../shared/html-source";
 import { nativePageHead, nativePageWithDetails, nativePageWithUrl } from "../shared/native-project";
 
@@ -75,8 +76,8 @@ export function normalizeRoute(input: string): Checked<string> {
   if (parts.some((part) => part.startsWith("_") || part.startsWith(".")))
     return { ok: false, error: "A URL part cannot start with _ or . (such files are not pages)." };
   if (parts[0] === "components" || parts[0] === "node_modules")
-    return { ok: false, error: `/${parts[0]}/ is not for pages.` };
-  return { ok: true, value: file ? `/${parts.join("/")}` : `/${parts.join("/")}/` };
+    return { ok: false, error: `${rootRoute(parts[0] + "/")} is not for pages.` };
+  return { ok: true, value: rootRoute(parts.join("/") + (file ? "" : "/")) };
 }
 
 /** A route's last part as a heading: `/videos/my-first_clip/` is "My first clip". */

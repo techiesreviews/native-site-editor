@@ -239,8 +239,8 @@ export function templateClickTarget(template: string, tag: string, kind: NativeE
  * The HTML a block inserts at `parent` (a body path; `items` opens instances'
  * items slots on the way): Heading levels follow the place; `wrap` puts it in a new Section.
  */
-export function blockMarkup(source: string, kind: NativeElementKind, parent: readonly number[], wrap = false, items?: ItemsSlotRule): string {
+export function blockMarkup(source: string, kind: NativeElementKind, parent: readonly number[], wrap = false, items?: ItemsSlotRule, prefix = ""): string {
   const level = kind === "heading" ? (wrap ? 2 : nativeHeadingLevel(source, parent, items) ?? 2) : undefined;
-  const markup = nativeElementMarkup(kind, level ? { level } : {});
+  const markup = nativeElementMarkup(kind, level ? { level } : {}, prefix);
   return wrap ? `<section class="flow">\n  ${markup}\n</section>` : markup;
 }

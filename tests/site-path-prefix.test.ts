@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { sitePathPrefix, siteAddress, withSitePrefix, sitePathOf, siteRouteOf } from "../shared/site-path-prefix.ts";
+import { rootRoute, sitePathPrefix, siteAddress, withSitePrefix, sitePathOf, siteRouteOf } from "../shared/site-path-prefix.ts";
 const mediaUrl = (path: string) => `/${path.split("/").map(encodeURIComponent).join("/")}`;
 
 const paths = ["", "media/images/x.webp", "hello world.txt", "日本語/été.webp", "a#b/c?d", "100%.pdf", "a/%20/# ?%.webp", "my-site/x.webp"];
@@ -103,4 +103,11 @@ test("siteRouteOf reads an address as a root route", () => {
   assert.equal(siteRouteOf("https://user.github.io/my-site/media/x.png", { url: "https://user.github.io/my-site/" }), "/media/x.png");
   assert.equal(siteRouteOf("about/", { prefix: "/my-site" }), undefined);
   assert.equal(siteRouteOf("/../x", { prefix: "/my-site" }), undefined);
+});
+
+test("rootRoute constructs internal identities without a site address", () => {
+  assert.equal(rootRoute(""), "/");
+  assert.equal(rootRoute("about/"), "/about/");
+  assert.equal(rootRoute("/about/"), "/about/");
+  assert.equal(rootRoute("blog/post.html"), "/blog/post.html");
 });

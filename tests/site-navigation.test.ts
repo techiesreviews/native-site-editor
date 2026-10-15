@@ -62,3 +62,29 @@ test("reordering named-entity links preserves source and decoded labels", () => 
   assert.ok(next.includes('<a href="/about/">About &NotEqualTilde;</a>'));
   assert.equal(next.includes("&amp;eacute;"), false);
 });
+
+test("navigation reads prefixed current links as internal routes and writes prefixed destinations", () => {
+  const source = '<header><nav><a href="/my-site/" aria-current="page">Home</a><a href="/about/?x=1&amp;y=2#team">About</a></nav></header>';
+  const list = readNavigation(source, false, "/my-site")!;
+  assert.deepEqual(list.links.map(link => link.href), ["/", "/about/?x=1&y=2#team"]);
+  const next = editNavigation(source, list, [...list.links, { href: "/services/", label: "Services" }], "/my-site");
+  assert.equal(next, '<header><nav>\n    <a href="/my-site/" aria-current="page">Home</a>\n    <a href="/my-site/about/?x=1&amp;y=2#team">About</a>\n    <a href="/my-site/services/">Services</a>\n  </nav></header>');
+  const prefixed = readNavigation('<header><nav><a href="/my-site/about/">About</a></nav></header>', false, "/my-site")!;
+  assert.equal(prefixed.links[0].href, "/about/");
+});
+
+test("empty navigation patterns write the site's prefix for direct and list links", () => {
+  for (const [inside, pattern] of [["", '<a href="/my-site/">Page</a>'], ["<ul></ul>", '<li><a href="/my-site/">Page</a></li>']]) {
+    const source = `<header><nav>${inside}</nav></header>`;
+    const list = readNavigation(source, false, "/my-site")!;
+    assert.equal(list.pattern, pattern);
+    assert.ok(editNavigation(source, list, [{ href: "/", label: "Home" }], "/my-site").includes(pattern.replace("Page", "Home")));
+  }
+});
+
+test("prefixed navigation keeps encoded path punctuation, query and fragment", () => {
+  const source = '<header><nav><a href="/my-site/files/a%23b%3Fc%25.pdf?x=1&amp;y=2#page=2">Download</a></nav></header>';
+  const list = readNavigation(source, false, "/my-site")!;
+  assert.equal(list.links[0].href, "/files/a%23b%3Fc%25.pdf?x=1&y=2#page=2");
+  assert.ok(editNavigation(source, list, list.links, "/my-site").includes('<a href="/my-site/files/a%23b%3Fc%25.pdf?x=1&amp;y=2#page=2">Download</a>'));
+});

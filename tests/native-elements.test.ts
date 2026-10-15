@@ -273,3 +273,9 @@ test('non-HTML Unicode whitespace cannot turn an unquoted value or tag name into
   }
   for(const char of ['\t','\n','\f','\r',' ']) assert.ok(apply(`<main><svg data-x=x${char}/><section></section></main>`,[0,1],0,'<hr>'));
 });
+
+test("placeholder image and native choice markup follow the site's prefix", () => {
+  const expected = '<img src="/my-site/images/placeholder.svg" alt="" width="640" height="400">';
+  assert.equal(nativeElementMarkup("media", {}, "/my-site"), expected);
+  assert.equal(nativeChoiceMarkup("native:media", undefined, "/my-site"), expected);
+});

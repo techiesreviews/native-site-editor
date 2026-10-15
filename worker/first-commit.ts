@@ -43,7 +43,8 @@ export async function startingPointFiles(
   starter: StarterProvider = (name) => starterFiles(name, fetch),
 ): Promise<StarterFile[]> {
   if (point === "starter") return starter(siteName);
-  return blankSiteFiles(siteName).map((file) => ({ path: file.path, content: file.content }));
+  // A newly created repository has no Site address yet.
+  return blankSiteFiles(siteName, "").map((file) => ({ path: file.path, content: file.content }));
 }
 
 /** Text first (a text file of the home page by preference), because the contents API call carries text for the fake and real tree alike. */

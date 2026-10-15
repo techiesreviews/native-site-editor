@@ -178,9 +178,9 @@ export function createNativeSettings(ports: SettingsPorts) {
         return applied(await ports.guardedEdits.run(r => {
           const source = r.source(path);
           if (source !== original) return { refuse: "Navigation changed while this panel was open. Reopen it to review the latest links." };
-          const list = readNavigation(source, path.startsWith("components/"));
+          const list = readNavigation(source, path.startsWith("components/"), sitePathPrefix(nativeSiteSettings(r.source(NATIVE_CONFIG_PATH)).url));
           if (!list) return { refuse: "This header's navigation is not a simple list of links." };
-          try { return { edits: new Map([[path, editNavigation(source, list, links)]]), done: "Navigation applied as a draft. Publish to keep it.", undone: "Undid changing navigation." }; }
+          try { return { edits: new Map([[path, editNavigation(source, list, links, sitePathPrefix(nativeSiteSettings(r.source(NATIVE_CONFIG_PATH)).url))]]), done: "Navigation applied as a draft. Publish to keep it.", undone: "Undid changing navigation." }; }
           catch (error) { return { refuse: error instanceof Error ? error.message : "Navigation could not be changed." }; }
         }, { since }));
       },

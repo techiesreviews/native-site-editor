@@ -33,7 +33,7 @@ test("a repository name reads as a site name", () => {
 });
 
 test("the Blank page is a home page, a shared stylesheet and settings", () => {
-  const files = blankSiteFiles('Tom & "Jerry" <b>');
+  const files = blankSiteFiles('Tom & "Jerry" <b>', "");
   assert.deepEqual(files.map((file) => file.path), ["index.html", "styles/site.css", ".editor/config.json"]);
   const home = files[0].content;
   assert.match(home, /^<!doctype html>/);
@@ -88,4 +88,14 @@ test("the Starter site drops the template's own deployment and takes its address
 test("a template without settings gets none added", () => {
   const out = prepareStarterFiles([{ path: "index.html", content: "<p>hi</p>" }], "Site");
   assert.deepEqual(out, [{ path: "index.html", content: "<p>hi</p>" }]);
+});
+
+test("blank sites prefix the home link and stylesheet, leaving all other bytes unchanged", () => {
+  const root = blankSiteFiles("My site", "");
+  const prefixed = blankSiteFiles("My site", "/my-site");
+  assert.deepEqual(prefixed, root.map(file => file.path !== "index.html" ? file : {
+    ...file, content: file.content.replace('href="/styles/site.css"', 'href="/my-site/styles/site.css"').replace('href="/"', 'href="/my-site/"'),
+  }));
+  assert.ok(prefixed[0].content.includes('<link rel="stylesheet" href="/my-site/styles/site.css">'));
+  assert.ok(prefixed[0].content.includes('<a class="site-name" href="/my-site/">My site</a>'));
 });

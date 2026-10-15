@@ -1,4 +1,5 @@
 // Static, portable HTML. Keys identify editor choices, never published attributes.
+import { siteAddress } from "../../shared/site-path-prefix";
 import { decodeHtmlEntities } from "./html-entities";
 import type { AddChoice } from "./add-catalog";
 
@@ -49,7 +50,7 @@ export const nativeElementChoices: readonly AddChoice[] = [
 ].map(([kind, label]) => ({ tag: `native:${kind}`, label, group: "Blocks", kind: "native" }));
 
 /** Portable HTML styled by the site's own flow and btn classes. */
-export function nativeElementMarkup(kind: NativeElementKind, options: NativeElementOptions = {}): string {
+export function nativeElementMarkup(kind: NativeElementKind, options: NativeElementOptions = {}, prefix = ""): string {
   switch (kind) {
     case "section": return '<section class="flow"></section>';
     case "div": return '<div class="flow"></div>';
@@ -64,13 +65,13 @@ export function nativeElementMarkup(kind: NativeElementKind, options: NativeElem
     case "media": {
       // The placeholder's own size; another src has its size set when it is chosen.
       const size = options.src === undefined ? ` width="${PLACEHOLDER_IMAGE_WIDTH}" height="${PLACEHOLDER_IMAGE_HEIGHT}"` : "";
-      return `<img src="${url(options.src ?? `/${PLACEHOLDER_IMAGE_PATH}`)}" alt="${escape(options.alt ?? "")}"${size}>`;
+      return `<img src="${url(options.src ?? siteAddress(PLACEHOLDER_IMAGE_PATH, prefix))}" alt="${escape(options.alt ?? "")}"${size}>`;
     }
     case "button": return `<a class="btn" href="${url(options.href ?? "#")}">${escape(options.text ?? "Button")}</a>`;
     default: throw new Error("Unknown native element.");
   }
 }
-export function nativeChoiceMarkup(key: string, options?: NativeElementOptions) {
+export function nativeChoiceMarkup(key: string, options?: NativeElementOptions, prefix = "") {
   const choice = nativeElementChoices.find((item) => item.tag === key);
-  return choice ? nativeElementMarkup(key.slice(7) as NativeElementKind, options) : undefined;
+  return choice ? nativeElementMarkup(key.slice(7) as NativeElementKind, options, prefix) : undefined;
 }

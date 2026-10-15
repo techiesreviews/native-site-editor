@@ -395,3 +395,16 @@ test("plain card fills keep body text and image addresses decoded once", () => {
 test("plain card fills refuse an implied end inside a closed outer card", () => {
   assert.equal(itemPageFill('<article><h3>Old</h3><p>Unclosed</article>', "card", "New", "/new/", plainFacts("<h1>New</h1>")), undefined);
 });
+
+test("card fills write prefixed link slots and added title links", () => {
+  const siteUrl = "https://user.github.io/my-site/";
+  const page = { route: "/about/", source: "<main><h1>About</h1></main>" };
+  const linked = '<article><slot name="title"><h3>Title</h3></slot><slot name="link"><a href="#">Read</a></slot></article>';
+  const facts = cardFill({ template: linked, page, siteUrl }).rows;
+  assert.equal(facts.find(row => row.role === "link")?.href, "/my-site/about/");
+  assert.equal(cardFillMarkup('<card-x></card-x>', linked, facts), '<card-x><h3 slot="title">About</h3><a slot="link" href="/my-site/about/">Read about About</a></card-x>');
+  const titleOnly = '<article><slot name="title"><h3>Title</h3></slot></article>';
+  const titleFacts = cardFill({ template: titleOnly, page, siteUrl }).rows;
+  assert.equal(cardFillMarkup('<card-x><h3 slot="title"><a href="#">Old</a></h3></card-x>', titleOnly, titleFacts), '<card-x><h3 slot="title"><a href="/my-site/about/">About</a></h3></card-x>');
+  assert.equal(itemPageFill('<article><h3>Title</h3></article>', "card", "About", "/my-site/about/", titleFacts)?.markup, '<article><h3><a href="/my-site/about/">About</a></h3></article>');
+});

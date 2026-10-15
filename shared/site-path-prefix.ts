@@ -15,6 +15,11 @@ export function siteAddress(path: string, prefix: string): string {
   return `${prefix}/${path.split("/").map(encodeURIComponent).join("/")}`;
 }
 
+/** An unprefixed internal route identity, never a published site address. */
+export function rootRoute(path: string): string {
+  return "/" + path.replace(/^\/+/, "");
+}
+
 /** Prefix an encoded root address once, preserving its query, fragment and trailing slash. */
 export function withSitePrefix(rootAddress: string, prefix: string): string {
   if (!prefix || !rootAddress.startsWith("/") || rootAddress.startsWith("//")) return rootAddress;

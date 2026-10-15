@@ -195,3 +195,19 @@ test("Move to refuses a page edit while its picker is open", async () => {
   await h.controller.moveTo(target);
   assert.deepEqual(h.memory.steps(), []); assert.match(h.errors[0], /changed meanwhile/);
 });
+
+test("new-page navigation writes prefixed links into the home and new page in one step", async () => {
+  const h = fixture();
+  h.memory.writeDraft(".editor/config.json", '{"site":{"url":"https://user.github.io/my-site/"}}');
+  assert.equal(await h.controller.createNew({ parent: "/", title: "News", slug: "news", addToNavigation: true }), undefined);
+  for (const path of ["index.html", "news/index.html"]) {
+    const source = h.memory.workspace.source(path)!;
+    assert.ok(source.includes('<a href="/my-site/news/">News</a>'));
+    assert.ok(source.includes('<a href="/my-site/about/">About</a>'));
+    assert.deepEqual(readNavigation(source, false, "/my-site")?.links.map(link => link.href), ["/about/", "/news/"]);
+  }
+  assert.deepEqual(h.memory.steps(), ["operation"]);
+  assert.equal(h.memory.undo(), true);
+  assert.equal(h.memory.workspace.source("index.html"), home);
+  assert.equal(h.memory.workspace.source("news/index.html"), undefined);
+});

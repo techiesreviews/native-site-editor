@@ -1,9 +1,10 @@
+import { sitePathPrefix } from "../shared/site-path-prefix";
 import type { CreateChoice, CreateOutcome } from "./components/get-started";
 import type { WizardCreateOutcome } from "./components/setup-wizard";
 import type { WizardRepo } from "./setup-wizard";
 import { createConfirmDialog } from "./components/confirm-dialog";
 import { siteNameFromRepository, blankSiteFiles, type StartingPoint } from "../shared/starting-point";
-import { nativePageBody, nativePageStylesheets, NATIVE_CONFIG_PATH } from "../shared/native-project";
+import { nativePageBody, nativePageStylesheets, nativeSiteSettings, NATIVE_CONFIG_PATH } from "../shared/native-project";
 import { expandStyleImports, resolveImportPath, rewriteCssUrls } from "../shared/css-imports";
 import { assetType } from "../shared/asset-types";
 import { dataUrlOf } from "./native-assets";
@@ -277,7 +278,7 @@ export function createSetupActions(ports: SetupPorts) {
     const siteName = siteNameFromRepository(repo.name);
     let starting: StarterFile[];
     try {
-      starting = point === "blank" ? blankSiteFiles(siteName) : (await ports.api<{ files: StarterFile[] }>("starter", { name: siteName })).files;
+      starting = point === "blank" ? blankSiteFiles(siteName, sitePathPrefix(nativeSiteSettings(ports.guardedEdits.peek.source(NATIVE_CONFIG_PATH)).url)) : (await ports.api<{ files: StarterFile[] }>("starter", { name: siteName })).files;
     } catch (error) {
       return error instanceof Error ? error.message : "The Starter site could not be loaded. Try again.";
     }

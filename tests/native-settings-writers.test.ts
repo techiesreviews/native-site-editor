@@ -16,10 +16,10 @@ const bundled = build({ entryPoints: ["src/native-settings.ts"], bundle: true, w
   } }],
 }).then(result => import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text + "\n//# sourceURL=native-settings-writers-bundle.mjs").toString("base64")}`));
 
-async function fixture(prefix: string) {
+async function fixture(prefix: string, home = '<html><head><title>Home</title></head><body><main><h1>Home</h1></main></body></html>') {
   const site = { routes: { "/": "index.html" }, components: {} };
   const config = JSON.stringify({ site: { url: `https://user.github.io${prefix}/` } });
-  const workspace = createMemoryWorkspace({ site, branch: { ".editor/config.json": config, "index.html": '<html><head><title>Home</title></head><body><main><h1>Home</h1></main></body></html>', "media/a.webp": "pixels" } });
+  const workspace = createMemoryWorkspace({ site, open: "index.html", branch: { ".editor/config.json": config, "index.html": home, "media/a.webp": "pixels" } });
   const previews: Record<string, string>[] = [];
   const ports = {
     nativeSite: site, generation: 0, appStore: createAppStore(createDraftStore()), guardedEdits: createGuardedEdits(workspace.workspace),
@@ -49,5 +49,14 @@ test("404 home link is written with the prefix read through the guarded edit", a
     await f.handlers.open404();
     const source = f.workspace.workspace.source("404.html");
     assert.ok(source?.includes(`<a href="${prefix}/">Go to the home page</a>`));
+  }
+});
+
+test("navigation settings write page choices with the prefix from the guarded config", async () => {
+  const source = '<header><nav><a href="/">Home</a></nav></header>';
+  for (const prefix of ["", "/my-site"]) {
+    const f = await fixture(prefix, source);
+    assert.equal(await f.handlers.applyNavigation("index.html", source, [{ href: "/", label: "Home" }, { href: "/about/", label: "About" }]), undefined);
+    assert.equal(f.workspace.workspace.source("index.html"), `<header><nav>\n    <a href="${prefix}/">Home</a>\n    <a href="${prefix}/about/">About</a>\n  </nav></header>`);
   }
 });

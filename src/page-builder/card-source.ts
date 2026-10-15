@@ -4,6 +4,7 @@
 // the browser's parser, so element-child index paths are the preview's), in
 // Node tests the source adapter. The rules are rules/items.ts and card-grid.ts.
 
+import { rootRoute, siteRouteOf } from "../../shared/site-path-prefix";
 import { readPage, type ElementRange } from "../native-source-location";
 import { nativeLinkTarget, isFolderRoute } from "../../shared/native-routes";
 import { normalizeRoute } from "../native-create";
@@ -30,6 +31,8 @@ export interface SourceGrid {
 export interface GridContext {
   /** The page's route, against which relative links resolve. */
   route: string;
+  /** Site address prefix; route identities above stay unprefixed. */
+  prefix: string;
   /** The site's routes to page files. */
   routes: Record<string, string>;
   /** Whether a tag is a section (a `<section>` or a section component): never an item. */
@@ -38,7 +41,7 @@ export interface GridContext {
 
 /** Where a link goes as a route: a page of the site, else a root folder path (`/work/new/`), else none. */
 export function linkRoute(href: string, context: GridContext): string | undefined {
-  const known = nativeLinkTarget(href, context.route, context.routes);
+  const known = nativeLinkTarget(href, context.route, context.routes, context.prefix);
   if (known) return known;
   // A page that is not there (yet): the URL resolved as the browser would (`..` and all), and only a
   // folder URL a page could have (`normalizeRoute`), so a link never names a path outside the site.
@@ -46,9 +49,11 @@ export function linkRoute(href: string, context: GridContext): string | undefine
   if (!value || value.startsWith("#") || /^(?:[a-z][a-z\d+.-]*:|\/\/)/i.test(value)) return undefined;
   let path: string;
   try {
-    const url = new URL(value, `https://site.invalid${context.route.startsWith("/") ? context.route : `/${context.route}`}`);
+    const url = new URL(value, `https://site.invalid${rootRoute(context.route)}`);
     if (url.origin !== "https://site.invalid") return undefined;
-    path = decodeURI(url.pathname);
+    const resolved = context.prefix ? siteRouteOf(url.pathname, { prefix: context.prefix }) : decodeURI(url.pathname);
+    if (resolved === undefined) return undefined;
+    path = resolved;
   } catch {
     return undefined;
   }

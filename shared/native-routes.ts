@@ -1,4 +1,4 @@
-import { siteRouteOf } from "./site-path-prefix";
+import { rootRoute, siteRouteOf } from "./site-path-prefix";
 
 // The repository is the site (docs/adr/0001-the-repository-is-the-site.md):
 // a page's URL is its file's path. The editor and the agent context route
@@ -30,9 +30,9 @@ export function nativePageRoute(path: string): string | undefined {
   const parts = path.split("/");
   if (NOT_PAGES.has(parts[0]) && parts.length > 1) return undefined;
   if (parts.some((part) => !SEGMENT.test(part) || part.startsWith("_") || part.startsWith("."))) return undefined;
-  if (parts[parts.length - 1] !== "index.html") return `/${path}`;
+  if (parts[parts.length - 1] !== "index.html") return rootRoute(path);
   parts.pop();
-  return parts.length ? `/${parts.join("/")}/` : "/";
+  return parts.length ? rootRoute(`${parts.join("/")}/`) : "/";
 }
 
 /** The file that gives `route`: `/` is `index.html`, `/a/b/` is `a/b/index.html`, `/x.html` is `x.html`. */
@@ -68,7 +68,7 @@ export function nativeLinkTarget(href: string, from: string, routes: Record<stri
   if (!value || value.startsWith("#") || /^(?:[a-z][a-z\d+.-]*:|\/\/)/i.test(value)) return undefined;
   let path: string;
   try {
-    const url = new URL(value, `${SITE}${from.startsWith("/") ? from : `/${from}`}`);
+    const url = new URL(value, `${SITE}${rootRoute(from)}`);
     if (url.origin !== SITE) return undefined;
     // A site in a sub-folder: its prefixed and plain root links name its pages.
     const resolved = prefix ? siteRouteOf(url.pathname, { prefix }) : decodeURI(url.pathname);

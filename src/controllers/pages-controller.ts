@@ -1,3 +1,4 @@
+import { sitePathPrefix } from "../../shared/site-path-prefix";
 import type { GuardedEdits, Reads, Stamp, PlanResult, Outcome } from "../guarded-edit";
 import { nativeNewTarget, firstHeadingText, buildNativePagesTree, nativePageLabel, type NativeNewTarget, type NativePageNode, type NativeSiteTree } from "../native-pages";
 import { nativePageTemplate, normalizeRoute, routeHeading, type Checked } from "../native-create";
@@ -537,12 +538,13 @@ export function createPagesController(ports: PagesPorts) {
         if (!nav) return { refuse: "No editable header navigation found. Uncheck Add to navigation to create only the page." };
         const source = r.source(nav.path);
         if (source === undefined) return { refuse: "Navigation could not be read." };
+        const prefix = sitePathPrefix(nativeSiteSettings(r.source(NATIVE_CONFIG_PATH)).url);
         let navigation: string, page = plan.content;
         try {
-          navigation = editNavigation(source, nav.list, [...nav.list.links, { href: plan.route, label: plan.title }]);
+          navigation = editNavigation(source, nav.list, [...nav.list.links, { href: plan.route, label: plan.title }], prefix);
           if (!nav.shared) {
-            const list = readNavigation(page);
-            if (list) page = editNavigation(page, list, [...nav.list.links, { href: plan.route, label: plan.title }]);
+            const list = readNavigation(page, false, prefix);
+            if (list) page = editNavigation(page, list, [...nav.list.links, { href: plan.route, label: plan.title }], prefix);
           }
         } catch (error) { return { refuse: error instanceof Error ? error.message : "Navigation could not be changed." }; }
         return { creates: [{ path: plan.file, content: page }], edits: new Map([[nav.path, navigation]]), open: plan.file,

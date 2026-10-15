@@ -7,6 +7,7 @@
 // `index.html` of its own is a row with no page), labels each row, and
 // decides what a new page writes: a slug made from the title typed, and the
 // folder and URL it gives. It has no DOM and no I/O.
+import { rootRoute, withSitePrefix } from "../shared/site-path-prefix";
 import { NATIVE_NOT_FOUND_ROUTE, isFolderRoute, nativeRouteFile } from "../shared/native-routes";
 import { routeHeading, type Checked } from "./native-create";
 import { parentRoute } from "./native-page-moves";
@@ -124,10 +125,10 @@ export function nativePageLabel(file: string, input: Pick<NativePagesInput, "rou
  * The pages a link's Address suggests, as "Title (/route/)": every page of
  * the site but the not-found page, which nothing links to.
  */
-export function nativeLinkSuggestions(routes: Iterable<string>, title: (route: string) => string | undefined): { label: string; value: string }[] {
+export function nativeLinkSuggestions(routes: Iterable<string>, title: (route: string) => string | undefined, prefix: string): { label: string; value: string }[] {
   return [...routes].filter((route) => route !== NATIVE_NOT_FOUND_ROUTE).map((route) => {
     const text = title(route);
-    return { label: text ? `${text} (${route})` : route, value: route };
+    return { label: text ? `${text} (${route})` : route, value: withSitePrefix(route, prefix) };
   });
 }
 
@@ -199,7 +200,7 @@ export function nativeNewTarget(parent: string, slug: string, taken?: NativeTake
   if (name.length > 80) return { ok: false, error: "That URL is too long; keep it under 80 characters." };
   if (!SLUG.test(name)) return { ok: false, error: "Use letters, digits and - in the URL, starting and ending with a letter or digit." };
   if (!isFolderRoute(parent)) return { ok: false, error: `The page at ${parent} is a single file, so it has no subpages.` };
-  if (parent === "/" && (name === "components" || name === "node_modules")) return { ok: false, error: `/${name}/ is not for pages; choose another URL.` };
+  if (parent === "/" && (name === "components" || name === "node_modules")) return { ok: false, error: `${rootRoute(name + "/")} is not for pages; choose another URL.` };
   const route = `${parent}${name}/`;
   const file = nativeRouteFile(route);
   const folder = file.slice(0, -"/index.html".length);

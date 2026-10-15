@@ -202,7 +202,7 @@ export function siteCommands(deps: EditorPaletteDeps): Command[] {
 
 /** Source-safe native placement: inside a valid container, else after selection, else main. */
 export function nativePaletteInsertPoint(source: string, path: string, selection: PaletteSelection | undefined, choice: AddChoice): { parent: number[]; index: number } | undefined {
-  const markup = nativeChoiceMarkup(choice.tag);
+  const markup = nativeChoiceMarkup(choice.tag, undefined, "");
   if (!markup) return undefined;
   const valid = (point: { parent: number[]; index: number }) => Boolean(nativeMarkupInsertEdit(source, point.parent, point.index, markup));
   if (selection?.path === path && selection.node?.length) {
@@ -230,7 +230,7 @@ export function nativePaletteCommands(deps: EditorPaletteDeps): Command[] {
   const held = deps.stamp?.();
   const selection = deps.selection();
   const identity = selectionIdentity(selection);
-  return (deps.nativeElements?.() ?? []).filter((choice) => choice.kind === "native" && Boolean(nativeChoiceMarkup(choice.tag))).map((choice) => ({
+  return (deps.nativeElements?.() ?? []).filter((choice) => choice.kind === "native" && Boolean(nativeChoiceMarkup(choice.tag, undefined, ""))).map((choice) => ({
     id: `native.add:${choice.tag}`, title: `Add ${choice.label}`, group: "Elements", icon: "insert",
     hint: "Native HTML", keywords: ["insert", "native", choice.tag, choice.group ?? ""],
     run: async () => {
@@ -238,7 +238,7 @@ export function nativePaletteCommands(deps: EditorPaletteDeps): Command[] {
         announceRefusal(deps, "The page changed. Reopen the command palette and try again."); return;
       }
       const point: { path?: string; parent: number[]; index: number } | undefined = deps.nativeInsertPoint ? deps.nativeInsertPoint(source, path, selection, choice) : nativePaletteInsertPoint(source, path, selection, choice);
-      const markup = nativeChoiceMarkup(choice.tag)!;
+      const markup = nativeChoiceMarkup(choice.tag, undefined, "")!;
       if (!point || !nativeMarkupInsertEdit(source, point.parent, point.index, markup)) {
         announceRefusal(deps, `Select a valid HTML container to add ${choice.label}.`); return;
       }

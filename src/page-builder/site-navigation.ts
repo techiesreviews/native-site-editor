@@ -1,3 +1,4 @@
+import { siteRouteOf, withSitePrefix } from "../../shared/site-path-prefix";
 import { elementEnd, startTagAttribute, startTags } from "../../shared/html-source";
 import { decodeText, escapeText, withAttribute } from "./site-head";
 
@@ -10,8 +11,8 @@ export function safeNavigationHref(value: string): boolean {
   return true;
 }
 
-/** Recognises a simple nav in a header, including a ul/ol of single-link li items. */
-export function readNavigation(html: string, component = false): NavigationList | undefined {
+/** Recognises simple header links; root destinations read as unprefixed routes, with URL encoding and suffixes retained. */
+export function readNavigation(html: string, component = false, prefix = ""): NavigationList | undefined {
   const tags = startTags(html);
   const header = tags.findIndex((tag) => tag.name === "header");
   const headerRange = header >= 0 ? elementEnd(html, tags, header, html.length) : undefined;
@@ -40,29 +41,32 @@ export function readNavigation(html: string, component = false): NavigationList 
     if (tag.name === "li" && (html.slice(tag.end, anchor.start).trim() || html.slice(anchorRange.end, range.close.start).trim())) return undefined;
     const href = startTagAttribute(html, anchor, "href");
     if (!href) return undefined;
-    links.push({ href: decodeText(href.value, true), label: decodeText(label), source: html.slice(tag.start, range.end) });
+    const address = decodeText(href.value, true);
+    const route = prefix ? siteRouteOf(address, { prefix }) : undefined;
+    links.push({ href: route === undefined ? address : route.split("/").map(encodeURIComponent).join("/") + (address.match(/[?#].*$/)?.[0] ?? ""), label: decodeText(label), source: html.slice(tag.start, range.end) });
     cursor = range.end;
   }
   if (html.slice(cursor, list.close.start).trim()) return undefined;
   const first = items[0];
   const indent = first ? /^[ \t]*$/.test(html.slice(html.lastIndexOf("\n", first.start - 1) + 1, first.start)) ? html.slice(html.lastIndexOf("\n", first.start - 1) + 1, first.start) : "    " : "    ";
-  return { start: list.tag.end, end: list.close.start, links, indent, newline: html.includes("\r\n") ? "\r\n" : "\n", pattern: links[0]?.source ?? (listIndex >= 0 ? '<li><a href="/">Page</a></li>' : '<a href="/">Page</a>') };
+  return { start: list.tag.end, end: list.close.start, links, indent, newline: html.includes("\r\n") ? "\r\n" : "\n", pattern: links[0]?.source ?? (listIndex >= 0 ? `<li><a href="${withSitePrefix("/", prefix)}">Page</a></li>` : `<a href="${withSitePrefix("/", prefix)}">Page</a>`) };
 }
 
-export function editNavigation(html: string, list: NavigationList, links: NavigationLink[]): string {
+export function editNavigation(html: string, list: NavigationList, links: NavigationLink[], prefix = ""): string {
   const items = links.map((link) => {
     if (!link.label.trim()) throw new Error("Every navigation link needs a label.");
     if (!safeNavigationHref(link.href)) throw new Error("Use a page URL, https:// link, mailto: or tel: address.");
-    let source = link.source ?? list.pattern ?? '<a href="/">Page</a>';
+    let source = link.source ?? list.pattern ?? `<a href="${withSitePrefix("/", prefix)}">Page</a>`;
     const tags = startTags(source);
     const index = tags.findIndex((tag) => tag.name === "a");
     const anchor = elementEnd(source, tags, index, source.length);
     if (!anchor?.close) throw new Error("This navigation item is incomplete.");
     if (decodeText(source.slice(anchor.tag.end, anchor.close.start)) !== link.label.trim())
       source = source.slice(0, anchor.tag.end) + escapeText(link.label.trim()) + source.slice(anchor.close.start);
+    const href = withSitePrefix(link.href.trim(), prefix);
     const originalHref = startTagAttribute(source, startTags(source)[index], "href")?.value ?? "";
-    if (decodeText(originalHref, true) !== link.href.trim())
-      source = withAttribute(source, startTags(source)[index], "href", link.href.trim());
+    if (decodeText(originalHref, true) !== href)
+      source = withAttribute(source, startTags(source)[index], "href", href);
     // Current-page state belongs to each page, never copied into a new shared link.
     if (!link.source) {
       const tag = startTags(source)[index];

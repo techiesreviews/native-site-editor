@@ -3,7 +3,7 @@ import test from "node:test";
 import { gridAt, gridOfItem, itemAround, instanceLabel, pageGrids, mainRange, linkRoute } from "../src/page-builder/card-source.ts";
 import { readSource } from "../src/page-builder/source-tree.ts";
 
-const context = { route: "/work/", routes: { "/": "index.html", "/work/": "work/index.html", "/work/a/": "work/a/index.html" }, isSection: () => false };
+const context = { prefix: "", route: "/work/", routes: { "/": "index.html", "/work/": "work/index.html", "/work/a/": "work/a/index.html" }, isSection: () => false };
 
 test("a card's link is a route of the site, relative links resolved against the page", () => {
   assert.equal(linkRoute("a/", context), "/work/a/");
@@ -110,4 +110,13 @@ test("grids drop scripts and refuse an item without an exact range", () => {
   const page = tree('<section><article><a href="a/">A</a></article><script>ignored()</script><article><a href="b/">B</a></article></section>');
   assert.deepEqual(gridAt(page, [0], context)?.items.map(item => item.index), [0, 1]);
   assert.equal(gridAt(tree('<section><article>A</article><article>B</section>'), [0], context), undefined);
+});
+
+test("prefixed card links keep unprefixed route identities, including missing pages", () => {
+  const site = { ...context, prefix: "/my-site", routes: { ...context.routes, "/about/": "about/index.html" } };
+  for (const href of ["/about/", "/my-site/about/"]) assert.equal(linkRoute(href, site), "/about/");
+  for (const href of ["/work/new/", "/my-site/work/new/"]) assert.equal(linkRoute(href, site), "/work/new/");
+  const grid = gridAt(tree(document('<main><div><article><a href="/my-site/work/a/">A</a></article><article><a href="/work/b/">B</a></article></div></main>')), [0, 0], site)!;
+  assert.deepEqual(grid.items.map(item => item.route), ["/work/a/", "/work/b/"]);
+  assert.equal(grid.collection, "/work/");
 });

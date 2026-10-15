@@ -1,3 +1,4 @@
+import { sitePathPrefix, withSitePrefix } from "../../shared/site-path-prefix";
 // A card's fill plan, read from source without a DOM. Writing it is a
 // separate operation: these rows describe each slot's source and mapping.
 // An empty unnamed fallback has no row; text or image fallbacks still do.
@@ -110,6 +111,7 @@ export function cardRoles(slots: TemplateSlot[]) {
 /** Map a chosen page's facts to a card's slots; missing facts keep fallbacks. */
 export function cardFill(input: { template: string; page: { route: string; source: string }; siteUrl?: string }): CardFill {
   const { template, page: { source, route }, siteUrl } = input;
+  const href = withSitePrefix(route, sitePathPrefix(siteUrl));
   const tree = readSource(source);
   const document = tree.elements() as SourceElement[];
   const templateTree = readSource(template);
@@ -134,7 +136,7 @@ export function cardFill(input: { template: string; page: { route: string; sourc
     if (role === "title") return fill(titleFrom, { text: title });
     if (role === "body" && description) return fill("meta description", { text: description });
     if (role === "image" && image) return fill("og:image", { src: image });
-    if (role === "link") return fill("address", { href: route, text: `Read about ${title}` });
+    if (role === "link") return fill("address", { href, text: `Read about ${title}` });
     if (role === "other" && slot.name) {
       const match = matchSlot(slot, templateTree, tree, content);
       if (match) return fill("matched", match);
@@ -155,7 +157,7 @@ export function cardFill(input: { template: string; page: { route: string; sourc
   }).filter(row => row.slot !== "" || row.text?.trim() || row.src);
   if (!linkSlot) rows.push({
     label: "Link", role: "link", from: titleSlot ? "address" : "not used",
-    status: titleSlot ? "added" : "not-used", href: route, text: title,
+    status: titleSlot ? "added" : "not-used", href, text: title,
   });
   if (description && !bodySlot) rows.push({ label: "Body", role: "body", from: "not used", status: "not-used", text: description });
   if (image && !imageSlot) rows.push({ label: "Image", role: "image", from: "not used", status: "not-used", src: image });

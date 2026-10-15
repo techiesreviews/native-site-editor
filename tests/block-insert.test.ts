@@ -272,3 +272,7 @@ test("a place measured in a template's preview is checked against the template's
   assert.ok(templateDropRefusal('<p class="card-note"><slot>Shared note</slot></p>', [0, 0]));
   assert.ok(templateDropRefusal(workTemplate, [0, 5]));
 });
+
+test("block image markup carries an explicit site prefix", () => {
+  assert.equal(blockMarkup(home, "media", [1, 2], false, undefined, "/my-site"), '<img src="/my-site/images/placeholder.svg" alt="" width="640" height="400">');
+});

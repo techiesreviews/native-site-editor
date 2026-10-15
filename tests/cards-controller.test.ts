@@ -84,6 +84,38 @@ test("guarded card actions on the memory workspace with the browser parser", asy
       assert.deepEqual(result.selected[0], result.card);
     });
 
+    await t.test("prefixed card fills and readers keep internal route identities", async () => {
+      const result = await browserPage.evaluate(async ({ branch, site, card }) => {
+        const prefixed = { ...branch, ".editor/config.json": '{"site":{"url":"https://user.github.io/my-site/"}}',
+          "index.html": branch["index.html"].replace('href="/work/oak/"', 'href="/my-site/work/oak/"') };
+        const { controller, m } = cardsFixture(prefixed, site);
+        const inGrid = controller.preview.linkPages(card)?.inGrid;
+        const fill = await controller.preview.fillCard(card, "/work/oak/");
+        return { inGrid, fill, after: m.source(card.path), steps: m.steps() };
+      }, data);
+      assert.deepEqual(result.inGrid, ["/work/oak/"]);
+      assert.deepEqual(result.fill, { title: "Oak", route: "/work/oak/" });
+      assert.ok(result.after!.includes('<h3 slot="title"><a href="/my-site/work/oak/">Oak</a></h3>'));
+      assert.deepEqual(result.steps, ["operation"]);
+    });
+
+    await t.test("plain cards and copied collection cards write prefixed links", async () => {
+      const result = await browserPage.evaluate(async ({ site, oak }) => {
+        const source = '<html><head></head><body><main><div><article class="card"><h3><a href="/my-site/work/oak/">Oak</a></h3><p>Oak</p></article><article class="card"><h3>Blank</h3><p>Blank</p></article><article class="card"><h3><a href="/my-site/work/pine/">Pine</a></h3><p>Pine</p></article></div></main></body></html>';
+        const { controller, m } = cardsFixture({ "index.html": source, "work/index.html": oak, "work/oak/index.html": oak, "work/pine/index.html": oak,
+          ".editor/config.json": '{"site":{"url":"https://user.github.io/my-site/"}}' }, { routes: { ...site.routes, "/work/pine/": "work/pine/index.html" }, components: {} });
+        const filled = await controller.preview.fillCard({ path: "index.html", node: [0, 0, 1] }, "/work/oak/");
+        const afterFill = m.source("index.html");
+        const created = await controller.createWithCard({ parent: "/work/", title: "Birch", slug: "birch" });
+        return { filled, afterFill, created, after: m.source("index.html"), page: m.source("work/birch/index.html") };
+      }, { site: componentSite, oak });
+      assert.deepEqual(result.filled, { title: "Oak", route: "/work/oak/" });
+      assert.ok(result.afterFill!.includes('<a href="/my-site/work/oak/">Oak</a>'));
+      assert.equal(result.created, undefined);
+      assert.ok(result.after!.includes('href="/my-site/work/birch/"'));
+      assert.ok(result.page);
+    });
+
     await t.test("fill and missing host CSS are one operation; undo removes both changes", async () => {
       const result = await browserPage.evaluate(async ({ branch, site, card }) => {
         const { controller, m } = cardsFixture(branch, site);
@@ -138,6 +170,19 @@ test("guarded card actions on the memory workspace with the browser parser", asy
       assert.equal(result.fill, undefined);
       assert.equal(result.after, cardPage);
       assert.equal(result.css, ":host { color: red; }");
+      assert.deepEqual(result.steps, []);
+      assert.deepEqual(result.said, ["The page changed meanwhile; choose the page again."]);
+    });
+
+    await t.test("a site address change during a card fill refuses the old-prefix write", async () => {
+      const result = await browserPage.evaluate(async ({ branch, site, card }) => {
+        const { controller, m } = cardsFixture({ ...branch, ".editor/config.json": '{"site":{"url":"https://user.github.io/my-site/"}}' }, site);
+        const pending = controller.preview.fillCard(card, "/work/oak/");
+        m.writeDraft(".editor/config.json", '{"site":{"url":"https://user.github.io/elsewhere/"}}');
+        return { fill: await pending, after: m.source(card.path), steps: m.steps(), said: m.announced };
+      }, data);
+      assert.equal(result.fill, undefined);
+      assert.equal(result.after, cardPage);
       assert.deepEqual(result.steps, []);
       assert.deepEqual(result.said, ["The page changed meanwhile; choose the page again."]);
     });

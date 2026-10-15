@@ -157,9 +157,19 @@ test("a new page is refused where the URL or the path is taken", () => {
 
 test("a link's Address suggests every page but the not-found page", () => {
   const titles: Record<string, string> = { "/": "Home", "/about/": "About" };
-  assert.deepEqual(nativeLinkSuggestions(["/", "/about/", "/notes.html", "/404.html"], (route) => titles[route]), [
+  assert.deepEqual(nativeLinkSuggestions(["/", "/about/", "/notes.html", "/404.html"], (route) => titles[route], ""), [
     { label: "Home (/)", value: "/" },
     { label: "About (/about/)", value: "/about/" },
     { label: "/notes.html", value: "/notes.html" },
   ]);
+});
+
+test("page chooser values carry the site prefix while route lookups stay unprefixed", () => {
+  const seen: string[] = [];
+  assert.deepEqual(nativeLinkSuggestions(["/", "/about/", "/blog/post.html", "/404.html"], route => { seen.push(route); return route === "/about/" ? "About" : undefined; }, "/my-site"), [
+    { label: "/", value: "/my-site/" },
+    { label: "About (/about/)", value: "/my-site/about/" },
+    { label: "/blog/post.html", value: "/my-site/blog/post.html" },
+  ]);
+  assert.deepEqual(seen, ["/", "/about/", "/blog/post.html"]);
 });

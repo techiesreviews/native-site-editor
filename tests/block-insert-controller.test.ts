@@ -221,3 +221,12 @@ test("a recorded image insert with a failed refresh shows its message and keeps 
   assert.deepEqual(selected(m), { path: "index.html", node: [0, 0, 1] });
   assert.deepEqual(m.refusals, ["The files changed, but the editor changed while opening them. Review the current drafts."]);
 });
+
+test("placeholder insertion reads the prefix from this transaction's config", async () => {
+  const { controller, m } = setup({}, { "index.html": page, ".editor/config.json": '{"site":{"url":"https://user.github.io/my-site/"}}' });
+  await controller.click("media");
+  assert.ok(m.source("index.html")!.includes('<img src="/my-site/images/placeholder.svg" alt="" width="640" height="400">'));
+  assert.equal(m.source(PLACEHOLDER_IMAGE_PATH), placeholderImageSvg);
+  assert.equal(m.undo(), true);
+  assert.equal(m.source("index.html"), page);
+});

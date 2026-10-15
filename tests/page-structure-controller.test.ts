@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createPageStructureController, type PageStructurePorts } from "../src/controllers/page-structure-controller.ts";
 import { createGuardedEdits } from "../src/guarded-edit.ts";
 import { createBlockMoves, type BlockMovePorts } from "../src/page-builder/block-move.ts";
-import { textRangeInSource } from "../shared/html-source.ts";
+import { elementEnd, startTags, startTagAttribute, textRangeInSource } from "../shared/html-source.ts";
 import { createMemoryWorkspace } from "./fakes/memory-workspace.ts";
 
 const PAGE = "index.html";
@@ -94,16 +94,16 @@ test("a bar's section move answers the moved path, and nothing is said at an edg
 });
 
 // The bar drawn for a selection: its Move buttons, as the edit bar would press them (a detached button too).
-function drawBar(f: ReturnType<typeof fixture>, node = f.target.node) {
-  let model: { controls: { label?: string; disabled?: boolean; onPress?: () => void }[] } | undefined;
+function drawBar(f: ReturnType<typeof fixture>, node = f.target.node, extra: Partial<PageStructurePorts> = {}, link?: string) {
+  let model: { controls: { label?: string; disabled?: boolean; onPress?: () => void; onInput?: (value: string) => void; suggestions?: { label: string; value: string }[] }[] } | undefined;
   Object.assign(f.ports, {
     nativePreview: { ...f.ports.nativePreview, showEditBar: (shown: typeof model) => { model = shown; }, hideEditBar: () => { model = undefined; } },
     nativeEditableSource: (path: string) => f.edits.peek.source(path),
     startTagAttribute: () => undefined, element: () => ({ textContent: "" }), setupScope: () => "scope", generation: 0,
     agentController: { captureAsk: () => undefined }, previewSelection: { textSelection: () => undefined }, cardControls: () => [],
-    nativeTextTags: new Set(), nativeLinkParents: new Set(), nativeNamedDescendant: () => false, nativePictureSources: () => false,
+    nativeTextTags: new Set(), nativeLinkParents: new Set(), nativeNamedDescendant: () => false, nativePictureSources: () => false, ...extra,
   });
-  f.controller.renderNativeEditBar({ path: PAGE, node, tag: "section", text: "", reason: "click", selectors: [], paintedSource: f.page(), rect: { x: 0, y: 0, width: 1, height: 1 } } as never);
+  f.controller.renderNativeEditBar({ path: PAGE, node, tag: "section", link, text: "", reason: "click", selectors: [], paintedSource: f.page(), rect: { x: 0, y: 0, width: 1, height: 1 } } as never);
   const button = (label: string) => model!.controls.find(control => control.label === label)!;
   return button;
 }
@@ -205,4 +205,35 @@ test("a template row moves through the now-shaped editing port and leaves the pa
   assert.equal(f.edits.peek.source(BAND), "<section><div>B</div>\n<div>A</div></section>");
   assert.equal(f.page(), SOURCE);
   assert.deepEqual(f.notices, []);
+});
+
+test("link popup writes chosen and typed page routes with the live site prefix", () => {
+  const f = fixture({ page: '<main><section><a href="/old/">Old</a></section></main>' });
+  f.mem.writeDraft(".editor/config.json", '{"site":{"url":"https://user.github.io/my-site/"}}');
+  Object.assign(f.ports, { nativePreview: { ...f.ports.nativePreview, selectAfterUpdate: () => {} } });
+  const rangeOf = (html: string, name: string) => {
+    const tags = startTags(html);
+    return elementEnd(html, tags, tags.findIndex(tag => tag.name === name), html.length);
+  };
+  const address = drawBar(f, f.target.node, {
+    startTagAttribute,
+    nativeRouteInfo: () => ({ title: "Home" }),
+    nearestLink: html => ({ range: rangeOf(html, "a")!, node: [0, 0, 0] }),
+    locateNativeElementRange: (html, node) => rangeOf(html, node.length === 3 ? "a" : "section"),
+    editorModule: { ...f.ports.editorModule!, replaceActiveRange: edit => {
+      const source = f.page()!;
+      assert.equal(source.slice(edit.start, edit.end), edit.expected);
+      f.mem.typeInto(PAGE, source.slice(0, edit.start) + edit.text + source.slice(edit.end));
+      return true;
+    } },
+  }, "/old/")("Address");
+  assert.deepEqual(address.suggestions, [{ label: "Home (/)", value: "/my-site/" }]);
+  address.onInput!(address.suggestions![0].value);
+  assert.equal(f.page(), '<main><section><a href="/my-site/">Old</a></section></main>');
+  address.onInput!("/about/");
+  assert.equal(f.page(), '<main><section><a href="/my-site/about/">Old</a></section></main>');
+  f.mem.writeDraft(".editor/config.json", '{"site":{"url":"https://user.github.io/elsewhere/"}}');
+  address.onInput!("/about/");
+  assert.equal(f.page(), '<main><section><a href="/elsewhere/about/">Old</a></section></main>');
+  assert.deepEqual(f.errors, []);
 });

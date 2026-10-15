@@ -1,4 +1,4 @@
-import { siteAddress, sitePathPrefix } from "../shared/site-path-prefix";
+import { rootRoute, siteAddress, sitePathPrefix } from "../shared/site-path-prefix";
 import { MEDIA_RECORDS_PATH } from "../shared/media-records";
 import { mediaOwnOrigins } from "./page-builder/media-origins";
 import { dismissRefusalNote, refuse } from "./components/refusal-note";
@@ -686,7 +686,7 @@ function mountComponentTools() {
     error: errorMessage,
     images: nativeImagePaths,
     chooseImage: (place, placement) => mediaController.choosePath(place, placement),
-    links: () => (nativeSite ? nativeLinkSuggestions(Object.keys(nativeSite.routes), (route) => nativeRouteInfo(route).title) : []),
+    links: () => (nativeSite ? nativeLinkSuggestions(Object.keys(nativeSite.routes), (route) => nativeRouteInfo(route).title, nativePrefix()) : []),
     pageLabel: nativePageLabelOf,
     panelHost: app.querySelector<HTMLElement>(".sidebar")!,
     canvasComponent: (parts) => nativePreview?.setCanvasComponent(parts),
@@ -731,7 +731,7 @@ function nativeSectionChoices(): InsertChoice[] {
 // file is in the editor, since edits go through the mounted editor.
 const nativeAddPoints = new WeakMap<InsertPoint, { source: string; epoch: number; scope: string; description: string }>();
 function nativeElementAddPoint(choice: InsertChoice, fallback: InsertPoint | undefined, mode: "click" | "drop" | "gap" = "click"): InsertPoint | undefined {
-  const markup = nativeChoiceMarkup(choice.tag);
+  const markup = nativeChoiceMarkup(choice.tag, undefined, nativePrefix());
   if (!markup) return fallback;
   if (versionView || !nativeSite) return;
   const selected = appStore.selection.value;
@@ -777,7 +777,7 @@ async function nativeComponentLoaderPlan(path: string, nextPageText: string, r: 
 // first when another file is in the editor.
 async function insertNativeComponent(point: InsertPoint, choice: InsertChoice) {
   const path = point.path;
-  const native = nativeChoiceMarkup(choice.tag);
+  const native = nativeChoiceMarkup(choice.tag, undefined, nativePrefix());
   // A destination planned against the page's bytes then (the Add panel's) holds only while they do.
   const captured = nativeAddPoints.get(point), moved = "The insertion source changed. Choose the destination again.";
   if (captured && (captured.epoch !== generation || captured.scope !== setupScope() || versionView)) { errorMessage(new Error(moved)); return; }
@@ -797,7 +797,7 @@ async function insertNativeComponent(point: InsertPoint, choice: InsertChoice) {
     loader: native ? undefined : nativeComponentLoaderPlan,
     edit(page) {
       if (native && captured && page !== captured.source) return moved;
-      const edit = native ? nativeMarkupInsertEdit(page, point.parent, point.index, native)
+      const edit = native ? nativeMarkupInsertEdit(page, point.parent, point.index, nativeChoiceMarkup(choice.tag, undefined, sitePathPrefix(nativeSiteSettings(r.source(NATIVE_CONFIG_PATH)).url))!)
         : nativeInsertEdit(page, point.parent, point.index, choice.tag, r.template(choice.tag)?.source ?? "");
       return edit ? [edit] : `${choice.label} was not added: the HTML around that spot could not be located exactly in ${path}.`;
     } }), { since, anchor: path, guard: () => !versionView });
@@ -1691,7 +1691,7 @@ function nativeInstanceContent(source: string, node: readonly number[], tag: str
   if (!range || range.tag.name !== tag) return false;
   if (["img", "picture", "video", "a", "button"].includes(tag)) return true;
   const route = nativePreview?.route();
-  if (route && gridOfItem(source, [...node], { route, routes: nativeSite?.routes ?? {}, isSection: isNativeSectionTag })) return true;
+  if (route && gridOfItem(source, [...node], { route, prefix: nativePrefix(), routes: nativeSite?.routes ?? {}, isSection: isNativeSectionTag })) return true;
   if (!range.close || !TEXT_TAGS.has(tag)) return false;
   const template = document.createElement("template");
   template.innerHTML = source.slice(range.tag.end, range.close.start);
@@ -1862,10 +1862,10 @@ function nativeNavigationTarget(pagePath: string | undefined, r: Reads = guarded
   const headerPath = site.components["site-header"];
   if (headerPath && /<site-header(?:\s|>)/i.test(page)) {
     const source = r.source(headerPath);
-    const list = source !== undefined ? readNavigation(source, true) : undefined;
+    const list = source !== undefined ? readNavigation(source, true, sitePathPrefix(nativeSiteSettings(r.source(NATIVE_CONFIG_PATH)).url)) : undefined;
     if (source !== undefined && list) return { path: headerPath, source, list, shared: true };
   }
-  const list = readNavigation(page);
+  const list = readNavigation(page, false, sitePathPrefix(nativeSiteSettings(r.source(NATIVE_CONFIG_PATH)).url));
   return list ? { path: pagePath, source: page, list, shared: false } : undefined;
 }
 
@@ -3204,6 +3204,10 @@ function options(
   );
 }
 
+// Addresses of the editor itself, independent of the opened site.
+const EDITOR_HOME = "/";
+const EDITOR_LOGIN = "/auth/login";
+
 function renderLogin(
   mode: "loading" | "auto" | "ready" | "expired" | "error" = "ready",
 ) {
@@ -3242,7 +3246,7 @@ function renderLogin(
   // loading and automatic states keep the card's size and hide what is below.
   app.innerHTML = `
     <main class="login-card" aria-labelledby="login-title" data-mode="${mode}">
-      <a class="brand login-brand" href="/" aria-label="Native Site Editor home"><span class="brand-mark">n<span>✦</span></span><span>Native <strong>Site Editor</strong></span></a>
+      <a class="brand login-brand" href="${EDITOR_HOME}" aria-label="Native Site Editor home"><span class="brand-mark">n<span>✦</span></span><span>Native <strong>Site Editor</strong></span></a>
       <h1 id="login-title">Welcome to Native Site Editor</h1>
       <div id="login-action" class="login-action"></div>
       <div id="notice" class="login-notice" role="alert" hidden></div>
@@ -4630,7 +4634,7 @@ function nativeFallbackPage(path: string) {
   if (!nativeSite) return undefined;
   const parts = path.split("/").slice(0, -1);
   for (let length = parts.length; length > 0; length--) {
-    const file = nativeSite.routes[`/${parts.slice(0, length).join("/")}/`];
+    const file = nativeSite.routes[rootRoute(`${parts.slice(0, length).join("/")}/`)];
     if (file && file !== path) return file;
   }
   return nativeSite.routes["/"];
@@ -5576,7 +5580,7 @@ const boot = createBootController({
 });
 
 document.addEventListener("click", (event) => {
-  if ((event.target as Element).closest?.('a[href="/auth/login"]'))
+  if ((event.target as Element).closest?.(`a[href="${EDITOR_LOGIN}"]`))
     retainWorkspaceLink();
 });
 // A fragment change before the session has loaded is not lost: once signed
