@@ -23,8 +23,10 @@ test("the header names the tab and counts the files; rows are one height with na
   await openFiles(page, baseURL);
   const heading = explorer(page).locator("#explorer-files > .files-heading");
   await expect(heading.getByRole("heading", { name: "Files", exact: true })).toHaveCSS("text-transform", "none");
-  await expect(page.locator("#files-count")).toHaveText(/^\d+ files$/);
-  await expect(page.locator("#files-count")).toHaveAttribute("title", /^Version [0-9a-f]{40}$/);
+  // "Files 46", as Pages shows "Pages 11"; the tooltip says it in words, with the version.
+  await expect(page.locator("#files-count")).toHaveText(/^\d+$/);
+  await expect(page.locator("#files-count")).toHaveAttribute("title", /^\d+ files\nVersion [0-9a-f]{40}$/);
+  await expect(heading.getByRole("button", { name: "New file or folder", exact: true })).toHaveText("+ New");
   await expect(page.locator("#revision")).toBeHidden();
 
   // Icons by type arrive with the explorer (the tree is drawn again then); the wide panel says the type.
@@ -39,6 +41,9 @@ test("the header names the tab and counts the files; rows are one height with na
   await expect(row(page, "robots.txt").locator(".file-icon")).toHaveAttribute("data-type", "text");
   await expect(row(page, "images/studio-desk.svg").locator(".file-icon")).toHaveAttribute("data-type", "picture");
   await expect(row(page, "index.html").locator(".file-type")).toHaveText("Page");
+  // One type column for every level, where Pages shows its URLs.
+  const column = (path: string) => row(page, path).locator(".file-type").evaluate(element => Math.round(element.getBoundingClientRect().left));
+  expect(await column("images/studio-desk.svg")).toBe(await column("index.html"));
   await expect(explorer(page).getByRole("button", { name: "index.html", exact: true })).toBeVisible();
 
   // Hover shows the folder's + and ⋯ inside the row, clear of the type word.

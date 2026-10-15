@@ -17,6 +17,7 @@ class Element {
   textContent = "";
   className = "";
   focused = false;
+  style = { setProperty: (name: string, value: string) => { this.dataset[name] = value; } };
   classList = { add: (name: string) => this.classes.add(name), remove: (name: string) => this.classes.delete(name) };
   append(...children: Element[]) { this.children.push(...children); }
   replaceChildren(...children: Element[]) { this.children = children; }

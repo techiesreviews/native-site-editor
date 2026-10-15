@@ -307,6 +307,8 @@ export function createFilesTreeController(ports: FilesTreePorts) {
         }
       });
       const line = node("div", `file-row-line${directory ? " is-folder" : ""}`);
+      // How deep the line sits: the type column (files-tree.css) takes the indent back out.
+      line.style.setProperty("--depth", String(parentPath ? parentPath.split("/").length : 0));
       line.append(row);
       if (gone) {
         const restore = button("Restore", () => void ports.restore({ path, name: entry.path, folder: directory, gone: true }), "file-restore");

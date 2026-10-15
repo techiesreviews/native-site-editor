@@ -1,37 +1,9 @@
-/* The explorer's Files tab (slice 124 design note): a calm header, one row height, a chevron
-   on every folder, icons by file type, a quiet type column when the panel is wide. */
+/* The explorer's Files tab (slice 124 design note), one family with Pages (pages-tree.css):
+   one row height, a chevron on every folder, a guide under it, icons by file type, and a
+   quiet type column where Pages shows its URLs. */
 
-/* A tab's header: its name in title case and a quiet count; the Pages tab can share it. */
-.explorer-heading {
-  justify-content: flex-start;
-  align-items: center;
-  gap: 8px;
-  min-block-size: var(--size-control);
-  text-transform: none;
-  letter-spacing: normal;
-}
-.explorer-heading__title {
-  margin: 0;
-  font-size: var(--type-title);
-  font-weight: 600;
-  color: var(--text);
-}
-.explorer-heading__count {
-  font-size: var(--type-small);
-  font-weight: 400;
-  font-variant-numeric: tabular-nums;
-  color: var(--muted);
-}
-.files-heading__end {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin-inline-start: auto;
-}
-.explorer-heading .file-add {
-  inline-size: var(--size-control);
-  block-size: var(--size-control);
-}
+/* The head ("Files 46", + New) shares the Pages rules in pages-tree.css; the heading is an h2. */
+.explorer-heading__title { margin: 0; font: inherit; }
 
 #files { container-type: inline-size; }
 .file-list {
@@ -42,16 +14,17 @@
 /* Rows in every list and menu stand 2px apart. */
 .file-list > li + li,
 .file-list .file-list { margin-block-start: 2px; }
-/* A level is a chevron and its gap deeper, so a child's chevron sits under its parent's icon;
-   a guide runs down an open folder's children under its chevron. */
+/* A level is --explorer-indent deeper, as in Pages; a guide runs down an open folder's
+   children under its chevron (row padding 4px + half the 16px slot). */
 .file-list .file-list {
   margin-inline-start: 12px;
-  padding-inline-start: 9px;
+  padding-inline-start: calc(var(--explorer-indent) - 13px);
   border-inline-start: 1px solid var(--control-line);
 }
 
 /* The whole line is the row, so a hover or the open file's tint runs under its + and ⋯ too. */
 .file-row-line {
+  position: relative;
   display: flex;
   align-items: center;
   border-radius: var(--radius);
@@ -80,7 +53,7 @@
   text-align: start;
   white-space: nowrap;
 }
-.file-row.selected { font-weight: 500; }
+.file-row.selected { font-weight: 600; }
 
 /* The chevron's slot: empty for a file, so names at one level line up. */
 .file-row::before {
@@ -125,17 +98,17 @@
   text-overflow: ellipsis;
 }
 
-/* What the file is, in a fixed column; only when the panel is wide. */
+/* What the file is, quietly, in the column where Pages shows URLs; only when the list is wide.
+   --depth (set per line) takes the line's indent back out, so every level shares the column. */
 .file-type { display: none; }
-@container (min-width: 640px) {
-  /* The row's end stays free for the + and ⋯ that fade in there. */
-  .file-row { padding-inline-end: 64px; }
-  .file-type {
+@container (width >= 30rem) {
+  .file-row:has(> .file-type) { padding-inline-end: calc(100cqi - var(--explorer-column-at) + 12px); }
+  .file-row > .file-type {
     display: block;
-    flex: none;
-    inline-size: 8ch;
-    margin-inline-start: auto;
-    padding-inline-start: 16px;
+    position: absolute;
+    inset-block-start: 50%;
+    inset-inline-start: calc(var(--explorer-column-at) - var(--depth, 0) * var(--explorer-indent));
+    translate: 0 -50%;
     font-size: var(--type-small);
     font-weight: 400;
     color: var(--muted);
@@ -144,7 +117,6 @@
 
 /* Change letters as code editors show them: coloured, no pill. */
 .file-row > .file-status { background: transparent; }
-.file-row > .file-type + .file-status { margin-inline-start: 8px; }
 
 /* An empty folder speaks at its children's name column; an empty repository in the middle. */
 .empty-folder {
@@ -169,6 +141,7 @@
 @media (hover: none), (pointer: coarse) {
   /* One action per row on touch: a folder's ⋯ has New file, New folder and Upload files. */
   .file-row-line > .row-action-overlay > .file-add { display: none; }
-  .explorer-heading .file-add { inline-size: 44px; block-size: 44px; }
+  /* A tablet's ⋯ takes the line's end: the type column needs the extra room. */
+  @container (width < 36rem) { .file-row > .file-type { display: none; } }
   .empty-folder { min-block-size: 44px; }
 }

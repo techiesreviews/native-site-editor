@@ -328,7 +328,7 @@ function mountWorkspace() {
       <div id="explorer-pages" class="explorer-panel" aria-labelledby="explorer-tab-pages" hidden></div>
       <div id="explorer-media" class="explorer-panel" aria-labelledby="explorer-tab-media" hidden></div>
       <div id="explorer-files" class="explorer-panel" aria-labelledby="explorer-tab-files">
-        <div class="files-heading explorer-heading"><h2 class="explorer-heading__title">Files</h2><span id="files-count" class="explorer-heading__count"></span><span id="revision" hidden>—</span><span class="files-heading__end"><button type="button" id="new-at-root" class="file-add" aria-label="New file or folder" title="New file or folder at the top of the repository" aria-haspopup="dialog">${iconMarkup("plus")}</button></span></div>
+        <div class="files-heading explorer-heading"><span class="explorer-heading__start"><h2 class="explorer-heading__title">Files</h2><span id="files-count" class="explorer-heading__count"></span></span><span id="revision" hidden>—</span><button type="button" id="new-at-root" class="explorer-new" aria-label="New file or folder" title="New file or folder at the top of the repository" aria-haspopup="dialog">+ New</button></div>
         <nav id="files" aria-label="Repository files"></nav>
       </div>
     </div>
@@ -3478,8 +3478,9 @@ const filesTreeController = createFilesTreeController({
   count: (total) => {
     // The commit the tree shows, in full (set on the hidden #revision before each draw).
     const count = element("files-count"), commit = element("revision").title;
-    count.textContent = total === undefined ? "" : `${total} ${total === 1 ? "file" : "files"}`;
-    count.title = /^[0-9a-f]{40}$/.test(commit) ? `Version ${commit}` : "";
+    // A number beside the heading, as Pages shows its page count; the tooltip says it in words.
+    count.textContent = total === undefined ? "" : String(total);
+    count.title = [total === undefined ? "" : `${total} ${total === 1 ? "file" : "files"}`, /^[0-9a-f]{40}$/.test(commit) ? `Version ${commit}` : ""].filter(Boolean).join("\n");
   },
 });
 function renderFileTree() { filesTreeController.render(); }
