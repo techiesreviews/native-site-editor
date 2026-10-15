@@ -1,8 +1,8 @@
 ---
 title: Video details - still picture and subtitles
 type: task (AFK)
-status: open
-assignee:
+status: in progress
+assignee: claude (mm-66 runner)
 blocked_by: [59-every-kind-in-media, 62-player-markup]
 builder: claude
 phase: 5
