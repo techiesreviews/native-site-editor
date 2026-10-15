@@ -31,3 +31,12 @@ test("a selection too tall for itself and the bar does not scroll", () => {
   assert.equal(roomScroll({ selectionTop: -50, selectionBottom: 330, frameHeight: 400, barHeight: 60 }), 0);
   assert.equal(roomScroll({ selectionTop: 0, selectionBottom: 400, frameHeight: 400, barHeight: 60 }), 0);
 });
+
+test("at the page's top or end, the other way", () => {
+  // Up was shorter (12 px) but the page could not scroll up: 52 px down instead.
+  const input = { selectionTop: 60, selectionBottom: 380, frameHeight: 400, barHeight: 60 };
+  assert.equal(roomScroll(input, -12), 52);
+  assert.equal(roomScroll({ selectionTop: 40, selectionBottom: 340, frameHeight: 400, barHeight: 60 }, 12), -32);
+  // No other way: nothing.
+  assert.equal(roomScroll({ selectionTop: 5, selectionBottom: 340, frameHeight: 400, barHeight: 60 }, 7), 0);
+});

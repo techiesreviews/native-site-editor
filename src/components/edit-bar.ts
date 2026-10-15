@@ -1079,10 +1079,14 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     const key = model.origin ? `${model.origin.path} ${model.origin.node?.join(".")}` : model.kind;
     if (key !== shownKey && scroll && matchMedia("(max-width: 650px)").matches) {
       clearTimeout(roomTimer);
-      roomTimer = window.setTimeout(() => {
-        const dy = pinned && shownKey === key ? roomScroll(pinned) : 0;
-        if (dy) scroll(dy);
-      }, 400);
+      // Then, still covered (the page could not scroll that way), the other way once.
+      const nudge = (tried: number) => {
+        const dy = pinned && shownKey === key ? roomScroll(pinned, tried) : 0;
+        if (!dy) return;
+        scroll(dy);
+        if (!tried) roomTimer = window.setTimeout(() => nudge(dy), 500);
+      };
+      roomTimer = window.setTimeout(() => nudge(0), 400);
     }
     shownKey = key;
     // A field asked to open does so once the bar is in place, and keeps the focus.

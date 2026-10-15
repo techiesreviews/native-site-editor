@@ -90,6 +90,9 @@ test.describe("phone", () => {
     await page.mouse.move(x, y);
     await page.mouse.down();
     await page.mouse.move(x, y - 150, { steps: 10 });
+    // The panes show as it opens, before the finger lets go.
+    await expect(structure(page)).toBeVisible();
+    await expect(code(page)).toBeVisible();
     await page.mouse.move(x, y - 300, { steps: 20 });
     // fixed-wait: the finger rests before letting go, so the release is slow and not a flick.
     await page.waitForTimeout(150);
@@ -116,6 +119,44 @@ test.describe("phone", () => {
     await expect(handle(page)).toHaveAttribute("aria-expanded", "false");
     await expect.poll(() => sheetSize(page)).toBe(0);
     await expect(structure(page)).toBeHidden();
+  });
+
+  test("a drag cancelled from folded folds the panes again", async ({ page, baseURL }) => {
+    await open(page, baseURL);
+    const start = await box(handle(page));
+    await handle(page).dispatchEvent("pointerdown", { pointerId: 7, button: 0, clientY: start.y + 10, isPrimary: true });
+    await handle(page).dispatchEvent("pointermove", { pointerId: 7, clientY: start.y - 120, isPrimary: true });
+    await expect(structure(page)).toBeVisible();
+    await handle(page).dispatchEvent("pointercancel", { pointerId: 7, isPrimary: true });
+    await expect(structure(page)).toBeHidden();
+    await expect(handle(page)).toHaveAttribute("aria-expanded", "false");
+    await expect.poll(() => sheetSize(page)).toBe(0);
+  });
+
+  test("after the window shrinks, the first ArrowDown shrinks the sheet on screen", async ({ page, baseURL }) => {
+    await open(page, baseURL);
+    await handle(page).focus();
+    await page.keyboard.press("End");
+    await expect(handle(page)).toHaveAttribute("aria-expanded", "true");
+    const tall = await sheetSize(page);
+    await page.setViewportSize({ width: 390, height: 640 });
+    await expect.poll(() => sheetSize(page)).toBeLessThan(tall);
+    const shown = await sheetSize(page);
+    await page.keyboard.press("ArrowDown");
+    await expect.poll(() => sheetSize(page)).toBe(shown - 40);
+  });
+
+  test("editing a component works with the sheet", async ({ page, baseURL }) => {
+    await open(page, baseURL);
+    await handle(page).tap();
+    await structure(page).getByRole("treeitem", { name: /^Site header/ }).first().locator(".page-structure__label").click();
+    const edit = bar(page).getByRole("button", { name: "Edit Site header component", exact: true });
+    await expect(edit).toBeVisible();
+    await expect.poll(() => clearOfBar(page, frame(page).locator("site-header"))).toBe(0);
+    await edit.click();
+    await expect(page.locator("#current-page")).not.toHaveAttribute("data-path", "index.html");
+    await page.getByRole("button", { name: "Done editing component", exact: true }).click();
+    await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
   });
 
   test("keyboard users reach the handle and open, resize and fold the sheet", async ({ page, baseURL }) => {
@@ -174,6 +215,14 @@ test.describe("phone", () => {
     await page.locator("#main").evaluate((main) => main.classList.remove("code-collapsed"));
     await expect(handle(page)).toHaveAttribute("aria-expanded", "true");
   });
+});
+
+// A phone on its side has no room for a sheet under the top bar: the plain column stays, with its own toggles.
+test("a phone on its side keeps the column layout", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 568, height: 320 });
+  await open(page, baseURL);
+  await expect(handle(page)).toBeHidden();
+  await expect(page.getByRole("separator", { name: "Resize page structure sidebar" })).toBeVisible();
 });
 
 test("wider screens keep Page structure beside the page and no sheet", async ({ page, baseURL }) => {

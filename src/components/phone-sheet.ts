@@ -56,8 +56,9 @@ export function mountPhoneSheet(workspace: HTMLElement, handle: HTMLButtonElemen
   handle.addEventListener("pointermove", (event) => {
     if (!drag) return;
     if (!drag.moved && Math.abs(event.clientY - drag.y) < 4) return;
+    // Pulled up from folded, the panes show as the sheet opens (a cancel folds them again).
+    if (!drag.moved) workspace.classList.add("sheet-dragging", "sheet-open");
     drag.moved = true;
-    workspace.classList.add("sheet-dragging");
     drag.samples.push({ y: event.clientY, t: event.timeStamp });
     while (drag.samples.length > 2 && event.timeStamp - drag.samples[0].t > sampleMs) drag.samples.shift();
     workspace.style.setProperty("--sheet-size", `${dragSize(drag.size + drag.y - event.clientY, bounds())}px`);
@@ -86,7 +87,8 @@ export function mountPhoneSheet(workspace: HTMLElement, handle: HTMLButtonElemen
     set({ open: !state.open, size: state.size });
   });
   handle.addEventListener("keydown", (event) => {
-    const next = keySheet(event.key, { open: state.open, size: last() }, bounds());
+    // From the height on screen (the window may have shrunk under the remembered one).
+    const next = keySheet(event.key, { open: state.open, size: state.open ? shown() : last() }, bounds());
     if (!next) return;
     event.preventDefault();
     set(next);
