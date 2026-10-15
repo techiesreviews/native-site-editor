@@ -324,7 +324,41 @@ test("Disconnect MCP revokes the agent's token, and Cancel drops a token no agen
   expect(response.status()).toBe(401);
 });
 
-test("an MCP client connected by OAuth reaches the open editor tab", async ({ page, context, baseURL }) => {
+// The clipboard is shared by the tests of a worker: the prompt the tab copies once it has shared
+// its context (start() in src/components/agent-menu.ts) must win over an earlier test's prompt.
+test("an agent connects with this tab's prompt while an earlier prompt is still on the clipboard", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const stale = `ase_${"0".repeat(64)}`;
+  await page.evaluate((token) => navigator.clipboard.writeText(`Server: \`${location.origin}/mcp\`\n\nAuthorization: \`Bearer ${token}\``), stale);
+  // Hold the tab's first context share, so its prompt is copied only after it is released.
+  let release!: () => void;
+  const released = new Promise<void>((done) => (release = done));
+  let held!: () => void;
+  const holding = new Promise<void>((done) => (held = done));
+  let first = true;
+  await page.route("**/api/agent/context", async (route) => {
+    if (first) {
+      first = false;
+      held();
+      await released;
+    }
+    await route.continue();
+  });
+  const connecting = connectAgent(page, baseURL);
+  await holding;
+  // clipboard-ready: the tab cannot have copied its prompt while its context share is held.
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toContain(stale);
+  release();
+  const client = await connecting;
+  try {
+    // The agent reached this tab's session, not an earlier test's.
+    await expect.poll(async () => result(await client.callTool({ name: "get_site", arguments: {} })).editor?.openFile, { timeout: 15_000 }).toBe(indexPath);
+  } finally {
+    await client.close();
+  }
+});
+
+test("an MCP client connected by OAuth reaches the open editor tab",async ({ page, context, baseURL }) => {
   await open(page, baseURL);
   const callback = `${baseURL}/oauth-test-callback`;
   const registered = await (await page.request.post("/auth/mcp/register", {
