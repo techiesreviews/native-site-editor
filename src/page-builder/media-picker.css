@@ -11,13 +11,16 @@
 .media-library button, .media-library input, .media-library select { font: inherit; }
 .media-library button { cursor: pointer; min-height: var(--size-control); border-radius: var(--radius); }
 .media-library :is(:disabled, [aria-disabled="true"]) { cursor: default; opacity: .55; }
+/* A filled button, disabled or held while a change runs, is plain rather than pale (slice 106). */
+.media-library :is(.primary, .secondary, .button):is(:disabled, [aria-disabled="true"]) { background: var(--surface-subtle); color: var(--muted); opacity: 1; }
 .media-library :focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
 .media-library input:focus-visible, .media-library select:focus-visible { outline-offset: -1px; }
 .media-library__header { display: flex; align-items: center; gap: 12px; padding: 20px 24px; border-bottom: 1px solid var(--line); }
 .media-library__header > div { flex: 1; min-width: 0; display: grid; gap: 5px; }
 .media-library__muted, .media-library__hint { color: var(--muted); font-size: var(--type-small); }
 .media-library input:not([type="checkbox"]), .media-library select { min-height: var(--size-control); min-width: 0; border: 1px solid var(--control-line); border-radius: var(--radius); padding: 6px 10px; background: var(--surface-input); color: var(--text); }
-.media-library__page:hover { background: var(--hover); }
+.media-library__page:active { background: var(--hover); }
+@media (hover: hover) and (pointer: fine) { .media-library__page:hover { background: var(--hover); } }
 .media-library__body { flex: 1; display: flex; min-height: 0; }
 .media-library__browse { flex: 1; min-width: 0; overflow: auto; padding: 18px 24px; display: flex; flex-direction: column; gap: 16px; }
 .media-library input[type="checkbox"] { accent-color: var(--primary); width: 16px; height: 16px; margin: 0; flex-shrink: 0; }
@@ -168,7 +171,8 @@
 .media-library .media-library__search input { width: 100%; height: 100%; padding: 0 8px 0 38px; border-radius: 22px; }
 .media-library .media-library__collections { width: 100%; padding: 0 12px; border-radius: 12px; font-weight: 600; text-overflow: ellipsis; }
 .media-library .media-library__more { width: 44px; padding: 0; border: 1px solid var(--control-line); border-radius: 12px; background: var(--surface-input); color: var(--text); }
-.media-library .media-library__more:is(:hover, [aria-expanded="true"]) { background: var(--hover); }
+.media-library .media-library__more:is(:active, [aria-expanded="true"]) { background: var(--hover); }
+@media (hover: hover) and (pointer: fine) { .media-library .media-library__more:hover { background: var(--hover); } }
 /* Collections stays a native select; where the browser can, it takes the editor's look:
    a quiet surface, long names shortened when closed, Phosphor's caret and check. */
 @supports (appearance: base-select) and selector(::picker(select)) {
@@ -182,7 +186,8 @@
     background: var(--panel-surface); color: var(--text); box-shadow: var(--shadow);
   }
   .media-library__collections option { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 10px 12px; border-radius: 8px; overflow-wrap: anywhere; }
-  .media-library__collections option:is(:hover, :focus-visible) { background: var(--hover); }
+  .media-library__collections option:is(:active, :focus-visible) { background: var(--hover); }
+  @media (hover: hover) and (pointer: fine) { .media-library__collections option:hover { background: var(--hover); } }
   .media-library__collections option:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
   .media-library__collections option:checked { background: var(--current); font-weight: 600; }
   .media-library__collections option::checkmark {
@@ -229,12 +234,14 @@
 .media-usage__head > div { flex: 1; min-width: 0; display: grid; gap: 4px; }
 .media-usage__state { color: var(--muted); }
 .media-usage .media-usage__close { flex: none; width: 44px; height: 44px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 50%; background: none; color: var(--text); }
-.media-usage .media-usage__close:hover { background: var(--hover); }
+.media-usage .media-usage__close:active { background: var(--hover); }
+@media (hover: hover) and (pointer: fine) { .media-usage .media-usage__close:hover { background: var(--hover); } }
 .media-usage__body { display: grid; gap: 16px; overflow: auto; }
 .media-usage ul { padding: 0; list-style: none; }
 .media-usage li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; min-height: 32px; overflow-wrap: anywhere; }
 .media-usage .media-library__page { background: none; color: var(--link); border: 0; padding: 0; text-align: left; overflow-wrap: anywhere; }
-.media-usage .media-library__page:hover { text-decoration: underline; }
+.media-usage .media-library__page:active { text-decoration: underline; }
+@media (hover: hover) and (pointer: fine) { .media-usage .media-library__page:hover { text-decoration: underline; } }
 .media-usage__file { min-width: 0; }
 .media-usage .media-library__muted, .media-usage .media-library__hint { color: var(--muted); font-size: var(--type-small); }
 .media-usage__foot { display: flex; justify-content: end; gap: 8px; flex-wrap: wrap; }
@@ -306,7 +313,7 @@
   position: sticky; bottom: 8px; z-index: 4; display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
   grid-template-areas: "count actions tools"; align-items: center; gap: 8px; padding: 8px 8px 8px 14px;
   border: 1px solid color-mix(in oklch, var(--primary) 35%, var(--line)); border-radius: 12px;
-  background: color-mix(in oklch, var(--primary) 10%, var(--surface)); box-shadow: var(--shadow-small);
+  background: color-mix(in oklch, var(--primary) 10%, var(--surface-card)); box-shadow: var(--shadow-small);
 }
 .media-library__bulk-count { grid-area: count; font-weight: 600; white-space: nowrap; }
 .media-library__bulk-actions { grid-area: actions; display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
@@ -381,7 +388,8 @@
   position: absolute; top: 0; right: 0; z-index: 1; width: 44px; height: 44px; min-height: 0; padding: 0; display: grid; place-items: center;
   border: 0; border-radius: 50%; background: none; color: #fff; filter: drop-shadow(0 1px 2px #0009);
 }
-.media-library .media-library__pending-cancel:is(:hover, :focus-visible) { background: rgb(10 18 32 / .45); }
+.media-library .media-library__pending-cancel:is(:active, :focus-visible) { background: rgb(10 18 32 / .45); }
+@media (hover: hover) and (pointer: fine) { .media-library .media-library__pending-cancel:hover { background: rgb(10 18 32 / .45); } }
 .media-library .media-library__pending-cancel:focus-visible { outline: 2px solid #fff; outline-offset: -4px; }
 .media-library__pending:is([data-state="adding"], [data-state="added"]) .media-library__pending-cancel { display: none; }
 .media-library__grid--list .media-library__pending { aspect-ratio: auto; min-height: 56px; border-radius: 0; border-bottom: 1px solid var(--line); background: none; color: var(--text); place-items: center start; padding-left: 52px; }
@@ -412,7 +420,8 @@
 .media-detail__head { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .media-detail__head h3 { font-size: var(--type-title); }
 .media-library .media-detail__back { flex: none; width: 44px; height: 44px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 50%; background: none; color: var(--text); }
-.media-library .media-detail__back:hover { background: var(--hover); }
+.media-library .media-detail__back:active { background: var(--hover); }
+@media (hover: hover) and (pointer: fine) { .media-library .media-detail__back:hover { background: var(--hover); } }
 .media-detail { display: grid; gap: 16px; align-items: start; }
 @container media-detail (min-width: 680px) {
   .media-detail { grid-template-columns: minmax(0, 1.4fr) minmax(280px, 1fr); gap: 28px; }
@@ -439,7 +448,7 @@
 .media-detail__part + .media-detail__actions { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
 .media-detail__info, .media-detail__form { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .media-detail__info :is(h4, p, ul, dl) { margin: 0; }
-.media-detail__facts { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 14px 16px; border-radius: 10px; background: var(--surface-subtle); }
+.media-detail__facts { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 14px 16px; border-radius: 10px; background: var(--surface-card); }
 .media-detail__facts dt { color: var(--muted); font-size: var(--type-small); }
 .media-detail__facts dd { margin: 2px 0 0; overflow-wrap: anywhere; }
 .media-detail__disclosure { border-top: 1px solid var(--line); }
@@ -454,7 +463,7 @@
 .media-detail__disclosure > summary > span { color: var(--muted); font-size: var(--type-small); text-align: right; }
 .media-detail__disclosure[open] { padding-bottom: 8px; }
 .media-detail__uses { display: grid; gap: 8px; }
-.media-detail__uses section { padding: 12px 14px; border-radius: 10px; background: var(--surface-subtle); }
+.media-detail__uses section { padding: 12px 14px; border-radius: 10px; background: var(--surface-card); }
 .media-detail__uses h3 { margin-bottom: 4px; }
 .media-detail__uses ul { padding: 0; list-style: none; }
 .media-detail__uses li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; min-height: 32px; overflow-wrap: anywhere; }
@@ -545,7 +554,8 @@
 .media-library--picker .media-library__header > div { flex: 1; flex-basis: auto; }
 .media-library__place { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .media-library .media-library__close { flex: none; width: 44px; height: 44px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 50%; background: none; color: var(--text); }
-.media-library .media-library__close:hover { background: var(--hover); }
+.media-library .media-library__close:active { background: var(--hover); }
+@media (hover: hover) and (pointer: fine) { .media-library .media-library__close:hover { background: var(--hover); } }
 .media-library--picker .media-library__bar { padding: 4px 24px; }
 .media-library--picker .media-library__browse { padding-top: 12px; }
 .media-library--picker .media-library__card.is-chosen::after { box-shadow: inset 0 0 0 3px var(--primary); }
@@ -562,7 +572,8 @@
 .media-library__chosen-thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .media-library__chosen-text { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-weight: 600; }
 .media-library .media-library__chosen-details { flex: none; padding: 0 10px; border: 0; background: none; color: var(--link); }
-.media-library .media-library__chosen-details:hover { text-decoration: underline; }
+.media-library .media-library__chosen-details:active { text-decoration: underline; }
+@media (hover: hover) and (pointer: fine) { .media-library .media-library__chosen-details:hover { text-decoration: underline; } }
 .media-library__choice-actions { flex: none; display: flex; gap: 8px; }
 .media-library .media-library__choice-actions button { min-width: 112px; min-height: 44px; border-radius: 22px; }
 /* Details, collections and adding screens use their own action rows. */
@@ -623,3 +634,10 @@
 .media-detail__confirm > div { display: flex; flex-wrap: wrap; gap: 8px; }
 .media-library .media-detail__confirm button { border: 1px solid var(--line); border-radius: 22px; padding: 0 14px; }
 .media-library .media-detail__confirm button.primary { border-color: transparent; }
+
+/* A picture with see-through parts (marked by media-transparency.ts) sits on a light checkerboard in
+   tiles, details and the picker, in both themes: the dark theme's surfaces would hide dark lettering.
+   8 px squares, as Squarespace and Figma show transparent assets (slice 106). */
+.media-library img[data-transparent] {
+  background: repeating-conic-gradient(oklch(97% 0 none) 0 25%, oklch(90% 0 none) 0 50%) 0 0 / 16px 16px;
+}

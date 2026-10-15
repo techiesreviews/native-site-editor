@@ -37,6 +37,15 @@ select:disabled {
   cursor: default;
   opacity: 0.5;
 }
+/* A disabled filled button is plain (the neutral surface, muted words), not a
+   pale version of its colour. Bare icon and text buttons have no fill and fade.
+   Hover rules below sit behind (hover: hover) and (pointer: fine), as a touch
+   screen keeps :hover on the last tap; touch gets the :active press instead. */
+:is(.primary, .secondary, .button):disabled {
+  background: var(--surface-subtle);
+  color: var(--muted);
+  opacity: 1;
+}
 a {
   color: inherit;
 }
@@ -250,8 +259,13 @@ select {
   font-size: var(--type-small);
   line-height: 18px;
 }
-.code-pane__rule:hover {
+.code-pane__rule:active {
   background: var(--surface-raised);
+}
+@media (hover: hover) and (pointer: fine) {
+  .code-pane__rule:hover {
+    background: var(--surface-raised);
+  }
 }
 .code-pane__rule-file,
 .code-pane__rule-origin {
@@ -305,9 +319,15 @@ select {
   background: transparent;
   color: var(--muted);
 }
-.icon-button:hover:not(:disabled) {
+.icon-button:active:not(:disabled) {
   background: var(--hover);
   color: var(--text);
+}
+@media (hover: hover) and (pointer: fine) {
+  .icon-button:hover:not(:disabled) {
+    background: var(--hover);
+    color: var(--text);
+  }
 }
 .files-heading {
   display: flex;
@@ -362,8 +382,13 @@ select {
 .file-row-line {
   border-radius: var(--radius);
 }
-.file-row-line:hover {
+.file-row-line:active {
   background: var(--hover);
+}
+@media (hover: hover) and (pointer: fine) {
+  .file-row-line:hover {
+    background: var(--hover);
+  }
 }
 .file-row-line:has(> .file-row.selected) {
   background: var(--current);
@@ -458,16 +483,26 @@ h1 {
   background: var(--primary);
   color: var(--on-primary);
 }
-.primary:hover {
+.primary:active:not(:disabled) {
   background: var(--primary-hover);
+}
+@media (hover: hover) and (pointer: fine) {
+  .primary:hover:not(:disabled) {
+    background: var(--primary-hover);
+  }
 }
 .secondary {
   background: var(--surface);
   color: inherit;
 }
-/* The hover over the button's own surface, as it is not transparent. */
-.secondary:hover:not(:disabled) {
+/* The hover and press over the button's own surface, as it is not transparent. */
+.secondary:active:not(:disabled) {
   background: linear-gradient(var(--hover) 0 0), var(--surface);
+}
+@media (hover: hover) and (pointer: fine) {
+  .secondary:hover:not(:disabled) {
+    background: linear-gradient(var(--hover) 0 0), var(--surface);
+  }
 }
 .fine-print {
   font-size: var(--type-small);
@@ -554,9 +589,15 @@ h1 {
   color: var(--link);
   font-size: var(--type-base);
 }
-.text-button:hover,
-.text-link:hover {
+.text-button:active,
+.text-link:active {
   text-decoration: underline;
+}
+@media (hover: hover) and (pointer: fine) {
+  .text-button:hover,
+  .text-link:hover {
+    text-decoration: underline;
+  }
 }
 .text-link {
   font-size: inherit;

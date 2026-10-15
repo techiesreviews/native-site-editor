@@ -14,6 +14,7 @@ import { mediaDetailParts } from "./media-library-video";
 import type { LibrarySheet, LibrarySheetContext } from "./media-library-sheet";
 import type { MediaBytes } from "./media-byte-cache";
 import type { MediaMetadata } from "./media-metadata";
+import { markTransparency } from "./media-transparency";
 
 /** The view around File details, and the screens File details can open. */
 export interface DetailHost extends LibrarySheetContext {
@@ -134,7 +135,8 @@ function renderPreview(
     if (still) void cache.get(still).then(bytes => use(bytes.url), () => failed?.());
   };
   if (kind === "image") {
-    const image = node("img"); image.src = data.url; image.alt = meta.alt;
+    const image = node("img"); image.alt = meta.alt;
+    markTransparency(image, path); image.src = data.url;
     image.addEventListener("error", surface, { once: true });
     preview.append(image);
   } else if (kind === "video") {

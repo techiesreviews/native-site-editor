@@ -54,7 +54,8 @@
   border-radius: var(--radius);
   background: transparent;
 }
-.image-large__icon:hover:not(:disabled) { background: var(--hover); }
+.image-large__icon:active:not(:disabled) { background: var(--hover); }
+@media (hover: hover) and (pointer: fine) { .image-large__icon:hover:not(:disabled) { background: var(--hover); } }
 .image-large__icon:disabled { opacity: 0.38; }
 .image-large__text {
   display: inline-flex;
@@ -68,7 +69,8 @@
   font-weight: 600;
 }
 .image-large .image-large__text { color: var(--link); }
-.image-large__text:hover:not(:disabled) { background: var(--hover); }
+.image-large__text:active:not(:disabled) { background: var(--hover); }
+@media (hover: hover) and (pointer: fine) { .image-large__text:hover:not(:disabled) { background: var(--hover); } }
 .image-large .image-large__text:disabled { color: var(--muted); opacity: 0.6; }
 .image-large__primary {
   min-height: var(--image-large-tap);
@@ -79,8 +81,10 @@
   font-weight: 600;
 }
 .image-large .image-large__primary { color: var(--on-primary); }
-.image-large__primary:hover:not(:disabled) { background: var(--primary-hover); }
-.image-large__primary:disabled { opacity: 0.55; }
+.image-large__primary:active:not(:disabled) { background: var(--primary-hover); }
+@media (hover: hover) and (pointer: fine) { .image-large__primary:hover:not(:disabled) { background: var(--primary-hover); } }
+/* Disabled, the main button is plain rather than a pale blue (slice 106). */
+.image-large .image-large__primary:disabled { background: var(--surface-subtle); color: var(--muted); opacity: 1; }
 
 .image-large__body {
   display: grid;

@@ -81,7 +81,8 @@
   border-radius: var(--radius);
   background: transparent;
 }
-.image-popup__icon:hover { background: var(--hover); }
+.image-popup__icon:active { background: var(--hover); }
+@media (hover: hover) and (pointer: fine) { .image-popup__icon:hover { background: var(--hover); } }
 .image-popup__x {
   position: absolute;
   top: 6px;
@@ -280,10 +281,12 @@
   transform: translateX(-50%);
 }
 .image-popup .image-popup__shape { color: #fff; }
-.image-popup__shape:hover { background: rgb(1 9 37 / 0.9); }
+.image-popup__shape:active { background: rgb(1 9 37 / 0.9); }
+@media (hover: hover) and (pointer: fine) { .image-popup__shape:hover { background: rgb(1 9 37 / 0.9); } }
 /* The Social image's fixed shape: named, not a menu. */
 .image-popup__shape--fixed { padding: 0 10px; }
-.image-popup__shape--fixed:hover { background: rgb(1 9 37 / 0.78); }
+.image-popup__shape--fixed:active { background: rgb(1 9 37 / 0.78); }
+@media (hover: hover) and (pointer: fine) { .image-popup__shape--fixed:hover { background: rgb(1 9 37 / 0.78); } }
 /* The shape menu is a manual popover on the top layer: no scrolling row clips it and the phone
    sheet's pinned message and Done never cover it. It hangs under the Shape button, above it when
    there is no room below, and as a last resort scrolls within the screen, clear of the safe area.
@@ -336,7 +339,8 @@
   background: transparent;
   text-align: left;
 }
-.image-popup__item:hover { background: var(--hover); }
+.image-popup__item:active { background: var(--hover); }
+@media (hover: hover) and (pointer: fine) { .image-popup__item:hover { background: var(--hover); } }
 .image-popup .image-popup__item .icon {
   margin-left: auto;
   visibility: hidden;
@@ -373,7 +377,8 @@
   font-weight: 650;
 }
 .image-popup .image-popup__link { color: var(--link); }
-.image-popup__link:hover { background: var(--hover); }
+.image-popup__link:active { background: var(--hover); }
+@media (hover: hover) and (pointer: fine) { .image-popup__link:hover { background: var(--hover); } }
 .image-popup__previews {
   display: flex;
   align-items: flex-start;
@@ -482,7 +487,10 @@
   background: var(--primary);
   color: var(--on-primary);
 }
-.image-popup__button--primary:hover { background: var(--primary-hover); }
+.image-popup__button--primary:active:not(:disabled) { background: var(--primary-hover); }
+@media (hover: hover) and (pointer: fine) { .image-popup__button--primary:hover:not(:disabled) { background: var(--primary-hover); } }
+/* Disabled, the main button is plain rather than a pale blue (slice 106). */
+.image-popup .image-popup__button--primary:disabled { background: var(--surface-subtle); color: var(--muted); opacity: 1; }
 
 /* Phones: a bottom sheet, its message and Done pinned while the rows scroll; 44 px targets. */
 @media (max-width: 700px) {

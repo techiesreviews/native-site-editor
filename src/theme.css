@@ -118,6 +118,8 @@
      insert picker and a request's card. Menus keep 6px round their rows,
      panels with a title or text 12px. */
   --panel-surface: var(--surface-raised);
+  /* A card, tray or bar on a panel: one step lighter than the panel in both themes. */
+  --surface-card: var(--surface);
   --panel-padding: 6px;
   --panel-padding-roomy: 12px;
 }
@@ -127,12 +129,6 @@
 .button {
   background: var(--primary);
   color: var(--on-primary);
-}
-.button:disabled,
-.button:disabled:hover {
-  background: var(--primary);
-  cursor: default;
-  opacity: 0.5;
 }
 .secondary {
   background: var(--surface);
@@ -153,7 +149,8 @@
     --semantic-selected: oklch(from var(--color-primary-darker) 35% min(c, 0.05) h);
     --semantic-text: var(--color-primary-lighter);
     --semantic-text-muted: oklch(from var(--color-primary-light) 80% min(c, 0.035) h);
-    --semantic-link: var(--color-primary-light);
+    /* A clear blue, not near-white text: 4.5:1 or more on the panel and its cards. */
+    --semantic-link: oklch(from var(--color-primary) 80% min(c, 0.12) h);
     --semantic-border: oklch(from var(--color-primary-darker) 36% min(c, 0.04) h);
     --semantic-focus: var(--color-primary-light);
     --semantic-shadow: oklch(from var(--color-primary-darkest) 5% c h / 0.35);
@@ -169,5 +166,6 @@
   :root {
     --pressed: var(--color-primary-light);
     --on-pressed: var(--color-primary-darkest);
+    --surface-card: color-mix(in oklch, var(--panel-surface), white 6%);
   }
 }

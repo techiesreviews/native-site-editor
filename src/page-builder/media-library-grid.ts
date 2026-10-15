@@ -8,6 +8,7 @@ import { formatBytes } from "../uploads";
 import { paintUsageBadge } from "./media-library-usage";
 import { mediaUsageBadge } from "./media-usage-text";
 import type { MediaUsageRecords } from "./media-usage";
+import { markTransparency } from "./media-transparency";
 
 /** What the grid keeps between draws; the view owns it. */
 export interface LibraryGridState {
@@ -180,6 +181,7 @@ function tilePicture(input: {
   const noPreview = () => { if (h.alive() && card.isConnected) surface(); };
   image.addEventListener("error", noPreview);
   if (!preview) { surface(); return; }
+  markTransparency(image, preview);
   const observer = new IntersectionObserver((entries) => {
     if (!h.alive() || !card.isConnected || !entries.some((entry) => entry.isIntersecting)) return;
     observer.disconnect();

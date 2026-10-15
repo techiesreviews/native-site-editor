@@ -1,5 +1,5 @@
 /* The progress summary every way of adding shares (slice 31): the Media tray, the picker's, and Files'. */
-.media-library__adding { display: grid; gap: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.media-library__adding { display: grid; gap: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-card); }
 .media-library__adding[hidden] { display: none; }
 .media-library__adding-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .media-library__adding-status { flex: 1 1 10em; margin: 0; font-weight: 600; }
@@ -7,7 +7,8 @@
 .media-library__adding-actions button { min-height: 44px; }
 .media-library__adding-actions button[hidden], .media-library__adding-bar[hidden] { display: none; }
 :is(.media-library, .media-files-adding) .media-library__adding-dismiss { width: 44px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 50%; background: none; color: var(--text); }
-:is(.media-library, .media-files-adding) .media-library__adding-dismiss:hover { background: var(--hover); }
+:is(.media-library, .media-files-adding) .media-library__adding-dismiss:active { background: var(--hover); }
+@media (hover: hover) and (pointer: fine) { :is(.media-library, .media-files-adding) .media-library__adding-dismiss:hover { background: var(--hover); } }
 :is(.media-library, .media-files-adding) .media-library__adding-dismiss:focus-visible { outline: var(--focus-ring); }
 .media-library__adding-bar { width: 100%; height: 6px; border: 0; border-radius: 3px; overflow: hidden; appearance: none; background: var(--line); accent-color: var(--primary); }
 .media-library__adding-bar::-webkit-progress-bar { background: var(--line); }
@@ -23,7 +24,8 @@
 .media-library__adding-row-name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .media-library__adding-row-state { color: var(--muted); font-size: var(--type-small); }
 :is(.media-library, .media-files-adding) .media-library__adding-row-cancel { width: 44px; height: 44px; min-height: 0; padding: 0; display: grid; place-items: center; border: 0; border-radius: 50%; background: none; color: var(--text); }
-:is(.media-library, .media-files-adding) .media-library__adding-row-cancel:hover { background: var(--hover); }
+:is(.media-library, .media-files-adding) .media-library__adding-row-cancel:active { background: var(--hover); }
+@media (hover: hover) and (pointer: fine) { :is(.media-library, .media-files-adding) .media-library__adding-row-cancel:hover { background: var(--hover); } }
 :is(.media-library, .media-files-adding) .media-library__adding-row-cancel:focus-visible { outline: var(--focus-ring); }
 .media-library__adding-row-cancel[hidden] { display: none; }
 /* Files: the summary stays in view at the foot of the Files panel while its tree scrolls. */

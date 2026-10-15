@@ -10,7 +10,7 @@
 .media-library .media-library__sheet[data-mode="improve"] p { margin: 0; }
 
 .media-improve__rows { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
-.media-improve__row { border-radius: 12px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); }
+.media-improve__row { border-radius: 12px; background: var(--surface-card); box-shadow: inset 0 0 0 1px var(--line); }
 /* The row's text takes the room and wraps; Fix keeps to the end. */
 .media-improve__top { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 4px 8px 4px 4px; }
 .media-library .media-improve__open {
