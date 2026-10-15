@@ -29,7 +29,7 @@ test("production and test CSP allow only same-origin/blob media and the same vid
 });
 
 
-test("both CSP policies allow the same four online-video connect hosts without widening img-src", () => {
+test("both CSP policies allow the same four online-video connect hosts with HTTPS outside pictures", () => {
   const header = staticAssetHeaders(readFileSync(new URL("../public/_headers", import.meta.url), "utf8"), "/").get("Content-Security-Policy")!;
   const hosts = ["https://i.ytimg.com", "https://www.youtube.com", "https://vimeo.com", "https://i.vimeocdn.com"];
   const policies = [directives(header), directives(testCsp)];
@@ -38,4 +38,31 @@ test("both CSP policies allow the same four online-video connect hosts without w
     assert.ok(!policy.get("img-src")?.has(host), host);
   }
   assert.deepEqual(hosts.filter(host => policies[0].get("connect-src")?.has(host)), hosts.filter(host => policies[1].get("connect-src")?.has(host)));
+});
+
+test("outside pictures widen only img-src and connect-src, preserving exact policies", () => {
+  const production = directives(staticAssetHeaders(readFileSync(new URL("../public/_headers", import.meta.url), "utf8"), "/").get("Content-Security-Policy")!);
+  const server = directives(testCsp);
+  const common = {
+    "default-src": ["'self'"], "script-src": ["'self'", "'wasm-unsafe-eval'"],
+    "style-src": ["'self'", "'unsafe-inline'"], "font-src": ["'self'", "data:"],
+    "media-src": ["'self'", "blob:"], "base-uri": ["'none'"],
+    "frame-ancestors": ["'none'"], "form-action": ["'self'"],
+  };
+  const video = ["https://www.youtube-nocookie.com", "https://www.youtube.com", "https://player.vimeo.com"];
+  const connect = ["'self'", "https:", "https://i.ytimg.com", "https://www.youtube.com", "https://vimeo.com", "https://i.vimeocdn.com"];
+  for (const [index, policy] of [production, server].entries()) {
+    const expected = new Map(Object.entries({
+      ...common,
+      "worker-src": index === 0 ? ["'self'"] : ["'self'", "blob:"],
+      "img-src": ["'self'", "data:", "blob:", "https:", ...index === 0 ? ["https://avatars.githubusercontent.com"] : []],
+      "connect-src": [...connect, ...index === 0 ? ["https://*.workers.dev"] : ["ws:", "wss:"]],
+      "frame-src": ["'self'", ...index === 0 ? ["https://*.workers.dev"] : [], ...video],
+    }).map(([name, values]) => [name, new Set(values)]));
+    assert.deepEqual(policy, expected);
+    for (const [name, sources] of policy) {
+      assert.ok(!sources.has("http:") && !sources.has("*"));
+      if (!["img-src", "connect-src"].includes(name)) assert.ok(!sources.has("https:"));
+    }
+  }
 });
