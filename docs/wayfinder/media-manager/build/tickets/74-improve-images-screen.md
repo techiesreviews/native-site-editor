@@ -2,7 +2,7 @@
 title: The Improve images screen
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-74 runner)
 blocked_by: [71-outside-pictures, 72-improve-heavy-files, 73-improve-gifs-and-players, 49-media-tab-badge]
 builder: claude
 phase: 6
