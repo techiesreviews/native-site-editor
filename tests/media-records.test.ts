@@ -216,3 +216,24 @@ test("fromGif is a validated flag that survives records, renaming and serialisat
   assert.throws(() => parseMediaRecords(JSON.stringify({ version: 2, collections: [], files: { "loop.mp4": { fromGif: "yes" } } })), /fromGif must be a boolean/);
   assert.deepEqual(parseMediaRecords(JSON.stringify({ version: 2, collections: [], files: { "loop.gif": { fromGif: false } } })).files["loop.gif"], {});
 });
+
+
+test("online video hash and serviceBar validate and round trip with unknown fields", () => {
+  const records = parseMediaRecords(JSON.stringify({ version: 2, collections: [], files: {}, onlineVideos: [{ service: "vimeo", id: "123", hash: "aB123f", serviceBar: true, future: 42 }] }));
+  assert.deepEqual(parseMediaRecords(serializeMediaRecords(records)), records);
+  assert.equal(records.onlineVideos?.[0].hash, "aB123f");
+  assert.equal(records.onlineVideos?.[0].serviceBar, true);
+  for (const change of [{ hash: 12 }, { hash: "bad/hash" }, { serviceBar: "yes" }]) assert.throws(() => parseMediaRecords(JSON.stringify({ ...records, onlineVideos: [{ ...records.onlineVideos![0], ...change }] })), /onlineVideos/);
+  const off = parseMediaRecords(JSON.stringify({ ...records, onlineVideos: [{ ...records.onlineVideos![0], serviceBar: false, hash: "" }] }));
+  assert.equal(off.onlineVideos?.[0].serviceBar, undefined);
+  assert.equal(off.onlineVideos?.[0].hash, undefined);
+});
+
+
+test("removed online-video records validate hash and serviceBar too", () => {
+  const records = { version: 2, collections: [], files: {}, removed: [{ path: "media/videos/still.webp", sha: "sha", date: "2026-10-15", onlineVideo: { service: "vimeo", id: "123", hash: "a1b2", serviceBar: true, future: 42 } }] };
+  const parsed = parseMediaRecords(JSON.stringify(records));
+  assert.deepEqual(parseMediaRecords(serializeMediaRecords(parsed)), parsed);
+  assert.equal(parsed.removed?.[0].onlineVideo?.future, 42);
+  assert.throws(() => parseMediaRecords(JSON.stringify({ ...records, removed: [{ ...records.removed[0], onlineVideo: { ...records.removed[0].onlineVideo, hash: 12 } }] })), /removed\[0\].onlineVideo.hash/);
+});

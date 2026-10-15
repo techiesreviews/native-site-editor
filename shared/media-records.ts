@@ -22,7 +22,9 @@ export interface MediaFileRecord {
   [key: string]: unknown;
 }
 export interface OnlineVideoRecord {
-  service: "youtube" | "vimeo"; id: string; title?: string; still?: string;
+  service: "youtube" | "vimeo"; id: string; title?: string; still?: string; hash?: string; serviceBar?: true;
+  /** The still is the service's picture the editor copied (its family goes with the video); not Lex's own image. */
+  stillCopied?: true;
   [key: string]: unknown;
 }
 export interface RemovedPath {
@@ -30,7 +32,7 @@ export interface RemovedPath {
   [key: string]: unknown;
 }
 export interface RemovedMedia extends RemovedPath {
-  date: string; family?: RemovedPath[]; record?: MediaFileRecord;
+  date: string; family?: RemovedPath[]; record?: MediaFileRecord; onlineVideo?: OnlineVideoRecord;
 }
 export const MEDIA_ADDING_VALUES = {
   image: ["smaller", "balanced", "higher", "smallest"],
@@ -134,6 +136,15 @@ function removedPath(value: unknown, field: string): RemovedPath {
   if (out.record !== undefined) out.record = fileRecord(out.record, `${field}.record`);
   return out as RemovedPath;
 }
+function onlineVideoRecord(entry: unknown, field: string): OnlineVideoRecord {
+  const video = { ...object(entry, field) };
+  if (video.service !== "youtube" && video.service !== "vimeo") invalid(`${field}.service`);
+  string(video.id, `${field}.id`);
+  optionalStrings(video, ["title", "still", "hash"], field);
+  if (video.hash !== undefined && !/^[a-f0-9]+$/i.test(video.hash as string)) invalid(`${field}.hash`);
+  flags(video, ["serviceBar", "stillCopied"], field);
+  return video as OnlineVideoRecord;
+}
 function readRecords(value: Record<string, unknown>): MediaRecords {
   const collections = names(value.collections, "collections");
   const files: Record<string, MediaFileRecord> = Object.create(null);
@@ -145,11 +156,7 @@ function readRecords(value: Record<string, unknown>): MediaRecords {
   if (value.onlineVideos !== undefined) {
     const seen = new Set<string>();
     const videos = array(value.onlineVideos, "onlineVideos").map((entry, index) => {
-      const field = `onlineVideos[${index}]`, video = { ...object(entry, field) };
-      if (video.service !== "youtube" && video.service !== "vimeo") invalid(`${field}.service`);
-      string(video.id, `${field}.id`);
-      optionalStrings(video, ["title", "still"], field);
-      return video as OnlineVideoRecord;
+      return onlineVideoRecord(entry, `onlineVideos[${index}]`);
     }).filter(video => {
       const key = JSON.stringify([video.service, video.id]);
       if (seen.has(key)) return false;
@@ -163,6 +170,7 @@ function readRecords(value: Record<string, unknown>): MediaRecords {
       const date = string(item.date, `${field}.date`);
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date)) || new Date(date).toISOString().slice(0, 10) !== date) invalid(`${field}.date`, "must be YYYY-MM-DD");
       const result: RemovedMedia = { ...item, date };
+      if (item.onlineVideo !== undefined) result.onlineVideo = onlineVideoRecord(item.onlineVideo, `${field}.onlineVideo`);
       if (item.family !== undefined) {
         const family = array(item.family, `${field}.family`).map((member, i) => removedPath(member, `${field}.family[${i}]`));
         if (family.length) result.family = family; else delete result.family;

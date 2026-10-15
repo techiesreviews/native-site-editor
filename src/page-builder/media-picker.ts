@@ -98,6 +98,7 @@ export interface MediaHeldFiles {
   chosen?(): { request: MediaImportRequest; take(): void } | undefined;
 }
 export interface MediaImportRequest {
+  onlineVideo?: import("../../shared/media-records").OnlineVideoRecord;
   file: File; result?: MediaOptimiseResult; folder: string;
   original?: { blob: Blob; extension: string };
   replaceFrom?: string; metadata?: MediaMetadata; expectedAssetVersion?: string;

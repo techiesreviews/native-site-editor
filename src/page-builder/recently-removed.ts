@@ -20,6 +20,13 @@ export function recordRemoval(records: MediaRecords, removal: { main: string; fa
   ] };
 }
 
+/** Restoring a picture never overwrites an online video that was added again meanwhile. */
+function restoreOnlineVideo(records: MediaRecords, entry: RemovedMedia): MediaRecords {
+  const video = entry.onlineVideo;
+  return video && !records.onlineVideos?.some(item => item.service === video.service && item.id === video.id)
+    ? { ...records, onlineVideos: [...records.onlineVideos ?? [], video] } : records;
+}
+
 /**
  * Drops expired entries and entries whose file is back already (the Files tab's or Save's Restore of an
  * unsaved deletion): their records return to the files, so a description or collection is never lost.
@@ -35,6 +42,7 @@ export function pruneRemoved(records: MediaRecords, today: string, current?: (pa
       if (!member.record || Object.hasOwn(files, member.path) || (member !== entry && current(member.path) === undefined)) continue;
       files = Object.assign(Object.create(null), files, { [member.path]: member.record });
     }
+    records = restoreOnlineVideo(records, entry);
     return false;
   });
   return { ...records, files, removed };
@@ -60,7 +68,7 @@ export function planRestore(records: MediaRecords, entry: { path: string; id: st
   for (const member of members) if (member.record) files[member.path] = member.record;
   return {
     members: members.map(member => member.sha ? { path: member.path, sha: member.sha } : { path: member.path, browserKey: member.browserKey! }),
-    records: { ...next, files, removed: next.removed!.filter(item => item !== found) },
+    records: { ...restoreOnlineVideo(next, found), files, removed: next.removed!.filter(item => item !== found) },
   };
 }
 

@@ -27,3 +27,15 @@ test("production and test CSP allow only same-origin/blob media and the same vid
   }
   assert.deepEqual(production.get("media-src"), server.get("media-src"));
 });
+
+
+test("both CSP policies allow the same four online-video connect hosts without widening img-src", () => {
+  const header = staticAssetHeaders(readFileSync(new URL("../public/_headers", import.meta.url), "utf8"), "/").get("Content-Security-Policy")!;
+  const hosts = ["https://i.ytimg.com", "https://www.youtube.com", "https://vimeo.com", "https://i.vimeocdn.com"];
+  const policies = [directives(header), directives(testCsp)];
+  for (const policy of policies) for (const host of hosts) {
+    assert.ok(policy.get("connect-src")?.has(host), host);
+    assert.ok(!policy.get("img-src")?.has(host), host);
+  }
+  assert.deepEqual(hosts.filter(host => policies[0].get("connect-src")?.has(host)), hosts.filter(host => policies[1].get("connect-src")?.has(host)));
+});

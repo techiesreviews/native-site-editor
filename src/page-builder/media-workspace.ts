@@ -12,7 +12,7 @@ import { isMediaTextFile, mediaMentions } from "./media-mentions";
 import { gitBlobSha, type UploadBytes, uploadImageType, uploadProblem } from "../uploads";
 import type { DraftScope } from "../drafts";
 import type { DraftAccess } from "../file-changes";
-import { setMediaDescription, MEDIA_RECORDS_PATH, serializeMediaRecords, type MediaRecords, type MediaTrim } from "../../shared/media-records";
+import { setMediaDescription, MEDIA_RECORDS_PATH, serializeMediaRecords, type MediaRecords, type OnlineVideoRecord, type MediaTrim } from "../../shared/media-records";
 import { applyMediaMetadata, mediaMetadataView, type MediaMetadata } from "./media-metadata";
 import { alwaysKeptFiles, mediaFamilyOf, familyMembers } from "./media-families";
 import { mediaEscape } from "./media-markup";
@@ -309,7 +309,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     const ctx = await context();
     session?.assertLive();
     ctx.assertLive();
-    const { batch, text, metadata } = await prepare(ctx, place?.label ?? "Add images", requests.some((item) => item.replaceFrom));
+    const { batch, text, metadata } = await prepare(ctx, place?.label ?? (requests[0]?.onlineVideo ? `Add ${requests[0].onlineVideo.service === "youtube" ? "YouTube" : "Vimeo"} video` : "Add images"), requests.some((item) => item.replaceFrom));
     if (place?.expectedPaths) batch.expectedPaths = place.expectedPaths;
     for (const [path, version] of place?.expectedAssets ?? []) batch.expectedAssets.set(path, version);
     const reserved = new Set(batch.expectedPaths);
@@ -387,6 +387,11 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     }
     // New files join the viewed collection in the same batch: one Undo step.
     let next = applyMediaMetadata({ ...metadata, files: { ...metadata.files, ...inherited } }, changes);
+    if (requests.some(request => request.onlineVideo)) {
+      const { upsertOnlineVideo } = await import("./online-video");
+      ctx.assertLive();
+      requests.forEach((request, index) => { if (request.onlineVideo) next = upsertOnlineVideo(next, { ...request.onlineVideo, still: paths[index], stillCopied: true }); });
+    }
     for (const [path, record] of Object.entries(previews)) next.files[path] = { ...next.files[path], ...record };
     for (const [name, members] of joins) next = addToMediaCollection(next, name, members);
     if (place) {
@@ -720,6 +725,68 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       await commit(ctx, batch);
     },
     import: importMedia,
+    async onlineVideo(record: OnlineVideoRecord, place?: MediaPlacement) {
+      session?.assertLive();
+      const ctx = await context(); session?.assertLive(); ctx.assertLive();
+      const { batch, metadata } = await prepare(ctx, place?.label ?? `Add ${record.service === "youtube" ? "YouTube" : "Vimeo"} video`);
+      const { upsertOnlineVideo } = await import("./online-video"); ctx.assertLive();
+      let next = upsertOnlineVideo(metadata, record);
+      if (place) {
+        const source = await ctx.read(place.path); ctx.assertLive();
+        if (source !== place.source || (place.records && batch.expectedSources.get(MEDIA_RECORDS_PATH) !== place.records.text)) throw new Error("The page or media records changed. Nothing was added.");
+        batch.expectedSources.set(place.path, source); batch.live = place.live;
+        if (place.expectedPaths) batch.expectedPaths = place.expectedPaths;
+        for (const [path, version] of place.expectedAssets ?? []) batch.expectedAssets.set(path, version);
+        batch.uploads.push(...place.uploads ?? []);
+        const placed = place.apply([], [], next);
+        batch.edits.set(place.path, typeof placed === "string" ? placed : placed.page);
+        if (typeof placed !== "string" && placed.records) next = placed.records;
+      }
+      recordsEdit(batch, metadata, next); await commit(ctx, batch);
+    },
+    async onlineVideoStill(key: import("./online-video").OnlineVideoKey, still: import("./online-video").OnlineVideoStill) {
+      const ctx = active();
+      const { batch, metadata, text } = await prepare(ctx, "Change video picture", true);
+      assetGuard(batch, [still.path]);
+      const { findOnlineVideo, setOnlineVideoStill, swapOnlineVideoStillInPage } = await import("./online-video"); ctx.assertLive();
+      if (!findOnlineVideo(metadata, key)) throw new Error("This video is no longer in Media.");
+      for (const path of ctx.pages) {
+        if (text[path] === undefined) throw new Error(`${path} could not be read.`);
+        const next = swapOnlineVideoStillInPage(text[path], key, still);
+        if (next !== text[path]) batch.edits.set(path, next);
+      }
+      recordsEdit(batch, metadata, setOnlineVideoStill(metadata, key, still.path)); await commit(ctx, batch);
+    },
+    async onlineVideoServiceBar(key: import("./online-video").OnlineVideoKey, enabled: boolean) {
+      const ctx = active();
+      const { batch, metadata, text } = await prepare(ctx, "Change video controls", true);
+      const { findOnlineVideo, upsertOnlineVideo, setOnlineVideoServiceBarInPage } = await import("./online-video"); ctx.assertLive();
+      const record = findOnlineVideo(metadata, key);
+      if (!record) throw new Error("This video is no longer in Media.");
+      for (const path of ctx.pages) {
+        if (text[path] === undefined) throw new Error(`${path} could not be read.`);
+        const next = setOnlineVideoServiceBarInPage(text[path], key, enabled);
+        if (next !== text[path]) batch.edits.set(path, next);
+      }
+      const next = { ...record }; if (enabled) next.serviceBar = true; else delete next.serviceBar;
+      recordsEdit(batch, metadata, upsertOnlineVideo(metadata, next)); await commit(ctx, batch);
+    },
+    async removeOnlineVideo(key: import("./online-video").OnlineVideoKey) {
+      const ctx = active();
+      const { batch, metadata } = await prepare(ctx, "Remove online video");
+      const { findOnlineVideo, removeOnlineVideo } = await import("./online-video"); ctx.assertLive();
+      const record = findOnlineVideo(metadata, key);
+      if (!record) return;
+      let next = removeOnlineVideo(metadata, key);
+      // Only the picture copied from the service leaves with the video; Lex's own chosen image stays.
+      if (record.stillCopied && record.still && batch.expectedPaths.includes(record.still)) {
+        const paths = familyPaths(record.still, batch.expectedPaths); assetGuard(batch, paths);
+        next = await removedRecords(ctx, next, paths); ctx.assertLive();
+        next = { ...next, removed: next.removed?.map((entry, index, entries) => index === entries.length - 1 ? { ...entry, onlineVideo: record } : entry) };
+        batch.deletes.push(...paths);
+      }
+      recordsEdit(batch, metadata, next); await commit(ctx, batch); await sweep(ctx);
+    },
     async adding(change, agent = false) {
       // Adding settings live in the site's records, so they travel with the site and undo like any change.
       const ctx = active();
@@ -830,5 +897,5 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       return type && blob.type !== type ? new Blob([blob], { type }) : blob;
     },
     async openPage(path) { await active().openPage(path); },
-  } satisfies MediaPickerHost & { share(request: MediaShareRequest): Promise<string>; replace(request: MediaReplaceRequest, agent?: boolean): Promise<string>; trim(request: MediaTrimRequest): Promise<string>; describe(file: string, change: { text?: string; decorative?: boolean; page?: string; element?: string }): Promise<void> };
+  } satisfies MediaPickerHost & { onlineVideo(record: OnlineVideoRecord, place?: MediaPlacement): Promise<void>; onlineVideoStill(key: import("./online-video").OnlineVideoKey, still: import("./online-video").OnlineVideoStill): Promise<void>; onlineVideoServiceBar(key: import("./online-video").OnlineVideoKey, enabled: boolean): Promise<void>; removeOnlineVideo(key: import("./online-video").OnlineVideoKey): Promise<void>; share(request: MediaShareRequest): Promise<string>; replace(request: MediaReplaceRequest, agent?: boolean): Promise<string>; trim(request: MediaTrimRequest): Promise<string>; describe(file: string, change: { text?: string; decorative?: boolean; page?: string; element?: string }): Promise<void> };
 }
