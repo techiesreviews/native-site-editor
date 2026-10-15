@@ -612,8 +612,28 @@ test("the large editor carries the popup's state; Cancel returns to the popup un
   // Flip and Cancel: back to the popup as it was.
   const previews = large(page).locator(".image-popup__spot img");
   const unflipped = (await previews.first().getAttribute("src"))!;
-  await large(page).getByRole("button", { name: "Flip side to side", exact: true }).click();
+  // Slice 121: Flip is a toggle that shows when it is on, solid in the theme's --pressed, light and dark.
+  const flipX = large(page).locator(".image-large__tools:not(.image-large__iconrow)").getByRole("button", { name: "Flip side to side", exact: true });
+  const flipY = large(page).locator(".image-large__tools:not(.image-large__iconrow)").getByRole("button", { name: "Flip upside down", exact: true });
+  await expect(flipX).toHaveAttribute("aria-pressed", "false");
+  const look = (button: typeof flipX) => button.evaluate(element => {
+    const probe = document.createElement("i"); probe.style.cssText = "background: var(--pressed); color: var(--on-pressed)";
+    element.parentElement!.append(probe);
+    const want = getComputedStyle(probe), have = getComputedStyle(element), result = { background: have.backgroundColor, color: have.color, pressed: want.backgroundColor, onPressed: want.color };
+    probe.remove(); return result;
+  });
+  const off = await look(flipX);
+  await flipX.click();
   await expect(message).toHaveText("Saves a new picture for this spot");
+  await expect(flipX).toHaveAttribute("aria-pressed", "true");
+  await expect(flipY).toHaveAttribute("aria-pressed", "false");
+  await page.mouse.move(0, 0);
+  for (const scheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme: scheme });
+    await expect.poll(async () => { const on = await look(flipX); return on.background === on.pressed && on.color === on.onPressed; }, { message: `pressed Flip in ${scheme}` }).toBe(true);
+  }
+  await page.emulateMedia({ colorScheme: "light" });
+  expect((await look(flipX)).background).not.toBe(off.background);
   // Both previews show the flipped picture at once.
   for (const index of [0, 1]) await expect(previews.nth(index)).not.toHaveAttribute("src", unflipped);
   // Undo, Redo and Reset (the whole original in the place's own shape, Original).
@@ -621,6 +641,7 @@ test("the large editor carries the popup's state; Cancel returns to the popup un
   await largeUndo(page).click();
   await expect(message).toHaveText("Only changes this spot");
   await expect(previews.first()).toHaveAttribute("src", unflipped);
+  await expect(flipX).toHaveAttribute("aria-pressed", "false");
   await large(page).getByRole("button", { name: "Redo", exact: true }).click();
   await expect(message).toHaveText("Saves a new picture for this spot");
   await large(page).getByRole("button", { name: "Reset", exact: true }).click();
