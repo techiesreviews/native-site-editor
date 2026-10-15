@@ -4608,7 +4608,7 @@ const agentSiteActions: AgentSiteActions = {
     const [media, listing] = await Promise.all([import("./agent-media-actions"), import("./agent-media")]);
     if (!since.holds()) throw new Error("The editor changed branch or revision.");
     const ctx = await mediaController.workspaceContext(listing.isAgentMediaPath);
-    return media.applyAgentMedia(ctx, command, () => place!, frame ? () => frame : undefined);
+    return media.applyAgentMedia(ctx, command, () => place!, frame ? () => frame : undefined, target => mediaController.prepareLoop(target));
   },
   legacy: applyAgentCommand,
 };

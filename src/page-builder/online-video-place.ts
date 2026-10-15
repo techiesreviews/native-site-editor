@@ -14,6 +14,7 @@ import { addOnlineVideo } from "./online-video-add";
 import { findOnlineVideo, onlineVideoMarkup, parseOnlineVideoAddress, type OnlineVideo, type OnlineVideoKey } from "./online-video";
 import type { Stamp } from "../guarded-edit";
 import type { prepareMediaFile } from "./media-prepare";
+import { NEW_ONLINE_VIDEO_REFUSED } from "../../shared/online-video-address";
 
 export interface OnlineVideoPlaceTarget {
   place: MediaInsertPlace;
@@ -29,6 +30,7 @@ export async function placeOnlineVideo(
   proof: { stamp: Stamp; epoch: number; source: string }, cancelled: () => boolean,
   /** The service reads and the still's preparation (tests stub them). */
   service: { fetch?: typeof fetch; prepare?: typeof prepareMediaFile } = {},
+  recordedOnly = false,
 ) {
   const { place } = target, path = place.path;
   const changed = "The page changed while the picker was open, so nothing was added. Try again.";
@@ -51,8 +53,10 @@ export async function placeOnlineVideo(
   const records = readSiteMediaRecords(metadata, ctx.items.map(item => item.path));
   let video: OnlineVideo | undefined;
   // Chosen from Media: placed again as recorded, never contacting the service (with or without a still).
-  const again = "address" in chosen ? undefined : findOnlineVideo(records, chosen);
-  if ("address" in chosen) video = parseOnlineVideoAddress(chosen.address);
+  const addressed = "address" in chosen ? parseOnlineVideoAddress(chosen.address) : undefined;
+  const again = "address" in chosen ? recordedOnly && addressed ? findOnlineVideo(records, addressed) : undefined : findOnlineVideo(records, chosen);
+  if (recordedOnly && !again) throw new Error(NEW_ONLINE_VIDEO_REFUSED);
+  if ("address" in chosen) video = addressed;
   else {
     if (!again) throw new Error("This video is no longer in Media. Paste its address instead.");
     video = { service: again.service, id: again.id, ...again.hash ? { hash: again.hash } : {} };

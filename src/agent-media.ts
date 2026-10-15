@@ -1,3 +1,4 @@
+import { mediaOnlineVideos, onlineVideoHref } from "./page-builder/online-video";
 import { MEDIA_LIST_LIMIT, MEDIA_PREVIEW_LIMIT, MEDIA_PREVIEW_SIZE, isPreviewablePicture, mediaKind, picturePreviewRefusal, textBytes } from "../shared/agent";
 import { MEDIA_RECORDS_PATH, type MediaRecords } from "../shared/media-records";
 import { isImagePath } from "./native-structure";
@@ -19,6 +20,7 @@ export interface MediaListInput {
   offset: number;
   limit: number;
   note?: string;
+  online?: ReturnType<typeof mediaOnlineVideos>;
 }
 
 /** One full entry per family; paging never removes fields from an entry. */
@@ -31,7 +33,7 @@ export function mediaListReport(input: MediaListInput) {
     ...families.filter(family => familyMembers(family).some(path => items.has(path))),
     ...input.items.filter(item => !members.has(item.path)).map((item): MediaFamily => ({ main: item.path, copies: [], originals: [], subtitles: [] })),
   ].filter(family => family.main.startsWith(prefix)).sort((a, b) => a.main.localeCompare(b.main));
-  const media = all.slice(input.offset, input.offset + input.limit).map(family => {
+  const entries: Record<string, unknown>[] = all.map(family => {
     const item = items.get(family.main), record = input.records?.files[family.main];
     const description = fileDescriptionState(record), usage = mediaUsageFor(input.usage, family.main);
     const paths = familyMembers(family);
@@ -49,8 +51,13 @@ export function mediaListReport(input: MediaListInput) {
       ...(paths.some(path => items.get(path)?.draft) ? { draft: true } : {}),
     };
   });
-  const report = () => ({ total: all.length, offset: input.offset, count: media.length,
-    ...(input.offset + media.length < all.length ? { nextOffset: input.offset + media.length } : {}),
+  if (!prefix) for (const video of input.online ?? []) entries.push({
+    path: video.key, kind: "online-video", name: video.title ?? `${video.service === "youtube" ? "YouTube" : "Vimeo"} video`,
+    ...video, address: onlineVideoHref(video), serviceBar: video.serviceBar ?? false,
+  });
+  const media = entries.slice(input.offset, input.offset + input.limit);
+  const report = () => ({ total: entries.length, offset: input.offset, count: media.length,
+    ...(input.offset + media.length < entries.length ? { nextOffset: input.offset + media.length } : {}),
     ...(input.usage.unreadable.length ? { notChecked: input.usage.unreadable } : {}),
     ...(input.note || input.records === undefined ? { note: input.note ?? `${MEDIA_RECORDS_PATH} could not be read; descriptions, collections and Always keep are unknown.` } : {}),
     media });
@@ -86,7 +93,7 @@ export async function listWorkspaceMedia(ctx: MediaWorkspaceContext, request: { 
   }
   ctx.assertLive();
   const usage = mediaUsageRecords({ media: ctx.items.map(item => item.path), sources, pages: ctx.pages, components: ctx.components });
-  return JSON.stringify(mediaListReport({ ...request, items: ctx.items, paths: ctx.paths, records, note, usage }));
+  return JSON.stringify(mediaListReport({ ...request, items: ctx.items, paths: ctx.paths, records, note, usage, online: records ? mediaOnlineVideos(records, Object.fromEntries(Object.entries(sources).filter((entry): entry is [string, string] => entry[1] !== undefined)), ctx.paths) : [] }));
 }
 
 export async function previewPicture(blob: Blob, path: string) {

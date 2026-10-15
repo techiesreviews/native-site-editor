@@ -7,6 +7,7 @@
 // and the user can undo it, discard it, and saves it to GitHub themselves.
 import { McpServer, createMcpHandler } from "@modelcontextprotocol/server";
 import { z } from "zod";
+import { parseOnlineVideoAddress } from "../shared/online-video-address";
 import {
   getHub,
   connectionContext,
@@ -303,7 +304,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
   // An inspection's report arrives as JSON; the agent gets it as an object.
   function resultOf(command: AgentCommand) {
     const report = command.result?.report;
-    if (!["inspect_preview", "list_media", "adding_settings", "frame_image", "remove_media", "keep_media", "restore_media"].includes(command.operation) || typeof report !== "string") return command.result;
+    if (!["inspect_preview", "list_media", "adding_settings", "frame_image", "loop_video", "remove_media", "keep_media", "restore_media"].includes(command.operation) || typeof report !== "string") return command.result;
     try {
       return JSON.parse(report);
     } catch {
@@ -710,7 +711,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
   server.registerTool(
     "list_media",
     {
-      description: "List media with kind, size, family (copies, originals, still, subtitles), uses (pages and other uses), description (by agent, or Decorative), collections, Always keep and Not checked yet; page with offset/limit and nextOffset. Follow the Media chapter of the native-site://conventions resource for the rules.",
+      description: "List media and recorded Online videos (title, service, address, still, uses, serviceBar) with kind, size, family (copies, originals, still, subtitles), uses (pages and other uses), description (by agent, or Decorative), collections, Always keep and Not checked yet; page with offset/limit and nextOffset. Follow the Media chapter of the native-site://conventions resource for the rules.",
       inputSchema: z.object({ folder: z.string().max(1024).optional(), offset: z.number().int().min(0).optional(), limit: z.number().int().min(1).max(200).optional(), requestId, waitSeconds }),
       annotations: readOnly,
     },
@@ -791,16 +792,49 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
   });
 
   server.registerTool("place_media", {
-    description: "Place a file already in Media into an existing image element on a page. Unsaved until the user saves. Follow the Media chapter of native-site://conventions.",
+    description: "Place a picture into an existing image, or video, audio or a download where Add → Media would place it with element selected. Picture spots take silent Looping video. YouTube/Vimeo addresses must already be recorded in Media; new addresses stay with the user. Unsaved until the user saves. Follow the Media chapter of native-site://conventions.",
     inputSchema: z.object({ path: mediaPath, element: mediaPath, file: mediaPath, requestId, waitSeconds }),
     annotations: editing,
   }, async ({ path, element, file, requestId, waitSeconds }) => {
     const args = { element, file };
-    const problem = writablePathProblem(path) ?? (isOutsideMediaAddress(file) ? OUTSIDE_MEDIA_REFUSED : writablePathProblem(file)) ?? agentMediaArgsProblem("place_media", args);
+    const problem = writablePathProblem(path) ?? (parseOnlineVideoAddress(file) ? undefined : isOutsideMediaAddress(file) ? OUTSIDE_MEDIA_REFUSED : writablePathProblem(file)) ?? agentMediaArgsProblem("place_media", args, path);
     if (problem) return failure(problem);
     if (!/\.html$/i.test(path)) return failure("Give a page path ending in .html.");
     const { context } = await current();
     return queue("place_media", context, { path, args, requestId, waitSeconds });
+  });
+  server.registerTool("loop_video", {
+    description: "Read or change Looping video for one placed video, using the edit bar's transaction. A picture spot always loops silently. Unsaved until the user saves. Follow the Media chapter of native-site://conventions.",
+    inputSchema: z.object({ path: mediaPath, element: mediaPath, looping: z.boolean().optional(), requestId, waitSeconds }),
+    annotations: editing,
+  }, async ({ path, element, looping, requestId, waitSeconds }) => {
+    const args = { element, looping };
+    const problem = writablePathProblem(path) ?? agentMediaArgsProblem("loop_video", args, path);
+    if (problem) return failure(problem);
+    const { context } = await current();
+    return queue("loop_video", context, { path, args, requestId, waitSeconds });
+  });
+  server.registerTool("video_still", {
+    description: "Choose a video's still everywhere: exactly one of moment (seconds into the video, saved as WebP) or picture (a picture already in Media). Unsaved until the user saves. Follow the Media chapter of native-site://conventions.",
+    inputSchema: z.object({ file: mediaPath, moment: z.number().finite().nonnegative().optional(), picture: mediaPath.optional(), requestId, waitSeconds }),
+    annotations: editing,
+  }, async ({ file, moment, picture, requestId, waitSeconds }) => {
+    const args = { file, moment, picture };
+    const problem = agentMediaArgsProblem("video_still", args) ?? writablePathProblem(file) ?? (picture ? writablePathProblem(picture) : undefined);
+    if (problem) return failure(problem);
+    const { context } = await current();
+    return queue("video_still", context, { path: "", args, requestId, waitSeconds });
+  });
+  server.registerTool("write_subtitles", {
+    description: "Write WebVTT or SubRip text for a video or audio file already in Media. Adds subtitles everywhere in one unsaved change, marked by agent in To check. Never uploads or fetches. Unsaved until the user saves. Follow the Media chapter of native-site://conventions.",
+    inputSchema: z.object({ file: mediaPath, text: z.string().max(2 * 1024 * 1024), format: z.enum(["vtt", "srt"]).optional(), requestId, waitSeconds }),
+    annotations: editing,
+  }, async ({ file, text: subtitles, format, requestId, waitSeconds }) => {
+    const args = { file, text: subtitles, format };
+    const problem = agentMediaArgsProblem("write_subtitles", args) ?? writablePathProblem(file);
+    if (problem) return failure(problem);
+    const { context } = await current();
+    return queue("write_subtitles", context, { path: "", args, requestId, waitSeconds });
   });
   server.registerTool("describe_media", {
     description: "Write a file description or a place's own words, or mark Decorative. Unsaved until the user saves. Follow the Media chapter of native-site://conventions.",

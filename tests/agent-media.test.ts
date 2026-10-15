@@ -145,3 +145,21 @@ test("tab refuses upload-like writes and placement outside Media before mutation
   const context = { items: [] } satisfies Pick<import("../src/page-builder/media-workspace.ts").MediaWorkspaceContext, "items">; // Membership refusal only reads items.
   await assert.rejects(applyAgentMedia(context as import("../src/page-builder/media-workspace.ts").MediaWorkspaceContext, { ...command, operation: "place_media", path: "index.html", args: { file: "images/outside.png", element: "0" } }, () => { throw new Error("Placement must not start"); }), /never upload, fetch or generate/);
 });
+
+test("Worker and tab share video tool argument rules", async () => {
+  const { agentMediaArgsProblem: problem } = await import("../shared/agent-media-args");
+  assert.equal(problem("place_media", { file: "https://youtu.be/dQw4w9WgXcQ?t=5", element: "0" }), undefined);
+  for (const file of ["media/film.mp4", "media/sound.mp3", "files/menu.pdf", "files/archive.zip"])
+    assert.equal(problem("place_media", { file, element: "0" }), undefined);
+  for (const file of ["https://example.com/video.mp4", "data:video/mp4,x", "blob:x"])
+    assert.match(problem("place_media", { file, element: "0" })!, /never upload/);
+  assert.equal(problem("loop_video", { element: "0", looping: false }, "index.html"), undefined);
+  assert.match(problem("loop_video", { element: "wrong" }, "index.html")!, /video element id/);
+  assert.match(problem("video_still", { file: "media/film.mp4" })!, /exactly one/);
+  assert.match(problem("video_still", { file: "media/film.mp4", picture: "images/a.png", moment: 1 })!, /exactly one/);
+  for (const moment of [-1, Infinity, NaN]) assert.match(problem("video_still", { file: "media/film.mp4", moment })!, /seconds/);
+  assert.match(problem("video_still", { file: "media/film.mp4", picture: "https://example.com/a.png" })!, /never upload/);
+  assert.match(problem("video_still", { file: "media/film.mp4", picture: "media/sound.mp3" })!, /Choose a picture/);
+  assert.match(problem("write_subtitles", { file: "images/a.png", text: "Hello" })!, /Only a video or audio/);
+  assert.match(problem("write_subtitles", { file: "media/film.mp4", text: "é".repeat(1024 * 1024 + 1) })!, /2 MB/);
+});

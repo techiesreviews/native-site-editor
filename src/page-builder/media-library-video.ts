@@ -13,23 +13,7 @@ export function currentSubtitles(path: string, meta: MediaMetadata, paths: strin
   return paths.includes(vtt) ? vtt : undefined;
 }
 
-/** A frame of the details player as the still's WebP, at the video's own size. */
-async function momentPicture(video: HTMLVideoElement): Promise<Blob> {
-  video.pause();
-  if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
-    // Nothing drawn yet (only the length is loaded): load the frame at the current moment.
-    await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error("The video did not load. Play it, pause at the moment you want, then try again.")), 10_000);
-      video.addEventListener("seeked", () => { clearTimeout(timer); resolve(); }, { once: true });
-      video.currentTime = video.currentTime;
-    });
-  }
-  if (!video.videoWidth || !video.videoHeight) throw new Error("The video did not load. Play it, pause at the moment you want, then try again.");
-  const canvas = new OffscreenCanvas(video.videoWidth, video.videoHeight);
-  canvas.getContext("2d")!.drawImage(video, 0, 0);
-  const { createMediaEncoder } = await import("./media-encoders");
-  return createMediaEncoder()(canvas, "image/webp", 80);
-}
+import { momentPicture } from "./video-moment";
 
 function row(title: string, ...content: (HTMLElement | string)[]) {
   const part = node("div", "media-detail__part");

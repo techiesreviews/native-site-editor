@@ -27,6 +27,9 @@ export type AgentOperation =
   | "inspect_preview"
   | "list_media"
   | "preview_media"
+  | "loop_video"
+  | "video_still"
+  | "write_subtitles"
   | "frame_image"
   | "place_media"
   | "describe_media"
@@ -109,6 +112,10 @@ export interface AgentCommandArgs {
   shape?: "original" | "square" | "4:3" | "16:9" | "4:5" | "component";
   focus?: { x: number; y: number };
   trim?: AgentImageTrim;
+  looping?: boolean;
+  moment?: number;
+  picture?: string;
+  format?: "vtt" | "srt";
   folder?: string;
   offset?: number;
 }

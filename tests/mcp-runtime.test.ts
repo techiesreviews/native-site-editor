@@ -19,7 +19,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { INSPECTION_LIMIT, MEDIA_LIST_LIMIT, MEDIA_PREVIEW_LIMIT, THREAD_LIMIT, THREAD_TEXT_LIMIT, agentResultLimit, applyReplacements, textHash } from "../shared/agent.ts";
-import { mediaListReport } from "../src/agent-media.ts";
+import { isAgentMediaPath, mediaListReport } from "../src/agent-media.ts";
 import { mediaUsageRecords } from "../src/page-builder/media-usage.ts";
 import { parseMediaRecords } from "../shared/media-records.ts";
 import { requestOperation } from "../worker/agent-requests.ts";
@@ -97,8 +97,8 @@ test("MCP site tools read the site, queue guarded changes for the editor tab, re
     const tools = listing.map((tool) => tool.name).sort();
     assert.deepEqual(tools, [
       "add_section", "adding_settings", "change_collection", "create_page", "delete_file", "describe_media", "edit_file", "export_site", "frame_image", "get_command_status", "get_page", "get_selection", "get_site",
-      "inspect_preview", "keep_media", "list_files", "list_media", "make_component", "move_file", "move_section", "open_page", "place_media", "preview_media", "read_file", "remove_media", "remove_section", "replace_media", "reply_to_request", "restore_media", "set_page_details",
-      "wait_for_requests", "write_file",
+      "inspect_preview", "keep_media", "list_files", "list_media", "loop_video", "make_component", "move_file", "move_section", "open_page", "place_media", "preview_media", "read_file", "remove_media", "remove_section", "replace_media", "reply_to_request", "restore_media", "set_page_details",
+      "video_still", "wait_for_requests", "write_file", "write_subtitles",
     ]);
     const documentation = readFileSync(new URL("../docs/mcp.md", import.meta.url), "utf8");
     for (const name of tools) assert.ok(documentation.includes(`\`${name}\``), `docs/mcp.md must list ${name}`);
@@ -158,7 +158,7 @@ test("MCP site tools read the site, queue guarded changes for the editor tab, re
     assert.equal(servedMedia, mediaChapter(siteConventions));
     for (const rule of ["adding_settings", "media/images/", "srcset", "### Shape, focus and trims", "frame_image", "whole new trim", "### Removing, keeping and restoring", "### Renaming and Replace everywhere"]) assert.ok(servedMedia.includes(rule));
     assert.doesNotMatch(servedMedia.slice(1), /^## /m);
-    for (const name of ["list_media", "preview_media", "place_media", "describe_media", "change_collection", "adding_settings", "frame_image", "remove_media", "keep_media", "restore_media", "replace_media"])
+    for (const name of ["list_media", "preview_media", "place_media", "describe_media", "change_collection", "adding_settings", "frame_image", "remove_media", "keep_media", "restore_media", "replace_media", "loop_video", "video_still", "write_subtitles"])
       assert.match(listing.find(tool => tool.name === name)!.description!, /Media chapter.*native-site:\/\/conventions/);
     assert.match(client.getInstructions()!, /Media chapter before listing, placing or describing media, changing collections, reading or changing adding settings, using frame_image/);
     assert.ok(chapter.startsWith("## Components\n"));
@@ -971,7 +971,7 @@ test("agent media editing tools validate before queueing and retain their comman
     }));
     const call = (name: string, args: Record<string, unknown>) => client!.callTool({ name, arguments: { ...args, waitSeconds: 0 } });
     const tools = (await client.listTools()).tools;
-    for (const name of ["place_media", "describe_media", "change_collection", "adding_settings", "frame_image", "remove_media", "keep_media", "restore_media", "replace_media"]) {
+    for (const name of ["place_media", "describe_media", "change_collection", "adding_settings", "frame_image", "remove_media", "keep_media", "restore_media", "replace_media", "loop_video", "video_still", "write_subtitles"]) {
       assert.equal(tools.find(tool => tool.name === name)?.annotations?.readOnlyHint, false);
       assert.match(tools.find(tool => tool.name === name)!.description!, /Unsaved until the user saves.*Media chapter.*native-site:\/\/conventions/);
     }
@@ -983,7 +983,7 @@ test("agent media editing tools validate before queueing and retain their comman
     }
     for (const chosen of ["https://example.com/a.png", "//example.com/a.png", "data:image/png,x", ".github/a.png", ".editor/media.json", "files/menu.pdf", "images/a.png"])
       assert.equal((await call("replace_media", { file: "images/a.png", with: chosen })).isError, true);
-    for (const file of ["https://example.com/a.png", "http://example.com/a.png", "//example.com/a.png", "data:image/png;base64,x", "blob:x", "files/menu.pdf", ".github/a.png", ".editor/media.json"]) {
+    for (const file of ["https://example.com/a.png", "http://example.com/a.png", "//example.com/a.png", "data:image/png;base64,x", "blob:x", ".github/a.png", ".editor/media.json"]) {
       const refused = await call("place_media", { path: "index.html", element: "1", file });
       assert.equal(refused.isError, true);
       if (/^(http|\/\/|data:|blob:)/.test(file)) assert.match(JSON.stringify(refused), /never upload, fetch or generate media/);
@@ -1005,6 +1005,11 @@ test("agent media editing tools validate before queueing and retain their comman
     assert.equal((await tab.hub()).commands?.length ?? 0, 0);
     for (const name of ["describe_media", "change_collection", "adding_settings", "frame_image", "list_media", "read_file"]) assert.ok(MEDIA_RECORDS_REFUSED.includes(name));
     const queued: [string, Record<string, unknown>, string, Record<string, unknown>][] = [
+      ["loop_video", { path: "index.html", element: "0", looping: true }, "index.html", { element: "0", looping: true }],
+      ["video_still", { file: "media/film.mp4", picture: "images/a.png" }, "", { file: "media/film.mp4", picture: "images/a.png" }],
+      ["write_subtitles", { file: "media/film.mp4", text: "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nHello\n" }, "", { file: "media/film.mp4", text: "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nHello\n" }],
+      ["place_media", { path: "index.html", element: "0", file: "files/menu.pdf" }, "index.html", { element: "0", file: "files/menu.pdf" }],
+      ["place_media", { path: "index.html", element: "0", file: "https://youtu.be/dQw4w9WgXcQ?t=5" }, "index.html", { element: "0", file: "https://youtu.be/dQw4w9WgXcQ?t=5" }],
       ["frame_image", { path: "index.html", element: "1.0" }, "index.html", { element: "1.0" }],
       ["frame_image", { path: "index.html", element: "1.0", shape: "component" }, "index.html", { element: "1.0", shape: "component" }],
       ["frame_image", { path: "index.html", element: "1.0", shape: "square", focus: { x: 25, y: 75 }, trim: { zoom: 2 } }, "index.html", { element: "1.0", shape: "square", focus: { x: 25, y: 75 }, trim: { zoom: 2 } }],
@@ -1101,7 +1106,7 @@ function agentMediaFixture(source = '<section><img src="/images/old.png" alt="Ol
   return { file, text, paths, bytes, ports, batches, history, labels, controller: createMediaController(ports), pick: () => pick };
 }
 function mediaCommand(operation: AgentCommand["operation"], args: AgentCommand["args"] = {}): AgentCommand {
-  return { id: "media-test", operation, args, path: ["place_media", "frame_image"].includes(operation) ? "index.html" : "", branch: "main", commit: "head", content: "", state: "pending", createdAt: 0 };
+  return { id: "media-test", operation, args, path: ["place_media", "frame_image", "loop_video"].includes(operation) ? "index.html" : "", branch: "main", commit: "head", content: "", state: "pending", createdAt: 0 };
 }
 
 test("an agent placement equals the editor's markup for the same place, including picture replacement", async () => {
@@ -1767,5 +1772,170 @@ test("agent removal, keep and restore retain asset proofs across a held library 
     assert.equal(f.batches.length, 0); assert.equal(f.history.length, 0);
     assert.equal(f.bytes.get(f.file), replacement);
     assert.ok(f.paths.includes(f.file));
+  }
+});
+
+const videoPage = (body: string) => `<html><head><title>Media</title></head><body><main>${body}</main></body></html>`;
+
+function agentVideoFixture(source = '<section><p>Selected</p></section>') {
+  const f = agentMediaFixture(videoPage(source));
+  f.ports.locateElement = (source, node) => { const tree = readSource(source, { page: true }), element = tree.at(node); return element && tree.range(element); };
+  for (const path of ["media/film.mp4", "media/sound.mp3", "media/guide.pdf", "media/film.vtt", "media/film.webp", "styles/media-player.css", "scripts/media-player.js", "scripts/media-online.js"]) {
+    f.paths.push(path); f.bytes.set(path, new Blob([path]));
+    if (/\.(?:css|js|vtt)$/.test(path)) f.text.set(path, "");
+  }
+  const records = parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH));
+  records.files["media/film.mp4"] = { still: "media/film.webp", description: { text: "A film" } };
+  records.files["media/sound.mp3"] = { duration: 42 };
+  f.text.set(MEDIA_RECORDS_PATH, JSON.stringify(records));
+  const actions = agentTidyActions(f);
+  actions.open = async () => true;
+  actions.media = async command => applyAgentMedia(await f.controller.workspaceContext(isAgentMediaPath), command,
+    target => f.controller.preparePlacement(target), undefined, target => f.controller.prepareLoop(target));
+  return { ...f, actions };
+}
+
+test("agent video, audio, download and picture-spot placement equal Add → Media, with one Undo", async () => {
+  for (const [file, source, element] of [
+    ["media/film.mp4", '<section><p>Selected</p></section>', "0.0.0"],
+    ["media/sound.mp3", '<section><p>Selected</p></section>', "0.0.0"],
+    ["media/guide.pdf", '<section><div></div></section>', "0.0.0"],
+    ["media/film.mp4", '<section><photo-card><img slot="media" src="/images/old.png" alt="Old"></photo-card></section>', "0.0.0.0"],
+    ["media/film.mp4", '<section><photo-card><picture slot="media"><img src="/images/old.png" alt="Old"></picture></photo-card></section>', "0.0.0.0.0"],
+  ]) {
+    const editor = agentVideoFixture(source), agent = agentVideoFixture(source);
+    if (source.includes("slot=")) {
+      await editor.controller.chooseImage({ path: "index.html", node: element.split(".").map(Number) });
+    } else {
+      const { clickTarget } = await import("../src/page-builder/block-insert");
+      const target = clickTarget(editor.text.get("index.html")!, "media", element.split(".").map(Number), () => undefined);
+      assert.equal(target.ok, true); if (!target.ok) throw new Error(target.reason);
+      await editor.controller.insertMedia({ path: "index.html", ...target });
+    }
+    await editor.pick()!.onPick!({ path: file, alt: "" }, () => false);
+    const result = await applySiteCommand(agent.actions, mediaCommand("place_media", { file, element }));
+    assert.deepEqual(agent.text, editor.text);
+    assert.ok(result.result?.element);
+    assert.equal(agent.history.length, 1);
+    assert.match(agent.text.get("index.html")!, /\/styles\/media-player.css/);
+    assert.doesNotMatch(agent.text.get("index.html")!, /autoplay/);
+    agent.history.pop()!(); assert.equal(agent.text.get("index.html"), videoPage(source));
+  }
+});
+
+test("agent recorded Online video placement uses the picker engine, keeps start time and never fetches", async () => {
+  const f = agentVideoFixture(), editor = agentVideoFixture();
+  const original = f.text.get("index.html")!;
+  for (const fixture of [f, editor]) {
+    const records = parseMediaRecords(fixture.text.get(MEDIA_RECORDS_PATH));
+    records.onlineVideos = [{ service: "youtube", id: "dQw4w9WgXcQ", title: "Recorded film", still: "media/film.webp", serviceBar: true }];
+    fixture.text.set(MEDIA_RECORDS_PATH, JSON.stringify(records));
+  }
+  const before = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => { calls++; throw new Error("No network for recorded videos"); };
+  try {
+    await editor.controller.insertMedia({ path: "index.html", parent: [0, 0], index: 1 });
+    const { createMediaWorkspace } = await import("../src/page-builder/media-workspace");
+    await editor.pick()!.onlineVideo!({ address: "https://youtu.be/dQw4w9WgXcQ?t=5" }, () => false, createMediaWorkspace(() => editor.controller.workspaceContext(isAgentMediaPath)));
+    await applySiteCommand(f.actions, mediaCommand("place_media", { file: "https://youtu.be/dQw4w9WgXcQ?t=5", element: "0.0.0" }));
+    assert.equal(f.text.get("index.html"), editor.text.get("index.html"));
+    assert.match(f.text.get("index.html")!, /&amp;t=5/);
+    assert.equal(calls, 0); assert.equal(f.history.length, 1);
+    const { listWorkspaceMedia } = await import("../src/agent-media");
+    const report = JSON.parse(await listWorkspaceMedia(await f.controller.workspaceContext(isAgentMediaPath), { offset: 0, limit: 100 }));
+    const online = report.media.find((item: { kind: string }) => item.kind === "online-video");
+    assert.equal(online.title, "Recorded film"); assert.equal(online.serviceBar, true);
+    assert.deepEqual(online.uses, ["index.html"]); assert.match(online.address, /youtube/);
+    f.history.pop()!(); assert.equal(f.text.get("index.html"), original);
+    const text = new Map(f.text), paths = [...f.paths];
+    await assert.rejects(applySiteCommand(f.actions, mediaCommand("place_media", { file: "https://vimeo.com/12345", element: "0.0.0" })), /Only the user can add a new online video/);
+    assert.deepEqual(f.text, text); assert.deepEqual(f.paths, paths); assert.equal(f.history.length, 0); assert.equal(calls, 0);
+  } finally { globalThis.fetch = before; }
+});
+
+test("agent Looping video equals the edit bar on/off, refuses other elements and picture-spot off", async () => {
+  const source = '<section><video src="/media/film.mp4" controls preload="none"></video></section>';
+  const f = agentVideoFixture(source), editor = agentVideoFixture(source);
+  for (const looping of [true, false]) {
+    const { createVideoPlaces } = await import("../src/page-builder/media-video-place");
+    const videos = createVideoPlaces(editor.ports, () => editor.controller.workspaceContext(isAgentMediaPath), editor.ports.load);
+    await videos.toggleLooping("index.html", [0, 0, 0], editor.text.get("index.html")!, looping);
+    await applySiteCommand(f.actions, mediaCommand("loop_video", { element: "0.0.0", looping }));
+    assert.deepEqual(f.text, editor.text);
+    const read = await applySiteCommand(f.actions, mediaCommand("loop_video", { element: "0.0.0" }));
+    assert.deepEqual(JSON.parse(read.result!.report), { looping });
+  }
+  assert.equal(f.history.length, 2); f.history.pop()!(); f.history.pop()!(); assert.equal(f.text.get("index.html"), videoPage(source));
+  for (const [page, element, message] of [
+    ['<section><photo-card><video slot="media" src="/media/film.mp4" muted loop></video></photo-card></section>', "0.0.0.0", /always loops silently/],
+    ['<section><p>Not video</p></section>', "0.0.0", /Choose a video/],
+  ] as const) {
+    const bad = agentVideoFixture(page);
+    await assert.rejects(applySiteCommand(bad.actions, mediaCommand("loop_video", { element, looping: false })), message);
+    assert.equal(bad.history.length, 0);
+  }
+});
+
+test("agent still from a Media picture or encoded moment updates every copy with one Undo", async () => {
+  const source = '<section><video src="/media/film.mp4"></video><video src="/media/film.mp4"></video></section>';
+  for (const moment of [false, true]) {
+    const f = agentVideoFixture(source), editor = agentVideoFixture(source);
+    const { createMediaWorkspace } = await import("../src/page-builder/media-workspace");
+    const host = createMediaWorkspace(() => editor.controller.workspaceContext(isAgentMediaPath)); await host.load();
+    const blob = new Blob(["encoded frame"], { type: "image/webp" });
+    await host.still("media/film.mp4", moment ? { blob } : { path: "images/old.png" });
+    let sought: number | undefined;
+    await applyAgentMedia(await f.controller.workspaceContext(isAgentMediaPath), mediaCommand("video_still", { file: "media/film.mp4", ...moment ? { moment: 3 } : { picture: "images/old.png" } }),
+      target => f.controller.preparePlacement(target), undefined, undefined, async (_blob, seconds) => { sought = seconds; return blob; });
+    assert.deepEqual(f.text, editor.text); assert.equal(f.history.length, 1);
+    if (moment) { assert.equal(sought, 3); assert.equal(await f.bytes.get("media/film.webp")!.text(), "encoded frame"); }
+    f.history.pop()!(); assert.equal(f.text.get("index.html"), videoPage(source));
+  }
+});
+
+test("agent VTT and SRT subtitles use the workspace, mark To check and undo together", async () => {
+  const { mediaToCheck } = await import("../src/page-builder/media-descriptions");
+  const { createMediaWorkspace } = await import("../src/page-builder/media-workspace");
+  for (const file of ["media/film.mp4", "media/sound.mp3"]) for (const format of ["vtt", "srt"] as const) {
+    const tag = file.endsWith("mp4") ? "video" : "audio";
+    const source = `<section><${tag} src="/${file}"></${tag}><${tag} src="/${file}"></${tag}></section>`;
+    const f = agentVideoFixture(source), editor = agentVideoFixture(source);
+    const text = format === "vtt" ? "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nHello\n" : "1\n00:00:00,000 --> 00:00:01,000\nHello\n";
+    const host = createMediaWorkspace(() => editor.controller.workspaceContext(isAgentMediaPath)); await host.load();
+    await host.subtitles(file, { name: `subtitles.${format}`, text });
+    await applySiteCommand(f.actions, mediaCommand("write_subtitles", { file, text, format }));
+    assert.equal(f.text.get("index.html"), editor.text.get("index.html"));
+    const vtt = file.replace(/\.[^.]+$/, ".vtt");
+    assert.equal(await f.bytes.get(vtt)!.text(), await editor.bytes.get(vtt)!.text());
+    const records = parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH));
+    assert.equal(records.files[file].subtitlesByAgent, true);
+    assert.ok(mediaToCheck(records, f.paths, { ...Object.fromEntries(f.text), [vtt]: await f.bytes.get(vtt)!.text() }).some(row => row.subtitles === vtt));
+    assert.equal((f.text.get("index.html")!.match(/<track /g) ?? []).length, 2);
+    assert.equal(f.history.length, 1); f.history.pop()!(); assert.equal(f.text.get("index.html"), videoPage(source));
+    assert.equal(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files[file]?.subtitlesByAgent, undefined);
+  }
+});
+
+
+test("agent still and subtitle refusals leave all files and Undo untouched", async () => {
+  const f = agentVideoFixture();
+  const before = new Map(f.text), paths = [...f.paths];
+  for (const [operation, args, message] of [
+    ["video_still", { file: "media/sound.mp3", picture: "images/old.png" }, /Only a video/],
+    ["video_still", { file: "media/film.mp4", picture: "images/outside.png" }, /never upload/],
+    ["video_still", { file: "media/film.mp4", picture: "media/sound.mp3" }, /Choose a picture/],
+    ["write_subtitles", { file: "media/film.mp4", format: "vtt", text: "not WebVTT" }, /not a WebVTT/],
+    ["write_subtitles", { file: "media/film.mp4", format: "vtt", text: "WEBVTT\n\n" }, /no subtitles/],
+    ["write_subtitles", { file: "media/film.mp4", format: "srt", text: "no cues" }, /no subtitles/],
+    ["write_subtitles", { file: "media/outside.mp4", text: "WEBVTT" }, /never upload/],
+  ] as const) {
+    await assert.rejects(applySiteCommand(f.actions, mediaCommand(operation, args)), message);
+    assert.deepEqual(f.text, before); assert.deepEqual(f.paths, paths); assert.equal(f.history.length, 0);
+  }
+  for (const file of ["media/sound.mp3", "media/guide.pdf"]) {
+    const spot = agentVideoFixture('<section><photo-card><img slot="media" src="/images/old.png"></photo-card></section>');
+    await assert.rejects(applySiteCommand(spot.actions, mediaCommand("place_media", { file, element: "0.0.0.0" })), /A picture spot takes only a picture or a video/);
+    assert.equal(spot.history.length, 0);
   }
 });

@@ -1,7 +1,8 @@
 import { agentMediaArgsProblem } from "../shared/agent-media-args";
+import { parseOnlineVideoAddress } from "../shared/online-video-address";
 import { agentImageTrim } from "../shared/agent-image-frame";
 import type { createMediaController } from "./controllers/media-controller";
-import { OUTSIDE_MEDIA_REFUSED, MEDIA_LIST_LIMIT, parseOutlineId, type AgentCommand } from "../shared/agent";
+import { OUTSIDE_MEDIA_REFUSED, MEDIA_LIST_LIMIT, mediaKind, parseOutlineId, type AgentCommand } from "../shared/agent";
 import { MEDIA_RECORDS_PATH } from "../shared/media-records";
 import { readSiteMediaRecords } from "./page-builder/media-collections";
 import { createMediaWorkspace, type MediaWorkspaceContext } from "./page-builder/media-workspace";
@@ -12,8 +13,10 @@ import { mediaImageForPlacement, type MediaImage } from "./page-builder/media-ma
 /** Loaded only when an agent changes Media. All writes use the editor's media transactions. */
 export async function applyAgentMedia(
   ctx: MediaWorkspaceContext, command: AgentCommand,
-  preparePlacement: (target: { path: string; node: number[] }) => (image: MediaImage, asset?: { path: string; version?: string }) => Promise<void>,
+  preparePlacement: (target: { path: string; node: number[] }) => (image: MediaImage, asset?: { path: string; version?: string }) => Promise<void | number[]>,
   prepareFrame?: ReturnType<typeof createMediaController>["prepareFrame"],
+  prepareLoop?: ReturnType<typeof createMediaController>["prepareLoop"],
+  moment?: (blob: Blob, seconds: number) => Promise<Blob>,
 ): Promise<void | { message: string; result: Record<string, string> }> {
   const args = command.args ?? {};
   const problem = agentMediaArgsProblem(command.operation, args, command.path);
@@ -35,10 +38,50 @@ export async function applyAgentMedia(
     const records = readSiteMediaRecords(metadata, ctx.items.map(item => item.path));
     return { message: "Image place read.", result: { report: JSON.stringify(await place.read(records)) } };
   }
+  if (command.operation === "loop_video") {
+    const { locatePageElement } = await import("./page-builder/media-insert");
+    const { readLooping } = await import("./page-builder/looping-video");
+    const source = await ctx.read(command.path); ctx.assertLive();
+    const range = source === undefined ? undefined : locatePageElement(source, parseOutlineId(args.element!)!);
+    if (!range || range.tag.name !== "video") throw new Error("Choose a video.");
+    if (args.looping !== undefined) {
+      if (!prepareLoop) throw new Error("Video controls are unavailable.");
+      await prepareLoop({ path: command.path, node: parseOutlineId(args.element!)! })(args.looping);
+    }
+    return { message: args.looping === undefined ? "Looping video read." : "Looping video changed, unsaved.", result: { report: JSON.stringify({ looping: args.looping ?? readLooping(source!.slice(range.tag.start, range.tag.end)) }) } };
+  }
+  if (command.operation === "video_still" || command.operation === "write_subtitles") {
+    if ([args.file!, ...args.picture ? [args.picture] : []].some(file => !ctx.items.some(item => item.path === file))) throw new Error(OUTSIDE_MEDIA_REFUSED);
+    const versions = new Map(ctx.paths.map(path => [path, ctx.assetVersion(path)]));
+    const assertLive = () => {
+      ctx.assertLive();
+      if (ctx.paths.length !== versions.size || ctx.paths.some(path => versions.get(path) !== ctx.assetVersion(path))) throw new Error("Media changed while preparing the change. Try again.");
+    };
+    const host = createMediaWorkspace(async () => ({ ...ctx, assertLive }));
+    await host.load(); assertLive();
+    if (command.operation === "write_subtitles") {
+      const format = args.format ?? (/^\uFEFF?WEBVTT(?:\s|$)/.test(args.text!) ? "vtt" : "srt");
+      await host.subtitles(args.file!, { name: `subtitles.${format}`, text: args.text! }, true);
+      return { message: "Subtitles written, unsaved; marked by agent in To check.", result: {} };
+    }
+    if (args.picture) await host.still(args.file!, { path: args.picture });
+    else {
+      const capture = moment ?? (await import("./page-builder/video-moment")).videoMoment;
+      assertLive();
+      const input = await ctx.blob(args.file!); assertLive();
+      const blob = await capture(input, args.moment!); assertLive();
+      await host.still(args.file!, { blob });
+    }
+    return { message: "Still picture changed everywhere, unsaved.", result: {} };
+  }
   if (command.operation === "place_media") {
     const file = args.file!;
-    if (!ctx.items.some(item => item.path === file)) throw new Error(OUTSIDE_MEDIA_REFUSED);
+    if (!parseOnlineVideoAddress(file) && !ctx.items.some(item => item.path === file)) throw new Error(OUTSIDE_MEDIA_REFUSED);
     const place = preparePlacement({ path: command.path, node: parseOutlineId(args.element!)! });
+    if (parseOnlineVideoAddress(file) || mediaKind(file) !== "image") {
+      const node = await place({ path: file, alt: "" });
+      return { message: `Placed ${file}, unsaved.`, result: node ? { element: node.join(".") } : {} };
+    }
     const version = ctx.assetVersion(file);
     const cache = createMediaByteCache({ load: async path => {
       // New or edited SVG text must use the same draft the canvas shows.

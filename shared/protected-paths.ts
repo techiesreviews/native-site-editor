@@ -47,7 +47,7 @@ export function touchesMediaRecords(path: string): boolean {
 
 export const GITHUB_CONFIG_REFUSED = "Workflows cannot be changed through the editor, nor can anything else in .github.";
 
-export const MEDIA_RECORDS_REFUSED = "Agents cannot change .editor/media.json directly; use describe_media for descriptions and Decorative, change_collection for collections, adding_settings for adding settings, frame_image for shape, focus and trims, and list_media to see them. Use keep_media to add Always keep, remove_media to remove unused families and restore_media for Recently removed; read_file can still read the file.";
+export const MEDIA_RECORDS_REFUSED = "Agents cannot change .editor/media.json directly; use describe_media for descriptions and Decorative, change_collection for collections, adding_settings for adding settings, frame_image for shape, focus and trims, loop_video for Looping video, video_still for still pictures, write_subtitles for subtitles, and list_media to see them. Use keep_media to add Always keep, remove_media to remove unused families and restore_media for Recently removed; read_file can still read the file.";
 
 /**
  * The edits an agent's operation may make: link rewrites and redirect lines in files under `.github` are

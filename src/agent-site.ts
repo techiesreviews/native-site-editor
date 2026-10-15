@@ -595,9 +595,11 @@ export async function applySiteCommand(actions: AgentSiteActions, command: Agent
     case "place_media": {
       const source = await openPage(actions, path, command.expectedHash);
       const node = parseOutlineId(args.element!)!;
-      const range = locateNativeElementRange(source, node);
-      if (!range || range.tag.name !== "img") throw new Conflict("That element is not an image; place_media fills an existing image. Add a section or component with an image first.");
-      await actions.media(command);
+      const { locatePageElement } = await import("./page-builder/media-insert");
+      const range = locatePageElement(source, node);
+      if (!range) throw new Conflict("That element is no longer on the page.");
+      const outcome = await actions.media(command);
+      if (outcome) return { ...outcome, result: { ...outcome.result, hash: await hashOf(actions, path) } };
       const placedSource = await actions.text(path) ?? "";
       const placed = locateNativeElement(placedSource, node);
       return { message: `Placed ${args.file} in ${args.element} on ${path}, unsaved.`, result: { hash: await hashOf(actions, path), alt: decodeHtmlEntities(placed ? startTagAttribute(placedSource, placed, "alt")?.value ?? "" : "", true) } };
@@ -606,6 +608,11 @@ export async function applySiteCommand(actions: AgentSiteActions, command: Agent
       if (args.page) await openPage(actions, args.page, command.expectedHash);
       await actions.media(command);
       return { message: `Changed description of ${args.file}, unsaved.`, result: { hash: await hashOf(actions, args.page ?? ".editor/media.json") } };
+    case "loop_video":
+      await openPage(actions, path, command.expectedHash);
+      return (await actions.media(command))!;
+    case "video_still":
+    case "write_subtitles":
     case "remove_media":
     case "keep_media":
     case "restore_media":

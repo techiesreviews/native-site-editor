@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { test, expect, type Page } from "@playwright/test";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 
@@ -212,6 +213,49 @@ test("an agent sets Square and focus, then trims that place; Media shows the cop
     await expect(library.getByRole("button", { name: `Details for ${trimmed.result.path}`, exact: true })).toBeVisible();
     await page.locator(".code-editor__undo").first().click();
     await expect.poll(source).toBe(square);
+    await page.locator(".code-editor__undo").first().click();
+    await expect.poll(source).toBe(before);
+  } finally { await client.close(); }
+});
+
+
+test("an agent places a video and writes subtitles; each change undoes once", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const added = await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "media/agent-film.mp4", base64: readFileSync("tests/native-save/clip.mp4").toString("base64") } });
+  expect(added.ok()).toBe(true);
+  await page.reload();
+  await expect(frame(page).locator(".hero h1")).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
+  const client = await connectAgent(page, baseURL);
+  const call = async (name: string, args: Record<string, unknown>) => {
+    const response = await client.callTool({ name, arguments: { ...args, waitSeconds: 25 } });
+    expect(response.isError, JSON.stringify(response)).toBeFalsy(); return result(response);
+  };
+  try {
+    const source = async () => (await call("read_file", { path: indexPath })).content;
+    const before = await source();
+    const inspection = await call("inspect_preview", { page: indexPath, selector: ".hero h1", limit: 1 });
+    await call("place_media", { path: indexPath, element: inspection.result.elements[0].element, file: "media/agent-film.mp4" });
+    await expect(frame(page).locator('video[src="/media/agent-film.mp4"]')).toBeAttached();
+    const placed = await source();
+    const videoElement = (await call("inspect_preview", { page: indexPath, selector: 'video[src="/media/agent-film.mp4"]', limit: 1 })).result.elements[0].element;
+    await call("loop_video", { path: indexPath, element: videoElement, looping: true });
+    await expect.poll(source).toContain("muted loop");
+    await page.locator(".code-editor__undo").first().click();
+    await expect.poll(source).toBe(placed);
+    const beyond = await client.callTool({ name: "video_still", arguments: { file: "media/agent-film.mp4", moment: 999, waitSeconds: 25 } });
+    expect(beyond.isError).toBe(true); expect(JSON.stringify(beyond)).toContain("beyond the video's duration");
+    expect(await source()).toBe(placed);
+    await call("video_still", { file: "media/agent-film.mp4", moment: 0.5 });
+    await expect.poll(source).toContain('poster="/media/agent-film.webp"');
+    await page.locator(".code-editor__undo").first().click();
+    await expect.poll(source).toBe(placed);
+    await call("write_subtitles", { file: "media/agent-film.mp4", text: "1\n00:00:00,000 --> 00:00:01,000\nAgent words\n", format: "srt" });
+    await expect.poll(source).toContain('src="/media/agent-film.vtt"');
+    const records = JSON.parse((await call("read_file", { path: ".editor/media.json" })).content);
+    expect(records.files["media/agent-film.mp4"].subtitlesByAgent).toBe(true);
+    await page.locator(".code-editor__undo").first().click();
+    await expect.poll(source).toBe(placed);
     await page.locator(".code-editor__undo").first().click();
     await expect.poll(source).toBe(before);
   } finally { await client.close(); }

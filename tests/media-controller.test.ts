@@ -382,7 +382,7 @@ test("agent placement uses the picker's exact markup and Decorative batch; refus
   assert.match(batches[0].edits.get("index.html")!, /alt=""/);
   assert.equal(JSON.parse(batches[0].edits.get(".editor/media.json")!).files["images/new.png"].places["index.html"].decorative, true);
   const invalid = fixture({ locateElement: source => ({ tag: startTags(source)[0] }) });
-  assert.throws(() => invalid.controller.preparePlacement({ path: "index.html", node: [0] }), /That element is not an image/);
+  await assert.rejects(invalid.controller.preparePlacement({ path: "index.html", node: [0] })(image), /That element is not an image/);
 });
 
 test("agent placement holds its page and decoded file proof across lazy reads", async () => {

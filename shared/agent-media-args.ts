@@ -1,5 +1,8 @@
 import { agentImageTrim } from "./agent-image-frame";
 import { isOutsideMediaAddress, OUTSIDE_MEDIA_REFUSED, parseOutlineId, mediaKind, type AgentOperation, type AgentCommandArgs } from "./agent";
+import { parseOnlineVideoAddress } from "./online-video-address";
+
+export { NEW_ONLINE_VIDEO_REFUSED } from "./online-video-address";
 
 export const AGENT_KEEP_REFUSED = "Agents may add Always keep but never take it off; ask the user to do it in Media.";
 
@@ -27,11 +30,30 @@ export function agentMediaArgsProblem(operation: AgentOperation, args: AgentComm
       try { agentImageTrim(args.trim); } catch (error) { return error instanceof Error ? error.message : "Invalid trim."; }
     }
   }
-  if (operation === "place_media" || operation === "describe_media") {
+  if (operation === "loop_video") {
+    if (!path || !/\.html$/i.test(path)) return "Give a page path ending in .html.";
+    if (!args.element || !parseOutlineId(args.element)) return "Give a video element id from get_page or inspect_preview.";
+    if (args.looping !== undefined && typeof args.looping !== "boolean") return "Looping must be true or false.";
+  }
+  if (operation === "video_still" || operation === "write_subtitles") {
     if (!args.file || isOutsideMediaAddress(args.file)) return OUTSIDE_MEDIA_REFUSED;
+    if (operation === "video_still") {
+      if (mediaKind(args.file) !== "video") return "Only a video has a still picture.";
+      if ((args.moment !== undefined) === (args.picture !== undefined)) return "Give exactly one of moment or picture.";
+      if (args.moment !== undefined && (!Number.isFinite(args.moment) || args.moment < 0)) return "Moment must be seconds from the start, zero or more.";
+      if (args.picture !== undefined && (!args.picture || isOutsideMediaAddress(args.picture))) return OUTSIDE_MEDIA_REFUSED;
+      if (args.picture !== undefined && mediaKind(args.picture) !== "image") return "Choose a picture for the still.";
+    } else {
+      if (!["video", "audio"].includes(mediaKind(args.file))) return "Only a video or audio file has subtitles.";
+      if (typeof args.text !== "string") return "Give subtitles as WebVTT or SubRip text.";
+      if (args.format !== undefined && !["vtt", "srt"].includes(args.format)) return "Choose vtt or srt.";
+      if (new TextEncoder().encode(args.text).length > 2 * 1024 * 1024) return "Subtitles must be no larger than 2 MB.";
+    }
+  }
+  if (operation === "place_media" || operation === "describe_media") {
+    if (!args.file || isOutsideMediaAddress(args.file) && !(operation === "place_media" && parseOnlineVideoAddress(args.file))) return OUTSIDE_MEDIA_REFUSED;
     if (operation === "place_media") {
       if (!args.element || !parseOutlineId(args.element)) return "Give an image element id from get_page or inspect_preview.";
-      if (mediaKind(args.file) !== "image") return "Only pictures can be placed for now.";
     } else {
       if ((args.text !== undefined) === (args.decorative !== undefined)) return "Give exactly one of text or decorative.";
       if (args.text !== undefined && !args.text.trim()) return "Use decorative: true for a picture that adds nothing to the page.";

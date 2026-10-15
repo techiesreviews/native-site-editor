@@ -932,7 +932,8 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       recordsEdit(batch, metadata, { ...metadata, files: { ...metadata.files, [video]: { ...metadata.files[video], still: path } } });
       await commit(ctx, batch);
     },
-    async subtitles(media: string, file: { name: string; text: string } | null) {
+    async subtitles(media: string, file: { name: string; text: string } | null, agent = false) {
+      if (agent && !file) throw new Error("Agents cannot remove subtitles.");
       // Subtitles (slice 66): WebVTT beside the file (its family), a track on every placed copy; or taken off.
       const ctx = active(), kind = mediaKind(media);
       if (kind !== "video" && kind !== "audio") throw new Error("Only a video or audio file has subtitles.");
@@ -966,7 +967,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
         // Subtitles the file had under another name stop showing; that file stays.
         if (current && current !== path) pages((source, page) => rules.removeTrackInPage(source, page, current, site));
         pages((source, page) => rules.addTrackInPage(source, page, media, path, site));
-        next = { ...metadata, files: { ...metadata.files, [media]: { ...record, subtitles: path } } };
+        next = { ...metadata, files: { ...metadata.files, [media]: { ...record, subtitles: path, ...agent ? { subtitlesByAgent: true } : {} } } };
       } else {
         if (!current) return;
         assetGuard(batch, [current]); batch.deletes.push(current);

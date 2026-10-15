@@ -360,11 +360,22 @@ export function createMediaController(ports: MediaControllerPorts) {
   function preparePlacement(target: { path: string; node: number[] }) {
     const stamp = ports.stamp(), epoch = ports.generation(), source = ports.source(target.path);
     const range = source === undefined ? undefined : (ports.locateElement ?? locateNativeElementRange)(source, target.node);
-    if (!range || range.tag.name !== "img" || source === undefined) throw new Error("That element is not an image; place_media fills an existing image. Add a section or component with an image first.");
+    if (!range || source === undefined) throw new Error("That element is not an image; place_media fills an existing image. Add a section or component with an image first.");
     const expected = source.slice(range.tag.start, range.tag.end), initialAlt = mediaExistingAlt(expected);
     return async (image: MediaImage, asset?: { path: string; version?: string }) => {
-      const { placeMediaImage } = await import("../page-builder/media-place");
-      await placeMediaImage(ports, workspaceContext, target, image, { stamp, epoch, source, expected, initialAlt, asset }, () => false);
+      const { placeAgentMedia } = await import("../page-builder/agent-media-place");
+      const templates = (tag: string) => { const path = ports.workspace()?.site?.components[tag]; return path === undefined ? undefined : { path, source: ports.source(path) }; };
+      return placeAgentMedia(ports, workspaceContext, target, image, { stamp, epoch, source, expected, initialAlt, asset }, templates);
+    };
+  }
+
+  function prepareLoop(target: { path: string; node: number[] }) {
+    const source = ports.source(target.path), stamp = ports.stamp();
+    if (source === undefined) throw new Error("Choose a video.");
+    return async (looping: boolean) => {
+      const { createVideoPlaces } = await import("../page-builder/media-video-place");
+      if (!stamp.holds() || ports.source(target.path) !== source) throw new Error("The source changed. Select the element again.");
+      await createVideoPlaces({ ...ports, selected: undefined }, workspaceContext, load).toggleLooping(target.path, target.node, source, looping);
     };
   }
 
@@ -563,6 +574,6 @@ export function createMediaController(ports: MediaControllerPorts) {
       (await import("../page-builder/social-sharing")).shareImage(workspaceContext, request, message => ports.announce(message)),
     /** The canvas stopped the edit bar's play `id`. */
     mediaEnded: (id: number) => player?.ended(id),
-    workspaceContext, preparePlacement, prepareFrame, chooseImage, insertMedia, choosePath, chooseBackground, videoControls, placeState, placeFrame, editImage, changePlace, ensureGallery, reviewInGallery, requestGalleryRefresh, disposeGallery,
+    workspaceContext, preparePlacement, prepareLoop, prepareFrame, chooseImage, insertMedia, choosePath, chooseBackground, videoControls, placeState, placeFrame, editImage, changePlace, ensureGallery, reviewInGallery, requestGalleryRefresh, disposeGallery,
     closePicker: () => loaded?.closeMediaPicker(), galleryVisible: () => ports.galleryVisible() };
 }
