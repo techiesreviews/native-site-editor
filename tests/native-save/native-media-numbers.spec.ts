@@ -54,7 +54,7 @@ test("Improve images' count and the details' lengths agree with what the screen 
     const duration = await player.evaluate((element: HTMLMediaElement) => element.duration);
     const value = length(duration);
     if (path.endsWith("wav")) expect(duration).toBeCloseTo(41.9, 1);
-    await expect(pane(page).locator(".media-detail__facts div", { hasText: "Length" }).locator("dd")).toHaveText(value);
+    await expect(pane(page).locator('.media-detail__facts [data-fact="length"]')).toHaveText(value);
     await pane(page).getByRole("button", { name: "Back", exact: true }).click();
     await expect(card.locator(".media-library__fact")).toHaveText(value);
   }

@@ -116,8 +116,8 @@ for (const colorScheme of ["light", "dark"] as const) {
     expect(await pane(page).evaluate(element => element.getBoundingClientRect().bottom)).toBeLessThanOrEqual(780 - 16);
     expect(bounds.scrollHeight).toBeGreaterThan(bounds.height);
     expect(bounds.nestedScrollers).toBe(0);
-    await pane(page).getByRole("button", { name: "Remove file…", exact: true }).scrollIntoViewIfNeeded();
-    await expect(pane(page).getByRole("button", { name: "Remove file…", exact: true })).toBeInViewport();
+    await pane(page).getByRole("button", { name: "More for this file", exact: true }).scrollIntoViewIfNeeded();
+    await expect(pane(page).getByRole("button", { name: "More for this file", exact: true })).toBeInViewport();
     await pane(page).getByRole("button", { name: "Back", exact: true }).scrollIntoViewIfNeeded();
     await expect(pane(page).getByRole("button", { name: "Back", exact: true })).toBeInViewport();
     await page.screenshot({ path: `.scratch/t3-continuation/media-manager-narrow-${colorScheme}.png` });
@@ -171,8 +171,9 @@ test("busy image action explains blocked controls and keeps Save focus after its
   });
   const library = page.getByRole("region",{name:"Media",exact:true});await library.getByRole("button",{name:"Details for images/a.svg",exact:true}).click();
   await library.getByLabel("Description",{exact:true}).fill("Saved pending alt");await library.getByRole("button",{name:"Save details",exact:true}).click();
-  await expect(library).toHaveAttribute("aria-busy","true");await expect(library.getByRole("button",{name:"Copy path",exact:true})).toHaveAttribute("aria-disabled","true");await expect(library.getByLabel("Description",{exact:true})).toHaveAttribute("aria-disabled","true");
-  await page.evaluate(() => [...document.querySelectorAll<HTMLButtonElement>(".media-library button")].find(button=>button.textContent==="Copy path")!.click());
+  await expect(library).toHaveAttribute("aria-busy","true");await expect(library.getByRole("button",{name:"More for this file",exact:true})).toHaveAttribute("aria-disabled","true");await expect(library.getByLabel("Description",{exact:true})).toHaveAttribute("aria-disabled","true");
+  await page.evaluate(() => [...document.querySelectorAll<HTMLButtonElement>(".media-library button")].find(button=>button.getAttribute("aria-label")==="More for this file")!.click());
+  await expect(page.getByRole("menu",{name:"More for this file",exact:true})).toBeHidden();
   await expect(library.locator(".media-library__message")).toContainText("image change is in progress");
   expect(await page.evaluate(() => (window as any).busyImageProbe.state())).toBe(0);
   await page.evaluate(() => (window as any).releaseImageWrite());await expect(library).not.toHaveAttribute("aria-busy","true");
@@ -334,12 +335,14 @@ test("refresh refuses stale delete confirmations and requires fresh usage", asyn
   const library = pane(page), thumb = library.getByRole("button", { name: "Details for images/a.svg", exact: true });
   await thumb.click(); await expect(library.getByLabel("Description", { exact: true })).toBeVisible();
   await page.evaluate(() => (window as any).focusProbe.refresh());
-  await library.getByRole("button", { name: "Remove file…", exact: true }).click();
+  await library.getByRole("button", { name: "More for this file", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Remove…", exact: true }).click();
   await expect(library.locator(".media-library__message")).toContainText("Wait for them to finish before deleting");
   await expect(library.getByRole("button", { name: "Remove file", exact: true })).toHaveCount(0);
   await page.evaluate(() => (window as any).releaseFocusLoad());
   await expect(library).not.toHaveAttribute("aria-busy", "true");
-  await library.getByRole("button", { name: "Remove file…", exact: true }).click();
+  await library.getByRole("button", { name: "More for this file", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Remove…", exact: true }).click();
   await expect(library.locator(".media-library__sheet")).toContainText("Used on 1 page");
   await library.getByRole("button", { name: "Cancel", exact: true }).focus();
   await page.evaluate(() => {
@@ -360,7 +363,8 @@ test("cancelled delete stays dismissed without a reopen notice on refresh", asyn
   await mountDelayedReferences(page, baseURL);
   const library = pane(page);
   await library.getByRole("button", { name: "Details for images/a.svg", exact: true }).click();
-  await library.getByRole("button", { name: "Remove file…", exact: true }).click();
+  await library.getByRole("button", { name: "More for this file", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Remove…", exact: true }).click();
   await library.getByRole("button", { name: "Cancel", exact: true }).click();
   await page.evaluate(() => (window as any).focusProbe.refresh());
   await expect(library.locator(".media-library__message")).toBeEmpty();

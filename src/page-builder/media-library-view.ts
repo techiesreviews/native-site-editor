@@ -118,7 +118,8 @@ export function createMediaLibraryView(
   };
   // From File details, Cancel and Back return to them.
   const detailHost = { ...context, dialog, grid, modal: Boolean(modal), close: shell.close, optimise,
-    remove: (paths: string[]) => remove(paths, () => void details(paths[0])) };
+    remove: (paths: string[]) => remove(paths, () => void details(paths[0])),
+    menu: (opener: HTMLButtonElement, items: MenuItem[]) => openMenu(opener, "More for this file", items) };
   // Each newer usage result repaints the badges and an open usage dialog.
   const stopCleanUp = cleanUp?.onChange(() => {
     if (!alive) return;

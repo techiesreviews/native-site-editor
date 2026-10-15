@@ -13,6 +13,8 @@ export interface MenuItem {
   checked?: boolean;
   /** Consecutive items with the same section form a group under that heading. */
   section?: string;
+  /** A destructive action (Remove…): red text, placed last by the caller. */
+  danger?: boolean;
 }
 
 /**
@@ -65,7 +67,7 @@ export function createRowMenu(host: HTMLElement, onClose?: () => void) {
           if (entry.disabled) return;
           close(false);
           entry.run();
-        }, "pages-menu__item");
+        }, entry.danger ? "pages-menu__item row-menu__danger" : "pages-menu__item");
         item.append(node("span", "", entry.label));
         if (entry.disabled) {
           // Still focusable, as a disabled menu item should be, with its reason.

@@ -104,7 +104,7 @@ test("disposing a pane aborts pending optimisation and revokes its preview URLs"
   });
   const panel = pane(page);
   await panel.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true }).click();
-  await panel.getByRole("button", { name: "Optimise image…", exact: true }).click();
+  await panel.getByRole("button", { name: "Optimise…", exact: true }).click();
   await panel.getByRole("button", { name: "Preview optimisation", exact: true }).click();
   await expect.poll(() => Boolean(release)).toBe(true);
   await page.evaluate(() => { (window as typeof window & { mediaPaneHarness: { view: { dispose(): void } } }).mediaPaneHarness.view.dispose(); });
@@ -270,7 +270,8 @@ for (const lastImage of [false, true]) {
     }, lastImage);
     const panel = pane(page);
     await panel.getByRole("button", { name: "Details for images/a.svg", exact: true }).click();
-    await panel.getByRole("button", { name: "Remove file…", exact: true }).click();
+    await panel.getByRole("button", { name: "More for this file", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Remove…", exact: true }).click();
     const confirm = panel.getByRole("button", { name: "Remove file", exact: true });
     await confirm.focus(); await page.keyboard.press("Enter");
     await expect.poll(() => page.evaluate(() => Boolean((window as any).releaseImageDelete))).toBe(true);

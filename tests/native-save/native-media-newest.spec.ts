@@ -45,7 +45,7 @@ async function addAndSee(browser: Browser, baseURL: string | undefined, phone: b
   const added = Date.parse(records.files["media/images/zebra.svg"].added ?? "");
   expect(Math.abs(Date.now() - added)).toBeLessThan(5 * 60_000);
   await zebra.getByRole("button", { name: "Details for media/images/zebra.svg", exact: true }).click();
-  await expect(pane(page).locator(".media-detail__facts div", { hasText: "Added" }).locator("dd")).toHaveText(/2\d{3}/);
+  await expect(pane(page).locator(".media-detail__note").first()).toHaveText(/^Added \S+ \S+/);
   await context.close();
 }
 

@@ -104,7 +104,8 @@ test("delete keeps metadata and binary deletion together until Undo", async ({ p
   await panel.getByLabel("Description", { exact: true }).fill("Restore me");
   await panel.getByRole("button", { name: "Save details", exact: true }).click();
   await expect.poll(async () => (await storedDraft(page, ".editor/media.json"))?.content).toContain("Restore me");
-  await panel.getByRole("button", { name: "Remove file…", exact: true }).click();
+  await panel.getByRole("button", { name: "More for this file", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Remove…", exact: true }).click();
   await panel.getByRole("button", { name: "Remove file", exact: true }).click();
   await expect(panel.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true })).toHaveCount(0);
   await expect.poll(async () => (await storedDraft(page, "images/studio-desk.svg"))?.deleted).toBe(true);
@@ -267,7 +268,7 @@ test("optimisation preview cannot replace a newer binary revision", async ({ pag
   }, { picker: "/src/page-builder/media-picker.ts", workspace: "/src/page-builder/media-workspace.ts" });
   const panel = page.getByRole("region", { name: "Media", exact: true });
   await panel.getByRole("button", { name: "Details for images/a.svg", exact: true }).click();
-  await panel.getByRole("button", { name: "Optimise image…", exact: true }).click();
+  await panel.getByRole("button", { name: "Optimise…", exact: true }).click();
   await panel.getByRole("button", { name: "Preview optimisation", exact: true }).click();
   await expect(panel.getByRole("button", { name: "Add optimised copies", exact: true })).toBeEnabled();
   await page.evaluate(() => (window as typeof window & { mediaReceiptProbe: { replace(): void } }).mediaReceiptProbe.replace());
@@ -287,7 +288,7 @@ test("cancelling optimisation aborts pending worker work and keeps Add disabled"
     await route.continue().catch(() => undefined);
   });
   await panel.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true }).click();
-  await panel.getByRole("button", { name: "Optimise image…", exact: true }).click();
+  await panel.getByRole("button", { name: "Optimise…", exact: true }).click();
   await panel.getByRole("button", { name: "Preview optimisation", exact: true }).click();
   await expect.poll(() => Boolean(release)).toBe(true);
   await panel.getByRole("button", { name: "Cancel", exact: true }).click();

@@ -6,12 +6,13 @@ import { formatBytes, uploadImageType } from "../uploads";
 import { input, field, check } from "./media-library-fields";
 import { detailCollections, mediaCollectionNameMessage } from "./media-collection-choices";
 import { basename, formatMediaLength, mediaKind, mediaTileLook, mediaTileStills } from "./media-library-filter";
-import { canReplaceEverywhere, mediaDetailChanges, mediaDetailFacts, mediaMadeFrom, mediaFamilyRows, mediaNameCheck, mediaRenamedPath, type MediaNameCheck } from "./media-file-details";
+import { canReplaceEverywhere, formatMediaAdded, mediaDetailChanges, mediaDetailFacts, mediaMadeFrom, mediaFamilyRows, mediaNameCheck, mediaRenamedPath, type MediaNameCheck } from "./media-file-details";
 import { isRenamableMedia, MediaNameTakenError } from "./media-names";
 import { keepPageFocus, usageSections } from "./media-library-usage";
 import { mediaUsageBadge, mediaUsageFor } from "./media-usage-text";
 import { mediaDetailParts } from "./media-library-video";
 import type { LibrarySheet, LibrarySheetContext } from "./media-library-sheet";
+import type { MenuItem } from "../components/row-menu";
 import type { MediaBytes } from "./media-byte-cache";
 import type { MediaMetadata } from "./media-metadata";
 import { markTransparency } from "./media-transparency";
@@ -25,6 +26,16 @@ export interface DetailHost extends LibrarySheetContext {
   close: () => void;
   optimise: (files: File[], existing: boolean, receipts: Map<string, string | undefined>) => void;
   remove: (paths: string[]) => void;
+  /** Open the ⋯ menu's `items` under `opener` (Media's own menu, so it works in the popover and the picker). */
+  menu: (opener: HTMLButtonElement, items: MenuItem[]) => void;
+}
+
+/** A file's ⋯ button (slice 108): its quieter actions, with Remove… last in red. */
+export function moreButton(h: Pick<DetailHost, "menu">, items: () => MenuItem[]) {
+  const more: HTMLButtonElement = button("", () => h.menu(more, items()), "button secondary media-detail__more");
+  more.setAttribute("aria-label", "More for this file"); more.setAttribute("aria-haspopup", "menu"); more.setAttribute("aria-expanded", "false");
+  more.append(icon("dots-three", 20));
+  return more;
 }
 
 /** Leave File details for the grid, focusing the file's tile. */
@@ -84,19 +95,14 @@ export async function showMediaDetail(sheet: LibrarySheet, h: DetailHost, path: 
   const still = mediaTileStills(library.items.map(item => item.path), library.metadata).get(path);
   layout.append(renderPreview(h, path, data, meta, still, current, replace), info);
   element.replaceChildren(head, layout);
-  renderInformation(form, sheet, h, path, data, meta, current);
+  const facts = renderInformation(form, sheet, h, path, data, meta, current);
   const player = layout.querySelector<HTMLMediaElement>("video, audio");
   if (player) {
     const length = () => {
       if (!current() || !Number.isFinite(player.duration) || player.duration <= 0) return;
-      let row = [...form.querySelectorAll(".media-detail__facts div")].find(row => row.querySelector("dt")?.textContent === "Length");
-      if (!row) {
-        row = node("div"); row.append(node("dt", "", "Length"), node("dd"));
-        form.querySelector(".media-detail__facts")?.append(row);
-      }
       const value = formatMediaLength(player.duration);
-      row.querySelector("dd")!.textContent = value;
       meta.duration = player.duration;
+      facts(player instanceof HTMLVideoElement ? { width: player.videoWidth, height: player.videoHeight } : {});
       const card = h.grid.querySelector<HTMLElement>(`[data-path="${CSS.escape(path)}"]`);
       const fact = card?.querySelector(".media-library__fact"), size = card?.querySelector(".media-library__size");
       if (fact) fact.textContent = value;
@@ -136,6 +142,8 @@ function renderPreview(
   };
   if (kind === "image") {
     const image = node("img"); image.alt = meta.alt;
+    // Its own shape before it loads, so the preview never jumps (slice 108).
+    if (data.width && data.height) { image.width = data.width; image.height = data.height; }
     markTransparency(image, path); image.src = data.url;
     image.addEventListener("error", surface, { once: true });
     preview.append(image);
@@ -157,16 +165,21 @@ function renderPreview(
     stillUrl(url => { image.src = url; }, surface);
     preview.append(image);
   } else surface();
+  // Slice 108 (Klaviyo, Apple Photos): Replace everywhere… and Optimise… beside the ⋯ menu, which
+  // holds Copy path and, last in red, Remove….
   const actions = node("div", "media-detail__actions");
-  if (uploadImageType(path)) actions.append(button("Optimise image…", () => optimise(
+  if (replace) actions.append(button("Replace everywhere…", replace));
+  if (uploadImageType(path)) actions.append(button("Optimise…", () => optimise(
     [new File([data.blob], path, { type: data.blob.type || uploadImageType(path) })], true, new Map([[path, data.version]]),
   )));
-  if (replace) actions.append(button("Replace everywhere…", replace));
-  actions.append(button("Copy path", () => void task(async () => {
-    await navigator.clipboard.writeText(siteAddress(path, h.library().prefix ?? "")); done("Path copied.");
-  })), button("Remove file…", () => remove([path])));
+  actions.append(moreButton(h, () => [
+    { label: "Copy path", run: () => void task(async () => {
+      await navigator.clipboard.writeText(siteAddress(path, h.library().prefix ?? "")); done("Path copied.");
+    }) },
+    { label: "Remove…", run: () => remove([path]), danger: true },
+  ]));
   const player = preview.querySelector<HTMLVideoElement | HTMLAudioElement>("video, audio") ?? undefined;
-  view.append(preview, ...(kind === "video" || kind === "audio") && !h.modal ? mediaDetailParts(h, path, meta, player, still, current) : [], actions);
+  view.append(preview, actions, ...(kind === "video" || kind === "audio") && !h.modal ? mediaDetailParts(h, path, meta, player, still, current) : []);
   return view;
 }
 
@@ -180,7 +193,8 @@ function disclosure(part: string, title: string, summary: HTMLElement, body: HTM
 
 let fieldIds = 0;
 
-/** Name, facts, usage, the Image family, collections, description, Always keep, then Save and Cancel. */
+/** Name, facts, usage, the Image family, collections, description, Always keep, then Save and Cancel.
+ * Returns the facts line's painter, for the dimensions and length a player reads later. */
 function renderInformation(
   form: HTMLFormElement, sheet: LibrarySheet, h: DetailHost,
   path: string, data: MediaBytes, meta: MediaMetadata, current: () => boolean,
@@ -192,11 +206,21 @@ function renderInformation(
   // Renaming renames the whole family and every mention (slice 52); kinds Media does not rename stay as they are.
   if (!isRenamableMedia(path)) name.disabled = true;
   const naming = renameField(name, path, library.items.map(entry => entry.path), library.githubPages);
-  const facts = node("dl", "media-detail__facts");
-  for (const fact of [...mediaDetailFacts({ path, size: item?.size ?? data.blob.size, date: item?.date, width: data.width, height: data.height, duration: meta.duration }), ...mediaMadeFrom(meta)]) {
-    const row = node("div"); row.append(node("dt", "", fact.label), node("dd", "", fact.value)); facts.append(row);
-  }
-  form.append(field("File name", name), naming.element, facts);
+  // One muted line of facts (slice 108, Shopify "JPG • 3024 × 4032 • 1.61 MB"), then when it was added.
+  const facts = node("p", "media-detail__facts"), notes: HTMLElement[] = [];
+  const paintFacts = (shown: { width?: number; height?: number } = {}) => {
+    facts.replaceChildren();
+    mediaDetailFacts({ path, size: item?.size ?? data.blob.size, width: data.width ?? shown.width, height: data.height ?? shown.height, duration: meta.duration })
+      .forEach((fact, index) => {
+        const part = node("span", "", fact.value); part.dataset.fact = fact.key;
+        facts.append(...index ? [" · ", part] : [part]);
+      });
+  };
+  paintFacts();
+  if (item?.date !== undefined) notes.push(node("p", "media-detail__note", formatMediaAdded(item.date)));
+  const madeFrom = mediaMadeFrom(meta);
+  if (madeFrom) notes.push(node("p", "media-detail__note", madeFrom));
+  form.append(field("File name", name), naming.element, facts, ...notes);
   // The Always keep mark (slice 49): on for this file, or for a copy or original in its family.
   if (library.keep?.includes(path)) form.append(node("p", "media-library__keep-note", "Always keep: Clean up never suggests this file."));
   // Usage from the site's usage check; newer results repaint it in place.
@@ -212,9 +236,9 @@ function renderInformation(
   form.append(usage);
   const family = mediaFamilyRows(path, library.items);
   if (family?.length) {
+    // Two lines each (slice 108): the name, then what it is; the size beside the name.
     const rows = family.map(row => {
-      const line = node("div", "media-detail__row");
-      const label = node("span", "", `${basename(row.path)} · ${row.label}`);
+      const line = node("div", "media-detail__row"), label = node("span", "media-detail__row-name", basename(row.path));
       if (row.original) {
         // The kept original (ticket 07): fetched only when asked for, then saved under its own name.
         const name = basename(row.path);
@@ -224,9 +248,9 @@ function renderInformation(
           const link = node("a"); link.href = cache.objectUrl(blob); link.download = name; link.click();
         }), "text-button media-detail__original");
         open.setAttribute("aria-label", `Download original ${name}`);
-        label.replaceChildren(open, document.createTextNode(` · ${row.label}`));
+        label.replaceChildren(open);
       }
-      line.append(label, node("span", "", row.size ?? ""));
+      line.append(label, node("span", "media-detail__row-size", row.size ?? ""), node("span", "media-detail__row-kind", row.label));
       return line;
     });
     form.append(disclosure("family", image ? "Copies and original" : "Files with it", node("span", "", String(family.length)), rows));
@@ -274,7 +298,7 @@ function renderInformation(
   const memberKept = Boolean(library.keep?.includes(path)) && !meta.alwaysKeep;
   naming.follow(() => keep.checked || memberKept);
   keep.addEventListener("change", () => naming.follow(() => keep.checked || memberKept));
-  form.append(check("Always keep", keep), node("p", "media-library__hint", "Never suggested for clean-up. For files used outside the site."));
+  form.append(check("Always keep", keep, "Never suggested for clean-up. For files used outside the site."));
   const footer = node("footer", "media-detail__foot");
   const save = button("Save details", () => undefined, "button primary"); save.type = "submit";
   const cancel = button("Cancel", () => backToGrid(sheet, h, path)); cancel.type = "button";
@@ -309,6 +333,7 @@ function renderInformation(
       done(`Details saved and the file renamed, with its uses updated, as drafts.${forward ? " Its old address forwards to the new one." : ""}`);
     });
   });
+  return paintFacts;
 }
 
 /** Under the File name field (ticket 15 "Renaming a media file"): before saving it says a taken
@@ -323,8 +348,8 @@ function renameField(name: HTMLInputElement, path: string, paths: string[], gith
   const tidied = node("p", "media-library__hint");
   const forward = input("Keep the old address working", "checkbox");
   const choice = node("div", "media-detail__forward");
-  choice.append(check("Keep the old address working", forward),
-    node("p", "media-library__hint", githubPages ? GITHUB_PAGES_REDIRECT_NOTE : "Links from other sites to the old name forward to the new one, on hosts that read the site's _redirects file."));
+  choice.append(check("Keep the old address working", forward,
+    githubPages ? GITHUB_PAGES_REDIRECT_NOTE : "Links from other sites to the old name forward to the new one, on hosts that read the site's _redirects file."));
   let touched = false;
   forward.addEventListener("change", () => { touched = true; });
   const taken = (file: string, suggestion: string) => {

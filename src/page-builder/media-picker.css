@@ -30,6 +30,9 @@
 .media-library__preview { max-width: 100%; height: 180px; object-fit: contain; background: var(--surface); border-radius: var(--radius); }
 .media-library__field { display: flex; flex-direction: column; gap: 5px; }
 .media-library__check { display: flex; align-items: center; gap: 8px; }
+/* A tick box with a helper: the helper is the row's second line, under the label (slice 108). */
+.media-library__check:has(> .media-library__hint) { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 2px 8px; min-block-size: 44px; padding-block: 4px; }
+.media-library__check > .media-library__hint { grid-column: 2; }
 .media-library__page { background: none; color: var(--link); border: none; padding: 4px 0; text-align: left; }
 .media-library__hint { line-height: 1.5; overflow-wrap: anywhere; }
 .media-library__code { margin: 0; padding: 10px; background: var(--surface-input); font-size: var(--type-small); font-family: var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; border-radius: var(--radius); }
@@ -348,6 +351,8 @@
 .media-library__memberships .media-library__field { margin-top: 4px; }
 .media-library__problem { color: var(--danger-fg); font-size: var(--type-small); overflow-wrap: anywhere; }
 .media-library__problem:empty { display: none; }
+/* A problem is never colour only (slice 108). */
+.media-library__problem::before { content: "\26A0\FE0E" / ""; margin-inline-end: 0.35em; }
 
 /* Manage collections and the name and delete screens. */
 .media-library__collection-list { display: grid; margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
@@ -419,6 +424,11 @@
 /* Usage lists name a page by its title, with its path under it. */
 .media-library__page:has(.media-library__page-title) { display: grid; gap: 1px; padding-block: 4px; }
 .media-library__page-path { color: var(--muted); font-size: var(--type-small); }
+/* Page names read as links in both themes (slice 108), whatever --link's colour. */
+.media-library__page-title, .media-library__page:not(:has(.media-library__page-title)) {
+  text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px;
+  text-decoration-color: color-mix(in oklch, currentColor 45%, transparent);
+}
 
 /* File details (media-manager ticket 06, tiles.html): its own screen with Back. A large,
    complete preview beside grouped information on wide screens, stacked on phones; Save and
@@ -442,15 +452,20 @@
   .media-detail { grid-template-columns: minmax(0, 1.4fr) minmax(280px, 1fr); gap: 28px; }
   .media-detail__view { position: sticky; top: 8px; }
 }
-.media-detail__preview { margin: 0; height: 260px; display: grid; place-items: center; overflow: hidden; border-radius: 12px; background: var(--surface-subtle); }
-@container media-detail (min-width: 680px) { .media-detail__preview { height: min(430px, 60dvh); } }
-/* The complete picture: never cropped or enlarged past its own size. */
-.media-detail__preview :is(img, video) { display: block; width: auto; height: auto; max-width: 100%; max-height: 100%; object-fit: contain; }
+/* The complete picture in its own shape (slice 108): as wide as the column allows, at most half the
+   screen tall, never enlarged past its own size and with no empty bands around it. */
+.media-detail__preview { margin: 0; display: grid; place-items: center; overflow: clip; border-radius: 12px; background: var(--surface-subtle); }
+.media-detail__preview:not(.is-file) { inline-size: fit-content; max-inline-size: 100%; margin-inline: auto; }
+.media-detail__preview :is(img, video) { display: block; inline-size: auto; block-size: auto; max-inline-size: 100%; max-block-size: 50dvh; }
 .media-detail__preview audio { width: min(100% - 32px, 420px); }
-.media-detail__preview.is-file { align-content: center; gap: 8px; color: var(--muted); }
+/* Files without a picture (audio, ZIP, a PDF without its first page) get a short surface. */
+.media-detail__preview.is-file { min-block-size: 160px; padding-block: 20px; align-content: center; gap: 8px; color: var(--muted); }
 .media-detail__preview .media-library__format { position: static; font-weight: 600; color: var(--text); }
 .media-detail__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .media-library .media-detail__actions button { border: 1px solid var(--line); border-radius: 22px; background: var(--surface); padding: 0 14px; }
+.media-library .media-detail__actions .media-detail__more { min-inline-size: 44px; padding: 0; display: inline-grid; place-items: center; }
+/* On a phone the two buttons and ⋯ share one row. */
+@container media-detail (max-width: 479px) { .media-library .media-detail__actions button:not(.media-detail__more) { padding-inline: 12px; } }
 /* A video's still picture and a video's or audio file's subtitles (slice 66), under the player. */
 .media-detail__part { display: grid; gap: 6px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
 .media-detail__part :is(h4, p) { margin: 0; }
@@ -460,12 +475,13 @@
 .media-detail__part-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .media-library .media-detail__part-actions button { border: 1px solid var(--line); border-radius: 22px; background: var(--surface); padding: 0 14px; }
 .media-detail__still { width: 72px; height: 44px; flex: none; object-fit: cover; border-radius: var(--radius-small); background: var(--surface-subtle); }
-.media-detail__part + .media-detail__actions { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
 .media-detail__info, .media-detail__form { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .media-detail__info :is(h4, p, ul, dl) { margin: 0; }
-.media-detail__facts { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 14px 16px; border-radius: 10px; background: var(--surface-card); }
-.media-detail__facts dt { color: var(--muted); font-size: var(--type-small); }
-.media-detail__facts dd { margin: 2px 0 0; overflow-wrap: anywhere; }
+/* The facts as one muted line, then when it was added (slice 108, Shopify and Squarespace). */
+.media-detail__facts, .media-detail__note { color: var(--muted); overflow-wrap: anywhere; }
+:is(.media-detail__facts, .media-detail__note) + .media-detail__note, .media-detail__name + .media-detail__facts { margin-block-start: -10px; }
+.media-detail__name { font-size: var(--type-title); font-weight: 600; overflow-wrap: anywhere; }
+.media-detail__facts a { color: var(--link); }
 .media-detail__disclosure { border-top: 1px solid var(--line); }
 .media-detail__disclosure + .media-detail__disclosure { margin-top: -12px; }
 .media-detail__disclosure > summary {
@@ -483,10 +499,14 @@
 .media-detail__uses ul { padding: 0; list-style: none; }
 .media-detail__uses li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; min-height: 32px; overflow-wrap: anywhere; }
 .media-detail__uses .media-library__page { min-height: 44px; padding: 0; text-align: left; overflow-wrap: anywhere; }
-.media-detail__row { display: flex; justify-content: space-between; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: var(--type-small); }
-.media-detail__row > :first-child { min-width: 0; overflow-wrap: anywhere; }
-.media-detail__original { padding: 0; font-size: inherit; text-decoration: underline; }
-.media-detail__row > :last-child { flex: none; color: var(--muted); font-variant-numeric: tabular-nums; }
+/* Copies and original (slice 108): the name with its size on the first line, what it is under it. */
+.media-detail__row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 2px 10px; padding-block: 8px; border-block-end: 1px solid var(--line); }
+.media-detail__row-name { overflow-wrap: anywhere; }
+.media-detail__row-size { color: var(--muted); font-size: var(--type-small); font-variant-numeric: tabular-nums; }
+.media-detail__row-kind { grid-column: 1; color: var(--muted); font-size: var(--type-small); }
+/* The kept original's name downloads it: a text link the size of its line, with a 44 px tap area. */
+.media-library .media-detail__original { position: relative; min-block-size: 0; padding: 0; border: 0; background: none; color: var(--link); font-size: inherit; text-align: start; text-decoration: underline; }
+.media-detail__original::after { content: ""; position: absolute; inset: min(0px, (100% - 44px) / 2) 0; }
 .media-detail__group { display: grid; gap: 8px; padding-top: 12px; border-top: 1px solid var(--line); }
 .media-detail__group h4 { font-size: var(--type-base); font-weight: 600; }
 /* Collections in details (slice 16) sit as a group like the others. */
@@ -499,7 +519,8 @@
 }
 .media-detail__form textarea:disabled { opacity: .55; }
 .media-detail__form .media-library__check { min-height: 44px; cursor: pointer; }
-.media-detail__form .media-library__check + .media-library__hint { margin-top: -10px; }
+/* Decorative and Always keep: 44 px rows, one under the other. */
+.media-detail__form > .media-library__check + .media-library__check { margin-block-start: -12px; }
 .media-detail__foot { display: flex; justify-content: flex-end; gap: 8px; padding-top: 16px; border-top: 1px solid var(--line); }
 .media-library .media-detail__foot button { min-width: 96px; border-radius: 22px; }
 @container media-detail (max-width: 479px) { .media-library .media-detail__foot button { flex: 1; } }
@@ -556,7 +577,6 @@
 .media-library .media-detail__suggest { justify-self: start; min-height: 44px; padding: 0; text-decoration: underline; }
 .media-detail__forward { display: grid; }
 .media-detail__forward[hidden] { display: none; }
-.media-detail__forward .media-library__check + .media-library__hint { margin-top: -6px; }
 .media-replace__label { color: var(--muted); font-size: var(--type-small); }
 .media-library .media-replace__line { max-width: 760px; line-height: 1.5; }
 .media-library .media-replace__line:first-of-type { padding: 10px 12px; border-radius: var(--radius-small); background: var(--surface-subtle); }

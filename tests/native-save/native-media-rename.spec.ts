@@ -103,6 +103,8 @@ test("a taken name is said before saving, with the next numbered name to use", a
   await media.getByRole("button", { name: "Details for images/tram.webp", exact: true }).click();
   await name.fill("lisbon");
   await expect(media.getByText("lisbon.webp is taken.", { exact: true })).toBeVisible();
+  // A ⚠ glyph says it too, so the message is not colour only (slice 108).
+  expect(await media.getByText("lisbon.webp is taken.", { exact: true }).evaluate(note => getComputedStyle(note, "::before").content)).toContain("⚠");
   await expect(name).toHaveAttribute("aria-invalid", "true");
   await expect(media.getByRole("checkbox", { name: "Keep the old address working", exact: true })).toBeHidden();
   // Save while taken changes nothing and stays on the field.

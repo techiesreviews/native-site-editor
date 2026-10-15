@@ -68,8 +68,9 @@ test("tapping a badge opens the usage words and page names; Escape keeps the exp
   await expect(usage).toBeVisible();
   await expect(usage.getByText("Used on 1 page", { exact: true })).toBeVisible();
   await expect(usage.getByRole("heading", { name: "Pages · 1", exact: true })).toBeVisible();
-  await expect(usage.getByRole("heading", { name: "Other uses · 0", exact: true })).toBeVisible();
-  await expect(usage.getByText("No other uses found.", { exact: true })).toBeVisible();
+  // A finished check with no other uses hides that group; ✕ and Escape close, File details is the one action (slice 108).
+  await expect(usage.getByRole("heading", { name: /^Other uses/ })).toHaveCount(0);
+  await expect(usage.locator(".media-usage__foot").getByRole("button")).toHaveText(["File details"]);
   await page.keyboard.press("Escape");
   await expect(usage).toHaveCount(0);
   await expect(pane(page)).toBeVisible();
@@ -153,7 +154,7 @@ test("Not checked yet and other uses show apart, and newer results repaint the b
   const sharedUsage = page.getByRole("dialog", { name: "shared.png", exact: true });
   await expect(sharedUsage.getByRole("heading", { name: "Other uses · 2", exact: true })).toBeVisible();
   await expect(sharedUsage.getByText("No page uses found.", { exact: true })).toBeVisible();
-  await sharedUsage.getByRole("button", { name: "Close", exact: true }).click();
+  await sharedUsage.getByRole("button", { name: "Close usage", exact: true }).click();
   await expect(other).toBeFocused();
   // File details from the usage dialog opens the file's details.
   await other.click();
@@ -431,6 +432,23 @@ test("on a phone, File details is its own screen with Back, the preview first an
   await expect(library.locator(".media-library__grid")).toBeHidden();
   const [preview, name] = await Promise.all([library.locator(".media-detail__preview").boundingBox(), library.getByLabel("File name", { exact: true }).boundingBox()]);
   expect(preview!.y + preview!.height).toBeLessThanOrEqual(name!.y);
+  // Slice 108: the facts are one line; the preview has the picture's own shape, at most half the screen;
+  // Copy path and Remove… (last, red) sit in the ⋯ menu; Always keep's helper is its row's second line.
+  await expect(library.locator(".media-detail__facts")).toHaveText(/^SVG( · \d+ × \d+)? · \d+ (B|KB) · images$/);
+  const shape = await library.locator(".media-detail__preview img").evaluate(image => {
+    const box = image.getBoundingClientRect(), frame = image.parentElement!.getBoundingClientRect(), picture = image as HTMLImageElement;
+    return { ratio: box.width / box.height, own: picture.naturalWidth / picture.naturalHeight, bands: frame.height - box.height, height: box.height };
+  });
+  expect(shape.ratio).toBeCloseTo(shape.own, 1);
+  expect(shape.bands).toBeLessThan(1);
+  expect(shape.height).toBeLessThanOrEqual(844 / 2 + 1);
+  await library.getByRole("button", { name: "More for this file", exact: true }).tap();
+  const menu = page.getByRole("menu", { name: "More for this file", exact: true });
+  await expect(menu.getByRole("menuitem")).toHaveText(["Copy path", "Remove…"]);
+  await expect(menu.getByRole("menuitem", { name: "Remove…", exact: true })).toHaveClass(/row-menu__danger/);
+  await page.keyboard.press("Escape");
+  await expect(menu).toBeHidden();
+  await expect(library.getByRole("checkbox", { name: "Always keep", exact: true })).toHaveAccessibleDescription("Never suggested for clean-up. For files used outside the site.");
   // Save stays pinned in view (slice 104); scrolled to the end, the buttons follow the fields and cover none of them.
   const save = library.getByRole("button", { name: "Save details", exact: true });
   await expect(save).toBeInViewport({ ratio: 1 });
@@ -679,7 +697,8 @@ test("a video, an audio file, a PDF and a download show their tiles and lengths;
   const family = library.locator('details[data-part="family"]');
   await family.locator("summary").click();
   await expect(family).toContainText("Files with it");
-  await expect(family).toContainText("clip.webp · Still picture");
+  // Two lines each (slice 108): the name, then what it is.
+  await expect(family.locator(".media-detail__row", { hasText: "clip.webp" }).locator(".media-detail__row-kind")).toHaveText("Still picture");
   await library.getByRole("button", { name: "Back", exact: true }).click();
   await track.getByRole("button", { name: "Details for media/audio/track.mp3, 0:01", exact: true }).click();
   await expect(library.locator(".media-detail__preview audio")).toHaveAttribute("controls", "");

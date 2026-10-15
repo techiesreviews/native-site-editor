@@ -11,27 +11,28 @@ const mediaRenameTarget = (path: string, name: string) => {
 import { applyMediaMetadata, mediaMetadataView } from "../src/page-builder/media-metadata";
 import { parseMediaRecords, serializeMediaRecords } from "../shared/media-records";
 
-test("facts say when a file was added, after its size, in the reader's calendar and clock (slice 103)", async () => {
-  const { formatMediaDate } = await import("../src/page-builder/media-file-details");
-  const time = Date.UTC(2026, 9, 15, 8, 30);
-  assert.equal(formatMediaDate(time, "en-GB", "UTC"), "15 Oct 2026, 08:30");
-  assert.match(formatMediaDate(time, "en-US", "America/New_York"), /^Oct 15, 2026, 4:30\sAM$/);
-  const facts = mediaDetailFacts({ path: "media/images/a.webp", size: 2048, date: time });
-  assert.deepEqual(facts.map(fact => fact.label), ["Kind", "Size", "Added", "Folder"]);
-  assert.equal(facts[2].value, formatMediaDate(time));
-  assert.equal(mediaDetailFacts({ path: "images/a.webp" }).some(fact => fact.label === "Added"), false);
+test("Added is a short date in the reader's calendar, with the year only when it is not this year (slice 108)", async () => {
+  const { formatMediaAdded } = await import("../src/page-builder/media-file-details");
+  const time = Date.UTC(2026, 9, 14, 8, 30);
+  assert.equal(formatMediaAdded(time, "en-GB", "UTC", Date.UTC(2026, 11, 31)), "Added 14 Oct");
+  assert.equal(formatMediaAdded(time, "en-GB", "UTC", Date.UTC(2027, 0, 1)), "Added 14 Oct 2026");
+  assert.equal(formatMediaAdded(time, "en-US", "UTC", Date.UTC(2026, 9, 15)), "Added Oct 14");
+  // The year is the reader's: 23:30 on 31 Dec in UTC is already next year in Tokyo.
+  assert.equal(formatMediaAdded(Date.UTC(2026, 11, 31, 23, 30), "en-GB", "Asia/Tokyo", Date.UTC(2027, 0, 2)), "Added 1 Jan");
 });
 
-test("facts give kind, size, dimensions when read and folder", () => {
-  assert.deepEqual(mediaDetailFacts({ path: "images/team/photo.webp", size: 438_272, width: 2400, height: 1345 }), [
-    { label: "Kind", value: "Image" }, { label: "Size", value: "428 KB" },
-    { label: "Dimensions", value: "2400 × 1345" }, { label: "Folder", value: "images/team" },
-  ]);
-  assert.deepEqual(mediaDetailFacts({ path: "guide.pdf" }), [{ label: "Kind", value: "Document" }, { label: "Folder", value: "Site root" }]);
-  // A video's or audio file's recorded length follows its size.
-  assert.deepEqual(mediaDetailFacts({ path: "v/clip.mp4", size: 1024, duration: 75 }).map(fact => fact.label + " " + fact.value), ["Kind Video", "Size 1 KB", "Length 1:15", "Folder v"]);
-  assert.equal(mediaDetailFacts({ path: "guide.pdf", duration: 75 }).some(fact => fact.label === "Length"), false);
-  assert.equal(mediaDetailFacts({ path: "media/intro.mp4", size: 10, width: 0, height: 0 })[0].value, "Video");
+test("facts are one line: format, dimensions when read, length, size and folder (slice 108)", () => {
+  const line = (file: Parameters<typeof mediaDetailFacts>[0]) => mediaDetailFacts(file).map(fact => fact.value).join(" · ");
+  assert.equal(line({ path: "media/images/red-acer.webp", size: 48_128, width: 2000, height: 1125 }), "WebP · 2000 × 1125 · 47 KB · media/images");
+  assert.deepEqual(mediaDetailFacts({ path: "images/team/photo.jpeg", size: 438_272, width: 2400, height: 1345 }).map(fact => fact.key),
+    ["format", "dimensions", "size", "folder"]);
+  assert.equal(line({ path: "guide.pdf" }), "PDF · Site root");
+  assert.equal(line({ path: "files/brochure.zip", size: 22 }), "ZIP · 22 B · files");
+  assert.equal(line({ path: "README" }), "File · Site root");
+  // A video's or audio file's recorded length comes before its size.
+  assert.equal(line({ path: "v/clip.mp4", size: 1024, duration: 75 }), "MP4 · 1:15 · 1 KB · v");
+  assert.equal(mediaDetailFacts({ path: "guide.pdf", duration: 75 }).some(fact => fact.key === "length"), false);
+  assert.equal(line({ path: "media/intro.mp4", size: 10, width: 0, height: 0 }), "MP4 · 10 B · media");
 });
 
 test("the Image family lists copies narrowest first, then kept originals, with known sizes", () => {
@@ -41,8 +42,8 @@ test("the Image family lists copies narrowest first, then kept originals, with k
     { path: "images/other.png" },
   ];
   assert.deepEqual(mediaFamilyRows("images/tram.webp", items), [
-    { path: "images/tram-480w.webp", label: "Smaller copy · 480 px wide" },
-    { path: "images/tram-960w.webp", label: "Smaller copy · 960 px wide", size: "1 KB" },
+    { path: "images/tram-480w.webp", label: "Smaller copy · 480 px" },
+    { path: "images/tram-960w.webp", label: "Smaller copy · 960 px", size: "1 KB" },
     { path: "media/originals/tram.jpg", label: "Original, kept", original: true, size: "3 MB" },
   ]);
   assert.deepEqual(mediaFamilyRows("images/other.png", items), []);
@@ -116,8 +117,8 @@ test("Always keep is read, written only when changed, cleared, and survives savi
 test("trimmed copies show Made from even when the source no longer exists", () => {
   const records = parseMediaRecords('{"version":2,"collections":[],"files":{"media/images/photo-crop.webp":{"trimmedFrom":{"source":"images/Original Photo.jpg","trim":{"x":0,"y":0,"width":0.5,"height":1}}}}}');
   const meta = mediaMetadataView(records)["media/images/photo-crop.webp"];
-  assert.deepEqual(mediaMadeFrom(meta), [{ label: "Made from", value: "Original Photo.jpg" }]);
-  assert.deepEqual(mediaMadeFrom({}), []);
+  assert.equal(mediaMadeFrom(meta), "Made from Original Photo.jpg");
+  assert.equal(mediaMadeFrom({}), undefined);
 });
 
 

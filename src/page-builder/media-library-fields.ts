@@ -18,8 +18,14 @@ export function field(label: string, control: HTMLElement) {
   wrap.append(node("span", "", label), control);
   return wrap;
 }
-export function check(label: string, control: HTMLInputElement) {
+let hints = 0;
+/** A tick box with its label; a `hint` is the row's second line (slice 108), describing the box. */
+export function check(label: string, control: HTMLInputElement, hint?: string) {
   const wrap = node("label", "media-library__check");
   wrap.append(control, node("span", "", label));
+  if (hint) {
+    const line = node("span", "media-library__hint", hint); line.id = `media-check-hint-${++hints}`;
+    control.setAttribute("aria-describedby", line.id); wrap.append(line);
+  }
   return wrap;
 }

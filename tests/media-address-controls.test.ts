@@ -9,7 +9,9 @@ async function controls(file: string, symbol: string) {
     plugins: [{ name: "controls-dom", setup(plugin) {
       plugin.onLoad({ filter: /(?:media-library-details|site-settings)\.ts$/ }, args => ({ contents: readFileSync(args.path, "utf8") + `\nexport { ${symbol} };`, loader: "ts" }));
       plugin.onResolve({ filter: /\/ui\/dom$/ }, () => ({ path: "dom", namespace: "test" }));
-      plugin.onLoad({ filter: /.*/, namespace: "test" }, () => ({ contents: `
+      plugin.onResolve({ filter: /\/icons$/ }, () => ({ path: "icons", namespace: "test" }));
+      plugin.onLoad({ filter: /^icons$/, namespace: "test" }, () => ({ contents: "export const icon = () => ({}); export const setIcon = () => {};" }));
+      plugin.onLoad({ filter: /^dom$/, namespace: "test" }, () => ({ contents: `
         class Element {
           children = []; dataset = {}; classList = { add() {} };
           append(...children) { this.children.push(...children); }
@@ -17,7 +19,7 @@ async function controls(file: string, symbol: string) {
           addEventListener() {}
           setAttribute(name, value) { this[name] = value; }
         }
-        export const node = () => new Element();
+        export const node = (tag, className) => Object.assign(new Element(), { className });
         export const button = (label, click) => Object.assign(new Element(), { label, click });
       ` }));
     } }],
@@ -31,8 +33,14 @@ test("media details Copy path copies the encoded site address under the current 
   Object.defineProperty(globalThis, "navigator", { configurable: true, value: { clipboard: { writeText: async (text: string) => { copied.push(text); } } } });
   try {
     for (const prefix of ["", "/my-site"]) {
-      const preview = renderPreview({ library: () => ({ prefix }), task: (work: () => Promise<void>) => work(), tell() {}, done() {}, cache: {} }, "media/a b.webp", { url: "blob:picture" }, { alt: "" }, undefined, () => true);
-      await preview.children.at(-1).children.find((button: { label: string }) => button.label === "Copy path").click();
+      let entries: { label: string; run: () => Promise<void> }[] = [];
+      const menu = (_opener: unknown, items: typeof entries) => { entries = items; };
+      const preview = renderPreview({ library: () => ({ prefix }), task: (work: () => Promise<void>) => work(), tell() {}, done() {}, cache: {}, menu }, "media/a b.webp", { url: "blob:picture" }, { alt: "" }, undefined, () => true);
+      // Copy path sits in the ⋯ menu after the preview, before Remove… (slice 108).
+      const actions = preview.children.find((child: { className?: string }) => child.className === "media-detail__actions");
+      actions.children.find((button: Record<string, string>) => button["aria-label"] === "More for this file").click();
+      assert.deepEqual(entries.map(entry => entry.label), ["Copy path", "Remove…"]);
+      await entries[0].run();
       assert.equal(copied.at(-1), `${prefix}/media/a%20b.webp`);
     }
   } finally {

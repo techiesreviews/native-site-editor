@@ -351,7 +351,11 @@ test("an online Vimeo video's details switch Vimeo's own bar on everywhere; Remo
   await expect.poll(() => mounted(page)).toContain('<a class="online-video" href="https://vimeo.com/76979871" data-controls="service">');
   await expect(bar).toBeChecked();
   const before = await mounted(page);
-  await library.getByRole("button", { name: "Remove from Media…", exact: true }).click();
+  // Remove… is the ⋯ menu's last item, in red (slice 108).
+  await library.getByRole("button", { name: "More for this file", exact: true }).click();
+  const remove = page.getByRole("menuitem", { name: "Remove…", exact: true });
+  await expect(remove).toHaveClass(/row-menu__danger/);
+  await remove.click();
   await expect(library.getByText("Pages that show it keep it (1 page). Vimeo is not contacted, and the video stays there.")).toBeVisible();
   await library.getByRole("button", { name: "Remove", exact: true }).click();
   await expect(page.locator(".editor-toast__text")).toHaveText("Talk was removed from Media.");

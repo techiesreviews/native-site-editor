@@ -31,7 +31,8 @@ export function pageButton(page: string, label: string | undefined, open: () => 
 }
 
 /** Pages and other uses of one family (media-manager ticket 06), shared by the usage
- * dialog and File details; uses found so far show while the check reads the rest. */
+ * dialog and File details; uses found so far show while the check reads the rest.
+ * A finished check with no other uses leaves that group out (slice 108). */
 export function usageSections(
   records: MediaUsageRecords | undefined, path: string,
   openPage: (page: string) => void, pageLabel?: (page: string) => string | undefined,
@@ -54,11 +55,12 @@ export function usageSections(
       list.append(item);
     }
     other.append(list);
-  } else other.append(node("p", "media-library__muted", checked ? "No other uses found." : "Not checked yet."));
+  } else other.append(node("p", "media-library__muted", "Not checked yet."));
+  const hideOther = checked && !record.otherUses.length;
   const note = !checked ? node("p", "media-library__hint", records?.unreadable.length
     ? `Some site files could not be read: ${records.unreadable.join(", ")}.`
     : "The site's files are still being checked.") : undefined;
-  return [pages, other, ...(note ? [note] : [])];
+  return [pages, ...hideOther ? [] : [other], ...(note ? [note] : [])];
 }
 
 /** Keep keyboard focus on the same page after a newer result, or on `fallback` when it is gone. */
@@ -81,7 +83,8 @@ export interface UsageDialogHost {
   returnFocus(path: string): void;
 }
 
-/** Tapping a badge: the usage words, the pages by name and other uses apart (media-manager ticket 06). */
+/** Tapping a badge: the usage words, the pages by name and other uses apart (media-manager ticket 06).
+ * ✕ and Escape close it; File details is its one action (slice 108). */
 export function showUsageDialog(h: UsageDialogHost, path: string) {
   const dialog = node("dialog", "media-usage");
   const title = node("h2", "", path.split("/").pop()!); title.id = `media-usage-${Math.random().toString(36).slice(2)}`;
@@ -92,7 +95,7 @@ export function showUsageDialog(h: UsageDialogHost, path: string) {
   const header = node("header", "media-usage__head"), heading = node("div");
   heading.append(title, state); header.append(heading, closer);
   const footer = node("footer", "media-usage__foot");
-  footer.append(button("File details", () => { dialog.close(); h.details(path); }), button("Close", () => dialog.close(), "button primary"));
+  footer.append(button("File details", () => { dialog.close(); h.details(path); }));
   dialog.append(header, body, footer);
   function render() {
     keepPageFocus(body, () => {

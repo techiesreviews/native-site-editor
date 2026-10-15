@@ -139,14 +139,16 @@ test("removing a used file warns with its page, then allows; after publishing, R
 
   // Remove file from details: the page using it is named, its picture will break, and it can be opened first.
   await pane(page).getByRole("button", { name: "Details for images/placeholder.svg", exact: true }).click();
-  await pane(page).getByRole("button", { name: "Remove file…", exact: true }).click();
+  await pane(page).getByRole("button", { name: "More for this file", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Remove…", exact: true }).click();
   await expect(pane(page).getByRole("heading", { name: "Remove placeholder.svg?", exact: true })).toBeFocused();
   await expect(pane(page).getByText(/^1 page uses this file\. The picture on it will break/)).toBeVisible();
   await expect(pane(page).getByRole("button", { name: /^Open (Home|index\.html)$/ })).toBeVisible();
   // Cancel goes back to the file's details.
   await pane(page).getByRole("button", { name: "Cancel", exact: true }).click();
-  await expect(pane(page).getByRole("button", { name: "Remove file…", exact: true })).toBeVisible();
-  await pane(page).getByRole("button", { name: "Remove file…", exact: true }).click();
+  await expect(pane(page).getByRole("button", { name: "More for this file", exact: true })).toBeVisible();
+  await pane(page).getByRole("button", { name: "More for this file", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Remove…", exact: true }).click();
   await pane(page).getByRole("button", { name: "Remove file", exact: true }).click();
   await expect(page.locator(".editor-toast__text")).toContainText("Removed placeholder.svg. Restore it from More → Recently removed.");
   await expect(pane(page).locator('.media-library__card[data-path="images/placeholder.svg"]')).toHaveCount(0);

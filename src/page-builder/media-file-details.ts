@@ -7,29 +7,38 @@ import type { MediaMetadata, MediaMetadataMap } from "./media-metadata";
 /** The pure rules behind File details (media build slice 14): its facts, the Image family
  * rows, what Save details writes and the new name it asks for. */
 
-const KIND_NAMES = { image: "Image", video: "Video", audio: "Audio", document: "Document" } as const;
+export type MediaFactKey = "format" | "dimensions" | "length" | "size" | "folder";
+export interface MediaDetailFact { key: MediaFactKey; value: string }
 
-export interface MediaDetailFact { label: string; value: string }
+/** A file's format as people name it: "WebP", else its extension in capitals ("JPG", "PDF", "ZIP"). */
+export const mediaFormatName = (path: string) => {
+  const extension = /\.([^./]+)$/.exec(path)?.[1].toLowerCase();
+  return !extension ? "File" : extension === "webp" ? "WebP" : extension.toUpperCase();
+};
 
-/** When a file was added, as the reader's calendar and clock say it: "15 Oct 2026, 10:23". */
-export const formatMediaDate = (time: number, locale?: string, timeZone?: string) =>
-  new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short", timeZone }).format(time);
+/** When a file was added, as the reader's calendar says it (slice 108, as Shopify and Squarespace):
+ * "Added 14 Oct", with the year only when it is not this year. */
+export function formatMediaAdded(time: number, locale?: string, timeZone?: string, now = Date.now()) {
+  const year = (at: number) => new Intl.DateTimeFormat("en", { year: "numeric", timeZone }).format(at);
+  return `Added ${new Intl.DateTimeFormat(locale, {
+    day: "numeric", month: "short", timeZone, ...year(time) === year(now) ? {} : { year: "numeric" },
+  }).format(time)}`;
+}
 
-/** Kind, size, when it was added (when known), length (a video's or audio file's, when recorded),
- * dimensions (when the picture was read) and folder, in that order. */
-export function mediaDetailFacts(file: { path: string; size?: number; date?: number; width?: number; height?: number; duration?: number }, locale?: string): MediaDetailFact[] {
-  const kind = mediaKind(file.path), facts: MediaDetailFact[] = [{ label: "Kind", value: KIND_NAMES[kind] }];
-  if (file.size !== undefined) facts.push({ label: "Size", value: formatBytes(file.size) });
-  if (file.date !== undefined) facts.push({ label: "Added", value: formatMediaDate(file.date, locale) });
-  if ((kind === "video" || kind === "audio") && file.duration && file.duration > 0) facts.push({ label: "Length", value: formatMediaLength(file.duration) });
-  if (file.width && file.height) facts.push({ label: "Dimensions", value: `${file.width} × ${file.height}` });
-  facts.push({ label: "Folder", value: parent(file.path) || "Site root" });
+/** The facts of File details' one line (slice 108): format, dimensions (when read), length (a
+ * video's or audio file's, when known), size (when known) and folder, in that order. */
+export function mediaDetailFacts(file: { path: string; size?: number; width?: number; height?: number; duration?: number }): MediaDetailFact[] {
+  const kind = mediaKind(file.path), facts: MediaDetailFact[] = [{ key: "format", value: mediaFormatName(file.path) }];
+  if (file.width && file.height) facts.push({ key: "dimensions", value: `${file.width} × ${file.height}` });
+  if ((kind === "video" || kind === "audio") && file.duration && file.duration > 0) facts.push({ key: "length", value: formatMediaLength(file.duration) });
+  if (file.size !== undefined) facts.push({ key: "size", value: formatBytes(file.size) });
+  facts.push({ key: "folder", value: parent(file.path) || "Site root" });
   return facts;
 }
 
 /** Provenance remains visible when the original has been removed. */
-export function mediaMadeFrom(record: Pick<MediaMetadata, "trimmedFrom">): MediaDetailFact[] {
-  return record.trimmedFrom ? [{ label: "Made from", value: basename(record.trimmedFrom.source) }] : [];
+export function mediaMadeFrom(record: Pick<MediaMetadata, "trimmedFrom">): string | undefined {
+  return record.trimmedFrom ? `Made from ${basename(record.trimmedFrom.source)}` : undefined;
 }
 
 export interface MediaFamilyRow { path: string; label: string; size?: string; original?: true }
@@ -44,7 +53,7 @@ export function mediaFamilyRows(path: string, items: { path: string; size?: numb
     return bytes === undefined ? {} : { size: formatBytes(bytes) };
   };
   return [
-    ...family.copies.map(copy => ({ path: copy.path, label: `Smaller copy · ${copy.width} px wide`, ...size(copy.path) })),
+    ...family.copies.map(copy => ({ path: copy.path, label: `Smaller copy · ${copy.width} px`, ...size(copy.path) })),
     ...family.sharing ? [{ path: family.sharing, label: "Sharing picture", ...size(family.sharing) }] : [],
     ...family.originals.map(original => ({ path: original, label: "Original, kept", original: true as const, ...size(original) })),
     ...family.still ? [{ path: family.still, label: /\.pdf$/i.test(path) ? "First page picture" : "Still picture", ...size(family.still) }] : [],
