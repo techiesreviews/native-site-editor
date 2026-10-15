@@ -111,6 +111,7 @@ The build plan for the [media-manager map](../map.md). Requirements, flow per sl
 | [53 Replace everywhere](tickets/53-replace-everywhere.md) | sol | 46, 48 |
 | [54 Rename and Replace everywhere in details](tickets/54-rename-and-replace-in-details.md) | claude | 52, 53, 14 |
 | [55 Agents remove, keep, restore, rename and replace](tickets/55-agents-tidy.md) | sol | 50, 51, 54, 45 |
+| [97 Replace everywhere gives sharing tags a JPEG of the new picture](tickets/97-replace-sharing-jpeg.md) | sol | 95 |
 
 ### Phase 5: Video, audio and downloads
 
