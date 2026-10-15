@@ -1,6 +1,7 @@
 import { isSharingImage, sharingJpegPath, sharingMetaName, sharingImageDetail } from "./sharing-jpeg";
 import { socialImageAddress, SOCIAL_IMAGE_NOTE } from "./social-image";
 import { mediaPictureUnwrap, mediaEscape } from "./media-markup";
+import { decodeHtmlEntities } from "./html-entities";
 import { readSource } from "./source-tree";
 import { startTags, startTagAttribute } from "../../shared/html-source";
 import type { MediaRecords } from "../../shared/media-records";
@@ -232,14 +233,14 @@ export function planMediaReplace(input: ReplaceInput) {
           if (name.startsWith("og:")) og = { width: first.width!, height: first.height!, type };
           if (sharingNeeded) {
             // Slice 53 already rewrote this value: keep its other parameters and fragment, swap the address and the mark.
-            const raw = attr ? source.slice(attr.valueStart, attr.valueEnd) : "", at = raw.search(/[?#]/);
+            // Split the decoded value: an entity such as `&#38;` holds a `#` that is not a fragment.
+            const raw = attr ? decodeHtmlEntities(source.slice(attr.valueStart, attr.valueEnd), true) : "", at = raw.search(/[?#]/);
             const version = versions.get(sharingPath);
-            let suffix = at < 0 ? "" : raw.slice(at);
+            const suffix = at < 0 ? "" : raw.slice(at);
             const hash = suffix.indexOf("#"), query = hash < 0 ? suffix : suffix.slice(0, hash), fragment = hash < 0 ? "" : suffix.slice(hash);
-            const params = query.replace(/^\?/, "").split(/&amp;|&/).filter(part => part && !/^v(?:=|$)/.test(part));
+            const params = query.replace(/^\?/, "").split("&").filter(part => part && !/^v(?:=|$)/.test(part));
             if (version) params.unshift("v=" + version);
-            suffix = (params.length ? "?" + params.join("&amp;") : "") + fragment;
-            content = mediaEscape(socialImageAddress(input.siteUrl, sharingPath).address) + suffix;
+            content = mediaEscape(socialImageAddress(input.siteUrl, sharingPath).address + (params.length ? "?" + params.join("&") : "") + fragment);
           }
         }
       } else if (og) content = sharingImageDetail(name, og) && mediaEscape(sharingImageDetail(name, og)!);

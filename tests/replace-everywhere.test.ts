@@ -408,3 +408,11 @@ test("review: sharing tags keep other parameters and the fragment; entity-encode
   });
   assert.ok(p.edits.get("index.html")!.includes('content="https://site.test/media/images/photo-sharing.jpg?v=12345678&amp;w=1&amp;q=2#hi"'));
 });
+
+for (const amp of ["&#38;", "&#x26;"]) test(`review round 2: numeric ampersand ${amp} in a sharing URL keeps parameters, fragment and one mark`, async () => {
+  const p = await plan({ "index.html": `<meta property="og:image" content="/${path}?w=1${amp}q=2${amp}v=old#hi">` }, {
+    request: { path, result: result("webp") }, sharing: { blob: new Blob(["jpeg"], { type: "image/jpeg" }) }, siteUrl: "https://site.test/",
+    versions: new Map([["media/images/photo-sharing.jpg", "12345678"]]),
+  });
+  assert.ok(p.edits.get("index.html")!.includes('content="https://site.test/media/images/photo-sharing.jpg?v=12345678&amp;w=1&amp;q=2#hi"'));
+});
