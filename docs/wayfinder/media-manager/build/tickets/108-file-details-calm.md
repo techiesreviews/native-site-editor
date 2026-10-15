@@ -2,7 +2,7 @@
 title: File details: one fact line, a calm preview, actions in order
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-108 runner)
 blocked_by: [105-editor-toast]
 builder: claude
 phase: 8
