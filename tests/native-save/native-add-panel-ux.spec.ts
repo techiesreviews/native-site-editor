@@ -26,7 +26,7 @@ test("section thumbnails show the whole section at the canvas's width, with no c
       return parseFloat(getComputedStyle(frame).width) >= 640 && root.clientHeight >= Math.floor(whole);
     })).toBe(true);
   }
-  await expect(add.getByRole("option", { name: /^(Section|Div|Heading|Paragraph|Image|Button) HTML$/ })).toHaveCount(0);
+  await expect(add.getByRole("option", { name: /^(Section|Div|Heading|Paragraph|Media|Image|Button) HTML$/ })).toHaveCount(0);
   await expect(add.locator(".pb-add-panel__code-toggle,.pb-add-item__code,.pb-add-panel__peek")).toHaveCount(0);
   expect(await page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html"))).toBe(before);
 });

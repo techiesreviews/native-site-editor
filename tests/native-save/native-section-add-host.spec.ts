@@ -9,7 +9,7 @@ test("Add offers page sections without a separate HTML element catalogue", { tag
   const panel = page.getByRole("dialog", { name: "Add to the page" });
   await expect(panel).toBeVisible();
   await expect(panel.getByRole("option", { name: /^Feature block/ })).toHaveCount(1);
-  for (const name of ["Heading", "Text", "Image", "Video", "Embed", "Input", "Grid", "Columns"])
+  for (const name of ["Heading", "Text", "Media", "Image", "Video", "Embed", "Input", "Grid", "Columns"])
     await expect(panel.getByRole("option", { name: new RegExp(`^${name}(?:\\s|$)`) })).toHaveCount(0);
   await frame.locator("section.hero").click({ position: { x: 5, y: 5 } });
   await panel.getByRole("option", { name: /^Feature block/ }).click();
