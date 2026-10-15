@@ -1,7 +1,7 @@
 ---
 title: The Media panel fills the height, keeps one size, pins its actions
 type: task (AFK)
-status: in-progress
+status: open
 assignee: claude (mm-104 runner)
 blocked_by: [89-ux-ui-audit]
 builder: claude
