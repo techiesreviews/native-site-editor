@@ -10,7 +10,7 @@ phase: 8
 
 ## What
 
-From the [UX and UI audit](../ux-ui-audit.md#image-button-and-image-popup-b-19-to-b-23): the popup is about 650 px tall against Brizy's 330. Look only; ticket 39's rules stay (both messages, previews, Done, Escape).
+From the [UX and UI audit](../ux-ui-audit.md#image-button-and-image-popup-b-19-to-b-23): the popup measures about 328 × 630 px at 1280 against Brizy's about 325 × 490 (Image and Zoom about 265 px of that; three switch rows the rest). Target: about 450 px for a fixed shape. Look only; ticket 39's rules stay (both messages, previews, Done, Escape).
 
 - The helper line under the picture shows only the first time a shape is chosen, then stays as the dot's accessible name; Replace stays on that line.
 - "Only changes this spot" and "Saves a new picture for this spot" become one 13 px muted line with a 14 px icon (amber icon for the second), beside Done on computer and above the buttons on phone. No box, no stripe.
