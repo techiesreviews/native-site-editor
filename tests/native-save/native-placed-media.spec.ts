@@ -31,7 +31,7 @@ const PAGE = `<!doctype html><html lang="en"><head><title>Placed</title>
 <audio src="/media/tour.wav" controls preload="none" data-duration="42" aria-label="Tour"></audio>
 <audio controls preload="none" aria-label="Talk"><source src="/media/talk.wav" type="audio/wav"></audio>
 <a class="download-card" href="/media/list.pdf"><span class="download-card-name">Price list</span><span class="download-card-meta">PDF · 1 KB</span><span class="download-card-action">Open</span></a>
-<div class="scroller"><p class="spacer">Inside.</p><video src="/media/clip.mp4" width="320" height="180" title="Inner"></video></div>
+<div class="scroller"><p class="spacer">Inside.</p><video src="/media/clip.mp4" width="320" height="180" title="Inner"></video><div class="sideways"><p class="wide">Wide.</p><video src="/media/clip.mp4" width="320" height="180" title="Side"></video></div></div>
 </section><p style="height:1200px">More words.</p></main></body></html>`;
 
 test.beforeEach(async ({ page, baseURL }) => {
@@ -43,7 +43,7 @@ test.beforeEach(async ({ page, baseURL }) => {
   await seed({ path: "media/tour.wav", base64: wav(41.9).toString("base64") });
   await seed({ path: "media/talk.wav", base64: wav(12.5).toString("base64") });
   await seed({ path: "media/list.pdf", content: "%PDF-1.1\n%%EOF\n" });
-  await seed({ path: "styles/placed.css", content: "body{margin:0} header{position:sticky;top:0;height:56px;background:#eee} main{padding:0 24px} video{display:block;width:640px;height:360px;background:#335} .scroller{height:300px;overflow:auto} .spacer{height:800px} .scroller video{width:320px;height:180px}" });
+  await seed({ path: "styles/placed.css", content: "body{margin:0} header{position:sticky;top:0;height:56px;background:#eee} main{padding:0 24px} video{display:block;width:640px;height:360px;background:#335} .scroller{height:300px;overflow:auto} .spacer{height:800px} .scroller video{width:320px;height:180px} .sideways{display:flex;overflow-x:auto;width:400px} .wide{flex:0 0 900px} .sideways video{flex:0 0 320px}" });
   await seed({ path: "index.html", content: PAGE });
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await page.reload();
@@ -150,4 +150,33 @@ test("a video inside a scrolling box, chosen in Page structure, is scrolled into
     return Boolean(a && b && a.y >= b.y - 1 && a.y + a.height <= b.y + b.height + 1);
   }).toBe(true);
   await expect(inner).toBeInViewport({ ratio: 0.9 });
+});
+
+test("a video clipped sideways in a scrolling box, chosen in Page structure, is scrolled into view", async ({ page }) => {
+  const side = frame(page).locator('video[title="Side"]');
+  const box = frame(page).locator(".sideways");
+  const tree = page.getByRole("tree", { name: "Page structure" });
+  await choose(page, /^Video/, ["Section", "Block"]);
+  const sideways = tree.getByRole("treeitem", { name: "Block", exact: true }).nth(1);
+  if (await sideways.getAttribute("aria-expanded") !== "true") { await sideways.focus(); await page.keyboard.press("ArrowRight"); }
+  await tree.getByRole("treeitem", { name: /^Video/ }).nth(2).click();
+  await expect.poll(async () => {
+    const [a, b] = [await side.boundingBox(), await box.boundingBox()];
+    return Boolean(a && b && a.x >= b.x - 1 && a.x + a.width <= b.x + b.width + 1);
+  }).toBe(true);
+  await expect(side).toBeInViewport({ ratio: 0.9 });
+});
+
+test("an audio whose <source> changes to a file already read loads that file's length", async ({ page }) => {
+  const talk = frame(page).locator('audio[aria-label="Talk"]');
+  await expect.poll(() => talk.evaluate((el: HTMLAudioElement) => el.duration || 0), { timeout: 15_000 }).toBeCloseTo(12.5, 1);
+  await expect.poll(() => frame(page).locator('audio[aria-label="Tour"]').evaluate((el: HTMLAudioElement) => el.duration || 0), { timeout: 15_000 }).toBeCloseTo(41.9, 1);
+  const before = await talk.evaluate((el: HTMLAudioElement) => el.currentSrc);
+  await page.evaluate(async () => {
+    const editor = await import("/src/components/code-editor.ts");
+    const before = editor.getMountedSource("index.html")!;
+    editor.replaceActiveRange({ path: "index.html", start: 0, end: before.length, expected: before, text: before.replace("/media/talk.wav", "/media/tour.wav") });
+  });
+  await expect.poll(() => talk.evaluate((el: HTMLAudioElement) => el.currentSrc)).not.toBe(before);
+  await expect.poll(() => talk.evaluate((el: HTMLAudioElement) => el.duration || 0), { timeout: 15_000 }).toBeCloseTo(41.9, 1);
 });

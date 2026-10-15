@@ -299,7 +299,14 @@ import { domView } from "../page-builder/rules/tree.ts";
     if (existing.tagName === "SCRIPT") return;
     // Typing not yet sent to the editor is not overwritten by a render.
     if (existing === editing && existing.textContent !== editingText) return;
+    var media = (existing.localName === "audio" || existing.localName === "video") && !(mediaPlay && mediaPlay.el === existing);
+    var sources = media && sourceList(existing);
     reconcileChildren(existing, desired);
+    // A video or audio does not take a changed <source> by itself: it loads again.
+    if (media && sourceList(existing) !== sources) existing.load();
+  }
+  function sourceList(el) {
+    return Array.prototype.map.call(el.querySelectorAll("source"), function (source) { return source.getAttribute("src"); }).join("\n");
   }
 
   function syncAttrs(existing, desired) {
@@ -1943,17 +1950,18 @@ import { domView } from "../page-builder/rules/tree.ts";
     var calm = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     // An element without a box of its own (display: contents) is brought into view as the browser sees fit.
     if (!box.width && !box.height) { el.scrollIntoView({ block: "center", behavior: smooth && !calm ? "smooth" : "auto" }); return; }
-    // A scrolling box on the page shows it first (at once), then the page brings that box in.
+    // Scrolling boxes on the page show it first (at once, the nearest way, as
+    // scrollIntoView does); then the page brings it in with the bar's room above.
+    var nearest = function (start, end, from, to) { return start < from ? start - from : end > to ? Math.min(end - to, start - from) : 0; };
     for (var at = canvasUp(el); at && at !== document.body && at !== document.documentElement; at = canvasUp(at)) {
-      var overflow = at.scrollHeight > at.clientHeight && getComputedStyle(at).overflowY;
-      if (overflow !== "auto" && overflow !== "scroll") continue;
-      var port = at.getBoundingClientRect();
-      if (box.top < port.top) at.scrollTop -= port.top - box.top;
-      else if (box.bottom > port.bottom) at.scrollTop += Math.min(box.bottom - port.bottom, box.top - port.top);
+      var style = getComputedStyle(at), port = at.getBoundingClientRect();
+      if (at.scrollHeight > at.clientHeight && /^(auto|scroll)$/.test(style.overflowY)) at.scrollTop += nearest(box.top, box.bottom, port.top, port.bottom);
+      if (at.scrollWidth > at.clientWidth && /^(auto|scroll)$/.test(style.overflowX)) at.scrollLeft += nearest(box.left, box.right, port.left, port.right);
       box = el.getBoundingClientRect();
     }
     var dy = revealOffset({ top: box.top, bottom: box.bottom, height: window.innerHeight, inset: topInset(el) });
-    if (Math.abs(dy) >= 1) window.scrollBy({ top: dy, behavior: smooth && !calm ? "smooth" : "auto" });
+    var dx = nearest(box.left, box.right, 0, document.documentElement.clientWidth);
+    if (Math.abs(dy) >= 1 || Math.abs(dx) >= 1) window.scrollBy({ top: dy, left: dx, behavior: smooth && !calm ? "smooth" : "auto" });
   }
 
   function resolveNodePath(request) {
