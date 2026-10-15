@@ -875,3 +875,36 @@ test("the adding tray: a short line for a failed file, Retry an edged 36 px butt
   await expect(media.getByRole("heading", { name: "Optimise", exact: true })).toBeVisible();
   await expect(media.locator(".media-library__sheet .media-library__problem")).toHaveText(/^phone-export\.png could not be prepared\. .+ again\.$/);
 });
+
+test("on a phone a failed file with a very long name still takes at most two lines; Review… has its whole name and reason", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await open(page, baseURL);
+  const media = page.getByRole("region", { name: "Media", exact: true }), tab = page.getByRole("tab", { name: "Media", exact: true });
+  if (!await tab.isVisible()) await page.locator("#explorer-toggle").click();
+  await tab.click();
+  const long = `${"holiday-photo-".repeat(10)}final.png`;
+  await media.locator('input[name="media-upload"]').setInputFiles({ name: long, mimeType: "image/png", buffer: Buffer.from("not a picture at all, only words ".repeat(20)) });
+  const tray = media.getByRole("region", { name: "Files being added", exact: true });
+  await expect(tray.getByRole("status")).toHaveText("1 file couldn't be added", { timeout: 30_000 });
+  const line = tray.getByRole("listitem");
+  await expect(line).toHaveText(/^holiday-photo-holiday…-final\.png couldn't be added\. /);
+  const fit = await line.evaluate(item => ({ lines: Math.round(item.getBoundingClientRect().height / parseFloat(getComputedStyle(item).lineHeight)), clipped: item.scrollHeight > item.clientHeight + 1 }));
+  // Two lines at most, and nothing cut off: the advice is all there.
+  expect(fit.lines).toBeLessThanOrEqual(2);
+  expect(fit.clipped).toBe(false);
+  await tray.getByRole("button", { name: "Review…", exact: true }).click();
+  await expect(media.locator(".media-library__sheet .media-library__problem")).toHaveText(new RegExp(`^${long.replace(/\./g, "\\.")} could not be prepared\\. `));
+});
+
+test("Files: Review… takes a failed picture to Media's Optimise with its full reason", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const explorer = await filesTab(page);
+  await dropOnFiles(page, [{ name: "phone-export.png", type: "image/png", base64: Buffer.from("not a picture at all, only words ".repeat(20)).toString("base64") }]);
+  const summary = explorer.getByRole("region", { name: "Files being added" });
+  await expect(summary.getByRole("status")).toHaveText("1 file couldn't be added", { timeout: 30_000 });
+  await expect(summary.getByRole("listitem")).toHaveText(/^phone-export\.png couldn't be added\. /);
+  await summary.getByRole("button", { name: "Review…", exact: true }).click();
+  const media = page.getByRole("region", { name: "Media", exact: true });
+  await expect(media.getByRole("heading", { name: "Optimise", exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(media.locator(".media-library__sheet .media-library__problem")).toHaveText(/^phone-export\.png could not be prepared\. .+ again\.$/);
+});

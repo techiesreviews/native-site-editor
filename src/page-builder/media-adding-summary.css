@@ -24,6 +24,8 @@
 .media-library__adding-bar::-moz-progress-bar { background: var(--primary); }
 .media-library__adding-failed { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; color: var(--danger-fg); font-size: var(--type-small); overflow-wrap: anywhere; }
 .media-library__adding-failed:empty { display: none; }
+/* Each failure at most two lines (the rule keeps it short; this is the backstop). The full reason is under Review…. */
+.media-library__adding-failed li { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: clip; }
 .media-library__adding-notes { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; color: var(--warning-fg); font-size: var(--type-small); overflow-wrap: anywhere; }
 .media-library__adding-notes:empty, .media-library__adding-rows:empty { display: none; }
 /* Where there are no tiles, each file being added has a row with its own Cancel. */

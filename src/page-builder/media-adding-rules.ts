@@ -71,16 +71,24 @@ export const mediaAddingReviewable = (name: string, state: MediaAddingState) =>
 export const mediaAddingFailedReason = (name: string, error = "The file could not be added.") =>
   error.includes(name) ? error : `${name}: ${error}`;
 
+/** A long file name in a tray line keeps its start and its end with the extension, "holiday-pho…-final.png";
+ * the full name is under Review…. */
+export function mediaAddingShortName(name: string, max = 32) {
+  if (name.length <= max) return name;
+  const tail = (/\.[^.]{1,5}$/.exec(name)?.[0].length ?? 0) + 6;
+  return `${name.slice(0, max - 1 - tail)}…${name.slice(-tail)}`;
+}
+
 /** The longest tray line that still fits about two lines on a phone. */
 const SHORT_LINE = 100;
 /** A failed file's tray line (audit slice 112): "<name> couldn't be added." and what to do, at most
  * about two lines. A long reason keeps only its last sentence, the advice; the full reason is under
  * Review…. A reason that already names the file in its own words ("x.png was not added.") stays. */
 export function mediaAddingFailedLine(name: string, error = "") {
-  const lead = `${name} couldn't be added.`;
+  const short = mediaAddingShortName(name), lead = `${short} couldn't be added.`;
   const opening = [`${name} could not be prepared.`, `${name} could not be added to your drafts.`, `${name} could not be added.`, `${name}:`]
     .find(start => error.startsWith(start));
-  if (!opening && error.includes(name)) return error;
+  if (!opening && error.includes(name)) return error.replaceAll(name, short);
   const rest = (opening ? error.slice(opening.length) : error).trim();
   if (!rest) return lead;
   if (lead.length + 1 + rest.length <= SHORT_LINE) return `${lead} ${rest}`;

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  mediaAddingWords, mediaAddingCancellable, mediaAddingFailedLine, mediaAddingFailedReason, mediaAddingHoldText, mediaAddingOffers, mediaAddingPath, mediaAddingReveal, mediaAddingReviewable, mediaAddingShown, mediaAddingStatus,
+  mediaAddingWords, mediaAddingCancellable, mediaAddingFailedLine, mediaAddingFailedReason, mediaAddingHoldText, mediaAddingShortName, mediaAddingOffers, mediaAddingPath, mediaAddingReveal, mediaAddingReviewable, mediaAddingShown, mediaAddingStatus,
 } from "../src/page-builder/media-adding-rules";
 import type { MediaLibraryFilter } from "../src/page-builder/media-library-filter";
 
@@ -97,6 +97,17 @@ test("a failed file's line names it once and says what to do in at most two shor
   // Other sentences that name the file already read as a line of their own.
   assert.equal(mediaAddingFailedLine("huge.pdf", "huge.pdf is 20 MB; uploads are limited to 20 MB per file."), "huge.pdf is 20 MB; uploads are limited to 20 MB per file.");
   assert.equal(mediaAddingFailedLine("Refused.png", "Refused.png was not added."), "Refused.png was not added.");
+});
+
+test("a long file name in a tray line keeps its start and its end; Review keeps it whole", () => {
+  const long = `${"holiday-photo-".repeat(10)}final.png`;
+  assert.equal(mediaAddingShortName("phone-export.png"), "phone-export.png");
+  assert.equal(mediaAddingShortName(long), "holiday-photo-holiday…-final.png");
+  assert.equal(mediaAddingShortName(long).length, 32);
+  assert.equal(mediaAddingFailedLine(long, `${long} could not be prepared. Hidden personal details could not be removed. Save it as a new JPEG or PNG and add it again.`),
+    "holiday-photo-holiday…-final.png couldn't be added. Save it as a new JPEG or PNG and add it again.");
+  assert.equal(mediaAddingFailedLine(long, `${long} was not added.`), "holiday-photo-holiday…-final.png was not added.");
+  assert.equal(mediaAddingFailedReason(long, "Nope."), `${long}: Nope.`);
 });
 
 test("Review gets each failed file's full reason, named once", () => {
