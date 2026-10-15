@@ -270,7 +270,7 @@ export function createPagesController(ports: PagesPorts) {
     let complete = true;
     for (const [path, source] of Object.entries(pageLinkSources(ports.files(), path => r.source(path)))) {
       if (source === undefined) { complete = false; continue; }
-      const rewritten = rewriteRouteLinks(source, from, to);
+      const rewritten = rewriteRouteLinks(source, from, to, true, nativeSitePrefix(r.source(NATIVE_CONFIG_PATH)));
       if (rewritten.count) links.push({ path: moved.get(path) ?? path, from: path, text: rewritten.text, count: rewritten.count });
     }
     const redirect = move.routes.filter(([route]) => onBranchHere(site.routes[route])).map(([route]) => route);
@@ -324,7 +324,7 @@ export function createPagesController(ports: PagesPorts) {
     const redirects = r.source(NATIVE_REDIRECTS_PATH), redirected = keep ? change.redirect : [];
     const creates: { path: string; content: string }[] = [];
     if (redirects !== undefined || redirected.length) {
-      const next = editNativeRedirects(redirects, change.from, change.to, redirected);
+      const next = editNativeRedirects(redirects, change.from, change.to, redirected, true, nativeSitePrefix(r.source(NATIVE_CONFIG_PATH)));
       if (next !== (redirects ?? "")) {
         if (redirects === undefined) creates.push({ path: NATIVE_REDIRECTS_PATH, content: next });
         else edits.set(NATIVE_REDIRECTS_PATH, next);

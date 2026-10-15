@@ -9,6 +9,7 @@
 // (`/about/` → `/company/` moves `about/team/index.html` to
 // `company/team/index.html`), and a single-file page moves alone.
 import { NATIVE_NOT_FOUND_ROUTE, isFolderRoute, nativePageRoute, nativeRouteFile } from "../shared/native-routes";
+import { rootRoute, routeAddress } from "../shared/site-path-prefix";
 import type { Checked } from "./native-create";
 
 export interface FileMove {
@@ -160,7 +161,7 @@ export interface LinkRewrite {
  * URL. Only whole parts match (`/about-us/` is not under `/about/`); only
  * the path in each link changes, so the rest of the markup stays as written.
  */
-export function rewriteRouteLinks(source: string, from: string, to: string, subtree = true): LinkRewrite {
+export function rewriteRouteLinks(source: string, from: string, to: string, subtree = true, prefix = ""): LinkRewrite {
   const edits: LinkRewrite["edits"] = [];
   if (from === "/" || from === to) return { text: source, count: 0, edits };
   const folder = isFolderRoute(from);
@@ -174,14 +175,17 @@ export function rewriteRouteLinks(source: string, from: string, to: string, subt
     const lead = value.length - value.trimStart().length;
     const trimmed = value.slice(lead);
     if (!trimmed.startsWith("/") || trimmed.startsWith("//")) continue;
-    const path = trimmed.split(/[?#\s]/)[0];
+    const original = trimmed.split(/[?#\s]/)[0];
+    const path = readRoute(original, prefix);
     let next: string | undefined;
     if (path === from || (bare !== undefined && path === bare)) next = path === bare ? to.replace(/\/$/, "") : to;
     else if (path === `${from}index.html` && folder) next = `${to}${isFolderRoute(to) ? "index.html" : ""}`;
     else if (folder && subtree && path.startsWith(from) && isFolderRoute(to)) next = `${to}${path.slice(from.length)}`;
-    if (next === undefined || next === path) continue;
+    if (next === undefined) continue;
+    next = routeAddress(next, prefix);
+    if (next === original) continue;
     const start = valueStart + lead;
-    edits.push({ start, end: start + path.length, text: next });
+    edits.push({ start, end: start + original.length, text: next });
   }
   let text = source;
   for (const edit of [...edits].reverse()) text = text.slice(0, edit.start) + edit.text + text.slice(edit.end);
@@ -198,14 +202,15 @@ export function rewriteRouteLinks(source: string, from: string, to: string, subt
  * written again, goes. Comments and other lines stay as written. With
  * `subtree` false only the page at `from` moved, not the pages under it.
  */
-export function editNativeRedirects(text: string | undefined, from: string, to: string, redirect: string[], subtree = true): string {
+export function editNativeRedirects(text: string | undefined, from: string, to: string, redirect: string[], subtree = true, prefix = ""): string {
   const newline = text?.includes("\r\n") ? "\r\n" : "\n";
   const lines = text ? text.split(/\r?\n/) : [];
   if (lines.length && lines[lines.length - 1] === "") lines.pop();
   const folder = isFolderRoute(from);
   const bare = folder ? from.slice(0, -1) : undefined;
   const move = (path: string) => {
-    const [route, rest] = splitPath(path);
+    const [original, rest] = splitPath(path);
+    const route = readRoute(original, prefix);
     if (bare !== undefined && route === bare) return `${to.replace(/\/$/, "")}${rest}`;
     if (route === from) return `${to}${rest}`;
     if (folder && subtree && route.startsWith(from) && isFolderRoute(to)) return `${to}${route.slice(from.length)}${rest}`;
@@ -217,7 +222,7 @@ export function editNativeRedirects(text: string | undefined, from: string, to: 
     const tokens = line.trim().split(/\s+/);
     if (!line.trim() || tokens[0].startsWith("#") || tokens.length < 2) { out.push(line); continue; }
     const [source, destination] = tokens;
-    const sourceRoute = splitPath(source)[0];
+    const sourceRoute = readRoute(splitPath(source)[0], prefix);
     // The new URLs are pages now: a redirect away from one would hide it.
     if ((subtree ? isRouteWithin(sourceRoute, to) : sourceRoute === to) || (isFolderRoute(to) && sourceRoute === to.slice(0, -1))) continue;
     if (writing.has(source) || writing.has(sourceRoute)) continue;
@@ -225,13 +230,24 @@ export function editNativeRedirects(text: string | undefined, from: string, to: 
     if (moved === undefined) { out.push(line); continue; }
     if (splitPath(moved)[0] === sourceRoute) continue;
     const at = line.indexOf(destination, line.indexOf(source) + source.length);
-    out.push(line.slice(0, at) + moved + line.slice(at + destination.length));
+    const [route, rest] = splitPath(moved);
+    out.push(line.slice(0, at) + routeAddress(route, prefix) + rest + line.slice(at + destination.length));
   }
   for (const route of redirect) {
-    const target = move(route);
-    if (target !== undefined) out.push(`${route} ${target} 301`);
+    const target = move(routeAddress(route, prefix));
+    if (target !== undefined) {
+      const [path, rest] = splitPath(target);
+      out.push(`${routeAddress(route, prefix)} ${routeAddress(path, prefix)}${rest} 301`);
+    }
   }
   return out.length ? `${out.join(newline)}${newline}` : "";
+}
+
+// A root path without the site's prefix (whole parts, any percent spelling); the rest stays as written.
+function readRoute(path: string, prefix: string): string {
+  const parts = path.split("/"), count = prefix.split("/").length;
+  try { if (prefix && decodeURIComponent(parts.slice(0, count).join("/")) === decodeURIComponent(prefix)) return rootRoute(parts.slice(count).join("/")); } catch { /* keep it */ }
+  return path;
 }
 
 function splitPath(value: string): [string, string] {

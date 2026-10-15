@@ -174,3 +174,9 @@ test("encoded folder prefixes survive Unicode Rename without double encoding", (
   const p = plan({ "index.html": `<img src="/caf%C3%A9/${old}">` }, { from: old, to, paths: [old], site: { origins: [], prefix: "/caf%C3%A9" } });
   assert.equal(p.edits.get("index.html"), `<img src="/caf%C3%A9/media/${encodeURIComponent("東京.webp")}">`);
 });
+
+test("sub-folder rename replaces an existing plain redirect source without duplicates", () => {
+  const p = plan({ _redirects: `# Keep this\n/${from} /away/ 302\n/my-site/${from} /away/ 302\n` },
+    { paths: [from], keepOldAddress: true, site: { prefix: "/my-site", origins: [] } });
+  assert.equal(p.redirects, `# Keep this\n/my-site/${from} /my-site/${to} 301\n`);
+});

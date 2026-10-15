@@ -458,3 +458,9 @@ test("sub-folder Replace keeps a file name's encoded characters", () => {
   });
   assert.equal(planned.edits.get("index.html"), '<img src="/my-site/media/a%23b.webp?v=new"><img src="/my-site/media/a%23b.webp?v=new">');
 });
+
+test("sub-folder type replacement replaces an existing plain redirect source", async () => {
+  const p = await plan({ _redirects: `# Keep this\n/${path} /away/ 302\n/my-site/${path} /away/ 302\n` },
+    { paths: [path], request: { path, result: result("webp"), keepOldAddress: true }, site: { prefix: "/my-site", origins: [] } });
+  assert.equal(p.edits.get("_redirects"), `# Keep this\n/my-site/${path} /my-site/media/images/photo.webp 301\n`);
+});

@@ -213,3 +213,21 @@ test("a moved page's canonical and og:url follow it: the site's address when the
   assert.match(nativePageMovedUrl(other, "/about/team/", "/people/", undefined), /og:url" content="https:\/\/old\.example\/"/);
   assert.equal(nativePageMovedUrl("<head><title>T</title></head>", "/a/", "/b/", "https://studio.example"), "<head><title>T</title></head>");
 });
+
+test("moved page addresses keep the site's sub-folder, including index.html site addresses", () => {
+  const page = '<head><link rel="canonical" href="https://host/my-site/about/"><meta property="og:url" content="https://host/my-site/about/"></head>';
+  for (const site of ["https://user.github.io/my-site/", "https://user.github.io/my-site/index.html", "https://user.github.io/my-site"]) {
+    assert.equal(nativePageUrl(site, "/company/"), "https://user.github.io/my-site/company/");
+    assert.equal(nativePageMovedUrl(page, "/about/", "/company/", site), page.replaceAll("https://host/my-site/about/", "https://user.github.io/my-site/company/"));
+  }
+  assert.equal(nativePageMovedUrl(page, "/about/", "/company/", undefined), page.replaceAll("/about/", "/company/"));
+  assert.equal(nativePageMovedUrl(page, "/about/", "/company/", "https://root.example/"), page.replaceAll("https://host/my-site/about/", "https://root.example/company/"));
+  const unrelated = page.replaceAll("/about/", "/about-us/");
+  assert.equal(nativePageMovedUrl(unrelated, "/about/", "/company/", undefined), unrelated);
+  // Only the home page itself is at `/`: every other address ends in a slash too.
+  assert.equal(nativePageMovedUrl(page, "/", "/home/", undefined), page);
+  for (const folder of ["", "/caf%c3%a9", "/my-site"]) {
+    const encoded = page.replaceAll("/my-site/about/", `${folder}/%61bout/`);
+    assert.equal(nativePageMovedUrl(encoded, "/about/", "/company/", undefined), encoded.replaceAll("/%61bout/", "/company/"));
+  }
+});

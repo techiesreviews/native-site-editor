@@ -176,3 +176,38 @@ test("an exact route change leaves links and redirects under it alone", () => {
     "/old/ /about/team/ 301\n/about/team/x/ /y/ 301\n/about/ /company/ 301\n",
   );
 });
+
+test("sub-folder links read both root spellings and write prefixed paths only", () => {
+  const paths = ["/about/", "/about/us/", "/about", "/about/index.html", "/about/?q=1#team", "/my-site/about/", "/my-site/about/us/", "/my-site/about", "/my-site/about/index.html#top", "/my-site-other/about/", "/about-us/", "https://host/my-site/about/"];
+  const source = paths.map(path => `<a href=" ${path}">A</a>`).join("\n");
+  const rewritten = rewriteRouteLinks(source, "/about/", "/company/", true, "/my-site");
+  const expected = ["/my-site/company/", "/my-site/company/us/", "/my-site/company", "/my-site/company/index.html", "/my-site/company/?q=1#team", "/my-site/company/", "/my-site/company/us/", "/my-site/company", "/my-site/company/index.html#top", ...paths.slice(9)];
+  assert.equal(rewritten.text, expected.map(path => `<a href=" ${path}">A</a>`).join("\n"));
+  for (const edit of rewritten.edits) assert.match(source.slice(edit.start, edit.end), /^\/[^?#" ]+$/);
+  assert.equal(rewriteRouteLinks(source, "/about/", "/company/", true, "").text,
+    paths.map(path => `<a href=" ${path.startsWith("/about") && !path.startsWith("/about-us") ? path.replace("/about", "/company") : path}">A</a>`).join("\n"));
+  assert.equal(rewriteRouteLinks('a{background:url(/my-site/about/team%23one.png)}', "/about/", "/company/", true, "/my-site").text,
+    'a{background:url(/my-site/company/team%23one.png)}');
+  assert.equal(rewriteRouteLinks('<a href="/my-site/about/us/"><a href="/about/index.html">', "/about/", "/company/", false, "/my-site").text,
+    '<a href="/my-site/about/us/"><a href="/my-site/company/index.html">');
+});
+
+test("a prefix is read decoded, on boundaries, and stripped only once", () => {
+  assert.equal(rewriteRouteLinks('<a href="/caf%c3%a9/about/">', "/about/", "/company/", true, "/caf%C3%A9").text, '<a href="/caf%C3%A9/company/">');
+  const source = '<a href="/my-site/"><a href="/my-site/my-site/"><a href="/my-site/my-site/team/">';
+  assert.equal(rewriteRouteLinks(source, "/my-site/", "/company/", true, "/my-site").text,
+    '<a href="/my-site/"><a href="/my-site/company/"><a href="/my-site/company/team/">');
+  assert.equal(rewriteRouteLinks('<a href="/about/">', "/about/", "/my-site/", true, "/my-site").text, '<a href="/my-site/my-site/">');
+  assert.equal(editNativeRedirects(undefined, "/my-site/", "/company/", ["/my-site/"], true, "/my-site"), "/my-site/my-site/ /my-site/company/ 301\n");
+});
+
+test("sub-folder redirects merge plain and prefixed chains, loops and duplicate sources", () => {
+  const source = ["# Leave /about/ alone", " /legacy/\t/about/?q=1#top  302", "/my-site/older/ /my-site/about/us/ 301", "/company/ /about/ 301", "/my-site/company/ /about/ 301", "/about/ /elsewhere/ 302", "/my-site/about/ /elsewhere/ 302", "/my-site-other/ /untouched/ 301", "/about-us/ /untouched/ 301", ""].join("\r\n");
+  assert.equal(editNativeRedirects(source, "/about/", "/company/", ["/about/", "/about/us/"], true, "/my-site"),
+    ["# Leave /about/ alone", " /legacy/\t/my-site/company/?q=1#top  302", "/my-site/older/ /my-site/company/us/ 301", "/my-site-other/ /untouched/ 301", "/about-us/ /untouched/ 301", "/my-site/about/ /my-site/company/ 301", "/my-site/about/us/ /my-site/company/us/ 301", ""].join("\r\n"));
+  for (const old of ["/about/", "/my-site/about/"]) {
+    assert.equal(editNativeRedirects(`${old} /my-site/company/ 301\n`, "/company/", "/about/", [], true, "/my-site"), "");
+  }
+  assert.equal(editNativeRedirects(source, "/about/", "/company/", ["/about/"], true, ""),
+    ["# Leave /about/ alone", " /legacy/\t/company/?q=1#top  302", "/my-site/older/ /my-site/about/us/ 301", "/my-site/company/ /company/ 301", "/my-site/about/ /elsewhere/ 302", "/my-site-other/ /untouched/ 301", "/about-us/ /untouched/ 301", "/about/ /company/ 301", ""].join("\r\n"));
+});

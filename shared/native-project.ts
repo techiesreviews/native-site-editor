@@ -62,7 +62,7 @@ export function nativeSiteSettings(text: string | undefined): NativeSiteSettings
 
 /** The address of the page at `route` on the site at `siteUrl` (`https://x.example` and `/about/` give `https://x.example/about/`). */
 export function nativePageUrl(siteUrl: string | undefined, route: string): string | undefined {
-  return siteUrl ? `${siteUrl.replace(/\/+$/, "")}${route}` : undefined;
+  return siteUrl ? `${siteUrl.replace(/\/index\.html?\/?$/i, "").replace(/\/+$/, "")}${route}` : undefined;
 }
 /** Redirects at the site root (Cloudflare Pages and Workers, Netlify). */
 export const NATIVE_REDIRECTS_PATH = "_redirects";
@@ -381,7 +381,7 @@ export function nativePageWithUrl(html: string, url: string | undefined): string
  * following it: with the site's address (`siteUrl`, from
  * `.editor/config.json`) its canonical link and `og:url` become that
  * address plus `to` (`nativePageWithUrl`); without one, each of them that
- * points at `from` on whatever host it names points at `to` there instead,
+ * points at `from` after an optional sub-folder points at `to` there instead,
  * and the rest are left alone.
  */
 export function nativePageMovedUrl(html: string, from: string, to: string, siteUrl: string | undefined): string {
@@ -395,8 +395,10 @@ export function nativePageMovedUrl(html: string, from: string, to: string, siteU
     if (!tag || !value) continue;
     let url: URL;
     try { url = new URL(value.trim()); } catch { continue; }
-    if (decodeURI(url.pathname) !== from) continue;
-    text = withContent(text, tag, `${url.origin}${to}`, name);
+    const path = decodeURI(url.pathname);
+    if (path !== from && (from === "/" || !path.endsWith(from))) continue;
+    const folder = url.pathname.split("/").slice(0, 1 - from.split("/").length).join("/");
+    text = withContent(text, tag, `${url.origin}${folder}${to}`, name);
   }
   return text;
 }

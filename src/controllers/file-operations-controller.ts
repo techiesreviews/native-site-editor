@@ -352,7 +352,7 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
       if (text === undefined) { complete = false; continue; }
       let count = 0;
       for (const change of changes) {
-        const rewritten = rewriteRouteLinks(text, change.from, change.to, change.subtree);
+        const rewritten = rewriteRouteLinks(text, change.from, change.to, change.subtree, nativeSitePrefix(r.source(NATIVE_CONFIG_PATH)));
         count += rewritten.count;
         text = rewritten.text;
       }
@@ -400,7 +400,7 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
     if (redirects !== undefined || (answer.option && redirected.length)) {
       let next = redirects ?? "";
       for (const change of urls.changes)
-        next = editNativeRedirects(next, change.from, change.to, answer.option ? urls.redirect.get(change) ?? [] : [], change.subtree);
+        next = editNativeRedirects(next, change.from, change.to, answer.option ? urls.redirect.get(change) ?? [] : [], change.subtree, nativeSitePrefix(r.source(NATIVE_CONFIG_PATH)));
       if (next !== (redirects ?? "")) edits.set(NATIVE_REDIRECTS_PATH, next);
     }
     const redirectCreate = redirects === undefined ? edits.get(NATIVE_REDIRECTS_PATH) : undefined;

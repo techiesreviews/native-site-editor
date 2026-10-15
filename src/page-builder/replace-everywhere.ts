@@ -252,12 +252,13 @@ export function planMediaReplace(input: ReplaceInput) {
   // Existing destinations are mentions too: a visitor forwarded to the same address must get the new bytes.
   // New forwarding lines (type change) point at addresses no browser has cached, so they stay plain.
   let redirects = rewriteMediaRedirects(renameInput, mapping, { versions });
-  const address = (path: string) => siteAddress(path, site?.prefix ?? sitePathPrefix(input.siteUrl));
+  const prefix = site?.prefix ?? sitePathPrefix(input.siteUrl);
+  const address = (path: string) => siteAddress(path, "");
   // Always keep on any family member (a kept copy protects the family) forwards every old address.
   const keepOld = request.keepOldAddress ?? family.some(member => Boolean(records.files[member]?.alwaysKeep));
   // An address the new picture keeps (an overwritten sharing JPEG) serves its new bytes; forwarding it would hide them.
   if (main !== path) for (const member of [old.main, ...old.copies.map(copy => copy.path), ...old.sharing ? [old.sharing] : []])
-    if (!uploads.some(upload => upload.path === member)) redirects = editNativeRedirects(redirects, address(member), address(mapping.get(member)!), keepOld ? [address(member)] : [], false);
+    if (!uploads.some(upload => upload.path === member)) redirects = editNativeRedirects(redirects, address(member), address(mapping.get(member)!), keepOld ? [address(member)] : [], false, prefix);
   if ((redirects ?? "") !== (input.sources._redirects ?? "")) edits.set("_redirects", redirects ?? "");
   const next = structuredClone(records);
   if (main !== path) { if (next.files[path]) next.files[main] = next.files[path]; delete next.files[path]; }

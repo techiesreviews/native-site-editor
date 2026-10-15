@@ -199,8 +199,8 @@ export function planMediaRename(input: RenameInput): { taken: string; suggestion
   // full address on the site's own host); sources are old addresses and stay.
   let redirects = rewriteMediaRedirects(input, mapping);
   // Forwarding lines name addresses as browsers request them: spaces and other characters encoded.
-  const address = (path: string) => siteAddress(path, input.site?.prefix ?? "");
-  for (const move of moves) redirects = editNativeRedirects(redirects, address(move.from), address(move.to), input.keepOldAddress ? [address(move.from)] : [], false);
+  const address = (path: string) => siteAddress(path, "");
+  for (const move of moves) redirects = editNativeRedirects(redirects, address(move.from), address(move.to), input.keepOldAddress ? [address(move.from)] : [], false, input.site?.prefix);
   if (redirects === (sources._redirects ?? "")) redirects = undefined;
   const records = moves.reduce((records, move) => renameMediaRecord(records, move.from, move.to), input.records);
   return { moves, edits, records, redirects };
