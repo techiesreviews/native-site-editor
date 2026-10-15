@@ -3,10 +3,12 @@
 //
 // Clipboard race: a copy button writes the clipboard asynchronously, so a test that reads
 // navigator.clipboard.readText() right after clicking can read the previous contents.
+// The previous contents may be an earlier test's (a worker's browser contexts share one
+// clipboard), so poll for what only this copy holds, not text every copy has.
 // Every read must follow an `expect.poll(...)` whose callback reads navigator.clipboard and
 // which closes within the three lines before the read:
 //
-//   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain("Server: `");
+//   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain(`Bearer ${token}`);
 //   const prompt = await page.evaluate(() => navigator.clipboard.readText());
 //
 // Also allowed: reads inside an expect.poll callback, helpers

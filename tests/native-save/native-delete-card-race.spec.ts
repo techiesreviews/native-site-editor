@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { storedDraft, storedDrafts } from "./drafts";
+import { copyConnectionPrompt } from "./mcp-prompt";
 
 // Deleting a page with its card: the card's edit to Home is computed when the
 // confirm dialog opens. A write to Home while it is open (an editor or agent
@@ -77,12 +78,8 @@ async function openCards(page: Page, baseURL: string | undefined) {
 // The agent connection the editor hands out (Connect with MCP), used as an agent does.
 async function connectAgent(page: Page) {
   await page.locator(".repository-menu__trigger").click();
-  await page.getByRole("button", { name: "Connect with MCP", exact: true }).click();
+  const { url, token } = await copyConnectionPrompt(page);
   await expect(page.locator(".agent-menu__hint")).toContainText("Paste it into Claude, Codex");
-  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain("Server: `");
-  const prompt = await page.evaluate(() => navigator.clipboard.readText());
-  const url = /Server: `(\S+)`/.exec(prompt)![1];
-  const token = /Authorization: `Bearer (ase_[a-f0-9]{64})`/.exec(prompt)![1];
   const client = new Client({ name: "delete-card-race", version: "1.0.0" });
   await client.connect(new StreamableHTTPClientTransport(new URL(url), { requestInit: { headers: { Authorization: `Bearer ${token}` } } }));
   await page.keyboard.press("Escape");

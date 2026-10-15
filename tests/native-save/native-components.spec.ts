@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { storedDraft } from "./drafts";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
+import { copyConnectionPrompt } from "./mcp-prompt";
 
 // Components as first-class page builder objects (src/page-builder/components.ts,
 // docs/page-builder/components.md): the component accent on instances, the
@@ -652,12 +653,8 @@ test("child selections omit template entry while root entry rejects stale or mis
 
 test("Make component refuses a page replacement made while it loads", async ({ page, baseURL }) => {
   await page.locator(".repository-menu__trigger").click();
-  await page.getByRole("button", { name: "Connect with MCP", exact: true }).click();
+  const { url, token } = await copyConnectionPrompt(page);
   await expect(page.locator(".agent-menu__hint")).toContainText("Paste it into Claude, Codex");
-  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain("Authorization:");
-  const prompt = await page.evaluate(() => navigator.clipboard.readText());
-  const url = /Server: `(\S+)`/.exec(prompt)![1];
-  const token = /Authorization: `Bearer (ase_[a-f0-9]{64})`/.exec(prompt)![1];
   expect(url).toBe(`${baseURL}/mcp`);
   const client = new Client({ name: "components-review-agent", version: "1.0.0" });
   await client.connect(new StreamableHTTPClientTransport(new URL(url), { requestInit: { headers: { Authorization: `Bearer ${token}` } } }));

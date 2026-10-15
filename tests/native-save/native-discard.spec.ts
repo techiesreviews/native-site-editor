@@ -5,6 +5,7 @@ import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/cli
 import { discardAllChanges, publishActions, publishButton, showPublish, showPublishActions } from "./publish";
 import { sampleContrast, type Pixel } from "./tone-contrast";
 import { storedDrafts } from "./drafts";
+import { copyConnectionPrompt } from "./mcp-prompt";
 
 // Discard changes in the Publish menu drops every draft of the branch (after a
 // question naming them); a draft that is GitHub's version again goes on its
@@ -54,12 +55,8 @@ async function refresh(page: Page) {
 
 async function connectAgent(page: Page, baseURL: string | undefined) {
   await page.locator(".repository-menu__trigger").click();
-  await page.getByRole("button", { name: "Connect with MCP", exact: true }).click();
+  const { url, token } = await copyConnectionPrompt(page);
   await expect(page.getByRole("button", { name: "Waiting for connection…", exact: true })).toBeVisible();
-  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain("Server: `");
-  const prompt = await page.evaluate(() => navigator.clipboard.readText());
-  const url = /Server: `(\S+)`/.exec(prompt)![1];
-  const token = /Authorization: `Bearer (ase_[a-f0-9]{64})`/.exec(prompt)![1];
   expect(url).toBe(`${baseURL}/mcp`);
   const client = new Client({ name: "playwright-agent", version: "1.0.0" });
   await client.connect(new StreamableHTTPClientTransport(new URL(url), { requestInit: { headers: { Authorization: `Bearer ${token}` } } }));

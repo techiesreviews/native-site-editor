@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { test, expect, type Page } from "@playwright/test";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
+import { copyConnectionPrompt } from "./mcp-prompt";
 
 // Default native-save fixture; new media is added through the user's Media pane.
 const indexPath = "index.html";
@@ -16,13 +17,9 @@ async function open(page: Page, baseURL: string | undefined) {
 // Connects an agent with the prompt "Connect with MCP" copies.
 async function connectAgent(page: Page, baseURL: string | undefined) {
   await page.locator(".repository-menu__trigger").click();
-  await page.getByRole("button", { name: "Connect with MCP", exact: true }).click();
+  const { url, token } = await copyConnectionPrompt(page);
   await expect(page.getByRole("button", { name: "Waiting for connection…", exact: true })).toBeVisible();
   await expect(page.locator(".agent-menu__hint")).toContainText("Paste it into Claude, Codex");
-  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain("Server: `");
-  const prompt = await page.evaluate(() => navigator.clipboard.readText());
-  const url = /Server: `(\S+)`/.exec(prompt)![1];
-  const token = /Authorization: `Bearer (ase_[a-f0-9]{64})`/.exec(prompt)![1];
   expect(url).toBe(`${baseURL}/mcp`);
   const client = new Client({ name: "playwright-agent", version: "1.0.0" });
   await client.connect(

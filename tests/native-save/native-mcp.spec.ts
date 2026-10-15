@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, test, type Locator, type Page, type Route } from "@playwright/test";
 import { storedDraft } from "./drafts";
+import { copyConnectionPrompt } from "./mcp-prompt";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 
 // An agent works on the site through the MCP site tools (worker/mcp.ts)
@@ -37,13 +38,9 @@ const draft = storedDraft;
 // Connects an agent with the prompt "Connect with MCP" copies.
 async function connectAgent(page: Page, baseURL: string | undefined) {
   await page.locator(".repository-menu__trigger").click();
-  await page.getByRole("button", { name: "Connect with MCP", exact: true }).click();
+  const { url, token } = await copyConnectionPrompt(page);
   await expect(page.getByRole("button", { name: "Waiting for connection…", exact: true })).toBeVisible();
   await expect(page.locator(".agent-menu__hint")).toContainText("Paste it into Claude, Codex");
-  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain("Server: `");
-  const prompt = await page.evaluate(() => navigator.clipboard.readText());
-  const url = /Server: `(\S+)`/.exec(prompt)![1];
-  const token = /Authorization: `Bearer (ase_[a-f0-9]{64})`/.exec(prompt)![1];
   expect(url).toBe(`${baseURL}/mcp`);
   const client = new Client({ name: "playwright-agent", version: "1.0.0" });
   await client.connect(
@@ -315,10 +312,9 @@ test("Disconnect MCP revokes the agent's token, and Cancel drops a token no agen
   } finally {
     await client.close().catch(() => undefined);
   }
-  await page.getByRole("button", { name: "Connect with MCP", exact: true }).click();
+  // A new token: the first one's prompt is still on the clipboard.
+  const { token } = await copyConnectionPrompt(page);
   await expect(page.getByRole("button", { name: "Waiting for connection…", exact: true })).toBeVisible();
-  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain("Bearer ase_");
-  const token = /Bearer (ase_[a-f0-9]{64})/.exec(await page.evaluate(() => navigator.clipboard.readText()))![1];
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(page.getByRole("button", { name: "Connect with MCP", exact: true })).toBeVisible();
   const response = await page.request.post(`${baseURL}/mcp`, {
