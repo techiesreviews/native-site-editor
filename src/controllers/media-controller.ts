@@ -1,5 +1,4 @@
-import { NATIVE_CONFIG_PATH, nativeSiteSettings } from "../../shared/native-project";
-import { sitePathPrefix } from "../../shared/site-path-prefix";
+import { NATIVE_CONFIG_PATH, nativeSitePrefix } from "../../shared/native-project";
 import type { MediaUsageCheckPorts } from "./media-usage-controller";
 import type { Stamp } from "../guarded-edit";
 import type { DraftScope, SavedDraft } from "../drafts";
@@ -234,7 +233,7 @@ export function createMediaController(ports: MediaControllerPorts) {
     ctx.assertLive();
     if (!stamp.holds() || identity !== ports.identity()) return;
     io.parseMediaRecords(source);
-    resolveFile = (page, src) => references.mediaResolvePath(entities.decodeHtmlEntities(src, true), page, undefined, sitePathPrefix(nativeSiteSettings(ports.source(NATIVE_CONFIG_PATH)).url));
+    resolveFile = (page, src) => references.mediaResolvePath(entities.decodeHtmlEntities(src, true), page, undefined, nativeSitePrefix(ports.source(NATIVE_CONFIG_PATH)));
     decodeAlt = value => entities.decodeHtmlEntities(value, true);
     descriptions = rules; recordIO = io; removedRules = removed; recordsScope = identity;
     ports.refreshDescriptions();
@@ -285,7 +284,7 @@ export function createMediaController(ports: MediaControllerPorts) {
       ctx.assertLive();
       if (!current()) throw new Error("This image changed. Select it again.");
       expectedSources.set(NATIVE_CONFIG_PATH, config);
-      const prefix = sitePathPrefix(nativeSiteSettings(config).url);
+      const prefix = nativeSitePrefix(config);
       const file = src && references.mediaResolvePath(entities.decodeHtmlEntities(src.value, true), page, undefined, prefix);
       if (!file) throw new Error("Choose an image stored in this repository before marking it Decorative.");
       const next = rules.setMediaPlaceDecorative(records, file, page, decorative);
@@ -304,7 +303,7 @@ export function createMediaController(ports: MediaControllerPorts) {
       decodeAlt = value => entities.decodeHtmlEntities(value, true);
       descriptions = rules; recordIO = io;
       recordsScope = ports.identity();
-      resolveFile = (page, src) => references.mediaResolvePath(entities.decodeHtmlEntities(src, true), page, undefined, sitePathPrefix(nativeSiteSettings(ports.source(NATIVE_CONFIG_PATH)).url));
+      resolveFile = (page, src) => references.mediaResolvePath(entities.decodeHtmlEntities(src, true), page, undefined, nativeSitePrefix(ports.source(NATIVE_CONFIG_PATH)));
       ports.refreshDescriptions();
     } catch (error) { ports.error(error); }
   }
@@ -407,7 +406,7 @@ export function createMediaController(ports: MediaControllerPorts) {
     return {
       async read(records?: import("../../shared/media-records").MediaRecords) {
         const { shapes, component } = await context();
-        return shapes.agentComponentRead(expected, records, target.path, component, sitePathPrefix(nativeSiteSettings(ports.source(NATIVE_CONFIG_PATH)).url));
+        return shapes.agentComponentRead(expected, records, target.path, component, nativeSitePrefix(ports.source(NATIVE_CONFIG_PATH)));
       },
       async frame(change: import("../page-builder/place-frame").PlaceFrameChange) {
         const { framePlace } = await import("../page-builder/place-frame");
@@ -417,7 +416,7 @@ export function createMediaController(ports: MediaControllerPorts) {
       async trim(request: import("../page-builder/place-trim").PlaceTrimRequest) {
         const { trimPlace } = await import("../page-builder/place-trim");
         const { shapes, component } = await context();
-        return trimPlace(ports, workspaceContext, target, shapes.agentTrimRequest(request, expected, target.path, component, sitePathPrefix(nativeSiteSettings(ports.source(NATIVE_CONFIG_PATH)).url)), proof);
+        return trimPlace(ports, workspaceContext, target, shapes.agentTrimRequest(request, expected, target.path, component, nativeSitePrefix(ports.source(NATIVE_CONFIG_PATH))), proof);
       },
     };
   }
@@ -449,7 +448,7 @@ export function createMediaController(ports: MediaControllerPorts) {
     return new Promise(resolve => {
       openMediaPicker({ accept, place, report: ports, onClose: () => resolve(undefined), onPick: async (image, cancelled, held) => {
         const { placeMediaPath } = await import("../page-builder/media-page-markup");
-        await placeMediaPath(ports, stamp, placement, image, cancelled, held, resolve, workspaceContext, sitePathPrefix(nativeSiteSettings(ports.source(NATIVE_CONFIG_PATH)).url));
+        await placeMediaPath(ports, stamp, placement, image, cancelled, held, resolve, workspaceContext, nativeSitePrefix(ports.source(NATIVE_CONFIG_PATH)));
       } })
         .catch((error: unknown) => { ports.error(error); resolve(undefined); });
     });
@@ -466,7 +465,7 @@ export function createMediaController(ports: MediaControllerPorts) {
   let player: import("../page-builder/media-play").MediaPlay | undefined;
   let playerLoading: Promise<void> | undefined;
   const loadPlayer = (host: import("../page-builder/media-play").MediaPlayHost) => playerLoading ??= import("../page-builder/media-play").then(module => {
-    player = module.createMediaPlay({ host, locate: (source, node) => locateNativeElementRange(source, node), site: () => ({ prefix: sitePathPrefix(nativeSiteSettings(ports.source(NATIVE_CONFIG_PATH)).url), origins: ports.origins?.() ?? [] }),
+    player = module.createMediaPlay({ host, locate: (source, node) => locateNativeElementRange(source, node), site: () => ({ prefix: nativeSitePrefix(ports.source(NATIVE_CONFIG_PATH)), origins: ports.origins?.() ?? [] }),
       source: path => ports.source(path), blob: async path => (await workspaceContext(() => true)).blob(path), refresh: () => ports.refreshDescriptions() });
   }, error => { playerLoading = undefined; throw error; });
   function playControl(path: string, node: number[], source: string): EditBarControl[] {

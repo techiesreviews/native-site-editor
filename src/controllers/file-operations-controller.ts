@@ -1,4 +1,3 @@
-import { sitePathPrefix } from "../../shared/site-path-prefix";
 import { mediaFamilyOf, renamedFamily, familyMembers } from "../page-builder/media-families";
 import { isRenamableMedia, mediaFileName, suggestMediaName } from "../page-builder/media-names";
 import type { GuardedEdits, Reads, PlanResult } from "../guarded-edit";
@@ -11,7 +10,7 @@ import type { FileChange, MovableFile } from "../file-changes";
 import { copyPath, filesLinkingTo, linkNote, movedPath, protectedPathProblem, type FileOperation } from "../native-files";
 import { editNativeRedirects, groupRouteChanges, isRouteWithin, rewriteRouteLinks, type RouteChange } from "../native-page-moves";
 import { nativePageRoute } from "../../shared/native-routes";
-import { NATIVE_CONFIG_PATH, nativeSiteSettings, NATIVE_HOME_PAGE, NATIVE_REDIRECTS_PATH, resolveNativeProject } from "../../shared/native-project";
+import { NATIVE_CONFIG_PATH, NATIVE_HOME_PAGE, NATIVE_REDIRECTS_PATH, resolveNativeProject, nativeSitePrefix } from "../../shared/native-project";
 
 export interface FileOperationsTreeState {
   changes: Map<string, FileChange>;
@@ -302,7 +301,7 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
     if (!assetMoves(moves).length) return { edits: base };
     const snap = nativeAssetSnapshot("moved", r);
     if ("error" in snap) return snap;
-    try { return { edits: planAssetReferenceRewrites(snap.sources, moves, base, sitePathPrefix(nativeSiteSettings(r.source(NATIVE_CONFIG_PATH)).url)) }; }
+    try { return { edits: planAssetReferenceRewrites(snap.sources, moves, base, nativeSitePrefix(r.source(NATIVE_CONFIG_PATH))) }; }
     catch (error) { return { error: error instanceof Error ? error.message : "The files that use this could not be updated, so nothing was moved." }; }
   }
 
@@ -494,7 +493,7 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
         try {
           const { assetInUseProblem, assetUsers } = await import("../page-builder/asset-references");
           const site = r.site();
-          const inUse = assetInUseProblem(assetUsers(snap.sources, found.map(file => file.path), { prefix: sitePathPrefix(nativeSiteSettings(r.source(NATIVE_CONFIG_PATH)).url), origins: ports.origins?.() ?? [], pages: Object.values(site?.routes ?? {}), components: site?.components }));
+          const inUse = assetInUseProblem(assetUsers(snap.sources, found.map(file => file.path), { prefix: nativeSitePrefix(r.source(NATIVE_CONFIG_PATH)), origins: ports.origins?.() ?? [], pages: Object.values(site?.routes ?? {}), components: site?.components }));
           if (inUse) return { refuse: inUse };
         } catch (error) { return { refuse: error instanceof Error ? error.message : "The files that use this could not be checked, so nothing was deleted." }; }
       }

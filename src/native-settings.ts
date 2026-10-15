@@ -5,7 +5,7 @@ import { editNavigation, readNavigation } from "./page-builder/site-navigation";
 import { nativePageTemplate } from "./native-create";
 import { NATIVE_HOME_UNREAD } from "./controllers/pages-controller";
 import { isImagePath } from "./native-structure";
-import { NATIVE_CONFIG_PATH, nativeSiteSettings, type NativeSite } from "../shared/native-project";
+import { NATIVE_CONFIG_PATH, nativeSiteSettings, type NativeSite, nativeSitePrefix } from "../shared/native-project";
 import type { Reads, Outcome, PlanResult, Stamp, GuardedEdits } from "./guarded-edit";
 import type { AppStore } from "./app-store";
 import { socialImageAddress, socialImagePath, SOCIAL_IMAGE_NOTE } from "./page-builder/social-image";
@@ -81,7 +81,7 @@ export function createNativeSettings(ports: SettingsPorts) {
       return result;
     };
     return createSiteSettings({
-      prefix: () => sitePathPrefix(nativeSiteSettings(ports.nativeEffectiveSource(NATIVE_CONFIG_PATH)).url),
+      prefix: () => nativeSitePrefix(ports.nativeEffectiveSource(NATIVE_CONFIG_PATH)),
       socialNote: () => socialImageAddress(nativeSiteSettings(ports.nativeEffectiveSource(NATIVE_CONFIG_PATH)).url, "").missingAddress ? SOCIAL_IMAGE_NOTE : undefined,
       async applyPage(path, fields, socialTrim) {
         const source = ports.guardedEdits.peek.source(path);
@@ -170,7 +170,7 @@ export function createNativeSettings(ports: SettingsPorts) {
           let source = nativePageTemplate(template, "Page not found");
           source = withPageField(source, "description", "There is nothing at this address. Try the home page.");
           source = upsertHeadTag(source, "robots", "noindex");
-          source = source.replace(/(<main\b[^>]*>)[\s\S]*?(<\/main>)/i, `$1\n    <section>\n      <h1>Page not found</h1>\n      <p>There is nothing at this address. <a href="${routeAddress("/", sitePathPrefix(nativeSiteSettings(r.source(NATIVE_CONFIG_PATH)).url))}">Go to the home page</a>.</p>\n    </section>\n  $2`);
+          source = source.replace(/(<main\b[^>]*>)[\s\S]*?(<\/main>)/i, `$1\n    <section>\n      <h1>Page not found</h1>\n      <p>There is nothing at this address. <a href="${routeAddress("/", nativeSitePrefix(r.source(NATIVE_CONFIG_PATH)))}">Go to the home page</a>.</p>\n    </section>\n  $2`);
           return { creates: [{ path: "404.html", content: source }], open: "404.html", done: "Created the 404 page as a draft.", undone: "Undid creating the 404 page." };
         }, { since }));
       },
@@ -178,9 +178,9 @@ export function createNativeSettings(ports: SettingsPorts) {
         return applied(await ports.guardedEdits.run(r => {
           const source = r.source(path);
           if (source !== original) return { refuse: "Navigation changed while this panel was open. Reopen it to review the latest links." };
-          const list = readNavigation(source, path.startsWith("components/"), sitePathPrefix(nativeSiteSettings(r.source(NATIVE_CONFIG_PATH)).url));
+          const list = readNavigation(source, path.startsWith("components/"), nativeSitePrefix(r.source(NATIVE_CONFIG_PATH)));
           if (!list) return { refuse: "This header's navigation is not a simple list of links." };
-          try { return { edits: new Map([[path, editNavigation(source, list, links, sitePathPrefix(nativeSiteSettings(r.source(NATIVE_CONFIG_PATH)).url))]]), done: "Navigation applied as a draft. Publish to keep it.", undone: "Undid changing navigation." }; }
+          try { return { edits: new Map([[path, editNavigation(source, list, links, nativeSitePrefix(r.source(NATIVE_CONFIG_PATH)))]]), done: "Navigation applied as a draft. Publish to keep it.", undone: "Undid changing navigation." }; }
           catch (error) { return { refuse: error instanceof Error ? error.message : "Navigation could not be changed." }; }
         }, { since }));
       },

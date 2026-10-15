@@ -1,5 +1,5 @@
-import { rootRoute, siteAddress, sitePathPrefix } from "../../shared/site-path-prefix";
-import { NATIVE_CONFIG_PATH, nativeSiteSettings } from "../../shared/native-project";
+import { rootRoute, siteAddress } from "../../shared/site-path-prefix";
+import { NATIVE_CONFIG_PATH, nativeSitePrefix } from "../../shared/native-project";
 import { MEDIA_RECORDS_PATH, parseMediaRecords, renameMediaRecord, serializeMediaRecords, type MediaRecords } from "../../shared/media-records";
 import { editNativeRedirects } from "../native-page-moves";
 import { mediaFamilyOf, renamedFamily, familyMembers } from "./media-families";
@@ -232,7 +232,7 @@ export function filesMediaRenamePlan(input: {
   const kept = (family ? familyMembers(family) : [from]).some(path => Boolean(records.files[path]?.alwaysKeep));
   sources._redirects = input.source("_redirects");
   const plan = planMediaRename({ from, to, paths, sources, records,
-    site: { prefix: sitePathPrefix(nativeSiteSettings(input.source(NATIVE_CONFIG_PATH)).url), origins: input.origins, pages: Object.values(site?.routes ?? {}), components: site?.components },
+    site: { prefix: nativeSitePrefix(input.source(NATIVE_CONFIG_PATH)), origins: input.origins, pages: Object.values(site?.routes ?? {}), components: site?.components },
     keepOldAddress: input.keepOldAddress ?? kept });
   if ("taken" in plan) return { refuse: `${plan.taken} is taken. Try ${plan.suggestion}.` };
   if (serializeMediaRecords(records) !== serializeMediaRecords(plan.records)) plan.edits.set(MEDIA_RECORDS_PATH, serializeMediaRecords(plan.records));

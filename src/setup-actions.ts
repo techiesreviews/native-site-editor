@@ -1,10 +1,9 @@
-import { sitePathPrefix } from "../shared/site-path-prefix";
 import type { CreateChoice, CreateOutcome } from "./components/get-started";
 import type { WizardCreateOutcome } from "./components/setup-wizard";
 import type { WizardRepo } from "./setup-wizard";
 import { createConfirmDialog } from "./components/confirm-dialog";
 import { siteNameFromRepository, blankSiteFiles, startingConfig, type StartingPoint } from "../shared/starting-point";
-import { nativePageBody, nativePageStylesheets, nativeSiteSettings, NATIVE_CONFIG_PATH } from "../shared/native-project";
+import { nativePageBody, nativePageStylesheets, NATIVE_CONFIG_PATH, nativeSitePrefix } from "../shared/native-project";
 import { expandStyleImports, resolveImportPath, rewriteCssUrls } from "../shared/css-imports";
 import { assetType } from "../shared/asset-types";
 import { dataUrlOf } from "./native-assets";
@@ -335,7 +334,7 @@ export function createSetupActions(ports: SetupPorts) {
     if (point === "blank") {
       const keptConfig = (state.get(NATIVE_CONFIG_PATH) === "taken" && !replace) || partial?.committed.includes(NATIVE_CONFIG_PATH);
       const config = keptConfig ? ports.guardedEdits.peek.source(NATIVE_CONFIG_PATH) : startingConfig(siteName);
-      const files = blankSiteFiles(siteName, sitePathPrefix(nativeSiteSettings(config).url));
+      const files = blankSiteFiles(siteName, nativeSitePrefix(config));
       starting = partial ? files.filter(file => !partial.committed.includes(file.path)) : files;
     }
     const problems: string[] = [];

@@ -1,4 +1,3 @@
-import { sitePathPrefix } from "../../shared/site-path-prefix";
 import { validImageSize, validImageStyle } from "./preview-protocol";
 import { imageResult } from "../page-builder/image-sizes";
 import { samePreviewFiles } from "./preview-files";
@@ -9,15 +8,7 @@ import { handleChunkLoadFailure } from "../chunk-recovery";
 import { mountSlotGhosts, readSlotGhostReport, type SlotGhostFillTarget } from "./slot-ghosts";
 export type { SlotGhostFillTarget, SlotGhostReport } from "./slot-ghosts";
 import { button, node } from "../ui/dom";
-import {
-  NATIVE_CONFIG_PATH,
-  nativeSiteSettings,
-  nativeDefaultRoute,
-  nativePageBody,
-  nativePageStylesheets,
-  nativeSitePaths,
-  type NativeSite,
-} from "../../shared/native-project";
+import { NATIVE_CONFIG_PATH, nativeDefaultRoute, nativePageBody, nativePageStylesheets, nativeSitePaths, type NativeSite, nativeSitePrefix } from "../../shared/native-project";
 import { nativeLinkFragment, nativeLinkTarget } from "../../shared/native-routes";
 import { nativeShownFiles, unreadableNeededFile } from "../native-boot";
 import { editBarSources } from "./edit-bar-sources";
@@ -286,7 +277,7 @@ function pageOf(source: string) {
 
 // The site's sub-folder from the Site address in its sources; none at a domain root.
 function sourcePrefix(sources: Record<string, string>) {
-  return sitePathPrefix(nativeSiteSettings(sources[NATIVE_CONFIG_PATH] ?? "").url);
+  return nativeSitePrefix(sources[NATIVE_CONFIG_PATH] ?? "");
 }
 
 // `css` (the file `path`) with each `url()` that names a repository image

@@ -1,4 +1,3 @@
-import { sitePathPrefix } from "../../shared/site-path-prefix";
 // The component tools' guarded plans (sturdy-base slice 13; src/guarded-edit.ts):
 // a slot chip's change, removing a part of a template, renaming a component,
 // making one from a page's element and adding a new one (its files are the
@@ -8,7 +7,7 @@ import { sitePathPrefix } from "../../shared/site-path-prefix";
 // DOM-free: tests/component-plans.test.ts runs them on the memory workspace.
 
 import type { Planned, Reads } from "../guarded-edit";
-import { NATIVE_CONFIG_PATH, nativeSiteSettings, nativePageStylesheets, type NativeSite } from "../../shared/native-project";
+import { NATIVE_CONFIG_PATH, nativePageStylesheets, type NativeSite, nativeSitePrefix } from "../../shared/native-project";
 import { expandStyleImports } from "../../shared/css-imports";
 import { slotChange, slotChangePages, tagNameProblem, type InstanceRange, type MakeComponentPlan, type RangeEdit, type SlotChange } from "./component-model";
 import { blankComponentFiles } from "./blank-component";
@@ -146,7 +145,7 @@ export async function makeComponentStep(r: Reads, input: {
   // The names were chosen against the component map: it is read (and proved) too.
   const taken = new Set(Object.keys(r.site()?.components ?? {}));
   if ([tag, ...input.bare.cards.map(card => card.tag)].some(name => taken.has(name))) return { refuse: changed };
-  const prefix = sitePathPrefix(nativeSiteSettings(r.source(NATIVE_CONFIG_PATH)).url);
+  const prefix = nativeSitePrefix(r.source(NATIVE_CONFIG_PATH));
   const linked = nativePageStylesheets(source, path, prefix).filter(file => r.source(file) !== undefined);
   const sheets = expandStyleImports(linked, file => r.source(file), undefined, prefix).sheets;
   const made = input.carry.withPageCss(input.bare, source, range, tag, sheets);

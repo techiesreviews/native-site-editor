@@ -1,6 +1,6 @@
 import { sitePathPrefix } from "../../shared/site-path-prefix";
 import { readMediaPrefix } from "./media-prefix";
-import { NATIVE_CONFIG_PATH, nativeSiteSettings } from "../../shared/native-project";
+import { NATIVE_CONFIG_PATH, nativeSiteSettings, nativeSitePrefix } from "../../shared/native-project";
 import { mediaKind } from "./media-library-filter";
 import { OUTSIDE_MEDIA_REFUSED, parseOutlineId } from "../../shared/agent";
 import { startTags, startTagAttribute } from "../../shared/html-source";
@@ -101,7 +101,7 @@ export interface MediaWorkspaceContext {
 }
 
 // The site's prefix as `prepare` captured it through the batch's reader (media-prefix.ts).
-const batchPrefix = (batch: MediaWorkspaceBatch) => sitePathPrefix(nativeSiteSettings(batch.expectedSources.get(NATIVE_CONFIG_PATH)).url);
+const batchPrefix = (batch: MediaWorkspaceBatch) => nativeSitePrefix(batch.expectedSources.get(NATIVE_CONFIG_PATH));
 
 function wideUsage(paths: string[], text: Record<string, string>, ctx: MediaWorkspaceContext, prefix: string) {
   const site = { prefix, origins: ctx.origins ?? [] };

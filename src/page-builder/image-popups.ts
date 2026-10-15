@@ -1,5 +1,4 @@
-import { NATIVE_CONFIG_PATH, nativeSiteSettings } from "../../shared/native-project";
-import { sitePathPrefix } from "../../shared/site-path-prefix";
+import { NATIVE_CONFIG_PATH, nativeSitePrefix } from "../../shared/native-project";
 // The Image button's lazy half (build slice 39): its badge and its one image popup at a time.
 // Loaded with the first image selected, so the editor's boot carries none of it.
 import type { MediaControllerPorts, MediaModule } from "../controllers/media-controller";
@@ -27,7 +26,7 @@ export function createImagePopups(deps: ImagePopupsDeps) {
     placeFrame(page: string, node: number[], tag: string) {
       const source = ports.source(page);
       const component = source === undefined ? undefined : componentPicture(source, node, path => ports.source(path));
-      return { badge: frameBadge(componentFrame(tag, deps.records(), page, component, sitePathPrefix(nativeSiteSettings(ports.source(NATIVE_CONFIG_PATH)).url))), open: popup?.path === page && popup.node === key(node) };
+      return { badge: frameBadge(componentFrame(tag, deps.records(), page, component, nativeSitePrefix(ports.source(NATIVE_CONFIG_PATH)))), open: popup?.path === page && popup.node === key(node) };
     },
     /** The Image button: the popup, or (pressed again) closing it unchanged. */
     async edit(target: { path: string; node: number[] }) {

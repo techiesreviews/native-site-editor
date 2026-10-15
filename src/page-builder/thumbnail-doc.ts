@@ -8,9 +8,8 @@
 // runs site code or reaches the network. Pure, so it is unit tested.
 
 import { expandStyleImports, parseCssImports, resolveImportPath, rewriteCssUrls } from "../../shared/css-imports";
-import { NATIVE_CONFIG_PATH, nativeSiteSettings, nativeDefaultRoute, nativePageBody, nativePageStylesheets, type NativeSite } from "../../shared/native-project";
+import { NATIVE_CONFIG_PATH, nativeDefaultRoute, nativePageBody, nativePageStylesheets, type NativeSite, nativeSitePrefix } from "../../shared/native-project";
 import { startTags } from "../../shared/html-source";
-import { sitePathPrefix } from "../../shared/site-path-prefix";
 import { canvasPath } from "../components/canvas-path";
 import { withSlottedRules } from "../../shared/slotted-css";
 
@@ -27,7 +26,7 @@ export interface ThumbnailInputs {
 
 const CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:";
 // The site's sub-folder, from its Site address (none at a domain root).
-const prefixOf = (inputs: ThumbnailInputs) => sitePathPrefix(nativeSiteSettings(inputs.sources[NATIVE_CONFIG_PATH] ?? "").url);
+const prefixOf = (inputs: ThumbnailInputs) => nativeSitePrefix(inputs.sources[NATIVE_CONFIG_PATH] ?? "");
 // Templates nested deeper than this are left unexpanded (a template that uses itself).
 const MAX_DEPTH = 12;
 

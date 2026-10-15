@@ -1,4 +1,4 @@
-import { rootRoute, sitePathPrefix, routeAddress } from "../../shared/site-path-prefix";
+import { rootRoute, routeAddress } from "../../shared/site-path-prefix";
 import { selectionAfterRemove } from "./remove";
 // Cards: grids of repeated items in the editor (docs/page-builder/cards.md).
 // Add card places a blank card first. Component cards and collection items
@@ -14,7 +14,7 @@ import { refuse as showRefusal } from "../components/refusal-note";
 import type { NativePreview, NativePreviewSelection } from "../components/native-preview";
 import type { EditBarControl } from "../components/edit-bar";
 import type { CardFilled, CardLinkPages, CardPageRequest, CardSwapped, GridDescription, ItemGridReport, NewCard } from "../components/card-grid-controls";
-import { NATIVE_CONFIG_PATH, nativeSiteSettings, nativePageBody, nativePageHead, nativePageMovedUrl, nativePageWithDetails } from "../../shared/native-project";
+import { NATIVE_CONFIG_PATH, nativeSiteSettings, nativePageBody, nativePageHead, nativePageMovedUrl, nativePageWithDetails, nativeSitePrefix } from "../../shared/native-project";
 import { nativeNewPageTitle, nativePageTemplate, normalizeRoute, withoutStructuredData, type Checked } from "../native-create";
 import { nativeNewTarget, slugify } from "../native-pages";
 import { duplicateEdit, removeEdit } from "../native-structure";
@@ -146,7 +146,7 @@ export function createCards(deps: CardsDeps) {
     const site = reads.site();
     return site ? Object.entries(site.routes).find(([, file]) => file === path)?.[0] : undefined;
   };
-  const prefix = (reads: Reads) => sitePathPrefix(nativeSiteSettings(reads.source(NATIVE_CONFIG_PATH)).url);
+  const prefix = (reads: Reads) => nativeSitePrefix(reads.source(NATIVE_CONFIG_PATH));
   const context = (reads: Reads, route: string): GridContext => ({ route, prefix: prefix(reads), routes: reads.site()?.routes ?? {}, isSection: (tag) => tag === "section" || (tag.includes("-") && isSectionTemplate(reads.template(tag)?.source ?? "")) });
   const template = (reads: Reads, tag: string) => reads.template(tag)?.source;
 

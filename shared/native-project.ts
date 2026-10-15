@@ -21,6 +21,7 @@ import { RESERVED_CUSTOM_ELEMENT_NAMES } from "./custom-element-names";
 import { resolveImportPath } from "./css-imports";
 import { asciiLower, startTagAttribute, startTags, type StartTag } from "./html-source";
 import { NATIVE_HOME_PAGE, deriveNativeRoutes } from "./native-routes";
+import { sitePathPrefix } from "./site-path-prefix";
 
 export { NATIVE_HOME_PAGE, NATIVE_NOT_FOUND_PAGE, NATIVE_NOT_FOUND_ROUTE } from "./native-routes";
 
@@ -36,6 +37,9 @@ export interface NativeSiteSettings {
 }
 
 /** The settings in the text of `.editor/config.json`; none when it is missing or not JSON. */
+/** The site's sub-folder (`/my-site`) from `.editor/config.json`'s text; empty at a domain root. */
+export const nativeSitePrefix = (config: string | undefined): string => sitePathPrefix(nativeSiteSettings(config).url);
+
 export function nativeSiteSettings(text: string | undefined): NativeSiteSettings {
   if (text === undefined) return {};
   let value: unknown;

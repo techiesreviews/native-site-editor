@@ -1,5 +1,4 @@
-import { NATIVE_CONFIG_PATH, nativeSiteSettings } from "../../shared/native-project";
-import { sitePathPrefix } from "../../shared/site-path-prefix";
+import { NATIVE_CONFIG_PATH, nativeSitePrefix } from "../../shared/native-project";
 import { readMediaPrefix } from "./media-prefix";
 import { MEDIA_RECORDS_PATH, parseMediaRecords, removeMediaRecords, serializeMediaRecords, setPictureLeftAsIs, type MediaRecords, type PictureLeftAsIs } from "../../shared/media-records";
 import { startTags } from "../../shared/html-source";
@@ -60,7 +59,7 @@ async function readSources(ctx: MediaWorkspaceContext) {
 async function readPlan(ctx: MediaWorkspaceContext, files: Facts) {
   const sources = await readSources(ctx);
   const records = parseMediaRecords(sources[MEDIA_RECORDS_PATH]);
-  const plan = improveImagesPlan({ sources, pages: ctx.pages, components: ctx.components, files, records, site: { prefix: sitePathPrefix(nativeSiteSettings(sources[NATIVE_CONFIG_PATH]).url), origins: ctx.origins ?? [] } });
+  const plan = improveImagesPlan({ sources, pages: ctx.pages, components: ctx.components, files, records, site: { prefix: nativeSitePrefix(sources[NATIVE_CONFIG_PATH]), origins: ctx.origins ?? [] } });
   return { plan, sources, records };
 }
 

@@ -1,5 +1,4 @@
-import { sitePathPrefix } from "../../shared/site-path-prefix";
-import { NATIVE_CONFIG_PATH, nativeSiteSettings } from "../../shared/native-project";
+import { NATIVE_CONFIG_PATH, nativeSitePrefix } from "../../shared/native-project";
 // Inserting a block (Section, Div, Heading, Paragraph, Image, Button) into a
 // page where HTML allows: one source edit and one undo
 // step, with the block selected and its place flashed. The rail's click
@@ -68,7 +67,7 @@ export function createBlockInsertController(ports: BlockInsertPorts) {
     const source = r.source(path);
     if (source === undefined) return { refuse: `${name} was not added: ${path} is not there any more.` };
     const items = itemsSlotRule(tag => r.template(tag)?.source);
-    const edit = nativeMarkupInsertEdit(source, parent, index, blockMarkup(source, kind, parent, wrap, items, sitePathPrefix(nativeSiteSettings(r.source(NATIVE_CONFIG_PATH)).url)), items, slot);
+    const edit = nativeMarkupInsertEdit(source, parent, index, blockMarkup(source, kind, parent, wrap, items, nativeSitePrefix(r.source(NATIVE_CONFIG_PATH))), items, slot);
     const next = edit && applyGuardedSourceEdit(source, edit);
     if (!next) return { refuse: `${name} was not added: the HTML around that spot could not be read exactly.` };
     const placeholder = kind === "media" && !r.exists(PLACEHOLDER_IMAGE_PATH);

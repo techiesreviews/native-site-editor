@@ -1,5 +1,4 @@
-import { sitePathPrefix } from "../../shared/site-path-prefix";
-import { NATIVE_CONFIG_PATH, nativeSiteSettings } from "../../shared/native-project";
+import { NATIVE_CONFIG_PATH, nativeSitePrefix } from "../../shared/native-project";
 // The page builder's part of the preview (src/components/native-preview.ts):
 // the Add panel, dragging from it or the block rail onto the canvas, the
 // empty page's "Start with a section", and the highlight on a section just
@@ -60,7 +59,7 @@ export function createPageBuilder(deps: PageBuilderDeps) {
   function preview(tag: string) {
     const inputs = deps.inputs();
     if (!inputs) return undefined;
-    const native = nativeChoiceMarkup(tag, undefined, sitePathPrefix(nativeSiteSettings(inputs.sources[NATIVE_CONFIG_PATH]).url));
+    const native = nativeChoiceMarkup(tag, undefined, nativeSitePrefix(inputs.sources[NATIVE_CONFIG_PATH]));
     if (native) return { markup: native, doc: thumbnailDocument(inputs, native) };
     if (!Object.hasOwn(inputs.site.components, tag)) return undefined;
     const page = inputs.site.routes[inputs.route];

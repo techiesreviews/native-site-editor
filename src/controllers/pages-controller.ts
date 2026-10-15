@@ -1,11 +1,10 @@
-import { sitePathPrefix } from "../../shared/site-path-prefix";
 import type { GuardedEdits, Reads, Stamp, PlanResult, Outcome } from "../guarded-edit";
 import { nativeNewTarget, firstHeadingText, buildNativePagesTree, nativePageLabel, type NativeNewTarget, type NativePageNode, type NativeSiteTree } from "../native-pages";
 import { nativePageTemplate, normalizeRoute, routeHeading, type Checked } from "../native-create";
 import { editNavigation, readNavigation } from "../page-builder/site-navigation";
 import { parentRoute, routeSlug, routeFolder, isRouteWithin, movedRoute, planPageMove, rewriteRouteLinks, editNativeRedirects, type PageMovePlan } from "../native-page-moves";
 import { isFolderRoute, nativeRouteFile } from "../../shared/native-routes";
-import { NATIVE_REDIRECTS_PATH, nativePageUrl, nativePageWithUrl, nativePageWithDetail, nativePageHead, nativeSiteSettings, NATIVE_CONFIG_PATH, type NativeSite } from "../../shared/native-project";
+import { NATIVE_REDIRECTS_PATH, nativePageUrl, nativePageWithUrl, nativePageWithDetail, nativePageHead, nativeSiteSettings, NATIVE_CONFIG_PATH, type NativeSite, nativeSitePrefix } from "../../shared/native-project";
 import type { NativeNewRequest, NativePagesTarget } from "../components/pages-tree";
 import type { PagePickerItem } from "../components/page-picker";
 import type { UrlPlan } from "../components/url-change";
@@ -538,7 +537,7 @@ export function createPagesController(ports: PagesPorts) {
         if (!nav) return { refuse: "No editable header navigation found. Uncheck Add to navigation to create only the page." };
         const source = r.source(nav.path);
         if (source === undefined) return { refuse: "Navigation could not be read." };
-        const prefix = sitePathPrefix(nativeSiteSettings(r.source(NATIVE_CONFIG_PATH)).url);
+        const prefix = nativeSitePrefix(r.source(NATIVE_CONFIG_PATH));
         let navigation: string, page = plan.content;
         try {
           navigation = editNavigation(source, nav.list, [...nav.list.links, { href: plan.route, label: plan.title }], prefix);

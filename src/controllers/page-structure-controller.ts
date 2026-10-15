@@ -1,5 +1,5 @@
-import { sitePathPrefix, withSitePrefix } from "../../shared/site-path-prefix";
-import { NATIVE_CONFIG_PATH, nativeSiteSettings } from "../../shared/native-project";
+import { withSitePrefix } from "../../shared/site-path-prefix";
+import { NATIVE_CONFIG_PATH, nativeSitePrefix } from "../../shared/native-project";
 import { pageRemovable, selectionAfterRemove } from "../page-builder/remove";
 import { type NativePreviewSelection, type NativeTextSelection, type NativeTextEdit, type NativeFormat, type createNativePreview } from "../components/native-preview";
 import { nativeElementLabel, linkWrapEdit, opensInNewTab, newTabEdit, setAttributeEdit, unwrapEdits, previousHeadingLevel, altFromPath, nativeKindLabel, duplicateEdit, removeEdit } from "../native-structure";
@@ -411,7 +411,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
         warning: current ? undefined : "No address",
         value: href?.value ?? "",
         placeholder: "Page or web address",
-        suggestions: nativeLinkSuggestions(Object.keys(site.routes), (route) => ports.nativeRouteInfo(route).title, sitePathPrefix(nativeSiteSettings(ports.nativeEffectiveSource(NATIVE_CONFIG_PATH)).url)),
+        suggestions: nativeLinkSuggestions(Object.keys(site.routes), (route) => ports.nativeRouteInfo(route).title, nativeSitePrefix(ports.nativeEffectiveSource(NATIVE_CONFIG_PATH))),
         open,
         // Beside the address: a new tab (target and rel) and an optional title.
         extras: [
@@ -426,7 +426,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
         ],
         onInput: (value) => {
           if (keepText) preview.selectTextAfterUpdate({ start: keepText.start, end: keepText.end });
-          live(link.node, "a", (latest, tag) => [setAttributeEdit(latest, tag, "href", withSitePrefix(value, sitePathPrefix(nativeSiteSettings(ports.nativeEffectiveSource(NATIVE_CONFIG_PATH)).url)))], "Link changed");
+          live(link.node, "a", (latest, tag) => [setAttributeEdit(latest, tag, "href", withSitePrefix(value, nativeSitePrefix(ports.nativeEffectiveSource(NATIVE_CONFIG_PATH))))], "Link changed");
         },
         onClose: () => {
           editor.closeActiveEditGroup(path);

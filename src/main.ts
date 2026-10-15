@@ -1,4 +1,4 @@
-import { rootRoute, siteAddress, sitePathPrefix } from "../shared/site-path-prefix";
+import { rootRoute, siteAddress } from "../shared/site-path-prefix";
 import { MEDIA_RECORDS_PATH } from "../shared/media-records";
 import { mediaOwnOrigins } from "./page-builder/media-origins";
 import { dismissRefusalNote, refuse } from "./components/refusal-note";
@@ -100,7 +100,7 @@ import { nativePageRoute } from "../shared/native-routes";
 
 
 import { descendants, parseSource } from "./page-builder/component-model";
-import { NATIVE_CONFIG_PATH, NATIVE_HOME_PAGE, NATIVE_REDIRECTS_PATH, minimalTextEdit, nativeComponentCssPath, nativeDefaultRoute, nativePageHead, nativePageStylesheets, nativePageMovedUrl, nativeSitePaths, nativeSiteSettings, resolveNativeProject, type NativeSite } from "../shared/native-project";
+import { NATIVE_CONFIG_PATH, NATIVE_HOME_PAGE, NATIVE_REDIRECTS_PATH, minimalTextEdit, nativeComponentCssPath, nativeDefaultRoute, nativePageHead, nativePageStylesheets, nativePageMovedUrl, nativeSitePaths, nativeSiteSettings, resolveNativeProject, type NativeSite, nativeSitePrefix } from "../shared/native-project";
 import { dataUrlOf, loadNativeAssetRequests } from "./native-assets";
 import { assetType, blobUrl, isFontType } from "../shared/asset-types";
 import { fetchWithReadRetry } from "./read-retry";
@@ -760,7 +760,7 @@ async function nativeComponentLoaderPlan(path: string, nextPageText: string, r: 
   try {
     const { componentLoaderPlan } = await import("./page-builder/component-loader");
     // The first pass avoids loading the vendored bytes when the site already has its loader.
-    const input = { prefix: sitePathPrefix(nativeSiteSettings(r.source(NATIVE_CONFIG_PATH)).url), pages: Object.values(site.routes), sources: { ...sources, [path]: nextPageText }, exists: (file: string) => r.exists(file), loader: "" };
+    const input = { prefix: nativeSitePrefix(r.source(NATIVE_CONFIG_PATH)), pages: Object.values(site.routes), sources: { ...sources, [path]: nextPageText }, exists: (file: string) => r.exists(file), loader: "" };
     const needed = componentLoaderPlan(input);
     if (!needed?.creates.length) return needed;
     const { starterLoader } = await import("./page-builder/starter-loader");
@@ -797,7 +797,7 @@ async function insertNativeComponent(point: InsertPoint, choice: InsertChoice) {
     loader: native ? undefined : nativeComponentLoaderPlan,
     edit(page) {
       if (native && captured && page !== captured.source) return moved;
-      const edit = native ? nativeMarkupInsertEdit(page, point.parent, point.index, nativeChoiceMarkup(choice.tag, undefined, sitePathPrefix(nativeSiteSettings(r.source(NATIVE_CONFIG_PATH)).url))!)
+      const edit = native ? nativeMarkupInsertEdit(page, point.parent, point.index, nativeChoiceMarkup(choice.tag, undefined, nativeSitePrefix(r.source(NATIVE_CONFIG_PATH)))!)
         : nativeInsertEdit(page, point.parent, point.index, choice.tag, r.template(choice.tag)?.source ?? "");
       return edit ? [edit] : `${choice.label} was not added: the HTML around that spot could not be located exactly in ${path}.`;
     } }), { since, anchor: path, guard: () => !versionView });
@@ -1862,10 +1862,10 @@ function nativeNavigationTarget(pagePath: string | undefined, r: Reads = guarded
   const headerPath = site.components["site-header"];
   if (headerPath && /<site-header(?:\s|>)/i.test(page)) {
     const source = r.source(headerPath);
-    const list = source !== undefined ? readNavigation(source, true, sitePathPrefix(nativeSiteSettings(r.source(NATIVE_CONFIG_PATH)).url)) : undefined;
+    const list = source !== undefined ? readNavigation(source, true, nativeSitePrefix(r.source(NATIVE_CONFIG_PATH))) : undefined;
     if (source !== undefined && list) return { path: headerPath, source, list, shared: true };
   }
-  const list = readNavigation(page, false, sitePathPrefix(nativeSiteSettings(r.source(NATIVE_CONFIG_PATH)).url));
+  const list = readNavigation(page, false, nativeSitePrefix(r.source(NATIVE_CONFIG_PATH)));
   return list ? { path: pagePath, source: page, list, shared: false } : undefined;
 }
 
@@ -1958,7 +1958,7 @@ function nativeEffectiveSource(path: string, scope = draftScope()) {
 
 // The site's sub-folder from its Site address (`/my-site`); none at a domain root.
 function nativePrefix() {
-  return sitePathPrefix(nativeSiteSettings(nativeEffectiveSource(NATIVE_CONFIG_PATH) ?? "").url);
+  return nativeSitePrefix(nativeEffectiveSource(NATIVE_CONFIG_PATH) ?? "");
 }
 
 // The stylesheets any page links, in page order: what the style loader reads.
