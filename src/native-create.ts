@@ -104,7 +104,7 @@ const MINIMAL_PAGE = `<!doctype html>
 `;
 
 // What sets a site's name off in a title: "About · Larkspur Studio".
-const TITLE_SEPARATORS = [" · ", " | ", " — ", " – ", " - ", " :: ", " • "];
+export const TITLE_SEPARATORS = [" · ", " | ", " — ", " – ", " - ", " :: ", " • "];
 
 /**
  * A new page's title in the form the home page's has: with the home page

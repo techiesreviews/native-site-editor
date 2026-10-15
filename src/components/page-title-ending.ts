@@ -1,7 +1,9 @@
 // The site's name that page titles share at their end ("Fern & Kettle · Larkspur Studio"):
 // the Pages tab leaves it off its rows, as site builders show page names rather than titles.
 
-const SEPARATOR = / (?:·|\||—|–|-|:) /g;
+import { TITLE_SEPARATORS } from "../native-create";
+
+const SEPARATOR = new RegExp(TITLE_SEPARATORS.map((separator) => separator.replace(/[|]/g, "\\$&")).join("|"), "g");
 
 /** The ending (separator included) shared by at least two titles and by at least half of them, if any. */
 export function sharedTitleEnding(titles: readonly string[]): string | undefined {

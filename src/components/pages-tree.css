@@ -100,18 +100,20 @@
   .pages-new:hover, .pages-row:not(.is-current):hover { background: var(--hover); }
   .pages-more:hover, .pages-add:hover { background: var(--hover); color: var(--text); }
   .pages-url--button:hover { color: var(--text); text-decoration: underline dotted; text-underline-offset: 3px; }
-  /* A wide list: URLs line up in one column beside the titles, not at the far end. */
-  @container (width >= 30rem) {
-    .pages-row:has(> .pages-url) { padding-inline-end: calc(100cqi - var(--pages-url-at) + 12px); }
-    .pages-row > .pages-url {
-      position: absolute;
-      inset-block: 0;
-      inset-inline: var(--pages-url-at) 8px;
-      margin: 0;
-      padding: 0;
-      line-height: var(--size-control);
-      text-align: start;
-    }
+}
+/* A wide list: URLs line up in one column beside the titles, not at the far end. */
+@container (width >= 30rem) {
+  .pages-row:has(> .pages-url) { padding-inline-end: calc(100cqi - var(--pages-url-at) + 12px); }
+  .pages-row > .pages-url {
+    position: absolute;
+    inset-block-start: 50%;
+    inset-inline-start: var(--pages-url-at);
+    /* Only as wide as its text: the rest of the row still opens the page. */
+    max-inline-size: calc(100cqi - var(--pages-url-at) - var(--pages-url-end, 8px));
+    translate: 0 -50%;
+    margin: 0;
+    padding: 0;
+    text-align: start;
   }
 }
 /* A narrow list (a phone) shows names only; ⋯ → Change URL… shows the URL. */
@@ -119,7 +121,13 @@
 /* Touch: one ⋯ per row (Add subpage is in it); New page reachable by thumb. */
 @media (hover: none), (pointer: coarse) {
   .pages-add { display: none; }
+  .pages-row { min-height: 44px; }
   .pages-row > .row-action-overlay { margin-inline-start: auto; }
+  /* A wide touch list keeps its URL column; the ⋯ holds the row's end. */
+  @container (width >= 30rem) {
+    .pages-row > .pages-url { --pages-url-end: 52px; }
+    .pages-row:has(> .pages-url) > .row-action-overlay { position: absolute; inset-block: 0; inset-inline-end: 0; }
+  }
   .pages-new { min-height: 44px; }
 }
 /* Change URL and New page open as a card under the row, aligned with the titles. */

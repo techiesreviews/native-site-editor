@@ -13,6 +13,10 @@ test("other separators count, and the last one in a title is its ending", () => 
   assert.equal(sharedTitleEnding(["Blog | Acme", "Team | Acme"]), " | Acme");
   assert.equal(sharedTitleEnding(["News — Q1 — Acme", "Jobs — Acme"]), " — Acme");
   assert.equal(sharedTitleEnding(["Pricing - Acme Co", "Docs - Acme Co", "Help"]), " - Acme Co");
+  // The separators new pages' titles are given (native-create's TITLE_SEPARATORS).
+  assert.equal(sharedTitleEnding(["About • Acme", "Contact • Acme"]), " • Acme");
+  assert.equal(sharedTitleEnding(["About :: Acme", "Contact :: Acme"]), " :: Acme");
+  assert.equal(sharedTitleEnding(["Ratio: 1:2", "Note: 3"]), undefined);
 });
 
 test("an ending only one title has, or fewer than half, is no shared ending", () => {

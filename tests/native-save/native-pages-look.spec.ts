@@ -25,6 +25,8 @@ async function open(page: Page, baseURL: string | undefined) {
   await page.locator("#explorer-toggle").click();
   await explorer(page).getByRole("tab", { name: "Pages", exact: true }).click();
   await expect(item(page, "Spring planting")).toBeVisible();
+  // The titles arrive after first paint and redraw the rows; measure after that.
+  await expect(item(page, "About this project")).toBeVisible();
 }
 
 const background = (page: Page, name: string) => row(page, name).evaluate(element => getComputedStyle(element).backgroundColor);
@@ -104,4 +106,33 @@ test.describe("touch", () => {
     await page.getByRole("menuitem", { name: "Change URL…" }).tap();
     await expect(explorer(page).getByRole("textbox", { name: /^URL of Winter pruning/ })).toHaveValue("/blog/winter-pruning/");
   });
+});
+
+test.describe("touch tablet", () => {
+  test.use({ hasTouch: true, isMobile: true, viewport: { width: 768, height: 1024 } });
+  test("a wide touch list keeps one URL column, clear of the ⋯ at the row's end", async ({ page, baseURL }) => {
+    await open(page, baseURL);
+    const starts: number[] = [];
+    for (const name of ["Home", "Journal", "Spring planting", "Winter pruning"]) {
+      expect((await row(page, name).boundingBox())!.height).toBeGreaterThanOrEqual(44);
+      const url = (await row(page, name).locator(".pages-url").boundingBox())!;
+      const more = (await row(page, name).locator(".pages-more").boundingBox())!;
+      const box = (await row(page, name).boundingBox())!;
+      starts.push(url.x);
+      expect(url.x + url.width).toBeLessThanOrEqual(more.x + 0.5);
+      expect(box.x + box.width - (more.x + more.width)).toBeLessThanOrEqual(8);
+      await expect(row(page, name).locator(".pages-add")).toBeHidden();
+    }
+    expect(Math.max(...starts) - Math.min(...starts)).toBeLessThanOrEqual(1);
+  });
+});
+
+test("in the URL column only the URL's text changes the URL; the rest of the row opens the page", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await open(page, baseURL);
+  const url = (await row(page, "Winter pruning").locator(".pages-url").boundingBox())!;
+  const box = (await row(page, "Winter pruning").boundingBox())!;
+  await page.mouse.click(url.x + url.width + 24, box.y + box.height / 2);
+  await expect(page.locator("#explorer-toggle")).toContainText("Winter pruning");
+  await expect(explorer(page).locator(".pages-url-change")).toHaveCount(0);
 });
