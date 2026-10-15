@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mediaTileCopySize, mediaTileWhole, TILE_COPY_EDGE } from "../src/page-builder/media-tile-picture.ts";
+import { mediaTileCopySize, mediaTileWhole, tilePictureUrl, TILE_COPY_EDGE } from "../src/page-builder/media-tile-picture.ts";
 
 test("a heavy picture's tile copy keeps its shape with the shorter side at the tile edge", () => {
   assert.deepEqual(mediaTileCopySize(6000, 4000), { width: 720, height: TILE_COPY_EDGE });
@@ -16,4 +16,25 @@ test("only pictures wider than 2:1 show whole on their tile", () => {
   assert.equal(mediaTileWhole(1000, 3000), false, "tall pictures crop like photos");
   assert.equal(mediaTileWhole(undefined, 100), false);
   assert.equal(mediaTileWhole(100, 0), false);
+});
+
+test("a tile copy finished after its view closed makes no address, and its decoded picture is released", async () => {
+  let release!: (blob: Blob) => void, closed = 0, made = 0, open = true;
+  const globals = globalThis as Record<string, unknown>, saved = { bitmap: globals.createImageBitmap, canvas: globals.OffscreenCanvas };
+  globals.createImageBitmap = async () => ({ close: () => { closed++; } });
+  globals.OffscreenCanvas = class {
+    getContext() { return { drawImage() {}, imageSmoothingQuality: "low" }; }
+    convertToBlob() { return new Promise<Blob>(resolve => { release = resolve; }); }
+  };
+  try {
+    const data = { url: "blob:full", blob: new Blob([new Uint8Array(1_500_000)], { type: "image/jpeg" }), width: 4000, height: 3000 };
+    const pending = tilePictureUrl(data, () => { made++; return "blob:copy"; }, () => open);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    open = false; release(new Blob(["copy"], { type: "image/webp" }));
+    assert.equal(await pending, "blob:full");
+    assert.equal(made, 0);
+    assert.equal(closed, 1);
+    const light = { ...data, blob: new Blob([new Uint8Array(10)], { type: "image/jpeg" }) };
+    assert.equal(await tilePictureUrl(light, () => "blob:never", () => true), "blob:full", "a light picture is shown as it is");
+  } finally { globals.createImageBitmap = saved.bitmap; globals.OffscreenCanvas = saved.canvas; }
 });
