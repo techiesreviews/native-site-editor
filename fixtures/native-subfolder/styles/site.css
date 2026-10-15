@@ -1,0 +1,5 @@
+@layer base, layout;
+@import url("/my-site/styles/base.css") layer(base);
+@import url("layout.css") layer(layout);
+
+h1 { text-decoration-line: underline; }

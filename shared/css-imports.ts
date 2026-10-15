@@ -1,3 +1,4 @@
+import { sitePathOf } from "./site-path-prefix";
 // `@import` in shared stylesheets, resolved from repository sources. Used by
 // the editor host (the preview gets one sheet per imported file) and by the
 // static exporter (imported files are inlined into the stylesheet that
@@ -201,10 +202,11 @@ export const isExternalImport = (url: string) => /^(?:[a-z][a-z\d+.-]*:|\/\/)/i.
  * (or to the repository root when it starts with `/`); undefined for an
  * external URL or one that leaves the repository.
  */
-export function resolveImportPath(from: string, url: string): string | undefined {
+export function resolveImportPath(from: string, url: string, prefix = ""): string | undefined {
   if (isExternalImport(url)) return undefined;
   const clean = url.trim().split(/[?#]/)[0];
   if (!clean) return undefined;
+  if (prefix && clean.startsWith("/")) return sitePathOf(clean, { prefix }) || undefined;
   const parts = clean.startsWith("/") ? [] : from.split("/").slice(0, -1);
   for (const part of clean.split("/")) {
     if (!part || part === ".") continue;
@@ -241,7 +243,7 @@ export function wrapImported(css: string, wrappers: readonly ImportWrapper[]) {
  * unchanged. An import of a file the host could not read as text
  * (`unreadable`) is skipped without an error: the host says so itself.
  */
-export function expandStyleImports(paths: readonly string[], read: (path: string) => string | undefined, unreadable?: (path: string) => boolean): ExpandedStyles {
+export function expandStyleImports(paths: readonly string[], read: (path: string) => string | undefined, unreadable?: (path: string) => boolean, prefix = ""): ExpandedStyles {
   const sheets: ExpandedSheet[] = [];
   const errors: string[] = [];
   const imported = new Set<string>();
@@ -257,7 +259,7 @@ export function expandStyleImports(paths: readonly string[], read: (path: string
       if (text) sheets.push({ path, source: wrapImported(text, wrappers), wrappers, importer, kind: "layers" });
     };
     for (const item of imports) {
-      const target = resolveImportPath(path, item.url);
+      const target = resolveImportPath(path, item.url, prefix);
       if (target === undefined) {
         if (!isExternalImport(item.url)) errors.push(`${path} imports ${item.url}, which is outside the repository.`);
         continue;

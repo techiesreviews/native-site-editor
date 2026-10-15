@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { sitePathPrefix, siteAddress, withSitePrefix, sitePathOf } from "../shared/site-path-prefix.ts";
+import { sitePathPrefix, siteAddress, withSitePrefix, sitePathOf, siteRouteOf } from "../shared/site-path-prefix.ts";
 import { mediaUrl } from "../src/page-builder/media-attributes.ts";
 
 const paths = ["", "media/images/x.webp", "hello world.txt", "日本語/été.webp", "a#b/c?d", "100%.pdf", "a/%20/# ?%.webp", "my-site/x.webp"];
@@ -82,4 +82,13 @@ test("read-back matches a prefix however its characters are encoded", () => {
   assert.equal(sitePathOf("/caf%c3%a9", { url }), "");
   assert.equal(sitePathOf("/cafés/x.webp", { url }), "cafés/x.webp");
   assert.equal(sitePathOf("/caf%c3%a9/../../x", { url }), undefined);
+});
+
+test("siteRouteOf reads an address as a root route", () => {
+  assert.equal(siteRouteOf("/my-site/about/", { prefix: "/my-site" }), "/about/");
+  assert.equal(siteRouteOf("/about/", { prefix: "/my-site" }), "/about/");
+  assert.equal(siteRouteOf("/my-site", { prefix: "/my-site" }), "/");
+  assert.equal(siteRouteOf("https://user.github.io/my-site/media/x.png", { url: "https://user.github.io/my-site/" }), "/media/x.png");
+  assert.equal(siteRouteOf("about/", { prefix: "/my-site" }), undefined);
+  assert.equal(siteRouteOf("/../x", { prefix: "/my-site" }), undefined);
 });

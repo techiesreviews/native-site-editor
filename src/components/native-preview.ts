@@ -1,3 +1,4 @@
+import { sitePathPrefix } from "../../shared/site-path-prefix";
 import { validImageSize, validImageStyle } from "./preview-protocol";
 import { imageResult } from "../page-builder/image-sizes";
 import { samePreviewFiles } from "./preview-files";
@@ -9,6 +10,8 @@ import { mountSlotGhosts, readSlotGhostReport, type SlotGhostFillTarget } from "
 export type { SlotGhostFillTarget, SlotGhostReport } from "./slot-ghosts";
 import { button, node } from "../ui/dom";
 import {
+  NATIVE_CONFIG_PATH,
+  nativeSiteSettings,
   nativeDefaultRoute,
   nativePageBody,
   nativePageStylesheets,
@@ -281,20 +284,25 @@ function pageOf(source: string) {
   return source.slice(start, end);
 }
 
+// The site's sub-folder from the Site address in its sources; none at a domain root.
+function sourcePrefix(sources: Record<string, string>) {
+  return sitePathPrefix(nativeSiteSettings(sources[NATIVE_CONFIG_PATH] ?? "").url);
+}
+
 // `css` (the file `path`) with each `url()` that names a repository image
 // the host has read shown from its data URL: the frame cannot reach the
 // repository, and a root path would resolve against the editor.
-function withAssetUrls(css: string, path: string, assets: Record<string, string>) {
+function withAssetUrls(css: string, path: string, assets: Record<string, string>, prefix = "") {
   return rewriteCssUrls(css, (url) => {
-    const target = resolveImportPath(path, url);
+    const target = resolveImportPath(path, url, prefix);
     return target !== undefined && Object.hasOwn(assets, target) ? assets[target] : undefined;
   });
 }
 
 /** The stylesheets the page at `route` links (the home page's for a component shown alone). */
-export function routeStylesheets(site: NativeSite, sources: Record<string, string>, route: string) {
+export function routeStylesheets(site: NativeSite, sources: Record<string, string>, route: string, prefix = sourcePrefix(sources)) {
   const file = site.routes[route] ?? site.routes[nativeDefaultRoute(site)];
-  return file ? nativePageStylesheets(sources[file] ?? "", file) : [];
+  return file ? nativePageStylesheets(sources[file] ?? "", file, prefix) : [];
 }
 
 /** A selection queued for the next render; `reveal: "center"` brings a just-added element fully into view. */
@@ -312,18 +320,19 @@ function composeStyles(
   alone: string | undefined,
   unreadable: ReadonlyMap<string, string> = new Map(),
 ) {
+  const prefix = sourcePrefix(sources);
   // Each component rule also styles what a page slots in (shared/slotted-css.ts).
   const stylesByComponent: Record<string, { path: string; source: string }> = {};
   for (const [tag, path] of Object.entries(componentStyles)) {
     if (!Object.hasOwn(site.components, tag)) continue;
-    stylesByComponent[tag] = { path, source: withAssetUrls(withSlottedRules(sources[path] ?? ""), path, assets) };
+    stylesByComponent[tag] = { path, source: withAssetUrls(withSlottedRules(sources[path] ?? ""), path, assets, prefix) };
   }
   // The page's linked stylesheets with their `@import`s expanded: one sheet
   // per file, each import before the sheet that imports it (see
   // shared/css-imports.ts).
   const linked = routeStylesheets(site, sources, alone ? "/" : route);
-  const expanded = expandStyleImports(linked.filter((path) => sources[path] !== undefined), (path) => sources[path], (path) => unreadable.has(path));
-  const styles = expanded.sheets.map(({ path, source, wrappers, importer, kind }) => ({ path, source: withAssetUrls(source, path, assets), wrappers, importer, kind }));
+  const expanded = expandStyleImports(linked.filter((path) => sources[path] !== undefined), (path) => sources[path], (path) => unreadable.has(path), prefix);
+  const styles = expanded.sheets.map(({ path, source, wrappers, importer, kind }) => ({ path, source: withAssetUrls(source, path, assets, prefix), wrappers, importer, kind }));
   const page = site.routes[alone ? "/" : route] ?? "";
   const styleErrors = [
     // A sheet the host could not read as text is not missing: it warns about it itself.
@@ -378,7 +387,7 @@ function composePayload(
   const sectionTags = Object.keys(components).filter((tag) => isSectionTemplate(components[tag]));
   // Relative image paths resolve against the page's URL, as on the live site.
   const base = alone ? "/" : route;
-  return { pages, pagePaths, components, componentPaths, styles, styleErrors, componentStyles: stylesByComponent, assetChanges, sectionTags, route, base, context, selectNode, selectText, hash, editableTemplatePath,
+  return { pages, pagePaths, components, componentPaths, styles, styleErrors, componentStyles: stylesByComponent, assetChanges, sectionTags, route, base, prefix: sourcePrefix(sources), context, selectNode, selectText, hash, editableTemplatePath,
   };
 }
 
@@ -640,7 +649,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     const shown = site && (alone ? site.components[alone] : site.routes[route]);
     // Only a page or template can be it, so a site with just stylesheets unread costs nothing.
     const message = site && shown && [...unreadable.keys()].some((path) => !/\.css$/i.test(path))
-      ? unreadableNeededFile(nativeShownFiles(site, [shown], (path) => unreadable.has(path) ? undefined : sources[path], () => false).files, () => false, unreadable)
+      ? unreadableNeededFile(nativeShownFiles(site, [shown], (path) => unreadable.has(path) ? undefined : sources[path], () => false, sourcePrefix(sources)).files, () => false, unreadable)
       : undefined;
     if (message) showBanner(message, true);
     else if (pageError) showBanner(undefined, false);
@@ -699,7 +708,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       ...Object.values(componentStyles),
       ...(site ? (() => {
         const linked = routeStylesheets(site, sources, alone ? "/" : route);
-        return [...linked, ...expandStyleImports(linked, (path) => sources[path]).imported];
+        return [...linked, ...expandStyleImports(linked, (path) => sources[path], undefined, sourcePrefix(sources)).imported];
       })() : []),
     ]);
   }
@@ -923,7 +932,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   }
   function followRoute(href: string) {
     if (!site) return false;
-    const candidate = nativeLinkTarget(href, alone ? "/" : route, site.routes);
+    const candidate = nativeLinkTarget(href, alone ? "/" : route, site.routes, sourcePrefix(sources));
     if (!candidate) return false;
     scrollHash = nativeLinkFragment(href);
     const moved = candidate !== route;
@@ -1215,7 +1224,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     },
     /** Whether `href` (a link on the page shown) goes to one of the site's pages. */
     canFollow(href: string) {
-      return Boolean(site && nativeLinkTarget(href, alone ? "/" : route, site.routes));
+      return Boolean(site && nativeLinkTarget(href, alone ? "/" : route, site.routes, sourcePrefix(sources)));
     },
     /** Navigate the preview to the page a link goes to; the current source edits stay. */
     follow(href: string) {

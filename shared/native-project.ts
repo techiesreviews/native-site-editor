@@ -179,14 +179,14 @@ function headTags(html: string): { tags: StartTag[]; end: number } {
  * the page's own path (`/styles/site.css` from anywhere, `../site.css` from
  * `about/index.html`). External and unresolvable ones are left out.
  */
-export function nativePageStylesheets(html: string, path: string): string[] {
+export function nativePageStylesheets(html: string, path: string, prefix = ""): string[] {
   const out: string[] = [];
   for (const tag of headTags(html).tags) {
     if (tag.name !== "link") continue;
     const rel = startTagAttribute(html, tag, "rel")?.value.toLowerCase().split(/\s+/) ?? [];
     if (!rel.includes("stylesheet") || rel.includes("alternate")) continue;
     const href = startTagAttribute(html, tag, "href")?.value;
-    const resolved = href === undefined ? undefined : resolveImportPath(path, href);
+    const resolved = href === undefined ? undefined : resolveImportPath(path, href, prefix);
     if (resolved && !out.includes(resolved)) out.push(resolved);
   }
   return out;

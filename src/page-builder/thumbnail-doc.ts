@@ -8,8 +8,10 @@
 // runs site code or reaches the network. Pure, so it is unit tested.
 
 import { expandStyleImports, parseCssImports, resolveImportPath, rewriteCssUrls } from "../../shared/css-imports";
-import { nativeDefaultRoute, nativePageBody, nativePageStylesheets, type NativeSite } from "../../shared/native-project";
+import { NATIVE_CONFIG_PATH, nativeSiteSettings, nativeDefaultRoute, nativePageBody, nativePageStylesheets, type NativeSite } from "../../shared/native-project";
 import { startTags } from "../../shared/html-source";
+import { sitePathPrefix } from "../../shared/site-path-prefix";
+import { canvasPath } from "../components/canvas-path";
 import { withSlottedRules } from "../../shared/slotted-css";
 
 export interface ThumbnailInputs {
@@ -24,17 +26,18 @@ export interface ThumbnailInputs {
 }
 
 const CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:";
-const SITE = "https://site.invalid";
+// The site's sub-folder, from its Site address (none at a domain root).
+const prefixOf = (inputs: ThumbnailInputs) => sitePathPrefix(nativeSiteSettings(inputs.sources[NATIVE_CONFIG_PATH] ?? "").url);
 // Templates nested deeper than this are left unexpanded (a template that uses itself).
 const MAX_DEPTH = 12;
 
 /** `css` (the file `path`) with repository `url()`s as data URLs and its leading `@import`s left out. */
-function prepareCss(css: string, path: string, assets: Record<string, string>) {
+function prepareCss(css: string, path: string, assets: Record<string, string>, prefix = "") {
   const { imports } = parseCssImports(css);
   let text = css;
   for (const item of [...imports].reverse()) text = text.slice(0, item.start) + text.slice(item.end);
   return rewriteCssUrls(text, (url) => {
-    const target = resolveImportPath(path, url);
+    const target = resolveImportPath(path, url, prefix);
     return target !== undefined && Object.hasOwn(assets, target) ? assets[target] : undefined;
   });
 }
@@ -46,9 +49,9 @@ const styleText = (css: string) => css.replace(/<\/style/gi, "<\\/style");
 export function sharedCss(inputs: ThumbnailInputs) {
   const { site, sources, assets } = inputs;
   const file = site.routes[inputs.route] ?? site.routes[nativeDefaultRoute(site)];
-  const linked = file ? nativePageStylesheets(sources[file] ?? "", file) : [];
-  const expanded = expandStyleImports(linked.filter((path) => sources[path] !== undefined), (path) => sources[path]);
-  return expanded.sheets.map((sheet) => prepareCss(sheet.source, sheet.path, assets));
+  const linked = file ? nativePageStylesheets(sources[file] ?? "", file, prefixOf(inputs)) : [];
+  const expanded = expandStyleImports(linked.filter((path) => sources[path] !== undefined), (path) => sources[path], undefined, prefixOf(inputs));
+  return expanded.sheets.map((sheet) => prepareCss(sheet.source, sheet.path, assets, prefixOf(inputs)));
 }
 
 /** `html` without scripts, event handler attributes, `javascript:` URLs or a refresh. */
@@ -66,14 +69,8 @@ function withImageData(html: string, inputs: ThumbnailInputs) {
   return html.replace(/(<img\b[^>]*?\ssrc\s*=\s*)(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/gi, (whole, lead: string, a?: string, b?: string, c?: string) => {
     const src = (a ?? b ?? c ?? "").trim();
     if (/^(?:[a-z][a-z\d+.-]*:|\/\/)/i.test(src)) return whole;
-    try {
-      const url = new URL(src, SITE + inputs.route);
-      if (url.origin !== SITE) return whole;
-      const key = decodeURI(url.pathname).replace(/^\//, "");
-      return Object.hasOwn(inputs.assets, key) ? `${lead}"${inputs.assets[key]}"` : whole;
-    } catch {
-      return whole;
-    }
+    const key = canvasPath(src, inputs.route, prefixOf(inputs));
+    return key !== undefined && Object.hasOwn(inputs.assets, key) ? `${lead}"${inputs.assets[key]}"` : whole;
   });
 }
 
@@ -92,7 +89,7 @@ export function expandComponents(html: string, inputs: ThumbnailInputs, shared: 
     if (/\/\s*>$/.test(html.slice(tag.start, tag.end))) continue;
     const template = sources[site.components[tag.name]] ?? "";
     const stylePath = componentStyles[tag.name];
-    const own = stylePath && sources[stylePath] !== undefined ? prepareCss(withSlottedRules(sources[stylePath]), stylePath, assets) : "";
+    const own = stylePath && sources[stylePath] !== undefined ? prepareCss(withSlottedRules(sources[stylePath]), stylePath, assets, prefixOf(inputs)) : "";
     const styles = [...shared, own].filter(Boolean).map((css) => `<style>${styleText(css)}</style>`).join("");
     const root = `<template shadowrootmode="open">${styles}${expandComponents(template, inputs, shared, [...seen, tag.name])}</template>`;
     out = out.slice(0, tag.end) + root + out.slice(tag.end);

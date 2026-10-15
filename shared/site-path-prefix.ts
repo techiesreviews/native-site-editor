@@ -53,3 +53,9 @@ export function sitePathOf(address: string, site: { prefix?: string; url?: strin
   }
   return parts.join("/");
 }
+
+/** `sitePathOf` as a decoded root route (`/about/`), as readers compare it with the site's routes. */
+export function siteRouteOf(address: string, site: { prefix?: string; url?: string; origins?: Iterable<string> }): string | undefined {
+  const path = sitePathOf(address, site);
+  return path === undefined ? undefined : "/" + path;
+}

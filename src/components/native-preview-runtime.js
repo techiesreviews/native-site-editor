@@ -2,6 +2,7 @@
 // Vite bundles it with the rules it imports into one IIFE
 // (vite-preview-runtime.ts): in dev, in the test server and in the build.
 import { imageBreakpoints, imageViewports } from "../page-builder/image-sizes.ts";
+import { canvasPath, canvasRoute } from "./canvas-path.ts";
 import { FRAME_SOURCE, HOST_SOURCE } from "./preview-wire.ts";
 import { canvasGesture } from "../page-builder/rules/canvas-gesture.ts";
 import { hasHeadingSlot, isCardSlot, isCardTag, isItemsSlot } from "../page-builder/rules/cards.ts";
@@ -119,7 +120,6 @@ import { domView } from "../page-builder/rules/tree.ts";
   // host read for them. The host sends each asset once (`assetChanges`, with
   // a render or on its own as images arrive after the page is drawn); they
   // are kept here across renders.
-  var SITE = "https://site.invalid";
   var assetUrls = Object.create(null);
   function applyAssetChanges(changes) {
     if (!changes || typeof changes !== "object") return false;
@@ -136,15 +136,8 @@ import { domView } from "../page-builder/rules/tree.ts";
   function assetFor(src) {
     if (typeof src !== "string") return null;
     if (/^(?:[a-z][a-z\d+.-]*:|\/\/)/i.test(src.trim())) return null;
-    var key;
-    try {
-      var url = new URL(src.trim(), SITE + ((state && state.base) || "/"));
-      if (url.origin !== SITE) return null;
-      key = decodeURI(url.pathname).replace(/^\//, "");
-    } catch (e) {
-      return null;
-    }
-    return key in assetUrls ? assetUrls[key] : null;
+    var key = canvasPath(src.trim(), (state && state.base) || "/", state && state.prefix);
+    return key !== undefined && key in assetUrls ? assetUrls[key] : null;
   }
   function resolveAssets(fragment) {
     // Media stays still and selectable on the canvas, including a video's
@@ -320,12 +313,8 @@ import { domView } from "../page-builder/rules/tree.ts";
     root.querySelectorAll("a[href]").forEach(function (link) {
       var href = link.getAttribute("href") || "";
       if (href.indexOf("#") >= 0 || link.hasAttribute("aria-current")) return;
-      try {
-        var url = new URL(href, SITE + (state.base || "/"));
-        if (url.origin === SITE && samePage(decodeURI(url.pathname)) === here) link.setAttribute("aria-current", "page");
-      } catch (e) {
-        // Not a URL: not this page.
-      }
+      var path = canvasRoute(href, state.base || "/", state.prefix);
+      if (path !== undefined && samePage(path) === here) link.setAttribute("aria-current", "page");
     });
   }
 
@@ -537,6 +526,7 @@ import { domView } from "../page-builder/rules/tree.ts";
       styleErrors: Array.isArray(payload.styleErrors) ? payload.styleErrors : [],
       componentStyles: payload.componentStyles || {},
       route: payload.route || "/",
+      prefix: typeof payload.prefix === "string" ? payload.prefix : "",
       base: typeof payload.base === "string" ? payload.base : "/",
       sectionTags: Array.isArray(payload.sectionTags) ? payload.sectionTags : [],
       context: String(payload.context || ""),

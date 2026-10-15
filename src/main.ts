@@ -1,3 +1,4 @@
+import { sitePathPrefix } from "../shared/site-path-prefix";
 import { MEDIA_RECORDS_PATH } from "../shared/media-records";
 import { mediaOwnOrigins } from "./page-builder/media-origins";
 import { dismissRefusalNote, refuse } from "./components/refusal-note";
@@ -1955,11 +1956,17 @@ function nativeEffectiveSource(path: string, scope = draftScope()) {
   return content;
 }
 
+// The site's sub-folder from its Site address (`/my-site`); none at a domain root.
+function nativePrefix() {
+  return sitePathPrefix(nativeSiteSettings(nativeEffectiveSource(NATIVE_CONFIG_PATH) ?? "").url);
+}
+
 // The stylesheets any page links, in page order: what the style loader reads.
 function nativeLinkedSheets(site: NativeSite, sources: Record<string, string>) {
   const out = new Set<string>();
+  const prefix = nativePrefix();
   for (const file of Object.values(site.routes))
-    for (const path of nativePageStylesheets(sources[file] ?? "", file)) out.add(path);
+    for (const path of nativePageStylesheets(sources[file] ?? "", file, prefix)) out.add(path);
   return [...out];
 }
 
@@ -1970,16 +1977,23 @@ function nativePageStyles() {
   const sources = nativeSources();
   const route = nativeRouteForPath(appStore.openFile.value) ?? nativeDefaultRoute(nativeSite);
   const linked = routeStylesheets(nativeSite, sources, route);
-  return [...new Set([...linked, ...expandStyleImports(linked, (path) => sources[path]).imported])];
+  return [...new Set([...linked, ...expandStyleImports(linked, (path) => sources[path], undefined, nativePrefix()).imported])];
 }
 
 // A page selection: the preview follows the newly opened page's route. Opening
 // a non-page file (CSS, component) leaves the preview's current route untouched.
 // The preview's sources: the effective ones, with History's earlier version
 // of the open file in its place while one is on show.
+// The preview's sources also carry the site's settings: its Site address
+// places the site in a sub-folder (shared/site-path-prefix.ts).
+function withSiteConfig(sources: Record<string, string>) {
+  const config = nativeEffectiveSource(NATIVE_CONFIG_PATH);
+  if (config !== undefined) sources[NATIVE_CONFIG_PATH] = config;
+  return sources;
+}
 function nativePreviewSources() {
   checkVersionView();
-  const sources = nativeSources();
+  const sources = withSiteConfig(nativeSources());
   if (versionView) sources[versionView.path] = versionView.content;
   return sources;
 }
@@ -2009,7 +2023,7 @@ function nativeShownPaths() {
   const route = nativePreview?.route();
   const page = (route !== undefined && site.routes[route]) || site.routes[nativeDefaultRoute(site)];
   const pages = [page, ...(appStore.openFile.value ? [appStore.openFile.value] : [])];
-  return new Set([...nativeShownFiles(site, pages, (path) => nativeEffectiveSource(path, scope), (path) => files.has(path)).files, ...nativePageStyles()]);
+  return new Set([...nativeShownFiles(site, pages, (path) => nativeEffectiveSource(path, scope), (path) => files.has(path), nativePrefix()).files, ...nativePageStyles()]);
 }
 function updateNativePreviewSources() {
   if (!nativeSite || !nativePreview) return;
@@ -2035,7 +2049,7 @@ function readNativeStyleFiles(repo: string, site: NativeSite, live: () => boolea
   return readStyleFiles({
     wanted: () => {
       const sources = nativeSources(site), linked = nativeLinkedSheets(site, sources);
-      return [...linked, ...expandStyleImports(linked.filter((path) => Object.hasOwn(sources, path)), (path) => sources[path]).imported]
+      return [...linked, ...expandStyleImports(linked.filter((path) => Object.hasOwn(sources, path)), (path) => sources[path], undefined, nativePrefix()).imported]
         .filter((path) => !Object.hasOwn(sources, path));
     },
     skipped: (path) => nativeMissingStyleFiles.has(path) || nativeUnreadableFiles.has(path) || nativeStyleFileRequests.has(path),
@@ -2071,7 +2085,7 @@ async function readNativeShownFiles(repo: string, site: NativeSite, pages: strin
     // A file that cannot be read as text is not asked for again: a
     // stylesheet is left out of the page, and a page or template the page
     // needs is the preview's error (nativeUnreadableShown).
-    const shown = nativeShownFiles(site, pages, (path) => nativeEffectiveSource(path, scope), isFile);
+    const shown = nativeShownFiles(site, pages, (path) => nativeEffectiveSource(path, scope), isFile, nativePrefix());
     for (const [tag, css] of shown.componentCss)
       if (held(css) && !nativeComponentStyles.has(tag)) { nativeComponentStyles.set(tag, css); loaded = true; }
     for (const tag of shown.missingComponentCss) nativeMissingComponentStyles.add(tag);
@@ -2197,8 +2211,8 @@ const NATIVE_FONT_WAIT_MS = 300;
 // component stylesheet, and the stylesheets it links with their imports.
 function nativePageShownSources(site: NativeSite, file: string) {
   const sources = nativeSources(site);
-  const linked = nativePageStylesheets(sources[file] ?? "", file);
-  const shown = new Set([file, ...Object.values(site.components), ...nativeComponentStyles.values(), ...linked, ...expandStyleImports(linked, (path) => sources[path]).imported]);
+  const linked = nativePageStylesheets(sources[file] ?? "", file, nativePrefix());
+  const shown = new Set([file, ...Object.values(site.components), ...nativeComponentStyles.values(), ...linked, ...expandStyleImports(linked, (path) => sources[path], undefined, nativePrefix()).imported]);
   return Object.fromEntries(Object.entries(sources).filter(([path]) => shown.has(path)));
 }
 // The sources of the page at `route` (the home page's for a component shown
@@ -2236,14 +2250,14 @@ async function loadNativeAssets(sources = nativeAssetSources(), onProgress = upd
   if (fontsOnly) {
     // Font preloading precedes paint. The page-media scanner stays out of that boot path.
     for (const [file, source] of Object.entries(sources)) if (file.endsWith(".css")) rewriteCssUrls(source, url => {
-      const path = resolveImportPath(file, url);
+      const path = resolveImportPath(file, url, nativePrefix());
       if (path) references.add(path);
       return undefined;
     });
   } else {
     const { scanMediaReferences } = await import("./page-builder/media-references");
     if (epoch !== generation || request !== nativeSourcesRequest) return;
-    for (const [file, source] of Object.entries(sources)) for (const ref of scanMediaReferences(file.endsWith(".css") || nativePageRoute(file) ? file : "index.html", source)) references.add(ref.path);
+    for (const [file, source] of Object.entries(sources)) for (const ref of scanMediaReferences(file.endsWith(".css") || nativePageRoute(file) ? file : "index.html", source, undefined, nativePrefix())) references.add(ref.path);
   }
   const wanted = [...references].filter((path) =>
     assetType(path) && only(path) && !nativeAssets.has(path) && !nativeMissingAssets.has(path) && !nativeAssetRequests.has(path));
@@ -2789,7 +2803,7 @@ async function activateNativeSite(repo: Repository, result: Snapshot, epoch: num
   showNativeWarnings(parsed.warnings);
   nativePreview?.activate(site);
   nativePreview?.update({
-    sources: nativeSources(),
+    sources: withSiteConfig(nativeSources()),
     componentStyles: Object.fromEntries(nativeComponentStyles),
     assets: Object.fromEntries(nativeAssets),
     unreadable: nativePreviewUnreadable(),
@@ -3161,7 +3175,7 @@ function noteNativeUnreadable(files: UnreadableFile[] | undefined) {
 function nativeUnreadableShown(site: NativeSite, pages: string[]) {
   const scope = draftScope(), files = new Set(nativeFiles(scope));
   const source = (path: string) => nativeEffectiveSource(path, scope);
-  return unreadableNeededFile(nativeShownFiles(site, pages, source, (path) => files.has(path)).files, (path) => source(path) !== undefined, nativeUnreadableFiles);
+  return unreadableNeededFile(nativeShownFiles(site, pages, source, (path) => files.has(path), nativePrefix()).files, (path) => source(path) !== undefined, nativeUnreadableFiles);
 }
 // The unreadable files with no draft (or History's earlier version) in their
 // place: the preview draws a page or template from that, and lets one without

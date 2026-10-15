@@ -29,6 +29,7 @@ Each file is followed by its declared entry symbols. Styles, fixtures, scripts a
 | Editor colours and surfaces | `src/style.css`; `src/theme.css`; `src/utilities.css` |
 | Effective sources, routes and preview updates | `src/main.ts` — `nativeSources`, `nativeEffectiveSource`, `updateNativePreviewSources` |
 | Preview host, selection and edit bar | `src/components/native-preview.ts` — `createNativePreview`; `src/controllers/preview-selection-controller.ts` — `createPreviewSelectionController` |
+| Canvas address mapping | `src/components/canvas-path.ts` — `canvasPath` |
 | Frame rendering, typing and host messages | `src/components/native-preview-runtime.js` — `apply`, `emit`, `renderPage` |
 | Frame protocol validation and freshness | `src/components/preview-protocol.ts` — `FrameMessage`, `HostMessage`, `readFrameMessage`, `FRESHNESS`; `src/components/preview-wire.ts` — `FRAME_SOURCE`, `HOST_SOURCE` |
 | Frame message transport and request/reply | `src/components/preview-link.ts` — `createPreviewLink`, `iframeFramePort`; `src/components/preview-frame-state.ts` — `createPreviewFrameState` |

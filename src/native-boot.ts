@@ -36,6 +36,7 @@ export function nativeShownFiles(
   pages: readonly string[],
   source: (path: string) => string | undefined,
   isFile: (path: string) => boolean,
+  prefix = "",
 ): NativeShownFiles {
   const files = new Set<string>();
   const componentCss = new Map<string, string>();
@@ -49,7 +50,7 @@ export function nativeShownFiles(
     files.add(path);
     const html = source(path);
     if (html === undefined) continue;
-    if (page) for (const sheet of nativePageStylesheets(html, path)) sheets.add(sheet);
+    if (page) for (const sheet of nativePageStylesheets(html, path, prefix)) sheets.add(sheet);
     for (const tag of usedComponentTags(html, site)) {
       if (seenTags.has(tag)) continue;
       seenTags.add(tag);
@@ -63,7 +64,7 @@ export function nativeShownFiles(
   const linked = [...sheets, ...componentCss.values()];
   for (const sheet of linked) files.add(sheet);
   const read = linked.filter((sheet) => source(sheet) !== undefined);
-  for (const sheet of expandStyleImports(read, source).imported) files.add(sheet);
+  for (const sheet of expandStyleImports(read, source, undefined, prefix).imported) files.add(sheet);
   return { files, componentCss, missingComponentCss };
 }
 

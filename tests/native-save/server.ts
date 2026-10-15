@@ -317,6 +317,9 @@ if (!demoMode)
     root: resolve(projectRoot, "fixtures/native-conventions"),
     repo: { ...DEMO_REPO, id: 531, name: "native-conventions", full_name: `${DEMO_LOGIN}/native-conventions` },
   }, {
+    root: resolve(projectRoot, "fixtures/native-subfolder"),
+    repo: { ...DEMO_REPO, id: 532, name: "native-subfolder", full_name: `${DEMO_LOGIN}/native-subfolder` },
+  }, {
     // The page builder's card grids: a home page whose cards link to subpages under /work/.
     root: resolve(projectRoot, "fixtures/native-cards"),
     repo: { ...DEMO_REPO, id: 540, name: "native-cards", full_name: `${DEMO_LOGIN}/native-cards` },

@@ -1,3 +1,4 @@
+import { sitePathOf } from "../../shared/site-path-prefix";
 import { mediaOwnAddress, type MediaSite } from "./media-origins";
 import { startTags } from "../../shared/html-source";
 import { mediaAttribute as startTagAttribute } from "./media-attributes";
@@ -8,12 +9,16 @@ export interface MediaUrlToken { file: string; start: number; end: number; value
 export interface MediaReference extends MediaUrlToken { path: string }
 export interface MediaUsage { files: string[]; pages: string[]; alts: string[] }
 
-export function mediaResolvePath(value: string, file: string, site?: MediaSite): string | undefined {
+export function mediaResolvePath(value: string, file: string, site?: MediaSite, prefix = ""): string | undefined {
   let decoded = value.trim();
   if (site && /^(?:https?:)?\/\//i.test(decoded) && mediaOwnAddress(decoded, site)) {
     try { decoded = new URL(decoded.startsWith("//") ? "https:" + decoded : decoded).pathname; } catch { return undefined; }
   }
   if (!decoded || /^(?:[a-z][\w+.-]*:|\/\/|#)/i.test(decoded)) return undefined;
+  if (prefix) {
+    try { return sitePathOf(new URL(decoded, `https://repo.invalid/${file}`).pathname, { prefix }); }
+    catch { return undefined; }
+  }
   try { return decodeURIComponent(new URL(decoded, `https://repo.invalid/${file}`).pathname).replace(/^\//, ""); }
   catch { return undefined; }
 }
@@ -174,9 +179,9 @@ export function scanMediaUrlTokens(file: string, source: string): MediaUrlToken[
   return out;
 }
 
-export function scanMediaReferences(file: string, source: string, site?: MediaSite): MediaReference[] {
+export function scanMediaReferences(file: string, source: string, site?: MediaSite, prefix = ""): MediaReference[] {
   return scanMediaUrlTokens(file, source).flatMap(({ file, start, end, value, alt, attribute, tag, attributeQuote, cssQuote }) => {
-    const path = mediaResolvePath(value, file, site);
+    const path = mediaResolvePath(value, file, site, prefix);
     return path ? [{ file, start, end, value, path, alt, attribute, tag, attributeQuote, cssQuote }] : [];
   });
 }
