@@ -61,6 +61,9 @@ test('Create site commits the native starter and every public page works without
         .replace(entry.path.endsWith('.html') && entry.path !== '404.html' ? /[ \t]*<meta name="robots" content="noindex">\r?\n?/g : /$^/, '')
         .replace(entry.path === 'AGENTS.md' ? / The site is kept out of search results[^\n]*? because this is a test domain\./g : /$^/, ''));
       expect(bytes.equals(expected), entry.path).toBe(true);
+    } else if (entry.path === '.nojekyll') {
+      // GitHub Pages publishes every file as is (slice 81): committed empty, as vendored.
+      expect(bytes.length).toBe(0);
     } else {
       expect(entry.path).toBe('.editor/config.json');
       expect(bytes.toString()).toBe(JSON.stringify({ site: { name: 'Native proof' } }, null, 2) + '\n');

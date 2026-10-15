@@ -221,3 +221,18 @@ test("new-page navigation always prefixes a route named like the site folder", a
     assert.ok(h.memory.workspace.source(path)?.includes('<a href="/my-site/my-site/">Nested</a>'));
   }
 });
+
+test("on GitHub Pages, keeping the old URL notes that it will not forward; elsewhere it says nothing new", async () => {
+  const note = "GitHub Pages doesn't forward old addresses, so links to the old one will stop working.";
+  for (const [label, url, cname, shown] of [["github.io", "https://lex.github.io/site/", false, true], ["root CNAME", "https://example.com/", true, true], ["neither", "https://example.com/", false, false], ["no address", undefined, false, false]] as const) {
+    const h = fixture();
+    h.ports.siteUrl = () => url;
+    if (cname) h.memory.writeDraft("CNAME", "example.com\n");
+    const plan = h.controller.urlPlan(target.file, "/news/"); assert.ok(plan.ok);
+    assert.equal(plan.redirect?.hint, shown ? note : undefined, label);
+    let notes: string[] = [];
+    h.ports.confirmation = () => ({ ask: async () => true, choose: async (options: { notes?: string[] }) => { notes = options.notes ?? []; return { value: undefined, option: false }; } });
+    await h.controller.confirmMove(target, "/news/");
+    assert.equal(notes.includes(note), shown, label);
+  }
+});

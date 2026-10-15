@@ -48,3 +48,16 @@ test("agent move_file writes the same sub-folder links and redirect", async ({ p
     await assertMoved(page);
   } finally { await client.close(); }
 });
+
+test("renaming a media file on a GitHub Pages site says the old address will not forward", async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/#repo=532&branch=main&file=index.html`);
+  await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
+  await page.locator("#explorer-toggle").click();
+  await page.getByRole("tab", { name: "Media", exact: true }).click();
+  const panel = page.getByRole("region", { name: "Media", exact: true });
+  await panel.getByRole("button", { name: "Details for media/picture.svg", exact: true }).click();
+  await panel.getByLabel("File name", { exact: true }).fill("garden.svg");
+  await expect(panel.getByRole("checkbox", { name: "Keep the old address working", exact: true })).toBeVisible();
+  await expect(panel.getByText("GitHub Pages doesn't forward old addresses, so links to the old one will stop working.", { exact: true })).toBeVisible();
+  await expect(panel.getByText(/on hosts that read the site's _redirects file/)).toHaveCount(0);
+});

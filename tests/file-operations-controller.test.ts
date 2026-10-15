@@ -620,3 +620,19 @@ test("lazy Files actions refuse what needs no GitHub at once, without the chunk 
   assert.equal(loads, 0);
   assert.equal(indexed, 0);
 });
+
+test("Files-tab page moves note that GitHub Pages will not forward the old URL, only on GitHub Pages", async () => {
+  const note = "GitHub Pages doesn't forward old addresses, so links to the old one will stop working.";
+  for (const [label, extra, shown] of [
+    ["github.io", { ".editor/config.json": '{ "site": { "url": "https://lex.github.io/site/" } }' }, true],
+    ["root CNAME", { CNAME: "example.com\n", ".editor/config.json": '{ "site": { "url": "https://example.com/" } }' }, true],
+    ["neither", { ".editor/config.json": '{ "site": { "url": "https://example.com/" } }' }, false],
+  ] as const) {
+    const h = fixture(true, extra);
+    let notes: string[] = [], offered = false;
+    h.ports.confirmDialog = () => ({ ask: async () => true, choose: async (options: { notes?: string[]; option?: unknown }) => { notes = options.notes ?? []; offered = Boolean(options.option); return { value: undefined, option: false }; } });
+    await h.controller.moveFileTarget(page, "renamed/index.html", "rename");
+    assert.ok(offered, `${label}: the keep-old-URL choice is offered`);
+    assert.equal(notes.includes(note), shown, label);
+  }
+});
