@@ -7,8 +7,9 @@
 // meta images, inline and file CSS `url()` and `@import`), `_redirects` lines and
 // `_headers` path lines, every root address moves, whether or not it names a file
 // yet. Anywhere else (inline scripts, JS, JSON, XML, plain text) only an address
-// that names one of the site's pages or files moves, so `split("/")` or a regular
-// expression in a script is never mistaken for a link. A full address moves when it
+// that names one of the site's pages or files moves, and a bare root path only as a
+// quoted string or a Markdown link, so `split("/")`, a regular expression or prose
+// about paths is never mistaken for a link. A full address moves when it
 // is on the old address's host inside its folder: another project site on the same
 // host and outside links stay. `.editor/` (route keys, records) is not addresses.
 import { sitePathPrefix } from "../../shared/site-path-prefix";
@@ -35,9 +36,12 @@ export function siteFolderChanges(from: string, to: string): boolean {
   return decoded(sitePathPrefix(from)) !== decoded(sitePathPrefix(to));
 }
 
-/** The text files a folder change reads: the site's own, without `.editor/` and `CNAME`. */
+/**
+ * The text files a folder change reads: the site's own, without `.editor/`, `CNAME` and Markdown
+ * (README, AGENTS: notes about the repository, which a static server never shows as pages).
+ */
 export function siteAddressFiles(paths: Iterable<string>): string[] {
-  return [...paths].filter(path => isMediaTextFile(path) && !path.startsWith(".editor/") && path !== "CNAME");
+  return [...paths].filter(path => isMediaTextFile(path) && !path.startsWith(".editor/") && path !== "CNAME" && !/\.(?:md|markdown)$/i.test(path));
 }
 
 /** The raw root-path segments of `path` that spell `prefix` (any percent case), or undefined. */
@@ -74,7 +78,8 @@ export function movedAddress(value: string, context: Context, named = false): { 
     head = "";
   }
   const rest = path.slice(head.length);
-  if (named) {
+  // A full address inside the old folder on the old host is this site's, the home page too.
+  if (named && full === undefined) {
     const file = decoded(rest)?.replace(/^\/+/, "");
     if (!file || !(context.has(file) || context.has(file.replace(/\/?$/, "/index.html")))) return undefined;
   }
@@ -135,6 +140,9 @@ export function rewriteSiteAddressText(file: string, source: string, context: Co
       const value = match[0].replace(/[.!:]+$/, "");
       const start = text.starts[match.index!], end = text.ends[match.index! + value.length - 1];
       if (start === undefined || end === undefined || overlaps(start, end)) continue;
+      // A bare root path counts only as a string, a Markdown link or a header link (`"/about/"`, `(/about/)`, `</a.css>`): in prose,
+      // `work/<slug>/index.html` or a table of routes is not a link.
+      if (!/^https?:/i.test(value) && !/["'`(<]/.test(text.text[match.index! - 1] ?? "")) continue;
       add(value, start, end, true);
     }
   }
@@ -156,11 +164,12 @@ export interface SiteAddressInput {
   paths: Iterable<string>;
   /** A file's text as it will be written before the addresses move (Site settings' own edits included). */
   source: (path: string) => string | undefined;
-  /** Between files: lets a large site's plan give the page its turn. */
+  /** Between files: lets a large site's plan give the page its turn (after `slice` ms of work, default 12). */
   pause?: () => Promise<void> | undefined;
+  slice?: number;
 }
 
-function context(input: SiteAddressInput, paths: string[]): Context {
+function context(input: Pick<SiteAddressInput, "from" | "to">, paths: string[]): Context {
   const oldPrefix = sitePathPrefix(input.from), newPrefix = sitePathPrefix(input.to);
   const folder = decoded(newPrefix)?.replace(/^\//, ""), files = new Set(paths);
   return {
@@ -188,9 +197,16 @@ export async function planSiteAddressRewriteInSlices(input: SiteAddressInput): P
   let since = performance.now();
   for (const file of siteAddressFiles(paths)) {
     if (step(plan, file, input.source(file), moving)) break;
-    if (input.pause && performance.now() - since > 12) { await input.pause(); since = performance.now(); }
+    if (input.pause && performance.now() - since >= (input.slice ?? 12)) { await input.pause(); since = performance.now(); }
   }
   return plan;
+}
+
+/** One stored address (Site settings' default social image) moved like the links in the files. */
+export function moveSiteAddress(value: string, input: Pick<SiteAddressInput, "from" | "to" | "paths">): string {
+  if (!siteFolderChanges(input.from, input.to)) return value;
+  const moved = movedAddress(value, context(input, [...input.paths]));
+  return moved ? moved.text + value.slice(moved.head) : value;
 }
 
 function step(plan: SiteAddressRewrite, file: string, source: string | undefined, moving: Context): boolean {

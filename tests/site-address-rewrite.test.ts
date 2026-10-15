@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { planSiteAddressRewrite, planSiteAddressRewriteInSlices, siteAddressConfirm, siteAddressDone, siteAddressFiles, siteFolderChanges } from "../src/page-builder/site-address-rewrite.ts";
+import { moveSiteAddress, planSiteAddressRewrite, planSiteAddressRewriteInSlices, siteAddressConfirm, siteAddressDone, siteAddressFiles, siteFolderChanges } from "../src/page-builder/site-address-rewrite.ts";
 
 const PROJECT = "https://user.github.io/my-site/";
 const OWN = "https://example.com/";
@@ -35,7 +35,7 @@ test("the folder changes only when the decoded path part differs", () => {
   assert.equal(siteFolderChanges(PROJECT, "https://www.example.com/my-site"), false);
   assert.equal(siteFolderChanges("https://x.test/caf%C3%A9/", "https://y.test/café/index.html"), false);
   assert.equal(siteFolderChanges("", OWN), false);
-  assert.deepEqual(siteAddressFiles([".editor/config.json", "CNAME", "index.html", "media/a.webp", "_redirects", "a.js"]), ["index.html", "_redirects", "a.js"]);
+  assert.deepEqual(siteAddressFiles([".editor/config.json", "CNAME", "index.html", "media/a.webp", "_redirects", "a.js", "README.md", "docs/notes.markdown"]), ["index.html", "_redirects", "a.js"]);
 });
 
 test("adding a folder prefixes every root address and full own address", () => {
@@ -100,6 +100,7 @@ test("scripts and plain text move only addresses naming a page or file", () => {
     "app.js": `const page = "/about/", parts = path.split("/"), re = /\\s+/g, gone = "/missing/", hero = '/my-site/media/hero.webp';\n`,
     "sitemap.xml": "<url><loc>https://user.github.io/my-site/about/</loc></url><url><loc>https://user.github.io/other/</loc></url>",
     "notes.txt": "Read /about/ and / or https://user.github.io/my-site/media/hero.webp.",
+    "notes/paths.txt": "Pages: work/<slug>/index.html is /work/<slug>/; about/index.html   /about/. See [About](/my-site/about/) and `href=\"/my-site/about/\"`.",
     "_headers": "/my-site/media/*\n  Cache-Control: max-age=3600\n  Link: </my-site/styles/site.css>; rel=preload\n",
     "_redirects": "# moved\n/my-site/old/ /my-site/about/ 301\n/my-site/gone https://elsewhere.test/ 302\n",
     ".editor/config.json": `{ "site": { "url": "${PROJECT}", "routes": { "/about/": "about/index.html" } } }`,
@@ -108,6 +109,9 @@ test("scripts and plain text move only addresses naming a page or file", () => {
   assert.equal(result.edits.get("app.js"), `const page = "/about/", parts = path.split("/"), re = /\\s+/g, gone = "/missing/", hero = '/media/hero.webp';\n`);
   assert.equal(result.edits.get("sitemap.xml"), "<url><loc>https://example.com/about/</loc></url><url><loc>https://user.github.io/other/</loc></url>");
   assert.equal(result.edits.get("notes.txt"), "Read /about/ and / or https://example.com/media/hero.webp.");
+  // Prose about paths stays; quoted strings and Markdown links move.
+  assert.equal(result.edits.get("notes/paths.txt"), "Pages: work/<slug>/index.html is /work/<slug>/; about/index.html   /about/. See [About](/about/) and `href=\"/about/\"`.");
+  assert.equal(plan("", PROJECT, { "notes/paths.txt": "work/<slug>/index.html and about/index.html   /about/" }, ["index.html", "about/index.html"]).count, 0);
   assert.equal(result.edits.get("_headers"), "/media/*\n  Cache-Control: max-age=3600\n  Link: </styles/site.css>; rel=preload\n");
   assert.equal(result.edits.get("_redirects"), "# moved\n/old/ /about/ 301\n/gone https://elsewhere.test/ 302\n");
   assert.equal(result.edits.has(".editor/config.json"), false);
@@ -127,7 +131,31 @@ test("an unread text file stops the plan; the sliced plan matches the whole one"
   assert.deepEqual({ missing: missing.missing, count: missing.count, size: missing.edits.size }, { missing: "b.html", count: 0, size: 0 });
   const sources = site("", "https://example.com");
   let pauses = 0;
-  const sliced = await planSiteAddressRewriteInSlices({ from: OWN, to: PROJECT, ...files(sources, binaries), pause: async () => { pauses++; } });
+  const sliced = await planSiteAddressRewriteInSlices({ from: OWN, to: PROJECT, ...files(sources, binaries), slice: 0, pause: async () => { pauses++; } });
   assert.deepEqual(sliced, plan(OWN, PROJECT, sources, binaries));
-  assert.ok(pauses >= 0);
+  // With no time allowed per slice, the plan gives the page its turn after every text file.
+  assert.equal(pauses, siteAddressFiles(Object.keys(sources).concat(binaries)).length);
+});
+
+test("the home page's full address moves in og:url and sitemaps, whichever way the folder changes", () => {
+  const home = (origin: string) => ({
+    "index.html": `<meta property="og:url" content="${origin}">`,
+    "sitemap.xml": `<url><loc>${origin}</loc></url><url><loc>${origin}about/</loc></url>`,
+    "robots.txt": `Sitemap: ${origin}sitemap.xml\n`,
+  });
+  const extra = ["about/index.html"];
+  for (const [from, to] of [[OWN, PROJECT], [PROJECT, "https://user.github.io/new-site/"], [PROJECT, OWN]]) {
+    const result = plan(from, to, home(from), extra);
+    assert.deepEqual(Object.fromEntries(result.edits), home(to), `${from} → ${to}`);
+    assert.equal(result.count, 4);
+  }
+});
+
+test("Site settings' stored default image moves like the pages' copies of it", () => {
+  const paths = ["media/share.jpg"];
+  assert.equal(moveSiteAddress("https://user.github.io/my-site/media/share.jpg", { from: PROJECT, to: OWN, paths }), "https://example.com/media/share.jpg");
+  assert.equal(moveSiteAddress("/media/share.jpg", { from: OWN, to: PROJECT, paths }), "/my-site/media/share.jpg");
+  assert.equal(moveSiteAddress("https://elsewhere.test/share.jpg", { from: PROJECT, to: OWN, paths }), "https://elsewhere.test/share.jpg");
+  assert.equal(moveSiteAddress("/my-site/media/share.jpg", { from: PROJECT, to: "https://www.example.com/my-site/", paths }), "/my-site/media/share.jpg");
+  assert.equal(moveSiteAddress("", { from: PROJECT, to: OWN, paths }), "");
 });

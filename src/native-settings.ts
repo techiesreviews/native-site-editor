@@ -37,7 +37,8 @@ interface SettingsPorts {
   readMediaText: (path: string) => Promise<unknown>;
 }
 
-type AddressMove = typeof import("./page-builder/site-address-rewrite");
+/** A new Site address folder: its plan's module, and every file it was planned from (`read`, `list`), proved until written. */
+interface AddressMove { module: typeof import("./page-builder/site-address-rewrite"); from: string; to: string; read: Map<string, string | undefined>; list: string }
 
 /** Settings orchestration is loaded with the first settings dialog. */
 export function createNativeSettings(ports: SettingsPorts) {
@@ -136,19 +137,22 @@ export function createNativeSettings(ports: SettingsPorts) {
         if (address && "error" in address) return address.error;
         const values = { ...typed, url: address?.url };
         // A new folder in the address moves every root address in the site's text files, asked first.
-        let move: { module: AddressMove; from: string; to: string } | undefined;
+        let move: AddressMove | undefined;
         if (site && address && sitePathPrefix(shownUrl) !== sitePathPrefix(address.url)) {
           const module = await import("./page-builder/site-address-rewrite");
           if (module.siteFolderChanges(shownUrl, address.url)) {
             const unread = await module.readSiteAddressFiles(ports.nativeFiles(), ports.readMediaText, () => since.holds());
             if (unread) return unread;
             if (stale() || sourcesChanged()) return changed;
-            const plan = await module.planSiteAddressRewriteInSlices({ from: shownUrl, to: address.url, paths: ports.nativeFiles(),
-              source: path => ports.guardedEdits.peek.source(path), pause: () => new Promise(resolve => setTimeout(resolve)) });
+            // The question's count holds only for these bytes: they are proved after it and when written.
+            const files = ports.nativeFiles(), list = files.join("\n");
+            const read = new Map(module.siteAddressFiles(files).map(path => [path, ports.guardedEdits.peek.source(path)] as const));
+            const plan = await module.planSiteAddressRewriteInSlices({ from: shownUrl, to: address.url, paths: files,
+              source: path => read.get(path), pause: () => new Promise(resolve => setTimeout(resolve)) });
             if (plan.missing) return siteAddressUnread(plan.missing);
             if (plan.count && !await confirm?.(module.siteAddressConfirm(plan))) return module.SITE_ADDRESS_KEPT;
-            if (stale() || sourcesChanged()) return changed;
-            move = { module, from: shownUrl, to: address.url };
+            move = { module, from: shownUrl, to: address.url, read, list };
+            if (stale() || sourcesChanged() || !moveHolds(move, path => ports.guardedEdits.peek.source(path))) return changed;
           }
         }
         if (site) {
@@ -182,7 +186,7 @@ export function createNativeSettings(ports: SettingsPorts) {
             reused = shared?.path;
           }
         }
-        return applied(await ports.guardedEdits.run(r => checkShown(r) || reused && !r.exists(reused) ? { refuse: changed } : applyNativeSiteSettings(values, r, move), { since }));
+        return applied(await ports.guardedEdits.run(r => checkShown(r) || reused && !r.exists(reused) || move && !moveHolds(move, path => r.source(path)) ? { refuse: changed } : applyNativeSiteSettings(values, r, move), { since }));
       },
       async open404() {
         if (stale() || sourcesChanged() || !ports.nativeSite) return changed;
@@ -261,15 +265,19 @@ export function createNativeSettings(ports: SettingsPorts) {
 
   const siteAddressUnread = (path: string) => `${path} could not be read, so the site's links cannot follow the new address. Nothing was applied.`;
 
+  const moveHolds = (move: AddressMove, source: (path: string) => string | undefined) =>
+    ports.nativeFiles().join("\n") === move.list && [...move.read].every(([path, text]) => source(path) === text);
+
   /** `move`: the Site address's folder changes; every root address follows, in the same step. */
-  async function applyNativeSiteSettings(values: Omit<SiteSettingsValues, "url"> & { url?: string }, r: Reads, move?: { module: AddressMove; from: string; to: string }): Promise<PlanResult> {
+  async function applyNativeSiteSettings(values: Omit<SiteSettingsValues, "url"> & { url?: string }, r: Reads, move?: AddressMove): Promise<PlanResult> {
     const site = r.site();
     if (!site) return { refuse: "Open a native site first." };
     const config = r.source(NATIVE_CONFIG_PATH);
     const before = readSiteIdentity(config, r.source(site.routes["/"]) ?? "");
     const edits = new Map<string, string>();
     try {
-      const nextConfig = withSiteIdentityConfig(config, values);
+      // The stored default image follows like the pages' copies of it (which the plan below moves).
+      const nextConfig = withSiteIdentityConfig(config, move ? { ...values, socialImage: move.module.moveSiteAddress(values.socialImage, { from: move.from, to: move.to, paths: move.list.split("\n") }) } : values);
       if (config !== nextConfig) edits.set(NATIVE_CONFIG_PATH, nextConfig);
       for (const path of new Set(Object.values(site.routes))) {
         const source = r.source(path);
