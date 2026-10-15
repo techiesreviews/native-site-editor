@@ -231,7 +231,8 @@ test("background image loads preserve typing, the chosen collection and details"
   await expect(library.locator(".media-library__sheet")).toContainText("Loading file");
   await page.evaluate(() => (window as any).releaseImageLoad());
   await expect(library.getByLabel("Description", { exact: true })).toBeVisible();
-  await expect(filterButton(library)).toHaveAccessibleName("Filter: Studio");
+  // Details hide the One bar; Filter keeps the chosen collection.
+  await expect(library.locator(".media-library__filter")).toHaveAttribute("aria-label", "Filter: Studio");
   await expect(library.locator(".media-library__message")).toBeEmpty();
   await page.evaluate(() => (window as any).loadImageProbe.dispose());
 });
