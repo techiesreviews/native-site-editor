@@ -39,6 +39,14 @@ configuration keys. Favicon and social site name update page heads. The default
 social image updates missing values and pages using the previous default; custom
 page images remain independent. Titles and descriptions keep their page values.
 
+Site address (`site.url`, the same key publishing setup writes) is where the site
+lives, for example `https://name.github.io/my-site/`. It is checked only when it
+changes: blank removes it; otherwise it must be a full http(s) address with a host
+name and no login, query or `#` part (`https://` is added when left out). Sharing
+copies use it for full `og:image` addresses, and the path part becomes the site's
+path prefix (`shared/site-path-prefix.ts`, media build phase 7). Changing it does
+not rewrite existing addresses yet (slice 80).
+
 The 404 action opens an existing `404.html`, or creates a plain HTML draft with a
 home link and `noindex`. Static hosting determines when that document is served.
 

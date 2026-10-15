@@ -8,6 +8,8 @@ import { SOCIAL_IMAGE_ACCEPT } from "../page-builder/social-image";
 import "./site-settings.css";
 
 export interface SiteSettingsValues { name: string; favicon: string; socialImage: string;
+  /** The Site address field as typed (`.editor/config.json` `site.url`); checked when applied. */
+  url: string;
   /** The social image was chosen in the picker during this dialog (even the one already set): it gets a sharing copy. */
   socialImageChosen?: boolean;
   /** The sharing copy's frame chosen in the Social image popup; else it is centred. */
@@ -392,6 +394,8 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
       const pagesPanel = dialog.category("Pages", "file");
       const general = section(generalPanel, "Site identity");
       const name = textField(general, "Site name", options.values.name, "Used for new page details and the site's social identity.");
+      const address = textField(general, "Site address", options.values.url, "Where your site lives, like https://name.github.io/my-site/");
+      Object.assign(address, { inputMode: "url", autocomplete: "off", spellcheck: false, autocapitalize: "off" });
       const favicon = textField(general, "Favicon", options.values.favicon, "Choose an image or paste its URL. Applied to every page's head.");
       addImageChoices(favicon, options.images);
       general.append(button("Choose favicon…", () => chooseInto(favicon, "Favicon", dialog, handlers), "site-settings__link"));
@@ -414,7 +418,7 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
       }, "site-settings__link"));
       applyButton(dialog, "Apply site settings", () => {
         const trim = stagedFrame(image)?.trim;
-        return handlers.applySite({ name: name.value.trim(), favicon: favicon.value.trim(), socialImage: image.value.trim(),
+        return handlers.applySite({ name: name.value.trim(), url: address.value.trim(), favicon: favicon.value.trim(), socialImage: image.value.trim(),
           ...image.dataset.chosen === image.value && image.value ? { socialImageChosen: true } : {}, ...trim ? { socialImageTrim: trim } : {} });
       });
       dialog.show();

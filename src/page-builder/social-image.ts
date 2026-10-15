@@ -6,7 +6,7 @@ import type { MediaOptimiseOptions } from "./media-optimise";
 import { trimmedCopyPath } from "./trimmed-copies";
 import { gifIsAnimated, pngIsAnimated, webpIsAnimated } from "./media-image-bytes";
 
-export const SOCIAL_IMAGE_NOTE = "Your site has no web address yet, so sharing services may not show this image. Set up publishing to give it one, then choose the image again.";
+export const SOCIAL_IMAGE_NOTE = "Your site has no web address yet, so sharing services may not show this image. Add it in Site settings, General, Site address, then choose the image again.";
 /** The picker offers still raster pictures only: an SVG cannot be drawn into the sharing copy (slice 36's follow-up). */
 export const SOCIAL_IMAGE_ACCEPT = "image/jpeg,image/png,image/webp,image/avif,image/gif,image/bmp";
 export const SOCIAL_IMAGE_OPTIONS: MediaOptimiseOptions = { maxWidth: 1200, quality: 85, format: "jpeg", responsive: false, keepOriginal: false };

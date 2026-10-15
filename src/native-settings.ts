@@ -1,6 +1,6 @@
 import { createSiteSettings, type SiteSettingsValues, type SiteLinkPreference } from "./components/site-settings";
 import { escapeText, readHeadSettings, upsertHeadTag, withPageField, type HeadField } from "./page-builder/site-head";
-import { readSiteIdentity, withSiteIdentityConfig, withSiteIdentityPage } from "./page-builder/site-identity";
+import { readSiteAddress, readSiteIdentity, siteAddressInput, withSiteIdentityConfig, withSiteIdentityPage } from "./page-builder/site-identity";
 import { editNavigation, readNavigation } from "./page-builder/site-navigation";
 import { nativePageTemplate } from "./native-create";
 import { NATIVE_HOME_UNREAD } from "./controllers/pages-controller";
@@ -63,12 +63,13 @@ export function createNativeSettings(ports: SettingsPorts) {
       baseline = new Map(shown.map(path => [path, ports.guardedEdits.peek.source(path)] as const));
     };
     // `depends`: every file the edits were planned from (Site settings: config and every page), proved through preparation.
-    const share = async (value: string, previous: string, page: string, edits: SocialSharingRequest["edits"], depends: string[] = [], trim?: MediaTrim) => {
+    // `siteUrl`: the address being applied with it (Site settings), else the config's.
+    const share = async (value: string, previous: string, page: string, edits: SocialSharingRequest["edits"], depends: string[] = [], trim?: MediaTrim, siteUrl?: string) => {
       if (stale() || sourcesChanged()) throw new Error(changed);
       const stamp = since, repository = ports.guardedEdits.stamp("repository");
       const expected = new Map([...baseline, ...[NATIVE_CONFIG_PATH, ...depends].map(path => [path, ports.guardedEdits.peek.source(path)] as const)]);
       const result = await ports.shareImage({ value, previous, page, ...trim ? { trim } : {},
-        siteUrl: nativeSiteSettings(ports.nativeEffectiveSource(NATIVE_CONFIG_PATH)).url,
+        siteUrl: siteUrl ?? nativeSiteSettings(ports.nativeEffectiveSource(NATIVE_CONFIG_PATH)).url,
         canonical: readHeadSettings(ports.nativeEffectiveSource(page) ?? "").canonical,
         expectedSources: expected,
         live: () => stamp.holds() && [...expected].every(([path, source]) => ports.guardedEdits.peek.source(path) === source), edits });
@@ -120,9 +121,14 @@ export function createNativeSettings(ports: SettingsPorts) {
         }
         return error;
       },
-      async applySite(values) {
+      async applySite(typed) {
         const site = ports.nativeSite;
         let reused: string | undefined;
+        // The address is checked and stored only when it changed: an untouched one stays byte for byte.
+        const shownUrl = readSiteAddress(ports.guardedEdits.peek.source(NATIVE_CONFIG_PATH));
+        const address = typed.url === shownUrl ? undefined : siteAddressInput(typed.url);
+        if (address && "error" in address) return address.error;
+        const values = { ...typed, url: address?.url };
         if (site) {
           const home = site.routes["/"], config = ports.guardedEdits.peek.source(NATIVE_CONFIG_PATH);
           const before = readSiteIdentity(config, ports.guardedEdits.peek.source(home) ?? "");
@@ -140,7 +146,7 @@ export function createNativeSettings(ports: SettingsPorts) {
                 if (text !== source) edits.set(path, { source, text });
               }
               return edits;
-            }, [...expected.keys()], values.socialImageTrim);
+            }, [...expected.keys()], values.socialImageTrim, values.url);
             if (shared) values.socialImage = shared.address;
             if (shared && !shared.reused) return undefined;
             reused = shared?.path;
@@ -222,7 +228,7 @@ export function createNativeSettings(ports: SettingsPorts) {
   }
 
 
-  function applyNativeSiteSettings(values: SiteSettingsValues, r: Reads): PlanResult {
+  function applyNativeSiteSettings(values: Omit<SiteSettingsValues, "url"> & { url?: string }, r: Reads): PlanResult {
     const site = r.site();
     if (!site) return { refuse: "Open a native site first." };
     const config = r.source(NATIVE_CONFIG_PATH);

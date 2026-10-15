@@ -86,6 +86,34 @@ test("site settings list pages, apply favicon and defaults together, and open 40
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "404.html");
 });
 
+test("site settings set, check and undo the site address, which the Social note points to", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  await openSite(page);
+  let panel = dialog(page, "Site settings");
+  const address = panel.getByLabel("Site address", { exact: true });
+  await expect(address).toHaveValue("");
+  await expect(panel).toContainText("Where your site lives, like https://name.github.io/my-site/");
+  await panel.getByRole("tab", { name: "Social", exact: true }).click();
+  await expect(panel).toContainText("Add it in Site settings, General, Site address");
+  await panel.getByRole("tab", { name: "General", exact: true }).click();
+  await address.fill("my site");
+  await panel.getByRole("button", { name: "Apply site settings" }).click();
+  await expect(panel.locator(".site-settings__status")).toContainText("Enter your site's full web address");
+  await expect(panel).toBeVisible();
+  await address.fill("name.github.io/my-site/");
+  await panel.getByRole("button", { name: "Apply site settings" }).click();
+  await expect(panel).not.toBeVisible();
+  await expect.poll(async () => (await storedDraft(page, ".editor/config.json"))?.content).toContain('"url": "https://name.github.io/my-site/"');
+  await openSite(page);
+  panel = dialog(page, "Site settings");
+  await expect(panel.getByLabel("Site address", { exact: true })).toHaveValue("https://name.github.io/my-site/");
+  await panel.getByRole("tab", { name: "Social", exact: true }).click();
+  await expect(panel).not.toContainText("no web address yet");
+  await panel.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(async () => (await storedDraft(page, ".editor/config.json"))?.content ?? "").not.toContain("my-site");
+});
+
 test("navigation renames, reorders, adds pages and external links in the shared template", async ({ page, baseURL }) => {
   await open(page, baseURL);
   await openNavigation(page);
