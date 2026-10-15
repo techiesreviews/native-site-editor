@@ -492,11 +492,11 @@ function enhanceLooping(video) {
     box = wrap(video, "loop");
     box.append(corner);
     // Inside a link, the link is named from its content: a named group gives
-    // it the video's name instead of the corner button's "Pause video".
-    const name = nameOf(video);
-    if (name && box.closest("a[href]")) {
+    // it the video's name (or "Looping video" for an unnamed one) instead of
+    // the corner button's changing "Pause video".
+    if (box.closest("a[href]")) {
       box.setAttribute("role", "group");
-      box.setAttribute("aria-label", name);
+      box.setAttribute("aria-label", nameOf(video) || "Looping video");
     }
   }
 
@@ -514,8 +514,8 @@ function enhanceLooping(video) {
   video.addEventListener("pause", sync);
   sync();
   // The corner may sit inside a link (a looping video made from a linked GIF)
-  // or a clickable card: pressing it pauses or plays, and nothing else. The
-  // rest of the link still follows it.
+  // or a clickable card: pressing it pauses or plays, and nothing else; a
+  // middle click on it opens no tab. The rest of the link still follows it.
   const own = (event) => {
     event.preventDefault();
     event.stopPropagation();

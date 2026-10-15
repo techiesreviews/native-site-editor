@@ -1,6 +1,6 @@
 {
-  "version": "d4c2635",
-  "source": "techiesreviews/native-site-editor-starter@d4c2635",
+  "version": "3aa1b13",
+  "source": "techiesreviews/native-site-editor-starter@3aa1b13",
   "files": [
     {
       "path": "404.html",
@@ -154,8 +154,8 @@
     },
     {
       "path": "scripts/media-player.js",
-      "size": 24478,
-      "sha256": "f8f9c62162ff481339ab984d80ca6c8a6e533c19090cf320099792adbe6d67d4"
+      "size": 24557,
+      "sha256": "cda0f873b0a25a92d31b17a16647b6a65ba6f311774bf6c3c8a45af2f8a083b4"
     },
     {
       "path": "styles/elements.css",
