@@ -97,3 +97,12 @@ test("navigation round trip keeps a route named like the site prefix", () => {
   assert.ok(next.includes('<a href="/my-site/my-site/">Nested</a>'));
   assert.ok(next.includes('<a href="https://other.test/my-site/">Other</a>'));
 });
+
+test("a typed address already carrying the prefix is written once; read routes always gain it", () => {
+  const source = '<header><nav><a href="/my-site/my-site/">Nested</a></nav></header>';
+  const list = readNavigation(source, false, "/my-site")!;
+  const next = editNavigation(source, list, [...list.links, { href: "/my-site/contact/", label: "Contact", typed: true }, { href: "/about/", label: "About", typed: true }], "/my-site");
+  assert.ok(next.includes('<a href="/my-site/my-site/">Nested</a>'));
+  assert.ok(next.includes('<a href="/my-site/contact/">Contact</a>'));
+  assert.ok(next.includes('<a href="/my-site/about/">About</a>'));
+});

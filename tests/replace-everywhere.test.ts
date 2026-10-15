@@ -446,3 +446,15 @@ test("Unicode Replace keeps literal mentions and encoded redirect addresses at t
   assert.ok(p.edits.get("index.html")?.includes('src="/media/京都.webp"'));
   assert.ok(p.edits.get("_redirects")?.includes(`/media/${encodeURIComponent("京都.jpg")} /media/${encodeURIComponent("京都.webp")}`));
 });
+
+test("sub-folder Replace keeps a file name's encoded characters", () => {
+  const planned = planMediaReplace({
+    request: { path: "media/a#b.webp", result: { before: 20, after: 10, outputs: [
+      { extension: "webp", blob: new Blob(["new"]), width: 20, height: 10 },
+    ] } },
+    paths: ["media/a#b.webp"], sources: { "index.html": '<img src="/my-site/media/a%23b.webp"><img src="/media/a%23b.webp">' },
+    records: parseMediaRecords(undefined), versions: new Map([["media/a#b.webp", "new"]]),
+    site: { prefix: "/my-site", origins: [] },
+  });
+  assert.equal(planned.edits.get("index.html"), '<img src="/my-site/media/a%23b.webp?v=new"><img src="/my-site/media/a%23b.webp?v=new">');
+});

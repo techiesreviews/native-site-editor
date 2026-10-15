@@ -1,5 +1,4 @@
 import { componentImageChoices } from "./component-model";
-import { NATIVE_CONFIG_PATH, nativeSitePrefix } from "../../shared/native-project";
 import type { MediaPathPlacement } from "./media-picker";
 import { componentRenameStep, madeFiles, madeMessage, makeComponentStep, newComponentStep, slotChipPlan, templateRemovalPlan, type LoaderPlanner, type MadePlanned, type NewPlanned, type RenamePlanned, type SlotChipPlanned } from "./component-plans";
 import { STALE_MESSAGE, type GuardedEdits, type Outcome, type Stamp } from "../guarded-edit";
@@ -129,6 +128,8 @@ export interface ComponentDeps {
   error: (error: unknown) => void;
   /** Images of the repository, as root paths' suggestions. */
   images: () => string[];
+  /** The site's sub-folder (`/my-site`), read now; empty at a domain root. */
+  prefix: () => string;
   /** The Media picker for `place`; resolves to the chosen file's root path, or undefined on Cancel. */
   chooseImage: (place: string, placement?: MediaPathPlacement) => Promise<string | undefined>;
   /** Pages of the site for a link's address. */
@@ -1172,7 +1173,7 @@ export function createComponentTools(deps: ComponentDeps) {
     const fields = node("div", "component-slot__fields");
     if (value.kind === "image") {
       fields.append(
-        textField(at, slot, "src", "Address", value.src ?? "", "Image in this repository or web address", componentImageChoices(deps.images(), nativeSitePrefix(deps.sources()[NATIVE_CONFIG_PATH]))),
+        textField(at, slot, "src", "Address", value.src ?? "", "Image in this repository or web address", componentImageChoices(deps.images(), deps.prefix())),
         chooseButton(slot),
         textField(at, slot, "alt", "Alt text", value.alt ?? "", "What the image shows; empty for decorative"),
       );
@@ -1890,7 +1891,7 @@ export function createComponentTools(deps: ComponentDeps) {
         if (!at || !attributeSourceSafe(at) || at.instance.attributes.filter(item => item.name === name).length !== 1) return false;
         return change(path, [attributeEdit(at.source, at.range.tag, name, undefined)], `${name} removed`, at.node);
       },
-      images: componentImageChoices(deps.images(), nativeSitePrefix(deps.sources()[NATIVE_CONFIG_PATH])),
+      images: componentImageChoices(deps.images(), deps.prefix()),
       links: deps.links(),
       openImageChoice(name) {
         const at = read(), slot = at?.slots.find(item => item.name === name);

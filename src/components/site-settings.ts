@@ -458,7 +458,7 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
           const label = textField(fields, `Link ${index + 1} label`, link.label);
           const href = textField(fields, `Link ${index + 1} URL`, link.href);
           label.addEventListener("input", () => { link.label = label.value; });
-          href.addEventListener("input", () => { link.href = href.value; });
+          href.addEventListener("input", () => { link.href = href.value; link.typed = true; });
           const controls = node("div", "site-settings__nav-controls");
           const up = button("", () => move(index, index - 1), "site-settings__link");
           up.append(icon("arrow-up", 16));

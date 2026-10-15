@@ -685,6 +685,7 @@ function mountComponentTools() {
     announce,
     error: errorMessage,
     images: nativeImagePaths,
+    prefix: () => nativePrefix(),
     chooseImage: (place, placement) => mediaController.choosePath(place, placement),
     links: () => (nativeSite ? nativeLinkSuggestions(Object.keys(nativeSite.routes), (route) => nativeRouteInfo(route).title, nativePrefix()) : []),
     pageLabel: nativePageLabelOf,

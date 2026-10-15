@@ -143,3 +143,8 @@ test("a prefix without a site does not make outside hosts local files", () => {
   assert.deepEqual(scanMediaReferences("index.html", '<iframe src="https://youtube.com/embed/aqz-KE-bpKQ"></iframe>', undefined, "/my-site"), []);
   assert.deepEqual(scanMediaReferences("index.html", '<img src="https://user.github.io/my-site/media/a.webp">', { prefix: "/my-site", origins: ["https://user.github.io"] }).map(ref => ref.path), ["media/a.webp"]);
 });
+
+test("a relative link inside a folder named like the prefix keeps that folder", () => {
+  const source = '<img src="media/a.webp"><img src="/my-site/media/a.webp">';
+  assert.deepEqual(scanMediaReferences("my-site/index.html", source, undefined, "/my-site").map(ref => ref.path), ["my-site/media/a.webp", "media/a.webp"]);
+});

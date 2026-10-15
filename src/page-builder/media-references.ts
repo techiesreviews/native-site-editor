@@ -20,7 +20,8 @@ export function mediaResolvePath(value: string, file: string, site?: MediaSite, 
     } catch { return undefined; }
   }
   if (!decoded || /^(?:[a-z][\w+.-]*:|\/\/|#)/i.test(decoded)) return undefined;
-  if (prefix) {
+  // Only root links carry the prefix; a relative link already names a repository path.
+  if (prefix && decoded.startsWith("/")) {
     try { return sitePathOf(new URL(decoded, `https://repo.invalid/${file}`).pathname, { prefix }); }
     catch { return undefined; }
   }

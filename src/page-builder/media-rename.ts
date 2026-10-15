@@ -95,7 +95,8 @@ function rewriteText(file: string, source: string, input: RenameInput, moves: Ma
     if (path !== to && !known.has(mediaResolvePath(value, file, input.site ?? { origins: [] }) ?? "") && !full && !template && !address.startsWith("/") && path.slice(0, path.lastIndexOf("/")) === to.slice(0, to.lastIndexOf("/"))) {
       next = address.slice(0, address.lastIndexOf("/") + 1) + to.split("/").at(-1)!;
     } else if (address.startsWith("./") && !next.startsWith(".")) next = "./" + next;
-    if (path !== to && /%[\da-f]{2}/i.test(rawPath)) {
+    // A same-path reference rebuilt with the prefix keeps its encoding too (`a%23b.webp`).
+    if ((path !== to || next !== address) && /%[\da-f]{2}/i.test(rawPath)) {
       const folder = full || address.startsWith("/") || template ? input.site?.prefix ?? "" : "";
       next = folder + next.slice(folder.length).split("/").map(part => encodeURIComponent(part)).join("/");
     }

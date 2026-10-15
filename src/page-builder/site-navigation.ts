@@ -1,9 +1,13 @@
-import { routeAddress, siteRouteOf } from "../../shared/site-path-prefix";
+import { routeAddress, siteRouteOf, withSitePrefix } from "../../shared/site-path-prefix";
 import { elementEnd, startTagAttribute, startTags } from "../../shared/html-source";
 import { decodeText, escapeText, withAttribute } from "./site-head";
 
 /** Root hrefs are internal route keys; full addresses retain their spelling. */
-export interface NavigationLink { href: string; label: string; source?: string }
+export interface NavigationLink {
+  href: string; label: string; source?: string;
+  /** Typed by the user: a root address already carrying the prefix is kept (withSitePrefix). */
+  typed?: boolean;
+}
 export interface NavigationList { start: number; end: number; links: NavigationLink[]; indent: string; newline: string; pattern?: string }
 export function safeNavigationHref(value: string): boolean {
   const href = value.trim();
@@ -65,7 +69,7 @@ export function editNavigation(html: string, list: NavigationList, links: Naviga
     if (decodeText(source.slice(anchor.tag.end, anchor.close.start)) !== link.label.trim())
       source = source.slice(0, anchor.tag.end) + escapeText(link.label.trim()) + source.slice(anchor.close.start);
     const address = link.href.trim();
-    const href = address.startsWith("/") && !address.startsWith("//") ? routeAddress(address, prefix) : address;
+    const href = !address.startsWith("/") || address.startsWith("//") ? address : link.typed ? withSitePrefix(address, prefix) : routeAddress(address, prefix);
     const originalHref = startTagAttribute(source, startTags(source)[index], "href")?.value ?? "";
     if (decodeText(originalHref, true) !== href)
       source = withAttribute(source, startTags(source)[index], "href", href);

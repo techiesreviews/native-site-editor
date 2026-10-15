@@ -99,3 +99,9 @@ test("blank sites prefix the home link and stylesheet, leaving all other bytes u
   assert.ok(prefixed[0].content.includes('<link rel="stylesheet" href="/my-site/styles/site.css">'));
   assert.ok(prefixed[0].content.includes('<a class="site-name" href="/my-site/">My site</a>'));
 });
+
+test("a blank site's stylesheet always gains the prefix, even one named like its folder", () => {
+  const [index] = blankSiteFiles("My site", "/styles");
+  assert.ok(index.content.includes('<link rel="stylesheet" href="/styles/styles/site.css">'));
+  assert.ok(index.content.includes('<a class="site-name" href="/styles/">My site</a>'));
+});

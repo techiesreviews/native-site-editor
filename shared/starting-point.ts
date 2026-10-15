@@ -1,4 +1,4 @@
-import { withSitePrefix } from "./site-path-prefix";
+import { routeAddress, siteAddress } from "./site-path-prefix";
 // Starting points: what a repository with nothing to show yet (empty, or
 // without a root index.html) starts from. The Starter site is the public
 // template techiesreviews/native-site-editor-starter, fetched by the Worker
@@ -72,11 +72,11 @@ export function blankSiteFiles(siteName: string, prefix: string): { path: string
   <meta property="og:site_name" content="${name}">
   <meta property="og:title" content="${name}">
   <meta property="og:description" content="">
-  <link rel="stylesheet" href="${withSitePrefix("/styles/site.css", prefix)}">
+  <link rel="stylesheet" href="${siteAddress("styles/site.css", prefix)}">
 </head>
 <body>
   <header class="site-header">
-    <a class="site-name" href="${withSitePrefix("/", prefix)}">${name}</a>
+    <a class="site-name" href="${routeAddress("/", prefix)}">${name}</a>
   </header>
   <main id="main">
     <section class="hero">
