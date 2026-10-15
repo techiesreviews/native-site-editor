@@ -440,6 +440,9 @@ test("cursor undo and existing editing actions stay available", async ({ page, b
 });
 
 test("dropping a Files row inserts its plain path into editable source", async ({ page, baseURL }) => {
+  // The explorer is one centred 1040px box for every tab (slice 104), so the code's first
+  // line shows beside it only in a wide window.
+  await page.setViewportSize({ width: 2000, height: 900 });
   await open(page, baseURL, "robots.txt");
   await setSource(page, "end");
   const explorer = page.locator("#explorer");
