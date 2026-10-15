@@ -40,6 +40,12 @@ export interface MediaPickerHost {
    * replace the agent's, which clears the mark too. One Undo step either way. `row.text` is the
    * words Lex saw: newer agent words refuse, so nothing is approved unseen. */
   check?(row: MediaToCheckRow, text?: string): Promise<void>;
+  /** A video's still picture (slice 66): a moment's WebP saved beside it, or a picture in Media.
+   * Every placed copy of the video shows it, and new places use it. One Undo step. */
+  still?(video: string, still: { blob: Blob } | { path: string }): Promise<void>;
+  /** A video's or audio file's subtitles (slice 66): a .vtt or .srt saved as WebVTT beside it and added
+   * to every placed copy (CC on video, Transcript on audio); `null` takes them off. One Undo step. */
+  subtitles?(media: string, file: { name: string; text: string } | null): Promise<void>;
   restore?(entries: { path: string; id: string }[]): Promise<void>;
   /** Replace everywhere (ticket 15): the new picture takes over the file's name and address; returns its main path. */
   replace?(request: MediaReplaceRequest): Promise<string>;

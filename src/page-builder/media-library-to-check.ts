@@ -2,7 +2,7 @@ import { button, node } from "../ui/dom";
 import { icon } from "../icons";
 import { basename, mediaKind } from "./media-library-filter";
 import { takeSheet, type LibrarySheet, type LibrarySheetContext } from "./media-library-sheet";
-import type { MediaToCheckRow } from "./media-descriptions";
+import { subtitlesWords, type MediaToCheckRow } from "./media-descriptions";
 
 /** What To check needs beyond the sheet context. */
 export interface ToCheckHost extends LibrarySheetContext {
@@ -12,7 +12,8 @@ export interface ToCheckHost extends LibrarySheetContext {
   pageLabel: (page: string) => string | undefined;
 }
 
-const rowKey = (row: { file: string; page?: string }) => `${row.file}\n${row.page ?? ""}`;
+const rowKey = (row: MediaToCheckRow) => `${row.file}\n${row.page ?? ""}\n${row.subtitles ?? ""}`;
+
 
 /** More's item: the count shows while anything waits. */
 export const toCheckLabel = (rows: MediaToCheckRow[] | undefined) => rows?.length ? `To check (${rows.length})` : "To check";
@@ -49,7 +50,7 @@ export function showToCheck(sheet: LibrarySheet, h: ToCheckHost) {
     if (!rows.length) {
       element.append(node("p", "media-check__empty", "Nothing to check. Descriptions an agent writes wait here until you press OK or edit them."));
     } else {
-      element.append(node("p", "media-library__muted", "An agent wrote these descriptions. Press OK if they read right, or Edit to change them."));
+      element.append(node("p", "media-library__muted", `An agent wrote these ${rows.some(row => row.subtitles) ? "words" : "descriptions"}. Press OK if they read right, or Edit to change them.`));
       const list = node("ul", "media-check__list");
       rows.forEach((row, index) => list.append(drawRow(row, rows[index + 1])));
       element.append(list);
@@ -61,47 +62,49 @@ export function showToCheck(sheet: LibrarySheet, h: ToCheckHost) {
     (target || title).focus();
 
     function drawRow(row: MediaToCheckRow, next: MediaToCheckRow | undefined) {
-      const key = rowKey(row), name = basename(row.file);
+      const key = rowKey(row), name = basename(row.file), what = row.subtitles ? "subtitles" : "description";
       const where = row.page === undefined ? "" : ` on ${h.pageLabel(row.page) ?? row.page}`;
       const item = node("li", "media-check__row"); item.dataset.path = row.file;
       if (row.page !== undefined) item.dataset.page = row.page;
+      // Subtitles an agent wrote (slice 66): their words to read, the whole file to edit.
+      if (row.subtitles) item.dataset.subtitles = row.subtitles;
       item.append(preview(row.file));
       const text = node("div", "media-check__text");
       const file = node("strong", "", name); file.title = row.file;
-      text.append(file, node("span", "media-library__muted", row.page === undefined ? "Description" : `Own words${where}`));
+      text.append(file, node("span", "media-library__muted", row.subtitles ? "Subtitles" : row.page === undefined ? "Description" : `Own words${where}`));
       const actions = node("div", "media-check__actions");
       const open = editing.get(key);
       if (!open) {
-        text.append(node("p", "media-check__words", row.text));
+        text.append(node("p", "media-check__words", row.subtitles ? subtitlesWords(row.text) : row.text));
         const ok = button("OK", () => void h.task(async () => {
           if (version !== sheet.version) return;
           await h.adapter.check!(row);
           await h.refresh();
-          h.tell(`Checked the description of ${name}${where}.`);
+          h.tell(`Checked the ${what} of ${name}${where}.`);
           // Focus moves on to the next row's OK, or to the heading when nothing is left.
           if (version !== sheet.version && sheet.element.dataset.mode === "to-check") focusAfter(next);
         }), "button primary");
         ok.setAttribute("aria-label", `OK ${name}${where}`);
         const edit = button("Edit", () => {
           editing.set(key, { seen: row.text, value: row.text });
-          draw(`Description for ${name}${where}`);
+          draw(`${row.subtitles ? "Subtitles" : "Description"} for ${name}${where}`);
         });
         edit.setAttribute("aria-label", `Edit ${name}${where}`);
         actions.append(ok, edit);
       } else {
-        const area = node("textarea", "media-check__field"); area.rows = 3; area.value = open.value; area.dataset.key = key;
-        area.setAttribute("aria-label", `Description for ${name}${where}`);
+        const area = node("textarea", "media-check__field"); area.rows = row.subtitles ? 8 : 3; area.value = open.value; area.dataset.key = key;
+        area.setAttribute("aria-label", `${row.subtitles ? "Subtitles" : "Description"} for ${name}${where}`);
         area.addEventListener("input", () => { open.value = area.value; });
         text.append(area);
         const save = button("Save", () => {
-          if (!area.value.trim()) { h.tell("Write the description, or press OK to keep these words."); area.focus(); return; }
+          if (!area.value.trim()) { h.tell(row.subtitles ? "Write the subtitles, or press OK to keep them." : "Write the description, or press OK to keep these words."); area.focus(); return; }
           void h.task(async () => {
             if (version !== sheet.version) return;
             // The words Lex was editing: if an agent changed them meanwhile, the host refuses.
             await h.adapter.check!({ ...row, text: open.seen }, area.value);
             editing.delete(key);
             await h.refresh();
-            h.tell(`Saved the description of ${name}${where} as a draft.`);
+            h.tell(`Saved the ${what} of ${name}${where} as a draft.`);
             if (version !== sheet.version && sheet.element.dataset.mode === "to-check") focusAfter(next);
           });
         }, "button primary");
@@ -117,7 +120,7 @@ export function showToCheck(sheet: LibrarySheet, h: ToCheckHost) {
   /** After a row leaves, focus the next row's first action, or the heading. */
   function focusAfter(next: MediaToCheckRow | undefined) {
     const row = next && [...sheet.element.querySelectorAll<HTMLElement>(".media-check__row")]
-      .find(item => item.dataset.path === next.file && item.dataset.page === next.page);
+      .find(item => item.dataset.path === next.file && item.dataset.page === next.page && item.dataset.subtitles === next.subtitles);
     (row?.querySelector<HTMLElement>("button, textarea") ?? sheet.element.querySelector<HTMLElement>("h3"))?.focus();
   }
   /** The picture, or a clean surface with the file's type. */

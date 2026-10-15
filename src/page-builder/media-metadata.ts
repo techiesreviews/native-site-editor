@@ -9,6 +9,8 @@ export interface MediaMetadata {
   trimmedFrom?: MediaFileRecord["trimmedFrom"];
   /** Read only: a video's or audio file's recorded length in seconds. */
   duration?: number;
+  /** Read only: a video's recorded still picture and a video's or audio file's subtitles (slice 66). */
+  still?: string; subtitles?: string; subtitlesByAgent?: boolean;
 }
 export type MediaMetadataMap = Record<string, MediaMetadata>;
 
@@ -23,7 +25,9 @@ export function mediaMetadataView(records: MediaRecords): MediaMetadataMap {
     ...(record.trimmedFrom ? { trimmedFrom: structuredClone(record.trimmedFrom) } : {}),
     // Read leniently: a wrong length is left out, never a reason to refuse the records.
     ...(typeof record.duration === "number" && Number.isFinite(record.duration) && record.duration > 0 ? { duration: record.duration } : {}),
-    ...(record.description?.byAgent && record.description.text ? { byAgent: true } : {}) };
+    ...(record.description?.byAgent && record.description.text ? { byAgent: true } : {}),
+    ...(record.still ? { still: record.still } : {}), ...(record.subtitles ? { subtitles: record.subtitles } : {}),
+    ...(record.subtitles && record.subtitlesByAgent ? { subtitlesByAgent: true } : {}) };
   return out;
 }
 

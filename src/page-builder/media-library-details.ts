@@ -8,6 +8,7 @@ import { canReplaceEverywhere, mediaDetailChanges, mediaDetailFacts, mediaMadeFr
 import { isRenamableMedia, MediaNameTakenError } from "./media-names";
 import { keepPageFocus, usageSections } from "./media-library-usage";
 import { mediaUsageBadge, mediaUsageFor } from "./media-usage-text";
+import { mediaDetailParts } from "./media-library-video";
 import type { LibrarySheet, LibrarySheetContext } from "./media-library-sheet";
 import type { MediaBytes } from "./media-byte-cache";
 import type { MediaMetadata } from "./media-metadata";
@@ -77,8 +78,8 @@ export async function showMediaDetail(sheet: LibrarySheet, h: DetailHost, path: 
       const { replaceEverywhere } = await import("./media-library-replace");
       if (current()) await replaceEverywhere(sheet, { ...h, details: to => showMediaDetail(sheet, h, to) }, path);
     }) : undefined;
-  const still = mediaTileStills(library.items.map(item => item.path)).get(path);
-  layout.append(renderPreview(h, path, data, meta, still, replace), info);
+  const still = mediaTileStills(library.items.map(item => item.path), library.metadata).get(path);
+  layout.append(renderPreview(h, path, data, meta, still, current, replace), info);
   element.replaceChildren(head, layout);
   renderInformation(form, sheet, h, path, data, meta, current);
   h.sync();
@@ -91,11 +92,12 @@ export async function showMediaDetail(sheet: LibrarySheet, h: DetailHost, path: 
 }
 
 /** The complete picture (a clean surface with its type's picture when there is none to draw), a
- * playable video or audio file, a PDF's first page, and the file's actions under it. */
+ * playable video or audio file, a PDF's first page, and the file's actions under it: in the Media
+ * pane a video's still picture and a video's or audio file's subtitles first (slice 66). */
 function renderPreview(
-  { optimise, remove, task, tell, cache }: Pick<DetailHost, "optimise" | "remove" | "task" | "tell" | "cache">,
-  path: string, data: MediaBytes, meta: MediaMetadata, still: string | undefined, replace?: () => void,
+  h: DetailHost, path: string, data: MediaBytes, meta: MediaMetadata, still: string | undefined, current: () => boolean, replace?: () => void,
 ) {
+  const { optimise, remove, task, tell, cache } = h;
   const view = node("div", "media-detail__view"), preview = node("figure", "media-detail__preview");
   const look = mediaTileLook(path, still, meta.duration), kind = mediaKind(path);
   preview.dataset.type = look.icon;
@@ -137,7 +139,8 @@ function renderPreview(
   actions.append(button("Copy path", () => void task(async () => {
     await navigator.clipboard.writeText(`/${path}`); tell("Path copied.");
   })), button("Remove file…", () => remove([path])));
-  view.append(preview, actions);
+  const player = preview.querySelector<HTMLVideoElement | HTMLAudioElement>("video, audio") ?? undefined;
+  view.append(preview, ...(kind === "video" || kind === "audio") && !h.modal ? mediaDetailParts(h, path, meta, player, still, current) : [], actions);
   return view;
 }
 

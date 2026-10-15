@@ -423,6 +423,16 @@
 .media-detail__preview .media-library__format { position: static; font-weight: 600; color: var(--text); }
 .media-detail__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .media-library .media-detail__actions button { border: 1px solid var(--line); border-radius: 22px; background: var(--surface); padding: 0 14px; }
+/* A video's still picture and a video's or audio file's subtitles (slice 66), under the player. */
+.media-detail__part { display: grid; gap: 6px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+.media-detail__part :is(h4, p) { margin: 0; }
+.media-detail__part h4 { font-size: var(--type-base); font-weight: 600; }
+.media-detail__part-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0; }
+.media-detail__part-row > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.media-detail__part-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.media-library .media-detail__part-actions button { border: 1px solid var(--line); border-radius: 22px; background: var(--surface); padding: 0 14px; }
+.media-detail__still { width: 72px; height: 44px; flex: none; object-fit: cover; border-radius: var(--radius-small); background: var(--surface-subtle); }
+.media-detail__part + .media-detail__actions { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
 .media-detail__info, .media-detail__form { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .media-detail__info :is(h4, p, ul, dl) { margin: 0; }
 .media-detail__facts { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 14px 16px; border-radius: 10px; background: var(--surface-subtle); }

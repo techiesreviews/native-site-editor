@@ -823,18 +823,29 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       recordsEdit(batch, metadata, await renameInto(ctx, batch, text, metadata, path, name, options));
       await commit(ctx, batch);
     },
-    async check({ file, page, text: seen }, text) {
+    async check({ file, page, subtitles, text: seen }, text) {
       // To check: a row that is gone (checked elsewhere) or holds other words than Lex saw refuses.
       const ctx = active();
       const words = text?.trim();
-      const { batch, text: sources, metadata } = await prepare(ctx, "Description checked", true);
-      const row = mediaToCheck(metadata, [file], sources).find(entry => entry.page === page);
+      const { batch, text: sources, metadata } = await prepare(ctx, subtitles ? "Subtitles checked" : "Description checked", true);
+      const row = mediaToCheck(metadata, [file], sources).find(entry => entry.page === page && entry.subtitles === subtitles);
       if (!row || row.text !== seen) throw new Error("These words changed meanwhile. Look at To check again.");
-      if (words === "") throw new Error("Write the description, or press OK to keep these words.");
-      const edit = words !== undefined && words !== row.text;
-      if (edit) batch.label = "Edit description";
+      if (words === "") throw new Error(subtitles ? "Write the subtitles, or press OK to keep them." : "Write the description, or press OK to keep these words.");
+      const edit = words !== undefined && words !== row.text.trim();
+      if (edit) batch.label = subtitles ? "Edit subtitles" : "Edit description";
       let next: MediaRecords;
-      if (page === undefined) {
+      if (subtitles) {
+        // Lex's text replaces the agent's file (checked as WebVTT); either way the mark goes.
+        const { subtitlesByAgent: _, ...record } = metadata.files[file];
+        next = { ...metadata, files: { ...metadata.files, [file]: record } };
+        if (edit) {
+          const { readSubtitles } = await import("./video-details"); ctx.assertLive();
+          const read = readSubtitles(subtitles, words!);
+          if ("problem" in read) throw new Error(read.problem);
+          assetGuard(batch, [subtitles]); batch.overwrites = [subtitles];
+          batch.uploads.push({ path: subtitles, blob: new Blob([read.vtt], { type: "text/vtt" }) });
+        }
+      } else if (page === undefined) {
         // Lex's words go through the usual description change: places using it follow, the mark goes.
         next = edit ? metadataInto(batch, sources, metadata, { [file]: { alt: words } }) : confirmMediaDescription(metadata, file);
       } else {
@@ -844,6 +855,79 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
           const edited = placeWordsEdits(sources[page], file, page, row.text, words);
           if (edited !== sources[page]) batch.edits.set(page, edited);
         }
+      }
+      recordsEdit(batch, metadata, next);
+      await commit(ctx, batch);
+    },
+    async still(video: string, still: { blob: Blob } | { path: string }) {
+      // A video's still (slice 66): a moment saved beside it, or a picture in Media; every placed copy shows it.
+      const ctx = active();
+      if (mediaKind(video) !== "video") throw new Error("Only a video has a still picture.");
+      const { batch, metadata, text } = await prepare(ctx, "Change still picture", true);
+      const { setPosterInPage, stillPathFor } = await import("./video-details"); ctx.assertLive();
+      assetGuard(batch, [video]);
+      let path: string;
+      if ("blob" in still) {
+        path = stillPathFor(video);
+        if (still.blob.type !== "image/webp") throw new Error("This browser could not make the still picture. Choose a picture from Media instead.");
+        const problem = uploadProblem({ name: path.split("/").pop()!, size: still.blob.size });
+        if (problem) throw new Error(problem);
+        if (batch.expectedPaths.includes(path)) {
+          // Only the video's own still is replaced, never another picture that has its name.
+          if (mediaFamilyOf(video, batch.expectedPaths)?.still !== path) throw new Error(`${path.split("/").pop()} is another picture, so the moment could not be saved beside the video.`);
+          assetGuard(batch, [path]); batch.overwrites = [path];
+        }
+        batch.uploads.push({ path, blob: still.blob });
+      } else {
+        path = still.path;
+        assetGuard(batch, [path]);
+        if (mediaKind(path) !== "image") throw new Error("Choose a picture for the still.");
+      }
+      for (const [page, source] of Object.entries(text)) {
+        if (!/\.html$/i.test(page)) continue;
+        const next = setPosterInPage(source, page, video, path);
+        if (next !== source) batch.edits.set(page, next);
+      }
+      recordsEdit(batch, metadata, { ...metadata, files: { ...metadata.files, [video]: { ...metadata.files[video], still: path } } });
+      await commit(ctx, batch);
+    },
+    async subtitles(media: string, file: { name: string; text: string } | null) {
+      // Subtitles (slice 66): WebVTT beside the file (its family), a track on every placed copy; or taken off.
+      const ctx = active(), kind = mediaKind(media);
+      if (kind !== "video" && kind !== "audio") throw new Error("Only a video or audio file has subtitles.");
+      const { batch, metadata, text } = await prepare(ctx, file ? "Add subtitles" : "Remove subtitles", true);
+      const rules = await import("./video-details"); ctx.assertLive();
+      assetGuard(batch, [media]);
+      const { subtitles: before, subtitlesByAgent: _, ...record } = metadata.files[media] ?? {};
+      const family = mediaFamilyOf(media, batch.expectedPaths)?.subtitles ?? [];
+      const current = before && batch.expectedPaths.includes(before) ? before : family.find(path => /\.vtt$/i.test(path));
+      const pages = (edit: (source: string, page: string) => string) => {
+        for (const [page, source] of Object.entries(text)) {
+          if (!/\.html$/i.test(page)) continue;
+          const original = batch.edits.get(page) ?? source, next = edit(original, page);
+          if (next !== original) batch.edits.set(page, next);
+        }
+      };
+      let next: MediaRecords;
+      if (file) {
+        const read = rules.readSubtitles(file.name, file.text);
+        if ("problem" in read) throw new Error(read.problem);
+        const path = rules.subtitlesPathFor(media);
+        if (batch.expectedPaths.includes(path)) {
+          if (!family.includes(path)) throw new Error(`${path.split("/").pop()} belongs to another file, so the subtitles could not be saved beside this one.`);
+          assetGuard(batch, [path]); batch.overwrites = [path]; batch.label = "Replace subtitles";
+        }
+        batch.uploads.push({ path, blob: new Blob([read.vtt], { type: "text/vtt" }) });
+        // Subtitles the file had under another name stop showing; that file stays.
+        if (current && current !== path) pages((source, page) => rules.removeTrackInPage(source, page, current));
+        pages((source, page) => rules.addTrackInPage(source, page, media, path));
+        next = { ...metadata, files: { ...metadata.files, [media]: { ...record, subtitles: path } } };
+      } else {
+        if (!current) return;
+        assetGuard(batch, [current]); batch.deletes.push(current);
+        pages((source, page) => rules.removeTrackInPage(source, page, current));
+        next = { ...metadata, files: { ...metadata.files, [media]: record } };
+        if (!Object.keys(record).length) delete next.files[media];
       }
       recordsEdit(batch, metadata, next);
       await commit(ctx, batch);

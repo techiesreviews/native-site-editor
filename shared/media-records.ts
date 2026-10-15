@@ -17,6 +17,8 @@ export interface MediaFileRecord {
   decorative?: true; alwaysKeep?: true; sharing?: true;
   trimmedFrom?: { source: string; trim: MediaTrim; [key: string]: unknown };
   still?: string; subtitles?: string; lighterFrom?: string; fromGif?: true;
+  /** An agent wrote `subtitles`; To check lists them until Lex presses OK or edits them. */
+  subtitlesByAgent?: true;
   /** A video's or audio file's length in seconds, recorded when it was added. */
   duration?: number;
   [key: string]: unknown;
@@ -123,7 +125,7 @@ function fileRecord(value: unknown, field: string): MediaFileRecord {
     }
     if (Object.keys(places).length) out.places = places; else delete out.places;
   }
-  flags(out, ["decorative", "alwaysKeep", "sharing", "fromGif"], field);
+  flags(out, ["decorative", "alwaysKeep", "sharing", "fromGif", "subtitlesByAgent"], field);
   optionalStrings(out, ["still", "subtitles", "lighterFrom"], field);
   if (out.trimmedFrom !== undefined) {
     const from = { ...object(out.trimmedFrom, `${field}.trimmedFrom`) };

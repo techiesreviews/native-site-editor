@@ -1026,3 +1026,117 @@ test("choosing another Social image leaves a previous family sharing JPEG beside
     assert.equal(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files[previous].sharing, true);
   }
 });
+
+/** A site with a video and its still on a page and in a component template (slice 66). */
+function videoSite(records: object = { "media/videos/clip.mp4": { still: "media/videos/clip.webp", duration: 4 } }) {
+  const f = fixture();
+  const add = (path: string, content: string) => { f.paths.add(path); f.bytes.set(path, new Blob([content])); f.versions.set(path, `${path}-v1`); };
+  add("media/videos/clip.mp4", "mp4"); add("media/videos/clip.webp", "still"); add("media/photos/sky.webp", "sky");
+  f.text.set("index.html", '<html lang="en"><body><video src="/media/videos/clip.mp4" poster="/media/videos/clip.webp" controls preload="none"></video></body></html>');
+  f.text.set("components/hero/hero.html", '<template><video data-background src="/media/videos/clip.mp4" muted loop playsinline preload="none"></video></template>');
+  f.paths.add("components/hero/hero.html");
+  f.text.set(MEDIA_RECORDS_PATH, JSON.stringify({ version: 2, collections: [], files: records }));
+  return f;
+}
+const SRT = "1\n00:00:01,000 --> 00:00:02,000\nHello\n";
+
+test("a moment's still replaces the video's own still, shows on every placed copy, and undoes as one step", async () => {
+  const f = videoSite(); await f.host.load();
+  await f.host.still("media/videos/clip.mp4", { blob: new Blob(["moment"], { type: "image/webp" }) });
+  assert.equal(f.batches.length, 1); assert.equal(f.batches[0].label, "Change still picture");
+  assert.deepEqual(f.batches[0].overwrites, ["media/videos/clip.webp"]);
+  assert.deepEqual(f.batches[0].uploads.map(upload => upload.path), ["media/videos/clip.webp"]);
+  assert.equal(await f.bytes.get("media/videos/clip.webp")!.text(), "moment");
+  assert.ok(f.text.get("index.html")!.includes('poster="/media/videos/clip.webp" controls'));
+  assert.equal(f.text.get("components/hero/hero.html"), '<template><video data-background src="/media/videos/clip.mp4" poster="/media/videos/clip.webp" muted loop playsinline preload="none"></video></template>');
+  f.history.pop()!();
+  assert.equal(await f.bytes.get("media/videos/clip.webp")!.text(), "still");
+  assert.ok(!f.text.get("components/hero/hero.html")!.includes("poster"));
+});
+
+test("a video without a still gets one saved beside it, joining its family", async () => {
+  const f = videoSite({}); f.paths.delete("media/videos/clip.webp"); f.bytes.delete("media/videos/clip.webp"); f.versions.delete("media/videos/clip.webp");
+  await f.host.load();
+  await f.host.still("media/videos/clip.mp4", { blob: new Blob(["moment"], { type: "image/webp" }) });
+  assert.equal(f.batches[0].overwrites, undefined);
+  assert.ok(f.paths.has("media/videos/clip.webp"));
+  assert.equal(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["media/videos/clip.mp4"].still, "media/videos/clip.webp");
+});
+
+test("a picture from Media becomes the still everywhere; the video's own still file stays", async () => {
+  const f = videoSite(); await f.host.load();
+  await f.host.still("media/videos/clip.mp4", { path: "media/photos/sky.webp" });
+  assert.equal(f.batches[0].uploads.length, 0); assert.equal(f.batches[0].deletes.length, 0);
+  assert.ok(f.text.get("index.html")!.includes('<video src="/media/videos/clip.mp4" poster="/media/photos/sky.webp" controls'));
+  assert.ok(f.text.get("components/hero/hero.html")!.includes('src="/media/videos/clip.mp4" poster="/media/photos/sky.webp"'));
+  const record = parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["media/videos/clip.mp4"];
+  assert.equal(record.still, "media/photos/sky.webp"); assert.equal(record.duration, 4);
+  assert.ok(f.paths.has("media/videos/clip.webp"));
+  // Tiles and details follow the recorded still.
+  assert.equal((await f.host.load()).metadata["media/videos/clip.mp4"].still, "media/photos/sky.webp");
+});
+
+test("a still is refused when it is not a picture, not WebP, or would overwrite another picture", async () => {
+  const f = videoSite(); await f.host.load();
+  await assert.rejects(f.host.still("media/videos/clip.mp4", { path: "media/videos/clip.mp4" }), /Choose a picture/);
+  await assert.rejects(f.host.still("media/photos/sky.webp", { path: "media/photos/sky.webp" }), /Only a video/);
+  await assert.rejects(f.host.still("media/videos/clip.mp4", { blob: new Blob(["png"], { type: "image/png" }) }), /could not make the still picture/);
+  // clip.webp with copies of its own is a picture's family, not the video's still.
+  f.paths.add("media/videos/clip-480.webp"); f.bytes.set("media/videos/clip-480.webp", new Blob(["copy"])); f.versions.set("media/videos/clip-480.webp", "copy-v1");
+  await f.host.load();
+  await assert.rejects(f.host.still("media/videos/clip.mp4", { blob: new Blob(["moment"], { type: "image/webp" }) }), /is another picture/);
+  assert.equal(f.batches.length, 0);
+});
+
+test("an .srt is saved as WebVTT beside the video, with a track on every placed copy, as one step", async () => {
+  const f = videoSite(); await f.host.load();
+  await f.host.subtitles("media/videos/clip.mp4", { name: "My clip.srt", text: SRT });
+  assert.equal(f.batches.length, 1); assert.equal(f.batches[0].label, "Add subtitles");
+  assert.deepEqual(f.batches[0].uploads.map(upload => upload.path), ["media/videos/clip.vtt"]);
+  assert.equal(await f.batches[0].uploads[0].blob.text(), "WEBVTT\n\n1\n00:00:01.000 --> 00:00:02.000\nHello\n");
+  assert.equal(f.batches[0].uploads[0].blob.type, "text/vtt");
+  assert.ok(f.text.get("index.html")!.includes('preload="none"><track kind="subtitles" src="/media/videos/clip.vtt" srclang="en" label="English"></video>'));
+  assert.ok(f.text.get("components/hero/hero.html")!.includes('<track kind="subtitles" src="/media/videos/clip.vtt" label="Subtitles"></video>'));
+  assert.equal(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["media/videos/clip.mp4"].subtitles, "media/videos/clip.vtt");
+  f.history.pop()!();
+  assert.ok(!f.paths.has("media/videos/clip.vtt")); assert.ok(!f.text.get("index.html")!.includes("<track"));
+  await assert.rejects(f.host.subtitles("media/videos/clip.mp4", { name: "notes.txt", text: "WEBVTT" }), /\.vtt or \.srt/);
+  await assert.rejects(f.host.subtitles("media/photos/sky.webp", { name: "a.vtt", text: "WEBVTT\n\n00:01.000 --> 00:02.000\nHi" }), /Only a video or audio/);
+});
+
+test("new subtitles replace the file's own and clear an agent's mark; Remove takes file and tracks off", async () => {
+  const f = videoSite({ "media/videos/clip.mp4": { still: "media/videos/clip.webp", subtitles: "media/videos/clip.vtt", subtitlesByAgent: true } });
+  const old = "WEBVTT\n\n00:01.000 --> 00:02.000\nOld\n";
+  f.paths.add("media/videos/clip.vtt"); f.bytes.set("media/videos/clip.vtt", new Blob([old])); f.versions.set("media/videos/clip.vtt", "vtt-v1"); f.text.set("media/videos/clip.vtt", old);
+  f.text.set("index.html", '<video src="/media/videos/clip.mp4" poster="/media/videos/clip.webp">\n  <track kind="subtitles" src="/media/videos/clip.vtt" srclang="en" label="English">\n</video>');
+  await f.host.load();
+  await f.host.subtitles("media/videos/clip.mp4", { name: "clip.vtt", text: "WEBVTT\n\n00:01.000 --> 00:02.000\nNew" });
+  assert.equal(f.batches[0].label, "Replace subtitles"); assert.deepEqual(f.batches[0].overwrites, ["media/videos/clip.vtt"]);
+  assert.equal(f.batches[0].edits.has("index.html"), false);
+  assert.equal(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["media/videos/clip.mp4"].subtitlesByAgent, undefined);
+  await f.host.load();
+  await f.host.subtitles("media/videos/clip.mp4", null);
+  assert.equal(f.batches[1].label, "Remove subtitles"); assert.deepEqual(f.batches[1].deletes, ["media/videos/clip.vtt"]);
+  assert.equal(f.text.get("index.html"), '<video src="/media/videos/clip.mp4" poster="/media/videos/clip.webp">\n</video>');
+  assert.deepEqual(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["media/videos/clip.mp4"], { still: "media/videos/clip.webp" });
+});
+
+test("To check lists agent-written subtitles: OK clears the mark, Edit saves Lex's text, newer text refuses", async () => {
+  const vtt = "WEBVTT\n\n00:01.000 --> 00:02.000\nHelo\n";
+  const f = videoSite({ "media/videos/clip.mp4": { subtitles: "media/videos/clip.vtt", subtitlesByAgent: true } });
+  f.paths.add("media/videos/clip.vtt"); f.bytes.set("media/videos/clip.vtt", new Blob([vtt])); f.versions.set("media/videos/clip.vtt", "vtt-v1"); f.text.set("media/videos/clip.vtt", vtt);
+  const row = (await f.host.load()).toCheck!.find(entry => entry.subtitles);
+  assert.deepEqual(row, { file: "media/videos/clip.mp4", subtitles: "media/videos/clip.vtt", text: vtt });
+  assert.equal((await f.host.load()).metadata["media/videos/clip.mp4"].subtitlesByAgent, true);
+  await assert.rejects(f.host.check({ ...row!, text: "WEBVTT\n\nolder" }), /changed meanwhile/);
+  await assert.rejects(f.host.check(row!, "not subtitles"), /not a WebVTT/);
+  await f.host.check(row!, vtt.replace("Helo", "Hello"));
+  assert.equal(f.batches.length, 1); assert.equal(f.batches[0].label, "Edit subtitles");
+  assert.equal(await f.bytes.get("media/videos/clip.vtt")!.text(), "WEBVTT\n\n00:01.000 --> 00:02.000\nHello\n");
+  assert.equal(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["media/videos/clip.mp4"].subtitlesByAgent, undefined);
+  f.history.pop()!();
+  const again = (await f.host.load()).toCheck!.find(entry => entry.subtitles)!;
+  await f.host.check(again);
+  assert.equal(f.batches[1].label, "Subtitles checked"); assert.equal(f.batches[1].uploads.length, 0);
+  assert.equal((await f.host.load()).toCheck!.some(entry => entry.subtitles), false);
+});

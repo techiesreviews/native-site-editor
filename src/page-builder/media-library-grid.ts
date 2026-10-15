@@ -44,7 +44,7 @@ export function drawLibraryGrid(shell: LibraryShell, library: MediaLibrary, stat
     usage: active.classList.contains("media-library__usage"),
   } : undefined;
   observers.forEach((observer) => observer.disconnect()); observers.clear();
-  const tiles = mediaLibraryTiles(library.items), stills = mediaTileStills(library.items.map(item => item.path));
+  const tiles = mediaLibraryTiles(library.items), stills = mediaTileStills(library.items.map(item => item.path), library.metadata);
   const filter: MediaLibraryFilter = { query: search.value, collection: collections.value, kind: state.kind, accept: state.accept };
   const filtered = filterMediaLibrary({ ...library, items: tiles }, filter);
   summary.textContent = `${filtered.length} of ${tiles.length} files${collections.value ? ` · ${collections.value}` : ""}`;

@@ -53,7 +53,8 @@ function languageTag(value?: string): string | undefined {
   try { return value?.trim() ? Intl.getCanonicalLocales(value.trim())[0] : undefined; } catch { return undefined; }
 }
 
-function subtitleMarkup(subtitles?: PlayerSubtitles, pageLanguage?: string): PlayerMarkup {
+/** A subtitles `<track>` for one page (video details add it to every placed player, slice 66). */
+export function subtitleMarkup(subtitles?: PlayerSubtitles, pageLanguage?: string): PlayerMarkup {
   if (!subtitles) return { markup: "", notes: [] };
   if (!/\.vtt$/i.test(subtitles.path)) return { markup: "", notes: ["Subtitles need a WebVTT (.vtt) file; this subtitles file was left out."] };
   // A malformed language falls back to the page's; with neither, browsers still use the track.

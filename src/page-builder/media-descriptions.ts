@@ -90,7 +90,9 @@ export function descriptionPlaceEdits(records: MediaRecords, file: string, page:
 
 /** One row of To check (ticket 13): agent-written words Lex has not checked yet. Without
  * `page` it is the file's description; with it, the agent's own words for that place. */
-export interface MediaToCheckRow { file: string; page?: string; text: string }
+/** A To check row: a file's description, a place's own words (`page`), or subtitles an agent wrote
+ * for a video or audio file (`subtitles`, the WebVTT file; `text` is its whole text). */
+export interface MediaToCheckRow { file: string; page?: string; subtitles?: string; text: string }
 
 /** The img tags on `page` that show `file`, with their decoded alt. */
 function placeImages(source: string, file: string, page: string) {
@@ -104,7 +106,8 @@ function placeImages(source: string, file: string, page: string) {
 }
 
 /** To check, in file order: each listed file whose description an agent wrote, then each
- * place where the agent's own words are still on the page (`sources` holds the pages). */
+ * place where the agent's own words are still on the page (`sources` holds the pages), then
+ * subtitles an agent wrote for it (`sources` holds the subtitles file too). */
 export function mediaToCheck(records: MediaRecords, files: string[], sources: Record<string, string>): MediaToCheckRow[] {
   const rows: MediaToCheckRow[] = [];
   for (const file of [...files].sort()) {
@@ -116,8 +119,21 @@ export function mediaToCheck(records: MediaRecords, files: string[], sources: Re
       if (text && source !== undefined && /\.html$/i.test(page) && placeImages(source, file, page).some(image => image.alt === text))
         rows.push({ file, page, text });
     }
+    const subtitles = record.subtitlesByAgent && record.subtitles ? sources[record.subtitles] : undefined;
+    if (subtitles !== undefined) rows.push({ file, subtitles: record.subtitles, text: subtitles });
   }
   return rows;
+}
+
+/** The words of a WebVTT file, cue by cue, without times, numbers, notes or styles. */
+export function subtitlesWords(vtt: string): string {
+  const words: string[] = [];
+  for (const block of vtt.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n").split(/\n[ \t]*\n/).slice(1)) {
+    const rows = block.split("\n"), at = rows.findIndex(row => row.includes("-->"));
+    const text = at < 0 ? "" : rows.slice(at + 1).join(" ").replace(/<[^>]*>/g, "").trim();
+    if (text) words.push(decodeHtmlEntities(text, true));
+  }
+  return words.join(" ");
 }
 
 /** Lex's words for a place replace the agent's wherever they still show `file` on the page. */

@@ -77,9 +77,16 @@ export function mediaLibraryTiles<T extends { path: string }>(items: T[]): T[] {
   return items.filter(item => !members.has(item.path));
 }
 
-/** Each video's or PDF's still picture, by its main: the tile draws it instead of the file. */
-export function mediaTileStills(paths: string[]): Map<string, string> {
-  return new Map(mediaFamilies(paths).flatMap(family => family.still ? [[family.main, family.still] as const] : []));
+/** Each video's or PDF's still picture, by its main: the tile draws it instead of the file. A still
+ * recorded for a video (a picture chosen from Media, slice 66) wins while it is in the site. */
+export function mediaTileStills(paths: string[], metadata: Record<string, { still?: string }> = {}): Map<string, string> {
+  const stills = new Map(mediaFamilies(paths).flatMap(family => family.still ? [[family.main, family.still] as const] : []));
+  const present = new Set(paths);
+  for (const path of paths) {
+    const still = metadata[path]?.still;
+    if (still && still !== path && present.has(still) && mediaKind(path) === "video") stills.set(path, still);
+  }
+  return stills;
 }
 
 /** A length as the browser's player shows it: 0:05, 12:34, 1:02:03 (whole seconds counted down, at least 1). */
