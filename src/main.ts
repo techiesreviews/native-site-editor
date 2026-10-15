@@ -102,7 +102,7 @@ import { nativePageRoute } from "../shared/native-routes";
 import { descendants, parseSource } from "./page-builder/component-model";
 import { NATIVE_CONFIG_PATH, NATIVE_HOME_PAGE, NATIVE_REDIRECTS_PATH, minimalTextEdit, nativeComponentCssPath, nativeDefaultRoute, nativePageHead, nativePageStylesheets, nativePageMovedUrl, nativeSitePaths, nativeSiteSettings, resolveNativeProject, type NativeSite, nativeSitePrefix } from "../shared/native-project";
 import { dataUrlOf, loadNativeAssetRequests } from "./native-assets";
-import { assetType, blobUrl, isFontType } from "../shared/asset-types";
+import { assetType, audioType, blobUrl, CANVAS_AUDIO_MAX_BYTES, isFontType } from "../shared/asset-types";
 import { fetchWithReadRetry } from "./read-retry";
 import { RepositoryIndex, fileKey, readFileText, readFileTexts, rememberFile } from "./repository-loading";
 import { iconMarkup, setIcon } from "./icons";
@@ -2252,7 +2252,7 @@ async function loadNativeAssets(sources = nativeAssetSources(), onProgress = upd
   const repo = appStore.repository.value.full_name;
   const request = nativeSourcesRequest;
   const epoch = generation;
-  const references = new Set<string>();
+  const references = new Set<string>(), sounds = new Set<string>();
   if (fontsOnly) {
     // Font preloading precedes paint. The page-media scanner stays out of that boot path.
     for (const [file, source] of Object.entries(sources)) if (file.endsWith(".css")) rewriteCssUrls(source, url => {
@@ -2263,10 +2263,15 @@ async function loadNativeAssets(sources = nativeAssetSources(), onProgress = upd
   } else {
     const { scanMediaReferences } = await import("./page-builder/media-references");
     if (epoch !== generation || request !== nativeSourcesRequest) return;
-    for (const [file, source] of Object.entries(sources)) for (const ref of scanMediaReferences(file.endsWith(".css") || nativePageRoute(file) ? file : "index.html", source, undefined, nativePrefix())) references.add(ref.path);
+    for (const [file, source] of Object.entries(sources)) for (const ref of scanMediaReferences(file.endsWith(".css") || nativePageRoute(file) ? file : "index.html", source, undefined, nativePrefix())) {
+      references.add(ref.path);
+      // An audio player's file, so the canvas shows its length (a link to a recording is not read).
+      if (ref.tag === "audio" || ref.tag === "source") sounds.add(ref.path);
+    }
   }
+  const typeOf = (path: string) => assetType(path) ?? (sounds.has(path) ? audioType(path) : undefined);
   const wanted = [...references].filter((path) =>
-    assetType(path) && only(path) && !nativeAssets.has(path) && !nativeMissingAssets.has(path) && !nativeAssetRequests.has(path));
+    typeOf(path) && only(path) && !nativeAssets.has(path) && !nativeMissingAssets.has(path) && !nativeAssetRequests.has(path));
   if (!wanted.length) return;
   const assetRequest = ++nativeAssetRequestId;
   wanted.forEach((path) => nativeAssetRequests.set(path, assetRequest));
@@ -2277,6 +2282,7 @@ async function loadNativeAssets(sources = nativeAssetSources(), onProgress = upd
     // copied one's blob; a deleted one is missing.
     const draft = scope ? draftStore().get(scope, path) : undefined;
     if (draft) nativeDraftAssets.add(path);
+    if (draft?.upload && sounds.has(path) && draft.upload.size > CANVAS_AUDIO_MAX_BYTES) return undefined;
     if (draft?.upload && scope) return uploadDataUrl(uploadBytes(), scope, draft).catch(() => undefined);
     // An SVG written as text here (the block placeholder, an edited one) shows its draft.
     if (draft && !draft.deleted && !draft.opaque && !draft.sourceSha && type === "image/svg+xml") return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(draft.content)}`;
@@ -2284,7 +2290,7 @@ async function loadNativeAssets(sources = nativeAssetSources(), onProgress = upd
     if (!live()) return undefined;
     // A batch can place an image just before its upload draft becomes visible.
     if (scope && draftStore().get(scope, path) !== draft) return load({ path, type });
-    if (!entry) return undefined;
+    if (!entry || (sounds.has(path) && ("size" in entry ? entry.size ?? 0 : 0) > CANVAS_AUDIO_MAX_BYTES)) return undefined;
     try {
       return await dataUrlOf(await readBlob(repo, entry.sha, path), type);
     } catch {
@@ -2293,7 +2299,7 @@ async function loadNativeAssets(sources = nativeAssetSources(), onProgress = upd
   };
   try {
     await loadNativeAssetRequests({
-      requests: wanted.map((path) => ({ path, type: assetType(path)! })),
+      requests: wanted.map((path) => ({ path, type: typeOf(path)! })),
       concurrency: 8,
       live,
       load,

@@ -26,6 +26,11 @@ test("fields reflect tag applicability, decoded values and honest custom method"
   assert.equal(fields[5].find((field) => field.property === "title")?.value, "A & B");
   assert.deepEqual(nativeElementFields("<label>Caption</label>", startTags("<label>Caption</label>")[0]), []);
 });
+test("a video's fields are named in plain words", () => {
+  const source = '<video src="/media/clip.mp4" poster="/media/clip.webp" title="Clip"></video>';
+  assert.deepEqual(nativeElementFields(source, startTags(source)[0]).map((field) => [field.property, field.label]),
+    [["src", "Video file"], ["poster", "Still picture"], ["title", "Title"]]);
+});
 test("patches are atomic, exact, removable and reject stale or forged source tags", () => {
   const source = '<video data-x="keep  bytes" title=old src="a"></video>';
   assert.equal(output(source, { title: null }), '<video data-x="keep  bytes" src="a"></video>');

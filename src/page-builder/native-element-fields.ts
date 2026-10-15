@@ -79,7 +79,7 @@ export function nativeElementFields(source: string, tag: StartTag): NativeElemen
   if ("error" in locateNativeFieldElement(source, tag)) return [];
   const fields: NativeElementField[] = [];
   const add = (property: string, label: string, kind: NativeElementField["kind"] = "text") => fields.push({ property, label, kind, value: value(source, tag, property) });
-  if (tag.name === "video") { add("src", "Video URL", "url"); add("poster", "Poster URL", "url"); add("title", "Title"); }
+  if (tag.name === "video") { add("src", "Video file", "url"); add("poster", "Still picture", "url"); add("title", "Title"); }
   if (tag.name === "iframe") { add("src", "Embed URL", "url"); add("title", "Title"); }
   if (tag.name === "form") {
     add("action", "Action URL", "url");

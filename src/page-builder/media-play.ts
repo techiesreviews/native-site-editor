@@ -8,6 +8,7 @@
 // its place on the canvas, in the editor, and follows it.
 import type { ElementRange } from "../../shared/html-source";
 import { startTags } from "../../shared/html-source";
+import { AUDIO_TYPES } from "../../shared/asset-types";
 import { mediaAttribute } from "./media-attributes";
 import { decodeHtmlEntities } from "./html-entities";
 import { mediaResolvePath } from "./media-references";
@@ -21,7 +22,7 @@ export type Playable =
 
 const MEDIA_TYPES: Record<string, string> = {
   mp4: "video/mp4", m4v: "video/mp4", webm: "video/webm", mov: "video/quicktime", ogv: "video/ogg",
-  mp3: "audio/mpeg", m4a: "audio/mp4", aac: "audio/aac", oga: "audio/ogg", ogg: "audio/ogg", opus: "audio/ogg", wav: "audio/wav", flac: "audio/flac",
+  ...AUDIO_TYPES,
 };
 const value = (source: string, tag: ElementRange["tag"], name: string) => {
   const found = mediaAttribute(source, tag, name);

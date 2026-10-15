@@ -10,6 +10,16 @@ export const ASSET_TYPES: Readonly<Record<string, string>> = {
   woff2: "font/woff2", woff: "font/woff", ttf: "font/ttf", otf: "font/otf",
 };
 
+/**
+ * Audio a placed player plays, by extension. The canvas reads the bytes of an
+ * <audio> on the page (as it reads images) so its bar shows the real length,
+ * up to CANVAS_AUDIO_MAX_BYTES: a longer recording shows its length once played.
+ */
+export const AUDIO_TYPES: Readonly<Record<string, string>> = {
+  mp3: "audio/mpeg", m4a: "audio/mp4", aac: "audio/aac", oga: "audio/ogg", ogg: "audio/ogg", opus: "audio/ogg", wav: "audio/wav", flac: "audio/flac",
+};
+export const CANVAS_AUDIO_MAX_BYTES = 10_000_000;
+
 /** The lower-case extension of `path` ("" when it has none). */
 export const assetExtension = (path: string) => {
   const name = path.split("/").pop() ?? "";
@@ -20,6 +30,10 @@ export const assetExtension = (path: string) => {
 /** The media type of an image or font path, or undefined for anything else. */
 export const assetType = (path: string): string | undefined =>
   Object.hasOwn(ASSET_TYPES, assetExtension(path)) ? ASSET_TYPES[assetExtension(path)] : undefined;
+
+/** The media type of an audio path, or undefined for anything else. */
+export const audioType = (path: string): string | undefined =>
+  Object.hasOwn(AUDIO_TYPES, assetExtension(path)) ? AUDIO_TYPES[assetExtension(path)] : undefined;
 
 /** Fonts are not loaded by URL in the preview (see src/main.ts), only images are. */
 export const isFontType = (type: string | undefined) => Boolean(type?.startsWith("font/"));

@@ -6,16 +6,16 @@
 import { startTagAttribute, startTags, textRangeInSource, type ElementRange, type StartTag } from "./native-source-location";
 import { componentLabel } from "./native-insert";
 import { isButtonBlock } from "./page-builder/block-fields";
+import { mediaCardLabel } from "./page-builder/rules/media-cards";
 
 // What the edit bar and the page structure call an element: a kind in the
 // user's words, or the tag itself for anything else.
 export function nativeKindLabel(tag: string, className = "") {
   if (isButtonBlock(tag, [{ name: "class", value: className }])) return "Button";
   if (/^h[1-6]$/.test(tag)) return "Heading";
-  // A PDF or other download placed from Media (slice 62's card).
-  if (tag === "a" && /(?:^|\s)download-card(?:\s|$)/.test(className)) return "Download";
-  // A YouTube or Vimeo video (slices 61, 68).
-  if (tag === "a" && /(?:^|\s)online-video(?:\s|$)/.test(className)) return "Video";
+  // A download or a YouTube or Vimeo video placed from Media (slices 61, 62, 68).
+  const card = mediaCardLabel(tag, className);
+  if (card) return card;
   const labels: Record<string, string> = {
     p: "Paragraph", a: "Link", button: "Button", img: "Image", picture: "Image", video: "Video", audio: "Audio",
     ul: "List", ol: "List", li: "List item", section: "Section", article: "Article", header: "Header",

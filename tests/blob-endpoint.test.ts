@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { handle, type Env, type StoredSession } from "../worker/app.ts";
-import { assetType, blobUrl, isFontType } from "../shared/asset-types.ts";
+import { assetType, audioType, blobUrl, isFontType } from "../shared/asset-types.ts";
 
 const origin = "https://editor.example";
 const id = "c".repeat(64);
@@ -189,4 +189,13 @@ test("blob addresses name the repository, the SHA and the asset's type", () => {
   assert.equal(assetType("a/constructor"), undefined);
   assert.ok(isFontType(assetType("x.ttf")));
   assert.ok(!isFontType(assetType("x.png")));
+});
+
+test("audio the canvas reads for its length is typed apart from images and fonts", () => {
+  assert.equal(audioType("media/Talk.MP3"), "audio/mpeg");
+  assert.equal(audioType("media/tour.wav"), "audio/wav");
+  assert.equal(audioType("media/clip.mp4"), undefined);
+  assert.equal(assetType("media/talk.mp3"), undefined);
+  // Audio is served as plain bytes; the editor types its data URL itself.
+  assert.equal(new URL(blobUrl("o/r", "abc", "media/talk.mp3"), "https://x").searchParams.has("type"), false);
 });

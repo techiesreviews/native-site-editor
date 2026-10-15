@@ -7,6 +7,8 @@ import { FRAME_SOURCE, HOST_SOURCE } from "./preview-wire.ts";
 import { canvasGesture } from "../page-builder/rules/canvas-gesture.ts";
 import { hasHeadingSlot, isCardSlot, isCardTag, isItemsSlot } from "../page-builder/rules/cards.ts";
 import { itemKind, NOT_GRIDS, repeatedRun } from "../page-builder/rules/items.ts";
+import { mediaCardLabelOf } from "../page-builder/rules/media-cards.ts";
+import { revealOffset } from "../page-builder/rules/reveal.ts";
 import { isInstance, movableBlock, sealed } from "../page-builder/rules/movable.ts";
 import { TEMPLATE_BLOCK_TAGS } from "../page-builder/rules/template-blocks.ts";
 import { INLINE_FORMATTING, TEXT_RUN_TAGS, TEXT_TAGS } from "../page-builder/rules/text-level.ts";
@@ -130,14 +132,36 @@ import { domView } from "../page-builder/rules/tree.ts";
     });
     (Array.isArray(changes.drop) ? changes.drop : []).forEach(function (key) {
       if (typeof key === "string" && key in assetUrls) { delete assetUrls[key]; changed = true; }
+      if (typeof key === "string" && soundUrls[key]) { URL.revokeObjectURL(soundUrls[key].url); delete soundUrls[key]; }
     });
     return changed;
   }
-  function assetFor(src) {
-    if (typeof src !== "string") return null;
-    if (/^(?:[a-z][a-z\d+.-]*:|\/\/)/i.test(src.trim())) return null;
+  function assetKey(src) {
+    if (typeof src !== "string") return undefined;
+    if (/^(?:[a-z][a-z\d+.-]*:|\/\/)/i.test(src.trim())) return undefined;
     var key = canvasPath(src.trim(), (state && state.base) || "/", state && state.prefix);
-    return key !== undefined && key in assetUrls ? assetUrls[key] : null;
+    return key !== undefined && key in assetUrls ? key : undefined;
+  }
+  function assetFor(src) {
+    var key = assetKey(src);
+    return key === undefined ? null : assetUrls[key];
+  }
+  // A placed audio's file, read like the page's images, plays from a blob:
+  // address of this frame (its media may not come from data: addresses), one
+  // per file, so the audio bar loads its length (preload="metadata").
+  var soundUrls = Object.create(null);
+  function soundFor(src) {
+    var key = assetKey(src), data = key === undefined ? "" : assetUrls[key];
+    var head = /^data:(audio\/[\w.+-]+);base64,/i.exec(data);
+    if (!head) return null;
+    var held = soundUrls[key];
+    if (!held || held.data !== data) {
+      if (held) URL.revokeObjectURL(held.url);
+      var text = atob(data.slice(head[0].length)), bytes = new Uint8Array(text.length);
+      for (var i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i);
+      held = soundUrls[key] = { data: data, url: URL.createObjectURL(new Blob([bytes], { type: head[1] })) };
+    }
+    return held.url;
   }
   function resolveAssets(fragment) {
     // Media stays still and selectable on the canvas, including a video's
@@ -147,7 +171,11 @@ import { domView } from "../page-builder/rules/tree.ts";
       if (mediaPlay && mediaPlay.el === el) return;
       el.removeAttribute("autoplay");
       if (el.localName === "video") el.removeAttribute("controls");
-      el.setAttribute("preload", "none");
+      // An audio shows its real length once its file is read (a blob: address is that file, already set).
+      var src = el.getAttribute("src") || "";
+      var sound = el.localName === "audio" && (/^blob:/i.test(src) ? src : soundFor(src));
+      if (sound && sound !== src) el.setAttribute("src", sound);
+      el.setAttribute("preload", sound ? "metadata" : "none");
       el.pause();
       // Its still picture shows, read like the page's images.
       var poster = el.getAttribute("poster"), still = poster && assetFor(poster);
@@ -557,7 +585,8 @@ import { domView } from "../page-builder/rules/tree.ts";
         // In Edit component mode the part edited stays in view below the site's sticky header.
         var edited = editHost();
         if (edited && editContains(edited, requested)) revealEdited(requested, false);
-        else if (requested.scrollIntoView) requested.scrollIntoView({ block: payload.selectNode.reveal === "center" ? revealBlock(requested) : "nearest" });
+        else if (payload.selectNode.reveal === "center") revealWithBar(requested, false);
+        else if (requested.scrollIntoView) requested.scrollIntoView({ block: "nearest" });
       }
     }
     // A block selected in its place (an insert, a drop) is not typed into.
@@ -1898,11 +1927,16 @@ import { domView } from "../page-builder/rules/tree.ts";
 
   // The element at `node` (element-child indexes) under the page root or under the shadow root of the component
   // whose template is `path`, preferring the currently selected instance.
-  // A just-added element is centred; one taller than the view shows from its top
-  // (the page's scroll-padding keeps it clear of a sticky header).
-  function revealBlock(el) {
-    var box = el.getBoundingClientRect && el.getBoundingClientRect();
-    return box && box.height > window.innerHeight * 0.8 ? "start" : "center";
+  // An element chosen outside the canvas (in Page structure or the code) or just
+  // added is centred under the site's sticky header with room above it for the
+  // edit bar; one taller than that shows from its top (rules/reveal.ts).
+  function revealWithBar(el, smooth) {
+    var box = el.getBoundingClientRect();
+    var calm = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    // An element without a box of its own (display: contents) is brought into view as the browser sees fit.
+    if (!box.width && !box.height) { el.scrollIntoView({ block: "center", behavior: smooth && !calm ? "smooth" : "auto" }); return; }
+    var dy = revealOffset({ top: box.top, bottom: box.bottom, height: window.innerHeight, inset: topInset(el) });
+    if (Math.abs(dy) >= 1) window.scrollBy({ top: dy, behavior: smooth && !calm ? "smooth" : "auto" });
   }
 
   function resolveNodePath(request) {
@@ -3622,6 +3656,12 @@ import { domView } from "../page-builder/rules/tree.ts";
     var id = (el.getAttribute("id") || "").trim();
     return id ? el.localName + "#" + id : el.localName;
   }
+  // The tag over a media card, or any part of it, names the card ("Download") as the edit bar does.
+  function canvasHoverText(el) {
+    var chain = [];
+    for (var at = el; at && at !== pageEl; at = canvasUp(at)) chain.push({ tag: at.localName, className: at.getAttribute("class") || "" });
+    return mediaCardLabelOf(chain) || canvasLabelText(el);
+  }
   function canvasSectionRoot(n) {
     var root = n.parentNode;
     return root instanceof ShadowRoot && root.host && sectionLike(root.host) && root.host.localName !== "section";
@@ -3664,7 +3704,7 @@ import { domView } from "../page-builder/rules/tree.ts";
     var rect = el && el.isConnected && el.getBoundingClientRect();
     if (!rect || (!rect.width && !rect.height)) { canvasLabel.style.display = "none"; return; }
     var color = canvasColor(el);
-    canvasLabel.textContent = canvasLabelText(el);
+    canvasLabel.textContent = canvasHoverText(el);
     canvasLabel.style.background = color;
     canvasLabel.style.color = canvasInk(color);
     canvasLabel.style.display = "block";
@@ -3790,7 +3830,7 @@ import { domView } from "../page-builder/rules/tree.ts";
     el.removeEventListener("error", old.end);
     el.pause();
     if (old.src === null) el.removeAttribute("src"); else el.setAttribute("src", old.src);
-    el.setAttribute("preload", "none");
+    el.setAttribute("preload", el.localName === "audio" && /^blob:/i.test(old.src || "") ? "metadata" : "none");
     el.muted = old.muted;
     el.load();
     URL.revokeObjectURL(old.url);
@@ -3903,10 +3943,7 @@ import { domView } from "../page-builder/rules/tree.ts";
       // Already selected: nothing to report, but it is still brought into sight.
       if (wanted !== selected) canvasSelect(wanted, "refresh");
       var rect = wanted.getBoundingClientRect();
-      if (rect.bottom < 0 || rect.top > window.innerHeight) {
-        var still = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-        wanted.scrollIntoView({ block: "center", behavior: still ? "auto" : "smooth" });
-      }
+      if (rect.bottom < 0 || rect.top > window.innerHeight) revealWithBar(wanted, true);
       return;
     }
     if (msg.type === "viewing") { if (state) state.viewing = msg.viewing === true; return; }
@@ -3974,10 +4011,9 @@ import { domView } from "../page-builder/rules/tree.ts";
       if (editing && (editing !== wanted || msg.edit === false)) stopEditing(true);
       selected = wanted;
       updateBoxes();
-      var reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       var editedHost = editHost();
       if (editedHost && editContains(editedHost, wanted)) revealEdited(wanted, true);
-      else if (wanted.scrollIntoView) wanted.scrollIntoView({ block: "center", behavior: reduced ? "auto" : "smooth" });
+      else revealWithBar(wanted, true);
       emitSelection(wanted, "click");
       if (msg.edit === true && editableText(wanted)) beginEditing(wanted, null);
       return;
