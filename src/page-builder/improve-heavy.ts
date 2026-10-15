@@ -6,6 +6,7 @@ import { mediaFamilyOf } from "./media-families";
 import { suggestMediaName } from "./media-names";
 import { mediaCopyName } from "./media-storage";
 import { mediaResolvePath } from "./media-references";
+import { decodeHtmlEntities } from "./html-entities";
 import { mediaAddingSettings } from "./media-settings";
 import { mediaImageRecipe, optimiseMedia } from "./media-optimise";
 import { makeOlderCopies } from "./media-older-copies";
@@ -80,9 +81,12 @@ export async function prepareImproveHeavy(ctx: MediaWorkspaceContext, request: I
     const old = picture.path!, family = mediaFamilyOf(old, paths);
     const standard = (family?.copies ?? []).filter(copy => /-(?:480|960|1600|\d+w)\.[^./]+$/i.test(copy.path));
     const adopted = plan.rows.flatMap(row => row.pictures).filter(p => p.path === old).some(p => (p.adopted ?? []).some(path => !standard.some(copy => copy.path === path)));
+    // A set written by hand on any place of this picture serves its plain places too: no second set.
+    const handMade = [...family?.copies ?? [], ...writtenVariants(plan.rows, sources, old, paths, site)]
+      .filter((variant, index, all) => all.findIndex(other => other.width === variant.width) === index);
     let image = images.get(old);
     if (!image) {
-      image = { path: old, ...files[old], alt: "", variants: family?.copies };
+      image = { path: old, ...files[old], alt: "", variants: handMade };
       if (picture.changes.includes("lighten")) {
         request.progress?.(quality === "smallest" ? "Preparing (slower)…" : "Preparing…"); guard();
         const existing = Object.entries(next.files).find(([path, record]) => record.lighterFrom === old && paths.includes(path) && path !== old);
@@ -147,16 +151,18 @@ export async function prepareImproveHeavy(ctx: MediaWorkspaceContext, request: I
             if (!variants.some(v => v.width === copy.width)) descriptorWidths.set(copy.path, width!);
           }
           descriptorWidths.set(old, width!);
-          image = { path: main, width, height, alt: "", variants: adopted ? family?.copies : variants };
+          image = { path: main, width, height, alt: "", variants: adopted ? handMade : variants };
           if (/\.avif$/i.test(main)) result.notes.push(`Sharing pictures keep ${old} because many sharing services cannot read AVIF.`);
         }
       }
-      if (image.path === old && picture.changes.includes("copies")) {
+      // A main that could not be made lighter still gets the copies a heavy picture lacks.
+      const copiesOnly = picture.changes.includes("copies") || picture.changes.includes("lighten") && !adopted && !family?.copies.length;
+      if (image.path === old && copiesOnly) {
         request.progress?.(quality === "smallest" ? "Preparing (slower)…" : "Preparing…"); guard();
         const guardedContext = { ...ctx, paths, assertLive: guard };
         const copies = await (ports.copies ?? makeOlderCopies)(guardedContext, image, quality, request.signal); guard();
         if (copies?.uploads.length) { batch.uploads.push(...copies.uploads); image = { ...image, variants: copies.variants }; }
-        else result.notes.push(`Smaller copies were not made for ${old}.`);
+        else if (picture.changes.includes("copies")) result.notes.push(`Smaller copies were not made for ${old}.`);
       }
       images.set(old, image);
     }
@@ -248,6 +254,21 @@ export async function improveHeavy(ctx: MediaWorkspaceContext, request: ImproveR
   if (!batch.live?.()) throw new DOMException("Improve images cancelled.", "AbortError");
   if (result.changed) await ctx.applyBatch(batch);
   return result;
+}
+
+/** `url NNNw` candidates of every place's own srcset for this picture, resolved to repository files. */
+function writtenVariants(rows: ReturnType<typeof improveImagesPlan>["rows"], sources: Record<string, string | undefined>, old: string, paths: string[], site: Parameters<typeof mediaResolvePath>[2]) {
+  const found: { path: string; width: number }[] = [];
+  for (const row of rows) for (const picture of row.pictures) {
+    if (picture.path !== old) continue;
+    const tag = (sources[row.file] ?? "").slice(picture.tag.start, picture.tag.end), start = startTags(tag)[0];
+    const srcset = start && startTagAttribute(tag, start, "srcset")?.value;
+    for (const candidate of srcset ? decodeHtmlEntities(srcset, true).split(",") : []) {
+      const match = /^\s*(\S+)\s+(\d+)w\s*$/.exec(candidate), path = match && mediaResolvePath(match[1], row.file, site);
+      if (path && path !== old && paths.includes(path)) found.push({ path, width: Number(match![2]) });
+    }
+  }
+  return found;
 }
 
 function currentTreeHasPictureSet(source: string, start: number): boolean {

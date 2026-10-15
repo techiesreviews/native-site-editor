@@ -119,7 +119,12 @@ test("AVIF setting preserves sharing tags, reports slower preparation and fallba
 
 test("not lighter keeps main but writes other details; family collision gets numbered name", async () => {
   const f = fixture(); f.ports.encode = async () => ({ outputs: [{ blob: imageBlob(300000), width: 1200, height: 800, extension: "webp" }], before: 300000, after: 300000 });
-  const result = await f.improve(); assert.ok(result.notes.some(note => note.includes("not lighter"))); assert.equal(f.batches[0].uploads.length, 0); assert.match(f.text.get("index.html")!, /src="\/images\/heavy.jpg"/); assert.match(f.text.get("index.html")!, /width="3000"/);
+  f.ports.copies = async () => ({ uploads: [{ path: "images/heavy-480.webp", blob: imageBlob(100, 480, 320) }], variants: [{ path: "images/heavy-480.webp", width: 480 }], version: "old" });
+  const result = await f.improve(); assert.ok(result.notes.some(note => note.includes("not lighter")));
+  // The old main stays, but the copies a heavy picture lacks are still made and listed.
+  assert.deepEqual(f.batches[0].uploads.map(upload => upload.path), ["images/heavy-480.webp"]);
+  assert.match(f.text.get("index.html")!, /src="\/images\/heavy.jpg"/); assert.match(f.text.get("index.html")!, /width="3000"/);
+  assert.match(f.text.get("index.html")!, /srcset="\/images\/heavy-480.webp 480w, \/images\/heavy.jpg 3000w"/);
   const collision = fixture(); collision.bytes.set("images/heavy-480.webp", imageBlob());
   await collision.improve(); assert.ok(collision.bytes.has("images/heavy-2.webp"));
 });
@@ -218,4 +223,15 @@ test("relative component pictures are resolved through their showing page", asyn
   let measuredFile = "";
   await f.improve({ row: "components/card.html", async measure(file) { measuredFile = file; return undefined; } });
   assert.equal(measuredFile, "components/card.html"); assert.match(f.text.get("components/card.html")!, /src="\/images\/heavy.webp"/);
+});
+
+test("a hand-made set written on one page serves the same picture's plain places", async () => {
+  const f = fixture('<img src="/images/heavy.jpg">');
+  f.text.set("other.html", '<img src="/images/heavy.jpg" srcset="/images/odd-small.webp 400w, /images/heavy.jpg 3000w">'); f.ctx.pages.push("other.html");
+  f.bytes.set("images/odd-small.webp", imageBlob(100, 400, 267)); f.versions.set("images/odd-small.webp", "odd"); f.facts["images/odd-small.webp"] = { size: 100, width: 400, height: 267 };
+  await f.improve();
+  assert.deepEqual(f.batches[0].uploads.map(upload => upload.path), ["images/heavy.webp"]);
+  assert.match(f.text.get("index.html")!, /srcset="\/images\/odd-small.webp 400w, \/images\/heavy.webp 1200w"/);
+  await f.improve({ row: "other.html" });
+  assert.match(f.text.get("other.html")!, /srcset="\/images\/odd-small.webp 400w, \/images\/heavy.webp 1200w"/);
 });
