@@ -290,10 +290,14 @@
    Without anchor positioning it opens in the middle of the screen, still whole. */
 .image-popup__shape { anchor-name: --image-popup-shape; }
 .image-popup__menu {
-  --image-popup-menu-edge: max(8px, env(safe-area-inset-bottom));
+  --image-popup-menu-top: max(8px, env(safe-area-inset-top));
+  --image-popup-menu-bottom: max(8px, env(safe-area-inset-bottom));
+  /* A flip mirrors the margins, so the far side keeps clear of either edge's safe area. */
+  --image-popup-menu-edge: max(var(--image-popup-menu-top), var(--image-popup-menu-bottom));
   box-sizing: border-box;
   min-width: 190px;
-  max-block-size: calc(100dvh - 8px - var(--image-popup-menu-edge));
+  max-block-size: calc(100dvh - var(--image-popup-menu-top) - var(--image-popup-menu-bottom));
+  inset: var(--image-popup-menu-top) 0 var(--image-popup-menu-bottom);
   margin: auto;
   padding: 4px;
   border: 0;
@@ -308,6 +312,7 @@
   .image-popup__menu {
     position-anchor: --image-popup-shape;
     position-area: block-end span-all;
+    inset: auto;
     margin: 4px 0 var(--image-popup-menu-edge);
     max-block-size: none;
     position-try-fallbacks: flip-block, --image-popup-menu-fit;
@@ -316,8 +321,8 @@
 @position-try --image-popup-menu-fit {
   position-area: span-all;
   align-self: center;
-  margin: 8px 0 var(--image-popup-menu-edge);
-  max-block-size: calc(100% - 8px - var(--image-popup-menu-edge));
+  margin: var(--image-popup-menu-top) 0 var(--image-popup-menu-bottom);
+  max-block-size: calc(100% - var(--image-popup-menu-top) - var(--image-popup-menu-bottom));
 }
 .image-popup__item {
   display: flex;

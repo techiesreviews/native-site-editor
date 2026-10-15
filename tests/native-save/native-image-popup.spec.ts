@@ -232,7 +232,46 @@ test.describe("on a touch phone", () => {
     await page.touchscreen.tap(picture.x + picture.width * 0.1, picture.y + picture.height * 0.15);
     await expect(dot(page)).not.toHaveAttribute("aria-valuetext", where!);
     await expect(dot(page)).toBeFocused();
+
+    // A phone on its side: the whole sheet scrolls; a swipe on the picture moves it, not the dot; Done stays uncovered.
+    await page.setViewportSize({ width: 320, height: 280 });
+    const sheet = popup(page);
+    await sheet.evaluate(element => element.scrollTo(0, 0));
+    const moved = await dot(page).getAttribute("aria-valuetext");
+    const pic = (await sheet.locator(".image-popup__picbox").boundingBox())!, foot = (await sheet.locator(".image-popup__bottom").boundingBox())!;
+    const sx = Math.round(pic.x + pic.width * 0.8), sy = Math.round(Math.min(pic.y + pic.height, foot.y) - 10);
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: sx, y: sy }] });
+    for (let step = 1; step <= 6; step++) await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: sx, y: sy - step * 10 }] });
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await expect.poll(() => sheet.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
+    await expect(dot(page)).toHaveAttribute("aria-valuetext", moved!);
+    for (const target of [sheet.getByRole("button", { name: "Done", exact: true }), sheet.locator(".image-popup__message")]) {
+      await expect(target).toBeInViewport({ ratio: 1 });
+      const box = (await target.boundingBox())!;
+      expect(await target.evaluate((element, at) => element.contains(document.elementFromPoint(at.x, at.y)), { x: box.x + box.width / 2, y: box.y + box.height / 2 })).toBe(true);
+    }
   });
+});
+
+test("on a phone the large editor's Shape is the phone's own menu; Free can be chosen and Done stays on screen", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await open(page, baseURL);
+  await openPopup(page);
+  await popup(page).getByRole("button", { name: "Replace", exact: true }).click();
+  await picker(page).locator('input[name="media-upload"]').setInputFiles({ name: "Wide.jpg", mimeType: "image/jpeg", buffer: Buffer.from(await quarters(page), "base64") });
+  await expect(picker(page).getByRole("button", { name: "Choose Wide.jpg", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await picker(page).getByRole("button", { name: "Use image", exact: true }).click();
+  await popup(page).getByRole("button", { name: "Open large editor", exact: true }).click();
+  const editor = page.getByRole("dialog", { name: "Edit image", exact: true });
+  for (const [width, height] of [[390, 844], [320, 568]]) {
+    await page.setViewportSize({ width, height });
+    const shape = editor.getByRole("combobox", { name: "Shape" });
+    await expect(shape).toBeInViewport({ ratio: 1 });
+    expect((await shape.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    await shape.selectOption(width === 390 ? "free" : "square");
+    await expect(shape).toHaveValue(width === 390 ? "free" : "square");
+    await expect(editor.getByRole("button", { name: "Done", exact: true })).toBeInViewport({ ratio: 1 });
+  }
 });
 
 // A corner of the trim dragged by a share of the picture's size.

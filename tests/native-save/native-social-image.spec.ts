@@ -228,6 +228,26 @@ test("the Social image popup moves the sharing copy's frame; Apply writes a fres
   await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toContain(`content="${first}"`);
 });
 
+// Slice 94: on a phone the Social popup is a sheet with its fixed label (no shape menu) and Done in reach.
+test("on a phone the Social image popup shows its fixed label and keeps Done on screen", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await fixture(page, baseURL, true);
+  await chooseDefault(page);
+  await panel(page).getByRole("button", { name: "Image", exact: true }).click();
+  const popup = page.getByRole("dialog", { name: "Social image", exact: true });
+  await expect(popup.locator(".image-popup__shape")).toHaveText("Sharing 1200 × 630");
+  for (const [width, height] of [[390, 844], [320, 568]]) {
+    await page.setViewportSize({ width, height });
+    await expect(popup.getByRole("menu")).toHaveCount(0);
+    await expect(popup.getByRole("button", { name: /^Shape/ })).toHaveCount(0);
+    await expect(popup.getByRole("button", { name: "Done", exact: true })).toBeInViewport({ ratio: 1 });
+    await expect(popup.getByText("Saves a sharing copy of this frame")).toBeInViewport({ ratio: 1 });
+  }
+  await popup.getByRole("button", { name: "Done", exact: true }).click();
+  await expect(popup).toHaveCount(0);
+  await expect(panel(page)).toBeVisible();
+});
+
 test("an animated picture is not framed: the Image button says so and offers the picker", async ({ page, baseURL }) => {
   await fixture(page, baseURL, true);
   expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: "images/moving.gif", base64: animatedGif().toString("base64") } })).status()).toBe(204);
