@@ -316,6 +316,10 @@
 .image-large__shape:active { background: var(--hover); }
 @media (hover: hover) and (pointer: fine) { .image-large__shape:hover { background: var(--hover); } }
 .image-large__shape[aria-expanded="true"] { border-color: var(--primary); }
+/* Its menu is at least as wide as the button. */
+@supports (width: anchor-size(width)) {
+  .image-large__shape + .image-popup__menu { min-width: max(190px, anchor-size(width)); }
+}
 /* The message: the popup's quiet line (slice 109), by Cancel and Done. */
 .image-large__message { justify-content: flex-end; }
 .image-large__note { display: block; }
