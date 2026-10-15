@@ -2,7 +2,7 @@
 title: GitHub Pages project sites, ADR 0001 and the rules
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-81 runner)
 blocked_by: [80-change-site-address]
 builder: sol
 phase: 7
