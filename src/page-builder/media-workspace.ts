@@ -750,10 +750,11 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       assetGuard(batch, [still.path]);
       const { findOnlineVideo, setOnlineVideoStill, swapOnlineVideoStillInPage } = await import("./online-video"); ctx.assertLive();
       if (!findOnlineVideo(metadata, key)) throw new Error("This video is no longer in Media.");
-      for (const path of ctx.pages) {
-        if (text[path] === undefined) throw new Error(`${path} could not be read.`);
-        const next = swapOnlineVideoStillInPage(text[path], key, still);
-        if (next !== text[path]) batch.edits.set(path, next);
+      // Every HTML file, component templates included, as renames do: the change applies everywhere.
+      for (const [path, source] of Object.entries(text)) {
+        if (!/\.html$/i.test(path)) continue;
+        const next = swapOnlineVideoStillInPage(source, key, still);
+        if (next !== source) batch.edits.set(path, next);
       }
       recordsEdit(batch, metadata, setOnlineVideoStill(metadata, key, still.path)); await commit(ctx, batch);
     },
@@ -763,12 +764,14 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       const { findOnlineVideo, upsertOnlineVideo, setOnlineVideoServiceBarInPage } = await import("./online-video"); ctx.assertLive();
       const record = findOnlineVideo(metadata, key);
       if (!record) throw new Error("This video is no longer in Media.");
-      for (const path of ctx.pages) {
-        if (text[path] === undefined) throw new Error(`${path} could not be read.`);
-        const next = setOnlineVideoServiceBarInPage(text[path], key, enabled);
-        if (next !== text[path]) batch.edits.set(path, next);
+      // Every HTML file, component templates included, as renames do: the change applies everywhere.
+      for (const [path, source] of Object.entries(text)) {
+        if (!/\.html$/i.test(path)) continue;
+        const next = setOnlineVideoServiceBarInPage(source, key, enabled);
+        if (next !== source) batch.edits.set(path, next);
       }
-      const next = { ...record }; if (enabled) next.serviceBar = true; else delete next.serviceBar;
+      // Undefined, not deleted: upsertOnlineVideo merges over the old record, and undefined is not saved.
+      const next: OnlineVideoRecord = { ...record, serviceBar: enabled ? true : undefined };
       recordsEdit(batch, metadata, upsertOnlineVideo(metadata, next)); await commit(ctx, batch);
     },
     async removeOnlineVideo(key: import("./online-video").OnlineVideoKey) {

@@ -149,6 +149,13 @@ test("add still, copies, record and optional placement in one import batch; seco
   const calls = service.calls.length;
   await addOnlineVideo({ address: onlineVideoHref(youtube), workspace: f.workspace, records: f.records(), paths: f.ctx.paths, fetch: service.fetch, prepare, assertLive() {} });
   assert.equal(service.calls.length, calls); assert.equal(f.batches.length, 1);
+  // Placing it again on another page: the placement is saved, with no service call and no upload.
+  f.text.set("about.html", "<main></main>");
+  await addOnlineVideo({ address: onlineVideoHref(youtube), workspace: f.workspace, records: f.records(), paths: f.ctx.paths, fetch: service.fetch, prepare, assertLive() {},
+    place: { path: "about.html", source: "<main></main>", apply: () => `<main>${onlineVideoMarkup({ video: youtube, still: { path: first.record.still! } }).markup}</main>` } });
+  assert.equal(service.calls.length, calls); assert.equal(f.batches.length, 2); assert.equal(f.batches[1].uploads.length, 0);
+  assert.ok(f.text.get("about.html")?.includes("/media/videos/film.webp"));
+  assert.equal(f.records().onlineVideos?.length, 1);
 });
 test("no still makes a records-only batch with service label; invalid input and stale scope refuse", async () => {
   const f = fixture(); const blocked = serviceFetch(() => { throw new TypeError("blocked"); });
@@ -160,6 +167,8 @@ test("no still makes a records-only batch with service label; invalid input and 
 });
 test("workspace swaps picture, stores service bar, removes without service calls and restores record and family", async () => {
   const f = fixture();
+  // The same video in a component template follows every change too.
+  f.text.set("components/talk/talk.html", `<template>${onlineVideoMarkup({ video: youtube, still: { path: "media/videos/film.webp" } }).markup}</template>`);
   const copied = serializeMediaRecords(upsertOnlineVideo(empty(), { ...youtube, title: "Film", still: "media/videos/film.webp", stillCopied: true, future: 42 }));
   f.text.set(MEDIA_RECORDS_PATH, copied);
   for (const path of ["media/videos/film.webp", "media/videos/film-480.webp", "media/videos/own.webp"]) f.bytes.set(path, new Blob([path]));
@@ -168,11 +177,15 @@ test("workspace swaps picture, stores service bar, removes without service calls
   await f.workspace.load();
   await f.workspace.onlineVideoServiceBar(youtube, true); assert.equal(findOnlineVideo(f.records(), youtube)?.serviceBar, true);
   assert.ok(f.text.get("index.html")?.includes('data-controls="service"'));
+  assert.ok(f.text.get("components/talk/talk.html")?.includes('data-controls="service"'));
   await f.workspace.onlineVideoServiceBar(youtube, false);
   assert.ok(!f.text.get("index.html")?.includes("data-controls"));
+  assert.equal(findOnlineVideo(f.records(), youtube)?.serviceBar, undefined); assert.ok(!f.text.get(MEDIA_RECORDS_PATH)?.includes("serviceBar"));
+  assert.ok(!f.text.get("components/talk/talk.html")?.includes("data-controls"));
   await f.workspace.onlineVideoServiceBar(youtube, true);
   await f.workspace.onlineVideoStill(youtube, { path: "media/videos/own.webp", width: 800, height: 600 });
   assert.ok(f.text.get("index.html")?.includes('/media/videos/own.webp')); assert.ok(f.bytes.has("media/videos/film.webp"));
+  assert.ok(f.text.get("components/talk/talk.html")?.includes('/media/videos/own.webp'));
   assert.equal(findOnlineVideo(f.records(), youtube)?.stillCopied, undefined);
   // Lex's own picture stays when the video leaves Media; only the record goes.
   await f.workspace.removeOnlineVideo(youtube);

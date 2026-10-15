@@ -71,7 +71,11 @@ export async function addOnlineVideo(input: OnlineVideoAddInput) {
   const video = input.video ?? parseOnlineVideoAddress(input.address ?? "");
   if (!video) throw new Error("Enter a YouTube or Vimeo video address.");
   const plan = onlineVideoStillPlan(input.records, video, input.paths);
-  if (!plan.copy) return { record: plan.record!, notes: [] as string[] };
+  if (!plan.copy) {
+    // Copied once: placing it again makes no service call, only the placement and its record.
+    if (input.place) await input.workspace.onlineVideo(plan.record!, input.place);
+    return { record: plan.record!, notes: [] as string[] };
+  }
   const read = await readOnlineVideo(video, input.fetch);
   input.assertLive();
   const record: OnlineVideoRecord = { ...plan.record, service: video.service, id: video.id, ...video.hash ? { hash: video.hash } : {}, ...read.title ? { title: read.title } : {} };
