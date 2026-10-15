@@ -834,8 +834,12 @@ test("Adding settings: at 900 MB the size bar turns amber and the warning shows"
   await expect(size.locator(".media-settings__used strong")).toHaveText("900 MB");
   const meter = size.getByRole("meter", { name: "Repository size: 900 MB of 1 GB" });
   await expect(meter).toHaveClass(/is-near-full/);
-  const fill = await meter.evaluate(element => getComputedStyle(element).getPropertyValue("--fill").trim());
-  expect(fill).toContain("color-warning");
+  const fill = await meter.evaluate(element => {
+    const probe = document.createElement("span"); probe.style.color = "var(--color-warning)"; element.after(probe);
+    const result = { fill: getComputedStyle(element).getPropertyValue("--fill").trim(), warning: getComputedStyle(probe).color };
+    probe.style.color = result.fill; result.fill = getComputedStyle(probe).color; probe.remove(); return result;
+  });
+  expect(fill.fill).toBe(fill.warning);
   await expect(size.locator(".media-settings__warning")).toContainText("GitHub Pages stops publishing sites over 1 GB.");
 });
 
