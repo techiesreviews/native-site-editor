@@ -720,7 +720,8 @@ test("a hand-written ratio is offered while the place has it; a press outside th
   await page.locator(".repository-menu__trigger").click();
   await page.locator('.repository-menu__repo[aria-current="true"]').hover();
   await page.getByRole("menu", { name: "Branches" }).getByRole("menuitem", { name: "Refresh from GitHub" }).click();
-  await expect.poll(() => heroTag(page)).toContain("aspect-ratio: 3 / 2");
+  // The page is briefly unmounted while it refreshes.
+  await expect.poll(async () => (await source(page)) ?? "").toContain("aspect-ratio: 3 / 2");
   await openPopup(page);
   await replaceWith(page, "Ratio.jpg", "image/jpeg", await quarters(page));
   const custom = "Custom (3 / 2)";
