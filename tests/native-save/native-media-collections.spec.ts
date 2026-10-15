@@ -28,6 +28,11 @@ async function newCollectionFromManage(page: Page, name: string) {
   await expect(library.locator(".media-library__collection-row", { hasText: name })).toContainText("0 files");
   await expect(library).not.toHaveAttribute("aria-busy", "true");
 }
+/** A collection's ⋯ in Manage collections, then Rename… or Delete… (slice 111). */
+async function collectionAction(page: Page, name: string, action: "Rename…" | "Delete…") {
+  await pane(page).getByRole("button", { name: `More for ${name}`, exact: true }).click();
+  await page.getByRole("menu", { name: `More for ${name}`, exact: true }).getByRole("menuitem", { name: action, exact: true }).click();
+}
 const select = (page: Page, path: string) => pane(page).getByLabel(`Select ${path}`, { exact: true }).check();
 
 test("create a collection, add two files, view it, take one out (it stays under All), Undo", { tag: "@smoke" }, async ({ page, baseURL }) => {
@@ -89,7 +94,7 @@ test("Manage collections renames and deletes the viewed collection: the view fol
   await page.keyboard.press("Escape");
   await filterTo(library, "Manage collections…");
   // Rename to a taken name, in another case: it says so and nothing merges.
-  await library.getByRole("button", { name: "Rename Logos", exact: true }).click();
+  await collectionAction(page, "Logos", "Rename…");
   const name = library.getByLabel("Collection name", { exact: true });
   await expect(name).toHaveValue("Logos"); await expect(name).toBeFocused();
   await name.fill("brand");
@@ -100,7 +105,7 @@ test("Manage collections renames and deletes the viewed collection: the view fol
   expect((await records(page)).collections).toEqual(["Logos", "Brand"]);
   await name.fill("Brand logos"); await expect(library.locator(".media-library__problem")).toBeHidden();
   await name.press("Enter");
-  await expect(library.getByRole("button", { name: "Rename Brand logos", exact: true })).toBeFocused();
+  await expect(library.getByRole("button", { name: "More for Brand logos", exact: true })).toBeFocused();
   await expect.poll(() => members(page, "Brand logos")).toEqual(["images/studio-desk.svg"]);
   // The view follows the rename.
   await library.getByRole("button", { name: "Back", exact: true }).click();
@@ -108,7 +113,7 @@ test("Manage collections renames and deletes the viewed collection: the view fol
   expect(await collectionChoices(library)).toEqual(["All collections", "Brand logos", "Brand"]);
   // Delete the viewed collection: only the group goes, and the view returns to All.
   await filterTo(library, "Manage collections…");
-  await library.getByRole("button", { name: "Delete Brand logos", exact: true }).click();
+  await collectionAction(page, "Brand logos", "Delete…");
   await expect(library.locator(".media-library__sheet")).toContainText("Its 1 file stays in Media, under All and any other collections.");
   await library.getByRole("button", { name: "Delete collection", exact: true }).click();
   await expect(library.locator(".media-library__collection-row")).toHaveCount(1);
@@ -401,7 +406,7 @@ test("renaming the collection while its files are prepared: they join it under i
   await dropOnMedia(page, [{ name: "late.png", text: svg("green") }]);
   await hold.started();
   await filterTo(library, "Manage collections…");
-  await library.getByRole("button", { name: "Rename Studio", exact: true }).click();
+  await collectionAction(page, "Studio", "Rename…");
   await library.getByLabel("Collection name", { exact: true }).fill("Picks");
   await library.getByRole("button", { name: "Rename", exact: true }).click();
   await library.getByRole("button", { name: "Back", exact: true }).click();

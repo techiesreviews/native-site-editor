@@ -286,7 +286,8 @@ export function createMediaLibraryView(
     const text = filterSummary(viewing, kind);
     shell.filterLabel.textContent = text;
     shell.filter.setAttribute("aria-label", `Filter: ${text}`);
-    shell.filter.toggleAttribute("data-narrowed", text !== "All");
+    // From the choice, not the words: a collection may be named "All".
+    shell.filter.toggleAttribute("data-narrowed", Boolean(viewing) || kind !== "all");
   }
   /** The picker's status: the chosen file's picture and name, or what to do. Use waits for a choice. */
   function paintChoice() {

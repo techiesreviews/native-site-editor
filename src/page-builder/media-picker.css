@@ -221,8 +221,8 @@
   .media-library--pane .media-library__filter:not([data-narrowed]) .media-library__filter-label,
   .media-library--pane .media-library__filter[data-narrowed]::before { display: none; }
 }
-/* Filter's and More's menu: long collection names wrap inside the window. */
-.media-library__menu { max-width: min(320px, 100vw - 16px); box-sizing: border-box; }
+/* Filter's and More's menu: long collection names wrap, and many collections scroll, inside the window. */
+.media-library__menu { max-width: min(320px, 100vw - 16px); max-height: calc(100dvh - 16px); overflow-y: auto; overscroll-behavior: contain; box-sizing: border-box; }
 .media-library__menu .pages-menu__item { white-space: normal; overflow-wrap: anywhere; }
 .media-library__empty:has(> button) { text-align: center; }
 .media-library__empty > button { margin-top: 12px; }

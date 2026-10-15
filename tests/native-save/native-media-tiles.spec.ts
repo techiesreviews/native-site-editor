@@ -147,6 +147,36 @@ test("phones: search keeps most of the One bar, and the selection bar is one row
   await expect(library.getByLabel("Select images/studio-desk.svg", { exact: true })).not.toBeChecked();
 });
 
+test("phones: with 30 collections Filter scrolls inside the window, and a collection named All still marks Filter as narrowing", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const names = ["All", ...Array.from({ length: 29 }, (_, at) => `Trip ${at + 1}`)];
+  await seed(page, baseURL, [{ path: ".editor/media.json", content: JSON.stringify({ version: 2, collections: names,
+    files: { "images/studio-desk.svg": { collections: ["All"] } } }) }]);
+  await open(page, baseURL);
+  const library = pane(page), filter = filterButton(library), menu = page.getByRole("menu", { name: "Filter", exact: true });
+  await filter.click();
+  const box = await menu.boundingBox();
+  expect(box!.y).toBeGreaterThanOrEqual(0);
+  expect(box!.y + box!.height).toBeLessThanOrEqual(844);
+  // The last choices are reached by scrolling the menu.
+  const list = menu.getByRole("menuitemradio", { name: "List", exact: true });
+  await list.scrollIntoViewIfNeeded();
+  await expect(list).toBeInViewport();
+  await expect(menu.getByRole("menuitem", { name: "Manage collections…", exact: true })).toBeAttached();
+  await list.click();
+  await expect(library.locator(".media-library__grid")).toHaveClass(/media-library__grid--list/);
+  // A collection named "All": its words show and Filter wears the narrowing colour.
+  await filter.click();
+  await menu.getByRole("group", { name: "Collections", exact: true }).getByRole("menuitemradio", { name: "All", exact: true }).click();
+  await expect(filter).toHaveAttribute("data-narrowed", "");
+  await expect(filter.locator(".media-library__filter-label")).toHaveText("All");
+  await expect(filter.locator(".media-library__filter-label")).toBeVisible();
+  await expect.poll(() => library.locator(".media-library__card").count()).toBe(1);
+  await filterTo(library, "All collections");
+  await expect(filter).not.toHaveAttribute("data-narrowed", "");
+  await expect(filter.locator(".media-library__filter-label")).toBeHidden();
+});
+
 test("phones: inside a collection, ⋯ offers Take out before Remove, and Take out keeps the file", async ({ page, baseURL }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await seed(page, baseURL, [{ path: ".editor/media.json", content: JSON.stringify({ version: 2, collections: ["Picks"],
