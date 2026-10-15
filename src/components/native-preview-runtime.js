@@ -163,6 +163,18 @@ import { domView } from "../page-builder/rules/tree.ts";
     }
     return held.url;
   }
+  // An audio (its own address, else its first <source>'s) plays its file from
+  // its blob: address once read, loading only its length; a blob: address is
+  // that file, already set.
+  function stillSound(el) {
+    var holder = el.hasAttribute("src") ? el : el.querySelector("source[src]");
+    var src = holder ? holder.getAttribute("src") : "";
+    var sound = holder ? (/^blob:/i.test(src) ? src : soundFor(src)) : null;
+    el.setAttribute("preload", sound ? "metadata" : "none");
+    if (!sound || sound === src) return;
+    holder.setAttribute("src", sound);
+    if (holder !== el && el.isConnected) el.load();
+  }
   function resolveAssets(fragment) {
     // Media stays still and selectable on the canvas, including a video's
     // native controls (audio keeps them: without, it has no box). Only the
@@ -171,11 +183,7 @@ import { domView } from "../page-builder/rules/tree.ts";
       if (mediaPlay && mediaPlay.el === el) return;
       el.removeAttribute("autoplay");
       if (el.localName === "video") el.removeAttribute("controls");
-      // An audio shows its real length once its file is read (a blob: address is that file, already set).
-      var src = el.getAttribute("src") || "";
-      var sound = el.localName === "audio" && (/^blob:/i.test(src) ? src : soundFor(src));
-      if (sound && sound !== src) el.setAttribute("src", sound);
-      el.setAttribute("preload", sound ? "metadata" : "none");
+      if (el.localName === "audio") stillSound(el); else el.setAttribute("preload", "none");
       el.pause();
       // Its still picture shows, read like the page's images.
       var poster = el.getAttribute("poster"), still = poster && assetFor(poster);
@@ -1935,6 +1943,15 @@ import { domView } from "../page-builder/rules/tree.ts";
     var calm = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     // An element without a box of its own (display: contents) is brought into view as the browser sees fit.
     if (!box.width && !box.height) { el.scrollIntoView({ block: "center", behavior: smooth && !calm ? "smooth" : "auto" }); return; }
+    // A scrolling box on the page shows it first (at once), then the page brings that box in.
+    for (var at = canvasUp(el); at && at !== document.body && at !== document.documentElement; at = canvasUp(at)) {
+      var overflow = at.scrollHeight > at.clientHeight && getComputedStyle(at).overflowY;
+      if (overflow !== "auto" && overflow !== "scroll") continue;
+      var port = at.getBoundingClientRect();
+      if (box.top < port.top) at.scrollTop -= port.top - box.top;
+      else if (box.bottom > port.bottom) at.scrollTop += Math.min(box.bottom - port.bottom, box.top - port.top);
+      box = el.getBoundingClientRect();
+    }
     var dy = revealOffset({ top: box.top, bottom: box.bottom, height: window.innerHeight, inset: topInset(el) });
     if (Math.abs(dy) >= 1) window.scrollBy({ top: dy, behavior: smooth && !calm ? "smooth" : "auto" });
   }
@@ -3830,7 +3847,8 @@ import { domView } from "../page-builder/rules/tree.ts";
     el.removeEventListener("error", old.end);
     el.pause();
     if (old.src === null) el.removeAttribute("src"); else el.setAttribute("src", old.src);
-    el.setAttribute("preload", el.localName === "audio" && /^blob:/i.test(old.src || "") ? "metadata" : "none");
+    // Its file may have been read while it played.
+    if (el.localName === "audio") stillSound(el); else el.setAttribute("preload", "none");
     el.muted = old.muted;
     el.load();
     URL.revokeObjectURL(old.url);

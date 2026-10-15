@@ -6,12 +6,14 @@ test.use({ viewport: { width: 1280, height: 800 } });
 
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const bar = (page: Page) => page.getByRole("toolbar", { name: "Edit bar", exact: true });
-// Chooses an element of the (collapsed) section in Page structure.
-const choose = async (page: Page, name: RegExp) => {
+// Chooses an element in Page structure, opening the (collapsed) rows on its way.
+const choose = async (page: Page, name: RegExp, open = ["Section"]) => {
   const tree = page.getByRole("tree", { name: "Page structure" });
-  const section = tree.getByRole("treeitem", { name: "Section", exact: true });
-  if (await section.getAttribute("aria-expanded") !== "true") { await section.focus(); await page.keyboard.press("ArrowRight"); }
-  await tree.getByRole("treeitem", { name }).click();
+  for (const row of open) {
+    const item = tree.getByRole("treeitem", { name: row, exact: true });
+    if (await item.getAttribute("aria-expanded") !== "true") { await item.focus(); await page.keyboard.press("ArrowRight"); }
+  }
+  await tree.getByRole("treeitem", { name }).first().click();
 };
 const wav = (seconds: number) => {
   const samples = Math.round(seconds * 8000), buffer = Buffer.alloc(44 + samples * 2);
@@ -27,7 +29,9 @@ const PAGE = `<!doctype html><html lang="en"><head><title>Placed</title>
 <section class="flow">
 <video src="/media/clip.mp4" controls preload="none" playsinline width="640" height="360" title="Clip"></video>
 <audio src="/media/tour.wav" controls preload="none" data-duration="42" aria-label="Tour"></audio>
+<audio controls preload="none" aria-label="Talk"><source src="/media/talk.wav" type="audio/wav"></audio>
 <a class="download-card" href="/media/list.pdf"><span class="download-card-name">Price list</span><span class="download-card-meta">PDF · 1 KB</span><span class="download-card-action">Open</span></a>
+<div class="scroller"><p class="spacer">Inside.</p><video src="/media/clip.mp4" width="320" height="180" title="Inner"></video></div>
 </section><p style="height:1200px">More words.</p></main></body></html>`;
 
 test.beforeEach(async ({ page, baseURL }) => {
@@ -37,17 +41,18 @@ test.beforeEach(async ({ page, baseURL }) => {
   };
   await seed({ path: "media/clip.mp4", base64: readFileSync("tests/native-save/clip.mp4").toString("base64") });
   await seed({ path: "media/tour.wav", base64: wav(41.9).toString("base64") });
+  await seed({ path: "media/talk.wav", base64: wav(12.5).toString("base64") });
   await seed({ path: "media/list.pdf", content: "%PDF-1.1\n%%EOF\n" });
-  await seed({ path: "styles/placed.css", content: "body{margin:0} header{position:sticky;top:0;height:56px;background:#eee} main{padding:0 24px} video{display:block;width:640px;height:360px;background:#335}" });
+  await seed({ path: "styles/placed.css", content: "body{margin:0} header{position:sticky;top:0;height:56px;background:#eee} main{padding:0 24px} video{display:block;width:640px;height:360px;background:#335} .scroller{height:300px;overflow:auto} .spacer{height:800px} .scroller video{width:320px;height:180px}" });
   await seed({ path: "index.html", content: PAGE });
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await page.reload();
   await expect(page.locator("#status")).toContainText("Up to date with main");
-  await expect(frame(page).locator("audio")).toBeAttached();
+  await expect(frame(page).locator("audio").first()).toBeAttached();
 });
 
 test("the canvas audio shows its real length, and Play then Stop keeps it", async ({ page }) => {
-  const audio = frame(page).locator("audio");
+  const audio = frame(page).locator('audio[aria-label="Tour"]');
   await expect.poll(() => audio.evaluate((el: HTMLAudioElement) => el.duration || 0), { timeout: 15_000 }).toBeCloseTo(41.9, 1);
   await expect(audio).toHaveAttribute("preload", "metadata");
   await expect(audio).toHaveAttribute("src", /^blob:/);
@@ -78,7 +83,7 @@ test("the hover tag over any part of a download card says Download", async ({ pa
 });
 
 test("at 1280 a video chosen in Page structure shows with the edit bar above it, and its hover outline is its box", async ({ page }) => {
-  const video = frame(page).locator("video");
+  const video = frame(page).locator('video[title="Clip"]');
   await video.scrollIntoViewIfNeeded();
   await video.hover({ position: { x: 30, y: 200 } });
   const hover = frame(page).locator('[data-native-selection-box="hover"]');
@@ -94,4 +99,55 @@ test("at 1280 a video chosen in Page structure shows with the edit bar above it,
   await expect(bar(page)).toHaveAttribute("data-side", "above");
   const [barBox, videoBox] = [await bar(page).boundingBox(), await video.boundingBox()];
   expect(barBox!.y + barBox!.height).toBeLessThanOrEqual(videoBox!.y);
+});
+
+test("an audio written with a <source> shows its real length too", async ({ page }) => {
+  const talk = frame(page).locator('audio[aria-label="Talk"]');
+  await expect.poll(() => talk.evaluate((el: HTMLAudioElement) => el.duration || 0), { timeout: 15_000 }).toBeCloseTo(12.5, 1);
+  await expect(talk).toHaveAttribute("preload", "metadata");
+  await expect(talk.locator("source")).toHaveAttribute("src", /^blob:/);
+});
+
+test("an audio whose file arrives while it plays keeps its real length after Stop", async ({ page, baseURL }) => {
+  // The canvas's read of the file is held back until the edit bar's Play has started.
+  const size = wav(41.9).length;
+  let held = false, release!: () => void;
+  const playing = new Promise<void>(resolve => { release = resolve; });
+  await page.route("**/api/blob?*", async route => {
+    const response = await route.fetch();
+    const body = await response.body();
+    if (body.length === size && !held) { held = true; await playing; }
+    await route.fulfill({ response, body });
+  });
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await page.reload();
+  await expect(page.locator("#status")).toContainText("Up to date with main");
+  const audio = frame(page).locator('audio[aria-label="Tour"]');
+  await choose(page, /^Audio/);
+  await bar(page).getByRole("button", { name: "Play", exact: true }).click();
+  await expect(bar(page).getByRole("button", { name: "Stop", exact: true })).toBeVisible();
+  await expect.poll(() => audio.evaluate((el: HTMLAudioElement) => !el.paused || el.muted)).toBe(true);
+  release();
+  await expect.poll(() => held).toBe(true);
+  await expect(audio).toHaveAttribute("preload", "auto");
+  // fixed-wait: the file reaching the canvas while Play's own address is on the audio shows nothing to wait on.
+  await page.waitForTimeout(1000);
+  await bar(page).getByRole("button", { name: "Stop", exact: true }).click();
+  await expect(audio).toHaveAttribute("preload", "metadata");
+  await expect(audio).toHaveAttribute("src", /^blob:/);
+  await expect.poll(() => audio.evaluate((el: HTMLAudioElement) => el.duration || 0), { timeout: 15_000 }).toBeCloseTo(41.9, 1);
+});
+
+test("a video inside a scrolling box, chosen in Page structure, is scrolled into view in that box", async ({ page }) => {
+  const inner = frame(page).locator('video[title="Inner"]');
+  const scroller = frame(page).locator(".scroller");
+  await frame(page).locator("h1").scrollIntoViewIfNeeded();
+  await choose(page, /^Video/, ["Section", "Block"]);
+  // The second Video row is the one in the box.
+  await page.getByRole("tree", { name: "Page structure" }).getByRole("treeitem", { name: /^Video/ }).nth(1).click();
+  await expect.poll(async () => {
+    const [a, b] = [await inner.boundingBox(), await scroller.boundingBox()];
+    return Boolean(a && b && a.y >= b.y - 1 && a.y + a.height <= b.y + b.height + 1);
+  }).toBe(true);
+  await expect(inner).toBeInViewport({ ratio: 0.9 });
 });
