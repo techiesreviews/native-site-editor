@@ -13,7 +13,7 @@ import "./media-improve.css";
 /** Kept by the Media view, so the Undo list and what a run found outlive leaving the screen. */
 export interface ImproveMemory {
   outcomes: RowOutcome[];
-  states: Map<string, { state: ImproveRowState; message?: string }>;
+  states: Map<string, { state: ImproveRowState; message?: string; notes?: string[] }>;
   /** Pictures a run could not bring in, by row file then picture key. */
   left: Map<string, Map<string, LeftPicture>>;
   own: Map<string, File>;
@@ -140,7 +140,8 @@ export function showImproveImages(sheet: LibrarySheet, h: ImproveHost) {
       const text = node("span", "media-improve__text");
       text.append(node("strong", "", row.label), node("span", "media-library__muted", improveRowLine(row)));
       const status = m.states.get(row.file);
-      if (status) text.append(node("span", `media-improve__status is-${status.state}`, improveRowStatus(status.state, status.message)));
+      if (status) text.append(node("span", `media-improve__status is-${status.state}`, improveRowStatus(status.state, status.message)),
+        ...status.notes?.map(note => node("span", "media-library__muted", note)) ?? []);
       toggle.append(icon(open.has(row.file) ? "caret-down" : "caret-right", 16), text);
       const fix = button("Fix", () => void run([row.file]), "button secondary");
       fix.dataset.focusKey = `fix:${row.file}`; fix.setAttribute("aria-label", `Fix ${row.label}`); fix.disabled = !row.count;
@@ -216,7 +217,7 @@ export function showImproveImages(sheet: LibrarySheet, h: ImproveHost) {
           try {
             const outcome = await session!.row({ row: file, known: m.known, maps: m.maps, signal: abort.signal, own: m.own, measure, siteUrl: h.improve.url() });
             if (outcome.changed) { m.outcomes.push(outcome); changed++; }
-            m.states.set(file, { state: outcome.changed ? "done" : "unchanged" });
+            m.states.set(file, { state: outcome.changed ? "done" : "unchanged", ...outcome.notes.length ? { notes: [...new Set(outcome.notes)] } : {} });
             m.left.set(file, new Map(outcome.left.map(item => [item.key, item])));
             for (const picture of row?.pictures ?? []) m.own.delete(picture.key);
           } catch (error) {

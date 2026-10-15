@@ -130,7 +130,8 @@ export async function improveRow(real: MediaWorkspaceContext, request: ImproveRo
   const row = plan.rows.find(item => item.file === request.row);
   const outcome: RowOutcome = { file: request.row, label: row?.label ?? request.row, changed: false, texts: [], added: [], left: [], notes: [] };
   if (!row) return outcome;
-  const wants = (...changes: string[]) => row.pictures.some(p => p.ticked && p.changes.some(change => changes.includes(change)));
+  let pictures = row.pictures;
+  const wants = (...changes: string[]) => pictures.some(p => p.ticked && p.changes.some(change => changes.includes(change)));
   const original = sources[row.file] ?? "";
   // The shown page was painted from the saved text: measure only while the row's elements keep their places.
   const measure: Measure | undefined = request.measure && (async (file, node, size) => {
@@ -153,6 +154,9 @@ export async function improveRow(real: MediaWorkspaceContext, request: ImproveRo
         measure: measure && (async (picture, size) => { const node = nodeAt(original, picture.tag.start); return node && measure(row.file, node, size); }),
       });
       outcome.left.push(...result.left); outcome.notes.push(...result.notes);
+      guard();
+      // What was brought in is judged again: an outside GIF becomes a looping video in this same save.
+      if (result.brought.length) pictures = (await readPlan(stage.ctx, files())).plan.rows.find(item => item.file === row.file)?.pictures ?? [];
       guard();
     }
     if (wants("lighten", "copies", "size", "sizes", "loading")) {
@@ -211,9 +215,12 @@ export async function undoRows(real: MediaWorkspaceContext, outcomes: readonly R
     } else if (now === after) texts.set(path, before);
     else throw new Error(`${path} was edited after Improve images changed it. Undo it there with Ctrl+Z, or edit it by hand.`);
   }
-  // Every file scanned for other uses is a proof: a page that starts using an added file meanwhile refuses the Undo.
+  // Every file scanned for other uses is a proof: a page or SVG that starts using an added file meanwhile
+  // refuses the Undo. Media files (an SVG is text) are proved by their versions, taken before reading.
+  const media = new Set(real.items.map(item => item.path));
+  for (const path of real.paths) if (media.has(path) && isMediaTextFile(path)) batch.expectedAssets.set(path, real.assetVersion(path));
   const sources = await readSources(real);
-  for (const [path, text] of Object.entries(sources)) if (!batch.expectedSources.has(path) && !real.items.some(item => item.path === path)) batch.expectedSources.set(path, text);
+  for (const [path, text] of Object.entries(sources)) if (!batch.expectedSources.has(path) && !media.has(path)) batch.expectedSources.set(path, text);
   for (const [path, text] of texts) sources[path] = text;
   const added = [...new Set([...outcomes.flatMap(outcome => outcome.added), ...kept])].filter(path => real.paths.includes(path));
   const mentioned = mediaMentions({ media: added, sources, site: { origins: real.origins ?? [] } });

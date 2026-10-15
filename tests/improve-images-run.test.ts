@@ -31,7 +31,7 @@ function site(pages: Record<string, string>) {
     get paths() { return [...new Set([...text.keys(), ...bytes.keys()])]; },
     get items() { return [...bytes].map(([path, blob]) => ({ path, size: blob.size })); },
     pages: Object.keys(pages), components: {}, origins: ["https://own.example"],
-    assertLive() {}, async read(path) { return text.get(path); }, async blob(path) { return bytes.get(path)!; },
+    assertLive() {}, async read(path) { return text.get(path) ?? (path.endsWith(".svg") ? bytes.get(path)?.text() : undefined); }, async blob(path) { return bytes.get(path)!; },
     assetVersion: path => versions.get(path), async openPage() {},
     async applyBatch(batch) {
       await applyMediaWorkspaceBatch(batch, {
@@ -183,4 +183,12 @@ test("Undo proves every page it read for other uses", async () => {
   assert.equal(undo.expectedSources.get("other.html"), "<p>No pictures</p>");
   assert.ok(undo.deletes.includes("images/heavy.webp"));
   assert.equal(undo.expectedSources.has("images/heavy.jpg"), false, "media files are proved by their versions");
+
+  // An SVG read for other uses is proved by its version, so one changed meanwhile refuses the Undo.
+  const svg = site({ "index.html": '<img src="/images/heavy.jpg">' });
+  svg.bytes.set("images/logo.svg", new Blob(['<svg xmlns="http://www.w3.org/2000/svg"/>'], { type: "image/svg+xml" }));
+  const fixed = await svg.row("index.html");
+  const count = svg.batches.length;
+  await undoRows(svg.ctx, [fixed]);
+  assert.ok(svg.batches[count].expectedAssets.has("images/logo.svg"));
 });
