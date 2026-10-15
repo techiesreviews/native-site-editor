@@ -163,3 +163,15 @@ test("Worker and tab share video tool argument rules", async () => {
   assert.match(problem("write_subtitles", { file: "images/a.png", text: "Hello" })!, /Only a video or audio/);
   assert.match(problem("write_subtitles", { file: "media/film.mp4", text: "é".repeat(1024 * 1024 + 1) })!, /2 MB/);
 });
+
+test("copied Online stills leave the picture list and paging, while the user's own still stays", () => {
+  const data = input();
+  const video = { key: "youtube:aqz-KE-bpKQ", service: "youtube" as const, id: "aqz-KE-bpKQ", still: "images/photo.webp", stillCopied: true as const, pages: [] };
+  const own = { key: "vimeo:123456", service: "vimeo" as const, id: "123456", still: "images/decoration.svg", pages: [] };
+  const report = mediaListReport({ ...data, online: [video, own], limit: 2 });
+  assert.equal(report.total, 4); assert.equal(report.nextOffset, 2);
+  assert.ok(report.media.some(item => item.path === "images/decoration.svg"));
+  const rest = mediaListReport({ ...data, online: [video, own], offset: 2, limit: 2 });
+  assert.deepEqual(rest.media.find(item => item.path === video.key)!.family, ["images/photo.webp", "images/photo-480w.webp", "media/originals/photo.jpg"]);
+  assert.equal(rest.nextOffset, undefined);
+});

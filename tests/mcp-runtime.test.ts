@@ -97,7 +97,7 @@ test("MCP site tools read the site, queue guarded changes for the editor tab, re
     const tools = listing.map((tool) => tool.name).sort();
     assert.deepEqual(tools, [
       "add_section", "adding_settings", "change_collection", "create_page", "delete_file", "describe_media", "edit_file", "export_site", "frame_image", "get_command_status", "get_page", "get_selection", "get_site",
-      "inspect_preview", "keep_media", "list_files", "list_media", "loop_video", "make_component", "move_file", "move_section", "open_page", "place_media", "preview_media", "read_file", "remove_media", "remove_section", "replace_media", "reply_to_request", "restore_media", "set_page_details",
+      "improve_images", "inspect_preview", "keep_media", "list_files", "list_media", "loop_video", "make_component", "move_file", "move_section", "open_page", "place_media", "preview_media", "read_file", "remove_media", "remove_section", "replace_media", "reply_to_request", "restore_media", "set_page_details",
       "video_still", "wait_for_requests", "write_file", "write_subtitles",
     ]);
     const documentation = readFileSync(new URL("../docs/mcp.md", import.meta.url), "utf8");
@@ -971,7 +971,7 @@ test("agent media editing tools validate before queueing and retain their comman
     }));
     const call = (name: string, args: Record<string, unknown>) => client!.callTool({ name, arguments: { ...args, waitSeconds: 0 } });
     const tools = (await client.listTools()).tools;
-    for (const name of ["place_media", "describe_media", "change_collection", "adding_settings", "frame_image", "remove_media", "keep_media", "restore_media", "replace_media", "loop_video", "video_still", "write_subtitles"]) {
+    for (const name of ["improve_images", "place_media", "describe_media", "change_collection", "adding_settings", "frame_image", "remove_media", "keep_media", "restore_media", "replace_media", "loop_video", "video_still", "write_subtitles"]) {
       assert.equal(tools.find(tool => tool.name === name)?.annotations?.readOnlyHint, false);
       assert.match(tools.find(tool => tool.name === name)!.description!, /Unsaved until the user saves.*Media chapter.*native-site:\/\/conventions/);
     }
@@ -1002,9 +1002,14 @@ test("agent media editing tools validate before queueing and retain their comman
       { path: "index.html", element: "1", trim: {} },
       { path: "index.html", element: "1", trim: { zoom: 1, turn: 0, flipX: false } },
     ]) assert.equal((await call("frame_image", args)).isError, true);
+    for (const row of ["", "../index.html", "/index.html", "https://example.com/index.html", "x.css", "x.html?x", "a\\b.html"])
+      assert.equal((await call("improve_images", { row })).isError, true);
     assert.equal((await tab.hub()).commands?.length ?? 0, 0);
     for (const name of ["describe_media", "change_collection", "adding_settings", "frame_image", "list_media", "read_file"]) assert.ok(MEDIA_RECORDS_REFUSED.includes(name));
     const queued: [string, Record<string, unknown>, string, Record<string, unknown>][] = [
+      ["improve_images", {}, "", {}],
+      ["improve_images", { row: "index.html" }, "", { row: "index.html" }],
+      ["improve_images", { row: "components/photo-card/photo-card.html" }, "", { row: "components/photo-card/photo-card.html" }],
       ["loop_video", { path: "index.html", element: "0", looping: true }, "index.html", { element: "0", looping: true }],
       ["video_still", { file: "media/film.mp4", picture: "images/a.png" }, "", { file: "media/film.mp4", picture: "images/a.png" }],
       ["write_subtitles", { file: "media/film.mp4", text: "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nHello\n" }, "", { file: "media/film.mp4", text: "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nHello\n" }],
@@ -1039,6 +1044,10 @@ test("agent media editing tools validate before queueing and retain their comman
         const settings = { image: expected.image ?? "balanced", video: "balanced", audio: "balanced", keepOriginal: expected.keepOriginal ?? false, isDefault: !expected.image, choices: MEDIA_ADDING_CHOICES };
         await tab.ack(id, command.grantId, "applied", { message: "Adding settings read.", result: { report: JSON.stringify(settings) } });
         assert.deepEqual(payload(await call(name, { ...args, requestId: id })).result, settings);
+      } else if (name === "improve_images") {
+        const report = { rows: [{ file: "index.html", label: "Home", changed: true, notes: [], left: [] }], failed: [] };
+        await tab.ack(id, command.grantId, "applied", { result: { report: JSON.stringify(report) } });
+        assert.deepEqual(payload(await client!.callTool({ name: "get_command_status", arguments: { requestId: id } })).result, report);
       } else if (name === "frame_image") {
         const report = { file: "images/a.png", shape: "original", focus: { x: 50, y: 50 }, trimmed: false };
         await tab.ack(id, command.grantId, "applied", { message: "Image place read.", result: { report: JSON.stringify(report) } });
@@ -1979,4 +1988,165 @@ test("agent still and subtitle refusals leave all files and Undo untouched", asy
     await assert.rejects(applySiteCommand(spot.actions, mediaCommand("place_media", { file, element: "0.0.0.0" })), /A picture spot takes only a picture or a video/);
     assert.equal(spot.history.length, 0);
   }
+});
+
+function improveAgentFixture(body = '<img src="/images/heavy.jpg"><img src="/images/a.gif">') {
+  const text = new Map([
+    ["index.html", `<html><head><title>Home</title></head><body>${body}</body></html>`],
+    ["components/hero/hero.html", '<img src="/images/heavy.jpg">'],
+    ["empty.html", '<html><head><title>Empty</title></head><body></body></html>'],
+  ]);
+  const png = (size: number, width = 3000, height = 2000) => {
+    const bytes = new Uint8Array(size), view = new DataView(bytes.buffer);
+    bytes.set([137, 80, 78, 71, 13, 10, 26, 10]); view.setUint32(16, width); view.setUint32(20, height);
+    return new Blob([bytes], { type: "image/png" });
+  };
+  const bytes = new Map([["images/heavy.jpg", png(300000)], ["images/a.gif", new Blob(["gif"], { type: "image/gif" })]]);
+  const batches: MediaWorkspaceBatch[] = [], undo: (() => void)[] = [], shown: string[] = [];
+  let live = true, encodeHook: (() => void) | undefined;
+  const ctx: import("../src/page-builder/media-workspace").MediaWorkspaceContext = {
+    key: "improve", scope: { account: "lex", repoId: 1, repo: "lex/site", branch: "main" }, history: false,
+    drafts: { get: () => undefined, save: () => { throw new Error("Direct write"); }, remove: () => { throw new Error("Direct write"); } },
+    get paths() { return [...new Set([...text.keys(), ...bytes.keys()])]; },
+    get items() { return [...bytes].filter(([path]) => /\.(jpg|webp|gif|mp4)$/.test(path)).map(([path, blob]) => ({ path, size: blob.size })); },
+    origins: ["https://own.example"], pages: ["index.html", "empty.html"], components: { "hero-card": "components/hero/hero.html" },
+    assertLive() { if (!live) throw new Error("The editor changed branch or revision."); },
+    read: async path => text.get(path) ?? (/\.(css|js)$/.test(path) ? bytes.get(path)?.text() : undefined),
+    blob: async path => bytes.get(path)!, assetVersion: path => bytes.has(path) ? path : undefined, async openPage() {},
+    async applyBatch(batch) {
+      ctx.assertLive(); assert.ok(batch.live?.() ?? true);
+      assert.deepEqual(batch.expectedPaths, ctx.paths);
+      for (const [path, source] of batch.expectedSources) assert.equal(await ctx.read(path), source);
+      const oldText = new Map(text), oldBytes = new Map(bytes);
+      undo.push(() => { text.clear(); oldText.forEach((value, key) => text.set(key, value)); bytes.clear(); oldBytes.forEach((value, key) => bytes.set(key, value)); });
+      batches.push(batch);
+      batch.edits.forEach((value, key) => text.set(key, value));
+      batch.uploads.forEach(({ path, blob }) => bytes.set(path, blob));
+    },
+  };
+  const ports: import("../src/agent-improve-images").AgentImprovePorts = {
+    sizes: async path => path.endsWith(".gif") ? { width: 800, height: 450 } : { width: 3000, height: 2000 },
+    heavy: { tree: source => readSource(source, { page: true }), async encode() {
+      encodeHook?.();
+      return { outputs: [{ blob: png(1000, 1200, 800), width: 1200, height: 800, extension: "webp" },
+        { blob: png(100, 480, 320), width: 480, height: 320, extension: "webp", variantWidth: 480 }], before: 300000, after: 1100 };
+    } },
+    gifs: {
+      async prepare(file, _key, folder) {
+        return { request: { file, folder: folder!, result: { outputs: [{ blob: new Blob(["video"], { type: "video/mp4" }), extension: "mp4", width: 800, height: 450 }],
+          still: { blob: png(100), extension: "webp" }, fromGif: true, before: 100, after: 5 } } };
+      },
+      async read() { throw new Error("An agent must not read the service"); },
+      async playerFiles() { return { "styles/media-player.css": "/* player */", "scripts/media-player.js": "// player", "scripts/media-online.js": "// online" }; },
+    },
+  };
+  const host = { context: async () => ctx, show: async (path: string) => { shown.push(path); },
+    measure: async (path: string, node: number[]) => path.startsWith("components/") ? undefined : ({ sizes: "(max-width: 600px) 100vw, 600px", firstScreen: true, large: true, images: [{ node, firstScreen: true, large: true }] }), url: () => "https://own.example/" } satisfies import("../src/agent-improve-images").AgentImproveHost;
+  const run = (row?: string) => applyAgentMedia(ctx, mediaCommand("improve_images", { row }), () => { throw new Error("No placement"); }, undefined, undefined, undefined, host, ports);
+  return { ctx, text, bytes, batches, undo, shown, host, ports, run, stop: () => { live = false; }, onEncode: (hook: () => void) => { encodeHook = hook; } };
+}
+
+test("agent Improve images equals the screen row, converts GIFs, measures pages and saves each row once", async () => {
+  const { improveRow, runMaps } = await import("../src/page-builder/improve-images-run");
+  const agent = improveAgentFixture(), screen = improveAgentFixture();
+  const outcome = await agent.run("index.html");
+  const report = JSON.parse(outcome!.result.report);
+  assert.deepEqual(report.failed, []); assert.equal(report.rows[0].changed, true);
+  await improveRow(screen.ctx, { row: "index.html", known: { "images/heavy.jpg": { width: 3000, height: 2000 }, "images/a.gif": { width: 800, height: 450 } },
+    maps: runMaps(), signal: new AbortController().signal, by: "lex", measure: screen.host.measure, siteUrl: screen.host.url() }, screen.ports);
+  assert.deepEqual(agent.text, screen.text);
+  assert.match(agent.text.get("index.html")!, /srcset="[^"]*heavy\.webp 1200w/);
+  assert.match(agent.text.get("index.html")!, /<video[^>]*muted loop playsinline/);
+  assert.deepEqual(agent.shown, ["index.html"]);
+  assert.deepEqual(agent.batches.map(batch => batch.label), ["Improve images: Home"]);
+  assert.equal(agent.undo.length, 1); agent.undo.pop()!();
+  assert.equal(agent.text.get("index.html"), screen.batches[0].expectedSources.get("index.html"));
+  const all = improveAgentFixture();
+  const allReport = JSON.parse((await all.run())!.result.report);
+  assert.deepEqual(allReport.rows.map((item: { file: string }) => item.file), ["components/hero/hero.html", "index.html"]);
+  assert.equal(all.undo.length, 2);
+  const component = improveAgentFixture();
+  await component.run("components/hero/hero.html");
+  assert.equal(component.batches.length, 1); assert.deepEqual(component.shown, []);
+  assert.doesNotMatch(component.text.get("index.html")!, /heavy.webp/);
+});
+
+test("agent Improve images leaves outside GIFs and players for Lex, respects unticks and refuses unknown rows", async () => {
+  const body = '<img src="https://outside.example/a.gif"><iframe src="https://youtube.com/embed/aqz-KE-bpKQ"></iframe><iframe src="https://player.vimeo.com/video/123456"></iframe>';
+  const fixture = improveAgentFixture(body);
+  const report = JSON.parse((await fixture.run("index.html"))!.result.report);
+  assert.deepEqual(report.failed, []); assert.equal(report.rows[0].changed, false);
+  assert.equal(report.rows[0].left.length, 3);
+  assert.ok(report.rows[0].left.every((left: { reason: string }) => left.reason === "for-lex"));
+  assert.equal(fixture.batches.length, 0);
+  await assert.rejects(fixture.run("missing.html"), /Unknown Improve images row/);
+  await assert.rejects(fixture.run("../index.html"), /page or component template path/);
+  assert.match((await fixture.run("empty.html"))!.message, /Nothing to improve/);
+  assert.equal(fixture.batches.length, 0);
+  const unticked = improveAgentFixture('<img src="/images/heavy.jpg">');
+  unticked.text.set(MEDIA_RECORDS_PATH, JSON.stringify({ version: 2, collections: [], files: {}, leftAsIs: [{ picture: "images/heavy.jpg", row: "index.html" }] }));
+  await unticked.run("index.html"); assert.equal(unticked.batches.length, 0);
+});
+
+test("agent Improve images stops on revision changes without saving a partial row, and continues ordinary failures", async () => {
+  const fixture = improveAgentFixture();
+  fixture.onEncode(fixture.stop);
+  await assert.rejects(fixture.run(), /changed branch or revision/);
+  assert.equal(fixture.batches.length, 0);
+  const partial = improveAgentFixture();
+  partial.onEncode(() => { if (partial.batches.length) partial.stop(); });
+  // First row makes the lighter file; interrupt the next row while showing its page.
+  partial.host.show = async () => { partial.stop(); };
+  await assert.rejects(partial.run(), /changed branch or revision/);
+  assert.equal(partial.batches.length, 1);
+  const failed = improveAgentFixture();
+  failed.host.show = async () => { throw new Error("Cannot show page"); };
+  const report = JSON.parse((await failed.run())!.result.report);
+  assert.equal(report.rows[0].changed, true);
+  assert.deepEqual(report.failed, [{ file: "index.html", message: "Cannot show page" }]);
+  const continues = improveAgentFixture();
+  let calls = 0;
+  continues.onEncode(() => { if (++calls === 1) throw new Error("Cannot encode component"); });
+  const continued = JSON.parse((await continues.run())!.result.report);
+  assert.deepEqual(continued.failed, [{ file: "components/hero/hero.html", message: "Cannot encode component" }]);
+  assert.equal(continued.rows[0].file, "index.html"); assert.equal(continued.rows[0].changed, true);
+  assert.equal(continues.batches.length, 1);
+});
+
+test("list_media owns copied online still families; remove_media refuses every member without changing anything", async () => {
+  const { listWorkspaceMedia } = await import("../src/agent-media");
+  for (const service of ["youtube", "vimeo"] as const) {
+    const fixture = agentMediaFixture();
+    const records = parseMediaRecords(fixture.text.get(MEDIA_RECORDS_PATH));
+    records.onlineVideos = [
+      { service, id: service === "youtube" ? "aqz-KE-bpKQ" : "123456", title: "Recorded film", still: fixture.file, stillCopied: true },
+      { service: "youtube", id: "dQw4w9WgXcQ", title: "Own picture", still: "images/old.png" },
+    ];
+    fixture.text.set(MEDIA_RECORDS_PATH, JSON.stringify(records));
+    const ctx = await fixture.controller.workspaceContext(isAgentMediaPath);
+    const report = JSON.parse(await listWorkspaceMedia(ctx, { offset: 0, limit: 100 }));
+    assert.equal(report.total, 3);
+    assert.ok(report.media.some((item: { path: string }) => item.path === "images/old.png"));
+    assert.ok(!report.media.some((item: { path: string }) => item.path === fixture.file));
+    const video = report.media.find((item: { name: string }) => item.name === "Recorded film");
+    const members = [fixture.file, "media/images/photo-480.webp", "media/images/photo-960.webp", "media/originals/photo.jpg"];
+    assert.deepEqual(video.family.sort(), members.sort());
+    const before = new Map(fixture.text), paths = [...fixture.paths];
+    for (const member of members) {
+      await assert.rejects(applyAgentMedia(await fixture.controller.workspaceContext(isAgentMediaPath), mediaCommand("remove_media", { files: [member] }),
+        () => { throw new Error("No placement"); }), /belongs to Online video Recorded film/);
+      assert.deepEqual(fixture.text, before); assert.deepEqual(fixture.paths, paths);
+      assert.equal(fixture.batches.length, 0); assert.equal(fixture.history.length, 0);
+    }
+  }
+});
+
+
+test("agent Improve images summarises oversized reports within the media response limit", async () => {
+  const fixture = improveAgentFixture(Array.from({ length: 120 }, (_, index) => `<img src="https://outside.example/${index}-${"x".repeat(250)}.gif">`).join(""));
+  const outcome = (await fixture.run("index.html"))!;
+  const report = JSON.parse(outcome.result.report);
+  assert.ok(new TextEncoder().encode(outcome.result.report).length <= MEDIA_LIST_LIMIT);
+  assert.equal(report.leftForLex, 120); assert.equal(report.omittedRows, 1);
+  assert.equal(fixture.batches.length, 0);
 });

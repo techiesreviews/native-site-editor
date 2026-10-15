@@ -4601,6 +4601,7 @@ const agentSiteActions: AgentSiteActions = {
   },
   async media(command) {
     const since = guardedEdits.stamp("repository");
+    const improve = command.operation === "improve_images" ? mediaController.prepareImprove() : undefined;
     const place = command.operation === "place_media"
       ? mediaController.preparePlacement({ path: command.path, node: parseOutlineId(command.args!.element!)! }) : undefined;
     const frame = command.operation === "frame_image"
@@ -4610,7 +4611,7 @@ const agentSiteActions: AgentSiteActions = {
     const [media, listing] = await Promise.all([import("./agent-media-actions"), import("./agent-media")]);
     if (!since.holds()) throw new Error("The editor changed branch or revision.");
     const ctx = await mediaController.workspaceContext(listing.isAgentMediaPath);
-    return media.applyAgentMedia(ctx, command, () => place!, frame ? () => frame : undefined, loop ? () => loop : undefined);
+    return media.applyAgentMedia(ctx, command, () => place!, frame ? () => frame : undefined, loop ? () => loop : undefined, undefined, improve);
   },
   legacy: applyAgentCommand,
 };

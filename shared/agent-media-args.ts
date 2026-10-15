@@ -8,6 +8,9 @@ export const AGENT_KEEP_REFUSED = "Agents may add Always keep but never take it 
 
 /** Worker and lazy tab validation use the same rules before applying media commands. */
 export function agentMediaArgsProblem(operation: AgentOperation, args: AgentCommandArgs, path?: string): string | undefined {
+  if (operation === "improve_images" && args.row !== undefined &&
+    (typeof args.row !== "string" || args.row.length > 1024 || !/\.html$/i.test(args.row) || /^(?:[a-z]+:|[\\/])|(?:^|[\\/])\.\.?(?:[\\/]|$)|[?#\\]/i.test(args.row)))
+    return "Give a page or component template path ending in .html, as listed by get_site.";
   if (operation === "keep_media" && args.keep === false) return AGENT_KEEP_REFUSED;
   if (["remove_media", "keep_media", "restore_media"].includes(operation)) {
     if (operation !== "restore_media" || args.files !== undefined) {

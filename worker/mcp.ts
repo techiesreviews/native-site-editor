@@ -304,7 +304,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
   // An inspection's report arrives as JSON; the agent gets it as an object.
   function resultOf(command: AgentCommand) {
     const report = command.result?.report;
-    if (!["inspect_preview", "list_media", "adding_settings", "frame_image", "loop_video", "remove_media", "keep_media", "restore_media"].includes(command.operation) || typeof report !== "string") return command.result;
+    if (!["improve_images", "inspect_preview", "list_media", "adding_settings", "frame_image", "loop_video", "remove_media", "keep_media", "restore_media"].includes(command.operation) || typeof report !== "string") return command.result;
     try {
       return JSON.parse(report);
     } catch {
@@ -802,6 +802,17 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     if (!/\.html$/i.test(path)) return failure("Give a page path ending in .html.");
     const { context } = await current();
     return queue("place_media", context, { path, args, requestId, waitSeconds });
+  });
+  server.registerTool("improve_images", {
+    description: "Improve images for one page or component template (row), or all rows when omitted. Makes lighter files, responsive copies and Looping videos, leaving outside pictures and old YouTube/Vimeo players for the user. Each row is one Undo step. Unsaved until the user saves. Follow the Media chapter of native-site://conventions.",
+    inputSchema: z.object({ row: mediaPath.optional(), requestId, waitSeconds }),
+    annotations: editing,
+  }, async ({ row, requestId, waitSeconds }) => {
+    const args = { row };
+    const problem = agentMediaArgsProblem("improve_images", args) ?? (row ? writablePathProblem(row) : undefined);
+    if (problem) return failure(problem);
+    const { context } = await current();
+    return queue("improve_images", context, { path: "", args, requestId, waitSeconds });
   });
   server.registerTool("loop_video", {
     description: "Read or change Looping video for one placed video, using the edit bar's transaction. A picture spot always loops silently. Unsaved until the user saves. Follow the Media chapter of native-site://conventions.",

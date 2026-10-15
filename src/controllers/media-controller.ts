@@ -574,6 +574,25 @@ export function createMediaController(ports: MediaControllerPorts) {
       (await import("../page-builder/social-sharing")).shareImage(workspaceContext, request, message => ports.announce(message)),
     /** The canvas stopped the edit bar's play `id`. */
     mediaEnded: (id: number) => player?.ended(id),
+    prepareImprove() {
+      const stamp = ports.stamp();
+      const assertLive = () => {
+        if (!stamp.holds()) throw new Error("The editor changed branch or revision.");
+        if (gallery?.element.getAttribute("aria-busy") === "true") throw new Error("Media is busy. Wait for the user's Improve images run or other Media work to finish.");
+      };
+      assertLive();
+      return {
+        context: async () => {
+          assertLive();
+          const ctx = await workspaceContext(() => true);
+          assertLive();
+          return ctx;
+        },
+        show: (path: string) => ports.showPage?.(path) ?? Promise.resolve(),
+        measure: (path: string, node: number[], size: { width?: number; height?: number }) => ports.measureImage?.(path, node, size) ?? Promise.resolve(undefined),
+        url: () => ports.usage?.url(),
+      };
+    },
     workspaceContext, preparePlacement, prepareLoop, prepareFrame, chooseImage, insertMedia, choosePath, chooseBackground, videoControls, placeState, placeFrame, editImage, changePlace, ensureGallery, reviewInGallery, requestGalleryRefresh, disposeGallery,
     closePicker: () => loaded?.closeMediaPicker(), galleryVisible: () => ports.galleryVisible() };
 }

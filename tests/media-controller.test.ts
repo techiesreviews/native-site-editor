@@ -683,3 +683,20 @@ test("a picture spot's picker lists videos too; a GIF added there becomes a loop
   assert.equal(f.changes.length, 0);
   assert.deepEqual(told, ["Looping video added."]);
 });
+
+test("agent Improve images refuses a busy Media screen and keeps its original repository proof", async () => {
+  const f = fixture();
+  await f.controller.ensureGallery();
+  f.busy();
+  assert.throws(() => f.controller.prepareImprove(), /Wait for the user's Improve images run/);
+  f.settle();
+  const run = f.controller.prepareImprove();
+  await run.context();
+  f.openAnotherPage();
+  await run.context();
+  f.busy();
+  await assert.rejects(run.context(), /Wait for the user/);
+  f.settle();
+  f.bump();
+  await assert.rejects(run.context(), /changed branch or revision/);
+});

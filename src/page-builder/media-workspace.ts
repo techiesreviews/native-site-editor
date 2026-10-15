@@ -990,6 +990,8 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       expectedAssets(ctx, batch, expected);
       assetGuard(batch, unique);
       if (rules) {
+        const online = rules.agentOnlineStillRemovalProblem(unique, ctx.paths, metadata);
+        if (online) throw new Error(online);
         const kept = rules.agentKeptRemovalProblem(unique, ctx.paths, metadata);
         if (kept) throw new Error(kept);
         const usage = wideUsage(unique, text, ctx);

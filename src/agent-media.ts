@@ -3,7 +3,7 @@ import { MEDIA_LIST_LIMIT, MEDIA_PREVIEW_LIMIT, MEDIA_PREVIEW_SIZE, isPreviewabl
 import { MEDIA_RECORDS_PATH, type MediaRecords } from "../shared/media-records";
 import { isImagePath } from "./native-structure";
 import { readSiteMediaRecords } from "./page-builder/media-collections";
-import { mediaFamilies, familyMembers, type MediaFamily } from "./page-builder/media-families";
+import { mediaFamilies, familyMembers, onlineStillMembers, type MediaFamily } from "./page-builder/media-families";
 import { fileDescriptionState } from "./page-builder/media-descriptions";
 import { mediaUsageFor, mediaUsageRecords, mediaUsageState, type MediaUsageRecords } from "./page-builder/media-usage";
 import type { MediaWorkspaceContext } from "./page-builder/media-workspace";
@@ -26,13 +26,14 @@ export interface MediaListInput {
 /** One full entry per family; paging never removes fields from an entry. */
 export function mediaListReport(input: MediaListInput) {
   const items = new Map(input.items.map(item => [item.path, item]));
+  const owned = onlineStillMembers(input.paths, input.online ?? input.records?.onlineVideos);
   const families = mediaFamilies(input.paths);
   const members = new Set(families.flatMap(family => familyMembers(family)));
   const prefix = input.folder ? `${input.folder.replace(/\/+$/, "")}/` : "";
   const all = [
     ...families.filter(family => familyMembers(family).some(path => items.has(path))),
     ...input.items.filter(item => !members.has(item.path)).map((item): MediaFamily => ({ main: item.path, copies: [], originals: [], subtitles: [] })),
-  ].filter(family => family.main.startsWith(prefix)).sort((a, b) => a.main.localeCompare(b.main));
+  ].filter(family => !owned.has(family.main) && family.main.startsWith(prefix)).sort((a, b) => a.main.localeCompare(b.main));
   const entries: Record<string, unknown>[] = all.map(family => {
     const item = items.get(family.main), record = input.records?.files[family.main];
     const description = fileDescriptionState(record), usage = mediaUsageFor(input.usage, family.main);
@@ -53,7 +54,7 @@ export function mediaListReport(input: MediaListInput) {
   });
   if (!prefix) for (const video of input.online ?? []) entries.push({
     path: video.key, kind: "online-video", name: video.title ?? `${video.service === "youtube" ? "YouTube" : "Vimeo"} video`,
-    ...video, address: onlineVideoHref(video), serviceBar: video.serviceBar ?? false,
+    ...video, ...video.stillCopied ? { family: [...onlineStillMembers(input.paths, [video])] } : {}, address: onlineVideoHref(video), serviceBar: video.serviceBar ?? false,
   });
   const media = entries.slice(input.offset, input.offset + input.limit);
   const report = () => ({ total: entries.length, offset: input.offset, count: media.length,

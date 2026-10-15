@@ -1,7 +1,7 @@
 ---
 title: Agents run Improve images
 type: task (AFK)
-status: in-progress
+status: open
 assignee: claude (mm-75 runner)
 blocked_by: [74-improve-images-screen, 69-agents-video-audio]
 builder: sol

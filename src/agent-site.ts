@@ -612,6 +612,7 @@ export async function applySiteCommand(actions: AgentSiteActions, command: Agent
     case "loop_video":
       await openPage(actions, path, command.expectedHash);
       return (await actions.media(command))!;
+    case "improve_images":
     case "video_still":
     case "write_subtitles":
     case "remove_media":

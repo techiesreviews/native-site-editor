@@ -33,6 +33,7 @@ export interface ImproveRowRequest {
   row: string; known: KnownSizes; maps: ImproveRunMaps; signal: AbortSignal;
   /** Lex's own copies for pictures whose website is gone or does not allow it, by picture key. */
   own?: Map<string, File>;
+  by?: "lex" | "agent";
   measure?: Measure; siteUrl?: string; fetch?: typeof fetch;
 }
 
@@ -150,7 +151,7 @@ export async function improveRow(real: MediaWorkspaceContext, request: ImproveRo
       const result = await bringInOutsidePictures({
         row, source: original, records, paths: stage.ctx.paths, workspace: createMediaWorkspace(async () => stage.ctx),
         assertLive: () => stage.ctx.assertLive(), live, brought: maps.brought, cache: request.maps.reads, own: request.own,
-        by: "lex", siteUrl: request.siteUrl, signal: request.signal, fetch: request.fetch, prepare: ports.prepare, probe: ports.probe,
+        by: request.by ?? "lex", siteUrl: request.siteUrl, signal: request.signal, fetch: request.fetch, prepare: ports.prepare, probe: ports.probe,
         measure: measure && (async (picture, size) => { const node = nodeAt(original, picture.tag.start); return node && measure(row.file, node, size); }),
       });
       outcome.left.push(...result.left); outcome.notes.push(...result.notes);
@@ -165,7 +166,7 @@ export async function improveRow(real: MediaWorkspaceContext, request: ImproveRo
       guard();
     }
     if (wants("loop", "first-frame", "player")) {
-      const result = await improveGifsAndPlayers(stage.ctx, { row: row.file, files: files(), by: "lex", fetch: request.fetch, siteUrl: request.siteUrl,
+      const result = await improveGifsAndPlayers(stage.ctx, { row: row.file, files: files(), by: request.by ?? "lex", fetch: request.fetch, siteUrl: request.siteUrl,
         converted: maps.converted, videos: maps.videos, live, signal: request.signal }, ports.gifs);
       outcome.left.push(...result.left); outcome.notes.push(...result.notes);
       guard();

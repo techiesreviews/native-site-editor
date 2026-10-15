@@ -27,6 +27,7 @@ export type AgentOperation =
   | "inspect_preview"
   | "list_media"
   | "preview_media"
+  | "improve_images"
   | "loop_video"
   | "video_still"
   | "write_subtitles"
@@ -71,6 +72,8 @@ export interface AgentCommand {
 }
 
 export interface AgentCommandArgs {
+  /** improve_images: page or component template; omitted means all rows. */
+  row?: string;
   /** create_page */
   parent?: string;
   title?: string;
@@ -132,7 +135,7 @@ export const MEDIA_PREVIEW_SIZE = 512;
 export function agentResultLimit(operation: AgentOperation) {
   if (operation === "inspect_preview") return 2 * INSPECTION_LIMIT;
   // Reports are JSON strings inside JSON: quotes and backslashes need slack.
-  if (["list_media", "restore_media", "remove_media", "keep_media"].includes(operation)) return 2 * MEDIA_LIST_LIMIT + 2048;
+  if (["improve_images", "list_media", "restore_media", "remove_media", "keep_media"].includes(operation)) return 2 * MEDIA_LIST_LIMIT + 2048;
   if (operation === "preview_media") return MEDIA_PREVIEW_LIMIT + 2048;
   return 2048;
 }

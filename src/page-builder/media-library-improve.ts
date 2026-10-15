@@ -1,3 +1,4 @@
+import { planWithPictureSizes } from "./improve-images-facts";
 import { button, node } from "../ui/dom";
 import { input } from "./media-library-fields";
 import { icon } from "../icons";
@@ -45,18 +46,9 @@ export function showImproveImages(sheet: LibrarySheet, h: ImproveHost) {
 
   async function load() {
     session ??= await h.adapter.improveImages!();
-    const first = await session.plan(m.known);
-    // Widths come from the pictures themselves; the listing only knows file sizes.
-    const missing = first.missingFacts.filter(path => !m.known[path]);
-    if (missing.length) {
-      let done = 0;
-      const read = async (path: string) => {
-        try { const bytes = await h.cache.get(path); m.known[path] = { width: bytes.width, height: bytes.height }; } catch { m.known[path] = {}; }
-        reading = `Reading pictures: ${++done} of ${missing.length}`; if (shown() && !plan) draw(false);
-      };
-      for (let index = 0; index < missing.length; index += 4) await Promise.all(missing.slice(index, index + 4).map(read));
-      plan = await session.plan(m.known);
-    } else plan = first;
+    plan = await planWithPictureSizes(session, m.known, path => h.cache.get(path), (done, total) => {
+      reading = `Reading pictures: ${done} of ${total}`; if (shown() && !plan) draw(false);
+    });
     h.improve.known(m.known);
   }
   const reload = () => h.task(async () => { await load(); if (shown()) draw(false); }, false);

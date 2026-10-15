@@ -17,10 +17,16 @@ export async function applyAgentMedia(
   prepareFrame?: ReturnType<typeof createMediaController>["prepareFrame"],
   prepareLoop?: ReturnType<typeof createMediaController>["prepareLoop"],
   moment?: (blob: Blob, seconds: number) => Promise<Blob>,
+  improve?: import("./agent-improve-images").AgentImproveHost,
+  improvePorts?: import("./agent-improve-images").AgentImprovePorts,
 ): Promise<void | { message: string; result: Record<string, string> }> {
   const args = command.args ?? {};
   const problem = agentMediaArgsProblem(command.operation, args, command.path);
   if (problem) throw new Error(problem);
+  if (command.operation === "improve_images") {
+    const { agentImproveImages } = await import("./agent-improve-images");
+    return agentImproveImages(improve ?? { context: async () => ctx }, args.row, improvePorts);
+  }
   if (command.operation === "frame_image") {
     if (!prepareFrame) throw new Error("Image framing is unavailable.");
     const place = prepareFrame({ path: command.path, node: parseOutlineId(args.element!)! });
