@@ -90,6 +90,9 @@ test("alt text from a file name, and the heading level before a point", () => {
 
 test("nativeKindLabel names elements in the user's words and leaves other tags as they are", () => {
   assert.equal(nativeKindLabel("h3"), "Heading");
+  assert.equal(nativeKindLabel("audio"), "Audio");
+  assert.equal(nativeKindLabel("a", "download-card"), "Download");
+  assert.equal(nativeKindLabel("a", "download-cards"), "Link");
   assert.equal(nativeKindLabel("p"), "Paragraph");
   assert.equal(nativeKindLabel("section"), "Section");
   assert.equal(nativeKindLabel("project-card"), "project-card");

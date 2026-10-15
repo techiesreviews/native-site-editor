@@ -12,8 +12,10 @@ import { isButtonBlock } from "./page-builder/block-fields";
 export function nativeKindLabel(tag: string, className = "") {
   if (isButtonBlock(tag, [{ name: "class", value: className }])) return "Button";
   if (/^h[1-6]$/.test(tag)) return "Heading";
+  // A PDF or other download placed from Media (slice 62's card).
+  if (tag === "a" && /(?:^|\s)download-card(?:\s|$)/.test(className)) return "Download";
   const labels: Record<string, string> = {
-    p: "Paragraph", a: "Link", button: "Button", img: "Image", picture: "Image", video: "Video",
+    p: "Paragraph", a: "Link", button: "Button", img: "Image", picture: "Image", video: "Video", audio: "Audio",
     ul: "List", ol: "List", li: "List item", section: "Section", article: "Article", header: "Header",
     footer: "Footer", nav: "Navigation", main: "Main", aside: "Aside", figure: "Figure", blockquote: "Quote",
     table: "Table", form: "Form", span: "Text", strong: "Bold", b: "Bold", em: "Italic", i: "Italic", slot: "Slot", div: "Block",

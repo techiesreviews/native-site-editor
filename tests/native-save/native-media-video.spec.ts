@@ -77,6 +77,8 @@ test("Add → Media places an audio file with its length and a PDF card that ope
   await audio.click();
   expect(await audio.evaluate(element => (element as HTMLAudioElement).paused)).toBe(true);
   await addMedia(page, "media/price-list.pdf", "Use file");
+  // The new card is selected, named for what it is.
+  await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Download");
   await expect.poll(() => mounted(page)).toContain('<a class="download-card" href="/media/price-list.pdf"><img src="/images/placeholder.svg" alt="" width="320" height="180" loading="lazy" decoding="async"><span class="download-card-name">price-list</span><span class="download-card-meta">PDF · ');
   const source = await mounted(page);
   expect(source).toContain('<span class="download-card-action">Open</span></a>');
