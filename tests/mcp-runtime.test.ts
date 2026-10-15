@@ -6,7 +6,7 @@ import { resolveNativeProject } from "../shared/native-project";
 import { createGuardedEdits } from "../src/guarded-edit";
 import { createMemoryWorkspace } from "./fakes/memory-workspace";
 import { applyAgentMedia } from "../src/agent-media-actions";
-import type { AgentCommand } from "../shared/agent";
+import { parseOutlineId, type AgentCommand } from "../shared/agent";
 import { createMediaController, type MediaControllerPorts } from "../src/controllers/media-controller";
 import type { MediaModule } from "../src/controllers/media-controller";
 import type { MediaPickerOptions } from "../src/page-builder/media-picker";
@@ -1790,10 +1790,51 @@ function agentVideoFixture(source = '<section><p>Selected</p></section>') {
   f.text.set(MEDIA_RECORDS_PATH, JSON.stringify(records));
   const actions = agentTidyActions(f);
   actions.open = async () => true;
-  actions.media = async command => applyAgentMedia(await f.controller.workspaceContext(isAgentMediaPath), command,
-    target => f.controller.preparePlacement(target), undefined, target => f.controller.prepareLoop(target));
+  // As main.ts: placement and looping take their proofs before anything is awaited.
+  actions.media = async command => {
+    const node = command.args?.element ? parseOutlineId(command.args.element)! : undefined;
+    const place = command.operation === "place_media" ? f.controller.preparePlacement({ path: command.path, node: node! }) : undefined;
+    const loop = command.operation === "loop_video" && command.args?.looping !== undefined ? f.controller.prepareLoop({ path: command.path, node: node! }) : undefined;
+    return applyAgentMedia(await f.controller.workspaceContext(isAgentMediaPath), command, () => place!, undefined, loop ? () => loop : undefined);
+  };
   return { ...f, actions };
 }
+
+test("agent placement and Looping proofs are taken before loading: a page changed meanwhile refuses with nothing written", async () => {
+  const source = '<section><video src="/media/film.mp4" controls preload="none"></video><p>Text</p></section>';
+  const swapped = '<section><p>Text</p><video src="/media/film.mp4" controls preload="none"></video></section>';
+  for (const prepare of [
+    (f: ReturnType<typeof agentVideoFixture>) => {
+      const loop = f.controller.prepareLoop({ path: "index.html", node: [0, 0, 0] });
+      return () => loop(true);
+    },
+    (f: ReturnType<typeof agentVideoFixture>) => {
+      const place = f.controller.preparePlacement({ path: "index.html", node: [0, 0, 0] });
+      return () => place({ path: "media/sound.mp3", alt: "" });
+    },
+  ]) {
+    const f = agentVideoFixture(source), run = prepare(f);
+    f.text.set("index.html", videoPage(swapped));
+    const text = new Map(f.text);
+    await assert.rejects(run(), /changed/);
+    assert.deepEqual(f.text, text); assert.equal(f.history.length, 0);
+  }
+});
+
+test("agent placing a recorded unlisted Vimeo video keeps its hash from Media and the address's start time", async () => {
+  const f = agentVideoFixture();
+  const records = parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH));
+  records.onlineVideos = [{ service: "vimeo", id: "123456", hash: "abcdef12", title: "Unlisted film", still: "media/film.webp" }];
+  f.text.set(MEDIA_RECORDS_PATH, JSON.stringify(records));
+  const before = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => { calls++; throw new Error("No network for recorded videos"); };
+  try {
+    await applySiteCommand(f.actions, mediaCommand("place_media", { file: "https://vimeo.com/123456#t=7s", element: "0.0.0" }));
+    assert.match(f.text.get("index.html")!, /href="https:\/\/vimeo\.com\/123456\/abcdef12#t=7s"/);
+    assert.equal(calls, 0); assert.equal(f.history.length, 1);
+  } finally { globalThis.fetch = before; }
+});
 
 test("agent video, audio, download and picture-spot placement equal Add → Media, with one Undo", async () => {
   for (const [file, source, element] of [

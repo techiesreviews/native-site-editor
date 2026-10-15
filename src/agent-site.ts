@@ -593,9 +593,10 @@ export async function applySiteCommand(actions: AgentSiteActions, command: Agent
       return { ...outcome, result: { ...outcome.result, hash: await hashOf(actions, path) } };
     }
     case "place_media": {
+      // Loaded first, so nothing awaits between the page's hash check and the placement's own proof.
+      const { locatePageElement } = await import("./page-builder/media-insert");
       const source = await openPage(actions, path, command.expectedHash);
       const node = parseOutlineId(args.element!)!;
-      const { locatePageElement } = await import("./page-builder/media-insert");
       const range = locatePageElement(source, node);
       if (!range) throw new Conflict("That element is no longer on the page.");
       const outcome = await actions.media(command);

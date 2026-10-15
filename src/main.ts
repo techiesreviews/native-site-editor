@@ -4605,10 +4605,12 @@ const agentSiteActions: AgentSiteActions = {
       ? mediaController.preparePlacement({ path: command.path, node: parseOutlineId(command.args!.element!)! }) : undefined;
     const frame = command.operation === "frame_image"
       ? mediaController.prepareFrame({ path: command.path, node: parseOutlineId(command.args!.element!)! }) : undefined;
+    const loop = command.operation === "loop_video" && command.args?.looping !== undefined
+      ? mediaController.prepareLoop({ path: command.path, node: parseOutlineId(command.args.element!)! }) : undefined;
     const [media, listing] = await Promise.all([import("./agent-media-actions"), import("./agent-media")]);
     if (!since.holds()) throw new Error("The editor changed branch or revision.");
     const ctx = await mediaController.workspaceContext(listing.isAgentMediaPath);
-    return media.applyAgentMedia(ctx, command, () => place!, frame ? () => frame : undefined, target => mediaController.prepareLoop(target));
+    return media.applyAgentMedia(ctx, command, () => place!, frame ? () => frame : undefined, loop ? () => loop : undefined);
   },
   legacy: applyAgentCommand,
 };

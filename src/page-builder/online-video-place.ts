@@ -56,7 +56,9 @@ export async function placeOnlineVideo(
   const addressed = "address" in chosen ? parseOnlineVideoAddress(chosen.address) : undefined;
   const again = "address" in chosen ? recordedOnly && addressed ? findOnlineVideo(records, addressed) : undefined : findOnlineVideo(records, chosen);
   if (recordedOnly && !again) throw new Error(NEW_ONLINE_VIDEO_REFUSED);
-  if ("address" in chosen) video = addressed;
+  // An agent's address only selects the record: service, id and an unlisted hash come from Media, the start time from the address.
+  if (recordedOnly && again) video = { service: again.service, id: again.id, ...again.hash ? { hash: again.hash } : {}, ...addressed?.start ? { start: addressed.start } : {} };
+  else if ("address" in chosen) video = addressed;
   else {
     if (!again) throw new Error("This video is no longer in Media. Paste its address instead.");
     video = { service: again.service, id: again.id, ...again.hash ? { hash: again.hash } : {} };
