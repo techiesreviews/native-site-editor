@@ -13,12 +13,19 @@ export function pruneLibrarySelection(items: MediaLibrary["items"], selected: Se
 /** The Collections option that opens Manage collections. Collection names are trimmed, so none starts with a space. */
 export const MANAGE_COLLECTIONS = " manage";
 
+/** "All collections"; a phone's One bar shows just "All" when it is chosen (slice 107). */
+export function allCollectionsOption() {
+  const option = new Option("All", ""), rest = document.createElement("span");
+  rest.className = "media-library__long"; rest.textContent = " collections"; option.append(rest);
+  return option;
+}
+
 /** All collections, then each collection in the library's order, then (in the Media pane)
  * Manage collections; a vanished choice falls back to All. */
 export function rebuildLibraryCollections(select: HTMLSelectElement, collections: string[], manage: boolean, chosen = select.value) {
   // The customizable select's button (showing the chosen option) stays first.
   select.replaceChildren(...[...select.children].filter(child => child instanceof HTMLButtonElement),
-    new Option("All collections", ""), ...collections.map(name => new Option(name, name)),
+    allCollectionsOption(), ...collections.map(name => new Option(name, name)),
     ...manage ? [document.createElement("hr"), new Option("Manage collections…", MANAGE_COLLECTIONS)] : []);
   select.value = collections.includes(chosen) ? chosen : "";
 }

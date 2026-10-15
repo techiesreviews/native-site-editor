@@ -27,7 +27,10 @@ const segment = encodeURIComponent;
 const apiRoot = "https://api.github.com";
 const maxPages = 50;
 const maxFileBytes = 1024 * 1024;
+/** Blobs up to this size are read as GitHub's base64 JSON (about 4/3 larger) and kept in the object cache. */
 const maxAssetBytes = 2 * 1024 * 1024;
+/** The largest file the editor reads or adds (GitHub's blob API takes up to 100 MB; the editor keeps well under). */
+export const MAX_FILE_BYTES = 20 * 1024 * 1024;
 const batchConcurrency = 8;
 const installationConcurrency = 6;
 
@@ -164,7 +167,7 @@ export class GitHub {
     return this.request<T>(path, method, body);
   }
 
-  private async send(path: string, method: string, body?: unknown, fresh = false, conditional?: string): Promise<Response> {
+  private async send(path: string, method: string, body?: unknown, fresh = false, conditional?: string, accept = "application/vnd.github+json"): Promise<Response> {
     // Native Workers fetch rejects a GitHub instance as its `this` receiver.
     const fetcher = this.fetcher;
     return fetcher(`${apiRoot}${path}`, {
@@ -176,7 +179,7 @@ export class GitHub {
         ...(conditional ? { "If-None-Match": conditional } : {}),
         "Content-Type": "application/json",
         Authorization: `Bearer ${this.token}`,
-        Accept: "application/vnd.github+json",
+        Accept: accept,
         "X-GitHub-Api-Version": "2022-11-28",
         "User-Agent": "native-site-editor",
       },
@@ -589,16 +592,47 @@ export class GitHub {
     }
   }
 
-  /** A blob's bytes (an image for the preview, a file to download), up to `maxAssetBytes`. */
-  async bytes(repo: Repository, sha: string): Promise<Uint8Array> {
+  /** A blob's bytes (an image for the preview, a file to download), up to `MAX_FILE_BYTES`.
+   * A blob whose base64 JSON fits `maxAssetBytes * 2` is read whole and cached; a larger one
+   * (a heavy photo) streams raw from GitHub, so the Worker never holds its bytes. */
+  async bytes(repo: Repository, sha: string): Promise<{ body: Uint8Array | ReadableStream<Uint8Array>; size?: number }> {
     if (!/^[a-f0-9]{40}$/.test(sha))
       throw new HttpError(400, "Invalid file revision.");
-    const data = await this.blob(repo, sha, maxAssetBytes * 2);
-    if (data.size > maxAssetBytes)
-      throw new HttpError(413, "Files read in the editor are limited to 2 MB.");
+    let data: GitBlob;
+    try {
+      data = await this.blob(repo, sha, maxAssetBytes * 2);
+    } catch (error) {
+      if (error instanceof HttpError && error.status === 413) return this.rawBlob(repo, sha);
+      throw error;
+    }
     if (data.encoding !== "base64")
       throw new HttpError(415, "This file cannot be read.");
-    return Uint8Array.from(atob(data.content.replace(/\s/g, "")), (char) => char.charCodeAt(0));
+    const body = Uint8Array.from(atob(data.content.replace(/\s/g, "")), (char) => char.charCodeAt(0));
+    return { body, size: body.length };
+  }
+
+  /** A blob's raw bytes as GitHub sends them, refused (or cut off) above `MAX_FILE_BYTES`. */
+  private async rawBlob(repo: Repository, sha: string): Promise<{ body: ReadableStream<Uint8Array> }> {
+    const path = `${this.base(repo)}/git/blobs/${sha}`;
+    const response = await this.send(path, "GET", undefined, false, undefined, "application/vnd.github.raw+json");
+    if (!response.ok) await this.request(path, "GET", undefined, undefined, false, response);
+    const tooLarge = () => new HttpError(413, `Files read in the editor are limited to ${MAX_FILE_BYTES / 1024 / 1024} MB.`);
+    const length = response.headers.get("Content-Length"), size = length === null ? undefined : Number(length);
+    if (!response.body) throw new HttpError(502, "GitHub returned an empty response. Try again.");
+    if (size !== undefined && size > MAX_FILE_BYTES) {
+      await response.body.cancel();
+      throw tooLarge();
+    }
+    let read = 0;
+    const body = response.body.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+      transform(chunk, controller) {
+        read += chunk.length;
+        if (read > MAX_FILE_BYTES) controller.error(tooLarge());
+        else controller.enqueue(chunk);
+      },
+    }));
+    // No length is passed on: a stream's length is the platform's to send.
+    return { body };
   }
 
   /** A blob as GitHub returns it; blobs never change, so each is read from GitHub once. */

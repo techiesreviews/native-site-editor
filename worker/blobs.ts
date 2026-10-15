@@ -3,11 +3,11 @@
 // the publish that commits it names the blob by its SHA. The blob is the
 // git blob of the bytes, so the browser knows the SHA before sending.
 import type { Repository } from "../shared/types";
-import { GitHub, HttpError } from "./github";
+import { GitHub, HttpError, MAX_FILE_BYTES } from "./github";
 import { blobSha } from "./publish";
 
-/** The largest file one upload may carry (GitHub's blob API takes up to 100 MB; the editor keeps well under). */
-export const MAX_BLOB_BYTES = 20 * 1024 * 1024;
+/** The largest file one upload may carry: the largest the editor reads. */
+export const MAX_BLOB_BYTES = MAX_FILE_BYTES;
 
 const tooLarge = () => new HttpError(413, `Uploads are limited to ${MAX_BLOB_BYTES / 1024 / 1024} MB per file.`);
 

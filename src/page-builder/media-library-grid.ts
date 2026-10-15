@@ -9,6 +9,7 @@ import { paintUsageBadge } from "./media-library-usage";
 import { mediaUsageBadge } from "./media-usage-text";
 import type { MediaUsageRecords } from "./media-usage";
 import { markTransparency } from "./media-transparency";
+import { mediaTileWhole, tilePictureUrl } from "./media-tile-picture";
 
 /** What the grid keeps between draws; the view owns it. */
 export interface LibraryGridState {
@@ -28,6 +29,8 @@ export interface LibraryGridHost {
   records: () => MediaUsageRecords | undefined;
   usage: (path: string) => void;
   bytes: (path: string) => Promise<MediaBytes>;
+  /** An address for a tile copy, released with the view. */
+  objectUrl: (blob: Blob) => string;
   /** Widens the filters when nothing matches. */
   recover: (change: Partial<MediaLibraryFilter>) => void;
   sync: () => void;
@@ -118,8 +121,8 @@ export function drawLibraryGrid(shell: LibraryShell, library: MediaLibrary, stat
     }
     // By agent (ticket 13): words an agent wrote for this file wait in To check.
     if (library.toCheck?.some(row => row.file === item.path)) {
-      const agent = node("span", "media-library__agent"); agent.title = "By agent: see To check in More";
-      agent.setAttribute("role", "img"); agent.setAttribute("aria-label", "By agent");
+      const agent = node("span", "media-library__agent"), words = "Written by an agent – check in To check";
+      agent.title = words; agent.setAttribute("role", "img"); agent.setAttribute("aria-label", words);
       card.classList.add("is-by-agent"); card.append(agent);
     }
     grid.append(card);
@@ -185,10 +188,14 @@ function tilePicture(input: {
   const observer = new IntersectionObserver((entries) => {
     if (!h.alive() || !card.isConnected || !entries.some((entry) => entry.isIntersecting)) return;
     observer.disconnect();
-    void h.bytes(preview).then((data) => {
+    void h.bytes(preview).then(async (data) => {
       if (!h.alive() || !card.isConnected) return;
       input.loaded?.(data);
-      image.src = data.url;
+      // A heavy picture shows a small copy; a banner wider than 2:1 shows whole (slice 107).
+      const url = await tilePictureUrl(data, h.objectUrl);
+      if (!h.alive() || !card.isConnected) return;
+      image.toggleAttribute("data-whole", mediaTileWhole(data.width, data.height));
+      image.src = url;
     }).catch(noPreview);
   }, { root: input.root, rootMargin: "200px" });
   input.state.observers.add(observer); observer.observe(card);

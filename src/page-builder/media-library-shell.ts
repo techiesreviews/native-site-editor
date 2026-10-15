@@ -3,6 +3,7 @@ import { setIcon } from "../icons";
 import { mediaSelectionActions } from "./media-collection-choices";
 import type { MediaPickerOptions } from "./media-picker";
 import { pickerFileWord, pickerNoun } from "./media-library-filter";
+import { allCollectionsOption } from "./media-library-refresh";
 
 export type LibraryShell = ReturnType<typeof createMediaLibraryShell>;
 
@@ -53,7 +54,7 @@ export function createMediaLibraryShell(
   // A customizable select shows the chosen option in this button; other browsers keep the native control.
   const chosen = node("button"); chosen.type = "button";
   chosen.append(document.createElement("selectedcontent"));
-  collections.append(chosen, new Option("All collections", ""));
+  collections.append(chosen, allCollectionsOption());
   toolbar.append(searchField, collections);
   const more = node("button", "media-library__more"); more.type = "button";
   more.setAttribute("aria-label", "More"); more.setAttribute("aria-haspopup", "menu"); more.setAttribute("aria-expanded", "false");
@@ -81,17 +82,18 @@ export function createMediaLibraryShell(
   // The selection bar (research 01, ticket 15): after the grid and sticky, so it stays in reach.
   const bulk = node("div", "media-library__bulk"); bulk.hidden = true;
   bulk.setAttribute("role", "group"); bulk.setAttribute("aria-label", "Selected files");
-  const bulkCount = node("span", "media-library__bulk-count");
+  // One control clears the selection and shows its count ("✕ 3"), as Google Photos does (slice 107).
+  const bulkCount = button("", actions.clear, "media-library__bulk-count");
   const bulkActions = node("div", "media-library__bulk-actions");
   const addTo: HTMLButtonElement = button("Add to collection", () => actions.addTo(addTo));
   addTo.setAttribute("aria-haspopup", "menu"); addTo.setAttribute("aria-expanded", "false");
-  const takeOut = button("", actions.takeOut), removeFiles = button("", actions.remove);
+  const takeOut = button("", actions.takeOut, "media-library__bulk-wide"), removeFiles = button("", actions.remove, "media-library__bulk-wide");
   bulkActions.append(addTo, takeOut, removeFiles);
   const bulkTools = node("div", "media-library__bulk-tools");
   const bulkMore: HTMLButtonElement = button("", () => actions.more(bulkMore), "button secondary media-library__bulk-more");
   bulkMore.setAttribute("aria-label", "More for selected files"); bulkMore.setAttribute("aria-haspopup", "menu"); bulkMore.setAttribute("aria-expanded", "false");
   setIcon(bulkMore, "dots-three", 20);
-  bulkTools.append(bulkMore, button("Clear", actions.clear));
+  bulkTools.append(bulkMore);
   bulk.append(bulkCount, bulkActions, bulkTools);
   // Files being added (ticket 06): the total, Cancel, files that could not be added, Show new files.
   const adding = node("section", "media-library__adding"); adding.hidden = true;
@@ -120,7 +122,7 @@ export function createMediaLibraryShell(
   container.append(dialog);
   if (modal) { modal.showModal(); search.focus(); }
   return {
-    dialog, close, search, collections, more, browse, summary, adding, bulk, bulkCount, addTo, takeOut, removeFiles, grid, sheet, message, uploadInput,
+    dialog, close, search, collections, more, browse, summary, adding, bulk, bulkCount, bulkMore, addTo, takeOut, removeFiles, grid, sheet, message, uploadInput,
     choice: { thumb: chosenThumb, name: chosenName, details: detailsButton, use }, online,
   };
 }
@@ -128,7 +130,11 @@ export function createMediaLibraryShell(
 /** Show the selection bar while files are selected: Take out only inside a collection. */
 export function syncSelectionBar(shell: Pick<LibraryShell, "bulk" | "bulkCount" | "takeOut" | "removeFiles">, count: number, viewing: string) {
   const labels = mediaSelectionActions(count, viewing);
-  shell.bulk.hidden = !count; shell.bulkCount.textContent = labels.count;
+  shell.bulk.hidden = !count;
+  // Phones show the number alone beside the ✕; the words stay for wider screens and screen readers.
+  const icon = node("span", "media-library__bulk-clear"); icon.setAttribute("aria-hidden", "true");
+  shell.bulkCount.replaceChildren(icon, String(count), node("span", "media-library__bulk-word", " selected"));
+  shell.bulkCount.setAttribute("aria-label", `${labels.count}. Clear selection`);
   shell.takeOut.hidden = !labels.takeOut; shell.takeOut.textContent = labels.takeOut ?? "";
   shell.removeFiles.textContent = labels.remove;
 }

@@ -107,6 +107,46 @@ test("GET /api/blob refuses types it does not show, bad revisions, strangers and
   assert.equal(asked.filter((path) => path.includes("/git/blobs/")).length, 0);
 });
 
+// A heavy photo (slice 107): GitHub's base64 JSON would be too large to hold, so the bytes stream raw.
+function heavyGithub(size: number) {
+  const asked: string[] = [];
+  const heavy = new Uint8Array(size).map((_, index) => index * 7 & 255);
+  const base = github().fetcher;
+  const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const path = new URL(String(input)).pathname;
+    if (path !== `/repos/lex/site/git/blobs/${sha}`) return base(input, init);
+    const raw = new Headers(init?.headers).get("Accept") === "application/vnd.github.raw+json";
+    asked.push(raw ? "raw" : "json");
+    return raw
+      ? new Response(heavy, { headers: { "Content-Length": String(heavy.length) } })
+      : Response.json({ size: heavy.length, encoding: "base64", content: Buffer.from(heavy).toString("base64") });
+  }) as typeof fetch;
+  return { fetcher, asked, heavy };
+}
+
+test("GET /api/blob streams a heavy picture raw from GitHub and refuses one over 20 MB", async () => {
+  const { fetcher, asked, heavy } = heavyGithub(3_500_000);
+  const response = await handle(get(`/api/blob?repo=lex/site&sha=${sha}&type=jpg`), environment(), fetcher);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("Content-Type"), "image/jpeg");
+  assert.equal(response.headers.get("Cache-Control"), "private, max-age=31536000, immutable");
+  assert.deepEqual(new Uint8Array(await response.arrayBuffer()), heavy);
+  assert.deepEqual(asked, ["json", "raw"], "the JSON read stops at its limit; the bytes come raw");
+  const huge = heavyGithub(20 * 1024 * 1024 + 1);
+  const refused = await handle(get(`/api/blob?repo=lex/site&sha=${sha}&type=jpg`), environment(), huge.fetcher);
+  assert.equal(refused.status, 413);
+  assert.equal(refused.headers.get("Cache-Control"), "no-store");
+});
+
+test("a 2.1 MB picture is read like a small one", async () => {
+  const { fetcher, asked, heavy } = heavyGithub(2_200_000);
+  const response = await handle(get(`/api/blob?repo=lex/site&sha=${sha}&type=jpg`), environment(), fetcher);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("Content-Length"), String(heavy.length));
+  assert.deepEqual(new Uint8Array(await response.arrayBuffer()), heavy);
+  assert.deepEqual(asked, ["json"]);
+});
+
 test("POST /api/blob is still the upload, with its origin check", async () => {
   const response = await handle(new Request(`${origin}/api/blob?repo=lex/site`, {
     method: "POST",

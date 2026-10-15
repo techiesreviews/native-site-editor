@@ -200,11 +200,12 @@ test("on a phone the list shortens a long name in the middle, keeping its end; t
   await page.evaluate(() => (window as any).usageProbe.dispose());
 });
 
-/** Each list row's usage: its words and how many lines they take, its height, whether it stays in the row, and where its number sits. */
+/** Each list row's usage: its words and how many lines they take, its height, whether it stays in the row, and where its words start. */
 const usageRows = (page: Page, paths: string[]) => page.evaluate(paths => paths.map(path => {
   const row = document.querySelector(`.media-library__card[data-path="${path}"]`)!, usage = row.querySelector(".media-library__usage")!;
   const words = usage.querySelector(".media-library__usage-label")!, range = document.createRange(); range.selectNodeContents(words);
-  const [box, target, count] = [row, usage, usage.querySelector(".media-library__count")!].map(element => element.getBoundingClientRect());
+  // The list says the count in words only (slice 107), so the words' start is the usage column.
+  const [box, target, count] = [row, usage, words].map(element => element.getBoundingClientRect());
   return { path, words: words.textContent, lines: new Set([...range.getClientRects()].map(rect => Math.round(rect.top))).size,
     height: target.height, inside: target.left >= box.left - 0.5 && target.right <= box.right + 0.5, count: Math.round(count.left) };
 }), paths);
@@ -524,7 +525,7 @@ async function toCheck(page: Page, label: string) {
   await page.getByRole("menuitem", { name: label, exact: true }).click();
   await expect(pane(page).getByRole("heading", { name: "To check", exact: true })).toBeFocused();
 }
-const agentMark = (page: Page, path: string) => tile(page, path).getByRole("img", { name: "By agent", exact: true });
+const agentMark = (page: Page, path: string) => tile(page, path).getByRole("img", { name: "Written by an agent – check in To check", exact: true });
 
 test("To check lists an agent's description; OK clears the mark, and it stays cleared after Publish", async ({ page, baseURL }) => {
   await page.setViewportSize({ width: 1280, height: 900 });

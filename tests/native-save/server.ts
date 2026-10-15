@@ -872,6 +872,9 @@ function githubFetch(
       const sha = path.slice(`${repoBase}/git/blobs/`.length);
       const content = git.blobs.get(sha);
       if (content === undefined) return jsonResponse({ message: "Not Found" }, 404);
+      // The raw form the Worker asks for when the JSON would be too large (a heavy photo).
+      if (new Headers(init?.headers).get("Accept") === "application/vnd.github.raw+json")
+        return new Response(content, { headers: { "Content-Length": String(content.length) } });
       return jsonResponse({
         sha,
         size: content.length,

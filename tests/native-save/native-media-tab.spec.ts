@@ -275,7 +275,7 @@ test("compact details reveal metadata and return to the same browse filters", as
   await expect(page.getByRole("menuitemradio", { name: "Images", exact: true })).toHaveAttribute("aria-checked", "true");
   await page.keyboard.press("Escape");
   await expect(library.getByLabel("Select images/studio-desk.svg", { exact: true })).toBeChecked();
-  await library.getByRole("button", { name: "Clear", exact: true }).click();
+  await library.getByRole("button", { name: "1 selected. Clear selection", exact: true }).click();
   await expect(library.getByLabel("Select images/studio-desk.svg", { exact: true })).not.toBeChecked();
 });
 

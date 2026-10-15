@@ -118,14 +118,18 @@ async function bootSessionHeaders(user: Session | null): Promise<Headers> {
 // sandboxes the file if it is opened on its own, so a repository's SVG runs
 // no script in the editor's origin; as an <img> the policy does not apply.
 export const BLOB_CONTENT_SECURITY_POLICY = "default-src 'none'; style-src 'unsafe-inline'; sandbox";
-function blobResponse(bytes: Uint8Array, type: string | null) {
+// The type is checked before GitHub is asked; a heavy file streams through (GitHub.bytes).
+function blobType(type: string | null) {
   const extension = (type ?? "").toLowerCase();
   const known = extension && Object.hasOwn(ASSET_TYPES, extension) ? ASSET_TYPES[extension] : undefined;
   if (type && !known) throw new HttpError(415, "This file type is not shown in the editor.");
-  return new Response(bytes as BodyInit, {
+  return known;
+}
+function blobResponse({ body, size }: { body: Uint8Array | ReadableStream<Uint8Array>; size?: number }, known: string | undefined) {
+  return new Response(body as BodyInit, {
     headers: {
       "Content-Type": known ?? "application/octet-stream",
-      "Content-Length": String(bytes.length),
+      ...(size === undefined ? {} : { "Content-Length": String(size) }),
       "Cache-Control": "private, max-age=31536000, immutable",
       // A cached copy belongs to the signed-in session that read it: another
       // account (or none) on this browser sends other cookies and asks again,
@@ -1022,8 +1026,10 @@ async function route(
       );
     if (path === "/api/change-status")
       return json(await changeStatus(github, repo, url.searchParams.get("sha") ?? ""));
-    if (path === "/api/blob")
-      return blobResponse(await github.bytes(repo, url.searchParams.get("sha") ?? ""), url.searchParams.get("type"));
+    if (path === "/api/blob") {
+      const known = blobType(url.searchParams.get("type"));
+      return blobResponse(await github.bytes(repo, url.searchParams.get("sha") ?? ""), known);
+    }
     if (path === "/api/files")
       return Response.json({
         files: await github.files(

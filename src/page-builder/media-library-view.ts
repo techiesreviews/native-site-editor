@@ -65,7 +65,8 @@ export function createMediaLibraryView(
       selected.clear(); await refresh(); keepFocus();
       done(`Took ${filesLabel(paths.length)} out of "${name}". ${paths.length === 1 ? "It stays" : "They stay"} in Media under All.`);
     }),
-    remove: () => remove([...selected], () => { if (!shell.removeFiles.hidden) shell.removeFiles.focus(); }),
+    // Back from the confirm: to Remove files, or to ⋯ where a phone keeps it.
+    remove: () => remove([...selected], () => { if (!shell.removeFiles.hidden) (shell.removeFiles.checkVisibility() ? shell.removeFiles : shell.bulkMore).focus(); }),
     more: opener => openMenu(opener, "More for selected files", [
       { label: "Select all shown", run: () => {
         for (const card of grid.querySelectorAll<HTMLElement>(".media-library__card[data-path]")) selected.add(card.dataset.path!);
@@ -84,6 +85,9 @@ export function createMediaLibraryView(
         if (!files.length) { tell("No selected images are above 2 MB."); return; }
         optimise(files, true, receipts);
       }) },
+      // Phones keep one row (slice 107): Take out and Remove files move here, removal last.
+      ...[shell.takeOut, shell.removeFiles].filter(control => !control.hidden && !control.checkVisibility())
+        .map(control => ({ label: control === shell.removeFiles ? `${control.textContent}…` : control.textContent ?? "", run: () => control.click() })),
     ]),
     clear: () => { selected.clear(); draw(); },
     details: () => { if (chosen) void (onlineVideo(chosen) ? onlineDetails(chosen) : details(chosen)); },
@@ -264,7 +268,7 @@ export function createMediaLibraryView(
     // A chosen file that is gone (removed, renamed, a held file cancelled) is no longer chosen.
     if (chosen && !heldFile(chosen) && !onlineVideo(chosen) && !library.items.some(item => item.path === chosen)) chosen = undefined;
     drawLibraryGrid(shell, library, { kind, selected, observers, accept: options.accept, modal: Boolean(modal), layout, chosen, online: !modal || Boolean(options.onlineVideo) }, {
-      alive: () => alive, bytes: path => cache.get(path), sync: () => busyLock.sync(),
+      alive: () => alive, bytes: path => cache.get(path), objectUrl: blob => cache.objectUrl(blob), sync: () => busyLock.sync(),
       details: path => void details(path), records: () => adapter.usage?.records(), usage,
       recover, restoreFocus: !sheet.focus,
       choose: path => { chosen = path; paintChoice(); },
