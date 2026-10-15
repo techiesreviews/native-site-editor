@@ -27,6 +27,8 @@ test("the header names the tab and counts the files; rows are one height with na
   await expect(page.locator("#files-count")).toHaveAttribute("title", /^Version [0-9a-f]{7}$/);
   await expect(page.locator("#revision")).toBeHidden();
 
+  // Icons by type arrive with the explorer (the tree is drawn again then); the wide panel says the type.
+  await expect(row(page, "index.html").locator(".file-icon")).toHaveAttribute("data-type", "page");
   for (const path of ["index.html", "images"]) expect((await line(page, path).boundingBox())!.height).toBe(32);
   // A folder and a file at one level start their names at the same x; a child sits deeper.
   expect(await left(page, '.file-row[data-path="images"] .filename')).toBe(await left(page, '.file-row[data-path="index.html"] .filename'));
@@ -34,8 +36,6 @@ test("the header names the tab and counts the files; rows are one height with na
   await expect(row(page, "images")).toHaveAttribute("aria-expanded", "true");
   expect(await left(page, '.file-row[data-path="images/studio-desk.svg"] .filename')).toBeGreaterThan(await left(page, '.file-row[data-path="index.html"] .filename'));
 
-  // Icons by type arrive with the explorer; the wide panel says the type, outside the row's name.
-  await expect(row(page, "index.html").locator(".file-icon")).toHaveAttribute("data-type", "page");
   await expect(row(page, "robots.txt").locator(".file-icon")).toHaveAttribute("data-type", "text");
   await expect(row(page, "images/studio-desk.svg").locator(".file-icon")).toHaveAttribute("data-type", "picture");
   await expect(row(page, "index.html").locator(".file-type")).toHaveText("Page");

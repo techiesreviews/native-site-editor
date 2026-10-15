@@ -62,6 +62,8 @@
   .file-row-line:hover { background: var(--hover); }
 }
 .file-row-line:has(> .file-row.selected) { background: var(--current); }
+/* Keyboard focus shows over the open file's tint (the fades in file-row-actions.css follow this order). */
+.file-row-line:has(> .file-row:focus-visible) { background: var(--hover); outline: var(--focus-ring); outline-offset: -2px; }
 
 .file-row {
   display: flex;

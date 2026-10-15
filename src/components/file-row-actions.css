@@ -14,7 +14,6 @@
 }
 .file-more:hover { background: var(--hover); color: var(--text); }
 .file-more:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
-.file-row-line:has(> .file-row:focus-visible) { background: var(--hover); outline: var(--focus-ring); outline-offset: -2px; }
 .file-row:focus-visible { outline: none; }
 
 /* A change in the drafts: A added, M modified, R renamed or moved, D deleted. */
