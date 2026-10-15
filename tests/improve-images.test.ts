@@ -169,3 +169,24 @@ test("unknown partial raster facts do not suggest lighten or copies, including B
   assert.deepEqual(plan.missingFacts, Object.keys(files));
   for (const picture of plan.rows[0].pictures) assert.deepEqual(picture.changes, ["size", "loading"]);
 });
+
+test("missing facts are listed even when the picture's row has nothing else to change", () => {
+  for (const facts of [{}, { width: 1200 }, { size: 300000 }]) {
+    const plan = single('<img src="/a.jpg" width="1200" height="800" loading="lazy">', { "a.jpg": facts });
+    assert.equal(plan.rows.length, 0);
+    assert.deepEqual(plan.missingFacts, ["a.jpg"]);
+  }
+});
+
+test("a picture whose own class a script selects is swapped in by script; a container class is not", () => {
+  const files = { "a.jpg": { size: 300000, width: 1200, height: 800 } };
+  const image = '<div class="media"><img class="hero shot" src="/a.jpg" width="1200" height="800" loading="lazy"></div>';
+  for (const script of ['document.querySelector(".hero").src = next;', "document.querySelector(`section .shot`).srcset = next;", 'document.getElementsByClassName("hero")[0].src = next;']) {
+    const inline = single(`${image}<script>${script}</script>`, files);
+    assert.deepEqual(inline.rows, []);
+    const external = improveImagesPlan({ sources: { "index.html": `${image}<script type="module" src="/scripts/swap.js"></script>`, "scripts/swap.js": script }, pages: ["index.html"], components: {}, files, records: parseMediaRecords(undefined) });
+    assert.deepEqual(external.rows, []);
+  }
+  const kept = single(`${image}<script>document.querySelector(".media").classList.add("ready"); document.querySelector(".hero-title");</script>`, files);
+  assert.deepEqual(kept.rows[0].pictures[0].changes, ["lighten", "sizes"]);
+});

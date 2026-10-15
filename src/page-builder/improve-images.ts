@@ -56,11 +56,16 @@ function onlineVideo(address: string): { kind: "youtube" | "vimeo"; videoId: str
     }
   } catch { /* Other iframe addresses are not online videos. */ }
 }
+const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 function scriptDriven(source: string, node: SourceElement, scripts: string): boolean {
   if (["data-src", "data-srcset"].some(name => attribute(source, node, name) !== undefined)) return true;
+  // The picture's own classes, inside a selector string or getElementsByClassName; container classes are too common to count.
+  for (const name of (attribute(source, node, "class") ?? "").split(/\s+/).filter(Boolean)) {
+    if (new RegExp(`["'\`][^"'\`\n]*\\.${escape(name)}(?![\\w-])[^"'\`\n]*["'\`]|getElementsByClassName\\(\\s*["']${escape(name)}["']`).test(scripts)) return true;
+  }
   return ancestry(node).some(parent => {
     const id = attribute(source, parent, "id");
-    const escaped = id?.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const escaped = id && escape(id);
     if (id && new RegExp(`#${escaped}(?![\\w-])|getElementById\\(\\s*["']${escaped}["']\\s*\\)`).test(scripts)) return true;
     // Attribute names come from the tokenizer, not text inside quoted values.
     const names = source.slice(parent.tag.nameEnd, parent.tag.end).match(/\bdata-[\w-]+/g) ?? [];
@@ -114,7 +119,7 @@ export function improveImagesPlan(input: Input): ImproveImagesPlan {
     const src = attribute(sources[page] ?? "", n, "src");
     return src ? sources[mediaResolvePath(src, page, site) ?? ""] ?? "" : (sources[page] ?? "").slice(n.tag.end, n.close?.start ?? n.end);
   }).join("\n")).get(page)!;
-  const rows: ImproveImagesRow[] = [];
+  const rows: ImproveImagesRow[] = [], missingFacts = new Set<string>();
   const templates = new Map<string, string>();
   for (const [tag, file] of Object.entries(components)) if (!templates.has(file)) templates.set(file, tag);
   for (const file of [...templates.keys(), ...input.pages.filter(p => !templates.has(p))]) {
@@ -194,6 +199,8 @@ export function improveImagesPlan(input: Input): ImproveImagesPlan {
         row.pictures.push({ key, address, ...(path ? { path } : { url, host: new URL(url!).host }), kind: video?.kind ?? (node.name === "meta" ? "sharing" : svg ? "svg" : path ? gif ? "gif" : "image" : "outside"), tag: { start: node.tag.start, end: node.tag.end }, link: parents.find(n => n.name === "a") ? attribute(source, parents.find(n => n.name === "a")!, "href") : undefined, ...(adopted?.length ? { adopted } : {}), ...(video ? { videoId: video.videoId } : {}), changes, ticked: !records.leftAsIs?.some(item => item.picture === key && (item.row === undefined || item.row === file)) });
       }
     }
+    // Unknown facts are listed even when nothing else on the row changes yet.
+    for (const p of row.pictures) if (p.path && raster.test(p.path) && (files[p.path].size === undefined || files[p.path].width === undefined)) missingFacts.add(p.path);
     if (!row.pictures.some(p => p.changes.length)) continue;
     for (const picture of row.pictures) if (picture.ticked && picture.changes.length) {
       row.count++;
@@ -203,10 +210,9 @@ export function improveImagesPlan(input: Input): ImproveImagesPlan {
     rows.push(row);
   }
   rows.sort((a, b) => a.kind !== b.kind ? a.kind === "component" ? -1 : 1 : (b.reach ?? 0) - (a.reach ?? 0) || a.label.localeCompare(b.label) || a.file.localeCompare(b.file));
-  const totals = counts(), missingFacts = new Set<string>();
+  const totals = counts();
   for (const row of rows) {
     for (const change of Object.keys(totals) as ImproveChange[]) totals[change] += row.counts[change];
-    for (const p of row.pictures) if (p.path && raster.test(p.path) && (files[p.path].size === undefined || files[p.path].width === undefined)) missingFacts.add(p.path);
   }
   return { rows, count: rows.filter(r => r.count > 0).length, totals, missingFacts: [...missingFacts].sort() };
 }
