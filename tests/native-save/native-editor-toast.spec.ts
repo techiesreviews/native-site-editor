@@ -76,3 +76,62 @@ test("a Media screen's warning does not carry over to the next screen, and a res
   await expect(line).toBeEmpty();
   await page.evaluate(() => (window as any).toastHarness.view.dispose());
 });
+
+test("a shown toast follows each layer opened over it, keeps its Undo usable, and goes after 6 s unless held", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  // Installed after load (a clock from the start fakes `performance` for Monaco too); paused, so
+  // the toast's 6 s cannot run out while the layers open.
+  await page.clock.install();
+  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1_000));
+  const show = () => page.evaluate(async () => {
+    const { showToast } = await import("/src/components/toast.ts");
+    showToast("Moved the hero.", { label: "Undo", run: () => { (window as any).toastUndone = ((window as any).toastUndone ?? 0) + 1; } });
+  });
+  await show();
+  await expect(toast(page)).toBeVisible();
+  expect(await toast(page).evaluate(element => element.parentElement === document.body)).toBe(true);
+
+  // The explorer opens over it: the toast moves in, and its Undo there leaves the explorer open.
+  const undone = () => page.evaluate(() => (window as any).toastUndone);
+  const explorerOpen = () => page.locator("#explorer").evaluate(element => element.matches(":popover-open"));
+  await page.locator("#explorer-toggle").click();
+  await expect(page.locator("#explorer > .editor-toast")).toBeVisible();
+  await toast(page).getByRole("button", { name: "Undo", exact: true }).click();
+  expect(await undone()).toBe(1);
+  expect(await explorerOpen()).toBe(true);
+  await expect(toast(page)).toBeHidden();
+  // A modal opened over a shown toast takes it in: its Undo is usable there and the modal stays.
+  await show();
+  await page.getByRole("tab", { name: "Pages", exact: true }).click();
+  await page.getByRole("button", { name: "Site settings", exact: true }).click();
+  await expect(dialog(page).locator(".editor-toast")).toBeVisible();
+  await toast(page).getByRole("button", { name: "Undo", exact: true }).click();
+  expect(await undone()).toBe(2);
+  await expect(dialog(page)).toBeVisible();
+  // The modal closing (it closed the explorer as it opened) hands the toast back to the page.
+  await show();
+  await expect(dialog(page).locator(".editor-toast")).toBeVisible();
+  await dialog(page).getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(dialog(page)).toBeHidden();
+  await expect(page.locator("body > .editor-toast")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await toast(page).getByRole("button", { name: "Undo", exact: true }).click();
+  expect(await undone()).toBe(3);
+
+  // It stays 6 s (the pointer away from it: under the pointer, it would be held).
+  await page.mouse.move(5, 5);
+  await show();
+  await page.clock.runFor(5_800);
+  await expect(toast(page)).toBeVisible();
+  await page.clock.runFor(400);
+  await expect(toast(page)).toBeHidden();
+  // Hovered, it stays; once the pointer leaves, it goes 2 s later.
+  await show();
+  await toast(page).hover();
+  await page.clock.runFor(8_000);
+  await expect(toast(page)).toBeVisible();
+  await page.mouse.move(5, 5);
+  await page.clock.runFor(2_200);
+  await expect(toast(page)).toBeHidden();
+  await page.clock.resume();
+});

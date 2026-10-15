@@ -42,12 +42,10 @@ function build() {
   });
   toast.addEventListener("focusout", (event) => { if (!toast!.contains(event.relatedTarget as Node | null)) release(); });
   toast.addEventListener("keydown", (event) => { if (event.key === "Escape") { event.stopPropagation(); dismissToast(); } });
-  // A layer opened over the toast takes it in (else it sits under it, and a click on it would
-  // close it); a layer that held it closed hands it to the next one down.
+  // Whenever a layer opens or closes, the toast follows the topmost one: under a newer layer it
+  // would be hidden or inert, and a click on it would close that layer.
   const moved = (event: Event) => {
-    const target = event.target, host = toast!.parentElement;
-    if (!(target instanceof HTMLElement) || target === toast || !host || !toast!.matches(":popover-open")) return;
-    if (target.matches(":popover-open, dialog:modal") ? !host.contains(target) : target.contains(host)) place();
+    if (event.target !== toast && toast!.matches(":popover-open") && layer() !== toast!.parentElement) place();
   };
   document.addEventListener("toggle", moved, true);
   document.addEventListener("close", moved, true);
@@ -66,11 +64,13 @@ function layer(): HTMLElement {
 function place() {
   const into = layer();
   if (toast!.parentElement !== into) {
-    if (toast!.matches(":popover-open")) toast!.hidePopover();
+    // A shown toast changes layer in place, without playing its entrance again.
+    if (toast!.matches(":popover-open")) { toast!.dataset.moving = ""; toast!.hidePopover(); }
     into.append(toast!);
   }
   toast!.style.removeProperty("--toast-lift");
   if (!toast!.matches(":popover-open")) toast!.showPopover();
+  if (toast!.dataset.moving !== undefined) requestAnimationFrame(() => { delete toast!.dataset.moving; });
   const box = toast!.getBoundingClientRect();
   // Only the layer's own buttons: what it covers is out of sight anyway.
   const obstacles = [...into.querySelectorAll<HTMLElement>(AVOID)]

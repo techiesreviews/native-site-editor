@@ -28,6 +28,9 @@
     display 0.2s allow-discrete,
     overlay 0.2s allow-discrete;
 }
+.editor-toast[data-moving] {
+  transition: none;
+}
 .editor-toast:popover-open {
   display: flex;
   align-items: center;

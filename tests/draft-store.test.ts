@@ -848,3 +848,19 @@ test("tagged groups stay closed when exposed by Undo or restored by Redo", async
   await store.redo("h");
   assert.equal(store.hasOpenGroup("h", "move:1"), false);
 });
+
+test("latestUndo names a history's top step only while no step anywhere is newer (the toast's Undo, slice 105)", async () => {
+  const { store } = setup();
+  store.recordAction("a", { label: "Site settings", undo: () => true });
+  const step = store.latestUndo("a");
+  assert.equal(typeof step, "number");
+  // A newer step in another history: the toast for "a" no longer offers its Undo.
+  store.recordAction("b", { label: "Page title", undo: () => true });
+  assert.equal(store.latestUndo("a"), undefined);
+  assert.equal(typeof store.latestUndo("b"), "number");
+  assert.equal(store.latestUndo("empty"), undefined);
+  // Undone, "b" has nothing on top that is newest; "a"'s step is older than the step undone.
+  assert.ok((await store.undo("b")).ok);
+  assert.equal(store.latestUndo("b"), undefined);
+  assert.equal(store.latestUndo("a"), undefined);
+});
