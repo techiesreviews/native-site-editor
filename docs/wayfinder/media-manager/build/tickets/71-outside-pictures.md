@@ -2,7 +2,7 @@
 title: Pictures from other websites
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (mm-71 runner)
 blocked_by: [70-improve-images-scan]
 builder: sol
 phase: 6
