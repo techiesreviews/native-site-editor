@@ -1,17 +1,25 @@
 /* The progress summary every way of adding shares (slice 31): the Media tray, the picker's, and Files'. */
 .media-library__adding { display: grid; gap: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-card); }
 .media-library__adding[hidden] { display: none; }
-.media-library__adding-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
-.media-library__adding-status { flex: 1 1 10em; margin: 0; font-weight: 600; }
-.media-library__adding-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.media-library__adding-actions button { min-height: 44px; }
-.media-library__adding-actions button[hidden], .media-library__adding-bar[hidden] { display: none; }
-:is(.media-library, .media-files-adding) .media-library__adding-dismiss { width: 44px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 50%; background: none; color: var(--text); }
+/* The title, with ✕ in the tray's top-right corner (Google Drive's tray). */
+.media-library__adding-head { display: flex; align-items: start; gap: 8px; }
+.media-library__adding-status { flex: 1; min-inline-size: 0; margin: 0; padding-block: 2px; font-weight: 600; }
+:is(.media-library, .media-files-adding) .media-library__adding-dismiss { flex: none; position: relative; inline-size: 32px; block-size: 32px; min-block-size: 0; margin: -6px -6px -6px 0; padding: 0; display: grid; place-items: center; border: 0; border-radius: 50%; background: none; color: var(--text); }
+/* Actions after the lines they act on: text buttons, and Retry as a 36 px edged secondary. Each is a 44 px target. */
+.media-library__adding-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; }
+:is(.media-library, .media-files-adding) .media-library__adding-actions > button { position: relative; min-block-size: 36px; padding-block: 0; }
+:is(.media-library, .media-files-adding) :is(.media-library__adding-actions > button, .media-library__adding-dismiss)::after { content: ""; position: absolute; inset: min(0px, (100% - 44px) / 2); }
+:is(.media-library, .media-files-adding) .media-library__adding-actions > .text-button { padding-inline: 2px; }
+:is(.media-library, .media-files-adding) .media-library__adding-actions > .secondary {
+  --surface: var(--surface-card); padding-inline: 14px; border: 1px solid var(--control-line); border-radius: 18px;
+}
+.media-library__adding-actions[hidden], .media-library__adding-actions button[hidden], .media-library__adding-bar[hidden],
+:is(.media-library, .media-files-adding) .media-library__adding-dismiss[hidden] { display: none; }
 :is(.media-library, .media-files-adding) .media-library__adding-dismiss:active { background: var(--hover); }
 @media (hover: hover) and (pointer: fine) { :is(.media-library, .media-files-adding) .media-library__adding-dismiss:hover { background: var(--hover); } }
 :is(.media-library, .media-files-adding) .media-library__adding-dismiss:focus-visible { outline: var(--focus-ring); }
-.media-library__adding-bar { width: 100%; height: 6px; border: 0; border-radius: 3px; overflow: hidden; appearance: none; background: var(--line); accent-color: var(--primary); }
-.media-library__adding-bar::-webkit-progress-bar { background: var(--line); }
+.media-library__adding-bar { width: 100%; height: 6px; border: 0; border-radius: 3px; overflow: hidden; appearance: none; background: var(--control-line); accent-color: var(--primary); }
+.media-library__adding-bar::-webkit-progress-bar { background: var(--control-line); }
 .media-library__adding-bar::-webkit-progress-value { background: var(--primary); border-radius: 3px; }
 .media-library__adding-bar::-moz-progress-bar { background: var(--primary); }
 .media-library__adding-failed { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; color: var(--danger-fg); font-size: var(--type-small); overflow-wrap: anywhere; }
@@ -30,5 +38,4 @@
 .media-library__adding-row-cancel[hidden] { display: none; }
 /* Files: the summary stays in view at the foot of the Files panel while its tree scrolls. */
 .media-files-adding { position: sticky; bottom: 0; z-index: 2; margin: 8px; box-shadow: var(--shadow); font-size: var(--type-base); }
-.media-files-adding .media-library__adding-actions button { min-height: 44px; }
 @media (prefers-color-scheme: dark) { .media-files-adding { box-shadow: none; } }

@@ -1,5 +1,6 @@
 import type { AudioQuality } from "./audio-prepare";
-import { mediaAddingCancellable, mediaAddingReviewable, type MediaAddingState } from "./media-adding-rules";
+import { mediaAddingCancellable, mediaAddingFailedReason, mediaAddingReviewable, type MediaAddingState } from "./media-adding-rules";
+import { basename } from "./media-library-filter";
 import type { MediaImportRequest } from "./media-picker";
 import type { MediaWorkspaceContext } from "./media-workspace";
 import type { MediaImageQuality } from "./media-optimise";
@@ -16,7 +17,7 @@ export interface FilesAddingHost {
   announce(text: string): void;
   error(error: unknown): void;
   /** Today's Optimise sheet with its before/after review, in Media, for pictures not added yet. */
-  review?(files: File[], folder: string): void;
+  review?(files: File[], folder: string, reasons: string[]): void;
 }
 export interface FilesAddition { folder: string; host: FilesAddingHost; entries: FilesAddingEntry[] }
 export interface FilesAddingDeps {
@@ -132,9 +133,10 @@ export function createFilesAdding(deps: FilesAddingDeps) {
       const addition = reviewable();
       if (!addition) return;
       const taken = addition.entries.filter(entry => mediaAddingReviewable(entry.file.name, entry.state));
+      const reasons = taken.filter(entry => entry.state === "failed").map(entry => mediaAddingFailedReason(basename(entry.file.name), entry.error));
       for (const entry of taken) { entry.work?.abort(); entry.state = "cancelled"; }
       deps.paint();
-      addition.host.review!(taken.map(entry => entry.file), addition.folder);
+      addition.host.review!(taken.map(entry => entry.file), addition.folder, reasons);
     },
     dismiss() { if (!running()) { additions = []; deps.paint(); } },
   };

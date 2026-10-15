@@ -23,25 +23,27 @@ export interface MediaAddingSummaryView {
 
 /** The short progress summary every way of adding shares (media-manager ticket 07, research 01 §4):
  * how many files, a bar, Cancel, then what was added, Large download notes, the files that could
- * not be added with their advice, and Retry. The Media pane and picker draw each file's progress on
+ * not be added with their advice in a line each (the full reason is under Review…), and Retry. The Media pane and picker draw each file's progress on
  * its tile; where there are no tiles (`rows`), each file being added has a row with its own Cancel. */
 export function createMediaAddingSummary(root: HTMLElement, actions: MediaAddingSummaryActions, rows = false) {
   const status = node("p", "media-library__adding-status"); status.setAttribute("role", "status");
   const bar = node("progress", "media-library__adding-bar"); bar.setAttribute("aria-label", "Files added");
   const list = node("ul", "media-library__adding-rows"), failed = node("ul", "media-library__adding-failed");
   const notes = node("ul", "media-library__adding-notes");
-  const showNew = button("Show new files", () => actions.showNew?.());
-  const review = button("Review…", () => actions.review?.());
+  const showNew = button("Show new files", () => actions.showNew?.(), "text-button");
+  const review = button("Review…", () => actions.review?.(), "text-button");
   const retry = button("Retry", () => actions.retry());
-  const cancel = button("Cancel", () => actions.cancel());
+  const cancel = button("Cancel", () => actions.cancel(), "text-button");
   const dismiss = button("", () => actions.dismiss(), "media-library__adding-dismiss");
   dismiss.setAttribute("aria-label", "Dismiss"); dismiss.append(icon("x", 20));
   for (const control of [cancel, dismiss, showNew]) control.dataset.mediaCancel = "adding";
   const head = node("div", "media-library__adding-head"), buttons = node("div", "media-library__adding-actions");
-  buttons.append(showNew, review, retry, cancel, dismiss);
-  head.append(status, buttons); root.append(head, bar);
+  // The title with ✕ in the tray's top-right corner, then progress, the files' lines, and the actions
+  // (Google Drive's tray): Retry is the one edged button, the rest are text buttons.
+  buttons.append(showNew, review, retry, cancel);
+  head.append(status, dismiss); root.append(head, bar);
   if (rows) root.append(list);
-  root.append(failed, notes);
+  root.append(failed, notes, buttons);
   const rowOf = new Map<object, HTMLLIElement>(), cancels = new Map<object, () => void>();
 
   function row(entry: MediaAddingSummaryEntry) {
@@ -81,11 +83,13 @@ export function createMediaAddingSummary(root: HTMLElement, actions: MediaAdding
         .map(entry => node("li", "", entry.note)));
       showNew.hidden = !view.showNew; review.hidden = !view.review;
       retry.hidden = !offers.retry; cancel.hidden = !offers.cancel; dismiss.hidden = !offers.dismiss;
+      buttons.hidden = [showNew, review, retry, cancel].every(control => control.hidden);
     },
     /** After a Cancel took the focused control away: the row `key`'s Cancel, else the first action. */
     focus(key?: object) {
       const next = key ? rowOf.get(key)?.querySelector<HTMLElement>(".media-library__adding-row-cancel:not([hidden])") : undefined;
-      (next ?? root.querySelector<HTMLElement>(".media-library__adding-actions button:not([hidden])"))?.focus();
+      (next ?? root.querySelector<HTMLElement>(".media-library__adding-actions button:not([hidden])")
+        ?? root.querySelector<HTMLElement>(".media-library__adding-dismiss:not([hidden])"))?.focus();
     },
   };
 }

@@ -280,14 +280,14 @@ export function createMediaActions(ports: MediaControllerPorts, load: () => Prom
   }
   /** Media's Optimise sheet for files added elsewhere (Files' Review…), once the pane has loaded:
    * only in the repository they were dropped in, by the same pane. */
-  async function reviewInGallery(files: File[], folder: string) {
+  async function reviewInGallery(files: File[], folder: string, reasons?: string[]) {
     const stamp = ports.stamp(), scope = ports.identity();
     const holds = () => stamp.holds() && scope === ports.identity();
     await ensureGallery();
     const view = gallery;
     if (!view || !holds() || galleryScope !== scope) return;
     await view.ready;
-    if (gallery === view && holds()) view.review(files, folder);
+    if (gallery === view && holds()) view.review(files, folder, reasons);
   }
   function requestGalleryRefresh() {
     if (!gallery) return;

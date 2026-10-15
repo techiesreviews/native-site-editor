@@ -34,7 +34,7 @@ export interface MediaLibraryView {
   element: HTMLElement;
   ready: Promise<void>;
   /** The Optimise sheet for files added elsewhere, bound for `folder`. */
-  review(files: File[], folder: string): void;
+  review(files: File[], folder: string, reasons?: string[]): void;
   readonly refreshedKey: string | undefined;
   refresh(): Promise<void>;
   dispose(): void;
@@ -165,8 +165,8 @@ export function createMediaLibraryView(
     import: requests => adapter.import(requests), task: work => task(work), idle: () => busyLock.idle(),
     refresh: async () => { cache.clear(); await refresh(); }, show: recover, tell,
     // The picker's reviewed files are held like the others.
-    review: (files, collection) => showMediaOptimise(sheet, modal ? { ...context, adapter: { ...adapter,
-      import: async requests => { adding.reviewed(requests); return []; } } } : context, "", files, false, new Map(), collection),
+    review: (files, collection, reasons) => showMediaOptimise(sheet, modal ? { ...context, adapter: { ...adapter,
+      import: async requests => { adding.reviewed(requests); return []; } } } : context, "", files, false, new Map(), collection, reasons),
     // In the picker a new file is chosen, never placed: Use still confirms it.
     added: paths => {
       const fits = paths.find(path => library.items.some(item => item.path === path) && filterMediaLibrary(
@@ -505,5 +505,5 @@ export function createMediaLibraryView(
     await refresh(); if (options.files?.length && alive) { chooseNext = true; adding.start(options.files); }
   }, false);
   return { element: dialog, ready, get refreshedKey() { return refreshedKey; }, refresh: () => task(refresh, false), dispose,
-    review: (files, folder) => { if (alive && library) showMediaOptimise(sheet, context, folder, files); } };
+    review: (files, folder, reasons) => { if (alive && library) showMediaOptimise(sheet, context, folder, files, false, new Map(), "", reasons); } };
 }

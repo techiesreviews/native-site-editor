@@ -103,10 +103,11 @@ test("Adding settings: Smaller files is remembered for the site and adds a photo
   await expect(images.getByRole("radio", { name: /^Balanced/ })).toBeChecked();
   await expect(media.getByRole("group", { name: "Audio", exact: true }).getByRole("radio", { name: /^Speech/ })).not.toBeChecked();
   await expect(media.getByRole("checkbox", { name: /^Keep original/ })).not.toBeChecked();
-  await expect(media.getByRole("button", { name: "Reset to defaults", exact: true })).toBeDisabled();
+  // Reset to defaults is there only once a choice differs from the defaults.
+  await expect(media.getByRole("button", { name: "Reset to defaults", exact: true })).toBeHidden();
   await images.getByRole("radio", { name: /^Smaller files/ }).check();
   await expect.poll(async () => JSON.parse((await storedDraft(page, ".editor/media.json"))?.content ?? "{}").adding).toEqual({ image: "smaller" });
-  await expect(media.getByRole("button", { name: "Reset to defaults", exact: true })).toBeEnabled();
+  await expect(media.getByRole("button", { name: "Reset to defaults", exact: true })).toBeVisible();
 
   // Reload: the site still remembers the choice.
   await page.reload();
@@ -439,7 +440,7 @@ test("Files: a picture that cannot be prepared asks first; Add unchanged adds it
 
   await dropOnFiles(page, [{ name: "Refused.png", type: "image/png", base64: bytes }]);
   await question.getByRole("button", { name: "Don't add", exact: true }).click();
-  await expect(summary.getByRole("status")).toHaveText("1 file could not be added");
+  await expect(summary.getByRole("status")).toHaveText("1 file couldn't be added");
   await expect(summary).toContainText("Refused.png was not added.");
   expect(await storedDraft(page, "refused.png")).toBeUndefined();
   // Retry asks again; Escape adds nothing either.
@@ -447,7 +448,7 @@ test("Files: a picture that cannot be prepared asks first; Add unchanged adds it
   await expect(question).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(question).toBeHidden();
-  await expect(summary.getByRole("status")).toHaveText("1 file could not be added");
+  await expect(summary.getByRole("status")).toHaveText("1 file couldn't be added");
   await expect(summary.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
   expect(await storedDraft(page, "refused.png")).toBeUndefined();
 });
@@ -759,4 +760,114 @@ test("a PDF whose preview passes the 30-second limit is added unchanged with a n
   // fixed-wait: Asserts the preview released after the time limit never writes a picture; nothing observable follows.
   await page.waitForTimeout(1_500);
   expect(await storedDraft(page, "report.webp")).toBeUndefined();
+});
+
+/** The demo repository reports no size: every listing that carries it gets `kib`. */
+async function repoSize(page: Page, kib: number) {
+  const patch = (value: unknown): unknown => Array.isArray(value) ? value.map(patch)
+    : value && typeof value === "object" ? Object.fromEntries(Object.entries(value).map(([key, inner]) => [key, patch(inner)])
+      .concat((value as { full_name?: string }).full_name === "native-demo-user/native-demo" ? [["size", kib]] : []))
+    : value;
+  await page.route(/\/api\//, async route => {
+    if (route.request().method() !== "GET") return route.fallback();
+    const response = await route.fetch(), text = await response.text();
+    if (!text.includes("native-demo-user/native-demo") || !/json/.test(response.headers()["content-type"] ?? "")) return route.fulfill({ response, body: text });
+    await route.fulfill({ response, json: patch(JSON.parse(text)) });
+  });
+}
+
+test("Adding settings: each kind is one card of choices with a ✓ on the chosen one; arrows move it; Keep original is a switch row", async ({ page, baseURL }) => {
+  await repoSize(page, 312_500);
+  await open(page, baseURL);
+  const media = await adding(page);
+  const images = media.getByRole("group", { name: "Images", exact: true });
+  const rows = images.locator(".media-settings__choice");
+  await expect(rows).toHaveCount(4);
+  // One card per kind, 12 px corners; each row at least 48 px, with no visible radio dot.
+  await expect(images.locator(".media-settings__card")).toHaveCSS("border-top-left-radius", "12px");
+  for (const row of await rows.all()) {
+    expect((await row.boundingBox())!.height).toBeGreaterThanOrEqual(48);
+    await expect(row.getByRole("radio")).toHaveCSS("opacity", "0");
+  }
+  await expect(rows.nth(1).locator(".media-settings__hint")).toHaveCSS("font-size", "13px");
+  const ticks = () => rows.evaluateAll(list => list.map(row => getComputedStyle(row.querySelector(".media-settings__tick")!).visibility));
+  await expect.poll(ticks).toEqual(["hidden", "visible", "hidden", "hidden"]);
+
+  // Keyboard: the arrows still move between choices, and the ✓ follows.
+  await images.getByRole("radio", { name: /^Balanced/ }).focus();
+  await page.keyboard.press("ArrowDown");
+  await expect(images.getByRole("radio", { name: /^Higher quality/ })).toBeChecked();
+  await expect.poll(ticks).toEqual(["hidden", "hidden", "visible", "hidden"]);
+  await expect(rows.nth(2)).toHaveCSS("outline-style", "solid");
+  await expect.poll(async () => JSON.parse((await storedDraft(page, ".editor/media.json"))?.content ?? "{}").adding).toEqual({ image: "higher" });
+  await page.keyboard.press("ArrowUp");
+  await expect(images.getByRole("radio", { name: /^Balanced/ })).toBeChecked();
+  await expect.poll(async () => JSON.parse((await storedDraft(page, ".editor/media.json"))?.content ?? "{}").adding).toBeUndefined();
+  await expect(media.getByRole("button", { name: "Reset to defaults", exact: true })).toBeHidden();
+
+  // Keep original: a click anywhere on its row turns the switch on; Reset appears as a text button.
+  const keep = media.getByRole("checkbox", { name: /^Keep original/ });
+  await media.locator(".media-settings__keep .media-settings__title").click();
+  await expect(keep).toBeChecked();
+  const reset = media.getByRole("button", { name: "Reset to defaults", exact: true });
+  await expect(reset).toBeVisible();
+  await expect(reset).toHaveClass(/text-button/);
+  await reset.click();
+  await expect(keep).not.toBeChecked();
+  await expect(reset).toBeHidden();
+  await expect(media.getByRole("heading", { name: "Adding settings", exact: true })).toBeFocused();
+
+  // Repository size: the size large, the allowance small, a rounded bar in the primary colour.
+  const size = media.getByRole("region", { name: "Repository size", exact: true });
+  await expect(size.locator(".media-settings__used")).toHaveText("320 MB of 1 GB GitHub Pages allows");
+  await expect(size.locator(".media-settings__used strong")).toHaveCSS("font-size", "20px");
+  await expect(size.locator(".media-settings__used strong")).toHaveCSS("font-weight", "600");
+  await expect(size.getByRole("meter", { name: "Repository size: 320 MB of 1 GB" })).not.toHaveClass(/is-near-full/);
+  await expect(size.locator(".media-settings__warning")).toHaveCount(0);
+});
+
+test("Adding settings: at 900 MB the size bar turns amber and the warning shows", async ({ page, baseURL }) => {
+  await repoSize(page, 878_907);
+  await open(page, baseURL);
+  const media = await adding(page);
+  const size = media.getByRole("region", { name: "Repository size", exact: true });
+  await expect(size.locator(".media-settings__used strong")).toHaveText("900 MB");
+  const meter = size.getByRole("meter", { name: "Repository size: 900 MB of 1 GB" });
+  await expect(meter).toHaveClass(/is-near-full/);
+  const fill = await meter.evaluate(element => getComputedStyle(element).getPropertyValue("--fill").trim());
+  expect(fill).toContain("color-warning");
+  await expect(size.locator(".media-settings__warning")).toContainText("GitHub Pages stops publishing sites over 1 GB.");
+});
+
+test("the adding tray: a short line for a failed file, Retry an edged 36 px button, ✕ in the corner, the full reason under Review…", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const media = page.getByRole("region", { name: "Media", exact: true }), tab = page.getByRole("tab", { name: "Media", exact: true });
+  if (!await tab.isVisible()) await page.locator("#explorer-toggle").click();
+  await tab.click();
+  const bytes = await photo(page);
+  await media.locator('input[name="media-upload"]').setInputFiles([
+    { name: "Tray-good.png", mimeType: "image/png", buffer: Buffer.from(bytes, "base64") },
+    { name: "phone-export.png", mimeType: "image/png", buffer: Buffer.from("not a picture at all, only words ".repeat(20)) },
+  ]);
+  const tray = media.getByRole("region", { name: "Files being added", exact: true });
+  await expect(tray.getByRole("status")).toHaveText("1 added · 1 couldn't be added", { timeout: 30_000 });
+  const line = tray.getByRole("listitem");
+  await expect(line).toHaveText(/^phone-export\.png couldn't be added\. [^.]+\.$/);
+  // At most two lines.
+  const lines = await line.evaluate(item => Math.round(item.getBoundingClientRect().height / parseFloat(getComputedStyle(item).lineHeight)));
+  expect(lines).toBeLessThanOrEqual(2);
+
+  const retry = tray.getByRole("button", { name: "Retry", exact: true });
+  expect(Math.round((await retry.boundingBox())!.height)).toBe(36);
+  await expect(retry).toHaveCSS("border-top-style", "solid");
+  await expect(tray.getByRole("button", { name: "Review…", exact: true })).toHaveClass(/text-button/);
+  // ✕ sits in the tray's top-right corner, beside the title, above the actions.
+  const box = (await tray.boundingBox())!, close = (await tray.getByRole("button", { name: "Dismiss", exact: true }).boundingBox())!;
+  expect(box.x + box.width - (close.x + close.width)).toBeLessThanOrEqual(12);
+  expect(close.y - box.y).toBeLessThanOrEqual(12);
+  expect(close.y + close.height).toBeLessThan((await retry.boundingBox())!.y);
+
+  await tray.getByRole("button", { name: "Review…", exact: true }).click();
+  await expect(media.getByRole("heading", { name: "Optimise", exact: true })).toBeVisible();
+  await expect(media.locator(".media-library__sheet .media-library__problem")).toHaveText(/^phone-export\.png could not be prepared\. .+ again\.$/);
 });

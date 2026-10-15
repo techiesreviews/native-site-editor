@@ -2356,10 +2356,10 @@ async function uploadFilesTo(folder: string, files: File[]): Promise<string[]> {
         return mediaController.workspaceContext();
       },
       // Pictures not added yet go to Media's Optimise sheet, still bound for this folder.
-      review: element("explorer-tabs").hidden ? undefined : (images, into) => {
+      review: element("explorer-tabs").hidden ? undefined : (images, into, reasons) => {
         if (!current()) return;
         openExplorer(); selectExplorerTab("media");
-        void mediaController.reviewInGallery(images, into).catch(errorMessage);
+        void mediaController.reviewInGallery(images, into, reasons).catch(errorMessage);
       } });
   } catch (error) { errorMessage(error); return []; }
 }

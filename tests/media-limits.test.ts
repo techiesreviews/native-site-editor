@@ -118,11 +118,14 @@ test("SVG executable content cannot bypass preparation", () => {
 test("repository size converts KiB to decimal MB and GB with exact thresholds", () => {
   assert.equal(REPO_SIZE_LARGE_BYTES, 500_000_000); assert.equal(REPO_SIZE_NEAR_LIMIT_BYTES, 900_000_000);
   assert.equal(repoSizeStatus(undefined), undefined);
-  assert.deepEqual(repoSizeStatus(488_281), { bytes: 499_999_744, label: "500 MB", level: "ok" });
+  assert.deepEqual(repoSizeStatus(488_281), { bytes: 499_999_744, label: "500 MB", level: "ok", nearFull: false });
   assert.equal(repoSizeStatus(488_282)?.level, "large");
   assert.equal(repoSizeStatus(878_906)?.level, "large");
   assert.equal(repoSizeStatus(878_907)?.level, "near-limit");
   assert.equal(repoSizeStatus(500_000)?.label, "512 MB");
   assert.equal(repoSizeStatus(1_074_219)?.label, "1.1 GB");
+  // The bar turns amber from 80 % of the 1 GB GitHub Pages allows.
+  assert.equal(repoSizeStatus(781_249)?.nearFull, false);
+  assert.equal(repoSizeStatus(781_250)?.nearFull, true);
   assert.match(repoSizeStatus(878_907)?.message ?? "", /GitHub Pages.*1 GB.*Git history.*removed or replaced.*deleting files does not shrink/);
 });

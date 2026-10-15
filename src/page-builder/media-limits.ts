@@ -181,14 +181,15 @@ export function preparationFailure(file: { name: string; size: number; type?: st
   return { kind: "ask", question: `${file.name} could not be prepared. Add the unchanged file instead?` };
 }
 
+/** `nearFull`: from 80 % of the 1 GB GitHub Pages allows, the size bar turns amber (audit slice 112). */
 export function repoSizeStatus(sizeKiB: number | undefined): {
-  bytes: number; label: string; level: "ok" | "large" | "near-limit"; message?: string;
+  bytes: number; label: string; level: "ok" | "large" | "near-limit"; nearFull: boolean; message?: string;
 } | undefined {
   if (sizeKiB === undefined) return undefined;
   const bytes = sizeKiB * 1024;
   const label = bytes >= 1_000_000_000 ? `${(bytes / 1_000_000_000).toFixed(1)} GB` : `${Math.round(bytes / 1_000_000)} MB`;
   const level = bytes >= REPO_SIZE_NEAR_LIMIT_BYTES ? "near-limit" : bytes >= REPO_SIZE_LARGE_BYTES ? "large" : "ok";
-  return { bytes, label, level, ...level === "ok" ? {} : {
+  return { bytes, label, level, nearFull: bytes >= 800_000_000, ...level === "ok" ? {} : {
     message: "GitHub Pages stops publishing sites over 1 GB. Git history keeps every removed or replaced file, so deleting files does not shrink the repository.",
   } };
 }

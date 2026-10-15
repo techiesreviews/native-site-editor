@@ -15,8 +15,8 @@ export function mediaAddingStatus(states: readonly MediaAddingState[]) {
   const running = active.some(state => state === "waiting" || state === "preparing" || state === "ready" || state === "adding");
   const done = active.filter(state => state === "ready" || state === "added" || state === "failed").length;
   const text = running ? `Adding ${files(active.length)}`
-    : added && failed ? `Added ${files(added)} · ${failed} could not be added`
-      : failed ? `${files(failed)} could not be added`
+    : added && failed ? `${added} added · ${failed} couldn't be added`
+      : failed ? `${files(failed)} couldn't be added`
         : added ? `Added ${files(added)}` : "";
   return { text, running, done, total: active.length };
 }
@@ -67,6 +67,31 @@ export const mediaAddingBusy = (states: readonly MediaAddingState[], hold = fals
 export const mediaAddingReviewable = (name: string, state: MediaAddingState) =>
   (mediaAddingCancellable(state) || state === "failed") && mediaNeedsPreparation(name);
 
-/** A failed file's line: its reason and advice, named once. */
-export const mediaAddingFailedLine = (name: string, error = "The file could not be added.") =>
+/** A failed file's full reason, named once: what Review… shows. */
+export const mediaAddingFailedReason = (name: string, error = "The file could not be added.") =>
   error.includes(name) ? error : `${name}: ${error}`;
+
+/** The longest tray line that still fits about two lines on a phone. */
+const SHORT_LINE = 100;
+/** A failed file's tray line (audit slice 112): "<name> couldn't be added." and what to do, at most
+ * about two lines. A long reason keeps only its last sentence, the advice; the full reason is under
+ * Review…. A reason that already names the file in its own words ("x.png was not added.") stays. */
+export function mediaAddingFailedLine(name: string, error = "") {
+  const lead = `${name} couldn't be added.`;
+  const opening = [`${name} could not be prepared.`, `${name} could not be added to your drafts.`, `${name} could not be added.`, `${name}:`]
+    .find(start => error.startsWith(start));
+  if (!opening && error.includes(name)) return error;
+  const rest = (opening ? error.slice(opening.length) : error).trim();
+  if (!rest) return lead;
+  if (lead.length + 1 + rest.length <= SHORT_LINE) return `${lead} ${rest}`;
+  return `${lead} ${rest.split(/(?<=[.!?])\s+/).at(-1)}`;
+}
+
+/** The picker's tray once its files are prepared: the ready ones wait for Use. Undefined while
+ * nothing is ready or files are still being prepared, so the tray keeps its own words. */
+export function mediaAddingHoldText(states: readonly MediaAddingState[]) {
+  if (states.some(state => state === "waiting" || state === "preparing")) return undefined;
+  const ready = states.filter(state => state === "ready").length, failed = states.filter(state => state === "failed").length;
+  if (!ready) return undefined;
+  return failed ? `${ready} ready · ${failed} couldn't be added` : `${ready} ready · Use saves and places; Close saves without placing.`;
+}

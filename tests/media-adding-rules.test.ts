@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  mediaAddingWords, mediaAddingCancellable, mediaAddingFailedLine, mediaAddingOffers, mediaAddingPath, mediaAddingReveal, mediaAddingReviewable, mediaAddingShown, mediaAddingStatus,
+  mediaAddingWords, mediaAddingCancellable, mediaAddingFailedLine, mediaAddingFailedReason, mediaAddingHoldText, mediaAddingOffers, mediaAddingPath, mediaAddingReveal, mediaAddingReviewable, mediaAddingShown, mediaAddingStatus,
 } from "../src/page-builder/media-adding-rules";
 import type { MediaLibraryFilter } from "../src/page-builder/media-library-filter";
 
@@ -13,9 +13,10 @@ test("the tray counts files settled out of those still being added; cancelled fi
   assert.deepEqual(mediaAddingStatus(["ready", "preparing", "cancelled"]), { text: "Adding 2 files", running: true, done: 1, total: 2 });
   assert.deepEqual(mediaAddingStatus(["adding"]), { text: "Adding 1 file", running: true, done: 0, total: 1 });
   assert.deepEqual(mediaAddingStatus(["added", "cancelled"]), { text: "Added 1 file", running: false, done: 1, total: 1 });
-  assert.equal(mediaAddingStatus(["added", "added", "failed"]).text, "Added 2 files · 1 could not be added");
-  assert.equal(mediaAddingStatus(["failed", "failed"]).text, "2 files could not be added");
-  assert.equal(mediaAddingStatus(["failed"]).text, "1 file could not be added");
+  assert.equal(mediaAddingStatus(["added", "added", "failed"]).text, "2 added · 1 couldn't be added");
+  assert.equal(mediaAddingStatus(["added", "failed", "failed"]).text, "1 added · 2 couldn't be added");
+  assert.equal(mediaAddingStatus(["failed", "failed"]).text, "2 files couldn't be added");
+  assert.equal(mediaAddingStatus(["failed"]).text, "1 file couldn't be added");
   // Everything cancelled: nothing to say, so the tray hides.
   assert.deepEqual(mediaAddingStatus(["cancelled", "cancelled"]), { text: "", running: false, done: 0, total: 0 });
   assert.equal(mediaAddingStatus([]).text, "");
@@ -78,10 +79,39 @@ test("Review… from Files takes pictures not added yet, or that failed; other k
   assert.equal(mediaAddingReviewable("logo.svg", "waiting"), true);
 });
 
-test("a failed file's line names it once", () => {
+test("a failed file's line names it once and says what to do in at most two short sentences", () => {
+  // The audit's example: the long middle sentence goes; the advice stays.
+  const hidden = "phone-export.png could not be prepared. Hidden personal details could not be removed because the picture could not be prepared. Save it as a new JPEG or PNG and add it again.";
+  assert.equal(mediaAddingFailedLine("phone-export.png", hidden), "phone-export.png couldn't be added. Save it as a new JPEG or PNG and add it again.");
+  // A short reason and its advice both fit.
+  assert.equal(mediaAddingFailedLine("big.jpg", "big.jpg could not be prepared. It is 25.3 MB and the limit is 20 MB. Try a smaller export."),
+    "big.jpg couldn't be added. It is 25.3 MB and the limit is 20 MB. Try a smaller export.");
+  assert.equal(mediaAddingFailedLine("clip.mov", "clip.mov could not be prepared. Export it as MP4 (H.264) and add it again."),
+    "clip.mov couldn't be added. Export it as MP4 (H.264) and add it again.");
+  assert.equal(mediaAddingFailedLine("a.png", "a.png could not be added to your drafts."), "a.png couldn't be added.");
+  assert.equal(mediaAddingFailedLine("a.png", "a.png: Choose a website folder outside media/originals when keeping an original."),
+    "a.png couldn't be added. Choose a website folder outside media/originals when keeping an original.");
+  // A reason that does not name the file gets the name in front.
+  assert.equal(mediaAddingFailedLine("a.png", "This folder changed. Try again."), "a.png couldn't be added. This folder changed. Try again.");
+  assert.equal(mediaAddingFailedLine("a.png"), "a.png couldn't be added.");
+  // Other sentences that name the file already read as a line of their own.
   assert.equal(mediaAddingFailedLine("huge.pdf", "huge.pdf is 20 MB; uploads are limited to 20 MB per file."), "huge.pdf is 20 MB; uploads are limited to 20 MB per file.");
-  assert.equal(mediaAddingFailedLine("a.png", "This folder changed. Try again."), "a.png: This folder changed. Try again.");
-  assert.equal(mediaAddingFailedLine("a.png"), "a.png: The file could not be added.");
+  assert.equal(mediaAddingFailedLine("Refused.png", "Refused.png was not added."), "Refused.png was not added.");
+});
+
+test("Review gets each failed file's full reason, named once", () => {
+  assert.equal(mediaAddingFailedReason("a.png", "a.png could not be prepared. Long reason. Advice."), "a.png could not be prepared. Long reason. Advice.");
+  assert.equal(mediaAddingFailedReason("a.png", "This folder changed. Try again."), "a.png: This folder changed. Try again.");
+  assert.equal(mediaAddingFailedReason("a.png"), "a.png: The file could not be added.");
+});
+
+test("the picker's held files: how many are ready and how many failed, or the tray's own words", () => {
+  assert.equal(mediaAddingHoldText(["ready", "ready"]), "2 ready · Use saves and places; Close saves without placing.");
+  assert.equal(mediaAddingHoldText(["ready", "failed"]), "1 ready · 1 couldn't be added");
+  // Nothing ready (all failed, or still preparing): the ordinary words.
+  assert.equal(mediaAddingHoldText(["failed"]), undefined);
+  assert.equal(mediaAddingHoldText(["ready", "preparing"]), undefined);
+  assert.equal(mediaAddingHoldText(["waiting"]), undefined);
 });
 
 test("Smallest files preparing words say slower; ordinary and settled words stay the same", () => {

@@ -7,7 +7,7 @@ import { mediaAddingSettings } from "./media-settings";
 import type { MediaImportRequest } from "./media-picker";
 import {
   MEDIA_ADDING_WORDS as WORDS, mediaAddingWords, mediaAddingBusy, mediaAddingCancellable, mediaAddingPath, mediaAddingReveal, mediaAddingShown,
-  mediaAddingStatus, type MediaAddingState,
+  mediaAddingStatus, mediaAddingFailedReason, mediaAddingHoldText, type MediaAddingState,
 } from "./media-adding-rules";
 import { createMediaAddingSummary } from "./media-adding-summary";
 import { markTransparency } from "./media-transparency";
@@ -28,8 +28,9 @@ export interface MediaAddingHost {
   /** Re-read the library once the new files are saved. */
   refresh(): Promise<void>;
   show(change: Partial<MediaLibraryFilter>): void;
-  /** Today's Optimise sheet, with its before/after review, for files not added yet. */
-  review(files: File[], collection: string): void;
+  /** Today's Optimise sheet, with its before/after review, for files not added yet; `reasons`
+   * are the full reasons of those that could not be added. */
+  review(files: File[], collection: string, reasons: string[]): void;
   /** The files one drop saved, once the library shows them (the picker chooses the first). */
   added?(paths: string[]): void;
   tell(text: string): void;
@@ -57,8 +58,9 @@ export function createMediaAdding(grid: HTMLElement, tray: HTMLElement, h: Media
     showNew: () => h.show(mediaAddingReveal(h.filter(), run.collection)),
     review: () => {
       const rest = run.entries.filter(entry => cancellable(entry) || entry.state === "failed");
+      const reasons = rest.filter(entry => entry.state === "failed").map(entry => mediaAddingFailedReason(basename(entry.file.name), entry.error));
       rest.forEach(stop);
-      h.review(rest.map(entry => entry.file), run.collection);
+      h.review(rest.map(entry => entry.file), run.collection, reasons);
       paint();
     },
     cancel: () => { run.entries.filter(cancellable).forEach(stop); paint(); summary.focus(); },
@@ -156,8 +158,7 @@ export function createMediaAdding(grid: HTMLElement, tray: HTMLElement, h: Media
     summary.paint({
       entries: entries.map(entry => ({ quality: entry.quality, name: entry.file.name, state: entry.state, error: entry.error, note: entry.note })),
       hold: h.hold,
-      text: h.hold && !entries.some(entry => entry.state === "waiting" || entry.state === "preparing")
-        ? `${entries.filter(entry => entry.state === "ready").length} ready · Use saves and places; Close saves without placing.` : text,
+      text: (h.hold && mediaAddingHoldText(entries.map(entry => entry.state))) || text,
       showNew: entries.some(entry => entry.state !== "cancelled" && entry.state !== "failed" && !visible(entry)),
       review: entries.some(entry => entry.state === "failed" || running && cancellable(entry)),
     });

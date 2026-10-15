@@ -1,26 +1,70 @@
-/* More → Adding settings (media-manager slice 26): its own screen with Back, like To check.
-   Plain choices in groups, each row a 44 px target with a short hint, then the repository's size. */
-.media-library__body:has(> .media-library__sheet[data-mode="adding-settings"]:not([hidden])) .media-library__browse,
-.media-library:has(.media-library__sheet[data-mode="adding-settings"]:not([hidden])) :is(.media-library__bar, .media-library__footer),
-.media-library--pane:has(.media-library__sheet[data-mode="adding-settings"]:not([hidden])) .media-library__header { display: none; }
-.media-library .media-library__sheet[data-mode="adding-settings"] {
-  flex: 1; width: 100%; min-width: 0; border-left: 0; background: transparent; padding: 8px 24px 24px; gap: 8px;
+/* More → Adding settings (slice 26; look from audit slice 112). A full sub-screen through the shared
+   [data-mode] rules in media-picker.css. Each kind is one grouped card (XChat "Upload Quality",
+   WhatsApp "Media quality"): 48 px rows with a title, a hint and a trailing ✓ on the chosen one.
+   The radio stays for keyboards and assistive tech, invisible over the whole row. */
+.media-settings, .media-settings__size { max-inline-size: 34rem; }
+.media-settings { display: flex; flex-direction: column; gap: 20px; }
+.media-settings__group { margin: 0; padding: 0; border: 0; display: grid; gap: 6px; min-inline-size: 0; }
+.media-settings__group legend { padding: 0 0 6px; color: var(--muted); font-size: var(--type-small); font-weight: 600; }
+.media-settings__card {
+  display: grid; overflow: clip;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--surface-card);
 }
-.media-library--pane .media-library__sheet[data-mode="adding-settings"] { padding: 8px 12px 20px; }
-.media-settings, .media-settings__size { display: flex; flex-direction: column; gap: 16px; max-width: 34rem; }
-.media-settings__group { margin: 0; padding: 0; border: 0; display: grid; gap: 2px; }
-.media-settings__group legend { padding: 0 0 4px; font-weight: 600; }
 .media-settings__choice {
-  min-height: 44px; display: grid; grid-template-columns: 20px minmax(0, 1fr); align-items: center; gap: 10px;
-  padding: 4px 8px; margin-inline: -8px; border-radius: 8px; cursor: pointer;
+  position: relative; min-block-size: 48px; display: flex; align-items: center; gap: 12px;
+  padding: 8px 14px; cursor: pointer;
 }
+/* --line is too faint on the dark card; the control edge shows in both themes. */
+.media-settings__choice + .media-settings__choice { border-block-start: 1px solid var(--control-line); }
 .media-settings__choice:active { background: var(--hover); }
 @media (hover: hover) and (pointer: fine) { .media-settings__choice:hover { background: var(--hover); } }
-.media-settings__choice input { width: 18px; height: 18px; margin: 0; accent-color: var(--primary); }
-.media-settings__text { display: grid; gap: 1px; min-width: 0; }
-.media-settings__keep { border-top: 1px solid var(--line); border-radius: 0 0 8px 8px; padding-top: 12px; }
-.media-library .media-settings__reset { align-self: start; min-height: 44px; }
-.media-settings__size { padding-top: 16px; margin-top: 8px; border-top: 1px solid var(--line); gap: 8px; }
+.media-settings__choice:has(input[type="radio"]:focus-visible) { outline: var(--focus-ring); outline-offset: -2px; border-radius: 12px; }
+.media-library .media-settings__choice input[type="radio"] {
+  appearance: none; position: absolute; inset: 0; inline-size: auto; block-size: auto; min-block-size: 0; margin: 0; padding: 0;
+  border: 0; border-radius: 0; background: none; opacity: 0; cursor: pointer;
+}
+.media-settings__text { flex: 1; display: grid; gap: 2px; min-inline-size: 0; }
+.media-settings__title { font-weight: 500; }
+.media-settings__choice:has(input:checked) .media-settings__title { font-weight: 600; }
+.media-settings__hint { color: var(--muted); font-size: var(--type-base); line-height: 1.4; overflow-wrap: anywhere; }
+/* --link reaches 4.5:1 on the card in both themes (slice 106); --primary is too dark on the dark card. */
+.media-settings__tick { flex: none; color: var(--link); visibility: hidden; }
+.media-settings__choice:has(input:checked) .media-settings__tick { visibility: visible; }
+
+/* Keep original: the same row with a switch at its end (still a checkbox for assistive tech). */
+.media-library .media-settings__keep input.media-settings__switch {
+  appearance: none; position: relative; flex: none; order: 1; inline-size: 36px; block-size: 20px; margin: 0;
+  border-radius: 999px; background: var(--control-line); cursor: pointer;
+}
+.media-library .media-settings__switch::before {
+  content: ""; position: absolute; inset-block-start: 2px; inset-inline-start: 2px; inline-size: 16px; block-size: 16px;
+  border-radius: 50%; background: oklch(100% 0 none); box-shadow: 0 1px 2px var(--semantic-shadow);
+}
+.media-library .media-settings__keep input.media-settings__switch:checked { background: var(--primary); }
+.media-library .media-settings__switch:checked::before { translate: 16px 0; }
+.media-library .media-settings__keep input.media-settings__switch:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+@media (prefers-reduced-motion: no-preference) {
+  .media-settings__switch, .media-library .media-settings__switch::before { transition: background-color 140ms ease-out, translate 140ms ease-out; }
+}
+
+/* Reset to defaults: a quiet text button, there only when a choice differs from the defaults. */
+.media-library .media-settings__reset { align-self: start; min-block-size: 44px; padding-block: 0; }
+.media-library .media-settings__reset[hidden] { display: none; }
+
+/* Repository size as a storage card (WhatsApp storage): the size large, the allowance small, one bar. */
+.media-settings__size { display: grid; gap: 6px; padding: 14px; margin-block-start: 12px; }
 .media-settings__size :is(h4, p) { margin: 0; }
-.media-settings__size meter { width: 100%; height: 8px; }
-.media-settings__warning { padding: 10px 12px; border-radius: 8px; background: var(--warning-bg); color: var(--warning-fg); line-height: 1.5; }
+.media-settings__size h4 { color: var(--muted); font-size: var(--type-small); font-weight: 600; }
+.media-settings__used { color: var(--muted); font-size: var(--type-base); }
+.media-settings__used strong { color: var(--text); font-size: var(--type-heading); font-weight: 600; font-variant-numeric: tabular-nums; }
+.media-settings__size meter {
+  --fill: var(--primary);
+  appearance: none; inline-size: 100%; block-size: 8px; margin-block: 6px 2px;
+  border: 0; border-radius: 999px; background: var(--control-line); overflow: clip;
+}
+.media-settings__size meter.is-near-full { --fill: var(--color-warning); }
+.media-settings__size meter::-webkit-meter-bar { block-size: 8px; border: 0; border-radius: 999px; background: var(--control-line); }
+.media-settings__size meter::-webkit-meter-optimum-value { border-radius: 999px; background: var(--fill); }
+.media-settings__size meter::-moz-meter-bar { border-radius: 999px; background: var(--fill); }
+.media-settings__warning { font-size: var(--type-base); line-height: 1.5; color: var(--muted); }
+.media-settings__warning.is-near-limit { color: var(--warning-fg); }

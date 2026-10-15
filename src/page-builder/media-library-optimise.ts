@@ -12,10 +12,11 @@ import type { MediaImportRequest } from "./media-picker";
 type OptimiseContext = Pick<LibrarySheetContext, "alive" | "library" | "task" | "adapter" | "cache" | "refresh" | "tell" | "done">;
 
 /** The Optimise sheet; `folder` is the folder filter, the default destination for new files,
- * which join `collection` (the one being viewed when they were dropped). */
+ * which join `collection` (the one being viewed when they were dropped). `reasons` are the full
+ * reasons the adding tray gave in short, for files that could not be added (audit slice 112). */
 export function showMediaOptimise(
   sheet: LibrarySheet, c: OptimiseContext, folder: string,
-  files: File[], existing = false, receipts = new Map<string, string | undefined>(), collection = "",
+  files: File[], existing = false, receipts = new Map<string, string | undefined>(), collection = "", reasons: string[] = [],
 ) {
   const { element } = sheet, { task, cache, done } = c;
   if (!c.alive()) return;
@@ -23,7 +24,8 @@ export function showMediaOptimise(
   delete element.dataset.mode;
   const defaults = mediaOptimiseStart(c.library().adding);
   element.append(node("h3", "", "Optimise"), node("p", "media-library__muted",
-    `${files.length} ${files.length === 1 ? "image" : "images"} · ${formatBytes(files.reduce((sum, file) => sum + file.size, 0))} before`));
+    `${files.length} ${files.length === 1 ? "image" : "images"} · ${formatBytes(files.reduce((sum, file) => sum + file.size, 0))} before`),
+    ...reasons.map(reason => node("p", "media-library__problem", reason)));
   // Empty keeps the full size (Higher quality).
   const width = input("Maximum width", "number"); width.min = "1"; width.max = "10000"; width.value = defaults.maxWidth === null ? "" : String(defaults.maxWidth);
   width.placeholder = "Full size";

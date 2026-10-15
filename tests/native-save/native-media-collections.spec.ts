@@ -442,14 +442,16 @@ test("a file that cannot be prepared stays in the tray with its reason and Revie
     for (const type of ["dragenter", "dragover", "drop"])
       element.dispatchEvent(new DragEvent(type, { dataTransfer: transfer, bubbles: true, cancelable: true }));
   }, svg("red"));
-  await expect(tray(page).getByRole("status")).toHaveText("Added 1 file · 1 could not be added");
-  await expect(tray(page).getByRole("listitem")).toHaveText(/broken\.png/);
+  await expect(tray(page).getByRole("status")).toHaveText("1 added · 1 couldn't be added");
+  await expect(tray(page).getByRole("listitem")).toHaveText(/^broken\.png couldn't be added\. /);
   await expect.poll(() => members(page, "Studio picks")).toEqual(["media/images/good.svg"]);
   await expect.poll(() => tileNames(page)).toEqual(["media/images/good.svg"]);
   // Review… offers only the failed file to today's Optimise sheet.
   await tray(page).getByRole("button", { name: "Review…", exact: true }).click();
   await expect(library.getByRole("heading", { name: "Optimise", exact: true })).toBeVisible();
   await expect(library.locator(".media-library__sheet")).toContainText("1 image");
+  // The full reason the tray gave in short is here.
+  await expect(library.locator(".media-library__sheet .media-library__problem")).toHaveText(/^broken\.png could not be prepared\. /);
   // The tray keeps the file that was added; the failed one moved to the sheet.
   await expect(tray(page).getByRole("status")).toHaveText("Added 1 file");
   await expect(tray(page).getByRole("listitem")).toHaveCount(0);

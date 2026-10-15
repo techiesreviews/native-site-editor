@@ -227,7 +227,7 @@ test("Upload files… in a folder's menu and files dropped on a folder upload th
   await dropFiles(page, "#explorer .file-row[data-path='images']", [{ name: "huge.pdf", type: "application/pdf", size: 20 * 1024 * 1024 + 1 }]);
   // The reason stays in the Files adding summary.
   const adding = explorer(page).getByRole("region", { name: "Files being added" });
-  await expect(adding.getByRole("status")).toHaveText("1 file could not be added");
+  await expect(adding.getByRole("status")).toHaveText("1 file couldn't be added");
   await expect(adding).toContainText("huge.pdf is 20 MB; uploads are limited to 20 MB per file.");
   await expect(explorer(page).locator(".file-row[data-path='images/huge.pdf']")).toHaveCount(0);
 

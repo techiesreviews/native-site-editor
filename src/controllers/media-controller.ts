@@ -313,10 +313,10 @@ export function createMediaController(ports: MediaControllerPorts, loadActions: 
     const module = await getActions();
     if (stamp.holds() && attempt === galleryEpoch) await module.ensureGallery();
   }
-  async function reviewInGallery(files: File[], folder: string) {
+  async function reviewInGallery(files: File[], folder: string, reasons?: string[]) {
     const stamp = ports.stamp(), attempt = galleryEpoch;
     const module = await getActions();
-    if (stamp.holds() && attempt === galleryEpoch) await module.reviewInGallery(files, folder);
+    if (stamp.holds() && attempt === galleryEpoch) await module.reviewInGallery(files, folder, reasons);
   }
   return { refreshUsage, invalidateUsage: () => { usage?.invalidate(); cleanUp?.invalidate(); }, usageRecords: () => usage?.usageRecords(),
     onUsageChange: (listener: (records: ReturnType<NonNullable<typeof usage>["usageRecords"]>) => void) => {

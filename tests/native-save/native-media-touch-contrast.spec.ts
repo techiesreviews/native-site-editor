@@ -121,7 +121,13 @@ test("a mouse still lights the row under it, and a disabled filled button is pla
 
   for (const scheme of ["light", "dark"] as const) {
     await page.emulateMedia({ colorScheme: scheme });
-    const reset = media(page).getByRole("button", { name: "Reset to defaults", exact: true });
+    // Reset to defaults hides rather than greys (slice 112): a disabled secondary in its place.
+    await media(page).locator(".media-settings").evaluate(form => {
+      if (form.querySelector(".probe-disabled")) return;
+      const probe = document.createElement("button"); probe.type = "button"; probe.className = "button secondary probe-disabled";
+      probe.textContent = "Disabled"; probe.disabled = true; form.append(probe);
+    });
+    const reset = media(page).locator(".probe-disabled");
     await expect(reset).toBeDisabled();
     const look = await reset.evaluate(element => {
       const probe = document.createElement("span"); probe.style.background = "var(--surface-subtle)"; probe.style.color = "var(--muted)";
