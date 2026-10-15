@@ -87,13 +87,13 @@ test("site categories preserve identity and image edits until Cancel, returning 
   const panel = settings(page, "Site settings");
   await panel.getByLabel("Site name", { exact: true }).fill("Unsaved identity");
   await panel.getByRole("tab", { name: "Social", exact: true }).click();
-  await panel.getByLabel("Default social image").fill("https://studio.example/share.png");
+  await panel.getByLabel("Default social image", { exact: true }).fill("https://studio.example/share.png");
   await panel.getByRole("tab", { name: "Pages", exact: true }).click();
   await expect(panel.locator(".site-settings__affected li")).toHaveCount(2);
   await panel.getByRole("tab", { name: "General", exact: true }).click();
   await expect(panel.getByLabel("Site name", { exact: true })).toHaveValue("Unsaved identity");
   await panel.getByRole("tab", { name: "Social", exact: true }).click();
-  await expect(panel.getByLabel("Default social image")).toHaveValue("https://studio.example/share.png");
+  await expect(panel.getByLabel("Default social image", { exact: true })).toHaveValue("https://studio.example/share.png");
   await panel.locator(".site-settings__actions").getByRole("button", { name: "Cancel", exact: true }).click();
   expect(await storedDraft(page, ".editor/config.json")).toBeUndefined();
   await expect(page.locator("#explorer-toggle")).toBeFocused();
