@@ -182,6 +182,7 @@ Lex asked for a final UX and UI audit of every media screen against current Mobb
 | [118 Improve images: leave a picture alone everywhere](tickets/118-improve-leave-alone-everywhere.md) | claude | 111 |
 | [119 One Media button for every media spot](tickets/119-media-button.md) | claude | 109, 115 |
 | [120 Starter player and agent-guide touch-ups](tickets/120-starter-touchups.md) | claude | 111, 115 |
+| [121 Media tab count matches Clean up; Flip shows when it's on](tickets/121-count-and-flip.md) | claude | 114, 110 |
 
 ## Finding the frontier
 
