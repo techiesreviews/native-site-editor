@@ -345,11 +345,15 @@ export function createMediaController(ports: MediaControllerPorts) {
     if (source === undefined || ports.viewingVersion()) return;
     const { openMediaPicker } = await load();
     if (!stamp.holds() || ports.source(place.path) !== source) return;
+    // Component templates (their items slots) by path, so the step can prove the ones it read.
+    const templates = (tag: string) => { const path = ports.workspace()?.site?.components[tag]; return path === undefined ? undefined : { path, source: ports.source(path) }; };
     await openMediaPicker({ place: `${ports.placeLabel?.(place.path) ?? place.path} · Add media`, report: ports, onPick: async (file, cancelled, held) => {
       const { placeChosenMedia } = await import("../page-builder/media-insert");
-      // Component templates (their items slots) by path, so the step can prove the ones it read.
-      const templates = (tag: string) => { const path = ports.workspace()?.site?.components[tag]; return path === undefined ? undefined : { path, source: ports.source(path) }; };
       await placeChosenMedia(ports, workspaceContext, { kind: "insert", place, templates }, file, { stamp, epoch, source }, cancelled, held);
+    }, onlineVideo: async (video, cancelled, host) => {
+      // A pasted YouTube or Vimeo address, or one already in Media (slice 68).
+      const { placeOnlineVideo } = await import("../page-builder/online-video-place");
+      await placeOnlineVideo(ports, workspaceContext, { place, templates }, video, host, { stamp, epoch, source }, cancelled);
     } }).catch((error: unknown) => ports.error(error));
   }
 

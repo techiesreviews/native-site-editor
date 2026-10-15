@@ -10,7 +10,7 @@ import { confirmMediaDelete } from "./media-library-delete";
 import { showMediaOptimise } from "./media-library-optimise";
 import { wireMediaLibraryInput } from "./media-library-input";
 import { createMediaAdding } from "./media-library-adding";
-import { basename, chosenNoun, filterMediaLibrary, mediaFamilyUsage, mediaKind, pickerFileWord, type MediaKindChoice, type MediaLibraryFilter } from "./media-library-filter";
+import { basename, chosenNoun, filterMediaLibrary, mediaFamilyUsage, mediaKind, onlineServiceName, onlineVideoName, pickerFileWord, type MediaKindChoice, type MediaLibraryFilter } from "./media-library-filter";
 import { mediaImageForPlacement, mediaNameAlt, mediaVariantName, mediaVariants, type MediaImage } from "./media-markup";
 import { node } from "../ui/dom";
 import { createRowMenu, type MenuItem } from "../components/row-menu";
@@ -64,7 +64,7 @@ export function createMediaLibraryView(
     remove: () => remove([...selected], () => { if (!shell.removeFiles.hidden) shell.removeFiles.focus(); }),
     more: opener => openMenu(opener, "More for selected files", [
       { label: "Select all shown", run: () => {
-        for (const card of grid.querySelectorAll<HTMLElement>(".media-library__card")) selected.add(card.dataset.path!);
+        for (const card of grid.querySelectorAll<HTMLElement>(".media-library__card[data-path]")) selected.add(card.dataset.path!);
         draw();
       } },
       { label: "Optimise heavy images", run: () => void task(async () => {
@@ -82,8 +82,9 @@ export function createMediaLibraryView(
       }) },
     ]),
     clear: () => { selected.clear(); draw(); },
-    details: () => { if (chosen) void details(chosen); },
+    details: () => { if (chosen) void (onlineVideo(chosen) ? onlineDetails(chosen) : details(chosen)); },
     use,
+    ...modal && options.onlineVideo ? { address: (text: string) => useAddress(text) } : {},
   }, modal);
   const { dialog, grid, collections, summary, message } = shell;
   let alive = true, kind: MediaKindChoice = "all", layout: "grid" | "list" = "grid", refreshVersion = 0, loadingLibrary = false;
@@ -229,12 +230,13 @@ export function createMediaLibraryView(
     if (!alive || !library) return;
     viewing = collections.value;
     // A chosen file that is gone (removed, renamed, a held file cancelled) is no longer chosen.
-    if (chosen && !heldFile(chosen) && !library.items.some(item => item.path === chosen)) chosen = undefined;
-    drawLibraryGrid(shell, library, { kind, selected, observers, accept: options.accept, modal: Boolean(modal), layout, chosen }, {
+    if (chosen && !heldFile(chosen) && !onlineVideo(chosen) && !library.items.some(item => item.path === chosen)) chosen = undefined;
+    drawLibraryGrid(shell, library, { kind, selected, observers, accept: options.accept, modal: Boolean(modal), layout, chosen, online: !modal || Boolean(options.onlineVideo) }, {
       alive: () => alive, bytes: path => cache.get(path), sync: () => busyLock.sync(),
       details: path => void details(path), records: () => adapter.usage?.records(), usage,
       recover, restoreFocus: !sheet.focus,
       choose: path => { chosen = path; paintChoice(); },
+      online: key => void onlineDetails(key),
     });
     adding.paint();
     paintChoice();
@@ -249,7 +251,18 @@ export function createMediaLibraryView(
       card.classList.toggle("is-chosen", on);
       card.querySelector(".media-library__thumbnail, .media-library__pending-select")?.setAttribute("aria-pressed", String(on));
     }
-    const held = chosen ? heldFile(chosen) : undefined;
+    const held = chosen ? heldFile(chosen) : undefined, online = chosen ? onlineVideo(chosen) : undefined;
+    if (online) {
+      // A YouTube or Vimeo video from Media: placed again without contacting the service.
+      name.textContent = `${onlineVideoName(online)} · ${onlineServiceName(online.service)}`;
+      use.textContent = "Use video"; use.disabled = false; details.hidden = false; thumb.replaceChildren();
+      const still = online.still, key = online.key;
+      if (still) void cache.get(still).then(data => {
+        if (!alive || chosen !== key) return;
+        const image = node("img"); image.alt = ""; image.src = data.url; thumb.replaceChildren(image);
+      }).catch(() => undefined);
+      return;
+    }
     const file = held ? held.request.file.name : chosen, note = file && options.chosenNote?.(file);
     name.textContent = file ? `${basename(file)}${note ? ` · ${note}` : ""}` : `Choose one ${pickerFileWord(options.accept)}`;
     // Use says what it places: "Use image", "Use video", "Use audio" or "Use file".
@@ -274,8 +287,38 @@ export function createMediaLibraryView(
     return filterMediaLibrary({ ...library, items: [{ path }] }, { query: "", collection: "", kind: "all", accept: options.accept }).length > 0;
   }
   function heldFile(id: string) { return adding.held().find(entry => entry.id === id); }
+  function onlineVideo(key: string) { return key.startsWith("online:") ? library?.onlineVideos?.find(video => video.key === key) : undefined; }
+  /** Add → Media's online video: a pasted address, or one chosen from Media. The picker closes once it is placed. */
+  function placeOnline(video: { address: string } | { service: "youtube" | "vimeo"; id: string }) {
+    const place = options.onlineVideo;
+    if (!place) return;
+    void task(async () => {
+      await place(video, () => !alive, adapter);
+      shell.close();
+    });
+  }
+  function useAddress(text: string) {
+    const online = shell.online;
+    if (!online) return;
+    void import("./online-video").then(({ onlineAddressProblem }) => {
+      if (!alive) return;
+      const problem = onlineAddressProblem(text);
+      online.note.textContent = problem ?? "";
+      online.field.toggleAttribute("aria-invalid", Boolean(problem));
+      if (problem) { online.field.focus(); return; }
+      placeOnline({ address: text.trim() });
+    }, error => tell(String(error)));
+  }
+  function onlineDetails(key: string) {
+    return task(async () => {
+      const { showOnlineVideoDetail } = await import("./media-library-online");
+      if (alive && library) showOnlineVideoDetail(sheet, detailHost, key);
+    }, false);
+  }
   function use() {
     const path = chosen, pick = options.onPick;
+    const online = path ? onlineVideo(path) : undefined;
+    if (online) { placeOnline({ service: online.service, id: online.id }); return; }
     if (!path || !pick) return;
     void task(async () => {
       const held = heldFile(path);

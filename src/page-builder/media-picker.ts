@@ -1,4 +1,5 @@
-import type { AddingSettings, MediaRecords, RemovedMedia } from "../../shared/media-records";
+import type { AddingSettings, MediaRecords, OnlineVideoRecord, RemovedMedia } from "../../shared/media-records";
+type OnlineVideoKey = { service: "youtube" | "vimeo"; id: string };
 import type { MediaCleanUpSuggestions } from "./media-clean-up";
 import type { MediaCollectionChange } from "./media-collections";
 import { node } from "../ui/dom";
@@ -13,6 +14,11 @@ import type { MediaReplaceRequest } from "./media-workspace";
 import { createMediaLibraryView, type MediaLibraryView } from "./media-library-view";
 export { isMediaLibraryPath } from "./media-library-filter";
 
+/** A YouTube or Vimeo video recorded in Media (slices 67, 68): `key` is "online:<service>:<id>";
+ * `uses` the HTML files that show it; `still` its picture while that is in the site. */
+export interface MediaOnlineVideo {
+  key: string; service: "youtube" | "vimeo"; id: string; hash?: string; title?: string; still?: string; serviceBar?: boolean; uses: string[];
+}
 export interface MediaLibraryItem { path: string; size?: number; date?: number; draft?: boolean; version?: string }
 export interface MediaLibrary {
   key: string; collections: string[]; items: MediaLibraryItem[]; metadata: MediaMetadataMap; usage: Record<string, MediaUsage>;
@@ -25,6 +31,8 @@ export interface MediaLibrary {
   adding?: AddingSettings;
   /** The repository's size in KiB as GitHub reports it; absent for local folders. */
   repoSize?: number;
+  /** YouTube and Vimeo videos, listed under Video. */
+  onlineVideos?: MediaOnlineVideo[];
 }
 export interface MediaPickerHost {
   begin?(): void;
@@ -53,6 +61,14 @@ export interface MediaPickerHost {
   removedBlob?(entry: { path: string; id: string }): Promise<Blob>;
   remove(paths: string[], unusedOnly?: boolean): Promise<void>;
   import(requests: MediaImportRequest[], place?: MediaPlacement): Promise<string[]>;
+  /** An online video recorded without a copied still, with an optional placement (slice 67). */
+  onlineVideo?(record: OnlineVideoRecord, place?: MediaPlacement): Promise<void>;
+  /** An online video's still swapped for a picture in Media, everywhere it is placed. One Undo step. */
+  onlineVideoStill?(key: OnlineVideoKey, still: { path: string; width?: number; height?: number }): Promise<void>;
+  /** "Show Vimeo's own bar" for every placed copy of the video. One Undo step. */
+  onlineVideoServiceBar?(key: OnlineVideoKey, enabled: boolean): Promise<void>;
+  /** Takes the video out of Media; pages keep it and the service is never contacted. */
+  removeOnlineVideo?(key: OnlineVideoKey): Promise<void>;
   /** Adding settings: remember changed choices for this site, or "reset" to the defaults. One Undo step. */
   adding?(change: Partial<MediaAddingChoices> | "reset"): Promise<void>;
   /** Improve images (ticket 11): its plan, row fixes, their Undo and left-as-is pictures. */
@@ -73,6 +89,9 @@ export interface MediaPlacement {
   /** The placement and newly added files share this Undo label. */
   label?: string;
   uploads?: { path: string; blob: Blob }[];
+  /** Text files created with the placement (the site's player): saved as text, so the preview reads
+   * them as stylesheets and scripts; one that exists meanwhile refuses. */
+  files?: { path: string; content: string }[];
   expectedAssets?: Map<string, string | undefined>;
   /** Other text files the placement was decided on (a component's template): newer ones refuse. */
   expectedSources?: Map<string, string | undefined>;
@@ -142,6 +161,10 @@ export interface MediaPickerOptions {
   /** Use: places the chosen file. The picker closes once it resolves; a thrown error keeps it open.
    * `cancelled` turns true when the picker closes meanwhile (Cancel): nothing may be placed after it. */
   onPick?: (image: MediaImage, cancelled: () => boolean, held?: MediaHeldFiles) => void | Promise<void>;
+  /** Add → Media (slice 68): places a pasted YouTube or Vimeo address, or an online video from Media
+   * (placed again without contacting the service). With it the picker shows the address field and lists
+   * online videos under Video. The picker closes once it resolves; a thrown error keeps it open. */
+  onlineVideo?: (video: { address: string } | OnlineVideoKey, cancelled: () => boolean, host: MediaPickerHost) => Promise<void>;
   /** Ready files saved when the picker closes without Use, and problems after it closed. */
   report?: { announce(message: string): void; error(error: unknown): void };
   /** The picker closed without Use (Cancel, Close or Escape): the existing placement stays. */

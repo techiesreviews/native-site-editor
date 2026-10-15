@@ -13,6 +13,8 @@ export function createMediaLibraryShell(
     addTo: (opener: HTMLButtonElement) => void; takeOut: () => void; remove: () => void; more: (opener: HTMLButtonElement) => void; clear: () => void;
     /** The picker's chosen file: its details, and Use. */
     details: () => void; use: () => void;
+    /** Add → Media's address field (slice 68): Use with a pasted YouTube or Vimeo address. */
+    address?: (text: string) => void;
   },
   modal?: HTMLDialogElement,
 ) {
@@ -57,6 +59,21 @@ export function createMediaLibraryShell(
   more.setAttribute("aria-label", "More"); more.setAttribute("aria-haspopup", "menu"); more.setAttribute("aria-expanded", "false");
   setIcon(more, "dots-three", 24);
   toolbar.append(more);
+  // Add → Media (slice 68): one field for a YouTube or Vimeo address, placed by its own Use.
+  let online: { form: HTMLFormElement; field: HTMLInputElement; note: HTMLElement } | undefined;
+  if (modal && actions.address) {
+    const form = node("form", "media-library__online"), field = node("input"), note = node("p", "media-library__online-note");
+    form.setAttribute("aria-label", "YouTube or Vimeo video");
+    field.type = "url"; field.name = "media-online-address"; field.autocomplete = "off"; field.spellcheck = false;
+    field.placeholder = "Paste a YouTube or Vimeo address"; field.setAttribute("aria-label", "YouTube or Vimeo address");
+    note.id = `media-library-online-${id}`; note.setAttribute("role", "status"); field.setAttribute("aria-describedby", note.id);
+    const submit = node("button", "", "Use"); submit.type = "submit";
+    form.noValidate = true;
+    form.addEventListener("submit", event => { event.preventDefault(); actions.address!(field.value); });
+    field.addEventListener("input", () => { note.textContent = ""; field.removeAttribute("aria-invalid"); });
+    form.append(field, submit, note);
+    online = { form, field, note };
+  }
   const body = node("div", "media-library__body");
   const browse = node("section", "media-library__browse");
   // The count is for screen readers; the tiles show it.
@@ -99,12 +116,12 @@ export function createMediaLibraryShell(
     row.append(cancel, use);
     footer.append(choice, row);
   }
-  dialog.append(header, toolbar, body, message, footer);
+  dialog.append(header, toolbar, ...online ? [online.form] : [], body, message, footer);
   container.append(dialog);
   if (modal) { modal.showModal(); search.focus(); }
   return {
     dialog, close, search, collections, more, browse, summary, adding, bulk, bulkCount, addTo, takeOut, removeFiles, grid, sheet, message, uploadInput,
-    choice: { thumb: chosenThumb, name: chosenName, details: detailsButton, use },
+    choice: { thumb: chosenThumb, name: chosenName, details: detailsButton, use }, online,
   };
 }
 

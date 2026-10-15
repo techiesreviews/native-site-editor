@@ -21,7 +21,7 @@ export function repaintUsageBadges(grid: HTMLElement, records: MediaUsageRecords
 }
 
 /** The page a usage lists: its title from the Pages tab, with the path under it. */
-function pageButton(page: string, label: string | undefined, open: () => void) {
+export function pageButton(page: string, label: string | undefined, open: () => void) {
   const control = button("", open, "media-library__page");
   const title = label?.trim() && label.trim() !== page ? label.trim() : undefined;
   if (title) control.append(node("span", "media-library__page-title", title), node("span", "media-library__page-path", page));

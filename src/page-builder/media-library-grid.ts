@@ -1,11 +1,12 @@
 import { button, node } from "../ui/dom";
 import { input } from "./media-library-fields";
-import { basename, filterMediaLibrary, mediaLibraryRecovery, mediaLibraryTiles, mediaTileLook, mediaTileStills, nameEnds, type MediaKindChoice, type MediaLibraryFilter } from "./media-library-filter";
+import { basename, filterMediaLibrary, filterOnlineVideos, onlineServiceName, onlineVideoName, mediaLibraryRecovery, mediaLibraryTiles, mediaTileLook, mediaTileStills, nameEnds, type MediaKindChoice, type MediaLibraryFilter } from "./media-library-filter";
 import type { MediaBytes } from "./media-byte-cache";
 import { syncSelectionBar, type LibraryShell } from "./media-library-shell";
 import type { MediaLibrary } from "./media-picker";
 import { formatBytes } from "../uploads";
 import { paintUsageBadge } from "./media-library-usage";
+import { mediaUsageBadge } from "./media-usage-text";
 import type { MediaUsageRecords } from "./media-usage";
 
 /** What the grid keeps between draws; the view owns it. */
@@ -16,6 +17,8 @@ export interface LibraryGridState {
   layout: "grid" | "list";
   /** The picker's chosen file. */
   chosen?: string;
+  /** YouTube and Vimeo videos are listed (Media, and Add → Media's picker). */
+  online?: boolean;
 }
 export interface LibraryGridHost {
   alive: () => boolean;
@@ -31,6 +34,8 @@ export interface LibraryGridHost {
   restoreFocus: boolean;
   /** The picker: a tile chooses its file (Use places it) rather than opening details. */
   choose: (path: string) => void;
+  /** An online video's details (its uses), by its key. */
+  online: (key: string) => void;
 }
 
 /** Draw the screen-reader count and one square tile (or list row) per Image family, or a way back when nothing matches. */
@@ -47,14 +52,15 @@ export function drawLibraryGrid(shell: LibraryShell, library: MediaLibrary, stat
   const tiles = mediaLibraryTiles(library.items), stills = mediaTileStills(library.items.map(item => item.path), library.metadata);
   const filter: MediaLibraryFilter = { query: search.value, collection: collections.value, kind: state.kind, accept: state.accept };
   const filtered = filterMediaLibrary({ ...library, items: tiles }, filter);
-  summary.textContent = `${filtered.length} of ${tiles.length} files${collections.value ? ` · ${collections.value}` : ""}`;
+  const online = state.online ? filterOnlineVideos(library.onlineVideos, filter) : [], onlineCount = state.online ? library.onlineVideos?.length ?? 0 : 0;
+  summary.textContent = `${filtered.length + online.length} of ${tiles.length + onlineCount} files${collections.value ? ` · ${collections.value}` : ""}`;
   syncSelectionBar(shell, selected.size, collections.value);
   grid.replaceChildren();
   const list = state.layout === "list";
   grid.classList.toggle("media-library__grid--list", list);
-  if (!filtered.length) {
+  if (!filtered.length && !online.length) {
     const empty = node("div", "media-library__empty");
-    if (!library.items.length) empty.textContent = state.modal
+    if (!library.items.length && !onlineCount) empty.textContent = state.modal
       ? "Your images belong here. Drop one here, or choose Add new file in More."
       : "Your media belongs here. Drop files here, or choose Add new file in More.";
     else {
@@ -116,31 +122,37 @@ export function drawLibraryGrid(shell: LibraryShell, library: MediaLibrary, stat
       card.classList.add("is-by-agent"); card.append(agent);
     }
     grid.append(card);
-    // A file with no picture to draw gets a clean surface with its type's picture, not a broken picture.
-    const surface = () => {
-      if (card.classList.contains("is-file")) return;
-      card.classList.add("is-file"); image.remove();
-      const picture = node("span", "media-library__type-picture"); picture.setAttribute("aria-hidden", "true");
-      thumb.prepend(picture, node("span", "media-library__format", look.type));
-    };
-    const noPreview = () => { if (h.alive() && card.isConnected) surface(); };
-    image.addEventListener("error", noPreview);
-    const preview = look.picture;
-    if (!preview) surface();
-    else {
-      // Observe thumbnails rather than downloading the whole repository on open; a video's or PDF's
-      // tile loads only its still picture.
-      const observer = new IntersectionObserver((entries) => {
-        if (!h.alive() || !card.isConnected || !entries.some((entry) => entry.isIntersecting)) return;
-        observer.disconnect();
-        void h.bytes(preview).then((data) => {
-          if (!h.alive() || !card.isConnected) return;
-          if (preview === item.path) { item.size = data.blob.size; sizeText(); }
-          image.src = data.url;
-        }).catch(noPreview);
-      }, { root: state.modal ? browse : dialog, rootMargin: "200px" });
-      observers.add(observer); observer.observe(card);
+    tilePicture({ card, thumb, image, preview: look.picture, type: look.type, state, h, root: state.modal ? browse : dialog,
+      loaded: data => { if (look.picture === item.path) { item.size = data.blob.size; sizeText(); } } });
+  }
+  // YouTube and Vimeo videos (slice 68): their copied still, name and a small service mark; the
+  // number counts the pages that show them. The pane opens their details, the picker chooses them.
+  for (const video of online) {
+    const card = node("article", "media-library__card is-online"); card.dataset.id = video.key; card.dataset.type = "video";
+    const service = onlineServiceName(video.service), title = onlineVideoName(video);
+    const thumb = button("", () => state.modal ? h.choose(video.key) : h.online(video.key), "media-library__thumbnail");
+    thumb.setAttribute("aria-label", `${state.modal ? "Choose" : "Details for"} ${service} video ${title}`);
+    const image = node("img"); image.alt = ""; image.loading = "lazy"; image.decoding = "async";
+    const name = node("span", "media-library__name"); name.append(node("span", "media-library__name-head", title));
+    if (list) { name.title = title; thumb.append(image, name, node("span", "media-library__size", service)); }
+    else thumb.append(image, name);
+    card.append(node("span", "media-library__shade"), thumb);
+    if (state.modal) {
+      const on = video.key === state.chosen, pick = node("span", "media-library__select media-library__pick");
+      thumb.setAttribute("aria-pressed", String(on)); card.classList.toggle("is-chosen", on);
+      pick.setAttribute("aria-hidden", "true"); pick.append(node("span")); card.append(pick);
     }
+    const used = button("", () => h.online(video.key), "media-library__usage"), badge = mediaUsageBadge({ main: video.key, members: [video.key], checked: true, pages: video.uses, otherUses: [] });
+    const count = node("span", "media-library__count", badge.count), words = node("span", "media-library__usage-label", badge.label);
+    count.setAttribute("aria-hidden", "true"); words.setAttribute("aria-hidden", "true");
+    used.append(count, words); used.setAttribute("aria-label", badge.label); used.dataset.usage = badge.state;
+    card.append(used);
+    if (!list) {
+      const mark = node("span", "media-library__fact media-library__service", service); mark.setAttribute("aria-hidden", "true");
+      card.classList.add("has-fact"); card.append(mark);
+    }
+    grid.append(card);
+    tilePicture({ card, thumb, image, preview: video.still, type: "", state, h, root: state.modal ? browse : dialog });
   }
   h.sync();
   if (browseFocus && h.restoreFocus && document.activeElement === document.body && !active?.isConnected) {
@@ -149,4 +161,33 @@ export function drawLibraryGrid(shell: LibraryShell, library: MediaLibrary, stat
         (browseFocus.usage ? control.classList.contains("media-library__usage") : control.getAttribute("aria-label") === browseFocus.label));
     if (replacement?.getClientRects().length) replacement.focus();
   }
+}
+
+/** A tile's picture, loaded when it nears the view (never the whole repository on open; a video's or
+ * PDF's tile loads only its still). A tile with no picture to draw gets a clean surface with its type's
+ * picture, not a broken picture. */
+function tilePicture(input: {
+  card: HTMLElement; thumb: HTMLElement; image: HTMLImageElement; preview: string | undefined; type: string;
+  state: LibraryGridState; h: LibraryGridHost; root: HTMLElement; loaded?: (data: MediaBytes) => void;
+}) {
+  const { card, thumb, image, preview, h } = input;
+  const surface = () => {
+    if (card.classList.contains("is-file")) return;
+    card.classList.add("is-file"); image.remove();
+    const picture = node("span", "media-library__type-picture"); picture.setAttribute("aria-hidden", "true");
+    thumb.prepend(picture, node("span", "media-library__format", input.type));
+  };
+  const noPreview = () => { if (h.alive() && card.isConnected) surface(); };
+  image.addEventListener("error", noPreview);
+  if (!preview) { surface(); return; }
+  const observer = new IntersectionObserver((entries) => {
+    if (!h.alive() || !card.isConnected || !entries.some((entry) => entry.isIntersecting)) return;
+    observer.disconnect();
+    void h.bytes(preview).then((data) => {
+      if (!h.alive() || !card.isConnected) return;
+      input.loaded?.(data);
+      image.src = data.url;
+    }).catch(noPreview);
+  }, { root: input.root, rootMargin: "200px" });
+  input.state.observers.add(observer); observer.observe(card);
 }

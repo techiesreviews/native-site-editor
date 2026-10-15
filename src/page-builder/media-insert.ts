@@ -113,7 +113,7 @@ function addedFacts(path: string, records: MediaRecords, paths: string[], reques
     still: stillPath ? { path: stillPath, width: still?.width, height: still?.height } : undefined,
     subtitles: siteFacts(path, records, paths).subtitles };
 }
-async function pictureSize(ctx: MediaWorkspaceContext, path: string) {
+export async function pictureSize(ctx: MediaWorkspaceContext, path: string) {
   try {
     const url = URL.createObjectURL(await ctx.blob(path));
     try { return await decodeImage(url); } finally { URL.revokeObjectURL(url); }
@@ -232,7 +232,7 @@ export async function placeChosenMedia(
     let placed: ReturnType<typeof build> | undefined;
     const saved = await held.save({ label, path, source: proof.source, stale: changed, live: () => !cancelled() && current(), records: { text: metadata },
       expectedPaths: ctx.paths, expectedAssets, expectedSources: templates,
-      uploads: [...copyUploads, ...(creates ?? []).map(file => ({ path: file.path, blob: new Blob([file.content], { type: file.path.endsWith(".css") ? "text/css" : "text/javascript" }) }))],
+      uploads: copyUploads, files: creates,
       apply: (paths, requests, now) => {
         const picked = held.image(paths), file = added ? picked : chosen, at = paths.indexOf(file.path);
         placed = build(proof.source, file, facts ?? addedFacts(file.path, now, [...ctx.paths, ...paths], requests[at]), now);

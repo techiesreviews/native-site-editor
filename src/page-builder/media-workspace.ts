@@ -318,6 +318,9 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     for (const upload of place?.uploads ?? []) {
       reserved.add(upload.path); batch.uploads.push(upload);
     }
+    for (const file of place?.files ?? []) {
+      reserved.add(file.path); batch.expectedSources.set(file.path, undefined); batch.edits.set(file.path, file.content);
+    }
     const changes: Record<string, Partial<MediaMetadata>> = {};
     const previews: MediaRecords["files"] = {};
     const inherited: MediaRecords["files"] = {};
@@ -708,7 +711,10 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       const records = pruneRemoved(read, today(ctx), path => back.get(path));
       const removed = recentlyRemoved(records, today(ctx), path => back.get(path));
       const metadata = mediaMetadataView(records);
-      return { key: ctx.key, removed, collections: [...records.collections], items: ctx.items.map((item) => ({ ...item, version: ctx.assetVersion(item.path) })), metadata, usage: wideUsage(ctx.items.map((item) => item.path), text, ctx),
+      // YouTube and Vimeo videos (slice 68), with the pages that show them; their code loads only when there are any.
+      const online = records.onlineVideos?.length ? (await import("./online-video")).mediaOnlineVideos(records, text, ctx.paths) : undefined;
+      ctx.assertLive();
+      return { key: ctx.key, ...online ? { onlineVideos: online } : {}, removed, collections: [...records.collections], items: ctx.items.map((item) => ({ ...item, version: ctx.assetVersion(item.path) })), metadata, usage: wideUsage(ctx.items.map((item) => item.path), text, ctx),
         // Folded over every path: a kept original the library does not list still marks its main.
         keep: [...alwaysKeptFiles(ctx.paths, new Set(Object.keys(records.files).filter(path => records.files[path].alwaysKeep)))],
         toCheck: mediaToCheck(records, ctx.items.map(item => item.path), text),
@@ -772,7 +778,10 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
         batch.expectedSources.set(place.path, source); batch.live = place.live;
         if (place.expectedPaths) batch.expectedPaths = place.expectedPaths;
         for (const [path, version] of place.expectedAssets ?? []) batch.expectedAssets.set(path, version);
+        // Component templates the place went through: newer ones refuse, as for files (slice 63).
+        for (const [path, text] of place.expectedSources ?? []) batch.expectedSources.set(path, text);
         batch.uploads.push(...place.uploads ?? []);
+        for (const file of place.files ?? []) { batch.expectedSources.set(file.path, undefined); batch.edits.set(file.path, file.content); }
         const placed = place.apply([], [], next);
         batch.edits.set(place.path, typeof placed === "string" ? placed : placed.page);
         if (typeof placed !== "string" && placed.records) next = placed.records;

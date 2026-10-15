@@ -78,7 +78,7 @@ export function createVideoPlaces(ports: VideoPlacePorts, context: Context, load
     assert(); ctx.assertLive();
     if (held) {
       const saved = await held.save({ label, path, source, live: current, expectedPaths: ctx.paths, expectedAssets,
-        records: { text: metadata }, uploads: plan?.creates.map(file => ({ path: file.path, blob: new Blob([file.content], { type: file.path.endsWith(".css") ? "text/css" : "text/javascript" }) })),
+        records: { text: metadata }, files: plan?.creates,
         apply: (paths, _requests, records) => {
           const image = held.image(paths);
           const page = background(source, node, { path: image.path, still: records.files[image.path]?.still ?? record?.still });

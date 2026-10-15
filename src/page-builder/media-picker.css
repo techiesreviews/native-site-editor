@@ -602,3 +602,20 @@
 /* The name keeps clear of the corner fact; marks move up above it. */
 .media-library .media-library__card.has-fact .media-library__name { padding-right: 52px; }
 .media-library__card.has-fact :is(.media-library__keep, .media-library__agent) { bottom: 32px; }
+
+/* Add → Media's YouTube or Vimeo address (slice 68): one row under the bar, with its own Use. */
+.media-library__online { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 8px; padding: 4px 24px; }
+.media-library .media-library__online input { min-height: 44px; border-radius: 22px; padding-inline: 16px; }
+.media-library .media-library__online button { min-width: 88px; min-height: 44px; border: 1px solid var(--line); border-radius: 22px; padding-inline: 18px; background: var(--surface); color: var(--text); }
+.media-library .media-library__online button:active { background: var(--hover); }
+@media (hover: hover) and (pointer: fine) { .media-library .media-library__online button:hover { background: var(--hover); } }
+.media-library__online-note { grid-column: 1 / -1; margin: 0; padding-inline: 16px; color: var(--danger-fg); font-size: var(--type-small); overflow-wrap: anywhere; }
+.media-library__online-note:empty { display: none; }
+.media-library:has(.media-library__sheet:not([hidden])) .media-library__online { display: none; }
+@media (max-width: 580px) { .media-library--picker .media-library__online { padding: 4px 12px; } }
+/* An online video's Remove from Media asks in place, under its picture. */
+.media-detail__confirm { display: grid; gap: 8px; margin-block-start: 10px; }
+.media-detail__confirm p { margin: 0; }
+.media-detail__confirm > div { display: flex; flex-wrap: wrap; gap: 8px; }
+.media-library .media-detail__confirm button { border: 1px solid var(--line); border-radius: 22px; padding: 0 14px; }
+.media-library .media-detail__confirm button.primary { border-color: transparent; }

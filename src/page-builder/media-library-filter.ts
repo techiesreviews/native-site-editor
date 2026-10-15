@@ -61,6 +61,18 @@ export function filterMediaLibrary(library: MediaLibrary, options: MediaLibraryF
   }).sort((a, b) => a.path.localeCompare(b.path));
 }
 
+export const onlineServiceName = (service: "youtube" | "vimeo") => service === "youtube" ? "YouTube" : "Vimeo";
+/** An online video's name in Media: its title, else "YouTube video". */
+export const onlineVideoName = (video: { service: "youtube" | "vimeo"; title?: string }) => video.title?.trim() || `${onlineServiceName(video.service)} video`;
+/** The online videos Media lists (slice 68): under All and Video, outside collections, and only where
+ * every kind may be placed (Media and Add → Media, not a narrowed picker). Search reads the name and service. */
+export function filterOnlineVideos<T extends { service: "youtube" | "vimeo"; title?: string }>(videos: T[] | undefined, options: MediaLibraryFilter): T[] {
+  if (!videos?.length || options.accept || options.collection || (options.kind !== "all" && options.kind !== "video")) return [];
+  const query = options.query.trim().toLowerCase();
+  return videos.filter(video => `${onlineVideoName(video)} ${onlineServiceName(video.service)}`.toLowerCase().includes(query))
+    .sort((a, b) => onlineVideoName(a).localeCompare(onlineVideoName(b)));
+}
+
 /** When nothing matches, the one step back towards all media: first the kind, then the
  * collection, then the search. Nothing when no filter is narrowing (an empty library). */
 export function mediaLibraryRecovery(options: MediaLibraryFilter): { label: string; change: Partial<MediaLibraryFilter> } | undefined {

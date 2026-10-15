@@ -34,6 +34,17 @@ export function parseOnlineVideoAddress(text: string): OnlineVideo | undefined {
   if (!id || !/^\d+$/.test(id) || (hash && !/^[\da-f]+$/i.test(hash))) return;
   return { service: "vimeo", id, ...hash ? { hash } : {}, ...start ? { start } : {} };
 }
+/** Why a pasted address cannot be placed (the picker's field, slice 68); undefined when it can. */
+export function onlineAddressProblem(text: string): string | undefined {
+  const value = text.trim();
+  if (!value) return "Paste the address of a YouTube or Vimeo video.";
+  if (parseOnlineVideoAddress(value)) return;
+  let host = "";
+  try { host = new URL(/^[a-z][a-z\d+.-]*:/i.test(value) ? value : `https://${value}`).hostname.toLowerCase(); } catch { /* not an address */ }
+  return /(?:^|\.)(?:youtube(?:-nocookie)?\.com|youtu\.be|vimeo\.com)$/.test(host)
+    ? "This address is not one video. Copy the address of the video itself."
+    : "Only YouTube and Vimeo videos can be placed. Paste a YouTube or Vimeo address.";
+}
 export function onlineVideoHref(video: OnlineVideo, start = video.start): string {
   const time = start !== undefined && Number.isSafeInteger(start) && start > 0 ? start : 0;
   return video.service === "youtube" ? `https://www.youtube.com/watch?v=${video.id}${time ? `&t=${time}` : ""}`
@@ -80,6 +91,18 @@ export function onlineVideoUses(sources: Record<string, string>) {
     if (!(uses[key] ??= []).includes(path)) uses[key].push(path);
   }
   return uses;
+}
+/** Media's online videos (slice 68): each recorded video, the HTML files that show it, and its still
+ * picture while that is in the site. */
+export function mediaOnlineVideos(records: MediaRecords, sources: Record<string, string>, paths: Iterable<string>) {
+  const present = new Set(paths);
+  const uses = onlineVideoUses(Object.fromEntries(Object.entries(sources).filter(([path]) => /\.html$/i.test(path))));
+  return (records.onlineVideos ?? []).map(video => ({
+    key: `online:${video.service}:${video.id}`, service: video.service, id: video.id,
+    ...video.hash ? { hash: video.hash } : {}, ...video.title ? { title: video.title } : {},
+    ...video.still && present.has(video.still) ? { still: video.still } : {}, ...video.serviceBar ? { serviceBar: true } : {},
+    uses: (uses[`${video.service}:${video.id}`] ?? []).sort((a, b) => a.localeCompare(b)),
+  }));
 }
 function stillTag(source: string, image: SourceElement, still: OnlineVideoStill) {
   const edits: { start: number; end: number; text: string }[] = [];
