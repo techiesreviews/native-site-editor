@@ -85,7 +85,7 @@ _Avoid_: alt text (in user-facing text)
 A mark on a media file or place saying the picture adds nothing to read aloud, so its empty description is intended rather than a gap.
 
 **To check**:
-The list in the media manager of descriptions and subtitles an agent wrote, each marked "by agent" until the user presses OK or edits it.
+The list in the media manager of descriptions and subtitles an agent wrote, each marked "by agent" until the user presses Looks right or edits it.
 
 **Section**:
 A whole page section or section component that can be inserted, moved, duplicated, or removed as one unit.

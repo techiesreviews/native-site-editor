@@ -1,6 +1,6 @@
 {
-  "version": "c597698",
-  "source": "techiesreviews/native-site-editor-starter@c597698",
+  "version": "2bff35d",
+  "source": "techiesreviews/native-site-editor-starter@2bff35d",
   "files": [
     {
       "path": "404.html",
@@ -9,8 +9,8 @@
     },
     {
       "path": "AGENTS.md",
-      "size": 38326,
-      "sha256": "91805b8a23303eeeb991703de20cc45bbd8caa40248275704c882a5bd0bb1562"
+      "size": 38466,
+      "sha256": "3d87bcd4471a70b82f205741df4b563367523593606af5fabf8bcd286d6bc455"
     },
     {
       "path": "about/index.html",
@@ -149,13 +149,13 @@
     },
     {
       "path": "scripts/media-online.js",
-      "size": 18021,
-      "sha256": "dce99d29b8de74e60d024d9254fda25bd391a6abdc5977f40206b24d820c4e4a"
+      "size": 18944,
+      "sha256": "4bbb6baf9a1b81d239bbe0962d7952a09954138b7eefdd06eb6990e8985ae713"
     },
     {
       "path": "scripts/media-player.js",
-      "size": 24557,
-      "sha256": "cda0f873b0a25a92d31b17a16647b6a65ba6f311774bf6c3c8a45af2f8a083b4"
+      "size": 26961,
+      "sha256": "84d8ecb87fcd438728250c935719839db3ff0e1225c91638c1e0f03dcbbc055c"
     },
     {
       "path": "styles/elements.css",
@@ -169,8 +169,8 @@
     },
     {
       "path": "styles/media-player.css",
-      "size": 13802,
-      "sha256": "b004ff313452b2a4c7023ef12d694b6b13c4603d4bd0d27777e6f62dfcbab86a"
+      "size": 14763,
+      "sha256": "eaa5175079d0b95ef3e704bcc3c791ffa498bcd2cbe81262c04d4c8d14aeb625"
     },
     {
       "path": "styles/sections.css",

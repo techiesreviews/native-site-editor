@@ -373,6 +373,42 @@
     object-fit: contain;
   }
 
+  /* The service cannot be reached (offline, or blocked by the browser): one
+     line and a link to the service, centred on the still. */
+  .media-blocked {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    inline-size: fit-content;
+    max-inline-size: calc(100% - 2 * var(--space-xs));
+    block-size: fit-content;
+    margin: auto;
+    padding: var(--space-2xs) var(--space-s);
+    border-radius: var(--radius-l);
+    background: var(--surface);
+    box-shadow: 0 2px 12px oklch(0 0 none / 0.25);
+    font-size: var(--text-s);
+    text-align: center;
+    text-wrap: balance;
+  }
+
+  .media-blocked a {
+    position: relative;
+    color: var(--accent);
+    font-weight: 600;
+  }
+
+  /* A tap target of at least 44px around the short link. */
+  .media-blocked a::after {
+    content: "";
+    position: absolute;
+    inset: min(0px, (100% - 44px) / 2);
+  }
+
+  .media-blocked a:active {
+    color: color-mix(in oklch, var(--accent), var(--ink) 30%);
+  }
+
   /* Looping video: the picture fills its place (a picture spot sets the
      shape); one small round button in the corner. */
   .media-player[data-kind="loop"] > video {

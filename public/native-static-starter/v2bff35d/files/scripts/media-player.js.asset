@@ -59,9 +59,11 @@
 //   </a>
 // The href may be any usual YouTube or Vimeo address (watch, youtu.be,
 // embed, shorts, vimeo.com/ID or /ID/HASH, player.vimeo.com); a start time
-// (t=90, t=1m30s, #t=90s) is kept. data-controls="service" keeps the
-// service's own bar: use it for a Vimeo video whose owner's plan cannot hide
-// Vimeo's bar. The still's alt (or the link's aria-label) names the video.
+// (t=90, t=1m30s, #t=90s) is kept. If the service cannot be reached (offline,
+// or blocked by the browser), the still stays with a link to watch it there.
+// data-controls="service" keeps the service's own bar: use it for a Vimeo
+// video whose owner's plan cannot hide Vimeo's bar. The still's alt (or the
+// link's aria-label) names the video.
 
 const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)");
 const enhanced = new WeakSet();
@@ -285,6 +287,47 @@ function pipSwitch(video) {
   };
 }
 
+// Subtitles clear the bar while it shows and drop back when it hides. The
+// browser draws them in lines of about 5% of the picture's smaller side,
+// counted up from the bottom, and a cue's first line sits on its line
+// number, so a cue goes up by the bar's height plus its own lines (its line
+// breaks, and a guess at wrapping that errs high); with the bar hidden, just
+// its own lines, which is where the browser puts it by itself. Chrome
+// redraws a cue on screen only when it is added again, so a moved one is.
+// A cue the subtitles file places itself keeps its own line.
+function liftSubtitles(box, video, bar) {
+  const trackEl = video.querySelector('track[kind="subtitles"], track[kind="captions"]');
+  const track = trackEl?.track;
+  if (!track) return;
+  const ours = new WeakSet();
+  const place = () => {
+    const picture = video.getBoundingClientRect();
+    const font = Math.min(picture.width, picture.height) * 0.05;
+    if (!font) return; // not laid out yet
+    const shows = bar.isConnected && !bar.hidden && !("idle" in box.dataset) && !video.webkitDisplayingFullscreen;
+    const lift = shows ? Math.max(0, Math.ceil((picture.bottom - bar.getBoundingClientRect().top) / font)) : 0;
+    const fits = picture.width / (0.6 * font); // a low guess at the characters a line holds
+    const onScreen = new Set(track.activeCues ?? []);
+    for (const cue of [...(track.cues ?? [])]) {
+      if (cue.line === "auto") ours.add(cue);
+      const rows = cue.text.replace(/<[^>]*>/g, "").split("\n").reduce((n, row) => n + Math.max(1, Math.ceil(row.length / fits)), 0);
+      if (!ours.has(cue) || cue.line === -lift - rows) continue;
+      cue.line = -lift - rows;
+      if (onScreen.has(cue)) {
+        track.removeCue(cue);
+        track.addCue(cue);
+      }
+    }
+  };
+  const watch = { attributes: true, attributeFilter: ["hidden", "data-idle", "data-started", "data-narrow"] };
+  const changes = new MutationObserver(place);
+  changes.observe(box, watch);
+  changes.observe(bar, watch);
+  if (typeof ResizeObserver === "function") new ResizeObserver(place).observe(box);
+  trackEl.addEventListener("load", place);
+  for (const type of ["webkitbeginfullscreen", "webkitendfullscreen"]) video.addEventListener(type, place);
+}
+
 /** The bar of a video, shared by the site's own videos and Online videos
     (enhance() hands it to scripts/media-online.js). media is a <video> or
     an object shaped like one: paused, currentTime, duration, muted,
@@ -468,6 +511,7 @@ function enhanceVideo(video) {
     nativeFull: typeof video.webkitEnterFullscreen === "function" ? () => video.webkitEnterFullscreen() : null,
   });
   fallBack(video, box, [start, bar]);
+  liftSubtitles(box, video, bar);
 
   // Tapping the still starts the video: it loads only now.
   start.addEventListener("click", () => {

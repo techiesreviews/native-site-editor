@@ -196,7 +196,7 @@ Media work goes through the open editor tab, like every agent edit. Each change 
 ### Descriptions and Decorative
 - A file's Description (alt text) is written once and used by every new place; a place can have its own words. Changing the file's Description updates places that follow it, not places with their own words.
 - Decorative, per file or per place, writes \`alt=""\` and is remembered. An empty alt not marked Decorative counts as not described yet. Use describe_media for Description and Decorative; never hand-edit alt to set them.
-- Text an agent writes carries the by agent mark and waits in Media's To check list until the user presses OK or edits it. Agents cannot clear the mark.
+- Text an agent writes carries the by agent mark and waits in Media's To check list until the user presses Looks right or edits it. Agents cannot clear the mark.
 - Look at the picture with preview_media before describing it; mark Decorative only what adds nothing for someone who cannot see it.
 
 ### Removing, keeping and restoring

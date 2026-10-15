@@ -6,9 +6,12 @@
 // copied into the site and the site's play button. The tap loads the
 // service's player (youtube-nocookie.com or player.vimeo.com) and its player
 // API, hides the service's own bar and lays the site's bar over the picture.
-// Whenever the service has to speak for itself (the API cannot load, the
-// video cannot be shown here, a phone refuses to start it from the site's
-// button), the service's own player takes over, so the video still plays.
+// Whenever the service has to speak for itself (the video cannot be shown
+// here, a phone refuses to start it from the site's button), the service's
+// own player takes over, so the video still plays. When the service cannot
+// be reached at all (offline, or blocked by the browser or an extension: its
+// API does not load or its player never answers), the still stays, with a
+// line and a link to watch the video on the service.
 
 const SERVICES = {
   youtube: { name: "YouTube", api: "https://www.youtube.com/iframe_api" },
@@ -350,6 +353,7 @@ function setUp(link, video, kit) {
   const own = link.dataset.controls !== "service";
   const still = link.querySelector("img");
   const name = kit.nameOf(link) || still?.alt.trim() || "";
+  const watch = link.href;
   const box = kit.wrap(link, "online");
   if (link.id) box.id = link.id; // links to #the-video keep working
   box.dataset.service = video.service;
@@ -363,6 +367,7 @@ function setUp(link, video, kit) {
 
   let player = null;
   let frame = null;
+  let surface = null;
   let bar = null;
 
   // The service's own player takes over: its bar, its messages.
@@ -376,7 +381,23 @@ function setUp(link, video, kit) {
     if (address && frame.src !== address) frame.src = address;
   };
 
+  // The service cannot be reached: no frame, the still and a link instead
+  // of an empty white box.
+  const blocked = () => {
+    player?.close();
+    const hadFocus = box.contains(document.activeElement);
+    for (const part of [frame, surface, bar, start]) part?.remove();
+    box.dataset.state = "blocked";
+    const note = document.createElement("p");
+    note.className = "media-blocked";
+    const away = Object.assign(document.createElement("a"), { href: watch, textContent: `Watch on ${service.name}` });
+    note.append("This video can't play here. ", away);
+    box.append(note);
+    if (hadFocus) away.focus();
+  };
+
   const begin = async () => {
+    if (navigator.onLine === false) return blocked();
     box.dataset.state = "loading";
     start.setAttribute("aria-busy", "true");
     frame = document.createElement("iframe");
@@ -394,7 +415,7 @@ function setUp(link, video, kit) {
     // The site's bar is the way to control it; the frame is only the picture.
     frame.tabIndex = -1;
     frame.setAttribute("aria-hidden", "true");
-    const surface = document.createElement("div");
+    surface = document.createElement("div");
     surface.className = "media-surface";
     start.before(surface);
 
@@ -417,7 +438,7 @@ function setUp(link, video, kit) {
       ]);
     } catch {
       // An error already handed over; otherwise the API did not load or answer.
-      if (box.dataset.state !== "service") handOver(serviceAddress);
+      if (box.dataset.state !== "service") blocked();
       return;
     } finally {
       clearTimeout(deadline);
