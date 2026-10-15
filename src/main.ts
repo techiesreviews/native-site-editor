@@ -91,6 +91,7 @@ import type { MediaWorkspaceBatch } from "./page-builder/media-workspace";
 import type { CssWorkspace } from "./page-builder/css-intelligence";
 import type { DeclarationStatus, RuleStatus } from "../shared/cascade";
 import { expandStyleImports, resolveImportPath, rewriteCssUrls } from "../shared/css-imports";
+import { readStyleFiles } from "./native-style-files";
 import { nativePageRoute } from "../shared/native-routes";
 
 
@@ -2029,48 +2030,26 @@ function updateNativePreviewAssets() {
 // Reads the stylesheets the pages link and the files those `@import` that
 // are not loaded yet, following imports of imports, into the base sources.
 // True when any loaded.
-async function readNativeStyleFiles(repo: string, site: NativeSite, live: () => boolean) {
-  let loaded = false;
-  for (let round = 0; round < 20; round++) {
-    const sources = nativeSources(site);
-    const linked = nativeLinkedSheets(site, sources);
-    const wanted = [...new Set([...linked, ...expandStyleImports(linked.filter((path) => Object.hasOwn(sources, path)), (path) => sources[path]).imported])].filter((path) =>
-      !Object.hasOwn(sources, path) && !nativeMissingStyleFiles.has(path) && !nativeUnreadableFiles.has(path) && !nativeStyleFileRequests.has(path));
-    if (!wanted.length) break;
-    wanted.forEach((path) => nativeStyleFileRequests.add(path));
-    try {
-      const found: { path: string; sha: string }[] = [];
-      const scope = draftScope();
-      // A level's files are looked up together and read in one request.
-      const entries = await Promise.all(wanted.map((path) => {
-        // A stylesheet drafted here (new, or moved) is its draft; one read with the site is there.
-        const draft = scope ? draftStore().get(scope, path) : undefined;
-        if ((draft && !draft.deleted) || (!draft && nativeBaseSources.has(path))) return "held" as const;
-        return draft?.deleted ? undefined : findEntry(path);
-      }));
-      if (!live()) return false;
-      wanted.forEach((path, index) => {
-        const entry = entries[index];
-        if (entry === "held") { nativeStyleFiles.add(path); loaded = true; }
-        else if (entry) found.push({ path, sha: entry.sha });
-        else nativeMissingStyleFiles.add(path);
-      });
-      const { texts, unreadable } = await readNativeTexts(repo, found);
-      if (!live()) return false;
-      // One that cannot be read as text is left out (with a warning), not reported as missing.
-      if (unreadable.length) { noteNativeUnreadable(unreadable); loaded = true; }
-      for (const file of found) {
-        const text = texts.get(file.path);
-        if (text === undefined) continue;
-        nativeBaseSources.set(file.path, text);
-        nativeStyleFiles.add(file.path);
-        loaded = true;
-      }
-    } finally {
-      wanted.forEach((path) => nativeStyleFileRequests.delete(path));
-    }
-  }
-  return loaded;
+function readNativeStyleFiles(repo: string, site: NativeSite, live: () => boolean) {
+  const scope = draftScope();
+  return readStyleFiles({
+    wanted: () => {
+      const sources = nativeSources(site), linked = nativeLinkedSheets(site, sources);
+      return [...linked, ...expandStyleImports(linked.filter((path) => Object.hasOwn(sources, path)), (path) => sources[path]).imported]
+        .filter((path) => !Object.hasOwn(sources, path));
+    },
+    skipped: (path) => nativeMissingStyleFiles.has(path) || nativeUnreadableFiles.has(path) || nativeStyleFileRequests.has(path),
+    // A stylesheet drafted here (new, or moved) is its draft; one read with the site is there.
+    draft: (path) => (scope ? draftStore().get(scope, path) : undefined),
+    read: (path) => nativeBaseSources.has(path),
+    find: (path) => findEntry(path),
+    readTexts: (found) => readNativeTexts(repo, found),
+    live,
+    reading: (paths, on) => paths.forEach((path) => (on ? nativeStyleFileRequests.add(path) : nativeStyleFileRequests.delete(path))),
+    shown: (path, text) => { if (text !== undefined) nativeBaseSources.set(path, text); nativeStyleFiles.add(path); },
+    missing: (path) => nativeMissingStyleFiles.add(path),
+    unreadable: noteNativeUnreadable,
+  });
 }
 
 // Reads what the pages `pages` show that is not read yet (src/native-boot.ts):

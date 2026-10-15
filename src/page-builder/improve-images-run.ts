@@ -68,9 +68,11 @@ export function stagingContext(real: MediaWorkspaceContext) {
   const expectedSources = new Map<string, string | undefined>(), expectedAssets = new Map<string, string | undefined>();
   const lives: (() => boolean)[] = [];
   const staged = (path: string) => edits.has(path) || added.has(path);
+  // New text files (the site's player): added with the row like uploads, so its Undo removes them too.
+  const created = new Set<string>();
   const ctx: MediaWorkspaceContext = {
     ...real,
-    get paths() { return [...real.paths, ...added.keys()]; },
+    get paths() { return [...real.paths, ...added.keys(), ...created]; },
     get items() { return [...real.items, ...[...added].filter(([path]) => path.startsWith("media/")).map(([path, blob]) => ({ path, size: blob.size, draft: true }))]; },
     read: async path => edits.has(path) ? edits.get(path) : added.has(path) ? added.get(path)!.text() : real.read(path),
     blob: async path => added.get(path) ?? real.blob(path),
@@ -85,6 +87,7 @@ export function stagingContext(real: MediaWorkspaceContext) {
       for (const [path, text] of batch.edits) {
         if (added.has(path)) { added.set(path, new Blob([text], { type: added.get(path)!.type })); continue; }
         if (!edits.has(path) && !expectedSources.has(path)) { expectedSources.set(path, await real.read(path)); real.assertLive(); }
+        if (!edits.has(path) && path !== MEDIA_RECORDS_PATH && expectedSources.get(path) === undefined && !real.paths.includes(path)) created.add(path);
         edits.set(path, text);
       }
       for (const upload of batch.uploads) {
@@ -103,7 +106,7 @@ export function stagingContext(real: MediaWorkspaceContext) {
       live: () => lives.every(live => live()),
     }),
     outcome: (): Pick<RowOutcome, "texts" | "added"> => ({
-      texts: [...edits].map(([path, text]) => [path, expectedSources.get(path), text]), added: [...added.keys()],
+      texts: [...edits].map(([path, text]) => [path, expectedSources.get(path), text]), added: [...added.keys(), ...created],
     }),
   };
 }

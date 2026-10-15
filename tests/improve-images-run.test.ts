@@ -105,6 +105,25 @@ test("Undo per row works in any order; Undo all removes what nothing uses any mo
   assert.equal(again.text.get("index.html"), '<img src="/images/heavy.jpg">');
 });
 
+test("a row that adds the site's player saves its files as text, and its Undo removes them (slice 101)", async () => {
+  const embed = '<iframe src="https://www.youtube.com/embed/abcdefghijk" title="Tour"></iframe>';
+  const s = site({ "index.html": `<html><head><title>Home</title></head><body>${embed}</body></html>` });
+  const player = { "styles/media-player.css": "/* player */", "scripts/media-player.js": "// player", "scripts/media-online.js": "// online" };
+  const outcome = await improveRow(s.ctx, { row: "index.html", known: {}, maps: runMaps(), signal: new AbortController().signal, fetch: async () => new Response(null, { status: 404 }), siteUrl: "https://own.example/" },
+    { gifs: { read: async () => ({ title: "Tour" }), playerFiles: async () => player } });
+  assert.equal(s.batches.length, 1);
+  const batch = s.batches[0];
+  // Never uploads: the preview's stylesheet reader takes a stylesheet only as text.
+  assert.deepEqual(batch.uploads.map(upload => upload.path), []);
+  for (const [path, text] of Object.entries(player)) { assert.equal(batch.edits.get(path), text); assert.equal(batch.expectedSources.get(path), undefined); assert.ok(batch.expectedSources.has(path)); }
+  assert.match(s.text.get("index.html")!, /href="\/styles\/media-player\.css"/);
+  assert.deepEqual(outcome.added.sort(), Object.keys(player).sort());
+  assert.ok(!outcome.added.includes(MEDIA_RECORDS_PATH), "the records file is never an added file");
+  assert.deepEqual(await undoRows(s.ctx, [outcome]), []);
+  assert.match(s.text.get("index.html")!, /youtube\.com\/embed/);
+  for (const path of Object.keys(player)) assert.ok(!s.text.has(path), `${path} goes with the Undo`);
+});
+
 test("Undo refuses a page edited since and changes nothing", async () => {
   const s = site({ "index.html": '<img src="/images/heavy.jpg">' });
   const outcome = await s.row("index.html");

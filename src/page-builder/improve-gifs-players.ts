@@ -14,7 +14,7 @@ import { chooseMediaPath, mediaCopyName, mediaStorageName } from "./media-storag
 import { mediaOriginalPath } from "./media-originals";
 import { readOnlineVideo } from "./online-video-add";
 import { onlineVideoMarkup, onlineVideoStillPlan, parseOnlineVideoAddress, upsertOnlineVideo } from "./online-video";
-import { mediaPlayerPlan, type MediaPlayerKind } from "./player-markup";
+import { mediaPlayerPlan, writePlayerFiles, type MediaPlayerKind } from "./player-markup";
 import { starterPlayerFiles } from "./starter-loader";
 import { uploadProblem } from "../uploads";
 import type { MediaImportRequest } from "./media-picker";
@@ -208,7 +208,8 @@ export async function prepareImproveGifsAndPlayers(ctx: MediaWorkspaceContext, r
     input.sources[row.file] = rewritten;
     let player = mediaPlayerPlan(input);
     if (player?.creates.length) { const files = await (ports.playerFiles ?? starterPlayerFiles)(); guard(); player = mediaPlayerPlan({ ...input, files }); }
-    for (const file of player?.creates ?? []) { batch.expectedSources.set(file.path, undefined); upload(file.path, new Blob([file.content], { type: file.path.endsWith(".css") ? "text/css" : "text/javascript" })); }
+    for (const file of player?.creates ?? []) reserved.add(file.path);
+    writePlayerFiles(batch, player?.creates);
     for (const [path, text] of player?.edits ?? []) batch.edits.set(path, text);
     player?.notes.forEach(note);
   }

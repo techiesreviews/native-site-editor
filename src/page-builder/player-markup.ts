@@ -114,6 +114,15 @@ export function addMediaPlayerLinks(source: string, path: string, needs: MediaPl
   return source;
 }
 
+/**
+ * Puts the site's player files into a save as new text files, never as uploads: the preview reads
+ * a stylesheet only as text (an uploaded one froze the editor). Every writer of the player uses this.
+ */
+export function writePlayerFiles(batch: { expectedSources: Map<string, string | undefined>; edits: Map<string, string> },
+  files: readonly { path: string; content: string }[] = []) {
+  for (const file of files) { batch.expectedSources.set(file.path, undefined); batch.edits.set(file.path, file.content); }
+}
+
 export function mediaPlayerPlan(input: MediaPlayerInput): ComponentLoaderPlan | undefined {
   // Every kind but a download card is driven by the player's script; cards need only its stylesheet.
   const script = input.kinds.some(kind => kind !== "download");

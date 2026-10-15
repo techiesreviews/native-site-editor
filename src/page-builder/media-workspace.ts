@@ -17,6 +17,7 @@ import { setMediaDescription, MEDIA_RECORDS_PATH, serializeMediaRecords, type Me
 import { applyMediaMetadata, mediaMetadataView, type MediaMetadata } from "./media-metadata";
 import { alwaysKeptFiles, mediaFamilies, mediaFamilyOf, familyMembers } from "./media-families";
 import { mediaEscape } from "./media-markup";
+import { writePlayerFiles } from "./player-markup";
 import { planMediaRename, tidyMediaName, MediaNameTakenError } from "./media-rename";
 import { mediaOriginalPath, mediaOriginalProblem } from "./media-originals";
 import { mediaStorageName, mediaCopyName, chooseMediaPath } from "./media-storage";
@@ -318,9 +319,8 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     for (const upload of place?.uploads ?? []) {
       reserved.add(upload.path); batch.uploads.push(upload);
     }
-    for (const file of place?.files ?? []) {
-      reserved.add(file.path); batch.expectedSources.set(file.path, undefined); batch.edits.set(file.path, file.content);
-    }
+    for (const file of place?.files ?? []) reserved.add(file.path);
+    writePlayerFiles(batch, place?.files);
     const changes: Record<string, Partial<MediaMetadata>> = {};
     const previews: MediaRecords["files"] = {};
     const inherited: MediaRecords["files"] = {};
@@ -781,7 +781,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
         // Component templates the place went through: newer ones refuse, as for files (slice 63).
         for (const [path, text] of place.expectedSources ?? []) batch.expectedSources.set(path, text);
         batch.uploads.push(...place.uploads ?? []);
-        for (const file of place.files ?? []) { batch.expectedSources.set(file.path, undefined); batch.edits.set(file.path, file.content); }
+        writePlayerFiles(batch, place.files);
         const placed = place.apply([], [], next);
         batch.edits.set(place.path, typeof placed === "string" ? placed : placed.page);
         if (typeof placed !== "string" && placed.records) next = placed.records;

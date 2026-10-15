@@ -53,7 +53,11 @@ test("one row commits GIF, still, records, page and player together; old GIF sta
   await f.run();
   assert.equal(f.batches.length, 1); assert.equal(f.playerCalls, 1);
   const batch = f.batches[0], html = f.text.get("index.html")!;
-  assert.deepEqual(batch.uploads.map(u => u.path), ["media/videos/a.mp4", "media/videos/a.webp", "styles/media-player.css", "scripts/media-player.js", "scripts/media-online.js"]);
+  assert.deepEqual(batch.uploads.map(u => u.path), ["media/videos/a.mp4", "media/videos/a.webp"]);
+  // The player goes in as new text files, never uploads: an uploaded stylesheet froze the editor (slice 101).
+  for (const [path, text] of [["styles/media-player.css", "/* player */"], ["scripts/media-player.js", "// player"], ["scripts/media-online.js", "// online"]]) {
+    assert.equal(batch.edits.get(path), text); assert.ok(batch.expectedSources.has(path)); assert.equal(batch.expectedSources.get(path), undefined);
+  }
   assert.deepEqual(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["media/videos/a.mp4"], { still: "media/videos/a.webp", fromGif: true, duration: 2.35 });
   assert.match(html, /controls muted loop playsinline/); assert.doesNotMatch(html, /autoplay/);
   for (const attribute of ['class="shape"', 'style="object-position:30% 70%"', 'slot="hero"', 'width="320"', 'height="180"', 'aria-label="A &amp; B"']) assert.ok(html.includes(attribute));

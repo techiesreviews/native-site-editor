@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { storedDraft } from "./drafts";
+import { animatedGif } from "./animated-gif";
 
 // Improve images (slice 74): Media's More lists pages with pictures to improve; a row is fixed in
 // one change, Undo puts it back. Default fixture group (the frozen native starter).
@@ -8,6 +9,14 @@ test.beforeEach(({ page }) => page.setDefaultTimeout(20_000));
 const pane = (page: Page) => page.getByRole("region", { name: "Media", exact: true });
 const tab = (page: Page) => page.getByRole("tab", { name: "Media", exact: true });
 
+/** A 640 × 360 PNG still for the stubbed YouTube service. */
+async function stillPng(page: Page) {
+  return page.evaluate(() => {
+    const canvas = document.createElement("canvas"); canvas.width = 640; canvas.height = 360;
+    const context = canvas.getContext("2d")!; context.fillStyle = "#3a6"; context.fillRect(0, 0, 640, 360);
+    return canvas.toDataURL("image/png").split(",")[1];
+  });
+}
 /** A 2000 × 1000 JPEG of noise: well over 200 KB, so it is heavy. */
 async function heavyJpeg(page: Page, seed: number) {
   return page.evaluate(start => {
@@ -107,4 +116,51 @@ test("untick a picture, Cancel mid-run, then Undo all", async ({ page, baseURL }
     await expect.poll(async () => (await storedDraft(page, `${name}/index.html`))?.content ?? "").not.toContain(`${name}.webp`);
     await expect.poll(async () => await storedDraft(page, `images/${name}.webp`)).toBeUndefined();
   }
+});
+
+// Slice 101: fixing a GIF row or an old YouTube embed row adds the site's player on a site that has
+// none yet. Its files went in as uploads, and the preview's stylesheet reader then re-read the
+// new media-player.css forever (the editor froze). They are text drafts now, and each row saves promptly.
+test("a GIF row and an old YouTube embed row add the site's player as text and finish promptly", async ({ page, baseURL }) => {
+  await page.goto(baseURL!);
+  const cors = { "access-control-allow-origin": "*" }, still = Buffer.from(await stillPng(page), "base64");
+  await page.route("https://www.youtube.com/oembed**", route => route.fulfill({ headers: cors, contentType: "application/json", body: JSON.stringify({ title: "Studio tour" }) }));
+  await page.route("https://i.ytimg.com/**", route => route.fulfill({ headers: cors, contentType: "image/png", body: still }));
+  await page.route("https://www.youtube.com/embed/**", route => route.fulfill({ contentType: "text/html", body: "<title>Stub</title>" }));
+  // The site knows its own address, so YouTube's is an outside one.
+  await commit(page, baseURL, { path: "CNAME", content: "studio.example\n" });
+  await commit(page, baseURL, { path: "images/loop.gif", base64: animatedGif().toString("base64") });
+  await commit(page, baseURL, { path: "loop/index.html", content: pageHtml("Loop", "images/loop.gif") });
+  const tourHtml = pageHtml("Tour", "images/placeholder.svg")
+    .replace(/<img [^>]*>/, '<iframe src="https://www.youtube.com/embed/aqz-KE-bpKQ" title="Studio tour" width="560" height="315"></iframe>');
+  await commit(page, baseURL, { path: "tour/index.html", content: tourHtml });
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect(page.locator("#status")).toContainText("Up to date with main");
+  await page.locator("#explorer-toggle").click();
+  await tab(page).click();
+  await pane(page).getByRole("button", { name: "More", exact: true }).click();
+  await page.getByRole("menuitem", { name: /^Improve images/ }).click();
+  for (const title of ["Loop", "Tour"]) {
+    await expect(row(page, title)).toBeVisible();
+    const started = Date.now();
+    await pane(page).getByRole("button", { name: `Fix ${title}`, exact: true }).click();
+    await expect(pane(page).locator(".media-improve__changed")).toContainText(title, { timeout: 30_000 });
+    expect(Date.now() - started, `${title} saves in normal time`).toBeLessThan(30_000);
+  }
+  expect((await storedDraft(page, "loop/index.html"))?.content).toMatch(/<video[^>]*src="\/media\/videos\/loop\.mp4"/);
+  const tour = (await storedDraft(page, "tour/index.html"))?.content ?? "";
+  expect(tour).toContain('class="online-video"');
+  expect(tour).toContain('href="/styles/media-player.css"');
+  // The player's files are new text drafts, not uploads.
+  for (const path of ["styles/media-player.css", "scripts/media-player.js", "scripts/media-online.js"]) {
+    const draft = await storedDraft(page, path);
+    expect(draft?.content.length, path).toBeGreaterThan(0);
+    expect(draft?.upload, path).toBeUndefined();
+    expect(draft?.opaque, path).toBeUndefined();
+  }
+  // The editor still answers: Undo all puts both pages back and takes the player files away again.
+  await pane(page).getByRole("button", { name: "Undo all", exact: true }).click();
+  await expect(pane(page).locator(".media-improve__changed")).toHaveCount(0);
+  await expect.poll(async () => (await storedDraft(page, "tour/index.html"))?.content ?? tourHtml).toBe(tourHtml);
+  for (const path of ["styles/media-player.css", "scripts/media-player.js", "scripts/media-online.js"]) await expect.poll(async () => await storedDraft(page, path), path).toBeUndefined();
 });

@@ -1,7 +1,7 @@
 ---
 title: Improve images freezes when it adds the player
 type: task (AFK)
-status: in progress
+status: open
 assignee: claude (mm-101 runner)
 blocked_by: [74-improve-images-screen]
 builder: claude

@@ -8,7 +8,7 @@ import { locateNativeElementRange } from "../native-source-location";
 import type { ElementRange } from "../../shared/html-source";
 import { isImagePath } from "../native-structure";
 import { MEDIA_RECORDS_PATH, parseMediaRecords } from "../../shared/media-records";
-import { mediaPlayerPlan, type MediaPlayerKind } from "./player-markup";
+import { mediaPlayerPlan, writePlayerFiles, type MediaPlayerKind } from "./player-markup";
 import { starterPlayerFiles } from "./starter-loader";
 import { sectionBackgroundEdits, writeLooping } from "./looping-video";
 
@@ -88,7 +88,7 @@ export function createVideoPlaces(ports: VideoPlacePorts, context: Context, load
       return;
     }
     const edits = new Map([[path, next]]);
-    for (const file of plan?.creates ?? []) { expectedSources.set(file.path, undefined); edits.set(file.path, file.content); }
+    writePlayerFiles({ expectedSources, edits }, plan?.creates);
     await ctx.applyBatch({ label, expectedPaths: ctx.paths, expectedSources, expectedAssets, edits, live: current, moves: [], deletes: [], restores: [], uploads: [] });
     ctx.assertLive();
   }
