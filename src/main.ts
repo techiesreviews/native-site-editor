@@ -1,4 +1,4 @@
-import { sitePathPrefix } from "../shared/site-path-prefix";
+import { siteAddress, sitePathPrefix } from "../shared/site-path-prefix";
 import { MEDIA_RECORDS_PATH } from "../shared/media-records";
 import { mediaOwnOrigins } from "./page-builder/media-origins";
 import { dismissRefusalNote, refuse } from "./components/refusal-note";
@@ -2460,7 +2460,7 @@ const mediaController = createMediaController({
     scroll: dy => nativePreview?.scrollBy(dy),
     // Read as the canvas reads its images, so the page can show a replacement too.
     picture: async path => {
-      if (!nativeAssets.has(path)) await loadNativeAssets({ [appStore.openFile.value ?? "index.html"]: `<img src="/${encodeURI(path).replace(/&/g, "&amp;")}">` });
+      if (!nativeAssets.has(path)) await loadNativeAssets({ [appStore.openFile.value ?? "index.html"]: `<img src="${siteAddress(path, nativePrefix()).replace(/&/g, "&amp;")}">` });
       return nativeAssets.get(path);
     },
   },

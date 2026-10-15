@@ -1,9 +1,10 @@
 // On-demand Improve images engine. Never import this module from the boot bundle.
+import { siteAddress, sitePathPrefix } from "../../shared/site-path-prefix";
 import type { MediaRecords } from "../../shared/media-records";
 import { startTags } from "../../shared/html-source";
 import type { ImproveImagesRow, ImprovePicture } from "./improve-images";
 import type { MediaImportRequest, MediaPlacement } from "./media-picker";
-import { mediaAttribute, mediaUrl } from "./media-attributes";
+import { mediaAttribute } from "./media-attributes";
 import { mediaAttributes, mediaPictureUnwrap, mediaPlacement, mediaSrcset, mediaImageForPlacement, type MediaImage, type MediaMeasured } from "./media-markup";
 import { mediaStorageName, mediaCopyName } from "./media-storage";
 import { mediaAddingSettings } from "./media-settings";
@@ -119,6 +120,7 @@ interface Edit { start: number; end: number; text: string }
 /** Rewrite only planned opening tags. A <picture> around one loses its wrapper and sources (ticket 08);
  * surrounding links retain their exact bytes. */
 export function rewriteOutsidePicturesPlan(source: string, replacements: OutsidePictureReplacement[], siteUrl?: string): { text: string; artDirected: boolean } {
+  const prefix = sitePathPrefix(siteUrl);
   const edits: Edit[] = [], tree = readSource(source);
   let artDirected = false;
   for (const { picture, image, measured } of replacements) {
@@ -129,8 +131,8 @@ export function rewriteOutsidePicturesPlan(source: string, replacements: Outside
       edits.push({ ...picture.tag, text: mediaAttributes(existing, { content: socialImageAddress(siteUrl, image.path).address }) });
       continue;
     }
-    const srcset = mediaSrcset(image);
-    const attributes: Record<string, string | undefined> = { src: mediaUrl(image.path), srcset, width: image.width ? String(image.width) : undefined, height: image.height ? String(image.height) : undefined };
+    const srcset = mediaSrcset(image, prefix);
+    const attributes: Record<string, string | undefined> = { src: siteAddress(image.path, prefix), srcset, width: image.width ? String(image.width) : undefined, height: image.height ? String(image.height) : undefined };
     if (srcset && !mediaAttribute(existing, tag, "sizes")) {
       const authored = mediaAttribute(existing, tag, "loading") || mediaAttribute(existing, tag, "fetchpriority");
       const placement = mediaPlacement(measured);

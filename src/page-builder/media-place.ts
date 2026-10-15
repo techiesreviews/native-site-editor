@@ -1,3 +1,4 @@
+import { readMediaPrefix } from "./media-prefix";
 import type { MediaControllerPorts } from "../controllers/media-controller";
 import type { Stamp } from "../guarded-edit";
 import type { MediaWorkspaceContext } from "./media-workspace";
@@ -27,6 +28,8 @@ export async function placeMediaImage(
   ]);
   const expectedPaths = [...ctx.paths];
   const mainVersion = ctx.assetVersion(image.path);
+  const prefixSources = new Map<string, string | undefined>();
+  const prefix = await readMediaPrefix(ctx, prefixSources);
   const metadata = await ctx.read(io.MEDIA_RECORDS_PATH);
   ctx.assertLive();
   // A new shape is measured with its style standing in, as `framePlace` does.
@@ -41,7 +44,7 @@ export async function placeMediaImage(
   if (!stamp.holds() || latest === undefined || latest !== source || !range || range.tag.name !== "img" || latest.slice(range.tag.start, range.tag.end) !== expected
     || ports.source(io.MEDIA_RECORDS_PATH) !== metadata) throw new Error(changed);
   const tag = html.startTags(expected)[0], src = tag && html.startTagAttribute(expected, tag, "src");
-  const from = src ? references.mediaResolvePath(entities.decodeHtmlEntities(src.value, true), target.path) : undefined;
+  const from = src ? references.mediaResolvePath(entities.decodeHtmlEntities(src.value, true), target.path, undefined, prefix) : undefined;
   // Unreadable records never block a swap, and are never overwritten (slice 13).
   let records = io.parseMediaRecords(undefined), readable = true;
   try { records = collections.readSiteMediaRecords(metadata, ctx.items.map(item => item.path)); } catch { readable = false; }
@@ -63,13 +66,13 @@ export async function placeMediaImage(
   const expectedAssets = new Map(proof.asset ? [[proof.asset.path, proof.asset.version]] : []);
   // New copies were made from this revision of the main: a newer one refuses the whole step.
   if (copies?.uploads.length && !expectedAssets.has(image.path)) expectedAssets.set(image.path, mainVersion);
-  const placement = mediaPlaceSwap(latest, target, expected, image, measured, locate, framed);
+  const placement = mediaPlaceSwap(latest, target, expected, image, measured, locate, framed, prefix);
   const { swap, next } = placement;
   const note = placement.note + copyNote;
   // Files added in the picker are saved with the placement and its records: one Undo step.
   if (held) {
     if (cancelled()) return;
-    const saved = await held.save({ path: target.path, source: latest, stale: changed, live: () => !cancelled(), records: { text: metadata },
+    const saved = await held.save({ path: target.path, source: latest, stale: changed, live: () => !cancelled(), records: { text: metadata }, expectedSources: prefixSources,
       ...copies?.uploads.length ? { uploads: copies.uploads, expectedAssets, expectedPaths } : {},
       apply: (paths, _requests, current) => {
         const selected = held.image(paths), picked = copies?.uploads.length ? { ...selected, variants: copies.variants } : selected, after = rules.swapPlaceImage(current, target.path, from, picked.path, initialAlt, swap(undefined, picked).page);
@@ -86,12 +89,13 @@ export async function placeMediaImage(
   // Agent decoding captures the file revision before its first await.
   if ([...expectedAssets].some(([path, version]) => ctx.assetVersion(path) !== version)) throw new Error("The image changed while preparing placement. Try again.");
   if (!copies?.uploads.length && (after.records === records || !readable)) {
+    if ([...prefixSources].some(([path, source]) => ports.source(path) !== source)) throw new Error("The site address changed. Try again.");
     if (!ports.change(target.path, latest, edits, next, "Image replaced")) throw new Error("The image could not be replaced.");
     if (note) ports.announce(`Image replaced.${note}`);
     return;
   }
   await ctx.applyBatch({ label: "Image replaced", expectedPaths,
-    expectedSources: new Map([[target.path, latest], [io.MEDIA_RECORDS_PATH, metadata]]), expectedAssets, ...copies?.uploads.length ? { live: () => !cancelled() && stamp.holds() } : {},
+    expectedSources: new Map([...prefixSources, [target.path, latest], [io.MEDIA_RECORDS_PATH, metadata]]), expectedAssets, ...copies?.uploads.length ? { live: () => !cancelled() && stamp.holds() } : {},
     edits: new Map([[target.path, page], ...readable && after.records !== records ? [[io.MEDIA_RECORDS_PATH, io.serializeMediaRecords(after.records)] as [string, string]] : []]), moves: [], deletes: [], restores: [], uploads: copies?.uploads ?? [] });
   ports.announce(`Image replaced${note ? "." + note : ""}`);
 }

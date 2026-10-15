@@ -336,3 +336,11 @@ test("a sharing-only mention keeps the lighter family used and Always keep prote
   assert.ok(offered().includes("images/heavy.jpg")); assert.ok(!offered().includes("images/heavy.webp"));
   records.files["images/heavy.jpg"] = { alwaysKeep: true }; assert.ok(!offered().includes("images/heavy.jpg"));
 });
+
+test("Improve images writes the requested prefix into the main and responsive copies", async () => {
+  const f = fixture();
+  await f.improve({ siteUrl: "https://user.github.io/my-site/" });
+  const html = f.text.get("index.html")!;
+  assert.ok(html.includes('src="/my-site/images/heavy.webp"'));
+  assert.ok(html.includes('srcset="/my-site/images/heavy-480.webp 480w, /my-site/images/heavy-960.webp 960w, /my-site/images/heavy.webp 1200w"'));
+});

@@ -101,3 +101,14 @@ test("an existing sharing copy is linked at the full address without a new copy"
   assert.equal((await shareImage(context, request, never))?.missingAddress, true);
 });
 
+
+test("GitHub Pages sharing addresses retain one prefix and resolve back to repository pictures", () => {
+  const path = "media/images/a b.jpg";
+  for (const siteUrl of ["https://user.github.io/my-site/", "https://user.github.io/my-site", "https://user.github.io/my-site/index.html"]) {
+    const result = socialImageAddress(siteUrl, path);
+    assert.deepEqual(result, { address: "https://user.github.io/my-site/media/images/a%20b.jpg", missingAddress: false });
+    for (const value of [result.address, "/my-site/media/images/a%20b.jpg", "/media/images/a%20b.jpg"]) {
+      assert.equal(socialImageSource({ value, page: "index.html", siteUrl, paths: [path], records: parseMediaRecords(undefined) }), path);
+    }
+  }
+});

@@ -26,7 +26,7 @@ export function assetMoves(moves: readonly { from: string; to: string }[]) {
  * the same file afterwards (both moved together); otherwise the whole move is
  * refused, since rewriting relative paths in moved files is not supported.
  */
-export function planAssetReferenceRewrites(sources: Readonly<Record<string, string | undefined>>, moves: readonly { from: string; to: string }[], base: ReadonlyMap<string, string> = new Map()): Map<string, string> {
+export function planAssetReferenceRewrites(sources: Readonly<Record<string, string | undefined>>, moves: readonly { from: string; to: string }[], base: ReadonlyMap<string, string> = new Map(), prefix = ""): Map<string, string> {
   const assets = assetMoves(moves);
   const edits = new Map(base);
   if (!assets.length) return edits;
@@ -36,14 +36,14 @@ export function planAssetReferenceRewrites(sources: Readonly<Record<string, stri
     const final = moved.get(file) ?? file;
     const text = base.get(final) ?? source;
     if (final !== file)
-      for (const ref of scanMediaReferences(file, source)) {
+      for (const ref of scanMediaReferences(file, source, undefined, prefix)) {
         if (/^\//.test(ref.value.trim())) continue;
-        const after = mediaResolvePath(ref.value, final);
+        const after = mediaResolvePath(ref.value, final, undefined, prefix);
         if (after !== (moved.get(ref.path) ?? ref.path))
           throw new Error(`${file} refers to ${ref.value} by a relative path, which would point elsewhere after the move. Use a path from the site root in it first; nothing was moved.`);
       }
     let next = text;
-    for (const { from, to } of assets) next = rewriteMediaReferences(final, next, from, to);
+    for (const { from, to } of assets) next = rewriteMediaReferences(final, next, from, to, prefix);
     if (next !== text) edits.set(final, next);
   }
   return edits;

@@ -73,3 +73,8 @@ test("Files usage follows template-relative URLs against their page, including d
   }, ["nested/images/a.png"], { origins: [], pages: ["nested/index.html"], components: { "my-card": "components/card.html" } });
   assert.deepEqual(users.get("nested/images/a.png"), ["components/card.html"]);
 });
+
+test("file moves recognise prefixed root uses and write the new prefixed address", () => {
+  const result = planAssetReferenceRewrites({ "index.html": '<img src="/my-site/images/a.svg"><img src="/images/a.svg">' }, move, new Map(), "/my-site");
+  assert.equal(result.get("index.html"), '<img src="/my-site/images/b.svg"><img src="/my-site/images/b.svg">');
+});

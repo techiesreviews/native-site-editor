@@ -1,6 +1,6 @@
 import { button, node } from "../ui/dom";
 import { icon } from "../icons";
-import { GITHUB_INSTALL_MEDIA, GITHUB_SCREENSHOTS, VIDEO_REPLACES_SCREENSHOT, installMedia, mediaUrl } from "../onboarding-media";
+import { GITHUB_INSTALL_MEDIA, GITHUB_SCREENSHOTS, VIDEO_REPLACES_SCREENSHOT, installMedia, onboardingAssetUrl } from "../onboarding-media";
 import "./github-trip.css";
 
 // What GitHub shows on the trip that installs the editor and signs the user
@@ -44,7 +44,7 @@ export function closeLightbox() {
 
 function picture(shot: (typeof GITHUB_SCREENSHOTS)[number], className: string) {
   const wrap = node("picture");
-  const webp = mediaUrl(shot.webp);
+  const webp = onboardingAssetUrl(shot.webp);
   if (webp) {
     const source = node("source");
     source.type = "image/webp";
@@ -52,7 +52,7 @@ function picture(shot: (typeof GITHUB_SCREENSHOTS)[number], className: string) {
     wrap.append(source);
   }
   const image = node("img", className);
-  image.src = mediaUrl(shot.png) ?? "";
+  image.src = onboardingAssetUrl(shot.png) ?? "";
   image.alt = shot.alt;
   image.width = shot.width;
   image.height = shot.height;

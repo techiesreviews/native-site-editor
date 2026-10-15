@@ -1,3 +1,4 @@
+import { siteAddress } from "../../shared/site-path-prefix";
 import { icon } from "../icons";
 import { button, node } from "../ui/dom";
 import { createUrlChange, type UrlPlan } from "./url-change";
@@ -19,6 +20,7 @@ export interface SocialImageFrame { file: string; value: string; trim?: MediaTri
 export interface SitePageChoice { route: string; label: string; file: string }
 export interface SiteLinkPreference { title: boolean; description: boolean }
 export interface SiteSettingsHandlers {
+  prefix: () => string;
   applyPage: (path: string, fields: Partial<Record<HeadField, string>>, socialTrim?: MediaTrim) => Promise<string | undefined>;
   planUrl: (path: string, value: string) => UrlPlan;
   applyUrl: (path: string, value: string, keep: boolean) => Promise<string | undefined>;
@@ -218,7 +220,7 @@ function socialImageButton(input: HTMLInputElement | HTMLTextAreaElement, place:
       if (!dialog.root.isConnected || input.value !== before) return;
       const opened = await openSocialImagePopup({ button: control, file: staged?.file ?? frame.file, trim: staged?.trim ?? frame.trim,
         card: { title: options.title(), site: frame.site },
-        picture: path => handlers.imageUrl(links.get(path) ?? `/${path}`),
+        picture: path => handlers.imageUrl(links.get(path) ?? siteAddress(path, handlers.prefix())),
         choose: async () => {
           const value = await handlers.chooseImage(place, SOCIAL_IMAGE_ACCEPT);
           const chosen = value ? handlers.socialFrame?.(value, options.page) : undefined;
@@ -228,7 +230,7 @@ function socialImageButton(input: HTMLInputElement | HTMLTextAreaElement, place:
         done: result => {
           // A dialog closed or a value typed meanwhile keeps what it has.
           if (!dialog.root.isConnected || input.value !== before) return;
-          const value = links.get(result.file) ?? `/${result.file}`;
+          const value = links.get(result.file) ?? siteAddress(result.file, handlers.prefix());
           input.value = value;
           input.dataset.chosen = value;
           socialFrames.set(input, { value, ...result });
@@ -307,7 +309,7 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
       if (!ownDescription) social.append(node("p", "site-settings__hint", "Not set, uses page description."));
       const socialDescription = textField(social, "Social description", ownDescription ? values["og:description"] : values.description);
       const image = textField(social, "Social image", values["og:image"], "Choose a site image or paste a full image URL. Sharing services favour a 1200 × 630 image.");
-      addImageChoices(image, options.images);
+      addImageChoices(image, options.images, handlers.prefix());
       social.append(socialImageButton(image, "Social image", dialog, handlers,
         { page: options.path, title: () => socialTitle.value || title.value || "Your page title", refresh }));
       const card = node("div", "site-settings__card");
@@ -397,13 +399,13 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
       const address = textField(general, "Site address", options.values.url, "Where your site lives, like https://name.github.io/my-site/");
       Object.assign(address, { inputMode: "url", autocomplete: "off", spellcheck: false, autocapitalize: "off" });
       const favicon = textField(general, "Favicon", options.values.favicon, "Choose an image or paste its URL. Applied to every page's head.");
-      addImageChoices(favicon, options.images);
+      addImageChoices(favicon, options.images, handlers.prefix());
       general.append(button("Choose favicon…", () => chooseInto(favicon, "Favicon", dialog, handlers), "site-settings__link"));
       const social = section(socialPanel, "Default share image");
       const note = handlers.socialNote?.();
       if (note) social.append(node("p", "site-settings__hint", note));
       const image = textField(social, "Default social image", options.values.socialImage, "Used on new pages and pages using the current default. Custom page images stay independent.");
-      addImageChoices(image, options.images);
+      addImageChoices(image, options.images, handlers.prefix());
       social.append(socialImageButton(image, "Default social image", dialog, handlers, { title: () => name.value.trim() || "Your site" }));
       const affected = section(pagesPanel, `Affected pages (${options.pages.length})`);
       affected.append(node("p", "site-settings__hint", "Favicon and social site name apply to these pages. Their title and description stay their own."));
@@ -485,10 +487,10 @@ export function createSiteSettings(handlers: SiteSettingsHandlers, linkPreferenc
   };
 }
 
-function addImageChoices(input: HTMLInputElement | HTMLTextAreaElement, images: string[]) {
+function addImageChoices(input: HTMLInputElement | HTMLTextAreaElement, images: string[], prefix: string) {
   const list = node("datalist");
   list.id = `site-images-${++serial}`;
-  for (const path of images) { const option = node("option"); option.value = `/${path}`; list.append(option); }
+  for (const path of images) { const option = node("option"); option.value = siteAddress(path, prefix); list.append(option); }
   input.setAttribute("list", list.id);
   input.parentElement?.append(list);
 }

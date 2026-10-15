@@ -1,3 +1,5 @@
+import { readMediaPrefix } from "./media-prefix";
+import { sitePathPrefix } from "../../shared/site-path-prefix";
 import { MEDIA_RECORDS_PATH, parseMediaRecords, serializeMediaRecords, type MediaRecords } from "../../shared/media-records";
 import { encodeSharingJpeg, isSharingImage, sharingJpegPath, sharingImageDetail, sharingMetaName } from "./sharing-jpeg";
 import { socialImageAddress, SOCIAL_IMAGE_NOTE } from "./social-image";
@@ -54,10 +56,12 @@ export async function prepareImproveHeavy(ctx: MediaWorkspaceContext, request: I
   const paths = [...ctx.paths], versions = new Map(paths.map(path => [path, ctx.assetVersion(path)]));
   const batch: MediaWorkspaceBatch = { label: "", expectedPaths: paths, expectedSources: new Map(), expectedAssets: versions,
     edits: new Map(), moves: [], deletes: [], restores: [], uploads: [], live: holds };
+  await readMediaPrefix(ctx, batch.expectedSources); guard();
   const sources: Record<string, string | undefined> = {};
   for (const file of new Set([...paths.filter(isMediaTextFile), MEDIA_RECORDS_PATH, "_redirects"])) {
     const text = await ctx.read(file); guard();
     if (paths.includes(file) && text === undefined) throw new Error(`Could not read ${file}; image usage is incomplete. Refresh and try again.`);
+    if (batch.expectedSources.has(file) && batch.expectedSources.get(file) !== text) throw new Error(`${file} changed while preparing image changes. Try again.`);
     sources[file] = text; if (!ctx.items.some(item => item.path === file)) batch.expectedSources.set(file, text);
   }
   const records = parseMediaRecords(sources[MEDIA_RECORDS_PATH]);
@@ -286,14 +290,14 @@ export async function prepareImproveHeavy(ctx: MediaWorkspaceContext, request: I
     const locate = ports.tree ? (text: string, node: number[]) => treeFor(text).at(node) : locateNativeElementRange;
     const safe = measured && { ...measured, images: measured.images.filter(item => !protectedNodes.has(JSON.stringify(item.node)) && !targets.some(target => target.svg && JSON.stringify(target.node) === JSON.stringify(item.node))) };
     const { edits, placement } = mediaPageEdits(source, safe, target.node, locate);
-    let text = mediaImageMarkup(image, existing, placement, true);
+    let text = mediaImageMarkup(image, existing, placement, true, sitePathPrefix(request.siteUrl));
     if (target.adopted) {
       const srcset = startTagAttribute(existing, startTags(existing)[0], "srcset")?.value;
       // A written picture/source set stays as written; a name-based family gets one srcset.
       const originalElement = tree.at(target.node);
       const originalTag = originalElement && sources[row.file]!.slice(originalElement.tag.start, originalElement.tag.end);
       const hasWrittenSet = !!originalTag && !!startTagAttribute(originalTag, startTags(originalTag)[0], "srcset") || currentTreeHasPictureSet(source, range.tag.start);
-      text = mediaAttributes(text, { srcset: srcset ?? (hasWrittenSet ? undefined : mediaSrcset(image)), sizes: placement.sizes });
+      text = mediaAttributes(text, { srcset: srcset ?? (hasWrittenSet ? undefined : mediaSrcset(image, sitePathPrefix(request.siteUrl))), sizes: placement.sizes });
     }
     // No description is introduced when the old place had no alt attribute either.
     if (!startTagAttribute(existing, startTags(existing)[0], "alt")) text = mediaAttributes(text, { alt: undefined });

@@ -105,9 +105,17 @@ test("refuse non-video, background toggles, non-picture spots and non-sections",
 });
 for (const kind of ["looping-video", "background-video"] as const) test(`${kind} installs player files and page links once`, () => {
   const files = { "styles/media-player.css": "style", "scripts/media-player.js": "player", "scripts/media-online.js": "online" };
-  const plan = mediaPlayerPlan({ pages: ["index.html"], sources: { "index.html": "<html><head></head><body></body></html>" }, exists: () => false, kinds: [kind], files });
+  const plan = mediaPlayerPlan({ prefix: "", pages: ["index.html"], sources: { "index.html": "<html><head></head><body></body></html>" }, exists: () => false, kinds: [kind], files });
   assert.equal(plan?.creates.length, 3);
   const source = plan!.edits.get("index.html")!;
   assert.match(source, /media-player.js/);
-  assert.equal(mediaPlayerPlan({ pages: ["index.html"], sources: { "index.html": source }, exists: () => true, kinds: [kind] }), undefined);
+  assert.equal(mediaPlayerPlan({ prefix: "", pages: ["index.html"], sources: { "index.html": source }, exists: () => true, kinds: [kind] }), undefined);
+});
+
+test("looping and background writers carry the project prefix", () => {
+  const video = { path: "media/a.mp4", still: "media/a.webp" };
+  assert.equal(loopingVideoMarkup(video, "/my-site").markup, '<video src="/my-site/media/a.mp4" poster="/my-site/media/a.webp" controls muted loop playsinline></video>');
+  assert.equal(backgroundVideoMarkup(video, "/my-site"), '<video data-background src="/my-site/media/a.mp4" poster="/my-site/media/a.webp" muted loop playsinline preload="none"></video>');
+  assert.equal(placedVideoMarkup(video, { fromGif: true }, undefined, "/my-site").markup, loopingVideoMarkup(video, "/my-site").markup);
+  assert.equal(pictureSpotVideo('<img slot="hero">', video, "/my-site").markup, '<video src="/my-site/media/a.mp4" poster="/my-site/media/a.webp" controls muted loop playsinline slot="hero"></video>');
 });

@@ -206,3 +206,9 @@ test("a recorded video's saved service bar choice is kept on the switched player
   await f.run(); assert.equal(f.reads, 0);
   assert.match(f.text.get("index.html")!, /<a class="online-video" href="https:\/\/vimeo.com\/123456\/a1b2c3d4e5" data-controls="service"><img src="\/media\/videos\/talk.webp" alt="Talk"/);
 });
+
+test("Improve GIF and online writers receive the project prefix including player links", async () => {
+  const f = fixture();
+  await f.run({ siteUrl: "https://user.github.io/my-site/" });
+  assert.equal(f.text.get("index.html"), '<html><head><title>Test</title>\n<link rel="stylesheet" href="/my-site/styles/media-player.css">\n<script type="module" src="/my-site/scripts/media-player.js"></script>\n</head><body><video src="/my-site/media/videos/a.mp4" poster="/my-site/media/videos/a.webp" controls muted loop playsinline width="800" height="450"></video></body></html>');
+});

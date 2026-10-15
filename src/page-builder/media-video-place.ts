@@ -1,4 +1,5 @@
 // One-Undo video transactions behind the edit bar's Looping video and Background video controls (lazy).
+import { readMediaPrefix } from "./media-prefix";
 import type { MediaControllerPorts } from "../controllers/media-controller";
 import type { MediaWorkspaceContext } from "./media-workspace";
 import type { MediaHeldFiles, MediaUsageSource } from "./media-picker";
@@ -32,16 +33,16 @@ export function createVideoPlaces(ports: VideoPlacePorts, context: Context, load
       });
   }
   function removeBackground(path: string, node: number[], source: string) {
-    return change(path, node, source, "Background video removed", undefined, page => background(page, node));
+    return change(path, node, source, "Background video removed", undefined, (page, _record, prefix) => background(page, node, undefined, prefix));
   }
-  function background(source: string, node: number[], video?: { path: string; still?: string }) {
+  function background(source: string, node: number[], video: { path: string; still?: string } | undefined, prefix: string) {
     const range = locate(source, node);
     if (!range) throw new Error("Choose a section.");
-    for (const edit of sectionBackgroundEdits(source, range, video).sort((a, b) => b.start - a.start)) source = source.slice(0, edit.start) + edit.text + source.slice(edit.end);
+    for (const edit of sectionBackgroundEdits(source, range, video, prefix).sort((a, b) => b.start - a.start)) source = source.slice(0, edit.start) + edit.text + source.slice(edit.end);
     return source;
   }
   async function change(path: string, node: number[], source: string, label: string, kind: MediaPlayerKind | undefined,
-    edit: (source: string, record?: import("../../shared/media-records").MediaFileRecord) => string,
+    edit: (source: string, record: import("../../shared/media-records").MediaFileRecord | undefined, prefix: string) => string,
     picked?: MediaImage, cancelled = () => false, held?: MediaHeldFiles, since = ports.stamp()) {
     const epoch = ports.generation();
     const current = () => since.holds() && !ports.viewingVersion() && ports.source(path) === source &&
@@ -59,14 +60,15 @@ export function createVideoPlaces(ports: VideoPlacePorts, context: Context, load
     const metadata = picked ? await ctx.read(MEDIA_RECORDS_PATH) : undefined;
     assert(); ctx.assertLive(); unchanged();
     const record = picked ? parseMediaRecords(metadata).files[picked.path] : undefined;
-    let next = edit(source, record);
     const expectedSources = new Map<string, string | undefined>([[path, source]]);
+    const prefix = await readMediaPrefix(ctx, expectedSources); assert();
+    let next = edit(source, record, prefix);
     if (picked) expectedSources.set(MEDIA_RECORDS_PATH, metadata);
     const expectedAssets = new Map<string, string | undefined>();
     if (existing) expectedAssets.set(picked!.path, version);
     let plan;
     if (kind) {
-      const input = { pages: [path], sources: { [path]: next }, exists: (file: string) => ctx.paths.includes(file), kinds: [kind] };
+      const input = { prefix, pages: [path], sources: { [path]: next }, exists: (file: string) => ctx.paths.includes(file), kinds: [kind] };
       plan = mediaPlayerPlan(input);
       if (plan?.creates.length) {
         const files = await starterPlayerFiles(); assert(); ctx.assertLive(); unchanged();
@@ -81,8 +83,8 @@ export function createVideoPlaces(ports: VideoPlacePorts, context: Context, load
         records: { text: metadata }, files: plan?.creates,
         apply: (paths, _requests, records) => {
           const image = held.image(paths);
-          const page = background(source, node, { path: image.path, still: records.files[image.path]?.still ?? record?.still });
-          return mediaPlayerPlan({ pages: [path], sources: { [path]: page }, exists: () => true, kinds: ["background-video"] })?.edits.get(path) ?? page;
+          const page = background(source, node, { path: image.path, still: records.files[image.path]?.still ?? record?.still }, prefix);
+          return mediaPlayerPlan({ prefix, pages: [path], sources: { [path]: page }, exists: () => true, kinds: ["background-video"] })?.edits.get(path) ?? page;
         } });
       if (saved.note) ports.announce(saved.note);
       return;
@@ -102,7 +104,7 @@ export function createVideoPlaces(ports: VideoPlacePorts, context: Context, load
       onPick: async (video, cancelled, held) => {
         if (!isVideoPath(video.path) && !held?.chosen?.()) throw new Error("Choose a video file.");
         await change(target.path, target.node, source, "Background video set", "background-video",
-          (page, record) => background(page, target.node, { path: video.path, still: record?.still }), video, cancelled, held, since);
+          (page, record, prefix) => background(page, target.node, { path: video.path, still: record?.still }, prefix), video, cancelled, held, since);
       } });
   }
   return { toggleLooping, removeBackground, chooseBackground };

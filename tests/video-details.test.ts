@@ -98,3 +98,14 @@ test("the site's own full addresses count as its files; other sites' files stay 
   assert.equal(removeTrackInPage(tracked, "index.html", "media/a.vtt", site),
     '<video src="https://example.com/media/a.mp4"></video><video src="https://elsewhere.org/media/a.mp4"></video><audio><source src="https://example.com/media/a.mp4"></audio>');
 });
+
+test("prefixed players receive prefixed posters and tracks; either already-placed spelling counts", () => {
+  const source = '<video src="/my-site/media/a.mp4"></video>';
+  assert.equal(setPosterInPage(source, "index.html", "media/a.mp4", "media/a.webp", undefined, "/my-site"), '<video src="/my-site/media/a.mp4" poster="/my-site/media/a.webp"></video>');
+  assert.equal(addTrackInPage(source, "index.html", "media/a.mp4", "media/a.vtt", undefined, "/my-site"), '<video src="/my-site/media/a.mp4"><track kind="subtitles" src="/my-site/media/a.vtt" label="Subtitles"></video>');
+  for (const root of ["/my-site/", "/"]) {
+    const existing = `<video src="/my-site/media/a.mp4" poster="${root}media/a.webp"><track src="${root}media/a.vtt"></video>`;
+    assert.equal(setPosterInPage(existing, "index.html", "media/a.mp4", "media/a.webp", undefined, "/my-site"), existing);
+    assert.equal(addTrackInPage(existing, "index.html", "media/a.mp4", "media/a.vtt", undefined, "/my-site"), existing);
+  }
+});

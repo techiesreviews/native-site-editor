@@ -1,8 +1,13 @@
+import { startTags } from "../../shared/html-source";
+import { mediaAttribute } from "./media-attributes";
+import { decodeHtmlEntities } from "./html-entities";
+import { mediaResolvePath } from "./media-references";
+import { readMediaPrefix } from "./media-prefix";
 import type { MediaControllerPorts } from "../controllers/media-controller";
 import { MEDIA_RECORDS_PATH, type MediaTrim } from "../../shared/media-records";
 import { NOTHING_TO_TRIM } from "../../shared/agent-image-frame";
 import { locateNativeElementRange } from "../native-source-location";
-import { readPlaceFrame, writePlaceFrame, inlineStyle, type PlaceFocus, type PlaceFrameChange, type PlaceFrameProof } from "./place-frame";
+import { writePlaceFrame, inlineStyle, type PlaceFocus, type PlaceFrameChange, type PlaceFrameProof } from "./place-frame";
 import { readSiteMediaRecords } from "./media-collections";
 import { trimStart, isTrim, validTrim } from "./trimmed-copies";
 import { prepareTrimmedCopy } from "./trimmed-copy-prepare";
@@ -43,9 +48,12 @@ export async function trimPlace(
   current();
   if (ports.openFile() !== target.path) { await ports.restoreFile(target.path, proof.epoch); current(); }
   const ctx = await workspaceContext(); current(); ctx.assertLive();
+  const prefixSources = new Map<string, string | undefined>();
+  const prefix = await readMediaPrefix(ctx, prefixSources);
   const metadata = await ctx.read(MEDIA_RECORDS_PATH); current(); ctx.assertLive();
   const records = readSiteMediaRecords(metadata, ctx.items.map(item => item.path));
-  const file = readPlaceFrame(proof.expected, records, target.path).file;
+  const src = mediaAttribute(proof.expected, startTags(proof.expected)[0], "src");
+  const file = src && mediaResolvePath(decodeHtmlEntities(src.value, true), target.path, undefined, prefix);
   if (!file || !ctx.items.some(item => item.path === file)) throw new Error("Choose a picture already in Media.");
   const start = trimStart(records, file, ctx.paths);
   // A trimmed copy whose original is gone counts as the original (slice 40). A picture chosen in the
@@ -81,13 +89,13 @@ export async function trimPlace(
   const host = createMediaWorkspace(async () => ctx);
   let note = "";
   const path = await host.trim({ source, previous, trim: request.trim, result, sourceVersion,
-    place: { path: target.path, source: proof.source, records: { text: metadata }, stale,
+    place: { path: target.path, source: proof.source, records: { text: metadata }, expectedSources: prefixSources, stale,
       live: () => { check(); return !cancelled(); },
       apply: (path, records) => {
         check();
         const image: MediaImage = { path, width: main.width, height: main.height, alt: "",
           variants: result.outputs.flatMap(output => output.variantWidth ? [{ path: mediaCopyName(path, output.variantWidth), width: output.variantWidth }] : []) };
-        const { swap, note: swapNote } = mediaPlaceSwap(proof.source, target, proof.expected, image, measured, locate, framed);
+        const { swap, note: swapNote } = mediaPlaceSwap(proof.source, target, proof.expected, image, measured, locate, framed, prefix);
         note = swapNote;
         const after = swapPlaceImage(records, target.path, file, path, mediaExistingAlt(proof.expected), swap(undefined).page);
         // The original's record, like its pixels, stays unchanged; place marks carry to the copy.

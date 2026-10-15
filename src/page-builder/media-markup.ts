@@ -1,3 +1,4 @@
+import { siteAddress } from "../../shared/site-path-prefix";
 import { mediaFamilyOf, RESPONSIVE_COPY_WIDTHS } from "./media-families";
 import { startTags, type ElementRange } from "../../shared/html-source";
 import { readSource, tagAttribute } from "./source-tree";
@@ -22,15 +23,15 @@ export function mediaPlacement(measured?: Pick<MediaMeasured, "sizes" | "firstSc
   return { sizes: `${lazy ? "auto, " : ""}${measured?.sizes || "100vw"}`, lazy, priority: !lazy && priority };
 }
 export type MediaPlacement = ReturnType<typeof mediaPlacement>;
-export { mediaEscape, mediaUrl, mediaExistingAlt } from "./media-attributes";
-import { mediaEscape, mediaUrl } from "./media-attributes";
+export { mediaEscape, mediaExistingAlt } from "./media-attributes";
+import { mediaEscape } from "./media-attributes";
 
-export function mediaSrcset(image: MediaImage): string | undefined {
+export function mediaSrcset(image: MediaImage, prefix = ""): string | undefined {
   if (image.path.startsWith("media/originals/")) return undefined;
   const variants = new Map((image.variants ?? []).filter((variant) => !variant.path.startsWith("media/originals/") && variant.width > 0 && !!image.width && variant.width < image.width).map((variant) => [variant.width, variant.path]));
   if (!variants.size) return undefined;
   if (image.width) variants.set(image.width, image.path);
-  return [...variants].sort(([a], [b]) => a - b).map(([width, path]) => `${mediaUrl(path)} ${width}w`).join(", ");
+  return [...variants].sort(([a], [b]) => a - b).map(([width, path]) => `${siteAddress(path, prefix)} ${width}w`).join(", ");
 }
 
 /**
@@ -38,13 +39,13 @@ export function mediaSrcset(image: MediaImage): string | undefined {
  * `keepAlt` leaves an existing alt attribute exactly as written (the picker
  * kept the page's alt unchanged), so its source is not re-escaped.
  */
-export function mediaImageMarkup(image: MediaImage, existing = "<img>", placement = mediaPlacement(), keepAlt = false): string {
+export function mediaImageMarkup(image: MediaImage, existing = "<img>", placement = mediaPlacement(), keepAlt = false, prefix = ""): string {
   const tag = startTags(existing)[0];
   if (!tag || tag.name !== "img") throw new Error("Choose an image element to replace.");
   if (existing[tag.end - 1] !== ">") throw new Error("This image's opening tag is incomplete.");
-  const srcset = mediaSrcset(image);
+  const srcset = mediaSrcset(image, prefix);
   const attributes: Record<string, string | undefined> = {
-    src: mediaUrl(image.path), alt: image.alt, width: image.width ? String(image.width) : undefined,
+    src: siteAddress(image.path, prefix), alt: image.alt, width: image.width ? String(image.width) : undefined,
     height: image.height ? String(image.height) : undefined, loading: placement.lazy ? "lazy" : undefined, fetchpriority: placement.priority ? "high" : undefined, decoding: "async", srcset, sizes: srcset ? placement.sizes : undefined,
   };
   if (keepAlt && startTagAttribute(existing, tag, "alt")) delete attributes.alt;

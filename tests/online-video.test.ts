@@ -261,3 +261,14 @@ test("Keep original applies to the copied still like any added picture", async (
   assert.equal(kept, true);
   assert.equal(f.batches.length, 1); assert.ok(f.batches[0].uploads.some(upload => upload.path.startsWith("media/originals/")));
 });
+
+test("online still writers carry the prefix while Vimeo hash stays external", () => {
+  const video = { service: "vimeo" as const, id: "123456", hash: "abcdef0123" };
+  assert.equal(onlineVideoMarkup({ video, title: "Clip", still: { path: "media/a.webp" } }, "/my-site").markup,
+    '<a class="online-video" href="https://vimeo.com/123456/abcdef0123"><img src="/my-site/media/a.webp" alt="Clip"></a>');
+  for (const body of ['<img src="/media/old.webp" alt="Keep">', "Clip"]) {
+    const source = `<a class="online-video" href="https://vimeo.com/123456/abcdef0123">${body}</a>`;
+    assert.equal(swapOnlineVideoStillInPage(source, video, { path: "media/a.webp" }, "/my-site"),
+      `<a class="online-video" href="https://vimeo.com/123456/abcdef0123"><img src="/my-site/media/a.webp" alt="${body.startsWith("<img") ? "Keep" : ""}"></a>`);
+  }
+});

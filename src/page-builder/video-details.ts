@@ -2,7 +2,8 @@
 // "The site's own videos" and "Audio"): the pure rules behind File details' Still picture and
 // Subtitles, and the page rewrites that make a change apply everywhere the file is used.
 // Loaded only when one of them changes; nothing here is on the editor's boot path.
-import { mediaAttribute, mediaEscape, mediaUrl } from "./media-attributes";
+import { siteAddress } from "../../shared/site-path-prefix";
+import { mediaAttribute, mediaEscape } from "./media-attributes";
 import { decodeHtmlEntities } from "./html-entities";
 import { mediaResolvePath } from "./media-references";
 import type { MediaSite } from "./media-origins";
@@ -62,16 +63,16 @@ export function readSubtitles(name: string, text: string): { vtt: string } | { p
 }
 
 // `site` holds the site's own addresses, so `https://example.com/media/a.mp4` is the site's file too.
-const resolves = (source: string, element: SourceElement, page: string, file: string, site?: MediaSite) => {
+const resolves = (source: string, element: SourceElement, page: string, file: string, site: MediaSite | undefined, prefix: string) => {
   const src = mediaAttribute(source, element.tag, "src");
-  return Boolean(src && mediaResolvePath(decodeHtmlEntities(src.value, true), page, site) === file);
+  return Boolean(src && mediaResolvePath(decodeHtmlEntities(src.value, true), page, site, prefix) === file);
 };
 const childElements = (element: SourceElement) => element.children.filter((node): node is SourceElement => node.type === "element");
 
 /** The `<video>`/`<audio>` elements on `page` that play `media`: their own src or one of their `<source>`s. */
-export function mediaPlayers(source: string, page: string, media: string, site?: MediaSite): SourceElement[] {
+export function mediaPlayers(source: string, page: string, media: string, site?: MediaSite, prefix = ""): SourceElement[] {
   return [...descendants(parseSource(source))].filter(element => (element.name === "video" || element.name === "audio") &&
-    (resolves(source, element, page, media, site) || childElements(element).some(child => child.name === "source" && resolves(source, child, page, media, site))));
+    (resolves(source, element, page, media, site, prefix) || childElements(element).some(child => child.name === "source" && resolves(source, child, page, media, site, prefix))));
 }
 
 function apply(source: string, edits: { start: number; end: number; text: string }[]) {
@@ -81,11 +82,11 @@ function apply(source: string, edits: { start: number; end: number; text: string
 
 /** Every placed copy of `video` on `page` shows `still` before it plays: a looping one, a section's
  * background and a picture spot's video too. Other attributes stay byte for byte. */
-export function setPosterInPage(source: string, page: string, video: string, still: string, site?: MediaSite): string {
-  return apply(source, mediaPlayers(source, page, video, site).filter(element => element.name === "video").flatMap(element => {
+export function setPosterInPage(source: string, page: string, video: string, still: string, site?: MediaSite, prefix = ""): string {
+  return apply(source, mediaPlayers(source, page, video, site, prefix).filter(element => element.name === "video").flatMap(element => {
     const poster = mediaAttribute(source, element.tag, "poster");
-    if (poster && mediaResolvePath(decodeHtmlEntities(poster.value, true), page, site) === still) return [];
-    const text = ` poster="${mediaEscape(mediaUrl(still))}"`;
+    if (poster && mediaResolvePath(decodeHtmlEntities(poster.value, true), page, site, prefix) === still) return [];
+    const text = ` poster="${mediaEscape(siteAddress(still, prefix))}"`;
     if (poster) return [{ start: poster.start, end: poster.end, text }];
     // Beside src, where the editor writes it.
     const at = mediaAttribute(source, element.tag, "src")?.end ?? element.tag.nameEnd;
@@ -95,11 +96,11 @@ export function setPosterInPage(source: string, page: string, video: string, sti
 
 /** Every placed copy of `media` on `page` gets a subtitles track for `vtt` (in the page's language),
  * after its `<source>`s and other tracks; copies that already have it stay as they are. */
-export function addTrackInPage(source: string, page: string, media: string, vtt: string, site?: MediaSite): string {
-  const track = subtitleMarkup({ path: vtt }, pageMediaLanguage(source)).markup;
-  return apply(source, mediaPlayers(source, page, media, site).flatMap(element => {
+export function addTrackInPage(source: string, page: string, media: string, vtt: string, site?: MediaSite, prefix = ""): string {
+  const track = subtitleMarkup({ path: vtt }, pageMediaLanguage(source), prefix).markup;
+  return apply(source, mediaPlayers(source, page, media, site, prefix).flatMap(element => {
     const children = childElements(element);
-    if (children.some(child => child.name === "track" && resolves(source, child, page, vtt, site))) return [];
+    if (children.some(child => child.name === "track" && resolves(source, child, page, vtt, site, prefix))) return [];
     const last = children.filter(child => child.name === "source" || child.name === "track").at(-1);
     // A void start tag with no end tag (`<video src>` alone) gets nothing it could not hold.
     if (!element.close) return [];
@@ -109,8 +110,8 @@ export function addTrackInPage(source: string, page: string, media: string, vtt:
 }
 
 /** Every `<track>` on `page` that loads `vtt` is taken out, with its line when it had one of its own. */
-export function removeTrackInPage(source: string, page: string, vtt: string, site?: MediaSite): string {
-  return apply(source, [...descendants(parseSource(source))].filter(element => element.name === "track" && resolves(source, element, page, vtt, site)).map(element => {
+export function removeTrackInPage(source: string, page: string, vtt: string, site?: MediaSite, prefix = ""): string {
+  return apply(source, [...descendants(parseSource(source))].filter(element => element.name === "track" && resolves(source, element, page, vtt, site, prefix)).map(element => {
     let start = element.start, end = element.end;
     const before = source.slice(source.lastIndexOf("\n", start - 1) + 1, start), after = /^[ \t]*(?:\r?\n|$)/.exec(source.slice(end));
     if (!before.trim() && after && source.lastIndexOf("\n", start - 1) >= 0) {

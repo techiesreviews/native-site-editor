@@ -109,3 +109,10 @@ test("placing into a component's items slot proves the template it read; the new
   assert.match(batches[0].edits.get("index.html")!, /<card-list><p>One<\/p>\s*<audio src="\/media\/song.mp3" controls preload="none"><\/audio><\/card-list>/);
   assert.deepEqual(selected, [{ path: "index.html", node: [0, 0, 1] }]);
 });
+
+test("image insertion and player insertion write project-site addresses", () => {
+  const source = '<html><body><main></main></body></html>';
+  const image = insertedImagePage(source, { path: "index.html", parent: [0], index: 0 }, { path: "media/a.webp", alt: "A" }, records(), undefined, "/my-site");
+  assert.equal(image?.page, '<html><body><main>\n  <img loading="lazy" decoding="async" src="/my-site/media/a.webp" alt="A">\n</main></body></html>');
+  assert.equal(playerMediaMarkup("media/a.mp3", {}, "", "/my-site")?.markup, '<audio src="/my-site/media/a.mp3" controls preload="none"></audio>');
+});

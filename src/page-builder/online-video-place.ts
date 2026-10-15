@@ -1,3 +1,4 @@
+import { readMediaPrefix } from "./media-prefix";
 // Add → Media with a YouTube or Vimeo video (build slice 68): a pasted address, or an online video
 // already in Media, goes into a page at a place as the starter's Online video markup (slice 61) with the
 // site's player, as one Undo step. A new video's still is copied once (slice 67's addOnlineVideo); placing
@@ -49,6 +50,7 @@ export async function placeOnlineVideo(
   if (ports.openFile() !== path) { await ports.restoreFile(path, proof.epoch); assert(); }
   const ctx = await workspaceContext(isMediaLibraryPath); assert(); ctx.assertLive();
   const live = () => { assert(); ctx.assertLive(); };
+  const prefix = await readMediaPrefix(ctx, templates);
   const metadata = await ctx.read(MEDIA_RECORDS_PATH); live();
   const records = readSiteMediaRecords(metadata, ctx.items.map(item => item.path));
   let video: OnlineVideo | undefined;
@@ -73,7 +75,7 @@ export async function placeOnlineVideo(
   live();
   if (stillPath !== undefined && ctx.assetVersion(stillPath) !== stillVersion) throw new Error(`${stillPath} changed while the video was being placed. Try again.`);
   // The site's player, once: its files are created only when missing, and the page's head links it.
-  const input = { pages: [path], sources: { [path]: proof.source }, exists: (file: string) => ctx.paths.includes(file), kinds: ["online-video" as const] };
+  const input = { prefix, pages: [path], sources: { [path]: proof.source }, exists: (file: string) => ctx.paths.includes(file), kinds: ["online-video" as const] };
   let plan = mediaPlayerPlan(input);
   if (plan?.creates.length) {
     const { starterPlayerFiles } = await import("./starter-loader");
@@ -92,10 +94,10 @@ export async function placeOnlineVideo(
       const copied = at >= 0 ? requests[at]?.result?.outputs[0] : undefined;
       const still = copied && record?.still ? { path: record.still, width: copied.width, height: copied.height }
         : record?.still && record.still === existing?.path ? existing : undefined;
-      const { markup } = onlineVideoMarkup({ video, title: record?.title, still, serviceBar: record?.serviceBar });
+      const { markup } = onlineVideoMarkup({ video, title: record?.title, still, serviceBar: record?.serviceBar }, prefix);
       const page = insertAtPlace(proof.source, place, markup, items);
       if (page === undefined) throw new Error("A video cannot go in that spot of the page.");
-      return mediaPlayerPlan({ pages: [path], sources: { [path]: page }, exists: () => true, kinds: ["online-video"] })?.edits.get(path) ?? page;
+      return mediaPlayerPlan({ prefix, pages: [path], sources: { [path]: page }, exists: () => true, kinds: ["online-video"] })?.edits.get(path) ?? page;
     },
   };
   if (again) {

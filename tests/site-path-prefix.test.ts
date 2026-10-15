@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { sitePathPrefix, siteAddress, withSitePrefix, sitePathOf, siteRouteOf } from "../shared/site-path-prefix.ts";
-import { mediaUrl } from "../src/page-builder/media-attributes.ts";
+const mediaUrl = (path: string) => `/${path.split("/").map(encodeURIComponent).join("/")}`;
 
 const paths = ["", "media/images/x.webp", "hello world.txt", "日本語/été.webp", "a#b/c?d", "100%.pdf", "a/%20/# ?%.webp", "my-site/x.webp"];
 

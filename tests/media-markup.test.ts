@@ -61,7 +61,7 @@ test("a component template's own fallback keeps a plain address; slot images on 
   const ports: Parameters<typeof prepareMediaPath>[0] = { measureImage: async () => { measured++; return undefined; } };
   const template = '<article><slot name="image"><img src="/images/placeholder.svg" alt=""></slot></article>';
   const edit = (url: string) => template.replace(/src="[^"]*"/, `src="${url}"`);
-  const fallback = await prepareMediaPath(ports, { path: "components/media-card/media-card.html", source: template, edit }, picked);
+  const fallback = await prepareMediaPath(ports, { path: "components/media-card/media-card.html", source: template, edit }, picked, "");
   assert.equal(fallback(picked), '<article><slot name="image"><img src="/media/images/desk.webp" alt=""></slot></article>');
   assert.equal(measured, 0);
 });
@@ -102,4 +102,19 @@ test("picture cleanup leaves an image's own slot and refuses a non-picture paren
   assert.equal(mediaPictureUnwrap(source, tree.range(img)!, tree.range(picture))?.slot, undefined);
   assert.equal(mediaPictureUnwrap(source, tree.range(tree.at([1, 0])!)!, tree.range(tree.at([1])!)), undefined);
   assert.equal(mediaPictureUnwrap(source, tree.range(img)!, undefined), undefined);
+});
+
+test("image and responsive copies write the project-site prefix exactly", () => {
+  const small = { path: "media/a b.webp", width: 800, height: 400, alt: "A", variants: [{ path: "media/a b-480.webp", width: 480 }] };
+  assert.equal(mediaSrcset(small, "/my-site"), "/my-site/media/a%20b-480.webp 480w, /my-site/media/a%20b.webp 800w");
+  assert.equal(mediaImageMarkup(small, undefined, undefined, false, "/my-site"), '<img src="/my-site/media/a%20b.webp" alt="A" width="800" height="400" loading="lazy" decoding="async" srcset="/my-site/media/a%20b-480.webp 480w, /my-site/media/a%20b.webp 800w" sizes="auto, 100vw">');
+});
+
+test("component address placement writes the project prefix", async () => {
+  const { prepareMediaPath } = await import("../src/page-builder/media-page-markup");
+  const image = { path: "media/a.webp", alt: "A" };
+  for (const path of ["components/card.html"]) {
+    const transform = await prepareMediaPath({}, { path, source: "", edit: url => `<img src="${url}" alt="A">` }, image, "/my-site");
+    assert.equal(transform(image), '<img src="/my-site/media/a.webp" alt="A">');
+  }
 });

@@ -131,3 +131,10 @@ test("template HTML uses each page address, paired CSS uses its own address", ()
   for (const path of paths.slice(0, 6)) assert.deepEqual(usage[path].pages, [path.startsWith("nested/") ? "nested/index.html" : "index.html"]);
   assert.deepEqual(usage["components/images/d.png"].pages, ["index.html", "nested/index.html"]);
 });
+
+test("rename recognises both root spellings and writes a prefixed new address with suffixes", () => {
+  const source = '<img src="/my-site/media/a.png?x=1&amp;y=2#photo"><img srcset="/media/a.png 1x, /my-site/media/a.png 2x">';
+  assert.equal(rewriteMediaReferences("index.html", source, "media/a.png", "media/new photo.png", "/my-site"),
+    '<img src="/my-site/media/new%20photo.png?x=1&amp;y=2#photo"><img srcset="/my-site/media/new%20photo.png 1x, /my-site/media/new%20photo.png 2x">');
+  assert.equal(rewriteMediaReferences("styles/site.css", '.hero{background:url(/my-site/media/a.png)}', "media/a.png", "media/b.png", "/my-site"), '.hero{background:url(/my-site/media/b.png)}');
+});

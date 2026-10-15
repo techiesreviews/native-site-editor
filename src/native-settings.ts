@@ -9,7 +9,7 @@ import { NATIVE_CONFIG_PATH, nativeSiteSettings, type NativeSite } from "../shar
 import type { Reads, Outcome, PlanResult, Stamp, GuardedEdits } from "./guarded-edit";
 import type { AppStore } from "./app-store";
 import { socialImageAddress, socialImagePath, SOCIAL_IMAGE_NOTE } from "./page-builder/social-image";
-import { mediaUrl } from "./page-builder/media-attributes";
+import { siteAddress, sitePathPrefix, withSitePrefix, sitePathOf } from "../shared/site-path-prefix";
 import { MEDIA_RECORDS_PATH, parseMediaRecords, type MediaRecords, type MediaTrim } from "../shared/media-records";
 import type { SocialSharingRequest } from "./page-builder/social-sharing";
 import type { UrlPlan } from "./components/url-change";
@@ -81,6 +81,7 @@ export function createNativeSettings(ports: SettingsPorts) {
       return result;
     };
     return createSiteSettings({
+      prefix: () => sitePathPrefix(nativeSiteSettings(ports.nativeEffectiveSource(NATIVE_CONFIG_PATH)).url),
       socialNote: () => socialImageAddress(nativeSiteSettings(ports.nativeEffectiveSource(NATIVE_CONFIG_PATH)).url, "").missingAddress ? SOCIAL_IMAGE_NOTE : undefined,
       async applyPage(path, fields, socialTrim) {
         const source = ports.guardedEdits.peek.source(path);
@@ -169,7 +170,7 @@ export function createNativeSettings(ports: SettingsPorts) {
           let source = nativePageTemplate(template, "Page not found");
           source = withPageField(source, "description", "There is nothing at this address. Try the home page.");
           source = upsertHeadTag(source, "robots", "noindex");
-          source = source.replace(/(<main\b[^>]*>)[\s\S]*?(<\/main>)/i, '$1\n    <section>\n      <h1>Page not found</h1>\n      <p>There is nothing at this address. <a href="/">Go to the home page</a>.</p>\n    </section>\n  $2');
+          source = source.replace(/(<main\b[^>]*>)[\s\S]*?(<\/main>)/i, `$1\n    <section>\n      <h1>Page not found</h1>\n      <p>There is nothing at this address. <a href="${withSitePrefix("/", sitePathPrefix(nativeSiteSettings(r.source(NATIVE_CONFIG_PATH)).url))}">Go to the home page</a>.</p>\n    </section>\n  $2`);
           return { creates: [{ path: "404.html", content: source }], open: "404.html", done: "Created the 404 page as a draft.", undone: "Undid creating the 404 page." };
         }, { since }));
       },
@@ -198,30 +199,31 @@ export function createNativeSettings(ports: SettingsPorts) {
         try { site = config.url ? new URL(config.url).host : ""; } catch { /* No usable address. */ }
         // A sharing copy re-opens on the picture it was made from, with its frame.
         const record = records?.files[path];
-        if (!record?.sharing) return { file: path, value: mediaUrl(path), site };
+        if (!record?.sharing) return { file: path, value: siteAddress(path, sitePathPrefix(config.url)), site };
         const from = record.trimmedFrom;
-        return from && /\.(?:jpe?g|png|webp|avif|bmp|gif)$/i.test(from.source) ? { file: from.source, value: mediaUrl(from.source), trim: from.trim, site } : undefined;
+        return from && /\.(?:jpe?g|png|webp|avif|bmp|gif)$/i.test(from.source) ? { file: from.source, value: siteAddress(from.source, sitePathPrefix(config.url)), trim: from.trim, site } : undefined;
       },
       async imageUrl(value) {
         if (stale() || !value.trim()) return undefined;
         // An absolute URL is previewed only when it is this site's own address (its canonical
         // origin), from the repository file at that path; the editor never loads other sites' images.
         const page = ports.appStore.openFile.value ?? "index.html";
+        const siteUrl = nativeSiteSettings(ports.nativeEffectiveSource(NATIVE_CONFIG_PATH)).url;
         let own: string | undefined;
         if (/^https?:\/\//i.test(value)) {
           let url: URL, origin: string | undefined;
           // Another site's image is not loaded: the preview says it is unavailable (the dialog shows that for a refusal).
           const unavailable = () => { throw new Error("Images from other sites are not previewed."); };
           try { url = new URL(value.trim()); origin = new URL(readHeadSettings(ports.nativeEffectiveSource(page) ?? "").canonical || "x:").origin; } catch { return unavailable(); }
-          const siteAddress = nativeSiteSettings(ports.nativeEffectiveSource(NATIVE_CONFIG_PATH)).url;
           let siteOrigin: string | undefined;
-          try { siteOrigin = siteAddress ? new URL(siteAddress).origin : undefined; } catch { /* No usable publishing address. */ }
+          try { siteOrigin = siteUrl ? new URL(siteUrl).origin : undefined; } catch { /* No usable publishing address. */ }
           if (url.origin !== origin && url.origin !== siteOrigin) return unavailable();
-          try { own = decodeURIComponent(url.pathname).replace(/^\//, ""); } catch { return unavailable(); }
+          // On the site's host but outside its folder is another site's image too.
+          own = sitePathOf(url.href, { url: siteUrl, origins: [origin ?? ""] }) ?? unavailable();
         }
-        const path = own ?? socialImagePath(value, page);
+        const path = own ?? socialImagePath(value, page, siteUrl);
         if (!path || !isImagePath(path)) return undefined;
-        await ports.loadNativeAssets({ "index.html": `<img src="/${escapeText(path).replace(/"/g, "&quot;")}">` }, () => {});
+        await ports.loadNativeAssets({ "index.html": `<img src="${escapeText(siteAddress(path, sitePathPrefix(siteUrl))).replace(/"/g, "&quot;")}">` }, () => {});
         return stale() || sourcesChanged() ? undefined : ports.nativeAssets.get(path);
       },
     }, siteLinkPreferences);

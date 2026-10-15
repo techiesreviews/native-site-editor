@@ -1,7 +1,7 @@
+import { siteAddress, sitePathPrefix, sitePathOf } from "../../shared/site-path-prefix";
 import type { MediaRecords } from "../../shared/media-records";
 export { SOCIAL_IMAGE_SIZE, socialImageTrim, socialImageSize } from "./social-geometry";
 import { mediaResolvePath } from "./media-references";
-import { mediaUrl } from "./media-markup";
 import type { MediaOptimiseOptions } from "./media-optimise";
 import { trimmedCopyPath } from "./trimmed-copies";
 import { gifIsAnimated, pngIsAnimated, webpIsAnimated } from "./media-image-bytes";
@@ -22,8 +22,8 @@ function webAddress(value?: string): URL | undefined {
 }
 
 export function socialImageAddress(siteUrl: string | undefined, path: string) {
-  const url = webAddress(siteUrl), root = mediaUrl(path);
-  return url ? { address: url.origin + url.pathname.replace(/\/+$/, "") + root, missingAddress: false } :
+  const url = webAddress(siteUrl), root = siteAddress(path, sitePathPrefix(siteUrl));
+  return url ? { address: url.origin + root, missingAddress: false } :
     { address: root, missingAddress: true, note: SOCIAL_IMAGE_NOTE };
 }
 
@@ -33,10 +33,10 @@ export function socialImagePath(value: string, page: string, siteUrl?: string, c
   if (/^https?:\/\//i.test(input)) {
     const url = webAddress(input), own = [webAddress(siteUrl), webAddress(canonical)].filter(url => url !== undefined);
     if (!url || !own.some(address => address.origin === url.origin)) return undefined;
-    try { return decodeURIComponent(url.pathname).replace(/^\//, ""); } catch { return undefined; }
+    return sitePathOf(input, { url: siteUrl, origins: canonical ? [canonical] : [] });
   }
   if (!input || /^(?:[a-z][a-z\d+.-]*:|\/\/)/i.test(input)) return undefined;
-  return mediaResolvePath(input, page);
+  return mediaResolvePath(input, page, undefined, sitePathPrefix(siteUrl));
 }
 
 export function socialImageSource(options: { value: string; page: string; siteUrl?: string; canonical?: string; paths: Iterable<string>; records: MediaRecords; bytes?: Uint8Array }) {

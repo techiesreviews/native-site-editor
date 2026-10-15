@@ -16,8 +16,8 @@ export { GITHUB_INSTALL_MEDIA, GITHUB_SCREENSHOTS, VIDEO_REPLACES_SCREENSHOT };
 
 const urls = import.meta.glob("./*.{mp4,webm,jpg,png,webp,vtt}", { eager: true, query: "?url", import: "default" }) as Record<string, string>;
 
-/** The address of one of the media files, when it is in this folder. */
-export const mediaUrl = (file: string): string | undefined => urls[`./${file}`];
+/** A Vite-built editor asset, independent of the edited site and its path prefix. */
+export const onboardingAssetUrl = (file: string): string | undefined => urls[`./${file}`];
 
 export interface InstallMedia {
   sources: { src: string; type: string }[];
@@ -28,14 +28,14 @@ export interface InstallMedia {
 /** The recording, or nothing while it has not been added. */
 export function installMedia(): InstallMedia | undefined {
   const sources = GITHUB_INSTALL_MEDIA.video.flatMap((video) => {
-    const src = mediaUrl(video.file);
+    const src = onboardingAssetUrl(video.file);
     return src ? [{ src, type: video.type }] : [];
   });
   if (!sources.length) return undefined;
-  const captions = mediaUrl(GITHUB_INSTALL_MEDIA.captions.file);
+  const captions = onboardingAssetUrl(GITHUB_INSTALL_MEDIA.captions.file);
   return {
     sources,
-    poster: mediaUrl(GITHUB_INSTALL_MEDIA.poster),
+    poster: onboardingAssetUrl(GITHUB_INSTALL_MEDIA.poster),
     ...(captions ? { captions: { src: captions, label: GITHUB_INSTALL_MEDIA.captions.label, lang: GITHUB_INSTALL_MEDIA.captions.lang } } : {}),
   };
 }

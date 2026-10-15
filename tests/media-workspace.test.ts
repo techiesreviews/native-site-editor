@@ -1225,3 +1225,23 @@ test("replace without site address reports sharing note and refuses a config cha
     }
   }
 });
+
+test("optimise import rewrites both root spellings using config from the batch reader", async () => {
+  const f = fixture(), config = JSON.stringify({ site: { url: "https://user.github.io/my-site/" } });
+  f.text.set(".editor/config.json", config); f.paths.add(".editor/config.json");
+  f.text.set("index.html", '<img src="/my-site/images/a.png"><img src="/images/a.png">');
+  await f.host.load();
+  await f.host.import([{ file: new File(["new"], "a.webp"), folder: "media/images", replaceFrom: "images/a.png", expectedAssetVersion: "a-v1" }]);
+  assert.equal(f.text.get("index.html"), '<img src="/my-site/media/images/a.webp"><img src="/my-site/media/images/a.webp">');
+  assert.equal(f.batches[0].expectedSources.get(".editor/config.json"), config);
+});
+
+test("a changed site address refuses an optimise rewrite before committing files", async () => {
+  const f = fixture();
+  f.text.set(".editor/config.json", JSON.stringify({ site: { url: "https://user.github.io/my-site/" } })); f.paths.add(".editor/config.json");
+  await f.host.load();
+  f.afterStage(() => f.text.set(".editor/config.json", JSON.stringify({ site: { url: "https://user.github.io/other/" } })));
+  await assert.rejects(f.host.import([{ file: new File(["new"], "a.webp"), folder: "media/images", replaceFrom: "images/a.png", expectedAssetVersion: "a-v1" }]), /config.json changed/);
+  assert.equal(f.bytes.has("media/images/a.webp"), false);
+  assert.equal(f.text.get("index.html"), '<head></head><body><img src="/images/a.png" alt="Keep this alt"></body>');
+});

@@ -1,3 +1,4 @@
+import { sitePathPrefix } from "../../shared/site-path-prefix";
 import { mediaFamilyOf, renamedFamily, familyMembers } from "../page-builder/media-families";
 import { isRenamableMedia, mediaFileName, suggestMediaName } from "../page-builder/media-names";
 import type { GuardedEdits, Reads, PlanResult } from "../guarded-edit";
@@ -10,7 +11,7 @@ import type { FileChange, MovableFile } from "../file-changes";
 import { copyPath, filesLinkingTo, linkNote, movedPath, protectedPathProblem, type FileOperation } from "../native-files";
 import { editNativeRedirects, groupRouteChanges, isRouteWithin, rewriteRouteLinks, type RouteChange } from "../native-page-moves";
 import { nativePageRoute } from "../../shared/native-routes";
-import { NATIVE_HOME_PAGE, NATIVE_REDIRECTS_PATH, resolveNativeProject } from "../../shared/native-project";
+import { NATIVE_CONFIG_PATH, nativeSiteSettings, NATIVE_HOME_PAGE, NATIVE_REDIRECTS_PATH, resolveNativeProject } from "../../shared/native-project";
 
 export interface FileOperationsTreeState {
   changes: Map<string, FileChange>;
@@ -301,7 +302,7 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
     if (!assetMoves(moves).length) return { edits: base };
     const snap = nativeAssetSnapshot("moved", r);
     if ("error" in snap) return snap;
-    try { return { edits: planAssetReferenceRewrites(snap.sources, moves, base) }; }
+    try { return { edits: planAssetReferenceRewrites(snap.sources, moves, base, sitePathPrefix(nativeSiteSettings(r.source(NATIVE_CONFIG_PATH)).url)) }; }
     catch (error) { return { error: error instanceof Error ? error.message : "The files that use this could not be updated, so nothing was moved." }; }
   }
 

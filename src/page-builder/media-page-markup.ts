@@ -1,7 +1,10 @@
+import { readMediaPrefix } from "./media-prefix";
+import { NATIVE_CONFIG_PATH } from "../../shared/native-project";
+import { siteAddress } from "../../shared/site-path-prefix";
 import { MEDIA_RECORDS_PATH } from "../../shared/media-records";
 import { startTags } from "../../shared/html-source";
 import { locateNativeElementRange, readPage } from "../native-source-location";
-import { mediaAttributes, mediaImageMarkup, mediaPlacement, mediaPriority, mediaUrl, type MediaImage, type MediaMeasured } from "./media-markup";
+import { mediaAttributes, mediaImageMarkup, mediaPlacement, mediaPriority, type MediaImage, type MediaMeasured } from "./media-markup";
 import { mediaAttribute } from "./media-attributes";
 import { decodeHtmlEntities } from "./html-entities";
 import type { MediaControllerPorts } from "../controllers/media-controller";
@@ -41,17 +44,17 @@ export function mediaPageEdits(source: string, measured: MediaMeasured | undefin
 }
 
 /** Slot pickers write page <img> elements; attribute-only fields keep their own address contract. */
-export async function prepareMediaPath(ports: Pick<MediaControllerPorts, "measureImage">, place: MediaPathPlacement, image: MediaImage) {
-  const proposed = place.edit(mediaUrl(image.path));
+export async function prepareMediaPath(ports: Pick<MediaControllerPorts, "measureImage">, place: MediaPathPlacement, image: MediaImage, prefix: string) {
+  const proposed = place.edit(siteAddress(image.path, prefix));
   // Component templates own their fallback, never an ordinary page place.
-  if (/^components\//.test(place.path)) return (picked: MediaImage) => place.edit(mediaUrl(picked.path));
+  if (/^components\//.test(place.path)) return (picked: MediaImage) => place.edit(siteAddress(picked.path, prefix));
   const tree = readPage(proposed), previous = readPage(place.source);
-  const target = tree.elements().find(element => tree.view.name(element) === "img" && tree.attribute(element, "src")?.value === mediaUrl(image.path)
+  const target = tree.elements().find(element => tree.view.name(element) === "img" && tree.attribute(element, "src")?.value === siteAddress(image.path, prefix)
     && (() => {
       const old = previous.at(tree.path(element)), before = old && previous.range(old), after = tree.range(element);
       return after && (!before || place.source.slice(before.tag.start, before.tag.end) !== proposed.slice(after.tag.start, after.tag.end));
     })());
-  if (!target) return (picked: MediaImage) => place.edit(mediaUrl(picked.path));
+  if (!target) return (picked: MediaImage) => place.edit(siteAddress(picked.path, prefix));
   const node = tree.path(target);
   // A slot filled for the first time has no page image yet: measure the instance's fallback in that slot.
   const slot = tree.attribute(target, "slot")?.value, old = previous.at(node), instance = place.node;
@@ -63,10 +66,10 @@ export async function prepareMediaPath(ports: Pick<MediaControllerPorts, "measur
   if (measured && fresh) measured = { ...measured, images: measured.images.map(item => item.node.length > instance.length && instance.every((step, i) => item.node[i] === step) && item.node[instance.length] >= node[instance.length]
     ? { ...item, node: [...instance, item.node[instance.length] + 1, ...item.node.slice(instance.length + 1)] } : item) };
   return (picked: MediaImage) => {
-    const page = place.edit(mediaUrl(picked.path)), range = locateNativeElementRange(page, node);
+    const page = place.edit(siteAddress(picked.path, prefix)), range = locateNativeElementRange(page, node);
     if (!range || range.tag.name !== "img") throw new Error(place.stale ?? "The image place changed.");
     const { edits, placement } = mediaPageEdits(page, measured, node);
-    edits.push({ start: range.tag.start, end: range.tag.end, text: mediaImageMarkup(picked, page.slice(range.tag.start, range.tag.end), placement, true) });
+    edits.push({ start: range.tag.start, end: range.tag.end, text: mediaImageMarkup(picked, page.slice(range.tag.start, range.tag.end), placement, true, prefix) });
     let result = page;
     for (const edit of edits.sort((a, b) => b.start - a.start)) result = result.slice(0, edit.start) + edit.text + result.slice(edit.end);
     return result;
@@ -77,10 +80,12 @@ export async function prepareMediaPath(ports: Pick<MediaControllerPorts, "measur
 export async function placeMediaPath(
   ports: MediaControllerPorts, stamp: Stamp, placement: MediaPathPlacement | undefined,
   image: MediaImage, cancelled: () => boolean, held: MediaHeldFiles | undefined,
-  resolve: (value: string | undefined) => void, workspaceContext: () => Promise<MediaWorkspaceContext>,
+  resolve: (value: string | undefined) => void, workspaceContext: () => Promise<MediaWorkspaceContext>, prefix = "",
 ) {
   if (!stamp.holds()) throw new Error("The repository changed. Choose an image again.");
   if (cancelled()) { resolve(undefined); return; }
+  const prefixSources = new Map<string, string | undefined>();
+  prefixSources.set(NATIVE_CONFIG_PATH, ports.source(NATIVE_CONFIG_PATH));
   let ctx: MediaWorkspaceContext | undefined, metadata: string | undefined;
   let copies: Awaited<ReturnType<typeof import("./media-older-copies")["makeOlderCopies"]>>;
   let expectedPaths: string[] | undefined;
@@ -89,6 +94,8 @@ export async function placeMediaPath(
     ctx = await workspaceContext();
     expectedPaths = [...ctx.paths];
     version = ctx.assetVersion(image.path);
+    prefixSources.clear();
+    prefix = await readMediaPrefix(ctx, prefixSources);
     const [older, records] = await Promise.all([import("./media-older-copies"), import("../../shared/media-records")]);
     ctx.assertLive();
     metadata = await ctx.read(records.MEDIA_RECORDS_PATH);
@@ -111,7 +118,7 @@ export async function placeMediaPath(
       const message = placement.stale ?? "The image place changed.";
       ports.announce(message); throw new Error(message);
     }
-    transform = await prepareMediaPath(ports, placement, image);
+    transform = await prepareMediaPath(ports, placement, image, prefix);
     if (!stamp.holds() || ports.source(placement.path) !== placement.source) {
       const message = placement.stale ?? "The image place changed.";
       ports.announce(message); throw new Error(message);
@@ -128,25 +135,26 @@ export async function placeMediaPath(
       const page = transform(image);
       if (ctx && copies?.uploads.length) {
         await ctx.applyBatch({ label: "Image replaced", expectedPaths: expectedPaths!,
-          expectedSources: new Map([[placement.path, placement.source], [MEDIA_RECORDS_PATH, metadata]]),
+          expectedSources: new Map([...prefixSources, [placement.path, placement.source], [MEDIA_RECORDS_PATH, metadata]]),
           expectedAssets: new Map([[image.path, version]]), live: () => !cancelled() && stamp.holds(),
           edits: new Map([[placement.path, page]]), uploads: copies.uploads, moves: [], deletes: [], restores: [] });
-      } else if (!ports.change(placement.path, placement.source, [{ start: 0, end: placement.source.length, text: page }], placement.node ?? [], "Image replaced")) throw new Error("The image could not be replaced.");
+      } else if ([...prefixSources].some(([path, source]) => ports.source(path) !== source) || !ports.change(placement.path, placement.source, [{ start: 0, end: placement.source.length, text: page }], placement.node ?? [], "Image replaced")) throw new Error("The image could not be replaced.");
       if (copyNote) ports.announce(`Image replaced.${copyNote}`);
       placement.placed = true;
     }
-    resolve(mediaUrl(image.path)); return;
+    resolve(siteAddress(image.path, prefix)); return;
   }
   // Files added in the picker are saved with the value's placement: one Undo step.
   const saved = await held.save(placement && { path: placement.path, source: placement.source, stale: placement.stale,
-    live: () => !cancelled() && stamp.holds(),
+    live: () => !cancelled() && stamp.holds(), expectedSources: prefixSources,
     ...copies?.uploads.length ? { uploads: copies.uploads, expectedPaths, expectedAssets: new Map([[image.path, version]]), records: { text: metadata } } : {},
     apply: paths => {
       const picked = held.image(paths);
       return transform!(copies?.uploads.length ? { ...picked, variants: copies.variants } : picked);
     } });
+  if (!placement && [...prefixSources].some(([path, source]) => ports.source(path) !== source)) throw new Error("The site address changed. Choose the image again.");
   if (placement && saved.placed) placement.placed = true;
   if (saved.note || copyNote) ports.announce(`${copyNote ? "Image replaced." + copyNote : ""}${saved.note}`.trim());
   // Cancelled while saving: the files are added, the value keeps what it had.
-  resolve(cancelled() && !saved.placed ? undefined : mediaUrl(held.image(saved.paths).path));
+  resolve(cancelled() && !saved.placed ? undefined : siteAddress(held.image(saved.paths).path, prefix));
 }

@@ -1,3 +1,5 @@
+import { readMediaPrefix } from "./media-prefix";
+import { sitePathPrefix } from "../../shared/site-path-prefix";
 // On-demand only: never import from boot.
 import { MEDIA_RECORDS_PATH, parseMediaRecords, serializeMediaRecords, type OnlineVideoRecord } from "../../shared/media-records";
 import { improveImagesPlan } from "./improve-images";
@@ -51,10 +53,12 @@ export async function prepareImproveGifsAndPlayers(ctx: MediaWorkspaceContext, r
   const paths = [...ctx.paths];
   const batch: MediaWorkspaceBatch = { label: "", expectedPaths: paths, expectedSources: new Map(), expectedAssets: new Map(),
     edits: new Map(), moves: [], deletes: [], restores: [], uploads: [], live: holds };
+  await readMediaPrefix(ctx, batch.expectedSources); guard();
   const sources: Record<string, string | undefined> = {};
   for (const file of new Set([...paths.filter(isMediaTextFile), MEDIA_RECORDS_PATH])) {
     const text = await ctx.read(file); guard();
     if (paths.includes(file) && text === undefined) throw new Error(`Could not read ${file}; image usage is incomplete. Refresh and try again.`);
+    if (batch.expectedSources.has(file) && batch.expectedSources.get(file) !== text) throw new Error(`${file} changed while preparing image changes. Try again.`);
     sources[file] = text; batch.expectedSources.set(file, text);
   }
   const converted = new Map<string, ConvertedGif>(), videos = new Map<string, PreparedOnlineVideo>();
@@ -132,7 +136,7 @@ export async function prepareImproveGifsAndPlayers(ctx: MediaWorkspaceContext, r
         }
         const spot = node.parent?.name === "picture" ? node.parent : node;
         const written = gifLoopingVideo(source, { tag: spot.tag, start: spot.start, end: spot.end, close: spot.close },
-          { path: video.video, still: video.still, width: video.width, height: video.height }, { linked: picture.link !== undefined });
+          { path: video.video, still: video.still, width: video.width, height: video.height }, { linked: picture.link !== undefined }, sitePathPrefix(request.siteUrl));
         edits.push({ start: spot.start, end: spot.end, text: written.markup });
         result.converted.push({ key: picture.key, path: video.video }); kinds.add("looping-video");
       } else if (picture.changes.includes("first-frame") && row.kind === "page") {
@@ -182,7 +186,7 @@ export async function prepareImproveGifsAndPlayers(ctx: MediaWorkspaceContext, r
         records = upsertOnlineVideo(records, stored);
         // Slice 67's saved "Show Vimeo's own bar" choice follows every placement.
         const written = onlineVideoMarkup({ video, title: record.title || attribute("title"), serviceBar: record.serviceBar,
-          still: record.still ? { path: record.still, width: width ?? files[record.still]?.width, height: height ?? files[record.still]?.height } : undefined });
+          still: record.still ? { path: record.still, width: width ?? files[record.still]?.width, height: height ?? files[record.still]?.height } : undefined }, sitePathPrefix(request.siteUrl));
         written.notes.forEach(note);
         let markup = written.markup;
         const classes = attribute("class");
@@ -203,7 +207,7 @@ export async function prepareImproveGifsAndPlayers(ctx: MediaWorkspaceContext, r
   for (const edit of edits.sort((a, b) => b.start - a.start)) rewritten = rewritten.slice(0, edit.start) + edit.text + rewritten.slice(edit.end);
   if (rewritten !== source) batch.edits.set(row.file, rewritten);
   if (kinds.size) {
-    const input = { pages: row.pages, sources: Object.fromEntries(Object.entries(sources).filter((entry): entry is [string, string] => entry[1] !== undefined)),
+    const input = { prefix: sitePathPrefix(request.siteUrl), pages: row.pages, sources: Object.fromEntries(Object.entries(sources).filter((entry): entry is [string, string] => entry[1] !== undefined)),
       exists: (path: string) => reserved.has(path), kinds: [...kinds] };
     input.sources[row.file] = rewritten;
     let player = mediaPlayerPlan(input);

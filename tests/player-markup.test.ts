@@ -12,7 +12,7 @@ const both = { stylesheet: true, script: true };
 const page = (lines = '<link rel="stylesheet" href="/styles/site.css">') => `<html lang="en">\n<head>\n  ${lines}\n</head>\n<body></body>\n</html>\n`;
 const files = { "styles/media-player.css": "style bytes\n", "scripts/media-player.js": "player bytes\n", "scripts/media-online.js": "online bytes\n" };
 function input(overrides: Partial<MediaPlayerInput> = {}): MediaPlayerInput {
-  return { pages: ["index.html"], sources: { "index.html": page() }, exists: () => false, kinds: ["video"], ...overrides };
+  return { prefix: "", pages: ["index.html"], sources: { "index.html": page() }, exists: () => false, kinds: ["video"], ...overrides };
 }
 
 test("video exact markup, optional still, dimensions and name", () => {
@@ -227,4 +227,22 @@ test("any missing starter player asset rejects with a plain error", async () => 
     const fetcher: typeof fetch = async request => String(request).endsWith(`${path}.asset`) ? new Response("missing", { status: 404 }) : new Response("bytes");
     await assert.rejects(starterPlayerFiles(fetcher), new RegExp(`The vendored media player file ${path} could not be read`));
   }
+});
+
+test("video, audio, subtitle and download addresses all carry the project prefix", () => {
+  assert.equal(videoMarkup({ path: "media/a.mp4", still: "media/a.webp", subtitles: { path: "media/a.vtt", label: "Words" } }, undefined, "/my-site").markup,
+    '<video src="/my-site/media/a.mp4" poster="/my-site/media/a.webp" controls preload="none" playsinline><track kind="subtitles" src="/my-site/media/a.vtt" label="Words"></video>');
+  assert.equal(audioMarkup({ path: "media/a.mp3" }, undefined, "/my-site").markup, '<audio src="/my-site/media/a.mp3" controls preload="none"></audio>');
+  assert.equal(downloadCardMarkup({ path: "media/a.pdf", preview: { path: "media/a.webp" } }, "/my-site").markup,
+    '<a class="download-card" href="/my-site/media/a.pdf"><img src="/my-site/media/a.webp" alt="" loading="lazy" decoding="async"><span class="download-card-name">a</span><span class="download-card-meta">PDF</span><span class="download-card-action">Open</span></a>');
+});
+
+test("player installation writes prefixed links and recognises either existing spelling", () => {
+  const installed = '<head>\n<link rel="stylesheet" href="/my-site/styles/media-player.css">\n<script type="module" src="/my-site/scripts/media-player.js"></script>\n</head>';
+  assert.equal(addMediaPlayerLinks("<head></head>", "index.html", both, "/my-site"), installed);
+  for (const source of [installed, installed.replaceAll("/my-site/", "/")]) {
+    assert.deepEqual(pageMediaPlayer(source, "index.html", "/my-site"), both);
+    assert.equal(addMediaPlayerLinks(source, "index.html", both, "/my-site"), source);
+  }
+  assert.equal(mediaPlayerPlan(input({ prefix: "/my-site", sources: { "index.html": "<head></head>" }, files }))?.edits.get("index.html"), installed);
 });

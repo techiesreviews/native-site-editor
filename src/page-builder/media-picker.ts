@@ -21,6 +21,7 @@ export interface MediaOnlineVideo {
 }
 export interface MediaLibraryItem { path: string; size?: number; date?: number; draft?: boolean; version?: string }
 export interface MediaLibrary {
+  prefix?: string;
   key: string; collections: string[]; items: MediaLibraryItem[]; metadata: MediaMetadataMap; usage: Record<string, MediaUsage>;
   /** Files that show the Always keep mark: each kept file and the main of each family with a kept member. */
   keep?: string[];

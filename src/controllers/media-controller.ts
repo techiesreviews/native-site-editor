@@ -1,3 +1,5 @@
+import { NATIVE_CONFIG_PATH, nativeSiteSettings } from "../../shared/native-project";
+import { sitePathPrefix } from "../../shared/site-path-prefix";
 import type { MediaUsageCheckPorts } from "./media-usage-controller";
 import type { Stamp } from "../guarded-edit";
 import type { DraftScope, SavedDraft } from "../drafts";
@@ -441,7 +443,7 @@ export function createMediaController(ports: MediaControllerPorts) {
     return new Promise(resolve => {
       openMediaPicker({ accept, place, report: ports, onClose: () => resolve(undefined), onPick: async (image, cancelled, held) => {
         const { placeMediaPath } = await import("../page-builder/media-page-markup");
-        await placeMediaPath(ports, stamp, placement, image, cancelled, held, resolve, workspaceContext);
+        await placeMediaPath(ports, stamp, placement, image, cancelled, held, resolve, workspaceContext, sitePathPrefix(nativeSiteSettings(ports.source(NATIVE_CONFIG_PATH)).url));
       } })
         .catch((error: unknown) => { ports.error(error); resolve(undefined); });
     });

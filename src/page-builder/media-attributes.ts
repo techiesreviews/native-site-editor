@@ -37,7 +37,6 @@ export function mediaAttribute(source: string, tag: StartTag, wanted: string): T
 }
 
 export const mediaEscape = (value: string) => value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-export const mediaUrl = (path: string) => `/${path.split("/").map(encodeURIComponent).join("/")}`;
 
 
 /**

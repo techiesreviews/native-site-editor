@@ -7,7 +7,7 @@ import { readSource } from "./source-tree";
 export function mediaPlaceSwap(
   latest: string, target: { node: number[] }, expected: string, image: MediaImage,
   measured: MediaMeasured | undefined, locate: NonNullable<MediaControllerPorts["locateElement"]>,
-  framed: (tag: string) => string = tag => tag,
+  framed: (tag: string) => string = tag => tag, prefix: string,
 ) {
   const range = locate(latest, target.node);
   if (!range || range.tag.name !== "img") throw new Error("Choose an image place.");
@@ -20,7 +20,7 @@ export function mediaPlaceSwap(
   const pageRules = mediaPageEdits(latest, measured, target.node, locate);
   // Page places use the rules below; picker alt defaults belong to component and settings fields.
   const swap = (alt: string | undefined, picked = image) => {
-    let markup = framed(mediaImageMarkup({ ...picked, alt: alt ?? "" }, expected, pageRules.placement, alt === undefined));
+    let markup = framed(mediaImageMarkup({ ...picked, alt: alt ?? "" }, expected, pageRules.placement, alt === undefined, prefix));
     if (unwrap?.slot !== undefined) markup = mediaAttributes(markup, { slot: unwrap.slot });
     const edits = [...pageRules.edits, ...(unwrap?.edits ?? []), { start: range.tag.start, end: range.tag.end, text: markup }];
     let page = latest;

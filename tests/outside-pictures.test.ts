@@ -257,3 +257,12 @@ test("a failed measurement falls back to the safe markup", async () => {
   await bringInOutsidePictures(f.input);
   assert.match(f.written(), /sizes="100vw"/); assert.ok(!f.written().includes("loading="));
 });
+
+test("brought-in pictures and sharing tags use the project address", () => {
+  const image = { path: "media/a.webp", width: 800, height: 400, alt: "", variants: [{ path: "media/a-480.webp", width: 480 }] };
+  const source = `<img src="${address}" alt="A">`;
+  assert.equal(rewriteOutsidePictures(source, [{ picture: picture(source), image }], "https://user.github.io/my-site/"),
+    '<img srcset="/my-site/media/a-480.webp 480w, /my-site/media/a.webp 800w" width="800" height="400" sizes="100vw" src="/my-site/media/a.webp" alt="A">');
+  const meta = `<meta property="og:image" content="${address}">`;
+  assert.equal(rewriteOutsidePictures(meta, [{ picture: picture(meta), image }], "https://user.github.io/my-site/"), '<meta property="og:image" content="https://user.github.io/my-site/media/a.webp">');
+});

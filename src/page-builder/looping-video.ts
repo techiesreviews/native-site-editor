@@ -1,23 +1,24 @@
 // Pure source writers. Import lazily when editing or placing a video.
+import { siteAddress } from "../../shared/site-path-prefix";
 import { startTags, type ElementRange } from "../../shared/html-source";
 import type { MediaFileRecord } from "../../shared/media-records";
 import type { NativeTextEdit } from "../../shared/native-project";
-import { mediaAttribute, mediaEscape, mediaUrl } from "./media-attributes";
+import { mediaAttribute, mediaEscape } from "./media-attributes";
 import { decodeHtmlEntities } from "./html-entities";
 import { descendants, parseSource } from "./source-tree";
 import { videoMarkup, type PlayerMarkup, type PlayerVideo } from "./player-markup";
 
 const attr = (name: string, value?: string | number) => value === undefined ? "" : ` ${name}="${mediaEscape(String(value))}"`;
 const positive = (n?: number) => n !== undefined && Number.isFinite(n) && n > 0 ? n : undefined;
-export function loopingVideoMarkup(video: PlayerVideo): PlayerMarkup {
-  return { markup: `<video${attr("src", mediaUrl(video.path))}${attr("poster", video.still ? mediaUrl(video.still) : undefined)} controls muted loop playsinline${attr("width", positive(video.width))}${attr("height", positive(video.height))}${attr("aria-label", video.name || undefined)}></video>`, notes: [] };
+export function loopingVideoMarkup(video: PlayerVideo, prefix = ""): PlayerMarkup {
+  return { markup: `<video${attr("src", siteAddress(video.path, prefix))}${attr("poster", video.still ? siteAddress(video.still, prefix) : undefined)} controls muted loop playsinline${attr("width", positive(video.width))}${attr("height", positive(video.height))}${attr("aria-label", video.name || undefined)}></video>`, notes: [] };
 }
-export function backgroundVideoMarkup(video: { path: string; still?: string }): string {
-  return `<video data-background${attr("src", mediaUrl(video.path))}${attr("poster", video.still ? mediaUrl(video.still) : undefined)} muted loop playsinline preload="none"></video>`;
+export function backgroundVideoMarkup(video: { path: string; still?: string }, prefix = ""): string {
+  return `<video data-background${attr("src", siteAddress(video.path, prefix))}${attr("poster", video.still ? siteAddress(video.still, prefix) : undefined)} muted loop playsinline preload="none"></video>`;
 }
 export const loopsFromStart = (record?: MediaFileRecord): boolean => record?.fromGif === true;
-export function placedVideoMarkup(video: PlayerVideo, record?: MediaFileRecord, pageLanguage?: string): PlayerMarkup {
-  return loopsFromStart(record) ? loopingVideoMarkup(video) : videoMarkup(video, pageLanguage);
+export function placedVideoMarkup(video: PlayerVideo, record?: MediaFileRecord, pageLanguage?: string, prefix = ""): PlayerMarkup {
+  return loopsFromStart(record) ? loopingVideoMarkup(video, prefix) : videoMarkup(video, pageLanguage, prefix);
 }
 const first = (text: string) => startTags(text)[0];
 const has = (text: string, name: string) => { const tag = first(text); return !!tag && !!mediaAttribute(text, tag, name); };
@@ -57,15 +58,15 @@ export function writeLooping(tagText: string, on: boolean): string {
   if (!on) text = ensure(text, "preload", "none");
   return text;
 }
-export function pictureSpotVideo(spotText: string, video: PlayerVideo): PlayerMarkup {
+export function pictureSpotVideo(spotText: string, video: PlayerVideo, prefix = ""): PlayerMarkup {
   if (!isPictureSpot(spotText)) throw new Error("Choose a picture spot.");
-  return pictureVideo(spotText, video);
+  return pictureVideo(spotText, video, prefix);
 }
-function pictureVideo(spotText: string, video: PlayerVideo): PlayerMarkup {
+function pictureVideo(spotText: string, video: PlayerVideo, prefix: string): PlayerMarkup {
   const spot = first(spotText);
   if (!spot || !["img", "picture"].includes(spot.name)) throw new Error("Choose a picture spot.");
   const image = spot.name === "img" ? spot : startTags(spotText).find(tag => tag.name === "img");
-  let markup = loopingVideoMarkup({ ...video, width: undefined, height: undefined, name: undefined }).markup;
+  let markup = loopingVideoMarkup({ ...video, width: undefined, height: undefined, name: undefined }, prefix).markup;
   const tag = first(markup)!;
   let kept = "";
   for (const name of ["slot", "id", "class", "style", "width", "height"]) {
@@ -79,8 +80,8 @@ function pictureVideo(spotText: string, video: PlayerVideo): PlayerMarkup {
   return { markup, notes: [] };
 }
 /** Replace the whole picture wrapper, preserving its presentation attributes. */
-export function gifLoopingVideo(source: string, range: ElementRange, video: PlayerVideo, options: { linked?: boolean } = {}): PlayerMarkup {
-  const written = pictureVideo(source.slice(range.start, range.end), video);
+export function gifLoopingVideo(source: string, range: ElementRange, video: PlayerVideo, options: { linked?: boolean } = {}, prefix = ""): PlayerMarkup {
+  const written = pictureVideo(source.slice(range.start, range.end), video, prefix);
   return options.linked ? { ...written, markup: without(written.markup, ["controls"]) } : written;
 }
 function sectionAt(source: string, range: ElementRange) {
@@ -94,12 +95,12 @@ export function readSectionBackground(source: string, sectionRange: ElementRange
   if (child?.type !== "element" || child.name !== "video" || !mediaAttribute(source, child.tag, "data-background") || !child.close) return;
   return { tag: child.tag, start: child.start, end: child.end, close: child.close };
 }
-export function sectionBackgroundEdits(source: string, sectionRange: ElementRange, video?: { path: string; still?: string }): NativeTextEdit[] {
+export function sectionBackgroundEdits(source: string, sectionRange: ElementRange, video?: { path: string; still?: string }, prefix = ""): NativeTextEdit[] {
   const section = sectionAt(source, sectionRange), old = readSectionBackground(source, sectionRange);
   if (old) {
-    if (video) return [{ start: old.start, end: old.end, text: backgroundVideoMarkup(video) }];
-    const prefix = source.slice(section.tag.end, old.start);
-    const line = /(?:\r\n|\n)[\t ]*$/.exec(prefix);
+    if (video) return [{ start: old.start, end: old.end, text: backgroundVideoMarkup(video, prefix) }];
+    const before = source.slice(section.tag.end, old.start);
+    const line = /(?:\r\n|\n)[\t ]*$/.exec(before);
     return [{ start: line ? section.tag.end + line.index : old.start, end: old.end, text: "" }];
   }
   if (!video) return [];
@@ -107,6 +108,6 @@ export function sectionBackgroundEdits(source: string, sectionRange: ElementRang
   const leading = /^(?:\r\n|\n)([\t ]*)/.exec(inner);
   const parentIndent = /(?:^|\n)([\t ]*)[^\n]*$/.exec(source.slice(0, section.start))?.[1] ?? "";
   const indent = leading?.[1] && leading[1].length > parentIndent.length ? leading[1] : parentIndent + "  ";
-  const markup = backgroundVideoMarkup(video);
+  const markup = backgroundVideoMarkup(video, prefix);
   return [{ start: section.tag.end, end: section.tag.end, text: leading ? newline + indent + markup : inner.trim() ? markup : newline + indent + markup + (inner ? "" : newline + parentIndent) }];
 }

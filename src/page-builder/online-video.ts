@@ -1,7 +1,8 @@
 // Pure online-video records and source transforms; loaded only by media actions.
+import { siteAddress } from "../../shared/site-path-prefix";
 import type { MediaRecords, OnlineVideoRecord } from "../../shared/media-records";
 import { descendants, parseSource, startTagAttributes, type SourceElement } from "./component-model";
-import { mediaAttribute, mediaEscape, mediaUrl } from "./media-attributes";
+import { mediaAttribute, mediaEscape } from "./media-attributes";
 
 import { parseOnlineVideoAddress, type OnlineVideo, type OnlineVideoKey } from "../../shared/online-video-address";
 export { parseOnlineVideoAddress, type OnlineVideo, type OnlineVideoKey } from "../../shared/online-video-address";
@@ -21,7 +22,7 @@ export function onlineAddressProblem(text: string): string | undefined {
 export function onlineVideoHref(video: OnlineVideo, start = video.start): string {
   const time = start !== undefined && Number.isSafeInteger(start) && start > 0 ? start : 0;
   return video.service === "youtube" ? `https://www.youtube.com/watch?v=${video.id}${time ? `&t=${time}` : ""}`
-    : `https://vimeo.com/${video.id}${video.hash ? `/${video.hash}` : ""}${time ? `#t=${time}s` : ""}`;
+    : `https://vimeo.com/${video.id}${video.hash ? "/".concat(video.hash) : ""}${time ? `#t=${time}s` : ""}`;
 }
 export const findOnlineVideo = (records: MediaRecords, key: OnlineVideoKey) => records.onlineVideos?.find(video => same(video, key));
 export function upsertOnlineVideo(records: MediaRecords, record: OnlineVideoRecord): MediaRecords {
@@ -44,9 +45,9 @@ export function onlineVideoStillPlan(records: MediaRecords, key: OnlineVideoKey,
 }
 const attr = (name: string, value?: string | number) => value === undefined ? "" : ` ${name}="${mediaEscape(String(value))}"`;
 const positive = (value?: number) => value && Number.isFinite(value) && value > 0 ? value : undefined;
-export function onlineVideoMarkup(input: { video: OnlineVideo; title?: string; still?: OnlineVideoStill; start?: number; serviceBar?: boolean }) {
+export function onlineVideoMarkup(input: { video: OnlineVideo; title?: string; still?: OnlineVideoStill; start?: number; serviceBar?: boolean }, prefix = "") {
   const title = input.title || (input.video.service === "youtube" ? "YouTube video" : "Vimeo video");
-  const image = input.still ? `<img${attr("src", mediaUrl(input.still.path))}${attr("alt", title)}${attr("width", positive(input.still.width))}${attr("height", positive(input.still.height))}>` : mediaEscape(title);
+  const image = input.still ? `<img${attr("src", siteAddress(input.still.path, prefix))}${attr("alt", title)}${attr("width", positive(input.still.width))}${attr("height", positive(input.still.height))}>` : mediaEscape(title);
   return { markup: `<a class="online-video"${attr("href", onlineVideoHref(input.video, input.start))}${input.serviceBar ? ' data-controls="service"' : ""}${input.still ? "" : attr("aria-label", title)}>${image}</a>`, notes: input.still ? [] : ["Add your own still picture…"] };
 }
 function links(source: string) {
@@ -77,10 +78,10 @@ export function mediaOnlineVideos(records: MediaRecords, sources: Record<string,
     uses: (uses[`${video.service}:${video.id}`] ?? []).sort((a, b) => a.localeCompare(b)),
   }));
 }
-function stillTag(source: string, image: SourceElement, still: OnlineVideoStill) {
+function stillTag(source: string, image: SourceElement, still: OnlineVideoStill, prefix: string) {
   const edits: { start: number; end: number; text: string }[] = [];
   let added = "";
-  for (const [name, value] of [["src", mediaUrl(still.path)], ["width", positive(still.width)], ["height", positive(still.height)]] as const) {
+  for (const [name, value] of [["src", siteAddress(still.path, prefix)], ["width", positive(still.width)], ["height", positive(still.height)]] as const) {
     const old = mediaAttribute(source, image.tag, name);
     if (old) edits.push({ start: old.start, end: old.end, text: attr(name, value) });
     else added += attr(name, value);
@@ -91,12 +92,12 @@ function stillTag(source: string, image: SourceElement, still: OnlineVideoStill)
   for (const edit of edits.sort((a, b) => b.start - a.start)) result = result.slice(0, edit.start - image.start) + edit.text + result.slice(edit.end - image.start);
   return result;
 }
-export function swapOnlineVideoStillInPage(source: string, key: OnlineVideoKey, still: OnlineVideoStill): string {
+export function swapOnlineVideoStillInPage(source: string, key: OnlineVideoKey, still: OnlineVideoStill, prefix = ""): string {
   const edits = links(source).filter(link => same(link.video, key)).map(({ element }) => {
     const image = [...descendants(element.children)].find(child => child.name === "img");
-    return image ? { start: image.start, end: image.tag.end, text: stillTag(source, image, still) }
+    return image ? { start: image.start, end: image.tag.end, text: stillTag(source, image, still, prefix) }
       // A link without a picture holds the title as text (it keeps its aria-label): the picture replaces it.
-      : { start: element.tag.end, end: element.close?.start ?? element.tag.end, text: `<img${attr("src", mediaUrl(still.path))} alt=""${attr("width", positive(still.width))}${attr("height", positive(still.height))}>` };
+      : { start: element.tag.end, end: element.close?.start ?? element.tag.end, text: `<img${attr("src", siteAddress(still.path, prefix))} alt=""${attr("width", positive(still.width))}${attr("height", positive(still.height))}>` };
   });
   for (const edit of edits.sort((a, b) => b.start - a.start)) source = source.slice(0, edit.start) + edit.text + source.slice(edit.end);
   return source;

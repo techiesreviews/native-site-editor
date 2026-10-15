@@ -1,3 +1,5 @@
+import { readMediaPrefix } from "./media-prefix";
+import { siteAddress } from "../../shared/site-path-prefix";
 // Add → Media (build slice 63): the file chosen in the Media picker goes into a page at a place, with
 // its kind's markup (pictures by slice 33's rules, videos and audio by slice 62's, PDFs and other
 // downloads as cards), the site's player added once, as one Undo step. A picture spot's picker may
@@ -16,7 +18,7 @@ import { readSiteMediaRecords } from "./media-collections";
 import { applyGuardedSourceEdit, nativeMarkupInsertEdit, type ItemsSlotRule } from "./native-operations";
 import { itemsSlotRule } from "./block-insert";
 import { readSource } from "./source-tree";
-import { mediaEscape, mediaUrl } from "./media-attributes";
+import { mediaEscape } from "./media-attributes";
 import { mediaPlaceSwap } from "./media-place-swap";
 import { swapPlaceImage } from "./media-descriptions";
 import { audioMarkup, downloadCardMarkup, mediaPlayerPlan, pageMediaLanguage, type MediaPlayerKind } from "./player-markup";
@@ -60,32 +62,32 @@ export function insertAtPlace(source: string, place: MediaInsertPlace, markup: s
 
 /** A video's, audio file's or download's markup and the player kind it needs; pictures are placed by
  * `insertedImagePage`. The name screen readers hear is the file's description, when it has one. */
-export function playerMediaMarkup(path: string, facts: PlacedFacts, page: string): { markup: string; kind: MediaPlayerKind; notes: string[] } | undefined {
+export function playerMediaMarkup(path: string, facts: PlacedFacts, page: string, prefix = ""): { markup: string; kind: MediaPlayerKind; notes: string[] } | undefined {
   const kind = mediaKind(path), name = facts.record?.description?.text?.trim() || undefined;
   const subtitles = facts.subtitles ? { path: facts.subtitles } : undefined;
   if (kind === "video") {
     const video = { path, still: facts.still?.path, width: facts.width ?? facts.still?.width, height: facts.height ?? facts.still?.height, name, subtitles };
-    return { ...placedVideoMarkup(video, facts.record, pageMediaLanguage(page)), kind: loopsFromStart(facts.record) ? "looping-video" : "video" };
+    return { ...placedVideoMarkup(video, facts.record, pageMediaLanguage(page), prefix), kind: loopsFromStart(facts.record) ? "looping-video" : "video" };
   }
-  if (kind === "audio") return { ...audioMarkup({ path, duration: facts.record?.duration, name, subtitles }, pageMediaLanguage(page)), kind: "audio" };
-  if (kind === "document") return { ...downloadCardMarkup({ path, size: facts.size, preview: facts.still }), kind: "download" };
+  if (kind === "audio") return { ...audioMarkup({ path, duration: facts.record?.duration, name, subtitles }, pageMediaLanguage(page), prefix), kind: "audio" };
+  if (kind === "document") return { ...downloadCardMarkup({ path, size: facts.size, preview: facts.still }, prefix), kind: "download" };
   return undefined;
 }
 
 /** The page with a picture at the place by the placed-image rules (slice 33), not measured yet, so
  * lazy with `sizes="auto, 100vw"`; its words follow the file (a description, Decorative, else its name). */
-export function insertedImagePage(source: string, place: MediaInsertPlace, image: MediaImage, records: MediaRecords, items?: ItemsSlotRule) {
-  const virtual = insertAtPlace(source, place, `<img src="${mediaEscape(mediaUrl(image.path))}" alt="${mediaEscape(image.alt)}">`, items);
+export function insertedImagePage(source: string, place: MediaInsertPlace, image: MediaImage, records: MediaRecords, items?: ItemsSlotRule, prefix = "") {
+  const virtual = insertAtPlace(source, place, `<img src="${mediaEscape(siteAddress(image.path, prefix))}" alt="${mediaEscape(image.alt)}">`, items);
   const node = insertedNode(place), range = virtual === undefined ? undefined : locatePageElement(virtual, node);
   if (virtual === undefined || range?.tag.name !== "img") return undefined;
-  const { swap } = mediaPlaceSwap(virtual, { node }, virtual.slice(range.tag.start, range.tag.end), image, undefined, locatePageElement);
+  const { swap } = mediaPlaceSwap(virtual, { node }, virtual.slice(range.tag.start, range.tag.end), image, undefined, locatePageElement, undefined, prefix);
   const after = swapPlaceImage(records, place.path, undefined, image.path, image.alt, swap(undefined).page);
   return { page: swap(after.alt).page, records: after.records };
 }
 
 /** A picture spot (an `<img slot>`, or the `<img>` of a `<picture slot>`) turned into a Looping video
  * keeping its slot, shape and focus; undefined when `node` is no picture spot. */
-export function spotVideoPage(source: string, node: number[], video: { path: string; still?: string; width?: number; height?: number }, locate: Locate) {
+export function spotVideoPage(source: string, node: number[], video: { path: string; still?: string; width?: number; height?: number }, locate: Locate, prefix = "") {
   const image = locate(source, node);
   if (image?.tag.name !== "img") return undefined;
   let spot = image, at = node;
@@ -94,7 +96,7 @@ export function spotVideoPage(source: string, node: number[], video: { path: str
     if (parent?.tag.name !== "picture" || !isPictureSpot(source.slice(parent.tag.start, parent.tag.end))) return undefined;
     spot = parent; at = node.slice(0, -1);
   }
-  return { page: source.slice(0, spot.start) + pictureSpotVideo(source.slice(spot.start, spot.end), video).markup + source.slice(spot.end), node: at };
+  return { page: source.slice(0, spot.start) + pictureSpotVideo(source.slice(spot.start, spot.end), video, prefix).markup + source.slice(spot.end), node: at };
 }
 
 /** The facts of a file in the site: its record, still (and its size), subtitles and bytes. */
@@ -159,6 +161,7 @@ export async function placeChosenMedia(
   const version = added ? undefined : ctx.assetVersion(chosen.path);
   if (!added && version === undefined) throw new Error(`${chosen.path} is no longer in Media. Choose it again.`);
   const unchanged = () => { if (!added && ctx.assetVersion(chosen.path) !== version) throw new Error(`${chosen.path} changed while it was being placed. Choose it again.`); };
+  const prefix = await readMediaPrefix(ctx, templates);
   const metadata = await ctx.read(MEDIA_RECORDS_PATH); assert(); ctx.assertLive(); unchanged();
   // Unreadable records never block placing, and are then never written (slice 13).
   let records = parseMediaRecords(undefined), readable = true;
@@ -171,17 +174,17 @@ export async function placeChosenMedia(
   /** The page (and records) with the file placed; `facts` as known now or after the addition. */
   const build = (page: string, file: MediaImage, facts: PlacedFacts, now: MediaRecords) => {
     if (target.kind === "spot") {
-      const spot = spotVideoPage(page, target.node, { path: file.path, still: facts.still?.path, width: facts.width ?? facts.still?.width, height: facts.height ?? facts.still?.height }, (ports.locateElement as Locate | undefined) ?? locatePageElement);
+      const spot = spotVideoPage(page, target.node, { path: file.path, still: facts.still?.path, width: facts.width ?? facts.still?.width, height: facts.height ?? facts.still?.height }, (ports.locateElement as Locate | undefined) ?? locatePageElement, prefix);
       if (!spot) throw new Error(changed);
       return { page: spot.page, node: spot.node, notes: [] as string[] };
     }
     const node = insertedNode(target.place);
     if (kind === "image") {
-      const placed = insertedImagePage(page, target.place, file, now, items);
+      const placed = insertedImagePage(page, target.place, file, now, items, prefix);
       if (!placed) throw new Error(refused);
       return { page: placed.page, records: placed.records, node, notes: [] as string[] };
     }
-    const markup = playerMediaMarkup(file.path, facts, page);
+    const markup = playerMediaMarkup(file.path, facts, page, prefix);
     const next = markup && insertAtPlace(page, target.place, markup.markup, items);
     if (!next) throw new Error(refused);
     return { page: next, node, notes: markup.notes };
@@ -190,7 +193,7 @@ export async function placeChosenMedia(
   // bytes load only then), and the page's head links it.
   const playerFiles = async () => {
     if (!player) return undefined;
-    const input = { pages: [path], sources: { [path]: proof.source }, exists: (file: string) => ctx.paths.includes(file), kinds: [player] };
+    const input = { prefix, pages: [path], sources: { [path]: proof.source }, exists: (file: string) => ctx.paths.includes(file), kinds: [player] };
     let plan = mediaPlayerPlan(input);
     if (plan?.creates.length) {
       const { starterPlayerFiles } = await import("./starter-loader");
@@ -200,7 +203,7 @@ export async function placeChosenMedia(
     if (plan?.notes.length) throw new Error(plan.notes.join(" "));
     return plan?.creates ?? [];
   };
-  const linked = (page: string) => player ? mediaPlayerPlan({ pages: [path], sources: { [path]: page }, exists: () => true, kinds: [player] })?.edits.get(path) ?? page : page;
+  const linked = (page: string) => player ? mediaPlayerPlan({ prefix, pages: [path], sources: { [path]: page }, exists: () => true, kinds: [player] })?.edits.get(path) ?? page : page;
   const label = `${target.kind === "spot" ? "Looping video" : NOUNS[kind]} added`;
   const say = (notes: string[]) => ports.announce([`${label}.`, ...notes].join(" "));
 

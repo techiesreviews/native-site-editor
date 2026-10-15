@@ -1,9 +1,8 @@
-import { sitePathOf } from "../../shared/site-path-prefix";
+import { siteAddress, sitePathOf } from "../../shared/site-path-prefix";
 import { mediaOwnAddress, type MediaSite } from "./media-origins";
 import { startTags } from "../../shared/html-source";
 import { mediaAttribute as startTagAttribute } from "./media-attributes";
 import { decodeHtmlEntities } from "./html-entities";
-import { mediaUrl } from "./media-markup";
 
 export interface MediaUrlToken { file: string; start: number; end: number; value: string; alt?: string; attribute?: "src" | "href" | "poster" | "content" | "srcset" | "data-src" | "data-srcset" | "imagesrcset" | "data" | "xlink:href" | "style"; tag?: string; attributeQuote?: string; cssQuote?: string }
 export interface MediaReference extends MediaUrlToken { path: string }
@@ -242,12 +241,12 @@ export function mediaUsageIndex(paths: string[], sources: Record<string, string 
   return out;
 }
 
-export function rewriteMediaReferences(file: string, source: string, from: string, to: string): string {
+export function rewriteMediaReferences(file: string, source: string, from: string, to: string, prefix = ""): string {
   let text = source;
-  const refs = scanMediaReferences(file, source).filter((ref) => ref.path === from);
+  const refs = scanMediaReferences(file, source, undefined, prefix).filter((ref) => ref.path === from);
   for (const ref of refs.sort((a, b) => b.start - a.start)) {
     const suffix = /[?#].*$/.exec(ref.value)?.[0] ?? "";
-    let value = mediaUrl(to) + suffix;
+    let value = siteAddress(to, prefix) + suffix;
     if (ref.cssQuote !== undefined) value = value.replace(/[\\\r\n\f'"()\s]/g, (char) => {
       if (char === "\\" || char === ref.cssQuote) return `\\${char}`;
       if (!ref.cssQuote || /[\r\n\f]/.test(char)) return `\\${char.charCodeAt(0).toString(16)} `;

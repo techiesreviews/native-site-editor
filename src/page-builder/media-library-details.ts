@@ -1,3 +1,4 @@
+import { siteAddress } from "../../shared/site-path-prefix";
 import { button, node } from "../ui/dom";
 import { icon } from "../icons";
 import { uploadImageType } from "../uploads";
@@ -137,7 +138,7 @@ function renderPreview(
   )));
   if (replace) actions.append(button("Replace everywhere…", replace));
   actions.append(button("Copy path", () => void task(async () => {
-    await navigator.clipboard.writeText(`/${path}`); tell("Path copied.");
+    await navigator.clipboard.writeText(siteAddress(path, h.library().prefix ?? "")); tell("Path copied.");
   })), button("Remove file…", () => remove([path])));
   const player = preview.querySelector<HTMLVideoElement | HTMLAudioElement>("video, audio") ?? undefined;
   view.append(preview, ...(kind === "video" || kind === "audio") && !h.modal ? mediaDetailParts(h, path, meta, player, still, current) : [], actions);

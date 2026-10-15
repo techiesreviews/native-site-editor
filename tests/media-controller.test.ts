@@ -644,6 +644,17 @@ test("page slot placement batches older copies while component fallback stays un
     f.sources.set(component.path, source);
     await placeMediaPath(f.ports, f.ports.stamp(), component, image, () => false, undefined, () => {}, () => { throw new Error("Components do not need a workspace"); });
     assert.equal(requests, before); assert.equal(f.changes.length, 1); assert.doesNotMatch(f.changes[0], /srcset/);
+    const prefixed = fixture();
+    const workspace = prefixed.ports.workspace()!;
+    prefixed.ports.workspace = () => ({ ...workspace, nativePaths: [...workspace.nativePaths!, ".editor/config.json"] });
+    prefixed.sources.set(".editor/config.json", JSON.stringify({ site: { url: "https://user.github.io/my-site/" } }));
+    prefixed.sources.set("index.html", source);
+    let address: string | undefined;
+    await placeMediaPath(prefixed.ports, prefixed.ports.stamp(), { ...place, placed: false }, { path: "media/new.webp", alt: "" }, () => false, undefined,
+      value => { address = value; }, () => prefixed.controller.workspaceContext(), "/my-site");
+    assert.equal(address, "/my-site/media/new.webp");
+    assert.ok(prefixed.changes[0].includes('src="/my-site/media/new.webp"'));
+
   } finally {
     descriptor ? Object.defineProperty(globalThis, "Worker", descriptor) : Reflect.deleteProperty(globalThis, "Worker");
     documentDescriptor ? Object.defineProperty(globalThis, "document", documentDescriptor) : Reflect.deleteProperty(globalThis, "document");
@@ -719,4 +730,19 @@ test("agent Improve images refuses a revision change during a held workspace rea
   await assert.rejects(run, /changed/);
   assert.equal(batches, 0);
   assert.equal(f.changes.length, 0);
+});
+
+test("an address picker refuses an old prefix if the site address changes while saving held files", async () => {
+  const { placeMediaPath } = await import("../src/page-builder/media-page-markup");
+  const f = fixture(), configPath = ".editor/config.json";
+  f.sources.set(configPath, JSON.stringify({ site: { url: "https://user.github.io/my-site/" } }));
+  const image = { path: "media/a.webp", alt: "" };
+  const held: MediaHeldFiles = { image: () => image, save: async () => {
+    f.sources.set(configPath, JSON.stringify({ site: { url: "https://user.github.io/other/" } }));
+    return { paths: [image.path], placed: false, note: "" };
+  } };
+  let resolved = false;
+  await assert.rejects(placeMediaPath(f.ports, f.ports.stamp(), undefined, image, () => false, held, () => { resolved = true; },
+    () => f.controller.workspaceContext(), "/my-site"), /site address changed/);
+  assert.equal(resolved, false);
 });

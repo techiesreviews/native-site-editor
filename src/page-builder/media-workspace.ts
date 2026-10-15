@@ -1,3 +1,5 @@
+import { sitePathPrefix } from "../../shared/site-path-prefix";
+import { readMediaPrefix } from "./media-prefix";
 import { NATIVE_CONFIG_PATH, nativeSiteSettings } from "../../shared/native-project";
 import { mediaKind } from "./media-library-filter";
 import { OUTSIDE_MEDIA_REFUSED, parseOutlineId } from "../../shared/agent";
@@ -98,6 +100,9 @@ export interface MediaWorkspaceContext {
   openPage(path: string): Promise<void>;
 }
 
+// The site's prefix as `prepare` captured it through the batch's reader (media-prefix.ts).
+const batchPrefix = (batch: MediaWorkspaceBatch) => sitePathPrefix(nativeSiteSettings(batch.expectedSources.get(NATIVE_CONFIG_PATH)).url);
+
 function wideUsage(paths: string[], text: Record<string, string>, ctx: MediaWorkspaceContext) {
   const site = { origins: ctx.origins ?? [] };
   const usage = mediaUsageIndex(paths, text, ctx.pages, ctx.components, site);
@@ -121,6 +126,7 @@ export interface MediaTrimRequest {
   place: {
     path: string; source: string; stale?: string; live?: () => boolean;
     records?: { text: string | undefined };
+    expectedSources?: Map<string, string | undefined>;
     apply(path: string, records: MediaRecords): { page: string; records?: MediaRecords };
   };
 }
@@ -160,11 +166,15 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       edits: new Map(), moves: [], deletes: [], restores: [], uploads: [],
     };
     for (const item of ctx.items) batch.expectedAssets.set(item.path, ctx.assetVersion(item.path));
+    await readMediaPrefix(ctx, batch.expectedSources);
     const text = usage ? await sources(ctx, batch.expectedPaths) : {};
     // Media files (SVG is text too) are proved by their asset revision, which also covers
     // uploads and moves whose bytes the host holds no source for.
     const media = new Set(ctx.items.map((item) => item.path));
-    for (const [path, value] of Object.entries(text)) if (!media.has(path)) batch.expectedSources.set(path, value);
+    for (const [path, value] of Object.entries(text)) if (!media.has(path)) {
+      if (batch.expectedSources.has(path) && batch.expectedSources.get(path) !== value) throw new Error(`${path} changed while preparing image changes. Try again.`);
+      batch.expectedSources.set(path, value);
+    }
     const metadata = await ctx.read(MEDIA_RECORDS_PATH);
     ctx.assertLive();
     batch.expectedSources.set(MEDIA_RECORDS_PATH, metadata);
@@ -256,7 +266,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     for (const [path, source] of Object.entries(text)) {
       if (!/\.(?:html|css)$/i.test(path)) continue;
       const before = batch.edits.get(path) ?? source;
-      const next = rewriteMediaReferences(path, before, from, to);
+      const next = rewriteMediaReferences(path, before, from, to, batchPrefix(batch));
       if (next !== before) batch.edits.set(path, next);
     }
   };
@@ -425,6 +435,10 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     const versions = familyVersions(ctx, [source, ...previous ? familyPaths(previous, ctx.paths) : []]);
     versions.set(source, sourceVersion);
     const { batch, metadata } = await prepare(ctx, "Picture trimmed");
+    for (const [path, text] of place.expectedSources ?? []) {
+      if (batch.expectedSources.has(path) && batch.expectedSources.get(path) !== text) throw new Error(place.stale ?? "The site address changed. Try again.");
+      batch.expectedSources.set(path, text);
+    }
     for (const [member, version] of versions) batch.expectedAssets.set(member, version);
     assetGuard(batch, [source, ...previous ? [previous] : []]);
     const { isTrim, trimmedCopyPath, planTrimmedCopy } = await import("./trimmed-copies");
@@ -713,8 +727,9 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       const metadata = mediaMetadataView(records);
       // YouTube and Vimeo videos (slice 68), with the pages that show them; their code loads only when there are any.
       const online = records.onlineVideos?.length ? (await import("./online-video")).mediaOnlineVideos(records, text, ctx.paths) : undefined;
+      const prefix = await readMediaPrefix(ctx, new Map());
       ctx.assertLive();
-      return { key: ctx.key, ...online ? { onlineVideos: online } : {}, removed, collections: [...records.collections], items: ctx.items.map((item) => ({ ...item, version: ctx.assetVersion(item.path) })), metadata, usage: wideUsage(ctx.items.map((item) => item.path), text, ctx),
+      return { key: ctx.key, prefix, ...online ? { onlineVideos: online } : {}, removed, collections: [...records.collections], items: ctx.items.map((item) => ({ ...item, version: ctx.assetVersion(item.path) })), metadata, usage: wideUsage(ctx.items.map((item) => item.path), text, ctx),
         // Folded over every path: a kept original the library does not list still marks its main.
         keep: [...alwaysKeptFiles(ctx.paths, new Set(Object.keys(records.files).filter(path => records.files[path].alwaysKeep)))],
         toCheck: mediaToCheck(records, ctx.items.map(item => item.path), text),
@@ -797,7 +812,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       // Every HTML file, component templates included, as renames do: the change applies everywhere.
       for (const [path, source] of Object.entries(text)) {
         if (!/\.html$/i.test(path)) continue;
-        const next = swapOnlineVideoStillInPage(source, key, still);
+        const next = swapOnlineVideoStillInPage(source, key, still, batchPrefix(batch));
         if (next !== source) batch.edits.set(path, next);
       }
       recordsEdit(batch, metadata, setOnlineVideoStill(metadata, key, still.path)); await commit(ctx, batch);
@@ -926,7 +941,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       const site = { origins: ctx.origins ?? [] };
       for (const [page, source] of Object.entries(text)) {
         if (!/\.html$/i.test(page)) continue;
-        const next = setPosterInPage(source, page, video, path, site);
+        const next = setPosterInPage(source, page, video, path, site, batchPrefix(batch));
         if (next !== source) batch.edits.set(page, next);
       }
       recordsEdit(batch, metadata, { ...metadata, files: { ...metadata.files, [video]: { ...metadata.files[video], still: path } } });
@@ -965,13 +980,13 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
         }
         batch.uploads.push({ path, blob: new Blob([read.vtt], { type: "text/vtt" }) });
         // Subtitles the file had under another name stop showing; that file stays.
-        if (current && current !== path) pages((source, page) => rules.removeTrackInPage(source, page, current, site));
-        pages((source, page) => rules.addTrackInPage(source, page, media, path, site));
+        if (current && current !== path) pages((source, page) => rules.removeTrackInPage(source, page, current, site, batchPrefix(batch)));
+        pages((source, page) => rules.addTrackInPage(source, page, media, path, site, batchPrefix(batch)));
         next = { ...metadata, files: { ...metadata.files, [media]: { ...record, subtitles: path, ...agent ? { subtitlesByAgent: true } : {} } } };
       } else {
         if (!current) return;
         assetGuard(batch, [current]); batch.deletes.push(current);
-        pages((source, page) => rules.removeTrackInPage(source, page, current, site));
+        pages((source, page) => rules.removeTrackInPage(source, page, current, site, batchPrefix(batch)));
         next = { ...metadata, files: { ...metadata.files, [media]: record } };
         if (!Object.keys(record).length) delete next.files[media];
       }
