@@ -2912,7 +2912,7 @@ window.addEventListener("blur", finishNativePageTitlePointer);
 
 function pagesBusy(explorer: HTMLElement) {
   return nativePageTitlePointer !== undefined || Boolean(pagesTree?.busy()) || explorer.matches(":popover-open") &&
-    Boolean(explorer.querySelector("[role=menu]:not([hidden]), input:focus, [popover]:popover-open"));
+    Boolean(explorer.querySelector("[role=menu]:not([hidden]), input:focus, [popover]:popover-open:not(.editor-toast)"));
 }
 function flushPendingNativePageTitles() {
   const pending = pendingNativePageTitles;

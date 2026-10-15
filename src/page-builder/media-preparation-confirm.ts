@@ -19,8 +19,8 @@ function enqueue(question: string, title: string, action: string): Promise<boole
 function ask(question: string, title: string, action: string): Promise<boolean> {
   confirmation ??= createConfirmDialog("media-preparation-confirm");
   // Inside the open popover (the explorer, with Files or Media), a modal question leaves it open
-  // behind, so the adding summary stays in view; otherwise on the page.
-  const host = [...document.querySelectorAll<HTMLElement>(":popover-open")].at(-1) ?? document.body;
+  // behind, so the adding summary stays in view; otherwise on the page. The editor toast is not a host.
+  const host = [...document.querySelectorAll<HTMLElement>(":popover-open:not(.editor-toast)")].at(-1) ?? document.body;
   if (confirmation.root.parentElement !== host) host.append(confirmation.root);
   return confirmation.ask({ title, notes: [question], action, cancel: "Don't add" });
 }

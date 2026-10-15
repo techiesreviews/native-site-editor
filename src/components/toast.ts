@@ -56,7 +56,7 @@ function build() {
 /** The topmost open modal dialog, else the topmost open auto popover, else the page. */
 function layer(): HTMLElement {
   const open = (selector: string) => [...document.querySelectorAll<HTMLElement>(selector)]
-    .filter(element => element !== toast && element.getAttribute("popover") !== "manual" && !element.closest("[hidden]"));
+    .filter(element => !toast?.contains(element) && element.getAttribute("popover") !== "manual" && !element.closest("[hidden]"));
   return open("dialog:modal").at(-1) ?? open("[popover]:popover-open").at(-1) ?? document.body;
 }
 

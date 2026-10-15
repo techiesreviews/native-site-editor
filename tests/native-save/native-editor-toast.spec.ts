@@ -133,5 +133,34 @@ test("a shown toast follows each layer opened over it, keeps its Undo usable, an
   await page.mouse.move(5, 5);
   await page.clock.runFor(2_200);
   await expect(toast(page)).toBeHidden();
+  // Focused, it stays as well; once the focus leaves, it goes 2 s later.
+  await show();
+  await toast(page).getByRole("button", { name: "Undo", exact: true }).focus();
+  await page.clock.runFor(8_000);
+  await expect(toast(page)).toBeVisible();
+  await page.locator("#explorer-toggle").focus();
+  await page.clock.runFor(2_200);
+  await expect(toast(page)).toBeHidden();
   await page.clock.resume();
+});
+
+test("a question that opens while a toast shows is not put inside the toast, and both keep working", async ({ page, baseURL }) => {
+  const errors: string[] = [];
+  page.on("pageerror", error => errors.push(error.message));
+  await open(page, baseURL);
+  await page.evaluate(async () => {
+    const { showToast } = await import("/src/components/toast.ts");
+    showToast("Added 2 files as drafts.");
+    const { askToAddUnchanged } = await import("/src/page-builder/media-preparation-confirm.ts");
+    void askToAddUnchanged("tram.png could not be made lighter.").then(answer => { (window as any).answered = answer; });
+  });
+  const question = page.getByRole("dialog", { name: "Add unchanged file?", exact: true });
+  await expect(question).toBeVisible();
+  await expect(question.locator(".editor-toast")).toBeVisible();
+  expect(await page.locator(".editor-toast").evaluate(toast => toast.querySelector("dialog") === null)).toBe(true);
+  await question.getByRole("button", { name: "Don't add", exact: true }).click();
+  await expect(question).toBeHidden();
+  expect(await page.evaluate(() => (window as any).answered)).toBe(false);
+  await expect(page.locator("body > .editor-toast")).toBeVisible();
+  expect(errors).toEqual([]);
 });
