@@ -1,8 +1,8 @@
 ---
 title: Numbers that agree, a double-click that always opens, tidy dates
 type: task (AFK)
-status: open
-assignee:
+status: in-progress
+assignee: claude (mm-114 runner)
 blocked_by: [89-ux-ui-audit]
 builder: sol
 phase: 8
