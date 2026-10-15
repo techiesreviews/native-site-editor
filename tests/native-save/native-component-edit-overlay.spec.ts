@@ -57,7 +57,7 @@ test('paragraph, wrapper and button identities in light DOM and template content
   const host=document.createElement('div');document.body.append(host);
   const tools=createComponentTools({site:()=>({components:{'project-card':templatePath},routes:{'/':'index.html'}}),edits:createGuardedEdits(createMemoryWorkspace().workspace),sources:()=>sources,
    editor:()=>undefined,preview:()=>({selectNode:(point:any)=>selected.push(point),selectAfterUpdate:()=>{}}),currentPath:()=> 'index.html',selection:()=>selection,
-   openFile:async(path:string)=>{opened.push(path);return true;},announce:()=>{},error:()=>{},images:()=>[],upload:async()=>undefined,links:()=>[],pageLabel:(path:string)=>path,panelHost:host,variantFiles:{site:()=>undefined,read:()=>undefined},canvasComponent:()=>{},refreshBar:()=>{},codeTitle:document.createElement('div'),previewPage:()=> 'index.html'});
+   openFile:async(path:string)=>{opened.push(path);return true;},announce:()=>{},error:()=>{},images:()=>[],prefix:()=>"",upload:async()=>undefined,links:()=>[],pageLabel:(path:string)=>path,panelHost:host,variantFiles:{site:()=>undefined,read:()=>undefined},canvasComponent:()=>{},refreshBar:()=>{},codeTitle:document.createElement('div'),previewPage:()=> 'index.html'});
   const entries:any[]=[];
   try{
    for(const path of ['index.html',templatePath]) for(const node of [[0,0],[0,0,0],[0,0,1]]) {

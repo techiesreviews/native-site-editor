@@ -618,7 +618,7 @@ test("child selections omit template entry while root entry rejects stale or mis
       editor: () => undefined, preview: () => ({ selectNode: (at: { path: string; node: number[] }) => selected.push(at), selectAfterUpdate: () => {} }),
       currentPath: () => path, selection: () => selection,
       openFile: async (file: string) => { opened.push(file); path = file; return true; },
-      announce: (message: string) => announcements.push(message), error: () => {}, images: () => [], upload: async () => undefined,
+      announce: (message: string) => announcements.push(message), error: () => {}, images: () => [], prefix: () => "", upload: async () => undefined,
       links: () => [], pageLabel: (file: string) => file,
       panelHost: host, addStrip: (strip: HTMLElement) => host.append(strip), codeTitle: document.createElement("div"), previewPage: () => "index.html",
     });

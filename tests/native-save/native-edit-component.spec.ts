@@ -116,7 +116,7 @@ test("a part chosen in the framed instance while the template opens stays select
       editor: () => undefined, preview: () => ({ selectNode: (request: { node: number[] }) => asked.push(request.node), selectAfterUpdate: () => {}, editComponent: () => {} }),
       currentPath: () => current, selection: () => selection as never,
       openFile: async (path: string) => { current = path; selection = part; return true; },
-      announce: () => {}, error: () => {}, images: () => [], upload: async () => undefined, links: () => [], pageLabel: (path: string) => path,
+      announce: () => {}, error: () => {}, images: () => [], prefix: () => "", upload: async () => undefined, links: () => [], pageLabel: (path: string) => path,
       panelHost: host, canvasComponent: () => {}, codeTitle: document.createElement("div"),
       previewPage: () => "index.html", refreshBar: () => {},
     });

@@ -39,7 +39,7 @@ test("slot seam rejects stale snapshots and fills duplicated outlets as one nati
       currentPath: () => currentPath, selection: () => selection, previewPage: () => previewPage,
       preview: () => ({ selectAfterUpdate: (request: any) => requests.push(request), selectNode() {} }),
       openFile: async () => { opens++; return false; }, announce() {}, error(error: unknown) { throw error; },
-      images: () => [], upload: async () => undefined, links: () => [], pageLabel: (path: string) => path,
+      images: () => [], prefix: () => "", upload: async () => undefined, links: () => [], pageLabel: (path: string) => path,
       panelHost, codeTitle, addStrip() {}, refreshBar() {},
     });
     tools.show(selection);
@@ -140,7 +140,7 @@ test("canvas fill-in and Structure Show write identical source for every slot sh
           site: () => ({ components: { "test-card": templatePath }, routes: { "/": pagePath } }), edits,
           sources: () => sources, editor: () => editor, currentPath: () => pagePath, selection: () => selection, previewPage: () => pagePath,
           preview: () => ({ selectAfterUpdate() {}, selectNode() {} }), openFile: async () => false, announce() {}, error(error: unknown) { throw error; },
-          images: () => [], upload: async () => undefined, links: () => [], pageLabel: (path: string) => path,
+          images: () => [], prefix: () => "", upload: async () => undefined, links: () => [], pageLabel: (path: string) => path,
           panelHost, codeTitle, addStrip() {}, refreshBar() {},
         });
         const before = tools.structure(pagePath, [0])?.slots.find((slot: any) => slot.name === entry.name);
