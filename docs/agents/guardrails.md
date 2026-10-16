@@ -39,10 +39,6 @@ Other CLIs need equivalent hook event wiring; runner adapters do not install hoo
 
 - **Raw colours** (`scripts/check-colours.mjs`, the last step): CSS under `src/` outside `src/theme.css` may not hold hex, `rgb/rgba/hsl/hsla/hwb/lab/lch/oklab/oklch/color()` or named colours (`transparent`, `currentColor` and `inherit` are fine), including inside `color-mix()`. Use a theme token from `src/theme.css`, adding one there (with its dark value) when no role fits. Comments, strings, `url()` and selectors are ignored. One form passes: an alpha-only relative colour from a token or `currentColor`, such as `oklch(from var(--x) l c h / 0.45)`. Exceptions go in `scripts/check-colours.allow.json` as `{file, match, reason}`; an entry without a reason, or one that matches nothing, fails.
 
-> **TODO before this ticket merges: ticket 20 (unused exports) is not done.** Add its line here
-> from its Done notes: `scripts/check-exports.mjs`, exports no production module imports, the
-> allow list, and whether it runs in `check` or (if slower than about 3 s) in `lint`.
-
 ## `npm run lint` (about 20 s, kept separate from `check` because of its speed)
 
 ESLint with type-aware typescript-eslint (`eslint.config.mjs`):
@@ -52,9 +48,8 @@ ESLint with type-aware typescript-eslint (`eslint.config.mjs`):
 
 - **Double assertions** (`no-restricted-syntax`, `tests/**`): `as unknown as X` fails. Type a fake with `satisfies` or a declared type; extend `Window` explicitly for browser probes. Escape a deliberate incomplete or malformed fixture with `// eslint-disable-next-line no-restricted-syntax -- <specific reason>`.
 
-> **TODO before this ticket merges: ticket 18 (promise lint) is not done.** Add its two-line
-> summary here from its Done notes: `@typescript-eslint/no-floating-promises` and
-> `no-misused-promises`, and how to handle a promise (`await`, or `void p.catch(report)`).
+- **Promises** (`@typescript-eslint/no-floating-promises`, `no-misused-promises`): lint fails on a promise nobody awaits or catches, and on an async function passed where `() => void` is expected (listeners, timers, callbacks). Fix: `await` it, or wrap the handler in `reported()` (`src/ui/report-failure.ts`) so a rejection reaches the notice bar; a bare `void` only with a comment naming who handles the rejection. node:test's `test`/`it`/`describe`/`suite` are allowed by name.
+- **Unused exports** (`scripts/check-exports.mjs`, about 6 s, so it runs in `lint`): fails on an export that no production module imports, starting from the entry points; imports from `tests/` don't count. Delete the dead code, or allowlist a deliberate test seam in `scripts/check-exports.allow.json` with `{ file, name, reason }`. Known limit: unused `export *` barrels are not reported.
 
 Opt out on one line with a reason: `// eslint-disable-next-line @typescript-eslint/unbound-method -- <reason>`. A reason is required, for example: the original is saved only to restore it later, and every call passes `.call(this)`.
 
