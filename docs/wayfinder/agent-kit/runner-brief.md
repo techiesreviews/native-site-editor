@@ -18,7 +18,7 @@ The lead sends this with a ticket path and an owner id (`ak-NN`).
    `kit review --help`). It saves evidence under the main root `.scratch/reviews/<owner>/` by itself.
    Fix real defects; re-review once if fixes are substantial.
 6. Close the ticket (`## Done (YYYY-MM-DD)`, `status: closed`, `assignee: <owner>`) in the same branch.
-7. Land: `scripts/agents/land.sh` then `scripts/agents/ci-status.sh dev --wait` (both in the background),
-   or `scripts/agents/kit pr` once ticket 14 is on dev. Fix CI failures you caused.
+7. Land: `scripts/agents/kit pr --ticket <ticket>` (in the background). The merged PR is the finish line.
+   Put the PR number in your report's `landed:` line. Fix CI failures you caused.
 8. Clean up your servers and worktree (`git worktree remove` from outside it; keep the branch).
 9. Report once, the seven-line report from runner.md. Never end your turn with your own background job running.

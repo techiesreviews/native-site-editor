@@ -44,3 +44,8 @@
 - Started ak-15.
 - Ticket 30 landed via land.sh. First real kit pr: all local steps ok, push ok, then 'createPullRequest: Resource not accessible by personal access token' → Lex must grant Pull requests: Read and write on the fine-grained token (asked 2026-10-16). Pushed branch deleted.
 - Lex granted Pull requests: Read and write (2026-10-16). Ticket 31 (compare uses current tooling) after proof-shot failure on a pre-kit ref.
+- PR #1 (lead changes) merged through `kit pr`: open, Sol review comment, CI, rebase-merge — the PR flow works. Runners switched to `kit pr`.
+- Ticket 25 done: proof shots (60, 0 failed) shown to Lex; compare on pre-kit refs needs ticket 31.
+- ak-19 built but blocked by native-add-card spec failing on plain dev → lead landed 19 with land.sh; ticket 32 to fix the spec.
+- ak-29 landed ab3daf58 (0→6 specs for files adding; narrow commits 6–25). Accepted: native-files-tab not linked to adding modules. Started ak-12.
+- App restart (≈14:20): all runners and the kit pr runs died. Recovered: PR #2 (ak-28) waiting on checks then lead merges; 32 and 19 closed in their branches → lead runs kit pr after 28; 27 and 12 resumed by fresh runners from their worktrees; started 10, 22, 31.
