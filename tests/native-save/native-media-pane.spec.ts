@@ -1,14 +1,12 @@
 import { expect, test, type Page } from "@playwright/test";
-import { openPickerOn } from "./open-picker";
+import { openEditor, openMedia, openImagePicker } from "../support/scenarios";
 import { storedDraft } from "./drafts";
 import { filterTo } from "./media-filter";
 
 async function mount(page: Page, baseURL: string | undefined) {
-  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
-  await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
+  await openEditor(page, baseURL);
   // The repository adapter is configured on the first Images use.
-  await page.locator("#explorer-toggle").click();
-  await page.getByRole("tab", { name: "Media", exact: true }).click();
+  await openMedia(page);
   await expect(page.getByRole("region", { name: "Media", exact: true }).getByRole("button", { name: "Details for images/studio-desk.svg", exact: true })).toBeVisible();
   await page.getByRole("tab", { name: "Pages", exact: true }).click();
   await page.keyboard.press("Escape");
@@ -323,11 +321,9 @@ test("a failed direct image load can be retried without refreshing the library",
 
 // Slice 18: the Media picker is this pane in a smaller window; the same search, Collections, details and drafts.
 test("the picker searches, filters by collection, shows details and keeps drafts like the pane", async ({ page, baseURL }) => {
-  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
-  await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
-  const frame = page.frameLocator(".native-preview-frame");
+  await openEditor(page, baseURL);
   const choose = async () => {
-    await openPickerOn(page, frame.locator(".hero img"));
+    await openImagePicker(page, ".hero img");
     const picker = page.getByRole("dialog", { name: "Choose image", exact: true });
     await expect(picker.getByRole("button", { name: "Choose images/studio-desk.svg", exact: true })).toBeVisible();
     return picker;

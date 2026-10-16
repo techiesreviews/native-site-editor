@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { openEditor, openMedia } from "../support/scenarios";
 import { storedDraft } from "./drafts";
 import { animatedGif } from "./animated-gif";
 
@@ -50,10 +51,8 @@ async function openImprove(page: Page, baseURL: string | undefined, titles: stri
 }
 /** The editor on the home page, then Media → More → Improve images. */
 async function showImprove(page: Page, baseURL: string | undefined) {
-  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
-  await expect(page.locator("#status")).toContainText("Up to date with main");
-  await page.locator("#explorer-toggle").click();
-  await tab(page).click();
+  await openEditor(page, baseURL);
+  await openMedia(page);
   await pane(page).getByRole("button", { name: "More", exact: true }).click();
   await page.getByRole("menuitem", { name: /^Improve images/ }).click();
   await expect(pane(page).getByRole("heading", { name: "Improve images", exact: true })).toBeVisible();
@@ -190,11 +189,9 @@ async function fixPlayerRow(page: Page, baseURL: string | undefined, title: "Loo
     await commit(page, baseURL, { path: "images/loop.gif", base64: animatedGif().toString("base64") });
     await commit(page, baseURL, { path: "loop/index.html", content: pageHtml("Loop", "images/loop.gif") });
   } else await commit(page, baseURL, { path: "tour/index.html", content: tourHtml });
-  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
-  await expect(page.locator("#status")).toContainText("Up to date with main");
+  await openEditor(page, baseURL);
   for (const path of PLAYER_FILES) expect(await storedDraft(page, path), `${path} is not in the site yet`).toBeUndefined();
-  await page.locator("#explorer-toggle").click();
-  await tab(page).click();
+  await openMedia(page);
   await pane(page).getByRole("button", { name: "More", exact: true }).click();
   await page.getByRole("menuitem", { name: /^Improve images/ }).click();
   await expect(row(page, title)).toBeVisible();

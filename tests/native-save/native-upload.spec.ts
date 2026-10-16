@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { expect, test, type Page } from "@playwright/test";
+import { openEditor, openMedia, pickPicture, openImagePicker } from "../support/scenarios";
 import { storedDraft } from "./drafts";
-import { openPickerOn } from "./open-picker";
 import { publishButton, showPublish } from "./publish";
 import { onePagePdf } from "./pdf-fixture";
 
@@ -45,10 +45,9 @@ const saveTrigger = publishButton;
 const panel = (page: Page) => page.locator("#publish-files");
 
 async function open(page: Page, baseURL: string | undefined) {
-  await page.goto(`${baseURL}/#repo=501&branch=main&file=${encodeURIComponent(indexPath)}`);
+  await openEditor(page, baseURL, encodeURIComponent(indexPath));
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath, { timeout: 30_000 });
   await expect(frame(page).locator(".hero h1")).toBeVisible({ timeout: 30_000 });
-  await expect(status(page)).toContainText("Up to date with main", { timeout: 30_000 });
 }
 
 async function editorText(page: Page) {
@@ -62,9 +61,9 @@ async function editorText(page: Page) {
 }
 
 async function openChooser(page: Page) {
-  await frame(page).locator(".hero img").click();
+  await pickPicture(page, ".hero img");
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Image");
-  await openPickerOn(page, frame(page).locator(".hero img"));
+  await openImagePicker(page, ".hero img");
   await expect(chooser(page)).toBeVisible();
   await expect(chooser(page).getByRole("button", { name: "Choose images/placeholder.svg", exact: true })).toBeVisible();
   await expect(chooser(page)).not.toHaveAttribute("aria-busy", "true");
@@ -247,8 +246,7 @@ test("Upload files… in a folder's menu and files dropped on a folder upload th
 
 // Nightly default fixture: real pdf.js and Mediabunny, outside the smoke group.
 async function addInMedia(page: Page, name: string, mimeType: string, buffer: Buffer) {
-  if (!await explorer(page).isVisible()) await page.locator("#explorer-toggle").click();
-  await page.getByRole("tab", { name: "Media", exact: true }).click();
+  await openMedia(page);
   const media = page.getByRole("region", { name: "Media", exact: true });
   await expect(media.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true })).toBeVisible();
   await media.locator('input[name="media-upload"]').setInputFiles({ name, mimeType, buffer });

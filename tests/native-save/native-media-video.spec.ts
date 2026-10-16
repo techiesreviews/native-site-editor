@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import { openEditor, openMedia } from "../support/scenarios";
 import { publishButton } from "./publish";
 import { storedDraft } from "./drafts";
 import { openPickerOn } from "./open-picker";
@@ -16,8 +17,7 @@ const VIDEO = '<video src="/media/clip.mp4" poster="/images/placeholder.svg" con
 // A real two-second VP9 clip in MP4 (Playwright's Chromium has no H.264), shared with native-media-policy.spec.ts.
 const CLIP = readFileSync("tests/native-save/clip.mp4").toString("base64");
 async function open(page: Page, baseURL: string | undefined, video: boolean | string = true, extra: Record<string, string> = {}, files: Record<string, object> = {}) {
-  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
-  await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
+  await openEditor(page, baseURL);
   const body = typeof video === "string" ? video : video ? VIDEO : "<p>Section words</p>";
   const source = `<!doctype html>\n<html lang="en">\n<head><title>Video page</title></head>\n<body>\n<main>\n  <section id="scene">\n    <h1>Video page</h1>\n    ${body}\n  </section>\n</main>\n</body>\n</html>`;
   for (const [path, content] of Object.entries({ "index.html": source, ...extra, ".editor/media.json": JSON.stringify({ version: 2, collections: [], files: { "media/clip.mp4": { still: "images/placeholder.svg" }, ...files } }) })) {
@@ -230,8 +230,7 @@ test("Play on an Online video lays YouTube's own player over its place; Stop rem
 test("video details: a moment becomes the still, an .srt adds a track, a picture from Media replaces the still", async ({ page, baseURL }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await open(page, baseURL, '<video src="/media/clip.mp4" poster="/images/placeholder.svg" controls preload="none" playsinline width="400" height="240" aria-label="Clip"></video>');
-  await page.locator("#explorer-toggle").click();
-  await page.getByRole("tab", { name: "Media", exact: true }).click();
+  await openMedia(page);
   const library = page.getByRole("region", { name: "Media", exact: true });
   await library.getByRole("button", { name: "Details for media/clip.mp4", exact: true }).click();
   const status = page.locator(".editor-toast__text");
@@ -330,8 +329,7 @@ test("Add → Media places a pasted YouTube address with its still and play butt
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Video");
   await expect(bar(page).getByText("Needs a name")).toHaveCount(0);
   // Media lists it under Video with the YouTube mark and the page that shows it.
-  await page.locator("#explorer-toggle").click();
-  await page.getByRole("tab", { name: "Media", exact: true }).click();
+  await openMedia(page);
   const library = page.getByRole("region", { name: "Media", exact: true });
   const tile = library.locator(".media-library__card.is-online");
   await expect(tile.locator(".media-library__service")).toHaveText("YouTube");
@@ -376,8 +374,7 @@ test("an online Vimeo video's details switch Vimeo's own bar on everywhere; Remo
   expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: ".editor/media.json", content: JSON.stringify(records) } })).ok()).toBe(true);
   await page.reload();
   await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
-  await page.locator("#explorer-toggle").click();
-  await page.getByRole("tab", { name: "Media", exact: true }).click();
+  await openMedia(page);
   const library = page.getByRole("region", { name: "Media", exact: true });
   await expect(library.locator(".media-library__card.is-online .media-library__service")).toHaveText("Vimeo");
   await library.getByRole("button", { name: "Details for Vimeo video Talk", exact: true }).click();

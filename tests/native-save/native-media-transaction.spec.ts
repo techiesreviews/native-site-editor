@@ -1,14 +1,13 @@
 import { test, expect } from "@playwright/test";
+import { openEditor, openMedia } from "../support/scenarios";
 import { storedDraft } from "./drafts";
 
 // Default native-save fixture group.
 for (const file of ["styles/site.css", "missing.html"]) {
   test(file === "missing.html" ? "media metadata with no file open joins the next page's Undo and Redo" : "open a stylesheet, mark an image Always keep, Undo", async ({ page, baseURL }) => {
-    await page.goto(`${baseURL}/#repo=501&branch=main&file=${file}`);
-    await expect(page.locator("#status")).toContainText("Up to date with main");
+    await openEditor(page, baseURL, file);
     if (file === "missing.html") await expect(page.locator(".code-editor__undo")).toHaveCount(0);
-    await page.locator("#explorer-toggle").click();
-    await page.getByRole("tab", { name: "Media", exact: true }).click();
+    await openMedia(page);
     const images = page.getByRole("region", { name: "Media", exact: true });
     await images.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true }).click();
     await images.getByRole("checkbox", { name: "Always keep", exact: true }).check();

@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { crc32, deflateSync } from "node:zlib";
 import { expect, test, type Page } from "@playwright/test";
+import { openEditor, openMedia } from "../support/scenarios";
 import { storedDraft } from "./drafts";
 import { publishButton } from "./publish";
 
@@ -52,11 +53,9 @@ async function seed(page: Page, baseURL: string | undefined, extra: Record<strin
   };
   for (const [path, data] of Object.entries(files))
     expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path, ...data } })).status()).toBe(204);
-  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await openEditor(page, baseURL);
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html", { timeout: 30_000 });
-  await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
-  await page.locator("#explorer-toggle").click();
-  await page.getByRole("tab", { name: "Media", exact: true }).click();
+  await openMedia(page);
   await expect(pane(page)).toBeVisible();
 }
 const pane = (page: Page) => page.getByRole("region", { name: "Media", exact: true });

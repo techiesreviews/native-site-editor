@@ -1,13 +1,11 @@
 import { expect, test, type Page } from "@playwright/test";
-import { openPickerOn } from "./open-picker";
+import { openEditor, openMedia, openImagePicker } from "../support/scenarios";
 import { storedDraft } from "./drafts";
 
 async function open(page: Page, baseURL: string | undefined) {
-  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await openEditor(page, baseURL);
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html", { timeout: 30_000 });
-  await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
-  await page.locator("#explorer-toggle").click();
-  await page.getByRole("tab", { name: "Media", exact: true }).click();
+  await openMedia(page);
   await expect(page.getByRole("region", { name: "Media", exact: true })).toBeVisible();
 }
 const library = (page: Page) => page.getByRole("region", { name: "Media", exact: true });
@@ -242,7 +240,7 @@ test("real worker keeps APNG frames, transparency in every copy, and turns rotat
 });
 
 test("optimisation preview cannot replace a newer binary revision", async ({ page, baseURL }) => {
-  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await openEditor(page, baseURL);
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html", { timeout: 30_000 });
   await page.evaluate(async (modulePaths) => {
     const { configureMediaPicker, mountMediaLibrary } = await import(modulePaths.picker) as typeof import("../../src/page-builder/media-picker");
@@ -330,7 +328,7 @@ test("renaming an image family keeps responsive copies when placing it on a page
     await expect.poll(async () => (await storedDraft(page, `images/garden-family-${width}w.svg`))?.movedFrom).toBe(`images/studio-desk-${width}w.svg`);
   }
   await closeLibrary(page);
-  await openPickerOn(page, page.frameLocator(".native-preview-frame").locator(".hero-image"));
+  await openImagePicker(page, ".hero-image");
   const chooser = page.getByRole("dialog", { name: "Choose image", exact: true });
   await chooser.getByRole("button", { name: "Choose images/garden-family.svg", exact: true }).click();
   await chooser.getByRole("button", { name: "Use image", exact: true }).click();

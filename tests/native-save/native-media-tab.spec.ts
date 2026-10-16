@@ -1,13 +1,11 @@
 import { test, expect, type Page } from "@playwright/test";
-import { openPickerOn } from "./open-picker";
+import { openEditor, openMedia, openImagePicker, switchSiteMidUpload } from "../support/scenarios";
 import { storedDraft } from "./drafts";
 import { collectionChoices, filterButton, filterTo } from "./media-filter";
 const pane = (page: Page) => page.getByRole("region", { name: "Media", exact: true });
 async function open(page: Page, baseURL: string | undefined) {
-  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
-  await expect(page.locator("#status")).toContainText("Up to date with main");
-  await page.locator("#explorer-toggle").click();
-  await page.getByRole("tab", { name: "Media", exact: true }).click();
+  await openEditor(page, baseURL);
+  await openMedia(page);
   await expect(pane(page).getByRole("button", { name: "Details for images/studio-desk.svg", exact: true })).toBeVisible();
 }
 test("Media is the tab between Pages and Files, with keyboard navigation and persistent query and detail state", async ({ page, baseURL }) => {
@@ -85,12 +83,10 @@ test("scope change disposes old controls and remounts clean image query state", 
   await open(page, baseURL); await pane(page).getByLabel("Search media", { exact: true }).fill("studio-desk");
   await pane(page).getByRole("button", { name: "Details for images/studio-desk.svg", exact: true }).click();
   await pane(page).getByLabel("Description", { exact: true }).fill("Stale scope alt");
-  await page.request.post(`${baseURL}/__demo/branch`, { data: { name: "feature" } });
-  await page.evaluate(() => { (window as any).oldImageSave = [...document.querySelectorAll<HTMLButtonElement>("#explorer-media button")].find(button => button.textContent === "Save details"); location.hash = "repo=501&branch=feature&file=index.html"; });
-  await expect(page.locator("#status")).toContainText("Up to date with feature");
+  await page.evaluate(() => { (window as any).oldImageSave = [...document.querySelectorAll<HTMLButtonElement>("#explorer-media button")].find(button => button.textContent === "Save details"); });
+  await switchSiteMidUpload(page, baseURL);
   await page.evaluate(() => (window as any).oldImageSave.click());
-  if (!await page.locator("#explorer").evaluate(element => element.matches(":popover-open"))) await page.locator("#explorer-toggle").click();
-  await page.getByRole("tab", { name: "Media", exact: true }).click();
+  await openMedia(page);
   await expect(pane(page).getByLabel("Search media", { exact: true })).toHaveValue("");
   expect((await storedDraft(page, ".editor/media.json"))?.content ?? "").not.toContain("Stale scope alt");
 });
@@ -131,13 +127,13 @@ test("image slot keeps its chooser modal while manager query survives", async ({
   await open(page, baseURL); await pane(page).getByLabel("Search media", { exact: true }).fill("studio-desk");
   await page.keyboard.press("Escape");
   await expect(page.locator("#explorer")).not.toBeVisible();
-  const frame = page.frameLocator(".native-preview-frame"); await openPickerOn(page, frame.locator(".hero-image"));
+  await openImagePicker(page, ".hero-image");
   const chooser = page.getByRole("dialog", { name: "Choose image", exact: true }); await expect(chooser).toBeVisible();
   await chooser.getByRole("button", { name: "Choose images/studio-desk.svg", exact: true }).click({ timeout: 10000 });
   await chooser.getByRole("button", { name: "Use image", exact: true }).click();
   await expect.poll(async () => (await storedDraft(page, "index.html"))?.content).toContain('src="/images/studio-desk.svg"');
   await expect(chooser).toHaveCount(0);
-  await page.locator("#explorer-toggle").click(); await page.getByRole("tab", { name: "Media", exact: true }).click();
+  await openMedia(page);
   await expect(pane(page).getByLabel("Search media", { exact: true })).toHaveValue("studio-desk");
 });
 test("changed image usage rebuilds detail references while retaining unfinished fields and focus", async ({page,baseURL}) => {
@@ -158,7 +154,7 @@ test("changed image usage rebuilds detail references while retaining unfinished 
   await expect(pane(page).getByRole("checkbox",{name:"Always keep",exact:true})).toBeChecked();
 });
 test("busy image action explains blocked controls and keeps focus on the screen after its refresh", async ({page,baseURL}) => {
-  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await openEditor(page, baseURL);
   await expect(page.locator("#current-page")).toHaveAttribute("data-path","index.html");
   await page.evaluate(async () => {
     const {createMediaLibraryView} = await import("/src/page-builder/media-library-view.ts");
@@ -202,7 +198,7 @@ test("closed Media explorer defers repository refresh until reopened", async ({p
 });
 
 test("background image loads preserve typing, the chosen collection and details", async ({ page, baseURL }) => {
-  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await openEditor(page, baseURL);
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
   await page.evaluate(async () => {
     const { createMediaLibraryView } = await import("/src/page-builder/media-library-view.ts");
@@ -285,7 +281,7 @@ test("compact details reveal metadata and return to the same browse filters", as
 });
 
 async function mountDelayedReferences(page: Page, baseURL: string | undefined) {
-  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await openEditor(page, baseURL);
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
   await page.evaluate(async () => {
     const { createMediaLibraryView } = await import("/src/page-builder/media-library-view.ts");
@@ -379,7 +375,7 @@ test("cancelled delete stays dismissed without a reopen notice on refresh", asyn
   await page.evaluate(() => (window as any).focusProbe.dispose());
 });
 test("a failed detail image clears its focus request and later refresh preserves grid focus", async ({ page, baseURL }) => {
-  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await openEditor(page, baseURL);
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
   await page.evaluate(async () => {
     const { createMediaLibraryView } = await import("/src/page-builder/media-library-view.ts");
@@ -416,7 +412,7 @@ for (const [width, across] of [[320, 2], [390, 3], [768, 4], [1280, 6]] as const
 
 test("Media tiles: one per Image family, names on hover or keyboard focus, a clean surface without a preview", async ({ page, baseURL }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
-  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await openEditor(page, baseURL);
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
   await page.evaluate(async () => {
     const { createMediaLibraryView } = await import("/src/page-builder/media-library-view.ts");
@@ -558,7 +554,7 @@ test("One bar: search, then Filter, + and More as one 44 px group at every width
 
 async function mountMixedLibrary(page: Page, baseURL: string | undefined) {
   await page.setViewportSize({ width: 1280, height: 900 });
-  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await openEditor(page, baseURL);
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
   await page.evaluate(async () => {
     const { createMediaLibraryView } = await import("/src/page-builder/media-library-view.ts");

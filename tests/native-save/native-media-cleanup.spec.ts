@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { openEditor, openMedia } from "../support/scenarios";
 import { publishButton } from "./publish";
 
 // Clean up: its count in More and the Always keep mark (slice 49; the Media tab's count and Dismiss went
@@ -18,8 +19,7 @@ const tab = (page: Page) => page.getByRole("tab", { name: "Media", exact: true }
 /** Clean up's count in More, opening Media first when it is not shown; 0 when there is none. */
 async function cleanUpCount(page: Page) {
   if (!await pane(page).isVisible()) {
-    if (!await tab(page).isVisible()) await page.locator("#explorer-toggle").click();
-    await tab(page).click();
+    await openMedia(page);
   }
   await pane(page).getByRole("button", { name: "More", exact: true }).click();
   const label = await page.getByRole("menuitem", { name: /^Clean up/ }).textContent();
@@ -33,8 +33,7 @@ async function commit(page: Page, baseURL: string | undefined, files: [string, s
     expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path, content } })).status()).toBe(204);
 }
 async function open(page: Page, baseURL: string | undefined) {
-  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
-  await expect(page.locator("#status")).toContainText("Up to date with main");
+  await openEditor(page, baseURL);
 }
 // The same address again is only a hash visit; a later visit reloads.
 async function reopen(page: Page) {
@@ -129,8 +128,7 @@ test("using the unused file on a page takes it out of the count", async ({ page,
 
 test("removing a used file warns with its page, then allows; after publishing, Recently removed restores it and the page shows it again", async ({ page, baseURL }) => {
   await open(page, baseURL);
-  await page.locator("#explorer-toggle").click();
-  await tab(page).click();
+  await openMedia(page);
   const hero = page.frameLocator(".native-preview-frame").locator(".hero-image");
   const shown = () => hero.evaluate(image => (image as HTMLImageElement).complete && (image as HTMLImageElement).naturalWidth);
   await expect.poll(shown).toBeGreaterThan(0);
@@ -156,8 +154,7 @@ test("removing a used file warns with its page, then allows; after publishing, R
   expect((await page.request.get(`${baseURL}/__demo/file?path=images/placeholder.svg`)).status()).toBe(404);
   // Publish closes the explorer; open Media again.
   await page.mouse.move(0, 400);
-  await page.locator("#explorer-toggle").click();
-  await tab(page).click();
+  await openMedia(page);
 
   // Recently removed lists it with its date and picture; Restore brings it back to the same address.
   await pane(page).getByRole("button", { name: "More", exact: true }).click();
@@ -243,8 +240,7 @@ test("on a phone the Clean up review is the media grid: three tiles a row, a tic
   await page.goto(baseURL!);
   await commit(page, baseURL, [...["a", "b", "c", "d"].map(name => [`images/spare-${name}.svg`, svg(name)] as [string, string]), [".editor/media.json", quiet]]);
   await open(page, baseURL);
-  await page.locator("#explorer-toggle").click();
-  await tab(page).click();
+  await openMedia(page);
   await pane(page).getByRole("button", { name: "More", exact: true }).click();
   await page.getByRole("menuitem", { name: /^Clean up/ }).click();
   await pane(page).getByRole("button", { name: /^Nothing uses these/ }).click();

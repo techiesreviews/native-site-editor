@@ -1,16 +1,15 @@
 // The Media screen (media-manager build slices 12, 14 and 59): usage badges on the tiles, the list view, File details and every kind.
 // Default fixture: images/placeholder.svg is on index.html; images/studio-desk.svg is on no page.
 import { test, expect, type Page } from "@playwright/test";
+import { openEditor, openMedia } from "../support/scenarios";
 import { storedDraft } from "./drafts";
 import { publishButton, showPublish } from "./publish";
 import { onePagePdf } from "./pdf-fixture";
 const pane = (page: Page) => page.getByRole("region", { name: "Media", exact: true });
 const tile = (page: Page, path: string) => pane(page).locator(`.media-library__card[data-path="${path}"]`);
 async function open(page: Page, baseURL: string | undefined, file = "index.html") {
-  await page.goto(`${baseURL}/#repo=501&branch=main&file=${file}`);
-  await expect(page.locator("#status")).toContainText("Up to date with main");
-  await page.locator("#explorer-toggle").click();
-  await page.getByRole("tab", { name: "Media", exact: true }).click();
+  await openEditor(page, baseURL, file);
+  await openMedia(page);
   await expect(pane(page).getByRole("button", { name: "Details for images/studio-desk.svg", exact: true })).toBeVisible();
 }
 async function view(page: Page, choice: string) {
@@ -84,7 +83,7 @@ test("tapping a badge opens the usage words and page names; Escape keeps the exp
 const LONG = "images/a-very-long-photograph-name-from-the-studio-shoot-in-october.png";
 /** A Media view on a usage source the test steps through: first a check still reading, then a finished one. */
 async function mountUsage(page: Page, baseURL: string | undefined) {
-  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await openEditor(page, baseURL);
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
   await page.evaluate(async long => {
     const { createMediaLibraryView } = await import("/src/page-builder/media-library-view.ts");
@@ -412,8 +411,7 @@ test("Always keep stays after reload, and Discard puts the saved details back", 
   await expect.poll(() => records(page)).toContain('"alwaysKeep": true');
   await page.reload();
   await expect(page.locator("#status")).toContainText("Up to date with main");
-  await page.locator("#explorer-toggle").click();
-  await page.getByRole("tab", { name: "Media", exact: true }).click();
+  await openMedia(page);
   await details(page, "images/studio-desk.svg");
   const keep = library.getByRole("checkbox", { name: "Always keep", exact: true });
   await expect(keep).toBeChecked();
@@ -512,7 +510,7 @@ test("words set aside by Decorative survive a background refresh and come back w
 });
 
 test("a host without one-step details refuses a rename and writes nothing", async ({ page, baseURL }) => {
-  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await openEditor(page, baseURL);
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
   await page.evaluate(async () => {
     const { createMediaLibraryView } = await import("/src/page-builder/media-library-view.ts");
@@ -584,8 +582,7 @@ test("To check lists an agent's description; OK clears the mark, and it stays cl
   expect(JSON.parse(saved).files["images/placeholder.svg"].description).toEqual({ text: "A green placeholder, by an agent" });
   await page.reload();
   await expect(page.locator("#status")).toContainText("Up to date with main");
-  await page.locator("#explorer-toggle").click();
-  await page.getByRole("tab", { name: "Media", exact: true }).click();
+  await openMedia(page);
   await expect(library.getByRole("button", { name: "Details for images/placeholder.svg", exact: true })).toBeVisible();
   await expect(agentMark(page, "images/placeholder.svg")).toHaveCount(0);
   await toCheck(page, "To check");
@@ -656,11 +653,9 @@ async function shortVideo(page: Page) {
 
 test("a video, an audio file, a PDF and a download show their tiles and lengths; kinds narrow to each; details play", async ({ page, baseURL }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
-  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
-  await expect(page.locator("#status")).toContainText("Up to date with main");
+  await openEditor(page, baseURL);
   const video = await shortVideo(page);
-  await page.locator("#explorer-toggle").click();
-  await page.getByRole("tab", { name: "Media", exact: true }).click();
+  await openMedia(page);
   const library = pane(page);
   await expect(library.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true })).toBeVisible();
   // Media's own chooser takes every kind, as drops do.

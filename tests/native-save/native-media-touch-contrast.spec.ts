@@ -1,12 +1,12 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import { openEditor } from "../support/scenarios";
 import { sampleContrast, type Pixel } from "./tone-contrast";
 
 // Slice 106 (audit C3): a tap leaves no hover patch, a mouse still gets one; links and disabled
 // buttons keep their contrast in both themes; see-through pictures sit on a light checkerboard.
 
 async function open(page: Page, baseURL: string | undefined) {
-  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
-  await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
+  await openEditor(page, baseURL);
 }
 const media = (page: Page) => page.getByRole("region", { name: "Media", exact: true });
 async function openMedia(page: Page, press: (target: Locator) => Promise<void>) {
