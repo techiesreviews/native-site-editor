@@ -10,9 +10,9 @@ for this build only. Ticket 24 folds the lasting rules into runner.md.
 - **No preview deploys.** Never run `deploy-preview.sh`, `npm run deploy:*` or
   wrangler. The lead deploys.
 - **Never touch `main`** or production.
-- **Finish line.** Until `kit pr` lands (ticket 14), finish with
-  `scripts/agents/land.sh` and `scripts/agents/ci-status.sh dev --wait`. After
-  that, finish with `scripts/agents/kit pr`; the merged PR is the finish line.
+- **Finish line.** Finish with `scripts/agents/land.sh` and
+  `scripts/agents/kit wait ci --branch dev` until the lead says to switch to
+  `scripts/agents/kit pr` (the lead runs its first real PR first).
 - **Review.** Every change gets one Sol review through `scripts/agents/review.sh`
   (or `kit review` once ticket 05 lands). Copy the review folder to
   `/home/ubulex/Projects/native-site-editor/.scratch/reviews/<owner>/` so it
