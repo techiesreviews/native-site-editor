@@ -23,4 +23,5 @@ Running tests, timing or a preview deploy: read `docs/agents/local-testing.md`.
 
 ## Review
 
+The repo's review and model-routing rules in docs/agents/ take priority over global skills.
 Reviewing a diff: apply `CODING_STANDARDS.md`.
