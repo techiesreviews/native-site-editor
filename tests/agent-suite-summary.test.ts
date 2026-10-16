@@ -51,6 +51,15 @@ test("summary marks known failures separately and still exits 1 for mixed failin
     assert.doesNotMatch(result.stdout, /next line/);
     assert.equal(spawnSync(process.execPath, ["scripts/agents/suite-summary.mjs"], { encoding: "utf8", env }).status, 2);
     assert.equal(spawnSync(process.execPath, ["scripts/agents/suite-summary.mjs", join(scratch, "missing.json")], { encoding: "utf8", env }).status, 1);
+    // Without the override the live registry is read; a failure no entry names stays unlabelled.
+    const live = { ...process.env };
+    delete live.ASE_KNOWN_FAILURES;
+    const unknownReport = join(scratch, "unknown.json");
+    writeFileSync(unknownReport, JSON.stringify({ suites: [{ title: "suite", file: "native-save/zz-stand-in.spec.ts", specs: [{ title: "stand-in", line: 1, tests: [{ status: "unexpected" }] }] }] }));
+    const plain = spawnSync(process.execPath, ["scripts/agents/suite-summary.mjs", unknownReport], { encoding: "utf8", env: live });
+    assert.equal(plain.status, 1);
+    assert.match(plain.stdout, /zz-stand-in\.spec\.ts:1 .*stand-in\n/);
+    assert.match(plain.stdout, /known flaky: 0, known failing on dev: 0/);
   } finally { rmSync(scratch, { recursive: true, force: true }); }
 });
 
