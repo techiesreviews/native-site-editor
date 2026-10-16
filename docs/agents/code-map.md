@@ -80,7 +80,7 @@ One line per media-* module. Concern-level rows sit in the table above.
 
 | Files and entry symbols | What it does |
 | --- | --- |
-| `shared/media-kinds.ts` — `mediaKind`, `mimeType`, `isImagePath`, `extensionsOf` | The one media-kind table: extensions per kind, MIME types and a named subset per caller policy. The only home for extension lists (source guard). |
+| `shared/media-kinds.ts` — `mediaKind`, `mimeType`, `extensionsOf` | The one media-kind table: extensions per kind, MIME types and a named subset per caller policy. The only home for extension lists (source guard). |
 | `shared/media-records.ts` — `parseMediaRecords` | The media records file: places, descriptions, collections, removed files. |
 | `shared/media-records-path.ts` — `MEDIA_RECORDS_PATH` | Where the records file lives. |
 | `shared/media-trim.ts` — `validTrim` | Checks a trim (crop, turn, straighten, flip) stays in range. |
