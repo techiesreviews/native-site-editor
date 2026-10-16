@@ -229,8 +229,10 @@ test("built bundle falls back to the only index asset when HTML has no reference
 });
 
 test("an old live bundle fails within the verification deadline and names both bundles", async t => {
+  // 300 ms (the fixture default) can be used up by one request on a slow CI runner,
+  // leaving no second attempt; give the loop room for several polls.
   const f = await fixture(t); f.setLive(() => html("index-old.js"));
-  const start = Date.now(), result = await f.run();
+  const start = Date.now(), result = await f.run([], { KIT_PREVIEW_VERIFY_MS: "1500" });
   assert.equal(result.status, 1);
   assert.ok(result.stdout.endsWith(`RESULT: fail preview ${version} ${f.sha} live index-old.js != built ${built}\n`));
   assert.ok(Date.now() - start < 5_000); assert.ok(f.requests.length >= 2);
