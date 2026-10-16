@@ -238,6 +238,14 @@ test("an old live bundle fails within the verification deadline and names both b
   assert.ok(Date.now() - start < 5_000); assert.ok(f.requests.length >= 2);
 });
 
+test("a poll cut short by the deadline keeps the bundle the last answer named", async t => {
+  const f = await fixture(t); f.setLive(count => count === 1 ? html("index-old.js") : "hang");
+  const result = await f.run();
+  assert.equal(result.status, 1);
+  assert.ok(result.stdout.endsWith(`RESULT: fail preview ${version} ${f.sha} live index-old.js != built ${built}\n`), result.stdout);
+  assert.equal(f.requests.length, 2);
+});
+
 test("an HTTP response that never finishes is bounded by the verification deadline", async t => {
   const f = await fixture(t); f.setLive(() => "hang");
   const start = Date.now(), result = await f.run();
