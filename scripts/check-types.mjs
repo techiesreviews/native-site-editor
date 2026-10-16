@@ -6,8 +6,7 @@
 // - tests/tsconfig.json: errors other than unused declarations, located in tests/ (not fixed
 //   yet) or in worker/ (that program uses the DOM lib, not the Workers types; the worker
 //   project checks those files fully). Such errors in src/ or shared/ fail.
-//   preview-wire.test.ts is checked fully so its exhaustive protocol maps cannot drift;
-// - unused-declaration errors in src/prototype/ (owned by another session).
+//   preview-wire.test.ts is checked fully so its exhaustive protocol maps cannot drift.
 // A tsc run that fails without a filterable diagnostic (a missing project, no inputs, a crash
 // or output on stderr) fails the check.
 // Prefix a parameter or loop variable with `_` when it must stay.
@@ -24,7 +23,6 @@ const projects = [
 ];
 const LOCATED = /^(.+?)\(\d+,\d+\): error TS(\d+):/;
 const UNUSED = new Set(["6133", "6138", "6192", "6196", "6198", "6199", "6205"]);
-const UNUSED_EXEMPT = ["src/prototype/"];
 
 function tsc(config) {
   return new Promise((resolve) => {
@@ -45,8 +43,7 @@ await Promise.all(projects.map(async ({ config, onlyUnusedIn }) => {
     let keep = true;
     if (match) {
       const [, file, number] = match;
-      if (UNUSED.has(number)) keep = !UNUSED_EXEMPT.some((prefix) => file.startsWith(prefix));
-      else keep = file === "tests/preview-wire.test.ts" || !onlyUnusedIn.some((prefix) => file.startsWith(prefix));
+      if (!UNUSED.has(number)) keep = file === "tests/preview-wire.test.ts" || !onlyUnusedIn.some((prefix) => file.startsWith(prefix));
     }
     if (!keep) { filtered++; return; }
     kept++;
