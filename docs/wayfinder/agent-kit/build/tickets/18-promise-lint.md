@@ -3,7 +3,7 @@ title: "Lint: no floating or misused promises"
 type: task (AFK)
 status: open
 assignee:
-blocked_by: [17-media-kinds]
+blocked_by: [17-media-kinds, 26-files-adding-stale-message]
 builder: sol
 ---
 
