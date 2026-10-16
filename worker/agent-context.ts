@@ -135,6 +135,8 @@ export async function createGrant(
 /**
  * Records a connection's first use, and the MCP client's name when a token
  * connection brings one, so the editor can show the agent as connected.
+ * Updates the hub before the grant record, so a failed hub step leaves the
+ * record unmarked and the next request retries the idempotent hub operation.
  */
 export async function markGrantUsed(
   env: Env,
@@ -148,8 +150,8 @@ export async function markGrantUsed(
     : "";
   const usedAt = Date.now();
   const named = grant.client ?? (name || undefined);
-  await agentRecord(env, id, "PUT", { ...grant, usedAt, ...(named ? { client: named } : {}) });
   await operateHub(env, grant.sessionId, { type: "use-grant", id, usedAt, client: named });
+  await agentRecord(env, id, "PUT", { ...grant, usedAt, ...(named ? { client: named } : {}) });
 }
 export async function revokeGrant(env: Env, id: string, sessionId: string) {
   await agentRecord(env, id, "DELETE");
