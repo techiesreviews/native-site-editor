@@ -49,7 +49,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  min-height: var(--size-control);
+  min-block-size: max(var(--size-control), var(--size-tap));
   padding: 0 6px 0 calc((var(--level, 1) - 1) * var(--pages-indent) + 4px);
   border-radius: var(--radius);
   font-size: var(--type-base);
@@ -124,14 +124,13 @@
 /* Touch: one ⋯ per row (Add subpage is in it); New page reachable by thumb. */
 @media (hover: none), (pointer: coarse) {
   .pages-add { display: none; }
-  .pages-row { min-height: 44px; }
   .pages-row > .row-action-overlay { margin-inline-start: auto; }
   /* A wide touch list keeps its URL column; the ⋯ holds the row's end. */
   @container (width >= 30rem) {
     .pages-row > .pages-url { --pages-url-end: 52px; }
     .pages-row:has(> .pages-url) > .row-action-overlay { position: absolute; inset-block: 0; inset-inline-end: 0; }
   }
-  :is(.pages-new, .explorer-new) { min-height: 44px; }
+  :is(.pages-new, .explorer-new) { min-block-size: var(--size-touch); }
 }
 /* Change URL and New page open as a card under the row, aligned with the titles. */
 .pages-url-change, .pages-edit {

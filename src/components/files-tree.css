@@ -43,7 +43,7 @@
   inline-size: 100%;
   gap: 6px;
   align-items: center;
-  min-block-size: var(--size-control);
+  min-block-size: max(var(--size-control), var(--size-tap));
   padding-block: 0;
   padding-inline: 4px 8px;
   border: 0;

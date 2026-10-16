@@ -266,7 +266,7 @@
   line-height: 1.2;
 }
 .edit-bar__media[aria-expanded="true"] .edit-bar__badge {
-  background: color-mix(in oklch, var(--on-pressed) 24%, transparent);
+  background: color-mix(in oklch, var(--pressed), var(--text) 20%);
 }
 .edit-bar__media[aria-expanded="true"],
 .edit-bar__address[aria-expanded="true"] {
