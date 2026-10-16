@@ -442,11 +442,13 @@ test("a card swapped before filling stays as written after a page switch, with n
   await openPages();
   const work = explorer.getByRole("treeitem", { name: "Work", exact: true });
   if ((await work.getAttribute("aria-expanded")) === "false") await work.press("ArrowRight");
-  await explorer.getByRole("treeitem", { name: /^Fern & Kettle/ }).click();
+  // The row's name opens the page; its URL column opens Change URL instead.
+  const pageName = (name: RegExp) => explorer.getByRole("treeitem", { name }).locator(":scope > .pages-row > .pages-label");
+  await pageName(/^Fern & Kettle/).click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "work/fern-and-kettle/index.html");
   await expect(page.locator(".card-fill")).toHaveCount(0);
   await openPages();
-  await explorer.getByRole("treeitem", { name: /^Home/ }).click();
+  await pageName(/^Home/).click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
   await expect(frame(page).locator("section-work > card-quote > h3")).toHaveText("Harbour Lane Pottery");
   // Nothing kept aside reached the HTML, and nothing offers to bring it back.
