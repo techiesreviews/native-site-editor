@@ -11,13 +11,13 @@
   },
   {
     "file": "shared/media-kinds.ts",
-    "name": "mimeType",
-    "reason": "ticket 27 owns this file; revisit after it lands"
+    "name": "mediaKind",
+    "reason": "The media-kind table's kind column (extension \u2192 kind \u2192 MIME, ticket 17); tests/media-kinds.test.ts proves every caller's old set through it."
   },
   {
     "file": "shared/media-kinds.ts",
-    "name": "isImagePath",
-    "reason": "ticket 27 owns this file; revisit after it lands"
+    "name": "mimeType",
+    "reason": "The media-kind table's MIME column (extension \u2192 kind \u2192 MIME, ticket 17); tests/media-kinds.test.ts proves every MIME type through it."
   },
   {
     "file": "shared/tone.ts",

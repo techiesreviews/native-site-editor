@@ -20,7 +20,7 @@ test("boot media kinds and lazy caller policies keep separate exports and depend
     "SOCIAL_IMAGE_ACCEPT", "playableMimeTypes", "outsidePictureFormats", "replacementLabels",
   ];
   const bootNames = [
-    "MEDIA_KINDS", "extensionsOf", "mediaKind", "mimeType", "isImagePath",
+    "MEDIA_KINDS", "extensionsOf", "mediaKind", "mimeType",
     "agentAudio", "agentDocuments", "agentImages", "agentVideos", "previewablePictures",
     "assetMimeTypes", "audioMimeTypes", "uploadMimeTypes", "previewImages", "creationBinaryFiles",
     "sharingImages", "subtitles", "renamableMedia",
@@ -202,7 +202,6 @@ test("canonical helpers classify a path and enumerate kinds without inherited ke
   ]) {
     assert.equal(media.mediaKind(path), kind);
     assert.equal(media.mimeType(path), mime);
-    assert.equal(media.isImagePath(path), kind === "image");
   }
   assert.deepEqual(media.extensionsOf("font"), ["woff2", "woff", "ttf", "otf", "eot", "ttc"]);
   for (const path of ["jpg", "file.unknown", "file.jpg?query", "file.jpg/child", "file.constructor", "file.__proto__", "file.ts", "file.json5", "file.ps1"]) {
