@@ -106,23 +106,33 @@ export function makeIndex(shots: Shot[]) {
 
 const escape = (value: string) => value.replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]!);
 export function contactHtml(shots: Shot[]) {
-  const groups = new Map<string, Shot[]>();
+  // One row per screen with its sizes and themes side by side; a before/after
+  // pair gets its own row per size and theme so the two sit next to each other.
+  const pairs = new Set(shots.filter(shot => shot.name === "after").map(shot => `${shot.screen}|${shot.width}|${shot.theme}`)
+    .filter(key => shots.some(shot => shot.name === "before" && `${shot.screen}|${shot.width}|${shot.theme}` === key)));
+  const groups = new Map<string, { paired: boolean; shots: Shot[] }>();
   for (const shot of shots) {
-    const key = `${shot.screen} · ${shot.width}px · ${shot.theme}`;
-    groups.set(key, [...(groups.get(key) ?? []), shot]);
+    const paired = (shot.name === "before" || shot.name === "after") && pairs.has(`${shot.screen}|${shot.width}|${shot.theme}`);
+    const key = paired ? `${shot.screen} · ${shot.width}px · ${shot.theme}` : `${shot.screen}${shot.name ? `-${shot.name}` : ""}`;
+    const group = groups.get(key) ?? { paired, shots: [] };
+    group.shots.push(shot);
+    groups.set(key, group);
   }
-  const rows = [...groups].map(([label, group]) => {
-    const paired = group.some(shot => shot.name === "before") && group.some(shot => shot.name === "after");
+  const rows = [...groups].map(([label, { paired, shots: group }]) => {
     if (paired) group.sort((a, b) => (a.name === "before" ? -1 : b.name === "before" ? 1 : 0));
     return `<section><h2>${escape(label)}</h2><div class="row${paired ? " paired" : ""}">${group.map(shot => {
+      const caption = paired ? shot.name! : `${shot.width}px · ${shot.theme}`;
       const file = shot.files.find(file => file.path.endsWith(".webp"));
-      return `<figure><figcaption>${escape(shot.name ?? shot.screen)}${shot.ok ? "" : " — failed"}</figcaption>${file ? `<img src="${escape(encodeURI(file.path))}" alt="${escape(label)}">` : "<p>No screenshot</p>"}</figure>`;
+      return `<figure><figcaption>${escape(caption)}${shot.ok ? "" : " — failed"}</figcaption>${file ? `<img src="${escape(encodeURI(file.path))}" alt="${escape(`${label} ${caption}`)}">` : "<p>No screenshot</p>"}</figure>`;
     }).join("")}</div></section>`;
   }).join("\n");
   return `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Kit shots</title><style>
   :root{font:14px system-ui;overflow-wrap:break-word;color:oklch(.2 0 none);background:oklch(.96 0 none)}
   body{margin:0;padding:20px}h1{font-size:22px}h2{font-size:16px;margin-block:20px 8px}
-  .row{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:12px}
-  figure{margin:0;min-inline-size:0}figcaption{padding-block:6px}img{display:block;inline-size:100%;block-size:auto;max-block-size:240px;object-fit:contain}
-  </style><h1>Kit shots</h1>${rows}</html>`;
+  main{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,180px),1fr));gap:0 16px}
+  section:has(figure + figure){grid-column:1/-1}
+  .row.paired{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .row{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,150px),1fr));gap:12px}
+  figure{margin:0;min-inline-size:0}figcaption{padding-block:6px}img{display:block;inline-size:100%;block-size:auto;max-block-size:420px;object-position:top;object-fit:contain}
+  </style><h1>Kit shots</h1><main>${rows}</main></html>`;
 }

@@ -59,14 +59,23 @@ function shot(name?: string): Shot {
 
 test("contact HTML labels single rows and orders paired before/after columns", () => {
   const single = contactHtml([shot()]);
-  assert.match(single, /editor · 390px · light/);
+  assert.match(single, /<h2>editor<\/h2>/);
+  assert.match(single, /<figcaption>390px · light<\/figcaption>/);
+  const matrix = contactHtml([shot(), { ...shot(), theme: "dark", files: [{ path: "editor-390-dark.webp", bytes: 1 }] }]);
+  assert.equal((matrix.match(/<section>/g) ?? []).length, 1, "one row per screen across sizes and themes");
   assert.match(single, /src="editor-390-light.webp"/);
   assert.doesNotMatch(single, /class="row paired"/);
   const pair = contactHtml([shot("after"), shot("before")]);
   assert.match(pair, /class="row paired"/);
   assert.ok(pair.indexOf("<figcaption>before") < pair.indexOf("<figcaption>after"));
   assert.equal((pair.match(/<section>/g) ?? []).length, 1);
-  assert.match(contactHtml([{ ...shot('<script>'), ok: false, files: [] }]), /&lt;script&gt; — failed/);
+  assert.match(pair, /<h2>editor · 390px · light<\/h2>/);
+  const lone = contactHtml([shot("before")]);
+  assert.doesNotMatch(lone, /class="row paired"/, "a before without its after is a plain row");
+  assert.match(lone, /<h2>editor-before<\/h2>/);
+  const escaped = contactHtml([{ ...shot('<script>'), ok: false, files: [] }]);
+  assert.match(escaped, /<h2>editor-&lt;script&gt;<\/h2>/);
+  assert.match(escaped, /390px · light — failed/);
   assert.match(contactHtml([{ ...shot(), ok: false, files: [] }]), /No screenshot/);
 });
 
