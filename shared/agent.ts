@@ -1,4 +1,4 @@
-import { agentAudio, agentDocuments, agentImages, agentVideos, previewablePictures } from "./media-kinds";
+import { agentAudio, agentDocuments, agentImages, agentVideos, previewablePictures, subtitles } from "./media-kinds";
 import type { AgentImageTrim } from "./agent-image-frame";
 import type { AddingSettings } from "./media-records";
 
@@ -305,4 +305,5 @@ export function requestThread(request: Pick<AgentRequest, "text" | "createdAt" |
 /** Outside media cannot be brought in by agents, even through a raw file write. */
 export const OUTSIDE_MEDIA_REFUSED = "Agents never upload, fetch or generate media; place a file already in Media (list_media lists them).";
 export const isOutsideMediaAddress = (file: string) => /^(?:https?:|data:|blob:|\/\/)/i.test(file.trim());
-export const isMediaUploadWrite = (path: string) => !TEXT_PATH.test(path) && mediaKind(path) !== "other";
+// Subtitles are documents but stay writable as text, as before ticket 39.
+export const isMediaUploadWrite = (path: string) => !TEXT_PATH.test(path) && !subtitles.test(path) && mediaKind(path) !== "other";

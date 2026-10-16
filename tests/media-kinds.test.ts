@@ -67,7 +67,8 @@ const callers: [string, RegExp, string[]][] = [
   ["shared/agent.ts:147", media.agentImages, ["jpg", "jpeg", "png", "webp", "gif", "avif", "svg", "ico", "bmp", "tif", "tiff", "heic", "heif"]],
   ["shared/agent.ts:148", media.agentVideos, ["mp4", "webm", "mov", "m4v", "avi", "mkv", "ogv", "mpeg", "mpg"]],
   ["shared/agent.ts:149", media.agentAudio, ["mp3", "wav", "ogg", "oga", "m4a", "aac", "flac", "opus", "aif", "aiff"]],
-  ["shared/agent.ts:150", media.agentDocuments, ["pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp", "rtf", "epub", "csv"]],
+  // Ticket 39: agents use the table's document list (txt, md, vtt, srt, pages, numbers, key added).
+  ["shared/agent.ts:150", media.agentDocuments, ["pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp", "rtf", "epub", "csv", "pages", "numbers", "key", "txt", "md", "vtt", "srt"]],
   ["src/native-structure.ts:185", media.previewImages, ["svg", "png", "jpg", "jpeg", "gif", "webp", "avif", "ico", "bmp"]],
   ["src/native-create.ts:17", media.creationBinaryFiles, ["png", "jpg", "jpeg", "gif", "webp", "avif", "ico", "bmp", "tif", "tiff", "pdf", "zip", "gz", "tgz", "tar", "7z", "woff", "woff2", "ttf", "otf", "eot", "mp3", "mp4", "m4a", "webm", "mov", "wav", "ogg"]],
   ["src/controllers/file-operations-controller.ts:64", media.operationBinaryFiles, ["heic", "heif", "png", "jpg", "jpeg", "gif", "webp", "avif", "ico", "bmp", "tif", "tiff", "pdf", "zip", "gz", "tgz", "tar", "7z", "woff", "woff2", "ttf", "otf", "eot", "mp3", "mp4", "m4a", "webm", "mov", "wav", "ogg"]],
