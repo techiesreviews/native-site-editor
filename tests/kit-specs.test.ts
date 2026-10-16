@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import { once } from "node:events";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test, { type TestContext } from "node:test";
-import { combineOutcomes, importsOf, namedSpecs, removedStrings, routeSpecs, selectAffected, selectionLine, specGroups, summarizeRun } from "../scripts/agents/specs-affected.mjs";
+import { setTimeout as delay } from "node:timers/promises";
+import { combineOutcomes, importsOf, namedSpecs, planShards, removedStrings, routeSpecs, selectAffected, selectionLine, SHARD_MIN_SPECS, shardCount, specGroups, summarizeRun } from "../scripts/agents/specs-affected.mjs";
 
 const kit = resolve("scripts/agents/kit");
 const save = (name: string) => `tests/native-save/${name}.spec.ts`;
@@ -54,21 +56,43 @@ const { spawnSync } = require("node:child_process");
 const { appendFileSync, mkdirSync } = require("node:fs");
 mkdirSync(".scratch", { recursive: true });
 appendFileSync(${JSON.stringify(calls)}, JSON.stringify(process.argv.slice(2)) + "\\n");
-const result = spawnSync(process.argv[2], process.argv.slice(3), { stdio: "inherit", env: { ...process.env, ASE_TEST_PORT: "5296", PATH: ${JSON.stringify(join(root, "fake-bin"))} + ":" + process.env.PATH } });
+const result = spawnSync(process.argv[2], process.argv.slice(3), { stdio: "inherit", env: { ...process.env, ASE_TEST_PORT: process.env.FAKE_PORT || String(process.pid * 2), PATH: ${JSON.stringify(join(root, "fake-bin"))} + ":" + process.env.PATH } });
 process.exit(result.status ?? 1);
 `);
   const fakeCommand = `#!${process.execPath}
-const { mkdirSync, readFileSync, writeFileSync } = require("node:fs");
+const { appendFileSync, mkdirSync, readFileSync, readdirSync, writeFileSync } = require("node:fs");
+async function main() {
 const args = process.argv.slice(2);
 const project = args.includes("--project=native-preview") ? "native-preview" : "native-save";
+const selected = args.filter(arg => arg.endsWith(".spec.ts"));
+if (process.env.FAKE_BARRIER_COUNT) {
+  mkdirSync(".scratch/arrivals/" + process.pid, { recursive: true });
+  const deadline = Date.now() + 5000;
+  while (readdirSync(".scratch/arrivals").length < Number(process.env.FAKE_BARRIER_COUNT)) {
+    if (Date.now() > deadline) throw new Error("shards did not overlap");
+    await new Promise(accept => setTimeout(accept, 10));
+  }
+}
+if (process.env.FAKE_WAIT_FOR_SIGNAL) {
+  for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, () => {
+    appendFileSync(".scratch/signals.jsonl", JSON.stringify({ pid: process.pid, signal }) + "\\n");
+    process.exit(1);
+  });
+  appendFileSync(".scratch/ready.jsonl", process.pid + "\\n");
+  setInterval(() => {}, 1000);
+  return;
+}
 console.log("fake browser output");
 console.log("last useful failure");
-if (process.env.FAKE_NO_JSON) process.exit(1);
+if (process.env.FAKE_NO_JSON || selected.some(file => file.endsWith(process.env.FAKE_NO_JSON_SPEC || "<none>"))) process.exit(1);
 const reports = JSON.parse(readFileSync("reports.json", "utf8"));
 const report = reports[project];
+if (report?.suites) report.suites = report.suites.map(suite => ({ ...suite, specs: suite.specs.filter(spec => selected.some(file => spec.file === file || spec.file.endsWith("/" + file))) }));
 mkdirSync(".scratch/" + project, { recursive: true });
 writeFileSync(".scratch/" + project + "/results-" + (Number(process.env.ASE_TEST_PORT) + (project === "native-preview" ? 1 : 0)) + ".json", JSON.stringify(report));
 process.exit(process.env.FAKE_EXIT ? Number(process.env.FAKE_EXIT) : 0);
+}
+main().catch(error => { console.error(error); process.exit(1); });
 `;
   put("fake-bin/npx", fakeCommand);
   put("fake-bin/node", fakeCommand);
@@ -77,7 +101,7 @@ process.exit(process.env.FAKE_EXIT ? Number(process.env.FAKE_EXIT) : 0);
     assert.equal(result.status, 0);
   }
   const run = (args: string[], env: NodeJS.ProcessEnv = {}) => spawnSync(kit, ["specs", ...args], {
-    cwd: root, env: { ...process.env, KIT_ROOT: root, KIT_SPECS_RUNNER: join(root, "fake-runner"), ...env }, encoding: "utf8", timeout: 15_000,
+    cwd: root, env: { ...process.env, ASE_SPEC_SHARDS: undefined, KIT_SPECS_FREE_SLOTS: undefined, KIT_ROOT: root, KIT_SPECS_RUNNER: join(root, "fake-runner"), ...env }, encoding: "utf8", timeout: 15_000,
   });
   return { root, put, git, files, base, run, calls };
 }
@@ -291,6 +315,54 @@ test("routing batches defaults and preview, runs tagged specs individually and b
   assert.throws(() => routeSpecs(specs, [...specs, { file: save("prefix-actual"), groups: ["actual"] }]), /ambiguous --spec filter/);
 });
 
+test("shards balance estimated weights with deterministic ties, sorted files and no empty shards", () => {
+  const files = ["f", "d", "a", "c", "e", "b"];
+  const weights = { a: 8, b: 7, c: 6, d: 5, e: 4, f: 3 };
+  const shards = planShards(files, 3, weights);
+  assert.deepEqual(shards, [["a", "f"], ["b", "e"], ["c", "d"]]);
+  assert.deepEqual(planShards([...files].reverse(), 3, weights), shards);
+  assert.deepEqual(planShards(["b", "a"], 20, { a: 0 }), [["a"], ["b"]]);
+  assert.deepEqual(planShards(files, 1), [["a", "b", "c", "d", "e", "f"]]);
+  assert.deepEqual(planShards([], 4), []);
+  assert.throws(() => planShards(files, 0), /positive integer/);
+});
+
+test("shard counts cap by slots, memory, load and files, with at least one and an uncapped override", () => {
+  const capacity = { free: 8, memoryKb: 100, minMemoryKb: 10, load: 1, maxLoad: 10, files: 40 };
+  assert.deepEqual(shardCount(capacity), { count: 4, free: 8, memoryCap: 10, loadCap: 9 });
+  assert.equal(shardCount({ ...capacity, free: 2 }).count, 2);
+  assert.equal(shardCount({ ...capacity, memoryKb: 29 }).count, 2);
+  assert.equal(shardCount({ ...capacity, load: 7.2 }).count, 2);
+  assert.equal(shardCount({ ...capacity, files: 2 }).count, 2);
+  assert.equal(shardCount({ ...capacity, free: 0, memoryKb: 0, load: 100 }).count, 1);
+  assert.equal(shardCount({ ...capacity, requested: "8", free: 0, memoryKb: 0, load: 100 }).count, 8);
+  assert.equal(shardCount({ ...capacity, requested: "999999999999999999999999999999", files: 2 }).count, 2);
+  assert.equal(shardCount({ ...capacity, minMemoryKb: 0 }).memoryCap, Infinity);
+  assert.equal(shardCount({ ...capacity, files: 0 }).count, 0);
+  for (const requested of ["", "0", "-2", "1.5", "bad", " 2", "+2"]) {
+    assert.throws(() => shardCount({ ...capacity, requested }), /Invalid ASE_SPEC_SHARDS/);
+  }
+});
+
+test("routing shards only large default groups and counts test calls from snapshot text", () => {
+  const defaults = Array.from({ length: SHARD_MIN_SPECS }, (_, i) => ({ file: save(`shard-${String(i).padStart(2, "0")}`), groups: ["default"] }));
+  const tagged = [
+    { file: save("actual"), groups: ["actual"] }, { file: save("static"), groups: ["native-static"] },
+    ...Array.from({ length: SHARD_MIN_SPECS }, (_, i) => ({ file: `tests/native-preview/${i}.spec.ts`, groups: ["native-preview"] })),
+  ];
+  const specs = [...defaults, ...tagged];
+  const texts = { [defaults[0].file]: 'test("heavy", () => {});\n'.repeat(50) + 'test.skip("skip", () => {});\n'.repeat(50) };
+  const runs = routeSpecs(specs, specs, { shards: 2, texts });
+  assert.deepEqual(runs.filter(run => run.group === "default").map(run => run.files), [[defaults[0].file], defaults.slice(1).map(spec => spec.file)]);
+  assert.deepEqual(runs.filter(run => run.group !== "default"), routeSpecs(tagged));
+  for (const run of runs.filter(run => run.group === "default")) {
+    assert.deepEqual(run.command, ["npx", "playwright", "test", "--project=native-save", "--workers=1", ...run.files]);
+  }
+  const small = defaults.slice(0, SHARD_MIN_SPECS - 1);
+  assert.deepEqual(routeSpecs(small, small, { shards: 4, texts }), routeSpecs(small));
+  assert.deepEqual(routeSpecs(small)[0].command, ["npx", "playwright", "test", "--project=native-save", "--workers=1", ...small.map(spec => spec.file)]);
+});
+
 test("real CLI --list includes committed, staged, unstaged and untracked changes, runs nothing", t => {
   const f = fixture(t);
   f.put("src/media.ts", 'export const media = "committed";\n');
@@ -317,6 +389,109 @@ test("real CLI --list includes committed, staged, unstaged and untracked changes
 
 function reportSpec(file: string, title: string, status = "expected", results = true) {
   return { title, file, line: 10, tests: [{ status, expectedStatus: "passed", results: results ? [{ status: status === "unexpected" ? "failed" : status === "skipped" ? "skipped" : "passed", errors: status === "unexpected" ? [{ message: "\u001b[31mMissing button\u001b[0m\nmore detail" }] : [] }] : [] }] };
+}
+
+function largeSelection(f: ReturnType<typeof fixture>, failed?: string) {
+  const files = Array.from({ length: SHARD_MIN_SPECS }, (_, i) => save(`parallel-${String(i).padStart(2, "0")}`));
+  for (const file of files) f.put(file, 'test("case", () => {});');
+  f.put("reports.json", JSON.stringify({ "native-save": { suites: [{ specs: files.map(file => reportSpec(file, "case", file === failed ? "unexpected" : "expected")) }] } }));
+  return files;
+}
+
+const callFiles = (call: string[]) => [...call[2].matchAll(/'(tests\/native-save\/[^']+\.spec\.ts)'/g)].map(match => match[1]);
+
+test("parallel shards isolate artifacts and merge a known failure in selection order", t => {
+  const f = fixture(t);
+  const failed = save("parallel-07");
+  const files = largeSelection(f, failed);
+  f.put("known.json", JSON.stringify([{ spec: "native-save/parallel-07.spec.ts", title: "case", status: "flaky" }]));
+  // More than ten concurrent runners also exercises signal listener sharing.
+  const result = f.run([...files].reverse(), { ASE_SPEC_SHARDS: "12", FAKE_BARRIER_COUNT: "12", ASE_KNOWN_FAILURES: join(f.root, "known.json") });
+  assert.equal(result.status, 1, result.stderr);
+  assert.doesNotMatch(result.stderr, /MaxListenersExceededWarning/);
+  assert.match(result.stdout, /shards: 12 \(ASE_SPEC_SHARDS\)/);
+  assert.match(result.stdout, /parallel-07.spec.ts: case — Missing button \[known flaky\]/);
+  assert.match(result.stdout, /RESULT: fail specs 1 of 40 failed: parallel-07.spec.ts\(known\)\n$/);
+  const calls: string[][] = readFileSync(f.calls, "utf8").trim().split("\n").map(line => JSON.parse(line));
+  assert.equal(calls.length, 12);
+  assert.deepEqual(calls.flatMap(callFiles).sort(), files);
+  const outputs = calls.map(call => call[2].match(/'--output=([^']+)'/)?.[1]);
+  assert.ok(outputs.every(output => output && /\/run-[^/]+\/artifacts-\d+$/.test(output)));
+  assert.equal(new Set(outputs).size, 12);
+  const lines = result.stdout.split("\n").filter(line => /^[✓✗] /.test(line));
+  assert.deepEqual(lines.map(line => line.split(" ")[1].replace(/:$/, "")), files);
+  const reports = [...result.stdout.matchAll(/^log: (.+)\.log$/gm)].map(match => JSON.parse(readFileSync(`${match[1]}.json`, "utf8")));
+  assert.deepEqual(reports.flatMap(report => report.suites.flatMap((suite: { specs: { file: string }[] }) => suite.specs.map(spec => spec.file))).sort(), files);
+});
+
+test("a missing shard report fails only that shard's specs", t => {
+  const f = fixture(t);
+  const files = largeSelection(f);
+  const result = f.run(files, { ASE_SPEC_SHARDS: "3", FAKE_NO_JSON_SPEC: files[0], FAKE_BARRIER_COUNT: "3" });
+  assert.equal(result.status, 1, result.stderr);
+  const calls: string[][] = readFileSync(f.calls, "utf8").trim().split("\n").map(line => JSON.parse(line));
+  assert.equal(calls.length, 3);
+  const missing = callFiles(calls.find(call => callFiles(call).includes(files[0]))!);
+  const failures = result.stdout.split("\n").filter(line => line.startsWith("✗ "));
+  assert.deepEqual(failures.map(line => line.split(" ")[1].replace(/:$/, "")), [...missing].sort());
+  assert.ok(failures.every(line => line.endsWith("run failed — last useful failure")));
+  assert.equal(result.stdout.split("\n").filter(line => line.startsWith("✓ ")).length, files.length - missing.length);
+  assert.ok(result.stdout.includes(`RESULT: fail specs ${missing.length} of 40 failed:`));
+});
+
+test("automatic shard caps and small selections retain their CLI behavior", t => {
+  const f = fixture(t);
+  const files = largeSelection(f);
+  const automatic = f.run(files, { KIT_SPECS_FREE_SLOTS: "3", ASE_MIN_MEM_KB: "0", ASE_MAX_LOAD: "1000000", FAKE_BARRIER_COUNT: "3" });
+  assert.equal(automatic.status, 0, automatic.stderr);
+  assert.match(automatic.stdout, /shards: 3 \(free slots 3, memory cap Infinity, load cap \d+\)/);
+  assert.match(automatic.stdout, /RESULT: ok specs 40\/40 passed/);
+  const small = f.run(files.slice(0, 39), { ASE_SPEC_SHARDS: "12" });
+  assert.equal(small.status, 0, small.stderr);
+  assert.doesNotMatch(small.stdout, /shards:/);
+  const calls: string[][] = readFileSync(f.calls, "utf8").trim().split("\n").map(line => JSON.parse(line));
+  assert.equal(calls.length, 4);
+  assert.doesNotMatch(calls[3][2], /--output=/);
+});
+
+for (const signal of ["SIGINT", "SIGTERM"] satisfies NodeJS.Signals[]) {
+  test(`${signal} reaches every active shard and prevents tagged runs`, async t => {
+    const f = fixture(t);
+    const files = largeSelection(f);
+    const child = spawn(kit, ["specs", ...files, save("actual")], {
+      cwd: f.root,
+      env: { ...process.env, KIT_ROOT: f.root, KIT_SPECS_RUNNER: join(f.root, "fake-runner"), ASE_SPEC_SHARDS: "2", FAKE_WAIT_FOR_SIGNAL: "1" },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    const closed = once(child, "close", { signal: AbortSignal.timeout(15_000) });
+    let stdout = "", stderr = "";
+    child.stdout.on("data", chunk => { stdout += String(chunk); });
+    child.stderr.on("data", chunk => { stderr += String(chunk); });
+    const ready = join(f.root, ".scratch/ready.jsonl");
+    try {
+      const deadline = Date.now() + 10_000;
+      while (!existsSync(ready) || readFileSync(ready, "utf8").trim().split("\n").length < 2) {
+        assert.ok(Date.now() < deadline, `shards did not start: ${stderr}`);
+        await delay(20);
+      }
+      child.kill(signal);
+      const [code] = await closed;
+      assert.equal(code, signal === "SIGINT" ? 130 : 143, stderr);
+      const signals: { pid: number; signal: string }[] = readFileSync(join(f.root, ".scratch/signals.jsonl"), "utf8").trim().split("\n").map(line => JSON.parse(line));
+      assert.equal(signals.length, 2);
+      assert.ok(signals.every(entry => entry.signal === signal));
+      assert.equal(new Set(signals.map(entry => entry.pid)).size, 2);
+      assert.equal(readFileSync(f.calls, "utf8").trim().split("\n").length, 2);
+      assert.match(stdout, /actual.spec.ts: run failed — Interrupted by SIG/);
+    } finally {
+      child.kill("SIGTERM");
+      // Only fake browser processes recorded by this fixture can need cleanup.
+      if (existsSync(ready)) for (const pid of readFileSync(ready, "utf8").trim().split("\n")) {
+        try { process.kill(Number(pid), "SIGKILL"); } catch { /* Already exited. */ }
+      }
+      await closed;
+    }
+  });
 }
 
 test("fake runner exercises port wrapper, reports, known failure labels and failed basename RESULT", t => {
@@ -352,8 +527,8 @@ test("fake runner exercises port wrapper, reports, known failure labels and fail
 test("missing, malformed and zero-result reports fail; stale port reports are not reused", t => {
   const f = fixture(t);
   f.put("reports.json", JSON.stringify({ "native-save": { suites: [{ specs: [reportSpec(save("imports"), "pass")] }] } }));
-  assert.equal(f.run(["imports.spec.ts"]).status, 0);
-  const missing = f.run(["imports.spec.ts"], { FAKE_NO_JSON: "1" });
+  assert.equal(f.run(["imports.spec.ts"], { FAKE_PORT: "5296" }).status, 0);
+  const missing = f.run(["imports.spec.ts"], { FAKE_PORT: "5296", FAKE_NO_JSON: "1" });
   assert.equal(missing.status, 1);
   assert.match(missing.stdout, /✗ .*imports.spec.ts: run failed — last useful failure/);
   for (const report of [null, {}, { suites: [{ specs: [reportSpec(save("imports"), "none", "expected", false)] }] }, { suites: [], errors: [{ message: "Server died" }] }]) {
@@ -372,10 +547,18 @@ test("help, empty selection and usage errors return without starting the runner"
   const help = f.run(["--help"]);
   assert.equal(help.status, 0, help.stderr);
   assert.match(help.stdout, /KIT_SPECS_RUNNER/);
+  assert.match(help.stdout, />= 40 files/);
+  assert.match(help.stdout, /ASE_SPEC_SHARDS/);
   assert.doesNotMatch(help.stdout, /RESULT:/);
   const empty = f.run(["--affected", "--list"]);
   assert.equal(empty.status, 0);
   assert.match(empty.stdout, /RESULT: ok specs none affected\n$/);
+  for (const ASE_SPEC_SHARDS of ["", "0", "-1", "2.5", "bad"]) {
+    const result = f.run(["imports.spec.ts", "--list"], { ASE_SPEC_SHARDS });
+    assert.equal(result.status, 2, result.stderr);
+    assert.match(result.stderr, /Invalid ASE_SPEC_SHARDS:/);
+    assert.match(result.stderr, /Usage: kit specs/);
+  }
   for (const args of [[], ["unknown"], ["--wat"], ["--base"], ["--base", "HEAD"], ["--affected", "imports.spec.ts"], ["--affected", "--base", "not-a-ref"], ["--affected", "--list", "--list"], ["--affected", "--base", "HEAD", "--base", "HEAD"]]) {
     const result = f.run(args);
     assert.equal(result.status, 2, `${args.join(" ")}\n${result.stderr}`);
