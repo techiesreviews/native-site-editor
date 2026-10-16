@@ -59,6 +59,22 @@ test("shot layout checks in Chromium", async (t) => {
       assert.deepEqual(await fixture('<button id="a">A</button><button id="b">B</button><div class="panel"><p>Panel</p></div>', 390, '#a,#b { position:absolute; inset-block-start:10px; inline-size:20px; block-size:20px; color:#eee; } #b { inset-inline-start:12px; } .panel { position:fixed; inset:0; background:oklch(1 0 none); }'), []);
     });
 
+    await t.test("form field values are text for contrast", async () => {
+      assert.equal(only(await fixture('<input aria-label="Name" value="Unreadable">', 1000, 'input { color:#eee; background:#fff; }'), "contrast").text, "Name");
+      assert.equal(only(await fixture('<textarea aria-label="Notes"></textarea>', 1000, 'textarea { color:#eee; background:#fff; }', async (page) => {
+        await page.locator("textarea").evaluate((element) => { (element as HTMLTextAreaElement).value = "Typed later"; });
+      }), "contrast").text, "Notes");
+      assert.deepEqual(await fixture('<input aria-label="Name" value="Readable"><input type="checkbox" aria-label="Pick" style="inline-size:48px;block-size:48px">', 1000, 'input { color:#000; background:#fff; }'), []);
+    });
+
+    await t.test("an opaque text background over a picture is still checked", async () => {
+      const picture = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100"><rect width="200" height="100" fill="black"/></svg>');
+      const html = (colour: string) => `<figure><img src="${picture}" alt=""><figcaption style="color:${colour}">On a white label</figcaption></figure>`;
+      const css = 'figure { position:relative; margin:0; } figcaption { position:absolute; inset-block-end:4px; background:#fff; }';
+      only(await fixture(html("#eee"), 1000, css), "contrast");
+      assert.deepEqual(await fixture(html("#000"), 1000, css), []);
+    });
+
     await t.test("a control peeking out from under a floating panel is layering, not overlap or crowding", async () => {
       assert.deepEqual(await fixture('<button id="under">Under</button><div class="panel"><button id="gear">Gear</button></div>', 390, '#under { position:absolute; inset-block-start:20px; inset-inline-start:180px; inline-size:44px; } .panel { position:fixed; inset-block:0 auto; inset-inline-start:0; inline-size:200px; block-size:120px; background:oklch(1 0 none); } #gear { position:absolute; inset-block-start:20px; inset-inline-start:150px; inline-size:44px; }'), []);
     });

@@ -274,7 +274,10 @@ export async function checkLayout(page: Page): Promise<LayoutFinding[]> {
     const darkCanvas = scheme.includes("dark") && (!scheme.includes("light") || matchMedia("(prefers-color-scheme: dark)").matches);
     const canvasColour: Colour = darkCanvas ? [18, 18, 18, 1] : [255, 255, 255, 1];
     for (const element of scoped) {
-      if (![...element.childNodes].some((node) => node.nodeType === Node.TEXT_NODE && node.textContent?.trim()) || element.closest(':disabled,[aria-disabled="true"]')) continue;
+      // Form fields render their value as text without a text node.
+      const fieldText = element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement || (element instanceof HTMLInputElement && !/^(checkbox|radio|range|color|file|image|hidden)$/i.test(element.type))
+        ? Boolean((element as HTMLInputElement).value.trim()) : false;
+      if ((!fieldText && ![...element.childNodes].some((node) => node.nodeType === Node.TEXT_NODE && node.textContent?.trim())) || element.closest(':disabled,[aria-disabled="true"]')) continue;
       const exposed = dom.exposed(element);
       if (exposed.right <= exposed.left || exposed.bottom <= exposed.top || !dom.shown(element)) continue;
       const style = dom.style(element), text = dom.box(element);
@@ -283,8 +286,8 @@ export async function checkLayout(page: Page): Promise<LayoutFinding[]> {
         const layer = dom.style(node);
         if (background[3] < 1 && layer.backgroundImage !== "none") { unknown = true; break; }
         // Text over a picture, or over a ::before/::after scrim, has no single backdrop colour.
-        if (node !== element && [...node.querySelectorAll("img,video,canvas")].some((media) => !media.contains(element) && dom.visible(media) && dom.contains(dom.box(media), { left: (text.left + text.right) / 2, right: (text.left + text.right) / 2, top: (text.top + text.bottom) / 2, bottom: (text.top + text.bottom) / 2 }))) { unknown = true; break; }
-        if (["::before", "::after"].some((pseudo) => { const layer = getComputedStyle(node!, pseudo); return layer.content !== "none" && layer.position === "absolute" && (layer.backgroundImage !== "none" || dom.colour(layer.backgroundColor)[3] > 0); })) { unknown = true; break; }
+        if (background[3] < 1 && node !== element && [...node.querySelectorAll("img,video,canvas")].some((media) => !media.contains(element) && dom.visible(media) && dom.contains(dom.box(media), { left: (text.left + text.right) / 2, right: (text.left + text.right) / 2, top: (text.top + text.bottom) / 2, bottom: (text.top + text.bottom) / 2 }))) { unknown = true; break; }
+        if (background[3] < 1 && ["::before", "::after"].some((pseudo) => { const layer = getComputedStyle(node!, pseudo); return layer.content !== "none" && layer.position === "absolute" && (layer.backgroundImage !== "none" || dom.colour(layer.backgroundColor)[3] > 0); })) { unknown = true; break; }
         const colour = dom.colour(layer.backgroundColor);
         foreground = dom.over(foreground, colour);
         background = dom.over(background, colour);
