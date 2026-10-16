@@ -32,10 +32,12 @@ const operationRequest = (action: unknown) => new Request("https://session.inter
   method: "POST", body: JSON.stringify(action),
 });
 
-test("a failed first-use hub update leaves the grant retryable on the next request", async () => {
+// An Env whose hub runs the real hubOperation; `fail` makes the next use-grant
+// or grant-record write fail once.
+function grantEnv() {
   const records = new Map<string, AgentGrant>();
   const storage = memoryStorage();
-  let failUse = false;
+  const fail = { use: false, put: false };
   const env: Env = {
     ASSETS: { fetch: async () => new Response("UI") },
     SESSIONS: {
@@ -45,8 +47,8 @@ test("a failed first-use hub update leaves the grant retryable on the next reque
           if (id === `agent-hub:${sessionId}`) {
             if (new URL(request.url).pathname === "/agent-operation") {
               const action = await request.json() as { type: string };
-              if (action.type === "use-grant" && failUse) {
-                failUse = false;
+              if (action.type === "use-grant" && fail.use) {
+                fail.use = false;
                 return Response.json({ error: "use-grant unavailable" }, { status: 500 });
               }
               return hubOperation(storage, action, async () => undefined);
@@ -56,6 +58,10 @@ test("a failed first-use hub update leaves the grant retryable on the next reque
           }
           assert.ok(id.startsWith("agent:"));
           if (request.method === "PUT") {
+            if (fail.put) {
+              fail.put = false;
+              throw new Error("grant record unavailable");
+            }
             records.set(id, await request.json() as AgentGrant);
             return new Response(null, { status: 204 });
           }
@@ -69,10 +75,14 @@ test("a failed first-use hub update leaves the grant retryable on the next reque
       }),
     },
   };
+  return { env, fail };
+}
+
+test("a failed first-use hub update leaves the grant retryable on the next request", async () => {
+  const { env, fail } = grantEnv();
   const { id } = await createGrant(env, { ...hub, sessionId, repoId: 7, repo: "lex/site", via: "token" });
-  failUse = true;
+  fail.use = true;
   await assert.rejects(markGrantUsed(env, id, await getGrant(env, id), " Agent\u0000 "), /use-grant unavailable/);
-  failUse = false;
   const retry = await getGrant(env, id);
   assert.equal(retry.usedAt, undefined);
   assert.equal((await getHub(env, sessionId))?.grants[0].usedAt, undefined);
@@ -83,9 +93,26 @@ test("a failed first-use hub update leaves the grant retryable on the next reque
   assert.equal(record.usedAt, connected.usedAt);
   assert.equal(record.client, "Agent");
   assert.equal(connected.client, "Agent");
-  // Even a stale request cannot move the hub's first use or replace its client.
+  // Even a stale request cannot move the first use or replace its client.
   await markGrantUsed(env, id, retry, "Other agent");
   assert.deepEqual((await getHub(env, sessionId))!.grants[0], connected);
+  assert.deepEqual(await getGrant(env, id), record);
+});
+
+test("a retry after a failed grant-record write keeps the hub's first use and client", async () => {
+  const { env, fail } = grantEnv();
+  const { id } = await createGrant(env, { ...hub, sessionId, repoId: 7, repo: "lex/site", via: "token" });
+  fail.put = true;
+  await assert.rejects(markGrantUsed(env, id, await getGrant(env, id), "First client"), /grant record unavailable/);
+  const first = (await getHub(env, sessionId))!.grants[0];
+  assert.equal(typeof first.usedAt, "number");
+  assert.equal((await getGrant(env, id)).usedAt, undefined);
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  await markGrantUsed(env, id, await getGrant(env, id), "Retry client");
+  const record = await getGrant(env, id);
+  assert.equal(record.usedAt, first.usedAt);
+  assert.equal(record.client, "First client");
+  assert.deepEqual((await getHub(env, sessionId))!.grants[0], first);
 });
 
 test("concurrent fake hub operations keep both grants", async () => {
@@ -96,6 +123,22 @@ test("concurrent fake hub operations keep both grants", async () => {
   ));
   for (const response of responses) assert.equal(response?.status, 200);
   assert.deepEqual((await storage.get<AgentHub>("session"))!.grants.map((grant) => grant.id), ["first", "second"]);
+});
+
+test("concurrent fake draft-text stores keep both texts", async () => {
+  const storage = memoryStorage();
+  const drafts = ["a", "b"].map((name) => ({ path: `${name}.html`, baseSha: null, updatedAt: 1, hash: name.repeat(64) }));
+  await storage.put({ session: { kind: "agent-hub", ...hub, grants: [] }, context: { drafts } });
+  const responses = await Promise.all(drafts.map(({ hash, path }) =>
+    fakeHubRoute("drafts-hub", storage, new Request("https://session.internal/agent-drafts", {
+      method: "POST", body: JSON.stringify([{ hash, content: path }]),
+    })),
+  ));
+  for (const response of responses) assert.deepEqual(await response?.json(), { stored: 1 });
+  for (const { hash, path } of drafts) {
+    const read = await fakeHubRoute("drafts-hub", storage, new Request(`https://session.internal/agent-draft?hash=${hash}`));
+    assert.equal(await read?.text(), path);
+  }
 });
 
 test("a throwing fake hub operation does not block the next queued operation", async () => {

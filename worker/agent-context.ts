@@ -151,7 +151,11 @@ export async function markGrantUsed(
   const usedAt = Date.now();
   const named = grant.client ?? (name || undefined);
   await operateHub(env, grant.sessionId, { type: "use-grant", id, usedAt, client: named });
-  await agentRecord(env, id, "PUT", { ...grant, usedAt, ...(named ? { client: named } : {}) });
+  // The hub keeps the first use and client; a retry after a failed record
+  // write copies them rather than its own.
+  const first = (await getHub(env, grant.sessionId, { context: false }))?.grants.find((item) => item.id === id);
+  const firstClient = first?.client ?? named;
+  await agentRecord(env, id, "PUT", { ...grant, usedAt: first?.usedAt ?? usedAt, ...(firstClient ? { client: firstClient } : {}) });
 }
 export async function revokeGrant(env: Env, id: string, sessionId: string) {
   await agentRecord(env, id, "DELETE");
