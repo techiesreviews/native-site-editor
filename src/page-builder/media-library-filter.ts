@@ -1,4 +1,5 @@
-import { libraryArchives, libraryExcludedFiles, librarySheets, librarySlides, libraryText, subtitles } from "../../shared/media-kinds";
+import { subtitles } from "../../shared/media-kinds";
+import { libraryArchives, libraryExcludedFiles, librarySheets, librarySlides, libraryText } from "../../shared/media-kinds-policies";
 import { mediaKind as fileKind, TEXT_PATH } from "../../shared/agent";
 import { uploadImageType } from "../uploads";
 import { mediaFamilies, familyMembers, onlineStillMembers } from "./media-families";

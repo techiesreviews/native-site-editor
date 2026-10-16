@@ -1,4 +1,4 @@
-import { olderCopyFormats, trimmableImages } from "../../shared/media-kinds";
+import { olderCopyFormats, trimmableImages } from "../../shared/media-kinds-policies";
 import { mediaFamilies, RESPONSIVE_COPY_WIDTHS } from "./media-families";
 import { mediaCopyName } from "./media-storage";
 import { uploadProblem } from "../uploads";

@@ -1,4 +1,4 @@
-import { convertedAudio } from "../../shared/media-kinds";
+import { convertedAudio } from "../../shared/media-kinds-policies";
 import type { MediaImageQuality } from "./media-optimise";
 import { filterMediaLibrary, type MediaLibraryFilter } from "./media-library-filter";
 import { mediaKindFolder, mediaNeedsPreparation, mediaStorageName, mediaVideoNeedsPreparation } from "./media-storage";

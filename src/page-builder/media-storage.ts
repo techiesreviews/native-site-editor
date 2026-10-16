@@ -1,4 +1,5 @@
-import { agentVideos, optimisableImages } from "../../shared/media-kinds";
+import { agentVideos } from "../../shared/media-kinds";
+import { optimisableImages } from "../../shared/media-kinds-policies";
 import { mediaKind } from "./media-library-filter";
 import { mediaFamilies, type MediaFamily, familyMembers } from "./media-families";
 import { mediaVariantName } from "./media-markup";

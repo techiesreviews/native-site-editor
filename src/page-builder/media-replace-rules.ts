@@ -1,4 +1,4 @@
-import { replacementFormats, replacementLabels } from "../../shared/media-kinds";
+import { replacementFormats, replacementLabels } from "../../shared/media-kinds-policies";
 import { mediaFamilyOf, familyMembers } from "./media-families";
 import { basename } from "./media-library-filter";
 import type { MediaMetadataMap } from "./media-metadata";
@@ -7,7 +7,7 @@ import type { MediaMetadataMap } from "./media-metadata";
  * "Replace everywhere"): what the picker may choose, and what the confirmation says. The engine is slice 53's. */
 
 /** The picker shows what the engine accepts as a new picture: photos and screenshots. */
-export { REPLACE_ACCEPT } from "../../shared/media-kinds";
+export { REPLACE_ACCEPT } from "../../shared/media-kinds-policies";
 
 const FORMATS: Record<string, string> = replacementLabels;
 const format = (path: string) => /\.([^./]+)$/.exec(path)?.[1].toLowerCase() ?? "";

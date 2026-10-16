@@ -1,4 +1,4 @@
-import { fileArchives, fileFonts } from "../../shared/media-kinds";
+import { fileArchives, fileFonts } from "../../shared/media-kinds-policies";
 import { mediaKind } from "../../shared/agent";
 
 /** What a Files row's file is, by its name: its icon, colour and kind label follow. */

@@ -10,7 +10,7 @@ const extension = new RegExp(String.raw`^(?:\.|(?:image|video|audio|font)\/)?(?:
 /** A string that is nothing but extensions separated by spaces ("jpg png webp"). */
 const spaceList = (text: string) => /^\.?[a-z\d]+(?: \.?[a-z\d]+)+$/i.test(text.trim()) && [...text.matchAll(token)].length >= 2;
 const detect: Detector = (source, file) => {
-  if (file === "shared/media-kinds.ts") return [];
+  if (file === "shared/media-kinds.ts" || file === "shared/media-kinds-policies.ts") return [];
   const tree = parse(source, file), hits: Finding[] = [];
   const strings = (node: TS.Node): string[] => {
     if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return [node.text];
@@ -41,7 +41,7 @@ const allowlist: AllowlistEntry[] = [
   { file: "worker/site-conventions.ts", match: { rule: "media-string", function: "<top-level>" }, reason: "Agent-facing site-conventions documentation with filename examples, not executable extension policy." },
 ];
 
-test("media extension policies stay in shared/media-kinds.ts", () => {
+test("media extension policies stay in shared/media-kinds.ts and shared/media-kinds-policies.ts", () => {
   const hits = ["src", "shared", "worker"].flatMap(directory => sourceFiles(directory)).flatMap(file => detect(readSource(file), file));
   assert.deepEqual(unallowed(hits, allowlist), []);
   assert.deepEqual(staleEntries(hits, allowlist), []);
@@ -67,4 +67,5 @@ test("guard catches pasted historical lists and each list syntax in memory", () 
   ]) assert.ok(detect(source, "src/example.ts").length, source);
   assert.deepEqual(detect(String.raw`const single = /\.svg$/i; const encode = "image/webp";`, "src/example.ts"), []);
   assert.deepEqual(detect(`const canonical = ["jpg", "png"];`, "shared/media-kinds.ts"), []);
+  assert.deepEqual(detect(`const policies = ["jpg", "png"];`, "shared/media-kinds-policies.ts"), []);
 });

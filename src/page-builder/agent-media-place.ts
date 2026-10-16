@@ -1,4 +1,4 @@
-import { playableVideos } from "../../shared/media-kinds";
+import { playableVideos } from "../../shared/media-kinds-policies";
 // Agent placement uses the picker's transactions; loaded only when placing Media.
 import type { MediaImage } from "./media-markup";
 import type { MediaWorkspaceContext } from "./media-workspace";

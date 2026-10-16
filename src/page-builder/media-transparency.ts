@@ -1,4 +1,4 @@
-import { transparentImages } from "../../shared/media-kinds";
+import { transparentImages } from "../../shared/media-kinds-policies";
 /** Formats that can hold see-through pixels; a JPEG never can, so it is never sampled. */
 export function mediaMayBeTransparent(path: string) {
   return transparentImages.test(path);

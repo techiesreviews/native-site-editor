@@ -1,4 +1,4 @@
-import { adviceVideos, adviceAudio, animationUncheckedImages, legacyRasterImages, suitableFiles } from "../../shared/media-kinds";
+import { adviceVideos, adviceAudio, animationUncheckedImages, legacyRasterImages, suitableFiles } from "../../shared/media-kinds-policies";
 import { heicFailureMessage, isHeic } from "./media-heic";
 import { MAX_UPLOAD_BYTES } from "../uploads";
 import { mediaKind } from "./media-library-filter";

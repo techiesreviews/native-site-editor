@@ -1,4 +1,4 @@
-import { trimmableImages } from "../../shared/media-kinds";
+import { trimmableImages } from "../../shared/media-kinds-policies";
 import { formatBytes } from "../uploads";
 import { mediaFamilyOf, renamedFamily } from "./media-families";
 import { mediaFileName, suggestMediaName } from "./media-names";

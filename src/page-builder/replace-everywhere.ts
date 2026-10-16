@@ -1,4 +1,5 @@
-import { replaceableImages, replacementOutputFormats, sharingImages } from "../../shared/media-kinds";
+import { sharingImages } from "../../shared/media-kinds";
+import { replaceableImages, replacementOutputFormats } from "../../shared/media-kinds-policies";
 import { siteAddress, sitePathPrefix } from "../../shared/site-path-prefix";
 import { isSharingImage, sharingJpegPath, sharingMetaName, sharingImageDetail } from "./sharing-jpeg";
 import { socialImageAddress, SOCIAL_IMAGE_NOTE } from "./social-image";

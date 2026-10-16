@@ -1,4 +1,4 @@
-import { operationBinaryFiles } from "../../shared/media-kinds";
+import { operationBinaryFiles } from "../../shared/media-kinds-policies";
 import { onGithubPages, GITHUB_PAGES_REDIRECT_NOTE } from "../../shared/github-pages";
 import { createFileOperationChecks } from "./file-operation-checks";
 import { renamedFamily, familyMembers } from "../page-builder/media-families";

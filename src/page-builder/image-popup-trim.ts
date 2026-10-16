@@ -1,4 +1,4 @@
-import { trimmableImages } from "../../shared/media-kinds";
+import { trimmableImages } from "../../shared/media-kinds-policies";
 // Trim, zoom and turn in the image popup (media build slice 41; ticket 09 "Shapes and what gets
 // saved" and "Replacing and re-cropping"): the part of the turned picture a shape and zoom keep,
 // Free trimming's four corners, when the result saves a Trimmed copy, and a re-crop starting from

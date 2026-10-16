@@ -1,4 +1,4 @@
-import { HEIC_ACCEPT } from "../../shared/media-kinds";
+import { HEIC_ACCEPT } from "../../shared/media-kinds-policies";
 import { button, node } from "../ui/dom";
 import { setIcon } from "../icons";
 import { mediaSelectionActions } from "./media-collection-choices";

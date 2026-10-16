@@ -1,4 +1,4 @@
-import { outsidePictureFormats } from "../../shared/media-kinds";
+import { outsidePictureFormats } from "../../shared/media-kinds-policies";
 // On-demand Improve images engine. Never import this module from the boot bundle.
 import { siteAddress, sitePathPrefix } from "../../shared/site-path-prefix";
 import type { MediaRecords } from "../../shared/media-records";

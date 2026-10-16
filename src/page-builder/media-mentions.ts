@@ -1,4 +1,4 @@
-import { binaryFiles, textMediaFiles } from "../../shared/media-kinds";
+import { binaryFiles, textMediaFiles } from "../../shared/media-kinds-policies";
 import { sitePathOf } from "../../shared/site-path-prefix";
 import { decodeHtmlEntities } from "./html-entities";
 import type { MediaOtherUseKind } from "./media-usage";

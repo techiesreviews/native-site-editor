@@ -1,4 +1,4 @@
-import { trimmableImages } from "../../shared/media-kinds";
+import { trimmableImages } from "../../shared/media-kinds-policies";
 import { siteAddress, sitePathPrefix, sitePathOf } from "../../shared/site-path-prefix";
 import type { MediaRecords } from "../../shared/media-records";
 export { SOCIAL_IMAGE_SIZE, socialImageTrim, socialImageSize } from "./social-geometry";
@@ -9,7 +9,7 @@ import { gifIsAnimated, pngIsAnimated, webpIsAnimated } from "./media-image-byte
 
 export const SOCIAL_IMAGE_NOTE = "Your site has no web address yet, so sharing services may not show this image. Add it in Site settings, General, Site address, then choose the image again.";
 /** The picker offers still raster pictures only: an SVG cannot be drawn into the sharing copy (slice 36's follow-up). */
-export { SOCIAL_IMAGE_ACCEPT } from "../../shared/media-kinds";
+export { SOCIAL_IMAGE_ACCEPT } from "../../shared/media-kinds-policies";
 export const SOCIAL_IMAGE_OPTIONS: MediaOptimiseOptions = { maxWidth: 1200, quality: 85, format: "jpeg", responsive: false, keepOriginal: false };
 
 export function socialCopyPath(options: { source: string; paths: Iterable<string>; records: MediaRecords; previous?: string }) {
