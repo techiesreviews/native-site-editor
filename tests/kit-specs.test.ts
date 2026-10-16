@@ -25,7 +25,8 @@ function fixture(t: TestContext) {
   const files: Record<string, string> = {
     "src/button.ts": 'export const label = "Image";\nexport const moved = "Still here";\n',
     "src/media.ts": 'export const media = "old";\n',
-    "src/index.ts": 'export { media } from "./media.js";\n',
+    "src/index.ts": 'export { media } from "./media.js";\nexport { html } from "../shared/html.ts";\n',
+    "shared/html.ts": 'export const html = "<p>";\n',
     "tests/native-save/helpers.ts": 'import { media } from "../../src/index.js";\n',
     [save("imports")]: 'import "./helpers";\n',
     [save("label")]: 'test("find Image settings", () => {});\n',
@@ -93,6 +94,9 @@ test("relative import graph follows helper, re-export and .js-to-.ts paths", t =
   // Specs load app modules in the browser from the site root.
   const rooted = { ...f.files, [save("rooted")]: 'test("x", async ({ page }) => page.evaluate(() => import("/src/media.ts")));' };
   assert.ok(selectAffected({ files: rooted, changed: ["src/media.ts"] }).some(spec => spec.file === save("rooted")));
+  // shared/ is followed directly from a spec and transitively through src.
+  const shared = { ...f.files, [save("direct")]: 'import { html } from "../../shared/html.ts";' };
+  assert.deepEqual(selectAffected({ files: shared, changed: ["shared/html.ts"] }).map(spec => spec.file), [save("direct"), save("imports")]);
 });
 
 test("removed visible strings match only quoted spec text and ignore moves and code", t => {
@@ -136,7 +140,8 @@ test("fixture rules match exact tags and collect every applicable reason", t => 
   const actual = selectAffected({ files: f.files, changed: ["fixtures/actual-starter/index.html"] });
   assert.deepEqual(actual.map(spec => spec.file), [save("actual"), save("both")]);
   const defaults = selectAffected({ files: f.files, changed: ["fixtures/native-starter/index.html"] });
-  assert.ok(defaults.every(spec => spec.groups.join() === "default"));
+  assert.ok(defaults.every(spec => ["default", "native-preview"].includes(spec.groups.join())));
+  assert.ok(defaults.some(spec => spec.file === preview), "the native-preview server serves the default fixture");
   assert.ok(defaults.some(spec => spec.file === save("imports")));
   const all = selectAffected({ files: f.files, changed: ["tests/native-save/fixture-contract.ts", "scripts/native-browser-tests.mjs"] });
   assert.equal(all.length, 7);
@@ -168,9 +173,10 @@ test("real CLI --list includes committed, staged, unstaged and untracked changes
   f.put("src/button.ts", 'export const label = "Media";\nexport const moved = "Still here";\n');
   f.put("fixtures/actual-starter/new.html", "new");
   f.put(save("new"), 'test("new", () => {});');
+  f.put("shared/html.ts", 'export const html = "<div>";\n');
   const result = f.run(["--affected", "--base", f.base, "--list"]);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /imports.spec.ts \[default\] — import: src\/media.ts/);
+  assert.match(result.stdout, /imports.spec.ts \[default\] — import: shared\/html.ts; import: src\/media.ts/);
   assert.match(result.stdout, /label.spec.ts \[default\] — removed string: "Image"/);
   assert.match(result.stdout, /actual.spec.ts \[actual\] — fixture: actual/);
   assert.match(result.stdout, /moved.spec.ts \[default\] — import: tests\/native-save\/moved.spec.ts/);

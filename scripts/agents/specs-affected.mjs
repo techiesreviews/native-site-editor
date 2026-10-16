@@ -2,7 +2,8 @@ import { posix } from "node:path";
 import { knownFailure } from "./suite-summary.mjs";
 
 const browserSpec = /^tests\/(native-save|native-preview)\/[^/]+\.spec\.ts$/;
-const graphFile = /^(tests|src|scripts)\//;
+/** Folders whose modules the import scan follows (specs reach app code in shared/ and worker/). */
+export const graphFile = /^(tests|src|scripts|shared|worker|tools)\//;
 // Quote and apostrophe strings end at the line, so an apostrophe in a comment cannot swallow later lines.
 const quoted = /"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'|`(?:\\.|[^`\\])*`/g;
 
@@ -95,7 +96,8 @@ export function selectAffected({ files, changed, diff = "" }) {
       if (reached.has(change)) reasons.add(`import: ${change}`);
       if (file.startsWith("tests/native-save/") && ["scripts/native-browser-tests.mjs", "tests/native-save/fixture-contract.ts"].includes(change)) reasons.add(`fixture: all native-save (${change})`);
       if (change.startsWith("fixtures/actual-starter/") && groups.includes("actual")) reasons.add(`fixture: actual (${change})`);
-      else if (change.startsWith("fixtures/native-starter/") && groups.includes("default")) reasons.add(`fixture: default (${change})`);
+      // The native-preview server serves the default fixture too.
+      else if (change.startsWith("fixtures/native-starter/") && (groups.includes("default") || groups.includes("native-preview"))) reasons.add(`fixture: default (${change})`);
       else {
         const fixture = /^fixtures\/([^/]+)\//.exec(change)?.[1];
         if (fixture && !["actual-starter", "native-starter"].includes(fixture) && text.includes(`fixtures/${fixture}`)) reasons.add(`fixture: ${fixture} (${change})`);
