@@ -163,6 +163,9 @@
   --size-icon: 24px;
   --size-compact: 28px;
   --size-control: 32px;
+  /* Real tap targets on touch devices and narrow editor layouts. */
+  --size-touch: 44px;
+  --size-tap: 0px;
 
   /* Floating panels: menus, flyouts, the edit bar and its popovers, the
      insert picker and a request's card. Menus keep 6px round their rows,
@@ -175,6 +178,10 @@
   --checkerboard: repeating-conic-gradient(oklch(97% 0 none) 0 25%, oklch(90% 0 none) 0 50%) 0 0 / 16px 16px;
   --panel-padding: 6px;
   --panel-padding-roomy: 12px;
+}
+
+@media (hover: none), (pointer: coarse), (width <= 768px) {
+  :root { --size-tap: var(--size-touch); }
 }
 
 /* App overrides for the legacy utility foundation, without changing the

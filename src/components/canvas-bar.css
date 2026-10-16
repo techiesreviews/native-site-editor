@@ -225,6 +225,8 @@
   place-items: center;
   width: 28px;
   height: var(--size-icon);
+  min-inline-size: var(--size-tap);
+  min-block-size: var(--size-tap);
   padding: 0;
   border: 0;
   border-radius: var(--radius-small);
@@ -233,9 +235,15 @@
   cursor: pointer;
   transition: background-color 120ms ease-out, color 120ms ease-out;
 }
-.canvas-device:hover {
+.canvas-device:active {
   background: var(--hover);
   color: var(--text);
+}
+@media (hover: hover) and (pointer: fine) {
+  .canvas-device:hover {
+    background: var(--hover);
+    color: var(--text);
+  }
 }
 .canvas-device:focus-visible {
   outline: var(--focus-ring);
