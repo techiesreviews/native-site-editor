@@ -44,6 +44,12 @@ export default tseslint.config(
       // unbound-method skips bare globals. A browser or Workers global stored as an object
       // property and called as `ports.frame()` gets the wrong receiver (p5-21, milestone-01).
       "no-restricted-syntax": ["error", RECEIVER_RULE],
+      // A promise nobody awaits or catches loses its rejection: the user never sees the error.
+      // node:test's test() promise never rejects; the runner reports failures itself.
+      "@typescript-eslint/no-floating-promises": ["error", {
+        allowForKnownSafeCalls: [{ from: "package", package: "node:test", name: ["test", "it", "describe", "suite"] }],
+      }],
+      "@typescript-eslint/no-misused-promises": "error",
       // tsc covers unused code (scripts/check-types.mjs).
       "no-unused-vars": "off",
       "@typescript-eslint/no-unused-vars": "off",
