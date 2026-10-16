@@ -21,7 +21,8 @@ RESULT line".
 ## Files
 
 - `scripts/agents/shots/cli.ts`
-- `tests/kit-shots.test.ts`
+- `scripts/agents/shots/findings-list.ts` (new: pure formatter; cli.ts runs main() on import)
+- `tests/kit-shots-findings.test.ts` (new)
 
 ## Done when
 
