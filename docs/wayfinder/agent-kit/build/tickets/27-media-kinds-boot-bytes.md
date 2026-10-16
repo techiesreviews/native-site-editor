@@ -45,8 +45,9 @@ subsets used only by lazily loaded modules now load at start-up with the table.
   saved, ≥ 600 target); the moved lists ship in a 1.05 kB lazy
   `media-kinds-policies` chunk. The request count does not fall back to 35: boot
   code still needs the core table, so its chunk still loads at start-up.
-- **Commits.** 5a45106f split (Sol build), cb39200a review fix: test that the boot
-  import graph never reaches `media-kinds-policies`.
+- **Commits.** "Media kinds: lazy-only subsets move to shared/media-kinds-policies.ts"
+  (Sol build) and "Review fix (ak-27): test that the boot import graph never reaches
+  media-kinds-policies".
 - **Tests.** `tests/media-kinds.test.ts` (transitive boot-import test added),
   `tests/media-kinds-guard.test.ts`. `npm run check`, `npm run lint` and 3,876 unit
   tests passed.
