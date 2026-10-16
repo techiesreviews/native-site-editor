@@ -1,0 +1,37 @@
+[
+  {
+    "file": "src/components/canvas-bar.css",
+    "match": "mask-image: linear-gradient(to right, transparent 0, #000 32px)",
+    "reason": "Mask gradients use only alpha; opaque black defines the visible region in both themes."
+  },
+  {
+    "file": "src/page-builder/components.css",
+    "match": "mask: linear-gradient(#000",
+    "reason": "Mask gradients use only alpha; opaque black defines the visible region in both themes."
+  },
+  {
+    "file": "src/page-builder/image-large-editor.css",
+    "match": "mask-image: linear-gradient(90deg, transparent, #000",
+    "reason": "Mask gradients use only alpha; opaque black defines the visible region in both themes."
+  },
+  {
+    "file": "src/page-builder/media-picker.css",
+    "match": "mask-image: linear-gradient(transparent, #000 75%)",
+    "reason": "Mask gradients use only alpha; opaque black defines the visible region in both themes."
+  },
+  {
+    "file": "src/page-builder/media-picker.css",
+    "match": "mask-image: radial-gradient(ellipse, #000 45%, transparent 75%)",
+    "reason": "Mask gradients use only alpha; opaque black defines the visible region in both themes."
+  },
+  {
+    "file": "src/components/repository-menu.css",
+    "match": "oklch(from var(--primary) 0.58 0.12 var(--initial-hue, h))",
+    "reason": "Avatar hue comes from each element's --initial-hue; a root token cannot read that per-element value."
+  },
+  {
+    "file": "src/components/repository-menu.css",
+    "match": "oklch(from var(--primary) 0.48 0.12 var(--initial-hue, h))",
+    "reason": "Avatar hue comes from each element's --initial-hue; a root token cannot read that per-element value."
+  }
+]

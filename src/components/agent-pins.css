@@ -10,33 +10,6 @@
    they recede. A pin whose element is gone is dashed. Focusing a pin from
    the keyboard shows the request's first line, and so does hovering one
    while another's card is held open (hovering opens the pin's card). */
-:root {
-  /* A question for the user: orange, on pins light in both themes. */
-  --agent-question-strong: oklch(66% 0.18 48);
-  --agent-question-pin: oklch(94.5% 0.05 62);
-  --agent-question-ink: oklch(46% 0.14 45);
-  /* Finished: a neutral grey with a trace of the editor's hue. */
-  --agent-done-pin: oklch(from var(--color-primary) 90.5% 0.006 h);
-  --agent-done-line: oklch(from var(--color-primary) 70% 0.012 h);
-  --agent-done-ink: oklch(from var(--color-primary) 36% 0.015 h);
-  /* A request's first line, on the always-light pin. */
-  --agent-pin-text: oklch(from var(--color-primary) 25% 0.01 h);
-  /* The card's: theme-aware. */
-  --agent-question-surface: oklch(96% 0.04 62);
-  --agent-question-text: oklch(42% 0.13 45);
-  --agent-done-surface: oklch(from var(--color-primary) 92.5% 0.005 h);
-  --agent-done-bubble: oklch(from var(--color-primary) 84% 0.008 h);
-  --agent-done-bubble-ink: oklch(from var(--color-primary) 27% 0.015 h);
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --agent-question-surface: oklch(31% 0.06 50);
-    --agent-question-text: oklch(88% 0.08 62);
-    --agent-done-surface: oklch(from var(--color-primary) 29% 0.006 h);
-    --agent-done-bubble: oklch(from var(--color-primary) 40% 0.01 h);
-    --agent-done-bubble-ink: oklch(from var(--color-primary) 92% 0.008 h);
-  }
-}
 .agent-pins {
   position: absolute;
   z-index: 25;
@@ -257,7 +230,7 @@
   border-radius: 999px;
   padding: 2px 7px;
   background: var(--agent-question-strong);
-  color: white;
+  color: var(--on-accent);
 }
 .agent-pins__tray-questions::before {
   content: "";

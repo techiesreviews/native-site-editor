@@ -20,14 +20,14 @@
 }
 /* Centred: no target, so the whole page is dimmed. */
 .spotlight[data-mode="centered"] {
-  background: rgb(0 0 0 / 0.55);
+  background: oklch(from var(--shadow-ink) l c h / 0.55);
 }
 /* The lit element: a ring, and a shadow so large that it dims the rest of the page. */
 .spotlight__hole {
   position: absolute;
   box-sizing: border-box;
   border-radius: calc(var(--radius) + 4px);
-  box-shadow: 0 0 0 100vmax rgb(0 0 0 / 0.55);
+  box-shadow: 0 0 0 100vmax oklch(from var(--shadow-ink) l c h / 0.55);
   outline: 2px solid var(--color-warning);
   outline-offset: 0;
   pointer-events: none;

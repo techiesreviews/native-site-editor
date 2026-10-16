@@ -84,7 +84,7 @@
 /* Agents' questions waiting for the user: the dot turns orange and the item
    counts them, as the project selector's tile does. */
 .agent-menu.is-asking .agent-menu__action::before {
-  background: var(--agent-question-strong, oklch(66% 0.18 48));
+  background: var(--agent-question-strong);
 }
 .agent-menu__label {
   flex: 1;
@@ -98,8 +98,8 @@
   border-radius: 999px;
   padding: 0 5px;
   box-sizing: border-box;
-  background: var(--agent-question-strong, oklch(66% 0.18 48));
-  color: white;
+  background: var(--agent-question-strong);
+  color: var(--on-accent);
   font-size: var(--type-badge);
   font-weight: 700;
   line-height: 18px;

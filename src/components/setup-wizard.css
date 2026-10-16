@@ -177,7 +177,7 @@
 .wizard-preview__card { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; height: 100%; }
 .wizard-preview__card .brand-mark { width: var(--size-control); height: var(--size-control); margin-bottom: 4px; border-radius: var(--radius); font-size: var(--type-title); }
 .wizard-preview__title { font-size: var(--type-title); font-weight: 600; }
-.wizard-preview__frame { position: absolute; left: 0; top: 0; width: 1280px; height: 800px; border: 0; background: #fff; transform: scale(var(--preview-scale)); transform-origin: top left; pointer-events: none; }
+.wizard-preview__frame { position: absolute; left: 0; top: 0; width: 1280px; height: 800px; border: 0; background: var(--preview-paper); transform: scale(var(--preview-scale)); transform-origin: top left; pointer-events: none; }
 @keyframes celebrate-in { from { opacity: 0; transform: translateY(8px) scale(0.98); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) {
   .wizard__panel--celebrate { animation: celebrate-fade 0.4s ease-out both; }

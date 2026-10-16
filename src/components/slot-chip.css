@@ -2,8 +2,8 @@
    slot, muted grey and struck through for a fixed part. Renamed in place, its
    name takes a caret and stays the chip: no field look. */
 .slot-chip {
-  --slot-chip-slot: oklch(from var(--color-component) 47% 0.21 h);
-  --slot-chip-items: oklch(50% 0.19 355);
+  --slot-chip-slot: var(--slot-surface);
+  --slot-chip-items: var(--items-slot-surface);
   flex: none;
   display: inline-block;
   box-sizing: border-box;
@@ -13,7 +13,7 @@
   border: 0;
   border-radius: 999px;
   background: var(--slot-chip-slot);
-  color: #fff;
+  color: var(--on-accent);
   font: 600 10.5px / 17px var(--font-mono);
   white-space: nowrap;
   cursor: pointer;
