@@ -1,4 +1,5 @@
-import { sharingImageExtensions, sharingImages } from "../../shared/media-kinds";
+import { sharingImages } from "../../shared/media-kinds";
+import { sharingImageExtensions } from "../../shared/media-kinds-policies";
 import { readMediaPrefix } from "./media-prefix";
 import { NATIVE_CONFIG_PATH, nativeSiteSettings } from "../../shared/native-project";
 import { sitePathPrefix } from "../../shared/site-path-prefix";

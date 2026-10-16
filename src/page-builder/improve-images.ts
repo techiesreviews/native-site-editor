@@ -1,4 +1,4 @@
-import { legacyRasterImages, rasterImages } from "../../shared/media-kinds";
+import { legacyRasterImages, rasterImages } from "../../shared/media-kinds-policies";
 import { rootRoute } from "../../shared/site-path-prefix";
 import { parseOnlineVideoAddress } from "./online-video";
 import { setPictureLeftAsIs, type MediaRecords } from "../../shared/media-records";

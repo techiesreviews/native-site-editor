@@ -1,6 +1,38 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import * as media from "../shared/media-kinds.ts";
+import * as kinds from "../shared/media-kinds.ts";
+import * as policies from "../shared/media-kinds-policies.ts";
+
+const media = { ...kinds, ...policies };
+
+test("boot media kinds and lazy caller policies keep separate exports and dependencies", () => {
+  const movedNames = [
+    "trimmableImages", "operationBinaryFiles", "fileFonts", "fileArchives", "playableVideos",
+    "losslessImages", "rasterImages", "legacyRasterImages", "convertedAudio", "sharingImageExtensions",
+    "heicImages", "libraryExcludedFiles", "libraryArchives", "librarySheets", "librarySlides",
+    "libraryText", "animationUncheckedImages", "adviceVideos", "adviceAudio", "suitableFiles",
+    "binaryFiles", "textMediaFiles", "optimisableImages", "transparentImages", "replaceableImages",
+    "replacementFormats", "replacementOutputFormats", "olderCopyFormats", "paletteImages",
+    "losslessImageTypes", "heicImageTypes", "VIDEO_ACCEPT", "HEIC_ACCEPT", "REPLACE_ACCEPT",
+    "SOCIAL_IMAGE_ACCEPT", "playableMimeTypes", "outsidePictureFormats", "replacementLabels",
+  ];
+  const bootNames = [
+    "MEDIA_KINDS", "extensionsOf", "mediaKind", "mimeType", "isImagePath",
+    "agentAudio", "agentDocuments", "agentImages", "agentVideos", "previewablePictures",
+    "assetMimeTypes", "audioMimeTypes", "uploadMimeTypes", "previewImages", "creationBinaryFiles",
+    "sharingImages", "subtitles", "renamableMedia",
+  ];
+  assert.deepEqual(Object.keys(policies).sort(), movedNames.sort());
+  for (const name of movedNames) assert.equal(Object.hasOwn(kinds, name), false, name);
+  for (const name of bootNames) {
+    assert.equal(Object.hasOwn(kinds, name), true, name);
+    assert.equal(Object.hasOwn(policies, name), false, name);
+  }
+  assert.deepEqual(Object.keys(kinds).filter(name => Object.hasOwn(policies, name)), []);
+  const source = readFileSync(new URL("../shared/media-kinds.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /media-kinds-policies/);
+});
 
 // Historical accepted sets, captured before migration. Keep these literal.
 const callers: [string, RegExp, string[]][] = [

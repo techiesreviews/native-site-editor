@@ -1,4 +1,4 @@
-import { losslessImageTypes, losslessImages } from "../../shared/media-kinds";
+import { losslessImageTypes, losslessImages } from "../../shared/media-kinds-policies";
 import type { MediaTrim } from "../../shared/media-records";
 import { socialImageTrim, socialImageSize } from "./social-geometry";
 import { trimGeometry, isTrim, validTrim } from "./trim-geometry";

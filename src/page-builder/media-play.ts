@@ -1,4 +1,4 @@
-import { playableMimeTypes } from "../../shared/media-kinds";
+import { playableMimeTypes } from "../../shared/media-kinds-policies";
 // The edit bar's Play (lazy, media slice 65): on the canvas everything stays
 // still so a click selects it; Play checks a selected video, audio or Online
 // video, and Stop (or the end, or the selection moving on) returns it to its

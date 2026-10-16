@@ -1,4 +1,4 @@
-import { VIDEO_ACCEPT, playableVideos } from "../../shared/media-kinds";
+import { VIDEO_ACCEPT, playableVideos } from "../../shared/media-kinds-policies";
 // One-Undo video transactions behind the edit bar's Looping video and Background video controls (lazy).
 import { readMediaPrefix } from "./media-prefix";
 import type { MediaControllerPorts } from "../controllers/media-controller";

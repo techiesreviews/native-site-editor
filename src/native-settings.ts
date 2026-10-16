@@ -1,4 +1,4 @@
-import { trimmableImages } from "../shared/media-kinds";
+import { trimmableImages } from "../shared/media-kinds-policies";
 import { NOJEKYLL_FILE, nojekyllNeeded } from "../shared/github-pages";
 import { createSiteSettings, type SiteSettingsValues, type SiteLinkPreference } from "./components/site-settings";
 import { escapeText, readHeadSettings, upsertHeadTag, withPageField, type HeadField } from "./page-builder/site-head";

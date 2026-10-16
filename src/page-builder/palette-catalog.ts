@@ -1,4 +1,4 @@
-import { paletteImages } from "../../shared/media-kinds";
+import { paletteImages } from "../../shared/media-kinds-policies";
 import type { EditorPaletteDeps, PaletteSelection } from "./palette";
 import { selectionIdentity, announceRefusal } from "./palette";
 import { parseMarked } from "../native-source-location";

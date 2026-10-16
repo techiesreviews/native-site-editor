@@ -1,4 +1,5 @@
-import { VIDEO_ACCEPT, agentVideos } from "../../shared/media-kinds";
+import { agentVideos } from "../../shared/media-kinds";
+import { VIDEO_ACCEPT } from "../../shared/media-kinds-policies";
 // A picture spot's picker (media slices 64 and 119): it lists pictures and videos, and a video
 // chosen there loops silently in the spot. Shared by the edit bar's picker, the Image popup's
 // Replace and the Media popup's Replace. Small; the placing code loads on Use.

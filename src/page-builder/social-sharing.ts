@@ -1,4 +1,4 @@
-import { trimmableImages } from "../../shared/media-kinds";
+import { trimmableImages } from "../../shared/media-kinds-policies";
 import { MEDIA_RECORDS_PATH, parseMediaRecords } from "../../shared/media-records";
 import type { MediaTrim } from "../../shared/media-records";
 import { createMediaWorkspace, type MediaWorkspaceContext, type MediaShareRequest } from "./media-workspace";

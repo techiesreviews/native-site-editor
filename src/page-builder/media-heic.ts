@@ -1,4 +1,4 @@
-import { heicImageTypes, heicImages } from "../../shared/media-kinds";
+import { heicImageTypes, heicImages } from "../../shared/media-kinds-policies";
 const HEIC_BRANDS = new Set(["heic", "heix", "hevc", "hevx", "heim", "heis"]);
 /** Generic HEIF brands alone also describe AVIF, so inspect compatible brands. */
 export function isHeic(name: string, type: string, bytes: Uint8Array): boolean {
