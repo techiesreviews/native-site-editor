@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { Env } from "../worker/app.ts";
-import { createGrant, getGrant, getHub, markGrantUsed, type AgentGrant, type AgentHub } from "../worker/agent-context.ts";
+import { createGrant, getGrant, getHub, markGrantUsed, revokeGrant, type AgentGrant, type AgentHub } from "../worker/agent-context.ts";
+import { forEachAwait } from "./support/await-race.ts";
 import { hubOperation, type HubStorage } from "../worker/agent-store.ts";
 import { fakeHubRoute } from "./native-save/fake-hub.ts";
 
@@ -32,12 +33,13 @@ const operationRequest = (action: unknown) => new Request("https://session.inter
   method: "POST", body: JSON.stringify(action),
 });
 
-// An Env whose hub runs the real hubOperation; `fail` makes the next use-grant
-// or grant-record write fail once.
+// An Env whose hub runs the real hubOperation; `fail.use` makes the next
+// use-grant fail once. `puts` counts grant-record writes.
 function grantEnv() {
   const records = new Map<string, AgentGrant>();
   const storage = memoryStorage();
-  const fail = { use: false, put: false };
+  const fail = { use: false };
+  const counts = { puts: 0 };
   const env: Env = {
     ASSETS: { fetch: async () => new Response("UI") },
     SESSIONS: {
@@ -58,10 +60,7 @@ function grantEnv() {
           }
           assert.ok(id.startsWith("agent:"));
           if (request.method === "PUT") {
-            if (fail.put) {
-              fail.put = false;
-              throw new Error("grant record unavailable");
-            }
+            counts.puts++;
             records.set(id, await request.json() as AgentGrant);
             return new Response(null, { status: 204 });
           }
@@ -75,44 +74,55 @@ function grantEnv() {
       }),
     },
   };
-  return { env, fail };
+  return { env, fail, counts };
 }
+const connect = (env: Env) => createGrant(env, { ...hub, sessionId, repoId: 7, repo: "lex/site", via: "token" });
 
-test("a failed first-use hub update leaves the grant retryable on the next request", async () => {
-  const { env, fail } = grantEnv();
-  const { id } = await createGrant(env, { ...hub, sessionId, repoId: 7, repo: "lex/site", via: "token" });
+test("a failed first-use hub update is retried on the next request, and a stale request cannot move it", async () => {
+  const { env, fail, counts } = grantEnv();
+  const { id } = await connect(env);
+  const grant = await getGrant(env, id);
+  const unused = await getHub(env, sessionId);
   fail.use = true;
-  await assert.rejects(markGrantUsed(env, id, await getGrant(env, id), " Agent\u0000 "), /use-grant unavailable/);
-  const retry = await getGrant(env, id);
-  assert.equal(retry.usedAt, undefined);
-  assert.equal((await getHub(env, sessionId))?.grants[0].usedAt, undefined);
-  await markGrantUsed(env, id, retry, " Agent\u0000 ");
-  const record = await getGrant(env, id);
+  await assert.rejects(markGrantUsed(env, id, grant, unused, " Agent\u0000 "), /use-grant unavailable/);
+  // The next request reads the hub again: still unused, so it tries again.
+  const next = await getHub(env, sessionId);
+  assert.equal(next?.grants[0].usedAt, undefined);
+  await markGrantUsed(env, id, grant, next, " Agent\u0000 ");
   const connected = (await getHub(env, sessionId))!.grants[0];
   assert.equal(typeof connected.usedAt, "number");
-  assert.equal(record.usedAt, connected.usedAt);
-  assert.equal(record.client, "Agent");
   assert.equal(connected.client, "Agent");
-  // Even a stale request cannot move the first use or replace its client.
-  await markGrantUsed(env, id, retry, "Other agent");
+  // A request that read the hub before the first use cannot move it or rename the client.
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  await markGrantUsed(env, id, grant, unused, "Other agent");
   assert.deepEqual((await getHub(env, sessionId))!.grants[0], connected);
-  assert.deepEqual(await getGrant(env, id), record);
+  // The first use lives in the hub only; the grant record is written once, at connect.
+  assert.equal(counts.puts, 1);
+  assert.deepEqual(await getGrant(env, id), grant);
 });
 
-test("a retry after a failed grant-record write keeps the hub's first use and client", async () => {
-  const { env, fail } = grantEnv();
-  const { id } = await createGrant(env, { ...hub, sessionId, repoId: 7, repo: "lex/site", via: "token" });
-  fail.put = true;
-  await assert.rejects(markGrantUsed(env, id, await getGrant(env, id), "First client"), /grant record unavailable/);
-  const first = (await getHub(env, sessionId))!.grants[0];
-  assert.equal(typeof first.usedAt, "number");
-  assert.equal((await getGrant(env, id)).usedAt, undefined);
-  await new Promise((resolve) => setTimeout(resolve, 5));
-  await markGrantUsed(env, id, await getGrant(env, id), "Retry client");
-  const record = await getGrant(env, id);
-  assert.equal(record.usedAt, first.usedAt);
-  assert.equal(record.client, "First client");
-  assert.deepEqual((await getHub(env, sessionId))!.grants[0], first);
+test("a connection revoked while its first use is recorded stays revoked", async () => {
+  const count = await forEachAwait((race) => {
+    const { env } = grantEnv();
+    const raced: Env = {
+      ...env,
+      SESSIONS: {
+        ...env.SESSIONS,
+        get: (id) => ({ fetch: race.port(`fetch ${id}`, (request: Request) => env.SESSIONS.get(id).fetch(request)) }),
+      },
+    };
+    const run = { env, id: "", done: Promise.resolve() };
+    run.done = (async () => {
+      const { id } = await connect(env);
+      run.id = id;
+      await markGrantUsed(raced, id, await getGrant(env, id), await getHub(env, sessionId), "Agent");
+    })();
+    return run;
+  }, (run) => revokeGrant(run.env, run.id, sessionId), async (run) => {
+    await assert.rejects(getGrant(run.env, run.id), /expired or was revoked/);
+    assert.deepEqual((await getHub(run.env, sessionId))!.grants, []);
+  });
+  assert.ok(count >= 1);
 });
 
 test("concurrent fake hub operations keep both grants", async () => {

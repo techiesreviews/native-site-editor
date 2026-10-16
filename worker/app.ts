@@ -508,16 +508,16 @@ async function route(
     const body = await requestJson(request, 3 * 1024 * 1024);
     // The first request of a connection marks it used; an MCP client names
     // itself in `initialize`.
-    if (!connection.grant.usedAt)
-      await markGrantUsed(
-        env,
-        connection.id,
-        connection.grant,
-        body?.method === "initialize" ? body.params?.clientInfo?.name : undefined,
-      ).catch((error) => {
-        // The record stays unmarked, so the next request tries again.
-        console.error("agent connection's first use not recorded:", error instanceof Error ? error.message : error);
-      });
+    await markGrantUsed(
+      env,
+      connection.id,
+      connection.grant,
+      connection.hub,
+      body?.method === "initialize" ? body.params?.clientInfo?.name : undefined,
+    ).catch((error) => {
+      // The hub still lists it unused, so the next request tries again.
+      console.error("agent connection's first use not recorded:", error instanceof Error ? error.message : error);
+    });
     // Loaded on first use: the MCP server and its schema library are most of
     // the bundle, and most isolates never serve /mcp.
     const { handleMcp } = await import("./mcp");

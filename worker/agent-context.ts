@@ -23,7 +23,7 @@ export interface AgentGrant {
   /** The OAuth client's name, as it registered. */
   client?: string;
   createdAt?: number;
-  /** When an agent first used the connection. */
+  /** Older records only; the hub records the first use (`markGrantUsed`). */
   usedAt?: number;
 }
 /** A connection as the editor tab lists it. */
@@ -133,29 +133,28 @@ export async function createGrant(
   return { id, token };
 }
 /**
- * Records a connection's first use, and the MCP client's name when a token
- * connection brings one, so the editor can show the agent as connected.
- * Updates the hub before the grant record, so a failed hub step leaves the
- * record unmarked and the next request retries the idempotent hub operation.
+ * Records a connection's first use in the session's hub, and the MCP client's
+ * name when a token connection brings one, so the editor can show the agent
+ * as connected. `hub` is the hub as this request read it: nothing to do when
+ * it lists the connection as used already (or not at all). The hub is the
+ * only record of the first use, so a failed step leaves it unused and the
+ * next request tries again; `use-grant` keeps the first time and client, and
+ * the grant record is never written here, so a revoked one stays gone.
  */
 export async function markGrantUsed(
   env: Env,
   id: string,
   grant: AgentGrant,
+  hub: AgentHub | undefined,
   client?: string,
 ) {
-  if (grant.usedAt) return;
+  const listed = hub?.grants.find((item) => item.id === id);
+  if (!listed || listed.usedAt) return;
   const name = typeof client === "string"
     ? client.trim().replace(/[\u0000-\u001f]/g, "").slice(0, 100)
     : "";
-  const usedAt = Date.now();
   const named = grant.client ?? (name || undefined);
-  await operateHub(env, grant.sessionId, { type: "use-grant", id, usedAt, client: named });
-  // The hub keeps the first use and client; a retry after a failed record
-  // write copies them rather than its own.
-  const first = (await getHub(env, grant.sessionId, { context: false }))?.grants.find((item) => item.id === id);
-  const firstClient = first?.client ?? named;
-  await agentRecord(env, id, "PUT", { ...grant, usedAt: first?.usedAt ?? usedAt, ...(firstClient ? { client: firstClient } : {}) });
+  await operateHub(env, grant.sessionId, { type: "use-grant", id, usedAt: Date.now(), client: named });
 }
 export async function revokeGrant(env: Env, id: string, sessionId: string) {
   await agentRecord(env, id, "DELETE");
@@ -281,7 +280,8 @@ export async function authenticateAgent(
   // takes effect at once; removing the repository from the installation, within
   // that time.
   const github = new GitHub(session.token, fetcher);
-  const shown = (await getHub(env, grant.sessionId))?.context?.repository;
+  const hub = await getHub(env, grant.sessionId);
+  const shown = hub?.context?.repository;
   const target = shown ?? { id: grant.repoId, fullName: grant.repo };
   const repo = await github.authorizeRepository(
     session.login,
@@ -290,5 +290,5 @@ export async function authenticateAgent(
   );
   if (repo.id !== target.id)
     throw new HttpError(403, "Repository access changed. Reconnect the agent.");
-  return { grant, github, repo, id };
+  return { grant, github, repo, id, hub };
 }
