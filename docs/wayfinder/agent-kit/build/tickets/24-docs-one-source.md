@@ -28,6 +28,10 @@ builder: claude
 - `docs/agents/issue-tracker.md`
 - docs/agents/runner-extras-template.md (new)
 - `AGENTS.md`
+- `docs/agents/github-settings.md` (token step, merge-queue note)
+- `tests/agent-scripts.test.ts` (runner.md wording it pins)
+- `scripts/check-types.mjs` (dead `src/prototype/` exemption)
+- `docs/wayfinder/agent-kit/lead-log.md` (the lead's build notes)
 
 ## Done when
 
