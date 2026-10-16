@@ -38,3 +38,4 @@
 - ak-11 landed 62f29a50 (5 review fixes; CI fix after its own test broke CI). Real lockfile vs shared node_modules: 193 match. Started ak-27.
 - ak-26 landed b56b01dd (no real flake: todo under red heading). Follow-ups: 28 kit-wait test under load (runner), 29 specs --affected lazy import() (free worker).
 - Ticket 29 rescoped to Sol: specs never import src (they load the app); add defined-strings + name-match selection.
+- ak-07 landed f195becc (35 findings / 52 shots). Lead decision: keep tuned tap rule (<24 px always; 24–43 px only when crowded; = WCAG 2.2 target size). Ticket 30 (print findings list) → free worker. Started ak-29.

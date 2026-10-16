@@ -3,7 +3,7 @@ title: "Docs: one source of truth for runners, review, landing and waiting"
 type: task (AFK)
 status: open
 assignee:
-blocked_by: [01-kit-front-door, 02-ci-pull-requests, 03-kit-doctor, 04-kit-wait, 05-kit-review, 06-kit-shots-core, 07-kit-shots-layout, 08-kit-shots-compare, 09-kit-specs, 10-kit-size, 11-kit-deps, 12-kit-status, 13-kit-preview, 14-kit-pr, 15-agent-resume, 16-unit-timeout, 17-media-kinds, 18-promise-lint, 19-colour-check, 20-unused-exports, 21-await-race-helper, 22-scenario-helpers-in-specs, 23-known-failures-refresh, 25-shots-proof, 26-files-adding-stale-message, 27-media-kinds-boot-bytes, 28-kit-wait-test-load, 29-kit-specs-lazy-imports]
+blocked_by: [01-kit-front-door, 02-ci-pull-requests, 03-kit-doctor, 04-kit-wait, 05-kit-review, 06-kit-shots-core, 07-kit-shots-layout, 08-kit-shots-compare, 09-kit-specs, 10-kit-size, 11-kit-deps, 12-kit-status, 13-kit-preview, 14-kit-pr, 15-agent-resume, 16-unit-timeout, 17-media-kinds, 18-promise-lint, 19-colour-check, 20-unused-exports, 21-await-race-helper, 22-scenario-helpers-in-specs, 23-known-failures-refresh, 25-shots-proof, 26-files-adding-stale-message, 27-media-kinds-boot-bytes, 28-kit-wait-test-load, 29-kit-specs-lazy-imports, 30-shots-print-findings]
 builder: claude
 ---
 
