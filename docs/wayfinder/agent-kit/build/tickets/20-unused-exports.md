@@ -3,7 +3,7 @@ title: "Check: no exports without production callers"
 type: task (AFK)
 status: open
 assignee:
-blocked_by: [17-media-kinds, 18-promise-lint, 19-colour-check]
+blocked_by: [17-media-kinds, 18-promise-lint, 19-colour-check, 27-media-kinds-boot-bytes]
 builder: sol
 ---
 

@@ -33,3 +33,4 @@
 - Lead fix landed: kit --help after a subcommand (Sol clean). Bare kit stays help-only (no RESULT), per ticket 01's tests.
 - ak-09 landed 09cf14fd (5 review fixes). ak-17 landed 54471759 (media-kind table).
 - Flake: tests/media-files-adding-runs-await-race.test.ts fails under load → folded into ak-26 (started).
+- ak-17 landed 54471759: +~1 KB boot → ticket 27 (split lazy subsets) before 18/20. Lex question for final summary: agents call txt/md/vtt 'other', table says 'document'. ak-14 started.
