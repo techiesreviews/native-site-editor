@@ -49,3 +49,12 @@
 - ak-19 built but blocked by native-add-card spec failing on plain dev → lead landed 19 with land.sh; ticket 32 to fix the spec.
 - ak-29 landed ab3daf58 (0→6 specs for files adding; narrow commits 6–25). Accepted: native-files-tab not linked to adding modules. Started ak-12.
 - App restart (≈14:20): all runners and the kit pr runs died. Recovered: PR #2 (ak-28) waiting on checks then lead merges; 32 and 19 closed in their branches → lead runs kit pr after 28; 27 and 12 resumed by fresh runners from their worktrees; started 10, 22, 31.
+- PRs #3 (32), #4 (12), #5 (31), #6 (10), #7 (19), #8 (lead notes), #9 (22) merged through kit pr.
+- Second app restart and two user messages interrupted foreground runners; lead cleared 4 stale agent-cap entries. Runners back to background; `kit status agent-kit` is the source of truth after any restart.
+- ak-24 drafted the docs (13956c47 + 23f84667), held before close/kit pr. Lead: keep the agent-scripts test update; also drop the dead src/prototype exemption in scripts/check-types.mjs in 24; fill guardrails TODOs after 18 and 20.
+- ak-27 merged a4b0a7d (PR #10): boot 353 → 352 KB. Its kit pr ran 1,035 affected specs serially (first run hit the 1 h background limit). Follow-up idea for Lex: kit pr should shard large spec sets through full-suite.sh. native-canvas.spec.ts:203 flaked once (13/13 on rerun).
+- 18 and 20 started early (both rebase after 27/18 merge). 24 drafted and held.
+- Lex: "the thread settles too early". Lead added a 15-minute T3 heartbeat (scheduled task) that wakes the thread, and ran merges and Sol runs as detached jobs (`setsid nohup`) waited on in the foreground with `kit wait pid`, so restarts and messages don't kill them.
+- PR #11 (18, promise lint) merged after a full browser run (1,059 + groups, 0 failures). PR #13 (33, Codex model check reads only header blocks) merged.
+- PR #12 (20, unused exports): kit pr stopped on one flaky spec (native-media-newest:50, fails 1/3 on plain dev, 3/3 on the branch) → lead finished the PR by hand (push, PR, Sol review on the PR, CI green, rebase-merge) and filed ticket 34. Review rounds 3–4 found rarer checker edge cases; round 3 fixed (destructuring assignments), round 4 (computed keys) documented as a known limit.
+- Ticket 24 (docs) closes the build through kit pr: the proof of the PR flow.
