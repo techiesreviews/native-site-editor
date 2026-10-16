@@ -19,6 +19,20 @@ builder: sol
 - `eslint.config.mjs`
 - src/**, shared/**, worker/**, tests/** files with findings (fix in place)
 
+## Scope (2026-10-16, before fixing)
+
+Both rules on `'src/**/*.ts' 'shared/**/*.ts' 'worker/**/*.ts' 'tests/**/*.ts'` at dev 12465061:
+
+| folder | no-floating-promises | no-misused-promises |
+|---|---|---|
+| src | 2 | 21 |
+| shared | 0 | 0 |
+| worker | 0 | 0 |
+| tests | 3288 | 3 |
+
+3286 of the tests findings are node:test `test()` calls; its promise never rejects (the runner
+reports failures), so the rule allows them by name (`allowForKnownSafeCalls`). 28 real findings remain.
+
 ## Done when
 
 - `npm run lint` clean with both rules on; check, unit and the touched specs pass.
