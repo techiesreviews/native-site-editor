@@ -37,3 +37,4 @@
 - ak-08 landed 7f014106 (2 concurrency fixes). Dev CI red from ak-11 kit deps test (ak-11 to fix). Started ak-19.
 - ak-11 landed 62f29a50 (5 review fixes; CI fix after its own test broke CI). Real lockfile vs shared node_modules: 193 match. Started ak-27.
 - ak-26 landed b56b01dd (no real flake: todo under red heading). Follow-ups: 28 kit-wait test under load (runner), 29 specs --affected lazy import() (free worker).
+- Ticket 29 rescoped to Sol: specs never import src (they load the app); add defined-strings + name-match selection.
