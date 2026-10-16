@@ -1,3 +1,4 @@
+import { HEIC_ACCEPT } from "../../shared/media-kinds";
 import { button, node } from "../ui/dom";
 import { setIcon } from "../icons";
 import { mediaSelectionActions } from "./media-collection-choices";
@@ -27,7 +28,7 @@ export function createMediaLibraryShell(
   dialog.setAttribute("aria-labelledby", title.id);
   if (!modal) dialog.setAttribute("role", "region");
   const uploadInput = node("input");
-  uploadInput.type = "file"; uploadInput.name = "media-upload"; uploadInput.accept = options.accept?.replace("image/*", "image/*,.heic,.heif") ?? ""; uploadInput.multiple = true; uploadInput.hidden = true;
+  uploadInput.type = "file"; uploadInput.name = "media-upload"; uploadInput.accept = options.accept?.replace("image/*", `image/*,${HEIC_ACCEPT}`) ?? ""; uploadInput.multiple = true; uploadInput.hidden = true;
   uploadInput.className = "media-library__upload-input";
   uploadInput.setAttribute("aria-label", "Add files");
   heading.append(title);

@@ -1,3 +1,4 @@
+import { legacyRasterImages, rasterImages } from "../../shared/media-kinds";
 import { rootRoute } from "../../shared/site-path-prefix";
 import { parseOnlineVideoAddress } from "./online-video";
 import { setPictureLeftAsIs, type MediaRecords } from "../../shared/media-records";
@@ -55,7 +56,7 @@ interface Input {
 }
 const counts = (): Counts => ({ "bring-in": 0, lighten: 0, copies: 0, size: 0, sizes: 0, loading: 0, loop: 0, "first-frame": 0, player: 0 });
 const inert = new Set(["pre", "code", "samp", "kbd", "xmp", "textarea", "template", "noscript"]);
-const raster = /\.(?:jpe?g|png|bmp|tiff?|webp|avif|gif)$/i;
+const raster = rasterImages;
 const elements = (nodes: SourceNode[]): SourceElement[] => nodes.flatMap(node => node.type === "element" ? [node, ...elements(node.children)] : []);
 function ancestry(node: SourceElement): SourceElement[] { return [node, ...node.parent ? ancestry(node.parent) : []]; }
 const attribute = (source: string, node: SourceElement, name: string) => {
@@ -84,7 +85,7 @@ function scriptDriven(source: string, node: SourceElement, scripts: string): boo
 }
 function heavy(path: string, facts: Facts, maxWidth: number | null): boolean {
   // Unknown facts must be measured before trusting a heavy/copies decision.
-  return facts.size !== undefined && facts.width !== undefined && (facts.size > IMPROVE_HEAVY_BYTES || (maxWidth !== null && facts.width > maxWidth) || /\.(?:bmp|tiff?)$/i.test(path));
+  return facts.size !== undefined && facts.width !== undefined && (facts.size > IMPROVE_HEAVY_BYTES || (maxWidth !== null && facts.width > maxWidth) || legacyRasterImages.test(path));
 }
 function summary(row: ImproveImagesRow): string {
   const c = row.counts, parts: string[] = [];

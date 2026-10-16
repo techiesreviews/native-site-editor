@@ -1,3 +1,4 @@
+import { agentImages, sharingImages, subtitles } from "../../shared/media-kinds";
 import { mediaKind } from "../../shared/agent";
 export interface MediaFamily {
   main: string;
@@ -18,12 +19,12 @@ export const familyMembers = (family: MediaFamily): string[] =>
 /** The widths responsive copies are made at when an image is added (ticket 07). */
 export const RESPONSIVE_COPY_WIDTHS = [480, 960, 1600] as const;
 
-const imageExtension = /\.(?:svg|png|jpe?g|gif|webp|avif|ico|bmp|tiff?|heic|heif)$/i;
+const imageExtension = agentImages;
 const originalPath = (path: string) => /^media\/originals\//i.test(path);
 // Videos and PDFs own a still picture; videos and audio own subtitles (ticket 12 "Connecting details").
 const stillOwner = { test: (path: string) => mediaKind(path) === "video" || /\.pdf$/i.test(path) };
 const subtitlesOwner = { test: (path: string) => mediaKind(path) === "video" || mediaKind(path) === "audio" };
-const subtitlesFile = /\.(?:vtt|srt)$/i;
+const subtitlesFile = subtitles;
 const stem = (path: string) => path.replace(/\.[^./]+$/, "");
 const base = (path: string) => stem(path).slice(stem(path).lastIndexOf("/") + 1);
 const extension = (path: string) => path.slice(stem(path).length);
@@ -78,9 +79,9 @@ export function mediaFamilies(paths: string[]): MediaFamily[] {
     families.delete(path);
   }
   for (const [path, family] of families) {
-    if (!/\.(?:avif|webp)$/i.test(path)) continue;
+    if (!sharingImages.test(path)) continue;
     const sharing = stem(path) + "-sharing.jpg";
-    const owners = (byStem.get(stem(path)) ?? []).filter(main => families.has(main) && /\.(?:avif|webp)$/i.test(main));
+    const owners = (byStem.get(stem(path)) ?? []).filter(main => families.has(main) && sharingImages.test(main));
     if (owners.length === 1 && families.has(sharing)) { family.sharing = sharing; families.delete(sharing); }
   }
   const byBase = new Map<string, MediaFamily[]>();

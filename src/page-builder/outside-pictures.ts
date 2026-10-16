@@ -1,3 +1,4 @@
+import { outsidePictureFormats } from "../../shared/media-kinds";
 // On-demand Improve images engine. Never import this module from the boot bundle.
 import { siteAddress, sitePathPrefix } from "../../shared/site-path-prefix";
 import type { MediaRecords } from "../../shared/media-records";
@@ -32,7 +33,7 @@ export function normaliseOutsidePicture(address: string): string {
   url.hash = "";
   return url.href;
 }
-const formats: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/gif": "gif", "image/webp": "webp", "image/avif": "avif", "image/bmp": "bmp" };
+const formats: Record<string, string> = outsidePictureFormats;
 export function outsidePictureName(address: string, contentType?: string): string {
   const url = new URL(normaliseOutsidePicture(address));
   const labels = url.hostname.replace(/^www\./, "").split(".");

@@ -1,3 +1,4 @@
+import { uploadMimeTypes } from "../shared/media-kinds";
 // Uploaded files (images and other binary files) as publishable drafts.
 //
 // An upload is a new-file draft (src/drafts.ts) like any other A change,
@@ -18,10 +19,7 @@ export const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 /** Above this an image is heavy for a web page: uploaded, with a warning. */
 export const WARN_IMAGE_BYTES = 2 * 1024 * 1024;
 
-const IMAGE_TYPES: Record<string, string> = {
-  svg: "image/svg+xml", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif",
-  webp: "image/webp", avif: "image/avif", ico: "image/x-icon", bmp: "image/bmp",
-};
+const IMAGE_TYPES: Record<string, string> = uploadMimeTypes;
 const extension = (path: string) => (/\.([^./]+)$/.exec(path)?.[1] ?? "").toLowerCase();
 /** The image type of a path by its extension, or undefined for anything else. */
 export const uploadImageType = (path: string): string | undefined => IMAGE_TYPES[extension(path)];

@@ -1,3 +1,4 @@
+import { olderCopyFormats, trimmableImages } from "../../shared/media-kinds";
 import { mediaFamilies, RESPONSIVE_COPY_WIDTHS } from "./media-families";
 import { mediaCopyName } from "./media-storage";
 import { uploadProblem } from "../uploads";
@@ -7,7 +8,7 @@ import type { MediaWorkspaceContext } from "./media-workspace";
 import type { MediaImage } from "./media-markup";
 
 export function olderCopyWidths({ path, width, paths }: { path: string; width?: number; paths: string[] }): number[] {
-  if (!/\.(?:jpe?g|png|webp|avif|gif|bmp)$/i.test(path) || /^media\/originals\//i.test(path) || !width || !Number.isFinite(width)) return [];
+  if (!trimmableImages.test(path) || /^media\/originals\//i.test(path) || !width || !Number.isFinite(width)) return [];
   const family = mediaFamilies(paths).find(family => family.main === path);
   return family && !family.copies.length ? RESPONSIVE_COPY_WIDTHS.filter(size => size < width) : [];
 }
@@ -28,7 +29,7 @@ export function olderCopyPaths(main: string, widths: number[], extension: string
 export function olderCopyFormat(main: string, widths: number[], extension: string, paths: string[]): string | undefined {
   if (olderCopyPaths(main, widths, extension, paths).length === widths.length && olderCopyPaths(main, widths, "webp", paths).length === widths.length) return extension;
   const own = main.split(".").pop()!.toLowerCase();
-  if (["jpg", "jpeg", "png", "webp", "avif"].includes(own) && olderCopyPaths(main, widths, own, paths).length === widths.length) return own;
+  if (olderCopyFormats.includes(own) && olderCopyPaths(main, widths, own, paths).length === widths.length) return own;
 }
 
 /** Read and encode existing pixels without ever returning or uploading the main. */

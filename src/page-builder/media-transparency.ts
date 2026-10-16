@@ -1,6 +1,7 @@
+import { transparentImages } from "../../shared/media-kinds";
 /** Formats that can hold see-through pixels; a JPEG never can, so it is never sampled. */
 export function mediaMayBeTransparent(path: string) {
-  return /\.(?:png|webp|gif|avif|svg)$/i.test(path);
+  return transparentImages.test(path);
 }
 
 /** True when any pixel of RGBA bytes is not fully opaque. */

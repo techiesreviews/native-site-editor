@@ -1,3 +1,4 @@
+import { trimmableImages } from "../../shared/media-kinds";
 import { formatBytes } from "../uploads";
 import { mediaFamilyOf, renamedFamily } from "./media-families";
 import { mediaFileName, suggestMediaName } from "./media-names";
@@ -114,7 +115,7 @@ export function mediaNameCheck(path: string, name: string, paths: string[]): Med
 
 /** Whether File details offers Replace everywhere: a picture's main, not a Trimmed copy, not SVG. */
 export function canReplaceEverywhere(path: string, paths: string[], metadata: MediaMetadataMap): boolean {
-  return /\.(?:png|jpe?g|gif|webp|avif|bmp)$/i.test(path) && !/^media\/originals\//i.test(path) &&
+  return trimmableImages.test(path) && !/^media\/originals\//i.test(path) &&
     !metadata[path]?.trimmedFrom && Boolean(mediaFamilyOf(path, paths));
 }
 

@@ -1,3 +1,4 @@
+import { adviceVideos, adviceAudio, animationUncheckedImages, legacyRasterImages, suitableFiles } from "../../shared/media-kinds";
 import { heicFailureMessage, isHeic } from "./media-heic";
 import { MAX_UPLOAD_BYTES } from "../uploads";
 import { mediaKind } from "./media-library-filter";
@@ -27,7 +28,7 @@ const WEBP_CHUNKS = new Set(["VP8 ", "VP8L", "VP8X", "ALPH", "ANIM", "ANMF", "IC
 
 /** Unknown or broken image data may contain personal details we cannot safely inspect. */
 export function mayHoldHiddenDetails(bytes: Uint8Array, name: string): boolean {
-  if (/\.(?:gif|svg|ico)$/i.test(name)) return false;
+  if (animationUncheckedImages.test(name)) return false;
   if (/\.jpe?g$/i.test(name)) {
     if (bytes[0] !== 0xff || bytes[1] !== 0xd8) return true;
     let offset = 2, scanning = false;
@@ -165,9 +166,9 @@ export function preparationFailure(file: { name: string; size: number; type?: st
   const advice = (message: string): PreparationFailure => ({ kind: "advice", message: `${file.name} could not be prepared. ${message}` });
   if (file.size > MEDIA_FILE_CAP_BYTES) return advice(`It is ${decimalMB(file.size)} and the limit is 20 MB. Try a smaller export.`);
   if (isHeic(file.name, file.type ?? "", bytes)) return { kind: "advice", message: heicFailureMessage(file.name) };
-  if (/\.(?:tiff?|bmp)$/i.test(file.name)) return advice("Save it as JPEG or PNG and add it again.");
-  if (/\.(?:mov|mkv|avi|ogv)$/i.test(file.name)) return advice("Export it as MP4 (H.264) and add it again.");
-  if (/\.(?:flac|aiff?|ogg|oga|opus|wma)$/i.test(file.name)) return advice("Export it as MP3 or M4A and add it again.");
+  if (legacyRasterImages.test(file.name)) return advice("Save it as JPEG or PNG and add it again.");
+  if (adviceVideos.test(file.name)) return advice("Export it as MP4 (H.264) and add it again.");
+  if (adviceAudio.test(file.name)) return advice("Export it as MP3 or M4A and add it again.");
   const kind = mediaKind(file.name);
   if (kind === "image") {
     if (/\.svg$/i.test(file.name) && svgHasExecutableContent(bytes))
@@ -176,7 +177,7 @@ export function preparationFailure(file: { name: string; size: number; type?: st
       return advice("Hidden personal details could not be removed because the picture could not be prepared. Save it as a new JPEG or PNG and add it again.");
     if (!shown) return advice("This browser cannot show it as a picture. Save it as JPEG or PNG and add it again.");
   }
-  const suitable = kind === "document" || /\.(?:jpe?g|png|webp|avif|gif|svg|ico|mp4|m4v|webm|mp3|m4a|aac|wav)$/i.test(file.name);
+  const suitable = kind === "document" || suitableFiles.test(file.name);
   if (!suitable) return advice("Save it in a format that a web browser can show or play and add it again.");
   return { kind: "ask", question: `${file.name} could not be prepared. Add the unchanged file instead?` };
 }

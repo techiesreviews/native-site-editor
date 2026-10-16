@@ -1,3 +1,4 @@
+import { trimmableImages } from "../shared/media-kinds";
 import { NOJEKYLL_FILE, nojekyllNeeded } from "../shared/github-pages";
 import { createSiteSettings, type SiteSettingsValues, type SiteLinkPreference } from "./components/site-settings";
 import { escapeText, readHeadSettings, upsertHeadTag, withPageField, type HeadField } from "./page-builder/site-head";
@@ -240,7 +241,7 @@ export function createNativeSettings(ports: SettingsPorts) {
       socialFrame(value, page = ports.nativeSite?.routes["/"] ?? "index.html") {
         const config = nativeSiteSettings(ports.nativeEffectiveSource(NATIVE_CONFIG_PATH));
         const path = socialImagePath(value, page, config.url, readHeadSettings(ports.nativeEffectiveSource(page) ?? "").canonical);
-        if (!path || !/\.(?:jpe?g|png|webp|avif|bmp|gif)$/i.test(path)) return undefined;
+        if (!path || !trimmableImages.test(path)) return undefined;
         let records: MediaRecords | undefined;
         try { records = parseMediaRecords(ports.nativeEffectiveSource(MEDIA_RECORDS_PATH)); } catch { /* Opened centred. */ }
         let site = "";
@@ -249,7 +250,7 @@ export function createNativeSettings(ports: SettingsPorts) {
         const record = records?.files[path];
         if (!record?.sharing) return { file: path, value: siteAddress(path, sitePathPrefix(config.url)), site };
         const from = record.trimmedFrom;
-        return from && /\.(?:jpe?g|png|webp|avif|bmp|gif)$/i.test(from.source) ? { file: from.source, value: siteAddress(from.source, sitePathPrefix(config.url)), trim: from.trim, site } : undefined;
+        return from && trimmableImages.test(from.source) ? { file: from.source, value: siteAddress(from.source, sitePathPrefix(config.url)), trim: from.trim, site } : undefined;
       },
       async imageUrl(value) {
         if (stale() || !value.trim()) return undefined;

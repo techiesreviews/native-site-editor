@@ -1,3 +1,4 @@
+import { agentAudio, agentDocuments, agentImages, agentVideos, previewablePictures } from "./media-kinds";
 import type { AgentImageTrim } from "./agent-image-frame";
 import type { AddingSettings } from "./media-records";
 import type { EditorContext } from "./types";
@@ -142,12 +143,12 @@ export function agentResultLimit(operation: AgentOperation) {
 /** The largest result any operation may send; the tab's acknowledgement carries it. */
 export const AGENT_RESULT_MAX = Math.max(...(["inspect_preview", "list_media", "preview_media"] as const).map(agentResultLimit));
 
-export const isPreviewablePicture = (path: string) => /\.(?:jpe?g|png|webp|gif|avif|svg)$/i.test(path);
+export const isPreviewablePicture = (path: string) => previewablePictures.test(path);
 export function mediaKind(path: string): "image" | "video" | "audio" | "document" | "other" {
-  if (/\.(?:jpe?g|png|webp|gif|avif|svg|ico|bmp|tiff?|heic|heif)$/i.test(path)) return "image";
-  if (/\.(?:mp4|webm|mov|m4v|avi|mkv|ogv|mpeg|mpg)$/i.test(path)) return "video";
-  if (/\.(?:mp3|wav|ogg|oga|m4a|aac|flac|opus|aiff?)$/i.test(path)) return "audio";
-  if (/\.(?:pdf|docx?|xlsx?|pptx?|odt|ods|odp|rtf|epub|csv)$/i.test(path)) return "document";
+  if (agentImages.test(path)) return "image";
+  if (agentVideos.test(path)) return "video";
+  if (agentAudio.test(path)) return "audio";
+  if (agentDocuments.test(path)) return "document";
   return "other";
 }
 export function picturePreviewRefusal(path: string) {

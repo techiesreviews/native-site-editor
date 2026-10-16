@@ -1,3 +1,4 @@
+import { trimmableImages } from "../../shared/media-kinds";
 import { MEDIA_RECORDS_PATH, parseMediaRecords } from "../../shared/media-records";
 import type { MediaTrim } from "../../shared/media-records";
 import { createMediaWorkspace, type MediaWorkspaceContext, type MediaShareRequest } from "./media-workspace";
@@ -17,7 +18,7 @@ export async function shareImage(context: () => Promise<MediaWorkspaceContext>, 
   const assert = () => { if (!request.live()) throw new Error("The repository or source changed meanwhile. Reopen settings and try again."); };
   assert();
   const candidate = socialImagePath(request.value, request.page, request.siteUrl, request.canonical);
-  if (!candidate || !/\.(?:jpe?g|png|webp|avif|bmp|gif)$/i.test(candidate)) return undefined;
+  if (!candidate || !trimmableImages.test(candidate)) return undefined;
   const ctx = await context(); assert(); ctx.assertLive();
   if (!ctx.paths.includes(candidate)) return undefined;
   const recordText = await ctx.read(MEDIA_RECORDS_PATH); assert(); ctx.assertLive();

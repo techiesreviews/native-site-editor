@@ -1,7 +1,8 @@
+import { heicImageTypes, heicImages } from "../../shared/media-kinds";
 const HEIC_BRANDS = new Set(["heic", "heix", "hevc", "hevx", "heim", "heis"]);
 /** Generic HEIF brands alone also describe AVIF, so inspect compatible brands. */
 export function isHeic(name: string, type: string, bytes: Uint8Array): boolean {
-  if (/\.(?:heic|heif)$/i.test(name) || /^image\/(?:heic|heif)(?:-sequence)?$/i.test(type)) return true;
+  if (heicImages.test(name) || heicImageTypes.test(type)) return true;
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const brand = (offset: number) => String.fromCharCode(...bytes.subarray(offset, offset + 4));
   for (let offset = 0; offset + 8 <= bytes.length;) {

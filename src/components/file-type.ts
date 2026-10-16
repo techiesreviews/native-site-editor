@@ -1,3 +1,4 @@
+import { fileArchives, fileFonts } from "../../shared/media-kinds";
 import { mediaKind } from "../../shared/agent";
 
 /** What a Files row's file is, by its name: its icon, colour and kind label follow. */
@@ -16,8 +17,8 @@ export function fileType(name: string): FileType {
   if (/\.(?:m?js|cjs|ts|mts)$/i.test(base)) return "script";
   if (/\.(?:jsonc?|webmanifest|ya?ml|toml|xml)$/i.test(base) || /^_(?:redirects|headers)$/.test(base)) return "data";
   if (/\.(?:md|markdown|txt)$/i.test(base) || /^(?:license|readme|robots\.txt)$/i.test(base)) return "text";
-  if (/\.(?:woff2?|ttf|otf|eot)$/i.test(base)) return "font";
-  if (/\.(?:zip|tar|gz|tgz|7z|rar)$/i.test(base)) return "archive";
+  if (fileFonts.test(base)) return "font";
+  if (fileArchives.test(base)) return "archive";
   if (/\.pdf$/i.test(base)) return "pdf";
   const media = mediaKind(base);
   return media === "image" ? "picture" : media === "audio" ? "sound" : media === "video" ? "video" : media === "document" ? "document" : "other";

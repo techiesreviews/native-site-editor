@@ -1,15 +1,16 @@
+import { binaryFiles, textMediaFiles } from "../../shared/media-kinds";
 import { sitePathOf } from "../../shared/site-path-prefix";
 import { decodeHtmlEntities } from "./html-entities";
 import type { MediaOtherUseKind } from "./media-usage";
 import { mediaOwnAddress, type MediaSite } from "./media-origins";
 export { mediaOwnOrigins, type MediaSite } from "./media-origins";
-const binaryFile = (path: string) => /\.(?:png|jpe?g|gif|webp|avif|heic|heif|ico|icns|cur|apng|jfif|bmp|tiff?|jxl|psd|raw|aiff?|mid|midi|mpeg|mpg|3gp|mp3|mp4|m4a|m4v|webm|mov|avi|mkv|wav|ogg|oga|ogv|flac|aac|opus|woff2?|ttf|ttc|otf|eot|svgz|zip|gz|tgz|tar|7z|rar|bz2|xz|br|zst|pdf|docx?|xlsx?|pptx?|od[tps]|pages|numbers|key|wasm|exe|dll|bin)$/i.test(path);
+const binaryFile = (path: string) => binaryFiles.test(path);
 const siteFile = (path: string) => !/(?:^|\/)(?:node_modules|\.git)(?:\/|$)/.test(path) && path !== ".editor/media.json";
 /** Unknown formats are text: retaining an extra file is safer than missing a use. */
 export function isMediaTextFile(path: string): boolean { return siteFile(path) && !binaryFile(path); }
 /** Known media formats for the on-open check; callers can supply additional downloads. Subtitles
  * count too (text, like SVG), so a use of a video's subtitles keeps its family. */
-export function isMediaFile(path: string): boolean { return siteFile(path) && (binaryFile(path) || /\.(?:svg|vtt|srt)$/i.test(path)); }
+export function isMediaFile(path: string): boolean { return siteFile(path) && (binaryFile(path) || textMediaFiles.test(path)); }
 function kindFor(file: string): MediaOtherUseKind {
   if (file.startsWith(".editor/") || /^(?:_redirects|_headers|CNAME)$/i.test(file)) return "settings";
   if (/\.(?:[cm]?js|jsx|tsx?)$/i.test(file)) return "script";

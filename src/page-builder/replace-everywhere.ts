@@ -1,3 +1,4 @@
+import { replaceableImages, replacementOutputFormats, sharingImages } from "../../shared/media-kinds";
 import { siteAddress, sitePathPrefix } from "../../shared/site-path-prefix";
 import { isSharingImage, sharingJpegPath, sharingMetaName, sharingImageDetail } from "./sharing-jpeg";
 import { socialImageAddress, SOCIAL_IMAGE_NOTE } from "./social-image";
@@ -18,7 +19,7 @@ import type { MediaReplaceRequest } from "./media-workspace";
 
 export function replacementFamilies(path: string, paths: string[], records: MediaRecords) {
   const old = mediaFamilyOf(path, paths);
-  if (!old || old.main !== path || !/\.(?:png|jpe?g|gif|webp|avif|bmp|tiff?|heic|heif)$/i.test(path) || /^media\/originals\//i.test(path))
+  if (!old || old.main !== path || !replaceableImages.test(path) || /^media\/originals\//i.test(path))
     throw new Error("Choose an image Media file's main picture to replace.");
   if (records.files[path]?.trimmedFrom) throw new Error("Replace the original picture, not a Trimmed copy.");
   const members = (main: string) => {
@@ -91,7 +92,7 @@ export function planMediaReplace(input: ReplaceInput) {
   const outputs = result?.outputs ?? [], first = outputs[0];
   if (!first || first.variantWidth !== undefined || outputs.filter(output => output.variantWidth === undefined).length !== 1)
     throw new Error("Exactly one primary image must be encoded.");
-  if (outputs.some(output => !/^(?:png|jpe?g|webp|avif)$/i.test(output.extension) || output.extension !== first.extension))
+  if (outputs.some(output => !replacementOutputFormats.test(output.extension) || output.extension !== first.extension))
     throw new Error("All responsive images must use the primary image format.");
   const widths = outputs.flatMap(output => output.variantWidth === undefined ? [] : [output.variantWidth]);
   if (new Set(widths).size !== widths.length || widths.some(width => !Number.isInteger(width) || width <= 0))
@@ -136,7 +137,7 @@ export function planMediaReplace(input: ReplaceInput) {
     });
     if (indices.length) sharingTags.set(file, indices);
   }
-  const sharingNeeded = sharingTags.size > 0 && /\.(?:avif|webp)$/i.test(main);
+  const sharingNeeded = sharingTags.size > 0 && sharingImages.test(main);
   const sharingPath = sharingJpegPath(main);
   if (sharingNeeded) {
     const after = [...paths.filter(file => !family.includes(file)), ...uploads.map(upload => upload.path), sharingPath];

@@ -1,3 +1,4 @@
+import { replacementFormats, replacementLabels } from "../../shared/media-kinds";
 import { mediaFamilyOf, familyMembers } from "./media-families";
 import { basename } from "./media-library-filter";
 import type { MediaMetadataMap } from "./media-metadata";
@@ -6,9 +7,9 @@ import type { MediaMetadataMap } from "./media-metadata";
  * "Replace everywhere"): what the picker may choose, and what the confirmation says. The engine is slice 53's. */
 
 /** The picker shows what the engine accepts as a new picture: photos and screenshots. */
-export const REPLACE_ACCEPT = "image/png,image/jpeg,image/webp,image/avif";
+export { REPLACE_ACCEPT } from "../../shared/media-kinds";
 
-const FORMATS: Record<string, string> = { webp: "a WebP", png: "a PNG", jpg: "a JPEG", jpeg: "a JPEG", avif: "an AVIF" };
+const FORMATS: Record<string, string> = replacementLabels;
 const format = (path: string) => /\.([^./]+)$/.exec(path)?.[1].toLowerCase() ?? "";
 
 /** A refusal for the picture chosen in the picker, or undefined when it can take the old one's place. */
@@ -16,7 +17,7 @@ export function replaceChoiceProblem(path: string, chosen: string, paths: string
   const family = mediaFamilyOf(path, paths);
   const members = family ? familyMembers(family) : [path];
   if (members.includes(chosen)) return "That is the picture being replaced. Choose a different one.";
-  if (!/^(?:png|jpe?g|webp|avif)$/.test(format(chosen))) return "Choose a JPEG, PNG, WebP or AVIF picture.";
+  if (!replacementFormats.test(format(chosen))) return "Choose a JPEG, PNG, WebP or AVIF picture.";
   return undefined;
 }
 

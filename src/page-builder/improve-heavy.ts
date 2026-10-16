@@ -1,3 +1,4 @@
+import { sharingImageExtensions, sharingImages } from "../../shared/media-kinds";
 import { readMediaPrefix } from "./media-prefix";
 import { NATIVE_CONFIG_PATH, nativeSiteSettings } from "../../shared/native-project";
 import { sitePathPrefix } from "../../shared/site-path-prefix";
@@ -134,8 +135,8 @@ export async function prepareImproveHeavy(ctx: MediaWorkspaceContext, request: I
                 const suffix = path.slice(stem.length);
                 return path.startsWith(stem) && /^-(?:\d+w?|\d+x\d+)\.[^./]+$/i.test(suffix) && suffix.toLowerCase().endsWith(extension.toLowerCase());
               })) return true;
-              if (/\.(?:avif|webp)$/i.test(name) && [...paths, ...batch.uploads.map(upload => upload.path)].some(path =>
-                [stem + "-sharing.jpg", stem + ".avif", stem + ".webp"].some(target => path.toLowerCase() === target.toLowerCase()
+              if (sharingImages.test(name) && [...paths, ...batch.uploads.map(upload => upload.path)].some(path =>
+                [stem + "-sharing.jpg", ...sharingImageExtensions.map(extension => stem + "." + extension)].some(target => path.toLowerCase() === target.toLowerCase()
                   || path.toLowerCase().startsWith(target.toLowerCase() + "/") || target.toLowerCase().startsWith(path.toLowerCase() + "/")))) return true;
               return outputs.some(output => {
               const target = output.variantWidth === undefined ? name : mediaCopyName(name, output.variantWidth);
@@ -217,7 +218,7 @@ export async function prepareImproveHeavy(ctx: MediaWorkspaceContext, request: I
       let content: string | undefined;
       if (isSharingImage(name)) {
         if (name === "og:image") og = undefined;
-        if (old && main && /\.(?:avif|webp)$/i.test(main)) {
+        if (old && main && sharingImages.test(main)) {
           skip.push(tag);
           if (!sharing.has(main)) {
             sharing.set(main, undefined);

@@ -1,3 +1,4 @@
+import { creationBinaryFiles } from "../shared/media-kinds";
 // Files, folders and pages created in the editor's file tree.
 //
 // A new file is a browser draft with no base blob, published like any other
@@ -14,7 +15,7 @@ export type Checked<T> = { ok: true; value: T } | { ok: false; error: string };
 
 const SEGMENT = /^[\w.-]+$/;
 // Files a text editor cannot make: images, fonts, media and archives are uploaded on GitHub.
-const BINARY = /\.(?:png|jpe?g|gif|webp|avif|ico|bmp|tiff?|pdf|zip|gz|tgz|tar|7z|woff2?|ttf|otf|eot|mp3|mp4|m4a|webm|mov|wav|ogg)$/i;
+const BINARY = creationBinaryFiles;
 
 /** `name` (a name, or a path with `/`) under `folder` ("" is the root), as a repository path. */
 function joinPath(folder: string, name: string, what: "file" | "folder"): Checked<string> {

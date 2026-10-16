@@ -1,3 +1,4 @@
+import { playableMimeTypes } from "../../shared/media-kinds";
 // The edit bar's Play (lazy, media slice 65): on the canvas everything stays
 // still so a click selects it; Play checks a selected video, audio or Online
 // video, and Stop (or the end, or the selection moving on) returns it to its
@@ -8,7 +9,6 @@
 // its place on the canvas, in the editor, and follows it.
 import type { ElementRange } from "../../shared/html-source";
 import { startTags } from "../../shared/html-source";
-import { AUDIO_TYPES } from "../../shared/asset-types";
 import { mediaAttribute } from "./media-attributes";
 import { decodeHtmlEntities } from "./html-entities";
 import { mediaResolvePath } from "./media-references";
@@ -20,10 +20,7 @@ export type Playable =
   | { kind: "online"; address: string }
   | { kind: "none"; reason: string };
 
-const MEDIA_TYPES: Record<string, string> = {
-  mp4: "video/mp4", m4v: "video/mp4", webm: "video/webm", mov: "video/quicktime", ogv: "video/ogg",
-  ...AUDIO_TYPES,
-};
+const MEDIA_TYPES: Record<string, string> = playableMimeTypes;
 const value = (source: string, tag: ElementRange["tag"], name: string) => {
   const found = mediaAttribute(source, tag, name);
   return found ? decodeHtmlEntities(found.value, true).trim() : undefined;

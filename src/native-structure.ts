@@ -1,3 +1,4 @@
+import { previewImages } from "../shared/media-kinds";
 // Structural and attribute edits behind the edit bar: the section icons (move,
 // duplicate, remove), links on a text range and their new-tab and title
 // options, the image Address and the accessibility fields. Each is one range edit (or two that do not
@@ -182,6 +183,6 @@ export function previousHeadingLevel(source: string, at: number) {
   return level;
 }
 
-const IMAGE_EXTENSIONS = /\.(svg|png|jpe?g|gif|webp|avif|ico|bmp)$/i;
+const IMAGE_EXTENSIONS = previewImages;
 /** Whether a repository path names an image the preview can show. */
 export const isImagePath = (path: string) => IMAGE_EXTENSIONS.test(path);

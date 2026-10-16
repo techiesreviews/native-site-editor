@@ -1,3 +1,4 @@
+import { VIDEO_ACCEPT, playableVideos } from "../../shared/media-kinds";
 // One-Undo video transactions behind the edit bar's Looping video and Background video controls (lazy).
 import { readMediaPrefix } from "./media-prefix";
 import type { MediaControllerPorts } from "../controllers/media-controller";
@@ -13,7 +14,7 @@ import { mediaPlayerPlan, writePlayerFiles, type MediaPlayerKind } from "./playe
 import { starterPlayerFiles } from "./starter-loader";
 import { sectionBackgroundEdits, writeLooping } from "./looping-video";
 
-export const isVideoPath = (path: string) => /\.(?:mp4|m4v|webm|mov|ogv)$/i.test(path);
+export const isVideoPath = (path: string) => playableVideos.test(path);
 type Context = (include?: (path: string) => boolean) => Promise<MediaWorkspaceContext>;
 export type VideoPlacePorts = Pick<MediaControllerPorts, "stamp" | "generation" | "source" | "viewingVersion" | "openFile" | "restoreFile"
   | "locateElement" | "selected" | "placeLabel" | "error" | "announce">;
@@ -100,7 +101,7 @@ export function createVideoPlaces(ports: VideoPlacePorts, context: Context, load
     if (!since.holds() || ports.source(target.path) !== source || ports.selected && !ports.selected(target.path, target.node)) return;
     // Only this picker lists videos; the Media screen shows them once every kind is in Media (slice 59).
     const adapter = { ...createMediaWorkspace(() => context(path => isImagePath(path) || isVideoPath(path))), usage };
-    await openMediaPicker({ adapter, accept: ".mp4,.m4v,.webm,.mov,.ogv", place: `${ports.placeLabel?.(target.path) ?? target.path} · Background video`, report: ports,
+    await openMediaPicker({ adapter, accept: VIDEO_ACCEPT, place: `${ports.placeLabel?.(target.path) ?? target.path} · Background video`, report: ports,
       onPick: async (video, cancelled, held) => {
         if (!isVideoPath(video.path) && !held?.chosen?.()) throw new Error("Choose a video file.");
         await change(target.path, target.node, source, "Background video set", "background-video",

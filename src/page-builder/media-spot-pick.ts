@@ -1,3 +1,4 @@
+import { VIDEO_ACCEPT, agentVideos } from "../../shared/media-kinds";
 // A picture spot's picker (media slices 64 and 119): it lists pictures and videos, and a video
 // chosen there loops silently in the spot. Shared by the edit bar's picker, the Image popup's
 // Replace and the Media popup's Replace. Small; the placing code loads on Use.
@@ -6,9 +7,9 @@ import type { MediaImage } from "./media-markup";
 import type { MediaHeldFiles } from "./media-picker";
 import type { MediaWorkspaceContext } from "./media-workspace";
 
-export const VIDEO_ACCEPT = ".mp4,.m4v,.webm,.mov,.ogv";
+export { VIDEO_ACCEPT };
 export const SPOT_ACCEPT = `image/*,${VIDEO_ACCEPT}`;
-export const isVideoName = (name: string) => /\.(?:mp4|m4v|webm|mov|ogv|mkv|avi|mpe?g)$/i.test(name);
+export const isVideoName = (name: string) => agentVideos.test(name);
 /** The note beside a chosen file in a picture spot's picker. */
 export const spotNote = (name: string) => isVideoName(name) ? "loops silently here" : undefined;
 

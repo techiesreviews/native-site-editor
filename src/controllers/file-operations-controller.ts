@@ -1,3 +1,4 @@
+import { operationBinaryFiles } from "../../shared/media-kinds";
 import { onGithubPages, GITHUB_PAGES_REDIRECT_NOTE } from "../../shared/github-pages";
 import { createFileOperationChecks } from "./file-operation-checks";
 import { renamedFamily, familyMembers } from "../page-builder/media-families";
@@ -61,7 +62,7 @@ export interface FileOperationsPorts {
 export function createFileOperationsController(ports: FileOperationsPorts) {
   const { restoreFileTarget, protectedProblem, moveProblem, targetFamily, targetDrafts, pageLinks, isMediaTarget, mediaTaken, fileMoveProblem } = createFileOperationChecks(ports);
 
-  const BINARY_FILE = /\.(?:heic|heif|png|jpe?g|gif|webp|avif|ico|bmp|tiff?|pdf|zip|gz|tgz|tar|7z|woff2?|ttf|otf|eot|mp3|mp4|m4a|webm|mov|wav|ogg)$/i;
+  const BINARY_FILE = operationBinaryFiles;
   // The files a target takes: its branch files not deleted in the drafts and
   // its new ones; with `withText`, the text of each branch file that has no
   // draft (a binary or large one goes as its blob).

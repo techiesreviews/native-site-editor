@@ -1,3 +1,4 @@
+import { trimmableImages } from "../../shared/media-kinds";
 import { siteAddress, sitePathPrefix, sitePathOf } from "../../shared/site-path-prefix";
 import type { MediaRecords } from "../../shared/media-records";
 export { SOCIAL_IMAGE_SIZE, socialImageTrim, socialImageSize } from "./social-geometry";
@@ -8,7 +9,7 @@ import { gifIsAnimated, pngIsAnimated, webpIsAnimated } from "./media-image-byte
 
 export const SOCIAL_IMAGE_NOTE = "Your site has no web address yet, so sharing services may not show this image. Add it in Site settings, General, Site address, then choose the image again.";
 /** The picker offers still raster pictures only: an SVG cannot be drawn into the sharing copy (slice 36's follow-up). */
-export const SOCIAL_IMAGE_ACCEPT = "image/jpeg,image/png,image/webp,image/avif,image/gif,image/bmp";
+export { SOCIAL_IMAGE_ACCEPT } from "../../shared/media-kinds";
 export const SOCIAL_IMAGE_OPTIONS: MediaOptimiseOptions = { maxWidth: 1200, quality: 85, format: "jpeg", responsive: false, keepOriginal: false };
 
 export function socialCopyPath(options: { source: string; paths: Iterable<string>; records: MediaRecords; previous?: string }) {
@@ -41,7 +42,7 @@ export function socialImagePath(value: string, page: string, siteUrl?: string, c
 
 export function socialImageSource(options: { value: string; page: string; siteUrl?: string; canonical?: string; paths: Iterable<string>; records: MediaRecords; bytes?: Uint8Array }) {
   const path = socialImagePath(options.value, options.page, options.siteUrl, options.canonical);
-  if (!path || !/\.(?:jpe?g|png|webp|avif|bmp|gif)$/i.test(path) || !new Set(options.paths).has(path) || options.records.files[path]?.sharing) return undefined;
+  if (!path || !trimmableImages.test(path) || !new Set(options.paths).has(path) || options.records.files[path]?.sharing) return undefined;
   if (options.bytes && (gifIsAnimated(options.bytes) || pngIsAnimated(options.bytes) || webpIsAnimated(options.bytes))) return undefined;
   return path;
 }

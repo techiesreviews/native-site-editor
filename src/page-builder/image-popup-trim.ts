@@ -1,3 +1,4 @@
+import { trimmableImages } from "../../shared/media-kinds";
 // Trim, zoom and turn in the image popup (media build slice 41; ticket 09 "Shapes and what gets
 // saved" and "Replacing and re-cropping"): the part of the turned picture a shape and zoom keep,
 // Free trimming's four corners, when the result saves a Trimmed copy, and a re-crop starting from
@@ -177,4 +178,4 @@ export function turnText(cut: PopupCut) {
 }
 
 /** A picture the popup can trim: a raster file in the site (a trimmed copy is made with the image recipe). */
-export const trimmable = (path: string) => !/^(?:[a-z][a-z\d+.-]*:|\/\/)/i.test(path) && /\.(?:jpe?g|png|webp|avif|gif|bmp)$/i.test(path);
+export const trimmable = (path: string) => !/^(?:[a-z][a-z\d+.-]*:|\/\/)/i.test(path) && trimmableImages.test(path);

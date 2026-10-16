@@ -1,3 +1,4 @@
+import { losslessImageTypes, losslessImages } from "../../shared/media-kinds";
 import type { MediaTrim } from "../../shared/media-records";
 import { socialImageTrim, socialImageSize } from "./social-geometry";
 import { trimGeometry, isTrim, validTrim } from "./trim-geometry";
@@ -165,7 +166,7 @@ export function installMediaOptimiser(codecs: MediaCodecs = { loadHeicDecoder, l
         // A HEIC's own bytes never become the website file.
         const stripped = trim || heic ? undefined : strippedImageSource(bytes, type, bitmap.width === size.width && bitmap.height === height);
         if (!options.plainJpeg) blob = await mediaSmallerMain(blob, { size: file.size, stripped: stripped && new Blob([new Uint8Array(stripped)], { type }),
-          transparent, lossless: !heic && (/^image\/(?:png|gif|bmp)$/.test(type) || /\.(?:png|gif|bmp)$/i.test(file.name)) }, type => encode(canvas, type, settings.quality));
+          transparent, lossless: !heic && (losslessImageTypes.test(type) || losslessImages.test(file.name)) }, type => encode(canvas, type, settings.quality));
         blob = await squeeze(blob);
         const output = (blob: Blob, width: number, height: number): MediaOutput => ({ blob, width, height,
           extension: blob.type === "image/jpeg" ? "jpg" : blob.type.split("/")[1] });

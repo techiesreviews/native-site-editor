@@ -1,3 +1,4 @@
+import { paletteImages } from "../../shared/media-kinds";
 import type { EditorPaletteDeps, PaletteSelection } from "./palette";
 import { selectionIdentity, announceRefusal } from "./palette";
 import { parseMarked } from "../native-source-location";
@@ -12,7 +13,7 @@ const fileIcon = (path: string) => {
   if (ext === "html" || ext === "htm") return "file-html";
   if (ext === "css") return "file-css";
   if (["js", "mjs", "ts", "json", "jsonc", "xml", "svg", "md", "txt", "toml", "yml", "yaml"].includes(ext)) return "file-code";
-  if (["png", "jpg", "jpeg", "gif", "webp", "avif", "ico"].includes(ext)) return "image";
+  if (paletteImages.includes(ext)) return "image";
   return "file";
 };
 

@@ -1,3 +1,4 @@
+import { playableVideos } from "../../shared/media-kinds";
 // Agent placement uses the picker's transactions; loaded only when placing Media.
 import type { MediaImage } from "./media-markup";
 import type { MediaWorkspaceContext } from "./media-workspace";
@@ -34,7 +35,7 @@ export async function placeAgentMedia(
   const spot = range && isPictureSpot(proof.source.slice(range.tag.start, range.tag.end)) ||
     range?.tag.name === "img" && parent?.tag.name === "picture" && isPictureSpot(proof.source.slice(parent.tag.start, parent.tag.end));
   if (spot) {
-    if (online || kind !== "video" || !/\.(?:mp4|webm|m4v|mov|ogv)$/i.test(image.path)) throw new Error(PICTURE_SPOT_REFUSED);
+    if (online || kind !== "video" || !playableVideos.test(image.path)) throw new Error(PICTURE_SPOT_REFUSED);
     await placeChosenMedia(ports, context, { kind: "spot", ...target }, image, proof, () => false);
     return range?.tag.name === "img" && parent?.tag.name === "picture" ? target.node.slice(0, -1) : target.node;
   }

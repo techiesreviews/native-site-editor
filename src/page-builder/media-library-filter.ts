@@ -1,3 +1,4 @@
+import { libraryArchives, libraryExcludedFiles, librarySheets, librarySlides, libraryText, subtitles } from "../../shared/media-kinds";
 import { mediaKind as fileKind, TEXT_PATH } from "../../shared/agent";
 import { uploadImageType } from "../uploads";
 import { mediaFamilies, familyMembers, onlineStillMembers } from "./media-families";
@@ -32,7 +33,7 @@ export const mediaKind = (path: string): MediaKind => { const kind = fileKind(pa
  * never pages, styles, scripts, fonts, source files or the editor's own files. */
 export function isMediaLibraryPath(path: string) {
   return !/^(?:node_modules|\.github|\.editor)\//.test(path) && !/(?:^|\/)\.[^/]*$/.test(path) &&
-    (fileKind(path) !== "other" || !TEXT_PATH.test(path) && /\.[^/]+$/.test(path) && !/\.(?:[cm]?ts|tsx|jsx|cjs|map|lock|ya?ml|toml|jsonc|json5|ini|env|sh|ps1|py|rb|php|vue|svelte|astro|s[ac]ss|less|njk|liquid|hbs|woff2?|ttf|otf|eot)$/i.test(path));
+    (fileKind(path) !== "other" || !TEXT_PATH.test(path) && /\.[^/]+$/.test(path) && !libraryExcludedFiles.test(path));
 }
 
 /** What a picker's words call its files: "image" for pictures only (the long-standing wording),
@@ -132,8 +133,8 @@ export function formatMediaLength(seconds: number): string {
 /** The type picture a file without a picture shows (ticket 12 "In the editor"). */
 export type MediaTypePicture = "file" | "video" | "audio" | "pdf" | "archive" | "text" | "sheet" | "slides" | "subtitles";
 const TYPE_PICTURES: [MediaTypePicture, RegExp][] = [
-  ["pdf", /\.pdf$/i], ["archive", /\.(?:zip|gz|tgz|tar|7z|rar|bz2|xz)$/i], ["sheet", /\.(?:xlsx?|ods|csv|numbers)$/i],
-  ["slides", /\.(?:pptx?|odp|key)$/i], ["text", /\.(?:docx?|odt|rtf|pages|txt|md|epub)$/i], ["subtitles", /\.(?:vtt|srt)$/i],
+  ["pdf", /\.pdf$/i], ["archive", libraryArchives], ["sheet", librarySheets],
+  ["slides", librarySlides], ["text", libraryText], ["subtitles", subtitles],
 ];
 
 /** How a tile shows its file: the picture it draws (an image itself, a video's still, a PDF's first
