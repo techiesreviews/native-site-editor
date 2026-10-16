@@ -13,6 +13,7 @@ while (( $# )); do
     *) usage ;;
   esac
 done
+echo 'notice: land.sh is being replaced by scripts/agents/kit pr (opens a PR into dev and merges when CI passes)' >&2
 git check-ref-format "refs/heads/$branch" >/dev/null 2>&1 || usage
 (( !budget || dry_run )) || usage
 root=$(git rev-parse --show-toplevel)
