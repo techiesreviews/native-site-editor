@@ -1,7 +1,7 @@
 ---
 title: "Specs reuse the shared scenario helpers"
 type: task (AFK)
-status: open
+status: closed
 assignee: ak-22
 blocked_by: [06-kit-shots-core]
 builder: sol
@@ -44,3 +44,15 @@ Not touched: `native-add-card.spec.ts` (ticket 32), `scripts/agents/shots/` (tic
 
 - The touched specs pass (twice), and `kit shots media-gallery` still works.
 - Sol review saved under the main root `.scratch/reviews/`; landed on `dev` with CI green.
+
+## Done (2026-10-16)
+
+- 16 media specs now open the editor, Media, a picture and the image picker through
+  `tests/support/scenarios.ts`; the branch switch in native-media-tab uses the new
+  `switchSiteMidUpload`. `openEditor` takes an optional file, `pickPicture` and
+  `openImagePicker` an optional selector; defaults unchanged, so kit shots keeps working.
+- Same assertions. Built by Sol (d4836c51 before landing).
+- Checks: `npm run check`, `npm run lint`, unit (3920 pass); `kit specs` on the 16 specs
+  passed twice (16/16 each); `kit shots media-gallery --width 390` ok (6 files, 0 failed;
+  its two publish-menu tap-target notes predate this ticket).
+- Sol review: no defects (`.scratch/reviews/ak-22/20261016T154051Z`).
