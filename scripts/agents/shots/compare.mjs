@@ -23,8 +23,52 @@ export function splitCompare(args) {
   return { ref, rest };
 }
 
-export function baseKey({ screen, steps, width, theme }) {
-  return createHash("sha256").update(JSON.stringify({ screen, steps, width, theme })).digest("hex");
+export const toolingFiles = [
+  "scripts/agents/kit",
+  "scripts/agents/kit-lib.sh",
+  "scripts/agents/kit-lib.mjs",
+  "scripts/agents/kit.d/shots",
+  "scripts/agents/shots/",
+  "tests/support/scenarios.ts",
+  "scripts/agents/port.sh",
+  "scripts/agents/port-common.sh",
+  "playwright.config.ts",
+];
+
+/** Hash paths and bytes, including a stable marker for missing tooling. */
+export async function toolingHash(root) {
+  const paths = [];
+  async function collect(path) {
+    if (!path.endsWith("/")) { paths.push(path); return; }
+    let entries;
+    try { entries = await readdir(join(root, path), { withFileTypes: true }); }
+    catch (error) {
+      if (error.code !== "ENOENT" && error.code !== "ENOTDIR") throw error;
+      paths.push(path);
+      return;
+    }
+    for (const entry of entries) {
+      if (entry.isDirectory()) await collect(`${path}${entry.name}/`);
+      else if (entry.isFile()) paths.push(`${path}${entry.name}`);
+    }
+  }
+  for (const path of toolingFiles) await collect(path);
+  const hash = createHash("sha256");
+  for (const path of paths.sort()) {
+    let content;
+    try { content = await readFile(join(root, path)); }
+    catch (error) {
+      if (error.code !== "ENOENT" && error.code !== "ENOTDIR") throw error;
+      hash.update(JSON.stringify([path, "missing"])).update("\0");
+      continue;
+    }
+    hash.update(JSON.stringify([path, content.length])).update("\0").update(content).update("\0");
+  }
+  return hash.digest("hex");
+}
+
+export function baseKey({ screen, steps, width, theme, tooling }) {
+  return createHash("sha256").update(JSON.stringify({ screen, steps, width, theme, tooling })).digest("hex");
 }
 
 function cachedShot(dir) {
@@ -253,6 +297,7 @@ export async function main(args = process.argv.slice(2)) {
     const options = parseArgs(split.rest);
     if (options.spec) throw new Error("--spec cannot be used with --compare");
     const root = kitRoot(), mainRoot = kitMainRoot();
+    const tooling = await toolingHash(root);
     let scenarios = options.screens.map(screen => ({ screen, steps: [] }));
     if (options.steps) {
       const file = await scratchFile(options.steps, [root, mainRoot]);
@@ -263,15 +308,16 @@ export async function main(args = process.argv.slice(2)) {
     const env = nodeEnv({ ...process.env, ASE_NATIVE_SAVE_FIXTURE: fixture, ASE_NATIVE_SAVE_FIXTURE_KIND: process.env.ASE_NATIVE_SAVE_FIXTURE_KIND ?? "actual" });
     delete env.ASE_KIT_SHOTS_REQUEST;
     delete env.ASE_TEST_PORT;
+    delete env.ASE_KIT_SHOTS_APP_ROOT;
     await git(root, ["fetch", "-q", "origin", ref], false);
     const remote = await git(root, ["show-ref", "--verify", "--quiet", `refs/remotes/origin/${ref}`], false);
     sha = (await git(root, ["rev-parse", "--verify", `${remote.status === 0 ? `origin/${ref}` : ref}^{commit}`])).stdout;
     const setup = await ensureBase({ repo: root, mainRoot, sha, modules: join(root, "node_modules") });
     release = setup.release;
     const base = setup.dir;
-    try { await stat(join(base, "scripts/agents/kit.d/shots")); }
-    catch { throw new Error(`Ref ${ref} predates kit shots: scripts/agents/kit.d/shots is missing`); }
-    const cacheDir = (scenario, width, theme) => join(base, ".scratch/kit-shots-cache", baseKey({ ...scenario, width, theme }));
+    try { await stat(join(base, "tests/native-save/server.ts")); }
+    catch { throw new Error(`Base ${ref}@${sha.slice(0, 7)} cannot serve: tests/native-save/server.ts is missing`); }
+    const cacheDir = (scenario, width, theme) => join(base, ".scratch/kit-shots-cache", baseKey({ ...scenario, width, theme, tooling }));
     const missing = planBase(scenarios, options.widths, options.themes, (scenario, width, theme) => isHit(cacheDir(scenario, width, theme)));
     misses = missing.length;
     hits = scenarios.length * options.widths.length * options.themes.length - misses;
@@ -293,10 +339,17 @@ export async function main(args = process.argv.slice(2)) {
       for (const { widths, themes } of groups.values()) {
         const runOut = join(base, ".scratch/kit-shots-runs", `${runStamp}-${randomUUID()}`);
         try {
-          const result = await capture(base, scenario, "before", runOut, widths, themes, env, runStamp);
+          const result = await capture(root, scenario, "before", runOut, widths, themes, { ...env, ASE_KIT_SHOTS_APP_ROOT: base }, runStamp);
           if (result.status) failed = true;
-          const index = JSON.parse(await readFile(join(runOut, "index.json"), "utf8"));
-          for (const shot of index.screens) {
+          let contents = "";
+          try { contents = await readFile(join(runOut, "index.json"), "utf8"); }
+          catch (error) { if (error.code !== "ENOENT") throw error; }
+          const shots = contents.trim() ? JSON.parse(contents).screens : [];
+          if (!shots.some(shot => shot.ok)) {
+            failed = true;
+            console.error(`Base ${ref}@${sha.slice(0, 7)} captured no ok shots; see server logs in ${join(base, ".scratch/kit-shots")}/`);
+          }
+          for (const shot of shots) {
             if (!shot.ok) { failed = true; console.error(`Base shot failed: ${shot.screen} ${shot.width} ${shot.theme}`); continue; }
             await saveCache(cacheDir(scenario, shot.width, shot.theme), shot, runOut);
           }

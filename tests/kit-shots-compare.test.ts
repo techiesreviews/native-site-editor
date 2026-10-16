@@ -4,7 +4,7 @@ import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, readlink, realpath, rm
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
-import { baseKey, beforeShots, ensureBase, hasLiveLease, isHit, planBase, pruneTargets, saveCache, splitCompare } from "../scripts/agents/shots/compare.mjs";
+import { baseKey, beforeShots, ensureBase, hasLiveLease, isHit, planBase, pruneTargets, saveCache, splitCompare, toolingFiles, toolingHash } from "../scripts/agents/shots/compare.mjs";
 import { contactHtml, type Scenario, type Shot } from "../scripts/agents/shots/core";
 
 const temporary: string[] = [];
@@ -39,13 +39,70 @@ test("splitCompare extracts one ref and preserves the remaining arguments", () =
   assert.throws(() => splitCompare(["--compare", "dev", "--compare", "main"]), /Repeated flag: --compare/);
 });
 
-test("baseKey is stable and includes screen, ordered steps, width and theme", () => {
-  const input = { screen: "editor", steps: ['click "Filter"', "hover first tile"], width: 390, theme: "light" };
+test("baseKey is stable and includes screen, ordered steps, width, theme and tooling", () => {
+  const input = { screen: "editor", steps: ['click "Filter"', "hover first tile"], width: 390, theme: "light", tooling: "version-one" };
   const key = baseKey(input);
   assert.match(key, /^[0-9a-f]{64}$/);
-  assert.equal(key, baseKey({ theme: "light", width: 390, steps: [...input.steps], screen: "editor" }));
-  for (const change of [{ screen: "files" }, { steps: [] }, { steps: [...input.steps].reverse() }, { width: 768 }, { theme: "dark" }]) assert.notEqual(key, baseKey({ ...input, ...change }));
+  assert.equal(key, baseKey({ tooling: input.tooling, theme: "light", width: 390, steps: [...input.steps], screen: "editor" }));
+  for (const change of [{ screen: "files" }, { steps: [] }, { steps: [...input.steps].reverse() }, { width: 768 }, { theme: "dark" }, { tooling: "version-two" }]) assert.notEqual(key, baseKey({ ...input, ...change }));
   assert.equal(key, baseKey({ ...input, name: "ignored" }));
+});
+
+test("toolingHash includes listed paths and recursive files, ignores other files and tolerates missing files", async () => {
+  const dir = await temp();
+  const missing = await toolingHash(dir);
+  assert.match(missing, /^[0-9a-f]{64}$/);
+  assert.equal(await toolingHash(await temp()), missing, "missing markers do not depend on the checkout root");
+  await writeFile(join(dir, "unlisted.txt"), "ignored");
+  assert.equal(await toolingHash(dir), missing);
+  const paths = toolingFiles.filter((path: string) => !path.endsWith("/"));
+  paths.push("scripts/agents/shots/nested/capture.ts", "scripts/agents/shots/core.ts");
+  for (const path of paths) {
+    await mkdir(resolve(dir, path, ".."), { recursive: true });
+    const before = await toolingHash(dir);
+    await writeFile(join(dir, path), "first");
+    const added = await toolingHash(dir);
+    assert.notEqual(added, before, `${path} is included`);
+    await writeFile(join(dir, path), "second");
+    assert.notEqual(await toolingHash(dir), added, `${path} contents are included`);
+    await rm(join(dir, path));
+    assert.equal(await toolingHash(dir), before, `${path} can be missing again`);
+    await writeFile(join(dir, path), "first");
+  }
+  const reordered = await temp();
+  for (const path of [...paths].reverse()) {
+    await mkdir(resolve(reordered, path, ".."), { recursive: true });
+    await writeFile(join(reordered, path), "first");
+  }
+  assert.equal(await toolingHash(reordered), await toolingHash(dir), "directory creation order does not matter");
+  await rm(join(dir, paths[0]));
+  await writeFile(join(dir, "unlisted.txt"), "changed");
+  const partial = await toolingHash(dir);
+  await writeFile(join(dir, "another.txt"), "ignored too");
+  assert.equal(await toolingHash(dir), partial);
+});
+
+test("shots config validates app root and overrides only the server cwd", async () => {
+  const dir = await temp();
+  const env = { ...process.env, ASE_TEST_PORT: "5299", ASE_KIT_SHOTS_REQUEST: "test" };
+  delete env.ASE_KIT_SHOTS_APP_ROOT;
+  const run = (override: Record<string, string> = {}) => spawnSync(process.execPath, ["--import", "tsx", "--input-type=module", "-e",
+    "import config from './scripts/agents/shots/config.ts'; console.log(JSON.stringify(config));",
+  ], { env: { ...env, ...override }, encoding: "utf8", timeout: 15_000 });
+  const original = run();
+  assert.equal(original.status, 0, original.stderr);
+  const baseline = JSON.parse(original.stdout);
+  assert.equal(baseline.webServer.cwd, process.cwd());
+  const changed = run({ ASE_KIT_SHOTS_APP_ROOT: dir });
+  assert.equal(changed.status, 0, changed.stderr);
+  assert.deepEqual(JSON.parse(changed.stdout), { ...baseline, webServer: { ...baseline.webServer, cwd: dir } });
+  const file = join(dir, "file");
+  await writeFile(file, "not a directory");
+  for (const root of ["", ".", "relative/path", join(dir, "missing"), file]) {
+    const result = run({ ASE_KIT_SHOTS_APP_ROOT: root });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /ASE_KIT_SHOTS_APP_ROOT must be an absolute path to an existing directory/);
+  }
 });
 
 test("planBase uses complete on-disk cache entries and rejects damaged entries", async () => {
@@ -203,8 +260,13 @@ const scenario = JSON.parse(readFileSync(value('--steps'), 'utf8'));
 const widths = value('--width').split(',').map(Number);
 const themes = args.includes('--theme') ? [value('--theme')] : ['light', 'dark'];
 const out = value('--out');
-appendFileSync(process.env.TEST_LOG, JSON.stringify({ root: process.env.KIT_ROOT, scenario, widths, themes, fixture: process.env.ASE_NATIVE_SAVE_FIXTURE, kind: process.env.ASE_NATIVE_SAVE_FIXTURE_KIND, request: process.env.ASE_KIT_SHOTS_REQUEST, port: process.env.ASE_TEST_PORT }) + '\\n');
+appendFileSync(process.env.TEST_LOG, JSON.stringify({ root: process.env.KIT_ROOT, cwd: process.cwd(), appRoot: process.env.ASE_KIT_SHOTS_APP_ROOT, stepsFile: value('--steps'), scenario, widths, themes, fixture: process.env.ASE_NATIVE_SAVE_FIXTURE, kind: process.env.ASE_NATIVE_SAVE_FIXTURE_KIND, request: process.env.ASE_KIT_SHOTS_REQUEST, port: process.env.ASE_TEST_PORT }) + '\\n');
 mkdirSync(out, { recursive: true });
+if (scenario.name === 'before' && ['missing', 'empty', 'no-shots'].includes(process.env.TEST_FAIL_BASE)) {
+  if (process.env.TEST_FAIL_BASE === 'empty') writeFileSync(join(out, 'index.json'), '');
+  if (process.env.TEST_FAIL_BASE === 'no-shots') writeFileSync(join(out, 'index.json'), JSON.stringify({ screens: [] }));
+  process.exit(1);
+}
 let previous = [];
 try { previous = JSON.parse(readFileSync(join(out, 'index.json'), 'utf8')).screens; } catch {}
 const failed = process.env.TEST_FAIL_BASE === '1' && scenario.name === 'before';
@@ -234,9 +296,8 @@ test("compare coordinates fake captures, remote refs, cache reuse and partial ma
   await symlink(fixture, fixtureLink);
   await writeFile(join(repo, "package.json"), '{"type":"module"}');
   await writeFile(join(repo, ".gitignore"), "node_modules\n.scratch\n");
-  const command = join(repo, "scripts/agents/kit.d/shots");
-  await writeFile(command, fakeCapture);
-  await chmod(command, 0o755);
+  await mkdir(join(repo, "tests/native-save"), { recursive: true });
+  await writeFile(join(repo, "tests/native-save/server.ts"), "// Base app server fixture\n");
   git(repo, "init", "-q");
   git(repo, "add", ".");
   const baseSha = commit(repo);
@@ -244,10 +305,14 @@ test("compare coordinates fake captures, remote refs, cache reuse and partial ma
   const remote = join(dir, "remote.git");
   git(repo, "clone", "--bare", "-q", repo, remote);
   git(repo, "remote", "add", "origin", remote);
+  const command = join(repo, "scripts/agents/kit.d/shots");
+  await writeFile(command, fakeCapture);
+  await chmod(command, 0o755);
+  git(repo, "add", ".");
   const currentSha = commit(repo);
   git(repo, "branch", "-f", "dev", currentSha);
   const log = join(dir, "events.jsonl");
-  const env = { ...process.env, KIT_ROOT: repo, KIT_MAIN_ROOT: mainRoot, ASE_NATIVE_SAVE_FIXTURE: fixtureLink, ASE_NATIVE_SAVE_FIXTURE_KIND: "actual", ASE_KIT_SHOTS_REQUEST: "inherited", ASE_TEST_PORT: "9999", TEST_LOG: log };
+  const env = { ...process.env, KIT_ROOT: repo, KIT_MAIN_ROOT: mainRoot, ASE_NATIVE_SAVE_FIXTURE: fixtureLink, ASE_NATIVE_SAVE_FIXTURE_KIND: "actual", ASE_KIT_SHOTS_REQUEST: "inherited", ASE_KIT_SHOTS_APP_ROOT: "inherited-invalid-root", ASE_TEST_PORT: "9999", TEST_LOG: log };
   const run = (args: string[], extraEnv = {}) => spawnSync(process.execPath, ["--import", "tsx", comparePath, ...args], { env: { ...env, ...extraEnv }, cwd: process.cwd(), encoding: "utf8", timeout: 30_000 });
   const args = ["editor", "--compare", "dev", "--width", "390", "--out", out];
   const first = run(args);
@@ -256,6 +321,9 @@ test("compare coordinates fake captures, remote refs, cache reuse and partial ma
   assert.equal((first.stdout.match(/^RESULT:/gm) ?? []).length, 1);
   assert.doesNotMatch(first.stderr, /RESULT:/);
   assert.match(first.stderr, /child diagnostic/);
+  assert.doesNotMatch(first.stderr, /captured no ok shots/);
+  const base = join(mainRoot, ".scratch/shots-base", baseSha);
+  await assert.rejects(lstat(join(base, "scripts/agents/kit.d/shots")), { code: "ENOENT" });
   const second = run(args);
   assert.equal(second.status, 0, second.stderr);
   assert.match(second.stdout, /base 2 cached, 0 shot; after ok/);
@@ -269,11 +337,28 @@ test("compare coordinates fake captures, remote refs, cache reuse and partial ma
     assert.equal(event.kind, "actual");
     assert.equal(event.request, undefined);
     assert.equal(event.port, undefined);
-    assert.equal(event.root, event.scenario.name === "before" ? join(mainRoot, ".scratch/shots-base", baseSha) : repo);
+    assert.equal(event.root, repo);
+    assert.equal(event.cwd, repo);
+    assert.ok(event.stepsFile.startsWith(join(repo, ".scratch/kit-shots-compare/")));
+    assert.equal(event.appRoot, event.scenario.name === "before" ? base : undefined);
   }
   const index = JSON.parse(await readFile(join(out, "index.json"), "utf8"));
   assert.equal(index.screens.length, 8, "reusing out replaces matching before/after identities");
   assert.equal(await readFile(join(out, "editor-before-390-light.png"), "utf8"), "before");
+  const oldTooling = await toolingHash(repo);
+  await writeFile(command, `${fakeCapture}\n// Current tooling changed\n`);
+  const changedTooling = await toolingHash(repo);
+  assert.notEqual(changedTooling, oldTooling);
+  const changed = run(args);
+  assert.equal(changed.status, 0, changed.stderr);
+  assert.match(changed.stdout, /base 0 cached, 2 shot; after ok/);
+  const unchanged = run(args);
+  assert.equal(unchanged.status, 0, unchanged.stderr);
+  assert.match(unchanged.stdout, /base 2 cached, 0 shot; after ok/);
+  for (const tooling of [oldTooling, changedTooling]) {
+    const key = baseKey({ screen: "editor", steps: [], width: 390, theme: "light", tooling });
+    assert.equal(isHit(join(base, ".scratch/kit-shots-cache", key)), true, "old tooling entries remain unused");
+  }
   const stepsFile = join(repo, ".scratch/custom.yaml");
   await writeFile(stepsFile, 'screen: files\nname: custom\nsteps:\n  - press Escape\n');
   const steps = run(["--steps", stepsFile, "--compare", baseSha, "--width", "390", "--theme", "dark", "--out", out]);
@@ -285,19 +370,29 @@ test("compare coordinates fake captures, remote refs, cache reuse and partial ma
   assert.equal(failed.status, 1);
   assert.match(failed.stderr, /Base shot failed: pages 390 light/);
   assert.match(failed.stderr, /Missing before shot: pages 390 light/);
+  const diagnostic = `Base dev@${baseSha.slice(0, 7)} captured no ok shots; see server logs in ${base}/.scratch/kit-shots/`;
+  assert.equal(failed.stderr.split("\n").filter(line => line === diagnostic).length, 1);
   assert.match(failed.stdout, /RESULT: fail shots compare .*after ok/);
   assert.equal((failed.stdout.match(/^RESULT:/gm) ?? []).length, 1);
-  const base = join(mainRoot, ".scratch/shots-base", baseSha);
-  const missingKey = baseKey({ screen: "pages", steps: [], width: 390, theme: "light" });
+  const missingKey = baseKey({ screen: "pages", steps: [], width: 390, theme: "light", tooling: changedTooling });
   assert.equal(isHit(join(base, ".scratch/kit-shots-cache", missingKey)), false);
-  for (const path of [join(base, ".scratch/kit-shots-compare"), join(base, ".scratch/kit-shots-runs"), join(repo, ".scratch/kit-shots-compare")]) {
+  for (const mode of ["missing", "empty", "no-shots"]) {
+    const noIndex = run(["pages", "--compare", "dev", "--width", "390", "--theme", "light", "--out", out], { TEST_FAIL_BASE: mode });
+    assert.equal(noIndex.status, 1);
+    assert.equal(noIndex.stderr.split("\n").filter(line => line === diagnostic).length, 1);
+    assert.match(noIndex.stdout, /after ok/);
+    assert.doesNotMatch(noIndex.stderr, /ENOENT|Unexpected end of JSON/);
+  }
+  await assert.rejects(lstat(join(base, ".scratch/kit-shots-compare")), { code: "ENOENT" });
+  assert.equal(git(base, "diff", "--exit-code"), "", "base tracked files remain untouched");
+  for (const path of [join(base, ".scratch/kit-shots-runs"), join(repo, ".scratch/kit-shots-compare")]) {
     assert.deepEqual(await readdir(path), [], "generated steps and run folders are cleaned");
   }
-  git(repo, "rm", "-q", "scripts/agents/kit.d/shots");
-  const noKit = commit(repo);
-  const predates = run(["editor", "--compare", noKit, "--out", out]);
-  assert.equal(predates.status, 1);
-  assert.match(predates.stderr, /predates kit shots/);
+  git(repo, "rm", "-q", "tests/native-save/server.ts");
+  const noServer = commit(repo);
+  const cannotServe = run(["editor", "--compare", noServer, "--out", out]);
+  assert.equal(cannotServe.status, 1);
+  assert.ok(cannotServe.stderr.includes(`Base ${noServer}@${noServer.slice(0, 7)} cannot serve: tests/native-save/server.ts is missing`));
 });
 
 test("wrapper help and rejected compare arguments never capture", () => {
