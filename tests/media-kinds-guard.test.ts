@@ -2,9 +2,13 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { ts, parse, walk, finding, sourceFiles, readSource, unallowed, staleEntries, type AllowlistEntry, type Detector, type Finding, type TS } from "./support/source-guard.ts";
 
-// Match whole extension tokens, including historical regex abbreviations.
-const token = /(?<![a-z\d])(?:jpe\?g|tiff\?|woff2\?|aiff\?|mpe\?g|jpg|jpeg|png|webp|gif|avif|svg|ico|bmp|tif|tiff|heic|heif|mp4|m4v|webm|mov|ogv|mkv|avi|mpeg|mpg|mp3|m4a|aac|wav|ogg|oga|opus|flac|aif|aiff|woff|woff2|ttf|otf|eot|pdf)(?![a-z\d])/gi;
-const extension = /^(?:\.|(?:image|video|audio|font)\/)?(?:jpg|jpeg|png|webp|gif|avif|svg|ico|bmp|tif|tiff|heic|heif|mp4|m4v|webm|mov|ogv|mkv|avi|mpeg|mpg|mp3|m4a|aac|wav|ogg|oga|opus|flac|aif|aiff|woff|woff2|ttf|otf|eot|pdf)(?:\+xml)?$/i;
+// Match whole extension tokens, including historical regex abbreviations. Archive and office
+// formats count too; generic words that are also extensions (key, pages, md, txt) stay out.
+const names = "jpg|jpeg|png|webp|gif|avif|svg|ico|bmp|tif|tiff|heic|heif|mp4|m4v|webm|mov|ogv|mkv|avi|mpeg|mpg|mp3|m4a|aac|wav|ogg|oga|opus|flac|aif|aiff|woff|woff2|ttf|otf|eot|pdf|zip|gz|tgz|tar|7z|rar|bz2|xz|zst|doc|docx|xls|xlsx|ppt|pptx|odt|ods|odp|rtf|epub";
+const token = new RegExp(String.raw`(?<![a-z\d])(?:jpe\?g|tiff\?|woff2\?|aiff\?|mpe\?g|docx\?|xlsx\?|pptx\?|${names})(?![a-z\d])`, "gi");
+const extension = new RegExp(String.raw`^(?:\.|(?:image|video|audio|font)\/)?(?:${names})(?:\+xml)?$`, "i");
+/** A string that is nothing but extensions separated by spaces ("jpg png webp"). */
+const spaceList = (text: string) => /^\.?[a-z\d]+(?: \.?[a-z\d]+)+$/i.test(text.trim()) && [...text.matchAll(token)].length >= 2;
 const detect: Detector = (source, file) => {
   if (file === "shared/media-kinds.ts") return [];
   const tree = parse(source, file), hits: Finding[] = [];
@@ -15,7 +19,7 @@ const detect: Detector = (source, file) => {
   walk(tree, node => {
     if (ts.isRegularExpressionLiteral(node) && node.text.includes("|") && [...node.text.matchAll(token)].length >= 2)
       hits.push(finding(tree, node, "media-regex"));
-    if ((ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) && (node.text.includes(",") || node.text.includes("|")) && [...node.text.matchAll(token)].length >= 2)
+    if ((ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) && ((node.text.includes(",") || node.text.includes("|")) && [...node.text.matchAll(token)].length >= 2 || spaceList(node.text)))
       hits.push(finding(tree, node, "media-string"));
     if (ts.isArrayLiteralExpression(node) && !(node.parent && ts.isArrayLiteralExpression(node.parent)) && strings(node).filter(value => extension.test(value)).length >= 2)
       hits.push(finding(tree, node, "media-array"));
@@ -56,6 +60,10 @@ test("guard catches pasted historical lists and each list syntax in memory", () 
     `const old = { jpg: "image/jpeg", png: "image/png" };`,
     `const old = ".mp4,.webm";`,
     `const old = [["png", "PNG"], ["jpeg", "JPEG"]];`,
+    String.raw`const old = /\.(?:zip|tar|gz|tgz|7z|rar)$/i;`,
+    String.raw`const old = /\.(?:docx?|xlsx?|pptx?)$/i;`,
+    `const old = ["doc", "docx"];`,
+    `const old = "jpg png".split(" ");`,
   ]) assert.ok(detect(source, "src/example.ts").length, source);
   assert.deepEqual(detect(String.raw`const single = /\.svg$/i; const encode = "image/webp";`, "src/example.ts"), []);
   assert.deepEqual(detect(`const canonical = ["jpg", "png"];`, "shared/media-kinds.ts"), []);
