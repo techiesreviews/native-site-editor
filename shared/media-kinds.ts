@@ -26,7 +26,6 @@ export function mimeType(path: string): string | undefined {
   if (suffix === "pdf" || suffix === "zip") return "application/" + suffix;
   return Object.hasOwn(MIME_TYPES, suffix) ? MIME_TYPES[suffix] : undefined;
 }
-export const isImagePath = (path: string) => mediaKind(path) === "image";
 
 // Listed image/audio/video/font extensions default to `${kind}/${extension}`; only exceptions need spelling out.
 function types(kind: string, extensions: string, exceptions: Record<string, string> = {}): Record<string, string> {
