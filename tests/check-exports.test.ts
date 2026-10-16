@@ -52,6 +52,32 @@ test("namespace access uses checker identity, including literal keys and shadowe
   }), [{ file: "src/values.ts", line: 1, name: "dead" }]);
 });
 
+for (const { form, use, values } of [
+  { form: "renamed assignment", use: "let value: number; ({ live: value } = api); console.log(value);" },
+  { form: "shorthand assignment", use: "let live: number; ({ live } = api); console.log(live);" },
+  { form: "renamed assignment with default", use: "let value: number; ({ live: value = 0 } = api); console.log(value);" },
+  { form: "shorthand assignment with default", use: "let live: number; ({ live = 0 } = api); console.log(live);" },
+  { form: "assignment to a nested target", use: "let value: number; ({ live: { value } } = api); console.log(value);", values: "export const live = { value: 1 }, dead = 2;" },
+  { form: "assignment to a nested target with defaults", use: "let value: number; ({ live: { value = 0 } = {} } = api); console.log(value);", values: "export const live = { value: 1 }, dead = 2;" },
+  { form: "nested assignment", use: "let value: number; ({ nested: { live: value } } = { nested: api }); console.log(value);" },
+  { form: "nested assignment with defaults", use: "let live: number; ({ nested: { live = 0 } = {} } = { nested: api }); console.log(live);" },
+  { form: "declaration", use: "const { live: value } = api; console.log(value);" },
+]) {
+  test(`namespace destructuring ${form} consumes only selected exports`, () => {
+    assert.deepEqual(fixture({
+      "src/main.ts": `import * as api from "./values"; ${use}`,
+      "src/values.ts": values ?? "export const live = 1, dead = 2;",
+    }), [{ file: "src/values.ts", line: 1, name: "dead" }]);
+  });
+}
+
+test("destructuring assignments from shadowed namespaces do not consume exports", () => {
+  assert.deepEqual(fixture({
+    "src/main.ts": 'import * as api from "./values"; api.live; function other(api: { dead: number }) { let value: number; ({ dead: value } = api); console.log(value); }',
+    "src/values.ts": "export const live = 1, dead = 2;",
+  }), [{ file: "src/values.ts", line: 1, name: "dead" }]);
+});
+
 test("dynamic module members and destructuring count without consuming the whole module", () => {
   assert.deepEqual(fixture({
     "src/main.ts": 'const module = await import("./values"); module.live; (await import("./values")).direct; const { destructured: renamed } = await import("./values");',

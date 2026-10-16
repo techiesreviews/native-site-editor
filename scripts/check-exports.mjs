@@ -166,6 +166,23 @@ function analyzeProgram(program, roots, root, host) {
     for (const file of moduleTypes(type)) mark(file, name, user);
   }
 
+  // Assignment targets have their own object type; follow the source type instead.
+  function assignmentMembers(pattern, type, user) {
+    if (ts.isBinaryExpression(pattern) && pattern.operatorToken.kind === ts.SyntaxKind.EqualsToken) pattern = pattern.left;
+    if (!ts.isObjectLiteralExpression(pattern)) return;
+    type = checker.getNonNullableType(type);
+    for (const property of pattern.properties) {
+      if (!ts.isPropertyAssignment(property) && !ts.isShorthandPropertyAssignment(property)) continue;
+      const name = property.name;
+      if (!ts.isIdentifier(name) && !ts.isStringLiteralLike(name)) continue;
+      member(type, name.text, user);
+      const symbol = checker.getPropertyOfType(type, name.text);
+      if (symbol && ts.isPropertyAssignment(property)) {
+        assignmentMembers(property.initializer, checker.getTypeOfSymbolAtLocation(symbol, property), user);
+      }
+    }
+  }
+
   function literalNames(type) {
     if (type.isUnion()) return type.types.flatMap(literalNames);
     return type.isStringLiteral() ? [type.value] : [];
@@ -236,6 +253,8 @@ function analyzeProgram(program, roots, root, host) {
       } else if (ts.isBindingElement(node) && ts.isObjectBindingPattern(node.parent) && !node.dotDotDotToken) {
         const name = node.propertyName ?? node.name;
         if ((ts.isIdentifier(name) || ts.isStringLiteralLike(name)) && exportedNames.has(name.text)) member(checker.getTypeAtLocation(node.parent), name.text, file);
+      } else if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken && ts.isObjectLiteralExpression(node.left)) {
+        assignmentMembers(node.left, checker.getTypeAtLocation(node.right), file);
       } else if (ts.isImportTypeNode(node) && node.qualifier) {
         let name = node.qualifier;
         while (ts.isQualifiedName(name)) name = name.left;
