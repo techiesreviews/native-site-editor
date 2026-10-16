@@ -12,11 +12,7 @@ transactions and DOM mounting, and hands them in as ports.
 - Ports are live: each port reads the host's value at call time (a getter or
   an arrow), so the controller holds no copy of repository, branch, snapshot,
   site, source, draft, selection or tree state that the host also owns.
-- Proofs survive awaits: capture the proof (generation, scope, revision,
-  `masterRevision()`, `proof.isCurrent()`, selection epoch, expected sources
-  and files, editor model) before the first await, and re-check that same
-  proof after every await and before every write. Taking a fresh proof after
-  an await, in place of the old one, hides the race it exists to catch.
+- Proofs survive awaits: follow the rule under Async writers below.
 - One transaction per user action: a write goes through one guarded edit
   (`edits.run` or `edits.now`, src/guarded-edit.ts) whose plan reads every
   file it depends on through `r`, so it succeeds whole, fails whole, and
@@ -34,6 +30,17 @@ transactions and DOM mounting, and hands them in as ports.
   compile.
 - Ports and API names cost bytes (property names are not minified): report
   the budget delta of a slice, and prefer few, short port names.
+
+## Async writers
+
+Every async writer follows this rule, including writers outside controllers.
+
+- Proofs survive awaits: capture the proof (generation, scope, revision,
+  `masterRevision()`, `proof.isCurrent()`, selection epoch, expected sources
+  and files, editor model) before the first await, and re-check that same
+  proof after every await and before every write. Taking a fresh proof after
+  an await, in place of the old one, hides the race it exists to catch.
+- Tests prove it with `tests/support/await-race.ts` (`forEachAwait`).
 
 ## Racing and speculative reads
 
