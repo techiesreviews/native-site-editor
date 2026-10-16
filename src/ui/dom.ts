@@ -1,4 +1,5 @@
 import { icon } from "../icons";
+import { reported } from "./report-failure";
 
 export function node<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -22,11 +23,11 @@ export function link(text: string, href: string, className = "button primary") {
 
 export function button(
   text: string,
-  action: () => void,
+  action: (() => void) | (() => Promise<void>),
   className = "button secondary",
 ) {
   const result = node("button", className, text);
   result.type = "button";
-  result.addEventListener("click", action);
+  result.addEventListener("click", reported(action));
   return result;
 }

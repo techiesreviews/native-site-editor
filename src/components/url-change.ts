@@ -1,4 +1,5 @@
 import { node } from "../ui/dom";
+import { reported } from "../ui/report-failure";
 import "./url-change.css";
 
 /** What changing a page's URL to a typed value would do, or why it cannot. */
@@ -117,7 +118,7 @@ export function createUrlChange(options: {
   });
   // Keys typed here are the field's, not the tree's or the sidebar's.
   form.addEventListener("click", (event) => event.stopPropagation());
-  form.addEventListener("submit", async (event) => {
+  form.addEventListener("submit", reported(async (event) => {
     event.preventDefault();
     if (pending) return;
     const planned = check();
@@ -138,7 +139,7 @@ export function createUrlChange(options: {
     } finally {
       pending = false;
     }
-  });
+  }));
   // The sidebar's field is checked once a page is on show (`reset`).
   if (options.buttons) check();
 

@@ -8,6 +8,7 @@
 import { refuse } from "./refusal-note";
 import "./site-actions.css";
 import { button, link, node } from "../ui/dom";
+import { reported } from "../ui/report-failure";
 import { setDeployStatus } from "../deploy-status";
 import { changeStatusLabel, changeStatusPending, type ChangeState, type ChangeStatus } from "../../shared/change-status";
 import { buildSiteZip, saveBytes, siteUrlFromConfig, siteZipName, type SiteFiles } from "../site-download";
@@ -140,7 +141,7 @@ export function mountSiteActions(options: SiteActionsOptions) {
     render(saved, "waiting");
     void refreshSite();
     const alive = () => id === tracking && live.isConnected && current();
-    const schedule = () => { timer = setTimeout(check, pollDelay(Date.now() - started)); };
+    const schedule = () => { timer = setTimeout(reported(check), pollDelay(Date.now() - started)); };
     async function check() {
       if (!alive()) { if (id === tracking && !current()) clear(); return; }
       let result: ChangeStatus;
@@ -168,7 +169,7 @@ export function mountSiteActions(options: SiteActionsOptions) {
       render(saved, result.state, result);
       if (changeStatusPending(result.state)) schedule();
     }
-    timer = setTimeout(check, Math.min(1_000, pollDelay(0)));
+    timer = setTimeout(reported(check), Math.min(1_000, pollDelay(0)));
   }
 
   function clear() {

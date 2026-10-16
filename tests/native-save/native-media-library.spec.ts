@@ -149,7 +149,9 @@ test("real worker keeps a smaller source only without its personal details, with
     const crc = (bytes: Uint8Array) => { let c = ~0; for (const byte of bytes) { c ^= byte; for (let k = 0; k < 8; k++) c = c & 1 ? (c >>> 1) ^ 0xedb88320 : c >>> 1; } return ~c >>> 0; };
     const draw = (paint: (ctx: CanvasRenderingContext2D) => void, type: string, quality?: number) => {
       const canvas = document.createElement("canvas"); canvas.width = 400; canvas.height = 300; paint(canvas.getContext("2d")!);
-      return new Promise<Uint8Array>(resolve => canvas.toBlob(async blob => resolve(new Uint8Array(await blob!.arrayBuffer())), type, quality));
+      return new Promise<Uint8Array>((resolve, reject) => canvas.toBlob(blob => {
+        void blob!.arrayBuffer().then(b => resolve(new Uint8Array(b)), reject);
+      }, type, quality));
     };
     const pixels = async (blob: Blob) => {
       const bitmap = await createImageBitmap(blob), canvas = new OffscreenCanvas(bitmap.width, bitmap.height), ctx = canvas.getContext("2d")!;
@@ -200,7 +202,9 @@ test("real worker keeps APNG frames, transparency in every copy, and turns rotat
     };
     const canvasBytes = (width: number, height: number, paint: (ctx: CanvasRenderingContext2D) => void, type: string, quality?: number) => {
       const canvas = document.createElement("canvas"); canvas.width = width; canvas.height = height; paint(canvas.getContext("2d")!);
-      return new Promise<Uint8Array>(resolve => canvas.toBlob(async blob => resolve(new Uint8Array(await blob!.arrayBuffer())), type, quality));
+      return new Promise<Uint8Array>((resolve, reject) => canvas.toBlob(blob => {
+        void blob!.arrayBuffer().then(b => resolve(new Uint8Array(b)), reject);
+      }, type, quality));
     };
     const decode = async (blob: Blob) => {
       const bitmap = await createImageBitmap(blob), canvas = new OffscreenCanvas(bitmap.width, bitmap.height), ctx = canvas.getContext("2d")!;

@@ -1,4 +1,5 @@
 import { button, node } from "../ui/dom";
+import { reported } from "../ui/report-failure";
 import "./create-dialog.css";
 
 export type CreateKind = "file" | "folder";
@@ -93,7 +94,7 @@ export function createCreateDialog(options: {
     return plan;
   }
   name.addEventListener("input", () => refresh());
-  form.addEventListener("submit", async (event) => {
+  form.addEventListener("submit", reported(async (event) => {
     event.preventDefault();
     if (pending) return;
     const plan = refresh(true);
@@ -111,7 +112,7 @@ export function createCreateDialog(options: {
       pending = false;
       submit.disabled = false;
     }
-  });
+  }));
   // Escape closes the dialog only; the explorer would otherwise close too.
   dialog.addEventListener("keydown", (event) => { if (event.key === "Escape") event.stopPropagation(); });
   dialog.addEventListener("close", () => {

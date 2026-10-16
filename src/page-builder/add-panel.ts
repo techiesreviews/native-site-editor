@@ -9,6 +9,7 @@
 import { refuse as showRefusal } from "../components/refusal-note";
 import type { InsertChoice, InsertPoint } from "../components/insert-controls";
 import { button, node } from "../ui/dom";
+import { reported } from "../ui/report-failure";
 import { icon } from "../icons";
 import { addCatalog, matchesQuery, type AddItem } from "./add-catalog";
 import { normaliseComponentName, normaliseField, previewComponentTag } from "./component-names";
@@ -150,7 +151,7 @@ export function createAddPanel(handlers: AddPanelHandlers) {
       event.stopPropagation();
       if (!pending) resetNewForm(true);
     });
-    form.addEventListener("submit", async event => {
+    form.addEventListener("submit", reported(async event => {
       event.preventDefault();
       if (pending) return;
       const result = normaliseComponentName(name.value, "section", handlers.takenTags?.() ?? handlers.choices().map(choice => choice.tag));
@@ -175,7 +176,7 @@ export function createAddPanel(handlers: AddPanelHandlers) {
         pending = false;
         name.disabled = cancel.disabled = create.disabled = false;
       }
-    });
+    }));
     render();
     newEntry.replaceChildren(form);
     name.focus();

@@ -1,5 +1,6 @@
 import { handleChunkLoadFailure } from "../chunk-recovery";
 import { button, link, node } from "../ui/dom";
+import { reported } from "../ui/report-failure";
 import { icon } from "../icons";
 import {
   DEFAULT_REPOSITORY_NAME,
@@ -388,7 +389,7 @@ export function createSetupWizard(options: SetupWizardOptions) {
         }),
       );
     };
-    form.addEventListener("submit", async (event) => {
+    form.addEventListener("submit", reported(async (event) => {
       event.preventDefault();
       if (state.busy) return;
       const problem = showName();
@@ -454,7 +455,7 @@ export function createSetupWizard(options: SetupWizardOptions) {
         fallback.hidden = false;
         state.manual = choice;
       }
-    });
+    }));
     showName();
     const back = footer.querySelector<HTMLButtonElement>("button")!;
     form.append(
