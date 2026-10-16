@@ -195,9 +195,12 @@ async function scratchFile(file, roots) {
   return path;
 }
 
-async function saveCache(dir, shot, out) {
-  await mkdir(resolve(dir, ".."), { recursive: true });
+/** Publish a cache entry; a complete entry is never replaced, since readers may be copying it. */
+export async function saveCache(dir, shot, out) {
+  const cache = resolve(dir, "..");
+  await mkdir(cache, { recursive: true });
   const temp = await mkdtemp(`${dir}-`);
+  let aside;
   try {
     for (const file of shot.files) {
       if (file.path !== basename(file.path)) throw new Error(`Unexpected shot path: ${file.path}`);
@@ -205,13 +208,19 @@ async function saveCache(dir, shot, out) {
     }
     await writeFile(join(temp, "shot.json"), JSON.stringify(shot));
     if (!isHit(temp)) throw new Error(`Incomplete base shot: ${shot.screen} ${shot.width} ${shot.theme}`);
-    // Another compare may have published this same entry while we captured it.
-    if (!isHit(dir)) {
-      await rm(dir, { recursive: true, force: true });
-      try { await rename(temp, dir); }
-      catch (error) { if (!isHit(dir)) throw error; }
-    }
-  } finally { await rm(temp, { recursive: true, force: true }); }
+    // Check and replace under one lock so another compare's finished entry survives.
+    const lock = await setupLock(cache);
+    try {
+      if (isHit(dir)) return;
+      aside = `${dir}-broken-${randomUUID()}`;
+      try { await rename(dir, aside); }
+      catch (error) { if (error.code !== "ENOENT") throw error; aside = undefined; }
+      await rename(temp, dir);
+    } finally { await rm(lock, { recursive: true, force: true }); }
+  } finally {
+    await rm(temp, { recursive: true, force: true });
+    if (aside) await rm(aside, { recursive: true, force: true });
+  }
 }
 
 function matrixArgs(widths, themes) {

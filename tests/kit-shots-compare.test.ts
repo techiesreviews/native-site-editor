@@ -4,7 +4,7 @@ import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, readlink, realpath, rm
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
-import { baseKey, beforeShots, ensureBase, hasLiveLease, isHit, planBase, pruneTargets, splitCompare } from "../scripts/agents/shots/compare.mjs";
+import { baseKey, beforeShots, ensureBase, hasLiveLease, isHit, planBase, pruneTargets, saveCache, splitCompare } from "../scripts/agents/shots/compare.mjs";
 import { contactHtml, type Scenario, type Shot } from "../scripts/agents/shots/core";
 
 const temporary: string[] = [];
@@ -70,6 +70,24 @@ test("planBase uses complete on-disk cache entries and rejects damaged entries",
   assert.equal(isHit(first), false, "failed captures are never cached");
   await writeFile(join(first, "shot.json"), JSON.stringify(shot({ files: [] })));
   assert.equal(isHit(first), false, "metadata alone is insufficient");
+});
+
+test("saveCache keeps complete entries, replaces broken ones and serializes concurrent publishers", async () => {
+  const dir = await temp(), runA = join(dir, "run-a"), runB = join(dir, "run-b"), entry = join(dir, "cache", "key");
+  for (const [run, text] of [[runA, "a"], [runB, "b"]]) {
+    await mkdir(run);
+    for (const file of shot().files) await writeFile(join(run, file.path), text);
+  }
+  await Promise.all([saveCache(entry, shot(), runA), saveCache(entry, shot(), runB)]);
+  assert.equal(isHit(entry), true);
+  const winner = await readFile(join(entry, "editor-before-390-light.png"), "utf8");
+  assert.equal(await readFile(join(entry, "editor-before-390-light.webp"), "utf8"), winner, "one publisher's files, never a mix");
+  await saveCache(entry, shot(), winner === "a" ? runB : runA);
+  assert.equal(await readFile(join(entry, "editor-before-390-light.png"), "utf8"), winner, "a complete entry is never replaced");
+  await rm(join(entry, "editor-before-390-light.webp"));
+  await saveCache(entry, shot(), runB);
+  assert.equal(isHit(entry), true, "a broken entry is replaced");
+  assert.deepEqual((await readdir(join(dir, "cache"))).sort(), ["key"], "no temp, aside or lock folders remain");
 });
 
 test("pruneTargets keeps the newest three and current while ignoring other names", () => {
