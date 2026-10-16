@@ -145,6 +145,7 @@ test("concurrent fake draft-text stores keep both texts", async () => {
     })),
   ));
   for (const response of responses) assert.deepEqual(await response?.json(), { stored: 1 });
+  assert.deepEqual(await storage.get("drafts"), Object.fromEntries(drafts.map(({ hash, path }) => [hash, path.length])));
   for (const { hash, path } of drafts) {
     const read = await fakeHubRoute("drafts-hub", storage, new Request(`https://session.internal/agent-draft?hash=${hash}`));
     assert.equal(await read?.text(), path);
