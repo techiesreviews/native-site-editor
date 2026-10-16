@@ -30,6 +30,7 @@ export const toolingFiles = [
   "scripts/agents/kit.d/shots",
   "scripts/agents/shots/",
   "tests/support/scenarios.ts",
+  "tests/native-save/open-picker.ts",
   "scripts/agents/port.sh",
   "scripts/agents/port-common.sh",
   "playwright.config.ts",
