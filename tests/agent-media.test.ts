@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { MEDIA_LIST_LIMIT, isPreviewablePicture, mediaKind, textBytes } from "../shared/agent.ts";
+import { MEDIA_LIST_LIMIT, isMediaUploadWrite, isPreviewablePicture, mediaKind, textBytes } from "../shared/agent.ts";
 import { parseMediaRecords } from "../shared/media-records.ts";
 import { mediaListReport, isAgentMediaPath, type MediaListInput } from "../src/agent-media.ts";
 import { mediaUsageRecords } from "../src/page-builder/media-usage.ts";
@@ -77,11 +77,19 @@ test("kind and preview rules include pictures, documents, video, audio and other
     assert.equal(mediaKind(`photo.${extension}`), "image");
     assert.equal(isPreviewablePicture(`photo.${extension}`), true);
   }
-  for (const [extension, kind] of [["pdf", "document"], ["docx", "document"], ["mp4", "video"], ["mp3", "audio"], ["zip", "other"], ["heic", "image"]]) {
+  for (const [extension, kind] of [["pdf", "document"], ["docx", "document"], ["vtt", "document"], ["pages", "document"], ["mp4", "video"], ["mp3", "audio"], ["zip", "other"], ["heic", "image"]]) {
     assert.equal(mediaKind(`files/file.${extension}`), kind);
     assert.equal(isPreviewablePicture(`files/file.${extension}`), false);
     assert.equal(isAgentMediaPath(`files/file.${extension}`), true);
   }
+  // Ticket 39: text and subtitle files are documents for agents too, but stay writable as text.
+  for (const path of ["notes/a.md", "notes/a.txt", "subs/a.vtt", "subs/a.srt"]) {
+    assert.equal(mediaKind(path), "document", path);
+    assert.equal(isMediaUploadWrite(path), false, path);
+  }
+  // Text documents stay site files: not listed in Media or to agents.
+  for (const path of ["notes/a.md", "notes/a.txt"]) assert.equal(isAgentMediaPath(path), false, path);
+  assert.equal(isMediaUploadWrite("files/report.pdf"), true);
   for (const path of ["index.html", "styles/site.css", "scripts/site.js", "README.md", ".editor/media.json", "node_modules/image.png", ".github/test.png", ".nojekyll", "images/.DS_Store"]) assert.equal(isAgentMediaPath(path), false);
 });
 

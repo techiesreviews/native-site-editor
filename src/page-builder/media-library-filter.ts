@@ -34,7 +34,9 @@ export const mediaKind = (path: string): MediaKind => { const kind = fileKind(pa
  * never pages, styles, scripts, fonts, source files or the editor's own files. */
 export function isMediaLibraryPath(path: string) {
   return !/^(?:node_modules|\.github|\.editor)\//.test(path) && !/(?:^|\/)\.[^/]*$/.test(path) &&
-    (fileKind(path) !== "other" || !TEXT_PATH.test(path) && /\.[^/]+$/.test(path) && !libraryExcludedFiles.test(path));
+    // Text documents (.md, .txt) stay site files, edited in Files, not Media (ticket 39).
+    (fileKind(path) !== "other" && !(fileKind(path) === "document" && TEXT_PATH.test(path)) ||
+      fileKind(path) === "other" && !TEXT_PATH.test(path) && /\.[^/]+$/.test(path) && !libraryExcludedFiles.test(path));
 }
 
 /** What a picker's words call its files: "image" for pictures only (the long-standing wording),
