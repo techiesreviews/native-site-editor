@@ -47,6 +47,56 @@
   --component-surface: oklch(from var(--color-component) 96% 0.03 h);
   --component-text: oklch(from var(--color-component) 42% 0.17 h);
 
+  /* Request pins and cards (agent-pins.css, agent-menu.css, repository-menu.css). */
+  /* A question for the user: orange, on pins light in both themes. */
+  --agent-question-strong: oklch(66% 0.18 48);
+  --agent-question-pin: oklch(94.5% 0.05 62);
+  --agent-question-ink: oklch(46% 0.14 45);
+  /* Finished: a neutral grey with a trace of the editor's hue. */
+  --agent-done-pin: oklch(from var(--color-primary) 90.5% 0.006 h);
+  --agent-done-line: oklch(from var(--color-primary) 70% 0.012 h);
+  --agent-done-ink: oklch(from var(--color-primary) 36% 0.015 h);
+  /* A request's first line, on the always-light pin. */
+  --agent-pin-text: oklch(from var(--color-primary) 25% 0.01 h);
+  /* The card's: theme-aware. */
+  --agent-question-surface: oklch(96% 0.04 62);
+  --agent-question-text: oklch(42% 0.13 45);
+  --agent-done-surface: oklch(from var(--color-primary) 92.5% 0.005 h);
+  --agent-done-bubble: oklch(from var(--color-primary) 84% 0.008 h);
+  --agent-done-bubble-ink: oklch(from var(--color-primary) 27% 0.015 h);
+
+  /* Fixed colours over pictures and saturated badges, identical in both themes. */
+  --on-media: oklch(100% 0 none);
+  --on-accent: var(--on-media);
+  --preview-paper: var(--on-media);
+  --media-paper: oklch(97% 0 none);
+  --media-control-ink: oklch(20% 0.03 262);
+  /* Exact sRGB(10 18 32) and sRGB(1 9 37); the latter differs from primary-darkest. */
+  --media-scrim: oklch(18.23% 0.0315 261.1);
+  --image-control-scrim: oklch(15.28% 0.0611 262.26);
+  --shadow-ink: oklch(0% 0 none);
+  --media-player-surface: var(--shadow-ink);
+  /* Frozen utility foundation; theme.css overrides its editor buttons. */
+  --foundation-action: oklch(17.76% 0 none);
+
+  /* Slot chip fills, retained across themes over the editing preview. */
+  --slot-surface: oklch(from var(--color-component) 47% 0.21 h);
+  --items-slot-surface: oklch(50% 0.19 355);
+  /* The structure editor's inner highlight and lift. */
+  --structure-edit-highlight: oklch(from var(--shadow-ink) l c h / 0.05);
+  --structure-edit-drop: 0 6px 18px -8px oklch(from var(--shadow-ink) l c h / 0.28), 0 1px 3px oklch(from var(--shadow-ink) l c h / 0.12);
+
+  /* File type accents mix with theme-aware text in files-tree.css. */
+  --file-page: oklch(66% 0.17 45);
+  --file-style: oklch(62% 0.15 255);
+  --file-script: oklch(74% 0.15 95);
+  --file-data: oklch(64% 0.11 190);
+  --file-picture: oklch(64% 0.15 150);
+  --file-video: oklch(62% 0.17 340);
+  --file-sound: oklch(62% 0.15 300);
+  --file-pdf: oklch(60% 0.18 25);
+  --file-document: oklch(60% 0.14 255);
+
   /* Compatibility aliases keep all component styling on one palette. */
   --surface: var(--semantic-surface);
   --background: var(--semantic-background);
@@ -164,6 +214,14 @@
     --component: oklch(from var(--color-component) 72% 0.16 h);
     --component-surface: oklch(from var(--color-component) 28% 0.05 h);
     --component-text: oklch(from var(--color-component) 85% 0.1 h);
+
+    --agent-question-surface: oklch(31% 0.06 50);
+    --agent-question-text: oklch(88% 0.08 62);
+    --agent-done-surface: oklch(from var(--color-primary) 29% 0.006 h);
+    --agent-done-bubble: oklch(from var(--color-primary) 40% 0.01 h);
+    --agent-done-bubble-ink: oklch(from var(--color-primary) 92% 0.008 h);
+    --structure-edit-highlight: oklch(from var(--on-media) l c h / 0.06);
+    --structure-edit-drop: 0 8px 24px -8px oklch(from var(--shadow-ink) l c h / 0.6), 0 2px 6px oklch(from var(--shadow-ink) l c h / 0.35);
   }
   /* The action colour is too dark for a pressed toggle on dark panels. */
   :root {

@@ -64,7 +64,7 @@
 }
 .media-library input.media-switch::before {
   content: ""; position: absolute; inset-block-start: 2px; inset-inline-start: 2px; inline-size: 16px; block-size: 16px;
-  border-radius: 50%; background: oklch(100% 0 none); box-shadow: 0 1px 2px var(--semantic-shadow);
+  border-radius: 50%; background: var(--on-media); box-shadow: 0 1px 2px var(--semantic-shadow);
 }
 .media-library input.media-switch:checked { background: var(--primary); }
 .media-library input.media-switch:checked::before { translate: 16px 0; }
@@ -137,18 +137,18 @@
   border-block-start: 1px solid var(--line); background: var(--panel-surface);
 }
 
-.media-library__card { position: relative; min-width: 0; aspect-ratio: 1; overflow: hidden; border-radius: var(--radius-small); background: var(--surface-subtle); color: #fff; }
+.media-library__card { position: relative; min-width: 0; aspect-ratio: 1; overflow: hidden; border-radius: var(--radius-small); background: var(--surface-subtle); color: var(--on-media); }
 .media-library .media-library__thumbnail { position: absolute; inset: 0; width: 100%; height: 100%; padding: 0; border: 0; border-radius: 0; background: none; color: inherit; }
 .media-library__thumbnail img { display: block; width: 100%; height: 100%; object-fit: cover; }
 /* See-through pictures (on the checkerboard) and banners wider than 2:1 show whole; photos fill the square.
    Both sit on a light backing in either theme, so their number and circle turn dark and lose the band. */
 .media-library__thumbnail img:is([data-transparent], [data-whole]) { object-fit: contain; }
-.media-library__thumbnail img[data-whole]:not([data-transparent]) { background: oklch(97% 0 none); }
+.media-library__thumbnail img[data-whole]:not([data-transparent]) { background: var(--media-paper); }
 .media-library__grid:not(.media-library__grid--list) .media-library__card:has(.media-library__thumbnail img:is([data-transparent], [data-whole])) {
   .media-library__shade { display: none; }
   /* A see-through picture may still fill the corner, so the dark glyphs carry a light halo. */
-  .media-library__usage, .media-library__select { color: oklch(20% 0.03 262); text-shadow: 0 0 2px oklch(100% 0 none), 0 0 6px oklch(100% 0 none / .8); }
-  .media-library__select input:not(:checked) { background: oklch(100% 0 none / .35); box-shadow: 0 0 0 1px oklch(100% 0 none / .7); }
+  .media-library__usage, .media-library__select { color: var(--media-control-ink); text-shadow: 0 0 2px var(--on-media), 0 0 6px oklch(from var(--on-media) l c h / .8); }
+  .media-library__select input:not(:checked) { background: oklch(from var(--on-media) l c h / .35); box-shadow: 0 0 0 1px oklch(from var(--on-media) l c h / .7); }
 }
 /* Rings sit above the shades: the selection's, and keyboard focus on the picture. */
 .media-library__card::after { content: ""; position: absolute; inset: 0; z-index: 3; border-radius: inherit; pointer-events: none; }
@@ -161,14 +161,14 @@
 .media-library__shade { position: absolute; inset: 0 0 auto; z-index: 1; height: 36px; pointer-events: none; }
 .media-library__shade::before, .media-library__shade::after,
 .media-library__name::before, .media-library__name::after { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; }
-.media-library__shade::after { background: linear-gradient(rgb(10 18 32 / .35), transparent); }
+.media-library__shade::after { background: linear-gradient(oklch(from var(--media-scrim) l c h / .35), transparent); }
 .media-library__name {
   position: absolute; inset: auto 0 0; z-index: 1; isolation: isolate; padding: 21px 6px 5px;
   overflow: hidden; white-space: nowrap; text-overflow: ellipsis; text-align: left;
-  font-size: var(--type-small); font-weight: 600; line-height: 1.35; text-shadow: 0 1px 2px #0007;
+  font-size: var(--type-small); font-weight: 600; line-height: 1.35; text-shadow: 0 1px 2px oklch(from var(--shadow-ink) l c h / 0.466666666667);
 }
 .media-library__name::before { backdrop-filter: blur(8px); mask-image: linear-gradient(transparent, #000 75%); }
-.media-library__name::after { background: linear-gradient(transparent, rgb(10 18 32 / .64) 55%, rgb(10 18 32 / .82)); }
+.media-library__name::after { background: linear-gradient(transparent, oklch(from var(--media-scrim) l c h / .64) 55%, oklch(from var(--media-scrim) l c h / .82)); }
 /* A tile is just the picture (Lex, slice 122). With a mouse, its top band, usage number, select
    circle and name come in on hover, keyboard focus or selection, and on every tile while any is
    selected (Google Photos), even one search or Filter hides: the selection bar shows exactly then. Touch has no hover: the number and circle stay, the name goes (details
@@ -190,17 +190,17 @@
 
 /* Usage number top left, selection top right: 44 px targets that never overlap. */
 .media-library .media-library__usage, .media-library__select { position: absolute; top: 0; z-index: 2; width: 44px; height: 44px; display: grid; place-items: center; isolation: isolate; }
-.media-library .media-library__usage { left: 0; min-height: 0; padding: 0; border: 0; border-radius: 0; background: none; color: inherit; font-size: var(--type-base); font-weight: 650; font-variant-numeric: tabular-nums; text-shadow: 0 0 4px rgb(10 18 32 / .7), 0 1px 3px #0009; }
+.media-library .media-library__usage { left: 0; min-height: 0; padding: 0; border: 0; border-radius: 0; background: none; color: inherit; font-size: var(--type-base); font-weight: 650; font-variant-numeric: tabular-nums; text-shadow: 0 0 4px oklch(from var(--media-scrim) l c h / .7), 0 1px 3px oklch(from var(--shadow-ink) l c h / 0.6); }
 .media-library__select { right: 0; cursor: pointer; }
 /* A mouse hover and keyboard focus use the name's soft background; a tap leaves nothing lit. */
-.media-library__usage::before, .media-library__select::before { content: ""; position: absolute; inset: 0; z-index: -1; display: none; background: radial-gradient(ellipse, rgb(10 18 32 / .38), transparent 72%); backdrop-filter: blur(8px); mask-image: radial-gradient(ellipse, #000 45%, transparent 75%); }
+.media-library__usage::before, .media-library__select::before { content: ""; position: absolute; inset: 0; z-index: -1; display: none; background: radial-gradient(ellipse, oklch(from var(--media-scrim) l c h / .38), transparent 72%); backdrop-filter: blur(8px); mask-image: radial-gradient(ellipse, #000 45%, transparent 75%); }
 .media-library__usage:focus-visible::before, .media-library__select:has(:focus-visible)::before { display: block; }
 @media (hover: hover) and (pointer: fine) { :is(.media-library__usage, .media-library__select):hover::before { display: block; } }
 .media-library .media-library__usage:focus-visible { outline: 2px solid currentColor; outline-offset: -2px; }
-.media-library .media-library__select input { appearance: none; width: 22px; height: 22px; margin: 0; color: inherit; border: 1.5px solid; border-radius: 50%; background: rgb(10 18 32 / .12); box-shadow: 0 1px 3px #0006; cursor: pointer; }
-.media-library .media-library__select input:checked { border-color: #fff; background: var(--primary); }
+.media-library .media-library__select input { appearance: none; width: 22px; height: 22px; margin: 0; color: inherit; border: 1.5px solid; border-radius: 50%; background: oklch(from var(--media-scrim) l c h / .12); box-shadow: 0 1px 3px oklch(from var(--shadow-ink) l c h / 0.4); cursor: pointer; }
+.media-library .media-library__select input:checked { border-color: var(--on-media); background: var(--primary); }
 .media-library .media-library__select input:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
-.media-library__select:has(input:checked)::after { content: ""; position: absolute; inset: 0; width: 14px; height: 14px; margin: auto; background: #fff; mask: url("@phosphor-icons/core/regular/check.svg") center / contain no-repeat; pointer-events: none; }
+.media-library__select:has(input:checked)::after { content: ""; position: absolute; inset: 0; width: 14px; height: 14px; margin: auto; background: var(--on-media); mask: url("@phosphor-icons/core/regular/check.svg") center / contain no-repeat; pointer-events: none; }
 
 /* A file with no picture preview: a clean surface with dark text and its type. */
 .media-library__card.is-file { color: var(--text); }
@@ -264,8 +264,8 @@
 }
 .media-library__grid:not(.media-library__grid--list) .media-library__usage .media-library__usage-label {
   position: absolute; top: 46px; left: 4px; width: max-content; max-width: calc(100cqi - 8px);
-  padding: 4px 8px; border-radius: 8px; background: rgb(10 18 32 / .8); backdrop-filter: blur(8px);
-  box-shadow: 0 0 10px 2px rgb(10 18 32 / .35); color: #fff; text-align: left; text-shadow: none;
+  padding: 4px 8px; border-radius: 8px; background: oklch(from var(--media-scrim) l c h / .8); backdrop-filter: blur(8px);
+  box-shadow: 0 0 10px 2px oklch(from var(--media-scrim) l c h / .35); color: var(--on-media); text-align: left; text-shadow: none;
   font-size: var(--type-small); font-weight: 600; line-height: 1.3; white-space: normal; pointer-events: none;
 }
 /* Files with no picture keep the clean surface: their usage words sit on a light popup with dark text. */
@@ -413,8 +413,8 @@
 .media-library__sheet-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 
 /* Always keep: a pin in the tile's corner (the name leaves it room) and a line in details. */
-.media-library__keep { position: absolute; right: 6px; bottom: 6px; z-index: 2; width: 24px; height: 24px; border-radius: 999px; background: rgb(10 18 32 / .62); pointer-events: none; }
-.media-library__keep::after { content: ""; position: absolute; inset: 0; width: 14px; height: 14px; margin: auto; background: #fff; mask: url("@phosphor-icons/core/regular/push-pin.svg") center / contain no-repeat; }
+.media-library__keep { position: absolute; right: 6px; bottom: 6px; z-index: 2; width: 24px; height: 24px; border-radius: 999px; background: oklch(from var(--media-scrim) l c h / .62); pointer-events: none; }
+.media-library__keep::after { content: ""; position: absolute; inset: 0; width: 14px; height: 14px; margin: auto; background: var(--on-media); mask: url("@phosphor-icons/core/regular/push-pin.svg") center / contain no-repeat; }
 .media-library__card.is-kept .media-library__name { padding-right: 34px; }
 /* In the list the pin sits on the thumbnail's lower corner (the row's middle less 24 px), clear of the usage. */
 .media-library__grid--list .media-library__keep { right: auto; bottom: calc(50% - 24px); left: 82px; width: 20px; height: 20px; }
@@ -428,20 +428,20 @@
 .media-library.is-dropping .media-library__browse { outline: 2px dashed var(--primary); outline-offset: -6px; border-radius: var(--radius); }
 .media-library__pending {
   position: relative; min-width: 0; aspect-ratio: 1; overflow: hidden; display: grid; place-items: center;
-  border-radius: var(--radius-small); background: var(--surface-subtle); color: #fff;
+  border-radius: var(--radius-small); background: var(--surface-subtle); color: var(--on-media);
 }
 .media-library__pending-preview { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); }
 .media-library__pending-preview img { width: 100%; height: 100%; object-fit: cover; opacity: .55; filter: saturate(.6); }
-.media-library__pending::before { content: ""; position: absolute; inset: 0; background: rgb(10 18 32 / .38); pointer-events: none; }
+.media-library__pending::before { content: ""; position: absolute; inset: 0; background: oklch(from var(--media-scrim) l c h / .38); pointer-events: none; }
 .media-library__pending-state {
-  position: relative; padding: 4px 10px; border-radius: 999px; background: rgb(10 18 32 / .62);
+  position: relative; padding: 4px 10px; border-radius: 999px; background: oklch(from var(--media-scrim) l c h / .62);
   font-size: var(--type-small); font-weight: 600; white-space: nowrap;
 }
 .media-library__pending-name {
   position: absolute; inset: auto 0 6px; padding: 0 8px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
-  font-size: var(--type-small); font-weight: 600; text-shadow: 0 1px 2px #0009;
+  font-size: var(--type-small); font-weight: 600; text-shadow: 0 1px 2px oklch(from var(--shadow-ink) l c h / 0.6);
 }
-.media-library__pending-bar { position: absolute; inset: auto 0 0; height: 4px; overflow: hidden; background: rgb(255 255 255 / .25); }
+.media-library__pending-bar { position: absolute; inset: auto 0 0; height: 4px; overflow: hidden; background: oklch(from var(--on-media) l c h / .25); }
 .media-library__pending-bar::after { content: ""; position: absolute; inset: 0 auto 0 0; width: 0; background: var(--primary); transition: width .3s ease-out; }
 .media-library__pending[data-state="ready"] .media-library__pending-bar::after { width: 100%; }
 .media-library__pending:is([data-state="preparing"], [data-state="adding"], [data-state="added"]) .media-library__pending-bar::after {
@@ -457,11 +457,11 @@
 }
 .media-library .media-library__pending-cancel {
   position: absolute; top: 0; right: 0; z-index: 1; width: 44px; height: 44px; min-height: 0; padding: 0; display: grid; place-items: center;
-  border: 0; border-radius: 50%; background: none; color: #fff; filter: drop-shadow(0 1px 2px #0009);
+  border: 0; border-radius: 50%; background: none; color: var(--on-media); filter: drop-shadow(0 1px 2px oklch(from var(--shadow-ink) l c h / 0.6));
 }
-.media-library .media-library__pending-cancel:is(:active, :focus-visible) { background: rgb(10 18 32 / .45); }
-@media (hover: hover) and (pointer: fine) { .media-library .media-library__pending-cancel:hover { background: rgb(10 18 32 / .45); } }
-.media-library .media-library__pending-cancel:focus-visible { outline: 2px solid #fff; outline-offset: -4px; }
+.media-library .media-library__pending-cancel:is(:active, :focus-visible) { background: oklch(from var(--media-scrim) l c h / .45); }
+@media (hover: hover) and (pointer: fine) { .media-library .media-library__pending-cancel:hover { background: oklch(from var(--media-scrim) l c h / .45); } }
+.media-library .media-library__pending-cancel:focus-visible { outline: 2px solid var(--on-media); outline-offset: -4px; }
 .media-library__pending:is([data-state="adding"], [data-state="added"]) .media-library__pending-cancel { display: none; }
 .media-library__grid--list .media-library__pending { aspect-ratio: auto; min-height: 56px; border-radius: 0; border-bottom: 1px solid var(--line); background: none; color: var(--text); place-items: center start; padding-left: 52px; }
 .media-library__grid--list .media-library__pending::before { display: none; }
@@ -515,8 +515,8 @@
 @media (max-width: 700px) { .media-detail__form textarea, .media-check__field { font-size: 16px; } }
 
 /* By agent (ticket 13): a mark on the tile beside Always keep, and a line under Description. */
-.media-library__agent { position: absolute; right: 6px; bottom: 6px; z-index: 2; width: 24px; height: 24px; border-radius: 999px; background: rgb(10 18 32 / .62); pointer-events: none; }
-.media-library__agent::after { content: ""; position: absolute; inset: 0; width: 14px; height: 14px; margin: auto; background: #fff; mask: url("@phosphor-icons/core/regular/robot.svg") center / contain no-repeat; }
+.media-library__agent { position: absolute; right: 6px; bottom: 6px; z-index: 2; width: 24px; height: 24px; border-radius: 999px; background: oklch(from var(--media-scrim) l c h / .62); pointer-events: none; }
+.media-library__agent::after { content: ""; position: absolute; inset: 0; width: 14px; height: 14px; margin: auto; background: var(--on-media); mask: url("@phosphor-icons/core/regular/robot.svg") center / contain no-repeat; }
 .media-library__card.is-kept .media-library__agent { right: 34px; }
 .media-library__card.is-by-agent .media-library__name { padding-right: 34px; }
 .media-library__card.is-kept.is-by-agent .media-library__name { padding-right: 62px; }
@@ -589,9 +589,9 @@
 .media-library--picker .media-library__card.is-chosen::after { box-shadow: inset 0 0 0 3px var(--primary); }
 .media-library--picker .media-library__card.is-chosen .media-library__name { opacity: 1; }
 .media-library--picker .media-library__select { pointer-events: none; }
-.media-library .media-library__pick > span { width: 22px; height: 22px; box-sizing: border-box; border: 1.5px solid; border-radius: 50%; background: rgb(10 18 32 / .12); box-shadow: 0 1px 3px #0006; }
-.media-library__card.is-chosen .media-library__pick > span { border-color: #fff; background: var(--primary); }
-.media-library__card.is-chosen .media-library__pick::after { content: ""; position: absolute; inset: 0; width: 14px; height: 14px; margin: auto; background: #fff; mask: url("@phosphor-icons/core/regular/check.svg") center / contain no-repeat; }
+.media-library .media-library__pick > span { width: 22px; height: 22px; box-sizing: border-box; border: 1.5px solid; border-radius: 50%; background: oklch(from var(--media-scrim) l c h / .12); box-shadow: 0 1px 3px oklch(from var(--shadow-ink) l c h / 0.4); }
+.media-library__card.is-chosen .media-library__pick > span { border-color: var(--on-media); background: var(--primary); }
+.media-library__card.is-chosen .media-library__pick::after { content: ""; position: absolute; inset: 0; width: 14px; height: 14px; margin: auto; background: var(--on-media); mask: url("@phosphor-icons/core/regular/check.svg") center / contain no-repeat; }
 .media-library__card.is-file:not(.is-chosen) .media-library__pick > span { border-color: var(--muted); background: transparent; box-shadow: none; }
 .media-library__choice { display: flex; align-items: center; gap: 12px; padding: 12px 24px; border-top: 1px solid var(--line); background: var(--surface); }
 .media-library__chosen { flex: 1; min-width: 0; min-height: 44px; display: flex; align-items: center; gap: 10px; }
@@ -624,10 +624,10 @@
 /* Held picker files can be chosen across the tile; Cancel keeps its own target. */
 .media-library__pending-select { position: absolute; inset: 0; z-index: 1; border: 0; border-radius: inherit; background: none; cursor: pointer; }
 .media-library__pending-select:disabled { cursor: default; }
-.media-library__pending-select:focus-visible { outline: 2px solid oklch(1 0 none); outline-offset: -3px; }
-.media-library__pending-select:active { background: color-mix(in oklch, oklch(1 0 none) 12%, transparent); }
+.media-library__pending-select:focus-visible { outline: 2px solid var(--on-media); outline-offset: -3px; }
+.media-library__pending-select:active { background: color-mix(in oklch, var(--on-media) 12%, transparent); }
 @media (hover: hover) and (pointer: fine) {
-  .media-library__pending-select:enabled:hover { background: color-mix(in oklch, oklch(1 0 none) 8%, transparent); }
+  .media-library__pending-select:enabled:hover { background: color-mix(in oklch, var(--on-media) 8%, transparent); }
 }
 .media-library__pending:has(.media-library__pending-select) .media-library__pending-cancel { z-index: 2; }
 
@@ -643,8 +643,8 @@
 [data-type="slides"] { --type-picture: url("@phosphor-icons/core/regular/file-ppt.svg"); }
 [data-type="subtitles"] { --type-picture: url("@phosphor-icons/core/regular/subtitles.svg"); }
 .media-library__fact {
-  position: absolute; right: 6px; bottom: 6px; z-index: 2; padding: 1px 6px; border-radius: 6px; background: rgb(10 18 32 / .62);
-  color: #fff; font-size: var(--type-small); font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.4; pointer-events: none;
+  position: absolute; right: 6px; bottom: 6px; z-index: 2; padding: 1px 6px; border-radius: 6px; background: oklch(from var(--media-scrim) l c h / .62);
+  color: var(--on-media); font-size: var(--type-small); font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.4; pointer-events: none;
 }
 .media-library__card.is-file .media-library__fact { background: none; color: var(--muted); }
 /* The name keeps clear of the corner fact; marks move up above it. */

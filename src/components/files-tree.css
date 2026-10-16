@@ -82,15 +82,15 @@
 /* A type's hue, mixed toward the text colour so it reads on light and dark panels. */
 .file-icon[data-type] { color: color-mix(in oklch, var(--file-tint, var(--muted)) 72%, var(--text)); }
 .file-icon:is([data-type="text"], [data-type="font"], [data-type="archive"], [data-type="other"]) { color: var(--muted); }
-.file-icon[data-type="page"] { --file-tint: oklch(66% 0.17 45); }
-.file-icon[data-type="style"] { --file-tint: oklch(62% 0.15 255); }
-.file-icon[data-type="script"] { --file-tint: oklch(74% 0.15 95); }
-.file-icon[data-type="data"] { --file-tint: oklch(64% 0.11 190); }
-.file-icon[data-type="picture"] { --file-tint: oklch(64% 0.15 150); }
-.file-icon[data-type="video"] { --file-tint: oklch(62% 0.17 340); }
-.file-icon[data-type="sound"] { --file-tint: oklch(62% 0.15 300); }
-.file-icon[data-type="pdf"] { --file-tint: oklch(60% 0.18 25); }
-.file-icon[data-type="document"] { --file-tint: oklch(60% 0.14 255); }
+.file-icon[data-type="page"] { --file-tint: var(--file-page); }
+.file-icon[data-type="style"] { --file-tint: var(--file-style); }
+.file-icon[data-type="script"] { --file-tint: var(--file-script); }
+.file-icon[data-type="data"] { --file-tint: var(--file-data); }
+.file-icon[data-type="picture"] { --file-tint: var(--file-picture); }
+.file-icon[data-type="video"] { --file-tint: var(--file-video); }
+.file-icon[data-type="sound"] { --file-tint: var(--file-sound); }
+.file-icon[data-type="pdf"] { --file-tint: var(--file-pdf); }
+.file-icon[data-type="document"] { --file-tint: var(--file-document); }
 
 .filename {
   min-inline-size: 0;

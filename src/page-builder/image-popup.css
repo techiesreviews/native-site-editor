@@ -154,8 +154,8 @@
 .image-popup__frame {
   position: absolute;
   box-sizing: border-box;
-  border: 1.5px solid #fff;
-  box-shadow: 0 0 0 1px rgb(1 9 37 / 0.45), 0 0 0 999px var(--image-popup-wash);
+  border: 1.5px solid var(--on-media);
+  box-shadow: 0 0 0 1px oklch(from var(--image-control-scrim) l c h / 0.45), 0 0 0 999px var(--image-popup-wash);
   pointer-events: none;
 }
 /* A see-through picture on slice 106's light checkerboard, not the dark well. */
@@ -195,8 +195,8 @@
   box-sizing: border-box;
   border: 1px solid var(--primary);
   border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 1px 3px rgb(0 0 0 / 0.35);
+  background: var(--on-media);
+  box-shadow: 0 1px 3px oklch(from var(--shadow-ink) l c h / 0.35);
 }
 .image-popup__corner--nw { left: 0; top: 0; cursor: nwse-resize; }
 .image-popup__corner--ne { left: 100%; top: 0; cursor: nesw-resize; }
@@ -228,8 +228,8 @@
   margin-top: -7px;
   border: 2px solid var(--primary);
   border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 1px 3px rgb(0 0 0 / 0.3);
+  background: var(--on-media);
+  box-shadow: 0 1px 3px oklch(from var(--shadow-ink) l c h / 0.3);
   appearance: none;
 }
 .image-popup__range::-moz-range-track { height: 4px; border-radius: 2px; background: var(--image-popup-line); }
@@ -239,7 +239,7 @@
   height: 15px;
   border: 2px solid var(--primary);
   border-radius: 50%;
-  background: #fff;
+  background: var(--on-media);
 }
 .image-popup__value {
   font-variant-numeric: tabular-nums;
@@ -271,14 +271,14 @@
   width: 16px;
   height: 16px;
   box-sizing: border-box;
-  border: 3px solid #fff;
+  border: 3px solid var(--on-media);
   border-radius: 50%;
   background: var(--primary);
-  box-shadow: 0 1px 4px rgb(0 0 0 / 0.45);
+  box-shadow: 0 1px 4px oklch(from var(--shadow-ink) l c h / 0.45);
 }
 .image-popup .image-popup__dot:focus-visible { outline: none; }
 .image-popup__dot:focus-visible::after {
-  box-shadow: 0 0 0 3px var(--focus), 0 1px 4px rgb(0 0 0 / 0.45);
+  box-shadow: 0 0 0 3px var(--focus), 0 1px 4px oklch(from var(--shadow-ink) l c h / 0.45);
 }
 .image-popup__shape {
   position: absolute;
@@ -292,19 +292,19 @@
   padding: 0 8px 0 10px;
   border: 0;
   border-radius: var(--radius);
-  background: rgb(1 9 37 / 0.78);
+  background: oklch(from var(--image-control-scrim) l c h / 0.78);
   font-size: var(--type-small);
   font-weight: 600;
   white-space: nowrap;
   transform: translateX(-50%);
 }
-.image-popup .image-popup__shape { color: #fff; }
-.image-popup__shape:active { background: rgb(1 9 37 / 0.9); }
-@media (hover: hover) and (pointer: fine) { .image-popup__shape:hover { background: rgb(1 9 37 / 0.9); } }
+.image-popup .image-popup__shape { color: var(--on-media); }
+.image-popup__shape:active { background: oklch(from var(--image-control-scrim) l c h / 0.9); }
+@media (hover: hover) and (pointer: fine) { .image-popup__shape:hover { background: oklch(from var(--image-control-scrim) l c h / 0.9); } }
 /* The Social image's fixed shape: named, not a menu. */
 .image-popup__shape--fixed { padding: 0 10px; }
-.image-popup__shape--fixed:active { background: rgb(1 9 37 / 0.78); }
-@media (hover: hover) and (pointer: fine) { .image-popup__shape--fixed:hover { background: rgb(1 9 37 / 0.78); } }
+.image-popup__shape--fixed:active { background: oklch(from var(--image-control-scrim) l c h / 0.78); }
+@media (hover: hover) and (pointer: fine) { .image-popup__shape--fixed:hover { background: oklch(from var(--image-control-scrim) l c h / 0.78); } }
 /* The shape menu is a manual popover on the top layer: no scrolling row clips it and the phone
    sheet's pinned message and Done never cover it. It hangs under the Shape button, above it when
    there is no room below, and as a last resort scrolls within the screen, clear of the safe area.

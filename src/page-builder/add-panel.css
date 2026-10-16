@@ -14,7 +14,7 @@
   min-height: 40px;
   border: 1px solid var(--control-line);
   border-radius: var(--radius);
-  background: #fff;
+  background: var(--preview-paper);
   transition: border-color 120ms ease-out;
 }
 .pb-thumb__frame {
@@ -100,7 +100,7 @@
 }
 .pb-drag-ghost.is-refused {
   background: var(--danger);
-  color: #fff;
+  color: var(--on-media);
 }
 .pb-drag-ghost.is-refused .pb-drag-ghost__where {
   white-space: normal;
