@@ -17,3 +17,7 @@
   CLOUDFLARE_API_TOKEN secret); main is an ancestor of dev.
 - Ticket 16 → free worker (opencode longcat-2.5-preview-free, T3 task `ak-16-attempt-1`, worktree isolation).
 - Plan landed on dev 846147f9. Wave 1 runners (Claude, driving Sol): ak-01, ak-02, ak-17, ak-21, ak-23.
+- ak-16 landed (free worker, 1 attempt; Sol: 0 defects, 2 gaps fixed by lead).
+- ak-02 landed 6f0f0e71 (Sol clean). CI workflow appears in GitHub's list only after the first PR into dev.
+- ak-01 landed 8efa8316. Lead check: `kit` lists commands, unknown → RESULT fail exit 2, `kit version --help` ok. Note for 24: bare `kit` prints no RESULT line.
+- Wave 2: ak-05 started.
