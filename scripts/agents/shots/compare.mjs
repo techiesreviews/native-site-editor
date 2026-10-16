@@ -76,7 +76,9 @@ async function run(command, args, { cwd, env = process.env, forward = false }) {
   for (const [stream, output] of [[child.stdout, process.stdout], [child.stderr, process.stderr]]) {
     if (forward) {
       const reader = createInterface({ input: stream, crlfDelay: Infinity });
-      reader.on("line", line => { if (!line.startsWith("RESULT:")) output.write(`${line}\n`); });
+      // A predicate can also hide lines, such as paths in a run folder deleted afterwards.
+      const keep = typeof forward === "function" ? forward : () => true;
+      reader.on("line", line => { if (!line.startsWith("RESULT:") && keep(line)) output.write(`${line}\n`); });
       readers.push(reader);
     }
   }
@@ -201,7 +203,7 @@ async function capture(root, scenario, name, out, widths, themes, env, stamp) {
   try {
     await writeFile(file, JSON.stringify({ screen: scenario.screen, steps: scenario.steps, name }));
     return await run(join(root, "scripts/agents/kit.d/shots"), ["--steps", file, "--out", out, ...matrixArgs(widths, themes)], {
-      cwd: root, env: { ...env, KIT_ROOT: root }, forward: true,
+      cwd: root, env: { ...env, KIT_ROOT: root }, forward: name === "before" ? line => !line.startsWith(out) : true,
     });
   } finally { await rm(file, { force: true }); }
 }
