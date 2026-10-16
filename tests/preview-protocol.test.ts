@@ -1,6 +1,7 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { FRAME_SOURCE, FRESHNESS, readFrameMessage, type FrameMessage } from "../src/components/preview-protocol";
+import { FRESHNESS, readFrameMessage, type FrameMessage } from "../src/components/preview-protocol";
+import { FRAME_SOURCE } from "../src/components/preview-wire";
 
 const context = "1\n/\n\nindex.html:10:60:62";
 const rect = { top: 1, left: 2, width: 3, height: 4, bottom: 5, right: 6 };

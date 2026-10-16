@@ -292,11 +292,6 @@ export function retainFileModel(scope: DraftScope, path: string) {
   const doc = docs.get(draftKey(scope, path));
   return doc?.stored && alive(doc) ? sourceStore().retain(doc.scope, doc.path) : () => {};
 }
-/** The state of the file `path` (mounted or kept), if the editor holds it. */
-export function modelState(scope: DraftScope, path: string) {
-  const doc = docs.get(draftKey(scope, path));
-  return doc && alive(doc) ? { version: docRevision(doc), source: docText(doc) } : undefined;
-}
 /**
  * Records `action` as the next undo step of the mounted file `path`'s history,
  * below any later edit: Undo runs it once the edits after it are undone.
@@ -508,9 +503,6 @@ const editorFor = (path: string) => {
 export async function applyAgentDraft(command: AgentCommand) {
   return editorFor(command.path).apply(command);
 }
-export function selectActiveRange(edit: Omit<RangeEdit, "text">) {
-  return editorFor(edit.path).range.select(edit);
-}
 // Inline edits stream keystrokes; `group` keeps them in one undo step until
 // `closeActiveEditGroup` is called.
 // A `companion` (another file changed with it, or the selection and what is said) is undone and redone with the edit.
@@ -563,22 +555,10 @@ export function markElement(path: string, tag: { start: number; end: number } | 
 export function isMounted(path: string) {
   return mounted.has(path);
 }
-// Shows the diff against the GitHub baseline for a mounted file.
-export function setReviewMode(path: string, on: boolean) {
-  mounted.get(path)?.range.review(on);
-}
 // Shows an earlier version of a mounted file beside the current one, both
 // read only; `undefined` goes back to editing.
 export function compareVersion(path: string, version: VersionCompare | undefined) {
   mounted.get(path)?.range.compare(version);
-}
-export function isReviewing(path: string) {
-  return mounted.get(path)?.range.reviewing() ?? false;
-}
-// Files whose browser draft differs from GitHub, for the changes window.
-export function changedFiles() {
-  return sourceStore().changed()
-    .map((file) => ({ path: file.path, created: file.baseSha === null, scopeKey: `${file.scope.repoId}:${file.scope.branch}` }));
 }
 /** Forgets every Undo and Redo step: the drafts they changed are gone (Discard changes). */
 export function clearHistory() {

@@ -155,8 +155,6 @@ export function rewriteOutsidePicturesPlan(source: string, replacements: Outside
   for (const edit of edits.sort((a, b) => b.start - a.start)) text = text.slice(0, edit.start) + edit.text + text.slice(edit.end);
   return { text, artDirected };
 }
-export const rewriteOutsidePictures = (source: string, replacements: OutsidePictureReplacement[], siteUrl?: string) =>
-  rewriteOutsidePicturesPlan(source, replacements, siteUrl).text;
 export interface BringInOutsidePicturesInput extends OutsidePictureReadDeps {
   row?: ImproveImagesRow; file?: string; pictures?: ImprovePicture[]; source: string;
   records: MediaRecords; paths: Iterable<string>;

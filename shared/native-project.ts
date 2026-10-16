@@ -23,7 +23,7 @@ import { asciiLower, startTagAttribute, startTags, type StartTag } from "./html-
 import { NATIVE_HOME_PAGE, deriveNativeRoutes } from "./native-routes";
 import { sitePathPrefix } from "./site-path-prefix";
 
-export { NATIVE_HOME_PAGE, NATIVE_NOT_FOUND_PAGE, NATIVE_NOT_FOUND_ROUTE } from "./native-routes";
+export { NATIVE_HOME_PAGE } from "./native-routes";
 
 /** Editor-only site settings: `{ "site": { "name": "…", "url": "https://…" } }`. */
 export const NATIVE_CONFIG_PATH = ".editor/config.json";
@@ -76,12 +76,6 @@ const TAG = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)+$/;
 /** Whether `tag` can name a component: a valid custom-element name the spec does not reserve. */
 export function isNativeComponentTag(tag: string): boolean {
   return TAG.test(tag) && !RESERVED_CUSTOM_ELEMENT_NAMES.has(tag);
-}
-
-/** Whether the repository paths make a native site: it has a home page. */
-export function isNativeProject(paths: Iterable<string>): boolean {
-  for (const path of paths) if (path === NATIVE_HOME_PAGE) return true;
-  return false;
 }
 
 /**
@@ -254,11 +248,6 @@ export interface NativeTextEdit {
   start: number;
   end: number;
   text: string;
-}
-
-/** `html` with `edit` made. */
-export function applyTextEdit(html: string, edit: NativeTextEdit | null | undefined): string {
-  return edit ? html.slice(0, edit.start) + edit.text + html.slice(edit.end) : html;
 }
 
 /** The smallest edit that turns `before` into `after`; null when they are the same. */

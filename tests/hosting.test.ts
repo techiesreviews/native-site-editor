@@ -1,4 +1,4 @@
-import { onGithubPages } from "../shared/github-pages.ts";
+import { onGithubPages, githubPagesProjectSite, nojekyllNeeded } from "../shared/github-pages.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -6,12 +6,9 @@ import {
   PAGES_A_RECORDS,
   checkDomain,
   cloudflarePipelineFiles,
-  cloudflareTokenLink,
   dnsInstruction,
   dnsRecords,
   pagesRoot,
-  githubPagesProjectSite,
-  nojekyllNeeded,
   pipelineFiles,
   spacefastPipelineFiles,
   validCloudflareAccountId,
@@ -107,18 +104,6 @@ test("token formats", () => {
   assert.ok(!validCloudflareAccountId("B9B9A2B4C908C9D03ABE92A52C2D0F43"));
   assert.ok(validSpacefastToken("sf_live_abcdef123456"));
   assert.ok(!validSpacefastToken("has space in it"));
-});
-
-test("the prefilled Cloudflare token link uses the documented keys", () => {
-  const url = new URL(cloudflareTokenLink("Site"));
-  assert.equal(url.origin + url.pathname, "https://dash.cloudflare.com/profile/api-tokens");
-  assert.deepEqual(JSON.parse(url.searchParams.get("permissionGroupKeys")!), [
-    { key: "workers_scripts", type: "edit" },
-    { key: "account_settings", type: "read" },
-  ]);
-  assert.equal(url.searchParams.get("accountId"), "*");
-  assert.equal(url.searchParams.get("zoneId"), "all");
-  assert.equal(url.searchParams.get("name"), "Site");
 });
 
 test("GitHub Pages project addresses need .nojekyll only when missing", () => {

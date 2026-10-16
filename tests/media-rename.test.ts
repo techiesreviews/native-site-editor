@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { planMediaRename, suggestMediaName, tidyMediaName } from "../src/page-builder/media-rename";
+import { planMediaRename, tidyMediaName } from "../src/page-builder/media-rename";
+import { suggestMediaName } from "../src/page-builder/media-names";
 import { parseMediaRecords } from "../shared/media-records";
 
 const from = "media/images/photo.webp", to = "media/images/b-photo.webp";

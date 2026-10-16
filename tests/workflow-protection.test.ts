@@ -3,7 +3,7 @@
 // /api/publish writes them only when the user confirmed (`allowWorkflows`).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { splitProtectedEdits, touchesGithubConfig, touchesWorkflows, touchesMediaRecords, MEDIA_RECORDS_REFUSED } from "../shared/protected-paths.ts";
+import { splitProtectedEdits, touchesGithubConfig, touchesMediaRecords, MEDIA_RECORDS_REFUSED } from "../shared/protected-paths.ts";
 import { writablePathProblem } from "../worker/site-files.ts";
 import { agentOperation } from "../worker/agent-operations.ts";
 import { applySiteCommand, type AgentSiteActions } from "../src/agent-site.ts";
@@ -39,9 +39,6 @@ const fine = [
 ];
 
 test("the workflows folder, what is in it, and the folder that holds it are protected however they are spelled", () => {
-  for (const path of spellings) assert.equal(touchesWorkflows(path), true, path);
-  for (const path of fine) assert.equal(touchesWorkflows(path), false, path);
-  for (const path of otherGithub) assert.equal(touchesWorkflows(path), path.toLowerCase().includes("workflows"), path);
   for (const path of [...spellings, ...otherGithub]) assert.equal(touchesGithubConfig(path), true, path);
   for (const path of fine) assert.equal(touchesGithubConfig(path), false, path);
 });

@@ -2,7 +2,7 @@ import { NATIVE_CONFIG_PATH, nativeSitePrefix } from "../../shared/native-projec
 import { readMediaPrefix } from "./media-prefix";
 import { MEDIA_RECORDS_PATH, parseMediaRecords, removeMediaRecords, serializeMediaRecords, type MediaRecords } from "../../shared/media-records";
 import { startTags } from "../../shared/html-source";
-import { improveImagesPlan, leavePictureAlone, type ImproveImagesPlan, type ImproveImagesRow } from "./improve-images";
+import { improveImagesPlan, leavePictureAlone, type ImproveImagesPlan } from "./improve-images";
 import { improveHeavy, type ImprovePorts } from "./improve-heavy";
 import { improveGifsAndPlayers, type ConvertedGif, type ImproveGifsPlayersPorts, type PreparedOnlineVideo } from "./improve-gifs-players";
 import { bringInOutsidePictures, type BringInOutsidePicturesInput, type OutsidePictureRead } from "./outside-pictures";
@@ -289,4 +289,3 @@ export function improveImagesSession(context: () => Promise<MediaWorkspaceContex
   };
 }
 export type ImproveImagesSession = ReturnType<typeof improveImagesSession>;
-export type { ImproveImagesPlan, ImproveImagesRow };

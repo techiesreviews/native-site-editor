@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { type MediaRecords, type MediaTrim } from "../shared/media-records";
-import { isTrim, validTrim, trimGeometry, trimStart, trimmedCopyPath, planTrimmedCopy } from "../src/page-builder/trimmed-copies";
+import { isTrim, validTrim, trimStart, trimmedCopyPath, planTrimmedCopy } from "../src/page-builder/trimmed-copies";
+import { trimGeometry } from "../src/page-builder/trim-geometry";
 import { prepareTrimmedCopy } from "../src/page-builder/trimmed-copy-prepare";
 import { mediaImageRecipe } from "../src/page-builder/media-optimise";
 

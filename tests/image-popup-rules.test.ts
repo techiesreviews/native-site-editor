@@ -1,10 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import {
-  POPUP_SHAPES, focusApplies, focusAt, frameBadge, frameChange, nudgeFocus, placeBadge, placePopup, popupMessage,
-  pictureHint, placeShapeOf, replaceNotice, seenHints, shapeLabel, shapeRatio, sheetScroll, visibleArea,
-} from "../src/page-builder/image-popup-rules";
-import { writePlaceFrame } from "../src/page-builder/place-frame";
+import { POPUP_SHAPES, focusApplies, focusAt, frameBadge, frameChange, nudgeFocus, placePopup, popupMessage, pictureHint, placeShapeOf, replaceNotice, seenHints, shapeLabel, shapeRatio, sheetScroll } from "../src/page-builder/image-popup-rules";
+import { readPlaceFrame, writePlaceFrame } from "../src/page-builder/place-frame";
 import type { MediaRecords } from "../shared/media-records";
 
 test("the shape menu lists the prototype's shapes in order; Free follows for pictures that can be trimmed", () => {
@@ -37,25 +34,9 @@ test("the badge says Trimmed for a trimmed copy, else the shape", () => {
   assert.equal(frameBadge({ shape: { kind: "other", value: "3 / 2" }, trimmed: false }), "Custom");
   assert.equal(frameBadge({ shape: "square", trimmed: true }), "Trimmed");
   const tag = writePlaceFrame('<img src="/media/desk-crop.webp">', { shape: "16:9" });
-  assert.equal(placeBadge(tag, undefined, "index.html"), "16:9");
+  assert.equal(frameBadge(readPlaceFrame(tag, undefined, "index.html")), "16:9");
   const records = { version: 2, collections: [], files: { "media/desk-crop.webp": { trimmedFrom: { source: "media/desk.webp", trim: { x: 0, y: 0, width: 1, height: 1 } } } } } satisfies MediaRecords;
-  assert.equal(placeBadge(tag, records, "index.html"), "Trimmed");
-});
-
-test("the visible area follows object-fit: cover and the focus percentages", () => {
-  // A 2:1 picture in a square place: half its width shows, shared by the focus.
-  assert.deepEqual(visibleArea({ width: 200, height: 100 }, 1, { x: 50, y: 50 }), { x: 0.25, y: 0, w: 0.5, h: 1 });
-  assert.deepEqual(visibleArea({ width: 200, height: 100 }, 1, { x: 0, y: 50 }), { x: 0, y: 0, w: 0.5, h: 1 });
-  assert.deepEqual(visibleArea({ width: 200, height: 100 }, 1, { x: 100, y: 50 }), { x: 0.5, y: 0, w: 0.5, h: 1 });
-  // A tall picture in a wide place crops top and bottom.
-  const tall = visibleArea({ width: 100, height: 200 }, 16 / 9, { x: 50, y: 20 });
-  assert.equal(tall.w, 1);
-  assert.ok(Math.abs(tall.h - 0.28125) < 1e-9 && Math.abs(tall.y - (1 - 0.28125) * 0.2) < 1e-9);
-  // Original, the same ratio or an unknown size show it whole; focus is kept on the picture.
-  assert.deepEqual(visibleArea({ width: 200, height: 100 }, undefined, { x: 10, y: 10 }), { x: 0, y: 0, w: 1, h: 1 });
-  assert.deepEqual(visibleArea({ width: 160, height: 90 }, 16 / 9, { x: 10, y: 10 }), { x: 0, y: 0, w: 1, h: 1 });
-  assert.deepEqual(visibleArea({}, 1, { x: 10, y: 10 }), { x: 0, y: 0, w: 1, h: 1 });
-  assert.deepEqual(visibleArea({ width: 200, height: 100 }, 1, { x: 180, y: 50 }), { x: 0.5, y: 0, w: 0.5, h: 1 });
+  assert.equal(frameBadge(readPlaceFrame(tag, records, "index.html")), "Trimmed");
 });
 
 test("arrow keys move the dot 2 %, Shift 10 %, within the picture; other keys do nothing", () => {

@@ -26,3 +26,13 @@ builder: sol
 
 - check/lint pass; boot bytes unchanged or smaller.
 - Sol review saved under the main root `.scratch/reviews/`; landed on `dev` with CI green.
+
+## Findings (2026-10-16, before any removal)
+
+- Literal rule (every export no other production module imports): **804** on origin/dev 1246506
+  (src 673, shared 73, worker 58). Rough split: ~670 are used inside their own module (export kept
+  for a unit test or simply unneeded), ~78 only by tests, ~56 nowhere. 61 of the 804 are one
+  `export * from "./source-editor"` line in src/components/code-editor.ts, counted per name.
+- Rule adopted (ak-20, from the ticket's "dead code with only test callers"): an export fails
+  when no production code uses it, its own module included; tests never count; `export *` is
+  judged at the declaration. Count under that rule: see Done notes.

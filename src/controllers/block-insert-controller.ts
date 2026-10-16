@@ -145,4 +145,3 @@ export function createBlockInsertController(ports: BlockInsertPorts) {
 
   return { insert, click, drop };
 }
-export type BlockInsertController = ReturnType<typeof createBlockInsertController>;

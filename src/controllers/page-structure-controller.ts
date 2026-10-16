@@ -878,5 +878,3 @@ export function createPageStructureController(ports: PageStructurePorts) {
     set nativeElementMoveAction(value: typeof nativeElementMoveAction) { nativeElementMoveAction = value; },
   };
 }
-
-export type PageStructureController = ReturnType<typeof createPageStructureController>;

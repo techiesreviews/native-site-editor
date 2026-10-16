@@ -24,7 +24,7 @@
     "test:browser:all": "playwright test",
     "test:browser:smoke": "playwright test --grep @smoke --grep-invert \"@actual|@native-static\"",
     "test:budget": "tsx tests/perf/byte-budget.ts",
-    "lint": "eslint && node scripts/agents/tickets.mjs check",
+    "lint": "eslint && node scripts/agents/tickets.mjs check && node scripts/check-exports.mjs",
     "test:media-encoders-csp": "tsx tests/perf/media-encoders-csp.ts"
   },
   "devDependencies": {

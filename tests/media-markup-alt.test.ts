@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { mediaExistingAlt, mediaImageMarkup } from "../src/page-builder/media-markup";
+import { mediaImageMarkup } from "../src/page-builder/media-markup";
+import { mediaExistingAlt } from "../src/page-builder/media-attributes";
 
 const image = { path: "images/desk.svg", alt: "desk" };
 

@@ -27,7 +27,6 @@ export const DEPLOY_WORKFLOW_PATH = ".github/workflows/deploy.yml";
 export const SPACEFAST_WORKFLOW_PATH = ".github/workflows/spacefast.yml";
 /** Without this (empty) file, GitHub Pages runs Jekyll, which drops every file and folder starting with `_`. */
 export const NOJEKYLL_FILE: PipelineFile = NOJEKYLL;
-export { githubPagesProjectSite, nojekyllNeeded } from "./github-pages";
 const COMPATIBILITY_DATE = "2026-09-17";
 
 /** A Workers script name from a repository name: lower case, letters, digits and hyphens, at most 63. */
@@ -266,25 +265,6 @@ export function validSpacefastToken(token: unknown): token is string {
 }
 export function validSpacefastSpace(space: unknown): space is string {
   return typeof space === "string" && /^[\w.:-]{1,100}$/.test(space);
-}
-
-/**
- * The Cloudflare dashboard's prefilled API token page (documented at
- * developers.cloudflare.com/fundamentals/api/how-to/account-owned-token-template/):
- * Workers Scripts: Edit to deploy, and Account Settings: Read so the editor
- * can list the account and its workers.dev address.
- */
-export function cloudflareTokenLink(name = "Native Site Editor deploy") {
-  const keys = [
-    { key: "workers_scripts", type: "edit" },
-    { key: "account_settings", type: "read" },
-  ];
-  return `https://dash.cloudflare.com/profile/api-tokens?${new URLSearchParams({
-    permissionGroupKeys: JSON.stringify(keys),
-    accountId: "*",
-    zoneId: "all",
-    name,
-  })}`;
 }
 
 // ---------------------------------------------------------------------------

@@ -23,12 +23,6 @@ function segments(path: string): string[] {
   return names;
 }
 
-/** Whether `path` is the workflows folder, a path inside it, or a folder that holds it (`.github`). */
-export function touchesWorkflows(path: string): boolean {
-  const names = segments(path);
-  return names[0] === ".github" && (names.length === 1 || names[1] === "workflows");
-}
-
 /**
  * Whether `path` is `.github` or anything in it. Workflows are only part of it:
  * a composite action (`.github/actions/**`), a CODEOWNERS file or a template

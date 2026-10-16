@@ -2,8 +2,7 @@
 // its shapes and badge, the part of the picture a place shows, the focus dot's keys,
 // the one-line message, where the popup stands and what Done writes. No DOM here.
 import type { ComponentPicture } from "./component-shapes";
-import type { MediaRecords } from "../../shared/media-records";
-import { readPlaceFrame, type PlaceFocus, type PlaceFrameChange, type PlaceShape } from "./place-frame";
+import type { PlaceFocus, PlaceFrameChange, PlaceShape } from "./place-frame";
 
 /** A place's shape as read back (one of the popup's, a hand-written ratio it keeps, or its component's), or Free trimming. */
 export type PopupShape = PlaceShape | "free" | { kind: "other"; value: string } | { kind: "component"; value: string; label: string; badge: string };
@@ -35,28 +34,8 @@ export function frameBadge(frame: { shape: PopupShape; trimmed: boolean }) {
   return frame.trimmed ? "Trimmed" : typeof frame.shape === "string" ? shapeLabel(frame.shape) : frame.shape.kind === "component" ? frame.shape.badge : "Custom";
 }
 
-/** The badge of an image tag on `page`; records name a trimmed copy. */
-export function placeBadge(tag: string, records: MediaRecords | undefined, page: string, prefix = "") {
-  return frameBadge(readPlaceFrame(tag, records, page, false, prefix));
-}
-
 /** Whether the focus dot means anything: a shape that crops (Original shows the whole picture). */
 export const focusApplies = (shape: PopupShape) => shapeRatio(shape) !== undefined;
-
-/**
- * The part of the picture a place shows (fractions of the picture), as `object-fit: cover` with
- * `object-position: x% y%` crops it: the picture fills the place's box and the overflow is shared
- * by the focus percentages. No box ratio, or no picture size, shows the whole picture.
- */
-export function visibleArea(picture: { width?: number; height?: number }, boxRatio: number | undefined, focus: PlaceFocus) {
-  const whole = { x: 0, y: 0, w: 1, h: 1 };
-  if (!boxRatio || !picture.width || !picture.height) return whole;
-  const ratio = picture.width / picture.height, fx = clamp(focus.x / 100), fy = clamp(focus.y / 100);
-  if (Math.abs(ratio - boxRatio) < 1e-6) return whole;
-  if (ratio > boxRatio) { const w = boxRatio / ratio; return { x: (1 - w) * fx, y: 0, w, h: 1 }; }
-  const h = ratio / boxRatio;
-  return { x: 0, y: (1 - h) * fy, w: 1, h };
-}
 const clamp = (value: number, low = 0, high = 1) => Math.min(high, Math.max(low, value));
 
 /** Arrow keys move the dot 2 % (Shift: 10 %), kept on the picture; other keys do nothing. */

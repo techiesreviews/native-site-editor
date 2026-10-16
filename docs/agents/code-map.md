@@ -67,10 +67,10 @@ Each file is followed by its declared entry symbols. Styles, fixtures, scripts a
 | Linked style rules and cascade | `src/styles-index.ts` — `findStyleRulesInSources`; `src/style-cascade.ts` — `resolveSelectedRules`; `src/main.ts` — `linkNativeStyles` |
 | Source editor CSS and variant suggestions | `src/page-builder/css-intelligence.ts` — `cssVariableCompletion`; `src/page-builder/variant-intelligence.ts` — `variantSuggestions`; `src/page-builder/variant-fields.ts` — `variantFields` |
 | Media manager and draft batches | `src/controllers/media-controller.ts` — `createMediaController`; `src/controllers/media-actions.ts` — `createMediaActions`; `src/media-batch.ts` — `applyMediaBatch`; `src/page-builder/media-workspace.ts` — `createMediaWorkspace`; `src/page-builder/media-prepare.ts` — `prepareMediaFile`, `importPreparedMedia`; `src/page-builder/media-files-adding-runs.ts` — `createFilesAdding` (Files adding); `src/page-builder/media-adding-summary.ts` — the shared adding progress; `src/main.ts` — `applyMediaBatch` |
-| Improve images plans and row batches | `src/page-builder/improve-images.ts` — `improveImagesPlan`; `src/page-builder/improve-heavy.ts` — `prepareImproveHeavy`, `improveHeavy`, `improveRows` |
+| Improve images plans and row batches | `src/page-builder/improve-images.ts` — `improveImagesPlan`; `src/page-builder/improve-heavy.ts` — `prepareImproveHeavy`, `improveHeavy` |
 | Media records, migration and serialization | `shared/media-records.ts` — `parseMediaRecords`, `serializeMediaRecords`, `renameMediaRecord`, `removeMediaRecords` |
 | Media descriptions, Decorative and by-agent marks | `src/page-builder/media-descriptions.ts` — `placeDescriptionState`, `descriptionPlaceEdits`, `setMediaPlaceDecorative`, `confirmMediaDescription` |
-| Media uploads, optimise and responsive copies | `src/uploads.ts` — `addUpload`; `src/page-builder/media-prepare.ts` — `prepareMedia`; `src/page-builder/media-optimise.ts` — `optimiseMedia` |
+| Media uploads, optimise and responsive copies | `src/uploads.ts` — `addUpload`; `src/page-builder/media-prepare.ts` — `prepareMediaFile`; `src/page-builder/media-optimise.ts` — `optimiseMedia` |
 
 ### Worker, test seams and agent scripts
 

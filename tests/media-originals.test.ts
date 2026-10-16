@@ -2,7 +2,8 @@ import { mediaFamilyRows } from "../src/page-builder/media-file-details";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { cleanedMediaOriginal, mediaOriginalCapQuestion, mediaOriginalIsDuplicate, mediaOriginalPath, mediaOriginalProblem } from "../src/page-builder/media-originals";
-import { keptOriginal, prepareMedia, prepareMediaFile } from "../src/page-builder/media-prepare";
+import { keptOriginal, prepareMediaFile } from "../src/page-builder/media-prepare";
+import { prepareFiles } from "./support/prepare-files";
 import { createMediaWorkspace, applyMediaWorkspaceBatch, type MediaWorkspaceContext, type MediaWorkspaceBatch } from "../src/page-builder/media-workspace";
 import { mediaImageRecipe, type optimiseMedia, type MediaOptimiseResult, type MediaOptimiseOptions } from "../src/page-builder/media-optimise";
 import { MEDIA_FILE_CAP_BYTES, mayHoldHiddenDetails } from "../src/page-builder/media-limits";
@@ -122,7 +123,7 @@ test("unchanged files, accepted Add unchanged, and identical cleaned mains have 
 });
 test("dirty originals fail this file, never silently omit or store them", async () => {
   const dirty: typeof optimiseMedia = async (file, options) => ({ ...await encoder(file, options), original: { blob: new Blob([photo()]), extension: "jpg" } });
-  const prepared = await prepareMedia([new File([photo()], "photo.jpg"), new File(["pdf"], "guide.pdf")], "repo", undefined, undefined, dirty, undefined, undefined, "balanced", true);
+  const prepared = await prepareFiles([new File([photo()], "photo.jpg"), new File(["pdf"], "guide.pdf")], "repo", undefined, undefined, dirty, undefined, undefined, "balanced", true);
   assert.equal(prepared.requests.length, 1); assert.match(prepared.errors[0], /original.*hidden personal details/);
   const f = fixture();
   await assert.rejects(f.host.import([{ file: new File(["main"], "photo.webp"), folder: "media/images", original: { blob: new Blob([photo()]), extension: "jpg" } }]), /hidden personal details/);
@@ -135,7 +136,7 @@ test("over-cap asks only when website files fit: yes omits original; no/missing 
   assert.equal(mediaOriginalCapQuestion("photo.jpg", MEDIA_FILE_CAP_BYTES), undefined);
   for (const answer of [true, false, undefined]) {
     let asked = 0;
-    const prepared = await prepareMedia([new File([photo()], "photo.jpg"), new File(["pdf"], "guide.pdf")], "repo", undefined, undefined, encode,
+    const prepared = await prepareFiles([new File([photo()], "photo.jpg"), new File(["pdf"], "guide.pdf")], "repo", undefined, undefined, encode,
       answer === undefined ? undefined : async (question, kind) => { asked++; assert.equal(kind, "original"); assert.match(question, /photo.jpg.*20 MB.*website version fits/); return answer; }, undefined, "balanced", true);
     assert.equal(asked, answer === undefined ? 0 : 1);
     assert.equal(prepared.requests.length, answer ? 2 : 1);

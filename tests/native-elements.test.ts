@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { nativeElementChoices, nativeElementMarkup, nativeChoiceMarkup, PLACEHOLDER_IMAGE_PATH, PLACEHOLDER_IMAGE_WIDTH, PLACEHOLDER_IMAGE_HEIGHT, placeholderImageSvg } from "../src/page-builder/native-elements.ts";
-import { addCatalog, filterCatalog } from "../src/page-builder/add-catalog.ts";
+import { addCatalog } from "../src/page-builder/add-catalog.ts";
 import { applyGuardedSourceEdit, nativeDestinations, nativeMarkupInsertEdit, nativeMoveEdit } from "../src/page-builder/native-operations.ts";
 const apply = (source: string, parent: number[], index: number, markup: string) => {
   const edit = nativeMarkupInsertEdit(source, parent, index, markup);
@@ -10,7 +10,6 @@ const apply = (source: string, parent: number[], index: number, markup: string) 
 test("six blocks join components and write exact portable HTML", () => {
   const groups = addCatalog([{ tag: "feature-block", label: "Feature block" }, ...nativeElementChoices]);
   assert.deepEqual(groups.map((group) => group.name), ["Blocks", "More sections"]);
-  assert.equal(filterCatalog(groups, "Blocks")[0].items.length, 6);
   const blocks = [
     ["section", "Section", '<section class="flow"></section>'],
     ["div", "Div", '<div class="flow"></div>'],

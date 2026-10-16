@@ -18,6 +18,3 @@ export function agentWhere(): Node {
   line.append(strong, " to copy the setup for your agent.");
   return line;
 }
-
-/** The same sentence as plain text, for tests and labels. */
-export const AGENT_WHERE_TEXT = "Agents connect here, from the project menu. Open it and choose Connect with MCP to copy the setup for your agent.";

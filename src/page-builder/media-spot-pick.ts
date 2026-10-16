@@ -8,7 +8,6 @@ import type { MediaImage } from "./media-markup";
 import type { MediaHeldFiles } from "./media-picker";
 import type { MediaWorkspaceContext } from "./media-workspace";
 
-export { VIDEO_ACCEPT };
 export const SPOT_ACCEPT = `image/*,${VIDEO_ACCEPT}`;
 export const isVideoName = (name: string) => agentVideos.test(name);
 /** The note beside a chosen file in a picture spot's picker. */

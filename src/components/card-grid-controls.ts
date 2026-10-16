@@ -586,5 +586,3 @@ export function createCardGridControls(pane: HTMLElement, frame: HTMLElement, ha
     },
   };
 }
-
-export type CardGridControls = ReturnType<typeof createCardGridControls>;

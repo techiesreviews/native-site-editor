@@ -22,8 +22,7 @@ export function mediaPlacement(measured?: Pick<MediaMeasured, "sizes" | "firstSc
   const lazy = !measured?.firstScreen;
   return { sizes: `${lazy ? "auto, " : ""}${measured?.sizes || "100vw"}`, lazy, priority: !lazy && priority };
 }
-export type MediaPlacement = ReturnType<typeof mediaPlacement>;
-export { mediaEscape, mediaExistingAlt } from "./media-attributes";
+export { mediaEscape } from "./media-attributes";
 import { mediaEscape } from "./media-attributes";
 
 export function mediaSrcset(image: MediaImage, prefix = ""): string | undefined {

@@ -20,10 +20,6 @@ export function placeDescriptionState(records: MediaRecords, file: string, page:
   return { state: alt ? "described" as const : alt !== undefined && (record?.decorative || place?.decorative) ? "decorative" as const : "missing" as const,
     own, byAgent: own ? place?.agentText === alt : Boolean(alt && record?.description?.byAgent) };
 }
-export function newPlaceAlt(records: MediaRecords, file: string): string {
-  const state = fileDescriptionState(records.files[file]);
-  return state.state === "decorative" ? "" : state.text;
-}
 /** Legacy name alts follow the file unless recorded as deliberately written agent words. */
 export function followsFileName(file: string, alt: string | undefined): boolean {
   const name = file.split("/").pop() ?? file;
@@ -149,8 +145,6 @@ export function placeWordsEdits(source: string, file: string, page: string, from
 export function strandsAgentWords(source: string, file: string, page: string, target: number, marked: string | undefined, words: string, prefix = "") {
   return Boolean(marked && marked !== words && placeImages(source, file, page, prefix).some(image => image.tag.start !== target && image.alt === marked));
 }
-
-export { mediaNameAlt };
 
 /** Whether `page`'s source still shows `file` in one of its images. */
 export function pageUsesFile(source: string, page: string, file: string, prefix = "") {

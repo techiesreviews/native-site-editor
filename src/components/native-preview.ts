@@ -6,7 +6,6 @@ import type { FrameHost } from "./preview-protocol";
 import { createPreviewLink, iframeFramePort } from "./preview-link";
 import { handleChunkLoadFailure } from "../chunk-recovery";
 import { mountSlotGhosts, readSlotGhostReport, type SlotGhostFillTarget } from "./slot-ghosts";
-export type { SlotGhostFillTarget, SlotGhostReport } from "./slot-ghosts";
 import { button, node } from "../ui/dom";
 import { NATIVE_CONFIG_PATH, nativeDefaultRoute, nativePageBody, nativePageStylesheets, nativeSitePaths, type NativeSite, nativeSitePrefix } from "../../shared/native-project";
 import { nativeLinkFragment, nativeLinkTarget } from "../../shared/native-routes";
@@ -134,8 +133,6 @@ export interface NativeNodeRequest {
   path: string;
   node: number[];
 }
-
-export type { NativeSelectedRule } from "../style-cascade";
 
 export interface NativePreviewSelection {
   path: string;

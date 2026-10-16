@@ -1,7 +1,6 @@
 import { trimmableImages } from "../../shared/media-kinds-policies";
 import { siteAddress, sitePathPrefix, sitePathOf } from "../../shared/site-path-prefix";
 import type { MediaRecords } from "../../shared/media-records";
-export { SOCIAL_IMAGE_SIZE, socialImageTrim, socialImageSize } from "./social-geometry";
 import { mediaResolvePath } from "./media-references";
 import type { MediaOptimiseOptions } from "./media-optimise";
 import { trimmedCopyPath } from "./trimmed-copies";

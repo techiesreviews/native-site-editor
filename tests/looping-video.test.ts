@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { startTags, elementEnd, type ElementRange } from "../shared/html-source";
-import { backgroundVideoMarkup, canFillPictureSpot, isPictureSpot, loopingVideoMarkup, loopsFromStart, pictureSpotVideo, placedVideoMarkup, readLooping, readSectionBackground, sectionBackgroundEdits, writeLooping } from "../src/page-builder/looping-video";
+import { backgroundVideoMarkup, isPictureSpot, loopingVideoMarkup, loopsFromStart, pictureSpotVideo, placedVideoMarkup, readLooping, readSectionBackground, sectionBackgroundEdits, writeLooping } from "../src/page-builder/looping-video";
 import { readPlaceFrame } from "../src/page-builder/place-frame";
 import { mediaPlayerPlan } from "../src/page-builder/player-markup";
 
@@ -49,8 +49,6 @@ test("picture spots accept pictures and silent loops, exclude ordinary and backg
   assert.equal(isPictureSpot('<picture slot="image">'), true);
   assert.equal(isPictureSpot('<video slot="image" muted loop>'), true);
   assert.equal(isPictureSpot('<img>'), false);
-  for (const tag of ['<img>', '<picture slot="image">', '<video muted loop>']) assert.equal(canFillPictureSpot(tag), true);
-  for (const tag of ['<video controls>', '<video data-background muted loop>', '<section slot="image">']) assert.equal(canFillPictureSpot(tag), false);
   for (const tag of ['<video slot="image" muted loop>', '<video slot="image" controls>'])
     assert.throws(() => writeLooping(tag, false), /A video in a picture spot always loops silently\./);
 });
