@@ -59,3 +59,4 @@
 - PR #12 (20, unused exports): kit pr stopped on one flaky spec (native-media-newest:50, fails 1/3 on plain dev, 3/3 on the branch) → lead finished the PR by hand (push, PR, Sol review on the PR, CI green, rebase-merge) and filed ticket 34. Review rounds 3–4 found rarer checker edge cases; round 3 fixed (destructuring assignments), round 4 (computed keys) documented as a known limit.
 - Ticket 24 (docs) closes the build through kit pr: the proof of the PR flow.
 - PR #14 (24) first CI run failed in kit-shots-compare.test.ts (concurrent base setup race, ticket 08 code) → ticket 35 filed; kit pr re-run.
+- PR #15 (36: kit pr updates an open PR's body through the REST API; gh pr edit fails on Projects classic) merged. Then 24 re-ran kit pr on the fixed script.
