@@ -1,8 +1,8 @@
 ---
 title: "kit review: clean Codex home, sturdy scope, retry, saved evidence"
 type: task (AFK)
-status: open
-assignee:
+status: closed
+assignee: ak-05
 blocked_by: [01-kit-front-door]
 builder: sol
 ---
@@ -33,3 +33,29 @@ builder: sol
 
 - Unit tests: base resolution with `~`/`^`/SHA, `--commit`, empty-diff refusal, missing scope error, footer always present, one retry then fail (fake CLI), evidence path, CODEX_HOME contents (no skills, no mcp_servers).
 - Sol review saved under the main root `.scratch/reviews/`; landed on `dev` with CI green.
+
+## Done (2026-10-16)
+
+- Behaviour: `kit review [--base REF | --commit SHA] [--ticket FILE] [--pr N]` builds the brief,
+  runs it and saves `result.md`, `run.log`, `diff.patch`, `refs.txt` under the main root
+  `.scratch/reviews/<owner>/<UTC time>/` (named in the RESULT line; usage errors and bad refs
+  save nothing and say `evidence none`). Codex reviews get a fresh `CODEX_HOME`: symlinked
+  `auth.json` plus a config with `[skills] include_instructions = false`,
+  `[skills.bundled] enabled = false` and `plugins`/`apps`/`memories` off. A rotated `auth.json`
+  is copied back. Builds keep the normal home. Bases resolve with
+  `git rev-parse --verify <ref>^{commit}`; `--commit` reviews one commit; no scope is an error; an
+  empty diff fails before the model. The runner appends the REVIEW_STATUS footer exactly once and
+  re-asks once in the same session (`codex exec resume <id>` / `claude --resume <id>`).
+  `review.sh` is a thin wrapper. AGENTS.md: repo review/model rules beat global skills.
+- Lead check (codex-cli 0.163.0, live): with only `model` in config, Codex still unpacked bundled
+  skills into `$CODEX_HOME/skills` and loaded `~/.agents/skills` via HOME. With the config above,
+  the model reported no skills, no MCP servers, no apps and only the repo AGENTS.md. A live resume
+  kept the session, printed `model: gpt-6.1-sol` and stayed read-only.
+- Commits: 852cd849 (Sol build; Claude fixes: show the review text, no empty evidence folders,
+  Commit/Parent labels in the PR header).
+- Tests: `tests/kit-review.test.ts` (new) plus `tests/agent-scripts.test.ts` updates; check, lint and
+  unit 3542/3542 pass.
+- Review (dogfooded through `kit review`, evidence
+  `/home/ubulex/Projects/native-site-editor/.scratch/reviews/ak-05/20261016T120954Z`): one finding,
+  rejected. It asked `review.sh` to save main-root evidence too. The ticket ties evidence to
+  `kit review` and keeps `review.sh` a thin compatible wrapper; its callers copy the folder by hand.
