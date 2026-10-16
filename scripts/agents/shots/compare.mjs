@@ -127,6 +127,20 @@ async function setupLock(parent) {
   }
 }
 
+/** A lease names a live process using a base worktree; dead owners' leases do not count. */
+export async function hasLiveLease(dir) {
+  let names = [];
+  try { names = await readdir(join(dir, ".scratch/kit-shots-leases")); }
+  catch (error) { if (error.code !== "ENOENT") throw error; }
+  return names.some(name => {
+    const pid = Number(/^(\d+)-/.exec(name)?.[1]);
+    if (!pid) return false;
+    try { process.kill(pid, 0); return true; }
+    catch (error) { return error.code === "EPERM"; }
+  });
+}
+
+/** Set up or reuse the base worktree and lease it until release() so pruning skips it. */
 export async function ensureBase({ repo, mainRoot, sha, modules }) {
   if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error(`Invalid base commit: ${sha}`);
   const parent = join(mainRoot, ".scratch/shots-base");
@@ -158,8 +172,16 @@ export async function ensureBase({ repo, mainRoot, sha, modules }) {
     const entries = await Promise.all((await readdir(parent, { withFileTypes: true }))
       .filter(entry => entry.isDirectory() && /^[0-9a-f]{40}$/.test(entry.name))
       .map(async entry => ({ sha: entry.name, mtimeMs: (await stat(join(parent, entry.name))).mtimeMs })));
-    for (const entry of pruneTargets(entries, 3, sha)) await removeBase(repo, join(parent, entry.sha));
-    return { dir, reused };
+    const leases = join(dir, ".scratch/kit-shots-leases");
+    const lease = join(leases, `${process.pid}-${randomUUID()}`);
+    await mkdir(leases, { recursive: true });
+    await writeFile(lease, "");
+    // Another compare may still be capturing in an older base; never prune under it.
+    for (const entry of pruneTargets(entries, 3, sha)) {
+      const target = join(parent, entry.sha);
+      if (!(await hasLiveLease(target))) await removeBase(repo, target);
+    }
+    return { dir, reused, release: () => rm(lease, { force: true }) };
   } finally { await rm(lock, { recursive: true, force: true }); }
 }
 
@@ -209,7 +231,7 @@ async function capture(root, scenario, name, out, widths, themes, env, stamp) {
 }
 
 export async function main(args = process.argv.slice(2)) {
-  let ref = "(unknown)", sha = "???????", out = "(not created)", hits = 0, misses = 0, after = "not run", failed = false;
+  let ref = "(unknown)", sha = "???????", out = "(not created)", hits = 0, misses = 0, after = "not run", failed = false, release;
   const signals = ["SIGINT", "SIGTERM", "SIGHUP"];
   const handlers = signals.map(signal => () => {
     interrupted = signal;
@@ -235,7 +257,9 @@ export async function main(args = process.argv.slice(2)) {
     await git(root, ["fetch", "-q", "origin", ref], false);
     const remote = await git(root, ["show-ref", "--verify", "--quiet", `refs/remotes/origin/${ref}`], false);
     sha = (await git(root, ["rev-parse", "--verify", `${remote.status === 0 ? `origin/${ref}` : ref}^{commit}`])).stdout;
-    const { dir: base } = await ensureBase({ repo: root, mainRoot, sha, modules: join(root, "node_modules") });
+    const setup = await ensureBase({ repo: root, mainRoot, sha, modules: join(root, "node_modules") });
+    release = setup.release;
+    const base = setup.dir;
     try { await stat(join(base, "scripts/agents/kit.d/shots")); }
     catch { throw new Error(`Ref ${ref} predates kit shots: scripts/agents/kit.d/shots is missing`); }
     const cacheDir = (scenario, width, theme) => join(base, ".scratch/kit-shots-cache", baseKey({ ...scenario, width, theme }));
@@ -298,6 +322,7 @@ export async function main(args = process.argv.slice(2)) {
     failed = true;
     console.error(error instanceof Error ? error.message : String(error));
   } finally {
+    await release?.();
     signals.forEach((signal, index) => process.off(signal, handlers[index]));
     process.exitCode = failed ? 1 : 0;
     kitResult(failed ? "fail" : "ok", `shots compare ${ref}@${sha.slice(0, 7)}: base ${hits} cached, ${misses} shot; after ${after}; out ${out}`);

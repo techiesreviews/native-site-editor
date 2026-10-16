@@ -4,7 +4,7 @@ import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, readlink, realpath, rm
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
-import { baseKey, beforeShots, ensureBase, isHit, planBase, pruneTargets, splitCompare } from "../scripts/agents/shots/compare.mjs";
+import { baseKey, beforeShots, ensureBase, hasLiveLease, isHit, planBase, pruneTargets, splitCompare } from "../scripts/agents/shots/compare.mjs";
 import { contactHtml, type Scenario, type Shot } from "../scripts/agents/shots/core";
 
 const temporary: string[] = [];
@@ -90,6 +90,7 @@ test("ensureBase creates detached linked worktrees, reuses, repairs and prunes",
   await symlink(actualModules, modules);
   const options = { repo, mainRoot, sha, modules };
   const first = await ensureBase(options);
+  await first.release();
   assert.equal(first.reused, false);
   assert.equal(first.dir, join(mainRoot, ".scratch/shots-base", sha));
   assert.equal(git(first.dir, "rev-parse", "HEAD"), sha);
@@ -98,15 +99,19 @@ test("ensureBase creates detached linked worktrees, reuses, repairs and prunes",
   assert.equal(await readlink(join(first.dir, ".scratch/native-static-preview")), join(mainRoot, ".scratch/native-static-preview"));
   const old = new Date(1_000);
   await utimes(first.dir, old, old);
-  assert.equal((await ensureBase(options)).reused, true);
+  const reuse = await ensureBase(options);
+  await reuse.release();
+  assert.equal(reuse.reused, true);
   assert.ok((await lstat(first.dir)).mtimeMs > old.getTime());
   await rm(join(first.dir, "node_modules"));
-  assert.equal((await ensureBase(options)).reused, false, "broken cached worktree is replaced");
+  const repaired = await ensureBase(options);
+  await repaired.release();
+  assert.equal(repaired.reused, false, "broken cached worktree is replaced");
   const shas = [sha];
   for (let index = 0; index < 3; index++) {
     const next = commit(repo);
     shas.push(next);
-    await ensureBase({ ...options, sha: next });
+    await (await ensureBase({ ...options, sha: next })).release();
     const path = join(mainRoot, ".scratch/shots-base", next);
     await utimes(path, new Date(2_000 + index * 1_000), new Date(2_000 + index * 1_000));
     if (!index) await utimes(first.dir, old, old);
@@ -115,6 +120,32 @@ test("ensureBase creates detached linked worktrees, reuses, repairs and prunes",
   const registered = git(repo, "worktree", "list", "--porcelain");
   assert.ok(!registered.includes(first.dir), "pruning removes git registration too");
   for (const kept of shas.slice(1)) assert.match(registered, new RegExp(kept));
+});
+
+test("a live lease keeps a base worktree through pruning until it is released", async () => {
+  const dir = await temp(), repo = join(dir, "repo"), mainRoot = join(dir, "main"), modules = join(dir, "modules");
+  await mkdir(repo);
+  await mkdir(modules);
+  git(repo, "init", "-q");
+  const options = { repo, mainRoot, modules };
+  const active = await ensureBase({ ...options, sha: commit(repo) });
+  const stale = await ensureBase({ ...options, sha: commit(repo) });
+  await stale.release();
+  const dead = spawnSync(process.execPath, ["-e", ""]).pid;
+  await writeFile(join(stale.dir, ".scratch/kit-shots-leases", `${dead}-finished`), "");
+  assert.equal(await hasLiveLease(active.dir), true);
+  assert.equal(await hasLiveLease(stale.dir), false, "a finished process's lease does not count");
+  for (let index = 0; index < 3; index++) {
+    await utimes(active.dir, new Date(1_000), new Date(1_000));
+    await utimes(stale.dir, new Date(2_000), new Date(2_000));
+    await (await ensureBase({ ...options, sha: commit(repo) })).release();
+  }
+  assert.ok((await lstat(active.dir)).isDirectory(), "an active comparison's base survives pruning");
+  await assert.rejects(lstat(stale.dir), { code: "ENOENT" });
+  await active.release();
+  await utimes(active.dir, new Date(1_000), new Date(1_000));
+  await (await ensureBase({ ...options, sha: commit(repo) })).release();
+  await assert.rejects(lstat(active.dir), { code: "ENOENT" }, "released bases prune normally");
 });
 
 test("ensureBase serializes concurrent setup and removes stale locks", async () => {
@@ -127,6 +158,7 @@ test("ensureBase serializes concurrent setup and removes stale locks", async () 
   await mkdir(lock, { recursive: true });
   await utimes(lock, new Date(0), new Date(0));
   const results = await Promise.all([ensureBase({ repo, mainRoot, sha, modules }), ensureBase({ repo, mainRoot, sha, modules })]);
+  await Promise.all(results.map(result => result.release()));
   assert.deepEqual(results.map(result => result.reused).sort(), [false, true]);
   await assert.rejects(lstat(lock), { code: "ENOENT" });
 });
