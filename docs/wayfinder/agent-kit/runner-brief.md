@@ -14,9 +14,9 @@ The lead sends this with a ticket path and an owner id (`ak-NN`).
 4. Validate: `npm run check`, `scripts/agents/unit.sh`, `npm run lint`, the touched specs through
    `scripts/agents/port.sh`. Commit with the builder's Co-Authored-By line
    (Sol: `Co-Authored-By: GPT-6.1-Sol <noreply@openai.com>`; Claude: `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`).
-5. Review: one Sol review (`review-brief.sh` + `review.sh`, or `kit review` once it exists). Fix real
-   defects; re-review once if fixes are substantial. Copy the review folder to
-   `/home/ubulex/Projects/native-site-editor/.scratch/reviews/<owner>/`.
+5. Review: one Sol review with `scripts/agents/kit review --ticket <ticket>` (in the background; see
+   `kit review --help`). It saves evidence under the main root `.scratch/reviews/<owner>/` by itself.
+   Fix real defects; re-review once if fixes are substantial.
 6. Close the ticket (`## Done (YYYY-MM-DD)`, `status: closed`, `assignee: <owner>`) in the same branch.
 7. Land: `scripts/agents/land.sh` then `scripts/agents/ci-status.sh dev --wait` (both in the background),
    or `scripts/agents/kit pr` once ticket 14 is on dev. Fix CI failures you caused.
