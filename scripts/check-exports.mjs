@@ -114,13 +114,15 @@ function analyzeProgram(program, roots, root, host) {
       const id = key(source.fileName, name);
       const record = { file: slash(relative(root, source.fileName)), line: source.getLineAndCharacterOfPosition(declaration.getStart(source)).line + 1, name };
       if (subject(record.file)) exports.set(id, record);
-      if (!(exported.flags & ts.SymbolFlags.Alias)) {
-        for (const node of exported.declarations ?? []) {
+      const local = ts.isExportSpecifier(declaration) && !declaration.parent.parent.moduleSpecifier
+        ? checker.getExportSpecifierLocalTargetSymbol(declaration) : exported;
+      if (local && !(local.flags & ts.SymbolFlags.Alias)) {
+        for (const node of local.declarations ?? []) {
           if (node.name && ts.isIdentifier(node.name)) exportedNames.add(node.name.text);
         }
-        const entries = localExports.get(exported) ?? [];
-        entries.push({ id, declarations: exported.declarations ?? [] });
-        localExports.set(exported, entries);
+        const entries = localExports.get(local) ?? [];
+        entries.push({ id, declarations: local.declarations ?? [] });
+        localExports.set(local, entries);
       }
     }
     modules.set(source.fileName, names);

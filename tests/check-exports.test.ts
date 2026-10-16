@@ -19,6 +19,20 @@ test("named and default imports and own-module production references count", () 
   }), []);
 });
 
+for (const { form, declaration, name } of [
+  { form: "inline", declaration: "export const x = 1;", name: "x" },
+  { form: "local clause", declaration: "const x = 1; export { x };", name: "x" },
+  { form: "aliased local clause", declaration: "const x = 1; export { x as value };", name: "value" },
+]) {
+  test(`${form} exports count same-module uses`, () => {
+    assert.deepEqual(fixture({ "src/main.ts": `${declaration} console.log(x);` }), []);
+  });
+
+  test(`${form} exports without same-module uses report findings`, () => {
+    assert.deepEqual(fixture({ "src/main.ts": declaration }), [{ file: "src/main.ts", line: 1, name }]);
+  });
+}
+
 test("tests-only and unreachable production imports do not count; unreachable files report once", () => {
   assert.deepEqual(fixture({
     "src/main.ts": "export {};",
@@ -193,10 +207,17 @@ test("test-only callers do not rescue exports in reachable modules", () => {
 test("recursive references and local export clauses do not count as use", () => {
   assert.deepEqual(fixture({
     "src/main.ts": 'import "./values";',
-    "src/values.ts": "export function recursive() { recursive(); }\nconst value = 1; export { value };",
+    "src/values.ts": [
+      "export function recursive() { recursive(); }",
+      "const value = 1; export { value };",
+      "function local() { local(); } export { local };",
+      "function aliased() { aliased(); } export { aliased as renamed };",
+    ].join("\n"),
   }), [
     { file: "src/values.ts", line: 1, name: "recursive" },
     { file: "src/values.ts", line: 2, name: "value" },
+    { file: "src/values.ts", line: 3, name: "local" },
+    { file: "src/values.ts", line: 4, name: "renamed" },
   ]);
 });
 
