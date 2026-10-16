@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
+import { setTimeout as delay } from "node:timers/promises";
 import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
@@ -25,6 +26,13 @@ const wrangler = `#!/usr/bin/env node
 const fs = require("node:fs"), env = process.env;
 fs.appendFileSync(env.FAKE_CALLS, JSON.stringify({ tool: "wrangler", args: process.argv.slice(2), cwd: process.cwd(), ci: env.CI, color: env.NO_COLOR }) + "\\n");
 if (fs.existsSync("dist/stale.js")) throw new Error("stale dist was not removed");
+if (env.FAKE_DEPLOY_HOLD) {
+  process.on("SIGTERM", () => fs.writeFileSync(env.FAKE_DEPLOY_HOLD + ".term", ""));
+  fs.writeFileSync(env.FAKE_DEPLOY_HOLD + ".started", "");
+  const wait = () => fs.existsSync(env.FAKE_DEPLOY_HOLD + ".release") ? fs.writeFileSync(env.FAKE_DEPLOY_HOLD + ".done", "") : setTimeout(wait, 20);
+  wait();
+  return;
+}
 if (env.FAKE_DEPLOY_FAIL) {
   for (let i = 1; i <= 35; i++) console.error("failure line " + i);
   process.exit(1);
@@ -285,6 +293,41 @@ test("preview waits for another process's flock and succeeds after it releases",
   assert.equal(released, true); assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.equal(result.stdout.split("waiting for preview lock").length - 1, 1);
 });
+
+for (const signal of ["SIGTERM", "SIGKILL"] as const) {
+  test(`a ${signal} mid-deploy keeps the lock until the deploy child exits`, async t => {
+    const f = await fixture(t), hold = join(f.dir, "hold");
+    const until = async (check: () => boolean) => {
+      for (const end = Date.now() + 5_000; !check(); await delay(20)) assert.ok(Date.now() < end, "timed out");
+    };
+    const first = spawn(preview, [], { cwd: f.root, env: { ...f.env, FAKE_DEPLOY_HOLD: hold } });
+    let firstOut = "";
+    first.stdout.setEncoding("utf8").on("data", chunk => { firstOut += chunk; });
+    const firstClosed = once(first, "close");
+    try {
+      await until(() => existsSync(hold + ".started"));
+      first.kill(signal);
+      if (signal === "SIGTERM") await until(() => existsSync(hold + ".term"));
+      else await firstClosed;
+      let released = false;
+      const second = f.run(["--dry-run"], {}, preview, output => {
+        if (!released && output.includes("waiting for preview lock")) {
+          released = true;
+          setTimeout(() => writeFileSync(hold + ".release", ""), 200);
+        }
+      });
+      const result = await second;
+      assert.equal(released, true, result.stdout);
+      assert.ok(existsSync(hold + ".done"), "second run finished before the held deploy ended");
+      assert.equal(result.status, 0, result.stdout + result.stderr);
+      const [status, killed] = await firstClosed;
+      if (signal === "SIGTERM") {
+        assert.equal(status, 143); assert.equal(killed, null);
+        assert.match(firstOut, /RESULT: fail preview interrupted by SIGTERM\n$/);
+      } else assert.equal(killed, "SIGKILL");
+    } finally { writeFileSync(hold + ".release", ""); first.kill("SIGKILL"); }
+  });
+}
 
 test("kit preview and deploy-preview.sh both reach the command with --dry-run", async t => {
   const f = await fixture(t);
