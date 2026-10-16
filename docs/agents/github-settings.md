@@ -1,33 +1,36 @@
 # GitHub settings for Lex
 
-Open [techiesreviews/native-site-editor](https://github.com/techiesreviews/native-site-editor).
+Agents cannot change these settings (GitHub refuses them), so they are yours to click.
+Open [techiesreviews/native-site-editor](https://github.com/techiesreviews/native-site-editor) on GitHub.
 A pull request is a proposed change; merging adds it to its destination branch.
+Each step says in one line what it changes for you.
 
-1. After the CI workflow is added, open a pull request into `dev` and let **CI / checks** run once.
-   This makes **CI / checks** appear in GitHub's required-check search box.
+1. Wait until one pull request into `dev` has shown **CI / checks** with a green tick (agents open these).
+   Until it has run once, GitHub cannot offer **CI / checks** in the search box used in step 4.
 
-2. Open **Settings → Branches → Add classic branch protection rule**. Set **Branch name pattern** to `main`. If its rule already exists, click **Edit** instead.
-   This starts protection for the branch used for releases.
+2. Open **Settings → Branches** and click **Add classic branch protection rule**. Type `main` in **Branch name pattern**. If a `main` rule already exists, click **Edit** next to it instead.
+   This starts protecting `main`, the branch that becomes the live editor.
 
-3. Select **Require a pull request before merging** and **Do not allow bypassing the above settings**. Leave **Require approvals**, **Allow force pushes** and **Allow deletions** off.
-   This makes everyone, including you and agents, use pull requests to change `main`.
+3. Tick **Require a pull request before merging**. Untick **Require approvals** inside it. Tick **Do not allow bypassing the above settings**. Leave **Allow force pushes** and **Allow deletions** unticked.
+   Nobody, you and agents included, can change `main` except through a pull request you can see and merge.
 
-4. Select **Require status checks to pass before merging**, search for and select **CI / checks**, then select **Require branches to be up to date before merging**. Click **Create** (or **Save changes** when editing).
-   This blocks merging until the proposed change passes the checks with the latest destination-branch changes included.
+4. Tick **Require status checks to pass before merging**, type `checks` in the search box and pick **CI / checks**, then tick **Require branches to be up to date before merging**. Click **Create** (or **Save changes** when editing).
+   A pull request can only be merged once the checks pass on its newest version.
 
-5. Repeat steps 2–4 with **Branch name pattern** set to `dev`.
-   This gives the working branch the same pull-request and check protection. [GitHub's branch-protection guide](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/managing-a-branch-protection-rule).
+5. Back on **Settings → Branches**, click **Add classic branch protection rule** again and type `dev` in **Branch name pattern**. Tick only **Require status checks to pass before merging** with **CI / checks** and **Require branches to be up to date before merging**, as in step 4. Leave **Require a pull request before merging** and **Do not allow bypassing the above settings** unticked. Click **Create**.
+   Pull requests into `dev` must pass the checks first, while agents can still finish their work the way they do today.
 
-6. Open **Settings → General → Pull Requests** and select **Allow auto-merge**.
-   This lets a pull request merge automatically once its required checks pass. [GitHub's auto-merge guide](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-auto-merge-for-pull-requests-in-your-repository).
+6. Open **Settings → General**, scroll to **Pull Requests**, and tick **Allow auto-merge**.
+   A pull request can be set to merge by itself the moment its checks turn green.
 
-7. For `dev`, keep **Require branches to be up to date before merging** plus **Allow auto-merge**. GitHub's **Require merge queue** option needs an organisation-owned repository; `techiesreviews` is a personal account, so it is unavailable here. Agents' `kit pr` waits for checks, then merges.
-   This provides checked merges without a merge queue (a line of pull requests GitHub tests and merges in order). [GitHub's merge-queue availability](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue).
+7. Skip **Require merge queue**. GitHub only offers it to organisation accounts, and `techiesreviews` is a personal account. Steps 4 to 6 stand in for it: agents wait for green checks on an up-to-date branch, then merge.
+   Nothing changes for you; pull requests still merge one at a time, each checked first.
 
-8. In Cloudflare, select the **techies** account and open **Manage Account → Account API tokens → Create Token**. Under **Permission policies → Custom**, choose the **Edit Cloudflare Workers** template. Limit the token to **techies**, finish creating it, and copy its value.
-   This creates the access key GitHub needs to update the preview. [Cloudflare's token guide](https://developers.cloudflare.com/workers/ci-cd/external-cicd/github-actions/).
+8. In Cloudflare, click your profile icon at the top right, then **My Profile → API Tokens → Create Token**. Next to **Edit Cloudflare Workers**, click **Use template**. Under **Account Resources** pick the **techies** account, under **Zone Resources** pick **All zones from an account** and **techies**, then click **Continue to summary → Create Token** and copy the token it shows.
+   This makes the key GitHub needs to update the preview editor. It is shown only once; if you lose it, make a new one.
 
-9. Back on GitHub, open **Settings → Secrets and variables → Actions → New repository secret**. Enter `CLOUDFLARE_API_TOKEN` as **Name**, paste the token into **Secret**, and click **Add secret**.
-   This lets successful `dev` pushes deploy the preview by themselves; see [the missing-token issue](../work/tech-debt/issues/05-ci-preview-deploy-token.md) and [GitHub's secret guide](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-secrets).
+9. Back on GitHub, open **Settings → Secrets and variables → Actions** and click **New repository secret**. Type `CLOUDFLARE_API_TOKEN` in **Name**, paste the token into **Secret**, and click **Add secret**.
+   From then on, every change that lands on `dev` updates https://preview-editor.techies.tools by itself.
 
-Production deploys stay manual.
+The live editor (techies.tools) is not touched by any of this: it is still updated only when you ask.
+Background for agents: [the missing-token issue](../work/tech-debt/issues/05-ci-preview-deploy-token.md).

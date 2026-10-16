@@ -1,3 +1,8 @@
+# The required pull-request check "CI / checks": the same checks as
+# deploy-preview.yml (types, units, lint, byte budget, @smoke browser tests),
+# on every pull request and merge group into dev or main. A newer push to the
+# same pull request cancels its older run; merge-group runs never cancel.
+# Never deploys. Branch settings that require it: docs/agents/github-settings.md.
 name: CI
 
 on:
