@@ -32,3 +32,10 @@ Used by `/wayfinder`. A map is a directory: `docs/wayfinder/<effort>/`.
 - **Research findings**: committed on a throwaway branch `research/<map-prefix>-NN-<slug>` as `docs/wayfinder/<effort>/research/NN-<slug>.md`. The resolution names the branch and commit.
 - **Out of scope**: close the ticket and add one line under the map's Out of scope.
 - **Build notes** for a finished map go in `docs/wayfinder/<effort>/build/`.
+
+## Build files
+
+A build (the lead running a map's tickets through runners) keeps two files next to its map:
+
+- `docs/wayfinder/<build>/lead-log.md`: the lead's dated notes (start-up check, waves, landings, decisions, restarts). Commit it with the map; never keep it in `/tmp`, which a restart or clean-up loses.
+- `docs/wayfinder/<build>/runner-extras.md`: this build's few extra runner rules, which win over [runner.md](runner.md) for this build only. Start from [runner-extras-template.md](runner-extras-template.md) and keep it short. Rules that should outlive the build move into runner.md when the build ends.

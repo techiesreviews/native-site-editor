@@ -12,6 +12,7 @@ otherwise from `git rev-parse --show-toplevel` in the session cwd. The shared sc
 - **Timeout**: run `port.sh` directly. Claude uses `run_in_background` for long runs; Codex waits in the foreground or its background terminal. Bash rejects `timeout`/`gtimeout` around `port.sh` or `full-suite.sh`; releasing the lock can leave a server holding the port.
 - **Processes**: kill your own PID or process group (`kill -- -PGID`). Bash rejects `pkill`, `killall` and `pgrep -f` pipelines into `xargs kill`; patterns hit other runners and the caller’s shell. Start servers through `scripts/agents/port.sh`; `setsid` arguments mentioning `server`, `vite`, `http.server` or `playwright` are blocked.
 - **Subagents (Claude)**: wait at five live or pending agents to avoid account session exhaustion. Set `CLAUDE_AGENT_CAP` in the session environment to override. A per-session `flock` makes counting and reserving each launch atomic under `${XDG_RUNTIME_DIR:-/tmp}/claude-agent-cap/`. Start events consume the oldest reservation and record the agent ID; stop events remove it. Live entries expire after six hours; pending reservations after three minutes. PostToolUse and PostToolUseFailure release their call’s remaining reservation by `tool_use_id`, reconciling out-of-order starts; missing tool events or IDs rely on expiry. Codex SubagentStart/Stop only track valid IDs, fail open, and do not enforce the cap: enforcement requires Claude's Agent/Task PreToolUse launch event, where the account session limit problem lives.
+- **Waiting**: wait with `scripts/agents/kit wait` (pid, output or ci). Bash rejects `sleep` and `pgrep -f` inside a loop (`while`/`until`/`for`/`select` up to `done`, including conditions, `$(…)`, `sh -c`, `eval` and shell heredocs; `case` patterns such as `while)` do not count). Bare `pgrep -f` and a lone `sleep 1` outside loops stay allowed; retry loops with `sleep` are rejected too.
 - **Node**: when system Node is older than 24, SessionStart finds the highest installed Node ≥24 in npm’s npx cache or nvm. Claude appends PATH to `CLAUDE_ENV_FILE`; other CLIs receive SessionStart `additionalContext` JSON instructing them to prefix shell commands with the discovered PATH export. Node ≥24 makes the hook silent.
 
 Interactive Codex asks once to approve new or changed hooks. `agent.sh` uses
@@ -24,7 +25,7 @@ Other CLIs need equivalent hook event wiring; runner adapters do not install hoo
 
 ## `npm run check` (about 2 s on an idle machine)
 
-- **Types and unused code** (`scripts/check-types.mjs`): runs TypeScript 7 (`node_modules/typescript/bin/tsc`, by path) with `--noUnusedLocals --noUnusedParameters` over `src` and `shared` (`tsconfig.json`), `worker` and `tests` (`tests/tsconfig.json`) in parallel. Every error fails in `src`, `shared` and `worker`. In the tests program only unused declarations fail for files in `tests/` (other type errors there are not fixed yet) and `worker/` (that program uses the DOM lib; the worker project checks those files); any error it finds in `src/` or `shared/` fails. `src/prototype/` is exempt from the unused checks. Anything else fails, including a missing project, no inputs, or output on stderr. To keep a parameter or loop variable that is not used, start its name with `_`.
+- **Types and unused code** (`scripts/check-types.mjs`): runs TypeScript 7 (`node_modules/typescript/bin/tsc`, by path) with `--noUnusedLocals --noUnusedParameters` over `src` and `shared` (`tsconfig.json`), `worker` and `tests` (`tests/tsconfig.json`) in parallel. Every error fails in `src`, `shared` and `worker`. In the tests program only unused declarations fail for files in `tests/` (other type errors there are not fixed yet) and `worker/` (that program uses the DOM lib; the worker project checks those files); any error it finds in `src/` or `shared/` fails. Anything else fails, including a missing project, no inputs, or output on stderr. To keep a parameter or loop variable that is not used, start its name with `_`.
 - **Clipboard race** (`scripts/check-specs.mjs`): a copy button writes the clipboard asynchronously, so reading straight after the click can return the old text. In `tests/**/*.spec.ts`, every `navigator.clipboard.readText()` must follow an `expect.poll` whose callback reads `navigator.clipboard` and that closes within the three lines before the read. Comments, strings and template text are ignored (`${...}` stays code), and positions are UTF-16 offsets. It is a heuristic: regex literals are read as code, so a quote or backtick inside one can confuse it, and a backslash-CRLF string continuation ends the string early (the repo uses LF). `tests/check-specs.test.ts` covers the cases.
 
   ```ts
@@ -36,6 +37,12 @@ Other CLIs need equivalent hook event wiring; runner adapters do not install hoo
 
 - **Fixed waits** (`scripts/check-specs.mjs`): in `tests/**/*.spec.ts`, `waitForTimeout(...)` and `new Promise(... setTimeout ...)` sleeps fail. Wait on observable state. For a deliberate observation window, injected latency or an in-page polling interval, put `// fixed-wait: <specific reason>` on the wait or the line above it. The check ignores comments and literal text as the clipboard check does; template interpolations remain code.
 
+- **Raw colours** (`scripts/check-colours.mjs`, the last step): CSS under `src/` outside `src/theme.css` may not hold hex, `rgb/rgba/hsl/hsla/hwb/lab/lch/oklab/oklch/color()` or named colours (`transparent`, `currentColor` and `inherit` are fine), including inside `color-mix()`. Use a theme token from `src/theme.css`, adding one there (with its dark value) when no role fits. Comments, strings, `url()` and selectors are ignored. One form passes: an alpha-only relative colour from a token or `currentColor`, such as `oklch(from var(--x) l c h / 0.45)`. Exceptions go in `scripts/check-colours.allow.json` as `{file, match, reason}`; an entry without a reason, or one that matches nothing, fails.
+
+> **TODO before this ticket merges: ticket 20 (unused exports) is not done.** Add its line here
+> from its Done notes: `scripts/check-exports.mjs`, exports no production module imports, the
+> allow list, and whether it runs in `check` or (if slower than about 3 s) in `lint`.
+
 ## `npm run lint` (about 20 s, kept separate from `check` because of its speed)
 
 ESLint with type-aware typescript-eslint (`eslint.config.mjs`):
@@ -45,6 +52,10 @@ ESLint with type-aware typescript-eslint (`eslint.config.mjs`):
 
 - **Double assertions** (`no-restricted-syntax`, `tests/**`): `as unknown as X` fails. Type a fake with `satisfies` or a declared type; extend `Window` explicitly for browser probes. Escape a deliberate incomplete or malformed fixture with `// eslint-disable-next-line no-restricted-syntax -- <specific reason>`.
 
+> **TODO before this ticket merges: ticket 18 (promise lint) is not done.** Add its two-line
+> summary here from its Done notes: `@typescript-eslint/no-floating-promises` and
+> `no-misused-promises`, and how to handle a promise (`await`, or `void p.catch(report)`).
+
 Opt out on one line with a reason: `// eslint-disable-next-line @typescript-eslint/unbound-method -- <reason>`. A reason is required, for example: the original is saved only to restore it later, and every call passes `.call(this)`.
 
 typescript-eslint needs the TypeScript compiler API, which TypeScript 7 does not include. `tools/typescript-api/` is a small local package, installed as `typescript-eslint-api`, that depends on TypeScript 6. The committed `.npmrc` sets `install-links=true`, so npm copies it into `node_modules` and nests TypeScript 6 inside it, so its `tsc` stays out of `node_modules/.bin` and `npx tsc` remains TypeScript 7. `eslint.config.mjs` resolves typescript-eslint's `typescript` imports to it, and the `overrides` in `package.json` stop npm from rejecting the peer range.
@@ -53,9 +64,13 @@ typescript-eslint needs the TypeScript compiler API, which TypeScript 7 does not
 
 Use `tests/support/source-guard.ts` for parsing, bound names and aliases, destructuring, module references (imports, re-exports and dynamic imports), computed members and guarded plans. State the protected names/modules and permitted homes in the guard. Allowlist entries use `{ file, match, reason, count }` (count defaults to one); `staleEntries` rejects unused, over-counted or unreasoned exceptions. Shared loophole fixtures live in `tests/source-guard.test.ts`; keep rule-specific fixtures in each guard.
 
+## Media kinds
+
+`tests/media-kinds-guard.test.ts` (a source guard, part of `npm test`): media extension lists live only in `shared/media-kinds.ts`. Elsewhere it fails a regex alternation, a comma-, bar- or space-separated string, an array or an object's keys that hold two or more media extensions. Use the table's helpers (`mediaKind`, `mimeType`, `isImagePath`, `extensionsOf`) or add a named subset there. Exceptions (Vite globs, codec and encoder names, user-facing prose) are allowlisted with a reason in the guard.
+
 ## CI
 
-`.github/workflows/deploy-preview.yml` runs `check`, `test`, `lint`, the byte budget (`tests/perf/byte-budget.ts`, 355 KB, enforced) and the smoke browser tests.
+`.github/workflows/ci.yml` (**CI / checks**, on every pull request into `dev` or `main`) and `.github/workflows/deploy-preview.yml` (on every push to `dev`) both run `check`, `test`, `lint`, the byte budget (`tests/perf/byte-budget.ts`, 355 KB, enforced) and the smoke browser tests. Branch rules that require the check: [github-settings.md](github-settings.md).
 
 ## Pre-commit hook
 
