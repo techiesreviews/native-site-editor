@@ -54,9 +54,7 @@ test("Files adding never saves to the old repository when switched at any async 
   assert.equal(count, 5); // context, settings, two prepares, save.
 });
 
-test("Files adding does not publish an old repository's completed summary", {
-  todo: "stale write at await 5 (port save): createFilesAdding marks old entries added and announces success after the repository changed",
-}, async () => {
+test("Files adding does not publish an old repository's completed summary", async () => {
   await forEachAwait(scenario, run => { run.state.live = false; }, run => {
     assert.deepEqual(run.state.staleWrites, []);
     assert.ok(run.runs.entries().every(entry => entry.state !== "added"));

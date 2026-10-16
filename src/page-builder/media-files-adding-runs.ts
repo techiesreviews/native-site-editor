@@ -44,11 +44,11 @@ export function createFilesAdding(deps: FilesAddingDeps) {
     if (!mediaAddingCancellable(entry.state)) return;
     entry.work?.abort(); entry.state = "cancelled";
   }
-  /** Another repository or branch: the addition goes, saying so once. */
-  function drop(addition: FilesAddition, error: unknown) {
+  /** Another repository or branch: the addition goes, with advice if nothing was saved. */
+  function drop(addition: FilesAddition, error?: unknown) {
     addition.entries.forEach(stop);
     additions = additions.filter(other => other !== addition);
-    deps.paint(); addition.host.error(error);
+    deps.paint(); if (error !== undefined) addition.host.error(error);
   }
   function enqueue(addition: FilesAddition) {
     const done = queue.then(() => run(addition));
@@ -58,45 +58,54 @@ export function createFilesAdding(deps: FilesAddingDeps) {
   async function run(addition: FilesAddition): Promise<string[]> {
     const { host } = addition;
     if (!addition.entries.some(entry => entry.state === "waiting")) return [];
-    let ctx: MediaWorkspaceContext, quality: MediaImageQuality | undefined, keepOriginal = false, videoQuality: import("./video-prepare").VideoQuality | undefined, audio: AudioQuality = "balanced";
+    let ctx: MediaWorkspaceContext | undefined, quality: MediaImageQuality | undefined, keepOriginal = false, videoQuality: import("./video-prepare").VideoQuality | undefined, audio: AudioQuality = "balanced";
+    const current = () => {
+      if (!host.live()) return false;
+      try { ctx?.assertLive(); return true; } catch { return false; }
+    };
     try {
-      if (!host.live()) throw new Error(CHANGED);
+      if (!current()) throw new Error(CHANGED);
       ctx = await host.context();
+      if (!current()) throw new Error(CHANGED);
       const settings = await deps.settings?.(ctx);
+      if (!current()) throw new Error(CHANGED);
       quality = settings?.image; videoQuality = settings?.video; audio = settings?.audio ?? "balanced"; keepOriginal = settings?.keepOriginal === true;
-      ctx.assertLive();
-    } catch (error) { drop(addition, error); return []; }
+    } catch (error) { drop(addition, current() ? error : new Error(CHANGED)); return []; }
     for (const entry of addition.entries) {
       if (entry.state !== "waiting") continue;
-      if (!host.live()) { drop(addition, new Error(CHANGED)); return []; }
+      if (!current()) { drop(addition, new Error(CHANGED)); return []; }
       const work = entry.work = new AbortController();
       entry.quality = quality;
       set(entry, "preparing");
       try {
         const prepared = await deps.prepare(entry.file, ctx.key, addition.folder, work.signal, quality, keepOriginal, videoQuality, audio);
+        if (!current()) { drop(addition, new Error(CHANGED)); return []; }
         // Cancelled meanwhile: the file is left alone.
         if (work.signal.aborted) continue;
         entry.request = prepared.request; entry.note = prepared.warning;
         set(entry, "ready");
       } catch (error) {
+        if (!current()) { drop(addition, new Error(CHANGED)); return []; }
         if (!work.signal.aborted) { entry.error = problem(error); set(entry, "failed"); }
       }
     }
-    if (!host.live()) { drop(addition, new Error(CHANGED)); return []; }
+    if (!current()) { drop(addition, new Error(CHANGED)); return []; }
     const ready = addition.entries.filter(entry => entry.state === "ready");
     if (!ready.length) return [];
     ready.forEach(entry => { entry.state = "adding"; });
     deps.paint();
     try {
       const paths = await deps.save(ctx, () => host.context(), ready.map(entry => entry.request!));
+      if (!current()) { drop(addition); return []; }
       ready.forEach((entry, index) => { entry.path = paths[index]; entry.state = "added"; });
       host.announce([`Added ${paths.join(", ")}.`, ...ready.flatMap(entry => entry.note ?? [])].join(" "));
       return paths;
     } catch (error) {
-      if (!host.live()) { drop(addition, error); return []; }
+      // A save that failed added nothing: its reason (usually "Nothing was added") still holds.
+      if (!current()) { drop(addition, error); return []; }
       ready.forEach(entry => { entry.error = problem(error); entry.state = "failed"; });
       return [];
-    } finally { deps.paint(); }
+    } finally { if (current()) deps.paint(); }
   }
   /** The pictures of one addition not added yet (the earliest with any) go to the Optimise sheet. */
   const reviewable = () => additions.find(addition =>
