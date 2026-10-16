@@ -72,7 +72,7 @@ process.exit(Number(process.env.SIZE_EXIT ?? 0));
     cwd: root, env: { ...env, KIT_SIZE_RUNNER: runner, ...extra }, encoding: "utf8", timeout: 15_000,
   });
   const cachePath = (commit = sha) => join(root, ".scratch/size-cache", `${commit}.json`);
-  const seed = (commit = base, values = {}) => put(`.scratch/size-cache/${commit}.json`, JSON.stringify({ version: 1, sha: commit, boot: 298 * 1024, total: 1236 * 1024, requests: 15, ...values }));
+  const seed = (commit = base, values = {}) => put(`.scratch/size-cache/${commit}.json`, JSON.stringify({ version: 1, sha: commit, boot: 298 * 1024, total: 1236 * 1024, requests: 15, over: false, ...values }));
   const count = () => existsSync(calls) ? readFileSync(calls, "utf8").trim().split("\n").filter(line => line.startsWith('{"runner"')).length : 0;
   return { root, env, git, put, base, sha, calls, runner, run, cachePath, seed, count };
 }
@@ -84,8 +84,10 @@ test("delta formatting covers signs, zero and symmetric KB rounding", () => {
 });
 
 test("parse cold medians in bytes, prefer row boot and fall back to the budget line", () => {
-  assert.deepEqual(parseBudget(table() + summary), { boot: 301 * 1024, total: 1234 * 1024, requests: 14 });
-  assert.deepEqual(parseBudget(table("—") + summary), { boot: 302 * 1024, total: 1234 * 1024, requests: 14 });
+  assert.deepEqual(parseBudget(table() + summary), { boot: 301 * 1024, total: 1234 * 1024, requests: 14, over: false });
+  assert.deepEqual(parseBudget(table("—") + summary), { boot: 302 * 1024, total: 1234 * 1024, requests: 14, over: false });
+  assert.equal(parseBudget(table("355 KB") + summary.replace("within", "OVER")).over, true);
+  assert.equal(parseBudget(table("356 KB")).over, true);
   assert.equal(parseBudget(table("301.5 KB")).boot, 301.5 * 1024);
   assert.equal(parseBudget(table("0 KB")).boot, 0);
   assert.deepEqual(parseBudget(table().replaceAll("\n", "\r\n")), parseBudget(table()));
@@ -111,7 +113,7 @@ test("clean HEAD cache misses then hits, ignores scratch, and preserves full log
   assert.match(readFileSync(log, "utf8"), /cold\s+812/);
   assert.match(readFileSync(log, "utf8"), /budget diagnostic/);
   assert.doesNotMatch(first.stdout, /budget diagnostic/);
-  assert.deepEqual(JSON.parse(readFileSync(f.cachePath(), "utf8")), { version: 1, sha: f.sha, boot: 301 * 1024, total: 1234 * 1024, requests: 14 });
+  assert.deepEqual(JSON.parse(readFileSync(f.cachePath(), "utf8")), { version: 1, sha: f.sha, boot: 301 * 1024, total: 1234 * 1024, requests: 14, over: false });
   const second = f.run(["--no-base"]);
   result(second, 0, /ok size boot 301 KB, budget 355 KB$/);
   assert.match(second.stdout, new RegExp(`cache: hit ${f.sha.slice(0, 7)}`));
@@ -197,13 +199,13 @@ test("--no-base never resolves a base ref or creates a base worktree", t => {
 test("corrupt, mismatched and invalid cache records are misses", t => {
   const f = fixture(t);
   for (const text of ["{", "null", "{}", JSON.stringify({ version: 1, sha: f.sha, boot: "301", total: 0, requests: 0 }),
-    ...[{ sha: f.base }, { version: 2 }, { boot: -1 }, { total: null }, { requests: -1 }].map(values => JSON.stringify({ version: 1, sha: f.sha, boot: 301 * 1024, total: 1234 * 1024, requests: 14, ...values }))]) {
+    ...[{ sha: f.base }, { version: 2 }, { boot: -1 }, { total: null }, { requests: -1 }, { over: undefined }, { over: "no" }].map(values => JSON.stringify({ version: 1, sha: f.sha, boot: 301 * 1024, total: 1234 * 1024, requests: 14, over: false, ...values }))]) {
     f.put(`.scratch/size-cache/${f.sha}.json`, text);
     const output = f.run(["--no-base"]);
     result(output, 0, /ok size/);
     assert.match(output.stdout, /cache: miss/);
   }
-  assert.equal(f.count(), 9);
+  assert.equal(f.count(), 11);
 });
 
 test("budget boundary is 355 * 1024 bytes and cached over-budget results still fail", t => {
@@ -217,6 +219,35 @@ test("budget boundary is 355 * 1024 bytes and cached over-budget results still f
   result(cached, 1, /fail size boot 360 KB over budget 355 KB$/);
   assert.match(cached.stdout, /cache: hit/);
   assert.equal(f.count(), before);
+});
+
+test("the runner's OVER verdict fails even when the rounded boot reads 355 KB, also from cache", t => {
+  const f = fixture(t);
+  const over = table("355 KB") + "Byte budget: 355 KB gzip before first preview paint (cold median of 3), budget 355 KB: OVER.\nReport-only: not failing.";
+  result(f.run(["--no-base"], { SIZE_OUTPUT: over }), 1, /fail size boot 355 KB over budget 355 KB$/);
+  const cached = f.run(["--no-base"]);
+  result(cached, 1, /fail size boot 355 KB over budget 355 KB$/);
+  assert.match(cached.stdout, /cache: hit/);
+  assert.equal(f.count(), 1);
+});
+
+test("uncached base measures in a detached base worktree, caches it and releases the lease", t => {
+  const f = fixture(t);
+  mkdirSync(join(f.root, "node_modules"));
+  f.put(".git/info/exclude", "node_modules\n");
+  const first = f.run();
+  result(first, 0, new RegExp(`ok size boot 301 KB \\(±0 KB\\) vs dev@${f.base.slice(0, 7)}`));
+  assert.match(first.stdout, new RegExp(`cache: miss ${f.base.slice(0, 7)}`));
+  const dir = join(f.root, ".scratch/shots-base", f.base);
+  const cwds = readFileSync(f.calls, "utf8").trim().split("\n").map(line => JSON.parse(line).cwd).filter(Boolean);
+  assert.deepEqual([...new Set(cwds)], [f.root, dir]);
+  assert.equal(f.git("-C", dir, "rev-parse", "HEAD"), f.base);
+  assert.equal(JSON.parse(readFileSync(f.cachePath(f.base), "utf8")).sha, f.base);
+  assert.deepEqual(readdirSync(join(dir, ".scratch/kit-shots-leases")), []);
+  const second = f.run();
+  result(second, 0, /ok size/);
+  assert.match(second.stdout, new RegExp(`cache: hit ${f.base.slice(0, 7)}`));
+  assert.equal(f.count(), 2);
 });
 
 test("failed or unparseable measurements fail once and never populate cache", t => {
