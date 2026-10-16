@@ -1,8 +1,8 @@
 ---
 title: "Test helper: switch repo or selection at every await"
 type: task (AFK)
-status: open
-assignee:
+status: closed
+assignee: ak-21
 blocked_by: []
 builder: sol
 ---
@@ -24,3 +24,13 @@ builder: sol
 
 - Helper unit-tested on a toy writer that is wrong (caught) and right (passes).
 - Sol review saved under the main root `.scratch/reviews/`; landed on `dev` with CI green.
+
+## Done (2026-10-16)
+
+- Behaviour: `tests/support/await-race.ts` `forEachAwait(scenario, disturb, assertNoStaleWrite)` runs a baseline that counts wrapped port calls, then one fresh replay per await point. In each replay the disturbance runs while the writer is held at that await, even when the port rejects. Failures name the await number and port, and keep the original cause. Zero wrapped awaits fail loudly.
+- Writers covered (new test files only): Files adding `createFilesAdding` (5 await points: context, settings, two prepares, save); media draft transaction `mediaDraftTransaction` through `applyMediaWorkspaceBatch`, rename (3) and upload (5). The draft transaction is clean at every await.
+- Defect found (kept as a node:test `todo`, not fixed): `createFilesAdding` in `src/page-builder/media-files-adding-runs.ts`. After `await deps.save(...)` resolves it marks the entries `added` and calls `host.announce("Added …")` without re-checking `host.live()`, so a repository or branch switch during the save shows the old repository's success in the new view. **Follow-up for the lead:** this needs a ticket. The fix is a `host.live()` check after the save, going to `drop(addition, …)`; then remove the `todo` in `tests/media-files-adding-runs-await-race.test.ts`. It was not fixed here because ak-17 owns `src/page-builder/media-*` right now.
+- CODING_STANDARDS.md: "Proofs survive awaits" now lives in a new "Async writers" section that covers every async writer and names `forEachAwait`. The Controllers bullet points to it.
+- Commits: 31163ec0 (Sol build), plus this close.
+- Tests: `npm run check` passed; `scripts/agents/unit.sh` passed 3505 with 0 failures (1 todo); `npm run lint` passed. No browser specs were touched.
+- Review: one Sol review, clean (no defects, no nits). Saved in `/home/ubulex/Projects/native-site-editor/.scratch/reviews/ak-21/review/`.
