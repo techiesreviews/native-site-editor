@@ -9,3 +9,11 @@
   `git stash list`. `list`/`show` are allowed on purpose, so they prove nothing.
   `kit doctor` pipes the probe command as hook JSON into `bash-guard.sh` and expects
   exit 2. It never runs the probe itself, so a dead hook can't stash real work.
+
+## 2026-10-16 plan
+
+- 25 tickets landed with the map (846147f9 on build/agent-kit). Runner prompt: `runner-brief.md`.
+- Facts: personal-account repo (no merge queue); CI never deploys the preview (no
+  CLOUDFLARE_API_TOKEN secret); main is an ancestor of dev.
+- Ticket 16 → free worker (opencode longcat-2.5-preview-free, T3 task `ak-16-attempt-1`, worktree isolation).
+- Plan landed on dev 846147f9. Wave 1 runners (Claude, driving Sol): ak-01, ak-02, ak-17, ak-21, ak-23.
