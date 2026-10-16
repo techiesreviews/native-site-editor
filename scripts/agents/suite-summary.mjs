@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Usage: suite-summary.mjs <results.json> [...]; merge Playwright shard reports.
+// Usage: [ASE_KNOWN_FAILURES=<registry.json>] suite-summary.mjs <results.json> [...]; merge Playwright shard reports.
 import { readFileSync } from "node:fs";
 
 // Titles take precedence over line numbers so moved tests still match, while an
@@ -21,7 +21,9 @@ export function main(files) {
   }
   const counts = { passed: 0, failed: 0, skipped: 0, flaky: 0 };
   const knownCounts = { "known flaky": 0, "known failing on dev": 0 };
-  const entries = JSON.parse(readFileSync(new URL("../../tests/known-failures.json", import.meta.url), "utf8"));
+  // ASE_KNOWN_FAILURES names another registry file (tests use a stand-in).
+  const registry = process.env.ASE_KNOWN_FAILURES || new URL("../../tests/known-failures.json", import.meta.url);
+  const entries = JSON.parse(readFileSync(registry, "utf8"));
   let invalid = false;
   const stripAnsi = (value) => value.replace(/\x1b\[[0-9;]*m/g, "");
   function visit(suite, parents = []) {

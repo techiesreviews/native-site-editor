@@ -14,6 +14,8 @@ builder: claude
 ## Files
 
 - `tests/known-failures.json`
+- `tests/agent-suite-summary.test.ts` (lead decision 2026-10-16: stand-in registry)
+- `scripts/agents/suite-summary.mjs` (lead decision 2026-10-16: `ASE_KNOWN_FAILURES` override)
 
 ## Done when
 

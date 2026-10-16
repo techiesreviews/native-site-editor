@@ -26,27 +26,31 @@ test("known failures match report paths, exact titles, line families and spec-wi
 });
 
 test("summary marks known failures separately and still exits 1 for mixed failing reports", () => {
-  // Follows the registry, so editing the spec only means updating known-failures.json.
-  const compactLine = JSON.parse(readFileSync("tests/known-failures.json", "utf8"))
-    .find((entry: { spec: string }) => entry.spec === "native-save/native-structure-compact.spec.ts").line;
+  // A stand-in registry, so the live known-failures.json can shrink to nothing.
   const scratch = mkdtempSync(join(tmpdir(), "ase-summary-"));
   try {
+    const registry = join(scratch, "known-failures.json");
+    writeFileSync(registry, JSON.stringify([
+      { spec: "native-save/selector.spec.ts", title: "loads on demand", status: "flaky", since: "2026-01-01", note: "stand-in" },
+      { spec: "native-save/compact.spec.ts", line: 302, status: "failing-on-dev", since: "2026-01-01", note: "stand-in" },
+    ]));
+    const env = { ...process.env, ASE_KNOWN_FAILURES: registry };
     const report = join(scratch, "results.json");
-    writeFileSync(report, JSON.stringify({ suites: [{ title: "suite", file: "native-save/native-selector.spec.ts", specs: [
-      { title: entries[0].title, file: "unknown.spec.ts", line: 1, tests: [{ status: "unexpected" }] },
-      { title: "component CSS loads on demand, scopes to matching shadow root, and edits live", line: 999, tests: [{ status: "unexpected", results: [{ status: "failed", error: { message: "first error\nnext line" } }] }] },
-      { title: "variant", file: "native-save/native-structure-compact.spec.ts", line: compactLine, tests: [{ status: "unexpected" }] },
+    writeFileSync(report, JSON.stringify({ suites: [{ title: "suite", file: "native-save/selector.spec.ts", specs: [
+      { title: "loads on demand", file: "unknown.spec.ts", line: 1, tests: [{ status: "unexpected" }] },
+      { title: "loads on demand", line: 999, tests: [{ status: "unexpected", results: [{ status: "failed", error: { message: "first error\nnext line" } }] }] },
+      { title: "variant", file: "native-save/compact.spec.ts", line: 302, tests: [{ status: "unexpected" }] },
       { title: "retried", tests: [{ status: "flaky" }] },
     ] }] }));
-    const result = spawnSync(process.execPath, ["scripts/agents/suite-summary.mjs", report], { encoding: "utf8" });
+    const result = spawnSync(process.execPath, ["scripts/agents/suite-summary.mjs", report], { encoding: "utf8", env });
     assert.equal(result.status, 1);
     assert.match(result.stdout, /failed: 3, skipped: 0, flaky: 1/);
     assert.match(result.stdout, /known flaky: 1, known failing on dev: 1/);
     assert.match(result.stdout, /\[known flaky\]\n  first error/);
     assert.match(result.stdout, /\[known failing on dev\]/);
     assert.doesNotMatch(result.stdout, /next line/);
-    assert.equal(spawnSync(process.execPath, ["scripts/agents/suite-summary.mjs"], { encoding: "utf8" }).status, 2);
-    assert.equal(spawnSync(process.execPath, ["scripts/agents/suite-summary.mjs", join(scratch, "missing.json")], { encoding: "utf8" }).status, 1);
+    assert.equal(spawnSync(process.execPath, ["scripts/agents/suite-summary.mjs"], { encoding: "utf8", env }).status, 2);
+    assert.equal(spawnSync(process.execPath, ["scripts/agents/suite-summary.mjs", join(scratch, "missing.json")], { encoding: "utf8", env }).status, 1);
   } finally { rmSync(scratch, { recursive: true, force: true }); }
 });
 
