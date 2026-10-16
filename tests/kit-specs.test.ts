@@ -97,9 +97,9 @@ test("removed visible strings match only quoted spec text and ignore moves and c
   f.put("src/button.ts", 'export const moved = "Still here";\nexport const label = "Media";\n');
   const diff = f.git("diff", "--unified=0", f.base, "--", "src");
   assert.deepEqual(removedStrings(diff), [{ file: "src/button.ts", value: "Image" }]);
-  const files = { ...f.files, [save("plain")]: "// Image\n", [save("template")]: 'test(`Image picker`, () => {});' };
+  const files = { ...f.files, [save("plain")]: "// Image\n", [save("template")]: 'test(`Image picker`, () => {});', [save("apostrophe")]: "// the card's link\ntest(\"Don't open Image menu\", () => {});\n" };
   const selected = selectAffected({ files, changed: ["src/button.ts"], diff });
-  assert.deepEqual(selected.map(spec => spec.file), [save("label"), save("template")]);
+  assert.deepEqual(selected.map(spec => spec.file), [save("apostrophe"), save("label"), save("template")]);
   assert.match(selected[0].reasons[0], /removed string: "Image" \(src\/button.ts\)/);
   const markup = `diff --git a/src/ui.ts b/src/ui.ts
 --- a/src/ui.ts

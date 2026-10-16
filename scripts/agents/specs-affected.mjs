@@ -3,7 +3,8 @@ import { knownFailure } from "./suite-summary.mjs";
 
 const browserSpec = /^tests\/(native-save|native-preview)\/[^/]+\.spec\.ts$/;
 const graphFile = /^(tests|src|scripts)\//;
-const quoted = /"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`/g;
+// Quote and apostrophe strings end at the line, so an apostrophe in a comment cannot swallow later lines.
+const quoted = /"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'|`(?:\\.|[^`\\])*`/g;
 
 export function specGroups(file, text) {
   if (file.startsWith("tests/native-preview/")) return ["native-preview"];
