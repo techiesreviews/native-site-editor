@@ -18,8 +18,9 @@ export function importsOf(text) {
 }
 
 function resolveImport(file, specifier, files) {
-  if (!specifier.startsWith(".")) return undefined;
-  const target = posix.normalize(posix.join(posix.dirname(file), specifier));
+  if (!specifier.startsWith(".") && !specifier.startsWith("/")) return undefined;
+  // Specs load app modules in the browser from the site root, e.g. import("/src/drafts.ts").
+  const target = posix.normalize(specifier.startsWith("/") ? specifier.slice(1) : posix.join(posix.dirname(file), specifier));
   const stems = [target, ...(target.endsWith(".js") ? [target.slice(0, -3)] : [])];
   const candidates = stems.flatMap(stem => [stem, ...[".ts", ".tsx", ".js", ".mjs"].map(ext => stem + ext), ...[".ts", ".tsx", ".js", ".mjs"].map(ext => `${stem}/index${ext}`)]);
   return candidates.find(candidate => graphFile.test(candidate) && files.has(candidate));
@@ -29,9 +30,21 @@ function literals(text) {
   return [...text.matchAll(quoted)].map(match => match[0].slice(1, -1));
 }
 
-function visible(text) {
-  return text.length >= 3 && /\p{L}/u.test(text) && (/^\p{Lu}/u.test(text) || text.includes(" "))
-    && !/[/\\{}=]/.test(text) && !/^(?:[.#]|\[)/.test(text) && !text.includes("${");
+// Markup text and accessibility attributes are visible by position; other literals
+// must look like a label (capitalised or several words) to count.
+function visible(text, explicit) {
+  return text.length >= 2 && /\p{L}/u.test(text) && (explicit || /^\p{Lu}/u.test(text) || text.includes(" "))
+    && !/[/\\{}=]/.test(text) && !/^(?:[.#]|\[)/.test(text);
+}
+
+function lineStrings(line) {
+  const modules = new Set(importsOf(line));
+  const attributes = [...line.matchAll(/(?:aria-label|title|placeholder)=["']([^"']+)["']/g)].map(match => match[1]);
+  const text = [...line.matchAll(/>([^<>]+)</g)].map(match => match[1].trim());
+  return [
+    ...literals(line).filter(value => !modules.has(value)).map(value => ({ value, explicit: false })),
+    ...[...attributes, ...text].map(value => ({ value, explicit: true })),
+  ];
 }
 
 export function removedStrings(diff) {
@@ -52,14 +65,11 @@ export function removedStrings(diff) {
   for (const [file, { removed, added }] of files) {
     const candidates = new Set();
     for (const line of removed) {
-      const modules = new Set(importsOf(line));
-      const attributes = [...line.matchAll(/(?:aria-label|title|placeholder)=["']([^"']+)["']/g)].map(match => match[1]);
-      const text = [...line.matchAll(/>([^<>]+)</g)].map(match => match[1].trim());
-      for (const value of [...literals(line), ...attributes, ...text]) {
-        if (visible(value) && !modules.has(value)) candidates.add(value);
-      }
+      for (const { value, explicit } of lineStrings(line)) if (visible(value, explicit)) candidates.add(value);
     }
-    for (const value of candidates) if (!added.some(line => line.includes(value))) result.push({ file, value });
+    // A string that reappears whole in an added line moved; "Image" → "Images" is still a rename.
+    const kept = new Set(added.flatMap(line => lineStrings(line).map(({ value }) => value)));
+    for (const value of candidates) if (!kept.has(value)) result.push({ file, value });
   }
   return result;
 }

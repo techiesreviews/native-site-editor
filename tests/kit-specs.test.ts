@@ -90,6 +90,9 @@ test("relative import graph follows helper, re-export and .js-to-.ts paths", t =
   assert.equal(selectAffected({ files, changed: ["src/media.ts"] })[0].file, save("imports"));
   assert.deepEqual(importsOf('import x from "./a"; export * from "./b"; import "./c"; import("./d"); require("./e")'), ["./a", "./b", "./c", "./d", "./e"]);
   assert.deepEqual(selectAffected({ files, changed: [save("imports")] })[0].reasons, [`import: ${save("imports")}`]);
+  // Specs load app modules in the browser from the site root.
+  const rooted = { ...f.files, [save("rooted")]: 'test("x", async ({ page }) => page.evaluate(() => import("/src/media.ts")));' };
+  assert.ok(selectAffected({ files: rooted, changed: ["src/media.ts"] }).some(spec => spec.file === save("rooted")));
 });
 
 test("removed visible strings match only quoted spec text and ignore moves and code", t => {
@@ -111,6 +114,20 @@ test("removed visible strings match only quoted spec text and ignore moves and c
 +const html = "Replacement";
 `;
   assert.deepEqual(removedStrings(markup).map(row => row.value).sort(), ["More options", "Open media", "Save changes", "Search media"]);
+  const renames = `diff --git a/src/ui.ts b/src/ui.ts
+--- a/src/ui.ts
++++ b/src/ui.ts
+@@ -1,3 +1,3 @@
+-const label = "Image";
+-const html = \`<button>OK</button><button>delete</button>\`;
+-const short = "id";
++const label = "Images";
++const html = \`<button>Confirm</button><button>Remove</button>\`;
++const short = "key";
+`;
+  assert.deepEqual(removedStrings(renames).map(row => row.value).sort(), ["Image", "OK", "delete"]);
+  const okSpec = { ...f.files, [save("ok")]: 'await page.getByRole("button", { name: "OK" }).click();' };
+  assert.ok(selectAffected({ files: okSpec, changed: ["src/ui.ts"], diff: renames }).some(spec => spec.file === save("ok")));
 });
 
 test("fixture rules match exact tags and collect every applicable reason", t => {
