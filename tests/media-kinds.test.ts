@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { test } from "node:test";
 import * as kinds from "../shared/media-kinds.ts";
 import * as policies from "../shared/media-kinds-policies.ts";
+import { parse, ts } from "./support/source-guard.ts";
 
 const media = { ...kinds, ...policies };
 
@@ -32,6 +34,31 @@ test("boot media kinds and lazy caller policies keep separate exports and depend
   assert.deepEqual(Object.keys(kinds).filter(name => Object.hasOwn(policies, name)), []);
   const source = readFileSync(new URL("../shared/media-kinds.ts", import.meta.url), "utf8");
   assert.doesNotMatch(source, /media-kinds-policies/);
+});
+
+/** Files the boot bundle loads: src/main.ts and its static imports, without dynamic import(), type-only or ?worker/?url imports. */
+function bootFiles(entry = "src/main.ts") {
+  const seen = new Set<string>(), queue = [entry];
+  for (let file = queue.pop(); file; file = queue.pop()) {
+    if (seen.has(file)) continue;
+    seen.add(file);
+    for (const statement of parse(readFileSync(file, "utf8"), file).statements) {
+      if (!(ts.isImportDeclaration(statement) || ts.isExportDeclaration(statement)) || !statement.moduleSpecifier || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
+      if (ts.isImportDeclaration(statement) ? statement.importClause?.isTypeOnly : statement.isTypeOnly) continue;
+      const specifier = statement.moduleSpecifier.text;
+      if (!specifier.startsWith(".") || specifier.includes("?")) continue;
+      const base = join(dirname(file), specifier);
+      const found = [base, base + ".ts", base.replace(/\.js$/, ".ts"), join(base, "index.ts")].find(path => /\.[cm]?[jt]s$/.test(path) && existsSync(path));
+      if (found) queue.push(found);
+    }
+  }
+  return seen;
+}
+
+test("the boot import graph reaches the media-kind table but never the lazy caller policies", () => {
+  const boot = bootFiles();
+  assert.ok(boot.has("shared/media-kinds.ts"));
+  assert.equal(boot.has("shared/media-kinds-policies.ts"), false);
 });
 
 // Historical accepted sets, captured before migration. Keep these literal.
