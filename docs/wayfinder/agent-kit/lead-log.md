@@ -58,3 +58,4 @@
 - PR #11 (18, promise lint) merged after a full browser run (1,059 + groups, 0 failures). PR #13 (33, Codex model check reads only header blocks) merged.
 - PR #12 (20, unused exports): kit pr stopped on one flaky spec (native-media-newest:50, fails 1/3 on plain dev, 3/3 on the branch) → lead finished the PR by hand (push, PR, Sol review on the PR, CI green, rebase-merge) and filed ticket 34. Review rounds 3–4 found rarer checker edge cases; round 3 fixed (destructuring assignments), round 4 (computed keys) documented as a known limit.
 - Ticket 24 (docs) closes the build through kit pr: the proof of the PR flow.
+- PR #14 (24) first CI run failed in kit-shots-compare.test.ts (concurrent base setup race, ticket 08 code) → ticket 35 filed; kit pr re-run.
