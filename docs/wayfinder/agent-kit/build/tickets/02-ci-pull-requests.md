@@ -1,8 +1,8 @@
 ---
 title: "CI: checks on pull requests and the merge queue; dev queues instead of cancelling"
 type: task (AFK)
-status: open
-assignee:
+status: closed
+assignee: ak-02
 blocked_by: []
 builder: sol
 ---
@@ -25,3 +25,11 @@ builder: sol
 - Both workflow files parse; `ci.yml` triggers and concurrency match the above.
 - The checklist reads as plain steps with exact menu names.
 - Sol review saved under the main root `.scratch/reviews/`; landed on `dev` with CI green.
+
+## Done (2026-10-16)
+
+- **Behavior.** New `.github/workflows/ci.yml` (workflow **CI**, job **checks**) runs `npm ci`, the headless shell install, check, units, lint, byte budget and the @smoke browser slice, uploading the smoke report on failure. It triggers on `pull_request` and `merge_group` into `dev` and `main`; concurrency group `ci-<event>-<PR number or ref>`, cancel-in-progress only for `pull_request`, so merge groups never cancel. Read-only permissions, no deploy, no secrets. `deploy-preview.yml` changed only `cancel-in-progress: false`, so dev pushes queue; its checks, deploy step and `workflow_dispatch` are unchanged. `docs/agents/github-settings.md` is Lex's 9-step click list: protect `main` (pull requests only, no bypass, CI / checks, up to date) and `dev` (CI / checks and up to date, no pull-request requirement and admin bypass left on so `land.sh` keeps working until `kit pr`), allow auto-merge, skip the merge queue (personal account) and add the `CLOUDFLARE_API_TOKEN` secret.
+- **Commits.** `3e35cf03` (Sol build), `363b364d` (runner fixes: dev rule matches "PRs only into main", real Cloudflare menu path, Lex waits for an agent's PR, ci.yml header).
+- **Tests.** Both workflows parse (PyYAML; actionlint not installed). `npm run check` passed, `scripts/agents/unit.sh` 3496 pass / 0 fail, `npm run lint` passed. No browser specs touched.
+- **Review.** One Sol review: no defects, no gaps (`/home/ubulex/Projects/native-site-editor/.scratch/reviews/ak-02/review/`).
+- **Live check.** ci.yml first runs on a pull request; after landing, `gh workflow list` shows **CI**.
