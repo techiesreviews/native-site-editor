@@ -269,14 +269,43 @@ export function namedSpecs(names, files) {
   return [...selected.values()].sort((a, b) => a.file.localeCompare(b.file));
 }
 
-export function routeSpecs(specs, available = specs) {
+export const SHARD_MIN_SPECS = 40;
+
+/** Greedy largest-first partitioning, with stable ties independent of input order. */
+export function planShards(files, count, weights = {}) {
+  if (!Number.isInteger(count) || count < 1) throw new Error("shard count must be a positive integer");
+  const shards = Array.from({ length: Math.min(count, files.length) }, () => ({ files: [], weight: 0 }));
+  const weight = file => Math.max(1, weights[file] ?? 1);
+  const ordered = [...files].sort((a, b) => weight(b) - weight(a) || a.localeCompare(b));
+  for (const file of ordered) {
+    const lightest = shards.reduce((best, shard) => shard.weight < best.weight ? shard : best);
+    lightest.files.push(file);
+    lightest.weight += weight(file);
+  }
+  return shards.map(shard => shard.files.sort());
+}
+
+/** Return the concurrency and its diagnostic caps without reading the host. */
+export function shardCount({ requested, free = 0, memoryKb = 0, minMemoryKb = 4194304, load = 0, maxLoad = 1, files }) {
+  if (requested !== undefined && !/^[1-9][0-9]*$/.test(String(requested))) throw new Error(`Invalid ASE_SPEC_SHARDS: ${requested}`);
+  const memoryCap = minMemoryKb === 0 ? Infinity : Math.floor(memoryKb / minMemoryKb);
+  const loadCap = Math.floor(maxLoad - load);
+  // Convert only after validating decimal text: even enormous overrides cap at files.
+  const count = Math.min(files, requested === undefined ? Math.max(1, Math.min(4, free, memoryCap, loadCap)) : Number(requested));
+  return { count, free, memoryCap, loadCap };
+}
+
+export function routeSpecs(specs, available = specs, { shards = 1, texts = {} } = {}) {
   const runs = [];
   for (const group of ["default", "actual", "native-static", "native-preview"]) {
     const selected = specs.filter(spec => spec.groups.includes(group));
     if (!selected.length) continue;
     const project = group === "native-preview" ? group : "native-save";
     if (["default", "native-preview"].includes(group)) {
-      runs.push({ group, project, files: selected.map(spec => spec.file), command: ["npx", "playwright", "test", `--project=${project}`, "--workers=1", ...selected.map(spec => spec.file)] });
+      const files = selected.map(spec => spec.file);
+      const weights = Object.fromEntries(files.map(file => [file, Math.max(1, (texts[file] ?? "").match(/\btest(?:\.(?:only|skip|fixme|fail))?\s*\(/g)?.length ?? 0)]));
+      const batches = group === "default" && files.length >= SHARD_MIN_SPECS ? planShards(files, shards, weights) : [files];
+      for (const files of batches) runs.push({ group, project, files, command: ["npx", "playwright", "test", `--project=${project}`, "--workers=1", ...files] });
     } else for (const spec of selected) {
       const name = posix.basename(spec.file);
       if (available.filter(other => other.file.startsWith("tests/native-save/") && other.groups.includes(group) && posix.basename(other.file).includes(name)).length !== 1) throw new Error(`ambiguous --spec filter: ${name}`);
