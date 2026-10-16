@@ -39,3 +39,8 @@
 - ak-26 landed b56b01dd (no real flake: todo under red heading). Follow-ups: 28 kit-wait test under load (runner), 29 specs --affected lazy import() (free worker).
 - Ticket 29 rescoped to Sol: specs never import src (they load the app); add defined-strings + name-match selection.
 - ak-07 landed f195becc (35 findings / 52 shots). Lead decision: keep tuned tap rule (<24 px always; 24–43 px only when crowded; = WCAG 2.2 target size). Ticket 30 (print findings list) → free worker. Started ak-29.
+- ak-13 landed 9e3383ac (no deploy; dry-run made the deploy worktree). Dev CI red from kit-pr.test.ts (17, CI-only) → sent back to ak-14.
+- Ticket 30 (free worker, 1 attempt) → lead's first real `kit pr` run (in progress). Runners stay on land.sh until it's proven.
+- Started ak-15.
+- Ticket 30 landed via land.sh. First real kit pr: all local steps ok, push ok, then 'createPullRequest: Resource not accessible by personal access token' → Lex must grant Pull requests: Read and write on the fine-grained token (asked 2026-10-16). Pushed branch deleted.
+- Lex granted Pull requests: Read and write (2026-10-16). Ticket 31 (compare uses current tooling) after proof-shot failure on a pre-kit ref.
