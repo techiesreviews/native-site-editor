@@ -101,7 +101,8 @@ export async function readFileTexts(api: RepositoryApi, cache: FileCache, limit:
       }, () => {
         if (inflight.get(key) === content) inflight.delete(key);
       });
-      rememberFile(cache, limit, key, content);
+      // The Promise.all readers below await this same promise and handle its rejection.
+      void rememberFile(cache, limit, key, content);
     }
   }
   const result: Record<string, string> = {};

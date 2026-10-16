@@ -1120,7 +1120,7 @@ const gitOf = (key: string, id: string | null, repoName: string | null) =>
   (repoName && onboardingOf(key).repos.get(repoName)?.git) || sessions.get(id ?? key)!.git!;
 
 function workerMiddleware(): Connect.NextHandleFunction {
-  return async (req, res, next) => {
+  const run = async (...[req, res, next]: Parameters<Connect.NextHandleFunction>) => {
     const url = new URL(req.url ?? "/", `http://127.0.0.1:${appPort}`);
     const path = url.pathname;
     // Dist mode already applied public/_headers; do not weaken its worker policy.
@@ -1392,6 +1392,9 @@ function workerMiddleware(): Connect.NextHandleFunction {
     if (cookies.length) res.setHeader("Set-Cookie", cookies);
     const buffer = Buffer.from(await response.arrayBuffer());
     res.end(buffer);
+  };
+  return (req, res, next) => {
+    void run(req, res, next).catch(next);
   };
 }
 

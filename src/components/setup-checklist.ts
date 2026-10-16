@@ -1,4 +1,5 @@
 import { button, node } from "../ui/dom";
+import { reported } from "../ui/report-failure";
 import { icon } from "../icons";
 import type { SetupItemId, SetupProgress } from "../setup-checklist";
 import "./dropdown.css";
@@ -102,7 +103,7 @@ export function createSetupChecklist(actions: SetupActions) {
   const nameMessage = node("p", "setup-form__message");
   nameMessage.setAttribute("role", "status");
   nameForm.append(nameLabel, nameSubmit);
-  nameForm.addEventListener("submit", async (event) => {
+  nameForm.addEventListener("submit", reported(async (event) => {
     event.preventDefault();
     const name = nameInput.value.trim();
     if (!name) {
@@ -122,7 +123,7 @@ export function createSetupChecklist(actions: SetupActions) {
     } finally {
       nameSubmit.disabled = false;
     }
-  });
+  }));
   nameInput.addEventListener("input", () => { nameDirty = true; });
   const nameDetail = node("div", "setup-detail");
   nameDetail.hidden = true;

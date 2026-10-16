@@ -1,3 +1,4 @@
+import { reported } from "../ui/report-failure";
 import { mountEditorPalette, type EditorPaletteDeps } from "../page-builder/palette";
 import { firstHeadingText, nativePageLabel } from "../native-pages";
 import { componentLabel, isSectionTemplate } from "../native-insert";
@@ -78,14 +79,14 @@ export function createCommandPaletteController(ports: CommandPalettePorts) {
       insert: async (point, component) => { if (live()) await actions.insert(point, component); },
       select: (path, node) => { if (live()) actions.select(path, node); },
       history: direction => { if (live()) actions.history(direction); },
-      newPage: async () => {
+      newPage: reported(async () => {
         if (!live()) return;
         const held = ports.stamp();
         ports.beginNewPage();
         // The explorer's opening toggle renders rows before the title field starts.
         await afterExplorerRender();
         if (live() && held.holds()) ports.startNewPage();
-      },
+      }),
       newFile: () => { if (live()) actions.newFile(); },
       showPagesAndFiles: () => { if (live()) actions.showPagesAndFiles(); },
       toggleCode: () => { if (live()) actions.toggleCode(); },

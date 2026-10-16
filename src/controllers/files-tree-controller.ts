@@ -4,6 +4,7 @@ import { CHANGE_WORDS, type ChangeKind } from "../file-changes";
 import type { FileOperationsTreeState as TreeState } from "./file-operations-controller";
 import type { createFileRowActions, FileRowTarget } from "../components/file-row-actions";
 import type * as dom from "../ui/dom";
+import { reported } from "../ui/report-failure";
 import type { setIcon } from "../icons";
 
 /** Getters read current host state; only folder UI and listing cache belong here. */
@@ -258,7 +259,7 @@ export function createFilesTreeController(ports: FilesTreePorts) {
         reading.then(done, done);
         return reading;
       };
-      row.addEventListener("click", async () => {
+      row.addEventListener("click", reported(async () => {
         if (epoch !== ports.epoch() || !ports.repo()) return;
         ports.clearError();
         // A folder only opens or closes in the tree; the open file, the preview
@@ -313,7 +314,7 @@ export function createFilesTreeController(ports: FilesTreePorts) {
           if (draft) await ports.openDraft(draft);
           else if (!entry.isNew) await ports.openEntry(entry, path, epoch);
         }
-      });
+      }));
       const line = node("div", `file-row-line${directory ? " is-folder" : ""}`);
       // How deep the line sits: the type column (files-tree.css) takes the indent back out.
       line.style.setProperty("--depth", String(parentPath ? parentPath.split("/").length : 0));

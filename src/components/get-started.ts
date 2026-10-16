@@ -1,4 +1,5 @@
 import { button, link, node } from "../ui/dom";
+import { reported } from "../ui/report-failure";
 import { icon } from "../icons";
 import {
   DEFAULT_REPOSITORY_NAME,
@@ -190,7 +191,7 @@ export function createGetStarted(options: {
     fallback.hidden = false;
   }
   let busy = false;
-  form.addEventListener("submit", async (event) => {
+  form.addEventListener("submit", reported(async (event) => {
     event.preventDefault();
     if (busy) return;
     const problem = showName();
@@ -215,7 +216,7 @@ export function createGetStarted(options: {
       busy = false;
       if (root.isConnected) submit.disabled = false;
     }
-  });
+  }));
 
   // ---- Use a repository you have ----
   const existing = node("div", "onboard-card get-started__existing");

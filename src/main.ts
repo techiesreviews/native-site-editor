@@ -27,6 +27,7 @@ import "./utilities.css";
 import "./style.css";
 import "./theme.css";
 import { node, link, button } from "./ui/dom";
+import { reported, setErrorReporter } from "./ui/report-failure";
 import {
   readWorkspace,
   readWorkspaceUrl,
@@ -131,6 +132,8 @@ import type {
   Snapshot,
   TreeEntry,
 } from "../shared/types";
+
+setErrorReporter(errorMessage);
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
 const element = <T extends HTMLElement>(id: string) =>
@@ -359,7 +362,7 @@ function mountWorkspace() {
     onReload: () => void refreshRepositoryList(),
     onAccessChanged: () => void refreshRepositoryList(),
     onSwitchAccount: (login) => void switchAccount(login),
-    onSignOut: disconnect,
+    onSignOut: reported(disconnect),
   });
   element("repository-menu").append(repositoryMenu.root);
   element("site-settings-toggle").addEventListener("click", () => void openNativeSiteSettings());
@@ -4324,12 +4327,12 @@ async function mountSource(
         // Opened once the discard is done; what was announced (the discard,
         // or an undo's own words) outlasts the page's loading messages.
         if (fallback)
-          queueMicrotask(async () => {
+          queueMicrotask(reported(async () => {
             const said = element("status").textContent;
             const epoch = generation;
             await restoreFile(fallback, epoch);
             if (epoch === generation && said) element("status").textContent = said;
-          });
+          }));
       }
       if (appStore.snapshot.value && info.user) {
         showDirectory(appStore.snapshot.value);
@@ -4359,7 +4362,7 @@ async function mountSource(
     onDiscardAll: () => void savePublish.discardAll(),
     publishHead: () => savePublish.headFor(scope),
     onRefused: () => void savePublish.checkHead(true),
-    onDiscardChange: discardFileChange,
+    onDiscardChange: reported(discardFileChange),
     deletedUpstream: savePublish.isDeleted,
     onSettleDeleted: savePublish.settleDeleted,
     cssWorkspace: nativeCssWorkspace, variants: nativeVariantFiles,
@@ -5029,7 +5032,8 @@ function takeBootGuess(repo: Repository, branch: string): { snapshot: Promise<Sn
     for (const { sha } of guess.files && !token.abandoned ? provenFiles(guess.memory, snapshot.tree ?? snapshot.entries) : []) {
       const key = fileKey(repo.full_name, sha);
       if (fileContents.has(key)) continue;
-      rememberFile(fileContents, fileContentsLimit, key, guess.files!.then((files) => {
+      // Readers await this cached promise and handle its rejection.
+      void rememberFile(fileContents, fileContentsLimit, key, guess.files!.then((files) => {
         const text = files.value.files[sha];
         if (files.sessionTag !== tag || typeof text !== "string") throw new Error();
         return text;

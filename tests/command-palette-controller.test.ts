@@ -59,11 +59,11 @@ test("selection and editing follow the current file rather than a cached copy", 
   f.controller.dispose(); f.appStore.dispose();
 });
 
-test("remount disposes keyboard registration and rejects actions and views from old dependencies", () => {
+test("remount disposes keyboard registration and rejects actions and views from old dependencies", async () => {
   const f = fixture(); f.controller.mount(); const old = f.deps[0];
   f.controller.mount(); assert.equal(f.counters().disposed, 1);
-  old.open("index.html"); assert.equal(f.counters().opened, 0); assert.deepEqual(old.pages(), []); assert.equal(old.currentPath(), undefined);
-  f.deps[1].open("index.html"); assert.equal(f.counters().opened, 1);
+  await old.open("index.html"); assert.equal(f.counters().opened, 0); assert.deepEqual(old.pages(), []); assert.equal(old.currentPath(), undefined);
+  await f.deps[1].open("index.html"); assert.equal(f.counters().opened, 1);
   assert.equal(old.stamp?.().holds(), true);
   f.controller.dispose(); f.controller.dispose(); assert.equal(f.counters().disposed, 2); f.appStore.dispose();
 });

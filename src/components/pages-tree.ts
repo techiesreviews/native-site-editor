@@ -1,5 +1,6 @@
 import { refuse } from "./refusal-note";
 import { button, node } from "../ui/dom";
+import { reported } from "../ui/report-failure";
 import { setIcon, type IconName } from "../icons";
 import { nativeSubpageCount, nativeTreePages, slugify, type NativePageNode, type NativeSiteTree } from "../native-pages";
 import type { Checked } from "../native-create";
@@ -233,7 +234,7 @@ export function createPagesTree(options: {
       event.stopPropagation();
       cancelEditing(true);
     });
-    form.addEventListener("submit", async (event) => {
+    form.addEventListener("submit", reported(async (event) => {
       event.preventDefault();
       if (pending) return;
       const planned = check(true);
@@ -255,7 +256,7 @@ export function createPagesTree(options: {
       } finally {
         pending = false;
       }
-    });
+    }));
     editing = { parent, item, input, opener };
     check();
     place();
