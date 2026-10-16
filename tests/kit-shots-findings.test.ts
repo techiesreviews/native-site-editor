@@ -42,3 +42,15 @@ test("caps at limit and reports the merged lines left out", () => {
 test("empty input prints nothing", () => {
   assert.deepEqual(findingsList([]), []);
 });
+
+test("the default limit counts merged findings, not raw ones", () => {
+  const findings: IndexLayoutFinding[] = [];
+  for (let i = 0; i < 21; i++) {
+    const finding = { kind: "tap-target", selector: `#b${String(i).padStart(2, "0")}`, text: "", detail: "28x24 px" };
+    for (const width of [390, 1280]) for (const theme of ["light", "dark"]) findings.push({ screen: "editor", width, theme, finding });
+  }
+  const lines = findingsList(findings);
+  assert.equal(lines.length, 21);
+  assert.equal(lines[0], "editor 390,1280 light,dark: tap-target #b00 — 28x24 px");
+  assert.equal(lines[20], "… and 1 more (see index.json)");
+});
