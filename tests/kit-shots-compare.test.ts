@@ -4,7 +4,7 @@ import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, readlink, realpath, rm
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
-import { baseKey, beforeShots, ensureBase, hasLiveLease, isHit, planBase, pruneTargets, saveCache, splitCompare, toolingFiles, toolingHash } from "../scripts/agents/shots/compare.mjs";
+import { baseKey, beforeShots, ensureBase, hasLiveLease, isHit, planBase, pruneTargets, saveCache, setupLock, splitCompare, toolingFiles, toolingHash } from "../scripts/agents/shots/compare.mjs";
 import { contactHtml, type Scenario, type Shot } from "../scripts/agents/shots/core";
 
 const temporary: string[] = [];
@@ -229,13 +229,64 @@ test("ensureBase serializes concurrent setup and removes stale locks", async () 
   await mkdir(modules);
   git(repo, "init", "-q");
   const sha = commit(repo);
-  const lock = join(mainRoot, ".scratch/shots-base/.lock");
+  const parent = join(mainRoot, ".scratch/shots-base"), lock = join(parent, ".lock");
   await mkdir(lock, { recursive: true });
   await utimes(lock, new Date(0), new Date(0));
-  const results = await Promise.all([ensureBase({ repo, mainRoot, sha, modules }), ensureBase({ repo, mainRoot, sha, modules })]);
+  const results = await Promise.all(Array.from({ length: 4 }, () => ensureBase({ repo, mainRoot, sha, modules })));
   await Promise.all(results.map(result => result.release()));
-  assert.deepEqual(results.map(result => result.reused).sort(), [false, true]);
-  await assert.rejects(lstat(lock), { code: "ENOENT" });
+  assert.deepEqual(results.map(result => result.reused).sort(), [false, true, true, true]);
+  assert.deepEqual((await readdir(parent)).sort(), [sha], "no lock or guard folders remain");
+});
+
+test("setupLock admits one holder at a time while waiters break one stale lock", async () => {
+  const parent = await temp(), lock = join(parent, ".lock");
+  for (let round = 0; round < 5; round++) {
+    await mkdir(lock);
+    await utimes(lock, new Date(0), new Date(0));
+    let inside = 0, most = 0;
+    await Promise.all(Array.from({ length: 6 }, async () => {
+      const held = await setupLock(parent);
+      most = Math.max(most, ++inside);
+      await new Promise(resolve => setTimeout(resolve, 5));
+      inside--;
+      await held.release();
+    }));
+    assert.equal(most, 1, `round ${round}: two callers held the lock together`);
+    assert.deepEqual(await readdir(parent), []);
+  }
+});
+
+test("setupLock breaks old locks only when no live process holds them", async () => {
+  const parent = await temp(), lock = join(parent, ".lock"), old = new Date(0);
+  const holdLock = async (owner: string | null, time = old) => {
+    await mkdir(lock);
+    if (owner !== null) await writeFile(join(lock, "owner"), owner);
+    await utimes(lock, time, time);
+  };
+  await holdLock(`${process.pid}-alive`);
+  await assert.rejects(setupLock(parent, { timeoutMs: 300 }), /Timed out waiting for shots base lock/);
+  assert.equal(await readFile(join(lock, "owner"), "utf8"), `${process.pid}-alive`, "a live holder keeps its lock however old");
+  await rm(lock, { recursive: true });
+  await holdLock(null, new Date());
+  await assert.rejects(setupLock(parent, { timeoutMs: 300 }), /Timed out/, "a lock just created, before its owner file, is not stale");
+  await rm(lock, { recursive: true });
+  const dead = spawnSync(process.execPath, ["-e", ""]).pid;
+  for (const owner of [`${dead}-finished`, null, "unreadable"]) {
+    await holdLock(owner);
+    const held = await setupLock(parent, { timeoutMs: 1_000 });
+    assert.match(await readFile(join(lock, "owner"), "utf8"), new RegExp(`^${process.pid}-`), `${owner} lock is replaced`);
+    await held.release();
+    await assert.rejects(lstat(lock), { code: "ENOENT" });
+  }
+  await holdLock(null);
+  await mkdir(`${lock}.break`);
+  await utimes(`${lock}.break`, old, old);
+  await (await setupLock(parent, { timeoutMs: 1_000 })).release();
+  assert.deepEqual(await readdir(parent), [], "a breaker that died inside its guard does not block later breaks");
+  const held = await setupLock(parent);
+  await writeFile(join(lock, "owner"), "1-someone-else");
+  await held.release();
+  assert.equal(await readFile(join(lock, "owner"), "utf8"), "1-someone-else", "release never frees another holder's lock");
 });
 
 test("beforeShots rewrites filenames without mutating cache and pairs before first", () => {

@@ -154,19 +154,72 @@ async function removeBase(repo, dir) {
   await git(repo, ["worktree", "prune"]);
 }
 
-async function setupLock(parent) {
+const lockStaleMs = 600_000, guardStaleMs = 60_000;
+
+function processAlive(pid) {
+  try { process.kill(pid, 0); return true; }
+  catch (error) { return error.code === "EPERM"; }
+}
+
+/** Read a lock folder's holder token and age, or null once it is gone. */
+async function lockHolder(lock) {
+  let info;
+  try { info = await stat(lock); }
+  catch (error) { if (error.code === "ENOENT") return null; throw error; }
+  let owner = "";
+  try { owner = (await readFile(join(lock, "owner"), "utf8")).trim(); }
+  catch (error) { if (error.code !== "ENOENT" && error.code !== "ENOTDIR") throw error; }
+  return { owner, mtimeMs: info.mtimeMs };
+}
+
+/** Old and without a live holder: no owner file (older kit, or a crash mid-acquire) or a finished pid. */
+function isStale(holder) {
+  if (Date.now() - holder.mtimeMs <= lockStaleMs) return false;
+  const pid = Number(/^(\d+)-/.exec(holder.owner)?.[1]);
+  return !pid || !processAlive(pid);
+}
+
+/**
+ * Remove a stale lock under a guard and re-check it there. Without the guard, two waiters
+ * that both saw the stale lock could each remove it, the second one removing the lock the
+ * first had just taken, so both would enter.
+ */
+async function breakStale(lock) {
+  const guard = `${lock}.break`;
+  try { await mkdir(guard); }
+  catch (error) {
+    if (error.code !== "EEXIST") throw error;
+    // Breaking takes milliseconds, so an old guard belongs to a breaker that died inside it.
+    try { if (Date.now() - (await stat(guard)).mtimeMs > guardStaleMs) await rm(guard, { recursive: true, force: true }); }
+    catch (inner) { if (inner.code !== "ENOENT") throw inner; }
+    return;
+  }
+  try {
+    const holder = await lockHolder(lock);
+    if (holder && isStale(holder)) await rm(lock, { recursive: true, force: true });
+  } finally { await rm(guard, { recursive: true, force: true }); }
+}
+
+/** Take the folder lock in parent; release() frees it only while this caller still holds it. */
+export async function setupLock(parent, { timeoutMs = 60_000 } = {}) {
   const lock = join(parent, ".lock");
-  const deadline = Date.now() + 60_000;
+  const token = `${process.pid}-${randomUUID()}`;
+  const deadline = Date.now() + timeoutMs;
   while (true) {
     checkInterrupted();
-    try { await mkdir(lock); return lock; }
-    catch (error) { if (error.code !== "EEXIST") throw error; }
+    let created = false;
     try {
-      if (Date.now() - (await stat(lock)).mtimeMs > 600_000) {
-        await rm(lock, { recursive: true, force: true });
-        continue;
-      }
-    } catch (error) { if (error.code !== "ENOENT") throw error; }
+      await mkdir(lock);
+      created = true;
+      await writeFile(join(lock, "owner"), token);
+      return { release: async () => { if ((await lockHolder(lock))?.owner === token) await rm(lock, { recursive: true, force: true }); } };
+    } catch (error) {
+      if (created) { await rm(lock, { recursive: true, force: true }); throw error; }
+      if (error.code !== "EEXIST") throw error;
+    }
+    const holder = await lockHolder(lock);
+    if (!holder) continue;
+    if (isStale(holder)) await breakStale(lock);
     if (Date.now() >= deadline) throw new Error(`Timed out waiting for shots base lock: ${lock}`);
     await delay(100);
   }
@@ -179,9 +232,7 @@ export async function hasLiveLease(dir) {
   catch (error) { if (error.code !== "ENOENT") throw error; }
   return names.some(name => {
     const pid = Number(/^(\d+)-/.exec(name)?.[1]);
-    if (!pid) return false;
-    try { process.kill(pid, 0); return true; }
-    catch (error) { return error.code === "EPERM"; }
+    return Boolean(pid) && processAlive(pid);
   });
 }
 
@@ -191,6 +242,7 @@ export async function ensureBase({ repo, mainRoot, sha, modules }) {
   const parent = join(mainRoot, ".scratch/shots-base");
   const dir = join(parent, sha);
   await mkdir(parent, { recursive: true });
+  // Hold one lock from the readiness check through setup, so a waiter re-checks a finished base.
   const lock = await setupLock(parent);
   try {
     let reused = false;
@@ -227,7 +279,7 @@ export async function ensureBase({ repo, mainRoot, sha, modules }) {
       if (!(await hasLiveLease(target))) await removeBase(repo, target);
     }
     return { dir, reused, release: () => rm(lease, { force: true }) };
-  } finally { await rm(lock, { recursive: true, force: true }); }
+  } finally { await lock.release(); }
 }
 
 async function scratchFile(file, roots) {
@@ -261,7 +313,7 @@ export async function saveCache(dir, shot, out) {
       try { await rename(dir, aside); }
       catch (error) { if (error.code !== "ENOENT") throw error; aside = undefined; }
       await rename(temp, dir);
-    } finally { await rm(lock, { recursive: true, force: true }); }
+    } finally { await lock.release(); }
   } finally {
     await rm(temp, { recursive: true, force: true });
     if (aside) await rm(aside, { recursive: true, force: true });
