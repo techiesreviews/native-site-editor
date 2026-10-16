@@ -5,7 +5,7 @@ import { isTrim } from "./trim-geometry";
 
 /** The pure rules behind Trimmed copies (media build slice 40). The geometry lives apart, so the
  * image worker loads it without the naming and records code. */
-export { validTrim, isTrim, trimGeometry } from "./trim-geometry";
+export { validTrim, isTrim } from "./trim-geometry";
 
 export function trimStart(records: MediaRecords, path: string, paths: Iterable<string>): { source: string; trim?: MediaTrim; previous?: string } {
   const from = records.files[path]?.trimmedFrom;

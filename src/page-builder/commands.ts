@@ -106,14 +106,6 @@ export function availableCommands(): Command[] {
   return out;
 }
 
-/** Runs the command `id` if it is available now; whether it ran. */
-export async function runCommand(id: string): Promise<boolean> {
-  const command = availableCommands().find((item) => item.id === id);
-  if (!command) return false;
-  await command.run();
-  return true;
-}
-
 /**
  * Every shortcut for the sheet, by area ("Everywhere" first): registered
  * commands' (whether or not available now) and the listed ones, in
@@ -155,12 +147,6 @@ export function keyCaps(keys: Keys, mac: boolean): string[] {
     if (key === "Mod") return "Ctrl";
     return NAMES[key] ?? (key.length === 1 ? key.toUpperCase() : key);
   });
-}
-
-/** A combination in words, for a label or a title: "⌘K" on a Mac, "Ctrl+K" elsewhere. */
-export function keyLabel(keys: Keys, mac: boolean): string {
-  const caps = keyCaps(keys, mac);
-  return mac ? caps.join("") : caps.join("+");
 }
 
 /** Whether a keyboard event is the combination `keys` ("Mod" being ⌘ on a Mac, Ctrl elsewhere). */

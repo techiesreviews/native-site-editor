@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { fuzzyMatch, groupRanked, markRuns, parseQuery, pushRecent, rankItems, type Searchable } from "../src/page-builder/palette-search.ts";
-import { availableCommands, guardCommand, keyCaps, keyLabel, matchesKeys, registerCommand, registerCommandSource, registerShortcut, resetCommands, runCommand, shortcutSheet, type Command } from "../src/page-builder/commands.ts";
+import { availableCommands, guardCommand, keyCaps, matchesKeys, registerCommand, registerCommandSource, registerShortcut, resetCommands, shortcutSheet, type Command } from "../src/page-builder/commands.ts";
 
 test("fuzzy matching finds letters in order and prefers word starts and runs", () => {
   assert.equal(fuzzyMatch("xyz", "Publish changes"), undefined);
@@ -84,9 +84,8 @@ test("the registry lists available commands, sources and shortcuts", async () =>
   assert.deepEqual(availableCommands().map((c: Command) => c.id), ["x.save", "x.hidden", "page:a"]);
   open = false;
   assert.deepEqual(availableCommands().map((c: Command) => c.id), ["x.save", "page:a"]);
-  assert.equal(await runCommand("page:a"), true);
+  await availableCommands().find(command => command.id === "page:a")!.run();
   assert.equal(ran, "a");
-  assert.equal(await runCommand("x.hidden"), false);
   assert.deepEqual(shortcutSheet().map((area) => [area.area, area.entries.map((entry) => entry.label)]), [["Actions", ["Publish"]], ["Canvas", ["Move"]]]);
   // Removed, its id is free: the source's command with that id shows.
   remove();
@@ -98,8 +97,6 @@ test("keys show and match per platform", () => {
   assert.deepEqual(keyCaps(["Mod", "Shift", "Z"], true), ["⌘", "⇧", "Z"]);
   assert.deepEqual(keyCaps(["Mod", "Shift", "Z"], false), ["Ctrl", "Shift", "Z"]);
   assert.deepEqual(keyCaps(["Alt", "ArrowUp"], true), ["⌥", "↑"]);
-  assert.equal(keyLabel(["Mod", "K"], true), "⌘K");
-  assert.equal(keyLabel(["Mod", "K"], false), "Ctrl+K");
   const press = (key: string, mods: Partial<Record<"metaKey" | "ctrlKey" | "altKey" | "shiftKey", boolean>> = {}) =>
     ({ key, metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, ...mods });
   assert.equal(matchesKeys(press("k", { metaKey: true }), ["Mod", "K"], true), true);

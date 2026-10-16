@@ -29,10 +29,6 @@ export const PICTURE_SPOT_MESSAGE = "A video in a picture spot always loops sile
 export function isPictureSpot(tagText: string): boolean {
   return ["img", "picture", "video"].includes(first(tagText)?.name ?? "") && has(tagText, "slot");
 }
-export function canFillPictureSpot(tagText: string): boolean {
-  const name = first(tagText)?.name;
-  return name === "img" || name === "picture" || name === "video" && readLooping(tagText) && !has(tagText, "data-background");
-}
 /** Remove all occurrences of owned attributes; preserve every other byte. */
 function without(text: string, names: string[]) {
   for (const name of names) {

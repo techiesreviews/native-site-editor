@@ -3,7 +3,6 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import {
   isNativeComponentTag,
-  isNativeProject,
   nativeConventionComponents,
   nativePageBody,
   nativePageHead,
@@ -35,12 +34,6 @@ const site = [
   ".editor/config.json",
   "README.md",
 ];
-
-test("a repository is a native site when it has index.html at its root", () => {
-  assert.equal(isNativeProject(["README.md", "index.html"]), true);
-  assert.equal(isNativeProject(["about/index.html", "notes/index.html", ".editor/config.json"]), false);
-  assert.equal(isNativeProject([]), false);
-});
 
 test("pages and components are found where they are", () => {
   const result = resolveNativeProject(site);

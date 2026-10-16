@@ -8,7 +8,7 @@ import { mediaOwnAddress, type MediaSite } from "./media-origins";
 import { mediaResolvePath, scanMediaUrlTokens, walkMediaReferencePages, scanMediaReferences } from "./media-references";
 import { decodeHtmlEntity } from "./html-entities";
 import { suggestMediaName } from "./media-names";
-export { isRenamableMedia, mediaFileName, MediaNameTakenError, suggestMediaName, tidyMediaName } from "./media-names";
+export { MediaNameTakenError, tidyMediaName } from "./media-names";
 
 
 export interface RenameInput {

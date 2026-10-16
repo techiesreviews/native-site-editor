@@ -35,11 +35,6 @@ export function renameSlotChip(chip: HTMLElement | undefined) {
 
 const plural = (count: number, one: string) => `${count} ${one}${count === 1 ? "" : "s"}`;
 
-/** The chip's text: the slot's name, "items ×N" for an items slot. */
-export function slotChipText(chip: SlotChipState) {
-  return chip.state === "items" ? `${chip.name || "items"} ×${chip.count}` : chip.name;
-}
-
 /** The other chips of a group in this document, by their name part. */
 function groupNames(chip: HTMLElement) {
   const group = chip.dataset.slotChipGroup;

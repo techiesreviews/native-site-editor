@@ -1,7 +1,6 @@
 import { agentAudio, agentDocuments, agentImages, agentVideos, previewablePictures } from "./media-kinds";
 import type { AgentImageTrim } from "./agent-image-frame";
 import type { AddingSettings } from "./media-records";
-import type { EditorContext } from "./types";
 
 /**
  * What an agent can ask the open editor tab to do. The Worker validates and
@@ -207,8 +206,6 @@ export function parseOutlineId(id: string): number[] | undefined {
   if (!/^\d{1,4}(?:\.\d{1,4}){0,63}$/.test(id)) return undefined;
   return id.split(".").map(Number);
 }
-
-export type AgentContext = EditorContext;
 
 // ---- Agent requests ----
 

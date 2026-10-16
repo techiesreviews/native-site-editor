@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { join, relative } from "node:path";
-import { improveHeavy, improveRows, type ImproveRequest, type ImprovePorts } from "../src/page-builder/improve-heavy";
+import { improveHeavy, type ImproveRequest, type ImprovePorts } from "../src/page-builder/improve-heavy";
 import { applyMediaWorkspaceBatch, createMediaWorkspace, type MediaWorkspaceContext, type MediaWorkspaceBatch } from "../src/page-builder/media-workspace";
 import { parseMediaRecords, serializeMediaRecords, MEDIA_RECORDS_PATH } from "../shared/media-records";
 import { mediaCleanUpSuggestions } from "../src/page-builder/media-clean-up";
@@ -210,15 +210,6 @@ test("revision, source drift, unreadable file and cancellation refuse entire row
   }
   const f = fixture(), signal = new AbortController(); f.hook(() => signal.abort());
   await assert.rejects(f.improve({ signal: signal.signal })); assert.equal(f.batches.length, 0);
-});
-
-test("runner preserves completed rows, reports progress/failure, leaves cancellation row not started", async () => {
-  const f = fixture(); f.text.set("other.html", '<img src="/images/heavy.jpg">'); f.ctx.pages.push("other.html");
-  const signal = new AbortController(), states: string[] = [];
-  const results = await improveRows({ improve: request => f.improve(request) }, ["index.html", "other.html"], { files: f.facts, signal: signal.signal,
-    onProgress(progress) { states.push(progress.state); if (progress.row === "other.html") signal.abort(); } });
-  assert.deepEqual(results.map(row => row.state), ["done", "not started"]); assert.ok(states.includes("done")); assert.equal(f.batches.length, 1);
-  const failures = await improveRows({ async improve() { throw new Error("failure"); } }, ["a", "b"], { files: {} }); assert.deepEqual(failures.map(row => row.state), ["failed", "failed"]);
 });
 
 test("component fixes only template markup; fixture own pictures share existing adding recipe", async () => {

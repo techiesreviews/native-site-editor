@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { addCatalog, filterCatalog, groupName, suggestedItems } from "../src/page-builder/add-catalog.ts";
+import { addCatalog, groupName, suggestedItems } from "../src/page-builder/add-catalog.ts";
 import { defaultInsertPoint, pointAt, positionText } from "../src/page-builder/insert-target.ts";
 import { expandComponents, inertHtml, thumbnailDocument, type ThumbnailInputs } from "../src/page-builder/thumbnail-doc.ts";
 import type { InsertPoint } from "../src/components/insert-controls.ts";
@@ -20,15 +20,6 @@ test("components sharing a first word make a group, named in the plural, the res
   assert.equal(groupName("box"), "Boxes");
   assert.equal(groupName("gallery"), "Galleries");
   assert.equal(groupName("hero"), "Heros");
-});
-
-test("search matches the name, the full name, the tag and the group", () => {
-  const groups = addCatalog(["section-hero", "section-split", "feature-block"].map(choice));
-  assert.deepEqual(filterCatalog(groups, "hero").flatMap((group) => group.items.map((item) => item.tag)), ["section-hero"]);
-  assert.deepEqual(filterCatalog(groups, "SECTION-S").flatMap((group) => group.items.map((item) => item.tag)), ["section-split"]);
-  assert.deepEqual(filterCatalog(groups, "more").flatMap((group) => group.items.map((item) => item.tag)), ["feature-block"]);
-  assert.deepEqual(filterCatalog(groups, "zzz"), []);
-  assert.equal(filterCatalog(groups, "  ").length, 2);
 });
 
 test("an empty page suggests the likeliest openers first", () => {

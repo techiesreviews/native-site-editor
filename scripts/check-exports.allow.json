@@ -1,0 +1,72 @@
+[
+  {
+    "file": "worker/index.ts",
+    "name": "default",
+    "reason": "Cloudflare loads the Worker default through wrangler main."
+  },
+  {
+    "file": "worker/index.ts",
+    "name": "SessionStore",
+    "reason": "Cloudflare loads this Durable Object through wrangler durable_objects.bindings[].class_name."
+  },
+  {
+    "file": "shared/media-kinds.ts",
+    "name": "mimeType",
+    "reason": "ticket 27 owns this file; revisit after it lands"
+  },
+  {
+    "file": "shared/media-kinds.ts",
+    "name": "isImagePath",
+    "reason": "ticket 27 owns this file; revisit after it lands"
+  },
+  {
+    "file": "shared/tone.ts",
+    "name": "(file unreachable)",
+    "reason": "Browser contrast fixtures import the colour formulas to verify real rendered text and fills."
+  },
+  {
+    "file": "shared/html-source.ts",
+    "name": "markStartTags",
+    "reason": "Browser HTML-boundary specs need marked source to verify the real parser and preview boundaries."
+  },
+  {
+    "file": "src/components/code-editor.ts",
+    "name": "mountCodeEditor",
+    "reason": "Browser editor fixtures mount Monaco to drive real typing, history and CSS behaviour."
+  },
+  {
+    "file": "src/components/source-editor.ts",
+    "name": "discardNewFile",
+    "reason": "Browser model-alias spec drives the real Discard changes operation without a dialog."
+  },
+  {
+    "file": "src/drafts.ts",
+    "name": "memoryDrafts",
+    "reason": "In-memory DraftDatabase injection drives the production draft store without IndexedDB in unit tests."
+  },
+  {
+    "file": "src/uploads.ts",
+    "name": "memoryUploadBytes",
+    "reason": "In-memory UploadBytes injection drives production media transactions and guarded edits without IndexedDB."
+  },
+  {
+    "file": "src/page-builder/commands.ts",
+    "name": "resetCommands",
+    "reason": "Documented registry reset isolates production command registration in unit tests and browser palette fixtures."
+  },
+  {
+    "file": "src/page-builder/media-optimise.ts",
+    "name": "DEFAULT_MEDIA_OPTIMISE",
+    "reason": "Browser media-library spec uses these options to exercise the real encoder."
+  },
+  {
+    "file": "src/zip.ts",
+    "name": "unzipStored",
+    "reason": "Browser change-status spec reads the generated site archive to verify downloaded production files."
+  },
+  {
+    "file": "worker/starter.ts",
+    "name": "NATIVE_STARTER_VERSION",
+    "reason": "Browser starter fixtures and component-loader specs load the matching versioned starter assets."
+  }
+]

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { framePlace, readPlaceFrame, resetPlaceFocus, writePlaceFrame, type PlaceFramePorts, type PlaceShape } from "../src/page-builder/place-frame";
+import { framePlace, readPlaceFrame, writePlaceFrame, type PlaceFramePorts, type PlaceShape } from "../src/page-builder/place-frame";
 import { mediaAttribute } from "../src/page-builder/media-attributes";
 import { startTags } from "../shared/html-source";
 import { decodeHtmlEntities } from "../src/page-builder/html-entities";
@@ -53,9 +53,8 @@ test("attribute quoting, entities, missing/trailing semicolons and empty style",
   assert.equal(writePlaceFrame('<img style=" ; ; object-fit: cover; ; ">', { shape: "original" }), "<img>");
   assert.equal(writePlaceFrame('<img style="/* keep */object-fit:cover">', { shape: "original" }), '<img style="/* keep */">');
 });
-test("reset helper retains shape and other style; empty change is a no-op", () => {
+test("an empty frame change is a no-op", () => {
   const text = '<img style="aspect-ratio:1; object-fit:cover;object-position:20% 10%;color:red">';
-  assert.equal(style(resetPlaceFocus(text)), "aspect-ratio:1; object-fit:cover;color:red");
   assert.equal(writePlaceFrame(text, {}), text);
 });
 test("read ratios by numeric value; unknown values or non-cover are other", () => {

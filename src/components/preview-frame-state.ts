@@ -73,5 +73,3 @@ export function createPreviewFrameState(ports: PreviewFramePorts) {
     },
   };
 }
-
-export type PreviewFrameState = ReturnType<typeof createPreviewFrameState>;

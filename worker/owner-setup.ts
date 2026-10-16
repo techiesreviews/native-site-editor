@@ -285,14 +285,6 @@ export async function setupPayload(request: Request) {
   return typeof data?.token === "string" ? data.token : "";
 }
 
-export function setupCookie(cookies: string, name: string) {
-  return cookies
-    .split(";")
-    .map((part) => part.trim())
-    .find((part) => part.startsWith(`${name}=`))
-    ?.slice(name.length + 1) ?? "";
-}
-
 export function escapeHtml(value: string) {
   return value.replace(/[&<>"']/g, (char) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[

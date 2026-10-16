@@ -23,7 +23,8 @@ import { isAgentMediaPath, mediaListReport } from "../src/agent-media.ts";
 import { mediaUsageRecords } from "../src/page-builder/media-usage.ts";
 import { parseMediaRecords } from "../shared/media-records.ts";
 import { requestOperation } from "../worker/agent-requests.ts";
-import { componentsChapter, mediaChapter, siteConventions } from "../worker/site-conventions.ts";
+import { siteConventions } from "../worker/site-conventions.ts";
+import { conventionsChapter } from "./support/conventions-chapter";
 import { MEDIA_RECORDS_REFUSED } from "../shared/protected-paths.ts";
 import { editorTab, files, origin, payload, repo, signIn, siteContext, startWorker, workerFetch } from "./mcp-harness.ts";
 
@@ -153,10 +154,10 @@ test("MCP site tools read the site, queue guarded changes for the editor tab, re
     // The Components chapter, from its heading to the next `## `, is the one
     // source of how components are made; the starter's AGENTS.md copies it.
     const served = ((await client.readResource({ uri: "native-site://conventions" })).contents[0] as { text: string }).text;
-    const chapter = componentsChapter(served)!;
-    const servedMedia = mediaChapter(served);
+    const chapter = conventionsChapter(served, "Components")!;
+    const servedMedia = conventionsChapter(served, "Media");
     assert.ok(servedMedia?.startsWith("## Media\n"));
-    assert.equal(servedMedia, mediaChapter(siteConventions));
+    assert.equal(servedMedia, conventionsChapter(siteConventions, "Media"));
     assert.match(servedMedia, /\/my-site\/media\/images\/holiday-photo\.webp/);
     for (const rule of ["adding_settings", "media/images/", "srcset", "### Shape, focus and trims", "frame_image", "whole new trim", "### Removing, keeping and restoring", "### Renaming and Replace everywhere"]) assert.ok(servedMedia.includes(rule));
     assert.doesNotMatch(servedMedia.slice(1), /^## /m);

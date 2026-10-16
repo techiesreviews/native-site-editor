@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { componentsChapter, conventionsChapter, mediaChapter, siteConventions } from "../worker/site-conventions.ts";
+import { siteConventions } from "../worker/site-conventions.ts";
+import { conventionsChapter } from "./support/conventions-chapter";
 
 test("the starter's AGENTS.md Components chapter matches the conventions exactly", () => {
-  const conventions = componentsChapter(siteConventions);
+  const conventions = conventionsChapter(siteConventions, "Components");
   const starterGuide = readFileSync(new URL("../fixtures/actual-starter/AGENTS.md", import.meta.url), "utf8");
-  const starter = componentsChapter(starterGuide);
+  const starter = conventionsChapter(starterGuide, "Components");
   const refresh = "Copy the Components chapter from worker/site-conventions.ts into the starter's AGENTS.md on its dev branch, then refresh fixtures/actual-starter from that commit (see fixtures/actual-starter.README.md).";
   assert.notEqual(conventions, undefined, "worker/site-conventions.ts must contain a ## Components chapter.");
   assert.notEqual(starter, undefined, `fixtures/actual-starter/AGENTS.md must contain a ## Components chapter. ${refresh}`);
@@ -20,9 +21,9 @@ function chaptersMatch(conventions: string, starter: string, title: string) {
 }
 
 test("the starter's AGENTS.md Media chapter matches the conventions exactly", () => {
-  const conventions = mediaChapter(siteConventions);
+  const conventions = conventionsChapter(siteConventions, "Media");
   const starterGuide = readFileSync(new URL("../fixtures/actual-starter/AGENTS.md", import.meta.url), "utf8");
-  const starter = mediaChapter(starterGuide);
+  const starter = conventionsChapter(starterGuide, "Media");
   const refresh = "Copy the Media chapter from worker/site-conventions.ts into the starter's AGENTS.md on its dev branch, then refresh fixtures/actual-starter from that commit (see fixtures/actual-starter.README.md).";
   assert.notEqual(conventions, undefined, "worker/site-conventions.ts must contain a ## Media chapter.");
   assert.notEqual(starter, undefined, `fixtures/actual-starter/AGENTS.md must contain a ## Media chapter. ${refresh}`);

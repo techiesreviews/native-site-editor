@@ -1,5 +1,4 @@
 import { PIN_HEIGHT, noteAnchor, noteTop } from "./agent-pin-geometry";
-export { NOTE_GAP, PIN_HEIGHT, noteAnchor, noteTop } from "./agent-pin-geometry";
 import { guardChunkReload } from "../chunk-recovery";
 import { button, node } from "../ui/dom";
 import { REQUEST_TEXT_LIMIT, requestThread, type AgentRequest } from "../../shared/agent";
@@ -722,5 +721,3 @@ export function createAgentPins(pane: HTMLElement, frame: HTMLElement, handlers:
     },
   };
 }
-
-export type AgentPins = ReturnType<typeof createAgentPins>;

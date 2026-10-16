@@ -102,13 +102,6 @@ export function matchesQuery(item: AddItem, query: string) {
   return [item.name, item.label, item.tag, item.group].some((text) => text.toLowerCase().includes(needle));
 }
 
-/** The groups with only the items that match `query`; empty groups left out. */
-export function filterCatalog(groups: readonly AddGroup[], query: string): AddGroup[] {
-  return groups
-    .map((group) => ({ name: group.name, items: group.items.filter((item) => matchesQuery(item, query)) }))
-    .filter((group) => group.items.length);
-}
-
 /** Up to `count` items to start an empty page with, the likeliest openers first. */
 export function suggestedItems(groups: readonly AddGroup[], count = 3): AddItem[] {
   return pageOrder(groups.flatMap((group) => group.items)).slice(0, count);

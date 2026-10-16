@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { startTags } from "../shared/html-source.ts";
 import type { ImprovePicture } from "../src/page-builder/improve-images.ts";
-import { bringInOutsidePictures, outsidePictureName, outsidePicturesAllowed, readOutsidePicture, rewriteOutsidePictures, normaliseOutsidePicture, type BringInOutsidePicturesInput, type OutsidePictureReadDeps } from "../src/page-builder/outside-pictures.ts";
+import { bringInOutsidePictures, outsidePictureName, outsidePicturesAllowed, readOutsidePicture, rewriteOutsidePicturesPlan, normaliseOutsidePicture, type BringInOutsidePicturesInput, type OutsidePictureReadDeps } from "../src/page-builder/outside-pictures.ts";
 import { chooseMediaPath, mediaStorageName, mediaCopyName } from "../src/page-builder/media-storage.ts";
 import type { prepareMediaFile } from "../src/page-builder/media-prepare.ts";
 
@@ -102,7 +102,7 @@ test("only the img tag changes, link and other bytes survive, outside srcset rep
 test("pure rewrite applies descending ranges and keeps authored loading, sizes and priority", () => {
   const source = '<img src="x" loading="eager" fetchpriority="high"><span>same</span><img src="y" sizes="50vw">';
   const replacements = [0, 1].map(index => ({ picture: picture(source, index), image: { path: "media/images/x.webp", alt: "", width: 800, height: 400, variants: [{ path: "media/images/x-480.webp", width: 480 }] } }));
-  const result = rewriteOutsidePictures(source, replacements);
+  const result = rewriteOutsidePicturesPlan(source, replacements).text;
   assert.match(result, /<span>same<\/span>/); assert.match(result, /loading="eager" fetchpriority="high"/); assert.match(result, /sizes="50vw"/);
   assert.ok(!result.includes('loading="lazy"')); assert.ok(!result.includes("auto,"));
 });
@@ -261,8 +261,8 @@ test("a failed measurement falls back to the safe markup", async () => {
 test("brought-in pictures and sharing tags use the project address", () => {
   const image = { path: "media/a.webp", width: 800, height: 400, alt: "", variants: [{ path: "media/a-480.webp", width: 480 }] };
   const source = `<img src="${address}" alt="A">`;
-  assert.equal(rewriteOutsidePictures(source, [{ picture: picture(source), image }], "https://user.github.io/my-site/"),
+  assert.equal(rewriteOutsidePicturesPlan(source, [{ picture: picture(source), image }], "https://user.github.io/my-site/").text,
     '<img srcset="/my-site/media/a-480.webp 480w, /my-site/media/a.webp 800w" width="800" height="400" sizes="100vw" src="/my-site/media/a.webp" alt="A">');
   const meta = `<meta property="og:image" content="${address}">`;
-  assert.equal(rewriteOutsidePictures(meta, [{ picture: picture(meta), image }], "https://user.github.io/my-site/"), '<meta property="og:image" content="https://user.github.io/my-site/media/a.webp">');
+  assert.equal(rewriteOutsidePicturesPlan(meta, [{ picture: picture(meta), image }], "https://user.github.io/my-site/").text, '<meta property="og:image" content="https://user.github.io/my-site/media/a.webp">');
 });

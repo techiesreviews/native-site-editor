@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseMediaRecords, serializeMediaRecords, renameMediaRecord, setMediaDescription } from "../shared/media-records";
-import { fileDescriptionState, placeDescriptionState, newPlaceAlt, descriptionPlaceEdits, setMediaFileDecorative, setMediaPlaceDecorative, setMediaPlaceAgentText, confirmMediaDescription, mediaToCheck, placeWordsEdits, swapPlaceImage, pageUsesFile, mediaNameAlt, followsFileName, strandsAgentWords } from "../src/page-builder/media-descriptions";
+import { fileDescriptionState, placeDescriptionState, descriptionPlaceEdits, setMediaFileDecorative, setMediaPlaceDecorative, setMediaPlaceAgentText, confirmMediaDescription, mediaToCheck, placeWordsEdits, swapPlaceImage, pageUsesFile, followsFileName, strandsAgentWords } from "../src/page-builder/media-descriptions";
+import { mediaNameAlt } from "../src/page-builder/media-markup";
 import { mediaMetadataView } from "../src/page-builder/media-metadata";
 
 const file = "images/a.png", page = "news/index.html";
@@ -11,13 +12,10 @@ const before = { text: "Old & familiar", decorative: false };
 const after = { text: 'New & "bright" <view>', decorative: false };
 
 test("file description flows to new places; Decorative and missing give empty alt", () => {
-  assert.equal(newPlaceAlt(empty(), file), "");
   assert.deepEqual(fileDescriptionState(), { state: "missing", text: "", byAgent: false });
   const records = described();
-  assert.equal(newPlaceAlt(records, file), before.text);
   assert.deepEqual(placeDescriptionState(records, file, page, before.text), { state: "described", own: false, byAgent: false });
   assert.equal(placeDescriptionState(records, file, page, "My words").own, true);
-  assert.equal(newPlaceAlt(setMediaFileDecorative(records, file, true), file), "");
 });
 
 test("description changes rewrite shared, missing and old empty alts, preserving own words and unrelated source", () => {

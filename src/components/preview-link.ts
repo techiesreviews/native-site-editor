@@ -192,5 +192,3 @@ export function createPreviewLink(port: FramePort) {
     },
   };
 }
-
-export type PreviewLink = ReturnType<typeof createPreviewLink>;

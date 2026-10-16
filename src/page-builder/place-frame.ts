@@ -85,11 +85,6 @@ export function writePlaceFrame(tagText: string, change: PlaceFrameChange): stri
   return mediaAttributes(tagText, { style: editStyle(inlineStyle(tagText), changes) });
 }
 
-/** Replace resets only the focus (the image popup writes it through `placeMediaImage`'s frame). */
-export function resetPlaceFocus(tagText: string): string {
-  return writePlaceFrame(tagText, { focus: { x: 50, y: 50 } });
-}
-
 function styleValues(style: string) {
   const values = new Map<string, { value: string; important: boolean }>();
   for (const part of declarations(style)) {

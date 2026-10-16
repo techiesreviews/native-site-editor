@@ -97,7 +97,6 @@ export function clearWizard(store: Store) {
 }
 
 export const stepNumber = (id: WizardStepId) => WIZARD_STEPS.findIndex((step) => step.id === id) + 1;
-export const stepAfter = (id: WizardStepId): WizardStepId => WIZARD_STEPS[Math.min(WIZARD_STEPS.length - 1, stepNumber(id))].id;
 export const stepBefore = (id: WizardStepId): WizardStepId => WIZARD_STEPS[Math.max(0, stepNumber(id) - 2)].id;
 
 /** What the account's connection to GitHub is: signed in without the App, or with it installed (a signed-out visitor sees the sign-in screen, not the wizard). */

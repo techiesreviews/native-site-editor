@@ -1354,5 +1354,3 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   };
 }
 
-export type PageStructure = ReturnType<typeof createPageStructure>;
-

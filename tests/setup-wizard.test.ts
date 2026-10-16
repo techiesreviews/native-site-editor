@@ -8,7 +8,6 @@ import {
   connectionFromOnboarding,
   openingStep,
   readWizard,
-  stepAfter,
   stepBefore,
   stepNumber,
   writeWizard,
@@ -61,8 +60,6 @@ test("the steps run Connect GitHub, Create your site, Your site is ready", () =>
     ["Connect GitHub", "Create your site", "Your site is ready"],
   );
   assert.equal(stepNumber("open"), 3);
-  assert.equal(stepAfter("create"), "open");
-  assert.equal(stepAfter("open"), "open");
   assert.equal(stepBefore("connect"), "connect");
   assert.equal(stepBefore("open"), "create");
 });

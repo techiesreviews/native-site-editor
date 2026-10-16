@@ -11,7 +11,6 @@ import { optimiseMedia, mediaImageRecipe, mediaUntouched, type MediaImageQuality
 import { createMediaWorkspace, type MediaWorkspaceContext } from "./media-workspace";
 import type { MediaImportRequest, MediaPlacement } from "./media-picker";
 
-export { mediaNeedsPreparation };
 /** Videos and pictures share preparation; animated GIFs use the lazy video encoder. */
 export async function mediaFileNeedsPreparation(file: File) {
   if (mediaVideoNeedsPreparation(file.name) || file.type.startsWith("video/") || /\.gif$/i.test(file.name)) return true;
@@ -137,24 +136,6 @@ export async function keptOriginal(file: File, result: MediaOptimiseResult, sign
   const accepted = ask ? await ask(question, "original") : false;
   signal?.throwIfAborted();
   if (!accepted) throw new Error(`${file.name} was not added.`);
-}
-
-/** One failed preparation leaves the other files available. */
-export async function prepareMedia(files: File[], key: string, folder?: string, signal?: AbortSignal,
-  encode: typeof optimiseMedia = optimiseMedia, ask?: Ask, shows?: Shown, quality: MediaImageQuality = "balanced", keepOriginal = false, videoQuality: import("./video-prepare").VideoQuality = "balanced",
-  audio: AudioQuality = "balanced", deps: MediaPrepareDeps = {}) {
-  const requests: MediaImportRequest[] = [], errors: string[] = [], warnings: string[] = [];
-  for (const file of files) {
-    try {
-      const prepared = await prepareMediaFile(file, key, folder, signal, encode, ask, shows, quality, keepOriginal, videoQuality, undefined, audio, deps);
-      requests.push(prepared.request);
-      if (prepared.warning) warnings.push(prepared.warning);
-    } catch (error) {
-      if (signal?.aborted) throw error;
-      errors.push(error instanceof Error ? error.message : `${file.name} could not be added.`);
-    }
-  }
-  return { requests, errors, warnings };
 }
 
 /** Save prepared files as one batch (one Undo step) in the repository `ctx` was captured from.

@@ -29,7 +29,7 @@ import type { NativeStructureItem } from "../components/native-preview";
 import { descendants, parseSource, sourceView, type SourceElement, type SourceNode } from "./source-tree";
 
 // The source tree moved to source-tree.ts; its other users still import it from here.
-export { descendants, parseSource, sourceView, type SourceElement, type SourceNode, type SourceText } from "./source-tree";
+export { descendants, parseSource, sourceView, type SourceElement, type SourceNode } from "./source-tree";
 
 const elements = (nodes: SourceNode[]) => nodes.filter((node): node is SourceElement => node.type === "element");
 

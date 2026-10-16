@@ -354,26 +354,3 @@ function movePlaces(records: MediaRecords, old: string, main: string, file: stri
   records.files[main].places = { ...records.files[main].places, [file]: place };
   delete records.files[old].places![file];
 }
-
-export interface ImproveRowProgress { row: string; index: number; total: number; state: string }
-export type ImproveRowResult = { row: string; state: "done" | "unchanged"; result: ImproveResult } | { row: string; state: "failed"; message: string } | { row: string; state: "not started" };
-/** Sequential rows are independent Undo steps. Abort never rolls back completed rows. */
-export async function improveRows(workspace: { improve(request: ImproveRequest): Promise<ImproveResult> }, rows: readonly string[],
-  options: Omit<ImproveRequest, "row" | "progress"> & { onProgress?(progress: ImproveRowProgress): void }): Promise<ImproveRowResult[]> {
-  const results: ImproveRowResult[] = rows.map(row => ({ row, state: "not started" }));
-  for (let index = 0; index < rows.length; index++) {
-    if (options.signal?.aborted || options.live?.() === false) break;
-    const row = rows[index], progress = (state: string) => options.onProgress?.({ row, index, total: rows.length, state });
-    progress("Preparing…");
-    try {
-      const result = await workspace.improve({ ...options, row, progress });
-      const state = result.changed ? "done" : "unchanged";
-      results[index] = { row, state, result }; progress(state);
-    } catch (error) {
-      if (options.signal?.aborted || options.live?.() === false || error instanceof DOMException && error.name === "AbortError") break;
-      const message = error instanceof Error ? error.message : "This row could not be improved.";
-      results[index] = { row, state: "failed", message }; progress("failed");
-    }
-  }
-  return results;
-}

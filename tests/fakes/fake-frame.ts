@@ -1,7 +1,8 @@
 // The fake adapter of the preview link's seam (src/components/preview-link.ts):
 // it records what the host posts and answers as the runtime does, stamping
 // each message with the render token of the last `update` unless told another.
-import { FRAME_SOURCE, type FrameMessage, type HostMessage } from "../../src/components/preview-protocol";
+import { FRAME_SOURCE } from "../../src/components/preview-wire";
+import type { FrameMessage, HostMessage } from "../../src/components/preview-protocol";
 import type { FramePort } from "../../src/components/preview-link";
 
 export function createFakeFrame() {

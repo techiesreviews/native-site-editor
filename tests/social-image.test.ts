@@ -1,6 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { SOCIAL_IMAGE_SIZE, SOCIAL_IMAGE_OPTIONS, SOCIAL_IMAGE_NOTE, socialImageTrim, socialImageSize, socialCopyPath, socialImageAddress, socialImageSource } from "../src/page-builder/social-image";
+import { SOCIAL_IMAGE_OPTIONS, SOCIAL_IMAGE_NOTE, socialCopyPath, socialImageAddress, socialImageSource } from "../src/page-builder/social-image";
+import { SOCIAL_IMAGE_SIZE } from "../src/page-builder/social-geometry";
+import { socialImageTrim } from "../src/page-builder/social-geometry";
+import { socialImageSize } from "../src/page-builder/social-geometry";
 import { prepareSocialCopy } from "../src/page-builder/social-copy-prepare";
 import type { MediaWorkspaceContext } from "../src/page-builder/media-workspace";
 import { parseMediaRecords } from "../shared/media-records";

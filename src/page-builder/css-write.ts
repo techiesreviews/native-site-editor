@@ -39,27 +39,6 @@ function syntax(source: string) {
   return out;
 }
 
-function commentRanges(source: string) {
-  const ranges: { start: number; end: number }[] = [];
-  let quote = "";
-  for (let i = 0; i < source.length; i++) {
-    const c = source[i];
-    if (c === "\\") { i++; continue; }
-    if (quote) { if (c === quote) quote = ""; continue; }
-    if (c === "'" || c === '"') { quote = c; continue; }
-    if (c === "/" && source[i + 1] === "*") {
-      const end = source.indexOf("*/", i + 2) + 2;
-      ranges.push({ start: i, end }); i = end - 1;
-    }
-  }
-  return ranges;
-}
-
-function withoutComments(source: string) {
-  for (const range of commentRanges(source).reverse()) source = source.slice(0, range.start) + " " + source.slice(range.end);
-  return source;
-}
-
 function checkedCss(source: string): CssBlock[] | undefined {
   let clean: string;
   try { clean = syntax(source); } catch { return undefined; }
@@ -113,7 +92,6 @@ function checkedCss(source: string): CssBlock[] | undefined {
   return invalid ? undefined : blocks;
 }
 export function scanCss(source: string): CssBlock[] { return checkedCss(source) ?? []; }
-const lastWhere = <T>(items: T[], predicate: (item: T) => boolean) => [...items].reverse().find(predicate);
 // Only selector whitespace outside strings, comments and escapes is insignificant.
 function normalized(value: string): string {
   let result = "", pendingSpace = false;
@@ -147,110 +125,4 @@ function normalized(value: string): string {
     result += value.slice(start, i);
   }
   return result;
-}
-const ancestors = (rule: CssBlock) => {
-  const out: CssBlock[] = [];
-  for (let parent = rule.parent; parent; parent = parent.parent) out.unshift(parent);
-  return out;
-};
-const isRule = (block: CssBlock) => !block.selector.startsWith("@") && !ancestors(block).some((p) => /keyframes\b/.test(p.selector));
-export interface CssWriteOptions { expectedSource?: string; selector: string; baseStart?: number; breakpoint?: number; state?: "" | ":hover" | ":focus-visible" }
-const mediaWidth = (block: CssBlock) => /^@media\s+(?:screen\s+and\s+)?\(\s*max-width\s*:\s*(\d+)px\s*\)\s*$/i.exec(block.selector)?.[1];
-export function locateWriteRule(source: string, options: CssWriteOptions): CssBlock | undefined {
-  const blocks = scanCss(source);
-  const base = options.baseStart === undefined
-    ? lastWhere(blocks, (b) => normalized(b.selector) === normalized(options.selector) && !ancestors(b).some((p) => /^@media\b/.test(p.selector)))
-    : blocks.find((b) => b.start === options.baseStart && normalized(b.selector) === normalized(options.selector));
-  if (options.baseStart !== undefined && !base) return undefined;
-  if (!options.breakpoint && !options.state && base && normalized(base.selector) === normalized(options.selector)) return base;
-  const context = base?.parent;
-  const selector = normalized(options.selector + (options.state ?? ""));
-  return lastWhere(blocks, (b) => isRule(b) && normalized(b.selector) === selector && (options.breakpoint
-    ? !!b.parent && mediaWidth(b.parent) === String(options.breakpoint) && b.parent.parent === context
-    : b.parent === context));
-}
-function format(source: string) {
-  const newline = source.includes("\r\n") ? "\r\n" : "\n";
-  const indents = [...source.matchAll(/^(\t+| +)\S/gm)].map((m) => m[1]);
-  const unit = indents.some((i) => i.includes("\t")) ? "\t" : " ".repeat((indents.length ? Math.min(...indents.map((i) => i.length)) : 2));
-  return { newline, unit };
-}
-function indentAt(source: string, offset: number) { return /^[\t ]*/.exec(source.slice(source.lastIndexOf("\n", offset - 1) + 1, offset))![0]; }
-function replace(source: string, edits: { start: number; end: number; text: string }[]) {
-  for (const edit of edits.sort((a, b) => b.start - a.start)) source = source.slice(0, edit.start) + edit.text + source.slice(edit.end);
-  return source;
-}
-export function validateCssSource(source: string) {
-  syntax(source);
-  if (!checkedCss(source)) throw new Error("The stylesheet cannot be safely parsed.");
-}
-
-/** Empty/null values remove a property. All properties become a single source edit. */
-export function writeCssProperties(source: string, options: CssWriteOptions, properties: Readonly<Record<string, string | null>>): string {
-  if (options.expectedSource !== undefined && source !== options.expectedSource) throw new Error("The stylesheet changed. Try the style edit again.");
-  validateCssSource(source);
-  if (options.baseStart !== undefined && !scanCss(source).some((block) => block.start === options.baseStart && normalized(block.selector) === normalized(options.selector)))
-    throw new Error("The CSS rule changed. Select the element again.");
-  if (!options.selector.trim() || /[{};]/.test(syntax(options.selector))) throw new Error("Invalid CSS selector.");
-  if (options.breakpoint !== undefined && (!Number.isFinite(options.breakpoint) || options.breakpoint <= 0)) throw new Error("Invalid CSS breakpoint.");
-  for (const [property, value] of Object.entries(properties)) {
-    if (!/^(--[\w-]+|[a-z][a-z-]*)$/.test(property)) throw new Error("Invalid CSS property.");
-    if (value && /[{};]/.test(syntax(value))) throw new Error("Enter one CSS value.");
-  }
-  const { newline, unit } = format(source);
-  const rule = locateWriteRule(source, options);
-  if (rule) {
-    const edits: { start: number; end: number; text: string }[] = [];
-    const additions: string[] = [];
-    for (const [property, raw] of Object.entries(properties)) {
-      const value = raw?.trim();
-      const declarations = rule.declarations.filter((d) => d.property === property);
-      const last = lastWhere(declarations, (declaration) => /!important\s*$/i.test(withoutComments(declaration.value))) ?? declarations.at(-1);
-      for (const d of declarations) {
-        let start = d.start, end = d.end;
-        const original = source.slice(d.start, d.end);
-        const comments = commentRanges(original).map((range) => original.slice(range.start, range.end)).join(" ");
-        const text = value && d === last ? `${property}: ${value}${/!important\s*$/i.test(withoutComments(d.value)) && !/!important\s*$/i.test(withoutComments(value)) ? " !important" : ""}${comments ? " " + comments : ""};` : comments;
-        if (!text) {
-          const lineStart = source.lastIndexOf("\n", start - 1) + 1;
-          const lineEnd = source.indexOf("\n", end);
-          if (!source.slice(lineStart, start).trim() && lineEnd !== -1 && !source.slice(end, lineEnd).trim()) { start = lineStart; end = lineEnd + 1; }
-        }
-        edits.push({ start, end, text });
-      }
-      if (value && !last) additions.push(`${property}: ${value};`);
-    }
-    if (additions.length) {
-      const multiline = source.slice(rule.open, rule.close).includes("\n");
-      const baseIndent = indentAt(source, rule.start);
-      const childIndent = rule.declarations[0] && multiline ? indentAt(source, rule.declarations[0].start) : baseIndent + unit;
-      const tail = rule.declarations.at(-1);
-      const missingSemicolon = tail && source[tail.end - 1] !== ";" && !edits.some((e) => e.start <= tail.start && e.end >= tail.end);
-      const closingLine = multiline && !source.slice(source.lastIndexOf("\n", rule.close - 1) + 1, rule.close).trim();
-      const at = closingLine ? source.lastIndexOf("\n", rule.close - 1) + 1 : multiline ? rule.close : rule.close - (source.slice(rule.open + 1, rule.close).match(/\s*$/)?.[0].length ?? 0);
-      const samePoint = missingSemicolon && tail.end === at;
-      if (missingSemicolon && !samePoint) edits.push({ start: tail.end, end: tail.end, text: ";" });
-      const text = (samePoint ? ";" : "") + (multiline ? (closingLine ? "" : newline) + additions.map((d) => childIndent + d).join(newline) + newline + (closingLine ? "" : baseIndent) : " " + additions.join(" ") + " ");
-      edits.push({ start: at, end: multiline ? at : rule.close, text });
-    }
-    return replace(source, edits);
-  }
-  const entries = Object.entries(properties).filter(([, v]) => v?.trim());
-  if (!entries.length) return source;
-  const blocks = scanCss(source);
-  const base = options.baseStart === undefined
-    ? lastWhere(blocks, (b) => normalized(b.selector) === normalized(options.selector) && !ancestors(b).some((p) => /^@media\b/.test(p.selector)))
-    : blocks.find((b) => b.start === options.baseStart && normalized(b.selector) === normalized(options.selector));
-  const parent = base?.parent;
-  const media = options.breakpoint ? lastWhere(blocks, (b) => b.parent === parent && mediaWidth(b) === String(options.breakpoint)) : undefined;
-  const container = media ?? parent;
-  const containerIndent = container ? indentAt(source, container.start) : "";
-  const ruleIndent = container ? containerIndent + unit : "";
-  const renderRule = (indent: string) => `${indent}${options.selector}${options.state ?? ""} {${newline}${entries.map(([p, v]) => `${indent}${unit}${p}: ${v!.trim()};`).join(newline)}${newline}${indent}}${newline}`;
-  const newMedia = options.breakpoint && !media;
-  const text = newMedia ? `${ruleIndent}@media (max-width: ${options.breakpoint}px) {${newline}${renderRule(ruleIndent + unit)}${ruleIndent}}${newline}` : renderRule(ruleIndent);
-  if (!container) return source + (source && !source.endsWith("\n") ? newline : "") + (source ? newline : "") + text;
-  const lineStart = source.lastIndexOf("\n", container.close - 1) + 1;
-  const at = !source.slice(lineStart, container.close).trim() ? lineStart : container.close;
-  return source.slice(0, at) + newline + text + (at === container.close ? containerIndent : "") + source.slice(at);
 }

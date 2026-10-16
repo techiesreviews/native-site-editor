@@ -285,5 +285,3 @@ export function createPageBuilder(deps: PageBuilderDeps) {
     },
   };
 }
-
-export type PageBuilder = ReturnType<typeof createPageBuilder>;

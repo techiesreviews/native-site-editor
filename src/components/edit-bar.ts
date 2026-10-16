@@ -1161,5 +1161,3 @@ export function createEditBar(pane: HTMLElement, frame: HTMLElement, drag?: Edit
     },
   };
 }
-
-export type EditBar = ReturnType<typeof createEditBar>;

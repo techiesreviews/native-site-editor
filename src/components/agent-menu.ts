@@ -522,5 +522,3 @@ function clip(text: string, limit: number) {
   const line = text.replace(/\s+/g, " ").trim();
   return line.length > limit ? `${line.slice(0, limit - 1).trimEnd()}…` : line;
 }
-
-export { buildSitePrompt, createCommand, setupPrompt, connectionPrompt } from "../agent-prompts";

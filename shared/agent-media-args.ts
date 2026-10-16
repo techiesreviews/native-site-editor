@@ -2,8 +2,6 @@ import { agentImageTrim } from "./agent-image-frame";
 import { isOutsideMediaAddress, OUTSIDE_MEDIA_REFUSED, parseOutlineId, mediaKind, type AgentOperation, type AgentCommandArgs } from "./agent";
 import { parseOnlineVideoAddress } from "./online-video-address";
 
-export { NEW_ONLINE_VIDEO_REFUSED } from "./online-video-address";
-
 export const AGENT_KEEP_REFUSED = "Agents may add Always keep but never take it off; ask the user to do it in Media.";
 
 /** Worker and lazy tab validation use the same rules before applying media commands. */
