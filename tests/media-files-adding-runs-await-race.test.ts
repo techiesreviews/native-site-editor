@@ -60,3 +60,32 @@ test("Files adding does not publish an old repository's completed summary", asyn
     assert.ok(run.runs.entries().every(entry => entry.state !== "added"));
   });
 });
+
+test("a save that fails after a switch reports its reason once and marks nothing added", async () => {
+  let live = true, release!: (error: Error) => void, saving!: () => void;
+  const saveStarted = new Promise<void>(resolve => { saving = resolve; });
+  const announced: string[] = [], errors: string[] = [];
+  const ctx = {
+    key: "old/main", scope: { account: "a", repoId: 1, repo: "a/old", branch: "main" },
+    drafts: { get: () => undefined, save: () => true, remove: () => true },
+    paths: [], items: [], pages: [], components: {}, history: false, assertLive: () => {},
+    read: async () => undefined, blob: async () => new Blob(), assetVersion: () => undefined,
+    applyBatch: async () => {}, openPage: async () => {},
+  } satisfies MediaWorkspaceContext;
+  const runs = createFilesAdding({
+    prepare: async (file, _key, folder) => ({ request: { file, folder } }),
+    save: () => new Promise((_resolve, reject) => { release = reject; saving(); }),
+    paint() {},
+  });
+  const done = runs.start("docs", [new File(["a"], "a.pdf")], {
+    context: async () => ctx, live: () => live,
+    announce: text => { announced.push(text); }, error: error => { errors.push((error as Error).message); },
+  });
+  await saveStarted;
+  live = false;
+  release(new Error("The repository changed while adding files. Nothing was added."));
+  assert.deepEqual(await done, []);
+  assert.deepEqual(announced, []);
+  assert.deepEqual(errors, ["The repository changed while adding files. Nothing was added."]);
+  assert.deepEqual(runs.additions(), []);
+});
