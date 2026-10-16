@@ -1,11 +1,28 @@
 import { posix } from "node:path";
+import { createRequire } from "node:module";
 import { knownFailure } from "./suite-summary.mjs";
+
+// The repo's lint dependency supplies the compiler API (TypeScript 7 has none).
+const ts = createRequire(import.meta.url)("typescript-eslint-api");
 
 const browserSpec = /^tests\/(native-save|native-preview)\/[^/]+\.spec\.ts$/;
 /** Folders whose modules the import scan follows (specs reach app code in shared/ and worker/). */
 export const graphFile = /^(tests|src|scripts|shared|worker|tools)\//;
 // Quote and apostrophe strings end at the line, so an apostrophe in a comment cannot swallow later lines.
 const quoted = /"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'|`(?:\\.|[^`\\])*`/g;
+const appModule = /^(src|shared)\/.*\.(?:ts|tsx|js|mjs)$/;
+const MAX_STRING_SPECS = 15;
+// A string defined by more app modules than this is shared vocabulary ("Delete", "is-error"), not a feature hook.
+const MAX_STRING_MODULES = 3;
+// A module with more importers than this is a shared helper: its own strings count, its importers' do not.
+const MAX_WALK_IMPORTERS = 3;
+const GENERIC_NAME_TOKENS = new Set(["native", "media", "page", "builder", "editor"]);
+// Common UI states, element kinds and domain nouns do not identify a feature.
+const COMMON_STRINGS = new Set([
+  "true", "false", "none", "auto", "button", "hidden", "active", "open", "close", "error",
+  "image", "video", "file", "files", "page", "pages", "media", "native", "editor", "input", "text",
+]);
+const REASON_KINDS = ["import", "fixture", "removed string", "string", "name"];
 
 export function specGroups(file, text) {
   if (file.startsWith("tests/native-preview/")) return ["native-preview"];
@@ -75,6 +92,132 @@ export function removedStrings(diff) {
   return result;
 }
 
+// Separate from importsOf: browser import selection retains its original semantics.
+// Syntax nodes distinguish import types from real calls, including calls inside templates.
+function runtimeImports(file, text) {
+  const tree = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, false,
+    file.endsWith(".tsx") ? ts.ScriptKind.TSX : /\.[cm]?js$/.test(file) ? ts.ScriptKind.JS : ts.ScriptKind.TS);
+  const imports = [];
+  const visit = node => {
+    if (ts.isTypeNode(node)) return;
+    if (ts.isImportDeclaration(node)) {
+      const clause = node.importClause, bindings = clause?.namedBindings;
+      const onlyTypes = clause?.isTypeOnly || (!clause?.name && bindings && ts.isNamedImports(bindings)
+        && bindings.elements.length > 0 && bindings.elements.every(element => element.isTypeOnly));
+      if (!onlyTypes) imports.push(node.moduleSpecifier.text);
+      return;
+    }
+    if (ts.isExportDeclaration(node)) {
+      const clause = node.exportClause;
+      const onlyTypes = node.isTypeOnly || (clause && ts.isNamedExports(clause)
+        && clause.elements.length > 0 && clause.elements.every(element => element.isTypeOnly));
+      if (node.moduleSpecifier && !onlyTypes) imports.push(node.moduleSpecifier.text);
+      return;
+    }
+    if (ts.isImportEqualsDeclaration(node) && !node.isTypeOnly && ts.isExternalModuleReference(node.moduleReference)) {
+      if (node.moduleReference.expression) imports.push(node.moduleReference.expression.text);
+    }
+    if (ts.isCallExpression(node) && (node.expression.kind === ts.SyntaxKind.ImportKeyword
+      || (ts.isIdentifier(node.expression) && node.expression.text === "require"))) {
+      const argument = node.arguments[0];
+      if (argument && ts.isStringLiteralLike(argument)) imports.push(argument.text);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(tree);
+  return imports;
+}
+
+function changedModules(files, changed, paths) {
+  const reverse = new Map();
+  for (const [file, text] of Object.entries(files)) {
+    if (!appModule.test(file) || file === "src/main.ts") continue;
+    for (const specifier of runtimeImports(file, text)) {
+      const dependency = resolveImport(file, specifier, paths);
+      if (!dependency) continue;
+      if (!reverse.has(dependency)) reverse.set(dependency, new Set());
+      reverse.get(dependency).add(file);
+    }
+  }
+  const modules = new Set();
+  const visit = file => {
+    if (file === "src/main.ts" || modules.has(file)) return;
+    modules.add(file);
+    const importers = reverse.get(file) ?? new Set();
+    if (importers.size <= MAX_WALK_IMPORTERS) for (const importer of importers) visit(importer);
+  };
+  for (const file of changed) if (appModule.test(file) && Object.hasOwn(files, file)) visit(file);
+  return [...modules].sort();
+}
+
+function definedStrings(text) {
+  const candidates = new Map();
+  const add = (value, hook = false) => {
+    value = value.trim();
+    if (value.length < 4 || COMMON_STRINGS.has(value.toLowerCase()) || /[\\{}\n]/.test(value)) return;
+    candidates.set(value, hook || candidates.get(value) || false);
+  };
+  // Per line, as in removedStrings, so markup text cannot span code between unrelated < and >.
+  for (const { value, explicit } of text.split("\n").flatMap(lineStrings)) if (visible(value, explicit)) add(value);
+  for (const match of text.matchAll(/\b(class|className|id|data-[\w-]+)\s*(?:=\s*\{?\s*|:\s*)["'`]([^"'`]+)["'`]/g)) {
+    if (match[1].startsWith("data-")) add(match[1], true);
+    for (const token of match[2].split(/\s+/)) add(token, true);
+  }
+  for (const match of text.matchAll(/\bclassList\s*\.\s*(?:add|toggle|remove)\s*\(([^)]*)\)/g)) {
+    for (const value of literals(match[1])) add(value, true);
+  }
+  for (const value of literals(text)) {
+    if (/^[.#\[]/.test(value.trim())) {
+      for (const match of value.matchAll(/[.#]([\w-]+)/g)) add(match[1], true);
+    }
+    for (const match of value.matchAll(/\bdata-[\w-]+/g)) add(match[0], true);
+  }
+  return [...candidates].map(([value, hook]) => ({ value, hook }));
+}
+
+function stringPattern({ value, hook }) {
+  const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const word = hook ? "[\\w-]" : "[\\p{L}\\p{N}_]";
+  return new RegExp(`(?<!${word})${escaped}(?!${word})`, "u");
+}
+
+function nameTokens(file) {
+  return new Set(posix.basename(file).replace(/\.[^.]+$/, "").replace(/([a-z\d])([A-Z])/g, "$1-$2")
+    .replace(/([A-Z])([A-Z][a-z])/g, "$1-$2").toLowerCase().split(/[-_.]+/)
+    .filter(token => token && !["spec", "test", "actual", "index"].includes(token))
+    .map(token => token.length > 1 && token.endsWith("s") ? token.slice(0, -1) : token));
+}
+
+function moduleReasons(files, modules, specs) {
+  const reasons = new Map(specs.map(spec => [spec.file, []]));
+  if (!modules.length) return reasons;
+  const defined = new Map(Object.entries(files).filter(([file]) => appModule.test(file)).map(([file, text]) => [file, definedStrings(text)]));
+  const definers = new Map();
+  for (const candidates of defined.values()) for (const { value } of candidates) definers.set(value, (definers.get(value) ?? 0) + 1);
+  // Cache matches across modules: common labels occur in many importers.
+  const matches = new Map();
+  for (const file of modules) {
+    for (const candidate of defined.get(file) ?? []) {
+      if (definers.get(candidate.value) > MAX_STRING_MODULES) continue;
+      const key = JSON.stringify(candidate);
+      if (!matches.has(key)) {
+        const pattern = stringPattern(candidate);
+        const found = specs.filter(spec => spec.text.includes(candidate.value) && spec.strings.some(value => pattern.test(value)));
+        matches.set(key, found.length <= MAX_STRING_SPECS ? found : []);
+      }
+      for (const spec of matches.get(key)) reasons.get(spec.file).push(`string: ${JSON.stringify(candidate.value)} (${file})`);
+    }
+    const tokens = nameTokens(file);
+    for (const spec of specs) {
+      const shared = [...tokens].filter(token => spec.tokens.has(token));
+      if (shared.length >= 2 && shared.some(token => !GENERIC_NAME_TOKENS.has(token))) {
+        reasons.get(spec.file).push(`name: ${shared.join(", ")} (${file})`);
+      }
+    }
+  }
+  return reasons;
+}
+
 /** Select from a snapshot of repository paths and text; no filesystem or git reads. */
 export function selectAffected({ files, changed, diff = "" }) {
   const changedFiles = [...new Set(changed)].sort();
@@ -82,8 +225,11 @@ export function selectAffected({ files, changed, diff = "" }) {
   const graph = new Map(Object.entries(files).filter(([file]) => graphFile.test(file)).map(([file, text]) =>
     [file, importsOf(text).map(value => resolveImport(file, value, paths)).filter(Boolean)]));
   const removed = removedStrings(diff);
+  const specs = Object.keys(files).filter(file => browserSpec.test(file)).sort()
+    .map(file => { const strings = literals(files[file]); return { file, strings, text: strings.join("\n"), tokens: nameTokens(file) }; });
+  const extraReasons = moduleReasons(files, changedModules(files, changedFiles, paths), specs);
   const selected = [];
-  for (const file of Object.keys(files).filter(file => browserSpec.test(file)).sort()) {
+  for (const { file, strings } of specs) {
     const text = files[file], groups = specGroups(file, text), reasons = new Set();
     const reached = new Set();
     const visit = path => {
@@ -103,8 +249,8 @@ export function selectAffected({ files, changed, diff = "" }) {
         if (fixture && !["actual-starter", "native-starter"].includes(fixture) && text.includes(`fixtures/${fixture}`)) reasons.add(`fixture: ${fixture} (${change})`);
       }
     }
-    const strings = literals(text);
     for (const { file: source, value } of removed) if (strings.some(string => string.includes(value))) reasons.add(`removed string: ${JSON.stringify(value)} (${source})`);
+    for (const reason of extraReasons.get(file)) reasons.add(reason);
     if (reasons.size) selected.push({ file, groups, reasons: [...reasons] });
   }
   return selected;
@@ -142,7 +288,9 @@ export function routeSpecs(specs, available = specs) {
 
 export function selectionLine(spec) {
   const extra = spec.reasons.length - 3;
-  return `${spec.file} [${spec.groups.join(", ")}] — ${spec.reasons.slice(0, 3).join("; ")}${extra > 0 ? ` (+${extra} more)` : ""}`;
+  const counts = REASON_KINDS.map(kind => [kind, spec.reasons.filter(reason => reason.startsWith(`${kind}:`)).length])
+    .filter(([, count]) => count).map(([kind, count]) => `${kind} ${count}`);
+  return `${spec.file} [${spec.groups.join(", ")}] — ${spec.reasons.slice(0, 3).join("; ")}${extra > 0 ? ` (+${extra} more)` : ""}${counts.length ? ` [${counts.join(", ")}]` : ""}`;
 }
 
 const firstLine = value => String(value ?? "").replace(/\x1b\[[0-9;]*m/g, "").split(/\r?\n/).find(line => line.trim())?.trim();

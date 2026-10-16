@@ -105,7 +105,8 @@ test("removed visible strings match only quoted spec text and ignore moves and c
   const diff = f.git("diff", "--unified=0", f.base, "--", "src");
   assert.deepEqual(removedStrings(diff), [{ file: "src/button.ts", value: "Image" }]);
   const files = { ...f.files, [save("plain")]: "// Image\n", [save("template")]: 'test(`Image picker`, () => {});', [save("apostrophe")]: "// the card's link\ntest(\"Don't open Image menu\", () => {});\n" };
-  const selected = selectAffected({ files, changed: ["src/button.ts"], diff });
+  const selected = selectAffected({ files, changed: ["src/button.ts"], diff })
+    .filter(spec => spec.reasons.some(reason => reason.startsWith("removed string:")));
   assert.deepEqual(selected.map(spec => spec.file), [save("apostrophe"), save("label"), save("template")]);
   assert.match(selected[0].reasons[0], /removed string: "Image" \(src\/button.ts\)/);
   const markup = `diff --git a/src/ui.ts b/src/ui.ts
@@ -132,6 +133,133 @@ test("removed visible strings match only quoted spec text and ignore moves and c
   assert.deepEqual(removedStrings(renames).map(row => row.value).sort(), ["Image", "OK", "delete"]);
   const okSpec = { ...f.files, [save("ok")]: 'await page.getByRole("button", { name: "OK" }).click();' };
   assert.ok(selectAffected({ files: okSpec, changed: ["src/ui.ts"], diff: renames }).some(spec => spec.file === save("ok")));
+});
+
+test("defined labels, classes and hooks match quoted spec tokens with useful boundaries", t => {
+  const f = fixture(t);
+  const module = "src/uploads.ts";
+  const files = {
+    ...f.files,
+    [module]: `
+      const html = \`<button aria-label="Choose uploads" title="Upload details" placeholder="Find uploads"
+        class="upload-tray pending-upload" id="upload-panel" data-upload-state="pending">Add documents</button>\`;
+      node.className = "upload-row other-row";
+      node.classList.add("queued-upload", "upload-ready");
+      node.classList.toggle("upload-expanded", true);
+      node.classList.remove("upload-stale");
+      const selector = ".upload-focus";
+      const jsx = <div className={"upload-jsx"} />;
+      const label = "Upload complete";
+      const noise = ["true", "false", "button", "hidden", "active", "error", "Image", "Files", "Media", "OK", "add"];
+    `,
+    [save("labels")]: 'test("Choose uploads", () => page.getByText("Add documents"));',
+    [save("attributes")]: 'page.getByTitle("Upload details"); page.getByPlaceholder("Find uploads");',
+    [save("classes")]: 'page.locator(".upload-tray .pending-upload .upload-row .queued-upload .upload-ready .upload-expanded .upload-stale .upload-focus .upload-jsx");',
+    [save("hooks")]: 'page.locator("#upload-panel [data-upload-state]");',
+    [save("visible")]: 'test("Status: Upload complete!", () => {});',
+    [save("noise")]: 'test("true false button hidden active error Image Files Media OK add", () => {});',
+    [save("longer")]: 'page.locator(".upload-tray-extra .pre-upload-row .queued-uploaded #upload-panelist [data-upload-states]"); test("Choose uploadstuff ReUpload complete", () => {});',
+    [save("unquoted")]: '// Choose uploads\n// upload-tray\n',
+  };
+  const selected = selectAffected({ files, changed: [module] });
+  assert.deepEqual(selected.map(spec => spec.file), ["attributes", "classes", "hooks", "labels", "visible"].map(save));
+  assert.ok(selected.find(spec => spec.file === save("labels"))?.reasons.includes(`string: "Choose uploads" (${module})`));
+  assert.ok(selected.find(spec => spec.file === save("classes"))?.reasons.includes(`string: "upload-jsx" (${module})`));
+  assert.ok(selected.every(spec => spec.reasons.every(reason => reason.startsWith("string:"))));
+  assert.deepEqual(selectAffected({ files, changed: ["src/missing.ts", "tools/uploads.ts"] }), []);
+});
+
+test("defined strings occurring in more than fifteen specs are ignored", t => {
+  const f = fixture(t);
+  const files = { ...f.files, "shared/status.ts": 'export const label = "Upload finished";' };
+  for (let i = 0; i < 15; i++) files[save(`case-${i}`)] = 'test("Upload finished", () => {});';
+  assert.equal(selectAffected({ files, changed: ["shared/status.ts"] }).length, 15);
+  files[save("case-last")] = 'test("Upload finished", () => {});';
+  assert.deepEqual(selectAffected({ files, changed: ["shared/status.ts"] }), []);
+});
+
+test("shared vocabulary and shared helpers do not widen the selection", t => {
+  const f = fixture(t);
+  const files: Record<string, string> = { ...f.files, "src/tray.ts": 'const a = "Remove upload"; const b = "Upload tray title";', [save("tray")]: 'test("Remove upload Upload tray title", () => {});' };
+  // "Remove upload" is defined by four app modules: vocabulary, not a feature hook.
+  for (let i = 0; i < 3; i++) files[`src/other-${i}.ts`] = 'const label = "Remove upload";';
+  assert.deepEqual(selectAffected({ files, changed: ["src/tray.ts"] })[0].reasons, ['string: "Upload tray title" (src/tray.ts)']);
+  delete files["src/other-2.ts"];
+  assert.equal(selectAffected({ files, changed: ["src/tray.ts"] })[0].reasons.length, 2);
+  // A helper with three importers walks up to them; with four it is a shared helper and stops.
+  files["src/helper.ts"] = "export const limit = 1;";
+  files[save("panel")] = 'test("Panel heading one", () => {});';
+  for (let i = 0; i < 3; i++) files[`src/user-${i}.ts`] = `import { limit } from "./helper"; const label = "Panel heading ${["one", "two", "three"][i]}";`;
+  assert.deepEqual(selectAffected({ files, changed: ["src/helper.ts"] }).map(spec => spec.file), [save("panel")]);
+  files["src/user-3.ts"] = 'import { limit } from "./helper";';
+  assert.deepEqual(selectAffected({ files, changed: ["src/helper.ts"] }), []);
+});
+
+test("module names require two shared tokens including a non-generic token", t => {
+  const f = fixture(t);
+  const module = "src/page-builder/media-files-adding-runs.ts";
+  const files = {
+    ...f.files, [module]: "export const count = 1;",
+    [save("native-media-adding")]: "", [save("actual_mediaFile.test")]: "",
+    [save("native-media-pane")]: "", [save("native-file-ops")]: "", [save("adding-queue")]: "",
+    "src/native-media.ts": "", [save("native-media")]: "",
+    "src/native-pages.ts": "", [save("native-page")]: "",
+  };
+  const selected = selectAffected({ files, changed: [module, "src/native-media.ts", "src/native-pages.ts"] });
+  assert.deepEqual(selected.map(spec => spec.file), [save("actual_mediaFile.test"), save("native-media-adding")]);
+  assert.deepEqual(selected.find(spec => spec.file === save("native-media-adding"))?.reasons,
+    [`name: media, adding (${module})`]);
+});
+
+test("reverse module walk follows value and lazy imports, excludes type references and stops before main", t => {
+  const f = fixture(t);
+  const module = "shared/job.ts";
+  const files = {
+    ...f.files, [module]: "export const count = 1;",
+    "src/lazy.ts": 'const load = async () => await import("../shared/job"); const label = "Queued documents";',
+    "src/chain.ts": 'const load = () => import("./lazy.js").then(module => module); const label = "Pending documents";',
+    "src/loop.ts": 'export * from "./chain"; import "./loop"; const label = "Ready documents";',
+    "src/value.ts": 'import { count } from "../shared/job"; const label = "Current documents";',
+    "src/main.ts": 'const load = () => import("./chain"); const label = "Main documents";',
+    "src/above.ts": 'import "./main"; const label = "Above documents";',
+    [save("queued")]: 'test("Queued documents", () => {});',
+    [save("pending")]: 'test("Pending documents", () => {});',
+    [save("ready")]: 'test("Ready documents", () => {});',
+    [save("current")]: 'test("Current documents", () => {});',
+    [save("main")]: 'test("Main documents Above documents", () => {});',
+  };
+  const typeReferences = [
+    'import type { Job } from "../shared/job";',
+    'export type { Job } from "../shared/job";',
+    'type Job = typeof import("../shared/job");',
+    'type Job = import("../shared/job").Job;',
+    'type Job = import("../shared/job")["count"];',
+    'import { type Job } from "../shared/job";',
+    'export { type Job } from "../shared/job";',
+    '// await import("../shared/job");',
+    'const source = \'import("../shared/job")\';',
+  ];
+  for (const [i, reference] of typeReferences.entries()) {
+    files[`src/type-${i}.ts`] = `${reference}\nconst label = "Type documents";`;
+  }
+  files[save("types")] = 'test("Type documents", () => {});';
+  assert.deepEqual(selectAffected({ files, changed: [module] }).map(spec => spec.file),
+    ["current", "pending", "queued", "ready"].map(save));
+  assert.deepEqual(selectAffected({ files, changed: ["src/main.ts"] }), []);
+  // Existing spec import selection deliberately still follows type-only imports.
+  files[save("direct-type")] = 'import type { Job } from "../..//shared/job";';
+  assert.ok(selectAffected({ files, changed: [module] }).find(spec => spec.file === save("direct-type"))?.reasons.includes(`import: ${module}`));
+});
+
+test("selection lines count all reason kinds including reasons beyond the first three", () => {
+  const reasons = [
+    'string: "Add files" (src/adding.ts)', 'name: media, adding (src/adding.ts)',
+    'string: "upload-row" (src/adding.ts)', 'string: "pending-upload" (src/adding.ts)',
+    "import: shared/jobs.ts", "fixture: default (fixtures/native-starter/index.html)",
+    'removed string: "Old upload" (src/adding.ts)',
+  ];
+  assert.equal(selectionLine({ file: save("uploads"), groups: ["default"], reasons }),
+    `${save("uploads")} [default] — ${reasons.slice(0, 3).join("; ")} (+4 more) [import 1, fixture 1, removed string 1, string 3, name 1]`);
 });
 
 test("fixture rules match exact tags and collect every applicable reason", t => {
