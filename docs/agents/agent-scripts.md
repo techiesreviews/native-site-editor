@@ -1,8 +1,32 @@
 # Agent scripts
 
 Run from the worktree root; dependencies must already be installed.
+The order runners use these in: [runner.md](runner.md).
 
 Agent tool hooks and session Node PATH: see [Hooks](guardrails.md#hooks).
+
+## Kit
+
+`scripts/agents/kit <command> [args]` is the front door. Bare `kit` lists the commands;
+`kit <command> --help` prints that command's usage and is the source of truth for its flags.
+Every run ends with one `RESULT: ok|fail …` line (the kit adds one when a command does not, or
+is interrupted); exit 0 ok, 1 failure, 2 usage error. Each command is one file in
+`scripts/agents/kit.d/` with a `# kit: <summary>` line and its own `tests/kit-<command>.test.ts`;
+shared helpers live in `kit-lib.sh` and `kit-lib.mjs`. Owner: `ASE_OWNER`, else `.scratch/owner`.
+
+- `kit doctor [--quiet]` checks place, base, hook config, live hooks, Node, `node_modules` and conflict markers, each ✗ with a fix. The base passes when the branch contains `origin/dev`, or its base was the dev tip less than 24 hours ago ("N commits behind; rebase before landing"; `kit pr` rebases). `agent.sh` runs `--quiet` on its worktree and exits 3 on failure.
+- `kit review [--base REF | --commit SHA] [--ticket FILE] [--pr N]` runs one read-only review (default `--base origin/dev`; model `ASE_REVIEW_MODEL`, else `gpt-6.1-sol`; Codex gets a fresh `CODEX_HOME` with no skills, plugins or MCP servers). It saves `result.md`, `run.log`, `diff.patch` and `refs.txt` in the main root `.scratch/reviews/<owner>/<UTC time>/`, named in the RESULT line. An empty diff fails before the model; an incomplete answer is re-asked once.
+- `kit pr [--base dev] [--title T] [--ticket FILE] [--no-merge] [--dry-run] [--release]` lands a branch. It refuses a detached HEAD, `dev`/`main`, a dirty tree and `--base main` without `--release`; runs `kit deps check`, rebases on `origin/<base>`, then `npm run check`, `npm test`, `npm run lint` and `kit specs --affected` (`--dry-run` stops here). It pushes, opens or reuses the PR, posts the newest saved review that covers this exact HEAD and merge base (else runs `kit review --pr N`), waits with `kit wait ci --pr N`, and rebase-merges pinned to that head, deleting the branch. A "behind" refusal rebases and retries up to 3 times. `--release` opens `dev` → `main` and never merges. The `gh` token needs Pull requests: Read and write ([github-settings.md](github-settings.md)).
+- `kit wait pid <pid>`, `kit wait output <file> [--until RE] [--quiet D]` and `kit wait ci [--branch B | --pr N | --sha S]`, each with `--timeout D` (default 30m), wait on a process, a log (until the regex, or until its writers exit and it stays unchanged for 5 s; prints its last 20 lines) or the CI runs of one head (failed steps and the last 20 log lines; a cancelled run on a moved head is followed as "superseded"). At most one status line a minute.
+- `kit specs <spec…> | --affected [--base REF]` with `[--list]` runs browser specs by name, or those a diff against the merge-base reaches (reasons: import, fixture, removed string, defined string, name match; `--list` prints them and runs nothing). Each fixture group runs through `port.sh`; one ✓/✗ line per spec with known-failure labels from `ASE_KNOWN_FAILURES` (default `tests/known-failures.json`). Logs: `.scratch/kit-specs/run-*/`.
+- `kit shots <screen…> | --steps FILE | --spec FILE` with `[--width W,…] [--theme T] [--out DIR] [--compare REF]` shoots named screens (13; bare `kit shots` lists them) on the real starter over fake GitHub, 390/768/1280 × light/dark by default, a failed screen retaken once. Output in the main root `.scratch/shots/<owner>/<time>/`: PNGs, webp copies under 40 KB, `contact.html`/`contact.webp`, `index.json`, and up to 20 layout findings (clipped, overlap, tap-target, contrast, overflow). `--compare` shoots the ref with today's tooling from a cached base worktree and pairs before | after rows.
+- `kit size [--no-base] [--base REF]` builds and measures boot bytes before first paint against the base (default `origin/dev`) and fails above the 355 KB budget. Per-commit cache: main root `.scratch/size-cache/`.
+- `kit deps check [--lock F] [--modules D]` compares the shared `node_modules` with the lockfile; `kit deps add <pkg>[@version] [--dev]` adds a package without npm ever writing to the shared folder.
+- `kit status [map] [--ref REF] [--no-fetch]` prints one row per ticket (status, owner, LANDED commit and PR, CI) under a header with the ref's CI and the live preview bundle; offline it still prints the git table.
+- `kit preview [--dry-run]` is for the lead: deploys `origin/dev` from the main root `.scratch/preview-deploy` worktree under a lock and checks the live bundle (`RESULT: ok preview <version-id> <sha>`).
+- `kit version` prints the kit's commit, owner and Node version.
+
+## Other scripts
 
 - `scripts/agents/port.sh <cmd...>` waits for resources, locks a free slot, and sets `ASE_TEST_PORT`. Port rules below.
 - `scripts/agents/timing.sh <cmd...>` holds all eight focused slot locks, then `5216`, for an exclusive timing run.
@@ -12,17 +36,17 @@ Agent tool hooks and session Node PATH: see [Hooks](guardrails.md#hooks).
 - `scripts/agents/worktree.sh <branch> [base=origin/dev]` creates a sibling worktree with shared dev `node_modules` and native-static fixture symlinks; records UTC time, `${ASE_OWNER:-unknown}`, branch and base in `.scratch/owner`, then prints its path. Set `ASE_OWNER` to the agent/thread identifier.
 - `scripts/agents/worktrees.sh [--prune] [--older-than DAYS=3]` lists registered paths, branches, owners, dirtiness, commit age, merge state against local `origin/dev` or `origin/main`, and live cwd state from `/proc`. Listing is the default. Prune removes only clean, merged, inactive worktrees whose commit and creation ages exceed DAYS; unknown state is kept. Root, dev and locked worktrees are kept. It runs `git worktree prune` and keeps branches.
 - `scripts/agents/tickets.mjs frontier [map]` prints open wayfinder tickets with all blockers closed, including builder and title; `check` validates statuses and same-map blocker slugs in both `tickets/` and `build/tickets/`, and fails with `file:line`. Lint runs the check.
-- `scripts/agents/review.sh <worktree> <brief-file> <out-dir> [--base REF]` wraps the agent runner in review mode; copies its invocation's `out.md` to `<out-dir>/result.md` and `run.log` there, and verifies `REVIEW_STATUS: complete`. Model and CLI overrides below apply.
-- `scripts/agents/review-brief.sh <ticket-file> [base=origin/dev]` prints the standard slice brief: diff scope, ticket/linked spec, standards, finding format and the author's validation contract. Review completion accepts the first non-blank line, stripping a leading BOM or markdown fence.
-- `scripts/agents/agent.sh build|review <worktree> <brief> [--model M] [--cli codex|claude] [--effort E] [--base REF] [--out DIR]` runs the selected agent; defaults and adapters below.
+- `scripts/agents/review.sh <worktree> <brief-file> <out-dir> [--base REF]` is the older form of `kit review` (a thin wrapper that saves no main-root evidence); it wraps the agent runner in review mode; copies its invocation's `out.md` to `<out-dir>/result.md` and `run.log` there, and verifies `REVIEW_STATUS: complete`. Model and CLI overrides below apply.
+- `scripts/agents/review-brief.sh <ticket-file> [base=origin/dev]` (`kit review --ticket` builds the same brief itself) prints the standard slice brief: diff scope, ticket/linked spec, standards, finding format and the author's validation contract. Review completion accepts the first non-blank line, stripping a leading BOM or markdown fence.
+- `scripts/agents/agent.sh build|review <worktree> <brief> [--model M] [--cli codex|claude] [--effort E] [--base REF] [--out DIR]` runs the selected agent; `agent.sh --resume <out-dir>` continues a stopped run. Defaults, adapters and resume below.
 - `scripts/agents/sol.sh <worktree> <brief-file> [effort=medium]` is a compatibility wrapper for `agent.sh build`; model/CLI environment overrides apply. The runner prints its artifact directory.
-- `scripts/agents/unit.sh [files...]` runs all unit tests via `npm test`, or selected files via `tsx --test`; prints pass/fail counts and each failure's name and first four error lines. Preserves the command's exit status; full log: `.scratch/unit/<time>-<pid>.log`.
-- `scripts/agents/shots.sh <out-dir> <scratch-spec.spec.ts>` runs only that `.scratch/` scenario through a dedicated Playwright config on a `port.sh` slot. Serves the real starter over fake GitHub, stops its server on completion/failure, and prints PNG paths. Fixture: `${ASE_NATIVE_SAVE_FIXTURE:-$HOME/Projects/native-site-editor-starter}`; screenshot destination: `ASE_SHOTS_OUT_DIR`. Example below.
-- `scripts/agents/suite-summary.mjs <results.json> [...]` merges shard counts and prints each failure's file, line, title and first error line; labels and separately counts matches in [tests/known-failures.json](../../tests/known-failures.json) as known flaky or known failing on dev. It exits non-zero for every failure, report error or unreadable input. Registry titles match exactly and survive line moves; line-only entries cover parameterized tests, and spec-only entries cover the file.
+- `scripts/agents/unit.sh [files...]` runs all unit tests via `npm test`, or selected files via `tsx --test`; prints pass/fail counts and each failure's name and first four error lines. Preserves the command's exit status; full log: `.scratch/unit/<time>-<pid>.log`. A test that never settles fails after `ASE_UNIT_TIMEOUT_MS` (default 120000), naming the test.
+- `scripts/agents/shots.sh <out-dir> <scratch-spec.spec.ts>` (what `kit shots --spec` calls) runs only that `.scratch/` scenario through a dedicated Playwright config on a `port.sh` slot. Serves the real starter over fake GitHub, stops its server on completion/failure, and prints PNG paths. Fixture: `${ASE_NATIVE_SAVE_FIXTURE:-$HOME/Projects/native-site-editor-starter}`; screenshot destination: `ASE_SHOTS_OUT_DIR`. Example below.
+- `scripts/agents/suite-summary.mjs <results.json> [...]` merges shard counts and prints each failure's file, line, title and first error line; labels and separately counts matches in [tests/known-failures.json](../../tests/known-failures.json) (or the registry at `ASE_KNOWN_FAILURES`) as known flaky or known failing on dev. It exits non-zero for every failure, report error or unreadable input. Registry titles match exactly and survive line moves; line-only entries cover parameterized tests, and spec-only entries cover the file.
 - `scripts/agents/ci-fonts.conf` is a fontconfig with only DejaVu Sans, as on the CI runners; `FONTCONFIG_FILE=$PWD/scripts/agents/ci-fonts.conf` before a browser run uses it (cache in `~/.cache/fontconfig-ci`).
-- `scripts/agents/land.sh [--branch dev]` locks the target branch, fetches and rebases, runs check, test and lint, then pushes; a non-fast-forward rejection retries up to three attempts. UI/build/package changes also run the byte budget through `port.sh`. Conflicts abort the rebase. Logs: `.scratch/land/<time>-<pid>/`. `--dry-run` stops before pushing and skips the budget unless `--budget` is added; start on a clean branch.
-- `scripts/agents/deploy-preview.sh` locks preview deploys, refuses uncommitted changes, fetches and detaches at `origin/dev`, then deploys preview only. Prints `preview <version-id> <sha>`; full output: `.scratch/deploy/<time>-<pid>.log`.
-- `scripts/agents/ci-status.sh [branch=dev] [--wait]` prints the latest run per workflow and fails for unsuccessful completed runs, with failed steps and the last 20 log lines. `--wait` checks only the current `origin/<branch>` head every 30 seconds, prints changes, and times out after 20 minutes; requires authenticated `gh`.
+- `scripts/agents/land.sh` is replaced by `kit pr` and prints a notice pointing there. It still pushes straight to `dev` after check, test and lint; only the lead uses it, when `kit pr` cannot run.
+- `scripts/agents/deploy-preview.sh` is a wrapper: `exec kit preview "$@"`.
+- `scripts/agents/ci-status.sh [branch=dev]` prints the latest run per workflow and fails for unsuccessful completed runs, with failed steps and the last 20 log lines. To wait for CI, use `kit wait ci`.
 
 ## Agent runner
 
@@ -32,6 +56,15 @@ Build and review default to `codex`, `gpt-6.1-sol`, effort `medium`. Set
 `haiku`, `fable` select Claude; all others select Codex. `--model` overrides the
 kind's environment default. `--effort` is passed to the selected CLI; the CLI/model
 validates its supported levels.
+
+Every run writes `<out>/status.json` (pids, model, CLI, worktree, brief, state
+`running`/`done`/`failed`/`timeout`/`interrupted`, exit code, session id). After a
+crash or app restart, `agent.sh --resume <out-dir>` waits on a run that is still
+alive, or continues its session (`codex exec resume` or `claude --resume`) with
+"Continue where you stopped; the brief is unchanged.", appending to `run.log` and
+`out.md`. Codex reviews are not resumed (their private home holds credentials);
+rerun them. `agent.sh` refuses a worktree that fails `kit doctor --quiet` (exit 3;
+`ASE_SKIP_DOCTOR=1` is for tests).
 
 Both modes read the brief on stdin with cwd set to the worktree. Build appends the
 unstaged-work and validation contract. Both adapters verify the actual model
@@ -57,9 +90,8 @@ the result text. The lead commits builders' unstaged work.
 
 `ASE_AGENT_TIMEOUT` defaults to `90m`, with legacy `SOL_TIMEOUT` as fallback.
 Use positive integer seconds or `s/m/h/d` (at most 2147483 seconds). Expiry or
-interruption kills the CLI's whole process group. Claude callers use
-`run_in_background: true`; Codex callers wait in the foreground or its background
-terminal. Helpers themselves stay in the foreground.
+interruption kills the CLI's whole process group. How callers wait:
+[runner.md](runner.md#waiting).
 
 To add another CLI, add one adapter function in `agent-run.mjs` and register it in
 the adapter registry (plus inference if wanted). Contract:
@@ -73,8 +105,10 @@ Instruction imports use `AGENTS.md`: `CLAUDE.md` and `GEMINI.md` contain `@AGENT
 
 ## Screenshots
 
-Write `.scratch/shots.spec.ts`; `shots.sh` supplies `baseURL` and `ASE_SHOTS_OUT_DIR`.
-Run `scripts/agents/shots.sh .scratch/shots/example .scratch/shots.spec.ts`.
+`kit shots` covers the named screens and steps files. For anything else, write a raw
+spec at `.scratch/shots.spec.ts`; `shots.sh` supplies `baseURL` and `ASE_SHOTS_OUT_DIR`.
+Run `scripts/agents/kit shots --spec .scratch/shots.spec.ts` (or
+`scripts/agents/shots.sh .scratch/shots/example .scratch/shots.spec.ts`).
 This 20-line scenario saves the editor and its Add panel:
 
 ```ts

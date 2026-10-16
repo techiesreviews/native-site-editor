@@ -23,13 +23,16 @@ Each step says in one line what it changes for you.
 6. Open **Settings → General**, scroll to **Pull Requests**, and tick **Allow auto-merge**.
    A pull request can be set to merge by itself the moment its checks turn green.
 
-7. Skip **Require merge queue**. GitHub only offers it to organisation accounts, and `techiesreviews` is a personal account. Steps 4 to 6 stand in for it: agents wait for green checks on an up-to-date branch, then merge.
+7. Skip **Require merge queue**. GitHub only offers it to organisation accounts, and `techiesreviews` is a personal account. Steps 4 to 6 stand in for it: an agent's `kit pr` waits for green checks on an up-to-date branch, then merges.
    Nothing changes for you; pull requests still merge one at a time, each checked first.
 
-8. In Cloudflare, click your profile icon at the top right, then **My Profile → API Tokens → Create Token**. Next to **Edit Cloudflare Workers**, click **Use template**. Under **Account Resources** pick the **techies** account, under **Zone Resources** pick **All zones from an account** and **techies**, then click **Continue to summary → Create Token** and copy the token it shows.
+8. Done on 2026-10-16. On GitHub, click your profile picture, then **Settings → Developer settings → Personal access tokens → Fine-grained tokens**, and click the token the agents use. Under **Repository permissions**, set **Pull requests** to **Read and write**, then click **Update**.
+   Agents can open pull requests, post their review on them and merge them; without it they stop with "Resource not accessible by personal access token".
+
+9. In Cloudflare, click your profile icon at the top right, then **My Profile → API Tokens → Create Token**. Next to **Edit Cloudflare Workers**, click **Use template**. Under **Account Resources** pick the **techies** account, under **Zone Resources** pick **All zones from an account** and **techies**, then click **Continue to summary → Create Token** and copy the token it shows.
    This makes the key GitHub needs to update the preview editor. It is shown only once; if you lose it, make a new one.
 
-9. Back on GitHub, open **Settings → Secrets and variables → Actions** and click **New repository secret**. Type `CLOUDFLARE_API_TOKEN` in **Name**, paste the token into **Secret**, and click **Add secret**.
+10. Back on GitHub, open **Settings → Secrets and variables → Actions** and click **New repository secret**. Type `CLOUDFLARE_API_TOKEN` in **Name**, paste the token into **Secret**, and click **Add secret**.
    From then on, every change that lands on `dev` updates https://preview-editor.techies.tools by itself.
 
 The live editor (techies.tools) is not touched by any of this: it is still updated only when you ask.

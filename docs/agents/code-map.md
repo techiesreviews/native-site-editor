@@ -72,6 +72,125 @@ Each file is followed by its declared entry symbols. Styles, fixtures, scripts a
 | Media descriptions, Decorative and by-agent marks | `src/page-builder/media-descriptions.ts` — `placeDescriptionState`, `descriptionPlaceEdits`, `setMediaPlaceDecorative`, `confirmMediaDescription` |
 | Media uploads, optimise and responsive copies | `src/uploads.ts` — `addUpload`; `src/page-builder/media-prepare.ts` — `prepareMediaFile`; `src/page-builder/media-optimise.ts` — `optimiseMedia` |
 
+### Media
+
+One line per media-* module. Concern-level rows sit in the table above.
+
+#### Shared media rules
+
+| Files and entry symbols | What it does |
+| --- | --- |
+| `shared/media-kinds.ts` — `mediaKind`, `mimeType`, `isImagePath`, `extensionsOf` | The one media-kind table: extensions per kind, MIME types and a named subset per caller policy. The only home for extension lists (source guard). |
+| `shared/media-records.ts` — `parseMediaRecords` | The media records file: places, descriptions, collections, removed files. |
+| `shared/media-records-path.ts` — `MEDIA_RECORDS_PATH` | Where the records file lives. |
+| `shared/media-trim.ts` — `validTrim` | Checks a trim (crop, turn, straighten, flip) stays in range. |
+| `src/media-batch.ts` — `applyMediaBatch` | The host's atomic staging of a media batch: source receipts, upload rollback, one Undo step. |
+| `src/page-builder/media-workspace.ts` — `createMediaWorkspace`, `applyMediaWorkspaceBatch` | The Media workspace behind the controller; prepares each change as one batch. |
+| `src/page-builder/media-draft-transaction.ts` — `mediaDraftTransaction` | Captures and stages one change's draft records, source steps and new bytes. |
+| `src/page-builder/media-busy-lock.ts` — `createBusyLock` | One change at a time; Close and Cancel always work. |
+| `src/page-builder/media-history-home.ts` — `createMediaHistoryHome` | Keeps media Undo steps made while no file is open. |
+| `src/page-builder/media-settings.ts` — `mediaAddingSettings` | Adding settings: one quality per kind and Keep original. |
+| `src/page-builder/media-storage.ts` — `mediaKindFolder` | The folder per kind and which files need preparation. |
+| `src/page-builder/media-limits.ts` — `MEDIA_FILE_CAP_BYTES`, `largeDownloadNote` | Size limits, large-file notes, hidden-details and unsafe SVG checks. |
+| `src/page-builder/media-families.ts` — `mediaFamilies` | Groups a main file with its copies, stills and originals. |
+| `src/page-builder/media-names.ts` — `suggestMediaName` | Naming rules shared by every rename. |
+| `src/page-builder/media-metadata.ts` — `applyMediaMetadata` | Reads and writes descriptions, tags and provenance in the records. |
+
+#### Media pane and picker screens
+
+| Files and entry symbols | What it does |
+| --- | --- |
+| `src/page-builder/media-picker.ts` — `openMediaPicker`, `mountMediaLibrary` | Opens the picker or mounts the Media pane; the host port types. |
+| `src/page-builder/media-library-view.ts` — `createMediaLibraryView` | The library view: state, screens and redraws. |
+| `src/page-builder/media-library-shell.ts` — `createMediaLibraryShell` | Its frame: header, One bar, grid, selection bar, sheet, footer. |
+| `src/page-builder/media-library-grid.ts` — `drawLibraryGrid` | Draws the tiles. |
+| `src/page-builder/media-tile-picture.ts` — `tilePictureUrl` | Picks the small copy a tile shows. |
+| `src/page-builder/media-library-filter.ts` — `filterSummary` | Filter's kinds and its summary line. |
+| `src/page-builder/media-library-input.ts` — `wireMediaLibraryInput` | Drop, choose and arrow-key input. |
+| `src/page-builder/media-library-sheet.ts` — `takeSheet` | The side sheet shared by details, delete and Optimise; stale screens see it moved on. |
+| `src/page-builder/media-library-fields.ts` — `field` | Form controls for the sheets. |
+| `src/page-builder/media-library-refresh.ts` — `captureDetailForm` | Keeps the selection and an open form across redraws. |
+| `src/page-builder/media-library-details.ts` — `showMediaDetail` | File details and the screens it opens. |
+| `src/page-builder/media-file-details.ts` — `mediaDetailFacts` | The pure rules behind File details. |
+| `src/page-builder/media-library-video.ts` — `mediaDetailParts` | Still picture and Subtitles under a player. |
+| `src/page-builder/media-library-online.ts` — `showOnlineVideoDetail` | An online video's details. |
+| `src/page-builder/media-library-usage.ts` — `showUsageDialog` | Usage badges and the list of pages using a file. |
+| `src/page-builder/media-library-delete.ts` — `confirmMediaDelete` | Delete, with pages that still use the file. |
+| `src/page-builder/media-library-replace.ts` — `replaceEverywhere` | Replace everywhere from File details. |
+| `src/page-builder/media-replace-rules.ts` — `replaceNotice` | What Replace may choose and what it reports. |
+| `src/page-builder/media-replace-prepare.ts` — `prepareMediaReplacement` | Lazy preparation of the chosen replacement. |
+| `src/page-builder/media-library-collections.ts` — `showManageCollections` | Collection screens. |
+| `src/page-builder/media-collections.ts` — `createMediaCollection` | Collection edits in the records. |
+| `src/page-builder/media-collection-choices.ts` — `mediaCollectionNameMessage` | Collection names, sizes and selection actions. |
+| `src/page-builder/media-library-adding.ts` — `createMediaAdding` | Adding into the pane under the busy lock. |
+| `src/page-builder/media-adding-settings.ts` — `showAddingSettings` | The Adding settings screen. |
+| `src/page-builder/media-library-optimise.ts` — `showMediaOptimise` | The Optimise sheet. |
+| `src/page-builder/media-library-optimise-rules.ts` — `mediaOptimiseStart` | Its starting choices and import requests. |
+| `src/page-builder/media-library-improve.ts` — `showImproveImages` | The Improve images screen. |
+| `src/page-builder/media-library-clean-up.ts` — `showCleanUp` | The Clean up screen. |
+| `src/page-builder/media-clean-up.ts` — `mediaCleanUpSuggestions` | What Clean up suggests: unused, trimmed, leftover. |
+| `src/page-builder/media-clean-up-review.ts` — `sizedSuggestions` | Clean up review words and byte sums. |
+| `src/page-builder/media-clean-up-menu.ts` — `cleanUpMenuItem` | Improve images and Clean up items in More. |
+| `src/page-builder/media-library-recently-removed.ts` — `showRecentlyRemoved` | The Recently removed screen. |
+| `src/page-builder/media-recently-removed.ts` — `removedRows` | Its rows, restore refusals and notices. |
+| `src/page-builder/media-library-to-check.ts` — `showToCheck` | The To check screen (agent descriptions to confirm). |
+| `src/page-builder/media-adding-settings.css`; `src/page-builder/media-adding-summary.css`; `src/page-builder/media-clean-up-review.css`; `src/page-builder/media-detail.css`; `src/page-builder/media-improve.css`; `src/page-builder/media-picker.css`; `src/page-builder/media-spot-popup.css` | Media styles, one file per screen. |
+
+#### Adding and preparing files
+
+| Files and entry symbols | What it does |
+| --- | --- |
+| `src/page-builder/media-adding-rules.ts` — `mediaAddingStatus` | One dropped file's way through adding, and the tray's words. |
+| `src/page-builder/media-adding-summary.ts` — `createMediaAddingSummary` | The shared adding progress summary. |
+| `src/page-builder/media-files-adding.ts` — `addFilesTo` | Files dropped on a Files folder or chosen with Upload files. |
+| `src/page-builder/media-files-adding-runs.ts` — `createFilesAdding` | One Files adding run; re-checks its repository after every await. |
+| `src/page-builder/media-prepare.ts` — `prepareMediaFile` | Prepares pictures and videos before they are added. |
+| `src/page-builder/media-preparation-confirm.ts` — `askToAddWithoutOriginal` | Asks before adding a file unchanged or without its original. |
+| `src/page-builder/media-optimise.ts` — `optimiseMedia` | Encodes the main picture and its responsive copies. |
+| `src/page-builder/media-encoders.ts` — `createMediaEncoder` | Picks and loads the encoder per format. |
+| `src/page-builder/media-codecs.ts` — `loadHeicDecoder` | Worker-only codec loaders. |
+| `src/page-builder/media-heic.ts` — `decodeMediaBitmap` | HEIC detection and decoding with a fallback. |
+| `src/page-builder/media-png.ts` — `squeezePng` | Lossless PNG squeeze. |
+| `src/page-builder/media-svg.ts` — `cleanSvg` | Strips executable content from SVG, keeping the artwork. |
+| `src/page-builder/media-image-bytes.ts` — `strippedImageSource` | Strips metadata; detects animation. |
+| `src/page-builder/media-originals.ts` — `mediaOriginalPath` | Where originals go and when to keep one. |
+| `src/page-builder/media-older-copies.ts` — `makeOlderCopies` | Older-format copies of a picture. |
+| `src/page-builder/media-transparency.ts` — `markTransparency` | Detects see-through pixels. |
+| `src/page-builder/media-byte-cache.ts` — `createMediaByteCache` | Caches decoded picture bytes. |
+| `src/page-builder/media-upload-discard.ts` — `discardUploadDraft` | Discards an unsaved upload and its records. |
+
+#### Placing media on pages
+
+| Files and entry symbols | What it does |
+| --- | --- |
+| `src/page-builder/media-place.ts` — `placeMediaImage` | The picker's Use, agent placement and the popup's Replace. |
+| `src/page-builder/media-place-swap.ts` — `mediaPlaceSwap` | The exact markup swap those share. |
+| `src/page-builder/media-insert.ts` — `insertAtPlace` | Add → Media: inserts a file at a place with its kind's markup. |
+| `src/page-builder/media-markup.ts` — `mediaPlacement` | Picture markup: sizes, priority, responsive sources. |
+| `src/page-builder/media-page-markup.ts` — `mediaPageEdits` | Page-wide picture edits (priority holder, sizes). |
+| `src/page-builder/media-attributes.ts` — `mediaAttribute` | Reads attributes from a start tag safely. |
+| `src/page-builder/media-descriptions.ts` — `placeDescriptionState` | Descriptions, Decorative and by-agent marks. |
+| `src/page-builder/media-spot-rules.ts` — `mediaSpotKind` | What a selected media spot holds. |
+| `src/page-builder/media-spot-pick.ts` — `placeSpotVideo` | A picture spot's picker; a video loops silently there. |
+| `src/page-builder/media-spot-popup.ts` — `openMediaSpotPopup` | The Media popup for video, audio, downloads and online video. |
+| `src/page-builder/media-popup-frame.ts` — `mountMediaPopupFrame` | The window media popups live in. |
+| `src/page-builder/media-play.ts` — `createMediaPlay` | The edit bar's Play. |
+| `src/page-builder/media-video-place.ts` — `createVideoPlaces` | Looping and Background video, one Undo each. |
+| `src/page-builder/media-move-recheck.ts` — `recheckMove` | Re-checks picture sizes after a block move. |
+
+#### Usage, references, rename and removal
+
+| Files and entry symbols | What it does |
+| --- | --- |
+| `src/page-builder/media-references.ts` — `scanMediaReferences` | Finds every file reference in site text. |
+| `src/page-builder/media-mentions.ts` — `mediaMentions` | Raw mentions of media in other text files. |
+| `src/page-builder/media-usage.ts` — `mediaUsageRecords` | Usage records per file. |
+| `src/page-builder/media-usage-text.ts` — `mediaUsageBadge` | Usage words: used, unused, not checked yet. |
+| `src/page-builder/media-origins.ts` — `mediaOwnAddress` | Whether an address is the site's own. |
+| `src/page-builder/media-prefix.ts` — `readMediaPrefix` | Reads and proves the site's address prefix. |
+| `src/page-builder/media-rename.ts` — `planMediaRename` | Renames a file and rewrites its references and redirects. |
+| `src/page-builder/media-file-removal.ts` — `filesRemovalPlan` | Deletes files with their records, undoable together. |
+
 ### Worker, test seams and agent scripts
 
 | Concern | Files and entry symbols |
@@ -91,7 +210,10 @@ Each file is followed by its declared entry symbols. Styles, fixtures, scripts a
 | Edit component mode ownership guard | `tests/component-mode-guard.test.ts` |
 | Card source-tree read guard | `tests/card-tree-guard.test.ts` |
 | Focused ports, exclusive timing and suite shards | `scripts/agents/port.sh`; `scripts/agents/timing.sh`; `scripts/agents/full-suite.sh`; `scripts/agents/suite-summary.mjs` |
-| Cold-load measurement, worktrees and read-only reviews | `scripts/agents/cold.sh`; `scripts/agents/worktree.sh`; `scripts/agents/review.sh` |
+| Cold-load measurement and worktrees | `scripts/agents/cold.sh`; `scripts/agents/worktree.sh` |
+| Agent kit: front door, commands and helpers | `scripts/agents/kit`; `scripts/agents/kit.d/`; `scripts/agents/kit-lib.sh`; `scripts/agents/kit-lib.mjs` |
+| Shared browser scenarios (specs and kit shots) | `tests/support/scenarios.ts` — `openEditor`, `openMedia`, `pickPicture`, `switchSiteMidUpload` |
+| Await-race helper for async writers | `tests/support/await-race.ts` — `forEachAwait` |
 
 ## src/main.ts sections
 

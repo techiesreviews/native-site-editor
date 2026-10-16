@@ -1,7 +1,9 @@
-# Local testing, timing and preview deploys
+# Local testing and timing
 
-The scripts themselves are listed in [agent-scripts.md](agent-scripts.md);
-the automated checks in [guardrails.md](guardrails.md).
+The scripts and kit commands are listed in [agent-scripts.md](agent-scripts.md);
+the automated checks in [guardrails.md](guardrails.md). Review, landing (`kit pr`)
+and waiting: commands in [agent-scripts.md](agent-scripts.md#kit), order of steps
+in [runner.md](runner.md).
 
 ## Setup
 
@@ -21,7 +23,10 @@ run timing through `timing.sh`. Stop only processes you started.
 ## Which tests
 
 - Nightly (`browser-tests.yml`): default fixture in 4 shards plus the `@actual`
-  and `@native-static` groups. Per-push (`deploy-preview.yml`): only `@smoke`.
+  and `@native-static` groups. Pull requests (`ci.yml`, **CI / checks**) and
+  pushes to `dev` (`deploy-preview.yml`): only `@smoke`.
+- Specs a change reaches: `scripts/agents/kit specs --affected` picks them and
+  their fixture groups; the commands below run groups by hand.
 - Default group: `port.sh npx playwright test --project=native-save --workers=1 <files>`.
 - Tagged groups need their own fixture and command:
   `port.sh bash -c 'npm run test:browser:native-static -- --port $ASE_TEST_PORT --workers=1'`,
@@ -34,8 +39,9 @@ run timing through `timing.sh`. Stop only processes you started.
 - Full suite before merging shared plumbing: `scripts/agents/full-suite.sh 3`;
   duration and shard limits: [agent-scripts.md](agent-scripts.md).
 - Known failures: [tests/known-failures.json](../../tests/known-failures.json)
-  records flaky and failing-on-dev tests. Rerun once before calling a new
-  failure flaky; known failures still fail the suite summary.
+  records flaky and failing-on-dev tests (`ASE_KNOWN_FAILURES` points
+  `suite-summary.mjs` and `kit specs` at another registry). Rerun once before
+  calling a new failure flaky; known failures still fail the suite summary.
 
 ## Reading results
 
@@ -50,23 +56,11 @@ Playwright logs as binary; use `grep -a` or the JSON results.
 fresh `npm run build:ui`; check that `<outprefix>.served` names the built
 `dist/assets/index-*.js`. Compare before and after in one sitting, alternating
 builds: runs from different sittings differ by about 30 ms.
+For boot bytes against dev (the 355 KB budget), `scripts/agents/kit size` is
+enough; it caches results per commit.
 
-## Code review
+## Preview and CI deploys
 
-`scripts/agents/review.sh <worktree> <brief> <out-dir>` runs a read-only agent
-(default `gpt-6.1-sol`; override with `ASE_REVIEW_MODEL` and `ASE_AGENT_CLI`).
-The reviewer applies `CODING_STANDARDS.md`. Builders leave changes unstaged
-under the build contract; the lead commits. Codex uses `workspace-write`;
-Claude uses `acceptEdits`. Invocation and hook trust: [agent-scripts.md](agent-scripts.md#agent-runner).
-
-## Landing and preview
-
-1. Land finished work with `scripts/agents/land.sh`, then run
-   `scripts/agents/ci-status.sh dev --wait`. CI failures on dev are the
-   landing agent's to fix. Script options and logs: [agent-scripts.md](agent-scripts.md).
-2. Deploy the preview with `scripts/agents/deploy-preview.sh` when needed
-   (CI deployment needs the token in
-   [tech debt 05](../work/tech-debt/issues/05-ci-preview-deploy-token.md)).
-3. Confirm the live build: `curl -s "https://preview-editor.techies.tools/?v=$(date +%s)"`
-   names the same `index-*.js` as `dist/assets` (the cache buster skips an
-   edge copy that has not revalidated yet).
+The lead deploys the preview with `kit preview`, which also checks the live
+bundle. CI deploys `dev` by itself only once Lex adds the Cloudflare secret:
+[github-settings.md](github-settings.md).

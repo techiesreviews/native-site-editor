@@ -1,7 +1,8 @@
 # Agents
 
 Finding code: read `docs/agents/code-map.md`.
-Running a build slice: follow `docs/agents/runner.md`.
+Running a build slice: follow `docs/agents/runner.md` (order of steps: build, review, `kit pr`, report).
+Agent commands: `scripts/agents/kit <command> --help`; one line each in `docs/agents/agent-scripts.md#kit`.
 
 ## Agent skills
 
@@ -19,9 +20,10 @@ Single context: `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/
 
 ## Testing
 
-Running tests, timing or a preview deploy: read `docs/agents/local-testing.md`.
+Running tests or timing: read `docs/agents/local-testing.md`. Automated checks and hooks: `docs/agents/guardrails.md`.
 
 ## Review
 
 The repo's review and model-routing rules in docs/agents/ take priority over global skills.
+Running a review: `scripts/agents/kit review` (see `docs/agents/agent-scripts.md#kit`).
 Reviewing a diff: apply `CODING_STANDARDS.md`.
