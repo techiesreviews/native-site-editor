@@ -2,7 +2,7 @@
 // ring and says when it was added; in the picker it leads the grid and is chosen, so Use is one tap.
 // Default fixture: images/placeholder.svg and images/studio-desk.svg, no records yet.
 import { test, expect, type Browser, type Page } from "@playwright/test";
-import { openPickerOn } from "./open-picker";
+import { openEditor, openMedia, openImagePicker } from "../support/scenarios";
 import { storedDraft } from "./drafts";
 
 const pane = (page: Page) => page.getByRole("region", { name: "Media", exact: true });
@@ -13,10 +13,8 @@ const svg = (fill: string) => Buffer.from(`<svg xmlns="http://www.w3.org/2000/sv
 const file = (name: string, fill = "teal") => ({ name, mimeType: "image/svg+xml", buffer: svg(fill) });
 
 async function open(page: Page, baseURL: string | undefined) {
-  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
-  await expect(page.locator("#status")).toContainText("Up to date with main");
-  await page.locator("#explorer-toggle").click();
-  await page.getByRole("tab", { name: "Media", exact: true }).click();
+  await openEditor(page, baseURL);
+  await openMedia(page);
   await expect(pane(page).getByRole("button", { name: "Details for images/studio-desk.svg", exact: true })).toBeVisible();
 }
 const add = (page: Page, files: ReturnType<typeof file>[]) => pane(page).locator('input[name="media-upload"]').setInputFiles(files);
@@ -71,9 +69,8 @@ test("a file added while the kind hides it is one tap away: Show new files bring
 
 test("in the picker a file just added leads the grid, in view and chosen, so Use is one tap", async ({ page, baseURL }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
-  await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
-  const picker = await openPickerOn(page, page.frameLocator(".native-preview-frame").locator(".hero img"));
+  await openEditor(page, baseURL);
+  const picker = await openImagePicker(page, ".hero img");
   await picker.locator('input[name="media-upload"]').setInputFiles([file("zebra.svg")]);
   const first = picker.locator(".media-library__grid > *").first();
   await expect(first).toContainText("zebra.svg");

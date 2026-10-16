@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { openEditor, openMedia } from "../support/scenarios";
 import { storedDraft } from "./drafts";
 import { collectionChoices, filterButton, filterTo } from "./media-filter";
 
@@ -11,10 +12,8 @@ const members = async (page: Page, name: string) => Object.entries((await record
   .filter(([, record]) => record.collections?.includes(name)).map(([path]) => path).sort();
 
 async function open(page: Page, baseURL: string | undefined) {
-  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
-  await expect(page.locator("#status")).toContainText("Up to date with main");
-  await page.locator("#explorer-toggle").click();
-  await page.getByRole("tab", { name: "Media", exact: true }).click();
+  await openEditor(page, baseURL);
+  await openMedia(page);
   await expect(pane(page).getByRole("button", { name: "Details for images/studio-desk.svg", exact: true })).toBeVisible();
 }
 async function newCollectionFromManage(page: Page, name: string) {
@@ -67,8 +66,7 @@ test("create a collection, add two files, view it, take one out (it stays under 
   await page.keyboard.press("Escape");
   await page.locator(".code-editor__undo").first().click();
   await expect.poll(() => members(page, "Studio picks")).toEqual(["images/placeholder.svg", "images/studio-desk.svg"]);
-  await page.locator("#explorer-toggle").click();
-  await page.getByRole("tab", { name: "Media", exact: true }).click();
+  await openMedia(page);
   await filterTo(library, "Studio picks");
   await expect.poll(() => tileNames(page)).toEqual(["images/placeholder.svg", "images/studio-desk.svg"]);
 });
@@ -190,7 +188,7 @@ test("details show and edit a file's collections; a new name there must be free"
 });
 
 test("starting collections from named folders appear in Collections; dated and storage folders do not", async ({ page, baseURL }) => {
-  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await openEditor(page, baseURL);
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
   await page.evaluate(async () => {
     const { createMediaLibraryView } = await import("/src/page-builder/media-library-view.ts");
@@ -223,7 +221,7 @@ test("starting collections from named folders appear in Collections; dated and s
 });
 
 test("collections named like the details fields keep their own ticks across a refresh", async ({ page, baseURL }) => {
-  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await openEditor(page, baseURL);
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
   await page.evaluate(async () => {
     const { createMediaLibraryView } = await import("/src/page-builder/media-library-view.ts");
@@ -471,8 +469,7 @@ test("a file that cannot be prepared stays in the tray with its reason and Revie
 });
 
 test("a cancelled drop whose save was waiting never takes a later drop's files: each drop saves once", async ({ page, baseURL }) => {
-  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
-  await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
+  await openEditor(page, baseURL);
   // The third preparation (the later drop's second file) waits until released.
   let releaseWorker: (() => void) | undefined, workers = 0;
   await page.route("**/src/page-builder/image-optimise.worker.ts*", async route => {

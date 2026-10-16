@@ -5,6 +5,7 @@
 // in the large editor (slice 42), whose Cancel goes back to the popup as it was.
 // Default fixture: index.html's hero image is images/placeholder.svg (no alt); images/studio-desk.svg is unused.
 import { expect, test, type Page } from "@playwright/test";
+import { openEditor, pickPicture } from "../support/scenarios";
 import { storedDraft, storedDrafts } from "./drafts";
 
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
@@ -19,13 +20,12 @@ const source = (page: Page) => page.evaluate(async () => (await import("/src/com
 const heroTag = async (page: Page) => (await source(page)).match(/<img\b[^>]*class="hero-image"[^>]*>/)?.[0] ?? "";
 
 async function open(page: Page, baseURL: string | undefined) {
-  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await openEditor(page, baseURL);
   await expect(frame(page).locator(".hero img")).toBeVisible({ timeout: 30_000 });
   await expect(page.locator("#content [role='textbox']").first()).toBeAttached({ timeout: 30_000 });
-  await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
 }
 async function openPopup(page: Page) {
-  await frame(page).locator(".hero img").click();
+  await pickPicture(page, ".hero img");
   await imageButton(page).click();
   await expect(popup(page)).toBeVisible();
   await expect(imageButton(page)).toHaveAttribute("aria-expanded", "true");
@@ -40,7 +40,7 @@ test("Image → Square, move the focus dot, Done: the page has the shape and obj
   await page.setViewportSize({ width: 1280, height: 900 });
   await open(page, baseURL);
   const before = await source(page);
-  await frame(page).locator(".hero img").click();
+  await pickPicture(page, ".hero img");
   // One Image button with its state badge, where Choose image… was.
   await expect(imageButton(page)).toHaveText("MediaOriginal");
   await expect(bar(page).getByRole("button", { name: "Choose image…" })).toHaveCount(0);
@@ -62,7 +62,7 @@ test("Image → Square, move the focus dot, Done: the page has the shape and obj
   await expect(popup(page)).toHaveCount(0);
   await expect.poll(() => heroTag(page)).toMatch(/style="aspect-ratio: 1 \/ 1; object-fit: cover; object-position: 20% 50%"/);
   await expect(frame(page).locator(".hero img")).toHaveCSS("object-position", "20% 50%");
-  await frame(page).locator(".hero img").click();
+  await pickPicture(page, ".hero img");
   await expect(imageButton(page)).toHaveText("MediaSquare");
   // Done was one step.
   await page.locator(".code-editor__undo").first().click();
@@ -421,7 +421,7 @@ test("Free trim saves a -crop copy for this spot only; re-opening shows the trim
   const paths = (await storedDrafts(page)).map(draft => draft.path);
   expect(paths).toContain("media/images/quarters-crop.webp");
   expect((await storedDraft(page, original))?.deleted).toBeUndefined();
-  await frame(page).locator(".hero img").click();
+  await pickPicture(page, ".hero img");
   await expect(imageButton(page)).toHaveText("MediaTrimmed");
 
   // Re-opened and left as it was, Done changes nothing.
@@ -434,7 +434,7 @@ test("Free trim saves a -crop copy for this spot only; re-opening shows the trim
   expect(JSON.stringify(await storedDrafts(page))).toBe(drafts);
 
   // Re-opening starts from the full original with the trim put back.
-  await frame(page).locator(".hero img").click();
+  await pickPicture(page, ".hero img");
   await imageButton(page).click();
   await expect(popup(page)).toBeVisible();
   await expect(popup(page).locator(".image-popup__where")).toHaveText("quarters.webp");
@@ -453,7 +453,7 @@ test("Free trim saves a -crop copy for this spot only; re-opening shows the trim
   expect(again.files["media/images/quarters-crop.webp"]).toBeUndefined();
   expect(again.removed.map((entry: { path: string }) => entry.path)).toContain("media/images/quarters-crop.webp");
   // Replace on a trimmed spot, then zoom: the copy is cut from the new picture; the old copy, used nowhere else, goes.
-  await frame(page).locator(".hero img").click();
+  await pickPicture(page, ".hero img");
   await expect(imageButton(page)).toHaveText("MediaTrimmed");
   await imageButton(page).click();
   await popup(page).getByRole("button", { name: "Replace", exact: true }).click();

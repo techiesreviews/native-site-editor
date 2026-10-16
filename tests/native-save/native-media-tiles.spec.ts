@@ -1,5 +1,6 @@
 // Tiles, the list, the phone One bar and the phone selection bar (slice 107, UX audit).
 import { test, expect, type Page } from "@playwright/test";
+import { openEditor, openMedia } from "../support/scenarios";
 import { filterButton, filterTo } from "./media-filter";
 
 const pane = (page: Page) => page.getByRole("region", { name: "Media", exact: true });
@@ -33,10 +34,8 @@ async function seed(page: Page, baseURL: string | undefined, files: { path: stri
   for (const data of files) expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data })).status()).toBe(204);
 }
 async function open(page: Page, baseURL: string | undefined) {
-  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
-  await expect(page.locator("#status")).toContainText("Up to date with main");
-  await page.locator("#explorer-toggle").click();
-  await page.getByRole("tab", { name: "Media", exact: true }).click();
+  await openEditor(page, baseURL);
+  await openMedia(page);
   await expect(pane(page).getByRole("button", { name: "Details for images/studio-desk.svg", exact: true })).toBeVisible();
 }
 const drawn = (page: Page, path: string) => tile(page, path).locator("img").evaluate(image => {
