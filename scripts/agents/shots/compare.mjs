@@ -161,65 +161,71 @@ function processAlive(pid) {
   catch (error) { return error.code === "EPERM"; }
 }
 
-/** Read a lock folder's holder token and age, or null once it is gone. */
-async function lockHolder(lock) {
+/** Read a lock folder's holder, or null once it is gone; id names this one folder instance. */
+export async function lockHolder(lock) {
   let info;
   try { info = await stat(lock); }
   catch (error) { if (error.code === "ENOENT") return null; throw error; }
   let owner = "";
   try { owner = (await readFile(join(lock, "owner"), "utf8")).trim(); }
   catch (error) { if (error.code !== "ENOENT" && error.code !== "ENOTDIR") throw error; }
-  return { owner, mtimeMs: info.mtimeMs };
+  // Owner-less folders (older kit, or a crash between mkdir and the owner write) fall back to inode and time.
+  return { owner, mtimeMs: info.mtimeMs, id: owner || `${info.ino}-${info.mtimeMs}` };
 }
 
-/** Old and without a live holder: no owner file (older kit, or a crash mid-acquire) or a finished pid. */
-function isStale(holder) {
-  if (Date.now() - holder.mtimeMs <= lockStaleMs) return false;
+/** Old and without a live holder: no owner, an unreadable owner or a finished pid. A live pid is never stale. */
+function isStale(holder, staleMs) {
+  if (Date.now() - holder.mtimeMs <= staleMs) return false;
   const pid = Number(/^(\d+)-/.exec(holder.owner)?.[1]);
   return !pid || !processAlive(pid);
 }
 
+/** Create the lock folder with this caller's owner token, or return null while another holds it. */
+async function tryLock(lock) {
+  const token = `${process.pid}-${randomUUID()}`;
+  try { await mkdir(lock); }
+  catch (error) { if (error.code === "EEXIST") return null; throw error; }
+  try { await writeFile(join(lock, "owner"), token); }
+  catch (error) { await rm(lock, { recursive: true, force: true }); throw error; }
+  return { release: async () => { if ((await lockHolder(lock))?.owner === token) await rm(lock, { recursive: true, force: true }); } };
+}
+
+/** The guard folder for breaking one lock instance. */
+export function breakGuard(lock, seen) {
+  return `${lock}.break-${createHash("sha256").update(seen.id).digest("hex").slice(0, 16)}`;
+}
+
 /**
- * Remove a stale lock under a guard and re-check it there. Without the guard, two waiters
- * that both saw the stale lock could each remove it, the second one removing the lock the
- * first had just taken, so both would enter.
+ * Remove lock only if it is still the stale instance seen. The re-check runs under a guard named
+ * after that instance, so waiters with an outdated view never remove a newer lock. A guard left
+ * by a dead breaker is itself broken this way. Returns whether the lock was removed.
  */
-async function breakStale(lock) {
-  const guard = `${lock}.break`;
-  try { await mkdir(guard); }
-  catch (error) {
-    if (error.code !== "EEXIST") throw error;
-    // Breaking takes milliseconds, so an old guard belongs to a breaker that died inside it.
-    try { if (Date.now() - (await stat(guard)).mtimeMs > guardStaleMs) await rm(guard, { recursive: true, force: true }); }
-    catch (inner) { if (inner.code !== "ENOENT") throw inner; }
-    return;
+export async function breakStale(lock, seen, staleMs = lockStaleMs) {
+  const guard = breakGuard(lock, seen);
+  const held = await tryLock(guard);
+  if (!held) {
+    const holder = await lockHolder(guard);
+    if (holder && isStale(holder, guardStaleMs)) await breakStale(guard, holder, guardStaleMs);
+    return false;
   }
   try {
     const holder = await lockHolder(lock);
-    if (holder && isStale(holder)) await rm(lock, { recursive: true, force: true });
-  } finally { await rm(guard, { recursive: true, force: true }); }
+    if (!holder || holder.id !== seen.id || !isStale(holder, staleMs)) return false;
+    await rm(lock, { recursive: true, force: true });
+    return true;
+  } finally { await held.release(); }
 }
 
 /** Take the folder lock in parent; release() frees it only while this caller still holds it. */
 export async function setupLock(parent, { timeoutMs = 60_000 } = {}) {
   const lock = join(parent, ".lock");
-  const token = `${process.pid}-${randomUUID()}`;
   const deadline = Date.now() + timeoutMs;
   while (true) {
     checkInterrupted();
-    let created = false;
-    try {
-      await mkdir(lock);
-      created = true;
-      await writeFile(join(lock, "owner"), token);
-      return { release: async () => { if ((await lockHolder(lock))?.owner === token) await rm(lock, { recursive: true, force: true }); } };
-    } catch (error) {
-      if (created) { await rm(lock, { recursive: true, force: true }); throw error; }
-      if (error.code !== "EEXIST") throw error;
-    }
+    const held = await tryLock(lock);
+    if (held) return held;
     const holder = await lockHolder(lock);
-    if (!holder) continue;
-    if (isStale(holder)) await breakStale(lock);
+    if (!holder || (isStale(holder, lockStaleMs) && await breakStale(lock, holder))) continue;
     if (Date.now() >= deadline) throw new Error(`Timed out waiting for shots base lock: ${lock}`);
     await delay(100);
   }

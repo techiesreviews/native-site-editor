@@ -4,7 +4,7 @@ import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, readlink, realpath, rm
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
-import { baseKey, beforeShots, ensureBase, hasLiveLease, isHit, planBase, pruneTargets, saveCache, setupLock, splitCompare, toolingFiles, toolingHash } from "../scripts/agents/shots/compare.mjs";
+import { baseKey, beforeShots, breakGuard, breakStale, ensureBase, hasLiveLease, isHit, lockHolder, planBase, pruneTargets, saveCache, setupLock, splitCompare, toolingFiles, toolingHash } from "../scripts/agents/shots/compare.mjs";
 import { contactHtml, type Scenario, type Shot } from "../scripts/agents/shots/core";
 
 const temporary: string[] = [];
@@ -278,15 +278,60 @@ test("setupLock breaks old locks only when no live process holds them", async ()
     await held.release();
     await assert.rejects(lstat(lock), { code: "ENOENT" });
   }
-  await holdLock(null);
-  await mkdir(`${lock}.break`);
-  await utimes(`${lock}.break`, old, old);
-  await (await setupLock(parent, { timeoutMs: 1_000 })).release();
-  assert.deepEqual(await readdir(parent), [], "a breaker that died inside its guard does not block later breaks");
   const held = await setupLock(parent);
   await writeFile(join(lock, "owner"), "1-someone-else");
   await held.release();
   assert.equal(await readFile(join(lock, "owner"), "utf8"), "1-someone-else", "release never frees another holder's lock");
+});
+
+test("breakStale never removes a lock that replaced the stale instance it saw", async () => {
+  const parent = await temp(), lock = join(parent, ".lock"), old = new Date(0);
+  const dead = spawnSync(process.execPath, ["-e", ""]).pid;
+  const plant = async (path: string, owner: string | null, time = old) => {
+    await mkdir(path);
+    if (owner !== null) await writeFile(join(path, "owner"), owner);
+    await utimes(path, time, time);
+  };
+  // Two waiters saw the same stale lock; the first broke it and a new holder took the lock before the second acts.
+  for (const [first, next] of [[null, `${process.pid}-live`], [`${dead}-old`, `${dead}-newer`], [null, null]] as const) {
+    await plant(lock, first);
+    const seen = await lockHolder(lock);
+    assert.ok(seen);
+    assert.equal(await breakStale(lock, seen), true, "the first waiter removes the stale instance");
+    await plant(lock, next, new Date(1_000));
+    assert.equal(await breakStale(lock, seen), false, `a late waiter keeps the ${next ?? "owner-less"} replacement`);
+    assert.equal((await lockHolder(lock))?.owner, next ?? "");
+    await rm(lock, { recursive: true });
+  }
+  assert.deepEqual(await readdir(parent), [], "breakers release their guards");
+});
+
+test("a guard left by a dead breaker is recovered, and a live breaker's guard is not", async () => {
+  const parent = await temp(), lock = join(parent, ".lock"), old = new Date(0);
+  const dead = spawnSync(process.execPath, ["-e", ""]).pid;
+  const plant = async (path: string, owner: string | null) => {
+    await mkdir(path);
+    if (owner !== null) await writeFile(join(path, "owner"), owner);
+    await utimes(path, old, old);
+  };
+  await plant(lock, null);
+  const seen = await lockHolder(lock);
+  assert.ok(seen);
+  await plant(breakGuard(lock, seen), `${process.pid}-breaking`);
+  await assert.rejects(setupLock(parent, { timeoutMs: 300 }), /Timed out/, "a live breaker's guard is never expired by age");
+  assert.equal((await lockHolder(breakGuard(lock, seen)))?.owner, `${process.pid}-breaking`);
+  await rm(breakGuard(lock, seen), { recursive: true });
+  await plant(breakGuard(lock, seen), `${dead}-crashed`);
+  let inside = 0, most = 0;
+  await Promise.all(Array.from({ length: 4 }, async () => {
+    const held = await setupLock(parent, { timeoutMs: 5_000 });
+    most = Math.max(most, ++inside);
+    await new Promise(resolve => setTimeout(resolve, 5));
+    inside--;
+    await held.release();
+  }));
+  assert.equal(most, 1);
+  assert.deepEqual(await readdir(parent), [], "the dead breaker's guard, the stale lock and every guard are gone");
 });
 
 test("beforeShots rewrites filenames without mutating cache and pairs before first", () => {
