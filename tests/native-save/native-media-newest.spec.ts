@@ -26,6 +26,9 @@ async function addAndSee(browser: Browser, baseURL: string | undefined, phone: b
   // Enough files that the grid scrolls; then look at the bottom, as after browsing.
   await add(page, Array.from({ length: 14 }, (_, index) => file(`a-${String(index).padStart(2, "0")}.svg`)));
   await expect(tray(page).getByRole("status")).toHaveText("Added 14 files");
+  // The tray says Added before the refresh redraws the whole grid; the redrawn grid rings the new
+  // tiles, so wait for that before holding a tile to scroll it.
+  await expect(pane(page).locator(".media-library__card.is-new")).toHaveCount(14);
   await cards(page).last().scrollIntoViewIfNeeded();
   // A phone's grid is taller than its screen; a desktop shows every tile.
   if (phone) await expect(cards(page).first()).not.toBeInViewport();
