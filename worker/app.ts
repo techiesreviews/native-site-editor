@@ -514,7 +514,10 @@ async function route(
         connection.id,
         connection.grant,
         body?.method === "initialize" ? body.params?.clientInfo?.name : undefined,
-      ).catch(() => undefined);
+      ).catch((error) => {
+        // The record stays unmarked, so the next request tries again.
+        console.error("agent connection's first use not recorded:", error instanceof Error ? error.message : error);
+      });
     // Loaded on first use: the MCP server and its schema library are most of
     // the bundle, and most isolates never serve /mcp.
     const { handleMcp } = await import("./mcp");

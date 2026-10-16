@@ -160,7 +160,8 @@ import { realpathSync } from "node:fs";
 import { createServer, preview, type Connect, type Plugin } from "vite";
 import { handle, type Env } from "../../worker/app.ts";
 import { admitRegistration, isBudgetKey, REGISTRATION_ROUTE } from "../../worker/oauth-registration.ts";
-import { clearHub, hubOperation, hubView, readDraft, storeDrafts, type HubStorage } from "../../worker/agent-store.ts";
+import { clearHub, hubView, type HubStorage } from "../../worker/agent-store.ts";
+import { fakeHubRoute } from "./fake-hub.ts";
 import type { AgentHub } from "../../worker/agent-context.ts";
 import { tarball } from "../tar-helper.ts";
 import { NATIVE_STARTER_VERSION } from "../../worker/starter.ts";
@@ -995,9 +996,8 @@ function env(): Env {
           const url = new URL(request.url);
           // The agent hub, as worker/index.ts runs it.
           const storage = storageOf(id);
-          if (url.pathname === "/agent-operation") return hubOperation(storage, await request.json(), async () => undefined);
-          if (url.pathname === "/agent-drafts") return storeDrafts(storage, await request.json());
-          if (url.pathname === "/agent-draft") return readDraft(storage, url.searchParams.get("hash") ?? "");
+          const hubResponse = await fakeHubRoute(id, storage, request);
+          if (hubResponse) return hubResponse;
           if (url.pathname === REGISTRATION_ROUTE) {
             if (request.method !== "POST") return new Response(null, { status: 405, headers: { Allow: "POST" } });
             const { ipHash } = (await request.json()) as { ipHash: unknown };
