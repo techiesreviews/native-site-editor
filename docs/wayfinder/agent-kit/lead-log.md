@@ -34,3 +34,5 @@
 - ak-09 landed 09cf14fd (5 review fixes). ak-17 landed 54471759 (media-kind table).
 - Flake: tests/media-files-adding-runs-await-race.test.ts fails under load → folded into ak-26 (started).
 - ak-17 landed 54471759: +~1 KB boot → ticket 27 (split lazy subsets) before 18/20. Lex question for final summary: agents call txt/md/vtt 'other', table says 'document'. ak-14 started.
+- ak-08 landed 7f014106 (2 concurrency fixes). Dev CI red from ak-11 kit deps test (ak-11 to fix). Started ak-19.
+- ak-11 landed 62f29a50 (5 review fixes; CI fix after its own test broke CI). Real lockfile vs shared node_modules: 193 match. Started ak-27.
