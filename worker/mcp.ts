@@ -1066,6 +1066,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
           grantId: connection.id,
           repoId: connection.repo.id,
           branch: connection.workspace.branch,
+          generation: grant.generation,
           all: Boolean(all),
         })) as { requests: AgentRequest[] };
         if (requests.length)
@@ -1091,7 +1092,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     },
     async ({ request: id }) => {
       if (id) {
-        const found = (await operateHub(env, grant.sessionId, { type: "request", id, repoId: connection.repo.id, branch: connection.workspace.branch })) as AgentRequest;
+        const found = (await operateHub(env, grant.sessionId, { type: "request", id, grantId: connection.id, repoId: connection.repo.id, branch: connection.workspace.branch, generation: grant.generation })) as AgentRequest;
         return text({ ...requestForAgent(found), note: requestNote });
       }
       const { context } = await current();
@@ -1123,8 +1124,10 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
       const replied = (await operateHub(env, grant.sessionId, {
         type: "reply",
         id,
+        grantId: connection.id,
         repoId: connection.repo.id,
         branch: connection.workspace.branch,
+        generation: grant.generation,
         status,
         message,
         ...(requestIds?.length ? { requestIds } : {}),

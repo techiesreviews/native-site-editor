@@ -9,8 +9,9 @@ export const contextMaxAge = 120_000;
 const tabId = (value: unknown) =>
   typeof value === "string" && /^[\w-]{8,64}$/.test(value) ? value : undefined;
 
-const staleConnection = "The connection moved to another workspace or was rebound or removed. Connect the agent again and read the site again.";
-function staleGrant(hub: AgentHub, command: AgentCommand) {
+export const staleConnection = "The connection moved to another workspace or was rebound or removed. Connect the agent again and read the site again.";
+/** Whether the hub no longer lists the grant with this workspace and generation (a command's, or an agent's request action). */
+export function staleGrant(hub: AgentHub, command: Pick<AgentCommand, "grantId" | "repoId" | "branch" | "generation">) {
   return !hub.grants.some((grant) => grant.id === command.grantId && grant.repoId === command.repoId &&
     grant.branch === command.branch && grant.generation === command.generation && typeof grant.branch === "string" &&
     Number.isInteger(grant.generation));
@@ -50,10 +51,9 @@ export function agentOperation(hub: AgentHub, action: any) {
     if (!grant || (grant.generation ?? 1) !== action.previous || action.generation !== action.previous + 1)
       throw new HttpError(409, staleConnection);
     // A change a tab claimed may be applying now, out of the hub's reach: rebind
-    // only once it is answered. The tab refuses changes older than two minutes,
-    // so a claim from a tab that went away holds a rebind for five at most.
-    if (hub.commands?.some((item) => item.grantId === action.id && item.state === "pending" && item.claimedBy && Date.now() - item.createdAt < 300_000))
-      throw new HttpError(409, "A change from this connection is being applied in the editor. Try again in a moment.");
+    // only once the tab answered it. Elapsed time proves nothing about a paused tab.
+    if (hub.commands?.some((item) => item.grantId === action.id && item.state === "pending" && item.claimedBy))
+      throw new HttpError(409, "A change from this connection is still being applied in the editor. Try again once it finishes, or connect the agent again.");
     Object.assign(grant, { repoId: action.repoId, repo: action.repo, branch: action.branch, generation: action.generation });
     // An approval names its original workspace; it cannot opt another tab in after a rebind.
     delete grant.approval;
