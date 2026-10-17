@@ -42,6 +42,62 @@ const shas = Object.fromEntries(
   Object.keys(files).map((path, index) => [path, index.toString(16).padStart(40, "0")]),
 );
 
+/** Mutable GitHub fixture state shared by the Miniflare and counted Node paths. */
+export function githubState() {
+  return { allowed: true, writes: 0, others: [] as (typeof repo)[], requests: [] as string[], limited: false };
+}
+
+export async function fakeGitHub(request: Pick<Request, "url" | "method" | "json">, github: ReturnType<typeof githubState>) {
+  const path = new URL(request.url).pathname;
+  if (path === "/login/oauth/access_token")
+    return Response.json({ access_token: "github-private-token", expires_in: 28800 });
+  github.requests.push(path);
+  if (path === "/graphql" && !github.limited) {
+    // Batched blob texts; styles/tokens.css comes back truncated, as a
+    // large blob does, to be read on its own.
+    const { query } = (await request.json()) as { query: string };
+    const repository: Record<string, unknown> = {};
+    for (const [, alias, oid] of query.matchAll(/(f\d+): object\(oid: "([a-f0-9]{40})"\)/g)) {
+      const file = Object.keys(shas).find((key) => shas[key] === oid);
+      repository[alias] = file
+        ? { text: files[file], isBinary: false, isTruncated: file === "styles/tokens.css", byteSize: new TextEncoder().encode(files[file]).length }
+        : null;
+    }
+    return Response.json({ data: { repository } });
+  }
+  if (request.method !== "GET") github.writes++;
+  if (github.limited && path !== "/user")
+    return Response.json(
+      { message: "You have exceeded a secondary rate limit. Please wait a few minutes before you try again." },
+      { status: 403 },
+    );
+  if (path === "/user") return Response.json({ login: "lex", avatar_url: "" });
+  if (path === "/user/installations")
+    return Response.json({ installations: [{ id: 1, account: { type: "User", login: "lex" } }] });
+  if (path === "/user/installations/1/repositories")
+    return Response.json({ repositories: github.allowed ? [repo, ...github.others] : [] });
+  if (path === `/repos/lex/starter/git/commits/${commit}`) return Response.json({ tree: { sha: treeSha } });
+  if (path === `/repos/lex/starter/git/trees/${treeSha}`) {
+    const folders = new Set<string>();
+    for (const file of Object.keys(files)) {
+      const parts = file.split("/");
+      for (let index = 1; index < parts.length; index++) folders.add(parts.slice(0, index).join("/"));
+    }
+    return Response.json({
+      truncated: false,
+      tree: [
+        ...[...folders].map((folder) => ({ path: folder, sha: "e".repeat(40), type: "tree", mode: "040000" })),
+        ...Object.keys(files).map((file) => ({ path: file, sha: shas[file], type: "blob", mode: "100644", size: files[file].length })),
+      ],
+    });
+  }
+  const blob = /^\/repos\/lex\/starter\/git\/blobs\/([a-f0-9]{40})$/.exec(path)?.[1];
+  const file = blob && Object.keys(shas).find((key) => shas[key] === blob);
+  if (file)
+    return Response.json({ size: files[file].length, encoding: "base64", content: btoa(files[file]) });
+  throw new Error(`Unexpected GitHub path: ${path}`);
+}
+
 export async function startWorker() {
   const { outputFiles } = await build({
     entryPoints: ["worker/index.ts"],
@@ -56,7 +112,7 @@ export async function startWorker() {
   // `requests`: every GitHub API path asked, in order. `limited`: answer
   // everything but sign-in as GitHub's secondary rate limit does (a 403
   // whose message alone says so).
-  const github = { allowed: true, writes: 0, others: [] as (typeof repo)[], requests: [] as string[], limited: false };
+  const github = githubState();
   const worker = new Miniflare(
     convertV4MiniflareOptions({
       modules: true,
@@ -64,62 +120,18 @@ export async function startWorker() {
       compatibilityDate: "2026-09-17",
       durableObjects: { SESSIONS: { className: "SessionStore", useSQLite: true } },
       bindings: { GITHUB_CLIENT_ID: "test", GITHUB_CLIENT_SECRET: "test", GITHUB_APP_SLUG: "test" },
-      outboundService: async (request) => {
-        const path = new URL(request.url).pathname;
-        if (path === "/login/oauth/access_token")
-          return Response.json({ access_token: "github-private-token", expires_in: 28800 });
-        github.requests.push(path);
-        if (path === "/graphql" && !github.limited) {
-          // Batched blob texts; styles/tokens.css comes back truncated, as a
-          // large blob does, to be read on its own.
-          const { query } = (await request.json()) as { query: string };
-          const repository: Record<string, unknown> = {};
-          for (const [, alias, oid] of query.matchAll(/(f\d+): object\(oid: "([a-f0-9]{40})"\)/g)) {
-            const file = Object.keys(shas).find((key) => shas[key] === oid);
-            repository[alias] = file
-              ? { text: files[file], isBinary: false, isTruncated: file === "styles/tokens.css", byteSize: new TextEncoder().encode(files[file]).length }
-              : null;
-          }
-          return Response.json({ data: { repository } });
-        }
-        if (request.method !== "GET") github.writes++;
-        if (github.limited && path !== "/user")
-          return Response.json(
-            { message: "You have exceeded a secondary rate limit. Please wait a few minutes before you try again." },
-            { status: 403 },
-          );
-        if (path === "/user") return Response.json({ login: "lex", avatar_url: "" });
-        if (path === "/user/installations")
-          return Response.json({ installations: [{ id: 1, account: { type: "User", login: "lex" } }] });
-        if (path === "/user/installations/1/repositories")
-          return Response.json({ repositories: github.allowed ? [repo, ...github.others] : [] });
-        if (path === `/repos/lex/starter/git/commits/${commit}`) return Response.json({ tree: { sha: treeSha } });
-        if (path === `/repos/lex/starter/git/trees/${treeSha}`) {
-          const folders = new Set<string>();
-          for (const file of Object.keys(files)) {
-            const parts = file.split("/");
-            for (let index = 1; index < parts.length; index++) folders.add(parts.slice(0, index).join("/"));
-          }
-          return Response.json({
-            truncated: false,
-            tree: [
-              ...[...folders].map((folder) => ({ path: folder, sha: "e".repeat(40), type: "tree", mode: "040000" })),
-              ...Object.keys(files).map((file) => ({ path: file, sha: shas[file], type: "blob", mode: "100644", size: files[file].length })),
-            ],
-          });
-        }
-        const blob = /^\/repos\/lex\/starter\/git\/blobs\/([a-f0-9]{40})$/.exec(path)?.[1];
-        const file = blob && Object.keys(shas).find((key) => shas[key] === blob);
-        if (file)
-          return Response.json({ size: files[file].length, encoding: "base64", content: btoa(files[file]) });
-        throw new Error(`Unexpected GitHub path: ${path}`);
-      },
+      outboundService: (request) => fakeGitHub(request, github),
     }),
   );
   return { worker, github };
 }
 
-export async function signIn(worker: Miniflare, returnTo?: string) {
+/** Small common port; both Miniflare and the Node harness implement it. */
+export type WorkerDispatch = Pick<Miniflare, "dispatchFetch"> | {
+  dispatchFetch(url: string, init?: RequestInit): Promise<Response>;
+};
+
+export async function signIn(worker: WorkerDispatch, returnTo?: string) {
   const start = await worker.dispatchFetch(
     `${origin}/auth/login${returnTo ? `?return=${encodeURIComponent(returnTo)}` : ""}`,
     { redirect: "manual" },
@@ -137,7 +149,7 @@ export async function signIn(worker: Miniflare, returnTo?: string) {
 }
 
 /** The editor tab's API calls. */
-export function editorTab(worker: Miniflare, cookie: string, tabId = "tab-test-0001") {
+export function editorTab(worker: WorkerDispatch, cookie: string, tabId = "tab-test-0001") {
   const post = (path: string, body: unknown) =>
     worker.dispatchFetch(origin + path, {
       method: "POST",
@@ -211,8 +223,8 @@ export async function siteContext(): Promise<EditorContext> {
   };
 }
 
-/** A fetch for MCP client transports that goes to the Miniflare worker. */
-export function workerFetch(worker: Miniflare) {
+/** A fetch for MCP client transports that goes to either Worker runtime. */
+export function workerFetch(worker: WorkerDispatch) {
   return async (input: string | URL | Request, init?: RequestInit) => {
     const response = await worker.dispatchFetch(String(input instanceof Request ? input.url : input), init as any);
     return new Response(await response.text(), { status: response.status, headers: response.headers as any });
