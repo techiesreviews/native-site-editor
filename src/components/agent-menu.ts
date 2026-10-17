@@ -626,11 +626,14 @@ export function createAgentMenu(options: {
     const since = activation;
     const found: HubState | undefined = await api("hub").catch((error) => {
       // Today's allowance used up, or a cooldown: the workspace's tabs skip their checks until it ends.
-      if (error instanceof AgentFailureError && recordFailure(localStorage, workspace, error.failure, Date.now()) === "quota") {
+      if (!(error instanceof AgentFailureError)) return undefined;
+      // This tab's checks stop on quota even when browser storage refuses the record.
+      if (error.failure.kind === "quota") {
         for (const check of consentChecks) clearTimeout(check);
         consentChecks = [];
         say(QUOTA_PAUSE);
       }
+      try { recordFailure(localStorage, workspace, error.failure, Date.now()); } catch { /* storage full: nothing shared */ }
       return undefined;
     });
     // Turned on, or on and off again, meanwhile: this answer decides nothing.

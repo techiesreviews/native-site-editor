@@ -55,6 +55,8 @@ export function recordFailure(storage: Pick<Storage, "getItem" | "setItem">, wor
   if (failure.kind !== "quota" && (failure.kind !== "transient" || failure.retryAt === undefined)) return undefined;
   const key = recoveryKey(workspace), record = readRecord(storage, key);
   if (failure.kind === "quota") record.quota = { at: now, resetAt: failure.resetAt };
+  // The two-minute window counts from this failure, whichever tab retries.
+  else if (!record.lease && !record.attempts.length) record.since = now;
   if (failure.retryAt !== undefined) record.retryAt = Math.max(record.retryAt ?? 0, failure.retryAt);
   storage.setItem(key, JSON.stringify(record));
   return failure.kind;
@@ -164,7 +166,8 @@ export function createAgentRecovery(options: RecoveryOptions) {
       clearTimers();
     } else if (!record.quota && !record.paused && !record.lease) {
       record.lease = { tab: options.tabId, until: options.now() + LEASE };
-      record.since ??= options.now();
+      // A run of failures starts here, unless an earlier one is still within its window.
+      if (record.since === undefined || !record.attempts.length && options.now() - record.since > WINDOW) record.since = options.now();
     }
     write(record);
     if (!running) { clearTimers(); schedule(); }

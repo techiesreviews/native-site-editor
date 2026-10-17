@@ -318,3 +318,13 @@ test("a body cut off after its headers keeps the status and Retry-After", () => 
   const failure = classifyAgentFailure({ networkError: true, status: 503, retryAfter: "60", now });
   assert.deepEqual(failure, { kind: "transient", retryAt: now + 60_000 });
 });
+
+test("a cooldown an off tab records starts the two-minute window for the tab that retries", async () => {
+  const f = fixture(), workspace = { account: "lex", repoId: 1 };
+  recordFailure(f.storage, workspace, { kind: "transient", retryAt: now + 119_000 }, now);
+  const a = f.tab("a");
+  await f.tick(600_000);
+  assert.deepEqual(f.calls.map(call => call.at - now), [119_000]);
+  assert.equal(a.state().mode, "paused");
+  a.dispose();
+});
