@@ -4,12 +4,15 @@ import { createPageStructureController, type PageStructurePorts } from "../src/c
 import { createGuardedEdits } from "../src/guarded-edit.ts";
 import { createBlockMoves, type BlockMovePorts } from "../src/page-builder/block-move.ts";
 import { elementEnd, startTags } from "../shared/html-source.ts";
+import type { NativePreviewSelection } from "../src/components/native-preview.ts";
+import type { EditBarControl, EditBarModel } from "../src/components/edit-bar.ts";
 import { createMemoryWorkspace } from "./fakes/memory-workspace.ts";
 
 const PAGE = "index.html";
 const SOURCE = "<main><section>A</section><section>B</section></main>";
 const BAND = "components/x-band.html";
 const MOVE_STALE = "The source or selection changed. Select the section again before moving it.";
+const unused = (name: string) => (): never => { throw new Error(`unused port ${name}`); };
 const OPEN_STALE = "The source changed while its editor opened. Select the section again before moving it.";
 
 // The i-th element of <main> in these flat fixtures (the real locator needs a browser's parser).
@@ -17,7 +20,7 @@ function locateNativeElementRange(html: string, node: number[]) {
   const found = [...html.matchAll(/<(section|x-band)\b[^>]*>(.*?)<\/\1>/g)][node[1]];
   if (!found) return undefined;
   const start = found.index, end = start + found[0].length, closeStart = end - found[1].length - 3;
-  return { start, end, tag: { name: found[1], start, end: start + found[0].indexOf(">") + 1 }, close: { start: closeStart, end } };
+  return { start, end, tag: { name: found[1], start, nameEnd: start + 1 + found[1].length, end: start + found[0].indexOf(">") + 1 }, close: { start: closeStart, end } };
 }
 
 // The controller on the memory workspace and the real guarded edit module.
@@ -25,10 +28,10 @@ function fixture(init: { page?: string; open?: string; band?: string; editing?: 
   const mem = createMemoryWorkspace({
     branch: { [PAGE]: init.page ?? SOURCE, [BAND]: init.band ?? "<section>Band</section>", "styles/site.css": "body{}" },
     open: init.open ?? PAGE,
-    site: { routes: { "/": PAGE }, components: { "x-band": BAND } } as never,
+    site: { routes: { "/": PAGE }, components: { "x-band": BAND } },
   });
   const edits = createGuardedEdits(mem.workspace);
-  const state = { selected: { path: PAGE, node: [0, 0] } as { path: string; node: number[] } | undefined };
+  const state: { selected: NativePreviewSelection | undefined } = { selected: { path: PAGE, node: [0, 0], tag: "section", text: "", reason: "click", selectors: [] } };
   const notices: string[] = [], errors: string[] = [], forgotten: string[] = [];
   let refreshes = 0;
   const moves = createBlockMoves({
@@ -36,12 +39,24 @@ function fixture(init: { page?: string; open?: string; band?: string; editing?: 
     mounted: path => mem.openFile() === path && mem.model(path) !== undefined,
     forgetOpening: () => painted => { forgotten.push(painted); },
   } satisfies BlockMovePorts);
-  // eslint-disable-next-line no-restricted-syntax -- This move/text fixture supplies only the controller paths it exercises; drawBar adds its rendering ports below.
-  const ports = {
+  const ports: PageStructurePorts = {
     edits,
     appStore: { openFile: { get value() { return mem.openFile(); } }, selection: { get value() { return state.selected; } } },
-    editorModule: { isMounted: (path: string) => mem.model(path) !== undefined, captureFileModelState: () => ({ isCurrent: () => true }), forgetDraftModel: () => false },
-    nativePreview: { route: () => "/", refresh: () => { refreshes++; } },
+    editorModule: {
+      isMounted: path => mem.model(path) !== undefined,
+      captureFileModelState: (_scope, path) => mem.workspace.model(path),
+      captureHistoryHost: path => mem.workspace.modelState(path),
+      forgetDraftModel: () => false,
+      closeActiveEditGroup: path => mem.workspace.closeGroup(path),
+      replaceActiveRange: (edit, group = false) => { mem.workspace.change(edit.path, [edit], group); return true; },
+      replaceActiveRanges: unused("replaceActiveRanges"),
+      runVisualHistory: async direction => direction === "undo" ? mem.undo() : mem.redo(),
+    },
+    nativePreview: {
+      route: () => "/", refresh: () => { refreshes++; },
+      selectNode: unused("selectNode"), selectTextAfterUpdate: () => {}, selectAfterUpdate: () => {},
+      showEditBar: unused("showEditBar"), hideEditBar: unused("hideEditBar"),
+    },
     nativeSite: { routes: { "/": PAGE }, components: { "x-band": BAND } },
     nativeEditableTemplatePath: () => undefined,
     nativeEffectiveSource: (path: string) => edits.peek.source(path),
@@ -52,7 +67,23 @@ function fixture(init: { page?: string; open?: string; band?: string; editing?: 
     refuse: (message: string) => notices.push(message),
     errorMessage: (error: unknown) => errors.push(error instanceof Error ? error.message : String(error)),
     moves,
-  } as unknown as PageStructurePorts;
+    componentTools: undefined,
+    nativeEditableSource: path => edits.peek.source(path),
+    element: unused("element"), generation: 0, setupScope: () => "scope",
+    openNativeNavigation: unused("openNativeNavigation"),
+    nativeSources: () => Object.fromEntries(mem.files().map(path => [path, edits.peek.source(path)!])),
+    nativePageStyles: () => [], nativeTextTags: new Set(), nativeLinkParents: new Set(),
+    previewSelection: { textSelection: () => undefined },
+    wholeWrapper: () => undefined, nearestLink: () => undefined, nativeRouteInfo: () => ({}),
+    nativeNamedDescendant: () => false, nativePictureSources: () => false,
+    mediaPlaceState: undefined, changeMediaPlace: undefined, mediaVideoControls: undefined,
+    mediaButton: undefined, mediaPlaceFrame: undefined, editImage: undefined,
+    chooseMediaForImage: unused("chooseMediaForImage"),
+    cardControls: () => [], agentController: { captureAsk: () => undefined },
+    announce: text => mem.announced.push(text), restoreFile: unused("restoreFile"),
+    updateNativePreviewSources: unused("updateNativePreviewSources"), pageStructure: undefined,
+    elementPathAt: () => undefined, wrapperAround: () => undefined,
+  } satisfies PageStructurePorts;
   const controller = createPageStructureController(ports);
   const target = { path: PAGE, node: [0, 0], tag: "section" };
   const page = () => edits.peek.source(PAGE);
@@ -62,7 +93,7 @@ function fixture(init: { page?: string; open?: string; band?: string; editing?: 
 // What the bar holds for its selection: the painted bytes, the workspace then, and a guard on its selection and editor model.
 function barMove(f: ReturnType<typeof fixture>, direction: "up" | "down") {
   const model = f.mem.workspace.modelState(PAGE)!, node = f.target.node;
-  const options = { since: f.edits.stamp(), stale: MOVE_STALE, guard: () => model.isCurrent() && f.state.selected?.path === PAGE && f.state.selected.node.join() === node.join() };
+  const options = { since: f.edits.stamp(), stale: MOVE_STALE, guard: () => model.isCurrent() && f.state.selected?.path === PAGE && f.state.selected.node?.join() === node.join() };
   return () => f.controller.moveBlock({ path: PAGE, node, painted: SOURCE }, direction, options);
 }
 
@@ -73,7 +104,7 @@ for (const moved of ["generation", "scope", "source", "selection", "version", "r
     if (moved === "generation") f.mem.bumpGeneration();
     if (moved === "scope") f.mem.setScope("lex/site@other");
     if (moved === "source") f.mem.typeInto(PAGE);
-    if (moved === "selection") f.state.selected = { path: PAGE, node: [0, 1] };
+    if (moved === "selection") f.state.selected = { ...f.state.selected!, path: PAGE, node: [0, 1] };
     if (moved === "version") f.mem.setVersionView(true);
     if (moved === "route") f.mem.setRoute("/about");
     if (moved === "remount") f.mem.remount(PAGE);
@@ -94,16 +125,16 @@ test("a bar's section move answers the moved path, and nothing is said at an edg
 });
 
 // The bar drawn for a selection: its Move buttons, as the edit bar would press them (a detached button too).
-function drawBar(f: ReturnType<typeof fixture>, node = f.target.node, extra: Partial<PageStructurePorts> = {}, link?: string) {
-  let model: { controls: { label?: string; disabled?: boolean; onPress?: () => void; onInput?: (value: string) => void; suggestions?: { label: string; value: string }[] }[] } | undefined;
-  Object.assign(f.ports, {
-    nativePreview: { ...f.ports.nativePreview, showEditBar: (shown: typeof model) => { model = shown; }, hideEditBar: () => { model = undefined; } },
-    nativeEditableSource: (path: string) => f.edits.peek.source(path),
-    element: () => ({ textContent: "" }), setupScope: () => "scope", generation: 0,
-    agentController: { captureAsk: () => undefined }, previewSelection: { textSelection: () => undefined }, cardControls: () => [],
-    nativeTextTags: new Set(), nativeLinkParents: new Set(), nativeNamedDescendant: () => false, nativePictureSources: () => false, ...extra,
-  });
-  f.controller.renderEditBar({ path: PAGE, node, tag: "section", link, text: "", reason: "click", selectors: [], paintedSource: f.page(), rect: { x: 0, y: 0, width: 1, height: 1 } } as never);
+function drawBar(f: ReturnType<typeof fixture>, node = f.target.node, extra: Partial<PageStructurePorts> = {}, link?: string, tag = "section") {
+  let model: EditBarModel | undefined;
+  const rendering: Partial<PageStructurePorts> = {
+    nativePreview: { ...f.ports.nativePreview!, showEditBar: shown => { model = shown; }, hideEditBar: () => { model = undefined; } },
+    // Only textContent is used by the controller's status port in this Node fixture.
+    element: <T extends HTMLElement>() => ({ textContent: "" }) as T,
+    ...extra,
+  };
+  Object.assign(f.ports, rendering);
+  f.controller.renderEditBar({ path: PAGE, node, tag, link, text: "", reason: "click", selectors: [], paintedSource: f.page(), rect: { top: 0, left: 0, bottom: 1, right: 1, width: 1, height: 1 } });
   const button = (label: string) => model!.controls.find(control => control.label === label)!;
   return button;
 }
@@ -111,14 +142,19 @@ function drawBar(f: ReturnType<typeof fixture>, node = f.target.node, extra: Par
 test("the bar's Move buttons are off at the ends, and a detached one refuses once another section is selected", () => {
   const f = fixture();
   const button = drawBar(f);
-  assert.equal(button("Move up").disabled, true);
-  assert.equal(button("Move down").disabled, false);
-  f.state.selected = { path: PAGE, node: [0, 1] };
-  button("Move down").onPress!();
+  const up = button("Move up"), down = button("Move down");
+  assert.ok(up.kind === "button");
+  assert.ok(down.kind === "button");
+  assert.equal(up.disabled, true);
+  assert.equal(down.disabled, false);
+  f.state.selected = { ...f.state.selected!, path: PAGE, node: [0, 1] };
+  down.onPress();
   assert.equal(f.page(), SOURCE);
   assert.deepEqual(f.notices, [MOVE_STALE]);
-  f.state.selected = { path: PAGE, node: [0, 0] };
-  drawBar(f)("Move down").onPress!();
+  f.state.selected = { ...f.state.selected!, path: PAGE, node: [0, 0] };
+  const fresh = drawBar(f)("Move down");
+  assert.ok(fresh.kind === "button");
+  fresh.onPress();
   assert.equal(f.page(), "<main><section>B</section>\n<section>A</section></main>");
 });
 
@@ -201,7 +237,7 @@ test("queued text edits apply in the order typed, each its own guarded step", as
 test("a template row moves through the now-shaped editing port and leaves the page alone", () => {
   const band = "<section><div>A</div><div>B</div></section>";
   const f = fixture({ open: BAND, band, editing: BAND });
-  assert.deepEqual(f.controller.moveBlock({ path: BAND, node: [0, 0], painted: band }, "down"), [0, 1]);
+  assert.deepEqual(f.controller.moveBlock({ path: BAND, node: [0, 0], painted: band }, "down", {}), [0, 1]);
   assert.equal(f.edits.peek.source(BAND), "<section><div>B</div>\n<div>A</div></section>");
   assert.equal(f.page(), SOURCE);
   assert.deepEqual(f.notices, []);
@@ -210,7 +246,6 @@ test("a template row moves through the now-shaped editing port and leaves the pa
 test("link popup writes chosen and typed page routes with the live site prefix", () => {
   const f = fixture({ page: '<main><section><a href="/old/">Old</a></section></main>' });
   f.mem.writeDraft(".editor/config.json", '{"site":{"url":"https://user.github.io/my-site/"}}');
-  Object.assign(f.ports, { nativePreview: { ...f.ports.nativePreview, selectAfterUpdate: () => {} } });
   const rangeOf = (html: string, name: string) => {
     const tags = startTags(html);
     return elementEnd(html, tags, tags.findIndex(tag => tag.name === name), html.length);
@@ -226,6 +261,7 @@ test("link popup writes chosen and typed page routes with the live site prefix",
       return true;
     } },
   }, "/old/")("Address");
+  assert.ok(address.kind === "address");
   assert.deepEqual(address.suggestions, [{ label: "Home (/)", value: "/my-site/" }]);
   address.onInput!(address.suggestions![0].value);
   assert.equal(f.page(), '<main><section><a href="/my-site/">Old</a></section></main>');
@@ -235,4 +271,136 @@ test("link popup writes chosen and typed page routes with the live site prefix",
   address.onInput!("/about/");
   assert.equal(f.page(), '<main><section><a href="/elsewhere/about/">Old</a></section></main>');
   assert.deepEqual(f.errors, []);
+});
+
+// These fixtures have unique tag names; use the node-safe source parser as a locator.
+function rangeOf(html: string, name: string) {
+  const tags = startTags(html);
+  return elementEnd(html, tags, tags.findIndex(tag => tag.name === name), html.length);
+}
+
+function textBarPorts(f: ReturnType<typeof fixture>, wrappers: string[] = []): Partial<PageStructurePorts> {
+  return {
+    nativeTextTags: new Set(["p"]), nativeLinkParents: new Set(["p"]),
+    previewSelection: { textSelection: () => ({ path: PAGE, node: f.target.node, start: 0, end: 5, text: "Hello", wrappers }) },
+    locateNativeElementRange: (html, node) => rangeOf(html, node.length === 3 ? "a" : "p"),
+    wrapperAround: (inner, _at, names) => names.map(name => rangeOf(inner, name)).find(Boolean),
+    elementPathAt: (html, at) => startTags(html).some(tag => tag.start === at) ? [0] : undefined,
+  };
+}
+
+test("an attribute field groups typed values into one guarded step with Undo and Redo", () => {
+  const source = '<main><button name="old">Send</button></main>';
+  const f = fixture({ page: source });
+  const name = drawBar(f, f.target.node, { locateNativeElementRange: html => rangeOf(html, "button") }, undefined, "button")("Name");
+  assert.ok(name.kind === "address");
+  name.onOpen!();
+  name.onInput("new");
+  name.onInput("newer");
+  name.onClose!();
+  assert.equal(f.page(), '<main><button name="newer">Send</button></main>');
+  assert.deepEqual(f.mem.steps(), ["range"]);
+  assert.deepEqual(f.mem.selected.at(-1), { path: PAGE, node: f.target.node });
+  assert.equal(f.mem.announced.at(-1), "Name changed");
+  assert.equal(f.mem.undo(), true);
+  assert.equal(f.page(), source);
+  assert.equal(f.mem.announced.at(-1), "Undid: Name changed");
+  assert.equal(f.mem.redo(), true);
+  assert.equal(f.page(), '<main><button name="newer">Send</button></main>');
+  assert.deepEqual(f.notices, []);
+  assert.deepEqual(f.errors, []);
+});
+
+test("an attribute field refuses once its selection changes", () => {
+  const source = '<main><button name="old">Send</button><p>Elsewhere</p></main>';
+  const f = fixture({ page: source });
+  const name = drawBar(f, f.target.node, { locateNativeElementRange: html => rangeOf(html, "button") }, undefined, "button")("Name");
+  assert.ok(name.kind === "address");
+  name.onOpen!();
+  f.state.selected = { ...f.state.selected!, node: [0, 1] };
+  name.onInput("new");
+  assert.equal(f.page(), source);
+  assert.deepEqual(f.mem.steps(), []);
+  assert.deepEqual(f.notices, ["The source or selection changed. Select the element again before editing its fields."]);
+});
+
+test("Bold wraps selected text and unwraps formatted text through the edit bar", () => {
+  const source = "<main><p>Hello world</p></main>";
+  const f = fixture({ page: source });
+  const bold = drawBar(f, f.target.node, textBarPorts(f), undefined, "p")("B");
+  assert.ok(bold.kind === "button");
+  assert.equal(bold.pressed, false);
+  bold.onPress();
+  assert.equal(f.page(), "<main><p><strong>Hello</strong> world</p></main>");
+  assert.deepEqual(f.mem.steps(), ["range"]);
+  assert.equal(f.mem.undo(), true);
+  assert.equal(f.page(), source);
+  assert.equal(f.mem.redo(), true);
+  const unbold = drawBar(f, f.target.node, textBarPorts(f, ["strong"]), undefined, "p")("B");
+  assert.ok(unbold.kind === "button");
+  assert.equal(unbold.pressed, true);
+  unbold.onPress();
+  assert.equal(f.page(), source);
+  assert.deepEqual(f.mem.steps(), ["range", "range"]);
+  assert.equal(f.mem.undo(), true);
+  assert.equal(f.page(), "<main><p><strong>Hello</strong> world</p></main>");
+  assert.deepEqual(f.errors, []);
+  assert.deepEqual(f.notices, []);
+});
+
+test("Link wraps selected text; leaving its unused Address removes the empty link and its undo step", async () => {
+  const source = "<main><p>Hello world</p></main>";
+  const f = fixture({ page: source });
+  const link = drawBar(f, f.target.node, textBarPorts(f), undefined, "p")("Link");
+  assert.ok(link.kind === "button");
+  link.onPress();
+  assert.equal(f.page(), '<main><p><a href="">Hello</a> world</p></main>');
+  assert.deepEqual(f.mem.steps(), ["range"]);
+  const address = drawBar(f, f.target.node, textBarPorts(f, ["a"]), undefined, "p")("Address");
+  assert.ok(address.kind === "address");
+  assert.equal(address.open, true);
+  assert.equal(address.value, "");
+  f.state.selected = { ...f.state.selected!, node: [0, 1] };
+  // The edit bar closes the old popup when the selection moves, without any Address input.
+  address.onClose!();
+  await Promise.resolve();
+  assert.equal(f.page(), source);
+  assert.deepEqual(f.mem.steps(), []);
+  assert.equal(f.mem.undo(), false);
+  assert.deepEqual(f.notices, []);
+  assert.deepEqual(f.errors, []);
+});
+
+test("the bar includes the cardControls port's controls only outside sections and template roots", () => {
+  for (const kind of ["plain", "section", "template root"] as const) {
+    const tag = kind === "section" ? "section" : "div";
+    const f = fixture({ page: `<main><${tag}>Content</${tag}></main>` });
+    const calls: { selection: NativePreviewSelection; source: string }[] = [];
+    const card: EditBarControl = { kind: "button", label: "Card control", onPress: () => {} };
+    const extra: Partial<PageStructurePorts> = {
+      locateNativeElementRange: html => rangeOf(html, tag),
+      cardControls: (selection, source) => { calls.push({ selection, source }); return [card]; },
+    };
+    if (kind === "template root") Object.assign(extra, { componentTools: {
+      mode: {
+        now: () => ({ page: PAGE, node: [0], chain: [], tag: "x-band", template: PAGE, entry: {}, notes: [] }),
+        entry: unused("mode.entry"), opened: unused("mode.opened"), enter: unused("mode.enter"),
+        open: unused("mode.open"), rename: unused("mode.rename"), keep: unused("mode.keep"), kept: unused("mode.kept"),
+        dismissNotes: unused("mode.dismissNotes"), sync: unused("mode.sync"), leave: unused("mode.leave"), destroy: unused("mode.destroy"),
+      },
+      isTemplateRoot: () => true, variantControls: () => [], controls: () => [], removeControl: () => [], show: () => {}, identity: () => ({}),
+      makeFromAgent: unused("makeFromAgent"), menuItems: unused("menuItems"), slotMenu: unused("slotMenu"),
+      instanceSelection: unused("instanceSelection"), structure: unused("structure"), textRow: unused("textRow"), templateRows: unused("templateRows"),
+      refresh: unused("refresh"), editComponent: unused("editComponent"), newComponent: unused("newComponent"),
+      fillInstanceSlot: unused("fillInstanceSlot"), destroy: unused("destroy"),
+    } satisfies NonNullable<PageStructurePorts["componentTools"]> });
+    const control = drawBar(f, f.target.node, extra, undefined, tag)("Card control");
+    assert.equal(control, kind === "plain" ? card : undefined, kind);
+    assert.equal(calls.length, kind === "plain" ? 1 : 0, kind);
+    if (kind === "plain") {
+      assert.equal(calls[0].source, f.page());
+      assert.deepEqual(calls[0].selection.node, f.target.node);
+      assert.equal(calls[0].selection.tag, "div");
+    }
+  }
 });

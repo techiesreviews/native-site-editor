@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createSavePublishController, type SavePublishPorts } from "../src/controllers/save-publish-controller.ts";
 import type { DraftScope, SavedDraft } from "../src/drafts.ts";
+import { forEachAwait } from "./support/await-race.ts";
 import { listChanges } from "../src/file-changes.ts";
 import { EMPTY_COMMIT, type PublishResult, type Snapshot } from "../shared/types.ts";
 
@@ -68,10 +69,10 @@ function fixture() {
     fallback: () => "index.html",
     reopen: (wasOpen, back, styled) => { log.push(`reopen ${wasOpen} ${back ?? "-"} ${styled}`); },
     confirm: (question) => { questions.push(question.title); const answer = deferred<boolean>(); asked.push(answer); return answer.promise; },
-  };
+  } satisfies SavePublishPorts;
   const controller = createSavePublishController(ports);
   return {
-    controller, state, drafts, calls, answers, entries, asked, questions, log, hooks, refreshed: refreshed.promise,
+    controller, ports, state, drafts, calls, answers, entries, asked, questions, log, hooks, refreshed: refreshed.promise,
     wake: () => wake?.(), counts: () => ({ loads, unwoken }),
     open: (path?: string) => { opened = path; }, resyncing: (value: boolean) => { resync = value; },
   };
@@ -206,7 +207,7 @@ test("a save refreshes the snapshot once, in order, and only for the scope it be
   assert.deepEqual(f.calls[0], ["snapshot", { repo: "lex/site1", branch: "main", commit: "f".repeat(40) }]);
   f.answers[0].resolve(snap("f".repeat(40)));
   await flush();
-  assert.deepEqual(f.log.slice(1), ["snapshot f", "shown f", "Selected files saved to GitHub."]);
+  assert.deepEqual(f.log, ["saved", "snapshot f", "shown f", "Selected files saved to GitHub."]);
 
   const raced = fixture();
   raced.controller.published(raced.controller.proof(), scope1, result("f".repeat(40)), []);
@@ -371,4 +372,62 @@ test("pruned drafts are forgotten and redrawn when a save's refresh adopts a sna
   await check;
   assert.equal(f.drafts.has("same.html"), false);
   assert.deepEqual(f.log, ["forget same.html", "redraw"]);
+});
+
+test("a save refresh adopting during deleted-check lookups drops all stale answers, including the first await", async () => {
+  const points = await forEachAwait(race => {
+    const f = fixture();
+    const originals = [draft("gone.html"), draft("removed.html", { deleted: true }), draft("same.html", { content: "x" })];
+    for (const value of originals) f.drafts.set(value.path, value);
+    f.ports.findEntry = race.port("findEntry", async path => path === "same.html"
+      ? { path, sha: "c1b0730e0133447badcfd47fd144e254807b06e1", mode: "100644", type: "blob" as const } : undefined);
+    return { ...f, originals, done: f.controller.checkDeleted(1) };
+  }, async f => {
+    // The refresh's independent check sees files still present and changed.
+    f.ports.findEntry = async path => ({ path, sha: "b".repeat(40), mode: "100644", type: "blob" });
+    const adopted = deferred<void>();
+    const adopt = f.ports.adopt.bind(f.ports);
+    f.ports.adopt = snapshot => { adopt(snapshot); adopted.resolve(); };
+    f.controller.published(f.controller.proof(), scope1, result("f".repeat(40)), []);
+    f.answers[0].resolve(snap("f".repeat(40)));
+    await adopted.promise;
+  }, async f => {
+    await f.refreshed;
+    assert.equal(f.state.snapshot?.commit, "f".repeat(40));
+    assert.equal(f.state.generation, 1);
+    assert.deepEqual([...f.drafts.values()], f.originals);
+    for (const value of f.originals) assert.equal(f.controller.isDeleted(value.path), false);
+    assert.deepEqual(f.log, ["saved", "snapshot f", "shown f", "Selected files saved to GitHub."],
+      "the stale check neither settles drafts, forgets models nor redraws");
+  });
+  assert.equal(points, 3);
+});
+
+test("without a user scope, checks and discard actions do nothing and say nothing", async () => {
+  const f = fixture();
+  f.drafts.set("a.html", draft("a.html"));
+  const before = new Map(f.drafts);
+  f.ports.scope = () => undefined;
+  await f.controller.checkHead(true);
+  await f.controller.checkDeleted(1);
+  assert.equal(f.controller.discard(), 0);
+  assert.equal(f.controller.discard(["a.html"]), 0);
+  await f.controller.discardAll();
+  f.controller.settleDeleted("a.html", true);
+  f.controller.settleDeleted("a.html", false);
+  assert.deepEqual(f.drafts, before);
+  assert.deepEqual(f.calls, []);
+  assert.equal(f.entries.size, 0);
+  assert.deepEqual(f.questions, []);
+  assert.deepEqual(f.log, []);
+  assert.deepEqual(f.counts(), { loads: 0, unwoken: 0 });
+});
+
+test("without a user scope or row change, discardFile does nothing and says nothing", async () => {
+  const f = fixture();
+  f.ports.scope = () => undefined;
+  await f.controller.discardFile("a.html");
+  assert.deepEqual(f.questions, []);
+  assert.deepEqual(f.log, []);
+  assert.equal(f.drafts.size, 0);
 });
