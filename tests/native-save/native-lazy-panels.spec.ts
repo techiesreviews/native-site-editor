@@ -33,7 +33,7 @@ test("once Connect turns remote agents on, a transient hub failure retries and r
     if (++calls === 1) { await route.fulfill({ status: 503, json: { error: "Try again" } }); return; }
     await route.fulfill({ json: {
       grants: [], tabId: null, updatedAt: null, commands: [], requests: [{
-        id: "restored-question", repoId: 501, text: "Change the heading", state: "question", createdAt: Date.now() - 10_000,
+        id: "restored-question", repoId: 501, branch: "main", text: "Change the heading", state: "question", createdAt: Date.now() - 10_000,
         reply: { status: "question", message: "Which heading?", at: Date.now() },
         element: { file: "index.html", route: "/", id: "hero", tag: "h1", selector: ".hero h1" },
       }],
