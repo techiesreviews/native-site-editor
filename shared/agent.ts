@@ -42,6 +42,7 @@ export type AgentOperation =
   | "replace_media";
 
 export interface AgentCommand {
+  generation?: number;
   id: string;
   operation: AgentOperation;
   /** The file the operation is about (`create_page`: the parent page's route folder). */

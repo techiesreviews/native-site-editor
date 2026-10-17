@@ -10,7 +10,7 @@ async function connected() {
   const { worker } = harness;
   const { cookie } = await signIn(worker);
   const tab = editorTab(worker, cookie);
-  const connection = await tab.post("/api/agent/connect", { repo: repo.full_name, repoId: repo.id });
+  const connection = await tab.post("/api/agent/connect", { repo: repo.full_name, repoId: repo.id, branch: "main" });
   assert.equal(connection.status, 200);
   const { token } = await connection.json() as { token: string };
   assert.equal((await tab.share(await siteContext())).status, 200);

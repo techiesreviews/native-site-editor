@@ -157,20 +157,21 @@ function openRequests(hub: AgentHub | undefined, repoId: number) {
  * What the user has to do in the editor before agents can work: no tab
  * shares a site (signed out, no repository chosen yet, or the tab closed).
  */
-export function notSharingMessage(origin: string) {
-  return `The editor tab is not sharing a site right now, so there is nothing to work on yet. Ask the user to: 1) open ${origin} and sign in with GitHub (Continue with GitHub; a free GitHub account works, but a new account must confirm its email address first, or GitHub answers the sign-in with a 404 page); 2) open a repository there: choose one in the project menu, or, with none yet, create one on the Get started screen (or, if you have the GitHub CLI, run \`gh repo create <name> --public\` yourself and ask them to give the editor access to it there); 3) keep that editor tab open. The connection then works on whichever repository the tab shows; call get_site again.`;
+export function notSharingMessage(origin: string, workspace?: { repo: string; branch: string }, shown?: EditorContext) {
+  if (workspace && shown) return `This connection is for ${workspace.repo} on branch ${workspace.branch}; the editor shows ${shown.repository.fullName} on branch ${shown.branch}. Open that site and branch in the editor, or connect the agent again from the tab you want.`;
+  return `The editor tab is not sharing a site right now, so there is nothing to work on yet. Ask the user to: 1) open ${origin} and sign in with GitHub (Continue with GitHub; a free GitHub account works, but a new account must confirm its email address first, or GitHub answers the sign-in with a 404 page); 2) open a repository there: choose one in the project menu, or, with none yet, create one on the Get started screen (or, if you have the GitHub CLI, run \`gh repo create <name> --public\` yourself and ask them to give the editor access to it there); 3) keep that editor tab open. Open the repository and branch chosen for this connection; call get_site again.${workspace ? ` This connection is for ${workspace.repo} on branch ${workspace.branch}.` : ""}`;
 }
 
 /** Why a page tool cannot run before the repository has a home page. */
 const noHomePage =
   "This repository has no site yet: there is no index.html, so there is no page to work on or copy. Start the site first: write index.html (a full HTML document linking /styles/site.css) and styles/site.css with write_file, as the native-site://conventions resource's \"Starting a site from nothing\" describes, or ask the user to choose Starter site in the editor's Start your site panel. Then call get_site again.";
 
-export function siteSummary(hub: AgentHub | undefined, context: EditorContext | undefined, grantRepo: string, origin = "https://editor.techies.tools", variants?: SiteVariantSummary) {
+export function siteSummary(hub: AgentHub | undefined, context: EditorContext | undefined, grantRepo: string, origin = "https://editor.techies.tools", variants?: SiteVariantSummary, workspace?: { repo: string; branch: string }) {
   if (!context)
     return {
       repository: grantRepo,
       available: false,
-      note: notSharingMessage(origin),
+      note: notSharingMessage(origin, workspace, hub?.context),
     };
   const age = contextAge(hub);
   const site = context.site;
@@ -222,11 +223,11 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
 
   async function state() {
     const hub = await getHub(env, grant.sessionId, { requests: true });
-    return { hub, context: connectionContext(hub, connection.repo) };
+    return { hub, context: connectionContext(hub, connection.workspace) };
   }
   async function current() {
     const { hub, context } = await state();
-    if (!context) throw new HttpError(409, notSharingMessage(origin));
+    if (!context) throw new HttpError(409, notSharingMessage(origin, connection.workspace, hub?.context));
     return { hub, context, files: new SiteFiles(connection.github, connection.repo, context, (hash) => draftText(env, grant.sessionId, hash)) };
   }
   // Variants need the site's CSS and scripts; get_site still answers when
@@ -284,6 +285,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
       ...(input.expectedHash !== undefined ? { expectedHash: input.expectedHash } : {}),
       ...(input.args ? { args: input.args } : {}),
       grantId: connection.id,
+      generation: grant.generation,
       repoId: connection.repo.id,
       state: "pending",
       createdAt: Date.now(),
@@ -352,7 +354,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     async () => {
       const { hub, context } = await state();
       const variants = context ? await readVariants(context) : undefined;
-      return text(siteSummary(hub, context, connection.repo.full_name, origin, variants));
+      return text(siteSummary(hub, context, connection.repo.full_name, origin, variants, connection.workspace));
     },
   );
   server.registerTool(
@@ -1155,7 +1157,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
       const { hub, context } = await state();
       return {
         contents: [
-          { uri: uri.href, mimeType: "application/json", text: JSON.stringify(siteSummary(hub, context, connection.repo.full_name, origin)) },
+          { uri: uri.href, mimeType: "application/json", text: JSON.stringify(siteSummary(hub, context, connection.repo.full_name, origin, undefined, connection.workspace)) },
         ],
       };
     },
@@ -1174,7 +1176,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
             role: "user",
             content: {
               type: "text",
-              text: `${siteConventions}\n## The site now\n${JSON.stringify(siteSummary(hub, context, connection.repo.full_name, origin))}\n\n${goal ? `Goal: ${goal}` : "Ask what to change if the goal is not clear."}`,
+              text: `${siteConventions}\n## The site now\n${JSON.stringify(siteSummary(hub, context, connection.repo.full_name, origin, undefined, connection.workspace))}\n\n${goal ? `Goal: ${goal}` : "Ask what to change if the goal is not clear."}`,
             },
           },
         ],

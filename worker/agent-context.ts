@@ -8,8 +8,7 @@ import type { requestSummary } from "./agent-requests";
 /**
  * One agent connection: a bearer token (copied from the editor, or issued by
  * the OAuth token endpoint) scoped to one signed-in editor session. It works
- * on the repository the session's editor tab shows; `repo` is the one it was
- * made in, used until a tab shares its context. Stored under the SHA-256 of
+ * on one repository and branch, until explicitly rebound. Stored under the SHA-256 of
  * the token; the token itself is never stored.
  */
 export interface AgentGrant {
@@ -18,10 +17,13 @@ export interface AgentGrant {
   login: string;
   repoId: number;
   repo: string;
+  branch: string;
+  generation: number;
   expiresAt: number;
   via?: "token" | "oauth";
   /** The OAuth client's name, as it registered. */
   client?: string;
+  approval?: string;
   createdAt?: number;
   /** Older records only; the hub records the first use (`markGrantUsed`). */
   usedAt?: number;
@@ -31,8 +33,11 @@ export interface HubGrant {
   id: string;
   repoId: number;
   repo: string;
+  branch: string;
+  generation: number;
   via: "token" | "oauth";
   client?: string;
+  approval?: string;
   createdAt: number;
   usedAt?: number;
 }
@@ -109,6 +114,8 @@ export async function createGrant(
     login: string;
     repoId: number;
     repo: string;
+    branch: string;
+    approval?: string;
     expiresAt: number;
     via: "token" | "oauth";
     client?: string;
@@ -117,7 +124,7 @@ export async function createGrant(
   const token = `ase_${randomHex()}`;
   const id = await tokenId(token);
   const createdAt = Date.now();
-  await agentRecord(env, id, "PUT", { kind: "agent", ...input, createdAt });
+  await agentRecord(env, id, "PUT", { kind: "agent", ...input, generation: 1, createdAt });
   await operateHub(env, input.sessionId, {
     type: "add-grant",
     hub: { login: input.login, expiresAt: input.expiresAt },
@@ -125,6 +132,9 @@ export async function createGrant(
       id,
       repoId: input.repoId,
       repo: input.repo,
+      branch: input.branch,
+      generation: 1,
+      ...(input.approval ? { approval: input.approval } : {}),
       via: input.via,
       ...(input.client ? { client: input.client } : {}),
       createdAt,
@@ -229,19 +239,28 @@ export async function operateHub(env: Env, sessionId: string, action: unknown) {
 
 /**
  * The hub's context when it still shows the repository the request was
- * authorized for, else nothing (sharing is paused, or the tab switched
- * repository since).
+ * authorized for on the pinned branch, else nothing.
  */
 export function connectionContext(
   hub: AgentHub | undefined,
-  repo: { id: number; full_name: string },
+  workspace: Pick<AgentGrant, "repoId" | "repo" | "branch">,
 ) {
   const context = hub?.context;
   return context &&
-    context.repository.id === repo.id &&
-    context.repository.fullName === repo.full_name
+    context.repository.id === workspace.repoId &&
+    context.repository.fullName === workspace.repo &&
+    context.branch === workspace.branch
     ? context
     : undefined;
+}
+
+/** Git branch names accepted by connection and consent forms. */
+export function validAgentBranch(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= 255 &&
+    value !== "@" && !/[\\\s\x00-\x1f\x7f~^:?*\[]/.test(value) &&
+    !value.includes("..") && !value.includes("@{") && !value.endsWith(".") &&
+    !value.split("/").some((part) => !part || part.startsWith(".") || part.endsWith(".lock")) &&
+    !value.startsWith("-");
 }
 
 const agentAuthorizationMaxAge = 60_000;
@@ -261,6 +280,8 @@ export async function authenticateAgent(
     );
   const id = await tokenId(token);
   const grant = await getGrant(env, id);
+  if (!grant.branch)
+    throw new HttpError(401, "This connection was made before connections were tied to one branch; connect the agent again.");
   const response = await durable(env, grant.sessionId).fetch(
     new Request("https://session.internal/"),
   );
@@ -273,22 +294,21 @@ export async function authenticateAgent(
     session.login !== grant.login
   )
     throw new HttpError(401, "The editor session ended. Reconnect the agent.");
-  // The connection follows the repository the editor tab shows, checked
-  // against the GitHub App installation with a listing at most
-  // `agentAuthorizationMaxAge` old, so a burst of tool calls costs GitHub one
-  // listing, not two requests each. Revoking the agent or signing out still
-  // takes effect at once; removing the repository from the installation, within
-  // that time.
+  // Authorize the pinned repository with a listing at most one minute old.
+  // Reading the grant, sign-in session and hub still costs exactly three DO calls.
   const github = new GitHub(session.token, fetcher);
   const hub = await getHub(env, grant.sessionId);
-  const shown = hub?.context?.repository;
-  const target = shown ?? { id: grant.repoId, fullName: grant.repo };
+  const listed = hub?.grants.find((item) => item.id === id);
+  if (!listed || listed.repoId !== grant.repoId || listed.repo !== grant.repo ||
+      listed.branch !== grant.branch || listed.generation !== grant.generation)
+    throw new HttpError(401, "This connection changed or was revoked. Connect the agent again.");
   const repo = await github.authorizeRepository(
     session.login,
-    target.fullName,
+    grant.repo,
     agentAuthorizationMaxAge,
   );
-  if (repo.id !== target.id)
+  if (repo.id !== grant.repoId)
     throw new HttpError(403, "Repository access changed. Reconnect the agent.");
-  return { grant, github, repo, id, hub };
+  const workspace = { account: grant.login, repoId: grant.repoId, repo: grant.repo, branch: grant.branch };
+  return { grant, github, repo, id, hub, workspace };
 }

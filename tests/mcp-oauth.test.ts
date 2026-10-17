@@ -250,13 +250,13 @@ test("an MCP client connects by OAuth: discovery, registration, sign-in and cons
     // Consent names the app and the repositories; a foreign origin, another
     // session and Cancel are refused.
     const nonce = await consentForm(worker, authorizationUrl, cookie);
-    assert.equal((await consent(worker, cookie, { request: nonce, repo: repo.full_name, decision: "allow" }, "https://evil.example")).status, 403);
-    assert.equal((await consent(worker, signedIn.cookie, { request: nonce, repo: repo.full_name, decision: "allow" })).status, 403, "the consent belongs to the session that saw it");
+    assert.equal((await consent(worker, cookie, { request: nonce, repo: repo.full_name, branch: "main", decision: "allow" }, "https://evil.example")).status, 403);
+    assert.equal((await consent(worker, signedIn.cookie, { request: nonce, repo: repo.full_name, branch: "main", decision: "allow" })).status, 403, "the consent belongs to the session that saw it");
     const denyNonce = await consentForm(worker, authorizationUrl, cookie);
     const denied = new URL((await consent(worker, cookie, { request: denyNonce, decision: "deny" })).headers.get("location")!);
     assert.equal(denied.searchParams.get("error"), "access_denied");
     const allowNonce = await consentForm(worker, authorizationUrl, cookie);
-    const allowed = await consent(worker, cookie, { request: allowNonce, repo: repo.full_name, decision: "allow" });
+    const allowed = await consent(worker, cookie, { request: allowNonce, repo: repo.full_name, branch: "main", decision: "allow" });
     assert.equal(allowed.status, 302);
     const redirect = new URL(allowed.headers.get("location")!);
     assert.equal(redirect.origin + redirect.pathname, callback);
@@ -266,7 +266,7 @@ test("an MCP client connects by OAuth: discovery, registration, sign-in and cons
 
     // A wrong verifier does not get a token (and does not burn a good code:
     // the code used here is a second one).
-    const again = await consent(worker, cookie, { request: await consentForm(worker, authorizationUrl, cookie), repo: repo.full_name, decision: "allow" });
+    const again = await consent(worker, cookie, { request: await consentForm(worker, authorizationUrl, cookie), repo: repo.full_name, branch: "main", decision: "allow" });
     const secondCode = new URL(again.headers.get("location")!).searchParams.get("code")!;
     const wrong = await worker.dispatchFetch(`${origin}/auth/mcp/token`, {
       method: "POST",
