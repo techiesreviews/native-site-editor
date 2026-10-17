@@ -9,7 +9,6 @@ const allowlist: AllowlistEntry[] = [
   { file: "src/controllers/media-usage-controller.ts", match: { rule: "stale-compare", function: "live" }, reason: "Read-only usage check owns cancellation of obsolete batches; it never plans or writes edits." },
   { file: "src/controllers/agent-controller.ts", match: { rule: "stale-compare", function: "isCurrent" }, reason: "Agent menu load epoch pins the account and host, not edit staleness." },
   { file: "src/controllers/agent-controller.ts", match: { rule: "stale-compare", function: "ensure" }, reason: "Agent menu load epoch deduplicates lazy loads for the same account and host." },
-  { file: "src/controllers/agent-controller.ts", match: { rule: "stale-compare", function: "start" }, reason: "Agent menu load epoch prevents a discovery retry after controller disposal." },
   { file: "src/controllers/boot-controller.ts", match: { rule: "stale-compare", function: "current" }, reason: "Boot read generation rejects a superseded login/session load, not an edit." },
   { file: "src/controllers/boot-controller.ts", match: { rule: "stale-compare", function: "start" }, reason: "Boot read generation pins the failure handoff to the session it owns." },
   { file: "src/controllers/command-palette-controller.ts", match: { rule: "stale-compare", function: "live" }, reason: "Palette controller lifetime counter prevents an obsolete palette from using live ports." },
