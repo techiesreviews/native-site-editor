@@ -68,7 +68,7 @@ worker/agent-schemas.ts (request branch), shared/agent.ts (command generation, r
 src/components/agent-menu.ts and src/controllers/agent-controller.ts (branch port, approval match), tests that
 create grants or ask requests.
 
-**Commits.** 4c6f458d (Sol build + Claude fixes), 2c3cac9e (review 1), 7051b604 (review 2).
+**Commits.** 8f74c2d9 (Sol build + Claude fixes), 039ecc2b (review 1), 5033da87 (review 2).
 
 **Tests.** New `tests/agent-workspace-binding.test.ts` (38): shared context on another repository, renamed
 repository or branch never redirects; branchless grant refused; queue/claim of rebound, removed, other
