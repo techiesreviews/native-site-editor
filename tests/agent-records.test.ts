@@ -55,6 +55,7 @@ test("missing factory and open errors refuse agent operations while manual fallb
   const fake = fakeIndexedDB(); fake.state.openError = true;
   for (const records of [unavailableAgentRecords(), indexedDbAgentRecords(), indexedDbAgentRecords(draftDatabaseName, partial<IDBFactory>({ open() { throw new DOMException("Denied", "SecurityError"); } })), indexedDbAgentRecords(draftDatabaseName, fake.factory)]) {
     await assert.rejects(records.commit(command()), code("unavailable"));
+    await assert.rejects(records.cancel(draft, "operation-1", "grant-1"), code("unavailable"));
     await assert.rejects(records.workspace(draft), code("unavailable"));
     await assert.rejects(records.receipt(draft, "operation-1", "grant-1"), code("unavailable"));
     await assert.rejects(records.setGeneration(draft, 0, 1), code("unavailable"));

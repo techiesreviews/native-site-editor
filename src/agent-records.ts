@@ -17,9 +17,12 @@ export interface AgentCommit {
   receipt: Omit<AgentReceipt, "workspace" | "generation" | "revision">;
 }
 interface CommitResult { receipt: AgentReceipt; duplicate: boolean }
+type CancellationResult = { status: "unknown" } | { status: "applied"; receipt: AgentReceipt };
 
 export interface AgentRecords {
   commit: (command: AgentCommit) => Promise<CommitResult>;
+  /** Fences future delivery; without a live receipt the past outcome remains unknown. */
+  cancel: (workspace: AgentWorkspace, operationId: OperationId, authorizationId: string) => Promise<CancellationResult>;
   receipt: (workspace: AgentWorkspace, operationId: OperationId, authorizationId: string) => Promise<AgentReceipt | undefined>;
   reconcile: (workspace: AgentWorkspace, commands: AgentCommit[]) => Promise<AgentOutcome[]>;
   workspace: (workspace: AgentWorkspace) => Promise<WorkspaceRecord>;
@@ -33,7 +36,7 @@ export interface AgentRecords {
 }
 
 export class AgentRecordsError extends Error {
-  constructor(public readonly code: "unavailable" | "aborted" | "conflict" | "duplicate-id" | "revoked" | "capacity", message: string, cause?: unknown) {
+  constructor(public readonly code: "unavailable" | "aborted" | "conflict" | "duplicate-id" | "revoked" | "cancelled" | "not-owner" | "capacity", message: string, cause?: unknown) {
     super(message, { cause });
     this.name = "AgentRecordsError";
   }
@@ -41,7 +44,7 @@ export class AgentRecordsError extends Error {
 
 export function unavailableAgentRecords(): AgentRecords {
   const refuse = () => Promise.reject(new AgentRecordsError("unavailable", "Agent storage is unavailable in this browser."));
-  return { reconcile: refuse, pause: refuse, snapshot: refuse, revoke: refuse, evictReceipts: refuse, commit: refuse, receipt: refuse, workspace: refuse, setGeneration: refuse, putConversation: refuse, conversations: refuse };
+  return { reconcile: refuse, pause: refuse, snapshot: refuse, revoke: refuse, cancel: refuse, evictReceipts: refuse, commit: refuse, receipt: refuse, workspace: refuse, setGeneration: refuse, putConversation: refuse, conversations: refuse };
 }
 
 /** Agent writes never enter the manual editor's fallback or per-file retry path. */
@@ -51,6 +54,8 @@ export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFact
   const recordKey = (workspace: AgentWorkspace, id: string) => JSON.stringify([workspaceKey(workspace), id]);
   const initial = (): WorkspaceRecord => ({ revision: 0, generation: 0 });
   const revocationKey = (workspace: AgentWorkspace, authorizationId: string) => JSON.stringify(["revoked", workspaceKey(workspace), authorizationId]);
+  const cancellationKey = (workspace: AgentWorkspace, operationId: OperationId, authorizationId: string) => JSON.stringify(["cancelled", workspaceKey(workspace), authorizationId, operationId]);
+  const expired = (receipt: AgentReceipt, time = now()) => receipt.createdAt <= time - 24 * 60 * 60 * 1000;
   const same = (value: SavedDraft | null | undefined) => value ? payloadIdentity(JSON.parse(JSON.stringify(value)) as JsonValue) : null;
   const belongs = (key: string, workspace: AgentWorkspace) => key.startsWith(draftKey({ ...workspace, repo: "" }, "").slice(0, -3));
   const bytes = (key: string, receipt: AgentReceipt) => new TextEncoder().encode(JSON.stringify([key, receipt])).byteLength;
@@ -63,7 +68,7 @@ export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFact
     let count = rows.length + (incoming ? 1 : 0);
     const removed: string[] = [];
     for (const [key, receipt] of rows) {
-      if (receipt.createdAt > time - 24 * 60 * 60 * 1000 && count <= 1000 && size <= limit) break;
+      if (!expired(receipt, time) && count <= 1000 && size <= limit) break;
       removed.push(key); count--; size -= bytes(key, receipt);
     }
     return removed;
@@ -109,38 +114,65 @@ export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFact
               if (recorded.workspace !== key || recorded.authorizationId !== receipt.authorizationId ||
                 recorded.generation !== generation || recorded.payloadIdentity !== receipt.payloadIdentity)
                 throw new AgentRecordsError("duplicate-id", "Operation identifier was reused for different work.");
+              // Keep refusing this identifier even if a caller supplies fresh revision proofs.
+              if (expired(recorded)) conflict();
               done({ receipt: recorded, duplicate: true });
               return;
             }
-            read(workspaces.get(key), (stored: WorkspaceRecord | undefined) => {
-              const current = stored ?? initial();
-              if (!receipt.authorizationId || !Number.isSafeInteger(generation) || !Number.isSafeInteger(expectedRevision) ||
-                current.paused || current.generation !== generation || current.revision !== expectedRevision) conflict();
-              const expected = new Map(expectedDrafts);
-              if (expected.size !== expectedDrafts.length || new Set(drafts.map(([key]) => key)).size !== drafts.length) conflict();
-              for (const [draft, value] of drafts) {
-                if (!belongs(draft, workspace) || !expected.has(draft) || (value &&
-                  (workspaceKey(value) !== key || draftKey(value, value.path) !== draft))) conflict();
-              }
-              const apply = () => {
-                const committed: AgentReceipt = { ...receipt, workspace: key, generation, revision: current.revision + 1, createdAt: now() };
-                const rows: [string, AgentReceipt][] = all.filter((value) => value.workspace === key).map((value) => [recordKey(workspace, value.operationId), value]);
-                for (const expired of retention(rows, committed.createdAt, [receiptKey, committed])) receipts.delete(expired);
-                for (const [draft, value] of drafts) value ? files.put(value, draft) : files.delete(draft);
-                receipts.put(committed, receiptKey);
-                workspaces.put({ ...current, revision: committed.revision }, key);
-                done({ receipt: committed, duplicate: false });
-              };
-              let remaining = expectedDrafts.length;
-              if (!remaining) apply();
-              for (const [draft, wanted] of expectedDrafts) {
-                if (!belongs(draft, workspace)) conflict();
-                read(files.get(draft), (saved: SavedDraft | undefined) => {
-                  if (same(saved) !== same(wanted)) conflict();
-                  if (--remaining === 0) apply();
-                });
-              }
+            read(workspaces.get(cancellationKey(workspace, receipt.operationId, receipt.authorizationId)), (cancelled: unknown) => {
+              if (cancelled) throw new AgentRecordsError("cancelled", "Agent operation has been cancelled.");
+              read(workspaces.get(key), (stored: WorkspaceRecord | undefined) => {
+                const current = stored ?? initial();
+                if (!receipt.authorizationId || !Number.isSafeInteger(generation) || !Number.isSafeInteger(expectedRevision) ||
+                  current.paused || current.generation !== generation || current.revision !== expectedRevision) conflict();
+                const expected = new Map(expectedDrafts);
+                if (expected.size !== expectedDrafts.length || new Set(drafts.map(([key]) => key)).size !== drafts.length) conflict();
+                for (const [draft, value] of drafts) {
+                  if (!belongs(draft, workspace) || !expected.has(draft) || (value &&
+                    (workspaceKey(value) !== key || draftKey(value, value.path) !== draft))) conflict();
+                }
+                const apply = () => {
+                  const committed: AgentReceipt = { ...receipt, workspace: key, generation, revision: current.revision + 1, createdAt: now() };
+                  const rows: [string, AgentReceipt][] = all.filter((value) => value.workspace === key).map((value) => [recordKey(workspace, value.operationId), value]);
+                  for (const expired of retention(rows, committed.createdAt, [receiptKey, committed])) receipts.delete(expired);
+                  for (const [draft, value] of drafts) value ? files.put(value, draft) : files.delete(draft);
+                  receipts.put(committed, receiptKey);
+                  workspaces.put({ ...current, revision: committed.revision }, key);
+                  done({ receipt: committed, duplicate: false });
+                };
+                let remaining = expectedDrafts.length;
+                if (!remaining) apply();
+                for (const [draft, wanted] of expectedDrafts) {
+                  if (!belongs(draft, workspace)) conflict();
+                  read(files.get(draft), (saved: SavedDraft | undefined) => {
+                    if (same(saved) !== same(wanted)) conflict();
+                    if (--remaining === 0) apply();
+                  });
+                }
+              });
             });
+          });
+        });
+      });
+    },
+    cancel(workspace, operationId, authorizationId) {
+      const key = recordKey(workspace, operationId), cancelledKey = cancellationKey(workspace, operationId, authorizationId);
+      const revokedKey = revocationKey(workspace, authorizationId);
+      return run([draftStores.workspaces, draftStores.receipts], "readwrite", (tx, read, done) => {
+        const workspaces = tx.objectStore(draftStores.workspaces), receipts = tx.objectStore(draftStores.receipts);
+        read(workspaces.get(revokedKey), (revoked: unknown) => {
+          if (revoked) throw new AgentRecordsError("revoked", "Agent authorization has been revoked.");
+          read(receipts.get(key), (receipt: AgentReceipt | undefined) => {
+            if (receipt && !expired(receipt)) {
+              if (receipt.authorizationId !== authorizationId) throw new AgentRecordsError("duplicate-id", "Operation authorization differs.");
+              done({ status: "applied", receipt });
+              return;
+            }
+            if (receipt) receipts.delete(key);
+            // This tombstone prevents future application, but cannot prove whether an
+            // unknown operation applied before its receipt expired or was evicted.
+            workspaces.put({ cancelled: true }, cancelledKey);
+            done({ status: "unknown" });
           });
         });
       });
@@ -151,6 +183,7 @@ export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFact
         read(tx.objectStore(draftStores.workspaces).get(revokedKey), (revoked: unknown) => {
           if (revoked) throw new AgentRecordsError("revoked", "Agent authorization has been revoked.");
           read(tx.objectStore(draftStores.receipts).get(key), (receipt: AgentReceipt | undefined) => {
+            if (receipt && expired(receipt)) { done(undefined); return; }
             if (receipt && receipt.authorizationId !== authorizationId) throw new AgentRecordsError("duplicate-id", "Operation authorization differs.");
             done(receipt);
           });
@@ -167,6 +200,7 @@ export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFact
           if (workspaceKey(command.workspace) !== key) conflict();
           const { operationId, authorizationId, payloadIdentity } = command.receipt;
           const finish = (receipt?: AgentReceipt) => {
+            if (receipt && expired(receipt)) receipt = undefined;
             if (receipt && (receipt.authorizationId !== authorizationId || receipt.generation !== command.generation || receipt.payloadIdentity !== payloadIdentity))
               throw new AgentRecordsError("duplicate-id", "Outstanding command identity differs from its receipt.");
             outcomes[index] = receipt ? { operationId, status: "applied", receipt } : { operationId, status: "unknown" };
@@ -236,12 +270,18 @@ export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFact
       });
     },
     revoke(workspace, authorizationId) {
-      const key = workspaceKey(workspace), revokedKey = revocationKey(workspace, authorizationId);
+      const scope = structuredClone(workspace), key = workspaceKey(scope), revokedKey = revocationKey(scope, authorizationId);
       return run([draftStores.workspaces, draftStores.receipts], "readwrite", (tx, read, done) => {
         tx.objectStore(draftStores.workspaces).put({ revoked: true }, revokedKey);
         read(tx.objectStore(draftStores.receipts).getAll(), (receipts: AgentReceipt[]) => {
           // Report work that won before revocation; never undo committed drafts.
-          done(receipts.filter((receipt) => receipt.workspace === key && receipt.authorizationId === authorizationId));
+          const live: AgentReceipt[] = [];
+          for (const receipt of receipts) {
+            if (receipt.workspace !== key) continue;
+            if (expired(receipt)) tx.objectStore(draftStores.receipts).delete(recordKey(scope, receipt.operationId));
+            else if (receipt.authorizationId === authorizationId) live.push(receipt);
+          }
+          done(live);
         });
       });
     },
