@@ -1,0 +1,57 @@
+import { workspaceKey, type AgentWorkspace } from "../shared/agent-command.ts";
+import { AgentRecordsError, type AgentCommit, type AgentRecords } from "./agent-records.ts";
+
+type Snapshot = Awaited<ReturnType<AgentRecords["snapshot"]>>;
+
+/** A tab's admission gate. Only IndexedDB transactions decide ownership. */
+export function createAgentOwner(options: {
+  workspace: AgentWorkspace;
+  generation: number;
+  records: AgentRecords;
+  reload: (snapshot: Snapshot) => Promise<void>;
+}) {
+  const workspace = structuredClone(options.workspace), key = workspaceKey(workspace);
+  const { records, reload } = options;
+  let generation = options.generation, paused = false, takingOver = false;
+  const inFlight = new Set<AgentCommit>();
+  const conflict = () => new AgentRecordsError("conflict", "Agent ownership changed or admission is paused.");
+  return {
+    get paused() { return paused; },
+    get generation() { return generation; },
+    async commit(command: AgentCommit) {
+      const captured = structuredClone(command);
+      if (paused || captured.generation !== generation || workspaceKey(captured.workspace) !== key) throw conflict();
+      inFlight.add(captured);
+      try {
+        // The transaction checks this same captured generation, revision and draft proof.
+        return await records.commit(captured);
+      } finally { inFlight.delete(captured); }
+    },
+    async takeover(outstanding: AgentCommit[] = []) {
+      if (takingOver) throw conflict();
+      const expected = generation;
+      const pending = structuredClone([...inFlight, ...outstanding]);
+      if (pending.some((command) => workspaceKey(command.workspace) !== key)) throw conflict();
+      takingOver = paused = true;
+      try {
+        // Durable pause serializes even an unresponsive old tab against admission.
+        await records.pause(workspace, expected);
+        await records.reconcile(workspace, pending);
+        const snapshot = await records.snapshot(workspace);
+        if (snapshot.generation !== expected || !snapshot.paused) throw conflict();
+        // Reload is observational; its copy cannot change the CAS proof across this await.
+        await reload(structuredClone(snapshot));
+        const changed = await records.setGeneration(workspace, expected, expected + 1, snapshot);
+        generation = changed.generation;
+        // Reload/CAS can suspend the tab: recheck all authorizations together before
+        // exposing outcomes. Evicted or revoked receipts now remain unknown.
+        const outcomes = await records.reconcile(workspace, pending);
+        paused = false;
+        return { outcomes, snapshot, generation };
+      } finally {
+        takingOver = false;
+        // Fail closed: a failed takeover never resumes admission under the old proof.
+      }
+    },
+  };
+}

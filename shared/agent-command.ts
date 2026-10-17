@@ -21,9 +21,14 @@ export function payloadIdentity(payload: JsonValue): string {
 
 export interface AgentReceipt {
   operationId: OperationId;
+  workspace: string;
+  authorizationId: string;
   payloadIdentity: string;
   generation: number;
   revision: number;
   outcome: JsonValue;
   createdAt: number;
 }
+
+export type AgentOutcome = { operationId: OperationId; status: "unknown" } |
+  { operationId: OperationId; status: "applied"; receipt: AgentReceipt };
