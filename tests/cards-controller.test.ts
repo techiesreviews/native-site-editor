@@ -16,7 +16,7 @@ const selection = (node: number[]): NativePreviewSelection => ({ path: "index.ht
 
 test("before mounting, card adapters refuse or offer nothing", async () => {
   const { controller, edits } = fixture();
-  assert.equal(controller.mounted(), false);
+  assert.equal(await controller.preview.addCard({ path: "index.html", parent: [], index: -1, row: false }), undefined);
   assert.equal(controller.preview.createPage({ path: "index.html", node: [] }, { title: "Oak", parent: "/" }), undefined);
   assert.equal(controller.preview.describe({} as never), undefined);
   assert.deepEqual(controller.controls(selection([1, 0, 0, 1, 0]), page), []);
@@ -28,7 +28,7 @@ test("before mounting, card adapters refuse or offer nothing", async () => {
 test("mounting creates the card operations once the workspace mounts", () => {
   const { controller } = cardsFixture({ "index.html": page }, undefined, false);
   controller.mount();
-  assert.equal(controller.mounted(), true);
+  assert.equal(controller.preview.describe({ path: "index.html", parent: [], index: -1, row: false }), undefined);
   assert.deepEqual(controller.controls(selection([1, 0, 0, 1, 1]), page), []);
   assert.equal(controller.cardOffer("/"), undefined);
 });

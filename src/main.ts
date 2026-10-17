@@ -57,7 +57,7 @@ import { readNavigation } from "./page-builder/site-navigation";
 import { withPageField } from "./page-builder/site-head";
 import { newFilePath, newFolderPath, renamedPath, type Checked } from "./native-create";
 import { createCreateDialog, type CreateKind, type CreateRequest } from "./components/create-dialog";
-import type { createPagesTree, NativeNewRequest, NativePagesTarget } from "./components/pages-tree";
+import type { createPagesTree } from "./components/pages-tree";
 import "./components/pages-tree.css";
 import "./components/phone-sheet.css";
 import { createFileRowActions, type FileRowTarget } from "./components/file-row-actions";
@@ -73,12 +73,11 @@ import { createSetupChecklistController } from "./controllers/setup-checklist-co
 import type { SetupState } from "./setup-checklist";
 import { siteNameFromRepository, type StartingPoint } from "../shared/starting-point";
 import { createPagePicker } from "./components/page-picker";
-import type { UrlPlan } from "./components/url-change";
 import type { MenuItem } from "./components/row-menu";
 import { duplicateFile, listChanges, restoreFile as restoreDraftFile, type FileChange } from "./file-changes";
 import { formatBytes, pickFiles, sweepUploads, uploadBytes, uploadDataUrl, uploadKey } from "./uploads";
 import { firstHeadingText, nativeLinkSuggestions, nativePageLabel } from "./native-pages";
-import { elementPathAt, locateNativeElement, locateNativeElementRange, startTagAttribute, textRangeInSource, wrapperAround, type ElementRange } from "./native-source-location";
+import { elementPathAt, locateNativeElement, locateNativeElementRange, startTagAttribute, wrapperAround, type ElementRange } from "./native-source-location";
 import { positionText } from "./page-builder/insert-target";
 import { itemsSlotRule } from "./page-builder/block-insert";
 import { createBlockMoves, type MoveAt } from "./page-builder/block-move";
@@ -183,7 +182,7 @@ const loadMedia = lazyModule(async () => {
   // Usage badges read the site's usage check, which runs on open.
   // Media lists every kind (pictures, video, audio, PDFs and other downloads); pickers narrow by `accept`.
   module.configureMediaPicker({ ...createMediaWorkspace(() => mediaController.workspaceContext(module.isMediaLibraryPath)),
-    usage: { records: () => mediaController.usageRecords(), onChange: listener => mediaController.onUsageChange(listener), pageLabel: nativePageLabelOf } });
+    usage: { records: () => mediaController.usageRecords(), onChange: listener => mediaController.onUsageChange(listener), pageLabel: (file) => pagesController.pageLabel(file) } });
   return module;
 });
 const loadSetupActions = lazyModule(async () => {
@@ -215,8 +214,11 @@ const loadSiteSettings = lazyModule(async () => {
   const { createNativeSettings } = await import("./native-settings");
   return createNativeSettings({
     get nativeSite() { return nativeSite; }, get generation() { return generation; },
-    appStore, guardedEdits, nativeAssets, nativePageLabelOf, setupScope,
-    nativeUrlPlan, changeNativeUrl, restoreFile, nativeSiteReadForCreate,
+    appStore, guardedEdits, nativeAssets, setupScope,
+    nativePageLabelOf: (file) => pagesController.pageLabel(file),
+    nativeUrlPlan: (file, value) => pagesController.urlPlan(file, value),
+    changeNativeUrl: (file, value, keep, since, baseline) => pagesController.changeUrl(file, value, keep, since, baseline),
+    restoreFile, nativeSiteReadForCreate,
     choosePath: (place, accept) => mediaController.choosePath(place, undefined, accept), nativeEffectiveSource, loadNativeAssets,
     shareImage: request => mediaController.shareImage(request),
     nativeFiles: () => nativeFiles(), readMediaText,
@@ -235,7 +237,7 @@ const codePanes = createCodePanesController({
 editorModule.onUnmountedText(({ scope, path }) => {
   const live = draftScope();
   if (!live || draftKey(live, path) !== draftKey(scope, path)) return;
-  renderDraftFiles();
+  filesTreeController.refresh();
   if (nativeModeActive()) updateNativePreviewSources();
   componentTools?.refresh();
 });
@@ -366,7 +368,7 @@ function mountWorkspace() {
   });
   element("repository-menu").append(repositoryMenu.root);
   element("site-settings-toggle").addEventListener("click", () => void openNativeSiteSettings());
-  disposeExplorerMedia();
+  mediaController.disposeGallery();
   siteActions = mountSiteActions({ statusHost: element("change-status"), menuHost: element("site-actions"), siteFiles: nativeSiteFiles, announce });
   const menuPanel = element("repository-actions");
   menuPanel.addEventListener("toggle", () => {
@@ -490,7 +492,7 @@ function mountWorkspace() {
   element("explorer").addEventListener("toggle", () => {
     if (explorerDropdown?.isOpen()) {
       if (!element("explorer-files").hidden) filesTreeController.shown();
-      void ensurePagesTree().then(() => renderPagesTree()).catch(errorMessage);
+      void ensurePagesTree().then(() => pagesController.renderTree()).catch(errorMessage);
     } else {
       pagesTree?.reset();
       fileActions?.close();
@@ -530,9 +532,9 @@ function mountWorkspace() {
     onComponentStyles: (tags) => void loadNativeComponentStyles(tags),
     onDefaultStyles: (styles) => updateBodyStyles({ rules: styles.selectors, cascade: styles.cascade }),
     onFormat: (format) => pageStructureController.nativeFormatActions[format]?.(),
-    onImageDrop: (target, files) => void chooseMediaForImage(target, files),
-    onImageEdit: (target) => void chooseMediaForImage(target),
-    onTextEdit: (edit) => void applyNativeTextEdit(edit),
+    onImageDrop: (target, files) => void mediaController.chooseImage(target, files),
+    onImageEdit: (target) => void mediaController.chooseImage(target),
+    onTextEdit: (edit) => void pageStructureController.applyNativeTextEdit(edit),
     insertChoices: nativeSectionChoices,
     insertPointFor: nativeElementAddPoint,
     insertDestinationText: point => point ? nativeAddPoints.get(point)?.description ?? positionText(point) : "Choose a section destination.",
@@ -603,15 +605,15 @@ function mountWorkspace() {
       if (!route) return undefined;
       return route === "/" ? { route, fixed: "The home page's URL is always /." } : { route };
     },
-    planUrl: nativeUrlPlan,
-    applyUrl: changeNativeUrl,
+    planUrl: (file, value) => pagesController.urlPlan(file, value),
+    applyUrl: (file, value, keep) => pagesController.changeUrl(file, value, keep),
     onPageMetaClose: (path) => editorModule?.closeActiveEditGroup(path),
     // A row's Alt+arrows, by the Block move module. In Edit component mode a row of the template
     // edited (`template`: the bytes it was painted from) moves in it while that mode lasts. A page
     // that is not open opens first (the model held from the paint is then not its editor's).
     onMove: (path, item, direction, template) => {
       const paint = nativeStructurePaints.get(item), opens = !editorModule?.isMounted(path) || appStore.openFile.value !== path;
-      const stale = !opens ? STRUCTURE_MOVE_STALE : isNativeSectionTag(item.tag) ? SECTION_OPEN_STALE : BLOCK_OPEN_STALE;
+      const stale = !opens ? STRUCTURE_MOVE_STALE : pageStructureController.isNativeSectionTag(item.tag) ? SECTION_OPEN_STALE : BLOCK_OPEN_STALE;
       const at = { path, node: item.node, painted: template ? template.painted : nativeStructurePaintedSources.get(item) };
       return pageStructureController.moveBlock(at, direction, template
         ? { guard: () => componentTools?.mode.now()?.template === path, stale }
@@ -621,7 +623,7 @@ function mountWorkspace() {
     itemsSlots: nativeMoveItems,
     // In Edit component mode a row of the template edited (`template`: the bytes it was painted from).
     onRowDrag: (press, item, template) => dragPageBlock(press, {
-      node: item.node, tag: item.tag, cls: item.className ?? "", band: !template && isNativeSectionTag(item.tag),
+      node: item.node, tag: item.tag, cls: item.className ?? "", band: !template && pageStructureController.isNativeSectionTag(item.tag),
       painted: template ? template.painted : nativeStructurePaintedSources.get(item), ...(template ? { template: true } : {}),
     }),
     announce,
@@ -646,7 +648,7 @@ const paletteController = createCommandPaletteController({
   index: ensureNativeTextIndex,
   stamp: () => guardedEdits.stamp("repository"),
   isMounted: path => Boolean(editorModule?.isMounted(path)),
-  beginNewPage: () => { openExplorer(); selectExplorerTab("pages"); },
+  beginNewPage: () => { openExplorer(); pagesController.selectTab("pages"); },
   startNewPage: () => {
     const since = guardedEdits.stamp("repository");
     void ensurePagesTree().then(() => { if (since.holds() && explorerDropdown?.isOpen()) pagesTree?.startNew("/"); }).catch(errorMessage);
@@ -654,10 +656,10 @@ const paletteController = createCommandPaletteController({
   actions: {
     open: (path) => {
       if (path === appStore.openFile.value && editorModule?.isMounted(path)) return;
-      recordNativeSourceIntent(path);
+      previewSelection.recordIntent(path);
       void restoreFile(path, generation);
     },
-    isSectionTag: isNativeSectionTag,
+    isSectionTag: tag => pageStructureController.isNativeSectionTag(tag),
     insert: (point, component) => insertNativeComponent({ ...point, top: 0, left: 0, width: 0, before: "" }, component),
     editBar: () => (document.querySelector(".edit-bar[data-model]") ? pageStructureController.nativeEditBarModel : undefined),
     select: (path, node) => nativePreview?.selectNode({ path, node }),
@@ -669,7 +671,7 @@ const paletteController = createCommandPaletteController({
     structureHidden: () => Boolean(app.querySelector(".workspace--sidebar-collapsed")),
     newFile: () => {
       openExplorer();
-      if (nativeSite) selectExplorerTab("files");
+      if (nativeSite) pagesController.selectTab("files");
       openCreate("", element("new-at-root"));
     },
     showPagesAndFiles: () => {
@@ -699,7 +701,7 @@ function mountComponentTools() {
     selection: () => appStore.selection.value,
     openFile: async (path) => {
       const epoch = generation, scope = draftScope();
-      recordNativeSourceIntent(path);
+      previewSelection.recordIntent(path);
       // A pane open on its own history when a share (shareHistory below) asks for another opens again on that.
       const shared = scope && nativeHistoryShares.has(draftKey(scope, path)) ? nativeHistorySession(scope, path) : undefined;
       if (appStore.openFile.value !== path || !editorModule?.isMounted(path) || (shared && editorModule.paneOf(path)?.session !== shared)) await restoreFile(path, epoch);
@@ -711,7 +713,7 @@ function mountComponentTools() {
     prefix: () => nativePrefix(),
     chooseImage: (place, placement) => mediaController.choosePath(place, placement),
     links: () => (nativeSite ? nativeLinkSuggestions(Object.keys(nativeSite.routes), (route) => nativeRouteInfo(route).title, nativePrefix()) : []),
-    pageLabel: nativePageLabelOf,
+    pageLabel: (file) => pagesController.pageLabel(file),
     panelHost: app.querySelector<HTMLElement>(".sidebar")!,
     canvasComponent: (parts) => nativePreview?.setCanvasComponent(parts),
     codeTitle: element("primary-title").parentElement!,
@@ -719,7 +721,7 @@ function mountComponentTools() {
       const route = nativePreview?.route();
       return route && nativeSite ? nativeSite.routes[route] : undefined;
     },
-    refreshBar: () => { if (appStore.selection.value) renderNativeEditBar(appStore.selection.value); },
+    refreshBar: () => { if (appStore.selection.value) pageStructureController.renderEditBar(appStore.selection.value); },
     refreshStructure: () => pageStructure?.refresh(),
     // Joins the template to the page's journal, as the stylesheet pane follows the page's; an operation's alias stays under it.
     shareHistory: (path, owner) => {
@@ -856,7 +858,7 @@ const guardedEdits = createGuardedEdits(createEditorWorkspace({
   exists: path => nativePathExists(path) || (!nativeSite && (pathNow(path, treeState()) === "file" || pathNow(path, treeState()) === "folder")),
   base: path => nativeBaseSources.get(path),
   branchText,
-  entry: async path => (await targetFiles({ path, name: path.slice(path.lastIndexOf("/") + 1), folder: false }, true))[0],
+  entry: async path => (await fileOperationsController.targetFiles({ path, name: path.slice(path.lastIndexOf("/") + 1), folder: false }, true))[0],
   createProblem: async path => (await findEntry(path)) ? `${path} already exists.` : branchPathProblem(path),
   openFile: () => appStore.openFile.value,
   restore: (path, epoch, beforeMount) => restoreFile(path, epoch, { linkDefaultStyle: false, beforeMount }),
@@ -873,7 +875,7 @@ const guardedEdits = createGuardedEdits(createEditorWorkspace({
   closePane: closeSecondary,
   afterFileChanges,
   openAfter: (path, keepExplorer) => openAfter(path, keepExplorer, true),
-  showRow: focus => { if (explorerDropdown?.isOpen() && pagesController.explorerTab() === "pages") renderPagesTree(focus); },
+  showRow: focus => { if (explorerDropdown?.isOpen() && pagesController.explorerTab() === "pages") pagesController.renderTree(focus); },
   status: () => element("status").textContent ?? "",
   select: (request, reveal) => nativePreview?.selectAfterUpdate(request, reveal ? { reveal: "center" } : undefined),
   flash: request => nativePreview?.flashInsert(request),
@@ -1320,7 +1322,7 @@ async function openSecondary(css: string, guard: () => boolean = () => true) {
             syncLinkedStyles(value.path, value.content);
             if (nativeModeActive()) updateNativePreviewSources();
           }
-          renderDraftFiles();
+          filesTreeController.refresh();
         } },
       null,
     );
@@ -1512,7 +1514,7 @@ const previewSelection = createPreviewSelectionController({
   locateTag: (source, node) => locateNativeElement(source, node),
   tagName: (source, node) => locateNativeElementRange(source, [...node])?.tag.name,
   openFile: (path, epoch) => restoreFile(path, epoch, { linkDefaultStyle: false }),
-  renderEditBar: (selection) => renderNativeEditBar(selection),
+  renderEditBar: (selection) => pageStructureController.renderEditBar(selection),
   linkStyles: (selection, reveal) => void linkNativeStyles(selection, reveal),
   clearMoveAction: () => { pageStructureController.nativeElementMoveAction = undefined; },
   structureSelect: (target) => pageStructure?.select(target),
@@ -1576,7 +1578,7 @@ function readVariantFiles() {
     if (!live() || !read) return;
     editorModule?.refreshVariants();
     nativePreview?.refreshCardLooks();
-    if (appStore.selection.value) renderNativeEditBar(appStore.selection.value);
+    if (appStore.selection.value) pageStructureController.renderEditBar(appStore.selection.value);
   });
 }
 
@@ -1668,7 +1670,7 @@ const pageStructureController = createPageStructureController({
   get versionView() { return versionView; },
   get nativeEffectiveSource() { return nativeEffectiveSource; },
   get nativeNamedDescendant() { return nativeNamedDescendant; },
-  get chooseMediaForImage() { return chooseMediaForImage; },
+  chooseMediaForImage: (target, files) => mediaController.chooseImage(target, files),
   mediaPlaceState: (page, src, alt) => mediaController.placeState(page, src, alt),
   mediaVideoControls: (page, node, source) => mediaController.videoControls(page, node, source),
   mediaButton: (page, node, source) => mediaController.mediaButton(page, node, source),
@@ -1683,30 +1685,15 @@ const pageStructureController = createPageStructureController({
   refuse,
   get restoreFile() { return restoreFile; },
   get updateNativePreviewSources() { return updateNativePreviewSources; },
-  get nativeEditableTemplatePath() { return nativeEditableTemplatePath; },
-  get nativePageLabelOf() { return nativePageLabelOf; },
+  nativeEditableTemplatePath: () => previewSelection.editableTemplatePath(),
+  nativePageLabelOf: file => pagesController.pageLabel(file),
   get pageStructure() { return pageStructure; },
   get locateNativeElementRange() { return locateNativeElementRange; },
-  get startTagAttribute() { return startTagAttribute; },
   get elementPathAt() { return elementPathAt; },
-  get textRangeInSource() { return textRangeInSource; },
   get wrapperAround() { return wrapperAround; },
   get moves() { return blockMoves; },
   edits: guardedEdits,
 });
-function renderNativeEditBar(...args: Parameters<typeof pageStructureController.renderNativeEditBar>) {
-  return pageStructureController.renderNativeEditBar(...args);
-}
-
-function editOpenPage(...args: Parameters<typeof pageStructureController.editOpenPage>) {
-  return pageStructureController.editOpenPage(...args);
-}
-function isNativeSectionTag(...args: Parameters<typeof pageStructureController.isNativeSectionTag>) {
-  return pageStructureController.isNativeSectionTag(...args);
-}
-function applyNativeTextEdit(...args: Parameters<typeof pageStructureController.applyNativeTextEdit>) {
-  return pageStructureController.applyNativeTextEdit(...args);
-}
 
 // Components that fit between page sections: those whose template is a
 // single <section>, read from their current source so a draft counts.
@@ -1716,19 +1703,14 @@ function nativeInstanceContent(source: string, node: readonly number[], tag: str
   if (!range || range.tag.name !== tag) return false;
   if (["img", "picture", "video", "a", "button"].includes(tag)) return true;
   const route = nativePreview?.route();
-  if (route && gridOfItem(source, [...node], { route, prefix: nativePrefix(), routes: nativeSite?.routes ?? {}, isSection: isNativeSectionTag })) return true;
+  if (route && gridOfItem(source, [...node], { route, prefix: nativePrefix(), routes: nativeSite?.routes ?? {}, isSection: (...args) => pageStructureController.isNativeSectionTag(...args) })) return true;
   if (!range.close || !TEXT_TAGS.has(tag)) return false;
   const template = document.createElement("template");
   template.innerHTML = source.slice(range.tag.end, range.close.start);
   return Boolean(template.content.textContent?.trim()) && [...template.content.querySelectorAll("*")].every(element => INLINE_FORMATTING.has(element.localName));
 }
 
-function recordNativeSourceIntent(path: string) {
-  previewSelection.recordIntent(path);
-}
-function nativeEditableTemplatePath() {
-  return previewSelection.editableTemplatePath();
-}
+
 let nativeComponentFieldToken = 0;
 let nativeComponentFieldSnapshot: { key: string; proofs: { isCurrent(): boolean }[] } | undefined;
 function nativeComponentFieldsRevision() {
@@ -1872,7 +1854,7 @@ async function writeNativePageMeta(path: string, field: PageMetaField, value: st
     : await guardedEdits.run(plan);
   if (outcome.message) return outcome.message;
   updateCurrentPageLabel();
-  if (explorerDropdown?.isOpen() && pagesController.explorerTab() === "pages") renderPagesTree();
+  if (explorerDropdown?.isOpen() && pagesController.explorerTab() === "pages") pagesController.renderTree();
   if (outcome.ok && outcome.status === "applied") element("status").textContent = value.trim() ? `${field === "title" ? "Title" : "Description"} updated` : `${field === "title" ? "Title" : "Description"} removed`;
   return undefined;
 }
@@ -1939,7 +1921,7 @@ function refreshNativeRoutes() {
   updateNativePreviewSources();
   updateAgentContext();
   pageStructure?.refreshMeta();
-  renderPagesTree();
+  pagesController.renderTree();
   updateCurrentPageLabel();
 }
 
@@ -2032,7 +2014,7 @@ function updateNativePreview() {
     unreadable: nativePreviewUnreadable(),
     route: nativeRouteForPath(appStore.openFile.value),
     component: appStore.openFile.value ? nativeComponentTagForPath(appStore.openFile.value) : undefined,
-    editableTemplatePath: nativeEditableTemplatePath(),
+    editableTemplatePath: previewSelection.editableTemplatePath(),
   });
 }
 
@@ -2053,7 +2035,7 @@ function nativeShownPaths() {
 function updateNativePreviewSources() {
   if (!nativeSite || !nativePreview) return;
   nativePreviewBehind = false;
-  nativePreview.update({ sources: nativePreviewSources(), componentStyles: Object.fromEntries(nativeComponentStyles), assets: Object.fromEntries(nativeAssets), unreadable: nativePreviewUnreadable(), editableTemplatePath: nativeEditableTemplatePath() });
+  nativePreview.update({ sources: nativePreviewSources(), componentStyles: Object.fromEntries(nativeComponentStyles), assets: Object.fromEntries(nativeAssets), unreadable: nativePreviewUnreadable(), editableTemplatePath: previewSelection.editableTemplatePath() });
   void loadNativeAssets();
   void loadNativeStyleFiles();
   void loadNativeShownFiles();
@@ -2377,7 +2359,7 @@ async function uploadFilesTo(folder: string, files: File[]): Promise<string[]> {
       // Pictures not added yet go to Media's Optimise sheet, still bound for this folder.
       review: element("explorer-tabs").hidden ? undefined : (images, into, reasons) => {
         if (!current()) return;
-        openExplorer(); selectExplorerTab("media");
+        openExplorer(); pagesController.selectTab("media");
         void mediaController.reviewInGallery(images, into, reasons).catch(errorMessage);
       } });
   } catch (error) { errorMessage(error); return []; }
@@ -2485,8 +2467,8 @@ const mediaController = createMediaController({
   uploadedBlob: (scope, sha) => uploadBytes().get(uploadKey(scope, sha)),
   readBlob,
   applyBatch: applyMediaBatch,
-  refreshDescriptions: () => { if (appStore.selection.value) renderNativeEditBar(appStore.selection.value); },
-  placeLabel: nativePageLabelOf,
+  refreshDescriptions: () => { if (appStore.selection.value) pageStructureController.renderEditBar(appStore.selection.value); },
+  placeLabel: (file) => pagesController.pageLabel(file),
   select: (path, node) => { nativePreview?.selectAfterUpdate({ path, node }); nativePreview?.flashInsert({ path, node }); },
   imagePopup: {
     image: () => nativePreview?.selectionBox(),
@@ -2511,7 +2493,7 @@ const mediaController = createMediaController({
   openFile: () => appStore.openFile.value,
   viewingVersion: () => Boolean(versionView),
   restoreFile: (path, epoch) => restoreFile(path, epoch, { linkDefaultStyle: false }),
-  change: editOpenPage,
+  change: (...args) => pageStructureController.editOpenPage(...args),
   galleryHost: () => element("explorer-media"),
   galleryVisible: () => !element("explorer-media").hidden && element("explorer").matches(":popover-open"),
   mediaSelected: () => pagesController.explorerTab() === "media",
@@ -2529,9 +2511,7 @@ effect(() => {
   mediaUsageTimer = setTimeout(() => mediaController.refreshUsage(), 400);
 });
 function mediaIdentity() { return `${generation}:${setupScope()}`; }
-function chooseMediaForImage(target: { path: string; node: number[]; width?: number; paintedSource?: string }, files?: File[]) {
-  return mediaController.chooseImage(target, files);
-}
+
 
 // Undo stays bound to the page open before either lazy chunk loads.
 const loadMediaBatch = lazyModule(() => import("./media-batch"));
@@ -2543,7 +2523,7 @@ async function applyMediaBatch(scope: DraftScope, stamp: Stamp, batch: MediaWork
   await module.applyMediaBatch({
     appStore, editor: editorModule, mediaHistoryHome, site: () => nativeSite, load: loadMediaWorkspace,
     listRepositoryFiles, nativeFiles, draftStore, bytes: uploadBytes, mediaIdentity, mediaTextSource, entryAt, findEntry,
-    refresh: () => { afterFileChanges(); updateNativePreviewSources(); if (appStore.selection.value) renderNativeEditBar(appStore.selection.value); },
+    refresh: () => { afterFileChanges(); updateNativePreviewSources(); if (appStore.selection.value) pageStructureController.renderEditBar(appStore.selection.value); },
     announce,
   }, scope, stamp, batch, openAtStart);
 }
@@ -2583,10 +2563,10 @@ function adoptNativeBaseSources(
 
 function deactivateNative() {
   pendingNativePageTitles = undefined;
-  disposeExplorerMedia();
+  mediaController.disposeGallery();
   mediaController.closePicker();
   nativeSite = undefined;
-  updateExplorerTabs();
+  pagesController.updateTabs();
   nativeBaseFiles = [];
   nativeEngaged = false;
   nativeBaseSources.clear();
@@ -2820,7 +2800,7 @@ async function activateNativeSite(repo: Repository, result: Snapshot, epoch: num
     unreadable: nativePreviewUnreadable(),
     // The page about to open shows at once (its file opens next).
     route: nativeRouteForPath(appStore.openFile.value ?? openPath) ?? nativeDefaultRoute(site),
-    editableTemplatePath: nativeEditableTemplatePath(),
+    editableTemplatePath: previewSelection.editableTemplatePath(),
   });
   updateAgentContext();
   startNativeTextIndex(repo, site, scope, epoch, request, true);
@@ -2953,7 +2933,7 @@ function flushPendingNativePageTitles() {
     if (pagesBusy(pending.host)) return;
     // render() closes row interactions itself: consume this work before rendering.
     pendingNativePageTitles = undefined;
-    renderPagesTree();
+    pagesController.renderTree();
   });
 }
 
@@ -2995,7 +2975,7 @@ async function indexNativeTextFiles(repo: Repository, site: NativeSite, scope: R
     // before the index is read, so Pages may well be open by now).
     const explorer = element("explorer");
     if (pagesBusy(explorer)) pendingNativePageTitles = { host: explorer, live };
-    else renderPagesTree();
+    else pagesController.renderTree();
     updateCurrentPageLabel();
     componentTools?.refresh();
   }
@@ -3473,8 +3453,8 @@ const filesTreeController = createFilesTreeController({
   snapshot: () => appStore.snapshot.value, repo: () => appStore.repository.value,
   openFile: () => appStore.openFile.value, epoch: () => generation, root: () => files,
   state: treeState, scope: draftScope, draft: (scope, path) => draftStore().get(scope, path),
-  load: input => api<Directory>("tree", input), images: () => requestExplorerMediaRefresh(),
-  clearError, error: errorMessage, status, announce, refuse, intent: recordNativeSourceIntent,
+  load: input => api<Directory>("tree", input), images: () => mediaController.requestGalleryRefresh(),
+  clearError, error: errorMessage, status, announce, refuse, intent: (path) => previewSelection.recordIntent(path),
   openDraft: openNewDraft, openEntry, restore: target => restoreFileTarget(target),
   create: openCreate, actions: () => fileActions,
   visible: () => !!explorerDropdown?.isOpen() && pagesController.explorerTab() === "files",
@@ -3486,9 +3466,6 @@ const filesTreeController = createFilesTreeController({
     count.title = [total === undefined ? "" : `${total} ${total === 1 ? "file" : "files"}`, /^[0-9a-f]{40}$/.test(commit) ? `Version ${commit}` : ""].filter(Boolean).join("\n");
   },
 });
-function renderFileTree() { filesTreeController.render(); }
-function renderDraftFiles() { filesTreeController.refresh(); }
-function fileRow(path: string) { return filesTreeController.row(path); }
 
 // The explorer's Pages | Media | Files tabs: tab state and tree rendering
 // live in the Pages controller; the host mounts the DOM and paints the tabs.
@@ -3508,31 +3485,31 @@ function ensurePagesTree() {
         else void restoreFile(file, generation);
       },
       plan: (request) => {
-        const planned = planNativeNew(request);
+        const planned = pagesController.planNew(request);
         return planned.ok ? { ok: true, value: { route: planned.value.route, file: planned.value.file, note: planned.value.note } } : planned;
       },
-      create: createNativeNew,
+      create: (request) => pagesController.createNew(request),
       announce,
       onInteractionEnd: flushPendingNativePageTitles,
-      retitle: retitleNativePage,
+      retitle: (file, title) => pagesController.retitle(file, title),
       changed: (file) => Boolean(treeState().changes.get(file)),
       discard: (file) => void savePublish.discardFile(file),
-      duplicate: (file) => void duplicateNativePage(file),
-      remove: (target) => void removeNativePagesTarget(target),
-      createPage: (route) => void createNativeFolderPage(route),
+      duplicate: (file) => void pagesController.duplicate(file),
+      remove: (target) => void pagesController.remove(target),
+      createPage: (route) => void pagesController.createFolderPage(route),
       pageSettings: (path) => { element("explorer-toggle").focus(); void openNativePageSettings(path); },
       navigation: (path) => { element("explorer-toggle").focus(); void openNativeNavigation(path); },
       canAddToNavigation: () => Boolean(nativeNavigationTarget(nativeSite?.routes["/"])),
-      planUrl: (target, value) => (target.file ? nativeUrlPlan(target.file, value) : { ok: false, error: "This row has no page." }),
-      changeUrl: (target, value, keep) => (target.file ? changeNativeUrl(target.file, value, keep) : Promise.resolve("This row has no page.")),
-      moveTo: (target) => void moveNativePageTo(target),
-      dropProblem: nativeDropProblem,
-      drop: (source, parent) => void confirmNativeMove(source, parent),
+      planUrl: (target, value) => (target.file ? pagesController.urlPlan(target.file, value) : { ok: false, error: "This row has no page." }),
+      changeUrl: (target, value, keep) => (target.file ? pagesController.changeUrl(target.file, value, keep) : Promise.resolve("This row has no page.")),
+      moveTo: (target) => void pagesController.moveTo(target),
+      dropProblem: (source, parent) => pagesController.dropProblem(source, parent),
+      drop: (source, parent) => void pagesController.confirmMove(source, parent),
       cardOffer: cardsController.cardOffer,
     });
     element("explorer-pages").append(pagesTree.root);
 
-    if (explorerDropdown?.isOpen()) renderPagesTree();
+    if (explorerDropdown?.isOpen()) pagesController.renderTree();
   }).finally(() => { if (pagesTreeMount === pending) pagesTreeMount = undefined; });
   pagesTreeMount = pending;
   return pending;
@@ -3543,35 +3520,28 @@ function imagesSignature() {
   const scope = draftScope();
   return JSON.stringify([generation, setupScope(), appStore.snapshot.value?.commit, scope ? draftStore().list(scope) : []]);
 }
-function disposeExplorerMedia() { mediaController.disposeGallery(); }
-function ensureExplorerMedia() { return mediaController.ensureGallery(); }
-function explorerMediaVisible() { return mediaController.galleryVisible(); }
-function requestExplorerMediaRefresh() { mediaController.requestGalleryRefresh(); }
 
 function mountExplorerTabs() {
   const explorer = element("explorer");
   explorer.addEventListener("toggle", () => {
     // Closing a popover queues its toggle; session expiry may detach it before dispatch.
     if (!explorer.isConnected) return;
-    if (explorerMediaVisible() && pagesController.explorerTab() === "media") void ensureExplorerMedia().catch(errorMessage);
+    if (mediaController.galleryVisible() && pagesController.explorerTab() === "media") void mediaController.ensureGallery().catch(errorMessage);
   });
   const tabs = { pages: element<HTMLButtonElement>("explorer-tab-pages"), media: element<HTMLButtonElement>("explorer-tab-media"), files: element<HTMLButtonElement>("explorer-tab-files") };
   for (const [name, tab] of Object.entries(tabs) as [ExplorerTab, HTMLButtonElement][]) {
-    tab.addEventListener("click", () => selectExplorerTab(name));
+    tab.addEventListener("click", () => pagesController.selectTab(name));
     tab.addEventListener("keydown", (event) => {
       if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
       event.preventDefault();
       const index = explorerTabNames.indexOf(name);
       const next = event.key === "Home" ? "pages" : event.key === "End" ? "files" : explorerTabNames[(index + (event.key === "ArrowRight" ? 1 : -1) + 3) % 3];
-      selectExplorerTab(next);
+      pagesController.selectTab(next);
       tabs[next].focus();
     });
   }
 }
 
-function selectExplorerTab(name: ExplorerTab) { pagesController.selectTab(name); }
-function updateExplorerTabs(reset = false) { pagesController.updateTabs(reset); }
-function renderPagesTree(focus?: { file?: string; route?: string }) { pagesController.renderTree(focus); }
 function paintExplorerTabs(tab: ExplorerTab, native: boolean) {
   element("explorer-tabs").hidden = !native;
   element("site-settings-toggle").hidden = !native;
@@ -3594,16 +3564,13 @@ function nativePathExists(path: string) {
   return nativeFiles().some((file) => file === path || file.startsWith(`${path}/`));
 }
 
-// New-page planning and the home template belong to the Pages controller.
-function planNativeNew(request: NativeNewRequest, create = false) { return pagesController.planNew(request, create); }
-function nativeHomeTemplate() { return pagesController.homeTemplate(); }
 // The whole site read for the repository open now: an error message, or nothing.
 async function nativeSiteReadForCreate() {
   const epoch = generation, scope = setupScope();
   const problem = await ensureNativeTextIndex();
   if (problem) return problem;
   if (epoch !== generation || scope !== setupScope() || !nativeSite) return "The repository changed meanwhile. Try again.";
-  return nativeHomeTemplate() === undefined ? NATIVE_HOME_UNREAD : undefined;
+  return pagesController.homeTemplate() === undefined ? NATIVE_HOME_UNREAD : undefined;
 }
 
 // Pages whose URL changes keep their own address: the canonical link and
@@ -3621,10 +3588,6 @@ function withMovedPageUrls(edits: Map<string, string>, pages: { file: string; mo
   }
 }
 
-function nativePageLabelOf(file: string) { return pagesController.pageLabel(file); }
-function createNativeNew(request: NativeNewRequest): Promise<string | undefined> { return pagesController.createNew(request); }
-function createNativeFolderPage(route: string) { return pagesController.createFolderPage(route); }
-
 // ---- Card grids (src/page-builder/cards.ts, docs/page-builder/cards.md). ----
 // Lifecycle and adapters live in the cards controller; every card write is a guarded edit (src/guarded-edit.ts).
 const cardsController = createCardsController({
@@ -3633,7 +3596,7 @@ const cardsController = createCardsController({
   editable: path => Boolean(draftScope()) && appStore.openFile.value === path && Boolean(editorModule?.isMounted(path) && editorModule.captureHistoryHost(path)),
   preview: () => nativePreview,
   openPage: file => void restoreFile(file, generation),
-  pageLabel: nativePageLabelOf,
+  pageLabel: (file) => pagesController.pageLabel(file),
   variantFiles: nativeVariantFiles,
   announce,
 });
@@ -3655,7 +3618,7 @@ const pagesController = createPagesController({
   ensureIndex: ensureNativeTextIndex,
   readRedirects: readNativeRedirects,
   withMovedPageUrls,
-  pageLinks,
+  pageLinks: (...args) => fileOperationsController.pageLinks(...args),
   cardsLinkingTo: cardsController.cardsLinkingTo,
   confirmation: () => confirmDialog,
   picker: () => pagePicker,
@@ -3667,8 +3630,8 @@ const pagesController = createPagesController({
   clearPendingTitles: () => { pendingNativePageTitles = undefined; },
   tabsMounted: () => Boolean(document.getElementById("explorer-tabs")),
   paintTabs: paintExplorerTabs,
-  resetExplorer: () => { pagesTree?.reset(); disposeExplorerMedia(); },
-  showMedia: () => void ensureExplorerMedia().catch(errorMessage),
+  resetExplorer: () => { pagesTree?.reset(); mediaController.disposeGallery(); },
+  showMedia: () => void mediaController.ensureGallery().catch(errorMessage),
   siteReadForCreate: nativeSiteReadForCreate,
   createWithCard: cardsController.createWithCard,
   navigationTarget: nativeNavigationTarget,
@@ -3677,17 +3640,6 @@ const pagesController = createPagesController({
   refuse,
   error: errorMessage,
 });
-
-function retitleNativePage(file: string, title: string): Promise<string | undefined> { return pagesController.retitle(file, title); }
-function duplicateNativePage(file: string) { return pagesController.duplicate(file); }
-function removeNativePagesTarget(target: NativePagesTarget) { return pagesController.remove(target); }
-function nativeUrlPlan(file: string, value: string): UrlPlan { return pagesController.urlPlan(file, value); }
-function changeNativeUrl(file: string, value: string, keep: boolean, since?: Stamp, baseline?: ReadonlyMap<string, string | undefined>): Promise<string | undefined> {
-  return pagesController.changeUrl(file, value, keep, since, baseline);
-}
-function nativeDropProblem(source: NativePagesTarget, parent: string): string | undefined { return pagesController.dropProblem(source, parent); }
-function confirmNativeMove(source: NativePagesTarget, parent: string) { return pagesController.confirmMove(source, parent); }
-function moveNativePageTo(target: NativePagesTarget) { return pagesController.moveTo(target); }
 
 // Shared file operations use the same pure source/draft policy as Pages.
 function onBranchHere(path: string) {
@@ -3723,7 +3675,7 @@ async function branchText(path: string): Promise<{ sha: string; text: string } |
 function discardedNewPages(_paths: string[]) {
   if (!nativeSite) return;
   refreshNativeRoutes();
-  renderFileTree();
+  filesTreeController.render();
   updateAgentContext();
 }
 
@@ -3731,7 +3683,7 @@ let createDialog: ReturnType<typeof createCreateDialog> | undefined;
 
 // What a creation in the Files tab writes: new files (drafts with no base
 // blob), and what to show after. Planned as the name is typed, so the dialog says the result
-// live. Pages are made in the Pages tab (`createNativeNew`), where the URL is
+// live. Pages are made in the Pages tab (`pagesController.createNew`), where the URL is
 // the site's; a file or folder here is only ever what was typed.
 interface Creation {
   files: { path: string; content: string }[];
@@ -3850,10 +3802,10 @@ async function createFromRequest(request: CreateRequest): Promise<string | undef
     // The new folder shows open in the tree, with the dialog's focus returned to it.
     const parts = creation.folder.split("/");
     parts.forEach((_, index) => filesTreeController.openFolder(parts.slice(0, index + 1).join("/")));
-    renderFileTree();
+    filesTreeController.render();
     const row = [...files.querySelectorAll<HTMLElement>(".file-row")].find((row) => row.dataset.path === creation.folder);
     if (row) createDialog?.returnFocusTo(row);
-  } else renderFileTree();
+  } else filesTreeController.render();
   const opened = creation.open ? draftStore().get(scope, creation.open) : undefined;
   if (opened) await openNewDraft(opened);
   // Written as the user's own announcement, so a load finishing later keeps it.
@@ -3930,7 +3882,7 @@ function fileRowItems(target: FileRowTarget): MenuItem[] {
 // New file… and New folder… from a folder's menu: the + dialog, that kind chosen.
 function openCreateKind(folder: string, kind: CreateKind) {
   if (!appStore.snapshot.value) return;
-  const opener = fileRow(folder) ?? element<HTMLButtonElement>("new-at-root");
+  const opener = filesTreeController.row(folder) ?? element<HTMLButtonElement>("new-at-root");
   createDialog?.open({ in: folder, kinds: ["file", "folder"], first: kind, opener });
 }
 
@@ -3977,8 +3929,6 @@ const fileOperationsController = createLazyFileOperationsController({
   filesTabOpen: () => filesTreeController.visible(),
 }, lazyModule(() => import("./controllers/file-operations-controller")));
 const { moveProblem, fileMoveProblem, moveFileTarget, deleteFileTarget, duplicateFileTarget, restoreFileTarget } = fileOperationsController;
-function pageLinks(...args: Parameters<typeof fileOperationsController.pageLinks>) { return fileOperationsController.pageLinks(...args); }
-function targetFiles(...args: Parameters<typeof fileOperationsController.targetFiles>) { return fileOperationsController.targetFiles(...args); }
 
 // A media file's new name is tidied by the media rules (any language, its own format); a folder typed before it is checked as usual.
 function renameTarget(target: FileRowTarget, name: string): Checked<string> {
@@ -4072,11 +4022,11 @@ function afterFileChanges() {
     refreshNativeRoutes();
     void loadNativeComponentStyles(Object.keys(nativeSite.components));
   }
-  renderFileTree();
+  filesTreeController.render();
   updateAgentContext();
   updateCurrentPageLabel();
   resyncNativeSite();
-  requestExplorerMediaRefresh();
+  mediaController.requestGalleryRefresh();
 }
 
 // Opens `path` after an operation, or the home page (else the folder summary)
@@ -4153,7 +4103,7 @@ const savePublish = createSavePublishController({
   forget: (scope, path) => editorModule?.forgetDraftModel(scope, path),
   redraw: () => {
     editorModule?.refreshDrafts();
-    renderFileTree();
+    filesTreeController.render();
     if (nativeSite) updateNativePreviewSources();
   },
   saved: (scope, result, submitted) => {
@@ -4172,7 +4122,7 @@ const savePublish = createSavePublishController({
     updateAgentContext();
     element("revision").textContent = commit.slice(0, 7);
     element("revision").title = commit;
-    renderFileTree();
+    filesTreeController.render();
     if (nativeEngaged && nativeSite) startNativeTextIndex(appStore.repository.value!, nativeSite, draftScope(), generation, nativeSourcesRequest);
   },
   change: (path) => treeState().changes.get(path),
@@ -4340,7 +4290,7 @@ async function mountSource(
           repoId: scope.repoId,
           branch: scope.branch,
         });
-        renderDraftFiles();
+        filesTreeController.refresh();
         updateAgentContext();
       }
     },
@@ -4348,7 +4298,7 @@ async function mountSource(
       activeFileContext = value;
       if (value && appStore.openFile.value === value.path) syncLinkedStyles(value.path, value.content);
       updateAgentContext();
-      renderDraftFiles();
+      filesTreeController.refresh();
       historyController.refresh();
       if (nativeModeActive()) updateNativePreviewSources();
       // An open template's banner counts its instances again.
@@ -4584,15 +4534,15 @@ const agentSiteActions: AgentSiteActions = {
     return appStore.openFile.value === path;
   },
   async createPage(request) {
-    const plan = planNativeNew(request);
+    const plan = pagesController.planNew(request);
     if (!plan.ok) return plan.error;
-    return (await createNativeNew(request)) ?? { file: plan.value.file, route: plan.value.route };
+    return (await pagesController.createNew(request)) ?? { file: plan.value.file, route: plan.value.route };
   },
   async setPageDetail(path, field, value) {
     const error = await writeNativePageMeta(path, field, value, false);
     if (error) return error;
     pageStructure?.refreshMeta();
-    renderPagesTree();
+    pagesController.renderTree();
     updateCurrentPageLabel();
     updateAgentContext();
     return undefined;
@@ -4780,7 +4730,7 @@ async function applyAgentCommand(command: AgentCommand) {
   };
   draftStore().save(draft); // The editor reports persistence failures and retains a downloadable in-memory draft.
   if (nativePageRoute(draft.path)) refreshNativeRoutes();
-  renderDraftFiles();
+  filesTreeController.refresh();
   await openNewDraft(draft);
 }
 
@@ -4932,8 +4882,8 @@ async function loadSnapshot(
     const open = reopen ?? (isNative ? nativeSite?.routes["/"] : undefined);
     element("revision").textContent = result.empty ? "—" : result.commit.slice(0, 7);
     element("revision").title = result.empty ? "No commits yet" : result.commit;
-    renderFileTree();
-    updateExplorerTabs(true);
+    filesTreeController.render();
+    pagesController.updateTabs(true);
     showDirectory(result);
     // Agents see the site as it is now (pages found, or none yet).
     updateAgentContext();
@@ -4952,7 +4902,7 @@ async function loadSnapshot(
         path: open,
       });
     if (open) {
-      recordNativeSourceIntent(open);
+      previewSelection.recordIntent(open);
       const opening = restoreFile(open, epoch), selection = fileGeneration;
       await opening;
       // Its code pane waits for Monaco: a file opened meanwhile (a new page,
@@ -5571,7 +5521,7 @@ const agentController = createAgentController<HTMLElement>({
     context: agentContext,
     onCommand: applyAgentSiteCommand,
     // Ask agent shows in the edit bar while an agent is connected.
-    onConnection: (connected) => { setupController.noteAgent(connected); if (appStore.selection.value) renderNativeEditBar(appStore.selection.value); },
+    onConnection: (connected) => { setupController.noteAgent(connected); if (appStore.selection.value) pageStructureController.renderEditBar(appStore.selection.value); },
     onRequests: (requests) => nativePreview?.setRequests(requests),
     onQuestions: (count) => repositoryMenu?.setQuestions(count),
     // A question in the selector's list: its pin, card open, answer box focused.

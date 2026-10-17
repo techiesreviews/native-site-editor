@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createPageStructureController, type PageStructurePorts } from "../src/controllers/page-structure-controller.ts";
 import { createGuardedEdits } from "../src/guarded-edit.ts";
 import { createBlockMoves, type BlockMovePorts } from "../src/page-builder/block-move.ts";
-import { elementEnd, startTags, startTagAttribute, textRangeInSource } from "../shared/html-source.ts";
+import { elementEnd, startTags } from "../shared/html-source.ts";
 import { createMemoryWorkspace } from "./fakes/memory-workspace.ts";
 
 const PAGE = "index.html";
@@ -47,7 +47,7 @@ function fixture(init: { page?: string; open?: string; band?: string; editing?: 
     nativeEffectiveSource: (path: string) => edits.peek.source(path),
     draftScope: () => mem.scope,
     get versionView() { return undefined; },
-    locateNativeElementRange, textRangeInSource,
+    locateNativeElementRange,
     nativePageLabelOf: (path: string) => path,
     refuse: (message: string) => notices.push(message),
     errorMessage: (error: unknown) => errors.push(error instanceof Error ? error.message : String(error)),
@@ -99,11 +99,11 @@ function drawBar(f: ReturnType<typeof fixture>, node = f.target.node, extra: Par
   Object.assign(f.ports, {
     nativePreview: { ...f.ports.nativePreview, showEditBar: (shown: typeof model) => { model = shown; }, hideEditBar: () => { model = undefined; } },
     nativeEditableSource: (path: string) => f.edits.peek.source(path),
-    startTagAttribute: () => undefined, element: () => ({ textContent: "" }), setupScope: () => "scope", generation: 0,
+    element: () => ({ textContent: "" }), setupScope: () => "scope", generation: 0,
     agentController: { captureAsk: () => undefined }, previewSelection: { textSelection: () => undefined }, cardControls: () => [],
     nativeTextTags: new Set(), nativeLinkParents: new Set(), nativeNamedDescendant: () => false, nativePictureSources: () => false, ...extra,
   });
-  f.controller.renderNativeEditBar({ path: PAGE, node, tag: "section", link, text: "", reason: "click", selectors: [], paintedSource: f.page(), rect: { x: 0, y: 0, width: 1, height: 1 } } as never);
+  f.controller.renderEditBar({ path: PAGE, node, tag: "section", link, text: "", reason: "click", selectors: [], paintedSource: f.page(), rect: { x: 0, y: 0, width: 1, height: 1 } } as never);
   const button = (label: string) => model!.controls.find(control => control.label === label)!;
   return button;
 }
@@ -216,7 +216,6 @@ test("link popup writes chosen and typed page routes with the live site prefix",
     return elementEnd(html, tags, tags.findIndex(tag => tag.name === name), html.length);
   };
   const address = drawBar(f, f.target.node, {
-    startTagAttribute,
     nativeRouteInfo: () => ({ title: "Home" }),
     nearestLink: html => ({ range: rangeOf(html, "a")!, node: [0, 0, 0] }),
     locateNativeElementRange: (html, node) => rangeOf(html, node.length === 3 ? "a" : "section"),

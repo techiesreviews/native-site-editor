@@ -231,8 +231,10 @@ export function createSavePublishController(ports: SavePublishPorts) {
   async function confirmed(question: Question, all: boolean, paths?: string[]) {
     const was = proof(), token = ++asking;
     if (!(await ports.confirm(question, all)) || token !== asking || !live(was, false)) return false;
+    const scope = ports.scope(), store = ports.drafts();
+    const count = scope ? listChanges(store.list(scope)).length : 0;
     discard(paths);
-    return true;
+    return scope ? count - listChanges(store.list(scope)).length : 0;
   }
   // Discard changes on one file (its row menu in Pages & files).
   async function discardFile(path: string) {
@@ -252,11 +254,12 @@ export function createSavePublishController(ports: SavePublishPorts) {
     const names = changes.map((change) => (change.from ? `${change.from} → ${change.path}` : change.path));
     const shown = names.length > 12 ? `${names.slice(0, 10).join(", ")} and ${names.length - 10} more` : names.join(", ");
     const words = `${n} unsaved ${n === 1 ? "change" : "changes"}`;
-    if (await confirmed({
+    const discarded = await confirmed({
       title: `Discard ${words}?`,
       notes: [shown, `Every file goes back to GitHub's version on ${scope.branch}, including changes agents made. This cannot be undone.`],
       action: "Discard all",
-    }, true)) ports.announce(`Discarded ${words}.`);
+    }, true);
+    if (discarded) ports.announce(`Discarded ${discarded} unsaved ${discarded === 1 ? "change" : "changes"}.`);
   }
 
   /** A save of `scope`, from an editor opened on `was`, went through. */
