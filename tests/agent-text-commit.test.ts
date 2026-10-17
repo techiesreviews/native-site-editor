@@ -75,10 +75,15 @@ async function setup(t: TestContext, race?: AwaitRace) {
   const command: AgentCommand = { id: "operation", grantId: "grant", operation: "write_file", path: "index.html", branch: "main", commit: "commit",
     content: "agent", state: "pending", createdAt: Date.now(), expectedHash: await textHash("before") };
   const prepare = (input = command) => prepareAgentText(input, scope, store, () => true, (scope, paths) => models.flushTyping(scope, paths));
-  const run = async (input = command, changes = new Map([["index.html", input.content]]), open?: string) => {
+  const run = async (input = command, changes = new Map([["index.html", input.content]]), open?: string, afterCommit?: () => void) => {
     const prepared = await prepare(input);
     if (prepared.duplicate) return prepared.duplicate;
     context = prepared.context;
+    if (afterCommit) context = { ...context!, commit: async (...args) => {
+      const result = await prepared.context!.commit(...args);
+      afterCommit();
+      return result;
+    } };
     if (race) context = { ...context!, fence: race.port("flush", (...args) => prepared.context!.fence(...args)),
       commit: async (...args) => {
         await race.port("staged", async () => {})();
@@ -98,7 +103,7 @@ async function setup(t: TestContext, race?: AwaitRace) {
     } finally { context = undefined; }
   };
   t.after(async () => { await store.flush(); });
-  return { fake, scope, store, records, models, command, run, prepare, history, disk, published: () => published, manualWrites: () => manualWrites, edits, manual, denyHistory: () => { historyAvailable = false; }, denyPreview: () => { previewAvailable = false; } };
+  return { fake, scope, store, records, models, memory, command, run, prepare, history, disk, published: () => published, manualWrites: () => manualWrites, edits, manual, denyHistory: () => { historyAvailable = false; }, denyPreview: () => { previewAvailable = false; } };
 }
 
 test("text drafts and receipt commit together before model, history and preview publication; reload agrees", async t => {
@@ -360,6 +365,19 @@ test("redelivery after the receipt is evicted and Undo restored the text stays u
   assert.equal(f.models.text(f.scope, "index.html"), "before");
   assert.deepEqual((await f.records.snapshot(f.scope)).drafts, drafts);
   assert.deepEqual(await f.records.workspace(f.scope), revision);
+});
+
+test("an editor change while the transaction commits still leaves this tab's drafts matching the durable records", async t => {
+  const f = await setup(t);
+  const outcome = await f.run(undefined, undefined, undefined, () => f.memory.bumpGeneration());
+  assert.equal(outcome.result?.hash, await textHash("agent"));
+  assert.equal(f.history.length, 0);
+  // Not published to the stale editor, but draft memory (Save, file lists) reads the committed draft back.
+  assert.equal(f.store.get(f.scope, "index.html")?.content, "agent");
+  assert.ok(await f.records.receipt(f.scope, f.command.id, f.command.grantId!));
+  const loaded = new DraftStore(storage(), indexedDbDrafts(draftDatabaseName, f.fake.factory));
+  await loaded.load(f.scope.account);
+  assert.equal(loaded.get(f.scope, "index.html")?.content, "agent");
 });
 
 test("a durable manual draft newer than the mounted source is never overwritten", async t => {
