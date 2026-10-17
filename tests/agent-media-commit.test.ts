@@ -295,3 +295,21 @@ test("adding settings reports the committed settings from its prepared batch", a
   assert.equal(JSON.parse(f.store.get(f.scope, ".editor/media.json")!.content).adding.image, "smaller");
   assert.equal(f.counts().steps, 1);
 });
+
+test("buffered adding settings reports the prepared change and reset, and receipts replay that report after later changes", async t => {
+  const f = await setup(t);
+  const change: AgentCommand = { ...f.command, id: "settings-change", operation: "adding_settings", args: { image: "smaller", keepOriginal: true } };
+  const changed = await f.run(change);
+  assert.equal(JSON.parse(changed!.result.report).image, "smaller");
+  assert.equal(JSON.parse(changed!.result.report).isDefault, false);
+  assert.deepEqual((await f.records.receipt(f.scope, change.id, "grant"))?.outcome, changed);
+  const reset = await f.run({ ...change, id: "settings-reset", args: { reset: true } });
+  assert.equal(JSON.parse(reset!.result.report).isDefault, true);
+  assert.equal(JSON.parse(reset!.result.report).keepOriginal, false);
+  assert.deepEqual((await f.records.receipt(f.scope, "settings-reset", "grant"))?.outcome, reset);
+  assert.equal(f.counts().steps, 2);
+  assert.equal(f.counts().recordsTransactions, 2);
+  assert.deepEqual(await f.run(change), changed);
+  assert.equal(f.counts().steps, 2);
+  assert.equal(f.counts().writes, 0);
+});

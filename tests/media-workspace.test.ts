@@ -1,3 +1,4 @@
+import { agentMediaStorage } from "./support/agent-media-workspace";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { applyMediaWorkspaceBatch, createMediaWorkspace, type MediaWorkspaceBatch, type MediaWorkspaceContext } from "../src/page-builder/media-workspace";
@@ -603,9 +604,18 @@ test("agent descriptions refuse blanks, outside files and pages that do not use 
 
 test("agent collection actions call Media's rules, each undoable with no page open", async () => {
   const { applyAgentMedia } = await import("../src/agent-media-actions");
-  const f = fixture();
-  const run = (args: import("../shared/agent").AgentCommandArgs) => applyAgentMedia(f.context, {
-    id: "collection", operation: "change_collection", path: "", branch: "main", commit: "abc", content: "", state: "pending", createdAt: 0, args,
+  const f = fixture(), agentStorage = agentMediaStorage(f.context.scope);
+  let sequence = 0;
+  const manualBatch = f.context.applyBatch.bind(f.context);
+  f.context.applyBatch = async batch => {
+    if (!batch.agent) return manualBatch(batch);
+    await agentStorage.apply(f.context, batch, { ...f, paths: () => [...f.paths],
+      setPaths: value => { f.paths.clear(); value.forEach(path => f.paths.add(path)); },
+      version: path => f.versions.get(path), setVersion: (path, version) => { if (version) f.versions.set(path, version); else f.versions.delete(path); } });
+    f.batches.push(batch);
+  };
+  const run = async (args: import("../shared/agent").AgentCommandArgs) => applyAgentMedia(await agentStorage.context(f.context), {
+    id: `collection-${++sequence}`, grantId: "collection-grant", operation: "change_collection", path: "", branch: "main", commit: "abc", content: "", state: "pending", createdAt: 0, args,
   }, () => { throw new Error("Collections must not open a page"); });
   const records = () => parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH));
   await run({ action: "new", name: "Trip", files: ["images/a.png"] });
