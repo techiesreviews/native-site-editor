@@ -175,16 +175,20 @@ export function createAgentRecovery(options: RecoveryOptions) {
   }
   async function attemptAlone(manual: boolean, expected?: number): Promise<{ retryAt?: number }> {
     if (disposed || !owns()) return {};
-    const record = read(), at = generation;
-    if ((record.retryAt ?? 0) > options.now()) return { retryAt: record.retryAt };
-    if (!manual && (record.quota || record.paused)) return {};
-    if (!manual && (record.attempts.length !== expected || options.now() - (record.since ?? options.now()) > WINDOW)) {
+    const record = read(), at = generation, started = options.now();
+    // A cooldown, pause or another tab's read arrived after this read was planned: plan again
+    // against it (wait, pause or stop), letting go of the lease.
+    const stale = (record.retryAt ?? 0) > started || !manual && (record.quota || record.paused
+      || record.attempts.length !== expected || started - (record.since ?? started) > WINDOW);
+    if (stale) {
       clearTimers();
+      release();
       schedule();
-      return {};
+      notify();
+      return (record.retryAt ?? 0) > started ? { retryAt: record.retryAt } : {};
     }
     running = true;
-    record.attempts.push(options.now());
+    record.attempts.push(started);
     write(record);
     try {
       // This callback reads the hub. It never repeats a failed mutation.
@@ -195,7 +199,15 @@ export function createAgentRecovery(options: RecoveryOptions) {
           limit = options.setTimeout(() => reject(new AgentFailureError({ kind: "transient" })), READ_LIMIT);
         })]);
       } finally { over = true; options.clearTimeout(limit!); }
-      if (!disposed && generation === at && owns()) write({ attempts: [] });
+      if (!disposed && generation === at && owns()) {
+        // A cooldown or quota answer another tab recorded during this read still holds.
+        const latest = read(), now = options.now();
+        write({
+          attempts: [],
+          ...((latest.retryAt ?? 0) > now ? { retryAt: latest.retryAt } : {}),
+          ...(latest.quota && latest.quota.at > started ? { quota: latest.quota } : {}),
+        });
+      }
     } catch (error) {
       if (disposed || generation !== at || !owns()) return {};
       const failure = error instanceof AgentFailureError ? error.failure : { kind: "transient" } as const;
