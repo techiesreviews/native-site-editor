@@ -210,6 +210,7 @@ async function executeAgentMedia(
 
 // Kept in this lazy chunk: media never adds records, ownership or source-editor code to boot.
 const mediaOwners = new Map<string, Promise<{ records: AgentRecords; owner: ReturnType<typeof createAgentOwner> }>>();
+const portOwners = new WeakMap<AgentRecords, typeof mediaOwners>();
 
 /** Prepare every batch before committing any of them. More than one batch refuses the whole command. */
 export async function applyAgentMedia(...parameters: Parameters<typeof executeAgentMedia>): ReturnType<typeof executeAgentMedia> {
@@ -222,20 +223,39 @@ export async function applyAgentMedia(...parameters: Parameters<typeof executeAg
   const refuse = (error: unknown): never => {
     throw new Error(`${error instanceof Error ? error.message : "Browser storage failed."} Nothing was changed; your drafts are as they were.`);
   };
-  if (!command.grantId) return refuse(new Error("Agent media edits require an authorization id (grantId)."));
-  const scope = { ...ctx.scope }, workspace = { account: scope.account, repoId: scope.repoId, branch: scope.branch };
-  // Narrow the app's actual store by its runtime ports; test/manual DraftAccess adapters cannot persist agent edits.
-  const store = ctx.drafts;
-  const isAgentStore = (value: typeof store): value is DraftStore =>
-    ["fenceAgent", "stageAgent", "publishAgent", "announceAgent", "refresh"].every(key => key in value && typeof Reflect.get(value, key) === "function");
-  if (!isAgentStore(store)) return refuse(new Error("Browser draft storage is unavailable for agent edits."));
-  let applied = false;
+  // Argument and captured editor proofs keep their specific refusals even without storage.
+  const problem = agentMediaArgsProblem(command.operation, args, command.path);
+  if (problem) return refuse(new Error(problem));
   const versions = new Map(ctx.paths.map(path => [path, ctx.assetVersion(path)]));
+  let applied = false;
   const assertCurrent = () => {
     ctx.assertLive();
     if (!applied && (ctx.paths.length !== versions.size || ctx.paths.some(path => versions.get(path) !== ctx.assetVersion(path))))
       throw new Error("Media changed while preparing the command. Try again.");
   };
+  // A host without authorization/storage must still surface the operation's own validation.
+  // Run only as far as its first write boundary; no batch or browser copy can be changed.
+  const validateBeforeRefusal = async (error: unknown): Promise<never> => {
+    const stop = () => { throw error; };
+    const wrap = (context: MediaWorkspaceContext): MediaWorkspaceContext => ({ ...context, agent: true,
+      assertLive: () => { assertCurrent(); context.assertLive(); }, applyBatch: async () => stop(), blob: async () => stop(),
+      removedCopies: context.removedCopies && { ...context.removedCopies, put: async () => stop(), delete: async () => stop() } });
+    const validation: Parameters<typeof executeAgentMedia> = [...parameters];
+    validation[0] = wrap(ctx); validation[1] = command;
+    const improve = parameters[6];
+    if (command.operation === "improve_images") validation[6] = { ...improve, show: undefined,
+      context: async () => { assertCurrent(); const context = improve ? await improve.context() : ctx; assertCurrent(); return wrap(context); } };
+    try { assertCurrent(); await executeAgentMedia(...validation); assertCurrent(); }
+    catch (problem) { return refuse(problem); }
+    return refuse(error);
+  };
+  if (!command.grantId) return validateBeforeRefusal(new Error("Agent media edits require an authorization id (grantId)."));
+  const scope = { ...ctx.scope }, workspace = { account: scope.account, repoId: scope.repoId, branch: scope.branch };
+  // Narrow the app's actual store by its runtime ports; test/manual DraftAccess adapters cannot persist agent edits.
+  const store = ctx.drafts;
+  const isAgentStore = (value: typeof store): value is DraftStore =>
+    ["fenceAgent", "stageAgent", "publishAgent", "announceAgent", "refresh"].every(key => key in value && typeof Reflect.get(value, key) === "function");
+  if (!isAgentStore(store)) return validateBeforeRefusal(new Error("Browser draft storage is unavailable for agent edits."));
   let outcome: Awaited<ReturnType<typeof executeAgentMedia>> = undefined;
   try {
     assertCurrent();
@@ -245,22 +265,27 @@ export async function applyAgentMedia(...parameters: Parameters<typeof executeAg
     const identity = payloadIdentity(JSON.parse(JSON.stringify({ operation: command.operation, path: command.path,
       branch: command.branch, commit: command.commit, argsHash })) as JsonValue);
     const key = workspaceKey(workspace);
-    let loading = mediaOwners.get(key);
+    let owners = mediaOwners;
+    if (ctx.agentRecords) {
+      owners = portOwners.get(ctx.agentRecords) ?? new Map();
+      portOwners.set(ctx.agentRecords, owners);
+    }
+    let loading = owners.get(key);
     if (!loading) {
       loading = (async () => {
         const [{ indexedDbAgentRecords }, { createAgentOwner }] = await Promise.all([import("./agent-records"), import("./agent-owner")]);
-        const records = indexedDbAgentRecords(), state = await records.workspace(workspace);
+        const records = ctx.agentRecords ?? indexedDbAgentRecords(), state = await records.workspace(workspace);
         return { records, owner: createAgentOwner({ workspace, generation: state.generation, records,
           reload: async () => { throw new Error("Agent takeover is not available yet."); } }) };
       })();
-      mediaOwners.set(key, loading);
-      void loading.catch(() => { if (mediaOwners.get(key) === loading) mediaOwners.delete(key); });
+      owners.set(key, loading);
+      void loading.catch(() => { if (owners.get(key) === loading) owners.delete(key); });
     }
-    const { records, owner } = await loading;
+    const { records, owner } = await loading.catch(validateBeforeRefusal);
     assertCurrent();
     const receipt = { operationId: command.id, authorizationId: command.grantId, payloadIdentity: identity,
       outcome: {} as JsonValue, createdAt: Date.now() };
-    const existing = await records.receipt(workspace, command.id, command.grantId);
+    const existing = await records.receipt(workspace, command.id, command.grantId).catch(validateBeforeRefusal);
     assertCurrent();
     if (existing) {
       const result = await owner.commit({ workspace, generation: owner.generation, expectedRevision: 0, expectedDrafts: [], drafts: [], receipt });

@@ -183,3 +183,39 @@ test("copied Online stills leave the picture list and paging, while the user's o
   assert.deepEqual(rest.media.find(item => item.path === video.key)!.family, ["images/photo.webp", "images/photo-480w.webp", "media/originals/photo.jpg"]);
   assert.equal(rest.nextOffset, undefined);
 });
+
+test("specific media refusals precede missing authorization, missing store and unavailable IndexedDB", async () => {
+  const { applyAgentMedia } = await import("../src/agent-media-actions");
+  const { unavailableAgentRecords } = await import("../src/agent-records");
+  const { agentMediaStorage } = await import("./support/agent-media-workspace");
+  const scope = { account: "priority", repoId: 1, repo: "lex/site", branch: "main" };
+  const storage = agentMediaStorage(scope);
+  let writes = 0, copies = 0, stale = false;
+  const records = JSON.stringify({ version: 2, collections: [], files: {}, onlineVideos: [
+    { service: "youtube", id: "aqz-KE-bpKQ", title: "Recorded film", still: "images/still.webp", stillCopied: true },
+  ] });
+  const context = {
+    key: "priority", scope, paths: ["images/still.webp"], items: [{ path: "images/still.webp" }], pages: [], components: {}, history: false,
+    drafts: { get: () => undefined, save: () => { writes++; return true; }, remove: () => { writes++; return true; } },
+    read: async path => path === ".editor/media.json" ? records : undefined,
+    blob: async () => new Blob(["still"]), assetVersion: () => "v1",
+    assertLive() { if (stale) throw new Error("The editor changed branch or revision."); },
+    applyBatch: async () => { writes++; }, openPage: async () => {},
+    removedCopies: { get: async () => undefined, put: async () => { copies++; }, delete: async () => { copies++; }, keys: async () => [] },
+  } satisfies import("../src/page-builder/media-workspace").MediaWorkspaceContext;
+  const command = { id: "priority", grantId: "grant", operation: "remove_media", path: "", branch: "main", commit: "head", content: "", state: "pending", createdAt: 0,
+    args: { files: ["images/still.webp"] } } satisfies import("../shared/agent").AgentCommand;
+  for (const mode of ["grant", "store", "indexeddb"] as const) {
+    const ctx = mode === "indexeddb" ? { ...await storage.context(context), agentRecords: unavailableAgentRecords() } : context;
+    const input = mode === "grant" ? { ...command, grantId: undefined } : command;
+    const run = (input: import("../shared/agent").AgentCommand) => applyAgentMedia(ctx, input, () => { throw new Error("No placement"); });
+    await assert.rejects(run({ ...input, args: { files: ["https://outside.example/a.png"] } }), /never upload, fetch or generate/);
+    await assert.rejects(run(input), /belongs to Online video Recorded film/);
+    await assert.rejects(run({ ...input, operation: "replace_media", args: { file: "images/still.webp", with: "images/still.webp" } }), /Choose a different one/);
+    stale = true;
+    await assert.rejects(run(input), /changed branch or revision/);
+    stale = false;
+  }
+  assert.equal(writes, 0); assert.equal(copies, 0);
+  assert.deepEqual((await storage.records.snapshot(scope)).drafts, []);
+});

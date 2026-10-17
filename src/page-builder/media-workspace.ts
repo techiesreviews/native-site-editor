@@ -87,6 +87,8 @@ export async function applyMediaWorkspaceBatch<State>(batch: MediaWorkspaceBatch
 }
 export interface MediaWorkspaceContext {
   agent?: boolean;
+  /** Optional durable records port; browser hosts default to IndexedDB. */
+  agentRecords?: import("../agent-records").AgentRecords;
   /** Headless hosts can provide typing flush without loading the source editor. */
   flushTyping?(scope: DraftScope, paths: string[]): void;
   key: string; scope: DraftScope; drafts: DraftAccess; paths: string[]; items: MediaLibraryItem[];

@@ -1,3 +1,4 @@
+import { agentMediaStorage } from "./support/agent-media-workspace";
 import { MEDIA_ADDING_CHOICES, MEDIA_ADDING_DEFAULTS } from "../src/page-builder/media-settings";
 import { applySiteCommand, type AgentSiteActions } from "../src/agent-site";
 import { createFileOperationsController, type FileOperationsPorts } from "../src/controllers/file-operations-controller";
@@ -1071,6 +1072,7 @@ function agentMediaFixture(source = '<section><img src="/images/old.png" alt="Ol
   ]);
   const paths = [...text.keys(), "images/old.png", file, "media/images/photo-480.webp", "media/images/photo-960.webp", "media/originals/photo.jpg"];
   const scope = { account: "lex", repoId: 1, repo: "lex/site", branch: "main" };
+  const agentStorage = agentMediaStorage(scope);
   const bytes = new Map(paths.filter(path => /\.(png|webp|jpg)$/.test(path)).map(path => [path, new Blob(["picture"], { type: "image/webp" })]));
   const batches: MediaWorkspaceBatch[] = [], history: (() => void)[] = [], labels: string[] = [];
   let pick: MediaPickerOptions | undefined;
@@ -1080,7 +1082,7 @@ function agentMediaFixture(source = '<section><img src="/images/old.png" alt="Ol
   } satisfies MediaModule;
   const ports = {
     workspace: () => ({ repo: scope.repo, scope, identity: "site", site: { routes: { "/": "index.html" }, components: {} }, nativePaths: paths,
-      drafts: { list: () => [], get: () => undefined, save: () => true, remove: () => true } }),
+      drafts: agentStorage.store }),
     stamp: () => ({ holds: () => true, changed: () => undefined }), identity: () => "site", generation: () => 1,
     source: (path) => text.get(path), listPaths: async () => paths,
     findEntry: async (path) => paths.includes(path) ? { sha: path } : undefined,
@@ -1088,6 +1090,13 @@ function agentMediaFixture(source = '<section><img src="/images/old.png" alt="Ol
     readText: async (_repo, sha) => text.get(sha) ?? "", rememberSource: (path, source) => { text.set(path, source); },
     uploadedBlob: async () => undefined, readBlob: async (_repo, _sha, path) => bytes.get(path)!,
     applyBatch: async (_scope, _stamp, batch) => {
+      if (batch.agent) {
+        const ctx = await controller.workspaceContext();
+        await agentStorage.apply(ctx, batch, { text, bytes, paths: () => [...paths],
+          setPaths: value => { paths.splice(0, paths.length, ...value); }, version: path => ctx.assetVersion(path), history, labels });
+        batches.push(batch);
+        return;
+      }
       assert.ok(batch.live?.() ?? true);
       for (const [path, value] of batch.expectedSources) assert.equal(text.get(path), value);
       const before = new Map(text), beforeBytes = new Map(bytes), beforePaths = [...paths];
@@ -1115,10 +1124,14 @@ function agentMediaFixture(source = '<section><img src="/images/old.png" alt="Ol
     galleryHost() { throw new Error("No DOM in this source test"); }, galleryVisible: () => false, mediaSelected: () => false, gallerySignature: () => "",
     refreshDescriptions() {}, announce() {}, error(error) { throw error; },
   } satisfies MediaControllerPorts;
-  return { file, text, paths, bytes, ports, batches, history, labels, controller: createMediaController(ports, () => import("../src/controllers/media-actions")), pick: () => pick };
+  const controller = createMediaController(ports, () => import("../src/controllers/media-actions"));
+  const workspaceContext = controller.workspaceContext.bind(controller);
+  controller.workspaceContext = async (...args) => agentStorage.context(await workspaceContext(...args));
+  return { file, text, paths, bytes, ports, batches, history, labels, controller, agentStorage, pick: () => pick };
 }
+let mediaSequence = 0;
 function mediaCommand(operation: AgentCommand["operation"], args: AgentCommand["args"] = {}): AgentCommand {
-  return { id: "media-test", operation, args, path: ["place_media", "frame_image", "loop_video"].includes(operation) ? "index.html" : "", branch: "main", commit: "head", content: "", state: "pending", createdAt: 0 };
+  return { id: `media-test-${++mediaSequence}`, grantId: "media-grant", operation, args, path: ["place_media", "frame_image", "loop_video"].includes(operation) ? "index.html" : "", branch: "main", commit: "head", content: "", state: "pending", createdAt: 0 };
 }
 
 test("an agent placement equals the editor's markup for the same place, including picture replacement", async () => {
@@ -2047,9 +2060,10 @@ function improveAgentFixture(body = '<img src="/images/heavy.jpg"><img src="/ima
   const bytes = new Map([["images/heavy.jpg", png(300000)], ["images/a.gif", new Blob(["gif"], { type: "image/gif" })]]);
   const batches: MediaWorkspaceBatch[] = [], undo: (() => void)[] = [], shown: string[] = [];
   let live = true, encodeHook: (() => void) | undefined;
+  const agentStorage = agentMediaStorage({ account: "lex", repoId: 1, repo: "lex/site", branch: "main" });
   const ctx: import("../src/page-builder/media-workspace").MediaWorkspaceContext = {
     key: "improve", scope: { account: "lex", repoId: 1, repo: "lex/site", branch: "main" }, history: false,
-    drafts: { get: () => undefined, save: () => { throw new Error("Direct write"); }, remove: () => { throw new Error("Direct write"); } },
+    drafts: agentStorage.store, agentRecords: agentStorage.records, flushTyping() {},
     get paths() { return [...new Set([...text.keys(), ...bytes.keys()])]; },
     get items() { return [...bytes].filter(([path]) => /\.(jpg|webp|gif|mp4)$/.test(path)).map(([path, blob]) => ({ path, size: blob.size })); },
     origins: ["https://own.example"], pages: ["index.html", "empty.html"], components: { "hero-card": "components/hero/hero.html" },
@@ -2057,6 +2071,12 @@ function improveAgentFixture(body = '<img src="/images/heavy.jpg"><img src="/ima
     read: async path => text.get(path) ?? (/\.(css|js)$/.test(path) ? bytes.get(path)?.text() : undefined),
     blob: async path => bytes.get(path)!, assetVersion: path => bytes.has(path) ? path : undefined, async openPage() {},
     async applyBatch(batch) {
+      if (batch.agent) {
+        await agentStorage.apply(ctx, batch, { text, bytes, paths: () => ctx.paths, setPaths() {},
+          version: path => ctx.assetVersion(path), history: undo });
+        batches.push(batch);
+        return;
+      }
       ctx.assertLive(); assert.ok(batch.live?.() ?? true);
       assert.deepEqual(batch.expectedPaths, ctx.paths);
       for (const [path, source] of batch.expectedSources) assert.equal(await ctx.read(path), source);
@@ -2085,8 +2105,25 @@ function improveAgentFixture(body = '<img src="/images/heavy.jpg"><img src="/ima
   };
   const host = { context: async () => ctx, show: async (path: string) => { shown.push(path); },
     measure: async (path: string, node: number[]) => path.startsWith("components/") ? undefined : ({ sizes: "(max-width: 600px) 100vw, 600px", firstScreen: true, large: true, images: [{ node, firstScreen: true, large: true }] }), url: () => "https://own.example/" } satisfies import("../src/agent-improve-images").AgentImproveHost;
-  const run = (row?: string) => applyAgentMedia(ctx, mediaCommand("improve_images", { row }), () => { throw new Error("No placement"); }, undefined, undefined, undefined, host, ports);
-  return { ctx, text, bytes, batches, undo, shown, host, ports, run, stop: () => { live = false; }, onEncode: (hook: () => void) => { encodeHook = hook; } };
+  const run = async (row?: string) => applyAgentMedia(await agentStorage.context(ctx), mediaCommand("improve_images", { row }), () => { throw new Error("No placement"); }, undefined, undefined, undefined, host, ports);
+  // Multi-row UI scenarios now deliver one authorized command per row. `run()` still
+  // sends a single row-less command, so its all-or-none contract can be tested directly.
+  const runRows = async () => {
+    type Report = { rows: { file: string; changed: boolean; left: { key: string; reason: string }[] }[];
+      failed: { file: string; message: string }[]; changed: number; total: number };
+    const rows: Report["rows"] = [], failed: Report["failed"] = [];
+    let changed = 0, total = 0;
+    for (const row of ["components/hero/hero.html", "index.html"]) {
+      const outcome = await run(row);
+      const report: Report = JSON.parse(outcome!.result.report);
+      rows.push(...report.rows); failed.push(...report.failed); changed += report.changed; total += report.total;
+    }
+    const leftAlone = new Set(rows.flatMap(row => row.left.filter(left => left.reason === "left-alone").map(left => left.key))).size;
+    return { message: changed || failed.length ? `Improve images: ${changed} rows changed, ${failed.length} failed, unsaved.` : "Nothing to improve. Nothing was written.",
+      result: { report: JSON.stringify({ rows, failed, changed, total, leftAlone }) } };
+  };
+  return { ctx, text, bytes, batches, undo, shown, host, ports, run, runRows, agentStorage,
+    stop: () => { live = false; }, onEncode: (hook: () => void) => { encodeHook = hook; } };
 }
 
 test("agent Improve images equals the screen row, converts GIFs, measures pages and saves each row once", async () => {
@@ -2105,7 +2142,7 @@ test("agent Improve images equals the screen row, converts GIFs, measures pages 
   assert.equal(agent.undo.length, 1); agent.undo.pop()!();
   assert.equal(agent.text.get("index.html"), screen.batches[0].expectedSources.get("index.html"));
   const all = improveAgentFixture();
-  const allReport = JSON.parse((await all.run())!.result.report);
+  const allReport = JSON.parse((await all.runRows())!.result.report);
   assert.deepEqual(allReport.rows.map((item: { file: string }) => item.file), ["components/hero/hero.html", "index.html"]);
   assert.equal(all.undo.length, 2);
   const component = improveAgentFixture();
@@ -2136,7 +2173,7 @@ test("agent Improve images skips a picture left alone everywhere on every row an
   const fixture = improveAgentFixture('<img src="/images/heavy.jpg">');
   const records = JSON.stringify({ version: 2, collections: [], files: {}, leftAsIs: [{ picture: "images/heavy.jpg" }] });
   fixture.text.set(MEDIA_RECORDS_PATH, records);
-  const outcome = await fixture.run();
+  const outcome = await fixture.runRows();
   const report = JSON.parse(outcome!.result.report);
   assert.equal(fixture.batches.length, 0);
   assert.deepEqual(report.rows.map((row: { file: string; changed: boolean }) => [row.file, row.changed]), [["components/hero/hero.html", false], ["index.html", false]]);
@@ -2147,7 +2184,7 @@ test("agent Improve images skips a picture left alone everywhere on every row an
   // A one-row untick is listed only in that row; the other row is improved.
   const one = improveAgentFixture('<img src="/images/heavy.jpg">');
   one.text.set(MEDIA_RECORDS_PATH, JSON.stringify({ version: 2, collections: [], files: {}, leftAsIs: [{ picture: "images/heavy.jpg", row: "index.html" }] }));
-  const oneReport = JSON.parse((await one.run())!.result.report);
+  const oneReport = JSON.parse((await one.runRows())!.result.report);
   assert.deepEqual(oneReport.rows.map((row: { file: string; changed: boolean; left: { note?: string }[] }) => [row.file, row.changed, row.left.map(left => left.note)]),
     [["components/hero/hero.html", true, []], ["index.html", false, ["Left alone in this file by the user."]]]);
 });
@@ -2161,20 +2198,34 @@ test("agent Improve images stops on revision changes without saving a partial ro
   partial.onEncode(() => { if (partial.batches.length) partial.stop(); });
   // First row makes the lighter file; interrupt the next row while showing its page.
   partial.host.show = async () => { partial.stop(); };
-  await assert.rejects(partial.run(), /changed branch or revision/);
+  await assert.rejects(partial.runRows(), /changed branch or revision/);
   assert.equal(partial.batches.length, 1);
   const failed = improveAgentFixture();
   failed.host.show = async () => { throw new Error("Cannot show page"); };
-  const report = JSON.parse((await failed.run())!.result.report);
+  const report = JSON.parse((await failed.runRows())!.result.report);
   assert.equal(report.rows[0].changed, true);
   assert.deepEqual(report.failed, [{ file: "index.html", message: "Cannot show page" }]);
   const continues = improveAgentFixture();
   let calls = 0;
   continues.onEncode(() => { if (++calls === 1) throw new Error("Cannot encode component"); });
-  const continued = JSON.parse((await continues.run())!.result.report);
+  const continued = JSON.parse((await continues.runRows())!.result.report);
   assert.deepEqual(continued.failed, [{ file: "components/hero/hero.html", message: "Cannot encode component" }]);
   assert.equal(continued.rows[0].file, "index.html"); assert.equal(continued.rows[0].changed, true);
   assert.equal(continues.batches.length, 1);
+});
+
+test("one Improve images command refuses multiple batches or a failed later row without publishing any change", async () => {
+  for (const failure of ["multiple", "show", "encode", "stale"] as const) {
+    const f = improveAgentFixture(), before = new Map(f.text), bytes = new Map(f.bytes);
+    if (failure === "show") f.host.show = async () => { throw new Error("Cannot show page"); };
+    if (failure === "encode") { let calls = 0; f.onEncode(() => { if (++calls === 1) throw new Error("Cannot encode component"); }); }
+    if (failure === "stale") f.host.show = async () => { f.stop(); };
+    await assert.rejects(f.run(), failure === "multiple" ? /more than one batch/ : failure === "stale" ? /changed branch or revision/ : /Some image improvements failed/);
+    assert.deepEqual(f.text, before); assert.deepEqual(f.bytes, bytes);
+    assert.equal(f.batches.length, 0); assert.equal(f.undo.length, 0);
+    assert.deepEqual((await f.agentStorage.records.snapshot(f.ctx.scope)).drafts, []);
+    assert.equal(f.agentStorage.fake.stores.get("receipts")?.size ?? 0, 0);
+  }
 });
 
 test("list_media owns copied online still families; remove_media refuses every member without changing anything", async () => {
