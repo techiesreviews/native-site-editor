@@ -90,15 +90,38 @@ export function defaultFoldLines(source: string) {
 
 type FoldRegion = { startLineNumber: number; endLineNumber: number; isCollapsed: boolean };
 type FoldingModel = { getRegionAtLine(line: number): FoldRegion | null; toggleCollapseState(regions: FoldRegion[]): void };
-const folding = FoldingController as { get(editor: monaco.editor.ICodeEditor): { getFoldingModel(): Promise<FoldingModel | null> | null } | null };
+type ProviderRegistry = { has(model: monaco.editor.ITextModel): boolean; onDidChange(listener: () => void): monaco.IDisposable };
+type FoldingControl = {
+  getFoldingModel(): Promise<FoldingModel | null> | null;
+  // The registry the controller itself reads its folding providers from.
+  languageFeaturesService: { foldingRangeProvider: ProviderRegistry };
+};
+const folding = FoldingController as { get(editor: monaco.editor.ICodeEditor): FoldingControl | null };
 
-// Collapses the default lines (0-based) once Monaco has the folding ranges,
-// which come from the HTML worker and may still be loading when a person (or
-// a canvas selection) puts the cursor in the code. A region that would hide a
-// cursor stays open: folding over it would move the cursor to the region's
-// first line, and typing would land there.
+// Collapses the default lines (0-based) once Monaco has the HTML folding
+// ranges. Their provider registers when Monaco's HTML mode has loaded; until
+// then Monaco folds by indentation, so the defaults wait for the provider
+// (Monaco's folding controller, listening first, has then asked it for ranges).
 function foldDefaults(editor: monaco.editor.ICodeEditor, model: monaco.editor.ITextModel, lines: number[]) {
-  void folding.get(editor)?.getFoldingModel()?.then((ranges) => {
+  const control = folding.get(editor);
+  if (!control) return;
+  const providers = control.languageFeaturesService.foldingRangeProvider;
+  if (providers.has(model)) return foldWhenReady(control, editor, model, lines);
+  const registered = providers.onDidChange(() => {
+    if (!providers.has(model)) return;
+    stop();
+    foldWhenReady(control, editor, model, lines);
+  });
+  const disposed = editor.onDidDispose(() => stop());
+  const stop = () => { registered.dispose(); disposed.dispose(); };
+}
+
+// The ranges come from the HTML worker, which may still be loading when a
+// person (or a canvas selection) puts the cursor in the code. A region that
+// would hide a cursor stays open: folding over it would move the cursor to the
+// region's first line, and typing would land there.
+function foldWhenReady(control: FoldingControl, editor: monaco.editor.ICodeEditor, model: monaco.editor.ITextModel, lines: number[]) {
+  void control.getFoldingModel()?.then((ranges) => {
     if (!ranges || editor.getModel() !== model) return;
     const cursors = editor.getSelections() ?? [];
     const regions = lines.flatMap((line) => {
