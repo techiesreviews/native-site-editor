@@ -4642,7 +4642,8 @@ async function applyAgentSiteCommand(command: AgentCommand) {
     if (command.operation === "set_page_details" && current()) {
       pageStructure?.refreshMeta(); pagesController.renderTree(); updateCurrentPageLabel(); updateAgentContext();
     }
-    return { ...prepared.outcome, ...detail };
+    // The recorded reply wins (a duplicate delivery gets exactly it); live-only detail adds result fields.
+    return { ...prepared.outcome, result: { ...detail.result, ...prepared.outcome.result } };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error), unchanged = "Nothing was changed; your drafts are as they were.";
     if (!prepared.applied) throw new Error(message.includes(unchanged) ? message : `${message} ${unchanged}`);

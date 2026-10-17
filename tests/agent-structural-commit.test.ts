@@ -270,9 +270,10 @@ for (const operation of ["create_page", "set_page_details", "move_file", "delete
   } finally { scoped.dispose(); }
 });
 
-test("create_page records its file, route and hash; a duplicate delivery returns that same outcome without reapplying", async t => {
+for (const operation of ["create_page", "set_page_details", "move_file", "delete_file"] as const) test(`${operation} records the reply it gives; a duplicate delivery returns that same outcome without reapplying`, async t => {
   const f = await fixture(t, undefined, "<html><head><title>Home</title></head><body>home</body></html>");
-  const command: AgentCommand = { ...f.command("component"), operation: "create_page", path: "index.html", args: { title: "New page", slug: "new-page" } };
+  const command: AgentCommand = { ...f.command("component"), operation, path: operation === "move_file" || operation === "delete_file" ? "old.txt" : "index.html",
+    args: operation === "set_page_details" ? { title: "New title" } : operation === "move_file" ? { to: "new.txt" } : operation === "create_page" ? { title: "New page", slug: "new-page" } : {} };
   const prepared = await prepareAgentText(command, f.scope, f.store, () => true, () => {});
   assert.ok(prepared.context);
   const scoped = agentStructuralActions(f.workspace, prepared.context, () => true, controllerPorts(f));
@@ -282,7 +283,7 @@ test("create_page records its file, route and hash; a duplicate delivery returns
     await prepared.finish!(() => true);
   } finally { scoped.dispose(); }
   const recorded = prepared.outcome;
-  assert.deepEqual(recorded.result && Object.keys(recorded.result).sort(), ["file", "hash", "route"]);
+  if (operation === "create_page") assert.deepEqual(recorded.result && Object.keys(recorded.result).sort(), ["file", "hash", "route"]);
   assert.deepEqual({ ...recorded, ...live }, recorded, "the live reply adds nothing the receipt lacks");
   const drafts = f.store.list(f.scope).length, steps = f.memory.steps();
   const again = await prepareAgentText(command, f.scope, f.store, () => true, () => {});
