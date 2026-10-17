@@ -3,7 +3,7 @@ title: "Dispatch editing tools through atomic browser execution"
 type: task (AFK)
 status: open
 assignee:
-blocked_by: [15-browser-read-tools]
+blocked_by: [15-browser-read-tools, 07-atomic-structural-edits]
 builder: sol
 phase: 3
 ---

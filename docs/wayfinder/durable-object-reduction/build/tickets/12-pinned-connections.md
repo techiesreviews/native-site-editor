@@ -3,7 +3,7 @@ title: "Bind grants to an explicit workspace"
 type: task (AFK)
 status: open
 assignee:
-blocked_by: [11-clean-source-cache]
+blocked_by: [03-remote-recovery]
 builder: sol
 phase: 3
 ---

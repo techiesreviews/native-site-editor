@@ -3,7 +3,7 @@ title: "Clean temporary data after detected last-editor loss"
 type: task (AFK)
 status: open
 assignee:
-blocked_by: [24-authorization-cap]
+blocked_by: [21-workspace-metadata-caps, 22-bounded-repository-cache]
 builder: sol
 phase: 4
 ---

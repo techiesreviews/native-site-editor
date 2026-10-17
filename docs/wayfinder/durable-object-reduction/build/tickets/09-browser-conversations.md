@@ -3,7 +3,7 @@ title: "Persist Ask agent history locally"
 type: task (AFK)
 status: open
 assignee:
-blocked_by: [08-atomic-media-edits]
+blocked_by: [06-atomic-text-edits]
 builder: claude
 phase: 2
 ---

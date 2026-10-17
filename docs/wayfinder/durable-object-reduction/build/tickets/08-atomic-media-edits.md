@@ -3,7 +3,7 @@ title: "Include uploads and media changes in command recovery"
 type: task (AFK)
 status: open
 assignee:
-blocked_by: [07-atomic-structural-edits]
+blocked_by: [06-atomic-text-edits]
 builder: sol
 phase: 2
 ---

@@ -5,8 +5,7 @@ registration) is a separate later change and has no tickets here. Ticket answers
 [../tickets/](../tickets/) are the accepted product decisions; this build does not reopen them.
 
 Tickets live in [tickets/](tickets/), one slice each, landed through `kit pr` into `dev`.
-The chain is serial: every ticket's `blocked_by` names the one before it, so shared files are
-never edited by two slices at once. Source plan: a read-only Sol audit of `38039dda`
+Tickets run in parallel lanes (browser correctness 07–11; relay 12–13; server caps 23→24→22), joining at 14 (browser live transport) and 25 (disconnect lifecycle). `blocked_by` holds the lanes; parallel slices that share a file (mostly `worker/index.ts`, `worker/app.ts`, `worker/oauth.ts`, `src/main.ts`) resolve the overlap when `kit pr` rebases. Source plan: a read-only Sol audit of `38039dda`
 (2026-10-17); its file:line evidence is summarised under "Current code" below.
 
 ## Runner extras

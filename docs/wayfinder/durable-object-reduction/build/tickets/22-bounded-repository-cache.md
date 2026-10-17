@@ -3,7 +3,7 @@ title: "Separate authentication from cache loading"
 type: task (AFK)
 status: open
 assignee:
-blocked_by: [21-workspace-metadata-caps]
+blocked_by: [24-authorization-cap]
 builder: sol
 phase: 4
 ---
