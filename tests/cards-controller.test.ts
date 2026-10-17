@@ -25,10 +25,12 @@ test("before mounting, card adapters refuse or offer nothing", async () => {
   assert.equal(controller.createWithCard({ parent: "/", title: "x", slug: "x" }), undefined);
 });
 
-test("mounting creates the card operations once the workspace mounts", () => {
+test("mounting creates the card operations once the workspace mounts", async () => {
   const { controller } = cardsFixture({ "index.html": page }, undefined, false);
+  assert.equal(controller.createWithCard({ parent: "/", title: "x", slug: "x" }), undefined);
   controller.mount();
-  assert.equal(controller.preview.describe({ path: "index.html", parent: [], index: -1, row: false }), undefined);
+  // Mounted, the operations answer: with no site, no grid lists the pages.
+  assert.equal(await controller.createWithCard({ parent: "/", title: "x", slug: "x" }), "No grid lists the pages under / any more.");
   assert.deepEqual(controller.controls(selection([1, 0, 0, 1, 1]), page), []);
   assert.equal(controller.cardOffer("/"), undefined);
 });
