@@ -75,6 +75,11 @@
     "reason": "Durable Object reduction ticket 04 storage foundation; ticket 06 wires agent text commits to it (remove this entry then)."
   },
   {
+    "file": "src/agent-owner.ts",
+    "name": "(file unreachable)",
+    "reason": "Durable Object reduction ticket 05 fencing foundation; ticket 06 wires it (remove this entry then)."
+  },
+  {
     "file": "src/agent-records.ts",
     "name": "(file unreachable)",
     "reason": "Durable Object reduction ticket 04 storage foundation; ticket 06 wires agent text commits to it (remove this entry then)."

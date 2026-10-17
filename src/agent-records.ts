@@ -1,9 +1,10 @@
-import { payloadIdentity, workspaceKey, type AgentReceipt, type AgentWorkspace, type JsonValue, type OperationId } from "../shared/agent-command.ts";
+import { payloadIdentity, workspaceKey, type AgentOutcome, type AgentReceipt, type AgentWorkspace, type JsonValue, type OperationId } from "../shared/agent-command.ts";
 import { draftDatabaseName, draftKey, draftStores, openDraftDatabase, type SavedDraft } from "./drafts.ts";
 
-interface WorkspaceRecord { revision: number; generation: number }
+interface WorkspaceRecord { revision: number; generation: number; paused?: boolean }
+interface WorkspaceSnapshot extends WorkspaceRecord { drafts: [string, SavedDraft][] }
 interface Conversation { id: string; content: JsonValue }
-interface Commit {
+export interface AgentCommit {
   workspace: AgentWorkspace;
   generation: number;
   expectedRevision: number;
@@ -13,21 +14,26 @@ interface Commit {
    */
   expectedDrafts: [string, SavedDraft | null][];
   drafts: [string, SavedDraft | null][];
-  receipt: Omit<AgentReceipt, "generation" | "revision">;
+  receipt: Omit<AgentReceipt, "workspace" | "generation" | "revision">;
 }
 interface CommitResult { receipt: AgentReceipt; duplicate: boolean }
 
 export interface AgentRecords {
-  commit: (command: Commit) => Promise<CommitResult>;
-  receipt: (workspace: AgentWorkspace, operationId: OperationId) => Promise<AgentReceipt | undefined>;
+  commit: (command: AgentCommit) => Promise<CommitResult>;
+  receipt: (workspace: AgentWorkspace, operationId: OperationId, authorizationId: string) => Promise<AgentReceipt | undefined>;
+  reconcile: (workspace: AgentWorkspace, commands: AgentCommit[]) => Promise<AgentOutcome[]>;
   workspace: (workspace: AgentWorkspace) => Promise<WorkspaceRecord>;
-  setGeneration: (workspace: AgentWorkspace, expected: number, next: number) => Promise<WorkspaceRecord>;
+  setGeneration: (workspace: AgentWorkspace, expected: number, next: number, snapshot?: WorkspaceSnapshot) => Promise<WorkspaceRecord>;
+  pause: (workspace: AgentWorkspace, generation: number) => Promise<void>;
+  snapshot: (workspace: AgentWorkspace) => Promise<WorkspaceSnapshot>;
+  revoke: (workspace: AgentWorkspace, authorizationId: string) => Promise<AgentReceipt[]>;
+  evictReceipts: (workspace: AgentWorkspace, now?: number) => Promise<number>;
   putConversation: (workspace: AgentWorkspace, conversation: Conversation) => Promise<void>;
   conversations: (workspace: AgentWorkspace) => Promise<Conversation[]>;
 }
 
 export class AgentRecordsError extends Error {
-  constructor(public readonly code: "unavailable" | "aborted" | "conflict" | "duplicate-id", message: string, cause?: unknown) {
+  constructor(public readonly code: "unavailable" | "aborted" | "conflict" | "duplicate-id" | "revoked" | "capacity", message: string, cause?: unknown) {
     super(message, { cause });
     this.name = "AgentRecordsError";
   }
@@ -35,15 +41,33 @@ export class AgentRecordsError extends Error {
 
 export function unavailableAgentRecords(): AgentRecords {
   const refuse = () => Promise.reject(new AgentRecordsError("unavailable", "Agent storage is unavailable in this browser."));
-  return { commit: refuse, receipt: refuse, workspace: refuse, setGeneration: refuse, putConversation: refuse, conversations: refuse };
+  return { reconcile: refuse, pause: refuse, snapshot: refuse, revoke: refuse, evictReceipts: refuse, commit: refuse, receipt: refuse, workspace: refuse, setGeneration: refuse, putConversation: refuse, conversations: refuse };
 }
 
 /** Agent writes never enter the manual editor's fallback or per-file retry path. */
-export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFactory | undefined = globalThis.indexedDB): AgentRecords {
+export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFactory | undefined = globalThis.indexedDB, now = Date.now): AgentRecords {
   if (!factory) return unavailableAgentRecords();
   const connection = openDraftDatabase(name, factory);
   const recordKey = (workspace: AgentWorkspace, id: string) => JSON.stringify([workspaceKey(workspace), id]);
   const initial = (): WorkspaceRecord => ({ revision: 0, generation: 0 });
+  const revocationKey = (workspace: AgentWorkspace, authorizationId: string) => JSON.stringify(["revoked", workspaceKey(workspace), authorizationId]);
+  const same = (value: SavedDraft | null | undefined) => value ? payloadIdentity(JSON.parse(JSON.stringify(value)) as JsonValue) : null;
+  const belongs = (key: string, workspace: AgentWorkspace) => key.startsWith(draftKey({ ...workspace, repo: "" }, "").slice(0, -3));
+  const bytes = (key: string, receipt: AgentReceipt) => new TextEncoder().encode(JSON.stringify([key, receipt])).byteLength;
+  // All receipts are completed: pending work is never stored in this store.
+  const retention = (rows: [string, AgentReceipt][], time: number, incoming?: [string, AgentReceipt]) => {
+    const limit = 1024 * 1024;
+    if (incoming && bytes(...incoming) > limit) throw new AgentRecordsError("capacity", "Required edit receipt exceeds the workspace budget.");
+    rows.sort((a, b) => a[1].createdAt - b[1].createdAt || a[0].localeCompare(b[0]));
+    let size = rows.reduce((sum, row) => sum + bytes(...row), 0) + (incoming ? bytes(...incoming) : 0);
+    let count = rows.length + (incoming ? 1 : 0);
+    const removed: string[] = [];
+    for (const [key, receipt] of rows) {
+      if (receipt.createdAt > time - 24 * 60 * 60 * 1000 && count <= 1000 && size <= limit) break;
+      removed.push(key); count--; size -= bytes(key, receipt);
+    }
+    return removed;
+  };
   type Read = <T>(request: IDBRequest<T>, use: (value: T) => void) => void;
   const run = async <T>(stores: string[], mode: IDBTransactionMode, work: (tx: IDBTransaction, read: Read, done: (result: T) => void) => void): Promise<T> => {
     let db: IDBDatabase;
@@ -76,63 +100,160 @@ export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFact
       const key = workspaceKey(workspace), receiptKey = recordKey(workspace, receipt.operationId);
       return run<CommitResult>([draftStores.drafts, draftStores.receipts, draftStores.workspaces], "readwrite", (tx, read, done) => {
         const receipts = tx.objectStore(draftStores.receipts), workspaces = tx.objectStore(draftStores.workspaces), files = tx.objectStore(draftStores.drafts);
-        read(receipts.get(receiptKey), (recorded: AgentReceipt | undefined) => {
-          if (recorded) {
-            if (recorded.payloadIdentity !== receipt.payloadIdentity) throw new AgentRecordsError("duplicate-id", "Operation identifier was reused for different work.");
-            done({ receipt: recorded, duplicate: true });
-            return;
-          }
-          read(workspaces.get(key), (stored: WorkspaceRecord | undefined) => {
-            const current = stored ?? initial();
-            if (current.generation !== generation || current.revision !== expectedRevision) conflict();
-            // Removing the empty path's JSON suffix leaves the workspace's draft-key prefix.
-            const from = draftKey({ ...workspace, repo: "" }, "").slice(0, -3);
-            const expected = new Map(expectedDrafts);
-            for (const [draft, value] of drafts) {
-              if (!draft.startsWith(from) || !expected.has(draft) || (value &&
-                (workspaceKey(value) !== key || draftKey(value, value.path) !== draft))) conflict();
+        read(workspaces.get(revocationKey(workspace, receipt.authorizationId)), (revoked: unknown) => {
+          if (revoked) throw new AgentRecordsError("revoked", "Agent authorization has been revoked.");
+          read(receipts.getAll(), (all: AgentReceipt[]) => {
+            // A live operation id cannot be rebound to another workspace or authorization.
+            const recorded = all.find((value) => value.operationId === receipt.operationId);
+            if (recorded) {
+              if (recorded.workspace !== key || recorded.authorizationId !== receipt.authorizationId ||
+                recorded.generation !== generation || recorded.payloadIdentity !== receipt.payloadIdentity)
+                throw new AgentRecordsError("duplicate-id", "Operation identifier was reused for different work.");
+              done({ receipt: recorded, duplicate: true });
+              return;
             }
-            const apply = () => {
-              const committed: AgentReceipt = { ...receipt, generation, revision: current.revision + 1 };
-              for (const [draft, value] of drafts) value ? files.put(value, draft) : files.delete(draft);
-              receipts.put(committed, receiptKey);
-              workspaces.put({ ...current, revision: committed.revision }, key);
-              done({ receipt: committed, duplicate: false });
-            };
-            let remaining = expectedDrafts.length;
-            if (!remaining) apply();
-            // A JSON round trip drops undefined fields, so a record and its stored copy compare equal.
-            const same = (value: SavedDraft | null | undefined) => value ? payloadIdentity(JSON.parse(JSON.stringify(value)) as JsonValue) : null;
-            for (const [draft, wanted] of expectedDrafts) {
-              if (!draft.startsWith(from)) conflict();
-              read(files.get(draft), (saved: SavedDraft | undefined) => {
-                if (same(saved) !== same(wanted)) conflict();
-                if (--remaining === 0) apply();
-              });
-            }
+            read(workspaces.get(key), (stored: WorkspaceRecord | undefined) => {
+              const current = stored ?? initial();
+              if (!receipt.authorizationId || !Number.isSafeInteger(generation) || !Number.isSafeInteger(expectedRevision) ||
+                current.paused || current.generation !== generation || current.revision !== expectedRevision) conflict();
+              const expected = new Map(expectedDrafts);
+              if (expected.size !== expectedDrafts.length || new Set(drafts.map(([key]) => key)).size !== drafts.length) conflict();
+              for (const [draft, value] of drafts) {
+                if (!belongs(draft, workspace) || !expected.has(draft) || (value &&
+                  (workspaceKey(value) !== key || draftKey(value, value.path) !== draft))) conflict();
+              }
+              const apply = () => {
+                const committed: AgentReceipt = { ...receipt, workspace: key, generation, revision: current.revision + 1, createdAt: now() };
+                const rows: [string, AgentReceipt][] = all.filter((value) => value.workspace === key).map((value) => [recordKey(workspace, value.operationId), value]);
+                for (const expired of retention(rows, committed.createdAt, [receiptKey, committed])) receipts.delete(expired);
+                for (const [draft, value] of drafts) value ? files.put(value, draft) : files.delete(draft);
+                receipts.put(committed, receiptKey);
+                workspaces.put({ ...current, revision: committed.revision }, key);
+                done({ receipt: committed, duplicate: false });
+              };
+              let remaining = expectedDrafts.length;
+              if (!remaining) apply();
+              for (const [draft, wanted] of expectedDrafts) {
+                if (!belongs(draft, workspace)) conflict();
+                read(files.get(draft), (saved: SavedDraft | undefined) => {
+                  if (same(saved) !== same(wanted)) conflict();
+                  if (--remaining === 0) apply();
+                });
+              }
+            });
           });
         });
       });
     },
-    receipt(workspace, operationId) {
-      const key = recordKey(workspace, operationId);
-      return run([draftStores.receipts], "readonly", (tx, read, done) => read(tx.objectStore(draftStores.receipts).get(key), done));
+    receipt(workspace, operationId, authorizationId) {
+      const key = recordKey(workspace, operationId), revokedKey = revocationKey(workspace, authorizationId);
+      return run([draftStores.receipts, draftStores.workspaces], "readonly", (tx, read, done) => {
+        read(tx.objectStore(draftStores.workspaces).get(revokedKey), (revoked: unknown) => {
+          if (revoked) throw new AgentRecordsError("revoked", "Agent authorization has been revoked.");
+          read(tx.objectStore(draftStores.receipts).get(key), (receipt: AgentReceipt | undefined) => {
+            if (receipt && receipt.authorizationId !== authorizationId) throw new AgentRecordsError("duplicate-id", "Operation authorization differs.");
+            done(receipt);
+          });
+        });
+      });
+    },
+    reconcile(workspace, commands) {
+      const scope = structuredClone(workspace), key = workspaceKey(scope), pending = structuredClone(commands);
+      return run([draftStores.workspaces, draftStores.receipts], "readonly", (tx, read, done) => {
+        const outcomes: AgentOutcome[] = [];
+        let remaining = pending.length;
+        if (!remaining) { done(outcomes); return; }
+        for (const [index, command] of pending.entries()) {
+          if (workspaceKey(command.workspace) !== key) conflict();
+          const { operationId, authorizationId, payloadIdentity } = command.receipt;
+          const finish = (receipt?: AgentReceipt) => {
+            if (receipt && (receipt.authorizationId !== authorizationId || receipt.generation !== command.generation || receipt.payloadIdentity !== payloadIdentity))
+              throw new AgentRecordsError("duplicate-id", "Outstanding command identity differs from its receipt.");
+            outcomes[index] = receipt ? { operationId, status: "applied", receipt } : { operationId, status: "unknown" };
+            if (--remaining === 0) done(outcomes);
+          };
+          read(tx.objectStore(draftStores.workspaces).get(revocationKey(scope, authorizationId)), (revoked: unknown) => {
+            if (revoked) { finish(); return; }
+            read(tx.objectStore(draftStores.receipts).get(recordKey(scope, operationId)), finish);
+          });
+        }
+      });
     },
     workspace(workspace) {
       const key = workspaceKey(workspace);
       return run([draftStores.workspaces], "readonly", (tx, read, done) => read(tx.objectStore(draftStores.workspaces).get(key), (value: WorkspaceRecord | undefined) => done(value ?? initial())));
     },
-    setGeneration(workspace, expected, next) {
+    setGeneration(workspace, expected, next, snapshot) {
+      const proof = snapshot && structuredClone(snapshot);
+      const scope = structuredClone(workspace);
       const key = workspaceKey(workspace);
-      return run([draftStores.workspaces], "readwrite", (tx, read, done) => {
+      return run([draftStores.workspaces, draftStores.drafts], "readwrite", (tx, read, done) => {
         const store = tx.objectStore(draftStores.workspaces);
         read(store.get(key), (value: WorkspaceRecord | undefined) => {
           const current = value ?? initial();
           // Generations only increase, so a fence once passed can never be reused.
           if (current.generation !== expected || !Number.isSafeInteger(next) || next <= current.generation) conflict();
-          const changed = { ...current, generation: next };
-          store.put(changed, key);
-          done(changed);
+          const change = () => {
+            const changed: WorkspaceRecord = { revision: current.revision, generation: next };
+            store.put(changed, key);
+            done(changed);
+          };
+          if (!proof) { change(); return; }
+          if (proof.revision !== current.revision || proof.generation !== expected) conflict();
+          read(tx.objectStore(draftStores.drafts).getAllKeys(), (keys) => {
+            read(tx.objectStore(draftStores.drafts).getAll(), (values: SavedDraft[]) => {
+              const expected = new Map(proof.drafts);
+              const actual = keys.map((key, i) => [String(key), values[i]] as const).filter(([key]) => belongs(key, scope));
+              if (actual.length !== expected.size || actual.some(([key, value]) => same(value) !== same(expected.get(key)))) conflict();
+              change();
+            });
+          });
+        });
+      });
+    },
+    pause(workspace, generation) {
+      const key = workspaceKey(workspace);
+      return run([draftStores.workspaces], "readwrite", (tx, read, done) => {
+        const store = tx.objectStore(draftStores.workspaces);
+        read(store.get(key), (stored: WorkspaceRecord | undefined) => {
+          const current = stored ?? initial();
+          if (current.generation !== generation) conflict();
+          store.put({ ...current, paused: true }, key);
+          done(undefined);
+        });
+      });
+    },
+    snapshot(workspace) {
+      const scope = structuredClone(workspace), key = workspaceKey(scope);
+      return run([draftStores.workspaces, draftStores.drafts], "readonly", (tx, read, done) => {
+        read(tx.objectStore(draftStores.workspaces).get(key), (stored: WorkspaceRecord | undefined) => {
+          const store = tx.objectStore(draftStores.drafts);
+          read(store.getAllKeys(), (keys) => read(store.getAll(), (values: SavedDraft[]) => {
+            const drafts: [string, SavedDraft][] = keys.map((key, i) => [String(key), values[i]]);
+            done({ ...(stored ?? initial()), drafts: drafts.filter(([key]) => belongs(key, scope)) });
+          }));
+        });
+      });
+    },
+    revoke(workspace, authorizationId) {
+      const key = workspaceKey(workspace), revokedKey = revocationKey(workspace, authorizationId);
+      return run([draftStores.workspaces, draftStores.receipts], "readwrite", (tx, read, done) => {
+        tx.objectStore(draftStores.workspaces).put({ revoked: true }, revokedKey);
+        read(tx.objectStore(draftStores.receipts).getAll(), (receipts: AgentReceipt[]) => {
+          // Report work that won before revocation; never undo committed drafts.
+          done(receipts.filter((receipt) => receipt.workspace === key && receipt.authorizationId === authorizationId));
+        });
+      });
+    },
+    evictReceipts(workspace, time = now()) {
+      const key = workspaceKey(workspace), scope = structuredClone(workspace);
+      return run([draftStores.receipts], "readwrite", (tx, read, done) => {
+        const store = tx.objectStore(draftStores.receipts);
+        read(store.getAll(), (receipts: AgentReceipt[]) => {
+          const rows: [string, AgentReceipt][] = receipts.filter((receipt) => receipt.workspace === key).map((receipt) => [recordKey(scope, receipt.operationId), receipt]);
+          const removed = retention(rows, time);
+          for (const key of removed) store.delete(key);
+          done(removed.length);
         });
       });
     },
