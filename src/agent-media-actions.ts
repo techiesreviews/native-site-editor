@@ -1,3 +1,11 @@
+import { payloadIdentity, workspaceKey, type JsonValue } from "../shared/agent-command";
+import { textHash } from "../shared/agent";
+import { draftKey, type DraftStore } from "./drafts";
+import type { AgentRecords } from "./agent-records";
+import type { createAgentOwner } from "./agent-owner";
+import type { AgentTextCommit } from "./editor-workspace";
+import type { MediaWorkspaceBatch } from "./page-builder/media-workspace";
+
 import { agentMediaArgsProblem } from "../shared/agent-media-args";
 import { parseOnlineVideoAddress } from "../shared/online-video-address";
 import { agentImageTrim } from "../shared/agent-image-frame";
@@ -11,7 +19,7 @@ import { createMediaByteCache } from "./page-builder/media-byte-cache";
 import { mediaImageForPlacement, type MediaImage } from "./page-builder/media-markup";
 
 /** Loaded only when an agent changes Media. All writes use the editor's media transactions. */
-export async function applyAgentMedia(
+async function executeAgentMedia(
   ctx: MediaWorkspaceContext, command: AgentCommand,
   preparePlacement: (target: { path: string; node: number[] }) => (image: MediaImage, asset?: { path: string; version?: string }) => Promise<void | number[]>,
   prepareFrame?: ReturnType<typeof createMediaController>["prepareFrame"],
@@ -197,5 +205,145 @@ export async function applyAgentMedia(
       case "new": await host.collections({ kind: "new", name: args.name!, paths: args.files }); break;
       case "delete": await host.collections({ kind: "delete", name: args.name! }); break;
     }
+  }
+}
+
+// Kept in this lazy chunk: media never adds records, ownership or source-editor code to boot.
+const mediaOwners = new Map<string, Promise<{ records: AgentRecords; owner: ReturnType<typeof createAgentOwner> }>>();
+
+/** Prepare every batch before committing any of them. More than one batch refuses the whole command. */
+export async function applyAgentMedia(...parameters: Parameters<typeof executeAgentMedia>): ReturnType<typeof executeAgentMedia> {
+  const [ctx, input] = parameters;
+  const command = structuredClone(input), args = command.args ?? {};
+  const changing = ["remove_media", "keep_media", "replace_media", "describe_media", "change_collection", "write_subtitles", "video_still", "improve_images"].includes(command.operation)
+    || command.operation === "restore_media" && args.files !== undefined
+    || command.operation === "adding_settings" && [args.reset === true, args.image !== undefined, args.video !== undefined, args.audio !== undefined, args.keepOriginal !== undefined].some(Boolean);
+  if (!changing) return executeAgentMedia(...parameters);
+  const refuse = (error: unknown): never => {
+    throw new Error(`${error instanceof Error ? error.message : "Browser storage failed."} Nothing was changed; your drafts are as they were.`);
+  };
+  if (!command.grantId) return refuse(new Error("Agent media edits require an authorization id (grantId)."));
+  const scope = { ...ctx.scope }, workspace = { account: scope.account, repoId: scope.repoId, branch: scope.branch };
+  // Narrow the app's actual store by its runtime ports; test/manual DraftAccess adapters cannot persist agent edits.
+  const store = ctx.drafts;
+  const isAgentStore = (value: typeof store): value is DraftStore =>
+    ["fenceAgent", "stageAgent", "publishAgent", "announceAgent", "refresh"].every(key => key in value && typeof Reflect.get(value, key) === "function");
+  if (!isAgentStore(store)) return refuse(new Error("Browser draft storage is unavailable for agent edits."));
+  let applied = false;
+  const versions = new Map(ctx.paths.map(path => [path, ctx.assetVersion(path)]));
+  const assertCurrent = () => {
+    ctx.assertLive();
+    if (!applied && (ctx.paths.length !== versions.size || ctx.paths.some(path => versions.get(path) !== ctx.assetVersion(path))))
+      throw new Error("Media changed while preparing the command. Try again.");
+  };
+  let outcome: Awaited<ReturnType<typeof executeAgentMedia>> = undefined;
+  try {
+    assertCurrent();
+    // Hash the canonical arguments as a whole: no subtitle text, descriptions or byte strings in receipts.
+    const argsHash = await textHash(payloadIdentity(JSON.parse(JSON.stringify(args)) as JsonValue));
+    assertCurrent();
+    const identity = payloadIdentity(JSON.parse(JSON.stringify({ operation: command.operation, path: command.path,
+      branch: command.branch, commit: command.commit, argsHash })) as JsonValue);
+    const key = workspaceKey(workspace);
+    let loading = mediaOwners.get(key);
+    if (!loading) {
+      loading = (async () => {
+        const [{ indexedDbAgentRecords }, { createAgentOwner }] = await Promise.all([import("./agent-records"), import("./agent-owner")]);
+        const records = indexedDbAgentRecords(), state = await records.workspace(workspace);
+        return { records, owner: createAgentOwner({ workspace, generation: state.generation, records,
+          reload: async () => { throw new Error("Agent takeover is not available yet."); } }) };
+      })();
+      mediaOwners.set(key, loading);
+      void loading.catch(() => { if (mediaOwners.get(key) === loading) mediaOwners.delete(key); });
+    }
+    const { records, owner } = await loading;
+    assertCurrent();
+    const receipt = { operationId: command.id, authorizationId: command.grantId, payloadIdentity: identity,
+      outcome: {} as JsonValue, createdAt: Date.now() };
+    const existing = await records.receipt(workspace, command.id, command.grantId);
+    assertCurrent();
+    if (existing) {
+      const result = await owner.commit({ workspace, generation: owner.generation, expectedRevision: 0, expectedDrafts: [], drafts: [], receipt });
+      return result.receipt.outcome as Exclude<typeof outcome, void>;
+    }
+    const batches: MediaWorkspaceBatch[] = [];
+    const wrap = (context: MediaWorkspaceContext): MediaWorkspaceContext => ({ ...context, agent: true,
+      assertLive: () => { assertCurrent(); context.assertLive(); },
+      // Adding settings reports its prepared metadata before the buffered batch is published.
+      read: async path => command.operation === "adding_settings" && batches[0]?.edits.has(path)
+        ? batches[0].edits.get(path) : context.read(path),
+      applyBatch: async batch => { context.assertLive(); batches.push(batch); } });
+    parameters[0] = wrap(ctx);
+    parameters[1] = command;
+    if (command.operation === "improve_images") {
+      const improve = parameters[6];
+      parameters[6] = { ...improve, context: async () => {
+        assertCurrent();
+        const context = improve ? await improve.context() : ctx;
+        assertCurrent();
+        return wrap(context);
+      } };
+    }
+    outcome = await executeAgentMedia(...parameters);
+    assertCurrent();
+    if (batches.length > 1) throw new Error("This media command needs more than one batch. Request one change at a time.");
+    if (command.operation === "improve_images" && batches.length && outcome?.result.report
+      && (JSON.parse(outcome.result.report) as { failed: unknown[] }).failed.length)
+      throw new Error("Some image improvements failed. Request one change at a time.");
+    receipt.outcome = outcome ?? { message: "Media changed in the editor as an unsaved draft.", result: {} };
+    let expectedRevision = 0;
+    const context: AgentTextCommit = {
+      async fence(draftScope, paths) {
+        assertCurrent();
+        if (ctx.flushTyping) ctx.flushTyping(draftScope, paths);
+        else {
+          const { flushAgentTyping } = await import("./components/source-editor");
+          assertCurrent();
+          flushAgentTyping(draftScope, paths);
+        }
+        assertCurrent();
+        const release = await store.fenceAgent(draftScope, paths);
+        try {
+          assertCurrent();
+          expectedRevision = (await records.workspace(workspace)).revision;
+          assertCurrent();
+          return release;
+        } catch (error) { release(); throw error; }
+      },
+      async commit(before, after, current) {
+        store.stageAgent(after);
+        assertCurrent();
+        if (!current()) throw new Error("Media changed before the change could be applied.");
+        const result = await owner.commit({ workspace, generation: owner.generation, expectedRevision,
+          expectedDrafts: [...before].map(([path, record]) => [draftKey(scope, path), record ?? null]),
+          drafts: [...after].map(([path, record]) => [draftKey(scope, path), record ?? null]), receipt });
+        applied = true;
+        outcome = result.receipt.outcome as Exclude<typeof outcome, void>;
+        return !result.duplicate;
+      },
+      publish(changes, apply) {
+        const result = store.publishAgent(scope, changes, apply);
+        store.announceAgent(scope, [...changes.keys()]);
+        return result;
+      },
+      async settle(changes) {
+        await store.refresh([...changes.keys()].map(path => draftKey(scope, path)));
+        store.announceAgent(scope, [...changes.keys()]);
+      },
+    };
+    const batch = batches[0];
+    if (batch) {
+      await ctx.applyBatch({ ...batch, agent: context });
+      if (!applied) throw new Error("The media host did not commit the agent transaction.");
+    }
+    else {
+      const release = await context.fence(scope, []);
+      try { await context.commit(new Map(), new Map(), () => { assertCurrent(); return true; }); }
+      finally { release(); }
+    }
+    return outcome;
+  } catch (error) {
+    if (applied) return outcome;
+    return refuse(error);
   }
 }
