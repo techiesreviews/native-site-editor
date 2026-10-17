@@ -317,3 +317,19 @@ test("client alarms physically delete only expired registrations", async () => {
     assert.equal(await storage.get("repositoryCacheGeneration"), undefined);
   } finally { await h.worker.dispose(); }
 });
+
+test("a reservation whose cleanup alarm cannot be set persists nothing; the retry consumes one slot", async () => {
+  const m = memory();
+  const reservation = { clientId: "alarm-retry", expiresAt: 180 * DAY };
+  await assert.rejects(
+    m.run(() => admitRegistration(m.storage, "ip-alarm", 0, () => Promise.reject(new Error("alarm down")), reservation)),
+    /alarm down/,
+  );
+  assert.equal(await m.storage.get(KEY), undefined, "no rate slot, reservation or occupancy is persisted");
+  assert.equal((await m.run(() => admitRegistration(m.storage, "ip-alarm", 0, () => {}, reservation))).allowed, true);
+  const state = await m.state();
+  assert.equal(state.retained, 1);
+  assert.equal(state.day.count, 1);
+  assert.equal(state.hour.count, 1);
+  assert.deepEqual(Object.keys(state.pending), ["alarm-retry"]);
+});
