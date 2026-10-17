@@ -210,7 +210,7 @@ export function createAgentMenu(options: {
           : current === "off"
             ? "Turn on remote agents in this tab and copy a prompt that connects Claude, Codex or another agent"
             : "Copy a prompt that connects Claude, Codex or another agent to this site";
-    links.hidden = current === "off" || current === "closed";
+    links.hidden = changing || current === "off" || current === "closed";
     again.hidden = cancel.hidden = current !== "waiting";
     const text =
       current === "waiting"
