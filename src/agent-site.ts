@@ -73,8 +73,9 @@ export function agentStructuralActions(workspace: EditorWorkspace, context: Agen
   }
   let mount: ((path: string, pane: boolean) => void) | undefined, history = false;
   const stopMount = () => { if (mount) mounts.delete(mount); };
-  const commandContext: AgentTextCommit = { ...context, async commit(...args) {
-    const result = await context.commit(...args);
+  let planned: { after?: NodeRef; creates?: string[]; added?: string } | undefined;
+  const commandContext: AgentTextCommit = { ...context, async commit(before, after, valid) {
+    const result = await context.commit(before, after, valid, planned);
     recorded = true;
     return result;
   } };
@@ -150,6 +151,10 @@ export function agentStructuralActions(workspace: EditorWorkspace, context: Agen
         const result = await plan(checked(reads));
         await checkReads();
         verify();
+        if ("done" in result) {
+          const added: unknown = (result as Partial<SectionPlanned>).added;
+          planned = { after: result.select?.after, creates: result.creates?.map(file => file.path), ...typeof added === "string" && added ? { added } : {} };
+        }
         // historyOnly keeps the step on the staged commit; the plan's own selection follows once it applied.
         if ("done" in result && !result.select?.historyOnly && result.select?.after) selection = { after: result.select.after, flash: result.select.flash };
         return "done" in result ? { ...result, select: { ...result.select, historyOnly: true } } : result;
@@ -856,12 +861,15 @@ export async function applySiteCommand(actions: AgentSiteActions, command: Agent
 }
 
 /** A structural command's reply, from the drafts it commits (the same words applySiteCommand reports). */
-async function structuralOutcome(command: AgentCommand, after: Map<string, SavedDraft | undefined>): Promise<AgentCommandOutcome> {
+async function structuralOutcome(command: AgentCommand, after: Map<string, SavedDraft | undefined>,
+  plan?: { after?: { node: number[] }; creates?: string[]; added?: string }): Promise<AgentCommandOutcome> {
   const { path, args = {} } = command;
   const hash = async (file: string): Promise<Record<string, string>> => {
     const record = after.get(file);
     return record && !record.deleted && !record.opaque ? { hash: await textHash(record.content) } : {};
   };
+  // A plan that needed no change commits only its receipt.
+  if (!after.size) return { message: `Nothing needed changing; ${path} is as it was.`, result: { path } };
   switch (command.operation) {
     case "create_page": {
       const file = [...after].find(([file, record]) => record && !record.deleted && record.baseSha === null && !record.movedFrom && nativePageRoute(file))?.[0];
@@ -873,6 +881,15 @@ async function structuralOutcome(command: AgentCommand, after: Map<string, Saved
     case "move_file": return { message: `Moved ${path} to ${String(args.to ?? "")}, unsaved.`, result: { path: String(args.to ?? "") } };
     case "delete_file": return { message: `Deleted ${path}, unsaved (Restore brings it back).` };
     case "remove_section": return { message: `Section ${args.section} removed from ${path}, unsaved.`, result: { ...await hash(path) } };
+    case "add_section": case "move_section": {
+      if (!plan?.after) break;
+      const section = outlineId(plan.after.node);
+      return { message: command.operation === "add_section" ? `${componentLabel(String(args.component ?? ""))} added to ${path} as section ${section}, unsaved.${plan.added ? ` ${plan.added}` : ""}` : `Section moved to ${section}, unsaved.`,
+        result: { section, ...await hash(path) } };
+    }
+    case "make_component":
+      return { message: `Made a component from element ${args.element} on ${path}; the page has the instance, unsaved.`,
+        result: { files: (plan?.creates ?? []).join(", "), ...await hash(path) } };
   }
   return { message: `Applied ${command.operation} to ${path} in the local drafts, unsaved.`, result: { path, ...await hash(path) } };
 }
@@ -953,12 +970,12 @@ export async function prepareAgentText(command: AgentCommand, scope: DraftScope,
           return release;
         } catch (error) { release(); return refuse(error); }
       },
-      async commit(before, after, valid) {
+      async commit(before, after, valid, plan) {
         if (committed) throw new Error("An agent command must use one guarded commit.");
         store.stageAgent(after);
         if (command.operation !== "write_file") {
           // The recorded outcome is the reply: a duplicate delivery gets the same files, route and hash.
-          outcome = await structuralOutcome(command, after);
+          outcome = await structuralOutcome(command, after, plan);
           receipt.outcome = JSON.parse(JSON.stringify(outcome)) as JsonValue;
         }
         if (!current() || !valid()) throw new Error("The repository or source changed meanwhile.");

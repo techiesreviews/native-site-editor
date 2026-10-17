@@ -15,7 +15,9 @@ export interface AgentTextCommit {
   /** Recheck ownership and paused admission between preparation awaits; commit proves authorization and cancellation. */
   check(): Promise<void>;
   fence(scope: DraftScope, paths: string[]): Promise<() => void>;
-  commit(before: Map<string, SavedDraft | undefined>, after: Map<string, SavedDraft | undefined>, current: () => boolean): Promise<boolean>;
+  /** `plan`: what the structural plan selects and creates, so the recorded reply names them (src/agent-site.ts). */
+  commit(before: Map<string, SavedDraft | undefined>, after: Map<string, SavedDraft | undefined>, current: () => boolean,
+    plan?: { after?: { path: string; node: number[] }; creates?: string[]; added?: string }): Promise<boolean>;
   publish<T>(changes: Map<string, SavedDraft | undefined>, apply: () => T): T;
   /** Committed but not published (the editor changed meanwhile): reads the durable drafts back; newer manual writes win. */
   settle(changes: Map<string, SavedDraft | undefined>): Promise<void>;
