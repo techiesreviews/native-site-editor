@@ -100,6 +100,8 @@ export function createAgentMenu(options: {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let interval: ReturnType<typeof setInterval> | undefined;
   let consentChecks: ReturnType<typeof setTimeout>[] = [];
+  // Grants this tab saw before Turn off: a later approval elsewhere never turns them back on.
+  const declined = new Set<string>();
   const applied = new Map<string, { state: string; message: string; result?: AgentCommand["result"] }>();
 
   // One button: "Connect with MCP" makes a token and copies a prompt that
@@ -139,12 +141,15 @@ export function createAgentMenu(options: {
   /** A message that replaces the state's own hint until the state changes. */
   let notice: { text: string; state: string } | undefined;
 
-  async function api(action: string, body?: unknown, zipped = false) {
+  /** `at`: the remote activation an upload belongs to; once it ended, nothing is sent. */
+  async function api(action: string, body?: unknown, zipped = false, at?: number) {
+    const sent = body === undefined ? undefined : zipped ? await gzip(JSON.stringify(body)) : JSON.stringify(body);
+    if (at !== undefined && !live(at)) throw new Error("Remote agents were turned off.");
     const response = await fetch(`/api/agent/${action}`, {
       method: body === undefined ? "GET" : "POST",
       credentials: "same-origin",
       headers: body === undefined ? undefined : { "Content-Type": "application/json", ...(zipped ? { "Content-Encoding": "gzip" } : {}) },
-      body: body === undefined ? undefined : zipped ? await gzip(JSON.stringify(body)) : JSON.stringify(body),
+      body: sent,
     });
     const result = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(result.error ?? "Agent connection failed.");
@@ -303,6 +308,7 @@ export function createAgentMenu(options: {
     consentChecks = [];
     document.removeEventListener("visibilitychange", wake);
     window.removeEventListener("focus", wake);
+    for (const grant of hub.grants) declined.add(grant.id);
     hub = { grants: [], tabId: null, updatedAt: null, commands: [], requests: [] };
     sentRevision = -1;
     if (shared && !disposed) {
@@ -402,7 +408,7 @@ export function createAgentMenu(options: {
       const built = await options.context();
       if (!live(at)) return;
       if (built) {
-        const { missing } = await api("context", { tabId, context: built.context }, true);
+        const { missing } = await api("context", { tabId, context: built.context }, true, at);
         if (live(at)) await sendTexts(Array.isArray(missing) ? missing : [], built.texts, at);
         // Turned off while this share was on its way: withdraw it again.
         if (!live(at)) {
@@ -419,7 +425,9 @@ export function createAgentMenu(options: {
       sentRevision = version;
       lastSent = Date.now();
     } catch (error) {
-      if (!disposed) say((error as Error).message);
+      if (live(at)) say((error as Error).message);
+      // Turned off mid-share (a draft batch may have followed the context): withdraw it.
+      else if (!remote && !disposed) await api("pause", { tabId }).catch(() => undefined);
     }
   }
 
@@ -433,7 +441,7 @@ export function createAgentMenu(options: {
       if (content === undefined) continue;
       const bytes = textBytes(JSON.stringify(content)) + 80;
       if (batch.length && (size + bytes > 4 * 1024 * 1024 || batch.length >= 200)) {
-        await api("drafts", { texts: batch }, true);
+        await api("drafts", { texts: batch }, true, at);
         if (!live(at)) return;
         batch = [];
         size = 0;
@@ -441,7 +449,7 @@ export function createAgentMenu(options: {
       batch.push({ hash, content });
       size += bytes;
     }
-    if (batch.length && live(at)) await api("drafts", { texts: batch }, true);
+    if (batch.length) await api("drafts", { texts: batch }, true, at);
   }
 
   async function poll(now = false) {
@@ -522,11 +530,13 @@ export function createAgentMenu(options: {
     if (remote) return void poll(true);
     const repo = options.repository();
     if (!repo || changing) return;
+    const since = activation;
     const found: HubState = await api("hub").catch(() => undefined);
-    if (disposed || remote || options.repository()?.id !== repo.id) return;
+    // Turned on, or on and off again, meanwhile: this answer decides nothing.
+    if (disposed || remote || activation !== since || options.repository()?.id !== repo.id) return;
     // The grant is made after the approval: the page's clock stamps one, the Worker's the
     // other, so allow ten seconds of skew. An earlier grant (one turned off here) never counts.
-    if (!found?.grants?.some((grant) => grant.via === "oauth" && grant.repoId === repo.id && grant.createdAt >= at - 10_000)) return;
+    if (!found?.grants?.some((grant) => grant.via === "oauth" && grant.repoId === repo.id && !declined.has(grant.id) && grant.createdAt >= at - 10_000)) return;
     for (const check of consentChecks) clearTimeout(check);
     consentChecks = [];
     startRemote();
