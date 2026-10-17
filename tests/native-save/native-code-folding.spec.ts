@@ -59,3 +59,24 @@ test("a cursor placed before the folding ranges load stays put, and its section 
   await page.keyboard.type("Updated ");
   await expect(frame.locator(".hero h1")).toHaveText("Updated A native browser preview");
 });
+
+// Monaco's HTML mode, which registers the HTML folding provider, loads on its
+// own after the editor mounts; until then Monaco folds by indentation. The
+// default fold waits for the HTML ranges instead of folding the fallback's.
+test("the default fold waits for the HTML folding ranges, not the indentation fallback", async ({ page, baseURL }) => {
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  await page.route((url) => url.pathname.includes("htmlMode"), async (route) => {
+    await held;
+    await route.continue();
+  });
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await editorMounted(page);
+  // The gutter's fold arrows show that Monaco has its fallback ranges.
+  await expect(page.locator("#content .codicon-folding-expanded").first()).toBeAttached();
+  const lines = page.locator("#content .view-lines");
+  await expect(lines).toContainText("<title>");
+  release();
+  await expect(lines).not.toContainText("<title>");
+  await expect(lines).not.toContainText("A native browser preview");
+});
