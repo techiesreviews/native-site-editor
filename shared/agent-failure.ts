@@ -26,7 +26,8 @@ export function parseRetryAfter(value: string | null | undefined, now: number): 
   const text = value.trim();
   const at = /^\d+(?:\.\d+)?$/.test(text) ? now + Number(text) * 1000
     : /^[A-Za-z]{3},/.test(text) ? Date.parse(text) : NaN;
-  return Number.isFinite(at) && at >= now ? Math.min(at, now + 86_400_000) : undefined;
+  // An authoritative cooldown is kept in full, however long.
+  return Number.isFinite(at) && at >= now ? at : undefined;
 }
 
 export function classifyAgentFailure(input: {

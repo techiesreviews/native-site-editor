@@ -2,6 +2,8 @@ import { AgentFailureError, type AgentFailure } from "../shared/agent-failure";
 
 interface RecordState {
   quota?: { at: number; resetAt?: number };
+  /** When the current run of failures began: the two-minute window counts from here. */
+  since?: number;
   attempts: number[];
   retryAt?: number;
   paused?: "transient";
@@ -16,6 +18,8 @@ interface RecoveryOptions {
   random(): number;
   setTimeout(callback: () => void, delay: number): number;
   clearTimeout(timer: number): void;
+  /** Runs `run` only while no other tab of the browser runs one; `undefined` when another does. */
+  exclusive<T>(run: () => Promise<T>): Promise<T | undefined>;
   reconnect(): Promise<void>;
 }
 interface RecoveryState {
@@ -26,20 +30,38 @@ interface RecoveryState {
 }
 const LEASE = 15_000;
 const WINDOW = 120_000;
+type Workspace = RecoveryOptions["workspace"];
+const recoveryKey = (workspace: Workspace) => `native-site-editor:agent-recovery:${workspace.account}:${workspace.repoId}`;
+function readRecord(storage: Pick<Storage, "getItem">, key: string): RecordState {
+  try {
+    const record = JSON.parse(storage.getItem(key) ?? "null");
+    return record && Array.isArray(record.attempts) ? record : { attempts: [] };
+  }
+  catch { return { attempts: [] }; }
+}
+/** Whether a tab of this workspace paused or is recovering remote work: tabs with remote agents off honour it too. */
+export function recoveryHolds(storage: Pick<Storage, "getItem">, workspace: Workspace, now: number) {
+  const record = readRecord(storage, recoveryKey(workspace));
+  return Boolean(record.quota || record.paused || record.lease || record.attempts.length || (record.retryAt ?? 0) > now);
+}
+/** A tab with remote agents off records a quota answer, so every tab of the workspace pauses. */
+export function recordQuota(storage: Pick<Storage, "getItem" | "setItem">, workspace: Workspace, failure: AgentFailure & { kind: "quota" }, now: number) {
+  const key = recoveryKey(workspace), record = readRecord(storage, key);
+  record.quota = { at: now, resetAt: failure.resetAt };
+  if (failure.retryAt !== undefined) record.retryAt = Math.max(record.retryAt ?? 0, failure.retryAt);
+  storage.setItem(key, JSON.stringify(record));
+}
 
 export function createAgentRecovery(options: RecoveryOptions) {
-  const key = `native-site-editor:agent-recovery:${options.workspace.account}:${options.workspace.repoId}`;
+  const key = recoveryKey(options.workspace);
   const listeners = new Set<() => void>();
   let timer: number | undefined, renewal: number | undefined, nextAttemptAt: number | undefined;
   let disposed = false, running = false, flight: Promise<{ retryAt?: number }> | undefined;
   let generation = 0;
-  function read(): RecordState {
-    try {
-      const record = JSON.parse(options.storage.getItem(key) ?? "null");
-      return record && Array.isArray(record.attempts) ? record : { attempts: [] };
-    }
-    catch { return { attempts: [] }; }
-  }
+  let abandon!: () => void;
+  // Disposal lets go of the lock at once: a read still running is fenced and decides nothing.
+  const abandoned = new Promise<{ retryAt?: number }>((resolve) => { abandon = () => resolve({}); });
+  const read = () => readRecord(options.storage, key);
   function notify() { for (const listener of listeners) listener(); }
   function write(record: RecordState) {
     options.storage.setItem(key, JSON.stringify(record));
@@ -84,7 +106,7 @@ export function createAgentRecovery(options: RecoveryOptions) {
     const record = read();
     if (record.quota || record.paused) {
       if ((record.retryAt ?? 0) > options.now())
-        timer = options.setTimeout(() => { timer = undefined; notify(); }, record.retryAt! - options.now());
+        timer = options.setTimeout(() => { timer = undefined; notify(); schedule(); }, record.retryAt! - options.now());
       return;
     }
     if (record.lease && !owns()) {
@@ -96,7 +118,7 @@ export function createAgentRecovery(options: RecoveryOptions) {
     const current = read();
     const delay = 1000 * 2 ** current.attempts.length * (0.5 + options.random());
     nextAttemptAt = Math.max(options.now() + delay, current.retryAt ?? 0);
-    if (current.attempts.length >= 5 || nextAttemptAt - (current.attempts[0] ?? options.now()) > WINDOW) {
+    if (current.attempts.length >= 5 || nextAttemptAt - (current.since ?? current.attempts[0] ?? options.now()) > WINDOW) {
       current.paused = "transient";
       delete current.lease;
       write(current);
@@ -105,7 +127,8 @@ export function createAgentRecovery(options: RecoveryOptions) {
       return;
     }
     renew();
-    timer = options.setTimeout(() => { timer = undefined; void attempt(false); }, nextAttemptAt - options.now());
+    const expected = current.attempts.length;
+    timer = options.setTimeout(() => { timer = undefined; void attempt(false, expected); }, nextAttemptAt - options.now());
     notify();
   }
   function report(failure: AgentFailure) {
@@ -128,16 +151,29 @@ export function createAgentRecovery(options: RecoveryOptions) {
       clearTimers();
     } else if (!record.quota && !record.paused && !record.lease) {
       record.lease = { tab: options.tabId, until: options.now() + LEASE };
+      record.since ??= options.now();
     }
     write(record);
     if (!running) { clearTimers(); schedule(); }
     return failure.kind;
   }
-  async function attempt(manual: boolean): Promise<{ retryAt?: number }> {
+  /** `expected`: the attempts an automatic read was scheduled after; another tab's read since then cancels it. */
+  async function attempt(manual: boolean, expected?: number): Promise<{ retryAt?: number }> {
+    const result = await options.exclusive(() => Promise.race([attemptAlone(manual, expected), abandoned]));
+    // Another tab is reading the hub: its outcome decides what happens next.
+    if (result === undefined && !disposed) { clearTimers(); schedule(); notify(); }
+    return result ?? {};
+  }
+  async function attemptAlone(manual: boolean, expected?: number): Promise<{ retryAt?: number }> {
     if (disposed || !owns()) return {};
     const record = read(), at = generation;
     if ((record.retryAt ?? 0) > options.now()) return { retryAt: record.retryAt };
     if (!manual && (record.quota || record.paused)) return {};
+    if (!manual && (record.attempts.length !== expected || options.now() - (record.since ?? options.now()) > WINDOW)) {
+      clearTimers();
+      schedule();
+      return {};
+    }
     running = true;
     record.attempts.push(options.now());
     write(record);
@@ -182,6 +218,7 @@ export function createAgentRecovery(options: RecoveryOptions) {
       const current = read();
       // Manual Retry starts a fresh budget. Quota stays paused until a successful read.
       current.attempts = [];
+      current.since = options.now();
       delete current.paused;
       write(current);
       renew();
@@ -191,6 +228,7 @@ export function createAgentRecovery(options: RecoveryOptions) {
     subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; },
     dispose() {
       disposed = true;
+      abandon();
       generation++;
       clearTimers();
       unsubscribe();
@@ -201,8 +239,8 @@ export function createAgentRecovery(options: RecoveryOptions) {
 }
 
 /** Storage events deliver changes only to other tabs. Local subscribers hear writes directly. */
-export function browserAgentRecovery(workspace: RecoveryOptions["workspace"], tabId: string, reconnect: () => Promise<void>) {
-  const key = `native-site-editor:agent-recovery:${workspace.account}:${workspace.repoId}`;
+export function browserAgentRecovery(workspace: Workspace, tabId: string, reconnect: () => Promise<void>) {
+  const key = recoveryKey(workspace);
   return createAgentRecovery({
     workspace, tabId, reconnect, storage: localStorage,
     channel: {
@@ -214,7 +252,10 @@ export function browserAgentRecovery(workspace: RecoveryOptions["workspace"], ta
       },
     },
     now: () => Date.now(), random: () => Math.random(),
-    setTimeout: (callback, delay) => window.setTimeout(callback, delay),
+    // Longer delays overflow the browser's timer; the callback then checks the time again.
+    setTimeout: (callback, delay) => window.setTimeout(callback, Math.min(delay, 2_147_483_647)),
+    // Web Locks need a secure page; without them the shared lease alone keeps tabs apart.
+    exclusive: (run) => navigator.locks ? navigator.locks.request(key, { ifAvailable: true }, (lock) => (lock ? run() : undefined)) : run(),
     clearTimeout: (timer) => window.clearTimeout(timer),
   });
 }

@@ -1,5 +1,5 @@
 import { connectionPrompt } from "../agent-prompts";
-import { browserAgentRecovery } from "../agent-recovery";
+import { browserAgentRecovery, recordQuota, recoveryHolds } from "../agent-recovery";
 import { AgentFailureError, classifyAgentFailure } from "../../shared/agent-failure";
 import { button, node } from "../ui/dom";
 import { textBytes, type AgentCommand, type AgentElement } from "../../shared/agent";
@@ -65,6 +65,7 @@ interface HubState {
 }
 
 export const AGENT_CONNECTED_KEY = "native-site-editor:agent-connected";
+const QUOTA_PAUSE = "Remote agents are paused: the editor's service has used up today's allowance. Your drafts and sign-in are safe, and you can keep editing.";
 const FAST = 2000;
 const SLOW = 30_000;
 
@@ -298,7 +299,7 @@ export function createAgentMenu(options: {
           : "";
     let pause = "";
     if (recovering?.mode === "quota") {
-      pause = "Remote agents are paused: the editor's service has used up today's allowance. Your drafts and sign-in are safe, and you can keep editing.";
+      pause = QUOTA_PAUSE;
       if (recovering.resetAt !== undefined) pause += ` It should work again after ${new Date(recovering.resetAt).toLocaleString()} (midnight UTC).`;
     } else if (recovering?.mode === "paused") pause = "Remote agents are paused: the editor could not reach its service. Your drafts are safe. Choose Retry to try again.";
     else if (recovering?.mode === "reconnecting") pause = "Reconnecting to remote agents…";
@@ -614,10 +615,19 @@ export function createAgentMenu(options: {
     const repo = options.repository();
     if (!repo || changing) return;
     // Off tabs still honour a pause recorded by an on tab before checking consent.
-    const saved = JSON.parse(localStorage.getItem(`native-site-editor:agent-recovery:${options.account}:${repo.id}`) ?? "{}");
-    if (saved.quota || saved.paused || saved.lease || saved.attempts?.length || saved.retryAt > Date.now()) return;
+    const workspace = { account: options.account, repoId: repo.id };
+    if (recoveryHolds(localStorage, workspace, Date.now())) return;
     const since = activation;
-    const found: HubState = await api("hub").catch(() => undefined);
+    const found: HubState | undefined = await api("hub").catch((error) => {
+      // Today's allowance is used up: no further check runs, here or in the workspace's other tabs.
+      if (error instanceof AgentFailureError && error.failure.kind === "quota") {
+        recordQuota(localStorage, workspace, error.failure, Date.now());
+        for (const check of consentChecks) clearTimeout(check);
+        consentChecks = [];
+        say(QUOTA_PAUSE);
+      }
+      return undefined;
+    });
     // Turned on, or on and off again, meanwhile: this answer decides nothing.
     if (disposed || remote || activation !== since || options.repository()?.id !== repo.id) return;
     // The grant is made after the approval: the page's clock stamps one, the Worker's the

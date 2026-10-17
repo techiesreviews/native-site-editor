@@ -14,10 +14,19 @@ function fixture() {
   const timers = new Map<number, { at: number; callback: () => void }>();
   const channels = new Map<string, () => void>();
   const calls: { tab: string; at: number }[] = [];
+  let locked = false;
   const storage = { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value); } } satisfies Pick<Storage, "getItem" | "setItem">;
-  function tab(tabId: string, reconnect: () => Promise<void> = async () => transient(), repoId = 1) {
+  /** `own`: the tab sees its own copy of storage, as when two tabs' writes interleave. */
+  function tab(tabId: string, reconnect: () => Promise<void> = async () => transient(), repoId = 1, own = false) {
+    const copy = new Map<string, string>();
     return createAgentRecovery({
-      workspace: { account: "lex", repoId }, tabId, storage,
+      workspace: { account: "lex", repoId }, tabId,
+      storage: own ? { getItem: (key) => copy.get(key) ?? null, setItem: (key, value) => { copy.set(key, value); } } : storage,
+      async exclusive(run) {
+        if (locked) return undefined;
+        locked = true;
+        try { return await run(); } finally { locked = false; }
+      },
       channel: {
         subscribe(listener) { channels.set(tabId, listener); return () => { channels.delete(tabId); }; },
         post() { queueMicrotask(() => { for (const [id, listener] of channels) if (id !== tabId) listener(); }); },
@@ -69,7 +78,7 @@ test("Retry-After and midnight use absolute times without inventing a cooldown",
   assert.equal(parseRetryAfter("60", now), now + 60_000);
   assert.equal(parseRetryAfter(new Date(now + 60_000).toUTCString(), now), now + 60_000);
   for (const value of [null, "", "-1", "nonsense", new Date(now - 1000).toUTCString()]) assert.equal(parseRetryAfter(value, now), undefined);
-  assert.equal(parseRetryAfter("999999", now), now + 86_400_000);
+  assert.equal(parseRetryAfter("172800", now), now + 172_800_000);
   assert.equal(nextUtcMidnight(now), Date.UTC(2026, 9, 18));
   assert.equal(nextUtcMidnight(Date.UTC(2026, 11, 31)), Date.UTC(2027, 0, 1));
 });
@@ -166,4 +175,40 @@ test("lease takeover and disposal fence an unfinished read", async () => {
   assert.equal(f.calls.length, 2); assert.equal(f.calls[1].tab, "b");
   b.report({ kind: "quota" }); finish(); await settle();
   assert.equal(b.state().mode, "quota"); b.dispose();
+});
+
+test("tabs whose lease claims interleave still read the hub once", async () => {
+  const f = fixture();
+  let finish!: () => void;
+  const held = new Promise<void>(resolve => { finish = resolve; });
+  const a = f.tab("a", () => held, 1, true), b = f.tab("b", async () => {}, 1, true);
+  a.report({ kind: "quota" }); b.report({ kind: "quota" });
+  const first = a.retry(), second = b.retry();
+  await settle();
+  assert.equal(f.calls.length, 1);
+  finish(); await first; await second;
+  assert.equal(f.calls.length, 1);
+  a.dispose(); b.dispose();
+});
+
+test("the two-minute window starts at the failure, not at the first read", async () => {
+  const f = fixture(), a = f.tab("a");
+  a.report({ kind: "transient", retryAt: now + 119_000 });
+  await f.tick(600_000);
+  assert.deepEqual(f.calls.map(call => call.at - now), [119_000]);
+  assert.equal(a.state().mode, "paused");
+  a.dispose();
+});
+
+test("a 48-hour Retry-After holds manual Retry for the full 48 hours", async () => {
+  const f = fixture(), a = f.tab("a", async () => {});
+  const retryAt = parseRetryAfter("172800", now)!;
+  a.report({ kind: "quota", retryAt });
+  await f.tick(47 * 3_600_000);
+  assert.deepEqual(await a.retry(), { retryAt });
+  assert.equal(f.calls.length, 0);
+  await f.tick(3_600_000);
+  await a.retry();
+  assert.equal(f.calls.length, 1); assert.equal(a.allowAutomatic(), true);
+  a.dispose();
 });
