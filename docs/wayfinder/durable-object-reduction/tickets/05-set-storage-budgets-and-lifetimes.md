@@ -4,7 +4,7 @@ title: Set server data budgets and retention rules
 type: grilling (HITL)
 status: closed
 assignee: Codex lead with Lex
-blocked_by: [01, 02, 03]
+blocked_by: [01-define-disconnect-and-reconnect, 02-establish-quota-baseline, 03-research-live-relay-and-cleanup]
 ---
 
 ## Question

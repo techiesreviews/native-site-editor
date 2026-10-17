@@ -4,7 +4,7 @@ title: Set traffic budgets, quota recovery and rollout checks
 type: grilling (HITL)
 status: closed
 assignee: Codex lead with Lex
-blocked_by: [02, 04, 05, 06, 09]
+blocked_by: [02-establish-quota-baseline, 04-choose-connection-and-tab-ownership, 05-set-storage-budgets-and-lifetimes, 06-define-browser-recovery, 09-choose-registration-rollout]
 ---
 
 ## Question

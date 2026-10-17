@@ -4,7 +4,7 @@ title: Define browser persistence and command recovery
 type: grilling (HITL)
 status: closed
 assignee: Codex lead with Lex
-blocked_by: [01, 04]
+blocked_by: [01-define-disconnect-and-reconnect, 04-choose-connection-and-tab-ownership]
 ---
 
 ## Question

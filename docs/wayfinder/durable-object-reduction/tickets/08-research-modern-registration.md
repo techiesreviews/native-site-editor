@@ -4,7 +4,7 @@ title: Establish modern registration compatibility and safe metadata lookup
 type: research (AFK)
 status: closed
 assignee: Codex subscription researcher
-blocked_by: [04, 05]
+blocked_by: [04-choose-connection-and-tab-ownership, 05-set-storage-budgets-and-lifetimes]
 ---
 
 ## Question
