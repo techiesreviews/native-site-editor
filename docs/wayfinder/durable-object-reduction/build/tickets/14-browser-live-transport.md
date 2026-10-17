@@ -3,7 +3,7 @@ title: "Receive live commands without polling"
 type: task (AFK)
 status: open
 assignee:
-blocked_by: [13-live-relay-core]
+blocked_by: [10-browser-recovery, 11-clean-source-cache, 13-live-relay-core]
 builder: sol
 phase: 3
 ---

@@ -3,7 +3,7 @@ title: "Bound retained dynamic registrations"
 type: task (AFK)
 status: open
 assignee:
-blocked_by: [22-bounded-repository-cache]
+blocked_by: [03-remote-recovery]
 builder: sol
 phase: 4
 ---

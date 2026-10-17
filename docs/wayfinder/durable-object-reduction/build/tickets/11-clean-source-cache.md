@@ -3,7 +3,7 @@ title: "Bound disposable browser source caching"
 type: task (AFK)
 status: open
 assignee:
-blocked_by: [10-browser-recovery]
+blocked_by: [07-atomic-structural-edits]
 builder: sol
 phase: 2
 ---

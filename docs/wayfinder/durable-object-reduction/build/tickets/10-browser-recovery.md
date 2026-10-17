@@ -3,7 +3,7 @@ title: "Bound receipts and export recoverable work"
 type: task (AFK)
 status: open
 assignee:
-blocked_by: [09-browser-conversations]
+blocked_by: [08-atomic-media-edits, 09-browser-conversations]
 builder: claude
 phase: 2
 ---

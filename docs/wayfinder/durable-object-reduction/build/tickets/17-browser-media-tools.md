@@ -3,7 +3,7 @@ title: "Route remaining media tools through the same executor"
 type: task (AFK)
 status: open
 assignee:
-blocked_by: [16-browser-edit-tools]
+blocked_by: [16-browser-edit-tools, 08-atomic-media-edits]
 builder: sol
 phase: 3
 ---
