@@ -116,10 +116,13 @@ export function indexedDbUploadBytes(name = "native-site-editor-uploads"): Uploa
     request.onerror = () => { db = undefined; reject(request.error ?? new Error("Browser file storage is unavailable.")); };
   });
   const run = async <T>(mode: IDBTransactionMode, work: (store: IDBObjectStore) => IDBRequest<T>) => {
-    const store = (await open()).transaction("bytes", mode).objectStore("bytes");
+    const transaction = (await open()).transaction("bytes", mode);
+    const store = transaction.objectStore("bytes");
     return new Promise<T>((resolve, reject) => {
       const request = work(store);
-      request.onsuccess = () => resolve(request.result);
+      request.onsuccess = () => { if (mode === "readonly") resolve(request.result); };
+      transaction.oncomplete = () => resolve(request.result);
+      transaction.onabort = transaction.onerror = () => reject(transaction.error ?? new Error("Browser file storage failed."));
       request.onerror = () => reject(request.error ?? new Error("Browser file storage failed."));
     });
   };

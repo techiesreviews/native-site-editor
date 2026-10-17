@@ -1,3 +1,4 @@
+import type { AgentTextCommit } from "../editor-workspace";
 import { onGithubPages } from "../../shared/github-pages";
 import { sitePathPrefix } from "../../shared/site-path-prefix";
 import { readMediaPrefix } from "./media-prefix";
@@ -31,6 +32,7 @@ import { planRestore, pruneRemoved, recentlyRemoved, recordRemoval, removedPaths
 
 /** Prepared mutations only. The host validates and commits this entire batch atomically. */
 export interface MediaWorkspaceBatch {
+  agent?: AgentTextCommit;
   label: string;
   expectedPaths: string[];
   expectedSources: Map<string, string | undefined>;
@@ -52,6 +54,8 @@ export interface MediaBatchTransaction<State> {
   assetVersion(path: string): string | undefined;
   snapshot(batch: MediaWorkspaceBatch): Promise<State>;
   stage(batch: MediaWorkspaceBatch, state: State): Promise<void>;
+  persist?(batch: MediaWorkspaceBatch, state: State): Promise<boolean>;
+  release?(state: State): void;
   /** Synchronous draft/source/path mutation and one Undo registration. No awaits here. */
   commit(batch: MediaWorkspaceBatch, state: State): void;
   /** Restore the origin scope. Remove only newly owned, unreferenced upload bytes. */
@@ -68,18 +72,23 @@ export async function applyMediaWorkspaceBatch<State>(batch: MediaWorkspaceBatch
     for (const [path, version] of batch.expectedAssets) if (host.assetVersion(path) !== version) throw new Error(`${path} changed while preparing image changes. No image changes were applied.`);
   };
   guard();
+  if (batch.agent && !host.persist) throw new Error("Agent media persistence is unavailable.");
   const state = await host.snapshot(batch);
   try {
     guard();
     await host.stage(batch, state);
     guard();
+    if (batch.agent && host.persist && !await host.persist(batch, state)) return;
     host.commit(batch, state);
   } catch (error) {
     await host.rollback(batch, state);
     throw error;
-  }
+  } finally { host.release?.(state); }
 }
 export interface MediaWorkspaceContext {
+  agent?: boolean;
+  /** Headless hosts can provide typing flush without loading the source editor. */
+  flushTyping?(scope: DraftScope, paths: string[]): void;
   key: string; scope: DraftScope; drafts: DraftAccess; paths: string[]; items: MediaLibraryItem[];
   pages: string[]; components: Record<string, string>; origins?: string[];
   /** The repository's size in KiB (GitHub); absent for local folders. */
@@ -259,6 +268,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     return next;
   };
   const sweep = async (ctx: MediaWorkspaceContext) => {
+    if (ctx.agent) return;
     try {
       if (ctx.removedCopies) {
         await sweepRemovedCopies(ctx.removedCopies, today(ctx));
