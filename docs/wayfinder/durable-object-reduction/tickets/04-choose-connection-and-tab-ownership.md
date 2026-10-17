@@ -4,7 +4,7 @@ title: Choose agent connection modes and tab ownership
 type: grilling (HITL)
 status: closed
 assignee: Codex lead with Lex
-blocked_by: [01, 03]
+blocked_by: [01-define-disconnect-and-reconnect, 03-research-live-relay-and-cleanup]
 ---
 
 ## Question

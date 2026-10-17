@@ -4,7 +4,7 @@ title: Choose registration compatibility and retention rollout
 type: grilling (HITL)
 status: closed
 assignee: Codex lead with Lex
-blocked_by: [08]
+blocked_by: [08-research-modern-registration]
 ---
 
 ## Question
