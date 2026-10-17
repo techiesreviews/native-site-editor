@@ -1,5 +1,5 @@
 import { connectionPrompt } from "../agent-prompts";
-import { browserAgentRecovery, recordQuota, recoveryHolds } from "../agent-recovery";
+import { browserAgentRecovery, recordFailure, recoveryHolds } from "../agent-recovery";
 import { AgentFailureError, classifyAgentFailure } from "../../shared/agent-failure";
 import { button, node } from "../ui/dom";
 import { textBytes, type AgentCommand, type AgentElement } from "../../shared/agent";
@@ -157,18 +157,21 @@ export function createAgentMenu(options: {
     const sent = body === undefined ? undefined : zipped ? await gzip(JSON.stringify(body)) : JSON.stringify(body);
     if (at !== undefined && !live(at)) throw new Error("Remote agents were turned off.");
     if (!recovering && recovery && !recovery.allowAutomatic()) throw new AgentFailureError({ kind: "other" }, "Remote agents are paused.");
-    let response: Response;
-    try { response = await fetch(`/api/agent/${action}`, {
-      method: body === undefined ? "GET" : "POST",
-      credentials: "same-origin",
-      headers: body === undefined ? undefined : { "Content-Type": "application/json", ...(zipped ? { "Content-Encoding": "gzip" } : {}) },
-      body: sent,
-    }); } catch {
+    let response: Response, text: string;
+    // A connection lost while the answer's body arrives is a network failure too.
+    try {
+      response = await fetch(`/api/agent/${action}`, {
+        method: body === undefined ? "GET" : "POST",
+        credentials: "same-origin",
+        headers: body === undefined ? undefined : { "Content-Type": "application/json", ...(zipped ? { "Content-Encoding": "gzip" } : {}) },
+        body: sent,
+      });
+      text = await response.text();
+    } catch {
       const error = new AgentFailureError(classifyAgentFailure({ networkError: true, now: Date.now() }));
       if (!recovering && (at === undefined || live(at))) failed(error);
       throw error;
     }
-    const text = await response.text();
     let result;
     try { result = JSON.parse(text); } catch { /* Cloudflare's 1027 answer is HTML. */ }
     if (!response.ok) {
@@ -176,7 +179,7 @@ export function createAgentMenu(options: {
       if (!recovering && (at === undefined || live(at))) failed(error);
       throw error;
     }
-    return result;
+    return result ?? {};
   }
   function stopAutomatic() {
     clearInterval(interval);
@@ -619,9 +622,8 @@ export function createAgentMenu(options: {
     if (recoveryHolds(localStorage, workspace, Date.now())) return;
     const since = activation;
     const found: HubState | undefined = await api("hub").catch((error) => {
-      // Today's allowance is used up: no further check runs, here or in the workspace's other tabs.
-      if (error instanceof AgentFailureError && error.failure.kind === "quota") {
-        recordQuota(localStorage, workspace, error.failure, Date.now());
+      // Today's allowance used up, or a cooldown: the workspace's tabs skip their checks until it ends.
+      if (error instanceof AgentFailureError && recordFailure(localStorage, workspace, error.failure, Date.now()) === "quota") {
         for (const check of consentChecks) clearTimeout(check);
         consentChecks = [];
         say(QUOTA_PAUSE);
