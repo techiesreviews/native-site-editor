@@ -15,8 +15,14 @@ import "./agent-menu.css";
 // connection belongs to this editor session and works on whichever
 // repository the sharing tab shows; the Worker keeps the session's
 // connections, the context the sharing tab last reported, and the changes
-// agents queued in one hub (worker/agent-context.ts). This tab polls that
-// hub: while a connection exists it reports its context (built only when
+// agents queued in one hub (worker/agent-context.ts).
+//
+// Remote agents are off in each tab until the user turns them on there:
+// Connect with MCP, or approving a connection in this browser for the
+// repository this tab shows (`consentGranted`). Until then the tab makes no
+// agent requests at all, an existing connection included, and the choice is
+// not remembered across reloads. Turn off (or Disconnect MCP) stops it again.
+// While on, this tab polls that hub: while a connection exists it reports its context (built only when
 // sent) and applies queued changes with `onCommand`, then reports the new
 // context before it acknowledges each change, so an agent reading after
 // "applied" sees it. The context lists the drafts by hash; their texts go
@@ -83,12 +89,15 @@ export function createAgentMenu(options: {
   let disposed = false,
     polling = false,
     changing = false,
-    shared = false;
+    shared = false,
+    remote = false;
   let revision = 0,
     sentRevision = -1,
     lastSent = 0,
     lastPoll = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let interval: ReturnType<typeof setInterval> | undefined;
+  let consentChecks: ReturnType<typeof setTimeout>[] = [];
   const applied = new Map<string, { state: string; message: string; result?: AgentCommand["result"] }>();
 
   // One button: "Connect with MCP" makes a token and copies a prompt that
@@ -107,8 +116,11 @@ export function createAgentMenu(options: {
   hint.setAttribute("role", "status");
   const again = button("Copy again", () => void copyPrompt(), "text-button agent-menu__link");
   const cancel = button("Cancel", () => void revoke(), "text-button agent-menu__link");
+  // Stops this tab's remote work; the agents' access stays for when it is turned on again.
+  const off = button("Turn off", () => turnOff(), "text-button agent-menu__link");
+  off.title = "Stop remote agents in this tab. Their access stays; Connect with MCP turns them on again.";
   const links = node("span", "agent-menu__links");
-  links.append(again, cancel);
+  links.append(again, cancel, off);
   // What the connected agents wait on, beside Disconnect MCP.
   const waitingOn = node("div", "agent-menu__waiting");
   waitingOn.id = "agent-waiting";
@@ -143,6 +155,7 @@ export function createAgentMenu(options: {
   const waiting = () => Boolean(token && tokenId && liveGrants().some((grant) => grant.id === tokenId && !grant.usedAt));
   function state() {
     if (!options.repository()) return "closed";
+    if (!remote) return "off";
     if (usedGrants().length) return "connected";
     return waiting() ? "waiting" : "idle";
   }
@@ -194,10 +207,17 @@ export function createAgentMenu(options: {
         ? `${names} connected. Choose to revoke its access.`
         : current === "waiting"
           ? "Copy the prompt again"
-          : "Copy a prompt that connects Claude, Codex or another agent to this site";
-    links.hidden = current !== "waiting";
+          : current === "off"
+            ? "Turn on remote agents in this tab and copy a prompt that connects Claude, Codex or another agent"
+            : "Copy a prompt that connects Claude, Codex or another agent to this site";
+    links.hidden = current === "off" || current === "closed";
+    again.hidden = cancel.hidden = current !== "waiting";
     const text =
-      current === "waiting" ? "Prompt copied. Paste it into Claude, Codex or another agent." : "";
+      current === "waiting"
+        ? "Prompt copied. Paste it into Claude, Codex or another agent."
+        : current === "off"
+          ? "Remote agents are off in this tab. Choose Connect with MCP to turn them on."
+          : "";
     hint.textContent = notice?.text ?? text;
     hint.hidden = !hint.textContent;
   }
@@ -249,7 +269,42 @@ export function createAgentMenu(options: {
     const current = state();
     if (current === "connected") await revoke();
     else if (current === "waiting") await copyPrompt();
+    else if (current === "off") await turnOn();
     else await start();
+  }
+  // Connect with MCP while remote agents are off: an agent connected before
+  // is used again (it may need resuming); otherwise a new prompt is made.
+  async function turnOn(task?: string) {
+    if (!options.repository() || changing) return;
+    startRemote();
+    await poll(true);
+    if (state() === "connected") say("Remote agents are on. If an agent you connected before stopped, ask it to continue.");
+    else if (state() === "idle") await start(task);
+  }
+  function startRemote() {
+    if (remote || disposed) return;
+    remote = true;
+    interval = setInterval(() => void poll(), FAST);
+    document.addEventListener("visibilitychange", wake);
+    window.addEventListener("focus", wake);
+  }
+  /** Stops every remote request of this tab; a shared context is withdrawn once. */
+  function turnOff() {
+    if (!remote) return;
+    remote = false;
+    clearInterval(interval);
+    clearTimeout(timer);
+    for (const check of consentChecks) clearTimeout(check);
+    consentChecks = [];
+    document.removeEventListener("visibilitychange", wake);
+    window.removeEventListener("focus", wake);
+    hub = { grants: [], tabId: null, updatedAt: null, commands: [], requests: [] };
+    sentRevision = -1;
+    if (shared && !disposed) {
+      shared = false;
+      void api("pause", { tabId }).catch(() => undefined);
+    }
+    paint();
   }
   // A task the copied prompt ends with instead of watching for requests
   // (Start your site's Build it with an agent).
@@ -273,6 +328,9 @@ export function createAgentMenu(options: {
       await poll(true);
       await copyPrompt();
     } catch (error) {
+      changing = false;
+      // A failed first prompt leaves remote agents off; a connected agent keeps them on.
+      if (!usedGrants().length) turnOff();
       say((error as Error).message);
     } finally {
       changing = false;
@@ -287,7 +345,7 @@ export function createAgentMenu(options: {
       await api("revoke", { all: true });
       token = tokenId = undefined;
       changing = false;
-      await poll(true);
+      turnOff();
     } catch (error) {
       say((error as Error).message);
     } finally {
@@ -314,7 +372,7 @@ export function createAgentMenu(options: {
     return syncChain;
   }
   async function doSync(force: boolean) {
-    if (disposed) return;
+    if (disposed || !remote) return;
     const grants = liveGrants();
     if (!grants.length) {
       if (shared) {
@@ -374,7 +432,7 @@ export function createAgentMenu(options: {
   }
 
   async function poll(now = false) {
-    if (disposed || polling || changing) return;
+    if (disposed || !remote || polling || changing) return;
     // A tab in the background keeps applying changes while an agent is
     // connected (browsers may slow its timer); otherwise it waits to be seen.
     if (document.visibilityState === "hidden" && !now && !liveGrants().length) return;
@@ -428,28 +486,39 @@ export function createAgentMenu(options: {
       polling = false;
     }
   }
-  const interval = setInterval(() => void poll(), FAST);
-  const wake = () => {
+  function wake() {
     if (document.visibilityState === "visible") {
       sentRevision = -1;
       void poll(true);
     }
-  };
-  const consentGranted = () => {
-    // Consent announces before the grant arrives. Retry the same event after lazy loading.
-    for (const delay of [1000, 4000, 10_000]) setTimeout(() => void poll(true), delay);
-  };
+  }
+  // A connection approved in this browser at `at` turns remote agents on
+  // here only once the Worker has its new OAuth grant for this tab's
+  // repository: an older grant, or one for another repository, never does.
+  // The grant arrives after the consent page's announcement, so check a few times.
+  function consentGranted(at: number) {
+    for (const check of consentChecks) clearTimeout(check);
+    consentChecks = [1000, 4000, 10_000].map((delay) => setTimeout(() => void checkConsent(at), delay));
+  }
+  async function checkConsent(at: number) {
+    if (disposed) return;
+    if (remote) return void poll(true);
+    const repo = options.repository();
+    if (!repo || changing) return;
+    const found: HubState = await api("hub").catch(() => undefined);
+    if (disposed || remote || options.repository()?.id !== repo.id) return;
+    // The page's clock stamps the approval, the Worker's the grant: allow two minutes of skew.
+    if (!found?.grants?.some((grant) => grant.via === "oauth" && grant.repoId === repo.id && grant.createdAt >= at - 120_000)) return;
+    for (const check of consentChecks) clearTimeout(check);
+    consentChecks = [];
+    startRemote();
+    await poll(true);
+  }
   const onStorage = (event: StorageEvent) => {
-    if (event.key === AGENT_CONNECTED_KEY) {
-      // The consent page was just allowed: the token arrives in a moment.
-      consentGranted();
-    }
+    if (event.key === AGENT_CONNECTED_KEY) consentGranted(Number(event.newValue) || Date.now());
   };
-  document.addEventListener("visibilitychange", wake);
-  window.addEventListener("focus", wake);
   window.addEventListener("storage", onStorage);
   paint();
-  void poll(true);
   return {
     root,
     consentGranted,
@@ -462,7 +531,8 @@ export function createAgentMenu(options: {
       if (state() === "waiting" && token) {
         goal = task;
         await copyPrompt();
-      } else await start(task);
+      } else if (!remote) await turnOn(task);
+      else await start(task);
       return Boolean(token);
     },
     /** Whether an agent is connected now. */
@@ -502,15 +572,12 @@ export function createAgentMenu(options: {
       revision++;
       paint();
       clearTimeout(timer);
-      timer = setTimeout(() => void sync(), 600);
+      if (remote) timer = setTimeout(() => void sync(), 600);
     },
     destroy() {
       disposed = true;
       flyout.destroy();
-      clearInterval(interval);
-      clearTimeout(timer);
-      document.removeEventListener("visibilitychange", wake);
-      window.removeEventListener("focus", wake);
+      turnOff();
       window.removeEventListener("storage", onStorage);
       token = tokenId = undefined;
     },

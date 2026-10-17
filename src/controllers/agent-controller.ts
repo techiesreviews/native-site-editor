@@ -2,41 +2,32 @@ import type { AgentElement } from "../../shared/agent";
 import type { AppStore } from "../app-store";
 import type { createAgentMenu } from "../components/agent-menu";
 
+/** Mirrors AGENT_CONNECTED_KEY in components/agent-menu.ts, which loads lazily. */
+const AGENT_CONNECTED_KEY = "native-site-editor:agent-connected";
+
 type MenuOptions = Parameters<typeof createAgentMenu>[0];
 /** Only the menu surface the host uses; its implementation stays lazy. */
 export interface AgentMenuPort<Root> {
   root: Root;
   connected(): boolean;
   changed(): void;
-  consentGranted(): void;
+  /** A connection was approved in this browser at `at` (ms); the menu checks it is for this workspace. */
+  consentGranted(at: number): void;
   destroy(): void;
   ask(text: string, element: AgentElement): Promise<unknown>;
   answer(id: string, text: string): Promise<void>;
   dismiss(id: string): Promise<void>;
 }
+/** Only the consent page's storage event reaches the controller; it makes no requests itself. */
 interface AgentEnvironment {
   window: Pick<EventTarget, "addEventListener" | "removeEventListener">;
-  document: Pick<EventTarget, "addEventListener" | "removeEventListener">;
-  visible(): boolean;
-  hub(): Promise<{ grants?: unknown[]; requests?: unknown[] }>;
-  interval(callback: () => void, delay: number): () => void;
-  timeout(callback: () => void, delay: number): () => void;
-}
-function browserEnvironment(): AgentEnvironment {
-  return {
-    window, document,
-    visible: () => document.visibilityState === "visible",
-    async hub() {
-      const response = await fetch("/api/agent/hub", { credentials: "same-origin" });
-      if (!response.ok) throw new Error("Could not check the agent connection.");
-      return response.json();
-    },
-    interval(callback, delay) { const timer = setInterval(callback, delay); return () => clearInterval(timer); },
-    timeout(callback, delay) { const timer = setTimeout(callback, delay); return () => clearTimeout(timer); },
-  };
 }
 
-/** Owns lazy mounting and connection discovery for the current signed-in host. */
+/**
+ * Owns lazy mounting of the agent menu for the current signed-in host. Remote agents are opt-in
+ * per tab: startup and mounting make no agent requests; only Connect in the menu or a connection
+ * approved in this browser (checked against this tab's workspace by the menu) starts the transport.
+ */
 export function createAgentController<Root extends { remove(): void } = HTMLElement>(options: {
   account(): string | undefined;
   host(): { append(root: Root): void } | undefined;
@@ -46,28 +37,17 @@ export function createAgentController<Root extends { remove(): void } = HTMLElem
   onError(error: unknown): void;
   environment?: AgentEnvironment;
 }) {
-  const environment = options.environment ?? browserEnvironment();
+  const environment = options.environment ?? { window };
   let menu: AgentMenuPort<Root> | undefined;
   let mounted: { account: string; host: NonNullable<ReturnType<typeof options.host>> } | undefined;
   let active = true;
   let epoch = 0;
   let loading: { account: string; host: NonNullable<ReturnType<typeof options.host>>; epoch: number; promise: Promise<void> } | undefined;
-  let cancelInterval: (() => void) | undefined;
-  let cancelRetry: (() => void) | undefined;
-  let probeVersion = 0;
-  let probing: object | undefined;
   let listening = false;
   const isCurrent = (account: string, host: ReturnType<typeof options.host>, revision: number) =>
     active && epoch === revision && options.account() === account && options.host() === host;
   function currentMenu() {
     return mounted && isCurrent(mounted.account, mounted.host, epoch) ? menu : undefined;
-  }
-  function stop() {
-    cancelInterval?.();
-    cancelRetry?.();
-    cancelInterval = cancelRetry = undefined;
-    probeVersion++;
-    probing = undefined;
   }
   function ensure(): Promise<void> {
     if (!active || currentMenu()) return Promise.resolve();
@@ -89,63 +69,35 @@ export function createAgentController<Root extends { remove(): void } = HTMLElem
       });
       mounted = { account, host };
       host.append(menu.root);
-      stop();
     }).finally(() => { if (loading === request) loading = undefined; });
     loading = request;
     return request.promise;
   }
-  async function restore(now = false) {
-    if (!active || probing || currentMenu() || (!now && !environment.visible())) return;
-    const account = options.account(), host = options.host(), revision = epoch, version = probeVersion;
-    if (!account || !host) return;
-    const request = {};
-    probing = request;
-    try {
-      const hub = await environment.hub();
-      if (!isCurrent(account, host, revision) || version !== probeVersion) return;
-      if (hub.grants?.length || hub.requests?.length) await ensure();
-    } finally {
-      if (probing === request) probing = undefined;
-    }
-  }
-  const wake = () => { if (cancelInterval) void restore().catch(() => {}); };
   const storage = (event: Event) => {
-    if (!("key" in event) || event.key !== "native-site-editor:agent-connected" || currentMenu() || !active) return;
+    if (!("key" in event) || event.key !== AGENT_CONNECTED_KEY || currentMenu() || !active) return;
     const account = options.account(), host = options.host(), revision = epoch;
     if (!account || !host) return;
+    const at = Number((event as StorageEvent).newValue) || Date.now();
     void ensure().then(() => {
-      if (isCurrent(account, host, revision)) currentMenu()?.consentGranted();
+      if (isCurrent(account, host, revision)) currentMenu()?.consentGranted(at);
     }).catch((error: unknown) => options.onError(error));
   };
   function start() {
     active = true;
-    stop();
     if (!listening) {
-      environment.window.addEventListener("focus", wake);
-      environment.document.addEventListener("visibilitychange", wake);
       environment.window.addEventListener("storage", storage);
       listening = true;
     }
-    cancelInterval = environment.interval(() => void restore().catch(() => {}), 30_000);
-    const revision = epoch, version = probeVersion;
-    void restore(true).catch(() => {
-      // One early retry for a transient boot failure; visible polling continues.
-      if (active && epoch === revision && version === probeVersion && cancelInterval)
-        cancelRetry = environment.timeout(() => { cancelRetry = undefined; void restore().catch(() => {}); }, 3000);
-    });
   }
   function destroy() {
     active = false;
     epoch++;
-    stop();
     loading = undefined;
     menu?.destroy();
     menu?.root.remove();
     menu = undefined;
     mounted = undefined;
     if (listening) {
-      environment.window.removeEventListener("focus", wake);
-      environment.document.removeEventListener("visibilitychange", wake);
       environment.window.removeEventListener("storage", storage);
       listening = false;
     }
@@ -163,7 +115,7 @@ export function createAgentController<Root extends { remove(): void } = HTMLElem
     };
   }
   return {
-    ensure, start, stop, destroy,
+    ensure, start, destroy,
     captureAsk,
     connected: () => currentMenu()?.connected() ?? false,
     changed: () => currentMenu()?.changed(),
