@@ -1,7 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { admitRegistration, pruneRegistration, type BudgetStorage } from "../worker/oauth-registration.ts";
+import { admitRegistration, pruneRegistration, REGISTRATION_BUDGET, REGISTRATION_BYTES, REGISTRATION_CAP, type BudgetStorage } from "../worker/oauth-registration.ts";
 import { origin, startWorker } from "./mcp-harness.ts";
+import { startCountedWorker } from "./fakes/counted-agent.ts";
+import type { OAuthClient } from "../worker/oauth.ts";
 
 const HOUR = 60 * 60 * 1000;
 
@@ -167,4 +169,82 @@ test("a spoofed X-Forwarded-For does not dodge the limit; requests without CF-Co
   } finally {
     await worker.dispose();
   }
+});
+
+test("retained capacity refuses new apps clearly without spending rates or touching existing clients", async () => {
+  const h = await startCountedWorker();
+  try {
+    const now = Date.now();
+    const storage = h.storage(REGISTRATION_BUDGET);
+    const existingId = `mcp_${"c".repeat(32)}`;
+    const existing = { kind: "oauth-client", clientId: existingId, name: "Existing", redirectUris: ["https://client.example/cb"], expiresAt: now + 3600000 } satisfies OAuthClient;
+    await h.storage(`oauth-client:${existingId}`).put("session", existing);
+    // Only post-change occupancy is seeded; legacy occupancy remains unknown.
+    await storage.put(REGISTRATION_BUDGET, {
+      retained: REGISTRATION_CAP - 1, legacy: "uninventoried", pending: {},
+      hour: { start: now, count: 0 }, day: { start: now, count: 0 }, ips: {},
+    });
+    const register = () => h.worker.dispatchFetch(`${origin}/auth/mcp/register`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ redirect_uris: ["https://client.example/cb"] }),
+    });
+    const admitted = await register();
+    assert.equal(admitted.status, 201);
+    const { client_id: clientId } = await admitted.json() as { client_id: string };
+    const before = await storage.get(REGISTRATION_BUDGET);
+    const storedClient = await h.storage(`oauth-client:${clientId}`).get<OAuthClient>("session");
+    for (let index = 0; index < 2; index++) {
+      const refused = await register();
+      assert.equal(refused.status, 503);
+      assert.equal(refused.headers.get("access-control-allow-origin"), "*");
+      const body = await refused.json() as { error: string; error_description: string; client_id?: string };
+      assert.equal(body.error, "temporarily_unavailable");
+      assert.match(body.error_description, /limit of new app registrations.*Existing connections keep working/);
+      assert.equal(body.client_id, undefined);
+    }
+    assert.deepEqual(await storage.get(REGISTRATION_BUDGET), before, "capacity refusals consume no rate or retention budget");
+    assert.deepEqual(await h.storage(`oauth-client:${existingId}`).get("session"), existing);
+    assert.deepEqual(await h.storage(`oauth-client:${clientId}`).get("session"), storedClient);
+    assert.equal((await storage.get<{ retained: number }>(REGISTRATION_BUDGET))!.retained, REGISTRATION_CAP);
+  } finally { await h.worker.dispose(); }
+});
+
+test("serialized UTF-8 client records fit 16 KiB exactly; oversized records reserve nothing", async () => {
+  const h = await startCountedWorker();
+  try {
+    const metadata = (bytes: number) => {
+      const redirectUris = Array.from({ length: 9 }, () => `https://client.example/${"a".repeat(1700)}`);
+      const client = { kind: "oauth-client", clientId: `mcp_${"a".repeat(32)}`, name: "é".repeat(100), redirectUris, expiresAt: Date.now() + 180 * 24 * HOUR } satisfies OAuthClient;
+      let padding = bytes - new TextEncoder().encode(JSON.stringify(client)).byteLength;
+      assert.ok(padding > 0);
+      for (let index = 0; index < redirectUris.length && padding > 0; index++) {
+        const added = Math.min(padding, 2000 - redirectUris[index].length);
+        redirectUris[index] += "a".repeat(added);
+        padding -= added;
+      }
+      assert.equal(padding, 0);
+      const body = JSON.stringify({ client_name: client.name, redirect_uris: redirectUris });
+      assert.ok(new TextEncoder().encode(body).byteLength < REGISTRATION_BYTES, "wire JSON fits; the stored record determines admission");
+      return body;
+    };
+    const register = (body: string) => h.worker.dispatchFetch(`${origin}/auth/mcp/register`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body,
+    });
+    const calls = h.counters.log.length;
+    const oversized = await register(metadata(REGISTRATION_BYTES + 1));
+    assert.equal(oversized.status, 400);
+    assert.equal((await oversized.json()).error, "invalid_client_metadata");
+    assert.equal(oversized.headers.get("access-control-allow-origin"), "*");
+    assert.equal(h.counters.log.length, calls, "oversized metadata makes no Durable Object calls");
+    const accepted = await register(metadata(REGISTRATION_BYTES));
+    assert.equal(accepted.status, 201);
+    const { client_id: clientId } = await accepted.json() as { client_id: string };
+    const client = await h.storage(`oauth-client:${clientId}`).get<OAuthClient>("session");
+    assert.equal(new TextEncoder().encode(JSON.stringify(client)).byteLength, REGISTRATION_BYTES);
+    assert.ok(client!.expiresAt >= Date.now() + 180 * 24 * HOUR - 1000, "fixed 180-day lifetime is preserved");
+    // Ten individually valid redirect URIs can also overflow the request cap.
+    const tooManyBytes = await register(JSON.stringify({ redirect_uris: Array(10).fill(`https://client.example/${"b".repeat(1970)}`) }));
+    assert.equal(tooManyBytes.status, 400);
+    assert.equal((await tooManyBytes.json()).error, "invalid_client_metadata");
+  } finally { await h.worker.dispose(); }
 });

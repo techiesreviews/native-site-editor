@@ -19,7 +19,7 @@ import { createGrant } from "./agent-context";
 import type { Env, StoredSession } from "./app";
 import { GitHub, HttpError } from "./github";
 import { requestJson, requestText } from "./http";
-import { NO_IP_BUCKET, REGISTRATION_BUDGET, REGISTRATION_ROUTE } from "./oauth-registration";
+import { NO_IP_BUCKET, REGISTRATION_BUDGET, REGISTRATION_BYTES, REGISTRATION_ROUTE, type BudgetResult } from "./oauth-registration";
 import { escapeHtml } from "./owner-setup";
 
 export const OAUTH_SCOPE = "site";
@@ -216,33 +216,6 @@ async function register(request: Request, env: Env) {
   const name = typeof body.client_name === "string" && body.client_name.trim()
     ? body.client_name.trim().replace(/[\u0000-\u001f]/g, "").slice(0, 100)
     : "MCP client";
-  // Rate-limit accepted registrations before creating any client record, so a
-  // flood cannot fill storage with 180-day client Durable Objects. The IP comes
-  // only from Cloudflare's trusted CF-Connecting-IP, hashed before storage;
-  // X-Forwarded-For is ignored, and a missing header shares one fallback bucket.
-  const ip = request.headers.get("CF-Connecting-IP");
-  const ipHash = ip ? hex(await sha256(ip)) : NO_IP_BUCKET;
-  let admit: { allowed: boolean; retryAfter: number };
-  try {
-    const response = await env.SESSIONS.get(env.SESSIONS.idFromName(REGISTRATION_BUDGET)).fetch(
-      new Request(`https://session.internal${REGISTRATION_ROUTE}`, { method: "POST", body: JSON.stringify({ ipHash }) }),
-    );
-    if (!response.ok) throw new Error("registration budget unavailable");
-    admit = (await response.json()) as { allowed: boolean; retryAfter: number };
-  } catch {
-    // Fail closed: if the limiter cannot be consulted, register nothing.
-    return json(
-      { error: "temporarily_unavailable", error_description: "Registration is temporarily unavailable. Try again shortly." },
-      503,
-      { "Retry-After": "60" },
-    );
-  }
-  if (!admit.allowed)
-    return json(
-      { error: "too_many_requests", error_description: "Too many client registrations. Try again later." },
-      429,
-      { "Retry-After": String(admit.retryAfter) },
-    );
   const client: OAuthClient = {
     kind: "oauth-client",
     clientId: `mcp_${randomHex(16)}`,
@@ -250,7 +223,53 @@ async function register(request: Request, env: Env) {
     redirectUris: uris,
     expiresAt: Date.now() + CLIENT_LIFETIME,
   };
-  await record(env, `oauth-client:${client.clientId}`, "PUT", client);
+  if (new TextEncoder().encode(JSON.stringify(client)).byteLength > REGISTRATION_BYTES)
+    return oauthError("invalid_client_metadata", "Client metadata must fit within 16 KiB.");
+  // Reserve capacity and rate budget before allocating a client. Only the trusted
+  // CF-Connecting-IP is hashed; a missing header shares one fallback bucket.
+  const budget = (body: unknown) => env.SESSIONS.get(env.SESSIONS.idFromName(REGISTRATION_BUDGET)).fetch(
+    new Request(`https://session.internal${REGISTRATION_ROUTE}`, { method: "POST", body: JSON.stringify(body) }),
+  );
+  const unavailable = () => json(
+    { error: "temporarily_unavailable", error_description: "Registration is temporarily unavailable. Try again shortly." },
+    503,
+    { "Retry-After": "60" },
+  );
+  const ip = request.headers.get("CF-Connecting-IP");
+  const ipHash = ip ? hex(await sha256(ip)) : NO_IP_BUCKET;
+  let admit: BudgetResult;
+  try {
+    const response = await budget({ ipHash, clientId: client.clientId, expiresAt: client.expiresAt });
+    if (!response.ok) throw new Error("registration budget unavailable");
+    admit = (await response.json()) as BudgetResult;
+  } catch {
+    // Fail closed: if the limiter cannot be consulted, register nothing.
+    return unavailable();
+  }
+  if (!admit.allowed && admit.reason === "capacity")
+    return oauthError("temporarily_unavailable", "The editor has reached its limit of new app registrations. Existing connections keep working.", 503);
+  if (!admit.allowed)
+    return json(
+      { error: "too_many_requests", error_description: "Too many client registrations. Try again later." },
+      429,
+      { "Retry-After": String(admit.retryAfter) },
+    );
+  try {
+    const response = await record(env, `oauth-client:${client.clientId}`, "PUT", client);
+    if (!response.ok) throw new Error("Client allocation failed");
+  } catch {
+    // A failed PUT may already have stored the record. Release only after a
+    // definitive 404; an unavailable read leaves the reservation occupied.
+    try {
+      const existing = await record(env, `oauth-client:${client.clientId}`);
+      if (existing.status === 404) await budget({ action: "release", clientId: client.clientId });
+    } catch { /* Unknown outcome stays counted until the client's fixed expiry. */ }
+    return unavailable();
+  }
+  // A reservation already counts. Finalization failure must not hide a usable
+  // client from its caller; the limiter alarm promotes stale reservations.
+  try { await budget({ action: "finalize", clientId: client.clientId }); }
+  catch { /* The pending reservation remains occupied. */ }
   return json(
     {
       client_id: client.clientId,
