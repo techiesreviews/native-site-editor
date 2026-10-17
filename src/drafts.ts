@@ -310,21 +310,40 @@ export class DraftStore {
   }
 }
 
-/** The browser's database: one IndexedDB object store of records by draftKey. */
-export function indexedDbDrafts(name = "native-site-editor-drafts"): DraftDatabase {
+export const draftDatabaseName = "native-site-editor-drafts";
+export const draftDatabaseVersion = 2;
+export const draftStores = { drafts: "drafts", receipts: "receipts", workspaces: "workspaces", conversations: "conversations" } as const;
+
+/** Shared connection lifecycle; a blocked upgrade fails rather than waiting forever. */
+export function openDraftDatabase(name = draftDatabaseName, factory: IDBFactory | undefined = globalThis.indexedDB) {
   let db: IDBDatabase | undefined;
   let opening: Promise<IDBDatabase> | undefined;
   const open = () => opening ??= new Promise<IDBDatabase>((resolve, reject) => {
-    const request = indexedDB.open(name, 1);
-    request.onupgradeneeded = () => request.result.createObjectStore("drafts");
+    if (!factory) throw new Error("Browser draft storage is unavailable.");
+    const request = factory.open(name, draftDatabaseVersion);
+    let failed = false;
+    const fail = (error: Error) => { failed = true; reject(error); };
+    request.onupgradeneeded = () => {
+      for (const store of Object.values(draftStores))
+        if (!request.result.objectStoreNames.contains(store)) request.result.createObjectStore(store);
+    };
+    request.onblocked = () => fail(new Error("Browser draft storage is blocked."));
+    request.onerror = () => fail(request.error ?? new Error("Browser draft storage is unavailable."));
     request.onsuccess = () => {
-      const opened = (db = request.result);
+      const opened = request.result;
+      if (failed) { opened.close(); return; }
+      db = opened;
       // Another tab upgrading: close, and open again on the next use.
       opened.onversionchange = () => { opened.close(); db = opening = undefined; };
       resolve(opened);
     };
-    request.onerror = () => { opening = undefined; reject(request.error ?? new Error("Browser draft storage is unavailable.")); };
-  });
+  }).catch((error: unknown) => { opening = undefined; throw error; });
+  return { open, get current() { return db; } };
+}
+
+/** The manual editor retains its existing per-file recovery through DraftStore. */
+export function indexedDbDrafts(name = draftDatabaseName, factory: IDBFactory | undefined = globalThis.indexedDB): DraftDatabase {
+  const connection = openDraftDatabase(name, factory);
   const request = <T>(request: IDBRequest<T>) => new Promise<T>((resolve, reject) => {
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error ?? new Error("Browser draft storage failed."));
@@ -342,19 +361,19 @@ export function indexedDbDrafts(name = "native-site-editor-drafts"): DraftDataba
   };
   return {
     async load(from) {
-      const store = (await open()).transaction("drafts", "readonly").objectStore("drafts");
+      const store = (await connection.open()).transaction("drafts", "readonly").objectStore("drafts");
       const range = IDBKeyRange.bound(from, from + "￿");
       const [keys, values] = await Promise.all([request(store.getAllKeys(range)), request(store.getAll(range))]);
       return keys.map((key, i) => [String(key), values[i]]);
     },
     async get(key) {
-      return request((await open()).transaction("drafts", "readonly").objectStore("drafts").get(key));
+      return request((await connection.open()).transaction("drafts", "readonly").objectStore("drafts").get(key));
     },
     // Synchronous when open, so the transaction is queued before this returns.
     write(changes) {
-      if (db)
-        try { return write(db, changes); } catch (error) { return Promise.reject(error); }
-      return open().then((into) => write(into, changes));
+      if (connection.current)
+        try { return write(connection.current, changes); } catch (error) { return Promise.reject(error); }
+      return connection.open().then((into) => write(into, changes));
     },
   };
 }

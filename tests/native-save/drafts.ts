@@ -9,8 +9,8 @@ export async function storedDrafts(page: Page): Promise<StoredDraft[]> {
   const drafts = await page.evaluate(async () => {
     window.dispatchEvent(new Event("pagehide"));
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open("native-site-editor-drafts", 1);
-      request.onupgradeneeded = () => request.result.createObjectStore("drafts");
+      const request = indexedDB.open("native-site-editor-drafts");
+      request.onupgradeneeded = () => { if (!request.result.objectStoreNames.contains("drafts")) request.result.createObjectStore("drafts"); };
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
     });
