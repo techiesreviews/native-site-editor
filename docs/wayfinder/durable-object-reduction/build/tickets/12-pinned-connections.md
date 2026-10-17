@@ -81,6 +81,8 @@ approval id stays off. `npm run check` ok; `npm run lint` ok; `scripts/agents/un
 `kit specs --affected` (first commit, under load): `RESULT: fail specs 35 of 133 failed` — one shard of
 alphabetically adjacent specs, almost all `ModelService: Cannot add model because it already exists!`, no agent
 code involved; rerun `RESULT: ok specs 3/3 passed` (native-text, native-tone, native-media-tab).
+The first `kit pr` run failed `native-lazy-panels.spec.ts` (its mocked request had no branch, so the pin, now
+branch-scoped, stayed hidden); fixed the mock: `RESULT: ok specs 3/3 passed` (lazy-panels, agent-quiet, mcp).
 
 **Review** (gpt-6.1-sol, medium, read-only; run.log verified).
 Round 1 `RESULT: ok review … evidence .scratch/reviews/dor-12/20261017T212937Z`: fixed 2 (requests to agents
