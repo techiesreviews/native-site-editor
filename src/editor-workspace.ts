@@ -10,8 +10,10 @@ import type { NativeSite } from "../shared/native-project";
 import type { EditorWorkspace, NodeRef } from "./guarded-edit";
 import type { HistoryCompanion, HistorySourceEdit, HistorySourceReceipt } from "./components/source-editor";
 
-/** An admitted text command. The durable transaction runs before the synchronous history receipt. */
+/** An admitted agent command. The durable transaction runs before the synchronous history receipt. */
 export interface AgentTextCommit {
+  /** Recheck ownership and paused admission between preparation awaits; commit proves authorization and cancellation. */
+  check(): Promise<void>;
   fence(scope: DraftScope, paths: string[]): Promise<() => void>;
   commit(before: Map<string, SavedDraft | undefined>, after: Map<string, SavedDraft | undefined>, current: () => boolean): Promise<boolean>;
   publish<T>(changes: Map<string, SavedDraft | undefined>, apply: () => T): T;
