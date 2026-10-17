@@ -14,10 +14,15 @@ type FindingShot = {
   layout: IndexLayoutFinding["finding"][];
 };
 
-const findingKey = (finding: IndexLayoutFinding["finding"]) => JSON.stringify([finding.kind, finding.selector, finding.detail]);
+// Details carry measurements ("28x24 px"), so a finding whose numbers moved is still the same problem.
+const findingKey = (finding: IndexLayoutFinding["finding"]) => JSON.stringify([finding.kind, finding.selector]);
 const shotKey = (shot: FindingShot) => JSON.stringify([shot.screen, shot.width, shot.theme]);
 
-/** Format current findings and only mark fixes confirmed by a successful matching shot. */
+/**
+ * Without before shots: the plain findings list. With them: the after findings, then the
+ * before findings (kind and selector) that a successful after shot of the same screen,
+ * width and theme no longer has. An empty list reads "none".
+ */
 export function findingsSections(screens: FindingShot[]): string[] {
   const hasBefore = screens.some(shot => shot.name === "before");
   const after = screens.filter(shot => shot.name !== "before");
@@ -31,8 +36,8 @@ export function findingsSections(screens: FindingShot[]): string[] {
     const remaining = new Set(match.layout.map(findingKey));
     return flatten([{ ...shot, layout: shot.layout.filter(finding => !remaining.has(findingKey(finding))) }]);
   });
-  return ["layout findings (after):", ...current.map(line => `  ${line}`),
-    "fixed since before:", ...findingsList(fixed, 10).map(line => `  ${line}`)];
+  const section = (lines: string[]) => lines.length ? lines.map(line => `  ${line}`) : ["  none"];
+  return ["layout findings (after):", ...section(current), "fixed since before:", ...section(findingsList(fixed, 10))];
 }
 
 /**
