@@ -14,6 +14,11 @@ test.beforeEach(async ({ page, baseURL }) => {
   await expect(page.frameLocator(".native-preview-frame").getByRole("heading", { name: "A native browser preview" })).toBeVisible({ timeout: 30_000 });
   // These tests compare the mounted source before and after: Monaco loads on idle after the paint.
   await editorMounted(page);
+  // The default fold lands when the HTML folding ranges arrive and moves the
+  // code lines; hovers and clicks on a line wait until it has (the head folds).
+  const lines = page.locator("#content .view-lines");
+  await expect(lines).toContainText("<head>");
+  await expect(lines).not.toContainText("<title>");
 });
 
 const crumbs = (page: Page) => page.getByRole("navigation", { name: "Selected element and its ancestors" }).getByRole("button");
@@ -387,11 +392,17 @@ test("dragging a code range and clearing the canvas cancel pending cursor select
   await frame.locator('.hero h1').click();
   await expect(current(page)).toHaveText('h1');
   // Canvas selection reveals its folded source; unfold through Monaco's real shortcut.
+  // Both move the code lines, so the drag waits until each has landed.
   const editor = page.locator('#content .monaco-editor');
   await expect(editor).toBeVisible();
-  await editor.locator('textarea').focus();
+  // The h1's mark shows once its section has opened.
+  await expect(page.locator('#content .code-editor__element')).toBeVisible();
+  // Keys go to Monaco's text box, not its hidden helper textarea.
+  await page.locator('#content [role=textbox]').first().focus();
   await page.keyboard.press('ControlOrMeta+K');
   await page.keyboard.press('ControlOrMeta+J');
+  // The cards section, folded until now, opens below the hero.
+  await expect(page.locator('#content .view-lines')).toContainText('Reusable cards');
   const line = page.locator('#content .view-line').filter({ hasText: '<section class="hero"' });
   await expect(line).toBeVisible();
   const box = (await line.boundingBox())!;
