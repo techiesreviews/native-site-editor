@@ -27,7 +27,7 @@ test("editor boot leaves optional panels unloaded and the first palette key open
   expect(feature("agent-pins")).toBe(false);
 });
 
-test("a transient hub failure retries and restores requests after the grant was revoked", async ({ page, baseURL }) => {
+test("once Connect turns remote agents on, a transient hub failure retries and restores requests after the grant was revoked", async ({ page, baseURL }) => {
   let calls = 0;
   await page.route("**/api/agent/hub", async (route) => {
     if (++calls === 1) { await route.fulfill({ status: 503, json: { error: "Try again" } }); return; }
@@ -40,6 +40,10 @@ test("a transient hub failure retries and restores requests after the grant was 
     } });
   });
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
+  expect(calls, "remote agents are off until the user turns them on").toBe(0);
+  await page.locator(".repository-menu__trigger").click();
+  await page.getByRole("button", { name: "Connect with MCP", exact: true }).click();
   await expect(page.locator(".agent-pin__question")).toHaveText("Which heading?", { timeout: 15_000 });
   expect(calls).toBeGreaterThanOrEqual(2);
 });
@@ -52,9 +56,10 @@ test("first OAuth storage event keeps the short retries while its grant arrives"
   });
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html", { timeout: 30_000 });
-  await expect.poll(() => calls).toBe(1);
-  await page.evaluate(() => window.dispatchEvent(new StorageEvent("storage", { key: "native-site-editor:agent-connected" })));
-  await expect(page.locator(".agent-menu__action")).toContainText("Disconnect MCP", { timeout: 10_000 });
+  expect(calls, "startup makes no hub call").toBe(0);
+  // Approving the connection turns remote agents on in the tab showing its repository.
+  await page.evaluate(() => window.dispatchEvent(new StorageEvent("storage", { key: "native-site-editor:agent-connected", newValue: String(Date.now()) })));
+  await expect(page.locator(".agent-menu__action")).toContainText("Disconnect MCP", { timeout: 15_000 });
   expect(calls).toBeGreaterThanOrEqual(3);
 });
 
