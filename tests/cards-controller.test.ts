@@ -255,6 +255,32 @@ test("guarded card actions on the memory workspace with the browser parser", asy
 
     const collectionPage = cardPage.replace("Blank</h3>", '<a href="/work/pine/">Pine</a></h3>');
     const collectionData = { branch: { ...branch, "index.html": collectionPage, "work/pine/index.html": oak.replaceAll("Oak", "Pine") }, site: { ...componentSite, routes: { ...componentSite.routes, "/work/pine/": "work/pine/index.html" } } };
+    await t.test("mounted adapters expose card controls, grid details, linked cards and a collection offer", async () => {
+      const result = await browserPage.evaluate(({ branch, site }) => {
+        const { controller, m, edits } = cardsFixture(branch, site, false);
+        controller.mount();
+        const selection = { path: "index.html", node: [0, 0, 1, 1], tag: "card-quote", text: "Oak", reason: "click" as const, selectors: [] };
+        const controls = controller.controls(selection, branch["index.html"]).map(control => ({ kind: control.kind, label: control.label }));
+        const description = controller.preview.describe({ path: "index.html", parent: [0, 0, 1], index: 1, position: 1, count: 2, row: false, beside: false, ghost: { top: 0, left: 0, width: 1, height: 1 } });
+        const linked = controller.cardsLinkingTo("/work/oak/", new Set(["work/oak/index.html"]), edits.peek);
+        const excluded = controller.cardsLinkingTo("/work/oak/", new Set(["index.html"]), edits.peek);
+        return {
+          controls, description, linked: linked && { label: linked.label, edits: [...linked.edits] }, excluded,
+          offer: controller.cardOffer("/work/"), unlisted: controller.cardOffer("/unlisted/"),
+          steps: m.steps(), source: m.source("index.html"),
+        };
+      }, collectionData);
+      assert.deepEqual(result.controls, ["Duplicate", "Remove", "Add card", "Open page"].map(label => ({ kind: "button", label })));
+      assert.deepEqual(result.description, { noun: "card", label: "Work", collection: "/work/", card: "card-quote" });
+      assert.equal(result.linked?.label, "Also remove its card from “Work” on Home");
+      assert.deepEqual(result.linked?.edits, [["index.html", collectionPage.replace('<card-quote><h3 slot="title"><a href="/work/oak/">Oak</a></h3></card-quote>', "")]]);
+      assert.equal(result.excluded, undefined);
+      assert.equal(result.offer, "Add a card to “Work” on Home");
+      assert.equal(result.unlisted, undefined);
+      assert.deepEqual(result.steps, []);
+      assert.equal(result.source, collectionPage);
+    });
+
     await t.test("Pages tab creates the page and collection card in one step", async () => {
       const result = await browserPage.evaluate(async ({ branch, site }) => {
         const { controller, m } = cardsFixture(branch, site);

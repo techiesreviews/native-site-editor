@@ -4,6 +4,7 @@ import { createFileOperationsController, type FileOperationsPorts } from "../src
 import { createLazyFileOperationsController } from "../src/controllers/file-operation-checks";
 import { createGuardedEdits } from "../src/guarded-edit";
 import { createMemoryWorkspace, deferred } from "./fakes/memory-workspace";
+import { forEachAwait } from "./support/await-race";
 import { DraftStore } from "../src/drafts";
 import { resolveNativeProject, nativePageMovedUrl, nativeSiteSettings, NATIVE_CONFIG_PATH } from "../shared/native-project";
 import type { TreeEntry } from "../shared/types";
@@ -132,12 +133,23 @@ for (const action of ["delete", "move", "url"] as const) {
     else {
       // No link note in a plain repository: supply a native page losing its URL.
       const native = fixture(true);
-      native.ports.confirmDialog = () => ({ ask: async () => { native.memory.bumpGeneration(); return false; }, choose: async () => ({ value: undefined, option: false }) });
+      native.ports.confirmDialog = () => ({ ask: async question => {
+        assert.equal(question.title, "Move about/index.html to page.txt?");
+        assert.match(question.notes[0], /Its URL changes/);
+        native.memory.bumpGeneration(); return false;
+      }, choose: async () => { assert.fail("a plain move uses ask, not choose"); } });
       assert.equal(await native.controller.moveFileTarget(page, "page.txt", "move"), undefined);
       assert.match(native.memory.announced.at(-1)!, /Cancelled moving/); assert.deepEqual(native.memory.steps(), []);
+      assert.equal(native.memory.source(page.path), "<h1>About</h1>");
+      assert.equal(native.memory.workspace.exists("page.txt"), false);
+      assert.equal(native.memory.draft(page.path), undefined);
       return;
     }
     assert.match(h.memory.announced.at(-1)!, /Cancelled/); assert.deepEqual(h.memory.steps(), []); assert.deepEqual(h.errors, []);
+    const path = action === "url" ? page.path : target.path;
+    assert.equal(h.memory.draft(path), undefined);
+    assert.equal(h.memory.workspace.exists(path), true);
+    assert.equal(h.memory.workspace.exists("renamed/index.html"), false);
   });
 }
 
@@ -162,8 +174,16 @@ test("a changed file list refuses a URL move", async () => {
 
 test("asset in use refuses deletion", async () => {
   const h = fixture(true); h.memory.typeInto("index.html", '<link rel="stylesheet" href="/style.css">');
-  assert.ok(await h.controller.deleteFileTarget({ path: "style.css", name: "style.css", folder: false }));
-  assert.ok(h.refused.length); assert.deepEqual(h.memory.steps(), []);
+  let asked = 0;
+  h.ports.confirmDialog = () => ({ ask: async () => { asked++; return true; }, choose: async () => ({ value: "go", option: false }) });
+  const message = "style.css is used by index.html. Remove or replace those references first; nothing was deleted.";
+  assert.equal(await h.controller.deleteFileTarget({ path: "style.css", name: "style.css", folder: false }), message);
+  assert.deepEqual(h.refused, [message]);
+  assert.deepEqual(h.errors, [message]);
+  assert.equal(asked, 0);
+  assert.equal(h.memory.workspace.exists("style.css"), true);
+  assert.equal(h.memory.draft("style.css"), undefined);
+  assert.deepEqual(h.memory.steps(), []);
 });
 
 test("with no file open a plain rename opens the file where it went, whose Undo takes it back; a delete has no step", async () => {
@@ -635,4 +655,83 @@ test("Files-tab page moves note that GitHub Pages will not forward the old URL, 
     assert.ok(offered, `${label}: the keep-old-URL choice is offered`);
     assert.equal(notes.includes(note), shown, label);
   }
+});
+
+for (const action of ["move", "delete"] as const) {
+  test(`${action} keeps its generation proof through every awaited port, including targetFiles`, async () => {
+    const points = await forEachAwait(race => {
+      const h = fixture();
+      const index = h.ports.ensureNativeTextIndex.bind(h.ports);
+      const find = h.ports.findEntry.bind(h.ports);
+      const pathProblem = h.ports.branchPathProblem.bind(h.ports);
+      h.ports.ensureNativeTextIndex = race.port("ensureNativeTextIndex", () => index());
+      h.ports.findEntry = race.port("findEntry in targetFiles", path => find(path));
+      h.ports.branchPathProblem = race.port("branchPathProblem", path => pathProblem(path));
+      h.ports.confirmDialog = () => ({ ask: race.port("confirm", async () => true), choose: async () => ({ value: "go", option: false }) });
+      const done = action === "move" ? h.controller.moveFileTarget(target, "b.txt", "move") : h.controller.deleteFileTarget(target);
+      return { ...h, done };
+    }, h => { h.memory.bumpGeneration(); }, async h => {
+      assert.equal(await h.done, action === "move" ? "The repository changed meanwhile. Try again." : "The repository or source changed meanwhile. Try again.");
+      assert.equal(h.memory.source(target.path), "source");
+      assert.equal(h.memory.draft(target.path), undefined);
+      assert.equal(h.memory.workspace.exists("b.txt"), false);
+      assert.deepEqual(h.memory.steps(), []);
+    });
+    assert.equal(points, 3);
+  });
+
+  for (const change of ["target draft", "file list"] as const) {
+    test(`${action} proves the click's ${change} before invoking its plan`, async () => {
+      const h = fixture();
+      const run = h.ports.edits.run.bind(h.ports.edits);
+      let plans = 0, asked = 0;
+      h.ports.edits.run = (plan, options) => {
+        // Change just before planning, after the controller has captured its proofs.
+        h.memory.writeDraft(change === "target draft" ? target.path : "new.txt", "newer");
+        return run(r => { plans++; return plan(r); }, options);
+      };
+      h.ports.confirmDialog = () => ({ ask: async () => { asked++; return true; }, choose: async () => ({ value: "go", option: false }) });
+      const error = action === "move" ? await h.controller.moveFileTarget(target, "b.txt", "move") : await h.controller.deleteFileTarget(target);
+      assert.equal(error, action === "move" ? "The repository changed meanwhile. Try again." : "The repository or source changed meanwhile. Try again.");
+      assert.equal(plans, 0);
+      assert.equal(asked, 0);
+      assert.deepEqual(h.memory.steps(), []);
+      assert.equal(h.memory.workspace.exists("b.txt"), false);
+      assert.equal(h.memory.source(target.path), change === "target draft" ? "newer" : "source");
+      if (change === "file list") assert.equal(h.memory.source("new.txt"), "newer");
+    });
+  }
+}
+
+test("confirming a plain move's link-note dialog moves once and Undo restores the file", async () => {
+  const h = fixture(true);
+  const questions: { title: string; notes: string[]; action: string }[] = [];
+  h.ports.confirmDialog = () => ({
+    ask: async question => { questions.push(question); return true; },
+    choose: async () => { assert.fail("a plain move uses ask, not choose"); },
+  });
+  assert.equal(await h.controller.moveFileTarget(page, "page.txt", "move"), undefined);
+  assert.equal(questions.length, 1);
+  assert.equal(questions[0].title, "Move about/index.html to page.txt?");
+  assert.equal(questions[0].action, "Move");
+  assert.equal(questions[0].notes[0], "Its URL changes. 1 page links to /about/; those links are not updated.");
+  assert.equal(h.memory.workspace.exists(page.path), false);
+  assert.equal(h.memory.source("page.txt"), "<h1>About</h1>");
+  assert.deepEqual(h.memory.steps(), ["operation"]);
+  assert.deepEqual(h.focused, ["page.txt"]);
+  assert.equal(h.memory.undo(), true);
+  assert.equal(h.memory.source(page.path), "<h1>About</h1>");
+  assert.equal(h.memory.workspace.exists("page.txt"), false);
+});
+
+test("a move refuses an asset-reference rewrite error without changing either file", async () => {
+  const css = 'body { background: url("images/photo.webp"); }';
+  const h = fixture(true, { "style.css": css, "images/photo.webp": "binary" });
+  assert.equal(await h.controller.moveFileTarget({ path: "style.css", name: "style.css", folder: false }, "styles/site.css", "move"),
+    "style.css refers to images/photo.webp by a relative path, which would point elsewhere after the move. Use a path from the site root in it first; nothing was moved.");
+  assert.equal(h.memory.source("style.css"), css);
+  assert.equal(h.memory.workspace.exists("styles/site.css"), false);
+  assert.equal(h.memory.source("images/photo.webp"), "binary");
+  assert.equal(h.memory.draft("style.css"), undefined);
+  assert.deepEqual(h.memory.steps(), []);
 });
