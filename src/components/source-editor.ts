@@ -326,6 +326,11 @@ export interface HistorySourceReceipt {
   redo(): boolean;
   isCurrent(): boolean;
 }
+/** Settle touched typing steps before staging an agent command. */
+export function flushAgentTyping(scope: DraftScope, paths: string[]) {
+  sourceStore().flushTyping(scope, paths);
+}
+
 /**
  * Prepares owned, isolated text steps of mounted files without recording a
  * journal entry: the host commits drafts synchronously, then records this

@@ -117,7 +117,7 @@ import { addSectionStep } from "./page-builder/component-plans";
 import { writeNewDrafts } from "./new-drafts";
 import { createAgentSiteHost } from "./agent-site-host";
 import { createGuardedEdits, type Reads, type PlanResult, type Stamp } from "./guarded-edit";
-import { createEditorWorkspace } from "./editor-workspace";
+import { createEditorWorkspace, type AgentTextCommit } from "./editor-workspace";
 import type { AnnounceAs } from "./components/toast-rules";
 import type {
   EditorContext,
@@ -843,7 +843,7 @@ async function finishRailTyping(current: () => boolean) {
 // The guarded edit module (src/guarded-edit.ts) over this host: one way to
 // prove nothing changed since a plan read the files, then write one undo
 // step (the editor's range step, or its commit through the draft receipt).
-const guardedEdits = createGuardedEdits(createEditorWorkspace({
+const editorWorkspace = createEditorWorkspace({
   generation: () => generation,
   setupScope,
   draftScope,
@@ -882,7 +882,10 @@ const guardedEdits = createGuardedEdits(createEditorWorkspace({
   announce,
   refuse: (message, history) => refuse(message, history ? { history } : {}),
   error: errorMessage,
-}));
+});
+const guardedEdits = createGuardedEdits(editorWorkspace);
+const agentWorkspace = { ...editorWorkspace, get store() { return editorWorkspace.store; }, agentText: () => agentTextCommit };
+const agentEdits = createGuardedEdits(agentWorkspace);
 // The Block move module (src/page-builder/block-move.ts): what a press moves, where it may go,
 // and the move as one guarded edit, on the page or the template edited: the edit bar, the
 // canvas's and Page Structure's Alt+arrows, and MCP move_section (drags arrive in slice 32).
@@ -4473,8 +4476,9 @@ const agentSiteActions: AgentSiteActions = {
   },
   isMounted: (path) => Boolean(editorModule?.isMounted(path)),
   edits: guardedEdits,
+  atomicText: () => agentTextCommit !== undefined,
   loaderPlan: nativeComponentLoaderPlan,
-  writeDraft: async (path, content, create) => {
+  writeDraft: async (path, content, create, expected) => {
     if (!nativeSite && !nativeEngaged && create) {
       const scope = draftScope(), repo = appStore.repository.value, snap = appStore.snapshot.value;
       if (!scope || !repo || !snap) return "Open a repository first.";
@@ -4515,16 +4519,19 @@ const agentSiteActions: AgentSiteActions = {
       return undefined;
     }
     // A plan of one write: the file's bytes now (the branch's read first) are what it replaces.
-    const since = guardedEdits.stamp("repository");
-    if (!create && guardedEdits.peek.source(path) === undefined) {
+    const edits = agentTextCommit ? agentEdits : guardedEdits;
+    const since = edits.stamp("repository");
+    if (!create && edits.peek.source(path) === undefined) {
       const base = await branchText(path);
       if (!since.holds()) return "The repository changed meanwhile. Try again.";
       if (base) nativeBaseSources.set(path, base.text);
     }
     const done = `An agent ${create ? "created" : "changed"} ${path}.`, undone = `Undid the agent's change to ${path}.`;
-    const outcome = await guardedEdits.run(r => create ? { creates: [{ path, content }], ...nativePageRoute(path) ? { open: path } : {}, done, undone }
+    const outcome = await edits.run(r => create ? { creates: [{ path, content }], ...nativePageRoute(path) ? { open: path } : {}, done, undone }
+      : expected !== undefined && r.source(path) !== expected ? { refuse: `${path} changed in the editor since it was read. Read it again.` }
       : r.source(path) === undefined ? { refuse: `${path} does not exist.` }
-      : { edits: new Map([[path, content]]), ...nativePageRoute(path) ? { open: path } : {}, done, undone }, { since });
+      : { edits: new Map([[path, content]]), ...nativePageRoute(path) && (!agentTextCommit || !editorModule.isMounted(path)) ? { open: path } : {},
+        ...agentTextCommit ? { select: { historyOnly: true } } : {}, done, undone }, { since });
     // A home page just written switches the site on: the context is whole before the write is answered.
     await nativeResyncDone;
     return outcome.message;
@@ -4601,12 +4608,39 @@ const agentSiteActions: AgentSiteActions = {
   legacy: applyAgentCommand,
 };
 async function applyAgentSiteCommand(command: AgentCommand) {
-  const { applySiteCommand } = await loadAgentSite();
-  if (!appStore.snapshot.value || command.branch !== appStore.snapshot.value.branch || command.commit !== appStore.snapshot.value.commit)
-    throw new Error("The editor changed branch or revision.");
-  return agentActing(() => applySiteCommand(agentSiteActions, command));
+  const scope = draftScope(), epoch = generation, key = setupScope();
+  const current = () => epoch === generation && key === setupScope() && !versionView;
+  const { applySiteCommand, prepareAgentText } = await loadAgentSite();
+  if (!current() || !appStore.snapshot.value || command.branch !== appStore.snapshot.value.branch ||
+    command.repoId !== undefined && command.repoId !== scope?.repoId) throw new Error("The editor changed repository or branch.");
+  if (command.operation !== "write_file" || command.expectedHash === null) {
+    if (command.commit !== appStore.snapshot.value.commit) throw new Error("The editor changed branch or revision.");
+    return agentActing(() => applySiteCommand(agentSiteActions, command));
+  }
+  if (!scope) throw new Error("Open a repository first.");
+  const prepared = await prepareAgentText(command, scope, draftStore(), current, (scope, paths) => editorModule.flushAgentTyping(scope, paths));
+  if (!current()) throw new Error("The repository changed meanwhile.");
+  if (prepared.duplicate) return prepared.duplicate;
+  if (command.commit !== appStore.snapshot.value?.commit) throw new Error("The editor changed branch or revision.");
+  // New files retain their structural path until ticket 07 adds structural receipts.
+  const before = await agentSiteActions.text(command.path);
+  if (!current()) throw new Error("The repository changed meanwhile.");
+  if (before === undefined) return agentActing(() => applySiteCommand(agentSiteActions, command));
+  if (agentTextCommit) throw new Error("Another agent text edit is still running.");
+  agentTextCommit = prepared.context;
+  try {
+    await agentActing(() => applySiteCommand(agentSiteActions, command));
+    await prepared.finish!(() => current() && mediaTextSource(command.path) === command.content);
+    return prepared.outcome;
+  } catch (error) {
+    // A refresh failure after the durable boundary cannot change the recorded agent outcome.
+    if (!prepared.applied) throw error;
+    errorMessage(error);
+    return prepared.outcome;
+  } finally { agentTextCommit = undefined; }
 }
 // While an agent's command runs, its guarded edits leave .github alone (src/guarded-edit/commit.ts).
+let agentTextCommit: AgentTextCommit | undefined;
 let agentActingDepth = 0;
 async function agentActing<T>(run: () => Promise<T>): Promise<T> {
   agentActingDepth++;

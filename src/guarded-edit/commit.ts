@@ -20,6 +20,7 @@ import { GITHUB_CONFIG_REFUSED, splitProtectedEdits, touchesGithubConfig } from 
 import { prepareNativeTextHistory } from "../page-builder/native-operation-history";
 import { planNativeStructuralDrafts } from "../page-builder/native-structural-history";
 import { holdUploadDrafts } from "../uploads";
+import type { AgentTextCommit } from "../editor-workspace";
 import type { SavedDraft } from "../drafts";
 import type { MovableFile } from "../file-changes";
 import type { EditorWorkspace, NodeRef } from "../guarded-edit";
@@ -56,7 +57,7 @@ const OPENING_FAILED = "The files changed, but the editor changed while opening 
 const isStylesheet = (path: string) => /\.css$/i.test(path);
 const textOf = (record: SavedDraft) => record.deleted || record.opaque ? undefined : record.content;
 
-export function createCommit(ws: EditorWorkspace) {
+export function createCommit(ws: EditorWorkspace & { agentText?(): AgentTextCommit | undefined }) {
   // A file an editor pane mounts: during a step's own refresh it is that refresh's to prove
   // (`capturing`); otherwise every recorded step may adopt it over its exact bytes.
   let capturing: ((path: string, pane: boolean) => void) | undefined;
@@ -130,7 +131,19 @@ export function createCommit(ws: EditorWorkspace) {
       const from = store.get(scope, path)?.movedFrom;
       if (from) touched.add(from);
     }
+    const agent = !moves.length && !deletes.length && !creates.length ? ws.agentText?.() : undefined;
+    let releaseAgent: (() => void) | undefined;
+    if (agent) {
+      releaseAgent = await agent.fence(scope, [...touched]);
+      if (stale()) { releaseAgent(); return COMMIT_CHANGED; }
+    }
+    try {
     const before = new Map([...touched].map(path => [path, store.get(scope, path)] as const));
+    // A BroadcastChannel refresh can advance a draft while its mounted text is still old.
+    if (agent && [...edits.keys()].some(path => {
+      const draft = before.get(path);
+      return draft && (draft.deleted || draft.opaque || draft.content !== expected.get(path));
+    })) return COMMIT_CHANGED;
     const live = () => epoch === ws.generation() && scopeKey === ws.scope() && !ws.versionView();
 
     // ---- Edits only: the open page's history, no refresh. ----
@@ -158,7 +171,15 @@ export function createCommit(ws: EditorWorkspace) {
         retainModel: path => ws.retainModel(path), modelState: path => ws.model(path),
         evictModel: (path, proof) => ws.evictModel(path, proof), prepareSources: changes => ws.prepareSources(changes),
       }, { before, after, beforeSources, afterSources });
-      if (!receipt?.apply()) { const error = receipt?.error() ?? store.error ?? COMMIT_CHANGED; receipt?.dispose(); return error; }
+      if (!receipt) return store.error ?? COMMIT_CHANGED;
+      if (agent) {
+        if (!receipt.isCurrent()) { receipt?.dispose(); return COMMIT_CHANGED; }
+        try {
+          if (!await agent.commit(before, after, () => !stale() && receipt.isCurrent())) { receipt.dispose(); return undefined; }
+        } catch (error) { receipt.dispose(); throw error; }
+        if (stale() || !receipt.isCurrent()) { receipt.dispose(); op.recorded(); return undefined; }
+      }
+      if (!(agent ? agent.publish(after, () => receipt.apply()) : receipt.apply())) { const error = receipt?.error() ?? store.error ?? COMMIT_CHANGED; receipt?.dispose(); return error; }
       // A read-only stylesheet mount over this step's exact bytes belongs to the step.
       const adoptPane = (path: string) => { if (live()) receipt.adoptOwnMount(path, ws.model(path), ws.mountedSource(path)); };
       adopters.add(adoptPane);
@@ -175,6 +196,12 @@ export function createCommit(ws: EditorWorkspace) {
         return true;
       };
       if (!ws.recordHistory(anchor, () => transition("undo"), () => transition("redo"), dispose)) {
+        if (agent) {
+          // The durable receipt won already: unavailable Undo cannot roll its drafts back.
+          dispose(); op.recorded(); ws.afterFileChanges();
+          ws.refuse("The agent change was saved, but Undo is unavailable for this change.");
+          return undefined;
+        }
         if (receipt.undo()) ws.afterFileChanges();
         dispose();
         return "The editor changed before this operation could be recorded. Review the current drafts.";
@@ -231,7 +258,15 @@ export function createCommit(ws: EditorWorkspace) {
     const release = () => { releaseRefresh?.(); releaseRefresh = undefined; };
     // Undo writes `before` back: its uploads' bytes stay while the step lives (after-side uploads are the same bytes, moved).
     const releaseUploads = holdUploadDrafts(scope, before.values());
-    if (!receipt?.apply()) { const error = receipt?.error() ?? store.error ?? COMMIT_CHANGED; receipt?.dispose(); releaseUploads(); release(); return error; }
+    if (!receipt) { releaseUploads(); release(); return store.error ?? COMMIT_CHANGED; }
+    if (agent) {
+      if (!receipt.isCurrent()) { receipt?.dispose(); releaseUploads(); release(); return COMMIT_CHANGED; }
+      try {
+        if (!await agent.commit(before, after, () => !stale() && receipt.isCurrent())) { receipt.dispose(); releaseUploads(); release(); return undefined; }
+      } catch (error) { receipt.dispose(); releaseUploads(); release(); throw error; }
+      if (stale() || !receipt.isCurrent()) { receipt.dispose(); releaseUploads(); release(); op.recorded(); return undefined; }
+    }
+    if (!(agent ? agent.publish(after, () => receipt.apply()) : receipt.apply())) { const error = receipt?.error() ?? store.error ?? COMMIT_CHANGED; receipt?.dispose(); releaseUploads(); release(); return error; }
     // Files created or moved in keep the anchor's history while the step lives.
     let unshare = anchor === undefined ? () => {} : ws.shareHistory([...creates.map(file => file.path), ...moves.map(move => move.to)], anchor);
     const moved = new Map(moves.map(move => [move.from, move.to]));
@@ -317,6 +352,11 @@ export function createCommit(ws: EditorWorkspace) {
 
     if (anchor !== undefined) {
       if (!ws.recordHistory(anchor, undo, redo, dispose)) {
+        if (agent) {
+          dispose(); release(); op.recorded(); ws.afterFileChanges();
+          ws.refuse("The agent change was saved, but Undo is unavailable for this change.");
+          return undefined;
+        }
         receipt.undo(); dispose(); release(); ws.afterFileChanges();
         return "The editor changed before this operation could be recorded.";
       }
@@ -339,5 +379,6 @@ export function createCommit(ws: EditorWorkspace) {
       if (registered && home !== undefined) unshare = ws.shareHistory([home], next!);
       return opened ? undefined : receipt.error() ?? OPENING_FAILED;
     } finally { if (!registered) dispose(); }
+    } finally { releaseAgent?.(); }
   };
 }

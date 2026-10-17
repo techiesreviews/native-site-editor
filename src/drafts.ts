@@ -99,6 +99,9 @@ export class DraftStore {
   private timer?: ReturnType<typeof setTimeout>;
   private writing: Promise<void> = Promise.resolve();
   private failed = false;
+  private agentKeys = new Set<string>();
+  private publishing?: Map<string, SavedDraft | null>;
+  private writes = new Set<Promise<void>>();
   error: string | null = null;
   /** A write-through failed after its save returned (the message is `error`). */
   onError?: (message: string) => void;
@@ -207,10 +210,13 @@ export class DraftStore {
     return saved;
   }
   private put(value: SavedDraft) {
+    const key = draftKey(value, value.path);
+    const committed = this.publishing?.get(key);
+    if (committed && Object.keys({ ...committed, ...value }).every(field => field === "updatedAt" ||
+      JSON.stringify(committed[field as keyof SavedDraft]) === JSON.stringify(value[field as keyof SavedDraft]))) return this.publishRecord(key);
     if (!value.deleted && ((value.baseSha !== null && value.content === value.original && !replacedBytes(value)) ||
         (!value.opaque && !value.upload && this.baseline?.(value, value.path) === value.content)))
       return this.drop(value, value.path);
-    const key = draftKey(value, value.path);
     this.deleted.delete(key);
     this.memory.set(key, value);
     if (this.db) {
@@ -233,6 +239,7 @@ export class DraftStore {
   }
   private drop(scope: DraftScope, path: string) {
     const key = draftKey(scope, path);
+    if (this.publishing?.get(key) === null) return this.publishRecord(key);
     this.memory.delete(key);
     if (this.db) {
       this.queue(key, null);
@@ -250,6 +257,7 @@ export class DraftStore {
   }
   private queue(key: string, value: SavedDraft | null) {
     this.pending.set(key, value);
+    if (this.agentKeys.has(key)) { void this.flush(); return; }
     this.timer ??= setTimeout(() => void this.flush(), FLUSH_DELAY);
   }
   /** Writes pending changes now (the page is hidden or leaving); resolves once they committed or failed. */
@@ -262,7 +270,10 @@ export class DraftStore {
     this.pending.clear();
     // The transaction starts now, so a later read (another tab, a reload) sees it.
     const written = db.write(batch);
-    return (this.writing = this.settle(db, batch, written));
+    const settled = this.settle(db, batch, written);
+    this.writes.add(settled);
+    void settled.finally(() => this.writes.delete(settled));
+    return (this.writing = settled);
   }
   private async settle(db: DraftDatabase, batch: [string, SavedDraft | null][], written: Promise<void>) {
     const failed: [string, SavedDraft | null][] = [];
@@ -285,6 +296,42 @@ export class DraftStore {
     this.failed = true;
     this.error = failed.some(([, value]) => value) ? SAVE_FAILED : REMOVE_FAILED;
     this.onError?.(this.error);
+  }
+  /** Agent-only boundary: manual writes queued meanwhile immediately enter IndexedDB. */
+  async fenceAgent(scope: DraftScope, paths: string[]) {
+    if (!this.db) throw new Error("Agent edits are paused: this browser could not save the change in IndexedDB.");
+    const keys = paths.map(path => draftKey(scope, path));
+    for (const key of keys) this.agentKeys.add(key);
+    const release = () => { for (const key of keys) this.agentKeys.delete(key); };
+    try {
+      await this.flush();
+      await Promise.all([...this.writes]);
+      if (this.failed || keys.some(key => this.pending.has(key))) throw new Error(this.error ?? SAVE_FAILED);
+      return release;
+    } catch (error) { release(); throw error; }
+  }
+  /** Apply the same clean-draft pruning as save, while the agent's records are still staged. */
+  stageAgent(changes: Map<string, SavedDraft | undefined>) {
+    for (const [path, value] of changes) if (value && !value.deleted &&
+      ((value.baseSha !== null && value.content === value.original && !replacedBytes(value)) ||
+      (!value.opaque && !value.upload && this.baseline?.(value, value.path) === value.content))) changes.set(path, undefined);
+  }
+  /** The records transaction already saved these exact records. Publish without another write. */
+  publishAgent<T>(scope: DraftScope, changes: Map<string, SavedDraft | undefined>, apply: () => T): T {
+    if (this.publishing) throw new Error("An agent edit is already publishing.");
+    this.publishing = new Map([...changes].map(([path, record]) => [draftKey(scope, path), record ?? null]));
+    try { return apply(); }
+    finally { this.publishing = undefined; }
+  }
+  private publishRecord(key: string) {
+    const record = this.publishing!.get(key);
+    if (record) this.memory.set(key, record);
+    else this.memory.delete(key);
+    return true;
+  }
+  /** Announce only after the committed records have reached the model. */
+  announceAgent(scope: DraftScope, paths: string[]) {
+    this.announce?.(paths.map(path => draftKey(scope, path)));
   }
   /** Another tab committed `keys`: reads them again from the database. */
   async refresh(keys: string[]) {

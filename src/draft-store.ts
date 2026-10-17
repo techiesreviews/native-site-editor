@@ -1000,6 +1000,10 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
     applyReceipt: (history: string, label: string, changes: ReceiptFile[], record = true) => batch(() => applyReceipt(history, label, changes, record)),
     recordAction: (history: string, action: Parameters<typeof recordAction>[1]) => batch(() => recordAction(history, action)),
     beginTyping,
+    /** Close touched typing steps before an agent captures model and persistence proofs. */
+    flushTyping: (scope: DraftScope, paths: string[]) => batch(() => {
+      for (const path of paths) commitTyping(draftKey(scope, path));
+    }),
     undo: (history: string) => run(history, "undo"),
     redo: (history: string) => run(history, "redo"),
     canUndo: (history: string) => canRun(history, "undo"),
