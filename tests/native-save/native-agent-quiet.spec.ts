@@ -75,11 +75,24 @@ test("remote agents off: startup, the agent menu and idle visible or hidden tabs
     expect(requests.some((request) => request.path === "/api/agent/hub")).toBe(true);
     await expect.poll(() => requests.some((request) => request.path === "/api/agent/context")).toBe(true);
 
-    // Turn off stops it again: one pause, then nothing, and the agent keeps its access.
-    const paused = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/agent/pause");
+    // Turn off stops it again, even with a context share on its way: that share is
+    // withdrawn, then nothing more is sent, and the agent keeps its access.
+    let release!: () => void;
+    const held = new Promise<void>((done) => (release = done));
+    let holding!: () => void;
+    const caught = new Promise<void>((done) => (holding = done));
+    await page.route("**/api/agent/context", async (route) => { holding(); await held; await route.continue(); });
+    await page.clock.runFor(31_000); // The 30-second context heartbeat.
+    await caught;
     await page.getByRole("button", { name: "Turn off", exact: true }).click();
-    await paused;
     await expect(action).toHaveText("Connect with MCP");
+    const turnedOff = requests.length;
+    const withdrawn = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/agent/pause");
+    release();
+    await withdrawn;
+    await page.unroute("**/api/agent/context");
+    await page.clock.runFor(5_000);
+    expect(requests.slice(turnedOff).filter((request) => request.path !== "/api/agent/pause"), "nothing but withdrawing the share").toEqual([]);
     const after = requests.length;
     await page.clock.runFor(65_000);
     await setVisibility(page, "hidden");
@@ -96,7 +109,8 @@ test("an approval for an older grant or another repository does not turn remote 
   await page.route("**/api/agent/hub", async (route) => {
     calls++;
     await route.fulfill({ json: { grants: [
-      { id: "old", repoId: 501, repo: "native-demo-user/native-demo", via: "oauth", createdAt: Date.now() - 3_600_000, usedAt: Date.now() - 3_600_000 },
+      // Made a minute before this approval (for example, then turned off here).
+      { id: "old", repoId: 501, repo: "native-demo-user/native-demo", via: "oauth", createdAt: Date.now() - 60_000, usedAt: Date.now() - 60_000 },
       { id: "other", repoId: 999, repo: "native-demo-user/other", via: "oauth", createdAt: Date.now() + 60_000 },
     ], tabId: null, updatedAt: null, commands: [], requests: [] } });
   });

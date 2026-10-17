@@ -90,7 +90,9 @@ export function createAgentMenu(options: {
     polling = false,
     changing = false,
     shared = false,
-    remote = false;
+    remote = false,
+    // Each Connect and Turn off starts a new activation; work begun in an older one writes nothing.
+    activation = 0;
   let revision = 0,
     sentRevision = -1,
     lastSent = 0,
@@ -281,9 +283,11 @@ export function createAgentMenu(options: {
     if (state() === "connected") say("Remote agents are on. If an agent you connected before stopped, ask it to continue.");
     else if (state() === "idle") await start(task);
   }
+  const live = (at: number) => !disposed && remote && activation === at;
   function startRemote() {
     if (remote || disposed) return;
     remote = true;
+    activation++;
     interval = setInterval(() => void poll(), FAST);
     document.addEventListener("visibilitychange", wake);
     window.addEventListener("focus", wake);
@@ -292,6 +296,7 @@ export function createAgentMenu(options: {
   function turnOff() {
     if (!remote) return;
     remote = false;
+    activation++;
     clearInterval(interval);
     clearTimeout(timer);
     for (const check of consentChecks) clearTimeout(check);
@@ -372,7 +377,8 @@ export function createAgentMenu(options: {
     return syncChain;
   }
   async function doSync(force: boolean) {
-    if (disposed || !remote) return;
+    const at = activation;
+    if (!live(at)) return;
     const grants = liveGrants();
     if (!grants.length) {
       if (shared) {
@@ -394,12 +400,15 @@ export function createAgentMenu(options: {
     if (!force && sentRevision === version && hub.tabId === tabId && Date.now() - lastSent < 30_000) return;
     try {
       const built = await options.context();
-      if (disposed) return;
+      if (!live(at)) return;
       if (built) {
         const { missing } = await api("context", { tabId, context: built.context }, true);
-        await sendTexts(Array.isArray(missing) ? missing : [], built.texts);
+        if (live(at)) await sendTexts(Array.isArray(missing) ? missing : [], built.texts, at);
         // Turned off while this share was on its way: withdraw it again.
-        if (!remote) return void (await api("pause", { tabId }).catch(() => undefined));
+        if (!live(at)) {
+          if (!remote && !disposed) await api("pause", { tabId }).catch(() => undefined);
+          return;
+        }
         hub.tabId = tabId;
         hub.updatedAt = Date.now();
         shared = true;
@@ -415,22 +424,24 @@ export function createAgentMenu(options: {
   }
 
   // The draft texts the Worker lacks, a few MB of JSON at a time.
-  async function sendTexts(missing: string[], texts: Map<string, string>) {
+  async function sendTexts(missing: string[], texts: Map<string, string>, at: number) {
     let batch: { hash: string; content: string }[] = [],
       size = 0;
     for (const hash of missing) {
       const content = texts.get(hash);
-      if (content === undefined || disposed) continue;
+      if (!live(at)) return;
+      if (content === undefined) continue;
       const bytes = textBytes(JSON.stringify(content)) + 80;
       if (batch.length && (size + bytes > 4 * 1024 * 1024 || batch.length >= 200)) {
         await api("drafts", { texts: batch }, true);
+        if (!live(at)) return;
         batch = [];
         size = 0;
       }
       batch.push({ hash, content });
       size += bytes;
     }
-    if (batch.length) await api("drafts", { texts: batch }, true);
+    if (batch.length && live(at)) await api("drafts", { texts: batch }, true);
   }
 
   async function poll(now = false) {
@@ -442,17 +453,18 @@ export function createAgentMenu(options: {
     if (!now && Date.now() - lastPoll < interval - 100) return;
     polling = true;
     lastPoll = Date.now();
+    const at = activation;
     try {
       const next: HubState = await api("hub");
       // Turned off meanwhile: its answer is not applied.
-      if (disposed || !remote) return;
+      if (!live(at)) return;
       hub = next;
       await sync();
       paint();
       if (hub.tabId !== tabId) return;
       const repo = options.repository();
       for (const command of hub.commands) {
-        if (command.state !== "pending" || disposed || !remote) continue;
+        if (command.state !== "pending" || !live(at)) continue;
         if (command.claimedBy && command.claimedBy !== tabId) continue;
         let ack = applied.get(command.id);
         if (!ack) {
@@ -481,6 +493,7 @@ export function createAgentMenu(options: {
           revision++;
           await sync(true);
         }
+        // A change claimed before Turn off is still answered, so the agent knows its outcome.
         await api("ack", { tabId, id: command.id, grantId: command.grantId, ...ack });
         say(ack.message);
       }
@@ -511,8 +524,9 @@ export function createAgentMenu(options: {
     if (!repo || changing) return;
     const found: HubState = await api("hub").catch(() => undefined);
     if (disposed || remote || options.repository()?.id !== repo.id) return;
-    // The page's clock stamps the approval, the Worker's the grant: allow two minutes of skew.
-    if (!found?.grants?.some((grant) => grant.via === "oauth" && grant.repoId === repo.id && grant.createdAt >= at - 120_000)) return;
+    // The grant is made after the approval: the page's clock stamps one, the Worker's the
+    // other, so allow ten seconds of skew. An earlier grant (one turned off here) never counts.
+    if (!found?.grants?.some((grant) => grant.via === "oauth" && grant.repoId === repo.id && grant.createdAt >= at - 10_000)) return;
     for (const check of consentChecks) clearTimeout(check);
     consentChecks = [];
     startRemote();
