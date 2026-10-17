@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
 // @ts-expect-error Shared kit helpers are plain JavaScript without declarations.
 import { kitMainRoot, kitOwner, kitResult, kitRoot, nodeEnv } from "../kit-lib.mjs";
-import { findingsList } from "./findings-list";
+import { findingsSections } from "./findings-list";
 import { parseArgs, parseSteps, screens, type Shot } from "./core";
 
 const help = `Usage: kit shots <screen...> [--width 390,1280] [--theme light|dark] [--out dir]
@@ -87,11 +87,7 @@ async function main() {
     const index = JSON.parse(await readFile(join(out, "index.json"), "utf8"));
     for (const file of index.files) console.log(`${join(out, file.path)} (${file.bytes} bytes)`);
     console.log(join(out, "index.json"));
-    const lines = findingsList(index.layoutFindings);
-    if (lines.length > 0) {
-      console.log("layout findings:");
-      for (const line of lines) console.log(`  ${line}`);
-    }
+    for (const line of findingsSections(index.screens)) console.log(line);
     const failed = index.screens.filter((shot: Shot) => !shot.ok).length + (index.outputFailures?.length ?? 0);
     const findings = index.layoutFindings.length;
     process.exitCode = status || (failed ? 1 : 0);

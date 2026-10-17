@@ -22,7 +22,24 @@ const COMMON_STRINGS = new Set([
   "true", "false", "none", "auto", "button", "hidden", "active", "open", "close", "error",
   "image", "video", "file", "files", "page", "pages", "media", "native", "editor", "input", "text",
 ]);
-const REASON_KINDS = ["import", "fixture", "removed string", "string", "name"];
+const REASON_KINDS = ["import", "fixture", "removed string", "string", "name", "server"];
+const TEST_SERVER = "tests/native-save/server.ts";
+const AGENT_SERVERS = [TEST_SERVER, "tests/native-save/fake-hub.ts"];
+
+function changedRoutes(diff) {
+  const routes = new Set();
+  let server = false, inHunk = false;
+  for (const line of diff.split("\n")) {
+    if (line.startsWith("diff --git ")) { server = false; inHunk = false; }
+    if (!inHunk && (line.startsWith("--- a/") || line.startsWith("+++ b/"))) server = line.slice(6).replace(/\t.*$/, "") === TEST_SERVER;
+    if (line.startsWith("@@")) inHunk = true;
+    if (!server || !inHunk || !/^[+-]/.test(line)) continue;
+    for (const value of literals(line.slice(1))) {
+      if (/^\/(?!\/)[\w/.-]+$/.test(value) && !["/", "/api", "/user"].includes(value)) routes.add(value);
+    }
+  }
+  return [...routes].sort();
+}
 
 export function specGroups(file, text) {
   if (file.startsWith("tests/native-preview/")) return ["native-preview"];
@@ -228,6 +245,11 @@ export function selectAffected({ files, changed, diff = "" }) {
   const specs = Object.keys(files).filter(file => browserSpec.test(file)).sort()
     .map(file => { const strings = literals(files[file]); return { file, strings, text: strings.join("\n"), tokens: nameTokens(file) }; });
   const extraReasons = moduleReasons(files, changedModules(files, changedFiles, paths), specs);
+  const routeReasons = new Map(specs.map(spec => [spec.file, []]));
+  if (changedFiles.includes(TEST_SERVER)) for (const route of changedRoutes(diff)) {
+    const matches = specs.filter(spec => spec.strings.some(value => value.includes(route)));
+    if (matches.length <= MAX_STRING_SPECS) for (const spec of matches) routeReasons.get(spec.file).push(`server: route ${JSON.stringify(route)} (${TEST_SERVER})`);
+  }
   const selected = [];
   for (const { file, strings } of specs) {
     const text = files[file], groups = specGroups(file, text), reasons = new Set();
@@ -240,6 +262,8 @@ export function selectAffected({ files, changed, diff = "" }) {
     visit(file);
     for (const change of changedFiles) {
       if (reached.has(change)) reasons.add(`import: ${change}`);
+      if (file.startsWith("tests/native-save/") && AGENT_SERVERS.includes(change)
+        && (reached.has("tests/native-save/mcp-prompt.ts") || strings.some(value => value.includes("/mcp")))) reasons.add(`server: agent paths (${change})`);
       if (file.startsWith("tests/native-save/") && ["scripts/native-browser-tests.mjs", "tests/native-save/fixture-contract.ts"].includes(change)) reasons.add(`fixture: all native-save (${change})`);
       if (change.startsWith("fixtures/actual-starter/") && groups.includes("actual")) reasons.add(`fixture: actual (${change})`);
       // The native-preview server serves the default fixture too.
@@ -251,6 +275,7 @@ export function selectAffected({ files, changed, diff = "" }) {
     }
     for (const { file: source, value } of removed) if (strings.some(string => string.includes(value))) reasons.add(`removed string: ${JSON.stringify(value)} (${source})`);
     for (const reason of extraReasons.get(file)) reasons.add(reason);
+    for (const reason of routeReasons.get(file)) reasons.add(reason);
     if (reasons.size) selected.push({ file, groups, reasons: [...reasons] });
   }
   return selected;
