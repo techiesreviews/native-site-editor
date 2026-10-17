@@ -22,7 +22,7 @@ import { componentLabel, isSectionTemplate, nativeInsertEdit } from "./native-in
 import { buildNativePagesTree, firstHeadingText, nativeTreePages, slugify, type NativePageNode } from "./native-pages";
 import { startTagAttribute, locateNativeElement, locateNativeElementRange, parseMarked } from "./native-source-location";
 import { removeEdit } from "./native-structure";
-import type { createGuardedEdits, EditorWorkspace, GuardedEdits, Outcome, Reads } from "./guarded-edit";
+import type { createGuardedEdits, EditorWorkspace, GuardedEdits, NodeRef, Outcome, Reads } from "./guarded-edit";
 import { addSectionStep, type LoaderPlanner, type SectionPlanned } from "./page-builder/component-plans";
 import type { AgentCommandOutcome } from "./components/agent-menu";
 
@@ -125,7 +125,8 @@ export function agentStructuralActions(workspace: EditorWorkspace, context: Agen
       finishProofs.set("stamp", () => held.holds() && (options?.guard?.() ?? true));
       await context.check();
       verify();
-      return edits.run(async r => {
+      let selection: { after: NodeRef; flash?: string } | undefined;
+      const outcome = await edits.run(async r => {
         // Keep the plan's original proof for finish(), including plans that turn out unchanged.
         // A manual edit during its final fence must not earn a receipt for the earlier no-op.
         const scope = workspace.draftScope()!;
@@ -149,8 +150,13 @@ export function agentStructuralActions(workspace: EditorWorkspace, context: Agen
         const result = await plan(checked(reads));
         await checkReads();
         verify();
+        // historyOnly keeps the step on the staged commit; the plan's own selection follows once it applied.
+        if ("done" in result && !result.select?.historyOnly && result.select?.after) selection = { after: result.select.after, flash: result.select.flash };
         return "done" in result ? { ...result, select: { ...result.select, historyOnly: true } } : result;
       }, { ...options, since: held, guard: () => valid() && (options?.guard?.() ?? true) });
+      if (selection && outcome.ok && outcome.status === "applied" && !outcome.message && valid())
+        workspace.select({ ...selection.after, source: workspace.source(selection.after.path) }, selection.flash);
+      return outcome;
     },
     now() { throw new Error("Agent commands require an asynchronous guarded commit."); },
   };
