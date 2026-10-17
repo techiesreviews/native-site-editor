@@ -7,6 +7,7 @@ import { elementEnd, startTags } from "../shared/html-source.ts";
 import type { NativePreviewSelection } from "../src/components/native-preview.ts";
 import type { EditBarControl, EditBarModel } from "../src/components/edit-bar.ts";
 import { createMemoryWorkspace } from "./fakes/memory-workspace.ts";
+import { forEachAwait } from "./support/await-race.ts";
 
 const PAGE = "index.html";
 const SOURCE = "<main><section>A</section><section>B</section></main>";
@@ -233,6 +234,48 @@ test("queued text edits apply in the order typed, each its own guarded step", as
   assert.equal(f.page(), "<main><section>ABC</section><section>B</section></main>");
   assert.deepEqual(f.mem.steps(), ["range", "range"]);
 });
+
+// Text edits committed while the page is not open: the first opens it, the second waits its turn.
+function openingFixture() {
+  const f = fixture({ open: "styles/site.css" });
+  const restores: string[] = [];
+  f.ports.restoreFile = async (path, _epoch, options) => { restores.push(path); await f.mem.workspace.open(path, options?.beforeMount); };
+  const type = (before: string, after: string) => f.controller.applyNativeTextEdit({ path: PAGE, node: [0, 0], before, after });
+  return { ...f, restores, type };
+}
+
+test("text edits queued while the page opens apply in the order typed once it mounts", async () => {
+  const f = openingFixture();
+  const hold = f.mem.holdOpen();
+  const first = f.type("A", "AB"), second = f.type("AB", "ABC");
+  await hold.reached;
+  assert.equal(f.page(), SOURCE);
+  hold.release();
+  await Promise.all([first, second]);
+  assert.equal(f.page(), "<main><section>ABC</section><section>B</section></main>");
+  assert.deepEqual(f.mem.steps(), ["range", "range"]);
+  assert.deepEqual(f.restores, [PAGE]);
+  assert.deepEqual(f.errors, []);
+  assert.equal(f.mem.undo(), true);
+  assert.equal(f.page(), "<main><section>AB</section><section>B</section></main>");
+});
+
+for (const moved of ["generation", "scope"] as const) {
+  test(`a ${moved} change while queued text edits wait for the page writes neither`, async () => {
+    const points = await forEachAwait(race => {
+      const f = openingFixture();
+      const restore = f.ports.restoreFile;
+      f.ports.restoreFile = race.port("restoreFile", (...args: Parameters<typeof restore>) => restore(...args));
+      const done = Promise.all([f.type("A", "AB"), f.type("AB", "ABC")]);
+      return { ...f, done };
+    }, f => { if (moved === "generation") f.mem.bumpGeneration(); else f.mem.setScope("lex/site@other"); }, f => {
+      assert.equal(f.page(), SOURCE);
+      assert.deepEqual(f.mem.steps(), []);
+      assert.deepEqual(f.errors, []);
+    });
+    assert.equal(points, 1);
+  });
+}
 
 test("a template row moves through the now-shaped editing port and leaves the page alone", () => {
   const band = "<section><div>A</div><div>B</div></section>";
