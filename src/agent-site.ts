@@ -11,7 +11,11 @@ import { NATIVE_CONFIG_PATH, minimalTextEdit, nativeComponentCssPath, nativePage
 import { agentMediaArgsProblem } from "../shared/agent-media-args";
 import { isMediaUploadWrite, OUTSIDE_MEDIA_REFUSED, AGENT_TEXT_LIMIT, INSPECTION_LIMIT, isPreviewablePicture, picturePreviewRefusal, REQUEST_HTML_LIMIT, outlineId, parseOutlineId, textBytes, textHash, type AgentCommand, type AgentElement } from "../shared/agent";
 import type { AgentOutlineSection, AgentPageOutline, AgentSiteContext, EditorContext } from "../shared/types";
-import type { SavedDraft } from "./drafts";
+import { draftKey, type DraftScope, type DraftStore, type SavedDraft } from "./drafts";
+import { payloadIdentity, workspaceKey, type JsonValue } from "../shared/agent-command";
+import type { AgentTextCommit } from "./editor-workspace";
+import type { AgentRecords } from "./agent-records";
+import type { createAgentOwner } from "./agent-owner";
 import { listChanges } from "./file-changes";
 import { componentLabel, isSectionTemplate, nativeInsertEdit } from "./native-insert";
 import { buildNativePagesTree, firstHeadingText, nativeTreePages, slugify, type NativePageNode } from "./native-pages";
@@ -335,10 +339,11 @@ export interface AgentSiteActions {
   isMounted(path: string): boolean;
   /** Guarded edits (src/guarded-edit.ts): the agent's edits of open files and sections are its plans. */
   edits: GuardedEdits;
+  atomicText?(): boolean;
   /** Plans the component loader a page needs once it holds `next` (a section added). */
   loaderPlan?: LoaderPlanner;
   /** Writes `path` as a draft (a new file when `create`), as one operation Undo takes back; an error message, or nothing. */
-  writeDraft(path: string, content: string, create: boolean): Promise<string | undefined>;
+  writeDraft(path: string, content: string, create: boolean, expected?: string): Promise<string | undefined>;
   /** Opens the file (a page shows in the preview); whether it is open now. */
   open(path: string): Promise<boolean>;
   /** The Pages tab's New page; an error message, or the page made. */
@@ -474,7 +479,10 @@ export async function applySiteCommand(actions: AgentSiteActions, command: Agent
       return {};
     case "write_file": {
       const before = await expectHash(actions, path, command.expectedHash);
-      if (before !== undefined && actions.isMounted(path)) {
+      if (before !== undefined && actions.atomicText?.()) {
+        const error = await actions.writeDraft(path, command.content, false, before);
+        if (error) throw new Error(error);
+      } else if (before !== undefined && actions.isMounted(path)) {
         const edit = minimalTextEdit(before, command.content);
         if (edit) await guarded(actions.edits.run(r => r.source(path) !== before ? { refuse: CHANGED(path) }
           : { edits: new Map([[path, [edit]]]), done: `An agent changed ${path}.`, undone: `Undid the agent's change to ${path}.` }));
@@ -655,3 +663,84 @@ export async function applySiteCommand(actions: AgentSiteActions, command: Agent
   throw new Error("This editor cannot apply that change. Reload it.");
 }
 
+// One lazy records/owner pair per workspace in this tab. Focus never transfers ownership.
+const textOwners = new Map<string, Promise<{ records: AgentRecords; owner: ReturnType<typeof createAgentOwner> }>>();
+/** Carries a command's identity and exact reported outcome across the guarded commit boundary. */
+export async function prepareAgentText(command: AgentCommand, scope: DraftScope, store: DraftStore, current: () => boolean, flushTyping: (scope: DraftScope, paths: string[]) => void) {
+  command = structuredClone(command);
+  scope = { ...scope };
+  const refuse = (error: unknown): never => {
+    throw new Error(`Agent edits are paused: this browser could not save the change. ${error instanceof Error ? error.message : "Browser storage failed."}`);
+  };
+  if (!command.grantId) throw new Error("Agent text edits require an authorization id (grantId).");
+  const workspace = { account: scope.account, repoId: scope.repoId, branch: scope.branch };
+  const key = workspaceKey(workspace);
+  const identity = payloadIdentity(JSON.parse(JSON.stringify({ operation: command.operation, path: command.path,
+    branch: command.branch, commit: command.commit, expectedHash: command.expectedHash,
+    ...command.contentHash ? { contentHash: command.contentHash } : { content: command.content }, args: command.args })) as JsonValue);
+  try {
+    let loading = textOwners.get(key);
+    if (!loading) {
+      loading = (async () => {
+        const [{ indexedDbAgentRecords }, { createAgentOwner }] = await Promise.all([import("./agent-records"), import("./agent-owner")]);
+        const records = indexedDbAgentRecords();
+        const state = await records.workspace(workspace);
+        return { records, owner: createAgentOwner({ workspace, generation: state.generation, records,
+          reload: async () => { throw new Error("Agent takeover is not available yet."); } }) };
+      })();
+      textOwners.set(key, loading);
+      void loading.catch(() => { if (textOwners.get(key) === loading) textOwners.delete(key); });
+    }
+    const { records, owner } = await loading;
+    if (!current()) throw new Error("The repository changed meanwhile.");
+    const outcome = { message: `Changed ${command.path} in the editor as an unsaved draft.`,
+      result: { path: command.path, hash: await textHash(command.content) } };
+    if (!current()) throw new Error("The repository changed meanwhile.");
+    if (command.contentHash && command.contentHash !== outcome.result.hash) throw new Error("Command content does not match its content hash.");
+    const receipt = { authorizationId: command.grantId, operationId: command.id, payloadIdentity: identity, outcome, createdAt: Date.now() };
+    const existing = await records.receipt(workspace, command.id, command.grantId);
+    if (!current()) throw new Error("The repository changed meanwhile.");
+    if (existing) {
+      // Commit performs the identity and revocation checks again in the transaction returning the receipt.
+      const result = await owner.commit({ workspace, generation: owner.generation, expectedRevision: 0, expectedDrafts: [], drafts: [], receipt });
+      return { duplicate: result.receipt.outcome as AgentCommandOutcome };
+    }
+    let expectedRevision = 0, committed = false;
+    const context: AgentTextCommit = {
+      async fence(draftScope, paths) {
+        flushTyping(draftScope, paths);
+        const release = await store.fenceAgent(draftScope, paths);
+        try {
+          if (!current()) throw new Error("The repository changed meanwhile.");
+          expectedRevision = (await records.workspace(workspace)).revision;
+          if (!current()) throw new Error("The repository changed meanwhile.");
+          return release;
+        } catch (error) { release(); return refuse(error); }
+      },
+      async commit(before, after, valid) {
+        store.stageAgent(after);
+        if (!current() || !valid()) throw new Error("The repository or source changed meanwhile.");
+        try {
+          const result = await owner.commit({ workspace, generation: owner.generation, expectedRevision,
+            expectedDrafts: [...before].map(([path, record]) => [draftKey(scope, path), record ?? null]),
+            drafts: [...after].map(([path, record]) => [draftKey(scope, path), record ?? null]), receipt });
+          committed = true;
+          return !result.duplicate;
+        } catch (error) { return refuse(error); }
+      },
+      publish: (changes, apply) => {
+        const result = store.publishAgent(scope, changes, apply);
+        store.announceAgent(scope, [...changes.keys()]);
+        return result;
+      },
+    };
+    return { context, outcome, get applied() { return committed; }, async finish(valid: () => boolean) {
+      if (committed) return;
+      const release = await context.fence(scope, [command.path]);
+      try {
+        const before = new Map([[command.path, store.get(scope, command.path)]]);
+        await context.commit(before, new Map(), valid);
+      } finally { release(); }
+    } };
+  } catch (error) { return refuse(error); }
+}

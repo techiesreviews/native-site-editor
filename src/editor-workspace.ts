@@ -4,11 +4,18 @@
 // (src/guarded-edit/commit.ts); this adapter only reaches the editor.
 
 import type { AnnounceAs } from "./components/toast-rules";
-import type { DraftScope } from "./drafts";
+import type { DraftScope, SavedDraft } from "./drafts";
 import type { DraftAccess, MovableFile } from "./file-changes";
 import type { NativeSite } from "../shared/native-project";
 import type { EditorWorkspace, NodeRef } from "./guarded-edit";
 import type { HistoryCompanion, HistorySourceEdit, HistorySourceReceipt } from "./components/source-editor";
+
+/** An admitted text command. The durable transaction runs before the synchronous history receipt. */
+export interface AgentTextCommit {
+  fence(scope: DraftScope, paths: string[]): Promise<() => void>;
+  commit(before: Map<string, SavedDraft | undefined>, after: Map<string, SavedDraft | undefined>, current: () => boolean): Promise<boolean>;
+  publish<T>(changes: Map<string, SavedDraft | undefined>, apply: () => T): T;
+}
 
 type Range = { path: string; start: number; end: number; expected: string; text: string };
 type Proof = { isCurrent(): boolean };
@@ -71,6 +78,9 @@ export interface WorkspaceHost {
 }
 
 export function createEditorWorkspace(host: WorkspaceHost): EditorWorkspace {
+  // Manual and agent guarded edits share mounts, but carry separate commit contexts.
+  const mounts = new Set<(path: string, pane: boolean) => void>();
+  host.onMount((path, pane) => { for (const listener of mounts) listener(path, pane); });
   const { editor } = host;
   const scoped = <T>(use: (scope: DraftScope) => T, otherwise: T) => { const scope = host.draftScope(); return scope ? use(scope) : otherwise; };
   const model = (path: string) => {
@@ -122,7 +132,7 @@ export function createEditorWorkspace(host: WorkspaceHost): EditorWorkspace {
     recordHistory: (path, undo, redo, dispose) => editor.recordHistoryAction(path, undo, redo, dispose),
     holdRefresh: path => editor.holdHistoryRefresh(path),
     shareHistory: (paths, anchor) => host.shareHistory(paths, anchor),
-    onMount: listener => host.onMount(listener),
+    onMount: listener => { mounts.add(listener); },
     paneFile: () => host.paneFile(),
     closePane: () => host.closePane(),
     afterFileChanges: () => host.afterFileChanges(),
