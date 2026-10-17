@@ -177,7 +177,8 @@ export function createCommit(ws: EditorWorkspace & { agentText?(): AgentTextComm
         try {
           if (!await agent.commit(before, after, () => !stale() && receipt.isCurrent())) { receipt.dispose(); return undefined; }
         } catch (error) { receipt.dispose(); throw error; }
-        if (stale() || !receipt.isCurrent()) { receipt.dispose(); op.recorded(); return undefined; }
+        // The drafts are durable already: the editor moved on, so this tab's drafts read them back (as another tab's write).
+        if (stale() || !receipt.isCurrent()) { receipt.dispose(); op.recorded(); await agent.settle(after); return undefined; }
       }
       if (!(agent ? agent.publish(after, () => receipt.apply()) : receipt.apply())) { const error = receipt?.error() ?? store.error ?? COMMIT_CHANGED; receipt?.dispose(); return error; }
       // A read-only stylesheet mount over this step's exact bytes belongs to the step.
@@ -264,7 +265,7 @@ export function createCommit(ws: EditorWorkspace & { agentText?(): AgentTextComm
       try {
         if (!await agent.commit(before, after, () => !stale() && receipt.isCurrent())) { receipt.dispose(); releaseUploads(); release(); return undefined; }
       } catch (error) { receipt.dispose(); releaseUploads(); release(); throw error; }
-      if (stale() || !receipt.isCurrent()) { receipt.dispose(); releaseUploads(); release(); op.recorded(); return undefined; }
+      if (stale() || !receipt.isCurrent()) { receipt.dispose(); releaseUploads(); release(); op.recorded(); await agent.settle(after); return undefined; }
     }
     if (!(agent ? agent.publish(after, () => receipt.apply()) : receipt.apply())) { const error = receipt?.error() ?? store.error ?? COMMIT_CHANGED; receipt?.dispose(); releaseUploads(); release(); return error; }
     // Files created or moved in keep the anchor's history while the step lives.

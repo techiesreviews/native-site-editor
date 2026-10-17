@@ -666,7 +666,8 @@ export async function applySiteCommand(actions: AgentSiteActions, command: Agent
 // One lazy records/owner pair per workspace in this tab. Focus never transfers ownership.
 const textOwners = new Map<string, Promise<{ records: AgentRecords; owner: ReturnType<typeof createAgentOwner> }>>();
 /** Carries a command's identity and exact reported outcome across the guarded commit boundary. */
-export async function prepareAgentText(command: AgentCommand, scope: DraftScope, store: DraftStore, current: () => boolean, flushTyping: (scope: DraftScope, paths: string[]) => void) {
+export async function prepareAgentText(command: AgentCommand, scope: DraftScope, store: DraftStore, current: () => boolean, flushTyping: (scope: DraftScope, paths: string[]) => void,
+  afterSettle: () => void = () => {}) {
   command = structuredClone(command);
   scope = { ...scope };
   // Storage refusals (src/agent-records.ts) say what happened; nothing was applied and drafts are as they were.
@@ -740,6 +741,11 @@ export async function prepareAgentText(command: AgentCommand, scope: DraftScope,
         const result = store.publishAgent(scope, changes, apply);
         store.announceAgent(scope, [...changes.keys()]);
         return result;
+      },
+      async settle(changes) {
+        await store.refresh([...changes.keys()].map(path => draftKey(scope, path)));
+        store.announceAgent(scope, [...changes.keys()]);
+        afterSettle();
       },
     };
     return { context, outcome, get applied() { return committed; }, async finish(valid: () => boolean) {

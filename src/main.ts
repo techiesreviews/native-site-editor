@@ -4618,7 +4618,9 @@ async function applyAgentSiteCommand(command: AgentCommand) {
     return agentActing(() => applySiteCommand(agentSiteActions, command));
   }
   if (!scope) throw new Error("Open a repository first.");
-  const prepared = await prepareAgentText(command, scope, draftStore(), current, (scope, paths) => editorModule.flushAgentTyping(scope, paths));
+  const prepared = await prepareAgentText(command, scope, draftStore(), current, (scope, paths) => editorModule.flushAgentTyping(scope, paths),
+    // Committed while the editor moved on: lists and Save show the durable drafts if this is still the workspace.
+    () => { if (draftScope()?.account === scope.account && draftScope()?.repoId === scope.repoId && draftScope()?.branch === scope.branch) afterFileChanges(); });
   if (!current()) throw new Error("The repository changed meanwhile.");
   if (prepared.duplicate) return prepared.duplicate;
   if (command.commit !== appStore.snapshot.value?.commit) throw new Error("The editor changed branch or revision.");

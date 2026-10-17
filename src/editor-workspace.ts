@@ -15,6 +15,8 @@ export interface AgentTextCommit {
   fence(scope: DraftScope, paths: string[]): Promise<() => void>;
   commit(before: Map<string, SavedDraft | undefined>, after: Map<string, SavedDraft | undefined>, current: () => boolean): Promise<boolean>;
   publish<T>(changes: Map<string, SavedDraft | undefined>, apply: () => T): T;
+  /** Committed but not published (the editor changed meanwhile): reads the durable drafts back; newer manual writes win. */
+  settle(changes: Map<string, SavedDraft | undefined>): Promise<void>;
 }
 
 type Range = { path: string; start: number; end: number; expected: string; text: string };
