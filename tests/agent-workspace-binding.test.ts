@@ -243,3 +243,35 @@ test("concurrent rebinds advance one generation without overwriting its receiver
   assert.equal(listed.generation, 2);
   assert.equal(grant.branch, listed.branch);
 });
+
+test("rebind waits while a tab applies a claimed change of the connection", async () => {
+  const f = fixture(), { id } = await f.connect();
+  await operateHub(f.env, sessionId, { type: "context", tabId, context: await siteContext() });
+  await operateHub(f.env, sessionId, { type: "queue", command: command(id) });
+  assert.equal((await f.post("/api/agent/claim", { id: "change-1", grantId: id, tabId })).status, 200);
+  const body = { id, repo: repo.full_name, repoId: repo.id, branch: "preview" };
+  // The claimed change may be applying in the tab: the connection keeps its workspace.
+  assert.equal((await f.post("/api/agent/rebind", body)).status, 409);
+  assert.equal((await getGrant(f.env, id)).generation, 1);
+  assert.equal((await getHub(f.env, sessionId))!.grants[0].branch, "main");
+  await operateHub(f.env, sessionId, { type: "ack", id: "change-1", grantId: id, tabId, state: "applied" });
+  assert.equal((await f.post("/api/agent/rebind", body)).status, 200);
+  assert.equal((await getGrant(f.env, id)).generation, 2);
+});
+
+test("requests to agents stay on the branch they were asked on", async () => {
+  const f = fixture();
+  await f.connect();
+  const element = { file: "index.html", id: "0", tag: "h1", text: "Hello" };
+  const asked = (id: string, branch?: string) => ({ id, text: "Change it", createdAt: Date.now(), repoId: repo.id, repository: repo.full_name, ...(branch ? { branch } : {}), state: "open", element, thread: [] });
+  await operateHub(f.env, sessionId, { type: "ask", request: asked("req-main", "main") });
+  await operateHub(f.env, sessionId, { type: "ask", request: asked("req-preview", "preview") });
+  await operateHub(f.env, sessionId, { type: "ask", request: asked("req-legacy") });
+  const taken = await operateHub(f.env, sessionId, { type: "take-requests", grantId: "g", repoId: repo.id, branch: "main", all: true });
+  assert.deepEqual(taken.requests.map((item: { id: string }) => item.id), ["req-main"]);
+  for (const id of ["req-preview", "req-legacy"]) {
+    await assert.rejects(operateHub(f.env, sessionId, { type: "request", id, repoId: repo.id, branch: "main" }), { status: 404 });
+    await assert.rejects(operateHub(f.env, sessionId, { type: "reply", id, repoId: repo.id, branch: "main", status: "done", message: "ok" }), { status: 404 });
+  }
+  assert.equal((await operateHub(f.env, sessionId, { type: "request", id: "req-preview", repoId: repo.id, branch: "preview" })).id, "req-preview");
+});
