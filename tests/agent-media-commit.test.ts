@@ -17,7 +17,7 @@ const storage = () => {
     get length() { return values.size; } };
 };
 let sequence = 0;
-async function setup(t: TestContext) {
+async function setup(t: TestContext, extraMedia: string[] = []) {
   const drafts = fakeIndexedDB(), uploads = fakeIndexedDB();
   let recordsTransactions = 0, byteDeletes = 0, stages = 0, writes = 0, steps = 0, refreshes = 0;
   let live = true, model = '<video src="media/film.mp4"></video>', afterCommit = () => {}, beforeCommit = () => {};
@@ -75,7 +75,7 @@ async function setup(t: TestContext) {
   const bytes = indexedDbUploadBytes();
   const observedBytes = { ...bytes, put: async (key: string, blob: Blob) => { stages++; await bytes.put(key, blob); events.push("bytes durable"); },
     delete: async (key: string) => { byteDeletes++; await bytes.delete(key); } };
-  const base = new Map([["index.html", model]]), originalPaths = ["index.html", "media/film.mp4"];
+  const base = new Map([["index.html", model]]), originalPaths = ["index.html", "media/film.mp4", ...extraMedia];
   const paths = () => [...new Set([...originalPaths, ...store.list(scope).filter(d => !d.deleted).map(d => d.path)])];
   const source = (path: string) => path === "index.html" ? model : store.get(scope, path)?.content ?? base.get(path);
   const assetVersion = (path: string) => { const draft = store.get(scope, path); return draft ? JSON.stringify(draft) : originalPaths.includes(path) ? "a".repeat(40) : undefined; };
@@ -95,7 +95,7 @@ async function setup(t: TestContext) {
     history: () => { steps++; return true; }, refresh: () => { refreshes++; }, announce() {},
   } satisfies MediaDraftHost;
   const context = {
-    key: "media", scope, drafts: store, get paths() { return paths(); }, items: [{ path: "media/film.mp4", size: 10 }],
+    key: "media", scope, drafts: store, get paths() { return paths(); }, items: [{ path: "media/film.mp4", size: 10 }, ...extraMedia.map(path => ({ path, size: 10 }))],
     pages: ["index.html"], components: {}, history: true,
     flushTyping() {}, assertLive: () => { if (!live) throw new Error("Repository changed"); },
     read: async path => source(path), blob: async () => new Blob(["video"], { type: "video/mp4" }), assetVersion,
@@ -312,4 +312,22 @@ test("buffered adding settings reports the prepared change and reset, and receip
   assert.deepEqual(await f.run(change), changed);
   assert.equal(f.counts().steps, 2);
   assert.equal(f.counts().writes, 0);
+});
+
+test("a page draft another tab persisted after this tab read it refuses removal and keeps the image", async t => {
+  const f = await setup(t, ["media/unused.png"]);
+  // Another tab adds a use of the picture; this tab's memory has not heard (its notification is delayed).
+  const other = new DraftStore(storage(), indexedDbDrafts(draftDatabaseName, f.drafts.factory));
+  await other.load(f.scope.account);
+  assert.ok(other.save({ ...f.scope, version: 1, path: "index.html", baseSha: "a".repeat(40), original: f.model(),
+    content: `${f.model()}<img src="media/unused.png">`, updatedAt: Date.now() }));
+  await other.flush();
+  assert.equal(f.store.get(f.scope, "index.html"), undefined);
+  await assert.rejects(f.run({ ...f.command, operation: "remove_media", args: { files: ["media/unused.png"] } }),
+    /Nothing was changed; your drafts are as they were/);
+  assert.equal(await f.records.receipt(f.scope, "operation", "grant"), undefined);
+  const drafts = (await f.records.snapshot(f.scope)).drafts.map(([, record]) => record as SavedDraft);
+  assert.deepEqual(drafts.map(draft => draft.path), ["index.html"]);
+  assert.match(drafts[0].content, /unused\.png/);
+  assert.equal(f.counts().steps, 0);
 });

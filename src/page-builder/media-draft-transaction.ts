@@ -37,6 +37,8 @@ interface State {
   dispose?: () => void;
   committed: boolean;
   planned?: Map<string, SavedDraft | undefined>;
+  /** Agent batches: drafts the plan only read (pages proving usage, assets); the records transaction expects them unchanged. */
+  reads: Map<string, SavedDraft | undefined>;
   releaseFence?: () => void;
   agent?: boolean;
   published?: boolean;
@@ -136,7 +138,9 @@ export function mediaDraftTransaction(host: MediaDraftHost): MediaBatchTransacti
         const record = host.store.get(scope, path);
         for (const paired of [record?.movedFrom, record?.movedTo]) if (paired && !paths.includes(paired)) paths.push(paired);
       }
-      const releaseFence = batch.agent ? await batch.agent.fence(scope, paths) : undefined;
+      // Read dependencies are fenced too: another tab's persisted draft of one of them refuses the commit.
+      const reads = batch.agent ? [...new Set([...batch.expectedSources.keys(), ...batch.expectedAssets.keys()])].filter(path => !paths.includes(path)) : [];
+      const releaseFence = batch.agent ? await batch.agent.fence(scope, [...paths, ...reads]) : undefined;
       try {
         assertLive();
         const before = new Map(pathsOf(batch).map(path => [path, host.store.get(scope, path)]));
@@ -153,7 +157,8 @@ export function mediaDraftTransaction(host: MediaDraftHost): MediaBatchTransacti
         });
         const sources = host.prepareSources(edits);
         if (!sources) throw new Error("The editor source changed while preparing image changes.");
-        const state: State = { mountedStates: new Map([...before.keys()].map(path => [path, host.mounted(path)])), modelStates: new Map([...before.keys()].map(path => [path, host.modelState(path)])), before, after: new Map(), entries: new Map(), sources, staged: new Map(), ownedKeys: new Set(), releases: [], committed: false, releaseFence, agent: Boolean(batch.agent) };
+        const state: State = { mountedStates: new Map([...before.keys()].map(path => [path, host.mounted(path)])), modelStates: new Map([...before.keys()].map(path => [path, host.modelState(path)])), before, after: new Map(), entries: new Map(), sources, staged: new Map(), ownedKeys: new Set(), releases: [], committed: false, releaseFence, agent: Boolean(batch.agent),
+          reads: new Map(reads.filter(path => !before.has(path)).map(path => [path, host.store.get(scope, path)])) };
         for (const path of before.keys()) {
           assertLive();
           state.entries.set(path, await host.entry(path));
@@ -183,11 +188,11 @@ export function mediaDraftTransaction(host: MediaDraftHost): MediaBatchTransacti
     },
     async persist(batch, state) {
       const agent = batch.agent!;
-      const current = () => host.stamp.holds() && (batch.live?.() ?? true) && unchanged(state.before)
+      const current = () => host.stamp.holds() && (batch.live?.() ?? true) && unchanged(state.before) && unchanged(state.reads)
         && state.sources.isCurrent() && modelsCurrent(state) && host.historyCurrent();
       if (!current()) throw new Error("The files changed before image changes could be applied.");
       state.planned = plan(batch, state);
-      const fresh = await agent.commit(state.before, state.planned, current);
+      const fresh = await agent.commit(new Map([...state.reads, ...state.before]), state.planned, current);
       state.committed = true;
       if (!fresh || !current()) {
         await agent.settle(state.planned);
