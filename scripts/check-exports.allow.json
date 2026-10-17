@@ -68,5 +68,15 @@
     "file": "worker/starter.ts",
     "name": "NATIVE_STARTER_VERSION",
     "reason": "Browser starter fixtures and component-loader specs load the matching versioned starter assets."
+  },
+  {
+    "file": "shared/agent-command.ts",
+    "name": "(file unreachable)",
+    "reason": "Durable Object reduction ticket 04 storage foundation; ticket 06 wires agent text commits to it (remove this entry then)."
+  },
+  {
+    "file": "src/agent-records.ts",
+    "name": "(file unreachable)",
+    "reason": "Durable Object reduction ticket 04 storage foundation; ticket 06 wires agent text commits to it (remove this entry then)."
   }
 ]
