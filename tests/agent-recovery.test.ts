@@ -15,6 +15,7 @@ function fixture() {
   const channels = new Map<string, () => void>();
   const calls: { tab: string; at: number }[] = [];
   let locked = false;
+  const currents: (() => boolean)[] = [];
   const storage = { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value); } } satisfies Pick<Storage, "getItem" | "setItem">;
   /** `own`: the tab sees its own copy of storage, as when two tabs' writes interleave. */
   function tab(tabId: string, reconnect: () => Promise<void> = async () => transient(), repoId = 1, own = false) {
@@ -34,7 +35,7 @@ function fixture() {
       now: () => clock, random: () => 0.5,
       setTimeout(callback, delay) { const id = ++sequence; timers.set(id, { at: clock + delay, callback }); return id; },
       clearTimeout(id) { timers.delete(id); },
-      async reconnect() { calls.push({ tab: tabId, at: clock }); await reconnect(); },
+      async reconnect(current) { calls.push({ tab: tabId, at: clock }); currents.push(current); await reconnect(); },
     });
   }
   async function tick(ms: number) {
@@ -51,7 +52,7 @@ function fixture() {
     clock = end;
     await settle();
   }
-  return { tab, tick, calls, timers, values, storage, now: () => clock };
+  return { tab, tick, calls, currents, timers, values, storage, now: () => clock };
 }
 
 test("classification uses only the documented quota signals", () => {
@@ -234,5 +235,30 @@ test("a tab with remote agents off shares a cooldown or quota answer with the wo
   const a = f.tab("a", async () => {});
   await f.tick(600_000);
   assert.equal(a.allowAutomatic(), false); assert.equal(f.calls.length, 0);
+  a.dispose();
+});
+
+test("a tab that vanished without letting go of its lease is taken over within the window", async () => {
+  const f = fixture(), b = f.tab("b", async () => {});
+  // Tab a crashed mid-read: its lease stays in storage and is never renewed.
+  f.storage.setItem("native-site-editor:agent-recovery:lex:1", JSON.stringify({ attempts: [now], since: now, lease: { tab: "a", until: now + 15_000 } }));
+  b.report({ kind: "transient" });
+  await f.tick(60_000);
+  assert.equal(f.calls.length, 1); assert.equal(f.calls[0].tab, "b");
+  assert.ok(f.calls[0].at - now >= 15_000 && f.calls[0].at - now <= 120_000);
+  assert.equal(b.state().mode, "ok");
+  b.dispose();
+});
+
+test("a read that timed out is told it no longer counts", async () => {
+  const f = fixture();
+  let finish!: () => void;
+  const a = f.tab("a", () => new Promise<void>(resolve => { finish = resolve; }));
+  a.report({ kind: "transient" });
+  await f.tick(1000);
+  assert.equal(f.currents[0](), true);
+  await f.tick(30_000);
+  assert.equal(f.currents[0](), false);
+  finish(); await settle();
   a.dispose();
 });

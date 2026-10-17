@@ -203,13 +203,13 @@ export function createAgentMenu(options: {
     recovery?.dispose();
     activation++;
     recoveryRepo = repo?.id;
-    recovery = repo ? browserAgentRecovery({ account: options.account, repoId: repo.id }, tabId, async () => {
+    recovery = repo ? browserAgentRecovery({ account: options.account, repoId: repo.id }, tabId, async (current) => {
       const at = activation;
       try {
         const next: HubState = await api("hub", undefined, false, at, true);
-        if (live(at)) hub = next;
+        if (live(at) && current()) hub = next;
       } catch (error) {
-        if (live(at) && error instanceof AgentFailureError && error.failure.kind === "auth") failed(error);
+        if (live(at) && current() && error instanceof AgentFailureError && error.failure.kind === "auth") failed(error);
         throw error;
       }
     }) : undefined;
