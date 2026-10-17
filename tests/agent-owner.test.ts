@@ -64,6 +64,9 @@ test("eviction fences same-generation redelivery by its original expected revisi
   await records.commit(input);
   await records.evictReceipts(draft, 100 + 24 * 60 * 60 * 1000);
   await assert.rejects(records.commit(input), code("conflict"));
+  // Fresh proofs (the text restored, current revision) cannot turn the evicted id into a new edit.
+  input.expectedRevision = 1; input.expectedDrafts = [[key, draft]];
+  await assert.rejects(records.commit(input), code("conflict"));
   assert.deepEqual(await records.workspace(draft), { revision: 1, generation: 0 });
 });
 

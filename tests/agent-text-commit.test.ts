@@ -337,6 +337,31 @@ test("hashed command identity omits file contents and refuses mismatching delive
 });
 
 
+test("a command without contentHash stores the computed hash, never the file text, in its identity", async t => {
+  const f = await setup(t);
+  await f.run();
+  const receipt = await f.records.receipt(f.scope, f.command.id, f.command.grantId!);
+  const identity = JSON.parse(receipt!.payloadIdentity);
+  assert.equal(identity.contentHash, await textHash(f.command.content));
+  assert.equal("content" in identity, false);
+  assert.equal(receipt!.payloadIdentity.includes(JSON.stringify(f.command.content)), false);
+});
+
+test("redelivery after the receipt is evicted and Undo restored the text stays unknown and applies nothing", async t => {
+  const f = await setup(t);
+  await f.run();
+  assert.equal(await f.records.evictReceipts(f.scope, Date.now() + 25 * 60 * 60 * 1000), 1);
+  assert.equal(f.history.at(-1)!.undo(), true);
+  await f.store.flush();
+  assert.equal(f.models.text(f.scope, "index.html"), "before");
+  const drafts = (await f.records.snapshot(f.scope)).drafts, revision = await f.records.workspace(f.scope);
+  await assert.rejects(f.run(), /meanwhile/);
+  assert.equal(f.history.length, 1);
+  assert.equal(f.models.text(f.scope, "index.html"), "before");
+  assert.deepEqual((await f.records.snapshot(f.scope)).drafts, drafts);
+  assert.deepEqual(await f.records.workspace(f.scope), revision);
+});
+
 test("a durable manual draft newer than the mounted source is never overwritten", async t => {
   const f = await setup(t);
   f.store.save({ ...f.scope, version: 1, path: "index.html", baseSha: "a".repeat(40), original: "before", content: "newer manual", updatedAt: 2 });

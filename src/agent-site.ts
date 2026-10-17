@@ -669,15 +669,26 @@ const textOwners = new Map<string, Promise<{ records: AgentRecords; owner: Retur
 export async function prepareAgentText(command: AgentCommand, scope: DraftScope, store: DraftStore, current: () => boolean, flushTyping: (scope: DraftScope, paths: string[]) => void) {
   command = structuredClone(command);
   scope = { ...scope };
+  // Storage refusals (src/agent-records.ts) say what happened; nothing was applied and drafts are as they were.
   const refuse = (error: unknown): never => {
-    throw new Error(`Agent edits are paused: this browser could not save the change. ${error instanceof Error ? error.message : "Browser storage failed."}`);
+    const code = error instanceof Error && error.name === "AgentRecordsError" ? (error as Error & { code: string }).code : undefined;
+    if (code === undefined && error instanceof Error && /meanwhile|changed in the editor/.test(error.message)) throw error;
+    const reason = code === "conflict" ? `${command.path} or agent ownership changed in the editor meanwhile. Read it again.`
+      : code === "revoked" ? "This agent connection was disconnected (its authorization was revoked)."
+      : code === "cancelled" ? "The change was cancelled before it was applied."
+      : code === "duplicate-id" ? `This change's id was already used for different work (${(error as Error).message}).`
+      : code === "not-owner" ? "Another editor tab receives agent edits for this site."
+      : `Agent edits are paused: this browser could not save the change (${error instanceof Error ? error.message : "browser storage failed"}).`;
+    throw new Error(`${reason} Nothing was changed; your drafts are as they were.`);
   };
   if (!command.grantId) throw new Error("Agent text edits require an authorization id (grantId).");
   const workspace = { account: scope.account, repoId: scope.repoId, branch: scope.branch };
   const key = workspaceKey(workspace);
+  // The identity names the text by its hash: receipts never hold file contents.
+  const contentHash = await textHash(command.content);
+  if (command.contentHash && command.contentHash !== contentHash) throw new Error("Command content does not match its content hash.");
   const identity = payloadIdentity(JSON.parse(JSON.stringify({ operation: command.operation, path: command.path,
-    branch: command.branch, commit: command.commit, expectedHash: command.expectedHash,
-    ...command.contentHash ? { contentHash: command.contentHash } : { content: command.content }, args: command.args })) as JsonValue);
+    branch: command.branch, commit: command.commit, expectedHash: command.expectedHash, contentHash, args: command.args })) as JsonValue);
   try {
     let loading = textOwners.get(key);
     if (!loading) {
@@ -693,10 +704,7 @@ export async function prepareAgentText(command: AgentCommand, scope: DraftScope,
     }
     const { records, owner } = await loading;
     if (!current()) throw new Error("The repository changed meanwhile.");
-    const outcome = { message: `Changed ${command.path} in the editor as an unsaved draft.`,
-      result: { path: command.path, hash: await textHash(command.content) } };
-    if (!current()) throw new Error("The repository changed meanwhile.");
-    if (command.contentHash && command.contentHash !== outcome.result.hash) throw new Error("Command content does not match its content hash.");
+    const outcome = { message: `Changed ${command.path} in the editor as an unsaved draft.`, result: { path: command.path, hash: contentHash } };
     const receipt = { authorizationId: command.grantId, operationId: command.id, payloadIdentity: identity, outcome, createdAt: Date.now() };
     const existing = await records.receipt(workspace, command.id, command.grantId);
     if (!current()) throw new Error("The repository changed meanwhile.");
