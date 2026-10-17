@@ -115,7 +115,7 @@ function fakeIndexedDB(legacy?: SavedDraft, beforeOpen?: () => Promise<void>) {
 }
 const draft: SavedDraft = { version: 1, account: "Lex", repoId: 1, repo: "lex/site", branch: "main", path: "index.html", baseSha: null, original: "", content: "draft", updatedAt: 1 };
 const key = draftKey(draft, draft.path);
-const command = () => ({ workspace: { account: draft.account, repoId: draft.repoId, branch: draft.branch }, generation: 0, expectedRevision: 0, expectedDrafts: [[key, null]] as [string, number | null][], drafts: [[key, { ...draft }]] as [string, SavedDraft | null][], receipt: { operationId: "operation-1", payloadIdentity: payloadIdentity({ edit: "draft" }), outcome: { changed: 1 }, createdAt: 100 } });
+const command = () => ({ workspace: { account: draft.account, repoId: draft.repoId, branch: draft.branch }, generation: 0, expectedRevision: 0, expectedDrafts: [[key, null]] as [string, SavedDraft | null][], drafts: [[key, { ...draft }]] as [string, SavedDraft | null][], receipt: { operationId: "operation-1", payloadIdentity: payloadIdentity({ edit: "draft" }), outcome: { changed: 1 }, createdAt: 100 } });
 const storage = () => {
   const data = new Map<string, string>();
   return { getItem: (key: string) => data.get(key) ?? null, setItem: (key: string, value: string) => { data.set(key, value); }, removeItem: (key: string) => { data.delete(key); }, key: (index: number) => [...data.keys()][index] ?? null, get length() { return data.size; } };
@@ -137,7 +137,7 @@ test("v1 upgrade preserves drafts, adds stores and stays readable by the manual 
   assert.deepEqual(store.get(draft, draft.path), draft);
   const records = indexedDbAgentRecords(draftDatabaseName, fake.factory);
   assert.deepEqual(await records.workspace(draft), { revision: 0, generation: 0 });
-  const input = command(); input.expectedDrafts = [[key, 1]]; input.drafts[0][1]!.content = "agent draft";
+  const input = command(); input.expectedDrafts = [[key, draft]]; input.drafts[0][1]!.content = "agent draft";
   await records.commit(input);
   await store.refresh([key]);
   assert.equal(store.get(draft, draft.path)?.content, "agent draft");
@@ -146,7 +146,7 @@ test("v1 upgrade preserves drafts, adds stores and stays readable by the manual 
 for (const failure of ["AbortError", "QuotaExceededError"]) for (const failPutAt of [2, 3]) test(`${failure} on put ${failPutAt} rolls back deletes, puts, receipt and revision`, async () => {
   const fake = fakeIndexedDB(draft), records = indexedDbAgentRecords(draftDatabaseName, fake.factory);
   const input = command(), other = { ...draft, path: "about.html" };
-  input.expectedDrafts = [[key, 1], [draftKey(other, other.path), null]];
+  input.expectedDrafts = [[key, draft], [draftKey(other, other.path), null]];
   input.drafts = [[key, null], [draftKey(other, other.path), other]];
   fake.state.failure = failure; fake.state.failPutAt = failPutAt; // Fail receipt or workspace after the draft writes.
   await assert.rejects(records.commit(input), code("aborted"));
@@ -172,7 +172,7 @@ test("missing factory and open errors refuse agent operations while manual fallb
 
 test("stale revisions, generations and expected drafts abort without changing records", async () => {
   const fake = fakeIndexedDB(draft), records = indexedDbAgentRecords(draftDatabaseName, fake.factory);
-  for (const change of [{ expectedRevision: 1 }, { generation: 1 }, { expectedDrafts: [[key, 2]] }, { expectedDrafts: [[key, null]] }]) {
+  for (const change of [{ expectedRevision: 1 }, { generation: 1 }, { expectedDrafts: [[key, { ...draft, updatedAt: 2 }]] }, { expectedDrafts: [[key, { ...draft, content: "same time, other text" }]] }, { expectedDrafts: [[key, null]] }]) {
     await assert.rejects(records.commit({ ...command(), ...change } as ReturnType<typeof command>), code("conflict"));
     assert.deepEqual([...fake.stores.get("drafts")!], [[key, draft]]);
     assert.equal(await records.receipt(draft, "operation-1"), undefined);
@@ -186,12 +186,12 @@ test("changed drafts require workspace-scoped expectations, including deletions"
   for (const input of [
     { ...command(), expectedDrafts: [] },
     { ...command(), expectedDrafts: [[foreignKey, null]], drafts: [[foreignKey, null]] },
-    { ...command(), expectedDrafts: [[key, 1]], drafts: [[key, foreign]] },
+    { ...command(), expectedDrafts: [[key, draft]], drafts: [[key, foreign]] },
   ]) await assert.rejects(records.commit(input as ReturnType<typeof command>), code("conflict"));
   assert.deepEqual([...fake.stores.get("drafts")!], [[key, draft]]);
   assert.deepEqual(await records.workspace(draft), { revision: 0, generation: 0 });
   const other = { ...draft, path: "about.html" }, otherKey = draftKey(other, other.path);
-  await records.commit({ ...command(), expectedDrafts: [[key, 1], [otherKey, null]], drafts: [[key, null], [otherKey, other]] });
+  await records.commit({ ...command(), expectedDrafts: [[key, draft], [otherKey, null]], drafts: [[key, null], [otherKey, other]] });
   assert.deepEqual([...fake.stores.get("drafts")!], [[otherKey, other]]);
   assert.deepEqual(await records.workspace(draft), { revision: 1, generation: 0 });
 });
@@ -225,6 +225,9 @@ test("generation CAS serializes contenders; workspace keys and conversations rem
   assert.equal(outcomes[0].status, "fulfilled"); assert.equal(outcomes[1].status, "rejected");
   if (outcomes[1].status === "rejected") assert.ok(code("conflict")(outcomes[1].reason));
   assert.deepEqual(await records.workspace({ ...draft, account: "lex" }), { revision: 0, generation: 1 });
+  // Equal or lower generations refuse, so generation 0's commands stay fenced.
+  for (const next of [1, 0]) await assert.rejects(records.setGeneration(draft, 1, next), code("conflict"));
+  await assert.rejects(records.commit(command()), code("conflict"));
   const others = [{ ...draft, account: "other" }, { ...draft, repoId: 2 }, { ...draft, branch: "other" }];
   const conversation = { id: "one", content: { question: "hello" } };
   await records.putConversation(draft, conversation); conversation.content.question = "changed later";
@@ -246,7 +249,7 @@ test("proofs and draft writes are captured before every opener await", async () 
     return { fake, input, done: records.commit(input) };
   }, ({ input }) => {
     input.workspace.branch = "other"; input.generation = 99; input.expectedRevision = 99;
-    input.expectedDrafts[0][1] = 99; input.drafts[0][1]!.content = "changed later"; input.receipt.operationId = "changed later";
+    input.expectedDrafts[0][1] = { ...draft, content: "changed later" }; input.drafts[0][1]!.content = "changed later"; input.receipt.operationId = "changed later";
   }, ({ fake }) => {
     assert.deepEqual(fake.stores.get("drafts")!.get(key), draft);
     assert.deepEqual(fake.stores.get("workspaces")!.get(workspaceKey(draft)), { revision: 1, generation: 0 });

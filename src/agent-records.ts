@@ -1,4 +1,4 @@
-import { workspaceKey, type AgentReceipt, type AgentWorkspace, type JsonValue, type OperationId } from "../shared/agent-command.ts";
+import { payloadIdentity, workspaceKey, type AgentReceipt, type AgentWorkspace, type JsonValue, type OperationId } from "../shared/agent-command.ts";
 import { draftDatabaseName, draftKey, draftStores, openDraftDatabase, type SavedDraft } from "./drafts.ts";
 
 interface WorkspaceRecord { revision: number; generation: number }
@@ -7,8 +7,11 @@ interface Commit {
   workspace: AgentWorkspace;
   generation: number;
   expectedRevision: number;
-  /** draftKey and updatedAt, or null when the draft must be absent. */
-  expectedDrafts: [string, number | null][];
+  /**
+   * draftKey and the whole record the command was planned against, or null
+   * when the draft must be absent; timestamps alone cannot tell two writes apart.
+   */
+  expectedDrafts: [string, SavedDraft | null][];
   drafts: [string, SavedDraft | null][];
   receipt: Omit<AgentReceipt, "generation" | "revision">;
 }
@@ -98,10 +101,12 @@ export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFact
             };
             let remaining = expectedDrafts.length;
             if (!remaining) apply();
-            for (const [draft, updatedAt] of expectedDrafts) {
+            // A JSON round trip drops undefined fields, so a record and its stored copy compare equal.
+            const same = (value: SavedDraft | null | undefined) => value ? payloadIdentity(JSON.parse(JSON.stringify(value)) as JsonValue) : null;
+            for (const [draft, wanted] of expectedDrafts) {
               if (!draft.startsWith(from)) conflict();
               read(files.get(draft), (saved: SavedDraft | undefined) => {
-                if ((saved?.updatedAt ?? null) !== updatedAt) conflict();
+                if (same(saved) !== same(wanted)) conflict();
                 if (--remaining === 0) apply();
               });
             }
@@ -123,7 +128,8 @@ export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFact
         const store = tx.objectStore(draftStores.workspaces);
         read(store.get(key), (value: WorkspaceRecord | undefined) => {
           const current = value ?? initial();
-          if (current.generation !== expected || !Number.isSafeInteger(next) || next < 0) conflict();
+          // Generations only increase, so a fence once passed can never be reused.
+          if (current.generation !== expected || !Number.isSafeInteger(next) || next <= current.generation) conflict();
           const changed = { ...current, generation: next };
           store.put(changed, key);
           done(changed);
