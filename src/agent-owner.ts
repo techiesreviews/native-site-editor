@@ -43,12 +43,10 @@ export function createAgentOwner(options: {
         await reload(structuredClone(snapshot));
         const changed = await records.setGeneration(workspace, expected, expected + 1, snapshot);
         generation = changed.generation;
-        // Reload/CAS can suspend the tab: recheck all authorizations together before
-        // exposing outcomes. Evicted or revoked receipts now remain unknown.
-        const outcomes = await records.reconcile(workspace, pending);
-        const current = await records.workspace(workspace);
-        if (current.generation !== generation || current.paused)
-          throw new AgentRecordsError("not-owner", "Agent ownership was superseded during takeover.");
+        // Reload/CAS can suspend the tab: one transaction rechecks ownership and every
+        // authorization before exposing outcomes, with no await after it. Evicted or
+        // revoked receipts now remain unknown; a superseded takeover stays paused.
+        const outcomes = await records.reconcile(workspace, pending, generation);
         paused = false;
         return { outcomes, snapshot, generation };
       } finally {
