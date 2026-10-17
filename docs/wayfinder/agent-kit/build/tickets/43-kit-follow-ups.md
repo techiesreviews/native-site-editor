@@ -34,7 +34,8 @@ Two kit gaps found on 2026-10-17.
    `findingsList` (screen, kind, selector, detail; widths and themes joined):
    - `layout findings (after):` every after finding (cap 20).
    - `fixed since before:` findings of a before shot that its matching after shot (same screen, width
-     and theme, `ok`) no longer has (cap 10). A before shot whose after shot is missing or failed adds
+     and theme, `ok`) no longer has, compared by kind and selector, since details carry measurements
+     (cap 10). An empty list reads `none`. A before shot whose after shot is missing or failed adds
      nothing, so a multi-screen compare does not report later screens as fixed while they are still
      being shot.
    - Without before shots the output stays as it is (`layout findings:`). The RESULT line keeps its

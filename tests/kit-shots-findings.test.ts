@@ -14,17 +14,17 @@ function shot(name: string | undefined, layout: IndexLayoutFinding["finding"][],
 
 test("compare prints after-only findings under the after heading", () => {
   assert.deepEqual(findingsSections([shot("before", []), shot("after", [tap])]), [
-    "layout findings (after):", "  files 390 light: tap-target .file-row — 28x24 px", "fixed since before:",
+    "layout findings (after):", "  files 390 light: tap-target .file-row — 28x24 px", "fixed since before:", "  none",
   ]);
 });
 
 test("compare prints resolved findings only under fixed since before", () => {
   assert.deepEqual(findingsSections([shot("before", [tap]), shot(undefined, [])]), [
-    "layout findings (after):", "fixed since before:", "  files 390 light: tap-target .file-row — 28x24 px",
+    "layout findings (after):", "  none", "fixed since before:", "  files 390 light: tap-target .file-row — 28x24 px",
   ]);
 });
 
-test("compare keeps shared findings current and identifies fixes by kind, selector and detail", () => {
+test("compare keeps shared findings current and identifies fixes by kind and selector, not measured detail", () => {
   const changedDetail = { ...tap, detail: "30x24 px" };
   const changedKind = { ...tap, kind: "clipped" };
   const changedSelector = { ...tap, selector: ".other-row" };
@@ -37,7 +37,6 @@ test("compare keeps shared findings current and identifies fixes by kind, select
     "  files 390 light: tap-target .file-row — 28x24 px",
     "fixed since before:",
     "  files 390 light: clipped .file-row — 28x24 px",
-    "  files 390 light: tap-target .file-row — 30x24 px",
     "  files 390 light: tap-target .other-row — 28x24 px",
   ]);
 });
@@ -45,14 +44,14 @@ test("compare keeps shared findings current and identifies fixes by kind, select
 test("unpaired before shots never report fixes across screens, widths or themes", () => {
   for (const overrides of [{ screen: "editor" }, { width: 1280 }, { theme: "dark" }]) {
     assert.deepEqual(findingsSections([shot("before", [tap]), shot("after", [], overrides)]),
-      ["layout findings (after):", "fixed since before:"]);
+      ["layout findings (after):", "  none", "fixed since before:", "  none"]);
   }
-  assert.deepEqual(findingsSections([shot("before", [tap])]), ["layout findings (after):", "fixed since before:"]);
+  assert.deepEqual(findingsSections([shot("before", [tap])]), ["layout findings (after):", "  none", "fixed since before:", "  none"]);
 });
 
 test("failed after shots never confirm fixes", () => {
   assert.deepEqual(findingsSections([shot("before", [tap]), shot("after", [overflow], { ok: false })]), [
-    "layout findings (after):", "  files 390 light: overflow body — scrollWidth 500", "fixed since before:",
+    "layout findings (after):", "  files 390 light: overflow body — scrollWidth 500", "fixed since before:", "  none",
   ]);
 });
 
