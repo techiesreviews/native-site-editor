@@ -123,7 +123,7 @@ test("failed put/delete counts failure without written keys, bytes or retained c
   await assert.rejects(storage.put({ key: "after", extra: 1 }), /Injected/);
   storage.failNextWrite();
   await assert.rejects(storage.delete(["key"]), /Injected/);
-  assert.deepEqual(counters.byCategory.data, { calls: 0, keysRead: 0, keysWritten: 0, keysDeleted: 0, bytesWritten: 0, failedWrites: 2 });
+  assert.deepEqual(counters.byCategory.data, { calls: 0, alarms: 0, keysRead: 0, keysWritten: 0, keysDeleted: 0, bytesWritten: 0, failedWrites: 2 });
   assert.equal(counters.retainedBytes, retained);
   assert.equal(counters.peakRetainedBytes, retained);
   assert.equal(await storage.get("key"), "before");
@@ -143,8 +143,10 @@ test("lifecycle runs the real alarm and DELETE; sockets count UTF-8 and binary t
     await h.alarm("agent-hub:unit");
     assert.ok(h.counters.byCategory.lifecycle.keysDeleted >= 4);
     assert.equal(h.counters.byCategory.lifecycle.calls, 0);
+    assert.equal(h.counters.byCategory.lifecycle.alarms, 1);
     await h.namespace.get("agent-hub:unit").fetch(new Request("https://session.internal/", { method: "DELETE" }));
     assert.equal(h.counters.byCategory.lifecycle.calls, 1);
+    assert.equal(h.counters.byCategory.lifecycle.alarms, 1);
     assert.equal(await storage.getAlarm(), null);
     assert.equal((await storage.list()).size, 0);
     const socket = countedSocket();
@@ -170,4 +172,29 @@ test("clock drains microtasks/immediates before advancing and clears client dead
   assert.equal(Date.now, original.now);
   assert.equal(globalThis.setTimeout, original.setTimeout);
   assert.equal(globalThis.clearTimeout, original.clearTimeout);
+});
+
+test("fetches and alarms wait for an object's active concurrency block", async () => {
+  const h = await startCountedWorker();
+  try {
+    const config = { clientId: "Iv1.held", clientSecret: "secret", slug: "held" };
+    const object = h.namespace.get("native-site-editor/config");
+    let release!: () => void;
+    const held = new Promise<void>(resolve => (release = resolve));
+    const storage = h.storage("native-site-editor/config");
+    const put = storage.put.bind(storage);
+    storage.put = (async (key: string, value: unknown) => { await held; return put(key, value); }) as typeof storage.put;
+    const write = object.fetch(new Request("https://session.internal/config", { method: "PUT", body: JSON.stringify(config) }));
+    await new Promise(resolve => setImmediate(resolve));
+    const read = object.fetch(new Request("https://session.internal/config"));
+    const alarm = h.alarm("native-site-editor/config");
+    let settled = false;
+    void Promise.all([read, alarm]).then(() => (settled = true));
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(settled, false);
+    release();
+    assert.equal((await write).status, 204);
+    assert.deepEqual(await (await read).json(), config);
+    await alarm;
+  } finally { await h.worker.dispose(); }
 });
