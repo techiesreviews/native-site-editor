@@ -262,3 +262,36 @@ test("a read that timed out is told it no longer counts", async () => {
   finish(); await settle();
   a.dispose();
 });
+
+test("a cooldown another tab records before a planned read moves the read, without holding the lease", async () => {
+  const f = fixture(), a = f.tab("a"), key = "native-site-editor:agent-recovery:lex:1";
+  a.report({ kind: "transient" });
+  await f.tick(500);
+  // Another tab heard Retry-After: 20 s; its write reaches this tab only through storage.
+  f.storage.setItem(key, JSON.stringify({ ...JSON.parse(f.storage.getItem(key)!), retryAt: now + 20_000 }));
+  await f.tick(19_000);
+  assert.equal(f.calls.length, 0);
+  await f.tick(111_000);
+  assert.ok(f.calls.length >= 1 && f.calls[0].at >= now + 20_000);
+  assert.ok(f.calls.every(call => call.at - now <= 120_000));
+  assert.equal(a.state().mode, "paused");
+  a.dispose(); assert.equal(f.timers.size, 0);
+});
+
+test("a read that succeeds keeps a cooldown recorded while it ran", async () => {
+  const f = fixture(), key = "native-site-editor:agent-recovery:lex:1";
+  let finish!: () => void;
+  const a = f.tab("a", () => new Promise<void>(resolve => { finish = resolve; }));
+  a.report({ kind: "transient" });
+  await f.tick(1000);
+  assert.equal(f.calls.length, 1);
+  f.storage.setItem(key, JSON.stringify({ ...JSON.parse(f.storage.getItem(key)!), retryAt: now + 20_000 }));
+  finish(); await settle(); await f.tick(1000);
+  assert.equal(a.allowAutomatic(), false);
+  // After the cooldown one confirming read runs; its success resumes automatic work.
+  await f.tick(18_000);
+  assert.equal(f.calls.length, 2); assert.ok(f.calls[1].at >= now + 20_000);
+  finish(); await settle();
+  assert.equal(a.allowAutomatic(), true);
+  a.dispose();
+});
