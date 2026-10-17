@@ -28,7 +28,12 @@ import { publishHosts } from "./hosts";
 import { starterProvider } from "./starter";
 import { StartingPointError, commitStartingPoint, startingPointFiles, startingSiteName } from "./first-commit";
 import { GitHub, HttpError, type RepositoryCache } from "./github";
-import { isDailyQuotaError, nextUtcMidnight, type AgentQuotaBody } from "../shared/agent-failure";
+import { SIGNED_OUT, isDailyQuotaError, nextUtcMidnight, type AgentQuotaBody } from "../shared/agent-failure";
+
+/** The editor session ended; the answer carries a code so the browser asks to sign in again. */
+class SignedOutError extends HttpError {
+  readonly code = SIGNED_OUT;
+}
 import { requestFetch, startTiming, timed } from "./timing";
 import {
   configuredApp,
@@ -294,6 +299,7 @@ export async function handle(
           {
             error: message,
             ...(quota ? { error: message, code: "daily-quota", resetAt: nextUtcMidnight(Date.now()) } satisfies AgentQuotaBody : {}),
+            ...(error instanceof SignedOutError ? { code: error.code } : {}),
             ...(error instanceof HttpError && error.conflicts
               ? { conflicts: error.conflicts, gone: error.gone ?? [] }
               : {}),
@@ -530,7 +536,7 @@ async function route(
   }
   if (path.startsWith("/api/agent/")) {
     const user = await session(request, env);
-    if (!user) throw new HttpError(401, "Connect GitHub to use agent context.");
+    if (!user) throw new SignedOutError(401, "Connect GitHub to use agent context.");
     const sessionId = cookie(request, "session")!;
     if (
       request.method === "POST" &&

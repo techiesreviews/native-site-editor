@@ -1,4 +1,6 @@
-export type AgentFailureCode = "daily-quota";
+export type AgentFailureCode = "daily-quota" | "signed-out";
+/** The browser's editor session ended: only this answer asks the user to sign in again. */
+export const SIGNED_OUT = "signed-out";
 export interface AgentQuotaBody { error: string; code: AgentFailureCode; resetAt: number }
 export type AgentFailure =
   | { kind: "quota"; resetAt?: number; retryAt?: number }
@@ -36,8 +38,9 @@ export function classifyAgentFailure(input: {
   const workerQuota = input.body === undefined && /error code:?\s*1027\b|Error 1027\b/i.test(input.text ?? "");
   if ("code" in body && body.code === "daily-quota" || workerQuota)
     return { kind: "quota", resetAt: "resetAt" in body && typeof body.resetAt === "number" && Number.isFinite(body.resetAt) ? body.resetAt : workerQuota ? nextUtcMidnight(input.now) : undefined, retryAt };
-  // Origin refusals and other validation errors must not sign the user out.
-  if (input.status === 401 || input.status === 403 && /session|connection/i.test(message ?? "")) return { kind: "auth" };
+  // Only the Worker's signed-out answer means sign in again: an agent's expired or revoked
+  // connection, an origin refusal and other 401/403 answers keep remote agents on.
+  if (input.status === 401 && "code" in body && body.code === SIGNED_OUT) return { kind: "auth" };
   if (input.networkError || [408, 429, 500, 502, 503, 504].includes(input.status ?? 0)) return { kind: "transient", retryAt };
   return { kind: "other", message };
 }

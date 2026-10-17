@@ -53,8 +53,9 @@ test("classification uses only the documented quota signals", () => {
   for (const status of [408, 429, 500, 502, 503, 504]) assert.equal(classify({ status }).kind, "transient");
   assert.equal(classify({ status: 503, body: { error: "Durable Object is overloaded" } }).kind, "transient");
   assert.equal(classify({ networkError: true }).kind, "transient");
-  assert.equal(classify({ status: 401 }).kind, "auth");
-  assert.equal(classify({ status: 403, body: { error: "This connection belongs to another editor session." } }).kind, "auth");
+  assert.equal(classify({ status: 401, body: { error: "Connect GitHub to use agent context.", code: "signed-out" } }).kind, "auth");
+  assert.equal(classify({ status: 401, body: { error: "Agent connection expired." } }).kind, "other");
+  assert.equal(classify({ status: 403, body: { error: "This connection belongs to another editor session." } }).kind, "other");
   for (const status of [400, 409, 403]) assert.equal(classify({ status, body: { error: "Invalid request origin." } }).kind, "other");
   assert.equal(classify({ body: { code: "daily-quota", resetAt: Infinity } }).kind, "quota");
   for (const dimension of ["volume of requests", "duration", "rows written", "rows read"])
