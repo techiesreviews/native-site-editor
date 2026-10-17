@@ -1,4 +1,6 @@
 import { connectionPrompt } from "../agent-prompts";
+import { browserAgentRecovery } from "../agent-recovery";
+import { AgentFailureError, classifyAgentFailure } from "../../shared/agent-failure";
 import { button, node } from "../ui/dom";
 import { textBytes, type AgentCommand, type AgentElement } from "../../shared/agent";
 import type { SharedContext } from "../agent-site";
@@ -100,6 +102,8 @@ export function createAgentMenu(options: {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let interval: ReturnType<typeof setInterval> | undefined;
   let consentChecks: ReturnType<typeof setTimeout>[] = [];
+  let recovery: ReturnType<typeof browserAgentRecovery> | undefined;
+  let recoveryRepo: number | undefined, retrying = false;
   // Grants this tab saw before Turn off: a later approval elsewhere never turns them back on.
   const declined = new Set<string>();
   const applied = new Map<string, { state: string; message: string; result?: AgentCommand["result"] }>();
@@ -122,9 +126,15 @@ export function createAgentMenu(options: {
   const cancel = button("Cancel", () => void revoke(), "text-button agent-menu__link");
   // Stops this tab's remote work; the agents' access stays for when it is turned on again.
   const off = button("Turn off", () => turnOff(), "text-button agent-menu__link");
+  const retry = button("Retry", () => {
+    if (!recovery || retrying) return;
+    retrying = true;
+    paint();
+    void recovery.retry().finally(() => { retrying = false; paint(); });
+  }, "text-button agent-menu__link");
   off.title = "Stop remote agents in this tab. Their access stays; Connect with MCP turns them on again.";
   const links = node("span", "agent-menu__links");
-  links.append(again, cancel, off);
+  links.append(again, cancel, retry, off);
   // What the connected agents wait on, beside Disconnect MCP.
   const waitingOn = node("div", "agent-menu__waiting");
   waitingOn.id = "agent-waiting";
@@ -142,18 +152,75 @@ export function createAgentMenu(options: {
   let notice: { text: string; state: string } | undefined;
 
   /** `at`: the remote activation an upload belongs to; once it ended, nothing is sent. */
-  async function api(action: string, body?: unknown, zipped = false, at?: number) {
+  async function api(action: string, body?: unknown, zipped = false, at?: number, recovering = false) {
     const sent = body === undefined ? undefined : zipped ? await gzip(JSON.stringify(body)) : JSON.stringify(body);
     if (at !== undefined && !live(at)) throw new Error("Remote agents were turned off.");
-    const response = await fetch(`/api/agent/${action}`, {
+    if (!recovering && recovery && !recovery.allowAutomatic()) throw new AgentFailureError({ kind: "other" }, "Remote agents are paused.");
+    let response: Response;
+    try { response = await fetch(`/api/agent/${action}`, {
       method: body === undefined ? "GET" : "POST",
       credentials: "same-origin",
       headers: body === undefined ? undefined : { "Content-Type": "application/json", ...(zipped ? { "Content-Encoding": "gzip" } : {}) },
       body: sent,
-    });
-    const result = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(result.error ?? "Agent connection failed.");
+    }); } catch {
+      const error = new AgentFailureError(classifyAgentFailure({ networkError: true, now: Date.now() }));
+      if (!recovering && (at === undefined || live(at))) failed(error);
+      throw error;
+    }
+    const text = await response.text();
+    let result;
+    try { result = JSON.parse(text); } catch { /* Cloudflare's 1027 answer is HTML. */ }
+    if (!response.ok) {
+      const error = new AgentFailureError(classifyAgentFailure({ status: response.status, body: result, text, retryAfter: response.headers.get("Retry-After"), now: Date.now() }), result?.error);
+      if (!recovering && (at === undefined || live(at))) failed(error);
+      throw error;
+    }
     return result;
+  }
+  function stopAutomatic() {
+    clearInterval(interval);
+    interval = undefined;
+    clearTimeout(timer);
+    for (const check of consentChecks) clearTimeout(check);
+    consentChecks = [];
+  }
+  function failed(error: AgentFailureError) {
+    if (error.failure.kind === "auth") {
+      turnOff(false);
+      say("Your sign-in to the editor ended. Sign in again, then choose Connect with MCP.");
+    } else recovery?.report(error.failure);
+  }
+  function showError(error: unknown) {
+    if (!(error instanceof AgentFailureError) || error.failure.kind === "other") say((error as Error).message);
+  }
+  function recoverWorkspace() {
+    const repo = options.repository();
+    if (!remote || repo?.id === recoveryRepo) return;
+    recovery?.dispose();
+    activation++;
+    recoveryRepo = repo?.id;
+    recovery = repo ? browserAgentRecovery({ account: options.account, repoId: repo.id }, tabId, async () => {
+      const at = activation;
+      try {
+        const next: HubState = await api("hub", undefined, false, at, true);
+        if (live(at)) hub = next;
+      } catch (error) {
+        if (live(at) && error instanceof AgentFailureError && error.failure.kind === "auth") failed(error);
+        throw error;
+      }
+    }) : undefined;
+    recovery?.subscribe(recoveryChanged);
+    recoveryChanged();
+  }
+  function recoveryChanged() {
+    if (!remote) return;
+    if (!recovery?.allowAutomatic()) stopAutomatic();
+    else if (interval === undefined) {
+      interval = setInterval(() => void poll(), FAST);
+      // Resume with a fresh read, without re-arming consent checks.
+      timer = setTimeout(() => void poll(true), 0);
+    }
+    paint();
   }
   // A connection follows the open repository, so every one of the session's counts.
   const liveGrants = () => (options.repository() ? hub.grants : []);
@@ -163,6 +230,7 @@ export function createAgentMenu(options: {
   function state() {
     if (!options.repository()) return "closed";
     if (!remote) return "off";
+    if (recovery && recovery.state().mode !== "ok") return "paused";
     if (usedGrants().length) return "connected";
     return waiting() ? "waiting" : "idle";
   }
@@ -201,7 +269,7 @@ export function createAgentMenu(options: {
     tellRequests();
     if (notice && notice.state !== current) notice = undefined;
     root.dataset.state = current;
-    action.disabled = changing || current === "closed";
+    action.disabled = changing || current === "closed" || current === "paused";
     actionLabel.textContent =
       current === "connected" ? "Disconnect MCP" : current === "waiting" ? "Waiting for connection…" : "Connect with MCP";
     const asked = current === "connected" ? lastQuestions : 0;
@@ -219,13 +287,23 @@ export function createAgentMenu(options: {
             : "Copy a prompt that connects Claude, Codex or another agent to this site";
     links.hidden = changing || current === "off" || current === "closed";
     again.hidden = cancel.hidden = current !== "waiting";
+    const recovering = recovery?.state();
+    retry.hidden = current !== "paused" || recovering?.mode === "reconnecting";
+    retry.disabled = retrying || (recovering?.retryAt ?? 0) > Date.now();
     const text =
       current === "waiting"
         ? "Prompt copied. Paste it into Claude, Codex or another agent."
         : current === "off"
           ? "Remote agents are off in this tab. Choose Connect with MCP to turn them on."
           : "";
-    hint.textContent = notice?.text ?? text;
+    let pause = "";
+    if (recovering?.mode === "quota") {
+      pause = "Remote agents are paused: the editor's service has used up today's allowance. Your drafts and sign-in are safe, and you can keep editing.";
+      if (recovering.resetAt !== undefined) pause += ` It should work again after ${new Date(recovering.resetAt).toLocaleString()} (midnight UTC).`;
+    } else if (recovering?.mode === "paused") pause = "Remote agents are paused: the editor could not reach its service. Your drafts are safe. Choose Retry to try again.";
+    else if (recovering?.mode === "reconnecting") pause = "Reconnecting to remote agents…";
+    if (pause && (recovering?.retryAt ?? 0) > Date.now()) pause += ` You can retry after ${new Date(recovering!.retryAt!).toLocaleString()}.`;
+    hint.textContent = pause || notice?.text || text;
     hint.hidden = !hint.textContent;
   }
   // The flyout: the questions waiting for the user (each shows its pin),
@@ -288,33 +366,34 @@ export function createAgentMenu(options: {
     if (state() === "connected") say("Remote agents are on. If an agent you connected before stopped, ask it to continue.");
     else if (state() === "idle") await start(task);
   }
-  const live = (at: number) => !disposed && remote && activation === at;
+  const live = (at: number) => !disposed && remote && activation === at && options.repository()?.id === recoveryRepo;
   function startRemote() {
     if (remote || disposed) return;
     remote = true;
     activation++;
-    interval = setInterval(() => void poll(), FAST);
+    recoverWorkspace();
     document.addEventListener("visibilitychange", wake);
     window.addEventListener("focus", wake);
   }
   /** Stops every remote request of this tab; a shared context is withdrawn once. */
-  function turnOff() {
+  function turnOff(withdraw = true) {
     if (!remote) return;
     remote = false;
     activation++;
-    clearInterval(interval);
-    clearTimeout(timer);
-    for (const check of consentChecks) clearTimeout(check);
-    consentChecks = [];
+    stopAutomatic();
+    const paused = recovery && !recovery.allowAutomatic();
+    recovery?.dispose();
+    recovery = undefined;
+    recoveryRepo = undefined;
     document.removeEventListener("visibilitychange", wake);
     window.removeEventListener("focus", wake);
     for (const grant of hub.grants) declined.add(grant.id);
     hub = { grants: [], tabId: null, updatedAt: null, commands: [], requests: [] };
     sentRevision = -1;
-    if (shared && !disposed) {
-      shared = false;
+    if (shared && !disposed && !paused && withdraw) {
       void api("pause", { tabId }).catch(() => undefined);
     }
+    shared = false;
     paint();
   }
   // A task the copied prompt ends with instead of watching for requests
@@ -341,8 +420,8 @@ export function createAgentMenu(options: {
     } catch (error) {
       changing = false;
       // A failed first prompt leaves remote agents off; a connected agent keeps them on.
-      if (!usedGrants().length) turnOff();
-      say((error as Error).message);
+      if (!usedGrants().length && recovery?.allowAutomatic()) turnOff();
+      showError(error);
     } finally {
       changing = false;
       paint();
@@ -358,7 +437,7 @@ export function createAgentMenu(options: {
       changing = false;
       turnOff();
     } catch (error) {
-      say((error as Error).message);
+      showError(error);
     } finally {
       changing = false;
       paint();
@@ -384,12 +463,12 @@ export function createAgentMenu(options: {
   }
   async function doSync(force: boolean) {
     const at = activation;
-    if (!live(at)) return;
+    if (!live(at) || !recovery?.allowAutomatic()) return;
     const grants = liveGrants();
     if (!grants.length) {
       if (shared) {
         shared = false;
-        await api("pause", { tabId }).catch(() => undefined);
+        await api("pause", { tabId }, false, at).catch(() => undefined);
       }
       return;
     }
@@ -406,7 +485,7 @@ export function createAgentMenu(options: {
     if (!force && sentRevision === version && hub.tabId === tabId && Date.now() - lastSent < 30_000) return;
     try {
       const built = await options.context();
-      if (!live(at)) return;
+      if (!live(at) || !recovery?.allowAutomatic()) return;
       if (built) {
         const { missing } = await api("context", { tabId, context: built.context }, true, at);
         if (live(at)) await sendTexts(Array.isArray(missing) ? missing : [], built.texts, at);
@@ -419,13 +498,13 @@ export function createAgentMenu(options: {
         hub.updatedAt = Date.now();
         shared = true;
       } else if (shared) {
-        await api("pause", { tabId });
+        await api("pause", { tabId }, false, at);
         shared = false;
       }
       sentRevision = version;
       lastSent = Date.now();
     } catch (error) {
-      if (live(at)) say((error as Error).message);
+      if (live(at)) showError(error);
       // Turned off mid-share (a draft batch may have followed the context): withdraw it.
       else if (!remote && !disposed) await api("pause", { tabId }).catch(() => undefined);
     }
@@ -453,7 +532,9 @@ export function createAgentMenu(options: {
   }
 
   async function poll(now = false) {
+    recoverWorkspace();
     if (disposed || !remote || polling || changing) return;
+    if (!recovery?.allowAutomatic()) return;
     // A tab in the background keeps applying changes while an agent is
     // connected (browsers may slow its timer); otherwise it waits to be seen.
     if (document.visibilityState === "hidden" && !now && !liveGrants().length) return;
@@ -463,7 +544,7 @@ export function createAgentMenu(options: {
     lastPoll = Date.now();
     const at = activation;
     try {
-      const next: HubState = await api("hub");
+      const next: HubState = await api("hub", undefined, false, at);
       // Turned off meanwhile: its answer is not applied.
       if (!live(at)) return;
       hub = next;
@@ -472,12 +553,13 @@ export function createAgentMenu(options: {
       if (hub.tabId !== tabId) return;
       const repo = options.repository();
       for (const command of hub.commands) {
-        if (command.state !== "pending" || !live(at)) continue;
+        if (command.state !== "pending" || !live(at) || !recovery?.allowAutomatic()) continue;
         if (command.claimedBy && command.claimedBy !== tabId) continue;
         let ack = applied.get(command.id);
         if (!ack) {
           try {
-            await api("claim", { tabId, id: command.id, grantId: command.grantId });
+            await api("claim", { tabId, id: command.id, grantId: command.grantId }, false, at);
+            if (!live(at) || !recovery?.allowAutomatic()) return;
           } catch {
             continue;
           }
@@ -502,11 +584,11 @@ export function createAgentMenu(options: {
           await sync(true);
         }
         // A change claimed before Turn off is still answered, so the agent knows its outcome.
-        await api("ack", { tabId, id: command.id, grantId: command.grantId, ...ack });
+        await api("ack", { tabId, id: command.id, grantId: command.grantId, ...ack }, false, at);
         say(ack.message);
       }
     } catch (error) {
-      if (!disposed) say((error as Error).message);
+      if (!disposed && live(at)) showError(error);
     } finally {
       polling = false;
     }
@@ -522,6 +604,7 @@ export function createAgentMenu(options: {
   // repository: an older grant, or one for another repository, never does.
   // The grant arrives after the consent page's announcement, so check a few times.
   function consentGranted(at: number) {
+    if (recovery && !recovery.allowAutomatic()) return;
     for (const check of consentChecks) clearTimeout(check);
     consentChecks = [1000, 4000, 10_000].map((delay) => setTimeout(() => void checkConsent(at), delay));
   }
@@ -530,6 +613,9 @@ export function createAgentMenu(options: {
     if (remote) return void poll(true);
     const repo = options.repository();
     if (!repo || changing) return;
+    // Off tabs still honour a pause recorded by an on tab before checking consent.
+    const saved = JSON.parse(localStorage.getItem(`native-site-editor:agent-recovery:${options.account}:${repo.id}`) ?? "{}");
+    if (saved.quota || saved.paused || saved.lease || saved.attempts?.length || saved.retryAt > Date.now()) return;
     const since = activation;
     const found: HubState = await api("hub").catch(() => undefined);
     // Turned on, or on and off again, meanwhile: this answer decides nothing.
@@ -592,15 +678,16 @@ export function createAgentMenu(options: {
       try {
         await api("dismiss", { id });
       } catch (error) {
-        say((error as Error).message);
+        showError(error);
       }
     },
     /** Something the context holds changed: it is sent again shortly. */
     changed() {
+      recoverWorkspace();
       revision++;
       paint();
       clearTimeout(timer);
-      if (remote) timer = setTimeout(() => void sync(), 600);
+      if (remote && recovery?.allowAutomatic()) timer = setTimeout(() => void sync(), 600);
     },
     destroy() {
       disposed = true;

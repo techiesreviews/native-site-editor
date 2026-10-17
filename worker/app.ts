@@ -28,6 +28,7 @@ import { publishHosts } from "./hosts";
 import { starterProvider } from "./starter";
 import { StartingPointError, commitStartingPoint, startingPointFiles, startingSiteName } from "./first-commit";
 import { GitHub, HttpError, type RepositoryCache } from "./github";
+import { isDailyQuotaError, nextUtcMidnight, type AgentQuotaBody } from "../shared/agent-failure";
 import { requestFetch, startTiming, timed } from "./timing";
 import {
   configuredApp,
@@ -272,14 +273,17 @@ export async function handle(
   try {
     response = await route(request, env, url, fetcher);
   } catch (error) {
-    const status = error instanceof HttpError ? error.status : 500;
+    const quota = !(error instanceof HttpError) && isDailyQuotaError(error);
+    const status = error instanceof HttpError ? error.status : quota ? 503 : 500;
     // Unexpected errors reach the user as a plain "Something went wrong":
     // their cause goes to the Worker's logs.
-    if (!(error instanceof HttpError))
+    if (quota) console.error(`${request.method} ${url.pathname} failed: daily quota exhausted`);
+    else if (!(error instanceof HttpError))
       console.error(`${request.method} ${url.pathname} failed:`, error instanceof Error ? error.stack ?? error.message : error);
     const message =
       error instanceof HttpError
         ? error.message
+        : quota ? "The editor's service has used up today's allowance. It resets at midnight UTC."
         : "Something went wrong. Please try again.";
     response = ["/auth/login", "/auth/install", "/auth/callback"].includes(url.pathname)
       ? redirect(`/?error=${encodeURIComponent(message)}`, [
@@ -289,6 +293,7 @@ export async function handle(
       : json(
           {
             error: message,
+            ...(quota ? { error: message, code: "daily-quota", resetAt: nextUtcMidnight(Date.now()) } satisfies AgentQuotaBody : {}),
             ...(error instanceof HttpError && error.conflicts
               ? { conflicts: error.conflicts, gone: error.gone ?? [] }
               : {}),
