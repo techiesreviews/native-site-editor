@@ -1,7 +1,7 @@
 ---
 title: "kit follow-ups: test-server changes pick MCP specs; compare prints before and after findings apart"
 type: task (AFK)
-status: ready-for-agent
+status: closed
 assignee: td-kit
 blocked_by: []
 builder: sol
@@ -64,3 +64,34 @@ Two kit gaps found on 2026-10-17.
   Files row tap-target finding under "fixed since before".
 - `npm run check`, `npm run lint`, `scripts/agents/unit.sh`.
 - Sol review on the PR; merged into `dev` through `kit pr`.
+
+## Done (2026-10-17)
+
+- **Spec selection.** `selectAffected` has a `server` reason kind. A change to `tests/native-save/server.ts`
+  or `tests/native-save/fake-hub.ts` selects the agent specs (native-save specs reaching
+  `tests/native-save/mcp-prompt.ts` or quoting `/mcp`): `server: agent paths (<file>)`. For `server.ts`, a
+  quoted route (`/…`, not `/`, `/api`, `/user`) on an added or removed diff line selects the specs quoting
+  it, at most 15 per route: `server: route "/__demo/onboarding" (tests/native-save/server.ts)`.
+  `kit.d/specs` now passes `server.ts`'s diff with `src/`; `removedStrings` still reads `src/` only.
+  Not all ~180 native-save specs: server.ts changed in 59 commits in a month.
+- **Demo 1.** A one-line edit on server.ts's `/__demo/onboarding` route: `kit specs --affected --list` →
+  17 specs in 0.8 s (8 agent paths, 11 route; onboarding and component-loader have both). A comment
+  added to fake-hub.ts → the 8 agent specs. Both edits reverted.
+- **Compare findings.** `findingsSections(index.screens)` in `findings-list.ts`: with before and after
+  shots, `layout findings (after):` (cap 20) then `fixed since before:` (cap 10), both merged by
+  `findingsList`, empty lists read `none`. A before finding counts as fixed only when the ok after shot
+  of the same screen, width and theme has no finding of the same kind and selector (details carry
+  measurements). Unpaired or failed after shots add nothing. Only before shots (compare's base run):
+  `layout findings (before):`. No before shots: unchanged `layout findings:`. RESULT line unchanged.
+- **Demo 2.** `kit shots files --width 390 --compare 7c6bc892` (the commit before ticket 40): after
+  `none`; fixed since before: the Publish menu arrow (29x32 px) and the Files rows (350x32 px x16), light
+  and dark. Out: `/home/ubulex/Projects/native-site-editor/.scratch/shots/td-kit/20261017-054309`. That
+  run showed the base capture printing empty after/fixed lists, hence the before-only label.
+- **Commits.** 9a0a2a4a ticket; 3839c507 build (Sol); c213fc30 kind+selector pairing, `none`; 97cd9612
+  before-only label (Claude); close.
+- **Tests.** `tests/kit-specs.test.ts` +3 (agent paths and routes from server/hub diffs, common prefixes,
+  context lines and the 15-spec cap, real CLI `--list` with `[server 1]`); `tests/kit-shots-findings.test.ts`
+  +8 (after-only, fixed, kind+selector pairing, unpaired, failed after, before-only, unchanged without
+  before, separate caps). 37/37 focused; `npm run check`, `npm run lint`, `scripts/agents/unit.sh` 3961/0.
+- **Review.** Sol, `/home/ubulex/Projects/native-site-editor/.scratch/reviews/td-kit/20261017T054648Z`:
+  no defects, no validation gaps, no nits.
