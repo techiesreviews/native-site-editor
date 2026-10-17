@@ -19,24 +19,26 @@ const findingKey = (finding: IndexLayoutFinding["finding"]) => JSON.stringify([f
 const shotKey = (shot: FindingShot) => JSON.stringify([shot.screen, shot.width, shot.theme]);
 
 /**
- * Without before shots: the plain findings list. With them: the after findings, then the
- * before findings (kind and selector) that a successful after shot of the same screen,
- * width and theme no longer has. An empty list reads "none".
+ * Without before shots: the plain findings list. Only before shots (compare's base run):
+ * their list, labelled before. Both: the after findings, then the before findings (kind
+ * and selector) that a successful after shot of the same screen, width and theme no
+ * longer has. In the labelled lists an empty list reads "none".
  */
 export function findingsSections(screens: FindingShot[]): string[] {
-  const hasBefore = screens.some(shot => shot.name === "before");
+  const before = screens.filter(shot => shot.name === "before");
   const after = screens.filter(shot => shot.name !== "before");
   const flatten = (shots: FindingShot[]) => shots.flatMap(shot => shot.layout.map(finding => ({ screen: shot.screen, width: shot.width, theme: shot.theme, finding })));
+  const section = (lines: string[]) => lines.length ? lines.map(line => `  ${line}`) : ["  none"];
   const current = findingsList(flatten(after));
-  if (!hasBefore) return current.length ? ["layout findings:", ...current.map(line => `  ${line}`)] : [];
+  if (!before.length) return current.length ? ["layout findings:", ...current.map(line => `  ${line}`)] : [];
+  if (!after.length) return ["layout findings (before):", ...section(findingsList(flatten(before)))];
   const successful = new Map(after.filter(shot => shot.ok).map(shot => [shotKey(shot), shot]));
-  const fixed = screens.filter(shot => shot.name === "before").flatMap(shot => {
+  const fixed = before.flatMap(shot => {
     const match = successful.get(shotKey(shot));
     if (!match) return [];
     const remaining = new Set(match.layout.map(findingKey));
     return flatten([{ ...shot, layout: shot.layout.filter(finding => !remaining.has(findingKey(finding))) }]);
   });
-  const section = (lines: string[]) => lines.length ? lines.map(line => `  ${line}`) : ["  none"];
   return ["layout findings (after):", ...section(current), "fixed since before:", ...section(findingsList(fixed, 10))];
 }
 

@@ -46,7 +46,12 @@ test("unpaired before shots never report fixes across screens, widths or themes"
     assert.deepEqual(findingsSections([shot("before", [tap]), shot("after", [], overrides)]),
       ["layout findings (after):", "  none", "fixed since before:", "  none"]);
   }
-  assert.deepEqual(findingsSections([shot("before", [tap])]), ["layout findings (after):", "  none", "fixed since before:", "  none"]);
+});
+
+test("a run with only before shots (compare's base capture) lists them as before findings", () => {
+  assert.deepEqual(findingsSections([shot("before", [tap]), shot("before", [tap], { theme: "dark" })]),
+    ["layout findings (before):", "  files 390 light,dark: tap-target .file-row — 28x24 px"]);
+  assert.deepEqual(findingsSections([shot("before", [])]), ["layout findings (before):", "  none"]);
 });
 
 test("failed after shots never confirm fixes", () => {

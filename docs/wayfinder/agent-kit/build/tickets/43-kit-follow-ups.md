@@ -38,6 +38,7 @@ Two kit gaps found on 2026-10-17.
      (cap 10). An empty list reads `none`. A before shot whose after shot is missing or failed adds
      nothing, so a multi-screen compare does not report later screens as fixed while they are still
      being shot.
+   - A run with only before shots (compare's base capture) prints `layout findings (before):`.
    - Without before shots the output stays as it is (`layout findings:`). The RESULT line keeps its
      current format.
 
