@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { AgentFailureError, classifyAgentFailure, isDailyQuotaError, nextUtcMidnight, parseRetryAfter } from "../shared/agent-failure.ts";
-import { createAgentRecovery } from "../src/agent-recovery.ts";
+import { createAgentRecovery, recordFailure, recoveryHolds } from "../src/agent-recovery.ts";
 import { handle, type Env } from "../worker/app.ts";
 
 const now = Date.UTC(2026, 9, 17, 12);
@@ -136,7 +136,7 @@ test("quota pauses both tabs indefinitely; manual Retry is single-flight and cle
   const first = a.retry(), second = a.retry();
   assert.equal(first, second);
   await b.retry(); assert.equal(f.calls.length, 1);
-  await f.tick(30_000); // The lease renews during a slow read.
+  await f.tick(20_000); // The lease renews during a slow read.
   await b.retry(); assert.equal(f.calls.length, 1);
   finish(); await first; await settle();
   assert.equal(a.allowAutomatic(), true); assert.equal(b.allowAutomatic(), true);
@@ -210,5 +210,29 @@ test("a 48-hour Retry-After holds manual Retry for the full 48 hours", async () 
   await f.tick(3_600_000);
   await a.retry();
   assert.equal(f.calls.length, 1); assert.equal(a.allowAutomatic(), true);
+  a.dispose();
+});
+
+test("a read that never answers counts as a failure, and the window still ends in a pause", async () => {
+  const f = fixture(), a = f.tab("a", () => new Promise<void>(() => {}));
+  a.report({ kind: "transient" });
+  await f.tick(600_000);
+  assert.equal(a.state().mode, "paused");
+  assert.ok(f.calls.length >= 1 && f.calls.length <= 5);
+  assert.ok(f.calls.every(call => call.at - now <= 120_000));
+  a.dispose(); assert.equal(f.timers.size, 0);
+});
+
+test("a tab with remote agents off shares a cooldown or quota answer with the workspace", async () => {
+  const f = fixture(), workspace = { account: "lex", repoId: 1 };
+  assert.equal(recordFailure(f.storage, workspace, { kind: "transient" }, now), undefined);
+  assert.equal(recoveryHolds(f.storage, workspace, now), false);
+  assert.equal(recordFailure(f.storage, workspace, { kind: "transient", retryAt: now + 30_000 }, now), "transient");
+  assert.equal(recoveryHolds(f.storage, workspace, now + 29_999), true);
+  assert.equal(recoveryHolds(f.storage, workspace, now + 30_000), false);
+  assert.equal(recordFailure(f.storage, workspace, { kind: "quota" }, now), "quota");
+  const a = f.tab("a", async () => {});
+  await f.tick(600_000);
+  assert.equal(a.allowAutomatic(), false); assert.equal(f.calls.length, 0);
   a.dispose();
 });

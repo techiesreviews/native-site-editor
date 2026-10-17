@@ -30,6 +30,8 @@ interface RecoveryState {
 }
 const LEASE = 15_000;
 const WINDOW = 120_000;
+/** A recovery read still unanswered after this counts as a network failure. */
+const READ_LIMIT = 30_000;
 type Workspace = RecoveryOptions["workspace"];
 const recoveryKey = (workspace: Workspace) => `native-site-editor:agent-recovery:${workspace.account}:${workspace.repoId}`;
 function readRecord(storage: Pick<Storage, "getItem">, key: string): RecordState {
@@ -44,12 +46,17 @@ export function recoveryHolds(storage: Pick<Storage, "getItem">, workspace: Work
   const record = readRecord(storage, recoveryKey(workspace));
   return Boolean(record.quota || record.paused || record.lease || record.attempts.length || (record.retryAt ?? 0) > now);
 }
-/** A tab with remote agents off records a quota answer, so every tab of the workspace pauses. */
-export function recordQuota(storage: Pick<Storage, "getItem" | "setItem">, workspace: Workspace, failure: AgentFailure & { kind: "quota" }, now: number) {
+/**
+ * A tab with remote agents off records a quota answer or a cooldown, so every tab of the
+ * workspace pauses or waits; it returns which one it recorded.
+ */
+export function recordFailure(storage: Pick<Storage, "getItem" | "setItem">, workspace: Workspace, failure: AgentFailure, now: number) {
+  if (failure.kind !== "quota" && (failure.kind !== "transient" || failure.retryAt === undefined)) return undefined;
   const key = recoveryKey(workspace), record = readRecord(storage, key);
-  record.quota = { at: now, resetAt: failure.resetAt };
+  if (failure.kind === "quota") record.quota = { at: now, resetAt: failure.resetAt };
   if (failure.retryAt !== undefined) record.retryAt = Math.max(record.retryAt ?? 0, failure.retryAt);
   storage.setItem(key, JSON.stringify(record));
+  return failure.kind;
 }
 
 export function createAgentRecovery(options: RecoveryOptions) {
@@ -179,7 +186,12 @@ export function createAgentRecovery(options: RecoveryOptions) {
     write(record);
     try {
       // This callback reads the hub. It never repeats a failed mutation.
-      await options.reconnect();
+      let limit: number | undefined;
+      try {
+        await Promise.race([options.reconnect(), new Promise<never>((_, reject) => {
+          limit = options.setTimeout(() => reject(new AgentFailureError({ kind: "transient" })), READ_LIMIT);
+        })]);
+      } finally { options.clearTimeout(limit!); }
       if (!disposed && generation === at && owns()) write({ attempts: [] });
     } catch (error) {
       if (disposed || generation !== at || !owns()) return {};
