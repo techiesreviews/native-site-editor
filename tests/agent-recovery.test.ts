@@ -295,3 +295,26 @@ test("a read that succeeds keeps a cooldown recorded while it ran", async () => 
   assert.equal(a.allowAutomatic(), true);
   a.dispose();
 });
+
+test("quota still pauses the tab when browser storage refuses the write", async () => {
+  const f = fixture();
+  const a = createAgentRecovery({
+    workspace: { account: "lex", repoId: 1 }, tabId: "a",
+    storage: { getItem: () => null, setItem: () => { throw new DOMException("full", "QuotaExceededError"); } },
+    channel: { subscribe: () => () => {}, post() {} },
+    now: () => f.now(), random: () => 0.5,
+    setTimeout: () => 0, clearTimeout() {},
+    exclusive: (run) => run(),
+    async reconnect() {},
+  });
+  let heard = 0;
+  a.subscribe(() => { heard++; });
+  a.report({ kind: "quota" });
+  assert.equal(a.state().mode, "quota"); assert.equal(a.allowAutomatic(), false); assert.ok(heard > 0);
+  a.dispose();
+});
+
+test("a body cut off after its headers keeps the status and Retry-After", () => {
+  const failure = classifyAgentFailure({ networkError: true, status: 503, retryAfter: "60", now });
+  assert.deepEqual(failure, { kind: "transient", retryAt: now + 60_000 });
+});

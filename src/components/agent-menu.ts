@@ -157,7 +157,13 @@ export function createAgentMenu(options: {
     const sent = body === undefined ? undefined : zipped ? await gzip(JSON.stringify(body)) : JSON.stringify(body);
     if (at !== undefined && !live(at)) throw new Error("Remote agents were turned off.");
     if (!recovering && recovery && !recovery.allowAutomatic()) throw new AgentFailureError({ kind: "other" }, "Remote agents are paused.");
-    let response: Response, text: string;
+    // A failure counts only for the workspace that sent the request: not one opened since.
+    const scope = recovery;
+    const report = (error: AgentFailureError) => {
+      if (!recovering && recovery === scope && (at === undefined || live(at))) failed(error);
+      return error;
+    };
+    let response: Response | undefined, text: string;
     // A connection lost while the answer's body arrives is a network failure too.
     try {
       response = await fetch(`/api/agent/${action}`, {
@@ -168,16 +174,13 @@ export function createAgentMenu(options: {
       });
       text = await response.text();
     } catch {
-      const error = new AgentFailureError(classifyAgentFailure({ networkError: true, now: Date.now() }));
-      if (!recovering && (at === undefined || live(at))) failed(error);
-      throw error;
+      // Headers that did arrive still carry their Retry-After.
+      throw report(new AgentFailureError(classifyAgentFailure({ networkError: true, status: response?.status, retryAfter: response?.headers.get("Retry-After"), now: Date.now() })));
     }
     let result;
     try { result = JSON.parse(text); } catch { /* Cloudflare's 1027 answer is HTML. */ }
     if (!response.ok) {
-      const error = new AgentFailureError(classifyAgentFailure({ status: response.status, body: result, text, retryAfter: response.headers.get("Retry-After"), now: Date.now() }), result?.error);
-      if (!recovering && (at === undefined || live(at))) failed(error);
-      throw error;
+      throw report(new AgentFailureError(classifyAgentFailure({ status: response.status, body: result, text, retryAfter: response.headers.get("Retry-After"), now: Date.now() }), result?.error));
     }
     return result ?? {};
   }
