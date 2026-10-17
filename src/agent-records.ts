@@ -24,7 +24,8 @@ export interface AgentRecords {
   /** Fences future delivery; without a live receipt the past outcome remains unknown. */
   cancel: (workspace: AgentWorkspace, operationId: OperationId, authorizationId: string) => Promise<CancellationResult>;
   receipt: (workspace: AgentWorkspace, operationId: OperationId, authorizationId: string) => Promise<AgentReceipt | undefined>;
-  reconcile: (workspace: AgentWorkspace, commands: AgentCommit[]) => Promise<AgentOutcome[]>;
+  /** With `owner`, the same transaction also proves that generation still owns the workspace unpaused. */
+  reconcile: (workspace: AgentWorkspace, commands: AgentCommit[], owner?: number) => Promise<AgentOutcome[]>;
   workspace: (workspace: AgentWorkspace) => Promise<WorkspaceRecord>;
   setGeneration: (workspace: AgentWorkspace, expected: number, next: number, snapshot?: WorkspaceSnapshot) => Promise<WorkspaceRecord>;
   pause: (workspace: AgentWorkspace, generation: number) => Promise<void>;
@@ -190,11 +191,15 @@ export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFact
         });
       });
     },
-    reconcile(workspace, commands) {
+    reconcile(workspace, commands, owner) {
       const scope = structuredClone(workspace), key = workspaceKey(scope), pending = structuredClone(commands);
       return run([draftStores.workspaces, draftStores.receipts], "readonly", (tx, read, done) => {
         const outcomes: AgentOutcome[] = [];
         let remaining = pending.length;
+        if (owner !== undefined) read(tx.objectStore(draftStores.workspaces).get(key), (stored: WorkspaceRecord | undefined) => {
+          const current = stored ?? initial();
+          if (current.generation !== owner || current.paused) throw new AgentRecordsError("not-owner", "Agent ownership was superseded during takeover.");
+        });
         if (!remaining) { done(outcomes); return; }
         for (const [index, command] of pending.entries()) {
           if (workspaceKey(command.workspace) !== key) conflict();

@@ -436,9 +436,9 @@ test("competing takeovers disturb every await; one generation CAS wins", async (
   assert.equal(count, 6);
 });
 
-test("a contender from the acquired generation supersedes takeover during final reconciliation", async () => {
+test("a contender from the acquired generation races the final reconciliation; stale owner has 0 late commits", async () => {
   const count = await forEachAwait((race) => {
-    const { records } = setup();
+    const { fake, records } = setup();
     let reconciliations = 0;
     const tracked: AgentRecords = { ...records, reconcile: (...args) => {
       if (++reconciliations === 2) return race.port("final reconciliation", () => records.reconcile(...args))();
@@ -446,23 +446,47 @@ test("a contender from the acquired generation supersedes takeover during final 
     } };
     const owner = createAgentOwner({ workspace: draft, generation: 0, records: tracked, reload: async () => {} });
     const result = { superseded: false };
-    return { records, owner, result, done: owner.takeover([command()]).catch((error: unknown) => {
+    return { fake, records, owner, result, done: owner.takeover([command()]).catch((error: unknown) => {
       assert.ok(code("not-owner")(error)); result.superseded = true;
     }) };
   }, async ({ records, owner }) => {
     assert.equal(owner.generation, 1);
     const contender = createAgentOwner({ workspace: draft, generation: 1, records, reload: async () => {} });
     assert.equal((await contender.takeover()).generation, 2);
-    assert.equal(contender.paused, false);
-  }, async ({ records, owner, result }) => {
-    assert.equal(result.superseded, true);
-    assert.equal(owner.paused, true);
+  }, async ({ fake, records, owner, result }) => {
+    // Either order is valid: the final proof is one transaction, so the old owner either
+    // owned at that instant or stays paused. Durable fencing rejects it afterwards both ways.
+    if (result.superseded) assert.equal(owner.paused, true);
     assert.deepEqual(await records.workspace(draft), { revision: 0, generation: 2 });
     const stale = command(); stale.generation = 1;
-    await assert.rejects(owner.commit(stale), code("conflict"));
     await assert.rejects(records.commit(stale), code("conflict"));
+    assert.equal(fake.stores.get("receipts")!.size, 0, "0 late commits");
   });
   assert.equal(count, 1);
+});
+
+for (const disturbance of ["contender", "revocation"]) test(`${disturbance} completed before the final reconciliation transaction is honoured`, async () => {
+  const { fake, records } = setup();
+  const applied = await records.commit(command());
+  let reconciliations = 0;
+  const tracked: AgentRecords = { ...records, reconcile: async (...args) => {
+    if (++reconciliations === 2) {
+      if (disturbance === "revocation") await records.revoke(draft, "grant");
+      else await createAgentOwner({ workspace: draft, generation: 1, records, reload: async () => {} }).takeover();
+    }
+    return records.reconcile(...args);
+  } };
+  const owner = createAgentOwner({ workspace: draft, generation: 0, records: tracked, reload: async () => {} });
+  if (disturbance === "contender") {
+    await assert.rejects(owner.takeover([command()]), code("not-owner"));
+    assert.equal(owner.paused, true);
+    assert.deepEqual(await records.workspace(draft), { revision: 1, generation: 2 });
+  } else {
+    // The receipt existed before revocation, but takeover must not reveal it afterwards.
+    const { outcomes } = await owner.takeover([command()]);
+    assert.deepEqual(outcomes, [{ operationId: applied.receipt.operationId, status: "unknown" }]);
+  }
+  assert.equal(fake.stores.get("receipts")!.size, 1, "0 late commits");
 });
 
 test("takeover reconciles operations admitted before its durable pause", async () => {
