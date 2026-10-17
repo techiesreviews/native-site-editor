@@ -49,6 +49,11 @@ export function agentOperation(hub: AgentHub, action: any) {
     const grant = hub.grants.find((item) => item.id === action.id);
     if (!grant || (grant.generation ?? 1) !== action.previous || action.generation !== action.previous + 1)
       throw new HttpError(409, staleConnection);
+    // A change a tab claimed may be applying now, out of the hub's reach: rebind
+    // only once it is answered. The tab refuses changes older than two minutes,
+    // so a claim from a tab that went away holds a rebind for five at most.
+    if (hub.commands?.some((item) => item.grantId === action.id && item.state === "pending" && item.claimedBy && Date.now() - item.createdAt < 300_000))
+      throw new HttpError(409, "A change from this connection is being applied in the editor. Try again in a moment.");
     Object.assign(grant, { repoId: action.repoId, repo: action.repo, branch: action.branch, generation: action.generation });
     // An approval names its original workspace; it cannot opt another tab in after a rebind.
     delete grant.approval;

@@ -269,6 +269,8 @@ export interface AgentRequest {
   createdAt: number;
   repoId: number;
   repository: string;
+  /** The branch it was asked on; only connections pinned to it see it. */
+  branch?: string;
   state: AgentRequestState;
   element: AgentElement;
   seenAt?: number;

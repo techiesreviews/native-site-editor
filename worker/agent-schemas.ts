@@ -165,7 +165,7 @@ export function validateContext(value: unknown): EditorContext {
 }
 
 const askSchema = z.object({
-  repository: z.object({ id: z.number().int().positive(), fullName: z.string().regex(/^[\w.-]+\/[\w.-]+$/) }),
+  repository: z.object({ id: z.number().int().positive(), fullName: z.string().regex(/^[\w.-]+\/[\w.-]+$/), branch: z.string().min(1).max(255) }),
   text: z.string().trim().min(1).max(REQUEST_TEXT_LIMIT),
   element: elementSchema,
 });
@@ -184,6 +184,7 @@ export function validateAsk(value: unknown): AgentRequest {
     createdAt,
     repoId: repository.id,
     repository: repository.fullName,
+    branch: repository.branch,
     state: "open",
     element: { ...element, ...(html !== undefined ? { html } : {}), ...(html !== element.html ? { htmlClipped: true } : {}) },
     thread: [{ from: "user", text, at: createdAt }],

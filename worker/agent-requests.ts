@@ -6,8 +6,10 @@
 // its element until the user dismisses it. An agent's question the user
 // answers from the pin: the answer joins the request's thread and the
 // request waits for agents again, returned once more to every connection.
-// A request belongs to the repository it was asked in: a connection sees
-// only the ones of the repository the tab shows.
+// A request belongs to the repository and branch it was asked on: a
+// connection sees only the ones of the workspace it is pinned to.
+const inWorkspace = (request: AgentRequest, action: any) =>
+  request.repoId === action.repoId && request.branch !== undefined && request.branch === action.branch;
 import {
   OPEN_REQUESTS_LIMIT,
   REQUEST_TEXT_LIMIT,
@@ -51,7 +53,7 @@ export function requestSummary(request: AgentRequest) {
 
 /** A request as an agent reads it: with its whole thread, the user's answers included. */
 export function requestForAgent(request: AgentRequest) {
-  const { returnedTo: _returned, repoId: _repoId, ...rest } = request;
+  const { returnedTo: _returned, repoId: _repoId, branch: _branch, ...rest } = request;
   return { ...rest, thread: requestThread(request) };
 }
 
@@ -80,7 +82,7 @@ export function requestOperation(list: AgentRequest[], action: any): { list: Age
     const now = Date.now();
     const taken: AgentRequest[] = [];
     for (const request of list) {
-      if (request.repoId !== action.repoId || !waiting(request)) continue;
+      if (!inWorkspace(request, action) || !waiting(request)) continue;
       if (!action.all && request.returnedTo?.includes(grantId)) continue;
       request.state = "seen";
       request.seenAt ??= now;
@@ -91,11 +93,11 @@ export function requestOperation(list: AgentRequest[], action: any): { list: Age
   }
   const request = list.find((item) => item.id === action?.id);
   if (type === "request") {
-    if (!request || request.repoId !== action.repoId) throw new HttpError(404, "No such request in the site the editor shows.");
+    if (!request || !inWorkspace(request, action)) throw new HttpError(404, "No such request in the site and branch this connection works on.");
     return { list, changed: false, result: request };
   }
   if (type === "reply") {
-    if (!request || request.repoId !== action.repoId) throw new HttpError(404, "No such request in the site the editor shows.");
+    if (!request || !inWorkspace(request, action)) throw new HttpError(404, "No such request in the site and branch this connection works on.");
     if (request.state === "dismissed") throw new HttpError(409, "The user dismissed this request.");
     if (action.status !== "done" && action.status !== "answered" && action.status !== "question")
       throw new HttpError(400, "Reply with done, answered or question.");

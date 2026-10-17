@@ -62,7 +62,7 @@ interface HubState {
   tabId: string | null;
   updatedAt: number | null;
   commands: AgentCommand[];
-  requests?: (PinRequest & { repoId: number })[];
+  requests?: (PinRequest & { repoId: number; branch?: string })[];
 }
 
 export interface AgentApproval {
@@ -260,7 +260,7 @@ export function createAgentMenu(options: {
   // The open repository's requests, told only when they changed.
   function tellRequests() {
     const repo = options.repository();
-    const next = repo ? (hub.requests ?? []).filter((item) => item.repoId === repo.id) : [];
+    const next = repo ? (hub.requests ?? []).filter((item) => item.repoId === repo.id && item.branch === repo.branch) : [];
     const key = JSON.stringify(next);
     if (key === lastRequests) return;
     lastRequests = key;

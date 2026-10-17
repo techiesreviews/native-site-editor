@@ -46,6 +46,7 @@ test("a request kept from before threads reads as one, and its answer starts the
     createdAt: 1,
     repoId: 1,
     repository: "lex/site",
+    branch: "main",
     state: "question",
     element: { file: "index.html", id: "1", tag: "h1", text: "Hi" },
     returnedTo: ["grant-1"],
@@ -55,7 +56,7 @@ test("a request kept from before threads reads as one, and its answer starts the
   assert.equal(result.state, "open");
   assert.equal(result.returnedTo, undefined);
   assert.deepEqual(list[0].thread.map((item: any) => [item.from, item.text]), [["user", "Fix this"], ["agent", "Which way?"], ["user", "The short way"]]);
-  assert.equal(requestOperation(list, { type: "take-requests", grantId: "grant-1", repoId: 1 }).result.requests.length, 1);
+  assert.equal(requestOperation(list, { type: "take-requests", grantId: "grant-1", repoId: 1, branch: "main" }).result.requests.length, 1);
 });
 
 test("MCP site tools read the site, queue guarded changes for the editor tab, report them, and revoke access in Workers", async () => {
@@ -735,7 +736,7 @@ test("Ask agent: the tab's requests reach wait_for_requests with their element, 
     }));
     const call = (name: string, args: Record<string, unknown> = {}) => client!.callTool({ name, arguments: args });
     const ask = (text: string, extra: Record<string, unknown> = {}) =>
-      tab.post("/api/agent/ask", { repository: { id: repo.id, fullName: repo.full_name }, text, element, ...extra });
+      tab.post("/api/agent/ask", { repository: { id: repo.id, fullName: repo.full_name, branch: "main" }, text, element, ...extra });
 
     // The description says whose words the request is.
     const described = JSON.stringify((await client.listTools()).tools.find((tool) => tool.name === "wait_for_requests"));
@@ -868,7 +869,7 @@ test("Ask agent: the tab's requests reach wait_for_requests with their element, 
     // Sharing another repository does not redirect requests from this connection.
     const otherRepo = { ...repo, id: 2, name: "other", full_name: "lex/other" };
     github.others.push(otherRepo);
-    const elsewhere = await (await ask("Over there", { repository: { id: 2, fullName: "lex/other" } })).json();
+    const elsewhere = await (await ask("Over there", { repository: { id: 2, fullName: "lex/other", branch: "main" } })).json();
     assert.deepEqual(payload(await call("wait_for_requests", { all: true, waitSeconds: 0 })).requests, []);
     assert.equal((await call("get_selection", { request: elsewhere.id })).isError, true);
     await tab.share({ ...context, repository: { id: 2, fullName: "lex/other" } });
@@ -878,7 +879,7 @@ test("Ask agent: the tab's requests reach wait_for_requests with their element, 
     // Limits: text up to 2000 characters, source clipped at 4 KB, 50 waiting at once.
     assert.equal((await ask("")).status, 400);
     assert.equal((await ask("x".repeat(2001))).status, 400);
-    assert.equal((await tab.post("/api/agent/ask", { repository: { id: repo.id, fullName: repo.full_name }, text: "No element" })).status, 400);
+    assert.equal((await tab.post("/api/agent/ask", { repository: { id: repo.id, fullName: repo.full_name, branch: "main" }, text: "No element" })).status, 400);
     const long = await (await ask("Long", { element: { ...element, html: "x".repeat(4100) } })).json();
     const clipped = payload(await call("get_selection", { request: long.id })).element;
     assert.equal(clipped.html.length, 4096);
