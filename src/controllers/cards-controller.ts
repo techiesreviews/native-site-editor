@@ -16,7 +16,6 @@ export function createCardsController(ports: CardsControllerPorts) {
   return {
     /** Creates the card operations for a newly mounted workspace. */
     mount() { cards = createCards(ports); },
-    mounted: () => Boolean(cards),
     /** The preview's card grid callbacks; before mounting they refuse. */
     preview: {
       describe: (grid) => cards?.describe(grid),

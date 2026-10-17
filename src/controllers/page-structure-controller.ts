@@ -5,7 +5,7 @@ import { type NativePreviewSelection, type NativeTextSelection, type NativeTextE
 import { nativeElementLabel, linkWrapEdit, opensInNewTab, newTabEdit, setAttributeEdit, unwrapEdits, previousHeadingLevel, altFromPath, nativeKindLabel, duplicateEdit, removeEdit } from "../native-structure";
 import { type EditBarControl, type EditBarModel } from "../components/edit-bar";
 import { textSizeScale, currentTextSize, textSizeEdit } from "../native-text-size";
-import { type StartTag, type ElementRange } from "../native-source-location";
+import { startTagAttribute, textRangeInSource, type StartTag, type ElementRange } from "../../shared/html-source";
 import { nativeLinkSuggestions } from "../native-pages";
 import { nativeElementFields, locateNativeFieldElement, nativeElementAttributeEdits } from "../page-builder/native-element-fields";
 import { blockLayout, blockLayoutEdit } from "../page-builder/block-fields";
@@ -23,7 +23,12 @@ import type * as sourceEditor from "../components/source-editor";
 import type { PreviewSelectionController } from "./preview-selection-controller";
 import type { GuardedEdits, Planned, PlanResult, Reads, Stamp } from "../guarded-edit";
 
-/** Workspace values are live host getters; operations and parsers stay injected. */
+/**
+ * Workspace values are live host getters; operations stay injected.
+ * locateNativeElementRange, elementPathAt and wrapperAround stay injected because
+ * they use the browser DOM parser and tests supply node-safe lookup fakes.
+ * Pure source parsers come directly from shared/html-source.
+ */
 export interface PageStructurePorts {
   readonly nativePreview: Pick<ReturnType<typeof createNativePreview>, "selectNode" | "route" | "selectTextAfterUpdate" | "selectAfterUpdate" | "refresh" | "showEditBar" | "hideEditBar"> | undefined;
   readonly editorModule: Pick<typeof sourceEditor, "captureFileModelState" | "captureHistoryHost" | "closeActiveEditGroup" | "isMounted" | "replaceActiveRange" | "replaceActiveRanges" | "runVisualHistory" | "forgetDraftModel">;
@@ -74,9 +79,7 @@ export interface PageStructurePorts {
   readonly nativePageLabelOf: (file: string) => string;
   readonly pageStructure: Pick<ReturnType<typeof createPageStructure>, "update"> | undefined;
   readonly locateNativeElementRange: (html: string, path: number[]) => ElementRange | undefined;
-  readonly startTagAttribute: (html: string, tag: StartTag, name: string) => import("../../shared/html-source").TagAttribute | undefined;
   readonly elementPathAt: (html: string, start: number) => number[] | undefined;
-  readonly textRangeInSource: (inner: string, start: number, end: number, text: string) => import("../../shared/html-source").SourceSpan | undefined;
   readonly wrapperAround: (inner: string, at: number, names: string[]) => ElementRange | undefined;
   /** The Block move module (src/page-builder/block-move.ts): the bar's drag handle, Move buttons and steps. */
   readonly moves: BlockMoves;
@@ -180,7 +183,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
     const source = ports.nativeEditableSource(path) ?? "";
     const range = node ? ports.locateNativeElementRange(source, node) : undefined;
     // Decoded as the browser reads it, so the bar names it as the page structure does.
-    const classValue = range ? ports.startTagAttribute(source, range.tag, "class")?.value : undefined;
+    const classValue = range ? startTagAttribute(source, range.tag, "class")?.value : undefined;
     const className = classValue === undefined ? undefined : decodeHtmlEntities(classValue, true);
     const kind = nativeElementLabel(selection.tag, Boolean(ports.nativeSite && Object.hasOwn(ports.nativeSite.components, selection.tag)), className);
     // A new link whose Address never opened (the selection moved on first) keeps its empty href; its undo group ends.
@@ -284,7 +287,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
               ], `${format.name} off`);
               return;
             }
-            const span = ports.textRangeInSource(inner, text.start, text.end, text.text);
+            const span = textRangeInSource(inner, text.start, text.end, text.text);
             if (!span) { refuse(`Select text within one element to make it ${format.name.toLowerCase()}.`); return; }
             changeInner([
               { start: span.start, end: span.start, text: `<${format.tag}>` },
@@ -320,7 +323,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
       // wrapped in `<a href="">` (the Address then opens for it); selected text
       // inside a link gets that link's Address and Remove link below.
       if (node && selection.link === undefined && ports.nativeLinkParents.has(selection.tag)) {
-        const span = text ? ports.textRangeInSource(inner, text.start, text.end, text.text) : undefined;
+        const span = text ? textRangeInSource(inner, text.start, text.end, text.text) : undefined;
         const around = text && span ? ports.wrapperAround(inner, text.start, ["a"]) : undefined;
         const inLink = around?.close && span && span.start >= around.tag.end && span.end <= around.close.start ? around : undefined;
         // The caret in a link: the link on either side of it.
@@ -367,7 +370,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
     }
     // Edits sorted by position, as one undo step.
     const ordered = (edits: { start: number; end: number; text: string }[]) => [...edits].sort((a, b) => a.start - b.start);
-    const attribute = (name: string) => (range ? ports.startTagAttribute(source, range.tag, name) : undefined);
+    const attribute = (name: string) => (range ? startTagAttribute(source, range.tag, name) : undefined);
     // Links: the selected link, or the nearest link around the selection in
     // this file, takes an address as it is typed: a page of the site picked
     // from the suggestions, or any address. Each keystroke rewrites the href
@@ -397,7 +400,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
     const link = selection.link !== undefined && node ? ports.nearestLink(source, node, range)
       : textLink && textLinkRange?.tag.name === "a" ? { range: textLinkRange, node: textLink.node } : undefined;
     if (link && node && ports.nativeSite) {
-      const href = ports.startTagAttribute(source, link.range.tag, "href");
+      const href = startTagAttribute(source, link.range.tag, "href");
       const current = href?.value.trim() ?? "";
       const site = ports.nativeSite;
       // The link just made: its Address opens now, once.
@@ -421,7 +424,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
             if (keepText) preview.selectTextAfterUpdate({ start: keepText.start, end: keepText.end });
             live(link.node, "a", (latest, tag) => [newTabEdit(latest, tag, on)], on ? "Link opens in a new tab" : "Link opens in the same tab");
           } },
-          { kind: "text", label: "Title (optional)", value: ports.startTagAttribute(source, link.range.tag, "title")?.value ?? "", placeholder: "Shown when the pointer rests on the link", onInput: (value) => {
+          { kind: "text", label: "Title (optional)", value: startTagAttribute(source, link.range.tag, "title")?.value ?? "", placeholder: "Shown when the pointer rests on the link", onInput: (value) => {
             if (keepText) preview.selectTextAfterUpdate({ start: keepText.start, end: keepText.end });
             live(link.node, "a", (latest, tag) => [setAttributeEdit(latest, tag, "title", value || undefined)], value ? "Link title changed" : "Link title removed");
           } },
@@ -708,7 +711,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
     const editor = ports.editorModule;
     const latest = ports.nativeEditableSource(fresh.path) ?? "";
     const found = ports.locateNativeElementRange(latest, fresh.link);
-    if (!editor || found?.tag.name !== "a" || ports.startTagAttribute(latest, found.tag, "href")?.value.trim()) return;
+    if (!editor || found?.tag.name !== "a" || startTagAttribute(latest, found.tag, "href")?.value.trim()) return;
     const selected = ports.appStore.selection.value?.path === fresh.path && ports.appStore.selection.value.node?.join(".") === fresh.node.join(".");
     if (selected) ports.nativePreview?.selectTextAfterUpdate(fresh.text);
     const said = ports.element("status").textContent;
@@ -784,7 +787,7 @@ export function createPageStructureController(ports: PageStructurePorts) {
       else { endBefore++; endAfter++; }
     }
     const inner = range?.close ? source.slice(range.tag.end, range.close.start) : undefined;
-    const span = inner !== undefined ? ports.textRangeInSource(inner, start, endBefore, before.slice(start, endBefore)) : undefined;
+    const span = inner !== undefined ? textRangeInSource(inner, start, endBefore, before.slice(start, endBefore)) : undefined;
     if (!range || !span) return undefined;
     // Typed spaces arrive as no-break spaces where the browser needs them to stay visible.
     const text = after.slice(start, endAfter).replace(/\u00a0/g, " ")
@@ -828,19 +831,19 @@ export function createPageStructureController(ports: PageStructurePorts) {
     };
     return async () => {
     // The click that selected the element may still be opening its file.
-    for (let waited = 0; ports.appStore.openFile.value === path && !ports.editorModule?.isMounted(path) && waited < 10_000 && allowed(); waited += 50)
+    for (let waited = 0; ports.appStore.openFile.value === path && !ports.editorModule.isMounted(path) && waited < 10_000 && allowed(); waited += 50)
       await new Promise((done) => setTimeout(done, 50));
     if (!allowed()) { await draftLeftPage(); return; }
-    if (ports.appStore.openFile.value !== path || !ports.editorModule?.isMounted(path)) {
+    if (ports.appStore.openFile.value !== path || !ports.editorModule.isMounted(path)) {
       await ports.restoreFile(path, ports.generation, { linkDefaultStyle: false, beforeMount: allowed });
       if (sameLoad() && !allowed()) { await draftLeftPage(); return; }
-      if (!sameLoad() || ports.appStore.openFile.value !== path || !ports.editorModule?.isMounted(path) || !allowed()) return;
+      if (!sameLoad() || ports.appStore.openFile.value !== path || !ports.editorModule.isMounted(path) || !allowed()) return;
     }
     applyInEditor();
     };
     function applyInEditor() {
     const preview = ports.nativePreview;
-    if (!preview || !allowed() || ports.appStore.openFile.value !== path || !ports.editorModule?.isMounted(path)) return;
+    if (!preview || !allowed() || ports.appStore.openFile.value !== path || !ports.editorModule.isMounted(path)) return;
     const outcome = ports.edits.now(textPlan("Text changed", "Undid the text change", true), { anchor: path });
     if (outcome.ok) return;
     preview.refresh();
@@ -850,15 +853,11 @@ export function createPageStructureController(ports: PageStructurePorts) {
 
   return {
     renderEditBar: renderNativeEditBar,
-    renderNativeEditBar,
-    removeEmptyNewLink,
     editOpenPage,
     isNativeSectionTag,
     moveBlock,
     applyNativeTextEdit,
     textEdits: () => nativeTextEditQueue,
-    nativeTextSourceEdit,
-    prepareNativeTextEdit,
     get nativeFormatActions() { return nativeFormatActions; },
     removeRow(path: string, node: number[], source: string | undefined) {
       if (source === undefined || ports.nativeEffectiveSource(path) !== source || !ports.nativePreview) return false;

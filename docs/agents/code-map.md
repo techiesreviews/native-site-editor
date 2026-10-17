@@ -262,7 +262,6 @@ Frequently used top-level functions and constants in src/main.ts (30). Descripti
 | `guardedEdits` | Runs proved edits as one undoable transaction. |
 | `blockMoves` | Coordinates guarded block moves across pages and templates. |
 | `pageStructureController` | Owns Page Structure, edit-bar models and text edits. |
-| `renderNativeEditBar` | Delegates selection controls to the Page Structure controller. |
 | `draftScope` | Identifies the current account, repository and branch. |
 | `setupScope` | Produces the current account/repository/branch scope key. |
 | `nativeModeActive` | Reports whether a native site is active. |

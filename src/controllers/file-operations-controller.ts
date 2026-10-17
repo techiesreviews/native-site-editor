@@ -464,7 +464,7 @@ export function createFileOperationsController(ports: FileOperationsPorts) {
     ports.requestAnimationFrame(() => ports.fileRow(to)?.focus());
   }
 
-  return { deleteFileTarget, duplicateFileTarget, restoreFileTarget, protectedProblem, moveProblem, fileMoveProblem, targetFiles, pageLinks, moveFileTarget, nativeAssetSnapshot, nativeAssetReferences, planFileMoveUrls, moveFilesWithUrls };
+  return { deleteFileTarget, duplicateFileTarget, restoreFileTarget, protectedProblem, moveProblem, fileMoveProblem, targetFiles, pageLinks, moveFileTarget };
 }
 
 export type FileOperationsController = ReturnType<typeof createFileOperationsController>;

@@ -27,6 +27,7 @@ function fixture() {
   const asked: ReturnType<typeof deferred<boolean>>[] = [];
   const questions: string[] = [];
   const log: string[] = [];
+  const refreshed = deferred<void>();
   const hooks: { get?: () => void } = {};
   let wake: (() => void) | undefined, unwoken = 0, loads = 0, resync = false, opened: string | undefined;
   const ports: SavePublishPorts = {
@@ -55,7 +56,7 @@ function fixture() {
     announce: (text) => { log.push(text); },
     saved: () => { log.push("saved"); },
     adopt: (value) => { state.snapshot = value; log.push(`snapshot ${value.commit.slice(0, 1)}`); },
-    showSaved: (commit) => { log.push(`shown ${commit.slice(0, 1)}`); },
+    showSaved: (commit) => { log.push(`shown ${commit.slice(0, 1)}`); refreshed.resolve(); },
     status: (text) => { log.push(text); },
     fail: (error) => { log.push(`error ${String(error)}`); },
     change: (path) => listChanges([...drafts.values()]).find((change) => change.path === path),
@@ -70,7 +71,7 @@ function fixture() {
   };
   const controller = createSavePublishController(ports);
   return {
-    controller, state, drafts, calls, answers, entries, asked, questions, log, hooks,
+    controller, state, drafts, calls, answers, entries, asked, questions, log, hooks, refreshed: refreshed.promise,
     wake: () => wake?.(), counts: () => ({ loads, unwoken }),
     open: (path?: string) => { opened = path; }, resyncing: (value: boolean) => { resync = value; },
   };
@@ -300,6 +301,63 @@ test("a discard confirmed while a save's refresh adopts a snapshot of the same b
   await one;
   assert.equal(f.drafts.has("a.html"), false);
   assert.equal(f.log.at(-1), "Discarded the changes to a.html.");
+});
+
+test("discard all announces only changes left after a same-branch save refresh", async (t) => {
+  for (const left of [1, 0]) {
+    await t.test(`${left} changes left at confirmation`, async () => {
+      const f = fixture();
+      f.drafts.set("a.html", draft("a.html", { content: "x" }));
+      f.drafts.set("b.html", draft("b.html", { content: left ? "new" : "x" }));
+      const pending = f.controller.discardAll();
+      assert.deepEqual(f.questions, ["Discard 2 unsaved changes?"]);
+
+      f.controller.published(f.controller.proof(), scope1, result("f".repeat(40)), []);
+      f.answers[0].resolve(snap("f".repeat(40)));
+      await flush();
+      for (const path of ["a.html", "b.html"]) {
+        // The blob SHA of "x": the refresh prunes drafts now saved upstream.
+        f.entries.get(path)!.resolve({ path, sha: "c1b0730e0133447badcfd47fd144e254807b06e1", mode: "100644", type: "blob" });
+      }
+      await f.refreshed;
+      assert.equal(f.drafts.size, left);
+      assert.equal(f.state.generation, 1);
+      assert.equal(f.state.snapshot?.branch, scope1.branch);
+
+      f.asked[0].resolve(true);
+      await pending;
+      assert.equal(f.drafts.size, 0);
+      assert.deepEqual(f.log.filter(line => line.startsWith("Discarded")), left ? ["Discarded 1 unsaved change."] : []);
+    });
+  }
+});
+
+test("discard file makes no discard announcement when a same-branch refresh prunes its draft", async () => {
+  const f = fixture();
+  f.drafts.set("a.html", draft("a.html", { content: "x" }));
+  const pending = f.controller.discardFile("a.html");
+  assert.deepEqual(f.questions, ["Discard the changes to a.html?"]);
+  f.controller.published(f.controller.proof(), scope1, result("f".repeat(40)), []);
+  f.answers[0].resolve(snap("f".repeat(40)));
+  await flush();
+  f.entries.get("a.html")!.resolve({ path: "a.html", sha: "c1b0730e0133447badcfd47fd144e254807b06e1", mode: "100644", type: "blob" });
+  await f.refreshed;
+  assert.equal(f.drafts.size, 0);
+  f.asked[0].resolve(true);
+  await pending;
+  assert.deepEqual(f.log.filter(line => line.startsWith("Discarded")), []);
+});
+
+test("discard all counts a rename's two drafts as one change", async () => {
+  const f = fixture();
+  f.drafts.set("new.html", draft("new.html", { baseSha: null, movedFrom: "old.html" }));
+  f.drafts.set("old.html", draft("old.html", { deleted: true, movedTo: "new.html" }));
+  const pending = f.controller.discardAll();
+  assert.deepEqual(f.questions, ["Discard 1 unsaved change?"]);
+  f.asked[0].resolve(true);
+  await pending;
+  assert.equal(f.drafts.size, 0);
+  assert.equal(f.log.at(-1), "Discarded 1 unsaved change.");
 });
 
 test("pruned drafts are forgotten and redrawn when a save's refresh adopts a snapshot mid-check", async () => {
