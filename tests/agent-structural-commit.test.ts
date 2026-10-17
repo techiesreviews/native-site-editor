@@ -7,7 +7,10 @@ import { DraftStore, draftDatabaseName, indexedDbDrafts, type DraftScope } from 
 import { createGuardedEdits, type EditorWorkspace, type Outcome, type PlanResult } from "../src/guarded-edit.ts";
 import type { AgentTextCommit } from "../src/editor-workspace.ts";
 import { resolveNativeProject } from "../shared/native-project.ts";
-import type { PagesPorts } from "../src/controllers/pages-controller.ts";
+import { createPagesController, type PagesPorts } from "../src/controllers/pages-controller.ts";
+import { createLazyFileOperationsController } from "../src/controllers/file-operation-checks.ts";
+import { createBlockMoves } from "../src/page-builder/block-move.ts";
+import { withPageField } from "../src/page-builder/site-head.ts";
 import type { FileOperationsPorts } from "../src/controllers/file-operations-controller.ts";
 import { createMemoryWorkspace } from "./fakes/memory-workspace.ts";
 import { forEachAwait, type AwaitRace } from "./support/await-race.ts";
@@ -231,6 +234,7 @@ function controllerPorts(f: Awaited<ReturnType<typeof fixture>>, race?: AwaitRac
     requestAnimationFrame: task => task(), openFolder: () => {}, fileRow: () => undefined, renderFileTree: () => {}, filesTabOpen: () => false,
   };
   return { pages, files, components: () => { throw new Error("This unit fixture does not mount component UI."); },
+    factories: { createGuardedEdits, createPagesController, createLazyFileOperationsController, createBlockMoves, withPageField },
     actions(edits: typeof f.manual): AgentSiteActions {
       // These scenarios exercise only the structural ports supplied by agentStructuralActions.
       return { edits, text: async path => workspace.source(path), isMounted: path => workspace.mounted(path) } as AgentSiteActions;

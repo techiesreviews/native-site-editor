@@ -4633,10 +4633,15 @@ async function applyAgentSiteCommand(command: AgentCommand) {
   if (!current() || command.commit !== appStore.snapshot.value?.commit) throw new Error("The editor changed branch or revision.");
   const scoped = agentStructuralActions(editorWorkspace, prepared.context!, current, {
     actions: makeAgentSiteActions, pages: pagePorts(), files: filePorts(), components: componentPorts, loader: nativeComponentLoaderPlan,
+    factories: { createGuardedEdits, createPagesController, createLazyFileOperationsController, createBlockMoves, withPageField },
   });
   try {
     const detail = await agentActing(() => applySiteCommand(scoped.actions, command));
     await prepared.finish!(() => scoped.current(), scoped.readDrafts);
+    // The scoped page-details step skips writeNativePageMeta: its labels refresh here.
+    if (command.operation === "set_page_details" && current()) {
+      pageStructure?.refreshMeta(); pagesController.renderTree(); updateCurrentPageLabel(); updateAgentContext();
+    }
     return { ...prepared.outcome, ...detail };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error), unchanged = "Nothing was changed; your drafts are as they were.";
