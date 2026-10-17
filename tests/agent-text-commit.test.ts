@@ -28,7 +28,10 @@ async function setup(t: TestContext, race?: AwaitRace) {
   const scope: DraftScope = { account: `lex-${++sequence}`, repoId: 1, repo: "lex/site", branch: "main" };
   let manualWrites = 0;
   const disk = storage(), database = indexedDbDrafts(draftDatabaseName, fake.factory);
-  const store = new DraftStore(disk, { ...database, write: changes => { manualWrites++; return database.write(changes); } });
+  // `hold`: a read returns the record it read only once the hold settles (a slow IndexedDB read).
+  const reads: { hold?: Promise<void>; started?: () => void } = {};
+  const store = new DraftStore(disk, { ...database, write: changes => { manualWrites++; return database.write(changes); },
+    get: async key => { const value = await database.get(key); if (reads.hold) { reads.started?.(); await reads.hold; } return value; } });
   await store.load(scope.account);
   const records = indexedDbAgentRecords(draftDatabaseName, fake.factory);
   const models = createDraftStore({ persistence: store });
@@ -103,7 +106,7 @@ async function setup(t: TestContext, race?: AwaitRace) {
     } finally { context = undefined; }
   };
   t.after(async () => { await store.flush(); });
-  return { fake, scope, store, records, models, memory, command, run, prepare, history, disk, published: () => published, manualWrites: () => manualWrites, edits, manual, denyHistory: () => { historyAvailable = false; }, denyPreview: () => { previewAvailable = false; } };
+  return { fake, scope, store, records, models, memory, reads, command, run, prepare, history, disk, published: () => published, manualWrites: () => manualWrites, edits, manual, denyHistory: () => { historyAvailable = false; }, denyPreview: () => { previewAvailable = false; } };
 }
 
 test("text drafts and receipt commit together before model, history and preview publication; reload agrees", async t => {
@@ -378,6 +381,24 @@ test("an editor change while the transaction commits still leaves this tab's dra
   const loaded = new DraftStore(storage(), indexedDbDrafts(draftDatabaseName, f.fake.factory));
   await loaded.load(f.scope.account);
   assert.equal(loaded.get(f.scope, "index.html")?.content, "agent");
+});
+
+test("a manual write during the read-back of an unpublished agent commit wins over that read", async t => {
+  const f = await setup(t);
+  let release!: () => void;
+  const started = new Promise<void>(resolve => { f.reads.started = resolve; });
+  const pending = f.run(undefined, undefined, undefined, () => {
+    f.memory.bumpGeneration();
+    f.reads.hold = new Promise(resolve => { release = resolve; });
+  });
+  await started;
+  // Under the agent fence this write goes straight to IndexedDB, so nothing is pending when the read returns.
+  f.store.save({ ...f.scope, version: 1, path: "index.html", baseSha: "a".repeat(40), original: "before", content: "newer manual", updatedAt: Date.now() });
+  await f.store.flush();
+  release();
+  await pending;
+  assert.equal(f.store.get(f.scope, "index.html")?.content, "newer manual");
+  assert.equal((await f.records.snapshot(f.scope)).drafts.find(([key]) => key === draftKey(f.scope, "index.html"))?.[1].content, "newer manual");
 });
 
 test("a durable manual draft newer than the mounted source is never overwritten", async t => {

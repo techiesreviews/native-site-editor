@@ -102,6 +102,8 @@ export class DraftStore {
   private agentKeys = new Set<string>();
   private publishing?: Map<string, SavedDraft | null>;
   private writes = new Set<Promise<void>>();
+  /** Per key, how often this tab changed it: an agent's read-back loses to any change made during its read. */
+  private changes = new Map<string, number>();
   error: string | null = null;
   /** A write-through failed after its save returned (the message is `error`). */
   onError?: (message: string) => void;
@@ -211,6 +213,7 @@ export class DraftStore {
   }
   private put(value: SavedDraft) {
     const key = draftKey(value, value.path);
+    this.changed(key);
     const committed = this.publishing?.get(key);
     if (committed && Object.keys({ ...committed, ...value }).every(field => field === "updatedAt" ||
       JSON.stringify(committed[field as keyof SavedDraft]) === JSON.stringify(value[field as keyof SavedDraft]))) return this.publishRecord(key);
@@ -239,6 +242,7 @@ export class DraftStore {
   }
   private drop(scope: DraftScope, path: string) {
     const key = draftKey(scope, path);
+    this.changed(key);
     if (this.publishing?.get(key) === null) return this.publishRecord(key);
     this.memory.delete(key);
     if (this.db) {
@@ -329,6 +333,23 @@ export class DraftStore {
     else this.memory.delete(key);
     return true;
   }
+  private changed(key: string) { this.changes.set(key, (this.changes.get(key) ?? 0) + 1); }
+  /**
+   * An agent commit the editor did not publish: reads its keys back from the database. A write made
+   * here during a read (even one already flushed under the agent fence) wins over that read.
+   */
+  async settleAgent(keys: string[]) {
+    const db = this.db;
+    if (!db || !this.from) return;
+    for (const key of keys) {
+      if (!key.startsWith(this.from) || this.pending.has(key)) continue;
+      const seen = this.changes.get(key) ?? 0;
+      const value = valid(key, await db.get(key).catch(() => undefined));
+      if (this.pending.has(key) || (this.changes.get(key) ?? 0) !== seen || !key.startsWith(this.from || "\0")) continue;
+      if (value) this.memory.set(key, value);
+      else this.memory.delete(key);
+    }
+  }
   /** Announce only after the committed records have reached the model. */
   announceAgent(scope: DraftScope, paths: string[]) {
     this.announce?.(paths.map(path => draftKey(scope, path)));
@@ -351,6 +372,7 @@ export class DraftStore {
     void this.flush();
     this.memory.clear();
     this.deleted.clear();
+    this.changes.clear();
     this.from = "";
     this.error = null;
     this.failed = false;

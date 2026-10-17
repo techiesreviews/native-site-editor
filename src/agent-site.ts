@@ -743,7 +743,7 @@ export async function prepareAgentText(command: AgentCommand, scope: DraftScope,
         return result;
       },
       async settle(changes) {
-        await store.refresh([...changes.keys()].map(path => draftKey(scope, path)));
+        await store.settleAgent([...changes.keys()].map(path => draftKey(scope, path)));
         store.announceAgent(scope, [...changes.keys()]);
         afterSettle();
       },
