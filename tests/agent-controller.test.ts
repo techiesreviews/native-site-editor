@@ -27,20 +27,13 @@ class Events extends EventTarget {
 }
 function fixture() {
   const appStore = createAppStore(createDraftStore());
-  const windowEvents = new Events(), documentEvents = new Events();
-  const timers = new Map<object, { callback(): void; delay: number; recurring: boolean }>();
-  const timer = (callback: () => void, delay: number, recurring: boolean) => {
-    const key = {};
-    timers.set(key, { callback, delay, recurring });
-    return () => { timers.delete(key); };
-  };
-  const hubs: ReturnType<typeof deferred<{ grants?: unknown[]; requests?: unknown[] }>>[] = [];
+  const windowEvents = new Events();
   const loads: ReturnType<typeof deferred<{ createAgentMenu: typeof createMenu }>>[] = [];
   const menuOptions: Parameters<typeof createAgentMenu>[0][] = [];
   const menus: (AgentMenuPort<Root> & { calls: string[] })[] = [];
   const attached: Root[] = [];
   const initialHost = { append: (root: Root) => { attached.push(root); } };
-  const state = { account: "lex" as string | undefined, host: initialHost as typeof initialHost | undefined, visible: true };
+  const state = { account: "lex" as string | undefined, host: initialHost as typeof initialHost | undefined };
   const errors: unknown[] = [];
   function createMenu(options: Parameters<typeof createAgentMenu>[0]) {
     menuOptions.push(options);
@@ -50,7 +43,7 @@ function fixture() {
       root: { remove() { calls.push("remove"); } },
       connected: () => true,
       changed() { calls.push("changed"); },
-      consentGranted() { calls.push("consent"); },
+      consentGranted(at: number) { calls.push(`consent:${at}`); },
       destroy() { calls.push("destroy"); },
       async ask(text: string) { calls.push(`ask:${text}`); },
       async answer(id: string, text: string) { calls.push(`answer:${id}:${text}`); },
@@ -64,24 +57,13 @@ function fixture() {
     createOptions: () => ({ context: async () => undefined, onCommand: async () => {} }),
     load() { const pending = deferred<{ createAgentMenu: typeof createMenu }>(); loads.push(pending); return pending.promise; },
     onError: error => { errors.push(error); },
-    environment: {
-      window: windowEvents, document: documentEvents,
-      visible: () => state.visible,
-      hub() { const pending = deferred<{ grants?: unknown[]; requests?: unknown[] }>(); hubs.push(pending); return pending.promise; },
-      interval: (callback, delay) => timer(callback, delay, true),
-      timeout: (callback, delay) => timer(callback, delay, false),
-    },
+    environment: { window: windowEvents },
   });
-  const fire = (delay: number) => {
-    for (const [key, task] of [...timers]) if (task.delay === delay) {
-      if (!task.recurring) timers.delete(key);
-      task.callback();
-    }
-  };
-  const consent = () => windowEvents.dispatchEvent(Object.assign(new Event("storage"), { key: "native-site-editor:agent-connected" }));
+  const consent = (key = "native-site-editor:agent-connected", newValue = "1700") =>
+    windowEvents.dispatchEvent(Object.assign(new Event("storage"), { key, newValue }));
   async function mount() { const pending = controller.ensure(); loads.at(-1)!.resolve({ createAgentMenu: createMenu }); await pending; }
   const cleanup = () => { controller.destroy(); appStore.dispose(); };
-  return { controller, appStore, state, hubs, loads, menus, menuOptions, attached, timers, windowEvents, documentEvents, errors, fire, consent, mount, createMenu, cleanup };
+  return { controller, appStore, state, loads, menus, menuOptions, attached, windowEvents, errors, consent, mount, createMenu, cleanup };
 }
 
 test("lazy mount deduplicates loads; destroyed or replaced hosts cannot mount their pending result", async () => {
@@ -119,53 +101,24 @@ test("account changes reject a pending mount; failed lazy loads can be retried",
   f.cleanup();
 });
 
-test("discovery polls at 30 seconds, skips hidden wakes, and retries a boot failure only once", async () => {
+test("start only listens for consent: no hub probe, timer or mount until the user acts", async () => {
   const f = fixture();
-  f.state.visible = false;
   f.controller.start();
-  assert.equal(f.hubs.length, 1); // Boot probes even when hidden.
-  f.hubs[0].reject(new Error("Offline"));
-  await settle();
-  assert.deepEqual([...f.timers.values()].map(timer => timer.delay).sort((a, b) => a - b), [3000, 30_000]);
-  f.fire(3000);
-  assert.equal(f.hubs.length, 1);
-  f.fire(30_000);
+  f.controller.start();
+  assert.equal(f.windowEvents.listeners.size, 1);
   f.windowEvents.dispatchEvent(new Event("focus"));
-  assert.equal(f.hubs.length, 1);
-  f.state.visible = true;
-  f.documentEvents.dispatchEvent(new Event("visibilitychange"));
-  assert.equal(f.hubs.length, 2);
-  f.fire(30_000);
-  assert.equal(f.hubs.length, 2); // A pending probe is not duplicated.
-  f.hubs[1].reject(new Error("Still offline"));
-  await settle();
-  assert.deepEqual([...f.timers.values()].map(timer => timer.delay), [30_000]);
-  f.cleanup();
-});
-
-test("destroy cancels timers/listeners and invalidates probes; restart ignores an old probe's completion", async () => {
-  const f = fixture();
-  f.controller.start();
-  f.controller.destroy();
-  assert.equal(f.timers.size, 0);
-  assert.equal(f.windowEvents.listeners.size, 0);
-  assert.equal(f.documentEvents.listeners.size, 0);
-  f.controller.start();
-  assert.equal(f.hubs.length, 2);
-  f.hubs[0].resolve({ grants: [{}] });
+  f.consent("another-key");
   await settle();
   assert.equal(f.loads.length, 0);
-  f.windowEvents.dispatchEvent(new Event("focus"));
-  assert.equal(f.hubs.length, 2); // The old finally must not clear the new probe.
-  f.hubs[1].resolve({ requests: [{}] });
-  await settle();
-  assert.equal(f.loads.length, 1);
-  f.loads[0].resolve({ createAgentMenu: f.createMenu });
-  await settle();
-  assert.equal(f.controller.connected(), true);
-  assert.equal(f.timers.size, 0);
+  assert.equal(f.controller.connected(), false);
+  // Mounting the menu (opening it) is still lazy and local; the menu itself starts no transport.
+  await f.mount();
+  assert.equal(f.menus.length, 1);
+  f.controller.destroy();
+  assert.equal(f.windowEvents.listeners.size, 0);
+  f.consent();
+  assert.equal(f.loads.length, 1); // Destroyed: a consent event no longer loads anything.
   f.cleanup();
-  assert.deepEqual(f.menus[0].calls, ["destroy", "remove"]);
 });
 
 test("consent lazy-loads once and notifies only the same account and host", async () => {
@@ -180,9 +133,10 @@ test("consent lazy-loads once and notifies only the same account and host", asyn
   f.consent();
   f.loads[1].resolve({ createAgentMenu: f.createMenu });
   await settle();
-  assert.deepEqual(f.menus[0].calls, ["consent"]);
+  // The approval's time goes to the menu, which binds it to this tab's repository.
+  assert.deepEqual(f.menus[0].calls, ["consent:1700"]);
   f.consent();
-  assert.deepEqual(f.menus[0].calls, ["consent"]); // Mounted menu owns subsequent consent events.
+  assert.deepEqual(f.menus[0].calls, ["consent:1700"]); // Mounted menu owns subsequent consent events.
   f.cleanup();
 });
 
@@ -202,22 +156,6 @@ test("Ask captures its original menu and refuses replacement instead of sending 
   await f.controller.ask("new", about);
   assert.deepEqual(f.menus[0].calls, ["ask:first", "changed", "answer:q:yes", "dismiss:q", "destroy", "remove"]);
   assert.deepEqual(f.menus[1].calls, ["ask:new"]);
-  f.cleanup();
-});
-
-test("a hub response for a changed account cannot trigger mounting; stop prevents a pending failure retry", async () => {
-  const f = fixture();
-  f.controller.start();
-  f.state.account = "other";
-  f.hubs[0].resolve({ grants: [{}] });
-  await settle();
-  assert.equal(f.loads.length, 0);
-  f.controller.start();
-  assert.equal(f.hubs.length, 2);
-  f.controller.stop();
-  f.hubs[1].reject(new Error("Offline"));
-  await settle();
-  assert.equal(f.timers.size, 0);
   f.cleanup();
 });
 
