@@ -114,10 +114,9 @@ import { createSavePublishController } from "./controllers/save-publish-controll
 import { createLazyFileOperationsController } from "./controllers/file-operation-checks";
 import { createComponentTools, type ComponentTools, type PreparedComponentLoader } from "./page-builder/components";
 import { addSectionStep } from "./page-builder/component-plans";
-import { writeNewDrafts } from "./new-drafts";
 import { createAgentSiteHost } from "./agent-site-host";
-import { createGuardedEdits, type Reads, type PlanResult, type Stamp } from "./guarded-edit";
-import { createEditorWorkspace, type AgentTextCommit } from "./editor-workspace";
+import { createGuardedEdits, type GuardedEdits, type Reads, type PlanResult, type Stamp } from "./guarded-edit";
+import { createEditorWorkspace } from "./editor-workspace";
 import type { AnnounceAs } from "./components/toast-rules";
 import type {
   EditorContext,
@@ -686,7 +685,10 @@ const paletteController = createCommandPaletteController({
 // Components as first-class page builder objects (src/page-builder/components.ts).
 let componentTools: ComponentTools | undefined;
 function mountComponentTools() {
-  return createComponentTools({
+  return createComponentTools(componentPorts());
+}
+function componentPorts(): Parameters<typeof createComponentTools>[0] {
+  return {
     site: () => nativeSite,
     sources: () => nativeSources(),
     variantFiles: nativeVariantFiles,
@@ -734,7 +736,7 @@ function mountComponentTools() {
         if (rest.length) nativeHistoryShares.set(key, rest); else nativeHistoryShares.delete(key);
       };
     },
-  });
+  };
 }
 
 function nativeEditableSource(path: string): string | undefined {
@@ -777,20 +779,25 @@ function nativeElementAddPoint(choice: InsertChoice, fallback: InsertPoint | und
  * Plans from every indexed page and stylesheet, read through the step's `r` once the index has
  * loaded: the module proves them, the loader's existence and the route graph at the write.
  */
-async function nativeComponentLoaderPlan(path: string, nextPageText: string, r: Reads): Promise<PreparedComponentLoader | string | undefined> {
+async function nativeComponentLoaderPlan(path: string, nextPageText: string, r: Reads, check?: () => Promise<void>): Promise<PreparedComponentLoader | string | undefined> {
   const error = await ensureNativeTextIndex();
+  if (check) await check();
   if (error) return error;
   const site = r.site();
   if (!site) return "The repository or source changed meanwhile. Review the latest files and try again.";
   const sources = nativeSiteSources(site, file => r.source(file));
   try {
     const { componentLoaderPlan } = await import("./page-builder/component-loader");
+    if (check) await check();
     // The first pass avoids loading the vendored bytes when the site already has its loader.
     const input = { prefix: nativeSitePrefix(r.source(NATIVE_CONFIG_PATH)), pages: Object.values(site.routes), sources: { ...sources, [path]: nextPageText }, exists: (file: string) => r.exists(file), loader: "" };
     const needed = componentLoaderPlan(input);
     if (!needed?.creates.length) return needed;
     const { starterLoader } = await import("./page-builder/starter-loader");
-    return componentLoaderPlan({ ...input, loader: await starterLoader() });
+    if (check) await check();
+    const loader = await starterLoader();
+    if (check) await check();
+    return componentLoaderPlan({ ...input, loader });
   } catch (error) {
     void handleChunkLoadFailure(error);
     return "The component loader could not load. Try again.";
@@ -884,8 +891,6 @@ const editorWorkspace = createEditorWorkspace({
   error: errorMessage,
 });
 const guardedEdits = createGuardedEdits(editorWorkspace);
-const agentWorkspace = { ...editorWorkspace, get store() { return editorWorkspace.store; }, agentText: () => agentTextCommit };
-const agentEdits = createGuardedEdits(agentWorkspace);
 // The Block move module (src/page-builder/block-move.ts): what a press moves, where it may go,
 // and the move as one guarded edit, on the page or the template edited: the edit bar, the
 // canvas's and Page Structure's Alt+arrows, and MCP move_section (drags arrive in slice 32).
@@ -3605,7 +3610,7 @@ const cardsController = createCardsController({
 });
 
 // Pages policy belongs to the controller; guarded writes remain host transactions.
-const pagesController = createPagesController({
+const pagePorts = (): Parameters<typeof createPagesController>[0] => ({
   edits: guardedEdits,
   site: () => nativeSite,
   routeForPath: nativeRouteForPath,
@@ -3643,6 +3648,7 @@ const pagesController = createPagesController({
   refuse,
   error: errorMessage,
 });
+const pagesController = createPagesController(pagePorts());
 
 // Shared file operations use the same pure source/draft policy as Pages.
 function onBranchHere(path: string) {
@@ -3916,7 +3922,7 @@ function pathNow(path: string, state = treeState()): "file" | "folder" | "delete
   return entry?.type === "tree" ? "folder" : undefined;
 }
 
-const fileOperationsController = createLazyFileOperationsController({
+const filePorts = (): Parameters<typeof createLazyFileOperationsController>[0] => ({
   edits: guardedEdits, draftScope,
   engaged: () => nativeEngaged, repository: () => appStore.repository.value,
   parentOf, treeState, pathNow, branchFilesUnder, findEntry, draftStore,
@@ -3930,7 +3936,8 @@ const fileOperationsController = createLazyFileOperationsController({
   afterFileChanges, announce, refuse, errorMessage, requestAnimationFrame: callback => { requestAnimationFrame(callback); },
   openFolder: path => filesTreeController.openFolder(path), fileRow: path => filesTreeController.row(path), renderFileTree: () => filesTreeController.render(),
   filesTabOpen: () => filesTreeController.visible(),
-}, lazyModule(() => import("./controllers/file-operations-controller")));
+});
+const fileOperationsController = createLazyFileOperationsController(filePorts(), lazyModule(() => import("./controllers/file-operations-controller")));
 const { moveProblem, fileMoveProblem, moveFileTarget, deleteFileTarget, duplicateFileTarget, restoreFileTarget } = fileOperationsController;
 
 // A media file's new name is tidied by the media rules (any language, its own format); a folder typed before it is checked as usual.
@@ -4461,7 +4468,8 @@ async function awaitNativeResync() {
   if (before.account !== info.user?.login || before.repoId !== appStore.repository.value?.id || (before.branch && before.branch !== appStore.snapshot.value?.branch))
     throw new Error("The editor tab switched to another site meanwhile. Call get_site and try again.");
 }
-const agentSiteActions: AgentSiteActions = {
+const agentSiteActions = makeAgentSiteActions();
+function makeAgentSiteActions(edits: GuardedEdits = guardedEdits, atomic = false): AgentSiteActions { return {
   makeComponent: async (request) => componentTools?.makeFromAgent(request) ?? "The component tools are not ready.",
   async text(path) {
     await awaitNativeResync();
@@ -4475,11 +4483,11 @@ const agentSiteActions: AgentSiteActions = {
     return nativeBaseSources.get(path) ?? (await branchText(path))?.text;
   },
   isMounted: (path) => Boolean(editorModule?.isMounted(path)),
-  edits: guardedEdits,
-  atomicText: () => agentTextCommit !== undefined,
+  edits,
+  atomicText: () => atomic,
   loaderPlan: nativeComponentLoaderPlan,
   writeDraft: async (path, content, create, expected) => {
-    if (!nativeSite && !nativeEngaged && create) {
+    if (!atomic && !nativeSite && !nativeEngaged && create) {
       const scope = draftScope(), repo = appStore.repository.value, snap = appStore.snapshot.value;
       if (!scope || !repo || !snap) return "Open a repository first.";
       const epoch = generation, key = setupScope(), store = draftStore(), editor = editorModule;
@@ -4500,6 +4508,8 @@ const agentSiteActions: AgentSiteActions = {
       };
       // Before a home page exists there is no mounted editor to anchor operation
       // history: the file is a new draft, all or nothing, then the site resyncs.
+      const { writeNewDrafts } = await import("./new-drafts");
+      if (!isCurrent()) return "The repository changed meanwhile. Try again.";
       const error = await writeNewDrafts([{ path, content }], {
         scope, store, isCurrent,
         exists: path => pathNow(path, treeState(scope)) !== undefined,
@@ -4519,7 +4529,6 @@ const agentSiteActions: AgentSiteActions = {
       return undefined;
     }
     // A plan of one write: the file's bytes now (the branch's read first) are what it replaces.
-    const edits = agentTextCommit ? agentEdits : guardedEdits;
     const since = edits.stamp("repository");
     if (!create && edits.peek.source(path) === undefined) {
       const base = await branchText(path);
@@ -4527,11 +4536,11 @@ const agentSiteActions: AgentSiteActions = {
       if (base) nativeBaseSources.set(path, base.text);
     }
     const done = `An agent ${create ? "created" : "changed"} ${path}.`, undone = `Undid the agent's change to ${path}.`;
-    const outcome = await edits.run(r => create ? { creates: [{ path, content }], ...nativePageRoute(path) ? { open: path } : {}, done, undone }
+    const outcome = await edits.run(r => create ? { creates: [{ path, content }], ...nativePageRoute(path) || atomic && appStore.openFile.value === undefined ? { open: path } : {}, done, undone }
       : expected !== undefined && r.source(path) !== expected ? { refuse: `${path} changed in the editor since it was read. Read it again.` }
       : r.source(path) === undefined ? { refuse: `${path} does not exist.` }
-      : { edits: new Map([[path, content]]), ...nativePageRoute(path) && (!agentTextCommit || !editorModule.isMounted(path)) ? { open: path } : {},
-        ...agentTextCommit ? { select: { historyOnly: true } } : {}, done, undone }, { since });
+      : { edits: new Map([[path, content]]), ...nativePageRoute(path) && (!atomic || !editorModule.isMounted(path)) ? { open: path } : {},
+        ...atomic ? { select: { historyOnly: true } } : {}, done, undone }, { since });
     // A home page just written switches the site on: the context is whole before the write is answered.
     await nativeResyncDone;
     return outcome.message;
@@ -4606,43 +4615,37 @@ const agentSiteActions: AgentSiteActions = {
     return media.applyAgentMedia(ctx, command, () => place!, frame ? () => frame : undefined, loop ? () => loop : undefined, undefined, improve);
   },
   legacy: applyAgentCommand,
-};
+}; }
 async function applyAgentSiteCommand(command: AgentCommand) {
-  const scope = draftScope(), epoch = generation, key = setupScope();
-  const current = () => epoch === generation && key === setupScope() && !versionView;
-  const { applySiteCommand, prepareAgentText } = await loadAgentSite();
+  const scope = draftScope(), epoch = generation, key = setupScope(), revision = appStore.snapshot.value?.commit;
+  const current = () => epoch === generation && key === setupScope() && revision === appStore.snapshot.value?.commit && !versionView;
+  const { applySiteCommand, prepareAgentText, atomicAgentCommand, agentStructuralActions } = await loadAgentSite();
   if (!current() || !appStore.snapshot.value || command.branch !== appStore.snapshot.value.branch ||
     command.repoId !== undefined && command.repoId !== scope?.repoId) throw new Error("The editor changed repository or branch.");
-  if (command.operation !== "write_file" || command.expectedHash === null) {
+  if (!atomicAgentCommand(command)) {
     if (command.commit !== appStore.snapshot.value.commit) throw new Error("The editor changed branch or revision.");
     return agentActing(() => applySiteCommand(agentSiteActions, command));
   }
   if (!scope) throw new Error("Open a repository first.");
   const prepared = await prepareAgentText(command, scope, draftStore(), current, (scope, paths) => editorModule.flushAgentTyping(scope, paths),
-    // Committed while the editor moved on: lists and Save show the durable drafts if this is still the workspace.
     () => { if (draftScope()?.account === scope.account && draftScope()?.repoId === scope.repoId && draftScope()?.branch === scope.branch) afterFileChanges(); });
-  if (!current()) throw new Error("The repository changed meanwhile.");
   if (prepared.duplicate) return prepared.duplicate;
-  if (command.commit !== appStore.snapshot.value?.commit) throw new Error("The editor changed branch or revision.");
-  // New files retain their structural path until ticket 07 adds structural receipts.
-  const before = await agentSiteActions.text(command.path);
-  if (!current()) throw new Error("The repository changed meanwhile.");
-  if (before === undefined) return agentActing(() => applySiteCommand(agentSiteActions, command));
-  if (agentTextCommit) throw new Error("Another agent text edit is still running.");
-  agentTextCommit = prepared.context;
+  if (!current() || command.commit !== appStore.snapshot.value?.commit) throw new Error("The editor changed branch or revision.");
+  const scoped = agentStructuralActions(editorWorkspace, prepared.context!, current, {
+    actions: makeAgentSiteActions, pages: pagePorts(), files: filePorts(), components: componentPorts, loader: nativeComponentLoaderPlan,
+  });
   try {
-    await agentActing(() => applySiteCommand(agentSiteActions, command));
-    await prepared.finish!(() => current() && mediaTextSource(command.path) === command.content);
-    return prepared.outcome;
+    const detail = await agentActing(() => applySiteCommand(scoped.actions, command));
+    await prepared.finish!(() => scoped.current(), scoped.readDrafts);
+    return { ...prepared.outcome, ...detail };
   } catch (error) {
-    // A refresh failure after the durable boundary cannot change the recorded agent outcome.
-    if (!prepared.applied) throw error;
-    errorMessage(error);
+    const message = error instanceof Error ? error.message : String(error), unchanged = "Nothing was changed; your drafts are as they were.";
+    if (!prepared.applied) throw new Error(message.includes(unchanged) ? message : `${message} ${unchanged}`);
+    await prepared.recover!();
     return prepared.outcome;
-  } finally { agentTextCommit = undefined; }
+  } finally { scoped.dispose(); }
 }
 // While an agent's command runs, its guarded edits leave .github alone (src/guarded-edit/commit.ts).
-let agentTextCommit: AgentTextCommit | undefined;
 let agentActingDepth = 0;
 async function agentActing<T>(run: () => Promise<T>): Promise<T> {
   agentActingDepth++;

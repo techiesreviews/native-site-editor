@@ -21,9 +21,179 @@ import { componentLabel, isSectionTemplate, nativeInsertEdit } from "./native-in
 import { buildNativePagesTree, firstHeadingText, nativeTreePages, slugify, type NativePageNode } from "./native-pages";
 import { startTagAttribute, locateNativeElement, locateNativeElementRange, parseMarked } from "./native-source-location";
 import { removeEdit } from "./native-structure";
-import type { GuardedEdits, Outcome } from "./guarded-edit";
+import { createGuardedEdits, type EditorWorkspace, type GuardedEdits, type Outcome, type Reads } from "./guarded-edit";
 import { addSectionStep, type LoaderPlanner, type SectionPlanned } from "./page-builder/component-plans";
 import type { AgentCommandOutcome } from "./components/agent-menu";
+
+import { createPagesController } from "./controllers/pages-controller";
+import { createLazyFileOperationsController } from "./controllers/file-operation-checks";
+import type { createComponentTools, ComponentDeps } from "./page-builder/components";
+import { createBlockMoves } from "./page-builder/block-move";
+import { withPageField } from "./page-builder/site-head";
+
+/** Only these commands enter the draft/receipt transaction. Media has its own admission in ticket 08. */
+export function atomicAgentCommand(command: AgentCommand) {
+  return ["write_file", "create_page", "set_page_details", "make_component", "add_section", "move_section", "remove_section", "move_file", "delete_file"].includes(command.operation);
+}
+
+// The workspace keeps one dispatcher; command listeners live only as long as their history step.
+const agentMounts = new WeakMap<EditorWorkspace, Set<(path: string, pane: boolean) => void>>();
+
+/**
+ * A command owns these controllers and this edit adapter. No ambient flag redirects manual edits.
+ * All plans take the asynchronous commit path, including a mounted section move.
+ */
+export function agentStructuralActions(workspace: EditorWorkspace, context: AgentTextCommit, current: () => boolean, ports: {
+  actions(edits: GuardedEdits, atomic: boolean): AgentSiteActions;
+  pages: Parameters<typeof createPagesController>[0];
+  files: Parameters<typeof createLazyFileOperationsController>[0];
+  components(): ComponentDeps;
+  loader?(path: string, text: string, reads: Reads, check: () => Promise<void>): ReturnType<LoaderPlanner>;
+}) {
+  let keepAddress: boolean | undefined;
+  let active = true, claimed = false, tools: ReturnType<typeof createComponentTools> | undefined;
+  let recorded = false;
+  let mounts = agentMounts.get(workspace);
+  if (!mounts) {
+    const listeners = new Set<(path: string, pane: boolean) => void>();
+    workspace.onMount((path, pane) => { for (const listener of listeners) listener(path, pane); });
+    agentMounts.set(workspace, mounts = listeners);
+  }
+  let mount: ((path: string, pane: boolean) => void) | undefined, history = false;
+  const stopMount = () => { if (mount) mounts.delete(mount); };
+  const commandContext: AgentTextCommit = { ...context, async commit(...args) {
+    const result = await context.commit(...args);
+    recorded = true;
+    return result;
+  } };
+  const agentWorkspace: EditorWorkspace & { agentText(): AgentTextCommit } = { ...workspace, agentActing: () => true, agentText: () => commandContext,
+    onMount: listener => { mount = listener; mounts.add(listener); },
+    recordHistory(path, undo, redo, dispose) {
+      history = workspace.recordHistory(path, undo, redo, () => { try { dispose(); } finally { stopMount(); } });
+      return history;
+    },
+  };
+  const edits = createGuardedEdits(agentWorkspace);
+  const finishProofs = new Map<string, () => boolean>();
+  const readDrafts = new Map<string, SavedDraft | undefined>();
+  const valid = () => active && current();
+  const verify = () => { if (!valid()) throw new Error("The repository or source changed meanwhile."); };
+  const checkReads = async () => {
+    const prove = () => { verify(); if ([...finishProofs.values()].some(proof => !proof())) throw new Error("The repository or source changed meanwhile."); };
+    prove();
+    await context.check();
+    prove();
+  };
+  // Wrap preparation ports only: postcommit refreshes recover from the durable outcome instead.
+  const checked = <T extends object>(target: T): T => new Proxy(target, { get(target, key, receiver) {
+    const value = Reflect.get(target, key, receiver);
+    if (typeof value !== "function") return value;
+    return (...args: unknown[]) => {
+      verify();
+      const held = edits.stamp("repository");
+      const result = Reflect.apply(value, target, args);
+      if (!(result instanceof Promise)) return result;
+      return result.then(async result => {
+        verify();
+        if (!held.holds()) throw new Error("The repository or source changed meanwhile.");
+        if (recorded) await context.check();
+        else await checkReads();
+        verify();
+        if (!held.holds()) throw new Error("The repository or source changed meanwhile.");
+        return result;
+      });
+    };
+  } });
+  const scoped: GuardedEdits = { ...edits,
+    async run(plan, options) {
+      verify();
+      if (claimed) throw new Error("An agent command must use one guarded edit.");
+      claimed = true;
+      const held = options?.since ?? edits.stamp();
+      finishProofs.set("stamp", () => held.holds() && (options?.guard?.() ?? true));
+      await context.check();
+      verify();
+      return edits.run(async r => {
+        // Keep the plan's original proof for finish(), including plans that turn out unchanged.
+        // A manual edit during its final fence must not earn a receipt for the earlier no-op.
+        const scope = workspace.draftScope()!;
+        const remember = (path: string, text: string | undefined) => {
+          if (finishProofs.has(`source:${path}`)) return;
+          const record = workspace.store.get(scope, path), model = workspace.model(path);
+          readDrafts.set(path, record);
+          finishProofs.set(`source:${path}`, () => workspace.source(path) === text && workspace.store.get(scope, path) === record && model.isCurrent());
+        };
+        const reads: Reads = {
+          source(path) { const text = r.source(path); remember(path, text); return text; },
+          exists(path) { const found = r.exists(path); if (!finishProofs.has(`exists:${path}`)) finishProofs.set(`exists:${path}`, () => workspace.exists(path) === found); return found; },
+          site() { const site = r.site(), key = JSON.stringify(site); if (!finishProofs.has("site")) finishProofs.set("site", () => JSON.stringify(workspace.site()) === key); return site; },
+          template(tag) {
+            const template = r.template(tag), path = workspace.site()?.components[tag];
+            if (!finishProofs.has(`template:${tag}`)) finishProofs.set(`template:${tag}`, () => workspace.site()?.components[tag] === path);
+            if (template) remember(template.path, template.source);
+            return template;
+          },
+        };
+        const result = await plan(checked(reads));
+        await checkReads();
+        verify();
+        return "done" in result ? { ...result, select: { ...result.select, historyOnly: true } } : result;
+      }, { ...options, since: held, guard: () => valid() && (options?.guard?.() ?? true) });
+    },
+    now() { throw new Error("Agent commands require an asynchronous guarded commit."); },
+  };
+  const pages = createPagesController({ ...checked(ports.pages), edits: scoped });
+  const files = createLazyFileOperationsController({ ...checked(ports.files), edits: scoped,
+    requestAnimationFrame: task => ports.files.requestAnimationFrame(() => { if (valid()) task(); }),
+    // Agent answers belong to these ports, never the user's confirmation dialog.
+    confirmDialog: () => ({ ask: async () => true, choose: async question => ({ value: question.actions.at(-1)?.value, option: keepAddress ?? question.option?.checked ?? false }) }),
+  }, () => import("./controllers/file-operations-controller"));
+  const moves = createBlockMoves({ edits: scoped, editing: () => undefined, mounted: () => false, forgetOpening: () => () => {} });
+  const base = ports.actions(scoped, true);
+  const loader: LoaderPlanner | undefined = ports.loader ? (path, text, reads) => ports.loader!(path, text, reads, checkReads) : checked(base).loaderPlan;
+  const actions: AgentSiteActions = { ...checked(base), edits: scoped,
+    loaderPlan: loader,
+    async createPage(request) {
+      const plan = pages.planNew(request);
+      if (!plan.ok) return plan.error;
+      return (await pages.createNew(request)) ?? { file: plan.value.file, route: plan.value.route };
+    },
+    async makeComponent(request) {
+      const module = await import("./page-builder/components");
+      await context.check();
+      verify();
+      const component = ports.components(), preparation = checked(component);
+      tools ??= module.createComponentTools({ ...component, index: preparation.index, loaderPlan: loader ?? preparation.loaderPlan, edits: scoped });
+      return tools.makeFromAgent(request);
+    },
+    async setPageDetails(path, details) {
+      const result = await scoped.run(r => {
+        if (!Object.values(r.site()?.routes ?? {}).includes(path)) return { refuse: "This page has no URL in the site." };
+        const source = r.source(path);
+        if (source === undefined) return { refuse: "The page could not be read." };
+        let text = source;
+        for (const field of ["title", "description"] as const) if (details[field] !== undefined) text = withPageField(text, field, details[field]!);
+        return { edits: new Map([[path, text]]), done: "Page details updated", undone: "Undid changing page details." };
+      });
+      return result.message;
+    },
+    moveSection: (at, gap) => moves.move(at, { gap, section: true }),
+    moveFile: (path, to, keepOldUrl) => {
+      keepAddress = keepOldUrl;
+      const target = fileTarget(path);
+      return target ? files.moveFileTarget(target, to, ports.files.parentOf(path) === ports.files.parentOf(to) ? "rename" : "move", { keepOldAddress: keepOldUrl }) : Promise.resolve(`${path} does not exist.`);
+    },
+    deleteFile: path => { const target = fileTarget(path); return target ? files.deleteFileTarget(target, undefined, true) : Promise.resolve(`${path} does not exist.`); },
+  };
+  function fileTarget(path: string) {
+    const now = ports.files.pathNow(path, ports.files.treeState());
+    return now === "file" || now === "folder" ? { path, name: path.slice(path.lastIndexOf("/") + 1), folder: now === "folder" } : undefined;
+  }
+  return { actions, readDrafts, current: () => valid() && [...finishProofs.values()].every(proof => proof()), dispose() {
+    try { tools?.destroy(); } catch { /* Panel cleanup cannot change the command's recorded outcome. */ }
+    finally { active = false; if (!history) stopMount(); }
+  } };
+}
 
 // ---- Page outlines ----
 
@@ -352,6 +522,7 @@ export interface AgentSiteActions {
   makeComponent(request: { path: string; source: string; node: number[]; tag: string; fixed?: string[] }): Promise<string | {
     tag: string; files: string[]; slots: string[]; cards: string[]; notes: string[];
   }>;
+  setPageDetails?(path: string, details: { title?: string; description?: string }): Promise<string | undefined>;
   setPageDetail(path: string, field: "title" | "description", value: string): Promise<string | undefined>;
   sectionTags(): ReadonlySet<string>;
   /** Moves the proved section through the Block move module. */
@@ -502,7 +673,10 @@ export async function applySiteCommand(actions: AgentSiteActions, command: Agent
       return { message: `Created the page ${title} at ${made.route} (${made.file}), unsaved.`, result: { file: made.file, route: made.route, hash: await hashOf(actions, made.file) } };
     }
     case "set_page_details": {
-      for (const field of ["title", "description"] as const) {
+      if (actions.setPageDetails) {
+        const error = await actions.setPageDetails(path, args);
+        if (error) throw new Error(error);
+      } else for (const field of ["title", "description"] as const) {
         const value = args[field];
         if (value === undefined) continue;
         const error = await actions.setPageDetail(path, field, value);
@@ -673,8 +847,8 @@ export async function prepareAgentText(command: AgentCommand, scope: DraftScope,
   // Storage refusals (src/agent-records.ts) say what happened; nothing was applied and drafts are as they were.
   const refuse = (error: unknown): never => {
     const code = error instanceof Error && error.name === "AgentRecordsError" ? (error as Error & { code: string }).code : undefined;
-    if (code === undefined && error instanceof Error && /meanwhile|changed in the editor/.test(error.message)) throw error;
-    const reason = code === "conflict" ? `${command.path} or agent ownership changed in the editor meanwhile. Read it again.`
+    const reason = code === undefined && error instanceof Error && /meanwhile|changed in the editor/.test(error.message) ? error.message
+      : code === "conflict" ? `${command.path} or agent ownership changed in the editor meanwhile. Read it again.`
       : code === "revoked" ? "This agent connection was disconnected (its authorization was revoked)."
       : code === "cancelled" ? "The change was cancelled before it was applied."
       : code === "duplicate-id" ? `This change's id was already used for different work (${(error as Error).message}).`
@@ -682,11 +856,12 @@ export async function prepareAgentText(command: AgentCommand, scope: DraftScope,
       : `Agent edits are paused: this browser could not save the change (${error instanceof Error ? error.message : "browser storage failed"}).`;
     throw new Error(`${reason} Nothing was changed; your drafts are as they were.`);
   };
-  if (!command.grantId) throw new Error("Agent text edits require an authorization id (grantId).");
+  if (!command.grantId) throw new Error("Agent edits require an authorization id (grantId).");
   const workspace = { account: scope.account, repoId: scope.repoId, branch: scope.branch };
   const key = workspaceKey(workspace);
   // The identity names the text by its hash: receipts never hold file contents.
   const contentHash = await textHash(command.content);
+  if (!current()) return refuse(new Error("The repository changed meanwhile."));
   if (command.contentHash && command.contentHash !== contentHash) throw new Error("Command content does not match its content hash.");
   const identity = payloadIdentity(JSON.parse(JSON.stringify({ operation: command.operation, path: command.path,
     branch: command.branch, commit: command.commit, expectedHash: command.expectedHash, contentHash, args: command.args })) as JsonValue);
@@ -705,34 +880,48 @@ export async function prepareAgentText(command: AgentCommand, scope: DraftScope,
     }
     const { records, owner } = await loading;
     if (!current()) throw new Error("The repository changed meanwhile.");
-    const outcome = { message: `Changed ${command.path} in the editor as an unsaved draft.`, result: { path: command.path, hash: contentHash } };
-    const receipt = { authorizationId: command.grantId, operationId: command.id, payloadIdentity: identity, outcome, createdAt: Date.now() };
+    const outcome: AgentCommandOutcome = command.operation === "write_file"
+      ? { message: `${command.expectedHash === null ? "Created" : "Changed"} ${command.path} in the editor as an unsaved draft.`, result: { path: command.path, hash: contentHash } }
+      : { message: `Applied ${command.operation} to the local drafts.`, ...(command.operation === "create_page" ? {} : { result: { path: command.operation === "move_file" ? command.args?.to ?? command.path : command.path } }) };
+    const receipt = { authorizationId: command.grantId, operationId: command.id, payloadIdentity: identity, outcome: JSON.parse(JSON.stringify(outcome)) as JsonValue, createdAt: Date.now() };
     const existing = await records.receipt(workspace, command.id, command.grantId);
     if (!current()) throw new Error("The repository changed meanwhile.");
     if (existing) {
       // Commit performs the identity and revocation checks again in the transaction returning the receipt.
       const result = await owner.commit({ workspace, generation: owner.generation, expectedRevision: 0, expectedDrafts: [], drafts: [], receipt });
+      if (!current()) throw new Error("The repository changed meanwhile.");
       return { duplicate: result.receipt.outcome as AgentCommandOutcome };
     }
     let expectedRevision = 0, committed = false;
+    let lastAfter = new Map<string, SavedDraft | undefined>();
+    const check = async () => {
+      if (!current() || owner.paused) throw new Error("The repository or agent ownership changed meanwhile.");
+      const state = await records.workspace(workspace);
+      if (!current() || owner.paused || state.generation !== owner.generation || state.paused) throw new Error("The repository or agent ownership changed meanwhile.");
+      // Revocation and cancellation are serialized with the eventual write by owner.commit.
+      return state;
+    };
     const context: AgentTextCommit = {
+      check: async () => { await check(); },
       async fence(draftScope, paths) {
         flushTyping(draftScope, paths);
         const release = await store.fenceAgent(draftScope, paths);
         try {
           if (!current()) throw new Error("The repository changed meanwhile.");
-          expectedRevision = (await records.workspace(workspace)).revision;
+          expectedRevision = (await check()).revision;
           if (!current()) throw new Error("The repository changed meanwhile.");
           return release;
         } catch (error) { release(); return refuse(error); }
       },
       async commit(before, after, valid) {
+        if (committed) throw new Error("An agent command must use one guarded commit.");
         store.stageAgent(after);
         if (!current() || !valid()) throw new Error("The repository or source changed meanwhile.");
         try {
           const result = await owner.commit({ workspace, generation: owner.generation, expectedRevision,
             expectedDrafts: [...before].map(([path, record]) => [draftKey(scope, path), record ?? null]),
             drafts: [...after].map(([path, record]) => [draftKey(scope, path), record ?? null]), receipt });
+          lastAfter = after;
           committed = true;
           return !result.duplicate;
         } catch (error) { return refuse(error); }
@@ -748,11 +937,12 @@ export async function prepareAgentText(command: AgentCommand, scope: DraftScope,
         afterSettle();
       },
     };
-    return { context, outcome, get applied() { return committed; }, async finish(valid: () => boolean) {
+    const recover = async () => { try { await context.settle(lastAfter); } catch { /* The receipt still proves application when the view cannot refresh. */ } };
+    return { context, outcome, recover, get applied() { return committed; }, async finish(valid: () => boolean, reads?: ReadonlyMap<string, SavedDraft | undefined>) {
       if (committed) return;
-      const release = await context.fence(scope, [command.path]);
+      const release = await context.fence(scope, [...new Set([command.path, ...reads?.keys() ?? []])]);
       try {
-        const before = new Map([[command.path, store.get(scope, command.path)]]);
+        const before = new Map(reads ?? [[command.path, store.get(scope, command.path)]]);
         await context.commit(before, new Map(), valid);
       } finally { release(); }
     } };

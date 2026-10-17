@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, test, type Locator, type Page, type Route } from "@playwright/test";
-import { storedDraft } from "./drafts";
+import { storedDraft, storedDrafts } from "./drafts";
 import { copyConnectionPrompt } from "./mcp-prompt";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 
@@ -55,6 +55,49 @@ async function connectAgent(page: Page, baseURL: string | undefined) {
 function result(value: unknown): any {
   const text = (value as { content: { text: string }[] }).content[0].text;
   return JSON.parse(text);
+}
+
+// Abort at the receipt put, after the transaction has queued every draft write.
+async function abortAgentCommit(page: Page) {
+  await page.evaluate(() => {
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- Restore the exact method; every invocation below supplies its IDBObjectStore receiver.
+    const put = IDBObjectStore.prototype.put;
+    IDBObjectStore.prototype.put = function (...args) {
+      if (this.name === "receipts" && this.transaction.objectStoreNames.contains("drafts")) {
+        IDBObjectStore.prototype.put = put;
+        throw new DOMException("Injected storage failure", "QuotaExceededError");
+      }
+      return put.apply(this, args);
+    };
+  });
+}
+
+for (const operation of ["make_component", "create_page", "move_file"] as const) {
+  test(`${operation}: storage failure leaves no partial drafts; success undoes once`, async ({ page, baseURL }) => {
+    await open(page, baseURL);
+    const client = await connectAgent(page, baseURL);
+    const call = async (name: string, args: Record<string, unknown> = {}) => client.callTool({ name, arguments: args });
+    try {
+      const home = result(await call("get_page", { page: "/" }));
+      const args = operation === "make_component"
+        ? { page: "/", element: home.sections.find((section: { key: string }) => section.key === "filler").id, tag: "section-atomic", expectedHash: home.hash }
+        : operation === "create_page" ? { title: "Atomic page" }
+        : { path: "about/index.html", to: "team/index.html", keepOldUrl: true };
+      await abortAgentCommit(page);
+      const failed = await call(operation, args);
+      expect(failed.isError, JSON.stringify(failed)).toBe(true);
+      expect(JSON.stringify(failed)).toContain("Nothing was changed; your drafts are as they were.");
+      expect(await storedDrafts(page)).toEqual([]);
+      expect((await call("read_file", { path: indexPath })).isError).toBeFalsy();
+      const applied = await call(operation, args);
+      expect(applied.isError, JSON.stringify(applied)).toBeFalsy();
+      expect(result(applied).state).toBe("applied");
+      await expect.poll(async () => (await storedDrafts(page)).length).toBeGreaterThan(0);
+      await undo(page).click();
+      await expect.poll(() => storedDrafts(page)).toEqual([]);
+      await expect.poll(async () => result(await call("read_file", { path: indexPath })).content).toBe(indexSource);
+    } finally { await client.close(); }
+  });
 }
 
 test("make_component drafts files and whole-element slots in one undo step", { tag: "@smoke" }, async ({ page, baseURL }) => {
@@ -228,22 +271,26 @@ test("an agent edits a page, adds and removes a section, creates a page and sets
     await expect(page.locator("#current-page")).toHaveAttribute("data-path", "our-team/index.html");
     await expect(page.locator("#current-page")).toHaveText("Our team");
     await expect(frame(page).locator("main")).toBeEmpty();
-    const details = await call("set_page_details", { page: "/our-team/", description: "The people behind the studio." });
+    const details = await call("set_page_details", { page: "/our-team/", title: "Meet our team", description: "The people behind the studio." });
     expect(details.state).toBe("applied");
     const made = (await draft(page, "our-team/index.html"))!.content;
-    expect(made).toContain("<title>Our team</title>");
+    expect(made).toContain("<title>Meet our team</title>");
     expect(made).toContain('<meta name="description" content="The people behind the studio.">');
     // Its own address, not the home page's; og:title and og:description follow.
     expect(made).toContain('<link rel="canonical" href="https://studio.example/our-team/">');
     expect(made).toContain('<meta property="og:url" content="https://studio.example/our-team/">');
-    expect(made).toContain('<meta property="og:title" content="Our team">');
+    expect(made).toContain('<meta property="og:title" content="Meet our team">');
     expect(made).toContain('<meta property="og:description" content="The people behind the studio.">');
     const after = await call("get_site");
-    expect(after.pages.find((item: { route: string }) => item.route === "/our-team/")).toMatchObject({ file: "our-team/index.html", title: "Our team", description: "The people behind the studio.", new: true });
+    expect(after.pages.find((item: { route: string }) => item.route === "/our-team/")).toMatchObject({ file: "our-team/index.html", title: "Meet our team", description: "The people behind the studio.", new: true });
     expect(after.changes).toEqual(expect.arrayContaining([
       expect.objectContaining({ kind: "M", path: indexPath }),
       expect.objectContaining({ kind: "A", path: "our-team/index.html" }),
     ]));
+
+    await undo(page).click();
+    await expect.poll(async () => (await draft(page, "our-team/index.html"))?.content).toContain("<title>Our team</title>");
+    expect((await draft(page, "our-team/index.html"))!.content).not.toContain("The people behind the studio.");
 
     // open_page shows another page; nothing reached GitHub.
     expect((await call("open_page", { page: "/about/" })).state).toBe("applied");
