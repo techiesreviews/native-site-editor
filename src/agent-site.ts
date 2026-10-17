@@ -21,15 +21,24 @@ import { componentLabel, isSectionTemplate, nativeInsertEdit } from "./native-in
 import { buildNativePagesTree, firstHeadingText, nativeTreePages, slugify, type NativePageNode } from "./native-pages";
 import { startTagAttribute, locateNativeElement, locateNativeElementRange, parseMarked } from "./native-source-location";
 import { removeEdit } from "./native-structure";
-import { createGuardedEdits, type EditorWorkspace, type GuardedEdits, type Outcome, type Reads } from "./guarded-edit";
+import type { createGuardedEdits, EditorWorkspace, GuardedEdits, Outcome, Reads } from "./guarded-edit";
 import { addSectionStep, type LoaderPlanner, type SectionPlanned } from "./page-builder/component-plans";
 import type { AgentCommandOutcome } from "./components/agent-menu";
 
-import { createPagesController } from "./controllers/pages-controller";
-import { createLazyFileOperationsController } from "./controllers/file-operation-checks";
+import type { createPagesController } from "./controllers/pages-controller";
+import type { createLazyFileOperationsController } from "./controllers/file-operation-checks";
 import type { createComponentTools, ComponentDeps } from "./page-builder/components";
-import { createBlockMoves } from "./page-builder/block-move";
-import { withPageField } from "./page-builder/site-head";
+import type { createBlockMoves } from "./page-builder/block-move";
+import type { withPageField } from "./page-builder/site-head";
+
+/** The editor's own factories, passed in so this lazy chunk shares the boot modules instead of splitting them. */
+export interface AgentStructuralFactories {
+  createGuardedEdits: typeof createGuardedEdits;
+  createPagesController: typeof createPagesController;
+  createLazyFileOperationsController: typeof createLazyFileOperationsController;
+  createBlockMoves: typeof createBlockMoves;
+  withPageField: typeof withPageField;
+}
 
 /** Only these commands enter the draft/receipt transaction. Media has its own admission in ticket 08. */
 export function atomicAgentCommand(command: AgentCommand) {
@@ -49,7 +58,9 @@ export function agentStructuralActions(workspace: EditorWorkspace, context: Agen
   files: Parameters<typeof createLazyFileOperationsController>[0];
   components(): ComponentDeps;
   loader?(path: string, text: string, reads: Reads, check: () => Promise<void>): ReturnType<LoaderPlanner>;
+  factories: AgentStructuralFactories;
 }) {
+  const { createGuardedEdits, createPagesController, createLazyFileOperationsController, createBlockMoves, withPageField } = ports.factories;
   let keepAddress: boolean | undefined;
   let active = true, claimed = false, tools: ReturnType<typeof createComponentTools> | undefined;
   let recorded = false;
