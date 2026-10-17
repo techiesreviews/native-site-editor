@@ -56,6 +56,10 @@ export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFact
   const initial = (): WorkspaceRecord => ({ revision: 0, generation: 0 });
   const revocationKey = (workspace: AgentWorkspace, authorizationId: string) => JSON.stringify(["revoked", workspaceKey(workspace), authorizationId]);
   const cancellationKey = (workspace: AgentWorkspace, operationId: OperationId, authorizationId: string) => JSON.stringify(["cancelled", workspaceKey(workspace), authorizationId, operationId]);
+  // A receipt removed (expired or evicted) leaves this small marker for its operation id, kept like
+  // cancellation tombstones: a late redelivery then stays unknown instead of applying afresh.
+  const retiredKey = (operationId: OperationId) => JSON.stringify(["retired", operationId]);
+  const retire = (workspaces: IDBObjectStore, operationId: OperationId) => workspaces.put({ retired: true }, retiredKey(operationId));
   const expired = (receipt: AgentReceipt, time = now()) => receipt.createdAt <= time - 24 * 60 * 60 * 1000;
   const same = (value: SavedDraft | null | undefined) => value ? payloadIdentity(JSON.parse(JSON.stringify(value)) as JsonValue) : null;
   const belongs = (key: string, workspace: AgentWorkspace) => key.startsWith(draftKey({ ...workspace, repo: "" }, "").slice(0, -3));
@@ -122,34 +126,42 @@ export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFact
             }
             read(workspaces.get(cancellationKey(workspace, receipt.operationId, receipt.authorizationId)), (cancelled: unknown) => {
               if (cancelled) throw new AgentRecordsError("cancelled", "Agent operation has been cancelled.");
-              read(workspaces.get(key), (stored: WorkspaceRecord | undefined) => {
-                const current = stored ?? initial();
-                if (!receipt.authorizationId || !Number.isSafeInteger(generation) || !Number.isSafeInteger(expectedRevision) ||
-                  current.paused || current.generation !== generation || current.revision !== expectedRevision) conflict();
-                const expected = new Map(expectedDrafts);
-                if (expected.size !== expectedDrafts.length || new Set(drafts.map(([key]) => key)).size !== drafts.length) conflict();
-                for (const [draft, value] of drafts) {
-                  if (!belongs(draft, workspace) || !expected.has(draft) || (value &&
-                    (workspaceKey(value) !== key || draftKey(value, value.path) !== draft))) conflict();
-                }
-                const apply = () => {
-                  const committed: AgentReceipt = { ...receipt, workspace: key, generation, revision: current.revision + 1, createdAt: now() };
-                  const rows: [string, AgentReceipt][] = all.filter((value) => value.workspace === key).map((value) => [recordKey(workspace, value.operationId), value]);
-                  for (const expired of retention(rows, committed.createdAt, [receiptKey, committed])) receipts.delete(expired);
-                  for (const [draft, value] of drafts) value ? files.put(value, draft) : files.delete(draft);
-                  receipts.put(committed, receiptKey);
-                  workspaces.put({ ...current, revision: committed.revision }, key);
-                  done({ receipt: committed, duplicate: false });
-                };
-                let remaining = expectedDrafts.length;
-                if (!remaining) apply();
-                for (const [draft, wanted] of expectedDrafts) {
-                  if (!belongs(draft, workspace)) conflict();
-                  read(files.get(draft), (saved: SavedDraft | undefined) => {
-                    if (same(saved) !== same(wanted)) conflict();
-                    if (--remaining === 0) apply();
-                  });
-                }
+              read(workspaces.get(retiredKey(receipt.operationId)), (retired: unknown) => {
+                // Like an expired receipt: unknown, never applied afresh whatever proofs come with it.
+                if (retired) conflict();
+                read(workspaces.get(key), (stored: WorkspaceRecord | undefined) => {
+                  const current = stored ?? initial();
+                  if (!receipt.authorizationId || !Number.isSafeInteger(generation) || !Number.isSafeInteger(expectedRevision) ||
+                    current.paused || current.generation !== generation || current.revision !== expectedRevision) conflict();
+                  const expected = new Map(expectedDrafts);
+                  if (expected.size !== expectedDrafts.length || new Set(drafts.map(([key]) => key)).size !== drafts.length) conflict();
+                  for (const [draft, value] of drafts) {
+                    if (!belongs(draft, workspace) || !expected.has(draft) || (value &&
+                      (workspaceKey(value) !== key || draftKey(value, value.path) !== draft))) conflict();
+                  }
+                  const apply = () => {
+                    const committed: AgentReceipt = { ...receipt, workspace: key, generation, revision: current.revision + 1, createdAt: now() };
+                    const rows: [string, AgentReceipt][] = all.filter((value) => value.workspace === key).map((value) => [recordKey(workspace, value.operationId), value]);
+                    const byKey = new Map(rows);
+                    for (const expired of retention(rows, committed.createdAt, [receiptKey, committed])) {
+                      receipts.delete(expired);
+                      retire(workspaces, byKey.get(expired)!.operationId);
+                    }
+                    for (const [draft, value] of drafts) value ? files.put(value, draft) : files.delete(draft);
+                    receipts.put(committed, receiptKey);
+                    workspaces.put({ ...current, revision: committed.revision }, key);
+                    done({ receipt: committed, duplicate: false });
+                  };
+                  let remaining = expectedDrafts.length;
+                  if (!remaining) apply();
+                  for (const [draft, wanted] of expectedDrafts) {
+                    if (!belongs(draft, workspace)) conflict();
+                    read(files.get(draft), (saved: SavedDraft | undefined) => {
+                      if (same(saved) !== same(wanted)) conflict();
+                      if (--remaining === 0) apply();
+                    });
+                  }
+                });
               });
             });
           });
@@ -169,7 +181,7 @@ export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFact
               done({ status: "applied", receipt });
               return;
             }
-            if (receipt) receipts.delete(key);
+            if (receipt) { receipts.delete(key); retire(workspaces, operationId); }
             // This tombstone prevents future application, but cannot prove whether an
             // unknown operation applied before its receipt expired or was evicted.
             workspaces.put({ cancelled: true }, cancelledKey);
@@ -283,7 +295,10 @@ export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFact
           const live: AgentReceipt[] = [];
           for (const receipt of receipts) {
             if (receipt.workspace !== key) continue;
-            if (expired(receipt)) tx.objectStore(draftStores.receipts).delete(recordKey(scope, receipt.operationId));
+            if (expired(receipt)) {
+              tx.objectStore(draftStores.receipts).delete(recordKey(scope, receipt.operationId));
+              retire(tx.objectStore(draftStores.workspaces), receipt.operationId);
+            }
             else if (receipt.authorizationId === authorizationId) live.push(receipt);
           }
           done(live);
@@ -292,12 +307,13 @@ export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFact
     },
     evictReceipts(workspace, time = now()) {
       const key = workspaceKey(workspace), scope = structuredClone(workspace);
-      return run([draftStores.receipts], "readwrite", (tx, read, done) => {
+      return run([draftStores.receipts, draftStores.workspaces], "readwrite", (tx, read, done) => {
         const store = tx.objectStore(draftStores.receipts);
         read(store.getAll(), (receipts: AgentReceipt[]) => {
           const rows: [string, AgentReceipt][] = receipts.filter((receipt) => receipt.workspace === key).map((receipt) => [recordKey(scope, receipt.operationId), receipt]);
+          const byKey = new Map(rows);
           const removed = retention(rows, time);
-          for (const key of removed) store.delete(key);
+          for (const key of removed) { store.delete(key); retire(tx.objectStore(draftStores.workspaces), byKey.get(key)!.operationId); }
           done(removed.length);
         });
       });
