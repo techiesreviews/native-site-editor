@@ -2,7 +2,7 @@ import type { AgentHub } from "./agent-context";
 import { clearHub, hubOperation, hubView, readDraft, storeDrafts } from "./agent-store";
 import { DurableObject } from "cloudflare:workers";
 import { handle, type Env, type StoredValue } from "./app";
-import { admitRegistration, isBudgetKey, pruneRegistration, REGISTRATION_ROUTE } from "./oauth-registration";
+import { admitRegistration, finalizeRegistration, isBudgetKey, pruneRegistration, releaseRegistration, REGISTRATION_ROUTE } from "./oauth-registration";
 import type { RepositoryCache } from "./github";
 import type { GitHubAppConfig } from "./owner-setup";
 
@@ -34,11 +34,19 @@ export class SessionStore extends DurableObject {
     // (worker/oauth-registration.ts). One transaction keeps counts exact.
     if (url.pathname === REGISTRATION_ROUTE) {
       if (request.method !== "POST") return new Response(null, { status: 405, headers: { Allow: "POST" } });
-      const { ipHash } = (await request.json()) as { ipHash: unknown };
-      if (!isBudgetKey(ipHash)) return new Response(null, { status: 400 });
-      return this.ctx.blockConcurrencyWhile(async () =>
-        Response.json(await admitRegistration(storage, ipHash, Date.now(), (at) => storage.setAlarm(at))),
-      );
+      const { action, ipHash, clientId, expiresAt } = (await request.json()) as {
+        action?: unknown; ipHash?: unknown; clientId?: unknown; expiresAt?: unknown;
+      };
+      if (typeof clientId !== "string" || !/^mcp_[a-f0-9]{32}$/.test(clientId)) return new Response(null, { status: 400 });
+      return this.ctx.blockConcurrencyWhile(async () => {
+        if (action === "finalize" || action === "release") {
+          await (action === "finalize" ? finalizeRegistration : releaseRegistration)(storage, clientId);
+          return new Response(null, { status: 204 });
+        }
+        if (action !== undefined || !isBudgetKey(ipHash) || typeof expiresAt !== "number" || !Number.isSafeInteger(expiresAt) || expiresAt <= Date.now())
+          return new Response(null, { status: 400 });
+        return Response.json(await admitRegistration(storage, ipHash, Date.now(), (at) => storage.setAlarm(at), { clientId, expiresAt }));
+      });
     }
     if (url.pathname === "/repository-cache") {
       if (!["PUT", "DELETE"].includes(request.method)) return new Response(null, { status: 405, headers: { Allow: "PUT, DELETE" } });
@@ -129,10 +137,18 @@ export class SessionStore extends DurableObject {
     return url.pathname === "/consume" ? this.ctx.blockConcurrencyWhile(read) : read();
   }
   async alarm() {
-    await clearRepositoryCache(this.ctx.storage);
-    await this.ctx.storage.delete("repositoryCacheGeneration");
-    await clearHub(this.ctx.storage);
-    await pruneRegistration(this.ctx.storage, Date.now(), (at) => this.ctx.storage.setAlarm(at));
+    await this.ctx.blockConcurrencyWhile(async () => {
+      const client = await this.ctx.storage.get<StoredValue>("session");
+      if (client?.kind === "oauth-client") {
+        if (client.expiresAt <= Date.now()) await this.ctx.storage.delete(["session", "repositoryCacheGeneration"]);
+        else await this.ctx.storage.setAlarm(client.expiresAt);
+        return;
+      }
+      await clearRepositoryCache(this.ctx.storage);
+      await this.ctx.storage.delete("repositoryCacheGeneration");
+      await clearHub(this.ctx.storage);
+      await pruneRegistration(this.ctx.storage, Date.now(), (at) => this.ctx.storage.setAlarm(at));
+    });
   }
 }
 
