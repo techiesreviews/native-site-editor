@@ -69,10 +69,14 @@ export function createAgentRecovery(options: RecoveryOptions) {
   let abandon!: () => void;
   // Disposal lets go of the lock at once: a read still running is fenced and decides nothing.
   const abandoned = new Promise<{ retryAt?: number }>((resolve) => { abandon = () => resolve({}); });
-  const read = () => readRecord(options.storage, key);
+  // The record this tab could not store (browser storage full): it still pauses this tab.
+  let unsaved: string | undefined;
+  const read = () => readRecord(unsaved === undefined ? options.storage : { getItem: () => unsaved! }, key);
   function notify() { for (const listener of listeners) listener(); }
   function write(record: RecordState) {
-    options.storage.setItem(key, JSON.stringify(record));
+    const text = JSON.stringify(record);
+    try { options.storage.setItem(key, text); unsaved = undefined; }
+    catch { unsaved = text; }
     options.channel.post();
     notify();
   }
