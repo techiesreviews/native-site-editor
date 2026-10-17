@@ -2,6 +2,8 @@
 
 Language for a visual editor of native websites and their external coding-agent workflows.
 
+For sign-in and agent-work lifetime terms, see [GLOSSARY.md](GLOSSARY.md).
+
 ## Language
 
 **Native site**:

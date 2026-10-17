@@ -1,0 +1,34 @@
+# Durable Object reduction: implementation handoff
+
+Status: planning complete; application implementation and deployment pending a subsequent user request. The [map](map.md) indexes the accepted decisions. Ticket answers are the source of truth; historical comments include superseded proposals.
+
+## Intended result
+
+Use browser drafts as the source for agent work, with browser-local tools and an explicit remote connection. Eliminate background remote discovery and storage polling. Keep temporary relay payloads out of Durable Object storage, bound retained metadata and caches, and make temporary agent data eligible for cleanup five minutes after detected loss of the last editor connection. Preserve browser drafts, GitHub sign-in and App configuration.
+
+The reported historical daily exhaustion is not diagnosed conclusively. [Captured analytics](research/quota-baseline.md) approached the conditional Free request allowance, but the actual plan, incident dimension and aggregate stored-byte total remain unverified. Implementation must measure improvements across requests, rows, duration and bytes without promising an unsupported percentage.
+
+## Build order
+
+1. **Establish counters and quiet defaults.** Reproduce the baseline scenarios using fake transport/storage counters. Make remote mode opt-in without startup/menu discovery; add distinct quota-pause and bounded transient-reconnect handling. Treat GitHub/editor/auth traffic separately from agent control traffic. These changes can be verified before removing the old relay.
+2. **Establish browser correctness.** Add atomic draft/receipt commits, scoped command identifiers and revision checks, bounded local receipt/history retention, recovery/export and commit-time tab-ownership fencing. Verify failures, reload, old-tab resume, cancellation and duplicate delivery before relying on the browser as the only agent content copy. Follow [browser recovery](tickets/06-define-browser-recovery.md).
+3. **Replace polling with bounded live communication.** Route account/repository/branch-pinned remote commands to the explicit receiving tab. Use hibernation-compatible editor connections, correlated results and bounded pending work. Implement quiet waiting plus explicit ten-minute Watch. Propagate the negotiated modern/legacy MCP cancellation semantics; no offline mailbox or blind mutation replay. Follow [connection ownership](tickets/04-choose-connection-and-tab-ownership.md) and [traffic budgets](tickets/07-set-request-budgets-and-rollout.md).
+4. **Cut over storage and lifecycle.** Disable old draft/context/queue writers and reject obsolete endpoints before DO work. Enforce the accepted metadata, registration, authorization, relay and cache caps. Keep authentication-only reads free of repository-cache reconstruction. Combine alarm purposes without deleting sign-in/configuration; fence reconnect/cleanup races and retain absolute expiry as a backstop. Reconnect within grace revalidates the workspace; cleanup removes grants and requires new authorization. Follow [storage budgets](tickets/05-set-storage-budgets-and-lifetimes.md) and [disconnect behavior](tickets/01-define-disconnect-and-reconnect.md).
+5. **Verify, then migrate old objects gradually.** Run local correctness/resource checks and preview transport/hibernation checks. Check actual namespace-list permissions; inventory with sanitized classification and a resumable restricted manifest. Confirm browser recovery before deleting live-workspace mirrors, canary deletion accounting, then apply the accepted migration budgets. Unknown records or unbounded deletion cost are deferred and reported, not erased speculatively. Existing explicit sign-out/revocation still ends access immediately even if physical deletion is delayed.
+6. **Roll out the primary mitigation when authorized.** Use the accepted independent controls and rollback rules. Compare completed, comparable windows; distinguish normal operation, Watch, migration and stale-client Worker requests. Preserve drafts/manual editing on failures, without restoring old server mirrors or polling.
+7. **Add modern registration separately.** Implement the full CIMD resolver and reviewed metadata URL/callback handling, not just discovery advertisement. Verify Claude web/Desktop/Code and Codex plus documented compatibility paths before enabling. Preserve the fixed 180-day registration lifetime initially; do not adopt the superseded thirty-day proposal. Follow [registration rollout](tickets/09-choose-registration-rollout.md) and its [research](research/modern-registration.md).
+
+## Required evidence before release
+
+- Instrumented counts meet the accepted per-scenario budgets, including zero remote-off hub calls and zero obsolete storage polling/content mirrors. The proposed four-DO-call control-path target has explicit exclusions for initialization, data fetching, messages and lifecycle work; it is not a guarantee for an entire editing workflow.
+- Browser draft/receipt atomicity, stale revisions, ownership transfer, uncertain results, cancellation and local quota failures preserve work and never falsely acknowledge success or replay an unverifiable edit.
+- Visible/hidden idle, quiet connected idle, Watch, silent network loss, frozen/discarded tabs, deployment restart and modern/legacy clients behave as specified. Detecting disconnect and actual deletion are measured separately from five-minute cleanup eligibility.
+- Auth expiry, revocation, account/repository/branch isolation and private-cache access remain correct. Immutable clean source has only the accepted bounded memory cache; required draft baselines and uploads remain recoverable browser draft data.
+- Stored record classes and aggregate caps are inventoried. Legacy coverage and deletion accounting are verified before claiming complete cleanup or a storage bound includes all old records. The protected migration manifest contains no credentials or draft content and is removed after verification.
+- Rollback pauses affected remote work without restarting legacy polling/writers or losing browser drafts. Mixed old/new tabs cannot recreate deleted content; residual Worker requests from stale clients are attributed honestly.
+
+## Workspace and research preservation
+
+The checkout already contains unrelated modified/untracked icon, component, OAuth and WebMCP work. Recheck status and isolate any implementation before editing; do not revert, stage or commit that unrelated work as part of this handoff. This planning effort changed documentation only, and application tests have not been run for these decisions.
+
+Three research-only branches were pushed without PRs or merges: `research/durable-object-live-relay`, `research/durable-object-quota-baseline` and `research/durable-object-modern-registration`. Their reports are linked from the corresponding research tickets. Keep research evidence distinct from live client tests and deployed behavior.
