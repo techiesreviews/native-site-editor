@@ -9,7 +9,8 @@ import { fakeGitHub, githubState } from "../mcp-harness";
 
 export type Category = "auth" | "control" | "data" | "messages" | "lifecycle" | "migration";
 const categories: Category[] = ["auth", "control", "data", "messages", "lifecycle", "migration"];
-const counts = () => ({ calls: 0, keysRead: 0, keysWritten: 0, keysDeleted: 0, bytesWritten: 0, failedWrites: 0 });
+// `calls`: DO stub fetch invocations; `alarms`: alarm deliveries (not fetches).
+const counts = () => ({ calls: 0, alarms: 0, keysRead: 0, keysWritten: 0, keysDeleted: 0, bytesWritten: 0, failedWrites: 0 });
 type Operation = { category: Category; name: string; path: string; action?: string };
 const active = new AsyncLocalStorage<Operation>();
 const incoming = new AsyncLocalStorage<{ authHubPending: boolean }>();
@@ -210,7 +211,7 @@ async function loadWorker() {
 export async function startCountedWorker() {
   const runtime = await loadWorker();
   const counters = new UsageCounters(), clock = new FakeClock(counters), github = githubState();
-  const objects = new Map<string, { instance: Instance; storage: CountedStorage }>();
+  const objects = new Map<string, { instance: Instance; storage: CountedStorage; idle(): Promise<unknown> }>();
   function object(name: string) {
     let entry = objects.get(name);
     if (!entry) {
@@ -222,7 +223,8 @@ export async function startCountedWorker() {
         blocked = result.catch(() => undefined);
         return result;
       } };
-      entry = { storage, instance: new runtime.SessionStore(ctx, env) };
+      // Events (fetches, alarms) wait for an active block, as the runtime holds them.
+      entry = { storage, instance: new runtime.SessionStore(ctx, env), idle: () => blocked };
       objects.set(name, entry);
     }
     return entry;
@@ -246,7 +248,9 @@ export async function startCountedWorker() {
       const operation = { category, name, path: url.pathname + url.search, ...(action ? { action } : {}) };
       counters.byCategory[category].calls++;
       counters.log.push(operation);
-      return active.run(operation, () => object(name).instance.fetch(request));
+      const entry = object(name);
+      await entry.idle();
+      return active.run(operation, () => entry.instance.fetch(request));
     } }),
   } satisfies Env["SESSIONS"];
   const env: Env = { SESSIONS: namespace, ASSETS: { fetch: async () => new Response(null, { status: 404 }) },
@@ -265,8 +269,10 @@ export async function startCountedWorker() {
     async alarm(name: string) {
       const operation: Operation = { category: "lifecycle", name, path: "alarm" };
       counters.log.push(operation);
-      // Alarm delivery is not a stub fetch invocation.
-      return active.run(operation, () => object(name).instance.alarm());
+      counters.byCategory.lifecycle.alarms++;
+      const entry = object(name);
+      await entry.idle();
+      return active.run(operation, () => entry.instance.alarm());
     },
   };
 }
