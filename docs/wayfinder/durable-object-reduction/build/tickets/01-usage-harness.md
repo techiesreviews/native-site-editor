@@ -57,7 +57,7 @@ No difference from the expected numbers. The usage tests run in about 2 s.
 **Commits.** 5537ca2f (build, Sol), 34b9f18d (review fixes).
 
 **Tests.** Added `tests/agent-usage.test.ts` (8 tests). `npm run check` ok; `npm run lint` ok;
-`scripts/agents/unit.sh` pass 3995, fail 0 (before review fixes; targeted rerun after: 8/8);
+`scripts/agents/unit.sh` pass 3996, fail 0 (after review fixes);
 `RESULT: ok specs none affected`.
 
 **Review** (gpt-6.1-sol, effort medium, read-only; `RESULT: ok review` evidence
