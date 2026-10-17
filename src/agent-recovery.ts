@@ -20,7 +20,8 @@ interface RecoveryOptions {
   clearTimeout(timer: number): void;
   /** Runs `run` only while no other tab of the browser runs one; `undefined` when another does. */
   exclusive<T>(run: () => Promise<T>): Promise<T | undefined>;
-  reconnect(): Promise<void>;
+  /** Reads the hub; `current()` turns false once this read timed out or was overtaken, and then it applies nothing. */
+  reconnect(current: () => boolean): Promise<void>;
 }
 interface RecoveryState {
   mode: "ok" | "reconnecting" | "paused" | "quota";
@@ -116,7 +117,8 @@ export function createAgentRecovery(options: RecoveryOptions) {
         timer = options.setTimeout(() => { timer = undefined; notify(); schedule(); }, record.retryAt! - options.now());
       return;
     }
-    if (record.lease && !owns()) {
+    // Wait out another tab's live lease; an expired one (a crashed or frozen tab) is taken over below.
+    if (record.lease && record.lease.tab !== options.tabId && record.lease.until > options.now()) {
       timer = options.setTimeout(() => { timer = undefined; schedule(); }, Math.max(1, record.lease.until - options.now()));
       return;
     }
@@ -186,12 +188,13 @@ export function createAgentRecovery(options: RecoveryOptions) {
     write(record);
     try {
       // This callback reads the hub. It never repeats a failed mutation.
-      let limit: number | undefined;
+      let limit: number | undefined, over = false;
+      const current = () => !over && !disposed && generation === at;
       try {
-        await Promise.race([options.reconnect(), new Promise<never>((_, reject) => {
+        await Promise.race([options.reconnect(current), new Promise<never>((_, reject) => {
           limit = options.setTimeout(() => reject(new AgentFailureError({ kind: "transient" })), READ_LIMIT);
         })]);
-      } finally { options.clearTimeout(limit!); }
+      } finally { over = true; options.clearTimeout(limit!); }
       if (!disposed && generation === at && owns()) write({ attempts: [] });
     } catch (error) {
       if (disposed || generation !== at || !owns()) return {};
@@ -251,7 +254,7 @@ export function createAgentRecovery(options: RecoveryOptions) {
 }
 
 /** Storage events deliver changes only to other tabs. Local subscribers hear writes directly. */
-export function browserAgentRecovery(workspace: Workspace, tabId: string, reconnect: () => Promise<void>) {
+export function browserAgentRecovery(workspace: Workspace, tabId: string, reconnect: RecoveryOptions["reconnect"]) {
   const key = recoveryKey(workspace);
   return createAgentRecovery({
     workspace, tabId, reconnect, storage: localStorage,
