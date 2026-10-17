@@ -22,8 +22,8 @@ import "./agent-menu.css";
 // repository this tab shows (`consentGranted`). Until then the tab makes no
 // agent requests at all, an existing connection included, and the choice is
 // not remembered across reloads. Turn off (or Disconnect MCP) stops it again.
-// While on, this tab polls that hub: while a connection exists it reports its context (built only when
-// sent) and applies queued changes with `onCommand`, then reports the new
+// While on, this tab polls that hub: while a connection exists it reports
+// its context (built only when sent) and applies queued changes with `onCommand`, then reports the new
 // context before it acknowledges each change, so an agent reading after
 // "applied" sees it. The context lists the drafts by hash; their texts go
 // apart, only those the Worker says it lacks. Of several tabs, the one that reported last (a
@@ -398,6 +398,8 @@ export function createAgentMenu(options: {
       if (built) {
         const { missing } = await api("context", { tabId, context: built.context }, true);
         await sendTexts(Array.isArray(missing) ? missing : [], built.texts);
+        // Turned off while this share was on its way: withdraw it again.
+        if (!remote) return void (await api("pause", { tabId }).catch(() => undefined));
         hub.tabId = tabId;
         hub.updatedAt = Date.now();
         shared = true;
@@ -441,14 +443,16 @@ export function createAgentMenu(options: {
     polling = true;
     lastPoll = Date.now();
     try {
-      hub = await api("hub");
-      if (disposed) return;
+      const next: HubState = await api("hub");
+      // Turned off meanwhile: its answer is not applied.
+      if (disposed || !remote) return;
+      hub = next;
       await sync();
       paint();
       if (hub.tabId !== tabId) return;
       const repo = options.repository();
       for (const command of hub.commands) {
-        if (command.state !== "pending" || disposed) continue;
+        if (command.state !== "pending" || disposed || !remote) continue;
         if (command.claimedBy && command.claimedBy !== tabId) continue;
         let ack = applied.get(command.id);
         if (!ack) {
