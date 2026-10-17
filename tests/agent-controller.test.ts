@@ -43,7 +43,7 @@ function fixture() {
       root: { remove() { calls.push("remove"); } },
       connected: () => true,
       changed() { calls.push("changed"); },
-      consentGranted(at: number) { calls.push(`consent:${at}`); },
+      consentGranted(approval: { at: number }) { calls.push(`consent:${approval.at}`); },
       destroy() { calls.push("destroy"); },
       async ask(text: string) { calls.push(`ask:${text}`); },
       async answer(id: string, text: string) { calls.push(`answer:${id}:${text}`); },
@@ -59,11 +59,16 @@ function fixture() {
     onError: error => { errors.push(error); },
     environment: { window: windowEvents },
   });
-  const consent = (key = "native-site-editor:agent-connected", newValue = "1700") =>
+  const consent = (key = "native-site-editor:agent-connected", newValue = JSON.stringify({ at: 1700, repo: "lex/site", branch: "main", approval: "approval-1" })) =>
     windowEvents.dispatchEvent(Object.assign(new Event("storage"), { key, newValue }));
   async function mount() { const pending = controller.ensure(); loads.at(-1)!.resolve({ createAgentMenu: createMenu }); await pending; }
   const cleanup = () => { controller.destroy(); appStore.dispose(); };
-  return { controller, appStore, state, loads, menus, menuOptions, attached, windowEvents, errors, consent, mount, createMenu, cleanup };
+  /** The tab shows `fullName` on `branch`, as the approval names it. */
+  function show(fullName = "lex/site", branch = "main") {
+    appStore.repository.value = { id: 1, name: "site", full_name: fullName, default_branch: "main", private: false, owner: { login: "lex", type: "User" } };
+    appStore.snapshot.value = { branch, commit: "head", entries: [] };
+  }
+  return { controller, appStore, state, loads, menus, menuOptions, attached, windowEvents, errors, consent, mount, createMenu, show, cleanup };
 }
 
 test("lazy mount deduplicates loads; destroyed or replaced hosts cannot mount their pending result", async () => {
@@ -123,6 +128,7 @@ test("start only listens for consent: no hub probe, timer or mount until the use
 
 test("consent lazy-loads once and notifies only the same account and host", async () => {
   const f = fixture();
+  f.show();
   f.controller.start();
   f.consent();
   assert.equal(f.loads.length, 1);
@@ -133,7 +139,7 @@ test("consent lazy-loads once and notifies only the same account and host", asyn
   f.consent();
   f.loads[1].resolve({ createAgentMenu: f.createMenu });
   await settle();
-  // The approval's time goes to the menu, which binds it to this tab's repository.
+  // The approval goes to the menu, which matches this tab's repository and branch.
   assert.deepEqual(f.menus[0].calls, ["consent:1700"]);
   f.consent();
   assert.deepEqual(f.menus[0].calls, ["consent:1700"]); // Mounted menu owns subsequent consent events.
@@ -168,12 +174,39 @@ test("the mounted menu reads the current repository signals and refuses a replac
   // Access the shared store supplied to the controller, not a second repository copy.
   f.appStore.repository.value = appRepository;
   f.appStore.snapshot.value = { branch: "main", commit: "head", entries: [] };
-  assert.deepEqual(repository(), { id: 1, fullName: "lex/site" });
+  assert.deepEqual(repository(), { id: 1, fullName: "lex/site", branch: "main" });
   f.appStore.reset({ ...appRepository, id: 2, full_name: "lex/second" });
   assert.equal(repository(), undefined);
   f.appStore.snapshot.value = { branch: "main", commit: "next", entries: [] };
-  assert.deepEqual(repository(), { id: 2, fullName: "lex/second" });
+  assert.deepEqual(repository(), { id: 2, fullName: "lex/second", branch: "main" });
+  f.appStore.snapshot.value = { branch: "preview", commit: "next", entries: [] };
+  assert.deepEqual(repository(), { id: 2, fullName: "lex/second", branch: "preview" });
   f.state.account = "other";
   assert.equal(repository(), undefined);
+  f.cleanup();
+});
+
+test("old numeric and malformed announcements do not mount a menu", async () => {
+  const f = fixture();
+  f.controller.start();
+  for (const value of ["1700", "not-json", "null"]) f.consent("native-site-editor:agent-connected", value);
+  await settle();
+  assert.equal(f.loads.length, 0);
+  f.cleanup();
+});
+
+test("an approval for another repository or branch does not mount a menu", async () => {
+  const f = fixture();
+  f.controller.start();
+  f.consent();
+  f.show("lex/other", "main");
+  f.consent();
+  f.show("lex/site", "preview");
+  f.consent();
+  await settle();
+  assert.equal(f.loads.length, 0);
+  f.show();
+  f.consent();
+  assert.equal(f.loads.length, 1);
   f.cleanup();
 });

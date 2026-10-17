@@ -57,6 +57,7 @@ const command = (extra: Partial<AgentCommand>): AgentCommand => ({
   commit: "c".repeat(40),
   content: "",
   grantId: "g",
+  generation: 1,
   repoId: 1,
   state: "pending",
   createdAt: 1,
@@ -85,7 +86,7 @@ test("media records and their containing folder are protected however spelled; o
 
 test("the hub and editor refuse direct media record changes before touching drafts, while opening is allowed", async () => {
   const hub = (): AgentHub => ({
-    kind: "agent-hub", login: "lex", expiresAt: Date.now() + 60_000, grants: [],
+    kind: "agent-hub", login: "lex", expiresAt: Date.now() + 60_000, grants: [{ id: "g", repoId: 1, repo: "lex/site", branch: "main", generation: 1, via: "token", createdAt: 1 }],
     updatedAt: Date.now(),
     context: { repository: { id: 1, fullName: "lex/site" }, branch: "main", commit: "c".repeat(40), file: null, drafts: [] },
   });
@@ -118,7 +119,7 @@ test("the hub refuses a queued change that reaches the workflows as a path or a 
     kind: "agent-hub" as const,
     login: "lex",
     expiresAt: Date.now() + 60_000,
-    grants: [],
+    grants: [{ id: "g", repoId: 1, repo: "lex/site", branch: "main", generation: 1, via: "token", createdAt: 1 }],
     tabId: "tab-test-0001",
     updatedAt: Date.now(),
     context: { repository: { id: 1 }, branch: "main", commit: "c".repeat(40) },

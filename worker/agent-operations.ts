@@ -9,6 +9,21 @@ export const contextMaxAge = 120_000;
 const tabId = (value: unknown) =>
   typeof value === "string" && /^[\w-]{8,64}$/.test(value) ? value : undefined;
 
+const staleConnection = "The connection moved to another workspace or was rebound or removed. Connect the agent again and read the site again.";
+function staleGrant(hub: AgentHub, command: AgentCommand) {
+  return !hub.grants.some((grant) => grant.id === command.grantId && grant.repoId === command.repoId &&
+    grant.branch === command.branch && grant.generation === command.generation && typeof grant.branch === "string" &&
+    Number.isInteger(grant.generation));
+}
+function failPending(hub: AgentHub, id: string) {
+  for (const command of hub.commands ?? []) {
+    if (command.grantId === id && command.state === "pending" && staleGrant(hub, command)) {
+      command.state = "failed";
+      command.message = staleConnection;
+    }
+  }
+}
+
 /** A new hub for `add-grant` when the session has none yet. */
 export function newHub(action: any): AgentHub | undefined {
   if (action?.type !== "add-grant") return undefined;
@@ -30,11 +45,17 @@ export function agentOperation(hub: AgentHub, action: any) {
       if (!grant.client && typeof action.client === "string" && action.client)
         grant.client = action.client.slice(0, 100);
     }
+  } else if (action.type === "rebind-grant") {
+    const grant = hub.grants.find((item) => item.id === action.id);
+    if (!grant || (grant.generation ?? 1) !== action.previous || action.generation !== action.previous + 1)
+      throw new HttpError(409, staleConnection);
+    Object.assign(grant, { repoId: action.repoId, repo: action.repo, branch: action.branch, generation: action.generation });
+    // An approval names its original workspace; it cannot opt another tab in after a rebind.
+    delete grant.approval;
+    failPending(hub, action.id);
   } else if (action.type === "remove-grant") {
     hub.grants = hub.grants.filter((item) => item.id !== action.id);
-    hub.commands = hub.commands?.filter(
-      (item) => item.grantId !== action.id || item.state !== "pending",
-    );
+    failPending(hub, action.id);
   } else if (action.type === "pause") {
     if (!hub.tabId || hub.tabId === tabId(action.tabId)) {
       hub.context = undefined;
@@ -49,6 +70,7 @@ export function agentOperation(hub: AgentHub, action: any) {
     hub.tabId = tab;
   } else if (action.type === "queue") {
     const command = action.command as AgentCommand;
+    if (staleGrant(hub, command)) throw new HttpError(409, staleConnection);
     // Whatever the tool, an agent's change never reaches the workflows.
     if ([command.path, ...(command.operation === "change_collection" ? [] : [command.args?.to]), command.args?.parent, command.args?.file, command.args?.with, command.args?.page, ...command.args?.files ?? []].some((path) => typeof path === "string" && touchesGithubConfig(path)))
       throw new HttpError(403, GITHUB_CONFIG_REFUSED);
@@ -73,7 +95,9 @@ export function agentOperation(hub: AgentHub, action: any) {
         existing.expectedHash !== command.expectedHash ||
         JSON.stringify(existing.args ?? {}) !== JSON.stringify(command.args ?? {}) ||
         existing.branch !== command.branch ||
-        existing.commit !== command.commit
+        existing.commit !== command.commit ||
+        existing.generation !== command.generation ||
+        existing.repoId !== command.repoId
       )
         throw new HttpError(
           409,
@@ -143,6 +167,10 @@ export function agentOperation(hub: AgentHub, action: any) {
     const tab = tabId(action.tabId);
     const command = hub.commands?.find((item) => item.id === action.id && item.grantId === action.grantId);
     if (!command || !tab) throw new HttpError(404, "Change not found.");
+    if (staleGrant(hub, command)) {
+      failPending(hub, command.grantId!);
+      throw new HttpError(409, staleConnection);
+    }
     if (command.state !== "pending" || (command.claimedBy && command.claimedBy !== tab))
       throw new HttpError(409, "Another editor tab is applying this change.");
     command.claimedBy = tab;

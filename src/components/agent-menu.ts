@@ -14,8 +14,7 @@ import "./agent-menu.css";
 //
 // Agents connect to `/mcp` with OAuth (a custom connector in claude.ai or
 // Claude Desktop) or with a token in the prompt copied here. Either way the
-// connection belongs to this editor session and works on whichever
-// repository the sharing tab shows; the Worker keeps the session's
+// connection belongs to this editor session, repository and branch; the Worker keeps the session's
 // connections, the context the sharing tab last reported, and the changes
 // agents queued in one hub (worker/agent-context.ts).
 //
@@ -51,6 +50,8 @@ interface HubGrant {
   id: string;
   repoId: number;
   repo: string;
+  branch: string;
+  approval?: string;
   via: "token" | "oauth";
   client?: string;
   createdAt: number;
@@ -64,6 +65,13 @@ interface HubState {
   requests?: (PinRequest & { repoId: number })[];
 }
 
+export interface AgentApproval {
+  at: number;
+  repo: string;
+  branch: string;
+  approval: string;
+}
+
 export const AGENT_CONNECTED_KEY = "native-site-editor:agent-connected";
 const QUOTA_PAUSE = "Remote agents are paused: the editor's service has used up today's allowance. Your drafts and sign-in are safe, and you can keep editing.";
 const FAST = 2000;
@@ -72,7 +80,7 @@ const SLOW = 30_000;
 export function createAgentMenu(options: {
   account: string;
   /** The open repository, for the panel; nothing before one is open. */
-  repository: () => { id: number; fullName: string } | undefined;
+  repository: () => { id: number; fullName: string; branch: string } | undefined;
   /** The context to share and its drafts' texts, built when it is sent. */
   context: () => Promise<SharedContext | undefined>;
   onCommand: (command: AgentCommand) => Promise<AgentCommandOutcome | void>;
@@ -229,8 +237,11 @@ export function createAgentMenu(options: {
     }
     paint();
   }
-  // A connection follows the open repository, so every one of the session's counts.
-  const liveGrants = () => (options.repository() ? hub.grants : []);
+  // Only connections pinned to this tab's repository and branch count.
+  const liveGrants = () => {
+    const repo = options.repository();
+    return repo ? hub.grants.filter((grant) => grant.repoId === repo.id && grant.branch === repo.branch) : [];
+  };
   const usedGrants = () => liveGrants().filter((grant) => grant.via === "oauth" || grant.usedAt);
   /** The token this tab made, while no agent has used it yet. */
   const waiting = () => Boolean(token && tokenId && liveGrants().some((grant) => grant.id === tokenId && !grant.usedAt));
@@ -416,7 +427,7 @@ export function createAgentMenu(options: {
       // Tokens made earlier that no agent used cannot be copied again.
       for (const grant of liveGrants())
         if (grant.via === "token" && !grant.usedAt) await api("revoke", { id: grant.id }).catch(() => undefined);
-      const result = await api("connect", { repo: repo.fullName, repoId: repo.id });
+      const result = await api("connect", { repo: repo.fullName, repoId: repo.id, branch: repo.branch });
       if (disposed) return;
       token = result.token;
       tokenId = result.id;
@@ -439,7 +450,7 @@ export function createAgentMenu(options: {
     changing = true;
     paint();
     try {
-      await api("revoke", { all: true });
+      for (const grant of liveGrants()) await api("revoke", { id: grant.id });
       token = tokenId = undefined;
       changing = false;
       turnOff();
@@ -571,8 +582,8 @@ export function createAgentMenu(options: {
             continue;
           }
           try {
-            if (!repo || command.repoId !== undefined && command.repoId !== repo.id)
-              throw new Error("The editor switched to another repository. Read the site again.");
+            if (!repo || command.repoId !== undefined && command.repoId !== repo.id || command.branch !== repo.branch)
+              throw new Error("The editor switched to another repository or branch. Read the site again.");
             if (Date.now() - command.createdAt > 120_000)
               throw new Error("This change expired before the editor received it.");
             const outcome = (await options.onCommand(command)) || {};
@@ -606,17 +617,22 @@ export function createAgentMenu(options: {
       void poll(true);
     }
   }
-  // A connection approved in this browser at `at` turns remote agents on
-  // here only once the Worker has its new OAuth grant for this tab's
-  // repository: an older grant, or one for another repository, never does.
+  // A connection approved in this browser turns remote agents on only for
+  // the exact approval, repository and branch named by the consent page.
   // The grant arrives after the consent page's announcement, so check a few times.
-  function consentGranted(at: number) {
+  function matches(approval: AgentApproval) {
+    const repo = options.repository();
+    return approval && typeof approval.approval === "string" && approval.approval.length > 0 &&
+      repo?.fullName === approval.repo && repo.branch === approval.branch;
+  }
+  function consentGranted(approval: AgentApproval) {
+    if (!matches(approval)) return;
     if (recovery && !recovery.allowAutomatic()) return;
     for (const check of consentChecks) clearTimeout(check);
-    consentChecks = [1000, 4000, 10_000].map((delay) => setTimeout(() => void checkConsent(at), delay));
+    consentChecks = [1000, 4000, 10_000].map((delay) => setTimeout(() => void checkConsent(approval), delay));
   }
-  async function checkConsent(at: number) {
-    if (disposed) return;
+  async function checkConsent(approval: AgentApproval) {
+    if (disposed || !matches(approval)) return;
     if (remote) return void poll(true);
     const repo = options.repository();
     if (!repo || changing) return;
@@ -637,17 +653,18 @@ export function createAgentMenu(options: {
       return undefined;
     });
     // Turned on, or on and off again, meanwhile: this answer decides nothing.
-    if (disposed || remote || activation !== since || options.repository()?.id !== repo.id) return;
-    // The grant is made after the approval: the page's clock stamps one, the Worker's the
-    // other, so allow ten seconds of skew. An earlier grant (one turned off here) never counts.
-    if (!found?.grants?.some((grant) => grant.via === "oauth" && grant.repoId === repo.id && !declined.has(grant.id) && grant.createdAt >= at - 10_000)) return;
+    if (disposed || remote || activation !== since || options.repository()?.id !== repo.id || !matches(approval)) return;
+    // Match the exact approval, even when token exchange is delayed.
+    if (!found?.grants?.some((grant) => grant.via === "oauth" && grant.repoId === repo.id && grant.repo === approval.repo && grant.branch === approval.branch && grant.approval === approval.approval && !declined.has(grant.id))) return;
     for (const check of consentChecks) clearTimeout(check);
     consentChecks = [];
     startRemote();
     await poll(true);
   }
   const onStorage = (event: StorageEvent) => {
-    if (event.key === AGENT_CONNECTED_KEY) consentGranted(Number(event.newValue) || Date.now());
+    if (event.key === AGENT_CONNECTED_KEY) {
+      try { consentGranted(JSON.parse(event.newValue ?? "null")); } catch { /* Old or invalid announcements grant nothing. */ }
+    }
   };
   window.addEventListener("storage", onStorage);
   paint();

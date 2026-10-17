@@ -10,12 +10,12 @@
 // The authorize step is the editor's own GitHub sign-in: a signed-in session
 // (or a sign-in that returns here) picks a starting repository on a consent page,
 // and the token issued is the same kind of connection "Connect with MCP"
-// copies: one editor session, following the repository its tab shows, stored only as a hash,
+// copies: one editor session, pinned to the chosen repository and branch, stored only as a hash,
 // revoked with the session or from the editor. There are no refresh tokens:
 // a connection lasts as long as the editor session (up to eight hours), then
 // the client asks the user to connect again. Everything is kept in the
 // existing SessionStore Durable Object; nothing else is needed.
-import { createGrant } from "./agent-context";
+import { createGrant, validAgentBranch } from "./agent-context";
 import type { Env, StoredSession } from "./app";
 import { GitHub, HttpError } from "./github";
 import { requestJson, requestText } from "./http";
@@ -42,6 +42,7 @@ interface OAuthRequest {
   clientName: string;
   redirectUri: string;
   codeChallenge: string;
+  approval: string;
   state?: string;
   expiresAt: number;
 }
@@ -55,6 +56,8 @@ interface OAuthCode {
   codeChallenge: string;
   repoId: number;
   repo: string;
+  branch: string;
+  approval: string;
   expiresAt: number;
 }
 export type OAuthRecord = OAuthClient | OAuthRequest | OAuthCode;
@@ -327,7 +330,7 @@ async function authorize(request: Request, env: Env, url: URL, deps: OAuthDeps) 
     login.searchParams.set("return", `${url.pathname}${url.search}`);
     return new Response(null, { status: 302, headers: { Location: login.pathname + login.search } });
   }
-  let repositories: { id: number; full_name: string; private: boolean }[];
+  let repositories: { id: number; full_name: string; private: boolean; default_branch: string }[];
   try {
     repositories = await new GitHub(user.token, deps.fetcher).repositories(user.login);
   } catch (error) {
@@ -336,6 +339,7 @@ async function authorize(request: Request, env: Env, url: URL, deps: OAuthDeps) 
   const nonce = randomHex();
   const pending: OAuthRequest = {
     kind: "oauth-request",
+    approval: randomHex(),
     sessionId: user.id,
     login: user.login,
     clientId,
@@ -350,17 +354,18 @@ async function authorize(request: Request, env: Env, url: URL, deps: OAuthDeps) 
     .slice(0, 200)
     .map(
       (repo) =>
-        `<label class="repo"><input type="radio" name="repo" value="${escapeHtml(repo.full_name)}" required${repositories.length === 1 ? " checked" : ""}> ${escapeHtml(repo.full_name)}${repo.private ? ' <span class="muted">private</span>' : ""}</label>`,
+        `<label class="repo"><input type="radio" name="repo" value="${escapeHtml(repo.full_name)}" data-branch="${escapeHtml(repo.default_branch)}" required${repositories.length === 1 ? " checked" : ""}> ${escapeHtml(repo.full_name)}${repo.private ? ' <span class="muted">private</span>' : ""}</label>`,
     )
     .join("\n");
   const where = new URL(redirectUri);
   const body = `
 <h1>Connect ${escapeHtml(client.name)} to your site</h1>
 <p><strong>${escapeHtml(client.name)}</strong> (returning to <code>${escapeHtml(where.host)}</code>) asks to work on one of your sites as <strong>${escapeHtml(user.login)}</strong>.</p>
-<form method="post" action="/auth/mcp/authorize" class="panel" id="consent">
+<form method="post" action="/auth/mcp/authorize" class="panel" id="consent" data-approval="${pending.approval}">
   <input type="hidden" name="request" value="${nonce}">
   ${repositories.length ? `<fieldset><legend>Repository</legend>${choices}</fieldset>` : `<p>You have no repository in the editor yet, so there is no site to connect to. <a href="/" target="_blank" rel="noopener">Open the editor</a> and use <strong>Get started</strong> to create a repository (or give the editor access to one you have), then connect again.</p>`}
-  <p class="muted">It works on the repository your editor tab shows, starting with the one chosen here. It can read that repository's files and your unsaved changes in the editor, and make changes that appear in your open editor tab as unsaved drafts. It cannot publish; you review and publish. The connection lasts until you sign out of the editor (at most eight hours) or choose Disconnect MCP.</p>
+  ${repositories.length ? `<label>Branch <input name="branch" required maxlength="255" value="${repositories.length === 1 ? escapeHtml(repositories[0].default_branch) : ""}"></label>` : ""}
+  <p class="muted">It works on the chosen repository and branch only. Switching the editor tab to another site or branch does not move this connection; connect again for another one. It can read that repository's files and your unsaved changes in the editor, and make changes that appear in your open editor tab as unsaved drafts. It cannot publish; you review and publish. The connection lasts until you sign out of the editor (at most eight hours) or choose Disconnect MCP.</p>
   <p class="actions">
     ${repositories.length ? `<button name="decision" value="allow" class="primary">Allow</button>` : ""}
     <button name="decision" value="deny" formnovalidate>Cancel</button>
@@ -397,6 +402,9 @@ async function consent(request: Request, env: Env, url: URL, deps: OAuthDeps) {
     return errorPage(deps, "Consent expired", "This consent page expired or belongs to another sign-in. Start connecting again from the app.", 403);
   if (form.get("decision") !== "allow")
     return back(pending.redirectUri, { error: "access_denied", error_description: "The user cancelled.", state: pending.state }, url.origin);
+  const branches = form.getAll("branch"), repositories = form.getAll("repo");
+  if (repositories.length !== 1 || !repositories[0] || branches.length !== 1 || !validAgentBranch(branches[0]))
+    return errorPage(deps, "Choose a site and branch", "Choose exactly one repository and one valid branch for this connection.");
   let repo;
   try {
     repo = await new GitHub(user.token, deps.fetcher).authorizeRepository(user.login, form.get("repo") ?? "");
@@ -414,6 +422,8 @@ async function consent(request: Request, env: Env, url: URL, deps: OAuthDeps) {
     codeChallenge: pending.codeChallenge,
     repoId: repo.id,
     repo: repo.full_name,
+    branch: branches[0],
+    approval: pending.approval,
     expiresAt: Date.now() + CODE_LIFETIME,
   };
   await record(env, `oauth-code:${hex(await sha256(code))}`, "PUT", grant);
@@ -444,7 +454,7 @@ async function token(request: Request, env: Env) {
   if (!/^[a-f0-9]{64}$/.test(code)) return oauthError("invalid_grant", "The authorization code is invalid.");
   if (!/^[A-Za-z0-9._~-]{43,128}$/.test(verifier)) return oauthError("invalid_grant", "A PKCE code_verifier is required.");
   const grant = await load<OAuthCode>(env, `oauth-code:${hex(await sha256(code))}`, "oauth-code", true);
-  if (!grant) return oauthError("invalid_grant", "The authorization code expired or was already used.");
+  if (!grant || !validAgentBranch(grant.branch) || !grant.approval) return oauthError("invalid_grant", "The authorization code expired or was already used. Connect again.");
   if (form.get("client_id") !== grant.clientId) return oauthError("invalid_grant", "The code was issued to another client.");
   if ((form.get("redirect_uri") ?? grant.redirectUri) !== grant.redirectUri)
     return oauthError("invalid_grant", "redirect_uri does not match the authorization request.");
@@ -461,6 +471,8 @@ async function token(request: Request, env: Env) {
     login: grant.login,
     repoId: grant.repoId,
     repo: grant.repo,
+    branch: grant.branch,
+    approval: grant.approval,
     expiresAt: session.expiresAt,
     via: "oauth",
     client: grant.clientName,
@@ -479,10 +491,16 @@ async function token(request: Request, env: Env) {
 
 // Tells an open editor tab in this browser that a connection is coming, so
 // it starts sharing its context without waiting for its next check.
-const consentScript = `document.getElementById("consent")?.addEventListener("submit", function (event) {
+const consentScript = `document.getElementById("consent")?.addEventListener("change", function (event) {
+  if (event.target.name === "repo") this.elements.branch.value = event.target.dataset.branch || "";
+});
+document.getElementById("consent")?.addEventListener("submit", function (event) {
   var submitter = event.submitter;
   if (submitter && submitter.value === "allow") {
-    try { localStorage.setItem("native-site-editor:agent-connected", String(Date.now())); } catch (error) {}
+    var repo = this.querySelector('input[name="repo"]:checked');
+    var branch = this.elements.branch.value;
+    if (!repo || !branch) return;
+    try { localStorage.setItem("native-site-editor:agent-connected", JSON.stringify({at: Date.now(), repo: repo.value, branch: branch, approval: this.dataset.approval})); } catch (error) {}
   }
 });
 `;

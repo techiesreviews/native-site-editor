@@ -51,14 +51,14 @@ test("once Connect turns remote agents on, a transient hub failure retries and r
 test("first OAuth storage event keeps the short retries while its grant arrives", async ({ page, baseURL }) => {
   let calls = 0;
   await page.route("**/api/agent/hub", async (route) => {
-    const grants = ++calls >= 3 ? [{ id: "oauth-restored", repoId: 501, repo: "native-demo-user/native-demo", via: "oauth", createdAt: Date.now() }] : [];
+    const grants = ++calls >= 3 ? [{ id: "oauth-restored", branch: "main", approval: "lazy-approval", repoId: 501, repo: "native-demo-user/native-demo", via: "oauth", createdAt: Date.now() }] : [];
     await route.fulfill({ json: { grants, tabId: null, updatedAt: null, commands: [], requests: [] } });
   });
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html", { timeout: 30_000 });
   expect(calls, "startup makes no hub call").toBe(0);
   // Approving the connection turns remote agents on in the tab showing its repository.
-  await page.evaluate(() => window.dispatchEvent(new StorageEvent("storage", { key: "native-site-editor:agent-connected", newValue: String(Date.now()) })));
+  await page.evaluate(() => window.dispatchEvent(new StorageEvent("storage", { key: "native-site-editor:agent-connected", newValue: JSON.stringify({ at: Date.now(), repo: "native-demo-user/native-demo", branch: "main", approval: "lazy-approval" }) })));
   await expect(page.locator(".agent-menu__action")).toContainText("Disconnect MCP", { timeout: 15_000 });
   expect(calls).toBeGreaterThanOrEqual(3);
 });

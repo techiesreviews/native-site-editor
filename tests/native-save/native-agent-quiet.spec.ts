@@ -36,7 +36,7 @@ test("remote agents off: startup, the agent menu and idle visible or hidden tabs
   const { token } = await page.evaluate(async () => {
     const response = await fetch("/api/agent/connect", {
       method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ repo: "native-demo-user/native-demo", repoId: 501 }),
+      body: JSON.stringify({ repo: "native-demo-user/native-demo", repoId: 501, branch: "main" }),
     });
     return response.json() as Promise<{ token: string }>;
   });
@@ -104,19 +104,20 @@ test("remote agents off: startup, the agent menu and idle visible or hidden tabs
   }
 });
 
-test("an approval for an older grant or another repository does not turn remote agents on", async ({ page, baseURL }) => {
+test("an approval with another approval id or another repository or branch does not turn remote agents on", async ({ page, baseURL }) => {
   let calls = 0;
   await page.route("**/api/agent/hub", async (route) => {
     calls++;
     await route.fulfill({ json: { grants: [
       // Made a minute before this approval (for example, then turned off here).
-      { id: "old", repoId: 501, repo: "native-demo-user/native-demo", via: "oauth", createdAt: Date.now() - 60_000, usedAt: Date.now() - 60_000 },
-      { id: "other", repoId: 999, repo: "native-demo-user/other", via: "oauth", createdAt: Date.now() + 60_000 },
+      { id: "old", repoId: 501, repo: "native-demo-user/native-demo", branch: "main", approval: "another-approval", via: "oauth", createdAt: Date.now() - 60_000, usedAt: Date.now() - 60_000 },
+      { id: "other", repoId: 999, repo: "native-demo-user/other", branch: "main", approval: "another-approval", via: "oauth", createdAt: Date.now() + 60_000 },
+      { id: "branch", repoId: 501, repo: "native-demo-user/native-demo", branch: "other", approval: "this-approval", via: "oauth", createdAt: Date.now() },
     ], tabId: null, updatedAt: null, commands: [], requests: [] } });
   });
   await page.clock.install();
   await open(page, baseURL);
-  await page.evaluate(() => window.dispatchEvent(new StorageEvent("storage", { key: "native-site-editor:agent-connected", newValue: String(Date.now()) })));
+  await page.evaluate(() => window.dispatchEvent(new StorageEvent("storage", { key: "native-site-editor:agent-connected", newValue: JSON.stringify({ at: Date.now(), repo: "native-demo-user/native-demo", branch: "main", approval: "this-approval" }) })));
   // The approval's three checks, then nothing more.
   await expect.poll(async () => { await page.clock.runFor(1000); return calls; }, { timeout: 20_000 }).toBe(3);
   await page.clock.runFor(65_000);
@@ -124,4 +125,47 @@ test("an approval for an older grant or another repository does not turn remote 
   await page.locator(".repository-menu__trigger").click();
   await expect(page.locator(".agent-menu__action")).toHaveText("Connect with MCP");
   await expect(page.locator(".agent-menu__hint")).toContainText("Remote agents are off in this tab.");
+});
+
+for (const receiver of [{ repo: "native-demo-user/other", branch: "main" }, { repo: "native-demo-user/native-demo", branch: "other" }]) {
+  test(`approval for ${receiver.repo} on ${receiver.branch} makes zero hub requests in a different tab`, async ({ page, baseURL }) => {
+    await page.clock.install();
+    await open(page, baseURL);
+    // Mount first to exercise the lazy menu's own storage listener too.
+    await page.locator(".repository-menu__trigger").click();
+    const requests = agentRequests(page);
+    await page.evaluate((receiver) => window.dispatchEvent(new StorageEvent("storage", {
+      key: "native-site-editor:agent-connected",
+      newValue: JSON.stringify({ at: Date.now(), ...receiver, approval: "other-tab" }),
+    })), receiver);
+    await page.clock.runFor(65_000);
+    expect(requests).toEqual([]);
+    await expect(page.locator(".agent-menu__hint")).toContainText("Remote agents are off in this tab.");
+  });
+}
+
+test("the exact approval enables its repository and branch even after a delayed token exchange, but Turn off declines it", async ({ page, baseURL }) => {
+  const approval = { at: Date.now(), repo: "native-demo-user/native-demo", branch: "main", approval: "exact-approval" };
+  let calls = 0;
+  await page.route("**/api/agent/hub", async (route) => {
+    calls++;
+    await route.fulfill({ json: { grants: [
+      { id: "approved", repoId: 501, repo: approval.repo, branch: approval.branch, approval: approval.approval, via: "oauth", createdAt: 1 },
+    ], tabId: null, updatedAt: null, commands: [], requests: [] } });
+  });
+  await page.route("**/api/agent/context", (route) => route.fulfill({ json: { ok: true, missing: [] } }));
+  await page.route("**/api/agent/pause", (route) => route.fulfill({ json: { ok: true } }));
+  await page.clock.install();
+  await open(page, baseURL);
+  await page.locator(".repository-menu__trigger").click();
+  const announce = () => page.evaluate((approval) => window.dispatchEvent(new StorageEvent("storage", {
+    key: "native-site-editor:agent-connected", newValue: JSON.stringify(approval),
+  })), approval);
+  await announce();
+  await expect.poll(async () => { await page.clock.runFor(1000); return page.locator(".agent-menu__action").textContent(); }).toBe("Disconnect MCP");
+  await page.getByRole("button", { name: "Turn off", exact: true }).click();
+  await announce();
+  const before = calls;
+  await expect.poll(async () => { await page.clock.runFor(1000); return calls - before; }).toBe(3);
+  await expect(page.locator(".agent-menu__action")).toHaveText("Connect with MCP");
 });

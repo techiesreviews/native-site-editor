@@ -122,6 +122,12 @@ export async function hubOperation(storage: HubStorage, action: any, setAlarm: (
     if (shared) result = { ...result, missing: await collect(storage, hub, context) };
     return Response.json(result);
   } catch (error) {
+    // A stale claim fails its pending command before refusing delivery. Keep
+    // that outcome so the agent's result poll does not wait indefinitely.
+    if (type === "claim" && error instanceof HttpError && error.status === 409 &&
+        hub.commands?.some((command) => command.id === action.id &&
+          command.grantId === action.grantId && command.state === "failed"))
+      await storage.put({ session: hub });
     return failed(error);
   }
 }

@@ -1,6 +1,6 @@
 import type { AgentElement } from "../../shared/agent";
 import type { AppStore } from "../app-store";
-import type { createAgentMenu } from "../components/agent-menu";
+import type { AgentApproval, createAgentMenu } from "../components/agent-menu";
 
 /** Mirrors AGENT_CONNECTED_KEY in components/agent-menu.ts, which loads lazily. */
 const AGENT_CONNECTED_KEY = "native-site-editor:agent-connected";
@@ -11,8 +11,8 @@ export interface AgentMenuPort<Root> {
   root: Root;
   connected(): boolean;
   changed(): void;
-  /** A connection was approved in this browser at `at` (ms); the menu checks it is for this workspace. */
-  consentGranted(at: number): void;
+  /** A connection was approved in this browser for one repository and branch; the menu checks it is for this workspace. */
+  consentGranted(approval: AgentApproval): void;
   destroy(): void;
   ask(text: string, element: AgentElement): Promise<unknown>;
   answer(id: string, text: string): Promise<void>;
@@ -64,7 +64,7 @@ export function createAgentController<Root extends { remove(): void } = HTMLElem
         repository: () => {
           const repository = options.appStore.repository.value;
           return isCurrent(account, host, revision) && repository && options.appStore.snapshot.value
-            ? { id: repository.id, fullName: repository.full_name } : undefined;
+            ? { id: repository.id, fullName: repository.full_name, branch: options.appStore.snapshot.value.branch } : undefined;
         },
       });
       mounted = { account, host };
@@ -77,9 +77,13 @@ export function createAgentController<Root extends { remove(): void } = HTMLElem
     if (!("key" in event) || event.key !== AGENT_CONNECTED_KEY || currentMenu() || !active) return;
     const account = options.account(), host = options.host(), revision = epoch;
     if (!account || !host) return;
-    const at = Number((event as StorageEvent).newValue) || Date.now();
+    let approval: AgentApproval;
+    try { approval = JSON.parse((event as StorageEvent).newValue ?? "null"); } catch { return; }
+    // Only a tab showing the approved repository and branch loads the menu to check it.
+    const repository = options.appStore.repository.value;
+    if (!repository || approval?.repo !== repository.full_name || approval?.branch !== options.appStore.snapshot.value?.branch) return;
     void ensure().then(() => {
-      if (isCurrent(account, host, revision)) currentMenu()?.consentGranted(at);
+      if (isCurrent(account, host, revision)) currentMenu()?.consentGranted(approval);
     }).catch((error: unknown) => options.onError(error));
   };
   function start() {
