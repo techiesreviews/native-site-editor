@@ -7,6 +7,7 @@ import { decodeHtmlEntities } from "./page-builder/html-entities";
 import type { MoveAt, MoveOutcome } from "./page-builder/block-move";
 import { expandStyleImports } from "../shared/css-imports";
 import { touchesGithubConfig, GITHUB_CONFIG_REFUSED, touchesMediaRecords, MEDIA_RECORDS_REFUSED } from "../shared/protected-paths";
+import { nativePageRoute } from "../shared/native-routes";
 import { NATIVE_CONFIG_PATH, minimalTextEdit, nativeComponentCssPath, nativePageStylesheets, nativeSiteSettings, type NativeSite } from "../shared/native-project";
 import { agentMediaArgsProblem } from "../shared/agent-media-args";
 import { isMediaUploadWrite, OUTSIDE_MEDIA_REFUSED, AGENT_TEXT_LIMIT, INSPECTION_LIMIT, isPreviewablePicture, picturePreviewRefusal, REQUEST_HTML_LIMIT, outlineId, parseOutlineId, textBytes, textHash, type AgentCommand, type AgentElement } from "../shared/agent";
@@ -848,6 +849,28 @@ export async function applySiteCommand(actions: AgentSiteActions, command: Agent
   throw new Error("This editor cannot apply that change. Reload it.");
 }
 
+/** A structural command's reply, from the drafts it commits (the same words applySiteCommand reports). */
+async function structuralOutcome(command: AgentCommand, after: Map<string, SavedDraft | undefined>): Promise<AgentCommandOutcome> {
+  const { path, args = {} } = command;
+  const hash = async (file: string): Promise<Record<string, string>> => {
+    const record = after.get(file);
+    return record && !record.deleted && !record.opaque ? { hash: await textHash(record.content) } : {};
+  };
+  switch (command.operation) {
+    case "create_page": {
+      const file = [...after].find(([file, record]) => record && !record.deleted && record.baseSha === null && !record.movedFrom && nativePageRoute(file))?.[0];
+      const route = file && nativePageRoute(file);
+      if (!file || !route) break;
+      return { message: `Created the page ${String(args.title ?? "").trim()} at ${route} (${file}), unsaved.`, result: { file, route, ...await hash(file) } };
+    }
+    case "set_page_details": return { message: `Page details of ${path} updated, unsaved.`, result: { path, ...await hash(path) } };
+    case "move_file": return { message: `Moved ${path} to ${String(args.to ?? "")}, unsaved.`, result: { path: String(args.to ?? "") } };
+    case "delete_file": return { message: `Deleted ${path}, unsaved (Restore brings it back).` };
+    case "remove_section": return { message: `Section ${args.section} removed from ${path}, unsaved.`, result: { ...await hash(path) } };
+  }
+  return { message: `Applied ${command.operation} to ${path} in the local drafts, unsaved.`, result: { path, ...await hash(path) } };
+}
+
 // One lazy records/owner pair per workspace in this tab. Focus never transfers ownership.
 const textOwners = new Map<string, Promise<{ records: AgentRecords; owner: ReturnType<typeof createAgentOwner> }>>();
 /** Carries a command's identity and exact reported outcome across the guarded commit boundary. */
@@ -891,7 +914,7 @@ export async function prepareAgentText(command: AgentCommand, scope: DraftScope,
     }
     const { records, owner } = await loading;
     if (!current()) throw new Error("The repository changed meanwhile.");
-    const outcome: AgentCommandOutcome = command.operation === "write_file"
+    let outcome: AgentCommandOutcome = command.operation === "write_file"
       ? { message: `${command.expectedHash === null ? "Created" : "Changed"} ${command.path} in the editor as an unsaved draft.`, result: { path: command.path, hash: contentHash } }
       : { message: `Applied ${command.operation} to the local drafts.`, ...(command.operation === "create_page" ? {} : { result: { path: command.operation === "move_file" ? command.args?.to ?? command.path : command.path } }) };
     const receipt = { authorizationId: command.grantId, operationId: command.id, payloadIdentity: identity, outcome: JSON.parse(JSON.stringify(outcome)) as JsonValue, createdAt: Date.now() };
@@ -927,6 +950,11 @@ export async function prepareAgentText(command: AgentCommand, scope: DraftScope,
       async commit(before, after, valid) {
         if (committed) throw new Error("An agent command must use one guarded commit.");
         store.stageAgent(after);
+        if (command.operation !== "write_file") {
+          // The recorded outcome is the reply: a duplicate delivery gets the same files, route and hash.
+          outcome = await structuralOutcome(command, after);
+          receipt.outcome = JSON.parse(JSON.stringify(outcome)) as JsonValue;
+        }
         if (!current() || !valid()) throw new Error("The repository or source changed meanwhile.");
         try {
           const result = await owner.commit({ workspace, generation: owner.generation, expectedRevision,
@@ -949,7 +977,7 @@ export async function prepareAgentText(command: AgentCommand, scope: DraftScope,
       },
     };
     const recover = async () => { try { await context.settle(lastAfter); } catch { /* The receipt still proves application when the view cannot refresh. */ } };
-    return { context, outcome, recover, get applied() { return committed; }, async finish(valid: () => boolean, reads?: ReadonlyMap<string, SavedDraft | undefined>) {
+    return { context, get outcome() { return outcome; }, recover, get applied() { return committed; }, async finish(valid: () => boolean, reads?: ReadonlyMap<string, SavedDraft | undefined>) {
       if (committed) return;
       const release = await context.fence(scope, [...new Set([command.path, ...reads?.keys() ?? []])]);
       try {
