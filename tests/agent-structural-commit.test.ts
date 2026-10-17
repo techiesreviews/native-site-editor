@@ -270,6 +270,27 @@ for (const operation of ["create_page", "set_page_details", "move_file", "delete
   } finally { scoped.dispose(); }
 });
 
+test("create_page records its file, route and hash; a duplicate delivery returns that same outcome without reapplying", async t => {
+  const f = await fixture(t, undefined, "<html><head><title>Home</title></head><body>home</body></html>");
+  const command: AgentCommand = { ...f.command("component"), operation: "create_page", path: "index.html", args: { title: "New page", slug: "new-page" } };
+  const prepared = await prepareAgentText(command, f.scope, f.store, () => true, () => {});
+  assert.ok(prepared.context);
+  const scoped = agentStructuralActions(f.workspace, prepared.context, () => true, controllerPorts(f));
+  let live;
+  try {
+    live = await applySiteCommand(scoped.actions, command);
+    await prepared.finish!(() => true);
+  } finally { scoped.dispose(); }
+  const recorded = prepared.outcome;
+  assert.deepEqual(recorded.result && Object.keys(recorded.result).sort(), ["file", "hash", "route"]);
+  assert.deepEqual({ ...recorded, ...live }, recorded, "the live reply adds nothing the receipt lacks");
+  const drafts = f.store.list(f.scope).length, steps = f.memory.steps();
+  const again = await prepareAgentText(command, f.scope, f.store, () => true, () => {});
+  assert.deepEqual(again.duplicate, recorded);
+  assert.equal(f.store.list(f.scope).length, drafts);
+  assert.deepEqual(f.memory.steps(), steps);
+});
+
 for (const disturbance of ["takeover", "revocation", "cancel", "manual"] as const) test(`real page controller: ${disturbance} at every awaited port cannot commit late`, async t => {
   await forEachAwait(race => {
     const state: { f?: Awaited<ReturnType<typeof fixture>> } = {};
