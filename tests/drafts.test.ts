@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DraftStore, draftKey, memoryDrafts, type DraftDatabase, type SavedDraft } from "../src/drafts.ts";
+import { DraftStore, draftKey, indexedDbDrafts, memoryDrafts, type DraftDatabase, type SavedDraft } from "../src/drafts.ts";
 function storage() {
   const data = new Map<string, string>();
   return { getItem: (key: string) => data.get(key) ?? null, setItem: (key: string, value: string) => { data.set(key, value); }, removeItem: (key: string) => { data.delete(key); }, key: (index: number) => [...data.keys()][index] ?? null, get length() { return data.size; } };
@@ -132,4 +132,45 @@ test("another tab's committed drafts are read again", async () => {
   await one.flush();
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(two.get(draft, draft.path), undefined);
+});
+
+test("indexedDbDrafts upgrades v1 without recreating drafts or losing the manual editor's records", async (t) => {
+  // This small upgrade/read fixture starts with the v1 store; transactions are read-only here.
+  const partial = <T>(value: Partial<T>): T => value as T;
+  const stores = new Map<string, Map<string, SavedDraft>>([["drafts", new Map([[draftKey(draft, draft.path), structuredClone(draft)]])]]);
+  const event = new Event("success");
+  const result = <T>(value: T) => {
+    const request = partial<IDBRequest<T>>({ result: structuredClone(value) });
+    queueMicrotask(() => request.onsuccess?.call(request, event));
+    return request;
+  };
+  const factory = partial<IDBFactory>({ open(_name, version) {
+    assert.equal(version, 2);
+    const db = partial<IDBDatabase>({
+      objectStoreNames: partial<DOMStringList>({ contains: (name) => stores.has(name) }),
+      createObjectStore(name) {
+        assert.equal(stores.has(name), false);
+        stores.set(name, new Map()); return partial<IDBObjectStore>({});
+      },
+      transaction(name) {
+        const rows = stores.get(String(name))!;
+        return partial<IDBTransaction>({ objectStore: () => partial<IDBObjectStore>({
+          get: (key) => result(rows.get(String(key))),
+          getAll: () => result([...rows.values()]),
+          getAllKeys: () => result([...rows.keys()]),
+        }) });
+      },
+    });
+    const request = partial<IDBOpenDBRequest>({ result: db });
+    queueMicrotask(() => { request.onupgradeneeded?.call(request, partial<IDBVersionChangeEvent>({ oldVersion: 1 })); request.onsuccess?.call(request, event); });
+    return request;
+  } });
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, "IDBKeyRange");
+  Object.defineProperty(globalThis, "IDBKeyRange", { configurable: true, value: { bound: () => ({}) } });
+  t.after(() => { if (descriptor) Object.defineProperty(globalThis, "IDBKeyRange", descriptor); else Reflect.deleteProperty(globalThis, "IDBKeyRange"); });
+  const db = indexedDbDrafts("upgrade-drafts", factory), store = new DraftStore(storage(), db);
+  assert.deepEqual(await db.get(draftKey(draft, draft.path)), draft);
+  await store.load("lex");
+  assert.deepEqual(store.get(draft, draft.path), draft);
+  assert.deepEqual([...stores.keys()], ["drafts", "receipts", "workspaces", "conversations"]);
 });
