@@ -46,6 +46,9 @@ export function createAgentOwner(options: {
         // Reload/CAS can suspend the tab: recheck all authorizations together before
         // exposing outcomes. Evicted or revoked receipts now remain unknown.
         const outcomes = await records.reconcile(workspace, pending);
+        const current = await records.workspace(workspace);
+        if (current.generation !== generation || current.paused)
+          throw new AgentRecordsError("not-owner", "Agent ownership was superseded during takeover.");
         paused = false;
         return { outcomes, snapshot, generation };
       } finally {
