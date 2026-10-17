@@ -106,6 +106,79 @@ main().catch(error => { console.error(error); process.exit(1); });
   return { root, put, git, files, base, run, calls };
 }
 
+test("server changes select agent paths and only changed routes from the server diff", () => {
+  const server = "tests/native-save/server.ts";
+  const hub = "tests/native-save/fake-hub.ts";
+  const files = {
+    [server]: 'const route = "/unchanged";',
+    "tests/native-save/mcp-prompt.ts": "export const copyConnectionPrompt = () => {};",
+    "tests/native-save/agent-helper.ts": 'export * from "./mcp-prompt.js";',
+    [save("agent-import")]: 'import "./agent-helper";',
+    [save("agent-quoted")]: 'await page.request.post("/mcp/connect");',
+    [save("route-new")]: 'await page.goto("/__demo/onboarding");',
+    [save("route-old")]: 'await page.goto("/__demo/old");',
+    [save("unrelated")]: 'await page.goto("/unchanged");',
+    [preview]: 'await page.request.post("/mcp/connect");',
+  };
+  const diff = `diff --git a/${server} b/${server}
+--- a/${server}
++++ b/${server}
+@@ -1 +1 @@
+-const route = "/__demo/old";
++const route = "/__demo/onboarding";
+diff --git a/${hub} b/${hub}
+--- a/${hub}
++++ b/${hub}
+@@ -1 +1 @@
+-const label = "Unrelated label";
++const route = "/unchanged";
+`;
+  const selected = selectAffected({ files, changed: [server], diff });
+  assert.deepEqual(selected.map(spec => spec.file), [save("agent-import"), save("agent-quoted"), save("route-new"), save("route-old")]);
+  assert.deepEqual(selected[0].reasons, [`server: agent paths (${server})`]);
+  assert.deepEqual(selected[2].reasons, [`server: route "/__demo/onboarding" (${server})`]);
+  assert.deepEqual(selected[3].reasons, [`server: route "/__demo/old" (${server})`]);
+  assert.match(selectionLine(selected[0]), /\[server 1\]$/);
+  assert.deepEqual(selectAffected({ files, changed: [hub], diff }).map(spec => ({ file: spec.file, reasons: spec.reasons })),
+    ["agent-import", "agent-quoted"].map(name => ({ file: save(name), reasons: [`server: agent paths (${hub})`] })));
+  assert.deepEqual(removedStrings(diff), []);
+});
+
+test("server routes ignore common prefixes, context and matches beyond the fifteen-spec cap", () => {
+  const server = "tests/native-save/server.ts";
+  const files: Record<string, string> = {};
+  const diff = `diff --git a/${server} b/${server}
+--- a/${server}
++++ b/${server}
+@@ -1 +1,4 @@
+ const route = "/context-only";
++const routes = ["/", "/api", "/user", "/specific-route"];
+`;
+  files[save("context")] = 'const route = "/context-only";';
+  files[save("prefix")] = 'const routes = ["/elsewhere", "/api/repos", "/user/profile"];';
+  for (let i = 0; i < 15; i++) files[save(`route-${i}`)] = 'const route = "/specific-route";';
+  assert.equal(selectAffected({ files, changed: [server], diff }).length, 15);
+  files[save("route-last")] = 'const route = "/specific-route";';
+  assert.deepEqual(selectAffected({ files, changed: [server], diff }), []);
+});
+
+test("affected --list passes the server diff and counts server reasons", t => {
+  const f = fixture(t);
+  f.put("tests/native-save/server.ts", 'const route = "/__demo/onboarding";');
+  f.put(save("route"), 'await page.goto("/__demo/onboarding");');
+  f.put(save("agent"), 'await page.request.post("/mcp/connect");');
+  f.git("add", ".");
+  f.git("commit", "--quiet", "-m", "server fixtures");
+  f.git("update-ref", "refs/remotes/origin/dev", f.git("rev-parse", "HEAD"));
+  f.put("tests/native-save/server.ts", 'const route = "/__demo/replaced";');
+  const result = f.run(["--affected", "--list"]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /agent.spec.ts .*server: agent paths .*\[server 1\]/);
+  assert.match(result.stdout, /route.spec.ts .*server: route "\/__demo\/onboarding" .*\[server 1\]/);
+  assert.match(result.stdout, /RESULT: ok specs 2 selected \(list only\)/);
+  assert.equal(existsSync(f.calls), false);
+});
+
 test("relative import graph follows helper, re-export and .js-to-.ts paths", t => {
   const f = fixture(t);
   const selected = selectAffected({ files: f.files, changed: ["src/media.ts"] });

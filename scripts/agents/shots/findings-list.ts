@@ -5,6 +5,36 @@ export type IndexLayoutFinding = {
   finding: { kind: string; selector: string; text: string; detail: string };
 };
 
+type FindingShot = {
+  screen: string;
+  name?: string;
+  width: number;
+  theme: string;
+  ok: boolean;
+  layout: IndexLayoutFinding["finding"][];
+};
+
+const findingKey = (finding: IndexLayoutFinding["finding"]) => JSON.stringify([finding.kind, finding.selector, finding.detail]);
+const shotKey = (shot: FindingShot) => JSON.stringify([shot.screen, shot.width, shot.theme]);
+
+/** Format current findings and only mark fixes confirmed by a successful matching shot. */
+export function findingsSections(screens: FindingShot[]): string[] {
+  const hasBefore = screens.some(shot => shot.name === "before");
+  const after = screens.filter(shot => shot.name !== "before");
+  const flatten = (shots: FindingShot[]) => shots.flatMap(shot => shot.layout.map(finding => ({ screen: shot.screen, width: shot.width, theme: shot.theme, finding })));
+  const current = findingsList(flatten(after));
+  if (!hasBefore) return current.length ? ["layout findings:", ...current.map(line => `  ${line}`)] : [];
+  const successful = new Map(after.filter(shot => shot.ok).map(shot => [shotKey(shot), shot]));
+  const fixed = screens.filter(shot => shot.name === "before").flatMap(shot => {
+    const match = successful.get(shotKey(shot));
+    if (!match) return [];
+    const remaining = new Set(match.layout.map(findingKey));
+    return flatten([{ ...shot, layout: shot.layout.filter(finding => !remaining.has(findingKey(finding))) }]);
+  });
+  return ["layout findings (after):", ...current.map(line => `  ${line}`),
+    "fixed since before:", ...findingsList(fixed, 10).map(line => `  ${line}`)];
+}
+
 /**
  * Merge identical findings (same screen, kind, selector and detail) across
  * widths and themes into one line, ordered by screen, then kind, then selector.
