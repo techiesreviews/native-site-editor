@@ -319,3 +319,50 @@ test("relay failures are clear errors and never retry or fall back to a legacy s
     }
   } finally { h.namespace.get = get; await h.worker.dispose(); }
 });
+
+test("without a loaded tree, roots are walked through the tree API with prefixes; folders and submodules refuse; a held walk turns stale", async () => {
+  const f = await fixture();
+  const blob = (path: string, sha: string): TreeEntry => ({ path, sha, type: "blob", mode: "100644", size: 1 });
+  const roots: TreeEntry[] = [blob("index.html", "1".repeat(40)), { path: "about", sha: "a".repeat(40), type: "tree", mode: "040000" },
+    { path: ".github", sha: "b".repeat(40), type: "tree", mode: "040000" }, { path: "vendor", sha: "e".repeat(40), type: "commit", mode: "160000" }];
+  const nested: Record<string, TreeEntry[]> = {
+    ["a".repeat(40)]: [blob("index.html", "2".repeat(40))],
+    ["b".repeat(40)]: [{ path: "workflows", sha: "3".repeat(40), type: "tree", mode: "040000" }, blob("workflows/ci.yml", "4".repeat(40))],
+  };
+  const texts: Record<string, string> = { ["1".repeat(40)]: "home", ["2".repeat(40)]: "about", ["4".repeat(40)]: "ci" };
+  const calls: Record<string, string>[] = [];
+  let hold: ReturnType<typeof deferred> | undefined, valid = true;
+  const snapshot: Snapshot = { commit, branch: "main", entries: roots };
+  f.context.drafts.length = 0;
+  const tools = createAgentReadTools({ ...f.ports, stamp: () => ({ holds: () => valid, changed: () => undefined }), files: () => ({ repo, snapshot,
+    api: async <T>(_path: string, params: Record<string, string>) => { calls.push(params); await hold?.promise; return { entries: nested[params.sha] ?? [] } as T; },
+    read: async (_repo: string, sha: string) => texts[sha] ?? Promise.reject(new HttpError(404, "File cannot be read.")),
+    batch: async (_repo: string, shas: string[]) => Object.fromEntries(shas.filter(sha => texts[sha]).map(sha => [sha, texts[sha]])),
+    has: () => false,
+  }) });
+  const listed = await tools.run("list_files", {});
+  assert.equal(listed.ok, true);
+  if (listed.ok) assert.deepEqual((listed.value as { files: string[] }).files, [".github/workflows/ci.yml", "about/index.html", "index.html", "vendor"]);
+  assert.deepEqual(calls.map(call => [call.sha, call.recursive]).sort(), [["a".repeat(40), "1"], ["b".repeat(40), "1"]]);
+  const exported = await tools.run("export_site", {});
+  assert.equal(exported.ok, true);
+  // As on the Worker: .yml is not a text path, so it is listed by blob; the submodule too.
+  if (exported.ok) {
+    const value = exported.value as { files: { path: string; content: string }[]; binaries: { path: string }[] };
+    assert.deepEqual(value.files.map(file => [file.path, file.content]), [["about/index.html", "about"], ["index.html", "home"]]);
+    assert.deepEqual(value.binaries.map(file => file.path), [".github/workflows/ci.yml", "vendor"]);
+  }
+  for (const [path, message] of [["about", /about is a folder, not a file/], [".github/workflows", /is a folder/], ["vendor", /vendor is a submodule, not a file/]] as const) {
+    const result = await tools.run("read_file", { path });
+    assert.equal(result.ok, false, path);
+    if (!result.ok) assert.match(result.message, message);
+  }
+  hold = deferred();
+  const pending = tools.run("list_files", {});
+  await new Promise(resolve => setImmediate(resolve));
+  valid = false;
+  hold.resolve();
+  const stale = await pending;
+  assert.equal(stale.ok, false);
+  if (!stale.ok) assert.match(stale.message, /changed branch or revision/);
+});
