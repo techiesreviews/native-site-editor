@@ -497,18 +497,18 @@ test("a workspace briefly absent during a refresh refuses commands but keeps the
   a.transport.stop();
 });
 
-test("a socket lost while the workspace is briefly absent reconnects through the coordinator once it returns", async () => {
+test("a socket lost while the workspace is briefly absent reconnects through the coordinator meanwhile", async () => {
   const f = fixture(), a = f.tab("a");
   await a.transport.start();
   a.change(undefined);
   a.sockets[0].close();
   await f.tick(5_000);
-  assert.equal(a.sockets.length, 1, "no reconnect while the workspace is absent");
-  a.change({ ...workspace });
-  await f.tick(5_000);
   assert.equal(a.sockets.length, 2);
   await until(() => a.transport.state().mode === "live");
-  assert.equal(a.sockets[1].messages("handshake").length, 1);
+  a.change({ ...workspace });
+  a.deliver(command("after-return"));
+  await until(() => a.sockets[1].messages("result").length === 1);
+  assert.equal(a.sockets[1].messages("result")[0].result.state, "applied");
   a.transport.stop();
 });
 
@@ -539,17 +539,32 @@ test("storage refusal with a quota or Retry-After probe answer records it; a lat
   }
 });
 
-test("a reconnect attempt that runs while the workspace is briefly absent fails and a later one goes live", async () => {
+test("a first connection that fails before ready while the workspace is absent enters bounded recovery", async () => {
+  const f = fixture(), a = f.tab("a");
+  a.change(undefined);
+  a.fail();
+  await a.transport.start();
+  assert.equal(a.transport.state().mode, "reconnecting");
+  a.change({ ...workspace });
+  await f.tick(180_000);
+  assert.equal(a.transport.state().mode, "paused", "five attempts, then a pause with Retry");
+  assert.equal(a.sockets.length, 6);
+  a.transport.stop();
+});
+
+test("quota recorded while the workspace is absent closes the socket; nothing runs after it returns", async () => {
   const f = fixture(), a = f.tab("a");
   await a.transport.start();
-  a.sockets[0].close();
   a.change(undefined);
-  await f.tick(4_000);
-  assert.equal(a.sockets.length, 1, "no socket for an absent workspace");
+  recordFailure(f.storage, workspace, { kind: "quota" }, f.now());
+  f.recoveryChanged();
+  await f.tick(1_000);
+  assert.equal(a.transport.state().mode, "quota");
+  assert.equal(a.sockets[0].readyState, 3);
   a.change({ ...workspace });
-  await f.tick(30_000);
-  assert.equal(a.sockets.length, 2);
-  await until(() => a.transport.state().mode === "live");
+  await f.tick(300_000);
+  assert.equal(a.sockets.length, 1, "zero automatic attempts");
+  assert.equal(f.counts().runs, 0);
   a.transport.stop();
 });
 
