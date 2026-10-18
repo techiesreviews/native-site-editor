@@ -99,6 +99,16 @@ test("quiet by default: a wait answers at once, takes each request once per conn
   assert.deepEqual((await list.run({ operation: "requests", tool: "wait_for_requests", args: {}, grantId: "g" }, () => true, Date.now() + 9000) as { value: any }).value.requests, []);
 });
 
+test("requests are delivered oldest first even when storage returns request ID order", async () => {
+  const b = browser();
+  b.ask(asked("req-a-later", { createdAt: 200 }));
+  b.ask(asked("req-z-first", { createdAt: 100 }));
+  const ids = (result: { requests: AgentRequest[] }) => result.requests.map(request => request.id);
+  assert.deepEqual(ids(await b.value(b.run("wait_for_requests"))), ["req-z-first", "req-a-later"]);
+  assert.deepEqual(ids(await b.value(b.run("wait_for_requests"))), []);
+  assert.deepEqual(ids(await b.value(b.run("wait_for_requests", { all: true }))), ["req-z-first", "req-a-later"]);
+});
+
 test("Watch holds one wait until a request arrives here (an in-memory wake, no reads), clipped to Watch's end", async () => {
   const b = browser();
   b.watch.start(b.clock.now());
