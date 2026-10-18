@@ -93,7 +93,7 @@ export class SessionStore extends DurableObject {
         const reservation = relay.reserve(length, cancelKey);
         if ("ok" in reservation) return Response.json(reservation, { status: !reservation.ok && reservation.code === "too-large" ? 413 : 200 });
         let body;
-        try { body = await readRelayBody(request.body, length, started + 10_000, request.signal); }
+        try { body = await readRelayBody(request.body, length, started + 10_000, AbortSignal.any([request.signal, reservation.signal])); }
         // Idempotent; on success dispatch() re-admits in this same synchronous turn.
         finally { reservation.release(); }
         if (reservation.cancelled) return Response.json({ ok: false, code: "cancelled", outcome: "not-sent" });
