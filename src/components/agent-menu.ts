@@ -3,6 +3,8 @@ import { browserAgentRecovery, recordFailure, recoveryHolds } from "../agent-rec
 import { AgentFailureError, classifyAgentFailure } from "../../shared/agent-failure";
 import { button, node } from "../ui/dom";
 import { textBytes, type AgentCommand, type AgentElement } from "../../shared/agent";
+import { workspaceKey, type AgentWorkspace, type JsonValue } from "../../shared/agent-command";
+import { AgentRecordsError, indexedDbAgentRecords, isUnfinishedRequest, type AgentRecords } from "../agent-records";
 import type { SharedContext } from "../agent-site";
 import type { PinRequest } from "./agent-pins";
 import { mountFlyout } from "./flyout";
@@ -31,9 +33,17 @@ import "./agent-menu.css";
 // visible one) applies the changes.
 //
 // Ask agent in the edit bar sends a request about an element to the hub
-// (`ask`); agents fetch it with wait_for_requests and answer it. Each poll
-// brings the requests back with their state and thread, for the pins; the
-// user answers an agent's question from its pin (`answer`).
+// (`ask`); agents fetch it with wait_for_requests and answer it. The
+// browser keeps its own copy of each request (src/agent-records.ts, per
+// account, repository and branch), which is what the pins and this menu
+// show: it stays after remote agents are turned off or the tab reloads, is
+// not shared with other devices and never turns remote agents back on.
+// Only requests asked in this browser and workspace are kept; while remote
+// agents are on, each poll brings the agents' progress on them (state and
+// thread). Clearing or dismissing a request is local; one still waiting is
+// dismissed on the hub too, at once while on, or on the next poll once
+// turned on again. The user answers an agent's question from its pin
+// (`answer`), which needs remote agents on.
 //
 // While an agent is connected, Disconnect MCP counts the questions agents
 // ask the user, as the project selector's tile does, and hovering or
@@ -92,6 +102,8 @@ export function createAgentMenu(options: {
   onQuestions?: (count: number) => void;
   /** Show a request's pin with its card open (closing the menus). */
   onShowRequest?: (id: string) => void;
+  /** This browser's agent records (tests inject one). */
+  records?: AgentRecords;
 }) {
   const tabId = `tab-${crypto.randomUUID()}`;
   let hub: HubState = { grants: [], tabId: null, updatedAt: null, commands: [] };
@@ -257,15 +269,70 @@ export function createAgentMenu(options: {
   let lastQuestions = 0;
   // The open repository's requests, oldest first as their pins are numbered.
   let requests: PinRequest[] = [];
-  // The open repository's requests, told only when they changed.
-  function tellRequests() {
+  // This browser's requests of the open workspace (`historyKey`), dismissed ones included.
+  const records = options.records ?? indexedDbAgentRecords();
+  let history = new Map<string, StoredRequest>();
+  let historyKey = "", loadingKey: string | undefined, historyLoads = 0;
+  const channel = typeof BroadcastChannel === "function" ? new BroadcastChannel(CONVERSATIONS_CHANNEL) : undefined;
+  const scope = (): AgentWorkspace | undefined => {
     const repo = options.repository();
-    const next = repo ? (hub.requests ?? []).filter((item) => item.repoId === repo.id && item.branch === repo.branch) : [];
+    return repo ? { account: options.account, repoId: repo.id, branch: repo.branch } : undefined;
+  };
+  const scopeKey = () => { const current = scope(); return current ? workspaceKey(current) : ""; };
+  /** Reads the workspace's requests again: on opening it, and when another tab changed them. */
+  async function loadHistory() {
+    const current = scope(), key = current ? workspaceKey(current) : "", load = ++historyLoads;
+    loadingKey = key;
+    let list: StoredRequest[] = [];
+    try {
+      if (current) list = (await records.conversations(current)).map((item) => item.content as unknown as StoredRequest);
+    } catch { /* Browser storage unavailable: no history; Ask agent says so. */ }
+    if (disposed || load !== historyLoads || scopeKey() !== key) return;
+    loadingKey = undefined;
+    history = new Map(list.map((item) => [item.id, item]));
+    historyKey = key;
+    tellRequests();
+  }
+  function followHistory() {
+    const key = scopeKey();
+    if (key !== historyKey && key !== loadingKey) void loadHistory();
+  }
+  /** Keeps one request in this browser and shows it; refuses (throws) at capacity. */
+  async function keep(workspace: AgentWorkspace, request: StoredRequest) {
+    const content = stored(request);
+    await records.putConversation(workspace, { id: content.id, content: content as unknown as JsonValue, unfinished: isUnfinishedRequest(content.state), updatedAt: Date.now() });
+    const key = workspaceKey(workspace);
+    channel?.postMessage(key);
+    if (key !== historyKey || disposed) return;
+    history.set(content.id, content);
+    tellRequests();
+  }
+  if (channel) channel.onmessage = (event) => { if (event.data === historyKey && historyKey) void loadHistory(); };
+  // While remote agents are on, a poll brings the agents' progress on the requests asked here.
+  async function mergeHub(at: number) {
+    const workspace = scope();
+    if (!workspace || workspaceKey(workspace) !== historyKey) return;
+    for (const item of hub.requests ?? []) {
+      const local = history.get(item.id);
+      if (!local || item.repoId !== workspace.repoId || item.branch !== workspace.branch || !live(at)) continue;
+      if (local.state === "dismissed") {
+        // Dismissed while remote agents were off: the hub hears of it now.
+        if (isUnfinishedRequest(item.state)) await api("dismiss", { id: item.id }, false, at).catch(() => undefined);
+        continue;
+      }
+      const next = stored(item);
+      if (progress(next) < progress(local) || JSON.stringify(next) === JSON.stringify(local)) continue;
+      await keep(workspace, next).catch(() => undefined);
+    }
+  }
+  // The open workspace's requests, told only when they changed.
+  function tellRequests() {
+    const next = historyKey && historyKey === scopeKey() ? [...history.values()].filter((item) => item.state !== "dismissed") : [];
     const key = JSON.stringify(next);
     if (key === lastRequests) return;
     lastRequests = key;
     requests = [...next].sort((a, b) => a.createdAt - b.createdAt);
-    options.onRequests?.(next);
+    options.onRequests?.(requests);
     flyout.refresh();
     const questions = requests.filter((item) => item.state === "question").length;
     if (questions === lastQuestions) return;
@@ -284,6 +351,7 @@ export function createAgentMenu(options: {
       if (current === "connected") flyout.refresh();
       else flyout.close();
     }
+    followHistory();
     tellRequests();
     if (notice && notice.state !== current) notice = undefined;
     root.dataset.state = current;
@@ -572,6 +640,7 @@ export function createAgentMenu(options: {
       // Turned off meanwhile: its answer is not applied.
       if (!live(at)) return;
       hub = next;
+      await mergeHub(at);
       await sync();
       paint();
       if (hub.tabId !== tabId) return;
@@ -694,28 +763,53 @@ export function createAgentMenu(options: {
     connected() {
       return state() === "connected";
     },
-    /** Ask agent: a request about an element, for agents to fetch. */
+    /** Ask agent: a request about an element, for agents to fetch, kept in this browser. */
     async ask(text: string, element: AgentElement) {
-      const repo = options.repository();
-      if (!repo) throw new Error("Open a site first.");
-      const request = await api("ask", { repository: repo, text, element });
-      hub.requests = [...(hub.requests ?? []), request];
-      tellRequests();
+      const repo = options.repository(), workspace = scope();
+      if (!repo || !workspace) throw new Error("Open a site first.");
+      // Refused before anything is sent when this browser cannot keep it.
+      const planned = stored({ id: "req-planned", text, createdAt: Date.now(), repoId: repo.id, repository: repo.fullName, state: "open", element, thread: [{ from: "user", text, at: Date.now() }] });
+      await records.checkConversation(workspace, { id: planned.id, content: planned as unknown as JsonValue, unfinished: true, updatedAt: Date.now() }).catch((error) => refusal(error, " Nothing was sent."));
+      const request: StoredRequest = await api("ask", { repository: repo, text, element });
+      try {
+        await keep(workspace, request);
+      } catch (error) {
+        // Another tab filled the space meanwhile: agents do not get what the user cannot see.
+        void api("dismiss", { id: request.id }).catch(() => undefined);
+        refusal(error, " The request was withdrawn.");
+      }
       // Agents waiting pick it up at once; the tab sees their progress as it polls.
       void poll(true);
       return request as PinRequest;
     },
     /** Answer an agent's question from its pin: the request waits for agents again. */
     async answer(id: string, text: string) {
-      const request = await api("answer", { id, text });
-      hub.requests = (hub.requests ?? []).map((item) => (item.id === id ? request : item));
-      tellRequests();
+      const workspace = scope();
+      if (!remote) throw new Error("Remote agents are off in this tab. Choose Connect with MCP in the project menu, then send your answer.");
+      if (!workspace || !history.has(id)) throw new Error("This request is not in this site's history any more.");
+      const local = history.get(id)!;
+      if (!isUnfinishedRequest(local.state))
+        await records.checkConversation(workspace, { id, content: stored(local) as unknown as JsonValue, unfinished: true, updatedAt: Date.now() }).catch((error) => refusal(error, " Nothing was sent."));
+      const request: StoredRequest = await api("answer", { id, text });
+      await keep(workspace, request).catch(refusal);
       void poll(true);
     },
-    /** Dismiss (or clear) a request from its pin. */
+    /**
+     * Dismiss (or clear) a request from its pin, in this browser. One agents
+     * still wait on is dismissed on the hub too while remote agents are on
+     * (otherwise on the next poll once they are).
+     */
     async dismiss(id: string) {
-      hub.requests = (hub.requests ?? []).filter((item) => item.id !== id);
-      tellRequests();
+      const workspace = scope(), local = history.get(id);
+      if (!workspace || !local || local.state === "dismissed") return;
+      const waiting = isUnfinishedRequest(local.state);
+      try {
+        await keep(workspace, { ...local, state: "dismissed" });
+      } catch (error) {
+        say(refusalText(error));
+        return;
+      }
+      if (!waiting || !remote) return;
       try {
         await api("dismiss", { id });
       } catch (error) {
@@ -735,6 +829,7 @@ export function createAgentMenu(options: {
       flyout.destroy();
       turnOff();
       window.removeEventListener("storage", onStorage);
+      channel?.close();
       token = tokenId = undefined;
     },
   };
@@ -745,3 +840,26 @@ function clip(text: string, limit: number) {
   const line = text.replace(/\s+/g, " ").trim();
   return line.length > limit ? `${line.slice(0, limit - 1).trimEnd()}…` : line;
 }
+
+/** Tabs of this browser tell each other a workspace's requests changed (its workspace key). */
+const CONVERSATIONS_CHANNEL = "native-site-editor:agent-conversations";
+type StoredRequest = PinRequest & { repoId: number; repository?: string; seenAt?: number };
+/** A request as this browser keeps it: without its element's source or which connections had it. */
+function stored(request: StoredRequest & { returnedTo?: unknown }): StoredRequest {
+  const { returnedTo: _returned, ...rest } = request;
+  const { html: _html, htmlClipped: _clipped, lines: _lines, ...element } = request.element as AgentElement;
+  return JSON.parse(JSON.stringify({ ...rest, element }));
+}
+// How far a request has come: its latest message or the time an agent took it. A poll answered
+// before the user's answer reached the hub is older and changes nothing here.
+const progress = (request: StoredRequest) => Math.max(request.seenAt ?? 0, request.createdAt, ...(request.thread ?? []).map((message) => message.at), request.reply?.at ?? 0);
+function refusalText(error: unknown) {
+  if (error instanceof AgentRecordsError && error.code === "capacity") return error.message;
+  if (error instanceof AgentRecordsError)
+    return "This browser could not keep your requests to agents: its storage is unavailable or full.";
+  return (error as Error).message;
+}
+function refusal(error: unknown, note = ""): never {
+  throw new Error(`${refusalText(error)}${note}`, { cause: error });
+}
+

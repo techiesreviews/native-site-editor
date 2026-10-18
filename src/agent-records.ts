@@ -1,9 +1,15 @@
 import { payloadIdentity, workspaceKey, type AgentOutcome, type AgentReceipt, type AgentWorkspace, type JsonValue, type OperationId } from "../shared/agent-command.ts";
 import { draftDatabaseName, draftKey, draftStores, openDraftDatabase, type SavedDraft } from "./drafts.ts";
+import { OPEN_REQUESTS_LIMIT, type AgentRequestState } from "../shared/agent.ts";
 
 interface WorkspaceRecord { revision: number; generation: number; paused?: boolean }
 interface WorkspaceSnapshot extends WorkspaceRecord { drafts: [string, SavedDraft][] }
-interface Conversation { id: string; content: JsonValue }
+/**
+ * An Ask agent request as this browser keeps it for one workspace. `unfinished` ones wait for an
+ * agent or for the user's answer; `updatedAt` is when it last changed here, which a completed
+ * one's seven days count from.
+ */
+export interface Conversation { id: string; content: JsonValue; unfinished: boolean; updatedAt: number }
 export interface AgentCommit {
   workspace: AgentWorkspace;
   generation: number;
@@ -16,6 +22,7 @@ export interface AgentCommit {
   drafts: [string, SavedDraft | null][];
   receipt: Omit<AgentReceipt, "workspace" | "generation" | "revision">;
 }
+interface ConversationRecord { workspace: string; conversation: Conversation }
 interface CommitResult { receipt: AgentReceipt; duplicate: boolean }
 type CancellationResult = { status: "unknown" } | { status: "applied"; receipt: AgentReceipt };
 
@@ -32,7 +39,11 @@ export interface AgentRecords {
   snapshot: (workspace: AgentWorkspace) => Promise<WorkspaceSnapshot>;
   revoke: (workspace: AgentWorkspace, authorizationId: string) => Promise<AgentReceipt[]>;
   evictReceipts: (workspace: AgentWorkspace, now?: number) => Promise<number>;
+  /** Stores one conversation, evicting expired and then oldest completed ones; refuses at capacity. */
   putConversation: (workspace: AgentWorkspace, conversation: Conversation) => Promise<void>;
+  /** Whether putConversation would accept it now, without writing (before asking an agent). */
+  checkConversation: (workspace: AgentWorkspace, conversation: Conversation) => Promise<void>;
+  /** The workspace's unfinished conversations and its completed ones younger than seven days. */
   conversations: (workspace: AgentWorkspace) => Promise<Conversation[]>;
 }
 
@@ -43,9 +54,49 @@ export class AgentRecordsError extends Error {
   }
 }
 
+/**
+ * This browser's copy of a workspace's Ask agent requests (the source the agent menu and pins
+ * read): completed ones (done, answered, dismissed) are kept up to seven days, and all of them
+ * within one serialized byte budget; unfinished ones (at most OPEN_REQUESTS_LIMIT) are never evicted.
+ */
+export const CONVERSATION_BUDGET_BYTES = 1024 * 1024;
+export const CONVERSATION_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+/** Waiting for an agent (open, seen) or for the user's answer (question). */
+export const isUnfinishedRequest = (state: AgentRequestState) => state === "open" || state === "seen" || state === "question";
+const conversationBytes = (conversation: Conversation) => new TextEncoder().encode(JSON.stringify(conversation)).byteLength;
+export const conversationExpired = (conversation: Conversation, now: number) =>
+  !conversation.unfinished && conversation.updatedAt <= now - CONVERSATION_RETENTION_MS;
+
+/**
+ * The conversations a workspace drops when `incoming` is stored (ids), or a capacity refusal.
+ * Expired completed ones go first, then the oldest completed ones until all fit the byte budget.
+ * Unfinished ones are never dropped: a new one (or one reopened) is refused when
+ * OPEN_REQUESTS_LIMIT already wait, or when it cannot fit once every completed one is gone. A
+ * change to one already unfinished is kept even then, so an agent's reply is never lost.
+ */
+export function conversationRetention(stored: Conversation[], incoming: Conversation | undefined, now: number): string[] {
+  const existing = incoming && stored.find((item) => item.id === incoming.id);
+  const admitted = Boolean(incoming?.unfinished && !existing?.unfinished);
+  const rows = incoming ? [...stored.filter((item) => item.id !== incoming.id), incoming] : [...stored];
+  if (admitted && rows.filter((item) => item.unfinished && item.id !== incoming!.id).length >= OPEN_REQUESTS_LIMIT)
+    throw new AgentRecordsError("capacity", `${OPEN_REQUESTS_LIMIT} requests already wait for an agent or for your answer. Dismiss some first.`);
+  const removed = new Set(rows.filter((item) => conversationExpired(item, now)).map((item) => item.id));
+  let size = rows.reduce((sum, item) => sum + (removed.has(item.id) ? 0 : conversationBytes(item)), 0);
+  const completed = rows.filter((item) => !item.unfinished && !removed.has(item.id))
+    .sort((a, b) => a.updatedAt - b.updatedAt || a.id.localeCompare(b.id));
+  for (const item of completed) {
+    if (size <= CONVERSATION_BUDGET_BYTES) break;
+    removed.add(item.id);
+    size -= conversationBytes(item);
+  }
+  if (size > CONVERSATION_BUDGET_BYTES && incoming && (admitted || !existing))
+    throw new AgentRecordsError("capacity", "Requests to agents in this browser use all their space (1 MiB). Dismiss some first.");
+  return [...removed];
+}
+
 export function unavailableAgentRecords(): AgentRecords {
   const refuse = () => Promise.reject(new AgentRecordsError("unavailable", "Agent storage is unavailable in this browser."));
-  return { reconcile: refuse, pause: refuse, snapshot: refuse, revoke: refuse, cancel: refuse, evictReceipts: refuse, commit: refuse, receipt: refuse, workspace: refuse, setGeneration: refuse, putConversation: refuse, conversations: refuse };
+  return { reconcile: refuse, pause: refuse, snapshot: refuse, revoke: refuse, cancel: refuse, evictReceipts: refuse, commit: refuse, receipt: refuse, workspace: refuse, setGeneration: refuse, putConversation: refuse, checkConversation: refuse, conversations: refuse };
 }
 
 /** Agent writes never enter the manual editor's fallback or per-file retry path. */
@@ -319,13 +370,32 @@ export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFact
       });
     },
     putConversation(workspace, conversation) {
-      const key = recordKey(workspace, conversation.id), record = { workspace: workspaceKey(workspace), conversation: structuredClone(conversation) };
-      return run([draftStores.conversations], "readwrite", (tx, _read, done) => { tx.objectStore(draftStores.conversations).put(record, key); done(undefined); });
+      const scope = structuredClone(workspace), incoming = structuredClone(conversation), key = workspaceKey(scope);
+      return run([draftStores.conversations], "readwrite", (tx, read, done) => {
+        const store = tx.objectStore(draftStores.conversations);
+        read(store.getAll(), (records: ConversationRecord[]) => {
+          const removed = conversationRetention(records.filter((record) => record.workspace === key).map((record) => record.conversation), incoming, now());
+          for (const id of removed) store.delete(recordKey(scope, id));
+          if (!removed.includes(incoming.id)) store.put({ workspace: key, conversation: incoming }, recordKey(scope, incoming.id));
+          done(undefined);
+        });
+      });
+    },
+    checkConversation(workspace, conversation) {
+      const key = workspaceKey(workspace), incoming = structuredClone(conversation);
+      return run([draftStores.conversations], "readonly", (tx, read, done) => {
+        read(tx.objectStore(draftStores.conversations).getAll(), (records: ConversationRecord[]) => {
+          conversationRetention(records.filter((record) => record.workspace === key).map((record) => record.conversation), incoming, now());
+          done(undefined);
+        });
+      });
     },
     conversations(workspace) {
-      const key = workspaceKey(workspace);
+      const key = workspaceKey(workspace), time = now();
       return run([draftStores.conversations], "readonly", (tx, read, done) => {
-        read(tx.objectStore(draftStores.conversations).getAll(), (records: { workspace: string; conversation: Conversation }[]) => done(records.filter((record) => record.workspace === key).map((record) => record.conversation)));
+        read(tx.objectStore(draftStores.conversations).getAll(), (records: ConversationRecord[]) => done(records
+          .filter((record) => record.workspace === key && !conversationExpired(record.conversation, time))
+          .map((record) => record.conversation)));
       });
     },
   };
