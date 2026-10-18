@@ -94,7 +94,7 @@ export function agentStructuralActions(workspace: EditorWorkspace, context: Agen
   const checkReads = async () => {
     const prove = () => { verify(); if ([...finishProofs.values()].some(proof => !proof())) throw new Error("The repository or source changed meanwhile."); };
     prove();
-    await context.check();
+    await context.check?.();
     prove();
   };
   // Wrap preparation ports only: postcommit refreshes recover from the durable outcome instead.
@@ -109,7 +109,7 @@ export function agentStructuralActions(workspace: EditorWorkspace, context: Agen
       return result.then(async result => {
         verify();
         if (!held.holds()) throw new Error("The repository or source changed meanwhile.");
-        if (recorded) await context.check();
+        if (recorded) await context.check?.();
         else await checkReads();
         verify();
         if (!held.holds()) throw new Error("The repository or source changed meanwhile.");
@@ -124,7 +124,7 @@ export function agentStructuralActions(workspace: EditorWorkspace, context: Agen
       claimed = true;
       const held = options?.since ?? edits.stamp();
       finishProofs.set("stamp", () => held.holds() && (options?.guard?.() ?? true));
-      await context.check();
+      await context.check?.();
       verify();
       let selection: { after: NodeRef; flash?: string } | undefined;
       const outcome = await edits.run(async r => {
@@ -186,7 +186,7 @@ export function agentStructuralActions(workspace: EditorWorkspace, context: Agen
     },
     async makeComponent(request) {
       const module = await import("./page-builder/components");
-      await context.check();
+      await context.check?.();
       verify();
       const component = ports.components(), preparation = checked(component);
       tools ??= module.createComponentTools({ ...component, index: preparation.index, loaderPlan: loader ?? preparation.loaderPlan, edits: scoped });

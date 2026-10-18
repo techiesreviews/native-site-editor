@@ -13,7 +13,7 @@ import type { HistoryCompanion, HistorySourceEdit, HistorySourceReceipt } from "
 /** An admitted agent command. The durable transaction runs before the synchronous history receipt. */
 export interface AgentTextCommit {
   /** Recheck ownership and paused admission between preparation awaits; commit proves authorization and cancellation. */
-  check(): Promise<void>;
+  check?(): Promise<void>;
   fence(scope: DraftScope, paths: string[]): Promise<() => void>;
   /** `plan`: what the structural plan selects and creates, so the recorded reply names them (src/agent-site.ts). */
   commit(before: Map<string, SavedDraft | undefined>, after: Map<string, SavedDraft | undefined>, current: () => boolean,

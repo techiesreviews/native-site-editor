@@ -110,7 +110,7 @@ export function createCommit(ws: EditorWorkspace & { agentText?(): AgentTextComm
         const problem = await ws.createProblem(file.path);
         if (stale()) return COMMIT_CHANGED;
         if (agent) {
-          await agent.check();
+          await agent.check?.();
           if (stale()) return COMMIT_CHANGED;
         }
         if (problem) return `${problem} No files were changed.`;
@@ -119,7 +119,7 @@ export function createCommit(ws: EditorWorkspace & { agentText?(): AgentTextComm
         const found = await ws.entry(path);
         if (stale()) return COMMIT_CHANGED;
         if (agent) {
-          await agent.check();
+          await agent.check?.();
           if (stale()) return COMMIT_CHANGED;
         }
         if (!found) return `${path} is not there any more.`;
@@ -130,7 +130,7 @@ export function createCommit(ws: EditorWorkspace & { agentText?(): AgentTextComm
         bases.set(path, await ws.branchText(path));
         if (stale()) return COMMIT_CHANGED;
         if (agent) {
-          await agent.check();
+          await agent.check?.();
           if (stale()) return COMMIT_CHANGED;
         }
       }
