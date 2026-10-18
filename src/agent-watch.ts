@@ -27,9 +27,9 @@ type Store = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
 export const watchKey = (workspace: AgentWorkspace) => `native-site-editor:agent-watch:${workspaceKey({ ...workspace, account: workspace.account.toLowerCase() })}`;
 
-export function agentWatch(workspace: AgentWorkspace, storage: Store = localStorage) {
+export function agentWatch(workspace: AgentWorkspace, storage: Store = localStorage, clock: () => number = Date.now) {
   const key = watchKey(workspace);
-  function read(now = Date.now()): WatchRecord | undefined {
+  function read(now = clock()): WatchRecord | undefined {
     let value: Partial<WatchRecord> | null;
     try { value = JSON.parse(storage.getItem(key) ?? "null"); } catch { return undefined; }
     if (!value || !Number.isFinite(value.startedAt) || !Number.isFinite(value.until) || !Number.isSafeInteger(value.waits) ||
@@ -42,9 +42,9 @@ export function agentWatch(workspace: AgentWorkspace, storage: Store = localStor
     key,
     read,
     /** The user's explicit start or renewal: the only thing that resets the deadline and the count. */
-    start: (now = Date.now()) => write({ startedAt: now, until: now + WATCH_MS, waits: 0 }),
+    start: (now = clock()) => write({ startedAt: now, until: now + WATCH_MS, waits: 0 }),
     stop: () => { storage.removeItem(key); },
-    report(now = Date.now()): WatchReport {
+    report(now = clock()): WatchReport {
       const record = read(now);
       if (!record) return { state: "off" };
       if (now >= record.until) return { state: "paused", reason: "ended", at: record.until };
@@ -52,7 +52,7 @@ export function agentWatch(workspace: AgentWorkspace, storage: Store = localStor
       return { state: "on", until: record.until, waitsLeft: WATCH_WAITS - record.waits };
     },
     /** Counts one held wait; none once Watch is off, ended or used up. */
-    use(now = Date.now()): WatchRecord | undefined {
+    use(now = clock()): WatchRecord | undefined {
       const record = read(now);
       if (!record || now >= record.until || record.waits >= WATCH_WAITS) return undefined;
       return write({ ...record, waits: record.waits + 1 });

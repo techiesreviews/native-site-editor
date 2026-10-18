@@ -754,10 +754,12 @@ test("Ask agent: the tab's requests reach wait_for_requests with their element, 
     const selected = payload(await call("get_selection"));
     assert.deepEqual(selected.element, element);
 
-    // Nothing asked yet: an empty list and a hint, after waiting.
+    // Nothing asked yet: an empty list at once, and a hint that does not ask for another call (ticket 18).
     const empty = payload(await call("wait_for_requests", { waitSeconds: 0 }));
     assert.deepEqual(empty.requests, []);
-    assert.match(empty.hint, /Call wait_for_requests again/);
+    assert.match(empty.hint, /Do not call wait_for_requests again on your own/);
+    assert.doesNotMatch(empty.hint, /call wait_for_requests again now|keep watching/i);
+    assert.match(JSON.stringify(await client.getPrompt({ name: "watch_editor", arguments: {} })), /do not call it again on your own/);
 
     // Asked, it is returned once to this connection and seen from then on.
     const asked = await ask("Make this heading friendlier");
@@ -779,11 +781,12 @@ test("Ask agent: the tab's requests reach wait_for_requests with their element, 
     assert.equal(payload(await call("wait_for_requests", { all: true, waitSeconds: 0 })).requests.length, 1);
     assert.equal(payload(await call("get_selection", { request: request.id })).element.html, "<h1>Welcome</h1>");
 
-    // A request asked while an agent waits comes back at once.
-    const waiting = call("wait_for_requests", { waitSeconds: 10 });
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    // The legacy fallback is quiet too: a wait with nothing pending returns at once, never polling the hub.
+    const started = Date.now();
+    assert.deepEqual(payload(await call("wait_for_requests", { waitSeconds: 10 })).requests, []);
+    assert.ok(Date.now() - started < 5000, "no wait without Watch");
     const second = await (await ask("And a subtitle under it\nwith two lines")).json();
-    const arrived = payload(await waiting);
+    const arrived = payload(await call("wait_for_requests", { waitSeconds: 10 }));
     assert.deepEqual(arrived.requests.map((item: any) => item.id), [second.id]);
 
     // A reply shows in the tab; a dismissed request takes none.
