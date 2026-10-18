@@ -72,7 +72,12 @@ export interface RequestPorts {
   clock?: { setTimeout(callback: () => void, delay: number): unknown; clearTimeout(timer: unknown): void };
 }
 
-const notDismissed = (stored: AgentRequest | undefined) => Boolean(stored && stored.state !== "dismissed");
+/** A change made on a copy read before an await is kept only over that same stored copy: a reply,
+ * answer or dismissal committed meanwhile wins, and this change is dropped (never overwrites it). */
+const unchangedSince = (read: AgentRequest) => {
+  const seen = JSON.stringify(read);
+  return (stored: AgentRequest | undefined) => Boolean(stored && stored.state !== "dismissed" && JSON.stringify(stored) === seen);
+};
 const ok = (value: unknown): AgentReadResult => ({ ok: true, value: JSON.parse(JSON.stringify(value)) as { [key: string]: JsonValue } });
 
 /** The tab's side of wait_for_requests, reply_to_request and get_selection(request). */
@@ -81,11 +86,17 @@ export function createRequestTools(ports: RequestPorts) {
   const clock = ports.clock ?? { setTimeout: (callback: () => void, delay: number) => setTimeout(callback, delay), clearTimeout: (timer: unknown) => clearTimeout(timer as number) };
   const waiters = new Set<() => void>();
   const scope = { repoId: ports.workspace.repoId, branch: ports.workspace.branch };
-  async function take(grantId: string, all: boolean) {
-    const { result } = requestOperation(await ports.list(), { type: "take-requests", grantId, all, ...scope }) as { result: { requests: AgentRequest[] } };
+  async function take(grantId: string, all: boolean, current: () => boolean) {
+    const list = await ports.list();
+    const read = new Map(list.map(request => [request.id, structuredClone(request)]));
+    const { result } = requestOperation(list, { type: "take-requests", grantId, all, ...scope }) as { result: { requests: AgentRequest[] } };
     const taken = [];
-    // A request dismissed (perhaps in another tab) since the read is not handed out.
-    for (const request of result.requests) if (await ports.save(request, notDismissed)) taken.push(requestForAgent(request));
+    for (const request of result.requests) {
+      // A connection gone stale (turned off, lost, taken over) marks nothing delivered.
+      if (!current()) break;
+      // One changed since the read (replied, answered, dismissed in another tab) is not handed out now.
+      if (await ports.save(request, unchangedSince(read.get(request.id)!))) taken.push(requestForAgent(request));
+    }
     return taken;
   }
   /** Ends at a wake (a request arrived or Watch changed) or after `ms`. */
@@ -97,23 +108,27 @@ export function createRequestTools(ports: RequestPorts) {
     });
   }
   async function wait(command: AgentRequests, current: () => boolean, deadline: number) {
-    const all = command.args.all === true;
-    let requests = await take(command.grantId, all);
+    const all = command.args.all === true, started = now();
+    // While Watch is on, every wait call counts against its 25 (whatever it returns); once it ended
+    // or used them, calls still answer (quietly, at once) but are no longer counted or held.
+    const used = ports.watch.report(started).state === "on" ? ports.watch.use(started) : undefined;
+    let requests = await take(command.grantId, all, current);
     const wanted = typeof command.waitMs === "number" && Number.isFinite(command.waitMs) ? Math.min(WAIT_MS, command.waitMs) : WAIT_MS;
-    if (requests.length || !current() || wanted <= 0) return ok({ requests, watch: ports.watch.report(now()) });
-    const started = now(), used = ports.watch.use(started);
-    // Quiet by default: without Watch (or once it ended or used its waits) the answer is immediate.
-    if (!used) return ok({ requests, watch: ports.watch.report(started) });
-    const ms = Math.min(deadline, used.until, started + wanted) - started;
+    // Quiet by default: without Watch the answer is immediate.
+    if (requests.length || !current() || !used || wanted <= 0) return ok({ requests, watch: ports.watch.report(now()) });
+    const ms = Math.min(deadline, used.until, started + wanted) - now();
     if (ms > 0) await hold(ms);
     // The relay gave up or the socket went: take nothing it could not deliver.
-    if (current()) requests = await take(command.grantId, all);
+    if (current()) requests = await take(command.grantId, all, current);
     return ok({ requests, watch: ports.watch.report(now()) });
   }
-  async function reply(command: AgentRequests) {
+  async function reply(command: AgentRequests, current: () => boolean) {
     const { request: id, status, message, requestIds } = command.args;
-    const { result } = requestOperation(await ports.list(), { type: "reply", id, status, message, requestIds, ...scope }) as { result: AgentRequest };
-    if (!await ports.save(result, notDismissed)) throw new HttpError(409, "The user dismissed this request.");
+    const list = await ports.list(), read = structuredClone(list.find(request => request.id === id));
+    const { result } = requestOperation(list, { type: "reply", id, status, message, requestIds, ...scope }) as { result: AgentRequest };
+    if (!current()) throw new HttpError(409, "The editor stopped receiving for this connection. Nothing was changed; reply again when it is on.");
+    if (!await ports.save(result, unchangedSince(read!)))
+      throw new HttpError(409, "The request changed meanwhile (the user answered or dismissed it). Read it again with get_selection before replying.");
     return ok({ id: result.id, state: result.state });
   }
   async function find(command: AgentRequests) {
@@ -124,7 +139,7 @@ export function createRequestTools(ports: RequestPorts) {
     async run(command: AgentRequests, current: () => boolean, deadline: number): Promise<AgentReadResult> {
       try {
         if (command.tool === "wait_for_requests") return await wait(command, current, deadline);
-        if (command.tool === "reply_to_request") return await reply(command);
+        if (command.tool === "reply_to_request") return await reply(command, current);
         if (command.tool === "get_request") return await find(command);
         return { ok: false, message: "Unknown request tool." };
       } catch (error) {

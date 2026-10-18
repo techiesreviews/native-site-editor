@@ -254,10 +254,15 @@ test("live: waits are quiet by default; Watch holds one wait until Ask agent, sh
     await expect(page.locator(".agent-pin").first()).toHaveAttribute("data-state", "done");
     expect((await call("get_selection", { request: asked.id })).state).toBe("done");
 
-    // Empty results never renew Watch: its deadline stays, only the count moves.
+    // An empty Watch wait runs out on its own (10 s asked: held about 9 s inside the relay's budget) and
+    // invites the next call, but never renews Watch: its deadline stays, only the count moves.
     const before = await record();
-    await call("wait_for_requests", { waitSeconds: 0 });
-    expect((await record()).until).toBe(before.until);
+    const quietStart = Date.now();
+    const timedOut = await call("wait_for_requests", { waitSeconds: 10 });
+    expect(Date.now() - quietStart).toBeGreaterThan(7_000);
+    expect(timedOut.requests).toEqual([]);
+    expect(timedOut.hint).toContain("you may call wait_for_requests again now");
+    expect(await record()).toEqual({ ...before, waits: before.waits + 1 });
 
     // Expiry (forced by its own record): the next wait answers at once, paused; no renewal, the
     // connection stays and a separate edit still applies.
