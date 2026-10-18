@@ -221,7 +221,7 @@ test("live: waits are quiet by default; Watch holds one wait until Ask agent, sh
     const watchText = page.locator(".agent-menu__watch-text");
     await expect(watchText).toContainText("ask your agent to continue");
     await page.getByRole("button", { name: "Watch for requests" }).click();
-    await expect(watchText).toContainText(/Watching for requests until .+ \((10:00|9:5\d) left, 25 of 25 waits left\)/);
+    await expect(watchText).toContainText(/Watching for requests until .+ \((10:00|9:5\d) left, 25 waits left\)/);
     const watch = await record();
     expect(Object.keys(watch).sort()).toEqual(["startedAt", "until", "waits"]);
     expect(watch.until - watch.startedAt).toBe(600_000);
