@@ -110,3 +110,14 @@ agent-menu DOM harness, as tickets 09/14; the guard is one predicate checked aft
 - RESULT: ok specs 1/1 passed (native-agent-quiet 7, after review 2)
 - RESULT: fail specs 1 of 4 failed: native-agent-reads.spec.ts (list_files frame counted before Playwright delivered it; passed alone: RESULT: ok specs 1/1 passed); native-agent-quiet, native-agent-live, native-mcp 18 passed
 - RESULT: ok shots raw spec, out /home/ubulex/Projects/native-site-editor/.scratch/shots/dor-18/20261018-164932 (Watch off, on with countdown, paused; 1280 light, 390 dark)
+
+Landed: PR #67, merged as 54d394b (`RESULT: ok merged #67 54d394b`; kit pr: tier full, check, unit, lint, specs, review,
+CI ok). Landing fixes before it: tests/frame-guard.test.ts allowlists the requests BroadcastChannel; agent-tools-read's
+get_site now expects the tab's count; rebase over ticket 17's review 4 (media `seen` proof kept beside the requests route).
+
+Follow-up (landing review round 4, gpt-6.1-sol, medium, read-only; `RESULT: ok review … evidence
+/home/ubulex/Projects/native-site-editor/.scratch/reviews/dor-18/20261018T174509Z`): fixed 1 (P2) in a follow-up PR —
+the socket Ask path checked the activation before its write but not inside it; the write transaction now rechecks the
+activation and workspace, and a refused write throws "Nothing was sent" with no broadcast. Rejected in part: a
+`forEachAwait` menu test (no agent-menu DOM harness, as tickets 09/14; one predicate inside the write).
+RESULT: ok specs 1/1 passed (native-agent-quiet 7).
