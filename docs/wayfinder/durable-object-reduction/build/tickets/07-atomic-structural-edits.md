@@ -3,6 +3,7 @@ title: "Extend command commits to structural changes"
 type: task (AFK)
 status: closed
 assignee: dor-07
+landed: PR #44 (4a2cdb19)
 blocked_by: [06-atomic-text-edits]
 builder: sol
 phase: 2
@@ -55,9 +56,10 @@ The controller factories are passed in from main.ts so the lazy agent chunk does
 Out-of-Files edits (needed): src/editor-workspace.ts (optional `check()`, absent from ticket 08's media context, and the commit's plan hint on `AgentTextCommit`);
 tests/native-save/native-mcp.spec.ts (storage-failure and one-Undo assertions).
 
-Commits (after rebase on 90d88afe/b72c6cb3): 1976b6a7 (Sol build), 1a8792da (boot size, page-details labels; Claude),
-78ae6004 (review 1; Claude), 2675095c (add_section selection regression; Claude), 188db7b6, 284d9c0b and 6692ebd9
-(review 2: recorded reply, make_component files equal to the live reply; Claude).
+Commits (as merged in PR #44): bb9d94cf (Sol build), d0629849 (boot size, page-details labels; Claude),
+6a544f6a (review 1; Claude), 0701ae74 (add_section selection regression; Claude), aec72a95, e43daa2e and 369478a0
+(review 2: recorded reply, make_component files equal to the live reply; Claude), 4a2cdb19 (optional `check()` for
+ticket 08's media context; Claude).
 
 Tests: tests/agent-structural-commit.test.ts (57): create/move/delete/multi-file component commit together with
 the receipt, one Undo and one Redo; AbortError/QuotaExceededError roll every file back; `forEachAwait` over every
@@ -80,8 +82,9 @@ the inserted section (native-component-loader.spec.ts).
 Kit:
 - RESULT: ok doctor 7/7 checks passed
 - RESULT: ok size boot 354 KB (+1 KB) vs dev@90d88af, budget 355 KB
-- RESULT: fail specs 1 of 99 failed: native-component-loader.spec.ts (add_section selection; fixed in 2675095c, rerun: RESULT: ok specs 1/1 passed)
-- RESULT: fail specs 1 of 99 failed: native-mcp.spec.ts (first kit pr: make_component files listed the page; fixed in 6692ebd9)
-- RESULT: ok specs 2/2 passed (native-mcp.spec.ts, native-component-loader.spec.ts after 6692ebd9)
+- RESULT: fail specs 1 of 99 failed: native-component-loader.spec.ts (add_section selection; fixed in 0701ae74, rerun: RESULT: ok specs 1/1 passed)
+- RESULT: fail specs 1 of 99 failed: native-mcp.spec.ts (first kit pr: make_component files listed the page; fixed in 369478a0)
+- RESULT: ok specs 2/2 passed (native-mcp.spec.ts, native-component-loader.spec.ts after 369478a0)
 - RESULT: ok review git diff 90d88afe814fdb282d37cd79c274f7f0a3e31f28...HEAD evidence /home/ubulex/Projects/native-site-editor/.scratch/reviews/dor-07/20261017T222648Z
 - RESULT: ok review git diff 90d88afe814fdb282d37cd79c274f7f0a3e31f28...HEAD evidence /home/ubulex/Projects/native-site-editor/.scratch/reviews/dor-07/20261017T235123Z
+- RESULT: ok merged #44 4a2cdb1 (kit pr: check, unit, lint, specs, CI ok)
