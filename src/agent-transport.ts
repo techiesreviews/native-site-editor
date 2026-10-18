@@ -195,7 +195,12 @@ export function createLiveTransport(options: Options) {
   }
   async function connect(valid: () => boolean) {
     const at = epoch;
-    if (!await prove(at) || !valid()) return;
+    if (!await prove(at) || !valid()) {
+      // A refresh briefly removed the workspace: this attempt failed, it did not succeed, so the
+      // coordinator keeps its budget running and tries again (a move or takeover already halted).
+      if (!current() && !moved() && !stopped && epoch === at) throw new AgentFailureError({ kind: "transient" });
+      return;
+    }
     close();
     const source = socketFactory!(`/api/agent/relay?${new URLSearchParams({ repo: options.repo, branch: workspace.branch, tabId: options.tabId, generation: String(generation) })}`);
     socket = source;
@@ -416,4 +421,26 @@ export function createLiveTransport(options: Options) {
     retry: () => recovery?.retry() ?? Promise.resolve({}),
     report: (failure: AgentFailure) => { recovery?.report(failure); },
   };
+}
+
+/** After takeover: this tab's draft memory takes the durable drafts (a read any local change overtook is
+ * dropped), and the open file shows what this tab now owns unless the user typed during the read. */
+export async function reloadTakeover(snapshot: Snapshot, host: {
+  open: string | undefined;
+  key(path: string): string;
+  keys(): string[];
+  settle(keys: string[]): Promise<void>;
+  draft(path: string): { content?: string; deleted?: boolean } | undefined;
+  /** The open file's editor text, `undefined` once it is not the open, mounted file of this workspace. */
+  mounted(path: string): string | undefined;
+  restore(path: string): Promise<void>;
+}) {
+  const { open } = host, shown = open === undefined ? undefined : host.mounted(open), before = open === undefined ? undefined : host.draft(open);
+  await host.settle([...new Set([...host.keys(), ...snapshot.drafts.map(([key]) => key)])]);
+  if (open === undefined || shown === undefined || host.mounted(open) !== shown) return;
+  const after = host.draft(open), stored = snapshot.drafts.find(([key]) => key === host.key(open))?.[1];
+  // Memory must hold the durable record (or its absence), not a local change made meanwhile.
+  if (after ? after.content !== stored?.content || Boolean(after.deleted) !== Boolean(stored?.deleted) : stored) return;
+  // Deleted or moved away, discarded (gone from memory), or other text than the editor shows.
+  if (after ? after.deleted || after.content !== shown : before) await host.restore(open);
 }
