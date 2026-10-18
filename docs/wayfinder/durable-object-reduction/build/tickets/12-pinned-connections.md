@@ -89,7 +89,12 @@ Round 1 `RESULT: ok review … evidence .scratch/reviews/dor-12/20261017T212937Z
 ignored the branch; a change claimed before a rebind could still apply after it: rebind now waits).
 Round 2 `RESULT: ok review … evidence .scratch/reviews/dor-12/20261017T220101Z`: fixed 2 (the rebind wait had a
 five-minute limit, now none; request actions captured before a rebind still worked, now fenced by generation).
-Rejected 0. Note: the browser does not yet fence its own commit on the grant generation; until ticket 06 wires
+Round 3 (run by `kit pr`, `RESULT: ok review … evidence .scratch/reviews/dor-12/20261018T003646Z`, after PR #39
+merged, b72c6cb3): fixed 2 in a follow-up PR (answered-history trimming could drop a claimed pending change and so
+lift the rebind fence: pending changes are now always kept, new test fails without the fix; Connect installed a
+token after the tab switched repository or branch: the token is now revoked and ignored). Rejected in part: the
+suggested browser spec for the Connect race (the menu has no DOM unit harness; the fix is a two-line recheck).
+Rejected 0 otherwise. Note: the browser does not yet fence its own commit on the grant generation; until ticket 06 wires
 the receipt transaction, the server-side rebind wait is the fence.
 
 **Evidence.** `RESULT: ok doctor 7/7 checks passed`; `RESULT: ok size boot 352 KB, budget 355 KB` (builder run).

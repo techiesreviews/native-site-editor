@@ -429,6 +429,12 @@ export function createAgentMenu(options: {
         if (grant.via === "token" && !grant.usedAt) await api("revoke", { id: grant.id }).catch(() => undefined);
       const result = await api("connect", { repo: repo.fullName, repoId: repo.id, branch: repo.branch });
       if (disposed) return;
+      // The tab moved to another repository or branch meanwhile: that token is pinned to the old one.
+      const now = options.repository();
+      if (now?.id !== repo.id || now.branch !== repo.branch) {
+        await api("revoke", { id: result.id }).catch(() => undefined);
+        return;
+      }
       token = result.token;
       tokenId = result.id;
       sentRevision = -1;

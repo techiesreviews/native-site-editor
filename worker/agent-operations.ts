@@ -142,13 +142,12 @@ export function agentOperation(hub: AgentHub, action: any) {
         429,
         "Too many pending changes. Wait for the editor to apply them.",
       );
+    // Every pending change stays (a claimed one fences rebind); recent
+    // answered ones fill the rest of 29, oldest dropped first.
+    const answered = commands.filter((item) => item.state !== "pending" && Date.now() - item.createdAt < 300_000);
+    const dropped = new Set(answered.slice(0, Math.max(0, answered.length - Math.max(0, 29 - commands.filter((item) => item.state === "pending").length))));
     const nextCommands = [
-      ...commands
-        .filter(
-          (item) =>
-            item.state === "pending" || Date.now() - item.createdAt < 300_000,
-        )
-        .slice(-29),
+      ...commands.filter((item) => (item.state === "pending" || answered.includes(item)) && !dropped.has(item)),
       command,
     ];
     while (
