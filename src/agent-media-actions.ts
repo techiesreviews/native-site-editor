@@ -250,8 +250,8 @@ export async function applyAgentMedia(...parameters: Parameters<typeof executeAg
   const assertCurrent = () => {
     ctx.assertLive();
     if (!applied) {
+      // The live executor's proof carries the relay deadline and socket liveness (src/agent-tools-media.ts).
       proof?.();
-      if (command.ownerGeneration !== undefined && Date.now() >= command.createdAt + 10_000) throw new Error("The media command deadline passed. Cancelled before commit.");
     }
     if (!applied && parameters[8] && [...dependencies].some(([path, source]) => parameters[8]!.source(path) !== source))
       throw new Error("The source changed while preparing the media command.");

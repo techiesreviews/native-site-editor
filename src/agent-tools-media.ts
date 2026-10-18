@@ -21,6 +21,9 @@ export function createAgentMediaTools(options: {
   const executor = async ({ request, generation, current }: Input): Promise<AgentReadResult> => {
     const stamp = ports.stamp(), source = ports.files(), branch = source?.snapshot.branch, commit = source?.snapshot.commit, repoId = source?.repo.id;
     const changing = mediaChanges(request.tool, request.args);
+    // The relay's 10 s deadline counted from arrival in this tab: the Worker's clock is not this browser's.
+    // Arrival is later than the relay's start, so a late commit is reported unknown and reconciled by its receipt.
+    const deadline = Date.now() + 10_000;
     let applied = false;
     const check = () => {
       if (applied) return;
@@ -30,7 +33,7 @@ export function createAgentMediaTools(options: {
     };
     const beforeCommit = () => {
       check();
-      if (Date.now() >= request.createdAt + 10_000) throw new Error("The media command deadline passed. Cancelled before commit; nothing was changed.");
+      if (Date.now() >= deadline) throw new Error("The media command deadline passed. Cancelled before commit; nothing was changed.");
     };
     const reply = (outcome: JsonValue): AgentReadResult => ({ ok: true, value: { requestId: request.id, state: "applied", message: null,
       ...(outcome && typeof outcome === "object" && !Array.isArray(outcome) ? outcome : {}) } });
@@ -57,7 +60,7 @@ export function createAgentMediaTools(options: {
         beforeCommit();
         mediaCommandProofs.set(command, beforeCommit);
         // Cancellation races the same records transaction as commit; a committed receipt wins.
-        const timer = changing ? setTimeout(() => { void records.cancel(workspace, request.id, request.grantId).catch(() => {}); }, Math.max(0, request.createdAt + 10_000 - Date.now())) : undefined;
+        const timer = changing ? setTimeout(() => { void records.cancel(workspace, request.id, request.grantId).catch(() => {}); }, Math.max(0, deadline - Date.now())) : undefined;
         try {
           const outcome = await options.run(command);
           if (changing) {
