@@ -130,6 +130,7 @@ test("mixed tabs: old polling/uploads/claim/ack/Ask cannot recreate mirrors; new
   } satisfies RelaySocket;
   try {
     h.attach(name, socket, JSON.stringify({ type: "handshake", ...scope, owner: true }));
+    await h.settle(name);
     const hub = (await h.storage(h.hubName).get<AgentHub>("session"))!;
     const commands = [{ id: "legacy-pending", state: "pending", claimedBy: "old-tab" }];
     await h.storage(h.hubName).put("session", { ...hub, commands });
@@ -155,7 +156,7 @@ test("mixed tabs: old polling/uploads/claim/ack/Ask cannot recreate mirrors; new
     assert.equal(h.counters.byCategory.data.calls, 0);
     assert.equal(Object.values(h.counters.byCategory).reduce((sum, count) => sum + count.keysWritten, 0), 0);
     const stored = await h.storage(h.hubName).list();
-    assert.deepEqual([...stored.keys()], ["session"]);
+    assert.deepEqual([...stored.keys()], ["alarm-deadlines", "session"]);
     assert.deepEqual((stored.get("session") as AgentHub).commands, commands);
   } finally { await h.worker.dispose(); }
 });

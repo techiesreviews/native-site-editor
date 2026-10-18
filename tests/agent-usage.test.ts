@@ -133,7 +133,7 @@ test("lifecycle runs the real alarm and DELETE; sockets count UTF-8 and binary t
   const h = await startCountedWorker();
   try {
     const storage = h.storage("agent-hub:unit");
-    await storage.put({ session: { kind: "agent-hub", expiresAt: Date.now() + 10000 }, context: {}, drafts: {} });
+    await storage.put({ session: { kind: "agent-hub", expiresAt: Date.now() - 1 }, context: {}, drafts: {} });
     await storage.setAlarm(Date.now() + 1000);
     assert.ok(await storage.getAlarm());
     h.counters.reset();

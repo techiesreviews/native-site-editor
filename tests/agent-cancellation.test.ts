@@ -426,7 +426,8 @@ test("SessionStore legacy cancel during body intake or before dispatch sends not
   const counters = new UsageCounters();
   const env: Env = { SESSIONS: { idFromName: name => name, get: () => ({ fetch: async () => new Response(null, { status: 404 }) }) },
     ASSETS: { fetch: async () => new Response(null, { status: 404 }) } };
-  const instance = new SessionStore({ storage: new CountedStorage(counters), getWebSockets: () => [socket], setWebSocketAutoResponse() {} }, env);
+  const instance = new SessionStore({ storage: new CountedStorage(counters), getWebSockets: () => [socket], setWebSocketAutoResponse() {},
+    blockConcurrencyWhile<T>(run: () => Promise<T>) { return run(); } }, env);
   const tab = await browser(listener => { receive = listener; return new BrowserSocket(text => { instance.webSocketMessage(socket, text); }, () => {}); });
   try {
     for (const before of [false, true]) {
@@ -442,7 +443,11 @@ test("SessionStore legacy cancel during body intake or before dispatch sends not
         body: new ReadableStream<Uint8Array>({ start(controller) { body = controller; }, cancel() { readerCancelled = true; } }, { highWaterMark: 0 }) } as RequestInit));
       // Cancelled during intake: the body never finishes, yet the dispatch settles and frees its slot at once.
       const cancelledAt = Date.now();
-      if (!before) { assert.equal(instance.relayCore.reservedCount, 1); assert.equal((await cancel()).status, 202); }
+      if (!before) {
+        // Waking the relay loads its grant fence once before intake admission.
+        for (let turn = 0; turn < 50 && instance.relayCore.reservedCount === 0; turn++) await Promise.resolve();
+        assert.equal(instance.relayCore.reservedCount, 1); assert.equal((await cancel()).status, 202);
+      }
       else { body.enqueue(new TextEncoder().encode(text)); body.close(); }
       assert.deepEqual(await (await pending).json(), { ok: false, code: "cancelled", outcome: "not-sent" });
       if (!before) {
@@ -455,7 +460,8 @@ test("SessionStore legacy cancel during body intake or before dispatch sends not
       assert.deepEqual(tab.counts(), { runs: 0, history: 0 });
       assert.equal(tab.fake.stores.get("drafts")!.size, 0); assert.equal(tab.fake.stores.get("receipts")!.size, 0);
     }
-    assert.equal(counters.log.length, 0, "intake and cancellation use no storage");
+    assert.equal(counters.log.length, 0, "intake and cancellation schedule no alarms");
+    assert.equal(counters.byCategory.data.keysWritten, 0, "intake and cancellation written key count");
   } finally { tab.close(); }
 });
 

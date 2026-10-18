@@ -5,7 +5,7 @@ import type { Env, StoredSession } from "./app";
 import type { requestSummary } from "../shared/agent-requests";
 import { workspaceKey, type AgentWorkspace } from "../shared/agent-command";
 import { relayObjectName } from "./agent-relay";
-import { METADATA_ROUTE, type MetadataOperation, type MetadataResult } from "./agent-metadata";
+import { METADATA_ROUTE, type MetadataOperation, type MetadataResult, type Entry } from "./agent-metadata";
 
 
 /**
@@ -196,6 +196,7 @@ async function reserveGrant(env: Env, id: string, grant: AgentGrant, listed: Hub
     result = await metadata(env, grant, action);
   }
   if (!result.allowed) {
+    if (result.reason === "cleaned") throw new HttpError(401, "This connection was cleaned up. Connect the agent again.");
     if (result.reason === "connections") throw new HttpError(409,
       "This site already has 5 agent connections on this branch. Disconnect one in the editor's agent menu first.");
     if (result.reason === "bytes") throw new HttpError(409,
@@ -210,7 +211,7 @@ async function reserveGrant(env: Env, id: string, grant: AgentGrant, listed: Hub
 async function finishGrant(env: Env, id: string, grant: AgentGrant) {
   // Pending and final both count. An unavailable finalize cannot free capacity.
   const result = await metadata(env, grant, { action: "finalize", id, generation: grant.generation }).catch(() => undefined);
-  return result ? result.entries.some(entry => entry.id === id && entry.generation === grant.generation) : undefined;
+  return result ? result.allowed && result.entries.some(entry => entry.id === id && entry.generation === grant.generation) : undefined;
 }
 async function releaseGrant(env: Env, id: string, grant: Pick<AgentGrant, "login" | "repoId" | "branch" | "generation">) {
   await metadata(env, grant, { action: "release", id, generation: grant.generation });
@@ -294,6 +295,8 @@ async function reconcileGrants(env: Env, workspace: AgentGrant, entries: Metadat
  * leaves the old reservation counted; reconciliation repairs either side.
  */
 export async function rebindGrant(env: Env, id: string, previous: AgentGrant, target: Pick<AgentGrant, "repoId" | "repo" | "branch">) {
+  const sourceIsLive = async () => (await metadata(env, previous, { action: "finalize", id, generation: previous.generation })).allowed;
+  if (!await sourceIsLive()) throw new HttpError(401, "This connection was cleaned up. Connect the agent again.");
   const hub = await getHub(env, previous.sessionId);
   const listed = hub?.grants.find(item => item.id === id);
   if (!listed) throw new HttpError(409, "This connection was removed. Connect the agent again.");
@@ -309,11 +312,23 @@ export async function rebindGrant(env: Env, id: string, previous: AgentGrant, ta
   const write = new Request("https://session.internal/", {
     method: "PUT", headers: { "X-Agent-Previous": await tokenId(JSON.stringify(previous)), "X-Agent-Deadline": String(deadline) }, body: JSON.stringify(grant),
   });
+  if (!await sourceIsLive()) throw new HttpError(401, "This connection was cleaned up. Connect the agent again.");
   await operateHub(env, previous.sessionId, { type: "rebind-grant", id, ...target,
     generation: grant.generation, previous: previous.generation, deadline });
   const saved = await record.fetch(write);
   if (!saved.ok) throw new HttpError(503, "The connection could not be rebound. Connect the agent again.");
-  await finishGrant(env, id, grant);
+  const finalized = await finishGrant(env, id, grant);
+  if (finalized === false || finalized === undefined && Date.now() >= deadline || !await sourceIsLive()) {
+    // Cleanup may have fenced the source or destination while this write was in
+    // flight. Never report a successful rebind or leave this generation usable.
+    const deleted = await record.fetch(new Request("https://session.internal/", {
+      method: "DELETE", headers: { "X-Agent-Delete": await tokenId(JSON.stringify(grant)) },
+    })).catch(() => undefined);
+    if (deleted?.ok || deleted?.status === 404) {
+      if (await removeHubGrant(env, grant.sessionId, id, grant.generation)) await releaseGrant(env, id, grant).catch(() => undefined);
+    }
+    throw new HttpError(401, "This connection was cleaned up. Connect the agent again.");
+  }
   if (workspaceKey(grantWorkspace(previous)) !== workspaceKey(grantWorkspace(grant)))
     await releaseGrant(env, id, previous).catch(() => undefined);
   return grant;
@@ -350,18 +365,22 @@ export async function revokeGrant(env: Env, id: string, sessionId: string) {
   const hub = await getHub(env, sessionId);
   const listed = hub?.grants.find(item => item.id === id);
   const workspace = grant ?? (listed && hub ? { login: hub.login, repoId: listed.repoId, branch: listed.branch, generation: listed.generation } : undefined);
-  const deleted = await agentRecord(env, id, "DELETE");
-  const absent = deleted.ok || deleted.status === 404;
+  // Authentication consults the hub: deny before awaiting physical deletion.
   const removed = await removeHubGrant(env, sessionId, id);
+  const deleted = await agentRecord(env, id, "DELETE").catch(() => undefined);
+  const absent = deleted?.ok || deleted?.status === 404;
+  if (!removed && !absent) throw new HttpError(503, "The connection could not be disconnected. Try again.");
   if (absent && removed && workspace?.branch) await releaseGrant(env, id, workspace).catch(() => undefined);
 }
 
 /**
- * Sign-out: delete every listed grant record, end the session, delete its separate
+ * Sign-out: end the session, delete every listed grant record and its separate
  * hub, then release each definitely deleted grant's workspace reservation. 3 + 2n
  * calls, without a full revoke per grant; unknown outcomes stay counted.
  */
 export async function endSessionGrants(env: Env, sessionId: string, endSession: () => Promise<unknown>) {
+  // The session is the authentication fence, even if later reads or deletion fail.
+  await endSession();
   const hub = await getHub(env, sessionId).catch(() => undefined);
   const deleted: HubGrant[] = [];
   for (const grant of hub?.grants ?? []) {
@@ -370,7 +389,6 @@ export async function endSessionGrants(env: Env, sessionId: string, endSession: 
       if (response.ok || response.status === 404) deleted.push(grant);
     } catch { /* Unknown stays counted. */ }
   }
-  await endSession();
   try {
     const response = await durable(env, `agent-hub:${sessionId}`).fetch(new Request("https://session.internal/", { method: "DELETE" }));
     if (!response.ok && response.status !== 404) return;
@@ -461,4 +479,29 @@ export async function authenticateAgent(
     throw new HttpError(403, "Repository access changed. Reconnect the agent.");
   const workspace = { account: grant.login, repoId: grant.repoId, repo: grant.repo, branch: grant.branch };
   return { grant, github, repo, id, hub, workspace };
+}
+
+/** Physical cleanup of fenced ledger entries. Unknown outcomes remain counted.
+ * Conditional deletes leave a successfully rebound grant in another workspace alone. */
+export async function deleteCleanedGrants(env: Env, workspace: string, entries: Entry[]) {
+  const removed: Entry[] = [];
+  for (const entry of entries) {
+    try {
+      const response = await agentRecord(env, entry.id);
+      if (!response.ok && response.status !== 404) continue;
+      const headers: Record<string, string> = { "X-Agent-Cleaned-Until": String(entry.expiresAt) };
+      let matches = response.status === 404;
+      if (response.ok) {
+        const grant = await response.json() as AgentGrant;
+        matches = workspaceKey(grantWorkspace(grant)) === workspace && grant.generation <= entry.generation;
+        if (matches) headers["X-Agent-Delete"] = await tokenId(JSON.stringify(grant));
+      }
+      if (matches) {
+        const deleted = await durable(env, `agent:${entry.id}`).fetch(new Request("https://session.internal/", { method: "DELETE", headers }));
+        if (!deleted.ok && deleted.status !== 404) continue;
+      }
+      if (await removeHubGrant(env, entry.sessionId, entry.id, entry.generation)) removed.push(entry);
+    } catch { /* Retain the ledger and deny access until retry establishes absence. */ }
+  }
+  return removed;
 }

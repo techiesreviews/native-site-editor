@@ -1,20 +1,20 @@
 // Persistent workspace agent metadata consists of the AgentGrant record, its
 // HubGrant entry (including reserved first-use growth), and this ledger. The
-// relay retains only memory and editor WebSocket attachments, not agent
-// connections. Watch lives in browser localStorage. Neither adds persistent DO
-// metadata. Expiry is lazy; this ledger never schedules an alarm.
+// relay's command payloads remain in memory; Watch lives in browser localStorage.
+// SessionStore holds lifecycle fences separately and schedules disconnect cleanup;
+// this accounting function itself only expires entries lazily.
 export const METADATA_KEY = "agent-metadata";
 export const METADATA_ROUTE = "/agent-metadata";
 
-interface Entry { id: string; sessionId: string; generation: number; state: "pending" | "final"; bytes: number; expiresAt: number; at: number }
-interface Ledger { workspace: string; entries: Entry[] }
+export interface Entry { id: string; sessionId: string; generation: number; state: "pending" | "final" | "cleaned"; bytes: number; expiresAt: number; at: number }
+export interface Ledger { workspace: string; entries: Entry[] }
 export type MetadataOperation =
   | { action: "reserve"; id: string; sessionId: string; generation: number; bytes: number; expiresAt: number }
   | { action: "finalize"; id: string; generation: number }
   | { action: "release"; id: string; generation: number; expected?: Entry }
 ;
 export type MetadataAction = { workspace: string } & MetadataOperation;
-export interface MetadataResult { allowed: boolean; reason?: "invalid" | "workspace" | "connections" | "bytes"; entries: Entry[] }
+export interface MetadataResult { allowed: boolean; reason?: "invalid" | "workspace" | "connections" | "bytes" | "cleaned"; entries: Entry[] }
 interface Storage {
   get<T>(key: string): Promise<T | undefined>;
   put<T>(key: string, value: T): Promise<void>;
@@ -39,6 +39,8 @@ export async function accountMetadata(storage: Storage, operation: MetadataActio
   const ledger: Ledger = { workspace: operation.workspace, entries: (stored?.entries ?? []).filter(entry => entry.expiresAt > now) };
   let changed = Boolean(stored && ledger.entries.length !== stored.entries.length);
   const entry = ledger.entries.find(entry => entry.id === operation.id);
+  if (entry?.state === "cleaned" && operation.action !== "release")
+    return { allowed: false, reason: "cleaned", entries: ledger.entries };
   let reason: MetadataResult["reason"];
   if (operation.action === "reserve" && (!entry || entry.generation < operation.generation)) {
     // Returning to a workspace establishes a newer reservation before fencing

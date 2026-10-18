@@ -238,6 +238,7 @@ test("live read_file/get_site/resource/prompt: 3 auth + 1 real SessionStore disp
   } satisfies RelaySocket;
   try {
     h.attach(name, editor, JSON.stringify({ type: "handshake", ...scope, owner: true }));
+    await h.settle(name);
     const storage = h.storage(h.sessionId);
     // Legacy hub requests arrive through the existing authentication GET, without another invocation, but over the
     // relay the receiving tab counts its own (ticket 18; the menu fills openRequests), so they do not count here.

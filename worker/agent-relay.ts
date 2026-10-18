@@ -17,8 +17,8 @@ export interface RelayClock {
   setTimeout(callback: () => void, delay: number): unknown;
   clearTimeout(timer: unknown): void;
 }
-type Attachment = RelayScope & { role: "editor"; handshaken: boolean; owner?: { tabId: string | null; generation: number } };
-type FailureCode = "editor-unavailable" | "busy" | "waiting" | "too-large" | "cancelled" | "timeout" | "unknown-outcome";
+type Attachment = RelayScope & { role: "editor"; handshaken: boolean; everHandshaken?: boolean; owner?: { tabId: string | null; generation: number } };
+type FailureCode = "editor-unavailable" | "busy" | "waiting" | "too-large" | "cancelled" | "timeout" | "unknown-outcome" | "connect-agent-again";
 type Outcome = { ok: true; result: JsonValue } | { ok: false; code: FailureCode; outcome: "unknown" | "not-sent" };
 /** A dispatcher names the workspace; tab and generation are optional fences. The
  * relay resolves the current owner (an MCP grant does not know which tab owns). */
@@ -149,7 +149,7 @@ export class AgentRelay {
       if (!scope || !value || typeof value !== "object" || !("role" in value) || value.role !== "editor" || socket.readyState !== 1) continue;
       if (this.workspace && this.workspace !== workspaceKey(scope.workspace)) continue;
       this.workspace = workspaceKey(scope.workspace);
-      this.sockets.set(socket, { ...scope, role: "editor", handshaken: false });
+      this.sockets.set(socket, { ...scope, role: "editor", handshaken: false, everHandshaken: (value as Attachment).everHandshaken ?? (value as Attachment).handshaken });
       // Only an explicit, recorded owner claim restores ownership; a socket that
       // connected and never handshook claims nothing (decision 04).
       const owner = (value as Attachment).owner;
@@ -180,6 +180,13 @@ export class AgentRelay {
     return { workspace: probe.workspace, ...(target.tabId === undefined ? {} : { tabId: probe.tabId }), ...(target.generation === undefined ? {} : { generation: probe.generation }) };
   }
 
+  eligibleEditors(sockets: RelaySocket[], workspace = this.workspace) {
+    return sockets.filter(socket => socket.readyState === 1 && this.sockets.get(socket)?.everHandshaken === true &&
+      workspaceKey(this.sockets.get(socket)!.workspace) === workspace).length;
+  }
+  isHandshaken(socket: RelaySocket) { return this.sockets.get(socket)?.handshaken === true; }
+  private cleaned = new Set<string>();
+  refuse(ids: string[]) { for (const id of ids) this.cleaned.add(id); }
   get pendingCount() { return this.calls.size; }
   get waiting() { return this.waitId !== undefined; }
   get reservedCount() { return this.reserved.count; }
@@ -188,6 +195,7 @@ export class AgentRelay {
    * arriving, so concurrent intake shares the five-command / 8 MiB bounds and is
    * refused before the body is read. Release is idempotent. */
   reserve(length: number, cancelKey?: RelayCancelKey): RelayReservation | Outcome {
+    if (cancelKey && this.cleaned.has(cancelKey.grantId)) return failure("connect-agent-again");
     if (this.recentlyCancelled(cancelKey)) return failure("cancelled");
     if (this.calls.size + this.reserved.count >= 5) return failure("busy");
     if (this.buffered + this.reserved.bytes + length > AgentRelay.maxBytes) return failure("too-large");
@@ -243,6 +251,7 @@ export class AgentRelay {
   dispatch(target: RelayTarget, command: JsonValue, signal?: AbortSignal, intake?: { started: number; reservation: RelayReservation }, cancelKey?: RelayCancelKey): Promise<Outcome> {
     // The body's reservation becomes this call's own accounting in the same turn.
     intake?.reservation.release();
+    if (cancelKey && this.cleaned.has(cancelKey.grantId)) return Promise.resolve(failure("connect-agent-again"));
     if (intake?.reservation.cancelled || this.recentlyCancelled(cancelKey)) return Promise.resolve(failure("cancelled"));
     const started = intake?.started ?? this.clock.now();
     const wanted = AgentRelay.readTarget(target);
@@ -325,6 +334,7 @@ export class AgentRelay {
         other.serializeAttachment(otherMetadata);
       }
       metadata.handshaken = true;
+      metadata.everHandshaken = true;
       socket.serializeAttachment(metadata);
       try { socket.send(JSON.stringify({ type: "ready", ...scope })); }
       catch { this.disconnect(socket); return false; }

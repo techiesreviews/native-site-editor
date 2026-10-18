@@ -283,6 +283,7 @@ test("real media relay: 3 authentication + 1 dispatch, zero result polls or serv
   } satisfies RelaySocket;
   try {
     h.attach(name, socket, JSON.stringify({ type: "handshake", ...scope, owner: true }));
+    await h.settle(name);
     for (const [tool, args] of [["list_media", { limit: 1 }], ["preview_media", { path: "images/photo.svg" }],
       ["adding_settings", { image: "smaller", requestId: "one" }], ["adding_settings", { image: "smaller", requestId: "one" }],
       ["get_command_status", { requestId: "one" }]] as const) {
@@ -319,6 +320,7 @@ test("a committed edit whose reply arrives after the deadline stays unknown on t
   } satisfies RelaySocket;
   try {
     h.attach(name, socket, JSON.stringify({ type: "handshake", ...scope, owner: true }));
+    await h.settle(name);
     const result = payload(await h.rpc("adding_settings", { image: "smaller", requestId: "late", waitSeconds: 25 }));
     assert.equal(result.state, "unknown"); assert.match(result.message, /get_command_status.*do not replay/);
     const status = payload(await h.rpc("get_command_status", { requestId: "late" }));

@@ -260,7 +260,9 @@ test("unreachable ledger allocates nothing; sign-out and the session alarm clear
     assert.equal((await reserveResponse.json()).allowed, false, "late admission cannot recreate a signed-out ledger");
     const next = await oauth(h.worker);
     await next.nonce();
-    await h.alarm(next.sessionId);
+    const expiry = (await h.storage(next.sessionId).get<{ expiresAt: number }>("session"))!.expiresAt;
+    const now = Date.now;
+    try { Date.now = () => expiry; await h.alarm(next.sessionId); } finally { Date.now = now; }
     assert.equal(await h.storage(next.sessionId).get(PENDING_KEY), undefined);
   } finally { await h.worker.dispose(); }
 });

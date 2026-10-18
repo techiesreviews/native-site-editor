@@ -250,6 +250,7 @@ test("already-authorized edit and duplicate: 3 auth + 1 real relay dispatch, 0 r
   } satisfies RelaySocket;
   try {
     h.attach(name, editor, JSON.stringify({ type: "handshake", ...scope, owner: true }));
+    await h.settle(name);
     const args = { path: "index.html", expectedHash: browser.context.site!.outlines[0].hash,
       edits: [{ oldText: "Welcome", newText: "Hello over relay" }], requestId: "measured-edit", waitSeconds: 0 };
     let first: unknown;
