@@ -107,11 +107,13 @@ export function createAgentController<Root extends { remove(): void } = HTMLElem
     watching ??= effect(() => {
       const repository = options.appStore.repository.value, snapshot = options.appStore.snapshot.value;
       const account = options.account();
-      if (!repository || !snapshot || !account) return;
+      if (!repository || !snapshot || !account) { checked = ""; currentMenu()?.changed(); return; }
       const workspace = { account, repoId: repository.id, branch: snapshot.branch }, key = JSON.stringify(workspace);
       const host = options.host(), revision = epoch;
-      if (key === checked || currentMenu()) return;
+      if (key === checked) return;
       checked = key;
+      currentMenu()?.changed();
+      if (currentMenu()) return;
       void (options.history ?? browserHistory)(workspace).then((kept) => {
         if (kept && isCurrent(account, host, revision)) return ensure();
       }).catch(() => { if (checked === key) checked = ""; });

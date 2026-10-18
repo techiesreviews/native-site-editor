@@ -920,7 +920,7 @@ export async function prepareAgentText(command: AgentCommand, scope: DraftScope,
   };
   if (!command.grantId) throw new Error("Agent edits require an authorization id (grantId).");
   const workspace = { account: scope.account, repoId: scope.repoId, branch: scope.branch };
-  const key = workspaceKey(workspace);
+  const key = JSON.stringify([workspaceKey(workspace), command.ownerGeneration ?? null]);
   // The identity names the text by its hash: receipts never hold file contents.
   const contentHash = await textHash(command.content);
   if (!current()) return refuse(new Error("The repository changed meanwhile."));
@@ -934,8 +934,8 @@ export async function prepareAgentText(command: AgentCommand, scope: DraftScope,
         const [{ indexedDbAgentRecords }, { createAgentOwner }] = await Promise.all([import("./agent-records"), import("./agent-owner")]);
         const records = indexedDbAgentRecords();
         const state = await records.workspace(workspace);
-        return { records, owner: createAgentOwner({ workspace, generation: state.generation, records,
-          reload: async () => { throw new Error("Agent takeover is not available yet."); } }) };
+        return { records, owner: createAgentOwner({ workspace, generation: command.ownerGeneration ?? state.generation, records,
+          reload: async () => {} }) };
       })();
       textOwners.set(key, loading);
       void loading.catch(() => { if (textOwners.get(key) === loading) textOwners.delete(key); });

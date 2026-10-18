@@ -1,5 +1,11 @@
 import { expect, test } from "@playwright/test";
 
+test.beforeEach(async ({ page }) => {
+  // This fixture has no relay WebSocket upgrade. Exercise the absent-route fallback explicitly.
+  await page.routeWebSocket("**/api/agent/relay?*", socket => socket.close());
+  await page.route("**/api/agent/relay", route => route.fulfill({ status: 404, body: "Not found" }));
+});
+
 // Real request boundaries: the keyboard layer remains available before the UI loads.
 test("editor boot leaves optional panels unloaded and the first palette key opens it", async ({ page, baseURL }) => {
   const requests: string[] = [];

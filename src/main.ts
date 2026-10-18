@@ -213,7 +213,10 @@ const loadSpotlight = lazyModule(async () => {
   onboardingCopy = copy;
   return spotlight;
 });
-const loadAgentMenu = lazyModule(() => import("./components/agent-menu"));
+const loadAgentMenu = lazyModule(async () => {
+  const [menu, records] = await Promise.all([import("./components/agent-menu"), import("./agent-records")]);
+  return { createAgentMenu: (options: Parameters<typeof menu.createAgentMenu>[0]) => menu.createAgentMenu({ ...options, records: records.indexedDbAgentRecords() }) };
+});
 // The Site, Page and Navigation settings dialogs, loaded when one first opens.
 const loadSiteSettings = lazyModule(async () => {
   const { createNativeSettings } = await import("./native-settings");
@@ -5552,6 +5555,10 @@ const agentController = createAgentController<HTMLElement>({
   createOptions: () => ({
     context: agentContext,
     onCommand: applyAgentSiteCommand,
+    reload: async snapshot => {
+      const scope = draftScope();
+      if (scope) await draftStore().refresh([...new Set([...draftStore().list(scope).map(draft => draftKey(scope, draft.path)), ...snapshot.drafts.map(([key]) => key)])]);
+    },
     // Ask agent shows in the edit bar while an agent is connected.
     onConnection: (connected) => { setupController.noteAgent(connected); if (appStore.selection.value) pageStructureController.renderEditBar(appStore.selection.value); },
     onRequests: (requests) => nativePreview?.setRequests(requests),

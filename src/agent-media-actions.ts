@@ -266,7 +266,7 @@ export async function applyAgentMedia(...parameters: Parameters<typeof executeAg
     assertCurrent();
     const identity = payloadIdentity(JSON.parse(JSON.stringify({ operation: command.operation, path: command.path,
       branch: command.branch, commit: command.commit, argsHash })) as JsonValue);
-    const key = workspaceKey(workspace);
+    const key = JSON.stringify([workspaceKey(workspace), command.ownerGeneration ?? null]);
     let owners = mediaOwners;
     if (ctx.agentRecords) {
       owners = portOwners.get(ctx.agentRecords) ?? new Map();
@@ -277,8 +277,8 @@ export async function applyAgentMedia(...parameters: Parameters<typeof executeAg
       loading = (async () => {
         const [{ indexedDbAgentRecords }, { createAgentOwner }] = await Promise.all([import("./agent-records"), import("./agent-owner")]);
         const records = ctx.agentRecords ?? indexedDbAgentRecords(), state = await records.workspace(workspace);
-        return { records, owner: createAgentOwner({ workspace, generation: state.generation, records,
-          reload: async () => { throw new Error("Agent takeover is not available yet."); } }) };
+        return { records, owner: createAgentOwner({ workspace, generation: command.ownerGeneration ?? state.generation, records,
+          reload: async () => {} }) };
       })();
       owners.set(key, loading);
       void loading.catch(() => { if (owners.get(key) === loading) owners.delete(key); });

@@ -8,6 +8,9 @@ import { expect, type Page } from "@playwright/test";
  * answer), never just any prompt.
  */
 export async function copyConnectionPrompt(page: Page) {
+  // The legacy fixture cannot upgrade relay sockets; simulate a deployment without the relay route.
+  await page.routeWebSocket("**/api/agent/relay?*", socket => socket.close());
+  await page.route("**/api/agent/relay", route => route.fulfill({ status: 404, body: "Not found" }));
   const made = page.waitForResponse((response) =>
     new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST");
   await page.getByRole("button", { name: "Connect with MCP", exact: true }).click();

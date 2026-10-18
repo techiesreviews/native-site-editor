@@ -210,3 +210,13 @@ test("an approval for another repository or branch does not mount a menu", async
   assert.equal(f.loads.length, 1);
   f.cleanup();
 });
+
+test("a mounted menu hears both leaving a workspace and returning to the same workspace", async () => {
+  const f = fixture(); f.show(); f.controller.start(); await f.mount();
+  f.menus[0].calls.length = 0;
+  f.appStore.repository.value = undefined;
+  assert.equal(f.menus[0].calls.filter(call => call === "changed").length, 1);
+  f.show();
+  assert.equal(f.menus[0].calls.filter(call => call === "changed").length, 2);
+  f.cleanup();
+});

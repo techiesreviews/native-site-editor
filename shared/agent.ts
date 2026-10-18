@@ -42,6 +42,8 @@ export type AgentOperation =
   | "replace_media";
 
 export interface AgentCommand {
+  /** Receiving tab's durable ownership proof; absent on the legacy transport. */
+  ownerGeneration?: number;
   generation?: number;
   id: string;
   operation: AgentOperation;
