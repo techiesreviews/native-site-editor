@@ -4,7 +4,10 @@ import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/cli
 import { NATIVE_STARTER_VERSION } from "../../worker/starter";
 import { COMPONENT_LOADER_PATH, COMPONENT_LOADER_RULE, pageLoadsComponentLoader } from "../../src/page-builder/component-loader";
 import { editorMounted, effectiveSource, storedDraft } from "./drafts";
-import { copyConnectionPrompt } from "./mcp-prompt";
+import { copyConnectionPrompt, useLegacyRelay } from "./mcp-prompt";
+
+// These specs exercise queued edits and the matching legacy context fallback.
+test.beforeEach(({ page }) => useLegacyRelay(page));
 
 // Default fixture group. Blank page onboarding drafts are the real starting point.
 const loader = readFileSync(`public/native-static-starter/${NATIVE_STARTER_VERSION}/files/components/components.js.asset`, "utf8");

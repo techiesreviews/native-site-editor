@@ -1,7 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { storedDraft } from "./drafts";
-import { copyConnectionPrompt } from "./mcp-prompt";
+import { copyConnectionPrompt, useLegacyRelay } from "./mcp-prompt";
+
+// These specs exercise queued edits and the matching legacy context fallback.
+test.beforeEach(({ page }) => useLegacyRelay(page));
 
 // Default fixture group: native-subfolder (532).
 async function open(page: Page, baseURL: string | undefined) {

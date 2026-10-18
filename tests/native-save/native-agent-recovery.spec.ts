@@ -3,7 +3,10 @@ import { expect, test, type Page } from "@playwright/test";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { unzipStored } from "../../src/zip.ts";
 import { storedDrafts } from "./drafts";
-import { copyConnectionPrompt } from "./mcp-prompt";
+import { copyConnectionPrompt, useLegacyRelay } from "./mcp-prompt";
+
+// These specs exercise queued edits and the matching legacy context fallback.
+test.beforeEach(({ page }) => useLegacyRelay(page));
 
 // When this browser cannot keep agent edits (ticket 10, src/agent-records.ts): a full storage is
 // relieved and the edit tried once; still full, agent edits stop with a plain error in the

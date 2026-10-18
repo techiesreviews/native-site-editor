@@ -1,5 +1,11 @@
 import { expect, type Page } from "@playwright/test";
 
+/** Install before navigation: Playwright's WebSocket interception uses an init script. */
+export async function useLegacyRelay(page: Page) {
+  await page.routeWebSocket("**/api/agent/relay?*", socket => socket.close());
+  await page.route("**/api/agent/relay", route => route.fulfill({ status: 404, body: "Not found" }));
+}
+
 /**
  * Chooses Connect with MCP (the project menu is open) and returns the prompt it copies, with
  * the server address and token in it. The browser contexts of one Playwright worker share the
@@ -8,9 +14,6 @@ import { expect, type Page } from "@playwright/test";
  * answer), never just any prompt.
  */
 export async function copyConnectionPrompt(page: Page) {
-  // The legacy fixture cannot upgrade relay sockets; simulate a deployment without the relay route.
-  await page.routeWebSocket("**/api/agent/relay?*", socket => socket.close());
-  await page.route("**/api/agent/relay", route => route.fulfill({ status: 404, body: "Not found" }));
   const made = page.waitForResponse((response) =>
     new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST");
   await page.getByRole("button", { name: "Connect with MCP", exact: true }).click();

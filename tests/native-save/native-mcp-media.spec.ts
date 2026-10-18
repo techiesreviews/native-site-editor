@@ -1,7 +1,10 @@
 import { readFileSync } from "node:fs";
 import { test, expect, type Page } from "@playwright/test";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
-import { copyConnectionPrompt } from "./mcp-prompt";
+import { copyConnectionPrompt, useLegacyRelay } from "./mcp-prompt";
+
+// These specs exercise queued edits and the matching legacy context fallback.
+test.beforeEach(({ page }) => useLegacyRelay(page));
 
 // Default native-save fixture; new media is added through the user's Media pane.
 const indexPath = "index.html";

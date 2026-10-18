@@ -5,7 +5,10 @@ import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/cli
 import { discardAllChanges, publishActions, publishButton, showPublish, showPublishActions } from "./publish";
 import { sampleContrast, type Pixel } from "./tone-contrast";
 import { storedDrafts } from "./drafts";
-import { copyConnectionPrompt } from "./mcp-prompt";
+import { copyConnectionPrompt, useLegacyRelay } from "./mcp-prompt";
+
+// These specs exercise queued edits and the matching legacy context fallback.
+test.beforeEach(({ page }) => useLegacyRelay(page));
 
 // Discard changes in the Publish menu drops every draft of the branch (after a
 // question naming them); a draft that is GitHub's version again goes on its

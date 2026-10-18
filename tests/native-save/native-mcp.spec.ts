@@ -2,7 +2,8 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, test, type Locator, type Page, type Route } from "@playwright/test";
 import { storedDraft, storedDrafts } from "./drafts";
-import { copyConnectionPrompt } from "./mcp-prompt";
+import { copyConnectionPrompt, useLegacyRelay } from "./mcp-prompt";
+
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 
 // An agent works on the site through the MCP site tools (worker/mcp.ts)
@@ -16,9 +17,7 @@ const indexSource = readFileSync(resolve("fixtures/native-starter", indexPath), 
 const pageErrors: string[] = [];
 
 test.beforeEach(async ({ page }) => {
-  // The HTTP fixture cannot upgrade relay sockets; keep this suite on the explicit legacy fallback.
-  await page.routeWebSocket("**/api/agent/relay?*", socket => socket.close());
-  await page.route("**/api/agent/relay", route => route.fulfill({ status: 404, body: "Not found" }));
+  await useLegacyRelay(page);
   pageErrors.length = 0;
   page.on("pageerror", (error) => pageErrors.push(error.message));
 });
