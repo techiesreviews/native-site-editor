@@ -70,7 +70,7 @@ test("a changed edit polls the real hub 25 times over 10000 virtual ms", async (
   } finally { await h.worker.dispose(); }
 });
 
-test("an empty default wait takes requests 18 times over 25000 virtual ms with the MCP client", async () => {
+test("an empty default wait (legacy fallback) takes requests once and returns at once: no polling (ticket 18; 18 takes over 25000 ms before)", async () => {
   const h = await connected();
   const client = new Client({ name: "usage-client", version: "1" });
   try {
@@ -83,10 +83,12 @@ test("an empty default wait takes requests 18 times over 25000 virtual ms with t
     h.clock.install();
     const result = payload(await client.callTool({ name: "wait_for_requests", arguments: {} }));
     assert.deepEqual(result.requests, []);
-    assert.equal(h.counters.log.filter(row => row.category === "control" && row.action === "take-requests").length, 18);
+    assert.doesNotMatch(result.hint, /again now/);
+    assert.equal(h.counters.log.filter(row => row.category === "control" && row.action === "take-requests").length, 1);
     assert.equal(h.counters.byCategory.auth.calls, 3);
-    assert.equal(h.counters.byCategory.control.calls, 18);
-    assert.equal(h.counters.waitedMs, 25000);
+    // One refused relay dispatch (no editor socket), then the single legacy take.
+    assert.equal(h.counters.byCategory.control.calls, 2);
+    assert.equal(h.counters.waitedMs, 0);
   } finally { try { await client.close(); } finally { await h.worker.dispose(); } }
 });
 
