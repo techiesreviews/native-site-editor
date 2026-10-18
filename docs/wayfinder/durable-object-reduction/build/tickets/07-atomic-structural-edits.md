@@ -52,7 +52,7 @@ from the staged drafts and plan at commit time; the live reply is that recorded 
 (make_component's slots/cards/notes), so a duplicate delivery returns the same message and recorded fields.
 The controller factories are passed in from main.ts so the lazy agent chunk does not split boot modules.
 
-Out-of-Files edits (needed): src/editor-workspace.ts (`check()` and the commit's plan hint on `AgentTextCommit`);
+Out-of-Files edits (needed): src/editor-workspace.ts (optional `check()`, absent from ticket 08's media context, and the commit's plan hint on `AgentTextCommit`);
 tests/native-save/native-mcp.spec.ts (storage-failure and one-Undo assertions).
 
 Commits (after rebase on 90d88afe/b72c6cb3): 1976b6a7 (Sol build), 1a8792da (boot size, page-details labels; Claude),
