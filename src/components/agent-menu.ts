@@ -39,9 +39,9 @@ import "./agent-menu.css";
 // account, repository and branch), which is what the pins and this menu
 // show: it stays after remote agents are turned off or the tab reloads, is
 // not shared with other devices and never turns remote agents back on.
-// Only requests asked in this browser and workspace are kept; while remote
-// agents are on, each poll brings the agents' progress on them (state and
-// thread). Clearing or dismissing a request is local; one still waiting is
+// While remote agents are on, each poll brings the agents' progress on the
+// workspace's requests (state and thread); one this browser lacks is adopted
+// only while it still waits. Clearing or dismissing a request is local; one still waiting is
 // dismissed on the hub too, at once while on, or on the next poll once
 // turned on again. The user answers an agent's question from its pin
 // (`answer`), which needs remote agents on.
@@ -298,15 +298,16 @@ export function createAgentMenu(options: {
     if (key !== historyKey && key !== loadingKey) void loadHistory();
   }
   /**
-   * Keeps one request in this browser and shows it; refuses (throws) at capacity. With
-   * `progressOnly`, an agent's progress from the hub is kept only over a stored request it is newer
-   * than, and never over one dismissed (perhaps by another tab meanwhile): this tab reads them again.
+   * Keeps one request in this browser and shows it; refuses (throws) at capacity. As `progress`
+   * (an agent's progress from the hub, or an answer), it is kept only over a stored request it is
+   * newer than, and never over one dismissed (perhaps by another tab meanwhile), and when none is
+   * stored only if `adopt`: then this tab reads them again.
    */
-  async function keep(workspace: AgentWorkspace, request: StoredRequest, progressOnly = false) {
+  async function keep(workspace: AgentWorkspace, request: StoredRequest, progress?: { adopt: boolean }) {
     const content = stored(request);
-    const accept = progressOnly ? (current?: { content: JsonValue }) => {
+    const accept = progress ? (current?: { content: JsonValue }) => {
       const before = current?.content as unknown as StoredRequest | undefined;
-      return Boolean(before && before.state !== "dismissed" && progress(content) >= progress(before));
+      return before ? before.state !== "dismissed" && progressOf(content) >= progressOf(before) : progress.adopt;
     } : undefined;
     const kept = await records.putConversation(workspace, { id: content.id, content: content as unknown as JsonValue, unfinished: isUnfinishedRequest(content.state), updatedAt: Date.now() }, accept);
     if (disposed) return;
@@ -328,15 +329,21 @@ export function createAgentMenu(options: {
     if (!workspace || workspaceKey(workspace) !== historyKey) return;
     for (const item of hub.requests ?? []) {
       const local = history.get(item.id);
-      if (!local || item.repoId !== workspace.repoId || item.branch !== workspace.branch || !live(at)) continue;
+      if (item.repoId !== workspace.repoId || item.branch !== workspace.branch || !live(at)) continue;
+      // One this browser does not have (asked in this session before it kept them, or kept in a
+      // storage since cleared) is adopted while it still waits; a finished one is not.
+      if (!local) {
+        if (isUnfinishedRequest(item.state)) await keep(workspace, item, { adopt: true }).catch((error: unknown) => say(refusalText(error)));
+        continue;
+      }
       if (local.state === "dismissed") {
         // Dismissed while remote agents were off: the hub hears of it now.
         if (isUnfinishedRequest(item.state)) await api("dismiss", { id: item.id }, false, at).catch(() => undefined);
         continue;
       }
       const next = stored(item);
-      if (progress(next) < progress(local) || payloadIdentity(next as unknown as JsonValue) === payloadIdentity(local as unknown as JsonValue)) continue;
-      await keep(workspace, next, true).catch((error: unknown) => say(refusalText(error)));
+      if (progressOf(next) < progressOf(local) || payloadIdentity(next as unknown as JsonValue) === payloadIdentity(local as unknown as JsonValue)) continue;
+      await keep(workspace, next, { adopt: false }).catch((error: unknown) => say(refusalText(error)));
     }
   }
   // The open workspace's requests, told only when they changed.
@@ -818,7 +825,7 @@ export function createAgentMenu(options: {
       if (!live(at) || scopeKey() !== key) throw new Error("Remote agents or the open site changed meanwhile. Nothing was sent; answer again.");
       const request: StoredRequest = await api("answer", { id, text }, false, at);
       // Dismissed in another tab meanwhile: it stays dismissed (the hub hears of it on the next poll).
-      await keep(workspace, request, true).catch(refusal);
+      await keep(workspace, request, { adopt: false }).catch(refusal);
       void poll(true);
     },
     /**
@@ -877,7 +884,7 @@ function stored(request: StoredRequest & { returnedTo?: unknown }): StoredReques
 }
 // How far a request has come: its latest message or the time an agent took it. A poll answered
 // before the user's answer reached the hub is older and changes nothing here.
-const progress = (request: StoredRequest) => Math.max(request.seenAt ?? 0, request.createdAt, ...(request.thread ?? []).map((message) => message.at), request.reply?.at ?? 0);
+const progressOf = (request: StoredRequest) => Math.max(request.seenAt ?? 0, request.createdAt, ...(request.thread ?? []).map((message) => message.at), request.reply?.at ?? 0);
 function refusalText(error: unknown) {
   if (error instanceof AgentRecordsError && error.code === "capacity") return error.message;
   if (error instanceof AgentRecordsError)
