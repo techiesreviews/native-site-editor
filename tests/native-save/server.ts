@@ -1002,8 +1002,11 @@ function env(connect?: RelayConnect, relaySession = "anonymous"): Env {
           const relayResponse = await fakeRelayRoute(`${relaySession}:${id}`, request, connect);
           if (relayResponse) return relayResponse;
           // The agent hub, as worker/index.ts runs it.
-          const storage = storageOf(id);
-          const hubResponse = await fakeHubRoute(id, storage, request);
+          // Each demo sign-in owns an isolated clone, as for the relay above.
+          // Its ledger still runs the real rule through fakeHubRoute.
+          const storageId = id.startsWith("agent-relay:") ? `${relaySession}:${id}` : id;
+          const storage = storageOf(storageId);
+          const hubResponse = await fakeHubRoute(storageId, storage, request);
           if (hubResponse) return hubResponse;
           if (url.pathname === REGISTRATION_ROUTE) {
             if (request.method !== "POST") return new Response(null, { status: 405, headers: { Allow: "POST" } });
@@ -1046,12 +1049,18 @@ function env(connect?: RelayConnect, relaySession = "anonymous"): Env {
           if (!["/", "/consume", "/config"].includes(url.pathname)) return new Response(null, { status: 404 });
           if (request.method === "PUT") {
             const value = (await request.json()) as StoredSession;
+            const previous = request.headers.get("X-Agent-Previous");
+            const deadline = request.headers.get("X-Agent-Deadline");
+            if (previous && JSON.stringify(slot?.value) !== previous || deadline && Date.now() >= Number(deadline))
+              return new Response(null, { status: 409 });
             await storage.delete(["repositoryCache"]);
             await storage.put({ repositoryCacheGeneration: (await storage.get<number>("repositoryCacheGeneration") ?? 0) + 1 });
             sessions.set(id, { value, git: slot?.git ?? (value.kind === "user" ? cloneGit(initialGit) : undefined) });
             return new Response(null, { status: 204 });
           }
           if (request.method === "DELETE") {
+            const expected = request.headers.get("X-Agent-Delete");
+            if (expected && slot && JSON.stringify(slot.value) !== expected) return new Response(null, { status: 409 });
             await clearHub(storage);
             await storage.delete([PENDING_KEY]);
             sessions.delete(id);
@@ -1150,7 +1159,18 @@ async function workerResponse(req: Connect.IncomingMessage, bodyBuffer: Buffer, 
   const agentSession = bearer
     ? (sessions.get(`agent:${createHash("sha256").update(bearer).digest("hex")}`)?.value as { sessionId?: string } | undefined)?.sessionId
     : undefined;
-  const id = sessionCookie(req) ?? agentSession ?? null;
+  // Token exchange has no browser cookie. Resolve its isolated demo clone from
+  // the code, just as MCP resolves one from its bearer grant.
+  let code: string | undefined;
+  if (new URL(request.url).pathname === "/auth/mcp/token") {
+    if (request.headers.get("Content-Type")?.startsWith("application/json")) {
+      try { code = (JSON.parse(bodyBuffer.toString()) as { code?: string }).code; } catch { /* Worker validates malformed bodies. */ }
+    } else code = new URLSearchParams(bodyBuffer.toString()).get("code") ?? undefined;
+  }
+  const codeSession = code && /^[a-f0-9]{64}$/.test(code)
+    ? (sessions.get(`oauth-code:${createHash("sha256").update(code).digest("hex")}`)?.value as { sessionId?: string } | undefined)?.sessionId
+    : undefined;
+  const id = sessionCookie(req) ?? agentSession ?? codeSession ?? null;
   const slot = id ? sessions.get(id) : undefined;
   const onboardingKey = cookieNamed(req, "ase_demo_browser") ?? id;
   const git = slot?.git || initialGit;

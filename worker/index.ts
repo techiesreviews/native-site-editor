@@ -8,6 +8,7 @@ import { accountPending, PENDING_KEY, PENDING_ROUTE, type PendingAction } from "
 import type { RepositoryCache } from "./github";
 import type { GitHubAppConfig } from "./owner-setup";
 import { AgentRelay, readRelayBody } from "./agent-relay";
+import { accountMetadata, METADATA_ROUTE, type MetadataAction } from "./agent-metadata";
 
 interface RepositoryCacheChunks { chunks: number }
 const repositoryChunkPrefix = "repositoryCache:";
@@ -104,6 +105,15 @@ export class SessionStore extends DurableObject {
       }
       return new Response(null, { status: 400 });
     }
+    if (url.pathname === METADATA_ROUTE) {
+      // Internal only: app.ts constructs workspace identity after authorization.
+      if (request.method !== "POST") return new Response(null, { status: 405, headers: { Allow: "POST" } });
+      const action = await request.json() as MetadataAction;
+      return this.ctx.blockConcurrencyWhile(() => storage.transaction(async (transaction) => {
+        const result = await accountMetadata(transaction, action, Date.now());
+        return Response.json(result, { status: result.reason === "invalid" ? 400 : 200 });
+      }));
+    }
     if (url.pathname === PENDING_ROUTE) {
       if (request.method !== "POST") return new Response(null, { status: 405, headers: { Allow: "POST" } });
       const action = await request.json() as PendingAction;
@@ -192,8 +202,16 @@ export class SessionStore extends DurableObject {
       }
       const value = (await request.json()) as StoredValue;
       return this.ctx.blockConcurrencyWhile(async () => {
+        const deadline = request.headers.get("X-Agent-Deadline");
+        if (deadline && Date.now() >= Number(deadline)) return new Response(null, { status: 409 });
+        const previous = request.headers.get("X-Agent-Previous");
+        if (previous && JSON.stringify(await storage.get<StoredValue>("session")) !== previous)
+          return new Response(null, { status: 409 });
         await clearRepositoryCache(storage);
         await storage.put("repositoryCacheGeneration", (await storage.get<number>("repositoryCacheGeneration") ?? 0) + 1);
+        // A creation/rebind delayed past reconciliation's grace cannot publish
+        // a record after its reservation may have been reclaimed.
+        if (deadline && Date.now() >= Number(deadline)) return new Response(null, { status: 409 });
         await storage.put("session", value);
         await storage.setAlarm(value.expiresAt);
         return new Response(null, { status: 204 });
@@ -201,6 +219,11 @@ export class SessionStore extends DurableObject {
     }
     if (request.method === "DELETE") {
       return this.ctx.blockConcurrencyWhile(async () => {
+        const expected = request.headers.get("X-Agent-Delete");
+        if (expected) {
+          const current = await storage.get<StoredValue>("session");
+          if (current && JSON.stringify(current) !== expected) return new Response(null, { status: 409 });
+        }
         await clearRepositoryCache(storage);
         await storage.delete("repositoryCacheGeneration");
         await clearHub(storage);

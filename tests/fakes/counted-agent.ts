@@ -275,7 +275,8 @@ export async function startCountedWorker() {
     storage: (name: string) => object(name).storage,
     /** Restore a hibernated editor socket, then deliver its real scope handshake. */
     attach(name: string, socket: RelaySocket, handshake: string) {
-      if (objects.has(name)) throw new Error("Attach the socket before waking its relay");
+      // Metadata admission can wake this object before any relay/socket work.
+      if (sockets.has(name)) throw new Error("A socket is already attached to this relay");
       sockets.set(name, [socket]);
       object(name).instance.webSocketMessage(socket, handshake);
     },
