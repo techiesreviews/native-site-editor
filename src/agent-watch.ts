@@ -65,8 +65,9 @@ export interface RequestPorts {
   workspace: AgentWorkspace;
   /** This browser's requests of the workspace, read fresh. */
   list(): Promise<AgentRequest[]>;
-  /** Keeps one request when `accept` sees the stored copy in the writing transaction. */
-  save(request: AgentRequest, accept: (stored: AgentRequest | undefined) => boolean): Promise<boolean>;
+  /** Keeps one request when `accept` sees the stored copy in the writing transaction, and (with `owner`)
+   * that owner generation still holds the workspace unpaused in the same transaction. */
+  save(request: AgentRequest, accept: (stored: AgentRequest | undefined) => boolean, owner?: number): Promise<boolean>;
   watch: AgentWatch;
   now?: () => number;
   clock?: { setTimeout(callback: () => void, delay: number): unknown; clearTimeout(timer: unknown): void };
@@ -97,7 +98,7 @@ export function createRequestTools(ports: RequestPorts) {
   // Bumped by every notify: a wake that came while a wait was still reading is not lost.
   let version = 0;
   const scope = { repoId: ports.workspace.repoId, branch: ports.workspace.branch };
-  async function take(grantId: string, all: boolean, current: () => boolean) {
+  async function take(grantId: string, all: boolean, current: () => boolean, owner?: number) {
     const list = await ports.list();
     const read = new Map(list.map(request => [request.id, structuredClone(request)]));
     const { result } = requestOperation(list, { type: "take-requests", grantId, all, ...scope }) as { result: { requests: AgentRequest[] } };
@@ -106,7 +107,7 @@ export function createRequestTools(ports: RequestPorts) {
       // A connection gone stale (turned off, lost, taken over) marks nothing delivered.
       if (!current()) break;
       // One changed since the read (replied, answered, dismissed in another tab) is not handed out now.
-      if (await ports.save(request, unchangedSince(read.get(request.id)!, current))) taken.push(requestForAgent(request));
+      if (await ports.save(request, unchangedSince(read.get(request.id)!, current), owner)) taken.push(requestForAgent(request));
     }
     return taken;
   }
@@ -118,13 +119,13 @@ export function createRequestTools(ports: RequestPorts) {
       waiters.add(done);
     });
   }
-  async function wait(command: AgentRequests, current: () => boolean, deadline: number) {
+  async function wait(command: AgentRequests, current: () => boolean, deadline: number, owner?: number) {
     const all = command.args.all === true, started = now();
     // While Watch is on, every wait call counts against its 25 (whatever it returns); once it ended
     // or used them, calls still answer (quietly, at once) but are no longer counted or held.
     const used = ports.watch.report(started).state === "on" ? ports.watch.use(started) : undefined;
     const seen = version;
-    let requests = await take(command.grantId, all, current);
+    let requests = await take(command.grantId, all, current, owner);
     const wanted = typeof command.waitMs === "number" && Number.isFinite(command.waitMs) ? Math.min(WAIT_MS, command.waitMs) : WAIT_MS;
     // Quiet by default: without Watch the answer is immediate.
     if (requests.length || !current() || !used || wanted <= 0) return ok({ requests, watch: ports.watch.report(now()) });
@@ -135,15 +136,15 @@ export function createRequestTools(ports: RequestPorts) {
     const ms = version !== seen ? 0 : Math.min(deadline, still.until, started + wanted) - now();
     if (ms > 0) await hold(ms);
     // The relay gave up or the socket went: take nothing it could not deliver.
-    if (current()) requests = await take(command.grantId, all, current);
+    if (current()) requests = await take(command.grantId, all, current, owner);
     return ok({ requests, watch: ports.watch.report(now()) });
   }
-  async function reply(command: AgentRequests, current: () => boolean) {
+  async function reply(command: AgentRequests, current: () => boolean, owner?: number) {
     const { request: id, status, message, requestIds } = command.args;
     const list = await ports.list(), read = structuredClone(list.find(request => request.id === id));
     const { result } = requestOperation(list, { type: "reply", id, status, message, requestIds, ...scope }) as { result: AgentRequest };
     if (!current()) throw new HttpError(409, "The editor stopped receiving for this connection. Nothing was changed; reply again when it is on.");
-    if (!await ports.save(result, unchangedSince(read!, current)))
+    if (!await ports.save(result, unchangedSince(read!, current), owner))
       throw new HttpError(409, "The request changed meanwhile (the user answered or dismissed it). Read it again with get_selection before replying.");
     return ok({ id: result.id, state: result.state });
   }
@@ -152,10 +153,11 @@ export function createRequestTools(ports: RequestPorts) {
     return ok(requestForAgent(result));
   }
   return {
-    async run(command: AgentRequests, current: () => boolean, deadline: number): Promise<AgentReadResult> {
+    /** `owner`: the receiving tab's ownership generation, proved again in every write's transaction. */
+    async run(command: AgentRequests, current: () => boolean, deadline: number, owner?: number): Promise<AgentReadResult> {
       try {
-        if (command.tool === "wait_for_requests") return await wait(command, current, deadline);
-        if (command.tool === "reply_to_request") return await reply(command, current);
+        if (command.tool === "wait_for_requests") return await wait(command, current, deadline, owner);
+        if (command.tool === "reply_to_request") return await reply(command, current, owner);
         if (command.tool === "get_request") return await find(command);
         return { ok: false, message: "Unknown request tool." };
       } catch (error) {

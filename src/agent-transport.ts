@@ -38,7 +38,7 @@ interface Options {
   edit?: (request: AgentEdit | AgentStatus, generation: number, current: () => boolean) => Promise<AgentReadResult>;
   read?: (read: AgentRead) => Promise<AgentReadResult>;
   /** Ticket 18: the request tools, answered from this browser's requests (a wait may be held under Watch). */
-  requests?: (request: AgentRequests, current: () => boolean, deadline: number) => Promise<AgentReadResult>;
+  requests?: (request: AgentRequests, generation: number, current: () => boolean, deadline: number) => Promise<AgentReadResult>;
   run: (command: AgentCommand, ownerGeneration: number) => Promise<{ message?: string; result?: AgentCommand["result"] } | void>;
   listen: (state: State) => void;
   socket?: (url: string) => Socket;
@@ -164,7 +164,7 @@ export function createLiveTransport(options: Options) {
         result = typeof value.id !== "string" || !value.id || !matches(value) || !valid() || !requestTools.includes(read.tool) ||
           typeof read.grantId !== "string" || !read.grantId || !read.args || typeof read.args !== "object" || Array.isArray(read.args) || !await prove(at) || !valid()
           ? { ok: false, message: "This request call is incomplete or belongs to another workspace, tab or generation. Call it again." }
-          : await options.requests?.(read, valid, deadline) ?? { ok: false, message: "Browser request tools are unavailable. Refresh the editor." };
+          : await options.requests?.(read, generation!, valid, deadline) ?? { ok: false, message: "Browser request tools are unavailable. Refresh the editor." };
       } else {
         const editing = read.operation === "edit" || read.operation === "status" || read.operation === "media";
         if (typeof value.id !== "string" || !value.id || !matches(value) || !valid() || (editing ? (typeof read.id !== "string" || !/^[\w.:-]{1,128}$/.test(read.id) || typeof read.grantId !== "string" || !read.grantId ||

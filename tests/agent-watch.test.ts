@@ -6,6 +6,9 @@ import { WATCH_MS, WATCH_WAITS, agentWatch, answerRequest, createRequestTools, w
 import { connectionPrompt } from "../src/agent-prompts";
 import { AgentRelay, relayObjectName, type RelayClock, type RelayScope, type RelaySocket } from "../worker/agent-relay";
 import { countedSocket, startCountedWorker } from "./fakes/counted-agent";
+import { indexedDbAgentRecords } from "../src/agent-records";
+import { draftDatabaseName } from "../src/drafts";
+import { fakeIndexedDB } from "./support/fake-agent-indexeddb";
 import { editorTab, origin, payload, repo, signIn } from "./mcp-harness";
 
 const workspace = { account: "lex", repoId: repo.id, branch: "main" };
@@ -413,4 +416,31 @@ test("two answers made from the same question: the second never overwrites the f
   assert.equal(second.accept(stored), false);
   assert.deepEqual(stored.thread!.map(item => item.text), ["Change req-q", "Bold?", "Yes, bold"]);
   assert.equal(stored.state, "open");
+});
+
+test("takeover fence: an old owner's take or reply after another tab's takeover writes nothing (checked in the transaction)", async () => {
+  const records = indexedDbAgentRecords(draftDatabaseName, fakeIndexedDB().factory);
+  await records.setGeneration(workspace, 0, 1);
+  const put = (value: AgentRequest) => records.putConversation(workspace, { id: value.id, content: value as never, unfinished: true, updatedAt: 1 });
+  await put(asked("req-fenced"));
+  // Conversations hold JSON; these are the requests this test wrote.
+  const request = (content: unknown) => content as AgentRequest;
+  const read = async () => (await records.conversations(workspace)).map(item => request(item.content));
+  const tools = createRequestTools({ workspace, watch: agentWatch(workspace, memoryStorage()), list: read,
+    save: (value, accept, owner) => records.putConversation(workspace, { id: value.id, content: value as never, unfinished: true, updatedAt: 2 },
+      stored => accept(stored && request(stored.content)), owner) });
+  // Another tab took over (generation 2) while this tab's ownership hints have not arrived: current() still says yes.
+  await records.setGeneration(workspace, 1, 2);
+  const run = (tool: AgentRequests["tool"], args: AgentRequests["args"]) => tools.run({ operation: "requests", tool, args, grantId: "g" }, () => true, Date.now() + 9_000, 1);
+  assert.deepEqual(((await run("wait_for_requests", {})) as { value: any }).value.requests, []);
+  assert.equal((await read())[0].state, "open");
+  await put({ ...asked("req-fenced"), state: "seen" });
+  assert.equal((await run("reply_to_request", { request: "req-fenced", status: "done", message: "Late." })).ok, false);
+  assert.equal((await read())[0].state, "seen");
+  // The current owner (generation 2) writes; a paused workspace refuses even its owner.
+  const owned = await tools.run({ operation: "requests", tool: "reply_to_request", args: { request: "req-fenced", status: "done", message: "Done." }, grantId: "g" }, () => true, Date.now() + 9_000, 2);
+  assert.deepEqual((owned as { value: unknown }).value, { id: "req-fenced", state: "done" });
+  await records.pause(workspace, 2);
+  await put({ ...asked("req-paused") });
+  assert.deepEqual(((await tools.run({ operation: "requests", tool: "wait_for_requests", args: {}, grantId: "g" }, () => true, Date.now() + 9_000, 2)) as { value: any }).value.requests, []);
 });

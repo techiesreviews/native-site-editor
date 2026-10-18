@@ -47,9 +47,10 @@ export interface AgentRecords {
   /**
    * Stores one conversation, evicting expired and then oldest completed ones; refuses at capacity.
    * With `accept`, the same transaction first asks it about the stored one (none when absent) and
-   * writes nothing, resolving false, when it says no.
+   * writes nothing, resolving false, when it says no. With `owner` (an agent's take or reply, ticket 18), the
+   * same transaction also proves that generation still owns the workspace unpaused, else resolves false.
    */
-  putConversation: (workspace: AgentWorkspace, conversation: Conversation, accept?: (stored: Conversation | undefined) => boolean) => Promise<boolean>;
+  putConversation: (workspace: AgentWorkspace, conversation: Conversation, accept?: (stored: Conversation | undefined) => boolean, owner?: number) => Promise<boolean>;
   /** Whether putConversation would accept it now, without writing (before asking an agent). */
   checkConversation: (workspace: AgentWorkspace, conversation: Conversation) => Promise<void>;
   /** The workspace's unfinished conversations and its completed ones younger than seven days. */
@@ -591,17 +592,24 @@ export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFact
         }));
       });
     },
-    putConversation(workspace, conversation, accept) {
+    putConversation(workspace, conversation, accept, owner) {
       const scope = structuredClone(workspace), incoming = structuredClone(conversation), key = workspaceKey(scope);
-      return run<boolean>([draftStores.conversations], "readwrite", (tx, read, done) => {
+      const stores = owner === undefined ? [draftStores.conversations] : [draftStores.conversations, draftStores.workspaces];
+      return run<boolean>(stores, "readwrite", (tx, read, done) => {
         const store = tx.objectStore(draftStores.conversations);
-        read(store.getAll(), (records: ConversationRecord[]) => {
+        const write = () => read(store.getAll(), (records: ConversationRecord[]) => {
           const stored = records.filter((record) => record.workspace === key).map((record) => record.conversation);
           if (accept && !accept(stored.find((item) => item.id === incoming.id && !conversationExpired(item, now())))) { done(false); return; }
           const removed = conversationRetention(stored, incoming, now());
           for (const id of removed) store.delete(recordKey(scope, id));
           if (!removed.includes(incoming.id)) store.put({ workspace: key, conversation: incoming }, recordKey(scope, incoming.id));
           done(true);
+        });
+        if (owner === undefined) { write(); return; }
+        read(tx.objectStore(draftStores.workspaces).get(key), (value: WorkspaceRecord | undefined) => {
+          const current = value ?? initial();
+          if (current.generation !== owner || current.paused) { done(false); return; }
+          write();
         });
       });
     },
