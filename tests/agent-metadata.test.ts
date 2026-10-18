@@ -696,6 +696,80 @@ test("a PUT delayed beyond grace cannot publish a sixth usable grant after recon
   } finally { release(); if (pending) await pending; Date.now = now; await h.worker.dispose(); }
 });
 
+test("an add-grant delayed beyond grace cannot list an uncounted connection, even when cleanup then fails", async () => {
+  const h = await fixture();
+  const now = Date.now;
+  let release!: () => void, entered!: () => void, crashed = false;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  let delayed = true;
+  let pending: Promise<Response> | undefined;
+  try {
+    for (let n = 0; n < 4; n++) await connected(h);
+    const stop = intercept(h, async (name, request, next) => {
+      if (delayed && name === `agent-hub:${h.sessionId}` && request.method === "POST" &&
+          (await request.clone().json() as { type?: string }).type === "add-grant") {
+        delayed = false; entered(); await held;
+        const response = await next();
+        // The Worker is lost after the hub write: no later step reaches storage.
+        crashed = true;
+        return response;
+      }
+      if (crashed) return new Response(null, { status: 503 });
+      return next();
+    });
+    try {
+      pending = h.connect();
+      await started;
+      const later = now() + 61000;
+      Date.now = () => later;
+      await connected(h);
+      release();
+      assert.notEqual((await pending).status, 200);
+    } finally { stop(); }
+    const ledger = (await h.ledger())!.entries.map(entry => entry.id).sort();
+    assert.equal(ledger.length, 5);
+    assert.deepEqual((await connections(h)).map(grant => grant.id).sort(), ledger);
+  } finally { release(); if (pending) await pending; Date.now = now; await h.worker.dispose(); }
+});
+
+test("a rebind whose hub write is delayed beyond grace leaves the connection where it was", async () => {
+  const h = await fixture();
+  const now = Date.now;
+  let release!: () => void, entered!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  let delayed = true;
+  let pending: Promise<Response> | undefined;
+  try {
+    const source = await connected(h);
+    for (let n = 0; n < 4; n++) await connected(h, "preview");
+    const stop = intercept(h, async (name, request, next) => {
+      if (delayed && name === `agent-hub:${h.sessionId}` && request.method === "POST" &&
+          (await request.clone().json() as { type?: string }).type === "rebind-grant") {
+        delayed = false; entered(); await held;
+      }
+      return next();
+    });
+    try {
+      pending = h.tab.post("/api/agent/rebind", { id: source.id, repoId: repo.id, repo: repo.full_name, branch: "preview" });
+      await started;
+      const later = now() + 61000;
+      Date.now = () => later;
+      // Destination reconciliation reclaims the expired reservation for a new connection.
+      await connected(h, "preview");
+      release();
+      assert.equal((await pending).status, 409);
+    } finally { stop(); }
+    const listed = (await connections(h)).find(grant => grant.id === source.id)!;
+    assert.deepEqual([listed.branch, listed.generation], ["main", 1]);
+    assert.deepEqual([(await getGrant(h.env, source.id)).branch, (await getGrant(h.env, source.id)).generation], ["main", 1]);
+    assert.deepEqual((await h.ledger())!.entries.map(entry => entry.id), [source.id]);
+    assert.equal((await h.ledger("preview"))!.entries.some(entry => entry.id === source.id), false);
+    assert.equal((await h.ledger("preview"))!.entries.length, 5);
+  } finally { release(); if (pending) await pending; Date.now = now; await h.worker.dispose(); }
+});
+
 test("OAuth token capacity and unavailable ledger return OAuth JSON with plain descriptions", async () => {
   const h = await fixture();
   try {

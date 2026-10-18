@@ -145,7 +145,7 @@ export async function createGrant(
     const saved = await agentRecord(env, id, "PUT", record, deadline);
     if (!saved.ok) throw new HttpError(503, "The agent connection could not be saved. Try again.");
     await operateHub(env, input.sessionId, {
-      type: "add-grant", hub: { login: input.login, expiresAt: input.expiresAt }, grant: listed,
+      type: "add-grant", hub: { login: input.login, expiresAt: input.expiresAt }, grant: listed, deadline,
     });
   } catch (error) {
     // A rejected response may have followed a committed write. Release only
@@ -310,7 +310,7 @@ export async function rebindGrant(env: Env, id: string, previous: AgentGrant, ta
     method: "PUT", headers: { "X-Agent-Previous": await tokenId(JSON.stringify(previous)), "X-Agent-Deadline": String(deadline) }, body: JSON.stringify(grant),
   });
   await operateHub(env, previous.sessionId, { type: "rebind-grant", id, ...target,
-    generation: grant.generation, previous: previous.generation });
+    generation: grant.generation, previous: previous.generation, deadline });
   const saved = await record.fetch(write);
   if (!saved.ok) throw new HttpError(503, "The connection could not be rebound. Connect the agent again.");
   await finishGrant(env, id, grant);
