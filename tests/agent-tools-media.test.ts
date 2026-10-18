@@ -326,10 +326,11 @@ test("media relay failures never retry; only editor-unavailable with matching le
     assert.match(String(payload(await h.rpc("adding_settings", {}))), /branch other/i);
     context.branch = "main"; await h.tab.share(context);
     assert.equal(payload(await h.rpc("adding_settings", { image: "smaller", waitSeconds: 0 })).state, "pending");
-    for (const code of ["timeout", "unknown-outcome", "too-large", "lost", "busy"]) {
+    for (const code of ["timeout", "unknown-outcome", "too-large", "too-large-after-delivery", "lost", "busy"]) {
       let dispatches = 0;
       h.namespace.get = name => String(name).startsWith("agent-relay:") ? { fetch: async () => {
-        dispatches++; if (code === "lost") throw new Error("lost"); return Response.json({ ok: false, code, ...(code === "busy" ? { outcome: "not-sent" } : {}) });
+        dispatches++; if (code === "lost") throw new Error("lost"); return Response.json(code === "too-large-after-delivery" ? { ok: false, code: "too-large", outcome: "unknown" }
+          : { ok: false, code, ...(code === "busy" ? { outcome: "not-sent" } : {}) });
       } } : get(name);
       const result = payload(await h.rpc("adding_settings", { image: "smaller", waitSeconds: 25 }));
       if (code === "too-large") assert.match(String(result), /too large.*fewer files/i);

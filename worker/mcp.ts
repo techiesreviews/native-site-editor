@@ -159,8 +159,11 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
       if (!context) return failure(notSharingMessage(origin, connection.workspace, connection.hub?.context));
       return queue(tool, context, input);
     }
-    if (outcome.code === "too-large") return failure("The media request or result is too large; request fewer files or narrow the folder or page with offset/limit.");
-    if (!mediaChanges(tool, request.args)) return failure(`The editor media read failed (${outcome.code ?? "connection lost"}). Read again when the editor is ready.`);
+    const changing = mediaChanges(tool, request.args);
+    // A result too large to return after delivery leaves a change's outcome unknown, never "nothing changed".
+    if (outcome.code === "too-large" && (!changing || outcome.outcome !== "unknown"))
+      return failure("The media request or result is too large; request fewer files or narrow the folder or page with offset/limit.");
+    if (!changing) return failure(`The editor media read failed (${outcome.code ?? "connection lost"}). Read again when the editor is ready.`);
     return unknown(request.id, outcome.code, outcome.outcome);
   }
   function toolResult(result: AgentReadResult) {
