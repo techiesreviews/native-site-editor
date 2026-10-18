@@ -90,6 +90,8 @@ export function createLiveTransport(options: Options) {
   const flights = new Map<string, { identity: string; promise: Promise<Result> }>();
   const scope = (): Scope => ({ workspace, tabId: options.tabId, generation: generation! });
   const current = () => !stopped && options.current() !== undefined && workspaceKey(options.current()!) === key;
+  // A workspace briefly absent (a refresh reloading the repository) refuses commands but is no move.
+  const moved = () => { const now = options.current(); return now !== undefined && workspaceKey(now) !== key; };
   const matches = (value: Partial<Scope>) => value.workspace && typeof value.workspace.account === "string" && workspaceKey(value.workspace) === key && value.tabId === options.tabId && value.generation === generation;
   function show(next: State) { if (!stopped) { state = next; options.listen(state); } }
   function clearHeartbeat() {
@@ -184,9 +186,10 @@ export function createLiveTransport(options: Options) {
       } catch (error) { result = refuse(error instanceof Error ? error.message : "Browser storage is unavailable."); }
     }
     // Check the durable generation even when a frozen tab missed every ownership hint.
-    if (socket !== source || !await prove(at).catch(() => false)) return;
+    // While a refresh reloads the workspace (absent, not moved) the outcome is still this socket's to report.
+    if (socket !== source || current() && !await prove(at).catch(() => false)) return;
     // Correlation belongs to this socket and handshake epoch, never a replacement connection.
-    if (socket === source && source.readyState === 1 && handshaken && session === connection && epoch === at && current() && state.mode === "live") {
+    if (socket === source && source.readyState === 1 && handshaken && session === connection && epoch === at && !stopped && !moved() && state.mode === "live") {
       try { source.send(JSON.stringify({ type: "result", id: value.id, ...scope(), result })); } catch { source.close(); }
     }
   }
@@ -364,7 +367,7 @@ export function createLiveTransport(options: Options) {
   }
   const check = () => {
     const at = epoch;
-    if (!current()) { if (!stopped) halt("workspace-changed"); return; }
+    if (!current()) { if (!stopped && moved()) halt("workspace-changed"); return; }
     if (generation === undefined) {
       if (state.mode === "other-owner" && !registry.read()) show({ mode: "other-owner", closed: true });
       return;
@@ -402,7 +405,7 @@ export function createLiveTransport(options: Options) {
   return {
     start, takeover, stop,
     state: () => state,
-    changed: () => { if (!current()) halt("workspace-changed"); },
+    changed: () => { if (!stopped && moved()) halt("workspace-changed"); },
     retry: () => recovery?.retry() ?? Promise.resolve({}),
     report: (failure: AgentFailure) => { recovery?.report(failure); },
   };

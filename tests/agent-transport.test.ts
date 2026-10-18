@@ -479,3 +479,20 @@ test("a failed first upgrade honours the probe's quota body and Retry-After", as
     a.transport.stop();
   }
 });
+
+test("a workspace briefly absent during a refresh refuses commands but keeps the live socket", async () => {
+  const f = fixture(), a = f.tab("a");
+  await a.transport.start();
+  a.change(undefined);
+  a.deliver(command("during-refresh"));
+  await until(() => a.sockets[0].messages("result").length === 1);
+  assert.equal(a.sockets[0].messages("result")[0].result.state, "conflict");
+  a.change({ ...workspace });
+  assert.equal(a.transport.state().mode, "live");
+  a.deliver(command("after-refresh"));
+  await until(() => a.sockets[0].messages("result").length === 2);
+  assert.equal(a.sockets[0].messages("result")[1].result.state, "applied");
+  assert.equal(a.sockets.length, 1);
+  assert.equal(f.counts().runs, 1);
+  a.transport.stop();
+});
