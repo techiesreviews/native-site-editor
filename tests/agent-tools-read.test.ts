@@ -239,7 +239,8 @@ test("live read_file/get_site/resource/prompt: 3 auth + 1 real SessionStore disp
   try {
     h.attach(name, editor, JSON.stringify({ type: "handshake", ...scope, owner: true }));
     const storage = h.storage(h.sessionId);
-    // Request summaries arrive through the existing authentication GET, without another invocation.
+    // Legacy hub requests arrive through the existing authentication GET, without another invocation, but over the
+    // relay the receiving tab counts its own (ticket 18; the menu fills openRequests), so they do not count here.
     await storage.put("requests", [{ id: "open", repoId: repo.id, branch: "main", state: "open", element: {} },
       { id: "other", repoId: repo.id, branch: "other", state: "open", element: {} }]);
     for (const [method, params] of [
@@ -252,7 +253,7 @@ test("live read_file/get_site/resource/prompt: 3 auth + 1 real SessionStore disp
       const before = { ...traffic.counters }, githubBefore = { ...browser.browserGitHub };
       const answer = await h.rpc(method, params);
       assert.equal(answer.isError, undefined, JSON.stringify(answer));
-      if (method === "tools/call" && params.name === "get_site") assert.equal(payload(answer).openRequests, 1);
+      if (method === "tools/call" && params.name === "get_site") assert.equal(payload(answer).openRequests, 0);
       if (method === "tools/call" && params.name === "read_file") assert.match(payload(answer).content, /About the studio/);
       assert.equal(h.counters.byCategory.auth.calls, 3, JSON.stringify(h.counters.log));
       assert.equal(h.counters.byCategory.control.calls, 1, JSON.stringify(h.counters.log));
