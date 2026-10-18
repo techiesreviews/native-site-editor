@@ -621,6 +621,7 @@ test("child selections omit template entry while root entry rejects stale or mis
       announce: (message: string) => announcements.push(message), error: () => {}, images: () => [], prefix: () => "", upload: async () => undefined,
       links: () => [], pageLabel: (file: string) => file,
       panelHost: host, addStrip: (strip: HTMLElement) => host.append(strip), codeTitle: document.createElement("div"), previewPage: () => "index.html",
+      canvasComponent: () => {},
     });
     try {
       const childEntry = Boolean(tools.identity(selection).context.onEdit);
