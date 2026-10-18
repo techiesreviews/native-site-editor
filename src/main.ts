@@ -4595,10 +4595,10 @@ function makeAgentSiteActions(edits: GuardedEdits = guardedEdits, atomic = false
     return media.previewWorkspaceMedia(ctx, path, path => editorModule?.getMountedSource(path));
   },
   async media(command) {
-    const since = guardedEdits.stamp("repository");
+    const since = guardedEdits.stamp("repository"), page = mediaPorts.source(command.path);
     const { runAgentMedia } = await import("./agent-media-actions");
     if (!since.holds()) throw new Error("The editor changed branch or revision.");
-    return runAgentMedia(mediaController, mediaPorts, command);
+    return runAgentMedia(mediaController, mediaPorts, command, page);
   },
   legacy: applyAgentCommand,
 }; }

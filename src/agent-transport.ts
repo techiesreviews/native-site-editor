@@ -273,9 +273,11 @@ export function createLiveTransport(options: Options) {
           }).catch(() => { source.close(); failed(); return false; });
         } else if (value.type === "command") {
           const arrived = session;
-          // The relay's remaining total budget, counted from arrival here (never a fresh 10 s), less one-way latency.
+          // The relay's remaining total budget, counted from arrival here (never a fresh 10 s), less 1 s for transit.
+          // Clocks are never compared, so a frame delayed longer can still commit after the relay gave up: the Worker
+          // has then answered unknown and the receipt reconciles it. Relay-to-tab expiry is ticket 19's cancellation.
           const remaining = typeof value.remainingMs === "number" && Number.isFinite(value.remainingMs) ? Math.min(10_000, Math.max(0, value.remainingMs)) : 10_000;
-          const deadline = Date.now() + remaining - 250;
+          const deadline = Date.now() + remaining - 1_000;
           // The relay may send a waiting command immediately after ready, before IndexedDB answers.
           void readiness.then(() => {
             if (session === arrived && socket === source) return command(source, value, deadline);

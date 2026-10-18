@@ -11,7 +11,7 @@ import { parseOnlineVideoAddress } from "../shared/online-video-address";
 import { agentImageTrim } from "../shared/agent-image-frame";
 import type { createMediaController, MediaControllerPorts } from "./controllers/media-controller";
 import { mediaCommandProofs } from "./agent-tools-media";
-import { mediaChanges } from "../shared/agent-media";
+import { mediaChanges, type MediaTool } from "../shared/agent-media";
 import { placeAgentMedia } from "./page-builder/agent-media-place";
 import { createVideoPlaces } from "./page-builder/media-video-place";
 import { framePlace } from "./page-builder/place-frame";
@@ -39,8 +39,9 @@ async function executeAgentMedia(
   improve?: import("./agent-improve-images").AgentImproveHost,
   improvePorts?: import("./agent-improve-images").AgentImprovePorts,
   stagingPorts?: MediaControllerPorts,
+  seenSources?: ReadonlyMap<string, string | undefined>,
 ): Promise<void | { message: string; result: Record<string, string> }> {
-  void stagingPorts;
+  void stagingPorts; void seenSources;
   const args = command.args ?? {};
   const problem = agentMediaArgsProblem(command.operation, args, command.path);
   if (problem) throw new Error(problem);
@@ -244,7 +245,8 @@ export async function applyAgentMedia(...parameters: Parameters<typeof executeAg
     return refuse(new Error(OUTSIDE_MEDIA_REFUSED));
   const pageChange = ["place_media", "frame_image", "loop_video"].includes(command.operation);
   if (pageChange && !parameters[8]) return refuse(new Error("Staged media edit ports are unavailable."));
-  const dependencies = new Map<string, string | undefined>();
+  // Sources seen when the command arrived (before any module load) stay the proof: a page edited meanwhile refuses.
+  const dependencies = new Map<string, string | undefined>(parameters[9] ?? []);
   const versions = new Map(ctx.paths.map(path => [path, ctx.assetVersion(path)]));
   let applied = false;
   const assertCurrent = () => {
@@ -470,7 +472,8 @@ export async function applyAgentMedia(...parameters: Parameters<typeof executeAg
 }
 
 /** Main's adapter lives in this lazy chunk, including all media preparation. */
-export async function runAgentMedia(controller: ReturnType<typeof createMediaController>, ports: MediaControllerPorts, command: AgentCommand) {
+export async function runAgentMedia(controller: ReturnType<typeof createMediaController>, ports: MediaControllerPorts, command: AgentCommand,
+  page = ports.source(command.path)) {
   const since = ports.stamp(), proof = mediaCommandProofs.get(command);
   const check = () => { proof?.(); if (!since.holds()) throw new Error("The editor changed branch or revision."); };
   check();
@@ -483,5 +486,6 @@ export async function runAgentMedia(controller: ReturnType<typeof createMediaCon
   const frame = readingFrame ? controller.prepareFrame(target()) : undefined;
   const ctx: MediaWorkspaceContext = { ...context, assertLive: () => { check(); context.assertLive(); } };
   return applyAgentMedia(ctx, command, () => { throw new Error("Media placement was not staged."); }, frame ? () => frame : undefined,
-    undefined, undefined, improve, undefined, ports);
+    undefined, undefined, improve, undefined, ports,
+    ["place_media", "frame_image", "loop_video"].includes(command.operation) && mediaChanges(command.operation as MediaTool, command.args ?? {}) ? new Map([[command.path, page]]) : undefined);
 }

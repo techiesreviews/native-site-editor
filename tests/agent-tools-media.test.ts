@@ -369,3 +369,22 @@ test("a failed receipt lookup after the run reports unknown, never a conflict; s
   const status = body(await f.status.run({ operation: "status", id: input.id, grantId: input.grantId }, 0, () => true));
   assert.equal(status.state, "applied"); assert.equal(f.history.length, 1);
 });
+
+test("the media adapter keeps the page seen on arrival: a manual edit during module and workspace loading refuses", async () => {
+  const { runAgentMedia } = await import("../src/agent-media-actions");
+  for (const command of [request("frame_image", { element: "0.0.0", shape: "square" }, "adapter-frame", "index.html"),
+    request("loop_video", { element: "0.0.1", looping: false }, "adapter-loop", "index.html")]) {
+    const f = await fixture(), before = f.text.get("index.html")!;
+    const load = f.controller.workspaceContext.bind(f.controller);
+    // A sibling picture inserted before the target keeps repository, branch and commit: only the page proof can see it.
+    f.controller.workspaceContext = async (...args) => {
+      f.text.set("index.html", before.replace("<section>", '<section><img src="/images/photo.svg" alt="new">'));
+      return load(...args);
+    };
+    const changed: AgentCommand = { id: command.id, operation: command.tool, args: command.args, path: command.path, content: "", branch: "main",
+      commit, repoId: repo.id, grantId: command.grantId, state: "pending", createdAt: command.createdAt, ownerGeneration: 0 };
+    await assert.rejects(runAgentMedia(f.controller, f.ports, changed, before), /changed/i, command.tool);
+    assert.equal(f.history.length, 0); assert.equal(await f.records.receipt(workspace, command.id, command.grantId), undefined);
+    assert.equal(f.storage.store.list({ ...workspace, repo: repo.full_name }).filter(draft => draft.path === "index.html").length, 0);
+  }
+});
