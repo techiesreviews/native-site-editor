@@ -161,12 +161,14 @@ for (const [tool, args] of [["frame_image", { element: "0.0.0", shape: "square" 
   assert.ok((await f.records.snapshot(workspace)).drafts.some(([, draft]) => draft.path === "index.html"));
 });
 
-test("deadline and cancellation before commit leave drafts unchanged", async () => {
+test("deadline and cancellation before commit leave drafts unchanged", async t => {
   for (const cause of ["deadline", "cancel", "disconnect"] as const) {
     const f = await fixture(), hold = deferred<void>(); f.hold(hold.promise);
     const input = request("adding_settings", { image: "smaller" });
-    if (cause === "deadline") input.createdAt -= 10_001;
+    // The deadline counts from arrival in the tab; the Worker's createdAt clock is ignored.
+    input.createdAt -= 60_000;
     const pending = f.run(input);
+    if (cause === "deadline") { const start = Date.now(); t.mock.method(Date, "now", () => start + 10_001); }
     if (cause === "cancel") await f.records.cancel(workspace, input.id, input.grantId);
     if (cause === "disconnect") f.stale();
     hold.resolve();
