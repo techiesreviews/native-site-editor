@@ -17,12 +17,14 @@ const incoming = new AsyncLocalStorage<{ authHubPending: boolean }>();
 export class UsageCounters {
   byCategory = Object.fromEntries(categories.map(category => [category, counts()])) as Record<Category, ReturnType<typeof counts>>;
   log: Operation[] = [];
+  readKeys: string[] = [];
   retainedBytes = 0;
   peakRetainedBytes = 0;
   waitedMs = 0;
   reset() {
     for (const category of categories) this.byCategory[category] = counts();
     this.log.length = 0;
+    this.readKeys.length = 0;
     this.peakRetainedBytes = this.retainedBytes;
     this.waitedMs = 0;
   }
@@ -55,6 +57,7 @@ export class CountedStorage {
   async get<T>(key: string | string[]): Promise<T | undefined | Map<string, T>> {
     const keys = typeof key === "string" ? [key] : key;
     this.count.keysRead += keys.length;
+    this.counters.readKeys.push(...keys);
     if (typeof key === "string") return structuredClone(this.values.get(key)) as T | undefined;
     return new Map(keys.filter(key => this.values.has(key)).map(key => [key, structuredClone(this.values.get(key)) as T]));
   }

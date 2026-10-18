@@ -9,9 +9,27 @@ import type { GitHubAppConfig } from "./owner-setup";
 
 interface RepositoryCacheChunks { chunks: number }
 const repositoryChunkPrefix = "repositoryCache:";
+const repositoryCacheMaxBytes = 262144;
 async function clearRepositoryCache(storage: DurableObjectStorage | DurableObjectTransaction) {
   const keys = [...(await storage.list({ prefix: repositoryChunkPrefix })).keys(), "repositoryCache"];
   for (let start = 0; start < keys.length; start += 128) await storage.delete(keys.slice(start, start + 128));
+}
+
+async function readRepositoryCache(storage: DurableObjectStorage | DurableObjectTransaction): Promise<RepositoryCache | null> {
+  const value = await storage.get<RepositoryCache | RepositoryCacheChunks>("repositoryCache");
+  if (!value) return null;
+  if (!("chunks" in value)) return value;
+  const chunks: string[] = [];
+  for (let start = 0; start < value.chunks; start += 128) {
+    const keys = Array.from({ length: Math.min(128, value.chunks - start) }, (_, index) => `${repositoryChunkPrefix}${start + index}`);
+    const stored = await storage.get<string>(keys);
+    for (const key of keys) {
+      const chunk = stored.get(key);
+      if (chunk === undefined) throw new Error("Repository cache chunk is missing");
+      chunks.push(chunk);
+    }
+  }
+  return JSON.parse(chunks.join("")) as RepositoryCache;
 }
 
 export class SessionStore extends DurableObject {
@@ -58,8 +76,17 @@ export class SessionStore extends DurableObject {
       });
     }
     if (url.pathname === "/repository-cache") {
-      if (!["PUT", "DELETE"].includes(request.method)) return new Response(null, { status: 405, headers: { Allow: "PUT, DELETE" } });
+      if (!["GET", "PUT", "DELETE"].includes(request.method)) return new Response(null, { status: 405, headers: { Allow: "GET, PUT, DELETE" } });
       return this.ctx.blockConcurrencyWhile(async () => {
+        if (request.method === "GET") {
+          return storage.transaction(async (transaction) => {
+            const session = await transaction.get<StoredValue>("session");
+            if (!session || session.kind !== "user" || session.expiresAt <= Date.now()) return new Response(null, { status: 404 });
+            const generation = await transaction.get<number>("repositoryCacheGeneration") ?? 0;
+            const value = await readRepositoryCache(transaction);
+            return session.expiresAt <= Date.now() ? new Response(null, { status: 404 }) : Response.json({ generation, value });
+          });
+        }
         if (request.method === "DELETE") {
           const session = await storage.get<StoredValue>("session");
           if (!session || session.kind !== "user" || session.expiresAt <= Date.now()) return new Response(null, { status: 204 });
@@ -75,8 +102,8 @@ export class SessionStore extends DurableObject {
           return new Response(null, { status: 204 });
         await storage.transaction(async (transaction) => {
           await clearRepositoryCache(transaction);
-          if (value) {
-            const serialized = JSON.stringify(value);
+          const serialized = value && JSON.stringify(value);
+          if (serialized && new TextEncoder().encode(serialized).byteLength <= repositoryCacheMaxBytes) {
             const chunks = Math.ceil(serialized.length / 16000);
             for (let start = 0; start < chunks; start += 128) {
               const entries: Record<string, string> = {};
@@ -87,7 +114,8 @@ export class SessionStore extends DurableObject {
             await transaction.put("repositoryCache", { chunks });
           }
         });
-        return new Response(null, { status: 204 });
+        // A refused generation still succeeds, but cannot populate isolate memory.
+        return new Response(null, { status: 204, headers: { "X-Repository-Cache-Generation": String(generation) } });
       });
     }
     if (request.method === "PUT") {
@@ -123,28 +151,14 @@ export class SessionStore extends DurableObject {
         const value = await storage.get<GitHubAppConfig>("config");
         return value ? Response.json(value) : new Response(null, { status: 404 });
       }
-      const snapshot = await storage.get<StoredValue | RepositoryCache | RepositoryCacheChunks | number>(["session", "repositoryCache", "repositoryCacheGeneration"]);
+      const snapshot = await storage.get<StoredValue | number>(["session", "repositoryCacheGeneration"]);
       const value = snapshot.get("session") as StoredValue | undefined;
       if (!value || value.expiresAt <= Date.now())
         return new Response(null, { status: 404 });
       if (url.pathname === "/consume") await storage.delete("session");
       if (value.kind === "agent-hub")
         return Response.json(await hubView(storage, value as AgentHub, url));
-      let repositoryCache = snapshot.get("repositoryCache") as RepositoryCache | RepositoryCacheChunks | undefined;
-      if (repositoryCache && "chunks" in repositoryCache) {
-        const chunks: string[] = [];
-        for (let start = 0; start < repositoryCache.chunks; start += 128) {
-          const keys = Array.from({ length: Math.min(128, repositoryCache.chunks - start) }, (_, index) => `${repositoryChunkPrefix}${start + index}`);
-          const stored = await storage.get<string>(keys);
-          for (const key of keys) {
-            const chunk = stored.get(key);
-            if (chunk === undefined) return new Response(null, { status: 500 });
-            chunks.push(chunk);
-          }
-        }
-        repositoryCache = JSON.parse(chunks.join("")) as RepositoryCache;
-      }
-      return Response.json(value.kind === "user" ? { ...value, repositoryCache, repositoryCacheGeneration: snapshot.get("repositoryCacheGeneration") ?? 0 } : value);
+      return Response.json(value.kind === "user" ? { ...value, repositoryCache: undefined, repositoryCacheGeneration: snapshot.get("repositoryCacheGeneration") ?? 0 } : value);
     });
     return url.pathname === "/consume" ? this.ctx.blockConcurrencyWhile(read) : read();
   }
