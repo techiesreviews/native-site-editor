@@ -7,6 +7,9 @@ export const DISCONNECT_GRACE = 5 * 60_000;
  * entry already refuse authentication. Keeps the lifecycle record small. */
 export const TOMBSTONE_AFTER_DELETION = 10 * 60_000;
 const utf8Bytes = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).byteLength;
+/** What a cleaned grant's own object keeps meanwhile (its PUT fence and deadline table),
+ * measured at its widest; charged per live tombstone (decision 05 counts separate objects). */
+export const RECORD_FENCE_BYTES = utf8Bytes({ "agent-cleaned-until": Number.MAX_SAFE_INTEGER, "alarm-deadlines": { session: Number.MAX_SAFE_INTEGER } });
 export type Deadlines = Partial<Record<"session" | "registration" | "agent-cleanup", number>>;
 export interface LifecycleRecord {
   generation: number;
@@ -87,7 +90,8 @@ export class AgentLifecycle {
     const current = await this.load();
     const live = Object.fromEntries(Object.entries(current.cleaned).filter(([, expiry]) => expiry > this.now()));
     if (Object.keys(live).length !== Object.keys(current.cleaned).length) await this.save({ ...current, cleaned: live });
-    return (await this.storage.get(LIFECYCLE_KEY)) === undefined ? 0 : utf8Bytes(await this.load());
+    if ((await this.storage.get(LIFECYCLE_KEY)) === undefined) return 0;
+    return utf8Bytes(await this.load()) + Object.keys(live).length * RECORD_FENCE_BYTES;
   }
   async complete(generation: number, deleted: string[] = []) {
     const loaded = await this.load();
