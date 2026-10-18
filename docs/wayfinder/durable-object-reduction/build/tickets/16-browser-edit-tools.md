@@ -75,7 +75,7 @@ tests/native-save/native-agent-edits.spec.ts.
 
 **Commits.** 4d6aa932 (Sol build), 41fce5a7 (not-sent outcomes; Claude), 0973c850 (review 1: socket spec; Claude).
 
-**Tests.** New tests/agent-tools-edit.test.ts (12): every tool's prepared command shape from browser drafts;
+**Tests.** New tests/agent-tools-edit.test.ts (11): every tool's prepared command shape from browser drafts;
 hash/unchanged/protected-path/content/folder/parent-file and page/section/component/placement contracts; duplicate
 edit_file joins in flight and returns the receipt before re-reading a changed hash; unchanged receipts; stale
 preparation and unknown persistence never run again; real-relay counts above; legacy fallback only with matching
