@@ -90,7 +90,7 @@ test("handle preserves quota metadata, generic failures and login redirects", as
       ASSETS: { fetch: async () => new Response("UI") },
       SESSIONS: { idFromName: (name: string) => name, get: () => ({ fetch: async () => { throw new Error(quota ? "Exceeded allowed volume of requests in Durable Objects free tier" : "Other failure"); } }) },
     } satisfies Env;
-    const response = await handle(new Request("https://editor.example/api/agent/hub", { headers: { Cookie: `__Host-ase_session=${"b".repeat(64)}` } }), env);
+    const response = await handle(new Request("https://editor.example/api/agent/connections", { headers: { Cookie: `__Host-ase_session=${"b".repeat(64)}` } }), env);
     const body = await response.json();
     assert.equal(response.status, quota ? 503 : 500);
     assert.equal(body.code, quota ? "daily-quota" : undefined);

@@ -3,10 +3,9 @@ import { storedDraft } from "./drafts";
 import type { ComponentDeps } from "../../src/page-builder/components";
 import type { NativePreviewSelection } from "../../src/components/native-preview";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
-import { copyConnectionPrompt, useLegacyRelay } from "./mcp-prompt";
+import { copyConnectionPrompt, waitForConnection } from "./mcp-prompt";
 
-// These specs exercise queued edits and the matching legacy context fallback.
-test.beforeEach(({ page }) => useLegacyRelay(page));
+// These specs exercise edits through the fixture relay socket.
 
 // Components as first-class page builder objects (src/page-builder/components.ts,
 // docs/page-builder/components.md): the component accent on instances, the
@@ -671,6 +670,7 @@ test("Make component refuses a page replacement made while it loads", async ({ p
     return JSON.parse((response.content as { text: string }[])[0].text);
   };
   try {
+    await waitForConnection(page);
     await expect(page.getByRole("button", { name: "Disconnect MCP", exact: true })).toBeVisible();
     await page.keyboard.press("Escape");
     const home = await call("get_page", { page: "/" });

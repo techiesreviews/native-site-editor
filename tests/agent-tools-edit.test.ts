@@ -272,7 +272,7 @@ test("already-authorized edit and duplicate: 3 auth + 1 real relay dispatch, 0 r
   } finally { await h.worker.dispose(); }
 });
 
-test("legacy fallback only on editor-unavailable with matching context; timeout/lost never retries", async () => {
+test("no legacy edit fallback, even with matching context; timeout/lost never retries", async () => {
   const h = await connected(), get = h.namespace.get;
   try {
     h.counters.reset();
@@ -280,15 +280,15 @@ test("legacy fallback only on editor-unavailable with matching context; timeout/
     assert.equal(h.counters.log.length, 4); assert.equal(h.counters.waitedMs, 0);
     const context = await siteContext();
     context.branch = "other";
-    await h.tab.share(context);
+    await h.storage(h.counters.log.find(row => row.name.startsWith("agent-hub:"))!.name).put("context", context);
     h.counters.reset();
-    assert.match(String(payload(await h.rpc("write_file", { path: "new.txt", content: "x" }))), /branch other/i);
+    assert.match(String(payload(await h.rpc("write_file", { path: "new.txt", content: "x" }))), /not sharing/i);
     assert.equal(h.counters.log.length, 4); assert.equal(h.counters.waitedMs, 0);
     context.branch = "main";
-    await h.tab.share(context);
+    await h.storage(h.counters.log.find(row => row.name.startsWith("agent-hub:"))!.name).put("context", context);
     const legacy = payload(await h.rpc("write_file", { path: "new.txt", content: "x", waitSeconds: 0 }));
-    assert.equal(legacy.state, "pending");
-    assert.deepEqual(payload(await h.rpc("get_command_status", { requestId: legacy.requestId })), legacy);
+    assert.match(String(legacy), /not sharing/);
+    assert.match(String(payload(await h.rpc("get_command_status", { requestId: "legacy" }))), /not sharing/);
     let dispatches = 0;
     for (const code of ["timeout", "unknown-outcome", "busy", "too-large", "cancelled", "lost"]) {
       h.namespace.get = name => String(name).startsWith("agent-relay:") ? { fetch: async () => {

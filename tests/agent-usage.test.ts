@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { serialize } from "node:v8";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { CountedStorage, FakeClock, UsageCounters, countedSocket, startCountedWorker } from "./fakes/counted-agent";
-import { editorTab, origin, payload, repo, signIn, siteContext, workerFetch } from "./mcp-harness";
+import { editorTab, origin, payload, repo, signIn, workerFetch } from "./mcp-harness";
 
 async function connected() {
   const harness = await startCountedWorker();
@@ -13,7 +13,6 @@ async function connected() {
   const connection = await tab.post("/api/agent/connect", { repo: repo.full_name, repoId: repo.id, branch: "main" });
   assert.equal(connection.status, 200);
   const { token } = await connection.json() as { token: string };
-  assert.equal((await tab.share(await siteContext())).status, 200);
   const rpc = async (method: string, params?: object) => {
     const response = await worker.dispatchFetch(origin + "/mcp", {
       method: "POST",
@@ -51,45 +50,38 @@ test("MCP authentication measures three calls; first use adds only use-grant", a
   } finally { await h.worker.dispose(); }
 });
 
-test("a changed edit polls the real hub 25 times over 10000 virtual ms", async () => {
+test("an edit without a receiving tab refuses immediately: 3 auth + 1 dispatch, no polling", async () => {
   const h = await connected();
   try {
     await h.rpc("initialize", initialize);
     h.counters.reset();
-    h.clock.install();
-    const result = payload(await h.rpc("tools/call", { name: "write_file", arguments: { path: "usage.txt", content: "new file" } }));
-    assert.equal(result.state, "pending");
-    const polls = h.counters.log.filter(row => row.category === "data" && row.name.startsWith("agent-hub:") && row.path === "/");
-    assert.equal(polls.length, 25, JSON.stringify(h.counters.log));
+    const result = await h.rpc("tools/call", { name: "write_file", arguments: { path: "usage.txt", content: "new file" } });
+    assert.equal(result.isError, true);
+    assert.match(String(payload(result)), /not sharing/);
     assert.equal(h.counters.byCategory.auth.calls, 3);
-    // current() also reads the hub with requests=1 before queueing; it is not
-    // a result poll, so there are 26 data calls but exactly 25 plain hub polls.
-    assert.equal(h.counters.byCategory.data.calls, 26);
-    assert.equal(h.counters.log.filter(row => row.action === "queue").length, 1);
-    assert.equal(h.counters.waitedMs, 10000);
+    assert.equal(h.counters.byCategory.control.calls, 1);
+    assert.equal(h.counters.byCategory.data.calls, 0);
+    assert.equal(h.counters.waitedMs, 0);
+    assert.equal(h.counters.log.some(row => row.action === "queue"), false);
   } finally { await h.worker.dispose(); }
 });
 
-test("an empty default wait (legacy fallback) takes requests once and returns at once: no polling (ticket 18; 18 takes over 25000 ms before)", async () => {
+test("an empty wait without a receiver refuses immediately without a legacy take", async () => {
   const h = await connected();
   const client = new Client({ name: "usage-client", version: "1" });
   try {
     await client.connect(new StreamableHTTPClientTransport(new URL(origin + "/mcp"), {
       requestInit: { headers: { Authorization: `Bearer ${h.token}` } }, fetch: workerFetch(h.worker),
     }));
-    // callTool lazily lists tools for validation; exclude that separate call.
     await client.listTools();
     h.counters.reset();
-    // No virtual clock: the quiet wait never sleeps, and an idle fake clock would jump to the SDK's 60 s timeout under load.
-    const started = Date.now();
-    const result = payload(await client.callTool({ name: "wait_for_requests", arguments: {} }));
-    assert.ok(Date.now() - started < 5000);
-    assert.deepEqual(result.requests, []);
-    assert.doesNotMatch(result.hint, /again now/);
-    assert.equal(h.counters.log.filter(row => row.category === "control" && row.action === "take-requests").length, 1);
+    const result = await client.callTool({ name: "wait_for_requests", arguments: {} });
+    assert.equal(result.isError, true);
+    assert.match(String(payload(result)), /not sharing/);
+    assert.equal(h.counters.log.some(row => row.action === "take-requests"), false);
     assert.equal(h.counters.byCategory.auth.calls, 3);
-    // One refused relay dispatch (no editor socket), then the single legacy take.
-    assert.equal(h.counters.byCategory.control.calls, 2);
+    assert.equal(h.counters.byCategory.control.calls, 1);
+    assert.equal(h.counters.byCategory.data.calls, 0);
     assert.equal(h.counters.waitedMs, 0);
   } finally { try { await client.close(); } finally { await h.worker.dispose(); } }
 });

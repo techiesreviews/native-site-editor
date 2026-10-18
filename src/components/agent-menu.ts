@@ -1,10 +1,10 @@
 import { connectionPrompt } from "../agent-prompts";
-import { browserAgentRecovery, recordFailure, recoveryHolds } from "../agent-recovery";
+import { recordFailure, recoveryHolds } from "../agent-recovery";
 import { AgentFailureError, classifyAgentFailure } from "../../shared/agent-failure";
 import { button, node } from "../ui/dom";
-import { REQUEST_HTML_LIMIT, REQUEST_TEXT_LIMIT, textBytes, type AgentCommand, type AgentElement, type AgentRequest } from "../../shared/agent";
+import { REQUEST_HTML_LIMIT, REQUEST_TEXT_LIMIT, type AgentCommand, type AgentElement, type AgentRequest } from "../../shared/agent";
 import { WATCH_WAITS, agentWatch, answerRequest, createRequestTools } from "../agent-watch";
-import { payloadIdentity, workspaceKey, type AgentWorkspace, type JsonValue } from "../../shared/agent-command";
+import { workspaceKey, type AgentWorkspace, type JsonValue } from "../../shared/agent-command";
 import { AgentRecordsError, agentStorageStatus, indexedDbAgentRecords, isUnfinishedRequest, type AgentRecords, type AgentStorageProblem } from "../agent-records";
 import type { createLiveTransport } from "../agent-transport";
 import type { AgentReadPorts } from "../agent-tools-read";
@@ -12,50 +12,12 @@ import type { SharedContext } from "../agent-site";
 import type { PinRequest } from "./agent-pins";
 import { agentHistoryKey } from "../controllers/agent-controller";
 import { mountFlyout } from "./flyout";
-import { gzip } from "./publish-menu";
 import "./agent-menu.css";
 
-// The "Connect with MCP" button, and the editor tab's side of the MCP
-// connection.
-//
-// Agents connect to `/mcp` with OAuth (a custom connector in claude.ai or
-// Claude Desktop) or with a token in the prompt copied here. Either way the
-// connection belongs to this editor session, repository and branch; the Worker keeps the session's
-// connections, the context the sharing tab last reported, and the changes
-// agents queued in one hub (worker/agent-context.ts).
-//
-// Remote agents are off in each tab until the user turns them on there:
-// Connect with MCP, or approving a connection in this browser for the
-// repository this tab shows (`consentGranted`). Until then the tab makes no
-// agent requests at all, an existing connection included, and the choice is
-// not remembered across reloads. Turn off (or Disconnect MCP) stops it again.
-// The live transport is loaded only on opt-in. It receives fenced commands over one pinned
-// socket and keeps background ownership. Polling, context/draft uploads and claim/ack below
-// remain reachable only when WebSocket or the relay route is unavailable.
-//
-// Ask agent in the edit bar keeps a request about an element. With the live
-// relay it stays in this browser: agents fetch it with wait_for_requests over the
-// socket and answer it (src/agent-watch.ts), and Ask, answer and dismiss make no
-// hub call. A wait answers at once unless the user turned on Watch here (at most
-// 10 minutes, shown with its deadline, then paused). Only the legacy fallback still
-// sends requests to the hub (`ask`), where agents take them the same way. The
-// browser keeps its own copy of each request (src/agent-records.ts, per
-// account, repository and branch), which is what the pins and this menu
-// show: it stays after remote agents are turned off or the tab reloads, is
-// not shared with other devices and never turns remote agents back on.
-// While remote agents are on, each poll brings the agents' progress on the
-// workspace's requests (state and thread); one this browser lacks is adopted
-// only while it still waits. Clearing or dismissing a request is local; one still waiting is
-// dismissed on the hub too, at once while on, or on the next poll once
-// turned on again. The user answers an agent's question from its pin
-// (`answer`), which needs remote agents on.
-//
-// While an agent is connected, Disconnect MCP counts the questions agents
-// ask the user, as the project selector's tile does, and hovering or
-// focusing it opens a flyout (components/flyout.ts) of what the agents wait
-// on: the connected agents, then each question with its element and page,
-// which shows its pin with the answer box (`onShowRequest`), or how many
-// requests agents have when none asks.
+// Remote agents are opt-in per tab. Commands and requests travel over one live
+// relay socket; drafts and conversations stay in this browser. The Worker stores
+// grant metadata only. Returning to a copied token's tab checks connections once;
+// there is no timer polling, context heartbeat, or content upload.
 
 export interface AgentCommandOutcome {
   message?: string;
@@ -74,10 +36,7 @@ interface HubGrant {
 }
 interface HubState {
   grants: HubGrant[];
-  tabId: string | null;
-  updatedAt: number | null;
-  commands: AgentCommand[];
-  requests?: (PinRequest & { repoId: number; branch?: string })[];
+
 }
 
 export interface AgentApproval {
@@ -89,14 +48,12 @@ export interface AgentApproval {
 
 export const AGENT_CONNECTED_KEY = "native-site-editor:agent-connected";
 const QUOTA_PAUSE = "Remote agents are paused: the editor's service has used up today's allowance. Your drafts and sign-in are safe, and you can keep editing.";
-const FAST = 2000;
-const SLOW = 30_000;
 
 export function createAgentMenu(options: {
   account: string;
   /** The open repository, for the panel; nothing before one is open. */
   repository: () => { id: number; fullName: string; branch: string } | undefined;
-  /** The context to share and its drafts' texts, built when it is sent. */
+  /** Local context port retained for the host's read tools; never uploaded. */
   context: () => Promise<SharedContext | undefined>;
   tools?: AgentReadPorts;
   onCommand: (command: AgentCommand) => Promise<AgentCommandOutcome | void>;
@@ -113,27 +70,20 @@ export function createAgentMenu(options: {
   reload?: (snapshot: Awaited<ReturnType<AgentRecords["snapshot"]>>) => Promise<void>;
 }) {
   const tabId = `tab-${crypto.randomUUID()}`;
-  let hub: HubState = { grants: [], tabId: null, updatedAt: null, commands: [] };
+  let hub: HubState = { grants: [] };
   let token: string | undefined,
     tokenId: string | undefined;
   let disposed = false,
-    polling = false,
+    reading = false,
     changing = false,
-    shared = false,
     remote = false,
     // Each Connect and Turn off starts a new activation; work begun in an older one writes nothing.
     activation = 0;
-  let revision = 0,
-    sentRevision = -1,
-    lastSent = 0,
-    lastPoll = 0;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  let interval: ReturnType<typeof setInterval> | undefined;
+  let lastRead = 0;
   let consentChecks: ReturnType<typeof setTimeout>[] = [];
-  let recovery: ReturnType<typeof browserAgentRecovery> | undefined;
-  let recoveryRepo: number | undefined, retrying = false;
+  let retrying = false;
   let transport: ReturnType<typeof createLiveTransport> | undefined;
-  let transportMode: "pending" | "socket" | "legacy" = "pending";
+  let transportMode: "pending" | "socket" = "pending";
   let pinned: ReturnType<typeof options.repository>;
   let workspaceChanged = false;
   let transportState: ReturnType<ReturnType<typeof createLiveTransport>["state"]> | undefined;
@@ -226,11 +176,6 @@ export function createAgentMenu(options: {
         // takeover updates must not be lost (a real move sets workspaceChanged and a new activation).
         if (disposed || !remote || activation !== at || workspaceChanged) return;
         transportState = next;
-        if (next.mode === "fallback") {
-          transportMode = "legacy";
-          transport?.stop(); transport = undefined;
-          recoverWorkspace();
-        }
         paint();
       },
     });
@@ -238,7 +183,6 @@ export function createAgentMenu(options: {
   }
   // Grants this tab saw before Turn off: a later approval elsewhere never turns them back on.
   const declined = new Set<string>();
-  const applied = new Map<string, { state: string; message: string; result?: AgentCommand["result"] }>();
 
   // One button: "Connect with MCP" makes a token and copies a prompt that
   // tells an agent how to connect; it waits until an agent first uses the
@@ -259,10 +203,10 @@ export function createAgentMenu(options: {
   // Stops this tab's remote work; the agents' access stays for when it is turned on again.
   const off = button("Turn off", () => turnOff(), "text-button agent-menu__link");
   const retry = button("Retry", () => {
-    if ((!recovery && !transport) || retrying) return;
+    if (!transport || retrying) return;
     retrying = true;
     paint();
-    void (transport ? transport.retry() : recovery!.retry()).finally(() => { retrying = false; paint(); });
+    void transport.retry().finally(() => { retrying = false; paint(); });
   }, "text-button agent-menu__link");
   off.title = "Stop remote agents in this tab. Their access stays; Connect with MCP turns them on again.";
   const links = node("span", "agent-menu__links");
@@ -310,15 +254,15 @@ export function createAgentMenu(options: {
   /** A message that replaces the state's own hint until the state changes. */
   let notice: { text: string; state: string } | undefined;
 
-  /** `at`: the remote activation an upload belongs to; once it ended, nothing is sent. */
-  async function api(action: string, body?: unknown, zipped = false, at?: number, recovering = false) {
-    const sent = body === undefined ? undefined : zipped ? await gzip(JSON.stringify(body)) : JSON.stringify(body);
+  /** `at` fences a request to the activation that started it. */
+  async function api(action: string, body?: unknown, at?: number) {
+    const sent = body === undefined ? undefined : JSON.stringify(body);
     if (at !== undefined && !live(at)) throw new Error("Remote agents were turned off.");
-    if (!recovering && (recovery && !recovery.allowAutomatic() || transportMode === "socket" && !workspaceChanged && ["quota", "paused", "reconnecting"].includes(transportState?.mode ?? ""))) throw new AgentFailureError({ kind: "other" }, "Remote agents are paused.");
+    if (transportMode === "socket" && !workspaceChanged && ["quota", "paused", "reconnecting"].includes(transportState?.mode ?? "")) throw new AgentFailureError({ kind: "other" }, "Remote agents are paused.");
     // A failure counts only for the workspace that sent the request: not one opened since.
-    const scope = recovery;
+    const source = transport;
     const report = (error: AgentFailureError) => {
-      if (!recovering && recovery === scope && (at === undefined || live(at))) failed(error);
+      if (transport === source && (at === undefined || live(at))) failed(error);
       return error;
     };
     let response: Response | undefined, text: string;
@@ -327,7 +271,7 @@ export function createAgentMenu(options: {
       response = await fetch(`/api/agent/${action}`, {
         method: body === undefined ? "GET" : "POST",
         credentials: "same-origin",
-        headers: body === undefined ? undefined : { "Content-Type": "application/json", ...(zipped ? { "Content-Encoding": "gzip" } : {}) },
+        headers: body === undefined ? undefined : { "Content-Type": "application/json" },
         body: sent,
       });
       text = await response.text();
@@ -343,18 +287,14 @@ export function createAgentMenu(options: {
     return result ?? {};
   }
   function stopAutomatic() {
-    clearInterval(interval);
-    interval = undefined;
-    clearTimeout(timer);
     for (const check of consentChecks) clearTimeout(check);
     consentChecks = [];
   }
   function failed(error: AgentFailureError) {
     if (error.failure.kind === "auth") {
-      turnOff(false);
+      turnOff();
       say("Your sign-in to the editor ended. Sign in again, then choose Connect with MCP.");
     } else if (transportMode === "socket") transport?.report(error.failure);
-    else if (recovery) recovery.report(error.failure);
     else if (pinned) {
       try { recordFailure(localStorage, { account: options.account.toLowerCase(), repoId: pinned.id }, error.failure, Date.now()); } catch { /* Activation still reports the failure below. */ }
       if (error.failure.kind === "quota") say(QUOTA_PAUSE);
@@ -371,36 +311,9 @@ export function createAgentMenu(options: {
       workspaceChanged = true;
       activation++;
       stopAutomatic();
-      recovery?.dispose(); recovery = undefined;
       transport?.changed();
       transportState = { mode: "workspace-changed" };
     }
-    if (workspaceChanged || transportMode !== "legacy" || repo?.id === recoveryRepo && recovery) return;
-    recovery?.dispose();
-    activation++;
-    recoveryRepo = repo?.id;
-    recovery = repo ? browserAgentRecovery({ account: options.account.toLowerCase(), repoId: repo.id }, tabId, async (current) => {
-      const at = activation;
-      try {
-        const next: HubState = await api("hub", undefined, false, at, true);
-        if (live(at) && current()) hub = next;
-      } catch (error) {
-        if (live(at) && current() && error instanceof AgentFailureError && error.failure.kind === "auth") failed(error);
-        throw error;
-      }
-    }) : undefined;
-    recovery?.subscribe(recoveryChanged);
-    recoveryChanged();
-  }
-  function recoveryChanged() {
-    if (!remote || transportMode !== "legacy") return;
-    if (!recovery?.allowAutomatic()) stopAutomatic();
-    else if (interval === undefined) {
-      interval = setInterval(() => void poll(), FAST);
-      // Resume with a fresh read, without re-arming consent checks.
-      timer = setTimeout(() => void poll(true), 0);
-    }
-    paint();
   }
   // Only connections pinned to this tab's repository and branch count.
   const liveGrants = () => {
@@ -414,8 +327,7 @@ export function createAgentMenu(options: {
     if (!remote) return options.repository() ? "off" : "closed";
     if (workspaceChanged) return "workspace-changed";
     if (transportMode === "pending") return "connecting";
-    if (transportMode === "socket" && transportState && !["live", "fallback"].includes(transportState.mode)) return transportState.mode;
-    if (recovery && recovery.state().mode !== "ok") return "paused";
+    if (transportMode === "socket" && transportState && transportState.mode !== "live") return transportState.mode;
     if (usedGrants().length) return "connected";
     return waiting() ? "waiting" : "idle";
   }
@@ -451,18 +363,9 @@ export function createAgentMenu(options: {
     const key = scopeKey();
     if (key !== historyKey && key !== loadingKey) void loadHistory();
   }
-  /**
-   * Keeps one request in this browser and shows it; refuses (throws) at capacity. As `progress`
-   * (an agent's progress from the hub, or an answer), it is kept only over a stored request it is
-   * newer than, and never over one dismissed (perhaps by another tab meanwhile), and when none is
-   * stored only if `adopt`: then this tab reads them again.
-   */
-  async function keep(workspace: AgentWorkspace, request: StoredRequest, progress?: { adopt: boolean } | ((current?: { content: JsonValue }) => boolean), owner?: number) {
+  /** Keeps a browser request, optionally fenced against concurrent changes. */
+  async function keep(workspace: AgentWorkspace, request: StoredRequest, accept?: (current?: { content: JsonValue }) => boolean, owner?: number) {
     const content = stored(request);
-    const accept = typeof progress === "function" ? progress : progress ? (current?: { content: JsonValue }) => {
-      const before = current?.content as unknown as StoredRequest | undefined;
-      return before ? before.state !== "dismissed" && progressOf(content) >= progressOf(before) : progress.adopt;
-    } : undefined;
     const kept = await records.putConversation(workspace, { id: content.id, content: content as unknown as JsonValue, unfinished: isUnfinishedRequest(content.state), updatedAt: Date.now() }, accept, owner);
     if (disposed) return kept;
     // Shown at once; then read again, as the write may have evicted others and a read begun
@@ -479,29 +382,6 @@ export function createAgentMenu(options: {
   // Another tab of this browser may have changed them: read them again when this one is seen.
   const reread = () => { if (document.visibilityState === "visible" && historyKey) void loadHistory(); };
   document.addEventListener("visibilitychange", reread);
-  // While remote agents are on, a poll brings the agents' progress on the requests asked here.
-  async function mergeHub(at: number) {
-    const workspace = scope();
-    if (!workspace || workspaceKey(workspace) !== historyKey) return;
-    for (const item of hub.requests ?? []) {
-      const local = history.get(item.id);
-      if (item.repoId !== workspace.repoId || item.branch !== workspace.branch || !live(at)) continue;
-      // One this browser does not have (asked in this session before it kept them, or kept in a
-      // storage since cleared) is adopted while it still waits; a finished one is not.
-      if (!local) {
-        if (isUnfinishedRequest(item.state)) await keep(workspace, item, { adopt: true }).catch((error: unknown) => say(refusalText(error)));
-        continue;
-      }
-      if (local.state === "dismissed") {
-        // Dismissed while remote agents were off: the hub hears of it now.
-        if (isUnfinishedRequest(item.state)) await api("dismiss", { id: item.id }, false, at).catch(() => undefined);
-        continue;
-      }
-      const next = stored(item);
-      if (progressOf(next) < progressOf(local) || payloadIdentity(next as unknown as JsonValue) === payloadIdentity(local as unknown as JsonValue)) continue;
-      await keep(workspace, next, { adopt: false }).catch((error: unknown) => say(refusalText(error)));
-    }
-  }
   // The open workspace's requests, told only when they changed.
   function tellRequests() {
     const next = historyKey && historyKey === scopeKey() ? [...history.values()].filter((item) => item.state !== "dismissed") : [];
@@ -561,7 +441,7 @@ export function createAgentMenu(options: {
             : "Copy a prompt that connects Claude, Codex or another agent to this site";
     links.hidden = changing || current === "off" || current === "closed";
     again.hidden = cancel.hidden = current !== "waiting";
-    const recovering = transportMode === "socket" ? transportState : recovery?.state();
+    const recovering = transportState;
     takeover.hidden = !["other-owner", "taken-over", "takeover-failed"].includes(current);
     takeover.textContent = current === "takeover-failed" ? "Try again" : "Take over";
     move.hidden = another.hidden = current !== "workspace-changed";
@@ -580,7 +460,8 @@ export function createAgentMenu(options: {
     if (recovering?.mode === "quota") {
       pause = QUOTA_PAUSE;
       if (recovering.resetAt !== undefined) pause += ` It should work again after ${new Date(recovering.resetAt).toLocaleString()} (midnight UTC).`;
-    } else if (recovering?.mode === "paused") pause = "Remote agents are paused: the editor could not reach its service. Your drafts are safe. Choose Retry to try again.";
+    } else if (recovering?.mode === "unavailable") pause = "This browser can't keep a live connection for agents.";
+    else if (recovering?.mode === "paused") pause = "Remote agents are paused: the editor could not reach its service. Your drafts are safe. Choose Retry to try again.";
     else if (recovering?.mode === "reconnecting") pause = "Reconnecting to remote agents…";
     if (pause && (recovering?.retryAt ?? 0) > Date.now()) pause += ` You can retry after ${new Date(recovering!.retryAt!).toLocaleString()}.`;
     const liveCopy: Record<string, string> = {
@@ -733,7 +614,7 @@ export function createAgentMenu(options: {
   async function turnOn(task?: string) {
     if (!options.repository() || changing) return;
     startRemote();
-    await poll(true);
+    await readConnections();
     await activateSocket();
     if (state() === "connected") say("Remote agents are on. If an agent you connected before stopped, ask it to continue.");
     else if (state() === "idle") await start(task);
@@ -751,8 +632,8 @@ export function createAgentMenu(options: {
     window.addEventListener("focus", wake);
     paint();
   }
-  /** Stops every remote request of this tab; a shared context is withdrawn once. */
-  function turnOff(withdraw = true) {
+  /** Stops this tab's live connection and pending consent checks. */
+  function turnOff() {
     if (!remote) return;
     remote = false;
     activation++;
@@ -762,19 +643,10 @@ export function createAgentMenu(options: {
     requestTools?.notify(); requestTools = undefined;
     watchWorkspace = "";
     workspaceChanged = false;
-    const paused = recovery && !recovery.allowAutomatic();
-    recovery?.dispose();
-    recovery = undefined;
-    recoveryRepo = undefined;
     document.removeEventListener("visibilitychange", wake);
     window.removeEventListener("focus", wake);
     for (const grant of hub.grants) declined.add(grant.id);
-    hub = { grants: [], tabId: null, updatedAt: null, commands: [], requests: [] };
-    sentRevision = -1;
-    if (shared && !disposed && !paused && withdraw) {
-      void api("pause", { tabId }).catch(() => undefined);
-    }
-    shared = false;
+    hub = { grants: [] };
     paint();
   }
   async function moveHere() {
@@ -790,7 +662,7 @@ export function createAgentMenu(options: {
         await api("rebind", { id: grant.id, repo: target.fullName, repoId: target.id, branch: target.branch });
         if (!current()) return;
       }
-      turnOff(false);
+      turnOff();
       changing = false;
       await turnOn();
     } catch (error) { showError(error); }
@@ -821,14 +693,13 @@ export function createAgentMenu(options: {
       }
       token = result.token;
       tokenId = result.id;
-      sentRevision = -1;
       changing = false;
-      await poll(true);
+      await readConnections();
       await copyPrompt();
     } catch (error) {
       changing = false;
       // A failed first prompt leaves remote agents off; a connected agent keeps them on.
-      if (!usedGrants().length && recovery?.allowAutomatic()) turnOff();
+      if (!usedGrants().length && !["paused", "quota", "reconnecting"].includes(transportState?.mode ?? "")) turnOff();
       showError(error);
     } finally {
       changing = false;
@@ -862,163 +733,23 @@ export function createAgentMenu(options: {
     }
   }
 
-  // Reports the context (or stops sharing it) when it changed, every 30
-  // seconds as a heartbeat, or at once with `force`.
-  let syncChain: Promise<void> = Promise.resolve();
-  function sync(force = false) {
-    syncChain = syncChain.then(() => doSync(force));
-    return syncChain;
-  }
-  async function doSync(force: boolean) {
-    const at = activation;
-    if (transportMode !== "legacy" || !live(at) || !recovery?.allowAutomatic()) return;
-    const grants = liveGrants();
-    if (!grants.length) {
-      if (shared) {
-        shared = false;
-        await api("pause", { tabId }, false, at).catch(() => undefined);
-      }
-      return;
-    }
-    const version = revision;
-    // Of several tabs, the one sharing keeps sharing; another takes over when
-    // it is the one in use, or when the sharing tab went quiet (closed).
-    const visible = document.visibilityState === "visible";
-    const mine =
-      !hub.tabId ||
-      hub.tabId === tabId ||
-      (visible && document.hasFocus()) ||
-      (visible && Date.now() - (hub.updatedAt ?? 0) > 45_000);
-    if (!force && !mine) return;
-    if (!force && sentRevision === version && hub.tabId === tabId && Date.now() - lastSent < 30_000) return;
-    try {
-      const built = await options.context();
-      if (!live(at) || !recovery?.allowAutomatic()) return;
-      if (built) {
-        const { missing } = await api("context", { tabId, context: built.context }, true, at);
-        if (live(at)) await sendTexts(Array.isArray(missing) ? missing : [], built.texts, at);
-        // Turned off while this share was on its way: withdraw it again.
-        if (!live(at)) {
-          if (!remote && !disposed) await api("pause", { tabId }).catch(() => undefined);
-          return;
-        }
-        hub.tabId = tabId;
-        hub.updatedAt = Date.now();
-        shared = true;
-      } else if (shared) {
-        await api("pause", { tabId }, false, at);
-        shared = false;
-      }
-      sentRevision = version;
-      lastSent = Date.now();
-    } catch (error) {
-      if (live(at)) showError(error);
-      // Turned off mid-share (a draft batch may have followed the context): withdraw it.
-      else if (!remote && !disposed) await api("pause", { tabId }).catch(() => undefined);
-    }
-  }
-
-  // The draft texts the Worker lacks, a few MB of JSON at a time.
-  async function sendTexts(missing: string[], texts: Map<string, string>, at: number) {
-    let batch: { hash: string; content: string }[] = [],
-      size = 0;
-    for (const hash of missing) {
-      const content = texts.get(hash);
-      if (!live(at)) return;
-      if (content === undefined) continue;
-      const bytes = textBytes(JSON.stringify(content)) + 80;
-      if (batch.length && (size + bytes > 4 * 1024 * 1024 || batch.length >= 200)) {
-        await api("drafts", { texts: batch }, true, at);
-        if (!live(at)) return;
-        batch = [];
-        size = 0;
-      }
-      batch.push({ hash, content });
-      size += bytes;
-    }
-    if (batch.length) await api("drafts", { texts: batch }, true, at);
-  }
-
-  async function poll(now = false) {
-    recoverWorkspace();
-    if (disposed || !remote || polling || changing) return;
-    if (workspaceChanged || transportMode !== "legacy" && !now || recovery && !recovery.allowAutomatic()) return;
-    // A tab in the background keeps applying changes while an agent is
-    // connected (browsers may slow its timer); otherwise it waits to be seen.
-    if (document.visibilityState === "hidden" && !now && !liveGrants().length) return;
-    const interval = hub.grants.length ? FAST : SLOW;
-    if (!now && Date.now() - lastPoll < interval - 100) return;
-    polling = true;
-    lastPoll = Date.now();
+  /** Explicit metadata refresh; never loads or uploads site content. */
+  async function readConnections() {
+    if (disposed || !remote || reading || workspaceChanged) return;
+    reading = true;
     const at = activation;
     try {
-      const next: HubState = await api("hub", undefined, false, at);
-      // Turned off meanwhile: its answer is not applied.
+      const next: HubState = await api("connections", undefined, at);
       if (!live(at)) return;
       hub = next;
-      await mergeHub(at);
-      if (transportMode !== "legacy") { paint(); return; }
-      await sync();
+      lastRead = Date.now();
       paint();
-      if (hub.tabId !== tabId) return;
-      const repo = options.repository();
-      for (const command of hub.commands) {
-        if (command.state !== "pending" || !live(at) || !recovery?.allowAutomatic()) continue;
-        if (command.claimedBy && command.claimedBy !== tabId) continue;
-        let ack = applied.get(command.id);
-        if (!ack) {
-          try {
-            await api("claim", { tabId, id: command.id, grantId: command.grantId }, false, at);
-            if (!live(at) || !recovery?.allowAutomatic()) return;
-          } catch {
-            continue;
-          }
-          try {
-            if (!repo || command.repoId !== undefined && command.repoId !== repo.id || command.branch !== repo.branch)
-              throw new Error("The editor switched to another repository or branch. Read the site again.");
-            if (Date.now() - command.createdAt > 120_000)
-              throw new Error("This change expired before the editor received it.");
-            const outcome = (await options.onCommand(command)) || {};
-            ack = {
-              state: "applied",
-              message: outcome.message ?? "Applied in the editor as an unsaved draft.",
-              ...(outcome.result ? { result: outcome.result } : {}),
-            };
-          } catch (error) {
-            ack = { state: "conflict", message: (error as Error).message || "The change could not be applied." };
-          }
-          applied.set(command.id, ack);
-          if (applied.size > 100) applied.delete(applied.keys().next().value!);
-          // The context goes first, so an agent reading after "applied" sees the change.
-          revision++;
-          await sync(true);
-        }
-        // A change claimed before Turn off is still answered, so the agent knows its outcome.
-        await api("ack", { tabId, id: command.id, grantId: command.grantId, ...ack }, false, at);
-        // While storage stops agent edits, the alert below already says why each one is refused.
-        if (!storage.problem) say(ack.message);
-      }
-    } catch (error) {
-      if (!disposed && live(at)) showError(error);
-    } finally {
-      polling = false;
-    }
+    } catch (error) { if (live(at)) showError(error); }
+    finally { reading = false; }
   }
   function wake() {
-    if (workspaceChanged) return;
-    if (transportMode !== "legacy") {
-      // Socket mode never polls. Only while a copied token waits for its agent does returning to
-      // the tab read the hub once, so the menu learns the agent connected (at most one read per 2 s).
-      if (transportMode === "socket" && document.visibilityState === "visible" && state() === "waiting" && Date.now() - lastPoll >= 2000) {
-        lastPoll = Date.now();
-        void poll(true);
-      }
-      return;
-    }
-    if (document.visibilityState === "visible") {
-      sentRevision = -1;
-      void poll(true);
-    }
+    if (!workspaceChanged && document.visibilityState === "visible" && state() === "waiting" && Date.now() - lastRead >= 2000)
+      void readConnections();
   }
   // A connection approved in this browser turns remote agents on only for
   // the exact approval, repository and branch named by the consent page.
@@ -1030,20 +761,20 @@ export function createAgentMenu(options: {
   }
   function consentGranted(approval: AgentApproval) {
     if (!matches(approval)) return;
-    if (recovery && !recovery.allowAutomatic()) return;
+    if (["quota", "paused", "reconnecting"].includes(transportState?.mode ?? "")) return;
     for (const check of consentChecks) clearTimeout(check);
     consentChecks = [1000, 4000, 10_000].map((delay) => setTimeout(() => void checkConsent(approval), delay));
   }
   async function checkConsent(approval: AgentApproval) {
     if (disposed || !matches(approval)) return;
-    if (remote) return void poll(true);
+    if (remote) return void readConnections();
     const repo = options.repository();
     if (!repo || changing) return;
     // Off tabs still honour a pause recorded by an on tab before checking consent.
     const workspace = { account: options.account.toLowerCase(), repoId: repo.id };
     if (recoveryHolds(localStorage, workspace, Date.now())) return;
     const since = activation;
-    const found: HubState | undefined = await api("hub").catch((error) => {
+    const found: HubState | undefined = await api("connections").catch((error) => {
       // Today's allowance used up, or a cooldown: the workspace's tabs skip their checks until it ends.
       if (!(error instanceof AgentFailureError)) return undefined;
       // This tab's checks stop on quota even when browser storage refuses the record.
@@ -1063,7 +794,6 @@ export function createAgentMenu(options: {
     consentChecks = [];
     startRemote();
     hub = found;
-    await mergeHub(activation);
     await activateSocket();
     paint();
   }
@@ -1111,26 +841,13 @@ export function createAgentMenu(options: {
       await records.checkConversation(workspace, { id: planned.id, content: planned as unknown as JsonValue, unfinished: true, updatedAt: Date.now() }).catch((error) => refusal(error, " Nothing was sent."));
       // Turned off, or another site or branch opened, while storage answered: nothing is sent.
       if (!live(at) || scopeKey() !== key) throw new Error("Remote agents or the open site changed meanwhile. Nothing was sent; ask again.");
-      if (transportMode === "socket") {
-        // Live relay: the request stays in this browser and reaches agents over the socket.
-        const request = localRequest(repo, text, element);
-        // Turned off, or another site or branch opened, before the write commits: nothing is kept or announced.
-        const still = () => live(at) && scopeKey() === key;
-        const kept = await keep(workspace, request, () => still()).catch((error) => refusal(error, " Nothing was sent."));
-        if (!kept) throw new Error("Remote agents or the open site changed meanwhile. Nothing was sent; ask again.");
-        requestsChanged(key);
-        return request as PinRequest;
-      }
-      const request: StoredRequest = await api("ask", { repository: repo, text, element }, false, at);
-      try {
-        await keep(workspace, request);
-      } catch (error) {
-        // Another tab filled the space meanwhile: agents do not get what the user cannot see.
-        void api("dismiss", { id: request.id }).catch(() => undefined);
-        refusal(error, " The request was withdrawn.");
-      }
-      // Agents waiting pick it up at once; the tab sees their progress as it polls.
-      void poll(true);
+      // The request stays in this browser and reaches agents over the socket.
+      const request = localRequest(repo, text, element);
+      // Turned off, or another site or branch opened, before the write commits: nothing is kept or announced.
+      const still = () => live(at) && scopeKey() === key;
+      const kept = await keep(workspace, request, () => still()).catch((error) => refusal(error, " Nothing was sent."));
+      if (!kept) throw new Error("Remote agents or the open site changed meanwhile. Nothing was sent; ask again.");
+      requestsChanged(key);
       return request as PinRequest;
     },
     /** Answer an agent's question from its pin: the request waits for agents again. */
@@ -1143,30 +860,20 @@ export function createAgentMenu(options: {
       const answered = { ...local, state: "open" as const, thread: [...(local.thread ?? []), { from: "user" as const, text, at: Date.now() }] };
       await records.checkConversation(workspace, { id, content: stored(answered) as unknown as JsonValue, unfinished: true, updatedAt: Date.now() }).catch((error) => refusal(error, " Nothing was sent."));
       if (!live(at) || scopeKey() !== key) throw new Error("Remote agents or the open site changed meanwhile. Nothing was sent; answer again.");
-      if (transportMode === "socket") {
-        const trimmed = text.trim();
-        if (!trimmed || trimmed.length > REQUEST_TEXT_LIMIT) throw new Error(`An answer needs text (up to ${REQUEST_TEXT_LIMIT} characters).`);
-        // The hub's own rule, on this browser's copy: the request waits for every agent again.
-        const list = (await records.conversations(workspace)).map((item) => item.content as unknown as AgentRequest);
-        // Turned off, or another site or branch opened, during the read: nothing is kept (checked again at the write).
-        const still = () => live(at) && scopeKey() === key;
-        if (!still()) throw new Error("Remote agents or the open site changed meanwhile. Nothing was sent; answer again.");
-        const { request: result, accept } = answerRequest(list, id, trimmed);
-        if (!await keep(workspace, result as StoredRequest, current => still() && accept(current?.content as unknown as AgentRequest | undefined)).catch(refusal))
-          throw new Error("This request changed meanwhile (dismissed or answered in another tab). Open its card again.");
-        requestsChanged(key);
-        return;
-      }
-      const request: StoredRequest = await api("answer", { id, text }, false, at);
-      // Dismissed in another tab meanwhile: it stays dismissed (the hub hears of it on the next poll).
-      await keep(workspace, request, { adopt: false }).catch(refusal);
-      void poll(true);
+      const trimmed = text.trim();
+      if (!trimmed || trimmed.length > REQUEST_TEXT_LIMIT) throw new Error(`An answer needs text (up to ${REQUEST_TEXT_LIMIT} characters).`);
+      // The browser request waits for every agent again after the user's answer.
+      const list = (await records.conversations(workspace)).map((item) => item.content as unknown as AgentRequest);
+      // Turned off, or another site or branch opened, during the read: nothing is kept (checked again at the write).
+      const still = () => live(at) && scopeKey() === key;
+      if (!still()) throw new Error("Remote agents or the open site changed meanwhile. Nothing was sent; answer again.");
+      const { request: result, accept } = answerRequest(list, id, trimmed);
+      if (!await keep(workspace, result as StoredRequest, current => still() && accept(current?.content as unknown as AgentRequest | undefined)).catch(refusal))
+        throw new Error("This request changed meanwhile (dismissed or answered in another tab). Open its card again.");
+      requestsChanged(key);
+      return;
     },
-    /**
-     * Dismiss (or clear) a request from its pin, in this browser. One agents
-     * still wait on is dismissed on the hub too while remote agents are on
-     * (otherwise on the next poll once they are).
-     */
+    /** Dismisses a request in this browser, including when remote agents are off. */
     async dismiss(id: string) {
       const workspace = scope(), local = history.get(id);
       if (!workspace || !local || local.state === "dismissed") return;
@@ -1178,22 +885,13 @@ export function createAgentMenu(options: {
         return;
       }
       if (!waiting || !remote) return;
-      // With the live relay agents read this browser's copy: nothing to tell the hub.
-      if (transportMode === "socket") { requestsChanged(workspaceKey(workspace)); return; }
-      try {
-        await api("dismiss", { id });
-      } catch (error) {
-        showError(error);
-      }
+      requestsChanged(workspaceKey(workspace));
     },
-    /** Something the context holds changed: it is sent again shortly. */
+    /** The local workspace changed; keep the socket pinned to its original scope. */
     changed() {
       recoverWorkspace();
-      revision++;
       paint();
-      clearTimeout(timer);
       transport?.changed();
-      if (remote && transportMode === "legacy" && recovery?.allowAutomatic()) timer = setTimeout(() => void sync(), 600);
     },
     destroy() {
       disposed = true;
@@ -1228,7 +926,7 @@ type StoredRequest = PinRequest & { repoId: number; branch?: string; repository?
 function stored(request: StoredRequest): StoredRequest {
   return JSON.parse(JSON.stringify(request));
 }
-/** Ask agent's request, made here as the hub makes one (worker/agent-schemas.ts validateAsk). */
+/** Validates and creates Ask agent's browser record. */
 function localRequest(repo: { id: number; fullName: string; branch: string }, text: string, element: AgentElement): StoredRequest {
   const asked = text.trim();
   if (!asked || asked.length > REQUEST_TEXT_LIMIT) throw new Error(`A request needs text (up to ${REQUEST_TEXT_LIMIT} characters).`);
@@ -1240,9 +938,6 @@ function localRequest(repo: { id: number; fullName: string; branch: string }, te
     thread: [{ from: "user", text: asked, at: createdAt }],
   });
 }
-// How far a request has come: its latest message or the time an agent took it. A poll answered
-// before the user's answer reached the hub is older and changes nothing here.
-const progressOf = (request: StoredRequest) => Math.max(request.seenAt ?? 0, request.createdAt, ...(request.thread ?? []).map((message) => message.at), request.reply?.at ?? 0);
 function refusalText(error: unknown) {
   if (error instanceof AgentRecordsError && error.code === "capacity") return error.message;
   if (error instanceof AgentRecordsError)

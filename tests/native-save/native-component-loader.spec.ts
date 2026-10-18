@@ -4,10 +4,9 @@ import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/cli
 import { NATIVE_STARTER_VERSION } from "../../worker/starter";
 import { COMPONENT_LOADER_PATH, COMPONENT_LOADER_RULE, pageLoadsComponentLoader } from "../../src/page-builder/component-loader";
 import { editorMounted, effectiveSource, storedDraft } from "./drafts";
-import { copyConnectionPrompt, useLegacyRelay } from "./mcp-prompt";
+import { copyConnectionPrompt, waitForConnection } from "./mcp-prompt";
 
-// These specs exercise queued edits and the matching legacy context fallback.
-test.beforeEach(({ page }) => useLegacyRelay(page));
+// These specs exercise edits through the fixture relay socket.
 
 // Default fixture group. Blank page onboarding drafts are the real starting point.
 const loader = readFileSync(`public/native-static-starter/${NATIVE_STARTER_VERSION}/files/components/components.js.asset`, "utf8");
@@ -83,6 +82,7 @@ async function connectAgent(page: Page, baseURL: string | undefined) {
   const { token } = await copyConnectionPrompt(page);
   const client = new Client({ name: "loader-test", version: "1.0.0" });
   await client.connect(new StreamableHTTPClientTransport(new URL(`${baseURL}/mcp`), { requestInit: { headers: { Authorization: `Bearer ${token}` } } }));
+  await waitForConnection(page);
   await expect(page.getByRole("button", { name: "Disconnect MCP", exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
   return client;

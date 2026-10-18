@@ -3,10 +3,9 @@ import { expect, test, type Page } from "@playwright/test";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { unzipStored } from "../../src/zip.ts";
 import { storedDrafts } from "./drafts";
-import { copyConnectionPrompt, useLegacyRelay } from "./mcp-prompt";
+import { copyConnectionPrompt, waitForConnection } from "./mcp-prompt";
 
-// These specs exercise queued edits and the matching legacy context fallback.
-test.beforeEach(({ page }) => useLegacyRelay(page));
+// These specs use the fixture relay and browser-owned drafts and receipts.
 
 // When this browser cannot keep agent edits (ticket 10, src/agent-records.ts): a full storage is
 // relieved and the edit tried once; still full, agent edits stop with a plain error in the
@@ -16,6 +15,7 @@ const indexPath = "index.html";
 const pageErrors: string[] = [];
 test.beforeEach(async ({ page }) => {
   pageErrors.length = 0;
+
   page.on("pageerror", (error) => pageErrors.push(error.message));
 });
 test.afterEach(() => {
@@ -28,12 +28,19 @@ async function open(page: Page, baseURL: string | undefined) {
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath, { timeout: 30_000 });
   await expect(frame(page).locator(".hero h1")).toBeVisible({ timeout: 30_000 });
 }
-async function connectAgent(page: Page) {
+async function connectAgent(page: Page, storageOff = false) {
   await page.locator(".repository-menu__trigger").click();
-  const { url, token } = await copyConnectionPrompt(page);
+  const { url, token } = storageOff ? await (async () => {
+    const response = await page.request.post("/api/agent/connect", { headers: { Origin: new URL(page.url()).origin }, data: { repo: "native-demo-user/native-demo", repoId: 501, branch: "main" } });
+    expect(response.ok()).toBe(true);
+    const { token } = await response.json() as { token: string };
+    await page.getByRole("button", { name: "Connect with MCP", exact: true }).click();
+    return { url: new URL("/mcp", page.url()).href, token };
+  })() : await copyConnectionPrompt(page);
   const client = new Client({ name: "playwright-agent", version: "1.0.0" });
   await client.connect(new StreamableHTTPClientTransport(new URL(url), { requestInit: { headers: { Authorization: `Bearer ${token}` } } }));
-  await expect(page.getByRole("button", { name: "Disconnect MCP", exact: true })).toBeVisible({ timeout: 15_000 });
+  await waitForConnection(page);
+  await expect(page.locator(".agent-menu")).toHaveAttribute("data-state", /connected|takeover-failed/, { timeout: 15_000 });
   await page.keyboard.press("Escape");
   const call = async (name: string, args: Record<string, unknown> = {}) => {
     const response = await client.callTool({ name, arguments: args });
@@ -84,7 +91,9 @@ test("full storage: the agent edit is refused, agent edits stop with a plain err
     const before = await storedDrafts(page);
 
     await fillStorage(page, true);
-    const home = JSON.parse((await call("read_file", { path: indexPath })).text);
+    const homeRead = await call("read_file", { path: indexPath });
+    expect(homeRead.error, homeRead.text).toBe(false);
+    const home = JSON.parse(homeRead.text);
     const refused = await call("edit_file", { path: indexPath, expectedHash: home.hash, edits: [{ oldText: "A native browser preview", newText: "Agent heading" }] });
     expect(refused.error, refused.text).toBe(true);
     expect(refused.text).toContain("storage is full");
@@ -129,11 +138,11 @@ test("disabled storage: agent edits are refused with a plain error and the tab's
     IDBFactory.prototype.open = function () { throw new DOMException("The user denied permission to access the database.", "SecurityError"); };
   });
   await open(page, baseURL);
-  const { client, call } = await connectAgent(page);
+  const { client, call } = await connectAgent(page, true);
   try {
     const refused = await call("write_file", { path: "notes/plan.txt", content: "Kept only in this tab.\n" });
     expect(refused.error, refused.text).toBe(true);
-    expect(refused.text).toContain("Nothing was changed; your drafts are as they were.");
+    expect(refused.text).toContain("not sharing");
     // The user's own edit is kept by the tab (in memory and localStorage) and is what downloads.
     const source = await page.evaluate(async (path) => (await import("/src/components/code-editor.ts")).getMountedSource(path), indexPath);
     expect(source).toContain("A native browser preview");

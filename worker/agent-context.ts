@@ -1,8 +1,8 @@
 import { GitHub, HttpError } from "./github";
-import { AGENT_TEXT_LIMIT, textBytes, textHash, type AgentCommand } from "../shared/agent";
+import type { AgentCommand } from "../shared/agent";
 import type { EditorContext } from "../shared/types";
 import type { Env, StoredSession } from "./app";
-import type { requestSummary } from "./agent-requests";
+import type { requestSummary } from "../shared/agent-requests";
 
 
 /**
@@ -42,11 +42,10 @@ export interface HubGrant {
   usedAt?: number;
 }
 /**
- * Everything the agents of one editor session share: the connections, the
- * context the active editor tab last reported, and the queued commands. One
+ * Grant metadata for the agents of one editor session. One
  * Durable Object per session (`agent-hub:<session id>`), so a connection
  * made by OAuth reaches the open tab without the tab knowing its token.
- * The context and draft texts are stored apart (worker/agent-store.ts).
+ * Optional content fields describe legacy records only; no writer creates them.
  */
 export interface AgentHub {
   kind: "agent-hub";
@@ -55,10 +54,10 @@ export interface AgentHub {
   grants: HubGrant[];
   context?: EditorContext;
   updatedAt?: number;
-  /** The tab that reported the context; only it applies commands. */
+  /** Legacy sharing tab; live ownership is fenced in the browser. */
   tabId?: string;
   commands?: AgentCommand[];
-  /** The requests to agents, when read with them (worker/agent-store.ts `hubView`). */
+  /** Legacy request summaries; grant reads never load them. */
   requests?: ReturnType<typeof requestSummary>[];
 }
 
@@ -173,53 +172,14 @@ export async function revokeGrant(env: Env, id: string, sessionId: string) {
   );
 }
 
-/**
- * The session's hub: with the context the tab shared (unless `context` is
- * false), with `texts` each pending change's text, for the tab, and with
- * `requests` the requests to agents.
- */
-export async function getHub(
-  env: Env,
-  sessionId: string,
-  options: { context?: boolean; texts?: boolean; requests?: boolean } = {},
-): Promise<AgentHub | undefined> {
-  const query = `${options.context === false ? "context=0&" : ""}${options.texts ? "texts=1&" : ""}${options.requests ? "requests=1" : ""}`;
+/** The session's grant metadata, with all legacy content reads disabled. */
+export async function getHub(env: Env, sessionId: string): Promise<AgentHub | undefined> {
   const response = await durable(env, `agent-hub:${sessionId}`).fetch(
-    new Request(`https://session.internal/?${query}`),
+    new Request("https://session.internal/?context=0"),
   );
   if (!response.ok) return undefined;
   const hub = (await response.json()) as AgentHub;
   return hub.kind === "agent-hub" && hub.expiresAt > Date.now() ? hub : undefined;
-}
-/** A draft's text the tab shared, by its hash; undefined when not (yet) there. */
-export async function draftText(env: Env, sessionId: string, hash: string) {
-  const response = await durable(env, `agent-hub:${sessionId}`).fetch(
-    new Request(`https://session.internal/agent-draft?hash=${hash}`),
-  );
-  return response.ok ? response.text() : undefined;
-}
-/** Stores draft texts the tab sends, each checked against its hash. */
-export async function storeDraftTexts(env: Env, sessionId: string, value: unknown) {
-  const texts = (value as { texts?: unknown })?.texts;
-  if (!Array.isArray(texts) || texts.length > 500)
-    throw new HttpError(400, "Send at most 500 draft texts at once.");
-  for (const item of texts) {
-    if (typeof item?.hash !== "string" || typeof item.content !== "string")
-      throw new HttpError(400, "Invalid draft text.");
-    if (textBytes(item.content) > AGENT_TEXT_LIMIT)
-      throw new HttpError(413, "A draft text is larger than agents can read.");
-    if ((await textHash(item.content)) !== item.hash)
-      throw new HttpError(400, "A draft text does not match its hash.");
-  }
-  const response = await durable(env, `agent-hub:${sessionId}`).fetch(
-    new Request("https://session.internal/agent-drafts", {
-      method: "POST",
-      body: JSON.stringify(texts.map(({ hash, content }) => ({ hash, content }))),
-    }),
-  );
-  const result: any = await response.json();
-  if (!response.ok) throw new HttpError(response.status, result.error ?? "Draft texts could not be stored.");
-  return result;
 }
 export async function operateHub(env: Env, sessionId: string, action: unknown) {
   const response = await durable(env, `agent-hub:${sessionId}`).fetch(
@@ -235,23 +195,6 @@ export async function operateHub(env: Env, sessionId: string, action: unknown) {
       result.error ?? "Agent operation failed.",
     );
   return result;
-}
-
-/**
- * The hub's context when it still shows the repository the request was
- * authorized for on the pinned branch, else nothing.
- */
-export function connectionContext(
-  hub: AgentHub | undefined,
-  workspace: Pick<AgentGrant, "repoId" | "repo" | "branch">,
-) {
-  const context = hub?.context;
-  return context &&
-    context.repository.id === workspace.repoId &&
-    context.repository.fullName === workspace.repo &&
-    context.branch === workspace.branch
-    ? context
-    : undefined;
 }
 
 /** Git branch names accepted by connection and consent forms. */
@@ -297,7 +240,7 @@ export async function authenticateAgent(
   // Authorize the pinned repository with a listing at most one minute old.
   // Reading the grant, sign-in session and hub still costs exactly three DO calls.
   const github = new GitHub(session.token, fetcher);
-  const hub = await getHub(env, grant.sessionId, { requests: true });
+  const hub = await getHub(env, grant.sessionId);
   const listed = hub?.grants.find((item) => item.id === id);
   if (!listed || listed.repoId !== grant.repoId || listed.repo !== grant.repo ||
       listed.branch !== grant.branch || listed.generation !== grant.generation)

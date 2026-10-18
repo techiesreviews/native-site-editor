@@ -180,25 +180,13 @@ test("MCP before there is a site: guidance to sign in, open a repository, or sta
       assert.ok(JSON.stringify(result).includes("Continue with GitHub"), name);
     }
 
-    // The tab shares an empty repository.
-    assert.equal((await tab.share(emptyContext(EMPTY_COMMIT))).status, 200);
-    const empty = payload(await call("get_site"));
-    assert.equal(empty.native, false);
-    assert.equal(empty.empty, true);
-    assert.match(empty.start, /no index\.html/);
-    assert.match(empty.start, /write_file/);
-    const noPage = (await call("create_page", { title: "About" })) as { isError?: boolean };
-    assert.equal(noPage.isError, true);
-    assert.match(JSON.stringify(noPage), /no site yet/);
-
-    // The tab shares a repository that has commits but no home page.
-    assert.equal((await tab.share(emptyContext("a".repeat(40)))).status, 200);
-    const noHome = payload(await call("get_site"));
-    assert.equal(noHome.native, false);
-    assert.equal("empty" in noHome, false);
-    assert.match(noHome.start, /no site yet/);
-    assert.equal(((await call("create_page", { title: "About" })) as { isError?: boolean }).isError, true);
-    assert.equal(((await call("get_page", { page: "/" })) as { isError?: boolean }).isError, true);
+    // Obsolete context uploads cannot change the no-receiver answer, for empty or committed sites.
+    for (const revision of [EMPTY_COMMIT, "a".repeat(40)]) {
+      assert.equal((await tab.share(emptyContext(revision))).status, 410);
+      const result = await call("get_site");
+      assert.equal(payload(result).available, false);
+      assert.equal(payload(result).note, guidance);
+    }
   } finally {
     await client?.close();
     await worker.dispose();

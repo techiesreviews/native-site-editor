@@ -1,11 +1,5 @@
 import { expect, type Page } from "@playwright/test";
 
-/** Install before navigation: Playwright's WebSocket interception uses an init script. */
-export async function useLegacyRelay(page: Page) {
-  await page.routeWebSocket("**/api/agent/relay?*", socket => socket.close());
-  await page.route("**/api/agent/relay", route => route.fulfill({ status: 404, body: "Not found" }));
-}
-
 /**
  * Chooses Connect with MCP (the project menu is open) and returns the prompt it copies, with
  * the server address and token in it. The browser contexts of one Playwright worker share the
@@ -24,4 +18,13 @@ export async function copyConnectionPrompt(page: Page) {
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain(`Authorization: \`Bearer ${token}\``);
   const prompt = await page.evaluate(() => navigator.clipboard.readText());
   return { prompt, url: /Server: `(\S+)`/.exec(prompt)![1], token };
+}
+
+/** Simulates returning from the external agent while the copied token is waiting.
+ * Only these focus events refresh grant metadata; live idle never polls. */
+export async function waitForConnection(page: Page) {
+  await expect.poll(async () => {
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    return page.locator(".agent-menu").getAttribute("data-state");
+  }, { timeout: 15_000 }).toMatch(/connected|takeover-failed/);
 }

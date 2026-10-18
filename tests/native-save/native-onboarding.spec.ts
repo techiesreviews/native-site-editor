@@ -1,3 +1,4 @@
+import { waitForConnection } from "./mcp-prompt";
 import { discardAllChanges, publishButton, showPublish } from "./publish";
 import { expect, test, type Page } from "@playwright/test";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
@@ -380,9 +381,6 @@ test("the first save of an empty repository works after the tab has been open fo
 });
 
 test("a home page an agent writes switches the site on, and discarding all brings Start your site back", async ({ page, baseURL }) => {
-  // Route before navigation so queued-edit tests keep the legacy fallback.
-  await page.routeWebSocket("**/api/agent/relay?*", socket => socket.close());
-  await page.route("**/api/agent/relay", route => route.fulfill({ status: 404, body: "Not found" }));
   await control(page, baseURL, { repositories: "none", add: [{ name: "agent-repo", kind: "empty" }] });
   await openRepository(page, baseURL, "agent-repo");
   await expect(page.getByText("Empty repository")).toBeVisible({ timeout: 30_000 });
@@ -395,6 +393,7 @@ test("a home page an agent writes switches the site on, and discarding all bring
   const token = /Authorization: `Bearer (ase_[a-f0-9]{64})`/.exec(prompt)![1];
   const client = new Client({ name: "playwright-agent", version: "1.0.0" });
   await client.connect(new StreamableHTTPClientTransport(new URL(url), { requestInit: { headers: { Authorization: `Bearer ${token}` } } }));
+  await waitForConnection(page);
   await expect(page.getByRole("button", { name: "Disconnect MCP", exact: true })).toBeVisible({ timeout: 15_000 });
   await page.keyboard.press("Escape");
   const site = async () => JSON.parse(((await client.callTool({ name: "get_site", arguments: {} })) as any).content[0].text);

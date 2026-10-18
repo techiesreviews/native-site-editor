@@ -141,7 +141,7 @@ The state of a saved change: Saved, Building, Live, or Failed, according to the 
 The site's name and public address used by the editor when creating and updating page details. When the address includes a sub-folder (for example `https://yourname.github.io/my-site/`), the editor writes every link and picture address under that sub-folder, and changing the address updates them all. (Planned in the media-manager build, stage 7.)
 
 **Agent connection**:
-An authorized connection through which an external agent reads the site and proposes changes as drafts. It follows the project shown by the sharing editor tab; the user reviews and saves changes.
+An authorized connection through which an external agent reads the site and proposes changes as drafts. It is pinned to one project and branch and uses the receiving editor tab’s live relay; the user reviews and saves changes. Without a receiving tab, tools refuse immediately. Drafts, context, commands and conversations are never mirrored in Durable Objects.
 
 **Agent request**:
 Something the user asks connected agents to do about an element of the preview, sent from the edit bar with the element's context. Agents fetch it, carry it out as drafts, and reply; when an agent asks a question, the user answers on the pin and the request goes back to agents with the whole conversation. The user dismisses it.

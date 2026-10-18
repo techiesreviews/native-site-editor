@@ -84,7 +84,7 @@ test("media records and their containing folder are protected however spelled; o
   assert.match(writablePathProblem("../file.json", { readOnly: true }) ?? "", /Invalid path/);
 });
 
-test("the hub and editor refuse direct media record changes before touching drafts, while opening is allowed", async () => {
+test("the hub refuses obsolete queues; the editor protects media records while allowing opening", async () => {
   const hub = (): AgentHub => ({
     kind: "agent-hub", login: "lex", expiresAt: Date.now() + 60_000, grants: [{ id: "g", repoId: 1, repo: "lex/site", branch: "main", generation: 1, via: "token", createdAt: 1 }],
     updatedAt: Date.now(),
@@ -101,17 +101,17 @@ test("the hub and editor refuse direct media record changes before touching draf
       for (const extra of [{ path }, { args: { to: path } }, { args: { parent: path } }]) {
         const value = command({ operation, ...extra });
         assert.throws(() => agentOperation(hub(), { type: "queue", command: value }),
-          (error: HttpError) => error.status === 403 && error.message === MEDIA_RECORDS_REFUSED);
+          (error: HttpError) => error.status === 400);
         await assert.rejects(applySiteCommand(editorActions, value), { message: MEDIA_RECORDS_REFUSED });
       }
     }
   }
   assert.deepEqual(touched, []);
   const opening = command({ operation: "open_page", path: ".editor/media.json" });
-  assert.equal(agentOperation(hub(), { type: "queue", command: opening }), opening);
+  assert.throws(() => agentOperation(hub(), { type: "queue", command: opening }), { status: 400 });
   await applySiteCommand(editorActions, opening);
   assert.deepEqual(touched, [".editor/media.json"]);
-  assert.doesNotThrow(() => agentOperation(hub(), { type: "queue", command: command({ operation: "write_file", path: ".editor/other.json" }) }));
+  assert.throws(() => agentOperation(hub(), { type: "queue", command: command({ operation: "write_file", path: ".editor/other.json" }) }), { status: 400 });
 });
 
 test("the hub refuses a queued change that reaches the workflows as a path or a move's destination", () => {
@@ -126,11 +126,11 @@ test("the hub refuses a queued change that reaches the workflows as a path or a 
   });
   const queue = (value: AgentCommand) => agentOperation(hub() as never, { type: "queue", command: value });
   for (const path of [".github/workflows", ".github", ".github/actions/deploy"])
-    assert.throws(() => queue(command({ args: { to: path } })), (error: HttpError) => error.status === 403, `to ${path}`);
+    assert.throws(() => queue(command({ args: { to: path } })), (error: HttpError) => error.status === 400, `to ${path}`);
   assert.throws(() => queue(command({ path: ".GitHub/workflows/x.yml", args: { to: "elsewhere" } })), HttpError);
   assert.throws(() => queue(command({ operation: "write_file", path: ".github/actions/deploy/action.yml", content: "x" })), HttpError);
   assert.throws(() => queue(command({ operation: "delete_file", path: ".github" })), HttpError);
-  assert.doesNotThrow(() => queue(command({ args: { to: "company/about" } })));
+  assert.throws(() => queue(command({ args: { to: "company/about" } })), { status: 400 });
 });
 
 test("the editor tab refuses the same changes before touching a draft", async () => {

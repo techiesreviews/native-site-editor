@@ -1,7 +1,6 @@
 import { inventoryRoute } from "./agent-maintenance";
 import { requestJson } from "./http";
 import { ASSET_TYPES } from "../shared/asset-types";
-import { AGENT_RESULT_MAX } from "../shared/agent";
 import { AgentRelay, relayObjectName } from "./agent-relay";
 import {
   agentRecord,
@@ -13,11 +12,9 @@ import {
   markGrantUsed,
   operateHub,
   revokeGrant,
-  storeDraftTexts,
   type AgentGrant,
   type AgentHub,
 } from "./agent-context";
-import { requestIdPattern, requestSummary } from "./agent-requests";
 import {
   handleOAuth,
   isOAuthPath,
@@ -399,6 +396,12 @@ export async function handle(
   return secured;
 }
 
+// Ticket 07 rollback: stale tabs still cost Worker requests until reloaded, never DO work.
+const OBSOLETE_AGENT_ROUTES = new Set([
+  "/api/agent/hub", "/api/agent/context", "/api/agent/drafts", "/api/agent/claim",
+  "/api/agent/ack", "/api/agent/pause", "/api/agent/ask", "/api/agent/answer", "/api/agent/dismiss",
+]);
+
 async function route(
   request: Request,
   env: Env,
@@ -407,6 +410,9 @@ async function route(
   ctx?: { waitUntil(promise: Promise<unknown>): void },
 ): Promise<Response> {
   const path = url.pathname;
+  if (OBSOLETE_AGENT_ROUTES.has(path)) return Response.json({
+    error: "This editor was updated. Reload this tab to keep using agents.", code: "editor-updated",
+  }, { status: 410, headers: { "Cache-Control": "no-store" } });
   if (path === "/__maintenance/inventory") return inventoryRoute(request, env);
   if (isOAuthPath(path))
     return handleOAuth(request, env, url, {
@@ -673,36 +679,10 @@ async function route(
         expiresAt: user.expiresAt,
       });
     }
-    // The session's connections, the tab sharing its context, and the
-    // changes waiting for it (src/components/agent-menu.ts polls this).
-    if (path === "/api/agent/hub" && request.method === "GET") {
-      const hub = await getHub(env, sessionId, { context: false, texts: true, requests: true });
-      return json({
-        grants: hub?.grants ?? [],
-        tabId: hub?.tabId ?? null,
-        updatedAt: hub?.updatedAt ?? null,
-        commands: (hub?.commands ?? []).filter(
-          (command) => command.state === "pending",
-        ),
-        // The requests to agents the user has not dismissed, for the pins.
-        requests: (hub?.requests ?? []).filter((item) => item.state !== "dismissed"),
-      });
-    }
-    // Ask agent in the edit bar: a request about an element, for agents'
-    // wait_for_requests (worker/agent-requests.ts).
-    if (path === "/api/agent/ask" && request.method === "POST") {
-      const data = await requestJson(request, 64 * 1024);
-      return json(requestSummary(await operateHub(env, sessionId, { type: "ask", request: (await import("./agent-schemas")).validateAsk(data) })));
-    }
-    // The user's answer to an agent's reply, from the request's card.
-    if (path === "/api/agent/answer" && request.method === "POST") {
-      const data = await requestJson(request, 16 * 1024);
-      return json(requestSummary(await operateHub(env, sessionId, { type: "answer", ...(await import("./agent-schemas")).validateAnswer(data) })));
-    }
-    if (path === "/api/agent/dismiss" && request.method === "POST") {
-      const data = await requestJson(request, 4096);
-      if (!requestIdPattern.test(String(data?.id ?? ""))) throw new HttpError(400, "Invalid request.");
-      return json(await operateHub(env, sessionId, { type: "dismiss", id: data.id }));
+    // Explicit connection checks only; old bundles' polling uses the obsolete /hub route.
+    if (path === "/api/agent/connections" && request.method === "GET") {
+      const hub = await getHub(env, sessionId);
+      return json({ grants: hub?.grants ?? [] });
     }
     if (path === "/api/agent/revoke" && request.method === "POST") {
       const data = await requestJson(request, 4096);
@@ -718,48 +698,6 @@ async function route(
         if (grant || /^[a-f0-9]{64}$/.test(id)) await revokeGrant(env, id, sessionId);
       }
       return json({ ok: true, revoked: ids.length });
-    }
-    if (path === "/api/agent/pause" && request.method === "POST") {
-      const data = await requestJson(request, 4096);
-      if (!(await getHub(env, sessionId))) return json({ ok: true });
-      return json(await operateHub(env, sessionId, { type: "pause", tabId: data?.tabId }));
-    }
-    if (path === "/api/agent/context" && request.method === "POST") {
-      // Draft texts go apart (below), so this is paths and hashes.
-      const data = await requestJson(request, 1800 * 1024);
-      const context = (await import("./agent-schemas")).validateContext(data?.context);
-      return json(
-        await operateHub(env, sessionId, { type: "context", tabId: data?.tabId, context }),
-      );
-    }
-    // The draft texts the context response named missing, in batches.
-    if (path === "/api/agent/drafts" && request.method === "POST") {
-      const data = await requestJson(request, 8 * 1024 * 1024);
-      return json(await storeDraftTexts(env, sessionId, data));
-    }
-    if (path === "/api/agent/claim" && request.method === "POST") {
-      const data = await requestJson(request, 4096);
-      const command = await operateHub(env, sessionId, {
-        type: "claim",
-        id: data?.id,
-        grantId: data?.grantId,
-        tabId: data?.tabId,
-      });
-      return json({ id: command.id, state: command.state });
-    }
-    if (path === "/api/agent/ack" && request.method === "POST") {
-      // Room for the largest result (an inspection or media report, a picture preview) and the rest of the body.
-      const data = await requestJson(request, AGENT_RESULT_MAX + 8192);
-      const command = await operateHub(env, sessionId, {
-        type: "ack",
-        id: data?.id,
-        grantId: data?.grantId,
-        tabId: data?.tabId,
-        state: data?.state,
-        message: data?.message,
-        result: data?.result,
-      });
-      return json({ id: command.id, state: command.state });
     }
     throw new HttpError(404, "Agent endpoint not found.");
   }

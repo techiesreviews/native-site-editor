@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { test } from "node:test";
 import { accountPending, PENDING_KEY, PENDING_ROUTE, type PendingAction } from "../worker/oauth-pending";
 import { CountedStorage, UsageCounters, startCountedWorker } from "./fakes/counted-agent";
-import { editorTab, origin, repo, signIn, siteContext, startWorker, type WorkerDispatch } from "./mcp-harness";
+import { origin, repo, signIn, startWorker, type WorkerDispatch } from "./mcp-harness";
 
 type Ledger = Record<string, { bytes: number; expiresAt: number }>;
 const requestId = (n: number) => `oauth-request:${n.toString(16).padStart(64, "0")}`;
@@ -299,7 +299,6 @@ test("ordinary MCP reads add zero ledger calls, reads or writes", async () => {
     const approved = await flow.consent(await flow.nonce());
     const code = new URL(approved.headers.get("location")!).searchParams.get("code")!;
     const { access_token: token } = await (await flow.token(code)).json() as { access_token: string };
-    assert.equal((await editorTab(h.worker, flow.cookie).share(await siteContext())).status, 200);
     // Keep a pending entry so an accidental ledger load would be observable.
     await flow.nonce();
     const storage = h.storage(flow.sessionId);
@@ -327,10 +326,10 @@ test("ordinary MCP reads add zero ledger calls, reads or writes", async () => {
     h.counters.reset();
     const files = await rpc("tools/call", { name: "list_files", arguments: {} });
     assert.equal(files.status, 200);
-    assert.match(await files.text(), /index.html/);
+    assert.match(await files.text(), /not sharing/);
     assert.equal(h.counters.byCategory.auth.calls, 3);
-    assert.equal(h.counters.byCategory.control.calls, 1, "one relay dispatch finds no owner before legacy fallback");
-    assert.equal(h.counters.byCategory.data.calls, 0, "legacy fallback reuses the authenticated hub snapshot");
+    assert.equal(h.counters.byCategory.control.calls, 1, "one relay dispatch finds no owner");
+    assert.equal(h.counters.byCategory.data.calls, 0, "no legacy fallback reads");
     assert.equal(h.counters.log.filter(row => row.path === PENDING_ROUTE).length, 0);
     assert.equal(Object.values(h.counters.byCategory).reduce((n, counts) => n + counts.keysWritten + counts.keysDeleted, 0), 0);
   } finally { await h.worker.dispose(); }

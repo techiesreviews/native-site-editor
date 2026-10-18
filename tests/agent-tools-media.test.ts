@@ -328,15 +328,15 @@ test("a committed edit whose reply arrives after the deadline stays unknown on t
   } finally { await h.worker.dispose(); }
 });
 
-test("media relay failures never retry; only editor-unavailable with matching legacy context queues", async () => {
+test("media relay failures never retry or queue, even with matching legacy context", async () => {
   const h = await connected(), get = h.namespace.get;
   try {
     h.counters.reset(); assert.match(String(payload(await h.rpc("adding_settings", {}))), /not sharing/i);
     assert.equal(h.counters.log.length, 4); assert.equal(h.counters.waitedMs, 0);
-    const context = await siteContext(); context.branch = "other"; await h.tab.share(context);
-    assert.match(String(payload(await h.rpc("adding_settings", {}))), /branch other/i);
-    context.branch = "main"; await h.tab.share(context);
-    assert.equal(payload(await h.rpc("adding_settings", { image: "smaller", waitSeconds: 0 })).state, "pending");
+    const context = await siteContext(); context.branch = "other"; await h.storage(h.counters.log.find(row => row.name.startsWith("agent-hub:"))!.name).put("context", context);
+    assert.match(String(payload(await h.rpc("adding_settings", {}))), /not sharing/i);
+    context.branch = "main"; await h.storage(h.counters.log.find(row => row.name.startsWith("agent-hub:"))!.name).put("context", context);
+    assert.match(String(payload(await h.rpc("adding_settings", { image: "smaller", waitSeconds: 0 }))), /not sharing/);
     for (const code of ["timeout", "unknown-outcome", "too-large", "too-large-after-delivery", "lost", "busy"]) {
       let dispatches = 0;
       h.namespace.get = name => String(name).startsWith("agent-relay:") ? { fetch: async () => {

@@ -295,17 +295,17 @@ test("an MCP client connects by OAuth: discovery, registration, sign-in and cons
     assert.equal(createHash("sha256").update(saved.verifier).digest("base64url"), authorizationUrl.searchParams.get("code_challenge"));
 
     // The editor tab lists the OAuth connection and shares its context; the tools work.
-    const hub = await tab.hub();
+    const hub = await (await worker.dispatchFetch(origin + "/api/agent/connections", { headers: { Cookie: cookie } })).json();
     assert.deepEqual(hub.grants.map((grant: any) => [grant.via, grant.client, grant.repo]), [["oauth", "Test Claude", "lex/starter"]]);
-    await tab.share(await siteContext());
+    assert.equal((await tab.share(await siteContext())).status, 410);
     transport = new StreamableHTTPClientTransport(new URL(`${origin}/mcp`), { authProvider: provider, fetch: (...args: Parameters<typeof fetch>) => fetch(...args) });
     client = new Client({ name: "oauth-test", version: "1.0.0" });
     await client.connect(transport);
-    const site = payload(await client.callTool({ name: "get_site", arguments: {} }));
-    assert.equal(site.repository, "lex/starter");
-    const queued = payload(await client.callTool({ name: "open_page", arguments: { page: "/about/", waitSeconds: 0 } }));
-    assert.equal(queued.state, "pending");
-    assert.equal((await tab.hub()).commands[0].path, "about/index.html");
+    for (const [name, args] of [["get_site", {}], ["open_page", { page: "/about/", waitSeconds: 0 }]] as const) {
+      const result = await client.callTool({ name, arguments: args });
+      assert.equal(Boolean(result.isError), name !== "get_site");
+      assert.match(String(name === "get_site" ? payload(result).note : payload(result)), /not sharing/);
+    }
 
     // Revoking in the editor ends it.
     assert.equal((await tab.post("/api/agent/revoke", { all: true, repoId: repo.id })).status, 200);

@@ -12,7 +12,7 @@ import { browserAgentRecovery } from "./agent-recovery";
 
 type Snapshot = Awaited<ReturnType<AgentRecords["snapshot"]>>;
 type Mode = "connecting" | "live" | "other-owner" | "taken-over" | "taking-over" | "takeover-failed" |
-  "reconnecting" | "paused" | "quota" | "workspace-changed" | "fallback" | "off";
+  "reconnecting" | "paused" | "quota" | "workspace-changed" | "unavailable" | "off";
 interface State { mode: Mode; closed?: boolean; resetAt?: number; retryAt?: number }
 interface Scope { workspace: AgentWorkspace; tabId: string; generation: number }
 interface Result { state: "applied" | "conflict" | "unknown"; message: string; result?: AgentCommand["result"]; operationId: string }
@@ -371,7 +371,6 @@ export function createLiveTransport(options: Options) {
         first = false;
         const probe = await absent();
         if (!current() || epoch !== at) return;
-        if (probe.missing) { halt("fallback"); return; }
         failure = probe.failure;
       }
       recovery?.report(failure);
@@ -408,9 +407,8 @@ export function createLiveTransport(options: Options) {
     })().finally(() => { takeoverFlight = undefined; });
     return takeoverFlight;
   }
-  /** One plain probe: only a missing relay route (404) selects the legacy fallback. Any other
-   * answer is classified in full, so a quota body or Retry-After reaches the coordinator. */
-  async function absent(): Promise<{ missing: boolean; failure: AgentFailure }> {
+  /** One plain probe classifies every failure, including a missing relay, through recovery. */
+  async function absent(): Promise<{ failure: AgentFailure }> {
     // Headers and body share one 10 s deadline: a stalled probe is a network failure, never a wait.
     const stop = new AbortController();
     let limit: number | undefined;
@@ -422,21 +420,18 @@ export function createLiveTransport(options: Options) {
       return { status: response.status, body, text, retryAfter: response.headers.get("Retry-After") };
     }))(stop.signal).catch(() => undefined), expired]).finally(() => clock.clearTimeout(limit!));
     const probe = typeof answer === "number" ? { status: answer } : answer;
-    if (probe?.status === 404) return { missing: true, failure: { kind: "other" } };
     const failure = classifyAgentFailure({ ...probe, networkError: !probe, now: (options.now ?? Date.now)() });
-    return { missing: false, failure: failure.kind === "other" ? { kind: "transient" } : failure };
+    return { failure: failure.kind === "other" ? { kind: "transient" } : failure };
   }
   async function start() {
     const at = epoch;
     try { await begin(); } catch {
       if (!current() || epoch !== at) return;
-      // Browser storage refused before any socket: no tab can own here. Without a relay route the
-      // legacy fallback still answers agents (refusing edits plainly); otherwise stay paused.
+      // Browser storage refused before any socket: no tab can own here; stay paused.
       if (first) {
         first = false;
-        const { missing, failure } = await absent();
+        const { failure } = await absent();
         if (!current() || epoch !== at) return;
-        if (missing) { halt("fallback"); return; }
         // A quota answer or Retry-After is recorded for the workspace: a later takeover waits for it.
         if (failure.kind === "quota" || failure.kind === "transient" && failure.retryAt !== undefined) { recover(); recovery!.report(failure); }
       }
@@ -444,7 +439,7 @@ export function createLiveTransport(options: Options) {
     }
   }
   async function begin() {
-    if (!socketFactory) { show({ mode: "fallback" }); return; }
+    if (!socketFactory) { show({ mode: "unavailable" }); return; }
     const at = epoch, stored = await records.workspace(workspace);
     if (!current() || epoch !== at) return;
     const hint = registry.read();

@@ -165,7 +165,7 @@ test("blob cache writes go to waitUntil, and the colo cache is opened once", asy
   }
 });
 
-test("the agent hub still checks a shared context, with its schemas loaded on first use", async () => {
+test("the agent hub refuses shared context without reading or writing content", async () => {
   const stored = new Map<string, unknown>([
     ["session", { kind: "agent-hub", login: "lex", expiresAt: Date.now() + 60_000, grants: [] }],
   ]);
@@ -178,7 +178,7 @@ test("the agent hub still checks a shared context, with its schemas loaded on fi
   };
   const refused = await hubOperation(storage, { type: "context", tabId: "tab-12345", context: { branch: "" } }, async () => {});
   assert.equal(refused.status, 400);
-  assert.equal(((await refused.json()) as { error: string }).error, "Editor context is invalid or too large.");
+  assert.equal(((await refused.json()) as { error: string }).error, "Unknown agent operation.");
   assert.equal(stored.has("context"), false);
   const context = {
     repository: { id: 7, fullName: "lex/site" },
@@ -188,8 +188,8 @@ test("the agent hub still checks a shared context, with its schemas loaded on fi
     drafts: [],
   };
   const shared = await hubOperation(storage, { type: "context", tabId: "tab-12345", context }, async () => {});
-  assert.equal(shared.status, 200);
-  assert.deepEqual(stored.get("context"), context);
+  assert.equal(shared.status, 400);
+  assert.equal(stored.has("context"), false);
 });
 
 // /mcp through the lazily loaded module runs in tests/mcp-runtime.test.ts.
@@ -206,8 +206,8 @@ test("Workers runtime: Server-Timing and the cold marker on the bundle, MCP and 
   const script = outputFiles[0].text;
   // The MCP server module is bundled but evaluated on first use.
   assert.match(script, /await Promise\.resolve\(\)\.then\(\(\) => \(init_mcp\(\), mcp_exports\)\)/);
-  // Nor are zod and the agent schemas evaluated at startup.
-  assert.match(script, /\(init_agent_schemas\(\), agent_schemas_exports\)/);
+  // The obsolete content schemas are gone; zod remains lazy with MCP.
+  assert.doesNotMatch(script, /init_agent_schemas/);
   assert.doesNotMatch(script, /^init_(zod|mcp|agent_schemas)\(\);$/m);
   const worker = new Miniflare(
     convertV4MiniflareOptions({

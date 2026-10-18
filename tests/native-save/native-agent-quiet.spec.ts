@@ -1,19 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 
-test.beforeEach(async ({ page }, info) => {
-  // Tagged @live: the fixture's real relay socket (ticket 15). The rest exercise the absent-route fallback.
-  if (info.tags.includes("@live")) return;
-  await page.routeWebSocket("**/api/agent/relay?*", socket => socket.close());
-  await page.route("**/api/agent/relay", route => route.fulfill({ status: 404, body: "Not found" }));
-});
-
-// Remote agents are off in each tab until the user turns them on there
-// (src/components/agent-menu.ts). While off, the tab sends nothing to the
-// agent hub: every /api/agent/* request is one hub Durable Object call, so
-// these counts are agent-hub calls (POSTs: context uploads and hub writes).
-// Normal editor and GitHub traffic is not counted.
-
+// Agent HTTP requests are counted separately from socket frames and normal editor traffic.
 const open = async (page: Page, baseURL: string | undefined) => {
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html", { timeout: 30_000 });
@@ -79,27 +67,13 @@ test("remote agents off: startup, the agent menu and idle visible or hidden tabs
     await expect(action).toHaveText("Disconnect MCP", { timeout: 15_000 });
     await expect(page.locator(".agent-menu__hint")).toContainText("If an agent you connected before stopped, ask it to continue.");
     expect(requests.filter((request) => request.path === "/api/agent/connect"), "no new token for a connected agent").toEqual([]);
-    expect(requests.some((request) => request.path === "/api/agent/hub")).toBe(true);
-    await expect.poll(() => requests.some((request) => request.path === "/api/agent/context")).toBe(true);
-
-    // Turn off stops it again, even with a context share on its way: that share is
-    // withdrawn, then nothing more is sent, and the agent keeps its access.
-    let release!: () => void;
-    const held = new Promise<void>((done) => (release = done));
-    let holding!: () => void;
-    const caught = new Promise<void>((done) => (holding = done));
-    await page.route("**/api/agent/context", async (route) => { holding(); await held; await route.continue(); });
-    await page.clock.runFor(31_000); // The 30-second context heartbeat.
-    await caught;
+    expect(requests.some((request) => request.path === "/api/agent/connections")).toBe(true);
+    const idle = requests.length;
+    await page.clock.runFor(65_000);
+    expect(requests.slice(idle), "live idle has no polling or uploads").toEqual([]);
+    expect(requests.some(request => /\/(context|drafts|claim|ack|pause)$/.test(request.path))).toBe(false);
     await page.getByRole("button", { name: "Turn off", exact: true }).click();
     await expect(action).toHaveText("Connect with MCP");
-    const turnedOff = requests.length;
-    const withdrawn = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/agent/pause");
-    release();
-    await withdrawn;
-    await page.unroute("**/api/agent/context");
-    await page.clock.runFor(5_000);
-    expect(requests.slice(turnedOff).filter((request) => request.path !== "/api/agent/pause"), "nothing but withdrawing the share").toEqual([]);
     const after = requests.length;
     await page.clock.runFor(65_000);
     await setVisibility(page, "hidden");
@@ -113,7 +87,7 @@ test("remote agents off: startup, the agent menu and idle visible or hidden tabs
 
 test("an approval with another approval id or another repository or branch does not turn remote agents on", async ({ page, baseURL }) => {
   let calls = 0;
-  await page.route("**/api/agent/hub", async (route) => {
+  await page.route("**/api/agent/connections", async (route) => {
     calls++;
     await route.fulfill({ json: { grants: [
       // Made a minute before this approval (for example, then turned off here).
@@ -154,14 +128,12 @@ for (const receiver of [{ repo: "native-demo-user/other", branch: "main" }, { re
 test("the exact approval enables its repository and branch even after a delayed token exchange, but Turn off declines it", async ({ page, baseURL }) => {
   const approval = { at: Date.now(), repo: "native-demo-user/native-demo", branch: "main", approval: "exact-approval" };
   let calls = 0;
-  await page.route("**/api/agent/hub", async (route) => {
+  await page.route("**/api/agent/connections", async (route) => {
     calls++;
     await route.fulfill({ json: { grants: [
       { id: "approved", repoId: 501, repo: approval.repo, branch: approval.branch, approval: approval.approval, via: "oauth", createdAt: 1 },
     ], tabId: null, updatedAt: null, commands: [], requests: [] } });
   });
-  await page.route("**/api/agent/context", (route) => route.fulfill({ json: { ok: true, missing: [] } }));
-  await page.route("**/api/agent/pause", (route) => route.fulfill({ json: { ok: true } }));
   await page.clock.install();
   await open(page, baseURL);
   await page.locator(".repository-menu__trigger").click();

@@ -42,7 +42,7 @@ export type AgentOperation =
   | "replace_media";
 
 export interface AgentCommand {
-  /** Receiving tab's durable ownership proof; absent on the legacy transport. */
+  /** Receiving tab's durable ownership proof; absent on legacy stored commands. */
   ownerGeneration?: number;
   /** Hash of the original browser tool request, before context-dependent preparation. */
   requestIdentity?: string;
@@ -60,7 +60,7 @@ export interface AgentCommand {
   expectedHash?: string | null;
   /** New text (`write_file` and the Astro-era operations); empty otherwise. */
   content: string;
-  /** The hub keeps a change's text apart, by this hash (worker/agent-store.ts), and fills it in for the tab. */
+  /** Legacy stored command's content hash; new commands travel only over the relay. */
   contentHash?: string;
   /** Operation arguments, validated by the Worker. */
   args?: AgentCommandArgs;
@@ -136,7 +136,7 @@ export const MEDIA_LIST_LIMIT = 40 * 1024;
 export const MEDIA_PREVIEW_LIMIT = 96 * 1024;
 export const MEDIA_PREVIEW_SIZE = 512;
 
-/** The most JSON the hub keeps of a command's result: reads that report back get room, other results are a few fields. */
+/** The maximum JSON in a browser command result: reports get room; other results are a few fields. */
 export function agentResultLimit(operation: AgentOperation) {
   if (operation === "inspect_preview") return 2 * INSPECTION_LIMIT;
   // Reports are JSON strings inside JSON: quotes and backslashes need slack.
@@ -144,7 +144,7 @@ export function agentResultLimit(operation: AgentOperation) {
   if (operation === "preview_media") return MEDIA_PREVIEW_LIMIT + 2048;
   return 2048;
 }
-/** The largest result any operation may send; the tab's acknowledgement carries it. */
+/** The largest result any operation may send over the live relay. */
 export const AGENT_RESULT_MAX = Math.max(...(["inspect_preview", "list_media", "preview_media"] as const).map(agentResultLimit));
 
 export const isPreviewablePicture = (path: string) => previewablePictures.test(path);
@@ -233,7 +233,7 @@ export interface AgentRequestMessage {
 
 /**
  * Something the user asked agents to do about an element, from the edit
- * bar's Ask agent. The hub keeps them per session (worker/agent-requests.ts):
+ * bar's Ask agent. This browser keeps them per workspace (src/agent-records.ts):
  * open until an agent fetches it (seen), then done, answered or question by
  * its reply, or dismissed by the user. The user answers a question, which
  * opens it again for agents. `thread` is the conversation, `text` its first

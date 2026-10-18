@@ -234,12 +234,12 @@ test("missing pong closes socket and reconnects; freeze/resume restores heartbea
   assert.equal(a.sockets[0].readyState, 3); assert.equal(a.sockets.length, 2); a.transport.stop();
 });
 
-test("only an absent relay route activates legacy fallback, with one route probe", async () => {
+test("every failed relay probe enters recovery with one probe and no fallback", async () => {
   for (const status of [404, 400, 401, 429, 503]) {
     const f = fixture(); let probes = 0;
     const a = f.tab("a", { socket: () => new FakeSocket(true), probe: () => { probes++; return Promise.resolve(status); } });
     await a.transport.start();
-    assert.equal(a.transport.state().mode, status === 404 ? "fallback" : "reconnecting");
+    assert.equal(a.transport.state().mode, "reconnecting");
     await f.tick(120_000); assert.equal(probes, 1); a.transport.stop();
   }
 });
@@ -315,12 +315,12 @@ test("workspace changes at every ownership await never open a stale socket", asy
 });
 
 
-test("missing WebSocket activates fallback without a route probe or ownership claim", async t => {
+test("missing WebSocket stays unavailable without a route probe or ownership claim", async t => {
   const descriptor = Object.getOwnPropertyDescriptor(globalThis, "WebSocket");
   Object.defineProperty(globalThis, "WebSocket", { configurable: true, value: undefined });
   t.after(() => { if (descriptor) Object.defineProperty(globalThis, "WebSocket", descriptor); else Reflect.deleteProperty(globalThis, "WebSocket"); });
   const f = fixture(), a = f.tab("a", { socket: undefined }); await a.transport.start();
-  assert.equal(a.transport.state().mode, "fallback"); assert.equal(a.sockets.length, 0);
+  assert.equal(a.transport.state().mode, "unavailable"); assert.equal(a.sockets.length, 0);
   assert.equal(f.counts().http, 0); assert.equal((await f.records.workspace(workspace)).generation, 0); a.transport.stop();
 });
 
@@ -463,8 +463,8 @@ test("a socket lost or reset while admission reads IndexedDB never reaches the e
   }
 });
 
-test("browser storage refusing ownership selects the fallback only when the relay route is absent", async () => {
-  for (const [status, mode] of [[404, "fallback"], [400, "takeover-failed"]] as const) {
+test("browser storage refusing ownership stays paused even when the relay route is absent", async () => {
+  for (const [status, mode] of [[404, "takeover-failed"], [400, "takeover-failed"]] as const) {
     const f = fixture();
     const records = new Proxy(f.records, { get(target, name, receiver) {
       if (name === "workspace") return async () => { throw new DOMException("The user denied permission to access the database.", "SecurityError"); };
