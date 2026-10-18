@@ -40,6 +40,10 @@ export async function accountPending(storage: PendingStorage, operation: Pending
 
   let allowed = true;
   let reason: string | undefined;
+  // A transition only moves a reservation this ledger holds, so a delayed
+  // retry after the code was consumed cannot recreate it. A request it never
+  // held (stored before this ledger, at most ten minutes old) passes uncounted.
+  const owned = operation.action !== "transition" || Boolean(ledger[operation.fromId]);
   // A consumed request is removed even when its replacement cannot fit.
   if (operation.action === "transition") remove(operation.fromId);
   if (operation.action === "release") remove(operation.id);
@@ -48,7 +52,7 @@ export async function accountPending(storage: PendingStorage, operation: Pending
     if (session?.kind !== "user" || session.expiresAt <= now) {
       allowed = false;
       reason = "session";
-    } else if (!ledger[operation.id]) {
+    } else if (owned && !ledger[operation.id]) {
       const entries = Object.values(ledger);
       if (entries.length >= MAX_RECORDS || entries.reduce((sum, entry) => sum + entry.bytes, 0) + operation.bytes > MAX_BYTES) {
         allowed = false;
