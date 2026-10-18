@@ -624,7 +624,7 @@ export function createAgentMenu(options: {
     watchStart.title = "Let your agent wait for your requests for the next 10 minutes";
     if (report.state === "on") {
       const left = Math.max(0, Math.ceil((report.until - Date.now()) / 1000));
-      watchText.textContent = `Watching for requests until ${time(report.until)} (${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")} left, ${report.waitsLeft} of ${WATCH_WAITS} waits left).`;
+      watchText.textContent = `Watching for requests until ${time(report.until)} (${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")} left, ${report.waitsLeft} ${report.waitsLeft === 1 ? "wait" : "waits"} left).`;
     } else if (report.state === "paused") {
       watchText.textContent = report.reason === "used"
         ? `Watch paused: your agent used all ${WATCH_WAITS} waits. It stops waiting for requests; choose Watch again for 10 more minutes.`
