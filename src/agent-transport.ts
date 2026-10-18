@@ -1,4 +1,5 @@
 import type { AgentCommand } from "../shared/agent";
+import type { AgentEdit, AgentStatus } from "../shared/agent-edit";
 import type { AgentRead, AgentReadResult } from "../shared/agent-read";
 import { payloadIdentity, workspaceKey, type AgentWorkspace, type JsonValue } from "../shared/agent-command";
 import { AgentFailureError, classifyAgentFailure, type AgentFailure } from "../shared/agent-failure";
@@ -15,7 +16,7 @@ interface Result { state: "applied" | "conflict" | "unknown"; message: string; r
 type Socket = Pick<WebSocket, "readyState" | "send" | "close" | "addEventListener">;
 const operations = new Set(["update_active_draft", "create_file_draft", "write_file", "create_page", "set_page_details", "add_section", "make_component", "move_section", "remove_section", "move_file", "delete_file", "open_page", "inspect_preview", "list_media", "preview_media", "improve_images", "loop_video", "video_still", "write_subtitles", "frame_image", "place_media", "describe_media", "change_collection", "adding_settings", "remove_media", "keep_media", "restore_media", "replace_media"]);
 /** Mutations without an owner-fenced receipt yet (ticket 08 "Not covered"); refused live until tickets 16/17 route them. */
-const receiptless = new Set(["update_active_draft", "create_file_draft", "place_media", "frame_image", "loop_video"]);
+const receiptless = new Set(["place_media", "frame_image", "loop_video"]);
 type Recovery = ReturnType<typeof browserAgentRecovery>;
 interface Registry {
   read: () => { tabId: string; generation: number } | undefined;
@@ -31,6 +32,7 @@ interface Options {
   current: () => AgentWorkspace | undefined;
   records: AgentRecords;
   reload: (snapshot: Snapshot) => Promise<void>;
+  edit?: (request: AgentEdit | AgentStatus, generation: number, current: () => boolean) => Promise<AgentReadResult>;
   read?: (read: AgentRead) => Promise<AgentReadResult>;
   run: (command: AgentCommand, ownerGeneration: number) => Promise<{ message?: string; result?: AgentCommand["result"] } | void>;
   listen: (state: State) => void;
@@ -152,15 +154,18 @@ export function createLiveTransport(options: Options) {
     const valid = () => present() && socket === source && session === connection && handshaken && state.mode === "live" && source.readyState === 1;
     let result: AgentReadResult;
     try {
-      const read = value.command as AgentRead;
-      if (typeof value.id !== "string" || !value.id || !matches(value) || !valid() || !read.args || typeof read.args !== "object" || Array.isArray(read.args) ||
+      const read = value.command as AgentRead | AgentEdit | AgentStatus;
+      const editing = read.operation === "edit" || read.operation === "status";
+      if (typeof value.id !== "string" || !value.id || !matches(value) || !valid() || (editing ? (typeof read.id !== "string" || !/^[\w.:-]{1,128}$/.test(read.id) || typeof read.grantId !== "string" || !read.grantId ||
+            read.operation === "edit" && (!read.args || typeof read.args !== "object" || Array.isArray(read.args) || !Number.isFinite(read.createdAt))) : (!read.args || typeof read.args !== "object" || Array.isArray(read.args) ||
           !["get_site", "list_files", "read_file", "export_site", "get_page", "get_selection"].includes(read.tool) ||
           (read.tool === "read_file" && (typeof read.args.path !== "string" || !read.args.path || read.args.path.length > 1024)) ||
           (read.tool === "get_page" && (typeof read.args.page !== "string" || !read.args.page || read.args.page.length > 1024)) ||
           (read.args.folder !== undefined && (typeof read.args.folder !== "string" || read.args.folder.length > 1024)) ||
-          (read.args.source !== undefined && typeof read.args.source !== "boolean") ||
+          (read.args.source !== undefined && typeof read.args.source !== "boolean"))) ||
           !await prove(at) || !valid())
         result = { ok: false, message: "This read is incomplete or belongs to another workspace, tab or generation. Read the site again." };
+      else if (editing) result = await options.edit?.(read, generation!, valid) ?? { ok: false, message: "Browser edit tools are unavailable. Refresh the editor." };
       else result = await options.read?.(read) ?? { ok: false, message: "Browser read tools are unavailable. Refresh the editor." };
     } catch (error) { result = { ok: false, message: error instanceof Error ? error.message : "The browser read failed." }; }
     if (socket !== source || !await prove(at).catch(() => false) || !valid()) return;
@@ -171,7 +176,7 @@ export function createLiveTransport(options: Options) {
   }
   async function command(source: Socket, value: Partial<Scope> & { id?: unknown; command?: unknown }) {
     const at = epoch, connection = session;
-    if ((value.command as { operation?: unknown } | null)?.operation === "read") return readCommand(source, value);
+    if ((value.command as { operation?: unknown } | null)?.operation && ["read", "edit", "status"].includes((value.command as { operation: string }).operation)) return readCommand(source, value);
     const incoming = value.command as Partial<AgentCommand> | null;
     const operationId = typeof incoming?.id === "string" ? incoming.id : "";
     const refuse = (message: string): Result => ({ state: "conflict", message, operationId });

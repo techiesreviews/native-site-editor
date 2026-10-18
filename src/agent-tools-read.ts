@@ -23,7 +23,7 @@ export interface AgentReadPorts {
 }
 
 /** The browser's existing tree/blob readers and clean cache, pinned before any await. */
-function reader(ports: AgentReadFiles, context: EditorContext): SiteFileReader {
+export function agentFileReader(ports: AgentReadFiles, context: EditorContext): SiteFileReader {
   const { repo, snapshot, api } = ports;
   if (repo.id !== context.repository.id || snapshot.branch !== context.branch || snapshot.commit !== context.commit)
     throw new Error("The editor changed branch or revision. Read the site again.");
@@ -77,7 +77,7 @@ export function createAgentReadTools(ports: AgentReadPorts) {
       const shared = await ports.context();
       stale();
       if (!shared) throw new Error("The editor is unavailable. Open the connected site and branch, then read the site again.");
-      const files = new SiteFiles(reader(source, shared.context), source.repo, shared.context, async hash => shared.texts.get(hash));
+      const files = new SiteFiles(agentFileReader(source, shared.context), source.repo, shared.context, async hash => shared.texts.get(hash));
       const result = await executeAgentRead({ operation: "read", tool, args }, shared.context, files);
       stale();
       // Leave space for the relay's correlation/scope envelope, including JSON escaping and UTF-8.

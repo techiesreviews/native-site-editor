@@ -398,10 +398,10 @@ test("receiptless mutations are refused on the live connection before anything r
   let runs = 0;
   const f = fixture(), a = f.tab("a", { run: async () => { runs++; return { message: "Placed." }; } });
   await a.transport.start();
-  for (const operation of ["place_media", "frame_image", "loop_video", "update_active_draft", "create_file_draft"] as const)
+  for (const operation of ["place_media", "frame_image", "loop_video"] as const)
     a.deliver({ ...command(`receiptless-${operation}`), operation });
-  await until(() => a.sockets[0].messages("result").length === 5);
-  assert.deepEqual(a.sockets[0].messages("result").map(value => value.result.state), Array(5).fill("conflict"));
+  await until(() => a.sockets[0].messages("result").length === 3);
+  assert.deepEqual(a.sockets[0].messages("result").map(value => value.result.state), Array(3).fill("conflict"));
   assert.equal(runs, 0);
   a.transport.stop();
 });
@@ -652,4 +652,23 @@ test("read results lost across reset or workspace move are never sent on a repla
     assert.equal(f.counts().commits, 0);
     a.transport.stop();
   }
+});
+
+test("browser edit and receipt dispatches carry the owner fence; stale scope never executes", async () => {
+  const edits: { operation: string; generation: number }[] = [];
+  const f = fixture(), a = f.tab("a", { edit: async (request, generation, valid) => {
+    assert.equal(valid(), true);
+    edits.push({ operation: request.operation, generation });
+    return { ok: true, value: { requestId: request.id, state: "applied" } };
+  } });
+  await a.transport.start();
+  const incoming = { operation: "edit", tool: "write_file", args: { path: "new.txt", content: "new" }, id: "edit", grantId: "grant", createdAt: 100_000 };
+  a.deliver(incoming);
+  a.deliver({ operation: "status", id: "edit", grantId: "grant" });
+  a.deliver(incoming, { generation: 999 });
+  a.deliver(incoming, { tabId: "other" });
+  await until(() => a.sockets[0].messages("result").length === 4);
+  assert.deepEqual(edits, [{ operation: "edit", generation: 1 }, { operation: "status", generation: 1 }]);
+  assert.equal(a.sockets[0].messages("result").filter(value => value.result.ok === false).length, 2);
+  a.transport.stop();
 });

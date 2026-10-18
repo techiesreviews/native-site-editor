@@ -1,3 +1,4 @@
+import { applyReplacements } from "../shared/agent-replacements";
 import { agentMediaStorage } from "./support/agent-media-workspace";
 import { MEDIA_ADDING_CHOICES, MEDIA_ADDING_DEFAULTS } from "../src/page-builder/media-settings";
 import { applySiteCommand, type AgentSiteActions } from "../src/agent-site";
@@ -19,7 +20,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
-import { INSPECTION_LIMIT, MEDIA_LIST_LIMIT, MEDIA_PREVIEW_LIMIT, THREAD_LIMIT, THREAD_TEXT_LIMIT, agentResultLimit, applyReplacements, textHash } from "../shared/agent.ts";
+import { INSPECTION_LIMIT, MEDIA_LIST_LIMIT, MEDIA_PREVIEW_LIMIT, THREAD_LIMIT, THREAD_TEXT_LIMIT, agentResultLimit, textHash } from "../shared/agent.ts";
 import { isAgentMediaPath, mediaListReport } from "../src/agent-media.ts";
 import { mediaUsageRecords } from "../src/page-builder/media-usage.ts";
 import { parseMediaRecords } from "../shared/media-records.ts";

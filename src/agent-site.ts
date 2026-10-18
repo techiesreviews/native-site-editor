@@ -43,7 +43,7 @@ export interface AgentStructuralFactories {
 
 /** Only these commands enter the draft/receipt transaction. Media has its own admission in ticket 08. */
 export function atomicAgentCommand(command: AgentCommand) {
-  return ["write_file", "create_page", "set_page_details", "make_component", "add_section", "move_section", "remove_section", "move_file", "delete_file"].includes(command.operation);
+  return ["update_active_draft", "create_file_draft", "write_file", "create_page", "set_page_details", "make_component", "add_section", "move_section", "remove_section", "move_file", "delete_file"].includes(command.operation);
 }
 
 // The workspace keeps one dispatcher; command listeners live only as long as their history step.
@@ -654,6 +654,10 @@ async function guarded(pending: Promise<Outcome>) {
  * moved), and nothing is changed then.
  */
 export async function applySiteCommand(actions: AgentSiteActions, command: AgentCommand): Promise<AgentCommandOutcome> {
+  if (command.operation === "update_active_draft" || command.operation === "create_file_draft") {
+    if (command.operation === "update_active_draft" && !actions.isMounted(command.path)) throw new Error("Open the file in the editor first.");
+    command = { ...command, operation: "write_file", expectedHash: command.operation === "create_file_draft" ? null : command.expectedHash };
+  }
   const args = command.args ?? {};
   const path = command.path;
   // Last line of defence: nothing an agent queued may touch the workflows, as a
@@ -670,10 +674,6 @@ export async function applySiteCommand(actions: AgentSiteActions, command: Agent
   for (const candidate of [args.file, args.with, ...args.files ?? []])
     if (candidate && touchesMediaRecords(candidate)) throw new Error(MEDIA_RECORDS_REFUSED);
   switch (command.operation) {
-    case "update_active_draft":
-    case "create_file_draft":
-      await actions.legacy(command);
-      return {};
     case "write_file": {
       const before = await expectHash(actions, path, command.expectedHash);
       if (before !== undefined && actions.atomicText?.()) {
@@ -925,7 +925,7 @@ export async function prepareAgentText(command: AgentCommand, scope: DraftScope,
   const contentHash = await textHash(command.content);
   if (!current()) return refuse(new Error("The repository changed meanwhile."));
   if (command.contentHash && command.contentHash !== contentHash) throw new Error("Command content does not match its content hash.");
-  const identity = payloadIdentity(JSON.parse(JSON.stringify({ operation: command.operation, path: command.path,
+  const identity = command.requestIdentity ?? payloadIdentity(JSON.parse(JSON.stringify({ operation: command.operation, path: command.path,
     branch: command.branch, commit: command.commit, expectedHash: command.expectedHash, contentHash, args: command.args })) as JsonValue);
   try {
     let loading = textOwners.get(key);

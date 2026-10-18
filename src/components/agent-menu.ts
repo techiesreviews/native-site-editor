@@ -138,22 +138,33 @@ export function createAgentMenu(options: {
     const { createLiveTransport } = await import("../agent-transport");
     if (!live(at) || transportMode !== "pending") return;
     transportMode = "socket";
+    const run = async (command: AgentCommand) => {
+      const outcome = await options.onCommand(command);
+      const grant = hub.grants.find(each => each.id === command.grantId);
+      if (grant && !grant.usedAt && live(at)) { grant.usedAt = Date.now(); paint(); }
+      return outcome;
+    };
+    let editTools: Promise<ReturnType<typeof import("../agent-tools-edit")["createAgentEditTools"]>> | undefined;
     transport = createLiveTransport({
       workspace: { account: options.account, repoId: repo.id, branch: repo.branch }, repo: repo.fullName, tabId,
       current: scope, records, reload: snapshot => options.reload?.(snapshot) ?? Promise.resolve(),
+      edit: async (request, generation, current) => {
+        const ports = options.tools, stamp = ports?.stamp();
+        const source = ports?.files(), commit = source?.snapshot.commit;
+        if (!ports || !stamp) return { ok: false, message: "Browser edit tools are unavailable. Refresh the editor." };
+        editTools ??= import("../agent-tools-edit").then(({ createAgentEditTools }) => createAgentEditTools({
+          workspace: { account: options.account, repoId: repo.id, branch: repo.branch }, ports, records,
+          run,
+        }));
+        return (await editTools).run(request, generation, () => current() && stamp.holds() && ports.files()?.snapshot.commit === commit);
+      },
       read: async read => {
         const ports = options.tools, stamp = ports?.stamp();
         if (!ports || !stamp) return { ok: false, message: "Browser read tools are unavailable. Refresh the editor." };
         const { createAgentReadTools } = await import("../agent-tools-read");
         return createAgentReadTools({ ...ports, stamp: () => stamp }).run(read.tool, read.args);
       },
-      run: async command => {
-        const outcome = await options.onCommand(command);
-        // A command from a grant proves the agent uses it: no hub read is needed to show it connected.
-        const grant = hub.grants.find((each) => each.id === command.grantId);
-        if (grant && !grant.usedAt && live(at)) { grant.usedAt = Date.now(); paint(); }
-        return outcome;
-      },
+      run,
       listen: next => {
         // Same activation, even while a refresh briefly removes the repository: quota, pause and
         // takeover updates must not be lost (a real move sets workspaceChanged and a new activation).
