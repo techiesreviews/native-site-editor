@@ -914,6 +914,8 @@ export async function prepareAgentText(command: AgentCommand, scope: DraftScope,
       : code === "duplicate-id" ? `This change's id was already used for different work (${(error as Error).message}).`
       : code === "not-owner" ? "Another editor tab receives agent edits for this site."
       : `Agent edits are paused: this browser could not save the change (${error instanceof Error ? error.message : "browser storage failed"}).`;
+    // Whether the edit was kept is unproven: say so instead of claiming nothing changed.
+    if (code === "unknown") throw new Error((error as Error).message);
     throw new Error(`${reason} Nothing was changed; your drafts are as they were.`);
   };
   if (!command.grantId) throw new Error("Agent edits require an authorization id (grantId).");

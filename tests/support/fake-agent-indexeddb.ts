@@ -10,7 +10,9 @@ export function fakeIndexedDB(legacy?: SavedDraft, beforeOpen?: () => Promise<vo
     /** Every put into this store fails with `failure` while set (a storage that stays full). */
     failPutsInto: undefined as string | undefined, refusedPuts: 0,
     /** The next readwrite transaction commits, then reports an abort with this error (an uncertain outcome). */
-    abortAfterCommit: undefined as string | undefined };
+    abortAfterCommit: undefined as string | undefined, abortAfterCommitSkip: 0,
+    /** Read-only transactions cannot start (a receipt that cannot be read). */
+    failReadonly: false };
   const connections: IDBDatabase[] = [];
   const transactions: (() => void)[] = [];
   let busy = false;
@@ -33,6 +35,7 @@ export function fakeIndexedDB(legacy?: SavedDraft, beforeOpen?: () => Promise<vo
           },
           close() { state.closed++; },
           transaction(names, mode) {
+            if (state.failReadonly && mode !== "readwrite") throw new DOMException("Injected read failure", "UnknownError");
             const scope = typeof names === "string" ? [names] : [...names];
             for (const name of scope) assert.ok(stores.has(name));
             let local: Map<string, Rows>, ended = false;
@@ -50,7 +53,8 @@ export function fakeIndexedDB(legacy?: SavedDraft, beforeOpen?: () => Promise<vo
               if (next) { next(); if (!ended) setImmediate(step); return; }
               ended = true;
               if (mode === "readwrite") for (const [name, rows] of local) stores.set(name, rows);
-              if (mode === "readwrite" && state.abortAfterCommit) {
+              if (mode === "readwrite" && state.abortAfterCommit && state.abortAfterCommitSkip > 0) state.abortAfterCommitSkip--;
+              else if (mode === "readwrite" && state.abortAfterCommit) {
                 Object.assign(tx, { error: new DOMException("Reported after commit", state.abortAfterCommit) });
                 state.abortAfterCommit = undefined;
                 tx.onabort?.call(tx, event); finish(); return;

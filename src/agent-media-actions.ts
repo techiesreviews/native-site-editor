@@ -221,6 +221,8 @@ export async function applyAgentMedia(...parameters: Parameters<typeof executeAg
     || command.operation === "adding_settings" && [args.reset === true, args.image !== undefined, args.video !== undefined, args.audio !== undefined, args.keepOriginal !== undefined].some(Boolean);
   if (!changing) return executeAgentMedia(...parameters);
   const refuse = (error: unknown): never => {
+    // Whether the edit was kept is unproven (src/agent-records.ts "unknown"): never claim nothing changed.
+    if (error instanceof Error && error.name === "AgentRecordsError" && (error as Error & { code: string }).code === "unknown") throw new Error(error.message);
     throw new Error(`${error instanceof Error ? error.message : "Browser storage failed."} Nothing was changed; your drafts are as they were.`);
   };
   // Argument and captured editor proofs keep their specific refusals even without storage.
