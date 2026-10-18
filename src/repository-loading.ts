@@ -1,12 +1,10 @@
 import type { Directory, FilesResult, Repository, Snapshot, TreeEntry } from "../shared/types";
 import { MAX_BATCH_FILES } from "../shared/types";
+import type { CleanSourceCache } from "./clean-source-cache";
 
 export type RepositoryApi = <T>(path: string, params?: Record<string, string>) => Promise<T>;
 
-type FileCache = Map<string, Promise<string>>;
-
 const repositoryKey = (repo: string, commit: string) => `${repo}\n${commit}`;
-export const fileKey = (repo: string, sha: string) => `${repo}\n${sha}`;
 const directoryKey = (repo: string, sha: string) => `${repo}\n${sha}`;
 const BATCH_LIMIT = 2;
 const TREE_LIMIT = 4;
@@ -38,48 +36,15 @@ class AsyncQueue {
 }
 
 const fileBatchQueue = new AsyncQueue(BATCH_LIMIT);
-const inflightByCache = new WeakMap<FileCache, Map<string, Promise<string>>>();
-
-function inflightFiles(cache: FileCache) {
-  let inflight = inflightByCache.get(cache);
-  if (!inflight) {
-    inflight = new Map();
-    inflightByCache.set(cache, inflight);
-  }
-  return inflight;
+export function readFileText(api: RepositoryApi, cache: CleanSourceCache, repo: string, sha: string): Promise<string> {
+  return cache.load(repo, sha, () => api<{ content: string }>("file", { repo, sha }).then((file) => file.content));
 }
 
-export function rememberFile(cache: FileCache, limit: number, key: string, content: Promise<string>) {
-  if (cache.size >= limit) cache.delete(cache.keys().next().value!);
-  cache.set(key, content);
-  content.catch(() => {
-    if (cache.get(key) === content) cache.delete(key);
-  });
-  return content;
-}
-
-export function readFileText(api: RepositoryApi, cache: FileCache, limit: number, repo: string, sha: string): Promise<string> {
-  const key = fileKey(repo, sha);
-  const inflight = inflightFiles(cache);
-  const content = cache.get(key) ?? inflight.get(key);
-  if (content) return content;
-  const requested = api<{ content: string }>("file", { repo, sha }).then((file) => file.content);
-  inflight.set(key, requested);
-  requested.then(() => {
-    if (inflight.get(key) === requested) inflight.delete(key);
-  }, () => {
-    if (inflight.get(key) === requested) inflight.delete(key);
-  });
-  return rememberFile(cache, limit, key, requested);
-}
-
-export async function readFileTexts(api: RepositoryApi, cache: FileCache, limit: number, repo: string, shas: string[]): Promise<Record<string, string>> {
+export async function readFileTexts(api: RepositoryApi, cache: CleanSourceCache, repo: string, shas: string[]): Promise<Record<string, string>> {
   const unique = [...new Set(shas)];
-  const inflight = inflightFiles(cache);
   const local = new Map<string, Promise<string>>();
   for (const sha of unique) {
-    const key = fileKey(repo, sha);
-    const content = cache.get(key) ?? inflight.get(key);
+    const content = cache.get(repo, sha);
     if (content) local.set(sha, content);
   }
   const missing = unique.filter((sha) => !local.has(sha));
@@ -89,20 +54,11 @@ export async function readFileTexts(api: RepositoryApi, cache: FileCache, limit:
     const batch = fileBatchQueue.run(() => api<FilesResult>("files", { repo, shas: chunk.join(",") }));
     void batch.catch(() => {});
     for (const sha of chunk) {
-      const key = fileKey(repo, sha);
-      const content = batch.then((result) => {
+      const content = cache.load(repo, sha, () => batch.then((result) => {
         if (typeof result.files[sha] !== "string") throw new Error("Could not read this file.");
         return result.files[sha];
-      });
+      }));
       local.set(sha, content);
-      inflight.set(key, content);
-      content.then(() => {
-        if (inflight.get(key) === content) inflight.delete(key);
-      }, () => {
-        if (inflight.get(key) === content) inflight.delete(key);
-      });
-      // The Promise.all readers below await this same promise and handle its rejection.
-      void rememberFile(cache, limit, key, content);
     }
   }
   const result: Record<string, string> = {};

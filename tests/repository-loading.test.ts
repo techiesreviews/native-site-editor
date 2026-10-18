@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { dataUrlOf, loadNativeAssetRequests } from "../src/native-assets.ts";
-import { RepositoryIndex, readFileTexts } from "../src/repository-loading.ts";
+import { CleanSourceCache } from "../src/clean-source-cache.ts";
+import { RepositoryIndex, readFileText, readFileTexts } from "../src/repository-loading.ts";
 import type { Repository, Snapshot, TreeEntry } from "../shared/types.ts";
 
 const repo: Repository = {
@@ -29,26 +30,27 @@ test("repository file reads keep only two batches in flight and reuse cache entr
     const files = Object.fromEntries(params!.shas.split(",").map((sha) => [sha, `text ${sha}`]));
     return { files } as T;
   };
-  const cache = new Map<string, Promise<string>>();
+  const cache = new CleanSourceCache(() => "lex", 160);
   const shas = Array.from({ length: 121 }, (_, index) => index.toString(16).padStart(40, "0"));
-  const read = await readFileTexts(api, cache, 2, repo.full_name, [...shas, shas[0]]);
+  const read = await readFileTexts(api, cache, repo.full_name, [...shas, shas[0]]);
   assert.equal(Object.keys(read).length, 121);
   assert.equal(calls, 7);
   assert.equal(peak, 2);
-  await readFileTexts(api, cache, 400, repo.full_name, shas.slice(0, 10));
+  await readFileTexts(api, cache, repo.full_name, shas.slice(0, 10));
   assert.equal(calls, 8);
 });
 
 test("repository file reads keep cache hits even when new batch entries evict the cache", async () => {
   const a = "a".repeat(40), b = "b".repeat(40), c = "c".repeat(40), d = "d".repeat(40);
-  const cache = new Map<string, Promise<string>>([[`${repo.full_name}\n${a}`, Promise.resolve("cached a")]]);
+  const cache = new CleanSourceCache(() => "lex", 20);
+  await cache.load(repo.full_name, a, () => Promise.resolve("cached a"));
   const asked: string[] = [];
   const api = async <T>(path: string, params?: Record<string, string>): Promise<T> => {
     assert.equal(path, "files", "cached hit must not fall back to a single file request");
     asked.push(...params!.shas.split(","));
     return { files: Object.fromEntries(params!.shas.split(",").map((sha) => [sha, `text ${sha}`])) } as T;
   };
-  const read = await readFileTexts(api, cache, 2, repo.full_name, [a, b, c, d]);
+  const read = await readFileTexts(api, cache, repo.full_name, [a, b, c, d]);
   assert.equal(read[a], "cached a");
   assert.deepEqual(asked, [b, c, d]);
 });
@@ -64,14 +66,14 @@ test("repository file read batches share the global queue across concurrent call
     return { files: Object.fromEntries(params!.shas.split(",").map((sha) => [sha, sha])) } as T;
   };
   await Promise.all([
-    readFileTexts(api, new Map(), 400, repo.full_name, Array.from({ length: 81 }, (_, index) => `a${index}`.padStart(40, "0"))),
-    readFileTexts(api, new Map(), 400, repo.full_name, Array.from({ length: 81 }, (_, index) => `b${index}`.padStart(40, "0"))),
+    readFileTexts(api, new CleanSourceCache(() => "lex"), repo.full_name, Array.from({ length: 81 }, (_, index) => `a${index}`.padStart(40, "0"))),
+    readFileTexts(api, new CleanSourceCache(() => "lex"), repo.full_name, Array.from({ length: 81 }, (_, index) => `b${index}`.padStart(40, "0"))),
   ]);
   assert.equal(peak, 2);
 });
 
 test("overlapping repository file reads share in-flight blobs even after cache eviction", async () => {
-  const cache = new Map<string, Promise<string>>();
+  const cache = new CleanSourceCache(() => "lex", 160);
   const asked: string[] = [];
   let release!: () => void;
   const gate = new Promise<void>((resolve) => { release = resolve; });
@@ -83,9 +85,9 @@ test("overlapping repository file reads share in-flight blobs even after cache e
     return { files: Object.fromEntries(shas.map((sha) => [sha, sha])) } as T;
   };
   const shas = Array.from({ length: 500 }, (_, index) => index.toString(16).padStart(40, "0"));
-  const first = readFileTexts(api, cache, 2, repo.full_name, shas);
+  const first = readFileTexts(api, cache, repo.full_name, shas);
   await new Promise((resolve) => setTimeout(resolve, 5));
-  const second = readFileTexts(api, cache, 2, repo.full_name, shas);
+  const second = readFileTexts(api, cache, repo.full_name, shas);
   release();
   await Promise.all([first, second]);
   assert.equal(new Set(asked).size, 500);
@@ -99,11 +101,33 @@ test("failed repository file batches are not kept", async () => {
     if (fail) throw new Error("nope");
     return { files: { ["a".repeat(40)]: "ok" } } as T;
   };
-  const cache = new Map<string, Promise<string>>();
-  await assert.rejects(() => readFileTexts(api, cache, 400, repo.full_name, ["a".repeat(40)]));
+  const cache = new CleanSourceCache(() => "lex", 160);
+  await assert.rejects(() => readFileTexts(api, cache, repo.full_name, ["a".repeat(40)]));
   fail = false;
-  assert.deepEqual(await readFileTexts(api, cache, 400, repo.full_name, ["a".repeat(40)]), { ["a".repeat(40)]: "ok" });
+  assert.deepEqual(await readFileTexts(api, cache, repo.full_name, ["a".repeat(40)]), { ["a".repeat(40)]: "ok" });
   assert.equal(calls, 2);
+});
+
+test("single and batch reads share pending blobs and misses use current authorization", async () => {
+  let account = "A";
+  const cache = new CleanSourceCache(() => account);
+  const calls: string[] = [];
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const api = async <T>(path: string): Promise<T> => {
+    const captured = account;
+    calls.push(`${captured}:${path}`);
+    await gate;
+    return (path === "file" ? { content: captured } : { files: { sha: captured } }) as T;
+  };
+  const first = readFileText(api, cache, repo.full_name, "sha");
+  const batch = readFileTexts(api, cache, repo.full_name, ["sha"]);
+  release();
+  assert.equal(await first, "A");
+  assert.deepEqual(await batch, { sha: "A" });
+  account = "B";
+  assert.deepEqual(await readFileTexts(api, cache, repo.full_name, ["sha"]), { sha: "B" });
+  assert.deepEqual(calls, ["A:file", "B:files"]);
 });
 
 test("fallback repository listing indexes paths and findEntry reuses them", async () => {
@@ -228,6 +252,6 @@ test("45 files are read as batches of 20, 20 and 5", async () => {
     return { files: Object.fromEntries(list.map((sha) => [sha, sha])) } as T;
   };
   const shas = Array.from({ length: 45 }, (_, index) => index.toString(16).padStart(40, "0"));
-  await readFileTexts(api, new Map(), 400, repo.full_name, shas);
+  await readFileTexts(api, new CleanSourceCache(() => "lex"), repo.full_name, shas);
   assert.deepEqual(sizes, [20, 20, 5]);
 });

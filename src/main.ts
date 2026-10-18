@@ -106,7 +106,8 @@ import { NATIVE_CONFIG_PATH, NATIVE_HOME_PAGE, NATIVE_REDIRECTS_PATH, minimalTex
 import { dataUrlOf, loadNativeAssetRequests } from "./native-assets";
 import { assetType, audioType, blobUrl, CANVAS_AUDIO_MAX_BYTES, isFontType } from "../shared/asset-types";
 import { fetchWithReadRetry } from "./read-retry";
-import { RepositoryIndex, fileKey, readFileText, readFileTexts, rememberFile } from "./repository-loading";
+import { RepositoryIndex, readFileText, readFileTexts } from "./repository-loading";
+import { CleanSourceCache } from "./clean-source-cache";
 import { iconMarkup, setIcon } from "./icons";
 import { createCommandPaletteController } from "./controllers/command-palette-controller";
 import { createCodePanesController } from "./controllers/code-panes-controller";
@@ -1766,7 +1767,8 @@ let nativeSite: NativeSite | undefined;
 // even when its sources fail to load: the preview then shows the error
 // instead of the plain file browser.
 let nativeEngaged = false;
-const nativeBaseSources = new Map<string, string>();
+const cleanSources = new CleanSourceCache(() => info?.user?.login);
+const nativeBaseSources = cleanSources.base;
 let mediaTextKey = "";
 const mediaText = new Map<string, string>();
 const mediaOpaqueText = new Map<string, { sha: string; text: string }>();
@@ -3143,18 +3145,14 @@ async function postApi<T>(
     );
   return data as T;
 }
-// Blob contents are immutable per SHA, so a file read once in this tab is
-// never requested again: reopening a page, switching back to a stylesheet or
-// re-activating a native project all resolve from memory.
-const fileContents = new Map<string, Promise<string>>();
-const fileContentsLimit = 400;
+// Immutable blobs share the tab's disposable byte budget with pinned baselines.
 function readFile(repo: string, sha: string): Promise<string> {
-  return readFileText(api, fileContents, fileContentsLimit, repo, sha);
+  return readFileText(api, cleanSources, repo, sha);
 }
 // Reads many blobs in one request; anything already cached or in flight is
 // reused rather than fetched twice.
 async function readFiles(repo: string, shas: string[]): Promise<Record<string, string>> {
-  return readFileTexts(api, fileContents, fileContentsLimit, repo, shas);
+  return readFileTexts(api, cleanSources, repo, shas);
 }
 // The native site's reads: files GitHub cannot give as text are named, not thrown.
 function readNativeTexts(repo: string, files: { path: string; sha: string }[]) {
@@ -3240,6 +3238,7 @@ function renderLogin(
   boot.reset();
   appStore.reset();
   repositoryIndex.clear();
+  cleanSources.clear();
   app.className = "login-page";
   // One layout for every state, so nothing jumps when the answer arrives: the
   // loading and automatic states keep the card's size and hide what is below.
@@ -5025,14 +5024,16 @@ function takeBootGuess(repo: Repository, branch: string): { snapshot: Promise<Sn
     // Content is addressed by SHA: a path with the remembered SHA in this
     // fresh snapshot has exactly the remembered read's content.
     for (const { sha } of guess.files && !token.abandoned ? provenFiles(guess.memory, snapshot.tree ?? snapshot.entries) : []) {
-      const key = fileKey(repo.full_name, sha);
-      if (fileContents.has(key)) continue;
       // Readers await this cached promise and handle its rejection.
-      void rememberFile(fileContents, fileContentsLimit, key, guess.files!.then((files) => {
+      const live = () => !token.abandoned && boot.sessionTag() === tag;
+      void cleanSources.load(repo.full_name, sha, () => guess.files!.then((files) => {
         const text = files.value.files[sha];
         if (files.sessionTag !== tag || typeof text !== "string") throw new Error();
         return text;
-      }).catch(() => api<{ content: string }>("file", { repo: repo.full_name, sha }).then((file) => file.content)));
+      }).catch((error: unknown) => {
+        if (!live()) throw error;
+        return api<{ content: string }>("file", { repo: repo.full_name, sha }).then((file) => file.content);
+      }), "", live);
     }
     return snapshot;
   }, fresh);
@@ -5536,9 +5537,11 @@ function storage(kind: "local" | "session"): Pick<Storage, "getItem" | "setItem"
 }
 
 async function disconnect() {
+  cleanSources.clear();
   try {
     const response = await fetch("/auth/logout", { method: "POST" });
     if (!response.ok) throw new Error("Could not disconnect. Try again.");
+    cleanSources.clear();
     // 204: that was the last account on this browser, so nothing continues by itself next time.
     if (response.status === 204) forgetSignedIn(storage("local"));
     forgetBootMemory(storage("local"));
@@ -5589,7 +5592,10 @@ const boot = createBootController({
   loadDrafts: (login) => draftStore().load(login),
   onDraftError: () => { draftStore().onError = (message) => errorMessage(new Error(message)); },
   session: () => info,
-  adoptSession: (session) => { info = session; },
+  adoptSession: (session) => {
+    if (info?.user?.login !== session.user?.login) cleanSources.clear();
+    info = session;
+  },
   enterWorkspace: () => {
     resumeWorkspaceLink();
     mountWorkspace();
