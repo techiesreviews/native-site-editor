@@ -17,13 +17,14 @@ export function createAgentMediaTools(options: {
 }) {
   const { workspace, ports, records } = options;
   const flights = new Map<string, { identity: string; grantId: string; promise: Promise<AgentReadResult> }>();
-  type Input = { request: AgentMedia; generation: number; current: () => boolean; deadline?: number };
-  const executor = async ({ request, generation, current, deadline = Date.now() + 10_000 }: Input): Promise<AgentReadResult> => {
+  type Input = { request: AgentMedia; generation: number; current: () => boolean; deadline?: number; seen?: { page: string | undefined } };
+  const executor = async ({ request, generation, current, deadline = Date.now() + 10_000, seen }: Input): Promise<AgentReadResult> => {
     const stamp = ports.stamp(), source = ports.files(), branch = source?.snapshot.branch, commit = source?.snapshot.commit, repoId = source?.repo.id;
     const changing = mediaChanges(request.tool, request.args);
-    // A page change's element id points into the page as it is on admission: that source is the proof to commit.
+    // A page change's element id points into the page as it was when the command arrived (src/agent-transport.ts
+    // reads it before any await), else as it is on admission: that source is the proof to commit.
     const pageChange = changing && ["place_media", "frame_image", "loop_video"].includes(request.tool) && ports.source !== undefined;
-    const page = pageChange ? ports.source!(request.path) : undefined;
+    const page = pageChange ? seen ? seen.page : ports.source!(request.path) : undefined;
     // The relay's total deadline as the transport measured it on arrival (src/agent-transport.ts): never a fresh 10 s.
     let applied = false;
     const check = () => {
@@ -92,5 +93,6 @@ export function createAgentMediaTools(options: {
     }
   };
   const registry = createAgentTools<Input>(Object.fromEntries(mediaTools.map(tool => [tool, executor])));
-  return { run: (request: AgentMedia, generation: number, current: () => boolean, deadline?: number) => registry.run(request.tool, { request, generation, current, deadline }) };
+  return { run: (request: AgentMedia, generation: number, current: () => boolean, deadline?: number, seen?: { page: string | undefined }) =>
+    registry.run(request.tool, { request, generation, current, deadline, seen }) };
 }

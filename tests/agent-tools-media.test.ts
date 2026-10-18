@@ -405,3 +405,13 @@ test("a page edited while the receipt lookup waits refuses frame and loop change
     assert.equal(await receipt(workspace, input.id, input.grantId), undefined);
   }
 });
+
+test("the page seen on arrival is the proof: an edit before admission refuses, nothing runs", async () => {
+  const f = await fixture(), before = f.text.get("index.html")!;
+  f.text.set("index.html", before.replace("<section>", '<section><img src="/images/photo.svg" alt="new">'));
+  const input = request("frame_image", { element: "0.0.0", shape: "square" }, "arrival-frame", "index.html");
+  const result = body(await f.tools.run(input, 0, () => true, undefined, { page: before }));
+  assert.equal(result.state, "conflict"); assert.match(String(result.message), /changed in the editor meanwhile/);
+  assert.equal(f.counts().runs, 0); assert.equal(f.history.length, 0);
+  assert.equal(await f.records.receipt(workspace, input.id, input.grantId), undefined);
+});
