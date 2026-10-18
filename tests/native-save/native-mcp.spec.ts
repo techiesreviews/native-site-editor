@@ -975,6 +975,106 @@ test("Ask agent: an agent's question turns its pin orange, the user answers it o
   }
 });
 
+// Every /api/agent/* request is one agent-hub Durable Object call; /mcp is an agent's.
+function agentCalls(page: Page) {
+  const seen: string[] = [];
+  page.on("request", (request) => {
+    const path = new URL(request.url()).pathname;
+    if (path.startsWith("/api/agent/") || path === "/mcp") seen.push(`${request.method()} ${path}`);
+  });
+  return seen;
+}
+
+test("Ask agent history stays in this browser: after Turn off and a reload its pins show, clearing and dismissing make no hub calls, and another branch has its own", async ({ page, baseURL }) => {
+  // Another branch of the same repository, with the same pages.
+  const css = await (await page.request.get(`${baseURL}/__demo/file?path=styles/site.css`)).text();
+  await page.request.post(`${baseURL}/__demo/branch`, { data: { name: "history", path: "styles/site.css", content: `${css}\n/* History. */\n` } });
+  await open(page, baseURL);
+  const bar = page.getByRole("toolbar", { name: "Edit bar" });
+  const heading = frame(page).locator(".hero h1");
+  const client = await connectAgent(page, baseURL);
+  const call = async (name: string, args: Record<string, unknown> = {}) => {
+    const response = await client.callTool({ name, arguments: args });
+    const body = result(response);
+    expect(response.isError, `${name}: ${JSON.stringify(body)}`).toBeFalsy();
+    return body;
+  };
+  const pins = page.locator(".agent-pin");
+  try {
+    await expect.poll(async () => result(await client.callTool({ name: "get_site", arguments: {} })).available ?? true, { timeout: 15_000 }).toBe(true);
+    await heading.click();
+    await bar.getByRole("button", { name: "Ask agent" }).click();
+    await page.keyboard.type("Make this heading friendlier");
+    await page.keyboard.press("Enter");
+    await frame(page).locator("project-card").nth(1).locator('p[slot="body"]').click();
+    await bar.getByRole("button", { name: "Ask agent" }).click();
+    await page.keyboard.type("Is this sentence true?");
+    await page.keyboard.press("Enter");
+    await expect(pins).toHaveCount(2);
+    const [first, second] = (await call("wait_for_requests", { waitSeconds: 10 })).requests;
+    await call("reply_to_request", { request: first.id, status: "done", message: "Changed nothing, it is friendly." });
+    await call("reply_to_request", { request: second.id, status: "question", message: "Which part?" });
+    await expect(page.locator('.agent-pin[data-state="done"]')).toHaveCount(1);
+    await expect(page.locator('.agent-pin[data-state="question"]')).toHaveCount(1);
+
+    // Turned off: the pins stay, and so do they after a reload, from this browser alone.
+    await page.locator(".repository-menu__trigger").click();
+    await page.getByRole("button", { name: "Turn off", exact: true }).click();
+    await page.keyboard.press("Escape");
+    await expect(pins).toHaveCount(2);
+    const calls = agentCalls(page);
+    await page.reload();
+    await open(page, baseURL);
+    await expect(page.locator('.agent-pin[data-state="done"]')).toHaveCount(1);
+    await expect(page.locator('.agent-pin[data-state="question"]')).toHaveCount(1);
+    const card = page.getByRole("dialog", { name: "Request 1" });
+    await page.locator('.agent-pin[data-state="done"]').click();
+    await expect(card).toContainText("Changed nothing, it is friendly.");
+    await page.keyboard.press("Escape");
+
+    // Another branch keeps its own (none); coming back shows these again.
+    await page.evaluate(() => { location.hash = "#repo=501&branch=history&file=index.html"; });
+    await expect(page.locator("#status")).toContainText("Up to date with history", { timeout: 30_000 });
+    await expect(heading).toBeVisible({ timeout: 30_000 });
+    await expect(pins).toHaveCount(0);
+    await page.evaluate(() => { location.hash = "#repo=501&branch=main&file=index.html"; });
+    await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
+    await expect(pins).toHaveCount(2);
+
+    // Answering needs remote agents; the card says so and keeps the question.
+    const question = page.locator('.agent-pin[data-state="question"]');
+    const asking = page.getByRole("dialog", { name: "Request 2" });
+    await question.click();
+    await asking.getByRole("textbox", { name: "Answer the agent" }).fill("The first sentence");
+    await page.keyboard.press("Enter");
+    await expect(asking.locator(".agent-pin-card__error")).toContainText("Remote agents are off in this tab");
+    await expect(question).toHaveCount(1);
+    // Clear and Dismiss are this browser's: no hub call.
+    await asking.getByRole("button", { name: "Dismiss" }).click();
+    await expect(pins).toHaveCount(1);
+    await page.locator('.agent-pin[data-state="done"]').click();
+    await card.getByRole("button", { name: "Clear" }).click();
+    await expect(pins).toHaveCount(0);
+    await page.reload();
+    await open(page, baseURL);
+    // fixed-wait: Gives a stored request time to come back as a pin after the reload, which it must not.
+    await page.waitForTimeout(1000);
+    await expect(pins).toHaveCount(0);
+    expect(calls, "local conversation actions").toEqual([]);
+
+    // On again, the hub hears of the dismissed question: agents no longer get it.
+    await page.locator(".repository-menu__trigger").click();
+    await page.getByRole("button", { name: "Connect with MCP", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Disconnect MCP", exact: true })).toBeVisible({ timeout: 15_000 });
+    await page.keyboard.press("Escape");
+    await expect.poll(() => calls.includes("POST /api/agent/dismiss"), { timeout: 15_000 }).toBe(true);
+    expect((await call("wait_for_requests", { all: true, waitSeconds: 0 })).requests).toEqual([]);
+    await expect(pins).toHaveCount(0);
+  } finally {
+    await client.close();
+  }
+});
+
 test("media tools list starter images with uses and preview a picture at most 512 px", async ({ page, baseURL }) => {
   await open(page, baseURL);
   const client = await connectAgent(page, baseURL);

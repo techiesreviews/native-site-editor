@@ -59,7 +59,7 @@ test("missing factory and open errors refuse agent operations while manual fallb
     await assert.rejects(records.workspace(draft), code("unavailable"));
     await assert.rejects(records.receipt(draft, "operation-1", "grant-1"), code("unavailable"));
     await assert.rejects(records.setGeneration(draft, 0, 1), code("unavailable"));
-    await assert.rejects(records.putConversation(draft, { id: "one", content: "hello" }), code("unavailable"));
+    await assert.rejects(records.putConversation(draft, { id: "one", content: "hello", unfinished: true, updatedAt: 1 }), code("unavailable"));
     await assert.rejects(records.conversations(draft), code("unavailable"));
   }
   const disk = storage(), manual = new DraftStore(disk, indexedDbDrafts(draftDatabaseName, fake.factory));
@@ -126,17 +126,17 @@ test("generation CAS serializes contenders; workspace keys and conversations rem
   for (const next of [1, 0]) await assert.rejects(records.setGeneration(draft, 1, next), code("conflict"));
   await assert.rejects(records.commit(command()), code("conflict"));
   const others = [{ ...draft, account: "other" }, { ...draft, repoId: 2 }, { ...draft, branch: "other" }];
-  const conversation = { id: "one", content: { question: "hello" } };
+  const conversation = { id: "one", content: { question: "hello" }, unfinished: true, updatedAt: 1 };
   await records.putConversation(draft, conversation); conversation.content.question = "changed later";
   for (const workspace of others) {
     assert.deepEqual(await records.workspace(workspace), { revision: 0, generation: 0 });
     assert.equal(await records.receipt(workspace, "operation-1", "grant-1"), undefined);
     assert.deepEqual(await records.conversations(workspace), []);
-    await records.putConversation(workspace, { id: "one", content: "other" });
+    await records.putConversation(workspace, { id: "one", content: "other", unfinished: true, updatedAt: 1 });
   }
-  assert.deepEqual(await records.conversations(draft), [{ id: "one", content: { question: "hello" } }]);
-  await records.putConversation(draft, { id: "one", content: "updated" });
-  assert.deepEqual(await records.conversations(draft), [{ id: "one", content: "updated" }]);
+  assert.deepEqual(await records.conversations(draft), [{ id: "one", content: { question: "hello" }, unfinished: true, updatedAt: 1 }]);
+  await records.putConversation(draft, { id: "one", content: "updated", unfinished: true, updatedAt: 1 });
+  assert.deepEqual(await records.conversations(draft), [{ id: "one", content: "updated", unfinished: true, updatedAt: 1 }]);
 });
 
 test("proofs and draft writes are captured before every opener await", async () => {

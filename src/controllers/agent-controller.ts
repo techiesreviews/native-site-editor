@@ -1,4 +1,6 @@
+import { effect } from "@preact/signals-core";
 import type { AgentElement } from "../../shared/agent";
+import type { AgentWorkspace } from "../../shared/agent-command";
 import type { AppStore } from "../app-store";
 import type { AgentApproval, createAgentMenu } from "../components/agent-menu";
 
@@ -22,11 +24,18 @@ export interface AgentMenuPort<Root> {
 interface AgentEnvironment {
   window: Pick<EventTarget, "addEventListener" | "removeEventListener">;
 }
+/** Whether this browser keeps Ask agent requests for the workspace (read lazily, no network). */
+async function browserHistory(workspace: AgentWorkspace) {
+  const { indexedDbAgentRecords } = await import("../agent-records");
+  return (await indexedDbAgentRecords().conversations(workspace)).some((item) => (item.content as { state?: string } | null)?.state !== "dismissed");
+}
 
 /**
  * Owns lazy mounting of the agent menu for the current signed-in host. Remote agents are opt-in
  * per tab: startup and mounting make no agent requests; only Connect in the menu or a connection
  * approved in this browser (checked against this tab's workspace by the menu) starts the transport.
+ * Ask agent requests this browser keeps for the open workspace mount the menu (no requests either),
+ * so their pins show after a reload with remote agents off.
  */
 export function createAgentController<Root extends { remove(): void } = HTMLElement>(options: {
   account(): string | undefined;
@@ -36,6 +45,8 @@ export function createAgentController<Root extends { remove(): void } = HTMLElem
   load(): Promise<{ createAgentMenu: (options: MenuOptions) => AgentMenuPort<Root> }>;
   onError(error: unknown): void;
   environment?: AgentEnvironment;
+  /** Whether the browser keeps requests for a workspace; tests inject it. */
+  history?: (workspace: AgentWorkspace) => Promise<boolean>;
 }) {
   const environment = options.environment ?? { window };
   let menu: AgentMenuPort<Root> | undefined;
@@ -86,12 +97,29 @@ export function createAgentController<Root extends { remove(): void } = HTMLElem
       if (isCurrent(account, host, revision)) currentMenu()?.consentGranted(approval);
     }).catch((error: unknown) => options.onError(error));
   };
+  // The open workspace, once its files are read: its kept requests, if any, mount the menu.
+  let watching: (() => void) | undefined;
+  let checked = "";
+  function watchHistory() {
+    watching ??= effect(() => {
+      const repository = options.appStore.repository.value, snapshot = options.appStore.snapshot.value;
+      const account = options.account();
+      if (!repository || !snapshot || !account) return;
+      const workspace = { account, repoId: repository.id, branch: snapshot.branch }, key = JSON.stringify(workspace), revision = epoch;
+      if (key === checked || currentMenu()) return;
+      checked = key;
+      void (options.history ?? browserHistory)(workspace).then((kept) => {
+        if (kept && active && epoch === revision && options.account() === account) return ensure();
+      }).catch(() => { if (checked === key) checked = ""; });
+    });
+  }
   function start() {
     active = true;
     if (!listening) {
       environment.window.addEventListener("storage", storage);
       listening = true;
     }
+    watchHistory();
   }
   function destroy() {
     active = false;
@@ -105,6 +133,9 @@ export function createAgentController<Root extends { remove(): void } = HTMLElem
       environment.window.removeEventListener("storage", storage);
       listening = false;
     }
+    watching?.();
+    watching = undefined;
+    checked = "";
   }
   /** Pins an Ask prompt to its original menu and refuses a changed host/account. */
   function captureAsk() {
