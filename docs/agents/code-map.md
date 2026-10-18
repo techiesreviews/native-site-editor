@@ -199,7 +199,7 @@ One line per media-* module. Concern-level rows sit in the table above.
 | GitHub reads, blobs and saved history | `worker/github.ts` — `GitHub`; `worker/blobs.ts` — `uploadBlob`; `worker/history.ts` — `history`, `restore` |
 | Save to GitHub, host publishing and change status | `worker/publish.ts` — `publish`; `worker/hosts.ts` — `publishHosts`; `worker/change-status.ts` — `changeStatus`; `shared/hosting.ts` — `pipelineFiles` |
 | Owner setup and agent OAuth | `worker/owner-setup.ts` — `configuredApp`; `worker/oauth.ts` — `handleOAuth`; `worker/oauth-registration.ts` — `admitRegistration` |
-| Agent MCP tools, grants and requests | `worker/mcp.ts` — `createSiteServer`, `handleMcp`; `worker/agent-context.ts` — `createGrant`; `worker/agent-operations.ts` — `agentOperation`; `worker/agent-requests.ts` — `requestOperation`; `worker/agent-store.ts` — `hubOperation` |
+| Agent MCP tools, grants and requests | `worker/mcp.ts` — `createSiteServer`, `handleMcp`; `worker/agent-context.ts` — `createGrant`; `worker/agent-operations.ts` — `agentOperation`; `shared/agent-requests.ts` — `requestOperation` (hub and receiving tab); `src/agent-watch.ts` — `createRequestTools`, `agentWatch` (quiet waits, Watch); `worker/agent-store.ts` — `hubOperation` |
 | Starting point fetch and first commit | `worker/starter.ts` — `starterProvider`; `worker/first-commit.ts` — `commitStartingPoint` |
 | Native-save server: real Worker, fake GitHub and sessions | `tests/native-save/server.ts` — `githubFetch`, `buildInitialGit`, `env`; `tests/native-save/fixture-contract.ts` — `fixtureKind` |
 | Native-save draft and save helpers | `tests/native-save/drafts.ts` — `storedDrafts`, `effectiveSource`; `tests/native-save/publish.ts` — `showPublish` |

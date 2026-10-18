@@ -116,7 +116,7 @@ not rewrite links.
 | `open_page` | Shows a page in preview/source, or opens any file in the source editor. |
 | `inspect_preview` | Shows a page and measures elements by id, selector or selection: box, computed styles, matching rules and text contrast. |
 | `get_command_status` | Returns the state, message and result of a command this connection queued. |
-| `wait_for_requests` | Returns unseen Ask agent requests, or all waiting when requested. With none, waits up to the requested time (default 25 seconds, maximum 50). An answered question returns again with its thread. |
+| `wait_for_requests` | Returns unseen Ask agent requests, or all waiting when requested, from the receiving tab. With none it returns at once and tells the agent not to call again on its own. Only while the person has turned on Watch in the agent menu (10 minutes per activation, at most 25 held waits, one at a time per site) does it wait up to 25 seconds for a request. An answered question returns again with its thread. |
 | `get_selection` | Current preview selection or a request's element, with source, selector, component/slot context and conversation. |
 | `reply_to_request` | Replies done, answered or question, with optional edit request ids. Messages are at most 200 characters; questions at most 60. A question waits for the person's answer and returns in the request thread. |
 
@@ -126,7 +126,7 @@ The native-site conventions resource describes pages, components, slots, styles,
 media, records and the implemented [ADR 0001](adr/0001-the-repository-is-the-site.md)
 root-link amendment. The site resource returns the site as `get_site` does.
 The edit_site prompt combines conventions and current state with an optional goal;
-watch_editor describes waiting for Ask agent requests, carrying them out and replying.
+watch_editor describes taking Ask agent requests, carrying them out and replying, then stopping until asked to continue (or while Watch is on, waiting again).
 Their definitions live beside the tools in `worker/mcp.ts`; conventions live in
 `worker/site-conventions.ts`.
 
