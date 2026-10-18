@@ -3,7 +3,7 @@ title: "Build restricted resumable discovery"
 type: task (AFK)
 status: open
 assignee:
-blocked_by: [26-transport-validation]
+blocked_by: [13-live-relay-core, 22-bounded-repository-cache]
 builder: sol
 phase: 5
 ---

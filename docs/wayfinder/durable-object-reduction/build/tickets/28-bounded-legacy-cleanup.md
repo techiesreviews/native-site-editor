@@ -3,7 +3,7 @@ title: "Delete only proven eligible legacy records"
 type: task (AFK)
 status: open
 assignee:
-blocked_by: [27-legacy-inventory]
+blocked_by: [27-legacy-inventory, 20-disable-legacy-content, 25-disconnect-lifecycle]
 builder: sol
 phase: 5
 ---
