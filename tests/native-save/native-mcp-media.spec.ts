@@ -1,10 +1,9 @@
 import { readFileSync } from "node:fs";
 import { test, expect, type Page } from "@playwright/test";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
-import { copyConnectionPrompt, useLegacyRelay } from "./mcp-prompt";
+import { copyConnectionPrompt } from "./mcp-prompt";
 
-// These specs exercise queued edits and the matching legacy context fallback.
-test.beforeEach(({ page }) => useLegacyRelay(page));
+// These specs exercise the real fixture relay socket and browser media executor.
 
 // Default native-save fixture; new media is added through the user's Media pane.
 const indexPath = "index.html";
@@ -28,6 +27,11 @@ async function connectAgent(page: Page, baseURL: string | undefined) {
   await client.connect(
     new StreamableHTTPClientTransport(new URL(url), { requestInit: { headers: { Authorization: `Bearer ${token}` } } }),
   );
+  // Returning from the agent app refreshes grant metadata once; live mode has no hub polling.
+  await expect.poll(async () => {
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    return page.getByRole("button", { name: "Disconnect MCP", exact: true }).isVisible();
+  }).toBe(true);
   await expect(page.getByRole("button", { name: "Disconnect MCP", exact: true })).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole("button", { name: "Disconnect MCP", exact: true })).toHaveAttribute("title", /playwright-agent connected/);
   await page.keyboard.press("Escape");

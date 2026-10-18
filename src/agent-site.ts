@@ -793,7 +793,9 @@ export async function applySiteCommand(actions: AgentSiteActions, command: Agent
       if (!(await actions.open(path))) throw new Error(`${path} could not be opened.`);
       return { message: `Opened ${path}.` };
     case "frame_image": {
-      const source = await openPage(actions, path, command.expectedHash);
+      const changing = args.shape !== undefined || args.focus !== undefined || args.trim !== undefined;
+      const source = await (changing ? openPage(actions, path, command.expectedHash) : expectHash(actions, path, command.expectedHash));
+      if (source === undefined) throw new Conflict(`${path} could not be read.`);
       const node = parseOutlineId(args.element!)!;
       const range = locateNativeElementRange(source, node);
       if (!range || range.tag.name !== "img") throw new Conflict("That element is not an image; place_media fills an existing image. Add a section or component with an image first.");
@@ -818,7 +820,8 @@ export async function applySiteCommand(actions: AgentSiteActions, command: Agent
       await actions.media(command);
       return { message: `Changed description of ${args.file}, unsaved.`, result: { hash: await hashOf(actions, args.page ?? ".editor/media.json") } };
     case "loop_video":
-      await openPage(actions, path, command.expectedHash);
+      if (args.looping !== undefined) await openPage(actions, path, command.expectedHash);
+      else await expectHash(actions, path, command.expectedHash);
       return (await actions.media(command))!;
     case "improve_images":
     case "video_still":

@@ -394,15 +394,15 @@ test("back-forward cache pagehide preserves opt-in and pageshow resumes the owne
   assert.equal(a.transport.state().mode, "off"); assert.equal(f.timers.size, 0);
 });
 
-test("receiptless mutations are refused on the live connection before anything runs", async () => {
+test("media commands reach the receipt-capable executor on the live connection", async () => {
   let runs = 0;
   const f = fixture(), a = f.tab("a", { run: async () => { runs++; return { message: "Placed." }; } });
   await a.transport.start();
   for (const operation of ["place_media", "frame_image", "loop_video"] as const)
-    a.deliver({ ...command(`receiptless-${operation}`), operation });
+    a.deliver({ ...command(`media-${operation}`), operation });
   await until(() => a.sockets[0].messages("result").length === 3);
-  assert.deepEqual(a.sockets[0].messages("result").map(value => value.result.state), Array(3).fill("conflict"));
-  assert.equal(runs, 0);
+  assert.deepEqual(a.sockets[0].messages("result").map(value => value.result.state), Array(3).fill("applied"));
+  assert.equal(runs, 3);
   a.transport.stop();
 });
 

@@ -64,7 +64,7 @@ export function mediaListReport(input: MediaListInput) {
     media });
   while (textBytes(JSON.stringify(report())) > MEDIA_LIST_LIMIT) {
     // A single enormous entry (or unreadable-files list) cannot be paged without losing fields.
-    if (media.length <= 1) throw new Error("The media report cannot fit one complete entry. Narrow the folder or shorten its media records.");
+    if (media.length <= 1) throw new Error("The media report is too large: cannot fit one complete entry. Narrow the folder or shorten its media records.");
     media.pop();
   }
   return report();
