@@ -222,10 +222,12 @@ export function conversationRetention(stored: Conversation[], incoming: Conversa
 
 export function unavailableAgentRecords(factory?: IDBFactory): AgentRecords {
   const message = "Agent storage is unavailable in this browser.";
-  const refuse = () => Promise.reject(new AgentRecordsError("unavailable", message));
   const status = statusOf(factory);
-  return { reconcile: refuse, pause: refuse, snapshot: refuse, revoke: refuse, cancel: refuse, evictReceipts: refuse,
-    commit: () => { report(status, { reason: "unavailable", message }, false); return refuse(); },
+  const refuse = () => {
+    report(status, { reason: "unavailable", message }, false);
+    return Promise.reject(new AgentRecordsError("unavailable", message));
+  };
+  return { reconcile: refuse, pause: refuse, snapshot: refuse, revoke: refuse, cancel: refuse, evictReceipts: refuse, commit: refuse,
     receipt: refuse, workspace: refuse, setGeneration: refuse, putConversation: refuse, checkConversation: refuse, conversations: refuse };
 }
 
@@ -264,7 +266,11 @@ export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFact
   const run = async <T>(stores: string[], mode: IDBTransactionMode, work: (tx: IDBTransaction, read: Read, done: (result: T) => void) => void): Promise<T> => {
     let db: IDBDatabase;
     try { db = await connection.open(); }
-    catch (cause) { throw new AgentRecordsError("unavailable", "Agent storage could not be opened.", cause); }
+    catch (cause) {
+      const error = new AgentRecordsError("unavailable", "Agent storage could not be opened.", cause);
+      report(status, { reason: "unavailable", message: error.message }, false);
+      throw error;
+    }
     return new Promise<T>((resolve, reject) => {
       let tx: IDBTransaction;
       try { tx = db.transaction(stores, mode); }
@@ -425,7 +431,6 @@ export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFact
       if (status.stopped) throw new AgentRecordsError("unavailable", FULL_MESSAGE);
       try { return await attempt(captured); }
       catch (error) {
-        if (error instanceof AgentRecordsError && error.code === "unavailable") report(status, { reason: "unavailable", message: error.message }, false);
         if (!quotaError(error)) throw error;
         let failure = error;
         // The aborted transaction applied nothing; a receipt settles one that landed regardless.
