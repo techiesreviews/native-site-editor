@@ -46,6 +46,7 @@ test("a request kept from before threads reads as one, and its answer starts the
     createdAt: 1,
     repoId: 1,
     repository: "lex/site",
+    branch: "main",
     state: "question",
     element: { file: "index.html", id: "1", tag: "h1", text: "Hi" },
     returnedTo: ["grant-1"],
@@ -55,7 +56,7 @@ test("a request kept from before threads reads as one, and its answer starts the
   assert.equal(result.state, "open");
   assert.equal(result.returnedTo, undefined);
   assert.deepEqual(list[0].thread.map((item: any) => [item.from, item.text]), [["user", "Fix this"], ["agent", "Which way?"], ["user", "The short way"]]);
-  assert.equal(requestOperation(list, { type: "take-requests", grantId: "grant-1", repoId: 1 }).result.requests.length, 1);
+  assert.equal(requestOperation(list, { type: "take-requests", grantId: "grant-1", repoId: 1, branch: "main" }).result.requests.length, 1);
 });
 
 test("MCP site tools read the site, queue guarded changes for the editor tab, report them, and revoke access in Workers", async () => {
@@ -64,7 +65,7 @@ test("MCP site tools read the site, queue guarded changes for the editor tab, re
   try {
     const { cookie } = await signIn(worker);
     const tab = editorTab(worker, cookie);
-    const connection = await tab.post("/api/agent/connect", { repo: repo.full_name, repoId: repo.id });
+    const connection = await tab.post("/api/agent/connect", { repo: repo.full_name, repoId: repo.id, branch: "main" });
     assert.equal(connection.status, 200);
     const { id, token } = await connection.json();
     // The tab sees the connection and starts sharing.
@@ -398,12 +399,14 @@ test("MCP site tools read the site, queue guarded changes for the editor tab, re
     assert.equal(conflicted.isError, true);
     assert.equal(payload(conflicted).state, "conflict");
 
-    // The connection follows the repository the tab shows, when the
-    // installation includes it.
+    // A shared repository change never redirects this connection.
     const otherRepo = { ...repo, id: 2, name: "other", full_name: "lex/other" };
     github.others.push(otherRepo);
     await tab.share({ ...context, repository: { id: 2, fullName: "lex/other" } });
-    assert.equal(payload(await call("get_site")).repository, "lex/other");
+    const unavailable = payload(await call("get_site"));
+    assert.equal(unavailable.repository, "lex/starter");
+    assert.equal(unavailable.available, false);
+    assert.match(unavailable.note, /lex\/starter on branch main.*lex\/other on branch main/);
     await tab.share(context);
     assert.equal(payload(await call("get_site")).repository, "lex/starter");
     assert.equal(github.writes, 0, "MCP must not write to GitHub");
@@ -421,7 +424,7 @@ test("MCP site tools read the site, queue guarded changes for the editor tab, re
     assert.equal((await tab.post("/api/agent/revoke", { id })).status, 200);
     assert.deepEqual((await tab.hub()).grants, []);
     await assert.rejects(() => client!.listTools());
-    const reconnected = await (await tab.post("/api/agent/connect", { repo: repo.full_name, repoId: repo.id })).json();
+    const reconnected = await (await tab.post("/api/agent/connect", { repo: repo.full_name, repoId: repo.id, branch: "main" })).json();
     await tab.post("/auth/logout", {});
     const expired = await worker.dispatchFetch(origin + "/mcp", {
       method: "POST",
@@ -443,7 +446,7 @@ test("every draft up to 1 MB is readable and writable however many there are; a 
   try {
     const { cookie } = await signIn(worker);
     const tab = editorTab(worker, cookie);
-    const { token } = await (await tab.post("/api/agent/connect", { repo: repo.full_name, repoId: repo.id })).json();
+    const { token } = await (await tab.post("/api/agent/connect", { repo: repo.full_name, repoId: repo.id, branch: "main" })).json();
     // 150 drafts of about 5 KB each (750 KB, past the old 400 KB budget),
     // listed by hash only; their texts go apart.
     const texts = Array.from({ length: 150 }, (_, index) => `/* ${index} */\n${`.rule-${index} { color: red; }\n`.repeat(200)}`);
@@ -524,7 +527,7 @@ test("get_site applies variant drafts, reports unreadable files, skips missing i
   try {
     const { cookie } = await signIn(worker);
     const tab = editorTab(worker, cookie);
-    const { token } = await (await tab.post("/api/agent/connect", { repo: repo.full_name, repoId: repo.id })).json();
+    const { token } = await (await tab.post("/api/agent/connect", { repo: repo.full_name, repoId: repo.id, branch: "main" })).json();
     client = new Client({ name: "variant-drafts-test", version: "1.0.0" });
     await client.connect(new StreamableHTTPClientTransport(new URL(origin + "/mcp"), {
       requestInit: { headers: { Authorization: `Bearer ${token}` } }, fetch: workerFetch(worker),
@@ -593,7 +596,7 @@ test("export_site reads the whole site in one call with drafts and hashes, blobs
   try {
     const { cookie } = await signIn(worker);
     const tab = editorTab(worker, cookie);
-    const { token } = await (await tab.post("/api/agent/connect", { repo: repo.full_name, repoId: repo.id })).json();
+    const { token } = await (await tab.post("/api/agent/connect", { repo: repo.full_name, repoId: repo.id, branch: "main" })).json();
     const context = await siteContext();
     context.drafts.push({ path: "images/logo.png", baseSha: null, updatedAt: Date.now(), binary: true, size: 2048 });
     assert.equal((await tab.share(context)).status, 200);
@@ -667,7 +670,7 @@ test("inspect_preview asks the tab to measure the page it shows and hands its re
   try {
     const { cookie } = await signIn(worker);
     const tab = editorTab(worker, cookie);
-    const { token } = await (await tab.post("/api/agent/connect", { repo: repo.full_name, repoId: repo.id })).json();
+    const { token } = await (await tab.post("/api/agent/connect", { repo: repo.full_name, repoId: repo.id, branch: "main" })).json();
     assert.equal((await tab.share(await siteContext())).status, 200);
     client = new Client({ name: "inspect-test", version: "1.0.0" });
     await client.connect(new StreamableHTTPClientTransport(new URL(origin + "/mcp"), {
@@ -712,7 +715,7 @@ test("Ask agent: the tab's requests reach wait_for_requests with their element, 
   try {
     const { cookie } = await signIn(worker);
     const tab = editorTab(worker, cookie);
-    const { token } = await (await tab.post("/api/agent/connect", { repo: repo.full_name, repoId: repo.id })).json();
+    const { token } = await (await tab.post("/api/agent/connect", { repo: repo.full_name, repoId: repo.id, branch: "main" })).json();
     const context = await siteContext();
     const element = {
       file: "index.html",
@@ -733,7 +736,7 @@ test("Ask agent: the tab's requests reach wait_for_requests with their element, 
     }));
     const call = (name: string, args: Record<string, unknown> = {}) => client!.callTool({ name, arguments: args });
     const ask = (text: string, extra: Record<string, unknown> = {}) =>
-      tab.post("/api/agent/ask", { repository: { id: repo.id, fullName: repo.full_name }, text, element, ...extra });
+      tab.post("/api/agent/ask", { repository: { id: repo.id, fullName: repo.full_name, branch: "main" }, text, element, ...extra });
 
     // The description says whose words the request is.
     const described = JSON.stringify((await client.listTools()).tools.find((tool) => tool.name === "wait_for_requests"));
@@ -863,20 +866,20 @@ test("Ask agent: the tab's requests reach wait_for_requests with their element, 
     assert.equal((await tab.post("/api/agent/dismiss", { id: asking.id })).status, 200);
     assert.equal((await answer(asking.id, "Wait")).status, 409, "a dismissed request takes no answer");
 
-    // A request belongs to its repository: another one's waits until the tab shows it.
+    // Sharing another repository does not redirect requests from this connection.
     const otherRepo = { ...repo, id: 2, name: "other", full_name: "lex/other" };
     github.others.push(otherRepo);
-    const elsewhere = await (await ask("Over there", { repository: { id: 2, fullName: "lex/other" } })).json();
+    const elsewhere = await (await ask("Over there", { repository: { id: 2, fullName: "lex/other", branch: "main" } })).json();
     assert.deepEqual(payload(await call("wait_for_requests", { all: true, waitSeconds: 0 })).requests, []);
     assert.equal((await call("get_selection", { request: elsewhere.id })).isError, true);
     await tab.share({ ...context, repository: { id: 2, fullName: "lex/other" } });
-    assert.deepEqual(payload(await call("wait_for_requests", { waitSeconds: 0 })).requests.map((item: any) => item.id), [elsewhere.id]);
+    assert.deepEqual(payload(await call("wait_for_requests", { waitSeconds: 0 })).requests, []);
     await tab.share(context);
 
     // Limits: text up to 2000 characters, source clipped at 4 KB, 50 waiting at once.
     assert.equal((await ask("")).status, 400);
     assert.equal((await ask("x".repeat(2001))).status, 400);
-    assert.equal((await tab.post("/api/agent/ask", { repository: { id: repo.id, fullName: repo.full_name }, text: "No element" })).status, 400);
+    assert.equal((await tab.post("/api/agent/ask", { repository: { id: repo.id, fullName: repo.full_name, branch: "main" }, text: "No element" })).status, 400);
     const long = await (await ask("Long", { element: { ...element, html: "x".repeat(4100) } })).json();
     const clipped = payload(await call("get_selection", { request: long.id })).element;
     assert.equal(clipped.html.length, 4096);
@@ -897,7 +900,7 @@ test("media tools ask the tab for family reports and picture previews and refuse
   let client: Client | undefined;
   try {
     const { cookie } = await signIn(worker), tab = editorTab(worker, cookie);
-    const { token } = await (await tab.post("/api/agent/connect", { repo: repo.full_name, repoId: repo.id })).json();
+    const { token } = await (await tab.post("/api/agent/connect", { repo: repo.full_name, repoId: repo.id, branch: "main" })).json();
     await tab.share(await siteContext());
     client = new Client({ name: "media-test", version: "1.0.0" });
     await client.connect(new StreamableHTTPClientTransport(new URL(origin + "/mcp"), {
@@ -966,7 +969,7 @@ test("agent media editing tools validate before queueing and retain their comman
   let client: Client | undefined;
   try {
     const { cookie } = await signIn(worker), tab = editorTab(worker, cookie);
-    const { token } = await (await tab.post("/api/agent/connect", { repo: repo.full_name, repoId: repo.id })).json();
+    const { token } = await (await tab.post("/api/agent/connect", { repo: repo.full_name, repoId: repo.id, branch: "main" })).json();
     await tab.share(await siteContext());
     client = new Client({ name: "media-edit-test", version: "1" });
     await client.connect(new StreamableHTTPClientTransport(new URL(origin + "/mcp"), {

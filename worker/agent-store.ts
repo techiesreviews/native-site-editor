@@ -9,7 +9,7 @@
 import { AGENT_TEXT_LIMIT, textHash, type AgentRequest } from "../shared/agent";
 import type { EditorContext } from "../shared/types";
 import type { AgentHub } from "./agent-context";
-import { agentOperation, newHub } from "./agent-operations";
+import { agentOperation, newHub, staleConnection, staleGrant } from "./agent-operations";
 import { isRequestAction, requestOperation, requestSummary } from "./agent-requests";
 import { HttpError } from "./github";
 
@@ -84,6 +84,9 @@ export async function hubOperation(storage: HubStorage, action: any, setAlarm: (
   try {
     // Requests are a list of their own; the hub stays as it is.
     if (isRequestAction(type)) {
+      // An agent's request actions name its grant: one rebound or removed meanwhile reads and writes nothing.
+      if ((type === "take-requests" || type === "request" || type === "reply") && staleGrant(hub, action))
+        throw new HttpError(409, staleConnection);
       const { list, changed, result } = requestOperation((await storage.get<AgentRequest[]>("requests")) ?? [], action);
       if (changed) await storage.put({ requests: list });
       return Response.json(result);
@@ -122,6 +125,12 @@ export async function hubOperation(storage: HubStorage, action: any, setAlarm: (
     if (shared) result = { ...result, missing: await collect(storage, hub, context) };
     return Response.json(result);
   } catch (error) {
+    // A stale claim fails its pending command before refusing delivery. Keep
+    // that outcome so the agent's result poll does not wait indefinitely.
+    if (type === "claim" && error instanceof HttpError && error.status === 409 &&
+        hub.commands?.some((command) => command.id === action.id &&
+          command.grantId === action.grantId && command.state === "failed"))
+      await storage.put({ session: hub });
     return failed(error);
   }
 }

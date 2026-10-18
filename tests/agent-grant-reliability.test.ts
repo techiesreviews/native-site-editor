@@ -27,7 +27,7 @@ const hub = { login: "lex", expiresAt: Date.now() + 3_600_000 };
 const addGrant = (id: string) => ({
   type: "add-grant",
   hub,
-  grant: { id, repoId: 7, repo: "lex/site", via: "token", createdAt: 1 },
+  grant: { id, repoId: 7, repo: "lex/site", branch: "main", generation: 1, via: "token", createdAt: 1 },
 });
 const operationRequest = (action: unknown) => new Request("https://session.internal/agent-operation", {
   method: "POST", body: JSON.stringify(action),
@@ -76,7 +76,7 @@ function grantEnv() {
   };
   return { env, fail, counts };
 }
-const connect = (env: Env) => createGrant(env, { ...hub, sessionId, repoId: 7, repo: "lex/site", via: "token" });
+const connect = (env: Env) => createGrant(env, { ...hub, sessionId, repoId: 7, repo: "lex/site", branch: "main", via: "token" });
 
 test("a failed first-use hub update is retried on the next request, and a stale request cannot move it", async () => {
   const { env, fail, counts } = grantEnv();

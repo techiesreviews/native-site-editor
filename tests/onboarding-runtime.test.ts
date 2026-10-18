@@ -158,13 +158,13 @@ test("MCP before there is a site: guidance to sign in, open a repository, or sta
   try {
     const { cookie } = await signIn(worker);
     const tab = editorTab(worker, cookie);
-    const { token } = await (await tab.post("/api/agent/connect", { repo: repo.full_name, repoId: repo.id })).json();
+    const { token } = await (await tab.post("/api/agent/connect", { repo: repo.full_name, repoId: repo.id, branch: "main" })).json();
     client = new Client({ name: "onboarding-test", version: "1.0.0" });
     await client.connect(
       new StreamableHTTPClientTransport(new URL(origin + "/mcp"), { requestInit: { headers: { Authorization: `Bearer ${token}` } }, fetch: workerFetch(worker) }),
     );
     const call = (name: string, args: Record<string, unknown> = {}) => client!.callTool({ name, arguments: args });
-    const guidance = notSharingMessage(origin);
+    const guidance = notSharingMessage(origin, { repo: repo.full_name, branch: "main" });
 
     // No tab shares anything yet.
     const none = payload(await call("get_site"));

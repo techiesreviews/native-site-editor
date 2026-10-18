@@ -2,6 +2,8 @@ import { requestJson } from "./http";
 import { ASSET_TYPES } from "../shared/asset-types";
 import { AGENT_RESULT_MAX } from "../shared/agent";
 import {
+  agentRecord,
+  validAgentBranch,
   authenticateAgent,
   createGrant,
   getGrant,
@@ -543,19 +545,32 @@ async function route(
       request.headers.get("Origin") !== url.origin
     )
       throw new HttpError(403, "Invalid request origin.");
-    if (path === "/api/agent/connect" && request.method === "POST") {
+    if ((path === "/api/agent/connect" || path === "/api/agent/rebind") && request.method === "POST") {
       const data = await requestJson(request, 4096);
+      if (!validAgentBranch(data?.branch)) throw new HttpError(400, "Choose a valid branch.");
+      const previous = path === "/api/agent/rebind" ? await getGrant(env, String(data?.id ?? "")) : undefined;
+      if (previous && (previous.sessionId !== sessionId || previous.login !== user.login))
+        throw new HttpError(403, "This connection belongs to another editor session.");
       const repo = await sessionGitHub(user, env, fetcher).authorizeRepository(
         user.login,
         data?.repo ?? "",
       );
       if (repo.id !== data.repoId)
         throw new HttpError(403, "Repository changed. Reload and try again.");
+      if (previous) {
+        const grant = { ...previous, repoId: repo.id, repo: repo.full_name, branch: data.branch, generation: (previous.generation ?? 1) + 1 };
+        // Fence pending commands first. A failed record write leaves access refused, never redirected.
+        await operateHub(env, sessionId, { type: "rebind-grant", id: data.id, repoId: grant.repoId, repo: grant.repo, branch: grant.branch, generation: grant.generation, previous: previous.generation ?? 1 });
+        const saved = await agentRecord(env, data.id, "PUT", grant);
+        if (!saved.ok) throw new HttpError(503, "The connection could not be rebound. Connect the agent again.");
+        return json({ ok: true, generation: grant.generation });
+      }
       const { id, token } = await createGrant(env, {
         sessionId,
         login: user.login,
         repoId: repo.id,
         repo: repo.full_name,
+        branch: data.branch,
         expiresAt: user.expiresAt,
         via: "token",
       });
