@@ -311,14 +311,15 @@ export function createAgentMenu(options: {
     } : undefined;
     const kept = await records.putConversation(workspace, { id: content.id, content: content as unknown as JsonValue, unfinished: isUnfinishedRequest(content.state), updatedAt: Date.now() }, accept);
     if (disposed) return;
-    // A read begun before this write may miss it: read again once it is kept.
-    const superseded = loadingKey !== undefined || !kept;
-    if (superseded) { historyLoads++; loadingKey = undefined; }
+    // Shown at once; then read again, as the write may have evicted others and a read begun
+    // before it may miss it.
+    historyLoads++;
+    loadingKey = undefined;
     if (kept && workspaceKey(workspace) === historyKey) {
       history.set(content.id, content);
       tellRequests();
     }
-    if (superseded) void loadHistory();
+    void loadHistory();
   }
   // Another tab of this browser may have changed them: read them again when this one is seen.
   const reread = () => { if (document.visibilityState === "visible" && historyKey) void loadHistory(); };
@@ -820,8 +821,9 @@ export function createAgentMenu(options: {
       if (!remote) throw new Error("Remote agents are off in this tab. Choose Connect with MCP in the project menu, then send your answer.");
       if (!workspace || !history.has(id)) throw new Error("This request is not in this site's history any more.");
       const local = history.get(id)!, key = workspaceKey(workspace);
-      if (!isUnfinishedRequest(local.state))
-        await records.checkConversation(workspace, { id, content: stored(local) as unknown as JsonValue, unfinished: true, updatedAt: Date.now() }).catch((error) => refusal(error, " Nothing was sent."));
+      // Refused before it is sent when this browser cannot keep the conversation with the answer.
+      const answered = { ...local, state: "open" as const, thread: [...(local.thread ?? []), { from: "user" as const, text, at: Date.now() }] };
+      await records.checkConversation(workspace, { id, content: stored(answered) as unknown as JsonValue, unfinished: true, updatedAt: Date.now() }).catch((error) => refusal(error, " Nothing was sent."));
       if (!live(at) || scopeKey() !== key) throw new Error("Remote agents or the open site changed meanwhile. Nothing was sent; answer again.");
       const request: StoredRequest = await api("answer", { id, text }, false, at);
       // Dismissed in another tab meanwhile: it stays dismissed (the hub hears of it on the next poll).
