@@ -9,8 +9,19 @@ import type { MediaWorkspaceBatch } from "./page-builder/media-workspace";
 import { agentMediaArgsProblem } from "../shared/agent-media-args";
 import { parseOnlineVideoAddress } from "../shared/online-video-address";
 import { agentImageTrim } from "../shared/agent-image-frame";
-import type { createMediaController } from "./controllers/media-controller";
-import { OUTSIDE_MEDIA_REFUSED, MEDIA_LIST_LIMIT, mediaKind, parseOutlineId, type AgentCommand } from "../shared/agent";
+import type { createMediaController, MediaControllerPorts } from "./controllers/media-controller";
+import { mediaCommandProofs } from "./agent-tools-media";
+import { mediaChanges } from "../shared/agent-media";
+import { placeAgentMedia } from "./page-builder/agent-media-place";
+import { createVideoPlaces } from "./page-builder/media-video-place";
+import { framePlace } from "./page-builder/place-frame";
+import { trimPlace } from "./page-builder/place-trim";
+import { componentPicture, agentComponentRead, agentComponentChange, agentTrimRequest } from "./page-builder/component-shapes";
+import { nativeSitePrefix, NATIVE_CONFIG_PATH } from "../shared/native-project";
+import { locatePageElement } from "./page-builder/media-insert";
+import { mediaAttribute, mediaExistingAlt } from "./page-builder/media-attributes";
+import { decodeHtmlEntities } from "./page-builder/html-entities";
+import { OUTSIDE_MEDIA_REFUSED, MEDIA_LIST_LIMIT, textBytes, mediaKind, parseOutlineId, type AgentCommand } from "../shared/agent";
 import { MEDIA_RECORDS_PATH } from "../shared/media-records";
 import { readSiteMediaRecords } from "./page-builder/media-collections";
 import { createMediaWorkspace, type MediaWorkspaceContext } from "./page-builder/media-workspace";
@@ -27,7 +38,9 @@ async function executeAgentMedia(
   moment?: (blob: Blob, seconds: number) => Promise<Blob>,
   improve?: import("./agent-improve-images").AgentImproveHost,
   improvePorts?: import("./agent-improve-images").AgentImprovePorts,
+  stagingPorts?: MediaControllerPorts,
 ): Promise<void | { message: string; result: Record<string, string> }> {
+  void stagingPorts;
   const args = command.args ?? {};
   const problem = agentMediaArgsProblem(command.operation, args, command.path);
   if (problem) throw new Error(problem);
@@ -133,7 +146,7 @@ async function executeAgentMedia(
   const library = await host.load(); ctx.assertLive();
   const report = (message: string, value: unknown) => {
     const report = JSON.stringify(value);
-    if (report.length > MEDIA_LIST_LIMIT) throw new Error("The media report is too large. Request fewer files.");
+    if (textBytes(report) > MEDIA_LIST_LIMIT) throw new Error("The media report is too large. Request fewer files.");
     return { message, result: { report } };
   };
   if (command.operation === "remove_media") {
@@ -216,10 +229,9 @@ const portOwners = new WeakMap<AgentRecords, typeof mediaOwners>();
 export async function applyAgentMedia(...parameters: Parameters<typeof executeAgentMedia>): ReturnType<typeof executeAgentMedia> {
   const [ctx, input] = parameters;
   const command = structuredClone(input), args = command.args ?? {};
-  const changing = ["remove_media", "keep_media", "replace_media", "describe_media", "change_collection", "write_subtitles", "video_still", "improve_images"].includes(command.operation)
-    || command.operation === "restore_media" && args.files !== undefined
-    || command.operation === "adding_settings" && [args.reset === true, args.image !== undefined, args.video !== undefined, args.audio !== undefined, args.keepOriginal !== undefined].some(Boolean);
-  if (!changing) return executeAgentMedia(...parameters);
+  const changing = mediaChanges(command.operation as import("../shared/agent-media").MediaTool, args);
+  const proof = mediaCommandProofs.get(input);
+  if (!changing) { parameters[0] = { ...ctx, agent: true }; return executeAgentMedia(...parameters); }
   const refuse = (error: unknown): never => {
     // Whether the edit was kept is unproven (src/agent-records.ts "unknown"): never claim nothing changed.
     if (error instanceof Error && error.name === "AgentRecordsError" && (error as Error & { code: string }).code === "unknown") throw new Error(error.message);
@@ -228,16 +240,28 @@ export async function applyAgentMedia(...parameters: Parameters<typeof executeAg
   // Argument and captured editor proofs keep their specific refusals even without storage.
   const problem = agentMediaArgsProblem(command.operation, args, command.path);
   if (problem) return refuse(new Error(problem));
+  if (command.operation === "place_media" && !parseOnlineVideoAddress(args.file ?? "") && !ctx.items.some(item => item.path === args.file))
+    return refuse(new Error(OUTSIDE_MEDIA_REFUSED));
+  const pageChange = ["place_media", "frame_image", "loop_video"].includes(command.operation);
+  if (pageChange && !parameters[8]) return refuse(new Error("Staged media edit ports are unavailable."));
+  const dependencies = new Map<string, string | undefined>();
   const versions = new Map(ctx.paths.map(path => [path, ctx.assetVersion(path)]));
   let applied = false;
   const assertCurrent = () => {
     ctx.assertLive();
+    if (!applied) {
+      proof?.();
+      if (command.ownerGeneration !== undefined && Date.now() >= command.createdAt + 10_000) throw new Error("The media command deadline passed. Cancelled before commit.");
+    }
+    if (!applied && parameters[8] && [...dependencies].some(([path, source]) => parameters[8]!.source(path) !== source))
+      throw new Error("The source changed while preparing the media command.");
     if (!applied && (ctx.paths.length !== versions.size || ctx.paths.some(path => versions.get(path) !== ctx.assetVersion(path))))
       throw new Error("Media changed while preparing the command. Try again.");
   };
   // A host without authorization/storage must still surface the operation's own validation.
   // Run only as far as its first write boundary; no batch or browser copy can be changed.
   const validateBeforeRefusal = async (error: unknown): Promise<never> => {
+    if (pageChange) return refuse(error);
     const stop = () => { throw error; };
     const wrap = (context: MediaWorkspaceContext): MediaWorkspaceContext => ({ ...context, agent: true,
       assertLive: () => { assertCurrent(); context.assertLive(); }, applyBatch: async () => stop(), blob: async () => stop(),
@@ -264,7 +288,7 @@ export async function applyAgentMedia(...parameters: Parameters<typeof executeAg
     // Hash the canonical arguments as a whole: no subtitle text, descriptions or byte strings in receipts.
     const argsHash = await textHash(payloadIdentity(JSON.parse(JSON.stringify(args)) as JsonValue));
     assertCurrent();
-    const identity = payloadIdentity(JSON.parse(JSON.stringify({ operation: command.operation, path: command.path,
+    const identity = command.requestIdentity ?? payloadIdentity(JSON.parse(JSON.stringify({ operation: command.operation, path: command.path,
       branch: command.branch, commit: command.commit, argsHash })) as JsonValue);
     const key = JSON.stringify([workspaceKey(workspace), command.ownerGeneration ?? null]);
     let owners = mediaOwners;
@@ -301,6 +325,57 @@ export async function applyAgentMedia(...parameters: Parameters<typeof executeAg
         ? batches[0].edits.get(path) : context.read(path),
       applyBatch: async batch => { context.assertLive(); batches.push(batch); } });
     parameters[0] = wrap(ctx);
+    const stagingPorts = parameters[8];
+    if (stagingPorts && pageChange) {
+      // The controller's shared transforms prepare against live ports; write ports only buffer.
+      // No page model or draft changes until the outer durable media transaction publishes.
+      const stage = async (batch: MediaWorkspaceBatch) => { assertCurrent(); batches.push(batch); };
+      const ports: MediaControllerPorts = { ...stagingPorts, selected: undefined,
+        source(path, scope) { const source = stagingPorts.source(path, scope); if (!dependencies.has(path)) dependencies.set(path, source); return source; },
+        stamp: () => { const stamp = stagingPorts.stamp(); return { holds: () => { assertCurrent(); return stamp.holds(); }, changed: () => stamp.changed() }; },
+        applyBatch: async (_scope, _stamp, batch) => stage(batch),
+        change(path, source, edits, _node, label) {
+          assertCurrent();
+          let content = source;
+          for (const edit of [...edits].sort((a, b) => b.start - a.start)) {
+            content = content.slice(0, edit.start) + edit.text + content.slice(edit.end);
+          }
+          batches.push({ label, expectedPaths: [...ctx.paths], expectedSources: new Map([[path, source]]), expectedAssets: new Map(),
+            edits: new Map([[path, content]]), moves: [], deletes: [], restores: [], uploads: [] });
+          return true;
+        },
+      };
+      const context = async () => wrap(ctx);
+      const capture = (target: { path: string; node: number[] }) => {
+        assertCurrent();
+        const source = ports.source(target.path), locate = ports.locateElement ?? locatePageElement;
+        const range = source === undefined ? undefined : locate(source, target.node);
+        if (!range || source === undefined) throw new Error("That element is no longer on the page.");
+        return { source, expected: source.slice(range.tag.start, range.tag.end), stamp: ports.stamp(), epoch: ports.generation() };
+      };
+      parameters[2] = target => {
+        const proof = capture(target);
+        const templates = (tag: string) => { const path = ctx.components[tag]; return path ? { path, source: ports.source(path) } : undefined; };
+        return (image, asset) => placeAgentMedia(ports, context, target, image, { ...proof, initialAlt: mediaExistingAlt(proof.expected), asset }, templates);
+      };
+      parameters[3] = target => {
+        const proof = capture(target), locate = ports.locateElement ?? locatePageElement;
+        const parent = locate(proof.source, target.node.slice(0, -1))?.tag.name ?? "";
+        if (parent.includes("-")) for (const base of [`components/${parent}/${parent}`, `components/${parent}`])
+          for (const suffix of [".html", ".css"]) ports.source(base + suffix);
+        const component = componentPicture(proof.source, target.node, path => ports.source(path));
+        const prefix = nativeSitePrefix(ports.source(NATIVE_CONFIG_PATH));
+        return {
+          read: async records => agentComponentRead(proof.expected, records, target.path, component, prefix),
+          frame: change => framePlace(ports, target, agentComponentChange(change, component), proof),
+          trim: request => trimPlace(ports, context, target, agentTrimRequest(request, proof.expected, target.path, component, prefix), proof),
+        };
+      };
+      parameters[4] = target => {
+        const proof = capture(target);
+        return looping => createVideoPlaces(ports, context, () => ports.load()).toggleLooping(target.path, target.node, proof.source, looping);
+      };
+    }
     parameters[1] = command;
     if (command.operation === "improve_images") {
       const improve = parameters[6];
@@ -317,7 +392,26 @@ export async function applyAgentMedia(...parameters: Parameters<typeof executeAg
     if (command.operation === "improve_images" && batches.length && outcome?.result.report
       && (JSON.parse(outcome.result.report) as { failed: unknown[] }).failed.length)
       throw new Error("Some image improvements failed. Request one change at a time.");
-    receipt.outcome = outcome ?? { message: "Media changed in the editor as an unsaved draft.", result: {} };
+    outcome ??= { message: "Media changed in the editor as an unsaved draft.", result: {} };
+    const planned = async (path: string) => batches[0]?.edits.get(path) ?? await ctx.read(path) ?? "";
+    if (["place_media", "frame_image"].includes(command.operation)) {
+      const page = await planned(command.path); assertCurrent();
+      outcome.result.hash = await textHash(page); assertCurrent();
+      if (command.operation === "place_media") {
+        const range = locatePageElement(page, parseOutlineId(args.element!)!);
+        outcome.result.alt = range ? decodeHtmlEntities(mediaAttribute(page, range.tag, "alt")?.value ?? "", true) : "";
+        outcome.message = `Placed ${args.file} in ${args.element} on ${command.path}, unsaved.`;
+      }
+    }
+    if (command.operation === "describe_media") {
+      const page = await planned(args.page ?? MEDIA_RECORDS_PATH); assertCurrent();
+      outcome = { message: `Changed description of ${args.file}, unsaved.`, result: { hash: await textHash(page) } }; assertCurrent();
+    }
+    if (command.operation === "change_collection") outcome = { message: `Changed collection ${args.name}, unsaved.`, result: {} };
+    if (new TextEncoder().encode(JSON.stringify(outcome)).byteLength > 8 * 1024 * 1024 - 4096)
+      throw new Error("The media result is too large; narrow the folder or page with offset/limit.");
+    for (const [path, source] of dependencies) batches[0]?.expectedSources.set(path, source);
+    receipt.outcome = outcome;
     let expectedRevision = 0;
     const context: AgentTextCommit = {
       async fence(draftScope, paths) {
@@ -373,4 +467,21 @@ export async function applyAgentMedia(...parameters: Parameters<typeof executeAg
     if (applied) return outcome;
     return refuse(error);
   }
+}
+
+/** Main's adapter lives in this lazy chunk, including all media preparation. */
+export async function runAgentMedia(controller: ReturnType<typeof createMediaController>, ports: MediaControllerPorts, command: AgentCommand) {
+  const since = ports.stamp(), proof = mediaCommandProofs.get(command);
+  const check = () => { proof?.(); if (!since.holds()) throw new Error("The editor changed branch or revision."); };
+  check();
+  const improve = command.operation === "improve_images" ? controller.prepareImprove() : undefined;
+  const target = () => ({ path: command.path, node: parseOutlineId(command.args!.element!)! });
+  const { isAgentMediaPath } = await import("./agent-media"); check();
+  const context = await controller.workspaceContext(isAgentMediaPath); check();
+  const readingFrame = command.operation === "frame_image" && !mediaChanges("frame_image", command.args ?? {});
+  if (readingFrame) { await context.read(command.path); check(); }
+  const frame = readingFrame ? controller.prepareFrame(target()) : undefined;
+  const ctx: MediaWorkspaceContext = { ...context, assertLive: () => { check(); context.assertLive(); } };
+  return applyAgentMedia(ctx, command, () => { throw new Error("Media placement was not staged."); }, frame ? () => frame : undefined,
+    undefined, undefined, improve, undefined, ports);
 }

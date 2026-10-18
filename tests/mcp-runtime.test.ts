@@ -7,7 +7,7 @@ import { DraftStore } from "../src/drafts";
 import { resolveNativeProject } from "../shared/native-project";
 import { createGuardedEdits } from "../src/guarded-edit";
 import { createMemoryWorkspace } from "./fakes/memory-workspace";
-import { applyAgentMedia } from "../src/agent-media-actions";
+import { applyAgentMedia as commitAgentMedia } from "../src/agent-media-actions";
 import { parseOutlineId, type AgentCommand } from "../shared/agent";
 import { createMediaController, type MediaControllerPorts } from "../src/controllers/media-controller";
 import type { MediaModule } from "../src/controllers/media-controller";
@@ -29,6 +29,10 @@ import { siteConventions } from "../worker/site-conventions.ts";
 import { conventionsChapter } from "./support/conventions-chapter";
 import { MEDIA_RECORDS_REFUSED } from "../shared/protected-paths.ts";
 import { editorTab, files, origin, payload, repo, signIn, siteContext, startWorker, workerFetch } from "./mcp-harness.ts";
+import { memoryUploadBytes, uploadKey } from "../src/uploads";
+
+const mediaFixturePorts = new WeakMap<import("../src/page-builder/media-workspace").MediaWorkspaceContext, MediaControllerPorts>();
+const applyAgentMedia = (...args: Parameters<typeof commitAgentMedia>) => { args[8] ??= mediaFixturePorts.get(args[0]); return commitAgentMedia(...args); };
 
 test("applyReplacements needs each old text exactly once, or all", () => {
   assert.deepEqual(applyReplacements("a b a", [{ oldText: "b", newText: "c" }]), { ok: true, text: "a c a" });
@@ -1076,7 +1080,7 @@ function agentMediaFixture(source = '<section><img src="/images/old.png" alt="Ol
   ]);
   const paths = [...text.keys(), "images/old.png", file, "media/images/photo-480.webp", "media/images/photo-960.webp", "media/originals/photo.jpg"];
   const scope = { account: "lex", repoId: 1, repo: "lex/site", branch: "main" };
-  const agentStorage = agentMediaStorage(scope);
+  const agentStorage = agentMediaStorage(scope), removedCopies = memoryUploadBytes();
   const bytes = new Map(paths.filter(path => /\.(png|webp|jpg)$/.test(path)).map(path => [path, new Blob(["picture"], { type: "image/webp" })]));
   const batches: MediaWorkspaceBatch[] = [], history: (() => void)[] = [], labels: string[] = [];
   let pick: MediaPickerOptions | undefined;
@@ -1092,7 +1096,7 @@ function agentMediaFixture(source = '<section><img src="/images/old.png" alt="Ol
     findEntry: async (path) => paths.includes(path) ? { sha: path } : undefined,
     entry: (path) => paths.includes(path) ? { sha: path } : undefined,
     readText: async (_repo, sha) => text.get(sha) ?? "", rememberSource: (path, source) => { text.set(path, source); },
-    uploadedBlob: async () => undefined, readBlob: async (_repo, _sha, path) => bytes.get(path)!,
+    uploadedBlob: async (scope, sha) => agentStorage.uploads.get(uploadKey(scope, sha)), readBlob: async (_repo, _sha, path) => bytes.get(path)!,
     applyBatch: async (_scope, _stamp, batch) => {
       if (batch.agent) {
         const ctx = await controller.workspaceContext();
@@ -1130,7 +1134,11 @@ function agentMediaFixture(source = '<section><img src="/images/old.png" alt="Ol
   } satisfies MediaControllerPorts;
   const controller = createMediaController(ports, () => import("../src/controllers/media-actions"));
   const workspaceContext = controller.workspaceContext.bind(controller);
-  controller.workspaceContext = async (...args) => agentStorage.context(await workspaceContext(...args));
+  controller.workspaceContext = async (...args) => {
+    const context = { ...await agentStorage.context(await workspaceContext(...args)), removedCopies };
+    mediaFixturePorts.set(context, ports);
+    return context;
+  };
   return { file, text, paths, bytes, ports, batches, history, labels, controller, agentStorage, pick: () => pick };
 }
 let mediaSequence = 0;
@@ -1167,7 +1175,7 @@ test("an agent placement equals the editor's markup for the same place, includin
       assert.ok(placed.includes(`srcset="/media/images/photo-480.webp 480w, /media/images/photo-960.webp 960w, ${older ? "/media/images/photo-1600.webp 1600w, " : ""}/media/images/photo.webp 2400w"`));
       assert.ok(placed.includes(`sizes="${firstScreen ? "" : "auto, "}(max-width: 600px) 100vw, 600px"`));
       assert.match(placed, /width="2400"/); assert.match(placed, /height="1600"/); assert.match(placed, /decoding="async"/); assert.match(placed, decorative ? /alt=""/ : /alt="Photo"/);
-      assert.equal(agent.batches.length, decorative || older ? 1 : 0);
+      assert.equal(agent.batches.length, 1);
       if (older) {
         assert.deepEqual(agent.batches[0].uploads.map(upload => upload.path), ["media/images/photo-480.webp", "media/images/photo-960.webp", "media/images/photo-1600.webp"]);
         assert.deepEqual(agent.batches[0].uploads, editor.batches[0].uploads);
@@ -1239,7 +1247,7 @@ test("agent shape and focus use exactly the popup's framing and one page-only Un
       target => agent.controller.preparePlacement(target), target => agent.controller.prepareFrame(target));
     assert.equal(agent.text.get("index.html"), popup.text.get("index.html"));
     assert.equal(agent.text.get(MEDIA_RECORDS_PATH), beforeRecords);
-    assert.equal(agent.batches.length, 0); assert.equal(agent.history.length, 1);
+    assert.equal(agent.batches.length, 1); assert.equal(agent.history.length, 1);
     assert.equal(agent.labels[0], change.shape !== undefined ? "Image shape changed" : "Focus point moved");
     agent.history.pop()!(); assert.equal(agent.text.get("index.html"), source);
   }
@@ -1263,7 +1271,7 @@ test("agent shape and focus use exactly the popup's framing and one page-only Un
       target => agent.controller.preparePlacement(target), target => agent.controller.prepareFrame(target));
     assert.equal(agent.text.get("index.html"), popup.text.get("index.html"));
     assert.deepEqual(agent.text, popup.text);
-    assert.equal(agent.batches.length, 0); assert.equal(agent.history.length, 1);
+    assert.equal(agent.batches.length, 1); assert.equal(agent.history.length, 1);
     agent.history.pop()!(); assert.equal(agent.text.get("index.html"), source);
   }
 });

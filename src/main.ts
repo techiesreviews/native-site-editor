@@ -39,7 +39,7 @@ import {
 import { createSetupEntryController } from "./controllers/setup-entry-controller";
 import { createAgentController } from "./controllers/agent-controller";
 import type { AgentSiteActions, SharedContext } from "./agent-site";
-import { parseOutlineId, type AgentCommand } from "../shared/agent";
+import type { AgentCommand } from "../shared/agent";
 import { draftStore, type DraftScope, type SavedDraft } from "./drafts";
 import { nativeBootExtras, nativeBootStyleExtras, nativeShownFiles, readSiteTexts, unreadableAsText, unreadableNeededFile, withSiteIndexed, type SiteIndexGate, type UnreadableFile } from "./native-boot";
 import { draftKey } from "./drafts";
@@ -2434,7 +2434,7 @@ function mediaOrigins() {
 }
 
 // Media context and UI lifecycle use live getters; binary/Undo writes stay here.
-const mediaController = createMediaController({
+const mediaPorts: import("./controllers/media-controller").MediaControllerPorts = {
   measureImage: (path, node, image, slot, style) => nativePreview && nativeSite?.routes[nativePreview.shownRoute() ?? ""] === path
     ? nativePreview.measureImage({ path, node, slot, style, ...(image.width && image.height ? { image: { width: image.width, height: image.height } } : {}) }) : Promise.resolve(undefined),
   origins: mediaOrigins,
@@ -2512,7 +2512,8 @@ const mediaController = createMediaController({
   announce,
   undoAction,
   error: errorMessage,
-}, lazyModule(() => import("./controllers/media-actions")));
+};
+const mediaController = createMediaController(mediaPorts, lazyModule(() => import("./controllers/media-actions")));
 // Typing changes drafts often; the usage check waits for a pause.
 let mediaUsageTimer: ReturnType<typeof setTimeout> | undefined;
 effect(() => {
@@ -4595,17 +4596,9 @@ function makeAgentSiteActions(edits: GuardedEdits = guardedEdits, atomic = false
   },
   async media(command) {
     const since = guardedEdits.stamp("repository");
-    const improve = command.operation === "improve_images" ? mediaController.prepareImprove() : undefined;
-    const place = command.operation === "place_media"
-      ? mediaController.preparePlacement({ path: command.path, node: parseOutlineId(command.args!.element!)! }) : undefined;
-    const frame = command.operation === "frame_image"
-      ? mediaController.prepareFrame({ path: command.path, node: parseOutlineId(command.args!.element!)! }) : undefined;
-    const loop = command.operation === "loop_video" && command.args?.looping !== undefined
-      ? mediaController.prepareLoop({ path: command.path, node: parseOutlineId(command.args.element!)! }) : undefined;
-    const [media, listing] = await Promise.all([import("./agent-media-actions"), import("./agent-media")]);
+    const { runAgentMedia } = await import("./agent-media-actions");
     if (!since.holds()) throw new Error("The editor changed branch or revision.");
-    const ctx = await mediaController.workspaceContext(listing.isAgentMediaPath);
-    return media.applyAgentMedia(ctx, command, () => place!, frame ? () => frame : undefined, loop ? () => loop : undefined, undefined, improve);
+    return runAgentMedia(mediaController, mediaPorts, command);
   },
   legacy: applyAgentCommand,
 }; }

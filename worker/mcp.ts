@@ -44,6 +44,7 @@ import { siteSummary, executeAgentRead, notSharingMessage as sharingMessage } fr
 import { prepareAgentEdit, checkContent, type AgentEdit, type AgentEditArgsMap, type AgentEditTool } from "../shared/agent-edit";
 import { AgentRelay, relayObjectName } from "./agent-relay";
 import type { AgentRead, AgentReadResult } from "../shared/agent-read";
+import { mediaChanges, type AgentMedia } from "../shared/agent-media";
 
 type Connection = Awaited<ReturnType<typeof authenticateAgent>>;
 
@@ -112,7 +113,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     if (!context) throw new HttpError(409, notSharingMessage(origin, connection.workspace, hub?.context));
     return { hub, context, files: new SiteFiles(connection.github, connection.repo, context, (hash) => draftText(env, grant.sessionId, hash)) };
   }
-  async function dispatch(command: AgentRead | AgentEdit | { operation: "status"; id: string; grantId: string; generation?: number }) {
+  async function dispatch(command: AgentRead | AgentEdit | AgentMedia | { operation: "status"; id: string; grantId: string; generation?: number }) {
     try {
       const body = JSON.stringify(command);
       const name = await relayObjectName(connection.workspace);
@@ -138,9 +139,36 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     }
     return unknown(request.id, outcome.code, outcome.outcome);
   }
+  async function media(tool: AgentMedia["tool"], input: { path: string; args?: AgentCommandArgs; requestId?: string; waitSeconds?: number }) {
+    const request: AgentMedia = { operation: "media", tool, path: input.path, args: input.args ?? {},
+      id: input.requestId ?? `mcp-${crypto.randomUUID()}`, grantId: connection.id, generation: grant.generation, createdAt: Date.now() };
+    const outcome = await dispatch(request);
+    if (outcome.ok && outcome.result) {
+      const result = outcome.result;
+      if (!result.ok) return failure(result.message);
+      const value = result.value;
+      if (!value || typeof value !== "object" || Array.isArray(value)) return failure("Invalid browser media result.");
+      if (["conflict", "failed", "unknown"].includes(String(value.state))) return { isError: true, ...text(value) };
+      const command: AgentCommand = { id: request.id, operation: tool, path: request.path, args: request.args,
+        content: "", branch: connection.workspace.branch, commit: "", state: "applied", createdAt: request.createdAt,
+        message: typeof value.message === "string" ? value.message : undefined, result: value.result as AgentCommand["result"] };
+      return tool === "list_media" ? text(resultOf(command)) : status(command);
+    }
+    if (outcome.code === "editor-unavailable") {
+      const context = connectionContext(connection.hub, connection.workspace);
+      if (!context) return failure(notSharingMessage(origin, connection.workspace, connection.hub?.context));
+      return queue(tool, context, input);
+    }
+    if (outcome.code === "too-large") return failure("The media request or result is too large; request fewer files or narrow the folder or page with offset/limit.");
+    if (!mediaChanges(tool, request.args)) return failure(`The editor media read failed (${outcome.code ?? "connection lost"}). Read again when the editor is ready.`);
+    return unknown(request.id, outcome.code, outcome.outcome);
+  }
   function toolResult(result: AgentReadResult) {
     if (!result.ok) return failure(result.message);
-    const value = result.value;
+    let value = result.value;
+    if (value && typeof value === "object" && !Array.isArray(value) && value.result && typeof value.result === "object" && !Array.isArray(value.result) && typeof value.result.report === "string") {
+      try { value = { ...value, result: JSON.parse(value.result.report) }; } catch { /* Keep the original report when it is not JSON. */ }
+    }
     return value && typeof value === "object" && !Array.isArray(value) && ["conflict", "failed", "unknown"].includes(String(value.state))
       ? { isError: true, ...text(value) } : text(value);
   }
@@ -515,8 +543,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     },
     async ({ folder, offset, limit, requestId, waitSeconds }) => {
       if (folder && touchesGithubConfig(folder)) return failure(GITHUB_CONFIG_REFUSED);
-      const { context } = await current();
-      return queue("list_media", context, { path: folder ?? "", args: { ...(folder !== undefined ? { folder } : {}), offset: offset ?? 0, limit: limit ?? 100 }, requestId, waitSeconds });
+      return media("list_media", { path: folder ?? "", args: { ...(folder !== undefined ? { folder } : {}), offset: offset ?? 0, limit: limit ?? 100 }, requestId, waitSeconds });
     },
   );
   server.registerTool(
@@ -529,8 +556,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     async ({ path, requestId, waitSeconds }) => {
       if (touchesGithubConfig(path)) return failure(GITHUB_CONFIG_REFUSED);
       if (!isPreviewablePicture(path)) return failure(picturePreviewRefusal(path));
-      const { context } = await current();
-      return queue("preview_media", context, { path, requestId, waitSeconds });
+      return media("preview_media", { path, requestId, waitSeconds });
     },
   );
 
@@ -551,8 +577,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
       const args = { ...(files !== undefined ? { files } : {}), ...(typeof keep === "boolean" ? { keep } : {}) };
       const problem = agentMediaArgsProblem(operation, args) ?? files?.map(file => writablePathProblem(file)).find(Boolean);
       if (problem) return failure(problem);
-      const { context } = await current();
-      return queue(operation, context, { path: "", args, requestId, waitSeconds });
+      return media(operation, { path: "", args, requestId, waitSeconds });
     });
   }
   server.registerTool("replace_media", {
@@ -563,8 +588,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     const args = { file, with: chosen, ...(keepOldUrl !== undefined ? { keepOldUrl } : {}) };
     const problem = agentMediaArgsProblem("replace_media", args) ?? writablePathProblem(file) ?? writablePathProblem(chosen);
     if (problem) return failure(problem);
-    const { context } = await current();
-    return queue("replace_media", context, { path: "", args, requestId, waitSeconds });
+    return media("replace_media", { path: "", args, requestId, waitSeconds });
   });
 
   server.registerTool("frame_image", {
@@ -585,8 +609,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     const args = { element, shape, focus, trim };
     const problem = writablePathProblem(path) ?? agentMediaArgsProblem("frame_image", args, path);
     if (problem) return failure(problem);
-    const { context } = await current();
-    return queue("frame_image", context, { path, args, requestId, waitSeconds });
+    return media("frame_image", { path, args, requestId, waitSeconds });
   });
 
   server.registerTool("place_media", {
@@ -598,8 +621,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     const problem = writablePathProblem(path) ?? (parseOnlineVideoAddress(file) ? undefined : isOutsideMediaAddress(file) ? OUTSIDE_MEDIA_REFUSED : writablePathProblem(file)) ?? agentMediaArgsProblem("place_media", args, path);
     if (problem) return failure(problem);
     if (!/\.html$/i.test(path)) return failure("Give a page path ending in .html.");
-    const { context } = await current();
-    return queue("place_media", context, { path, args, requestId, waitSeconds });
+    return media("place_media", { path, args, requestId, waitSeconds });
   });
   server.registerTool("improve_images", {
     description: "Improve images for one page or component template (row), or all rows when omitted. Makes lighter files, responsive copies and Looping videos, leaving outside pictures and old YouTube/Vimeo players for the user. Pictures the user left alone (on one page or everywhere) are skipped and listed as left-alone. Each row is one Undo step. Unsaved until the user saves. Follow the Media chapter of native-site://conventions.",
@@ -609,8 +631,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     const args = { row };
     const problem = agentMediaArgsProblem("improve_images", args) ?? (row ? writablePathProblem(row) : undefined);
     if (problem) return failure(problem);
-    const { context } = await current();
-    return queue("improve_images", context, { path: "", args, requestId, waitSeconds });
+    return media("improve_images", { path: "", args, requestId, waitSeconds });
   });
   server.registerTool("loop_video", {
     description: "Read or change Looping video for one placed video, using the edit bar's transaction. A picture spot always loops silently. Unsaved until the user saves. Follow the Media chapter of native-site://conventions.",
@@ -620,8 +641,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     const args = { element, looping };
     const problem = writablePathProblem(path) ?? agentMediaArgsProblem("loop_video", args, path);
     if (problem) return failure(problem);
-    const { context } = await current();
-    return queue("loop_video", context, { path, args, requestId, waitSeconds });
+    return media("loop_video", { path, args, requestId, waitSeconds });
   });
   server.registerTool("video_still", {
     description: "Choose a video's still everywhere: exactly one of moment (seconds into the video, saved as WebP) or picture (a picture already in Media). Unsaved until the user saves. Follow the Media chapter of native-site://conventions.",
@@ -631,8 +651,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     const args = { file, moment, picture };
     const problem = agentMediaArgsProblem("video_still", args) ?? writablePathProblem(file) ?? (picture ? writablePathProblem(picture) : undefined);
     if (problem) return failure(problem);
-    const { context } = await current();
-    return queue("video_still", context, { path: "", args, requestId, waitSeconds });
+    return media("video_still", { path: "", args, requestId, waitSeconds });
   });
   server.registerTool("write_subtitles", {
     description: "Write WebVTT or SubRip text for a video or audio file already in Media. Adds subtitles everywhere in one unsaved change, marked by agent in To check. Never uploads or fetches. Unsaved until the user saves. Follow the Media chapter of native-site://conventions.",
@@ -642,8 +661,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     const args = { file, text: subtitles, format };
     const problem = agentMediaArgsProblem("write_subtitles", args) ?? writablePathProblem(file);
     if (problem) return failure(problem);
-    const { context } = await current();
-    return queue("write_subtitles", context, { path: "", args, requestId, waitSeconds });
+    return media("write_subtitles", { path: "", args, requestId, waitSeconds });
   });
   server.registerTool("describe_media", {
     description: "Write a file description or a place's own words, or mark Decorative. Unsaved until the user saves. Follow the Media chapter of native-site://conventions.",
@@ -654,8 +672,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     const problem = (isOutsideMediaAddress(file) ? OUTSIDE_MEDIA_REFUSED : writablePathProblem(file)) ?? (page ? writablePathProblem(page) : undefined) ?? agentMediaArgsProblem("describe_media", args);
     if (problem) return failure(problem);
     if (page && !/\.html$/i.test(page)) return failure("Give a page path ending in .html.");
-    const { context } = await current();
-    return queue("describe_media", context, { path: page ?? file, args, requestId, waitSeconds });
+    return media("describe_media", { path: page ?? file, args, requestId, waitSeconds });
   });
   server.registerTool("change_collection", {
     description: "Create, add to, take out of, rename or delete a Media collection. Unsaved until the user saves. Follow the Media chapter of native-site://conventions.",
@@ -665,8 +682,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     const args = { action, name, to, files };
     const problem = agentMediaArgsProblem("change_collection", args) ?? files?.map(file => writablePathProblem(file)).find(Boolean);
     if (problem) return failure(problem);
-    const { context } = await current();
-    return queue("change_collection", context, { path: "", args, requestId, waitSeconds });
+    return media("change_collection", { path: "", args, requestId, waitSeconds });
   });
 
   server.registerTool("adding_settings", {
@@ -677,8 +693,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     const args = { image, video, audio, keepOriginal, reset };
     const problem = agentMediaArgsProblem("adding_settings", args);
     if (problem) return failure(problem);
-    const { context } = await current();
-    return queue("adding_settings", context, { path: "", args, requestId, waitSeconds });
+    return media("adding_settings", { path: "", args, requestId, waitSeconds });
   });
 
   // ---- Sections ----
