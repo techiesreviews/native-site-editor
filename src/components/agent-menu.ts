@@ -3,8 +3,7 @@ import { browserAgentRecovery, recordFailure, recoveryHolds } from "../agent-rec
 import { AgentFailureError, classifyAgentFailure } from "../../shared/agent-failure";
 import { button, node } from "../ui/dom";
 import { REQUEST_HTML_LIMIT, REQUEST_TEXT_LIMIT, textBytes, type AgentCommand, type AgentElement, type AgentRequest } from "../../shared/agent";
-import { requestOperation } from "../../shared/agent-requests";
-import { WATCH_WAITS, agentWatch, createRequestTools } from "../agent-watch";
+import { WATCH_WAITS, agentWatch, answerRequest, createRequestTools } from "../agent-watch";
 import { payloadIdentity, workspaceKey, type AgentWorkspace, type JsonValue } from "../../shared/agent-command";
 import { AgentRecordsError, agentStorageStatus, indexedDbAgentRecords, isUnfinishedRequest, type AgentRecords, type AgentStorageProblem } from "../agent-records";
 import type { createLiveTransport } from "../agent-transport";
@@ -149,7 +148,11 @@ export function createAgentMenu(options: {
   /** A request was kept here: a held wait looks again, at once and without polling. */
   function requestsChanged(key: string) {
     requestTools?.notify();
-    try { channel?.postMessage(key); } catch { /* Closed channel: this tab still woke. */ }
+    broadcast(key);
+  }
+  /** Other tabs show the pins anew (an agent took or replied to a request here). */
+  function broadcast(key: string) {
+    try { channel?.postMessage(key); } catch { /* Closed channel: they read again when seen. */ }
   }
   async function activateSocket() {
     if (!remote || disposed || workspaceChanged || transportMode !== "pending" || !pinned) return;
@@ -211,7 +214,11 @@ export function createAgentMenu(options: {
         // An agent asking for requests is connected, as one sending a change is.
         const grant = hub.grants.find(each => each.id === request.grantId);
         if (grant && !grant.usedAt) { grant.usedAt = Date.now(); paint(); }
-        try { return await tools.run(request, current, deadline); } finally { if (live(at)) { refreshWatch(); paint(); } }
+        try { return await tools.run(request, current, deadline); }
+        finally {
+          if (request.tool !== "get_request") broadcast(workspaceKey(workspace));
+          if (live(at)) { refreshWatch(); paint(); }
+        }
       },
       run,
       listen: next => {
@@ -1138,8 +1145,9 @@ export function createAgentMenu(options: {
         if (!trimmed || trimmed.length > REQUEST_TEXT_LIMIT) throw new Error(`An answer needs text (up to ${REQUEST_TEXT_LIMIT} characters).`);
         // The hub's own rule, on this browser's copy: the request waits for every agent again.
         const list = (await records.conversations(workspace)).map((item) => item.content as unknown as AgentRequest);
-        const { result } = requestOperation(list, { type: "answer", id, text: trimmed }) as { result: StoredRequest };
-        if (!await keep(workspace, result, { adopt: false }).catch(refusal)) throw new Error("This request was dismissed.");
+        const { request: result, accept } = answerRequest(list, id, trimmed);
+        if (!await keep(workspace, result as StoredRequest, current => accept(current?.content as unknown as AgentRequest | undefined)).catch(refusal))
+          throw new Error("This request changed meanwhile (dismissed or answered in another tab). Open its card again.");
         requestsChanged(key);
         return;
       }
