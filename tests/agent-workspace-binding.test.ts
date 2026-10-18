@@ -5,6 +5,7 @@ import { authenticateAgent, connectionContext, createGrant, getGrant, getHub, op
 import { handle, type Env } from "../worker/app.ts";
 import { hubView, type HubStorage } from "../worker/agent-store.ts";
 import { handleOAuth, type OAuthDeps } from "../worker/oauth.ts";
+import { PENDING_ROUTE } from "../worker/oauth-pending.ts";
 import { notSharingMessage } from "../worker/mcp.ts";
 import type { AgentCommand } from "../shared/agent.ts";
 import { fakeHubRoute } from "./native-save/fake-hub.ts";
@@ -41,6 +42,8 @@ function fixture() {
           return hub ? Response.json(await hubView(storage, hub, url)) : new Response(null, { status: 404 });
         }
         if (url.pathname === "/repository-cache") return new Response(null, { status: 204 });
+        // Pending-authorization caps have their own tests (tests/oauth-pending.test.ts).
+        if (url.pathname === PENDING_ROUTE) return Response.json({ allowed: true });
         if (request.method === "PUT") {
           records.set(name, await request.json());
           return new Response(null, { status: 204 });
