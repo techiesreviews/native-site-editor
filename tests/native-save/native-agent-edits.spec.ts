@@ -83,6 +83,29 @@ test("socket edits apply once; duplicate requestId and status return the receipt
     expect((await call("create_page", { title: "Socket page", slug: "socket-page", requestId: "socket-page" })).state).toBe("applied");
     expect((await call("open_page", { page: "/", requestId: "socket-open" })).state).toBe("applied");
     expect((await call("inspect_preview", { page: "/", selector: ".hero h1" })).state).toBe("applied");
+
+    // Section and component tools: prepared from the tab's own outline, one dispatch each; a duplicate is the receipt.
+    const frame = page.frameLocator(".native-preview-frame");
+    const home = await call("get_page", { page: "/", source: false });
+    const addArgs = { page: "/", component: "feature-block", expectedHash: home.hash, after: "1.0", requestId: "socket-add" };
+    const added = await call("add_section", addArgs);
+    expect(added).toMatchObject({ state: "applied", result: { section: "1.1" } });
+    await expect(frame.locator("main > feature-block")).toHaveCount(1);
+    const afterAdd = await durable();
+    expect(await call("add_section", addArgs)).toEqual(added);
+    expect(await durable()).toEqual(afterAdd);
+    await expect(frame.locator("main > feature-block")).toHaveCount(1);
+    const withSection = await call("get_page", { page: "/", source: false });
+    expect((await call("move_section", { page: "/", section: "1.1", after: "1.3", expectedHash: withSection.hash, requestId: "socket-move-section" })).state).toBe("applied");
+    await expect(frame.locator("main > feature-block:last-child")).toHaveCount(1);
+    const movedPage = await call("get_page", { page: "/", source: false });
+    expect((await call("remove_section", { page: "/", section: "1.3", expectedHash: movedPage.hash, requestId: "socket-remove" })).state).toBe("applied");
+    await expect(frame.locator("main > feature-block")).toHaveCount(0);
+    const removed = await call("get_page", { page: "/", source: false });
+    const filler = removed.sections.find((section: { key?: string }) => section.key === "filler");
+    const made = await call("make_component", { page: "/", element: filler.id, tag: "section-socket", expectedHash: removed.hash, requestId: "socket-component" });
+    expect(made).toMatchObject({ state: "applied", result: { tag: "section-socket" } });
+    expect((await call("read_file", { path: "components/section-socket/section-socket.html" })).content).toContain("<slot");
     expect(agentHttp.filter(path => /\/(context|drafts|claim|ack)$/.test(path))).toEqual([]);
     expect(await (await page.request.get(`${baseURL}/__demo/file?path=index.html`)).text()).toBe(readFileSync("fixtures/native-starter/index.html", "utf8"));
   } finally { await client.close(); }
