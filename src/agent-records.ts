@@ -86,11 +86,12 @@ const fenceTime = (fence: Fence) => "retired" in fence ? fence.createdAt : fence
 /**
  * What one workspace drops to keep its receipts within 24 hours, RECEIPT_LIMIT and
  * RECEIPT_BUDGET_BYTES, with `incoming` (a receipt about to be written, never dropped) counted.
- * Aged-out receipts and fences go first; then the oldest receipts, each leaving a retired marker;
- * then, while bytes still exceed, the oldest markers. Cancellations and revocations only age out
- * (a fence is never refused or dropped early); if they and `incoming` cannot fit, `incoming` is
- * refused before anything is written. `horizon` is the latest issue time of any receipt or marker
- * dropped: the workspace keeps refusing deliveries issued at or before it.
+ * Aged-out receipts and fences go first; then the oldest receipts, each leaving a retired marker
+ * that keeps refusing its operation id (whatever issue time comes with it) until the receipt's 24
+ * hours end. Markers, cancellations and revocations only age out (a fence is never dropped early);
+ * if they and `incoming` cannot fit, `incoming` is refused before anything is written. `horizon`
+ * is the latest issue time of any receipt or marker dropped: the workspace keeps refusing
+ * deliveries issued at or before it.
  */
 export function receiptRetention(receipts: [string, AgentReceipt][], fences: [string, Fence][], time: number, incoming?: [string, AgentReceipt]) {
   const cutoff = time - RECEIPT_RETENTION_MS;
@@ -98,12 +99,10 @@ export function receiptRetention(receipts: [string, AgentReceipt][], fences: [st
   let horizon = 0, size = incoming ? recordBytes(...incoming) : 0;
   const raise = (issuedAt: unknown) => { if (typeof issuedAt === "number" && Number.isFinite(issuedAt)) horizon = Math.max(horizon, issuedAt); };
   if (size > RECEIPT_BUDGET_BYTES) throw new AgentRecordsError("capacity", "Required edit receipt exceeds the workspace budget.");
-  const markers: [string, Extract<Fence, { retired: true }>][] = [];
   for (const [key, fence] of fences) {
     // Old records without a time (before these caps) count as aged out.
     if (!(fenceTime(fence) > cutoff)) { remove.push(key); if ("retired" in fence) raise(fence.issuedAt); continue; }
     size += recordBytes(key, fence);
-    if ("retired" in fence) markers.push([key, fence]);
   }
   const live = receipts.filter(([key, receipt]) => {
     if (receipt.createdAt > cutoff) { size += recordBytes(key, receipt); return true; }
@@ -116,16 +115,7 @@ export function receiptRetention(receipts: [string, AgentReceipt][], fences: [st
     remove.push(key); raise(receipt.issuedAt); count--; size -= recordBytes(key, receipt);
     const marker: [string, Extract<Fence, { retired: true }>] = [retiredKey(receipt.workspace, receipt.operationId),
       { retired: true, workspace: receipt.workspace, operationId: receipt.operationId, issuedAt: receipt.issuedAt, createdAt: receipt.createdAt }];
-    retire.push(marker); markers.push(marker); size += recordBytes(...marker);
-  }
-  if (size > RECEIPT_BUDGET_BYTES) {
-    markers.sort((a, b) => a[1].createdAt - b[1].createdAt || a[0].localeCompare(b[0]));
-    for (const marker of markers) {
-      if (size <= RECEIPT_BUDGET_BYTES) break;
-      const made = retire.indexOf(marker);
-      if (made >= 0) retire.splice(made, 1); else remove.push(marker[0]);
-      raise(marker[1].issuedAt); size -= recordBytes(...marker);
-    }
+    retire.push(marker); size += recordBytes(...marker);
   }
   if (incoming && size > RECEIPT_BUDGET_BYTES)
     throw new AgentRecordsError("capacity", "This site's agent edit records are full in this browser; agent edits wait until older ones age out.");
@@ -390,10 +380,11 @@ export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFact
     });
   });
   /**
-   * Browser storage is full: drops, in every workspace, aged-out records, receipts and markers
-   * older than QUOTA_RECEIPT_AGE_MS of edits issued before `command` (their deliveries stay
-   * unknown under each workspace's horizon) and completed conversations. Unsaved drafts, unfinished conversations, cancellations and
-   * revocations stay. Resolves to how many records went.
+   * Browser storage is full: drops, in every workspace, aged-out records and completed
+   * conversations, and turns receipts older than QUOTA_RECEIPT_AGE_MS of edits issued before
+   * `command` into small retired markers (their ids stay refused, their deliveries unknown under
+   * the horizon). Unsaved drafts, unfinished conversations and fences stay. Resolves to how many
+   * records went.
    */
   const relieve = (command: AgentCommit) => run<number>([draftStores.receipts, draftStores.workspaces, draftStores.conversations], "readwrite", (tx, read, done) => {
     const receipts = tx.objectStore(draftStores.receipts), workspaces = tx.objectStore(draftStores.workspaces), conversations = tx.objectStore(draftStores.conversations);
@@ -406,15 +397,15 @@ export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFact
         const rows = byWorkspace.get(key) ?? [], marks = fencesBy.get(key) ?? [];
         const decided = receiptRetention(rows, marks, time);
         const gone = new Set(decided.remove);
-        for (const [rowKey, value] of [...rows, ...marks]) {
-          // Receipts and retired markers carry both times; cancellations and revocations stay.
-          if (!("issuedAt" in value) || gone.has(rowKey) || !(value.issuedAt < before) || !(value.createdAt <= time - QUOTA_RECEIPT_AGE_MS)) continue;
-          const issuedAt = value.issuedAt;
+        for (const [rowKey, receipt] of rows) {
+          if (gone.has(rowKey) || !(receipt.issuedAt < before) || !(receipt.createdAt <= time - QUOTA_RECEIPT_AGE_MS)) continue;
+          // A small marker replaces the receipt: its id stays refused until the 24 hours end.
           gone.add(rowKey);
-          decided.horizon = Math.max(decided.horizon, issuedAt);
+          decided.retire.push([retiredKey(key, receipt.operationId),
+            { retired: true, workspace: key, operationId: receipt.operationId, issuedAt: receipt.issuedAt, createdAt: receipt.createdAt }]);
+          decided.horizon = Math.max(decided.horizon, receipt.issuedAt);
         }
         decided.remove = [...gone];
-        decided.retire = decided.retire.filter(([, fence]) => !("retired" in fence && fence.issuedAt < before));
         const current = records.get(key) ?? initial();
         const horizon = retain(receipts, workspaces, decided, new Set(rows.map(([rowKey]) => rowKey)), current.horizon);
         if (horizon > (current.horizon ?? 0)) workspaces.put(withHorizon(current, horizon), key);
