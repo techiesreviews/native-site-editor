@@ -22,6 +22,7 @@ type FailureCode = "editor-unavailable" | "busy" | "too-large" | "cancelled" | "
 type Outcome = { ok: true; result: JsonValue } | { ok: false; code: FailureCode; outcome: "unknown" | "not-sent" };
 /** A dispatcher names the workspace; tab and generation are optional fences. The
  * relay resolves the current owner (an MCP grant does not know which tab owns). */
+export interface RelayReservation { release(): void }
 export interface RelayTarget {
   workspace: AgentWorkspace;
   tabId?: string;
@@ -68,6 +69,7 @@ export class AgentRelay {
   private workspace: string | undefined;
   private calls = new Map<string, Pending>();
   private buffered = 0;
+  private reserved = { count: 0, bytes: 0 };
 
   constructor(sockets: RelaySocket[], private clock: RelayClock = {
     now: () => Date.now(),
@@ -80,11 +82,12 @@ export class AgentRelay {
       if (!scope || !value || typeof value !== "object" || !("role" in value) || value.role !== "editor" || socket.readyState !== 1) continue;
       if (this.workspace && this.workspace !== workspaceKey(scope.workspace)) continue;
       this.workspace = workspaceKey(scope.workspace);
-      const savedOwner = (value as Attachment).owner;
-      const owner = savedOwner && Number.isSafeInteger(savedOwner.generation) && savedOwner.generation >= scope.generation &&
-        (savedOwner.tabId === null || typeof savedOwner.tabId === "string") ? savedOwner : { tabId: scope.tabId, generation: scope.generation };
       this.sockets.set(socket, { ...scope, role: "editor", handshaken: false });
-      if (!this.owner || owner.generation > this.owner.generation) this.owner = { ...owner };
+      // Only an explicit, recorded owner claim restores ownership; a socket that
+      // connected and never handshook claims nothing (decision 04).
+      const owner = (value as Attachment).owner;
+      if (!owner || !Number.isSafeInteger(owner.generation) || owner.generation < 1 || (owner.tabId !== null && typeof owner.tabId !== "string")) continue;
+      if (!this.owner || owner.generation > this.owner.generation) this.owner = { tabId: owner.tabId, generation: owner.generation };
       else if (owner.generation === this.owner.generation && owner.tabId !== this.owner.tabId) this.owner.tabId = null;
     }
     this.reset();
@@ -111,6 +114,24 @@ export class AgentRelay {
   }
 
   get pendingCount() { return this.calls.size; }
+  get reservedCount() { return this.reserved.count; }
+
+  /** Holds a pending slot and `length` bytes while a dispatch body is still
+   * arriving, so concurrent intake shares the five-command / 8 MiB bounds and is
+   * refused before the body is read. Release is idempotent. */
+  reserve(length: number): RelayReservation | Outcome {
+    if (this.calls.size + this.reserved.count >= 5) return failure("busy");
+    if (this.buffered + this.reserved.bytes + length > AgentRelay.maxBytes) return failure("too-large");
+    this.reserved.count++;
+    this.reserved.bytes += length;
+    let held = true;
+    return { release: () => {
+      if (!held) return;
+      held = false;
+      this.reserved.count--;
+      this.reserved.bytes -= length;
+    } };
+  }
   get bufferedBytes() { return this.buffered; }
 
   connect(socket: RelaySocket, scope: RelayScope): boolean {
@@ -145,8 +166,10 @@ export class AgentRelay {
   /** Sends to the current owner tab. A restored (post-hibernation) owner socket
    * gets the command after its fresh handshake, inside the same 10 s deadline;
    * with no owner socket at all the answer is immediate "editor-unavailable". */
-  dispatch(target: RelayTarget, command: JsonValue, signal?: AbortSignal): Promise<Outcome> {
-    const started = this.clock.now();
+  dispatch(target: RelayTarget, command: JsonValue, signal?: AbortSignal, intake?: { started: number; reservation: RelayReservation }): Promise<Outcome> {
+    // The body's reservation becomes this call's own accounting in the same turn.
+    intake?.reservation.release();
+    const started = intake?.started ?? this.clock.now();
     const wanted = AgentRelay.readTarget(target);
     if (!wanted || signal?.aborted) return Promise.resolve(failure(wanted ? "cancelled" : "editor-unavailable"));
     const owner = this.owner;
@@ -157,12 +180,12 @@ export class AgentRelay {
     const entry = receivers.find(([, metadata]) => metadata.handshaken) ?? receivers[0];
     if (!entry) return Promise.resolve(failure("editor-unavailable"));
     const [receiver, receiverMetadata] = entry;
-    if (this.calls.size >= 5) return Promise.resolve(failure("busy"));
+    if (this.calls.size + this.reserved.count >= 5) return Promise.resolve(failure("busy"));
     // Measure the complete wire envelope before allocating a correlation id,
     // promise, pending entry or timer. UUIDs have the placeholder's fixed width.
     const candidate = JSON.stringify({ type: "command", id: placeholder, ...scope, command });
     const length = bytes(candidate);
-    if (this.buffered + length > AgentRelay.maxBytes) return Promise.resolve(failure("too-large"));
+    if (this.buffered + this.reserved.bytes + length > AgentRelay.maxBytes) return Promise.resolve(failure("too-large"));
     const deadline = started + 10_000;
     if (this.clock.now() >= deadline) return Promise.resolve(failure("timeout"));
     const id = crypto.randomUUID();
@@ -221,6 +244,8 @@ export class AgentRelay {
       for (const call of [...this.calls.values()]) {
         if (call.unsent === undefined || !sameScope(call.scope, scope)) continue;
         call.socket = socket;
+        // A late handshake (or delayed timer) never sends an expired command.
+        if (this.clock.now() >= call.deadline) { call.finish(failure("timeout")); continue; }
         const queued = call.unsent;
         call.unsent = undefined;
         try { socket.send(queued); }
