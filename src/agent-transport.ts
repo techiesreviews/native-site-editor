@@ -1,6 +1,6 @@
 import type { AgentCommand } from "../shared/agent";
 import { payloadIdentity, workspaceKey, type AgentWorkspace, type JsonValue } from "../shared/agent-command";
-import { AgentFailureError, type AgentFailure } from "../shared/agent-failure";
+import { AgentFailureError, classifyAgentFailure, type AgentFailure } from "../shared/agent-failure";
 import { AgentRecordsError, type AgentRecords } from "./agent-records";
 import { createAgentOwner } from "./agent-owner";
 import { browserAgentRecovery } from "./agent-recovery";
@@ -34,7 +34,8 @@ interface Options {
   listen: (state: State) => void;
   socket?: (url: string) => Socket;
   /** One plain route probe, only after the first socket attempt fails. */
-  probe?: () => Promise<number>;
+  now?: () => number;
+  probe?: () => Promise<number | { status: number; body?: unknown; text?: string; retryAfter?: string | null }>;
   registry?: Registry;
   recovery?: (reconnect: (current: () => boolean) => Promise<void>) => Recovery;
   clock?: { setTimeout: (callback: () => void, delay: number) => number; clearTimeout: (timer: number) => void };
@@ -279,13 +280,15 @@ export function createLiveTransport(options: Options) {
       if (!current() || epoch !== at) return;
       close();
       if (!recovery?.allowAutomatic()) return;
+      let failure: AgentFailure = { kind: "transient" };
       if (first) {
         first = false;
-        const missing = await absent();
+        const probe = await absent();
         if (!current() || epoch !== at) return;
-        if (missing) { halt("fallback"); return; }
+        if (probe.missing) { halt("fallback"); return; }
+        failure = probe.failure;
       }
-      recovery?.report({ kind: "transient" });
+      recovery?.report(failure);
     }
     first = false;
   }
@@ -319,9 +322,19 @@ export function createLiveTransport(options: Options) {
     })().finally(() => { takeoverFlight = undefined; });
     return takeoverFlight;
   }
-  /** One plain probe: only a missing relay route (404) selects the legacy fallback. */
-  async function absent() {
-    return await (options.probe ?? (async () => (await fetch("/api/agent/relay")).status))().catch(() => 0) === 404;
+  /** One plain probe: only a missing relay route (404) selects the legacy fallback. Any other
+   * answer is classified in full, so a quota body or Retry-After reaches the coordinator. */
+  async function absent(): Promise<{ missing: boolean; failure: AgentFailure }> {
+    const answer = await (options.probe ?? (async () => {
+      const response = await fetch("/api/agent/relay"), text = await response.text();
+      let body: unknown;
+      try { body = JSON.parse(text); } catch { /* Cloudflare's 1027 answer is HTML. */ }
+      return { status: response.status, body, text, retryAfter: response.headers.get("Retry-After") };
+    }))().catch(() => undefined);
+    const probe = typeof answer === "number" ? { status: answer } : answer;
+    if (probe?.status === 404) return { missing: true, failure: { kind: "other" } };
+    const failure = classifyAgentFailure({ ...probe, networkError: !probe, now: (options.now ?? Date.now)() });
+    return { missing: false, failure: failure.kind === "other" ? { kind: "transient" } : failure };
   }
   async function start() {
     const at = epoch;
@@ -331,7 +344,7 @@ export function createLiveTransport(options: Options) {
       // legacy fallback still answers agents (refusing edits plainly); otherwise stay paused.
       if (first) {
         first = false;
-        const missing = await absent();
+        const { missing } = await absent();
         if (!current() || epoch !== at) return;
         if (missing) { halt("fallback"); return; }
       }

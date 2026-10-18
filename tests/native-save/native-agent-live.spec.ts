@@ -54,6 +54,9 @@ test("live commands correlate results; visible and hidden idle sends no HTTP; an
   await expect(page.locator(".agent-menu")).toHaveAttribute("data-state", "connected");
   await expect.poll(() => handshakes.length).toBe(1);
   expect(requests).toEqual(["/api/agent/hub"]);
+  // A second tab already showing the page before the owner's edit (its editor holds the old text).
+  const second = await context.newPage();
+  await open(second, baseURL);
   const source = readFileSync("fixtures/native-starter/index.html", "utf8");
   const { commit } = await (await page.request.get(`${baseURL}/__demo/head`)).json() as { commit: string };
   const command: AgentCommand = { id: "live-operation", operation: "write_file", path: "index.html", content: source.replace("A native browser preview", "Live transport edit"),
@@ -76,8 +79,7 @@ test("live commands correlate results; visible and hidden idle sends no HTTP; an
   expect(requests.slice(after)).toEqual([]);
   expect(handshakes).toHaveLength(1);
 
-  const second = await context.newPage();
-  await open(second, baseURL); await connect(second);
+  await connect(second);
   await expect(second.locator(".agent-menu__hint")).toContainText("Another tab");
   await expect(second.getByRole("button", { name: "Take over", exact: true })).toBeVisible();
   expect(handshakes).toHaveLength(1);
@@ -86,6 +88,8 @@ test("live commands correlate results; visible and hidden idle sends no HTTP; an
   await visible(page, "visible");
   await expect(page.locator(".agent-menu__hint")).toContainText("Another tab took over");
   expect(handshakes[1].generation).toBeGreaterThan(handshakes[0].generation);
+  // Takeover loaded the owner's committed draft into the open editor and preview.
+  await expect(second.frameLocator(".native-preview-frame").locator(".hero h1")).toHaveText("Live transport edit");
   await second.close();
 });
 
