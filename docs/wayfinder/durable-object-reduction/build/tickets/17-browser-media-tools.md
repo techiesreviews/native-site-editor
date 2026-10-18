@@ -106,3 +106,7 @@ proof was still taken after the executor's hashing and receipt lookup: now on ad
 - First `kit pr`: check, unit, lint, specs ok; PR #65 opened; stopped while CI ran (review 3 fix)
 - RESULT: ok size boot 355 KB (±0 KB) vs dev@57d25a1, budget 355 KB (after review 3)
 - RESULT: ok specs 4/4 passed (native-mcp-media 5, native-agent-live 2, native-agent-reads, native-agent-edits; after review 3)
+- Second `kit pr`: RESULT: fail specs 1 of 70 failed: native-mcp.spec.ts (Ask agent history, `locator.fill` 2 min timeout under
+  load; no media code), then alone RESULT: ok specs 1/1 passed
+- Third `kit pr`: check, unit, lint, specs ok; CI failed in tests/agent-usage.test.ts ("an empty default wait takes requests 18
+  times…": MCP client request timed out on the runner, as in ticket 14; passes locally); CI rerun refused, so this note retriggers it
