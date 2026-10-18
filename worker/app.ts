@@ -11,7 +11,7 @@ import {
   markGrantUsed,
   revokeGrant,
   rebindGrant,
-  revokeSessionGrants,
+  endSessionGrants,
   type AgentGrant,
   type AgentHub,
 } from "./agent-context";
@@ -427,10 +427,7 @@ async function route(
       throw new HttpError(403, "Invalid request origin.");
     // Signing out of one account moves to the next one still signed in.
     const id = cookie(request, "session");
-    if (id) {
-      await revokeSessionGrants(env, id);
-      await store(env, id, "DELETE");
-    }
+    if (id) await endSessionGrants(env, id, () => store(env, id, "DELETE"));
     const rest: { id: string; user: Session }[] = [];
     for (const other of accountIds(request).filter((other) => other !== id)) {
       const user = await loadSession(env, other);

@@ -340,8 +340,8 @@ test("OAuth token capacity and unavailable ledger return OAuth JSON with plain d
       });
     };
     const refused = await exchange(900);
-    assert.equal(refused.status, 409);
-    assert.deepEqual(await refused.json(), { error: "access_denied", error_description:
+    assert.equal(refused.status, 400);
+    assert.deepEqual(await refused.json(), { error: "invalid_grant", error_description:
       "This site already has 5 agent connections on this branch. Disconnect one in the editor's agent menu first." });
     const stop = intercept(h, async (_name, request, next) => new URL(request.url).pathname === METADATA_ROUTE
       ? new Response(null, { status: 503 }) : next());
