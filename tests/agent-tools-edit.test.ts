@@ -193,12 +193,14 @@ test("unchanged edits record a fenced receipt that reserves their id; stale prep
   assert.equal(f.commands.length, 0);
   // The revision proof comes from before preparation: an agent commit landing meanwhile refuses the unchanged receipt.
   const g = await fixture();
-  let release!: () => void;
+  let release!: () => void, entered!: () => void;
   const gate = new Promise<void>(resolve => { release = resolve; });
+  const inContext = new Promise<void>(resolve => { entered = resolve; });
   const held = createAgentEditTools({ workspace, records: g.records, run: async () => assert.fail("must not run"),
-    ports: { ...g.ports, context: async () => { await gate; return g.ports.context(); } } });
+    ports: { ...g.ports, context: async () => { entered(); await gate; return g.ports.context(); } } });
   const pending = held.run(request("edit_file", input.args, "held-unchanged"), 0, () => true);
-  await new Promise(resolve => setTimeout(resolve, 10));
+  // Preparation has read its revision proof and waits in context(): the agent commit lands after the proof.
+  await inContext;
   assert.equal(body(await g.run(request("write_file", { path: "meanwhile.txt", content: "agent" }, "meanwhile"))).state, "applied");
   release();
   assert.notEqual(body(await pending).state, "unchanged");
