@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { storedDraft } from "./drafts";
+import type { ComponentDeps } from "../../src/page-builder/components";
+import type { NativePreviewSelection } from "../../src/components/native-preview";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { copyConnectionPrompt } from "./mcp-prompt";
 
@@ -605,7 +607,7 @@ test("child selections omit template entry while root entry rejects stale or mis
       [templatePath]: "<article><h2>Heading</h2><p>Body</p></article>",
     };
     let path = "index.html";
-    let selection = { path: templatePath, tag: "p", node: [0, 1], text: "Body", reason: "click", selectors: [], host: { tag: "project-card", selector: "project-card", path: "index.html", node: [0] } };
+    let selection: NativePreviewSelection = { path: templatePath, tag: "p", node: [0, 1], text: "Body", reason: "click", selectors: [], host: { tag: "project-card", selector: "project-card", path: "index.html", node: [0] } };
     const announcements: string[] = [];
     const opened: string[] = [];
     const selected: { path: string; node: number[] }[] = [];
@@ -613,16 +615,17 @@ test("child selections omit template entry while root entry rejects stale or mis
     document.body.append(host);
     const tools = createComponentTools({
       site: () => ({ components: { "project-card": templatePath }, routes: { "/": "index.html" } }), sources: () => sources,
+      variantFiles: { site: () => ({ pages: ["index.html"], components: { "project-card": templatePath } }), read: (file) => sources[file] },
       // The guarded edit reads the same sources (Edit component mode peeks the template through it).
       edits: createGuardedEdits({ ...createMemoryWorkspace().workspace, source: (file: string) => sources[file], site: () => ({ components: { "project-card": templatePath }, routes: { "/": "index.html" } }) }),
       editor: () => undefined, preview: () => ({ selectNode: (at: { path: string; node: number[] }) => selected.push(at), selectAfterUpdate: () => {} }),
       currentPath: () => path, selection: () => selection,
       openFile: async (file: string) => { opened.push(file); path = file; return true; },
-      announce: (message: string) => announcements.push(message), error: () => {}, images: () => [], prefix: () => "", upload: async () => undefined,
+      announce: (message: string) => announcements.push(message), error: () => {}, images: () => [], prefix: () => "", chooseImage: async () => undefined,
       links: () => [], pageLabel: (file: string) => file,
-      panelHost: host, addStrip: (strip: HTMLElement) => host.append(strip), codeTitle: document.createElement("div"), previewPage: () => "index.html",
-      canvasComponent: () => {},
-    });
+      panelHost: host, codeTitle: document.createElement("div"), previewPage: () => "index.html",
+      canvasComponent: () => {}, refreshBar: () => {},
+    } satisfies ComponentDeps);
     try {
       const childEntry = Boolean(tools.identity(selection).context.onEdit);
       selection = { ...selection, path: "index.html", tag: "project-card", node: [0] };

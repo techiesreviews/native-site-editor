@@ -1,4 +1,5 @@
 import type { AgentCommand } from "../shared/agent";
+import type { AgentRead, AgentReadResult } from "../shared/agent-read";
 import { payloadIdentity, workspaceKey, type AgentWorkspace, type JsonValue } from "../shared/agent-command";
 import { AgentFailureError, classifyAgentFailure, type AgentFailure } from "../shared/agent-failure";
 import { AgentRecordsError, type AgentRecords } from "./agent-records";
@@ -30,6 +31,7 @@ interface Options {
   current: () => AgentWorkspace | undefined;
   records: AgentRecords;
   reload: (snapshot: Snapshot) => Promise<void>;
+  read?: (read: AgentRead) => Promise<AgentReadResult>;
   run: (command: AgentCommand, ownerGeneration: number) => Promise<{ message?: string; result?: AgentCommand["result"] } | void>;
   listen: (state: State) => void;
   socket?: (url: string) => Socket;
@@ -145,8 +147,31 @@ export function createLiveTransport(options: Options) {
     try { source.send(JSON.stringify({ type: "handshake", ...scope(), owner: true })); }
     catch { source.close(); }
   }
+  async function readCommand(source: Socket, value: Partial<Scope> & { id?: unknown; command?: unknown }) {
+    const at = epoch, connection = session;
+    const valid = () => present() && socket === source && session === connection && handshaken && state.mode === "live" && source.readyState === 1;
+    let result: AgentReadResult;
+    try {
+      const read = value.command as AgentRead;
+      if (typeof value.id !== "string" || !value.id || !matches(value) || !valid() || !read.args || typeof read.args !== "object" || Array.isArray(read.args) ||
+          !["get_site", "list_files", "read_file", "export_site", "get_page", "get_selection"].includes(read.tool) ||
+          (read.tool === "read_file" && (typeof read.args.path !== "string" || !read.args.path || read.args.path.length > 1024)) ||
+          (read.tool === "get_page" && (typeof read.args.page !== "string" || !read.args.page || read.args.page.length > 1024)) ||
+          (read.args.folder !== undefined && (typeof read.args.folder !== "string" || read.args.folder.length > 1024)) ||
+          (read.args.source !== undefined && typeof read.args.source !== "boolean") ||
+          !await prove(at) || !valid())
+        result = { ok: false, message: "This read is incomplete or belongs to another workspace, tab or generation. Read the site again." };
+      else result = await options.read?.(read) ?? { ok: false, message: "Browser read tools are unavailable. Refresh the editor." };
+    } catch (error) { result = { ok: false, message: error instanceof Error ? error.message : "The browser read failed." }; }
+    if (socket !== source || !await prove(at).catch(() => false) || !valid()) return;
+    let message = JSON.stringify({ type: "result", id: value.id, ...scope(), result });
+    if (new TextEncoder().encode(message).byteLength > 8 * 1024 * 1024)
+      message = JSON.stringify({ type: "result", id: value.id, ...scope(), result: { ok: false, message: "The result is too large. Export a folder with export_site instead." } });
+    try { source.send(message); } catch { source.close(); }
+  }
   async function command(source: Socket, value: Partial<Scope> & { id?: unknown; command?: unknown }) {
     const at = epoch, connection = session;
+    if ((value.command as { operation?: unknown } | null)?.operation === "read") return readCommand(source, value);
     const incoming = value.command as Partial<AgentCommand> | null;
     const operationId = typeof incoming?.id === "string" ? incoming.id : "";
     const refuse = (message: string): Result => ({ state: "conflict", message, operationId });

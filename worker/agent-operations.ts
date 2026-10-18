@@ -5,7 +5,7 @@ import type { EditorContext } from "../shared/types";
 import { HttpError } from "./github";
 import { touchesGithubConfig, GITHUB_CONFIG_REFUSED, touchesMediaRecords, MEDIA_RECORDS_REFUSED } from "../shared/protected-paths";
 
-export const contextMaxAge = 120_000;
+import { contextMaxAge } from "../shared/agent-read";
 const tabId = (value: unknown) =>
   typeof value === "string" && /^[\w-]{8,64}$/.test(value) ? value : undefined;
 

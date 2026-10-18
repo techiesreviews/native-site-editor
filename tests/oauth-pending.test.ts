@@ -329,7 +329,8 @@ test("ordinary MCP reads add zero ledger calls, reads or writes", async () => {
     assert.equal(files.status, 200);
     assert.match(await files.text(), /index.html/);
     assert.equal(h.counters.byCategory.auth.calls, 3);
-    assert.equal(h.counters.byCategory.data.calls, 1);
+    assert.equal(h.counters.byCategory.control.calls, 1, "one relay dispatch finds no owner before legacy fallback");
+    assert.equal(h.counters.byCategory.data.calls, 0, "legacy fallback reuses the authenticated hub snapshot");
     assert.equal(h.counters.log.filter(row => row.path === PENDING_ROUTE).length, 0);
     assert.equal(Object.values(h.counters.byCategory).reduce((n, counts) => n + counts.keysWritten + counts.keysDeleted, 0), 0);
   } finally { await h.worker.dispose(); }

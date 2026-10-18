@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { expect, test, type Page, type WebSocketRoute } from "@playwright/test";
 import { textHash, type AgentCommand } from "../../shared/agent";
+import type { AgentRead } from "../../shared/agent-read";
 
 // Default native-save fixture. Relay mocked in the browser; the fixture's Worker stays unchanged.
 async function open(page: Page, baseURL: string | undefined) {
@@ -70,6 +71,21 @@ test("live commands correlate results; visible and hidden idle sends no HTTP; an
   expect(results[0], JSON.stringify(results[0])).toMatchObject({ type: "result", id: "correlated-call", tabId: handshakes[0].tabId, generation: handshakes[0].generation,
     result: { state: "applied", operationId: "live-operation" } });
   await expect(page.frameLocator(".native-preview-frame").locator(".hero h1")).toHaveText("Live transport edit");
+  // Reads run through the lazy browser registry and see the just-applied unsaved draft.
+  const reads: AgentRead[] = [
+    { operation: "read", tool: "read_file", args: { path: "index.html" } },
+    { operation: "read", tool: "get_site", args: {} },
+    { operation: "read", tool: "get_page", args: { page: "/", source: false } },
+  ];
+  for (const [index, read] of reads.entries()) {
+    socket!.send(JSON.stringify({ ...handshakes[0], type: "command", id: `read-${index}`, command: read }));
+    await expect.poll(() => results.length).toBe(index + 2);
+    expect(results[index + 1]).toMatchObject({ id: `read-${index}`, result: { ok: true } });
+  }
+  expect(results[1].result.value).toMatchObject({ source: "draft", content: command.content, hash: await textHash(command.content) });
+  expect(results[2].result.value.changes).toContainEqual({ path: "index.html", kind: "M" });
+  expect(results[3].result.value).toMatchObject({ file: "index.html", source: "draft", hash: results[1].result.value.hash });
+  expect(results[3].result.value.html).toBeUndefined();
   const after = requests.length;
   // Stop at each ping so Playwright's external mocked server can deliver pong before advancing its deadline.
   await page.clock.runFor(45_000);

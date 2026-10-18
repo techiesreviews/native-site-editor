@@ -995,6 +995,9 @@ function env(): Env {
         fetch: async (request: Request): Promise<Response> => {
           const slot = sessions.get(id);
           const url = new URL(request.url);
+          // This HTTP-only fixture has no editor socket; MCP reads take the matching legacy fallback.
+          if (id.startsWith("agent-relay:") && url.pathname === "/relay/dispatch" && request.method === "POST")
+            return Response.json({ ok: false, code: "editor-unavailable", outcome: "not-sent" });
           // The agent hub, as worker/index.ts runs it.
           const storage = storageOf(id);
           const hubResponse = await fakeHubRoute(id, storage, request);

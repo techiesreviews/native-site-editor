@@ -4,6 +4,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { serialize } from "node:v8";
 import { build } from "esbuild";
+import type { RelaySocket } from "../../worker/agent-relay";
 import type { Env, handle } from "../../worker/app";
 import { fakeGitHub, githubState } from "../mcp-harness";
 
@@ -193,11 +194,12 @@ export class FakeClock {
   }
 }
 
-type Instance = { fetch(request: Request): Promise<Response>; alarm(): Promise<void> };
-type FakeContext = { storage: CountedStorage; blockConcurrencyWhile<T>(fn: () => Promise<T>): Promise<T> };
+type Instance = { fetch(request: Request): Promise<Response>; alarm(): Promise<void>; webSocketMessage(socket: RelaySocket, message: string): void };
+type FakeContext = { getWebSockets(): RelaySocket[]; setWebSocketAutoResponse(value: unknown): void; storage: CountedStorage; blockConcurrencyWhile<T>(fn: () => Promise<T>): Promise<T> };
 async function loadWorker() {
   const { outputFiles } = await build({
     stdin: { contents: 'export { SessionStore, default } from "./worker/index.ts"; export { handle } from "./worker/app.ts";', resolveDir: process.cwd() },
+    banner: { js: "class WebSocketRequestResponsePair { constructor(request, response) { this.request = request; this.response = response; } }" },
     bundle: true, write: false, format: "esm", platform: "browser", target: "es2022", conditions: ["workerd"],
     plugins: [{ name: "cloudflare-base", setup(build) {
       build.onResolve({ filter: /^cloudflare:workers$/ }, () => ({ path: "base", namespace: "cloudflare" }));
@@ -214,6 +216,7 @@ async function loadWorker() {
 export async function startCountedWorker() {
   const runtime = await loadWorker();
   const counters = new UsageCounters(), clock = new FakeClock(counters), github = githubState();
+  const sockets = new Map<string, RelaySocket[]>();
   const objects = new Map<string, { instance: Instance; storage: CountedStorage; idle(): Promise<unknown> }>();
   function object(name: string) {
     let entry = objects.get(name);
@@ -221,7 +224,7 @@ export async function startCountedWorker() {
       const storage = new CountedStorage(counters);
       // One queue per object mirrors blockConcurrencyWhile across concurrent calls.
       let blocked = Promise.resolve<unknown>(undefined);
-      const ctx: FakeContext = { storage, blockConcurrencyWhile(fn) {
+      const ctx: FakeContext = { getWebSockets: () => sockets.get(name) ?? [], setWebSocketAutoResponse() {}, storage, blockConcurrencyWhile(fn) {
         const result = blocked.then(fn);
         blocked = result.catch(() => undefined);
         return result;
@@ -246,6 +249,7 @@ export async function startCountedWorker() {
       const action = url.pathname === "/agent-operation" ? (await request.clone().json() as { type?: string }).type : undefined;
       const category: Category = request.method === "DELETE" ? "lifecycle"
         : action ? (["add-grant", "remove-grant", "use-grant"].includes(action) ? "auth" : "control")
+        : url.pathname.startsWith("/relay/") ? "control"
         : url.pathname.startsWith("/repository-cache") || url.pathname.startsWith("/agent-draft") ? "data"
         : name.startsWith("agent-hub:") ? (authenticating ? "auth" : "data") : "auth";
       const operation = { category, name, path: url.pathname + url.search, ...(action ? { action } : {}) };
@@ -269,6 +273,13 @@ export async function startCountedWorker() {
   };
   return { worker, dispatchFetch: (url: string, init?: RequestInit) => worker.dispatchFetch(url, init), counters, clock, github, namespace,
     storage: (name: string) => object(name).storage,
+    /** Restore a hibernated editor socket, then deliver its real scope handshake. */
+    attach(name: string, socket: RelaySocket, handshake: string) {
+      if (objects.has(name)) throw new Error("Attach the socket before waking its relay");
+      sockets.set(name, [socket]);
+      object(name).instance.webSocketMessage(socket, handshake);
+    },
+    message(name: string, socket: RelaySocket, message: string) { object(name).instance.webSocketMessage(socket, message); },
     async alarm(name: string) {
       const operation: Operation = { category: "lifecycle", name, path: "alarm" };
       counters.log.push(operation);

@@ -2,9 +2,9 @@
 // (shared/variant-lookup.ts), as the editor's code pane has them, over the
 // files the tab shows (SiteFiles: GitHub at the tab's commit, drafts applied),
 // read in batched rounds.
-import type { EditorContext } from "../shared/types";
-import { readVariants } from "../shared/variant-lookup";
-import type { Variant, VariantWarning } from "../shared/variants";
+import type { EditorContext } from "./types";
+import { readVariants } from "./variant-lookup";
+import type { Variant, VariantWarning } from "./variants";
 import type { SiteFiles } from "./site-files";
 
 export interface ComponentVariants { variants: Variant[]; variantWarnings?: VariantWarning[] }
