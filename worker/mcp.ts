@@ -5,7 +5,7 @@
 // the receiving browser, which prepares and applies them with the editor's own
 // code, so it lands as an ordinary browser draft: the preview updates live,
 // and the user can undo it, discard it, and saves it to GitHub themselves.
-import { McpServer, createMcpHandler } from "@modelcontextprotocol/server";
+import { McpServer, createMcpHandler, classifyInboundRequest } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { parseOnlineVideoAddress } from "../shared/online-video-address";
 import {
@@ -45,6 +45,8 @@ import { prepareAgentEdit, checkContent, type AgentEdit, type AgentEditArgsMap, 
 import { AgentRelay, relayObjectName } from "./agent-relay";
 import type { AgentRead, AgentReadResult } from "../shared/agent-read";
 import { mediaChanges, type AgentMedia } from "../shared/agent-media";
+
+type Exchange = { started?: () => void; cancelled?: boolean; requestId?: string | number; signal?: AbortSignal; waitUntil?: (promise: Promise<unknown>) => void };
 
 type Connection = Awaited<ReturnType<typeof authenticateAgent>>;
 
@@ -97,7 +99,7 @@ const sectionId = z
   .regex(/^\d{1,4}(?:\.\d{1,4}){0,63}$/)
   .describe('A section id from get_page\'s outline, such as "1.2".');
 
-export function createSiteServer(connection: Connection, env: Env, origin = "https://editor.techies.tools") {
+export function createSiteServer(connection: Connection, env: Env, origin = "https://editor.techies.tools", exchange: Exchange = {}) {
   const { grant } = connection;
   const server = new McpServer(
     { name: "native-site-editor", version: "1.0.0" },
@@ -117,11 +119,16 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     try {
       const body = JSON.stringify(command);
       const name = await relayObjectName(connection.workspace);
-      const response = await env.SESSIONS.get(env.SESSIONS.idFromName(name)).fetch(new Request("https://session.internal/relay/dispatch", {
+      exchange.started?.();
+      const pending = env.SESSIONS.get(env.SESSIONS.idFromName(name)).fetch(new Request("https://session.internal/relay/dispatch", {
         method: "POST", headers: { "Content-Type": "application/json", "Content-Length": String(textBytes(body)),
-          [AgentRelay.identityHeader]: JSON.stringify({ workspace: connection.workspace }) }, body,
+          [AgentRelay.identityHeader]: JSON.stringify({ workspace: connection.workspace, requestId: exchange.requestId, grantId: connection.id }) }, body, signal: exchange.signal,
       }));
-      return await response.json() as { ok: boolean; result?: AgentReadResult; code?: string; outcome?: "unknown" | "not-sent" };
+      exchange.waitUntil?.(pending.catch(() => undefined));
+      const response = await pending;
+      const outcome = await response.json() as { ok: boolean; result?: AgentReadResult; code?: string; outcome?: "unknown" | "not-sent" };
+      if (outcome.code === "cancelled") exchange.cancelled = true;
+      return outcome;
     } catch { return { ok: false, code: "unknown-outcome" }; }
   }
   async function edit<K extends AgentEditTool>(tool: K, args: AgentEditArgsMap[K], requestId?: string, waitSeconds?: number) {
@@ -355,7 +362,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     "get_command_status",
     {
       description:
-        "Look up a change receipt in the receiving browser. Without a receipt the outcome is unknown; never replay automatically.",
+        "Look up a change in the receiving browser: its receipt means applied; a cancellation tombstone means cancelled before commit. Otherwise the outcome is unknown; never replay automatically.",
       inputSchema: z.object({ requestId: z.string().min(1).max(128) }),
       annotations: readOnly,
     },
@@ -972,12 +979,75 @@ export async function handleMcp(
   connection: Connection,
   env: Env,
   parsedBody: unknown,
+  context?: { waitUntil(promise: Promise<unknown>): void },
 ) {
   const origin = editorOrigin(env, new URL(request.url).origin);
-  const handler = createMcpHandler(() => createSiteServer(connection, env, origin), {
+  const classification = classifyInboundRequest({ httpMethod: request.method, body: parsedBody,
+    protocolVersionHeader: request.headers.get("MCP-Protocol-Version") ?? undefined,
+    mcpMethodHeader: request.headers.get("Mcp-Method") ?? undefined, mcpNameHeader: request.headers.get("Mcp-Name") ?? undefined });
+  const body = parsedBody as { id?: unknown; method?: unknown; params?: { requestId?: unknown } } | null;
+  if (classification.kind !== "reject" && body?.method === "notifications/cancelled" &&
+    (typeof body.params?.requestId === "string" || typeof body.params?.requestId === "number" && Number.isFinite(body.params.requestId))) {
+    const name = await relayObjectName(connection.workspace);
+    await env.SESSIONS.get(env.SESSIONS.idFromName(name)).fetch(new Request("https://session.internal/relay/cancel", {
+      method: "POST", headers: { [AgentRelay.identityHeader]: JSON.stringify({ workspace: connection.workspace,
+        requestId: body.params.requestId, grantId: connection.id }) },
+    }));
+  }
+  const exchange: Exchange = {
+    requestId: typeof body?.id === "string" || typeof body?.id === "number" ? body.id : undefined,
+    // Legacy disconnects are not cancellation; keep their internal subrequest alive after the HTTP caller leaves.
+    signal: classification.kind === "modern" ? request.signal : undefined,
+    waitUntil: context && (promise => context.waitUntil(promise)),
+  };
+  const handler = createMcpHandler(() => createSiteServer(connection, env, origin, exchange), {
     legacy: "stateless",
     responseMode: "json",
     maxSubscriptions: 0,
   });
-  return handler.fetch(request, { parsedBody });
+  const cancel = () => {
+    if (exchange.requestId === undefined) return;
+    const pending = (async () => {
+      const name = await relayObjectName(connection.workspace);
+      await env.SESSIONS.get(env.SESSIONS.idFromName(name)).fetch(new Request("https://session.internal/relay/cancel", {
+        method: "POST", headers: { [AgentRelay.identityHeader]: JSON.stringify({ workspace: connection.workspace,
+          requestId: exchange.requestId, grantId: connection.id }) },
+      }));
+    })().catch(() => undefined);
+    context?.waitUntil(pending);
+  };
+  exchange.signal?.addEventListener("abort", cancel, { once: true });
+  let started!: () => void;
+  const dispatching = new Promise<undefined>(resolve => { started = () => resolve(undefined); });
+  exchange.started = started;
+  const response = handler.fetch(request, { parsedBody }).finally(() => exchange.signal?.removeEventListener("abort", cancel));
+  // Preserve the SDK's validation status before any tool is dispatched. Its stateless legacy path remains
+  // untouched: only a modern request's closed response cancels the underlying tool.
+  if (classification.kind !== "modern" || classification.messageKind !== "request") {
+    const result = await response;
+    return exchange.cancelled ? new Response(null, { status: 202 }) : result;
+  }
+  const early = await Promise.race([response, dispatching]);
+  if (early) return early;
+  // JSON mode otherwise buffers until the command ends. workerd observes a disconnected HTTP client on
+  // its next write, so send JSON whitespace while waiting (one JSON document, never SSE). The request
+  // signal requires enable_request_signal in production; runtime tests opt in without changing Wrangler.
+  let timer: ReturnType<typeof setInterval> | undefined, closed = false;
+  const clean = () => { closed = true; if (timer !== undefined) clearInterval(timer); };
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      const whitespace = new Uint8Array([32]);
+      controller.enqueue(whitespace);
+      timer = setInterval(() => { if (!closed) controller.enqueue(whitespace); }, 250);
+      void response.then(async result => {
+        const bytes = new Uint8Array(await result.arrayBuffer());
+        if (closed) return;
+        clean();
+        if (!exchange.cancelled) controller.enqueue(bytes);
+        controller.close();
+      }).catch(error => { if (!closed) { clean(); controller.error(error); } });
+    },
+    cancel() { clean(); cancel(); },
+  });
+  return new Response(stream, { headers: { "Content-Type": "application/json" } });
 }

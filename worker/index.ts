@@ -76,6 +76,13 @@ export class SessionStore extends DurableObject {
       // Worker-internal only: the public router never forwards this path. Browser
       // work is awaited outside blockConcurrencyWhile and never touches storage.
       const target = AgentRelay.readTarget(identity);
+      const key = identity as { requestId?: unknown; grantId?: unknown } | null;
+      const cancelKey = key && (typeof key.requestId === "string" || typeof key.requestId === "number" && Number.isFinite(key.requestId)) &&
+        typeof key.grantId === "string" && key.grantId ? { requestId: key.requestId, grantId: key.grantId } : undefined;
+      if (url.pathname === "/relay/cancel" && request.method === "POST" && target && cancelKey) {
+        this.relay().cancel(cancelKey);
+        return new Response(null, { status: 202 });
+      }
       if (url.pathname === "/relay/dispatch" && request.method === "POST" && target) {
         // One total deadline from ingress; capacity is reserved before the body is read.
         const started = Date.now();
@@ -92,7 +99,7 @@ export class SessionStore extends DurableObject {
         if (!body.ok && body.code === "invalid") return new Response(null, { status: 400 });
         if (!body.ok) return Response.json({ ok: false, code: body.code, outcome: "not-sent" }, { status: body.code === "too-large" ? 413 : 200 });
         const command = body.value;
-        return Response.json(await relay.dispatch(target, command, request.signal, { started, reservation }));
+        return Response.json(await relay.dispatch(target, command, request.signal, { started, reservation }, cancelKey));
       }
       return new Response(null, { status: 400 });
     }

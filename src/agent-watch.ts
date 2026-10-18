@@ -112,14 +112,16 @@ export function createRequestTools(ports: RequestPorts) {
     return taken;
   }
   /** Ends at a wake (a request arrived or Watch changed) or after `ms`. */
-  function hold(ms: number) {
+  function hold(ms: number, signal?: AbortSignal) {
     return new Promise<void>(resolve => {
-      const done = () => { waiters.delete(done); clock.clearTimeout(timer); resolve(); };
+      const done = () => { waiters.delete(done); clock.clearTimeout(timer); signal?.removeEventListener("abort", done); resolve(); };
       const timer = clock.setTimeout(done, ms);
       waiters.add(done);
+      signal?.addEventListener("abort", done, { once: true });
+      if (signal?.aborted) done();
     });
   }
-  async function wait(command: AgentRequests, current: () => boolean, deadline: number, owner?: number) {
+  async function wait(command: AgentRequests, current: () => boolean, deadline: number, owner?: number, signal?: AbortSignal) {
     const all = command.args.all === true, started = now();
     // While Watch is on, every wait call counts against its 25 (whatever it returns); once it ended
     // or used them, calls still answer (quietly, at once) but are no longer counted or held.
@@ -134,7 +136,7 @@ export function createRequestTools(ports: RequestPorts) {
     if (!still || still.startedAt !== used.startedAt || now() >= still.until) return ok({ requests, watch: ports.watch.report(now()) });
     // A request or a Watch change during the read: look again at once instead of holding.
     const ms = version !== seen ? 0 : Math.min(deadline, still.until, started + wanted) - now();
-    if (ms > 0) await hold(ms);
+    if (ms > 0) await hold(ms, signal);
     // The relay gave up or the socket went: take nothing it could not deliver.
     if (current()) requests = await take(command.grantId, all, current, owner);
     return ok({ requests, watch: ports.watch.report(now()) });
@@ -154,10 +156,12 @@ export function createRequestTools(ports: RequestPorts) {
   }
   return {
     /** `owner`: the receiving tab's ownership generation, proved again in every write's transaction. */
-    async run(command: AgentRequests, current: () => boolean, deadline: number, owner?: number): Promise<AgentReadResult> {
+    async run(command: AgentRequests, current: () => boolean, deadline: number, owner?: number, signal?: AbortSignal): Promise<AgentReadResult> {
+      const live = () => !signal?.aborted && current();
       try {
-        if (command.tool === "wait_for_requests") return await wait(command, current, deadline, owner);
-        if (command.tool === "reply_to_request") return await reply(command, current, owner);
+        signal?.throwIfAborted();
+        if (command.tool === "wait_for_requests") return await wait(command, live, deadline, owner, signal);
+        if (command.tool === "reply_to_request") return await reply(command, live, owner);
         if (command.tool === "get_request") return await find(command);
         return { ok: false, message: "Unknown request tool." };
       } catch (error) {

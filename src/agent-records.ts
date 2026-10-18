@@ -29,12 +29,13 @@ export interface AgentCommit {
 }
 interface ConversationRecord { workspace: string; conversation: Conversation }
 interface CommitResult { receipt: AgentReceipt; duplicate: boolean }
-type CancellationResult = { status: "unknown" } | { status: "applied"; receipt: AgentReceipt };
+type CancellationResult = { status: "unknown" | "cancelled" } | { status: "applied"; receipt: AgentReceipt };
 
 export interface AgentRecords {
   commit: (command: AgentCommit) => Promise<CommitResult>;
   /** Fences future delivery; without a live receipt the past outcome remains unknown. */
   cancel: (workspace: AgentWorkspace, operationId: OperationId, authorizationId: string) => Promise<CancellationResult>;
+  status: (workspace: AgentWorkspace, operationId: OperationId, authorizationId: string) => Promise<CancellationResult>;
   receipt: (workspace: AgentWorkspace, operationId: OperationId, authorizationId: string) => Promise<AgentReceipt | undefined>;
   /** With `owner`, the same transaction also proves that generation still owns the workspace unpaused. */
   reconcile: (workspace: AgentWorkspace, commands: AgentCommit[], owner?: number) => Promise<AgentOutcome[]>;
@@ -63,7 +64,7 @@ export interface AgentRecords {
  * stays unknown), a cancellation tombstone and an authorization revocation. Each is kept 24 hours.
  */
 type Fence = { retired: true; workspace: string; operationId: OperationId; issuedAt: number; createdAt: number } |
-  { cancelled: true; workspace: string; at: number } | { revoked: true; workspace: string; at: number };
+  { cancelled: true; workspace: string; at: number; uncertain?: boolean } | { revoked: true; workspace: string; at: number };
 
 /** Per account/repository/branch workspace: receipts are kept 24 hours, at most 1,000 of them. */
 export const RECEIPT_RETENTION_MS = 24 * 60 * 60 * 1000;
@@ -221,7 +222,7 @@ export function unavailableAgentRecords(factory?: IDBFactory): AgentRecords {
     return Promise.reject(new AgentRecordsError("unavailable", message));
   };
   return { reconcile: refuse, pause: refuse, snapshot: refuse, revoke: refuse, cancel: refuse, evictReceipts: refuse, commit: refuse,
-    receipt: refuse, workspace: refuse, setGeneration: refuse, putConversation: refuse, checkConversation: refuse, conversations: refuse };
+    status: refuse, receipt: refuse, workspace: refuse, setGeneration: refuse, putConversation: refuse, checkConversation: refuse, conversations: refuse };
 }
 
 const isFence = (value: unknown): value is Fence => typeof value === "object" && value !== null &&
@@ -463,10 +464,39 @@ export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFact
               done({ status: "applied", receipt });
               return;
             }
-            // This tombstone prevents future application, but cannot prove whether an
-            // unknown operation applied before its receipt expired or was evicted.
-            workspaces.put({ cancelled: true, workspace: scope, at: now() } satisfies Fence, cancelledKey);
-            done({ status: "unknown" });
+            // Preserve evidence of a past application even after retention removes the old receipt/marker.
+            read(workspaces.get(cancelledKey), (prior: Fence | undefined) => {
+              read(workspaces.get(retiredKey(scope, operationId)), (retired: unknown) => {
+                read(workspaces.get(legacyRetiredKey(operationId)), (legacy: unknown) => {
+                  const uncertain = Boolean(receipt || retired || legacy || prior && "cancelled" in prior && prior.uncertain);
+                  workspaces.put({ cancelled: true, workspace: scope, at: now(), ...(uncertain ? { uncertain: true } : {}) } satisfies Fence, cancelledKey);
+                  done({ status: "unknown" });
+                });
+              });
+            });
+          });
+        });
+      });
+    },
+    status(workspace, operationId, authorizationId) {
+      const scope = workspaceKey(workspace);
+      return run<CancellationResult>([draftStores.receipts, draftStores.workspaces], "readonly", (tx, read, done) => {
+        const workspaces = tx.objectStore(draftStores.workspaces);
+        read(workspaces.get(revocationKey(workspace, authorizationId)), (revoked: unknown) => {
+          if (revoked) throw new AgentRecordsError("revoked", "Agent authorization has been revoked.");
+          read(tx.objectStore(draftStores.receipts).get(recordKey(workspace, operationId)), (receipt: AgentReceipt | undefined) => {
+            if (receipt) {
+              if (receipt.authorizationId !== authorizationId) throw new AgentRecordsError("duplicate-id", "Operation authorization differs.");
+              done(expired(receipt) ? { status: "unknown" } : { status: "applied", receipt });
+              return;
+            }
+            read(workspaces.get(retiredKey(scope, operationId)), (retired: unknown) => {
+              read(workspaces.get(legacyRetiredKey(operationId)), (legacy: unknown) => {
+                read(workspaces.get(cancellationKey(workspace, operationId, authorizationId)), (cancelled: Fence | undefined) => {
+                  done({ status: !retired && !legacy && cancelled && "cancelled" in cancelled && !cancelled.uncertain && fenceTime(cancelled) > now() - RECEIPT_RETENTION_MS ? "cancelled" : "unknown" });
+                });
+              });
+            });
           });
         });
       });

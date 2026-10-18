@@ -178,15 +178,15 @@ export function createAgentMenu(options: {
       workspace: { account: options.account, repoId: repo.id, branch: repo.branch }, repo: repo.fullName, tabId,
       current: scope, records, reload: snapshot => options.reload?.(snapshot) ?? Promise.resolve(),
       source: path => options.tools?.source?.(path),
-      media: async (request, generation, current, deadline, seen) => {
+      media: async (request, generation, current, deadline, seen, signal) => {
         const ports = options.tools, stamp = ports?.stamp(), commit = ports?.files()?.snapshot.commit;
         if (!ports || !stamp) return { ok: false, message: "Browser media tools are unavailable. Refresh the editor." };
         mediaTools ??= import("../agent-tools-media").then(({ createAgentMediaTools }) => createAgentMediaTools({
           workspace: { account: options.account, repoId: repo.id, branch: repo.branch }, ports, records, run,
         }));
-        return (await mediaTools).run(request, generation, () => current() && stamp.holds() && ports.files()?.snapshot.commit === commit, deadline, seen);
+        return (await mediaTools).run(request, generation, () => current() && stamp.holds() && ports.files()?.snapshot.commit === commit, deadline, seen, signal);
       },
-      edit: async (request, generation, current) => {
+      edit: async (request, generation, current, signal) => {
         const ports = options.tools, stamp = ports?.stamp();
         const source = ports?.files(), commit = source?.snapshot.commit;
         if (!ports || !stamp) return { ok: false, message: "Browser edit tools are unavailable. Refresh the editor." };
@@ -194,13 +194,13 @@ export function createAgentMenu(options: {
           workspace: { account: options.account, repoId: repo.id, branch: repo.branch }, ports, records,
           run,
         }));
-        return (await editTools).run(request, generation, () => current() && stamp.holds() && ports.files()?.snapshot.commit === commit);
+        return (await editTools).run(request, generation, () => current() && stamp.holds() && ports.files()?.snapshot.commit === commit, signal);
       },
-      read: async read => {
+      read: async (read, signal) => {
         const ports = options.tools, stamp = ports?.stamp();
         if (!ports || !stamp) return { ok: false, message: "Browser read tools are unavailable. Refresh the editor." };
         const { createAgentReadTools } = await import("../agent-tools-read");
-        const result = await createAgentReadTools({ ...ports, stamp: () => stamp }).run(read.tool, read.args);
+        const result = await createAgentReadTools({ ...ports, stamp: () => stamp }).run(read.tool, read.args, signal);
         // The requests agents wait on live here now: count this browser's, not the hub's.
         if (read.tool === "get_site" && result.ok && result.value && typeof result.value === "object" && !Array.isArray(result.value)) {
           const kept = await records.conversations(workspace).catch(() => []);
@@ -208,13 +208,13 @@ export function createAgentMenu(options: {
         }
         return result;
       },
-      requests: async (request, generation, current, deadline) => {
+      requests: async (request, generation, current, deadline, signal) => {
         const tools = requestTools;
         if (!tools) return { ok: false, message: "Browser request tools are unavailable. Refresh the editor." };
         // An agent asking for requests is connected, as one sending a change is.
         const grant = hub.grants.find(each => each.id === request.grantId);
         if (grant && !grant.usedAt) { grant.usedAt = Date.now(); paint(); }
-        try { return await tools.run(request, current, deadline, generation); }
+        try { return await tools.run(request, current, deadline, generation, signal); }
         finally {
           if (request.tool !== "get_request") broadcast(workspaceKey(workspace));
           if (live(at)) { refreshWatch(); paint(); }

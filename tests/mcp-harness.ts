@@ -98,7 +98,7 @@ export async function fakeGitHub(request: Pick<Request, "url" | "method" | "json
   throw new Error(`Unexpected GitHub path: ${path}`);
 }
 
-export async function startWorker() {
+export async function startWorker(options: { requestSignal?: boolean; streaming?: boolean } = {}) {
   const { outputFiles } = await build({
     entryPoints: ["worker/index.ts"],
     bundle: true,
@@ -116,8 +116,10 @@ export async function startWorker() {
   const worker = new Miniflare(
     convertV4MiniflareOptions({
       modules: true,
+      ...(options.streaming ? { unsafeDirectSockets: [{ port: 0 }] } : {}),
       script: outputFiles[0].text,
       compatibilityDate: "2026-09-17",
+      ...(options.requestSignal ? { compatibilityFlags: ["enable_request_signal"] } : {}),
       durableObjects: { SESSIONS: { className: "SessionStore", useSQLite: true } },
       bindings: { GITHUB_CLIENT_ID: "test", GITHUB_CLIENT_SECRET: "test", GITHUB_APP_SLUG: "test" },
       outboundService: (request) => fakeGitHub(request, github),
@@ -224,9 +226,18 @@ export async function siteContext(): Promise<EditorContext> {
 }
 
 /** A fetch for MCP client transports that goes to either Worker runtime. */
-export function workerFetch(worker: WorkerDispatch) {
+export function workerFetch(worker: WorkerDispatch, options: { streaming?: boolean } = {}) {
   return async (input: string | URL | Request, init?: RequestInit) => {
-    const response = await worker.dispatchFetch(String(input instanceof Request ? input.url : input), init as any);
+    const url = String(input instanceof Request ? input.url : input);
+    if (options.streaming && "ready" in worker) {
+      // Use the runtime's HTTP ingress directly: the buffered dispatcher is retained below for old tests.
+      const local = new URL(url), ready = await worker.unsafeGetDirectURL();
+      local.protocol = ready.protocol; local.host = ready.host;
+      const request = new Request(input, init);
+      return fetch(new Request(local, request));
+    }
+    const response = await worker.dispatchFetch(url, init as any);
+    if (options.streaming) return response;
     return new Response(await response.text(), { status: response.status, headers: response.headers as any });
   };
 }
