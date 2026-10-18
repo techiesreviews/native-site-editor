@@ -211,8 +211,8 @@ export interface EditorContext {
   /**
    * The browser drafts of this repository and branch: a changed file's text
    * content hash (`textHash`), a deletion, or a rename (`movedFrom`). The
-   * text goes apart, by its hash (POST /api/agent/drafts); `content` inline
-   * is what older tabs sent. A text past AGENT_TEXT_LIMIT has no hash but
+   * text stays in the browser; agents read it from the receiving tab over the
+   * relay (`content` inline is what older tabs sent). A text past AGENT_TEXT_LIMIT has no hash but
    * its `size`; a binary (or not loaded) file's is `binary`.
    */
   drafts: {

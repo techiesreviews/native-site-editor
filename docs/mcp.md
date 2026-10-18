@@ -147,7 +147,8 @@ repository installation access is rechecked with a listing cached at most a minu
 Only token hashes and expiring authorization records are stored. GitHub credentials
 stay in the Worker. Requests with a foreign browser Origin refuse. Drafts, context,
 commands and conversations stay in the browser; the relay never persists their content.
-Without a receiving editor tab, tools return the not-sharing message immediately.
+Without a receiving editor tab, tools return the not-sharing message immediately
+(wait_for_requests answers with its quiet "no editor tab receives requests" hint).
 The browser reads grant metadata only from `GET /api/agent/connections` on explicit
 connection and consent checks, with no idle polling. Obsolete hub/context/drafts,
 claim/ack, pause and request-content endpoints return `410 editor-updated` before

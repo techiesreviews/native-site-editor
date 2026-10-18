@@ -741,7 +741,8 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
         const value = outcome.result.value as unknown as { requests?: unknown[]; watch?: WatchReport };
         return waited(Array.isArray(value?.requests) ? value.requests : [], value?.watch ?? { state: "off" });
       }
-      if (outcome.code === "editor-unavailable") return failure(notSharingMessage(origin, connection.workspace));
+      if (outcome.code === "editor-unavailable")
+        return waited([], { state: "off" }, "No editor tab receives requests for this site now. Stop here: tell the user to open the site in the editor and turn on remote agents, then to ask you to continue.");
       if (outcome.code === "waiting")
         return waited([], { state: "off" }, "Another wait for this site's requests is already open (one at a time). Do not call wait_for_requests again now: tell the user you are ready.");
       return waited([], { state: "off" }, `The editor did not answer this wait (${outcome.code ?? "connection lost"}). Do not repeat it on your own: tell the user you are ready. Requests it took come back with all: true.`);

@@ -66,7 +66,7 @@ test("an edit without a receiving tab refuses immediately: 3 auth + 1 dispatch, 
   } finally { await h.worker.dispose(); }
 });
 
-test("an empty wait without a receiver refuses immediately without a legacy take", async () => {
+test("an empty wait without a receiver answers quietly at once without a legacy take", async () => {
   const h = await connected();
   const client = new Client({ name: "usage-client", version: "1" });
   try {
@@ -76,8 +76,9 @@ test("an empty wait without a receiver refuses immediately without a legacy take
     await client.listTools();
     h.counters.reset();
     const result = await client.callTool({ name: "wait_for_requests", arguments: {} });
-    assert.equal(result.isError, true);
-    assert.match(String(payload(result)), /not sharing/);
+    assert.equal(result.isError, undefined);
+    assert.deepEqual(payload(result).requests, []);
+    assert.match(payload(result).hint, /No editor tab receives requests/);
     assert.equal(h.counters.log.some(row => row.action === "take-requests"), false);
     assert.equal(h.counters.byCategory.auth.calls, 3);
     assert.equal(h.counters.byCategory.control.calls, 1);
