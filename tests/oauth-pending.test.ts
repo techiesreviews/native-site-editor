@@ -42,14 +42,27 @@ test("request-to-code transition checks net occupancy; retries preserve bytes an
   assert.equal(h.counters.byCategory.data.keysWritten + h.counters.byCategory.data.keysDeleted, 0);
 });
 
+test("a delayed transition retry after the code was consumed recreates nothing", async () => {
+  const h = await memory();
+  const transition: PendingAction = { action: "transition", fromId: requestId(0), id: codeId(0), bytes: 200, expiresAt: 500 };
+  await h.run(reserve(0));
+  assert.equal((await h.run(transition)).allowed, true);
+  await h.run({ action: "release", id: codeId(0) });
+  assert.equal(await h.storage.get(PENDING_KEY), undefined);
+  assert.equal((await h.run(transition)).allowed, true);
+  assert.equal((await h.run(transition)).allowed, true);
+  assert.equal(await h.storage.get(PENDING_KEY), undefined, "no phantom code reservation");
+  for (let n = 1; n <= 20; n++) assert.equal((await h.run(reserve(n))).allowed, true);
+});
+
 test("count capacity refuses the 21st without evicting or extending existing entries", async () => {
   const h = await memory();
   for (let n = 0; n < 20; n++) await h.run(reserve(n, 100, 1000 + n));
   const before = await h.ledger();
   assert.equal((await h.run(reserve(20))).allowed, false);
   assert.deepEqual(await h.ledger(), before);
-  assert.equal((await h.run({ action: "transition", fromId: requestId(99), id: codeId(99), bytes: 100, expiresAt: 1000 })).allowed, false);
-  assert.deepEqual(await h.ledger(), before, "legacy transition also respects capacity");
+  assert.equal((await h.run({ action: "transition", fromId: requestId(99), id: codeId(99), bytes: 100, expiresAt: 1000 })).allowed, true);
+  assert.deepEqual(await h.ledger(), before, "an unowned transition adds nothing");
 });
 
 test("64 KiB fits exactly; byte refusal preserves entries and transition uses net bytes", async () => {
@@ -65,8 +78,12 @@ test("64 KiB fits exactly; byte refusal preserves entries and transition uses ne
   assert.deepEqual(await h.ledger(), { [codeId(0)]: { bytes: 65535, expiresAt: 500 } }, "a consumed request is released on transition refusal");
 });
 
-test("legacy transition reserves its code; expiry frees capacity at the exact deadline", async () => {
+test("legacy transition passes uncounted; expiry frees capacity at the exact deadline", async () => {
   const h = await memory();
+  const legacy: PendingAction = { action: "transition", fromId: requestId(7), id: codeId(7), bytes: 100, expiresAt: 500 };
+  assert.equal((await h.run(legacy)).allowed, true);
+  assert.equal(await h.storage.get(PENDING_KEY), undefined);
+  assert.equal((await h.run(reserve(0, 65536, 400))).allowed, true);
   const transition: PendingAction = { action: "transition", fromId: requestId(0), id: codeId(0), bytes: 65536, expiresAt: 500 };
   assert.equal((await h.run(transition)).allowed, true);
   assert.equal((await h.run(reserve(1), 499)).allowed, false);
