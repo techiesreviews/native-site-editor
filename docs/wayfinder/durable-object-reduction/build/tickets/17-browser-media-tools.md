@@ -110,3 +110,14 @@ proof was still taken after the executor's hashing and receipt lookup: now on ad
   load; no media code), then alone RESULT: ok specs 1/1 passed
 - Third `kit pr`: check, unit, lint, specs ok; CI failed in tests/agent-usage.test.ts ("an empty default wait takes requests 18
   times…": MCP client request timed out on the runner, as in ticket 14; passes locally); CI rerun refused, so this note retriggers it
+
+Landed: PR #65, merged as 4b42ebd8 (`RESULT: ok merged #65 4b42ebd`; kit pr: check, unit, lint, specs, review, CI ok).
+
+Follow-up (landing review round 4, gpt-6.1-sol, medium, read-only; evidence
+/home/ubulex/Projects/native-site-editor/.scratch/reviews/dor-17/20261018T161135Z; read before CI finished): fixed 1 in a
+follow-up PR (9036f317) — the agent menu awaited the lazy media executor before the page proof was taken; the transport now
+reads the page synchronously when the frame arrives (before readiness, the ownership proof and module loading) and
+carries it to the executor (tests: arrival read once and passed through; an edit before admission refuses with nothing
+run, mutation checked). What remains is inherent: the media tools take no page hash, so an edit between the agent's
+get_page and the frame's arrival is not detectable. `scripts/agents/unit.sh` (agent-transport, agent-tools-media):
+pass 58 fail 0; RESULT: ok size boot 355 KB (±0 KB) vs dev@4b42ebd; RESULT: ok specs 2/2 passed (native-mcp-media, native-agent-live).
