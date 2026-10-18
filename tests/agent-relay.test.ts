@@ -92,7 +92,7 @@ test("8 MiB budget measures complete UTF-8 envelopes across all pending calls", 
 
 test("exact byte admission boundary and result bytes share the same budget", async () => {
   const h = fixture();
-  const empty = Buffer.byteLength(JSON.stringify({ type: "command", id: "0".repeat(36), ...scope, command: "" }));
+  const empty = Buffer.byteLength(JSON.stringify({ type: "command", id: "0".repeat(36), ...scope, remainingMs: 10_000, command: "" }));
   const pending = h.relay.dispatch(scope, "a".repeat(AgentRelay.maxBytes - empty));
   assert.equal(h.relay.bufferedBytes, AgentRelay.maxBytes);
   const sends = h.editor.counters.sent;
@@ -556,4 +556,20 @@ test("dispatch intake reserves capacity before reading bodies and expires a stal
     if (original) Object.defineProperty(globalThis, "WebSocketRequestResponsePair", original);
     else Reflect.deleteProperty(globalThis, "WebSocketRequestResponsePair");
   }
+});
+
+test("each command frame carries only the remaining total budget, even after a delayed handshake", async () => {
+  const h = fixture();
+  const immediate = h.relay.dispatch(scope, "now");
+  assert.equal(JSON.parse(h.editor.sent.at(-1)!).remainingMs, 10_000);
+  h.relay.message(h.editor, reply(h.id()));
+  assert.deepEqual(await immediate, { ok: true, result: { applied: true } });
+  const restored = new AgentRelay([h.editor], h.clock);
+  const waiting = restored.dispatch({ workspace: scope.workspace }, "late");
+  h.advance(9_000);
+  assert.equal(restored.message(h.editor, handshake()), true);
+  const sent = JSON.parse(h.editor.sent.at(-1)!);
+  assert.equal(sent.type, "command"); assert.equal(sent.remainingMs, 1_000);
+  restored.message(h.editor, reply(sent.id));
+  assert.deepEqual(await waiting, { ok: true, result: { applied: true } });
 });

@@ -394,6 +394,21 @@ test("back-forward cache pagehide preserves opt-in and pageshow resumes the owne
   assert.equal(a.transport.state().mode, "off"); assert.equal(f.timers.size, 0);
 });
 
+test("a media dispatch's deadline is the relay's remaining budget from arrival, never a fresh 10 s", async () => {
+  const deadlines: number[] = [];
+  const f = fixture(), a = f.tab("a", { media: async (_request, _generation, _current, deadline) => { deadlines.push(deadline); return { ok: true, value: {} }; } });
+  await a.transport.start();
+  const media = { operation: "media", tool: "adding_settings", path: "", args: {}, id: "budget", grantId: "grant-1", createdAt: 0 };
+  for (const [index, remainingMs] of [1_000, undefined, 60_000, -5].entries()) {
+    const before = Date.now();
+    a.deliver(media, remainingMs === undefined ? {} : { remainingMs });
+    await until(() => a.sockets[0].messages("result").length === index + 1);
+    const deadline = deadlines.at(-1)!, budget = remainingMs === undefined ? 10_000 : Math.min(10_000, Math.max(0, remainingMs));
+    assert.ok(deadline <= Date.now() + budget - 250 && deadline >= before + budget - 250, `remainingMs ${remainingMs} gave ${deadline - before} ms`);
+  }
+  a.transport.stop();
+});
+
 test("media commands reach the receipt-capable executor on the live connection", async () => {
   let runs = 0;
   const f = fixture(), a = f.tab("a", { run: async () => { runs++; return { message: "Placed." }; } });

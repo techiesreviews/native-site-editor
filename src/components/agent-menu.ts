@@ -149,13 +149,13 @@ export function createAgentMenu(options: {
     transport = createLiveTransport({
       workspace: { account: options.account, repoId: repo.id, branch: repo.branch }, repo: repo.fullName, tabId,
       current: scope, records, reload: snapshot => options.reload?.(snapshot) ?? Promise.resolve(),
-      media: async (request, generation, current) => {
+      media: async (request, generation, current, deadline) => {
         const ports = options.tools, stamp = ports?.stamp(), commit = ports?.files()?.snapshot.commit;
         if (!ports || !stamp) return { ok: false, message: "Browser media tools are unavailable. Refresh the editor." };
         mediaTools ??= import("../agent-tools-media").then(({ createAgentMediaTools }) => createAgentMediaTools({
           workspace: { account: options.account, repoId: repo.id, branch: repo.branch }, ports, records, run,
         }));
-        return (await mediaTools).run(request, generation, () => current() && stamp.holds() && ports.files()?.snapshot.commit === commit);
+        return (await mediaTools).run(request, generation, () => current() && stamp.holds() && ports.files()?.snapshot.commit === commit, deadline);
       },
       edit: async (request, generation, current) => {
         const ports = options.tools, stamp = ports?.stamp();

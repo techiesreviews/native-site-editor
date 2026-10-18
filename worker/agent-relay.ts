@@ -33,7 +33,7 @@ interface Pending {
   scope: RelayScope;
   bytes: number;
   /** Set until the owner's (fresh) handshake sends it; cleared once sent. */
-  unsent?: string;
+  unsent?: (now: number) => string;
   deadline: number;
   timer: unknown;
   finish(outcome: Outcome): void;
@@ -43,7 +43,7 @@ const bytes = (value: string) => utf8.encode(value).byteLength;
 const placeholder = "00000000-0000-0000-0000-000000000000";
 const failure = (code: FailureCode, outcome: "unknown" | "not-sent" = "not-sent"): Outcome => ({ ok: false, code, outcome });
 /** A call lost before it reached the browser was never sent; after, its outcome is unknown. */
-const lost = (call: { unsent?: string }) => call.unsent === undefined ? failure("unknown-outcome", "unknown") : failure("editor-unavailable");
+const lost = (call: { unsent?: unknown }) => call.unsent === undefined ? failure("unknown-outcome", "unknown") : failure("editor-unavailable");
 const sameScope = (a: RelayScope, b: RelayScope) => a.tabId === b.tabId && a.generation === b.generation && workspaceKey(a.workspace) === workspaceKey(b.workspace);
 
 /** Shared by the editor upgrade and future MCP dispatchers. Repository names can
@@ -225,13 +225,16 @@ export class AgentRelay {
     if (this.calls.size + this.reserved.count >= 5) return Promise.resolve(failure("busy"));
     // Measure the complete wire envelope before allocating a correlation id,
     // promise, pending entry or timer. UUIDs have the placeholder's fixed width.
-    const candidate = JSON.stringify({ type: "command", id: placeholder, ...scope, command });
+    // remainingMs is filled in at each send (at most 5 digits, measured at its widest): the tab fences
+    // commits against this total deadline without comparing clocks.
+    const candidate = JSON.stringify({ type: "command", id: placeholder, ...scope, remainingMs: 10_000, command });
     const length = bytes(candidate);
     if (this.buffered + this.reserved.bytes + length > AgentRelay.maxBytes) return Promise.resolve(failure("too-large"));
     const deadline = started + 10_000;
     if (this.clock.now() >= deadline) return Promise.resolve(failure("timeout"));
     const id = crypto.randomUUID();
     const message = candidate.replace(placeholder, id);
+    const framed = (now: number) => message.replace('"remainingMs":10000', `"remainingMs":${Math.max(0, Math.floor(deadline - now))}`);
     return new Promise(resolve => {
       const cancel = () => call.finish(failure("cancelled", call.unsent === undefined ? "unknown" : "not-sent"));
       const call: Pending = { socket: receiver, scope, bytes: length, deadline, timer: undefined, finish: outcome => {
@@ -244,10 +247,11 @@ export class AgentRelay {
       } };
       this.calls.set(id, call);
       this.buffered += length;
-      call.timer = this.clock.setTimeout(() => call.finish(failure("timeout", call.unsent === undefined ? "unknown" : "not-sent")), deadline - this.clock.now());
+      const now = this.clock.now();
+      call.timer = this.clock.setTimeout(() => call.finish(failure("timeout", call.unsent === undefined ? "unknown" : "not-sent")), deadline - now);
       signal?.addEventListener("abort", cancel, { once: true });
-      if (!receiverMetadata.handshaken) { call.unsent = message; return; }
-      try { receiver.send(message); }
+      if (!receiverMetadata.handshaken) { call.unsent = framed; return; }
+      try { receiver.send(framed(now)); }
       catch { this.disconnect(receiver); }
     });
   }
@@ -287,10 +291,11 @@ export class AgentRelay {
         if (call.unsent === undefined || !sameScope(call.scope, scope)) continue;
         call.socket = socket;
         // A late handshake (or delayed timer) never sends an expired command.
-        if (this.clock.now() >= call.deadline) { call.finish(failure("timeout")); continue; }
+        const now = this.clock.now();
+        if (now >= call.deadline) { call.finish(failure("timeout")); continue; }
         const queued = call.unsent;
         call.unsent = undefined;
-        try { socket.send(queued); }
+        try { socket.send(queued(now)); }
         catch { this.disconnect(socket); return false; }
       }
       return true;

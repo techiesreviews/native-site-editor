@@ -86,7 +86,7 @@ async function fixture(race?: AwaitRace) {
   const tools = createAgentMediaTools({ workspace, ports: toolsPorts, records, run });
   const status = createAgentEditTools({ workspace, ports: toolsPorts, records, run });
   return { tools, status, text, paths, bytes, storage, records, snapshot, controller, ports, history,
-    run: (input: AgentMedia) => tools.run(input, 0, () => valid), hold: (value: Promise<void>) => { hold = value; },
+    run: (input: AgentMedia, deadline?: number) => tools.run(input, 0, () => valid, deadline), hold: (value: Promise<void>) => { hold = value; },
     stale: () => { valid = false; snapshot.commit = "changed"; }, counts: () => ({ runs, history: history.length }) };
 }
 
@@ -162,13 +162,15 @@ for (const [tool, args] of [["frame_image", { element: "0.0.0", shape: "square" 
 });
 
 test("deadline and cancellation before commit leave drafts unchanged", async t => {
-  for (const cause of ["deadline", "cancel", "disconnect"] as const) {
+  for (const cause of ["deadline", "relay-budget", "cancel", "disconnect"] as const) {
     const f = await fixture(), hold = deferred<void>(); f.hold(hold.promise);
     const input = request("adding_settings", { image: "smaller" });
     // The deadline counts from arrival in the tab; the Worker's createdAt clock is ignored.
     input.createdAt -= 60_000;
-    const pending = f.run(input);
-    if (cause === "deadline") { const start = Date.now(); t.mock.method(Date, "now", () => start + 10_001); }
+    // relay-budget: the relay spent 9 s before delivery; only its remaining 1 s may pass before commit.
+    const start = Date.now(), pending = f.run(input, cause === "relay-budget" ? start + 1_000 : undefined);
+    if (cause === "deadline") t.mock.method(Date, "now", () => start + 10_001);
+    if (cause === "relay-budget") t.mock.method(Date, "now", () => start + 1_001);
     if (cause === "cancel") await f.records.cancel(workspace, input.id, input.grantId);
     if (cause === "disconnect") f.stale();
     hold.resolve();
@@ -230,16 +232,25 @@ test("trim stages bytes before the page and receipt transaction; duplicate never
   assert.deepEqual(await f.run(input), result); assert.equal(encodes, 1); assert.equal(commits, 1); assert.equal(f.history.length, 1);
 });
 
-test("revision changes at every preparation await never commit", async () => {
-  const points = await forEachAwait(race => {
-    const state = { disturb: () => {}, history: () => 0, done: Promise.resolve() };
-    state.done = (async () => {
-      const f = await fixture(race); state.disturb = f.stale; state.history = () => f.history.length;
-      await f.run(request("adding_settings", { image: "smaller" }));
-    })();
-    return state;
-  }, state => state.disturb(), state => assert.equal(state.history(), 0));
-  assert.ok(points >= 3);
+test("revision changes at every preparation await never commit, for settings and each staged page change", async () => {
+  const changes = [() => request("adding_settings", { image: "smaller" }),
+    () => request("frame_image", { element: "0.0.0", shape: "square" }, "frame-race", "index.html"),
+    () => request("loop_video", { element: "0.0.1", looping: false }, "loop-race", "index.html")];
+  // place_media decodes the picture (DOM Image), which this Node fixture lacks; it stages through the same proof.
+  for (const change of changes) {
+    // Undisturbed, each change applies; disturbed at any await, none commits.
+    const clean = await fixture();
+    { const result = body(await clean.run(change())); assert.equal(result.state, "applied", `${change().tool}: ${result.message}`); }
+    const points = await forEachAwait(race => {
+      const state = { disturb: () => {}, history: () => 0, done: Promise.resolve() };
+      state.done = (async () => {
+        const f = await fixture(race); state.disturb = f.stale; state.history = () => f.history.length;
+        await f.run(change());
+      })();
+      return state;
+    }, state => state.disturb(), state => assert.equal(state.history(), 0, change().tool));
+    assert.ok(points >= 3, change().tool);
+  }
 });
 
 async function connected() {
@@ -340,4 +351,21 @@ test("media relay failures never retry; only editor-unavailable with matching le
       assert.match(String(payload(read)), /read failed|too large/); assert.equal(dispatches, 2);
     }
   } finally { h.namespace.get = get; await h.worker.dispose(); }
+});
+
+test("a failed receipt lookup after the run reports unknown, never a conflict; status then finds applied", async () => {
+  const f = await fixture(), receipt = f.records.receipt, commit = f.records.commit;
+  let committed = false;
+  f.records.commit = async input => { const result = await commit(input); committed = true; return result; };
+  f.records.receipt = async (...args) => {
+    if (committed) throw new DOMException("The read transaction was aborted.", "AbortError");
+    return receipt(...args);
+  };
+  const input = request("adding_settings", { image: "smaller" });
+  const result = body(await f.run(input));
+  assert.ok(committed);
+  assert.equal(result.state, "unknown"); assert.match(String(result.message), /get_command_status.*do not replay/);
+  f.records.receipt = receipt;
+  const status = body(await f.status.run({ operation: "status", id: input.id, grantId: input.grantId }, 0, () => true));
+  assert.equal(status.state, "applied"); assert.equal(f.history.length, 1);
 });
