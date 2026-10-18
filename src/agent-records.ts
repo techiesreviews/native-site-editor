@@ -39,8 +39,12 @@ export interface AgentRecords {
   snapshot: (workspace: AgentWorkspace) => Promise<WorkspaceSnapshot>;
   revoke: (workspace: AgentWorkspace, authorizationId: string) => Promise<AgentReceipt[]>;
   evictReceipts: (workspace: AgentWorkspace, now?: number) => Promise<number>;
-  /** Stores one conversation, evicting expired and then oldest completed ones; refuses at capacity. */
-  putConversation: (workspace: AgentWorkspace, conversation: Conversation) => Promise<void>;
+  /**
+   * Stores one conversation, evicting expired and then oldest completed ones; refuses at capacity.
+   * With `accept`, the same transaction first asks it about the stored one (none when absent) and
+   * writes nothing, resolving false, when it says no.
+   */
+  putConversation: (workspace: AgentWorkspace, conversation: Conversation, accept?: (stored: Conversation | undefined) => boolean) => Promise<boolean>;
   /** Whether putConversation would accept it now, without writing (before asking an agent). */
   checkConversation: (workspace: AgentWorkspace, conversation: Conversation) => Promise<void>;
   /** The workspace's unfinished conversations and its completed ones younger than seven days. */
@@ -71,8 +75,8 @@ export const conversationExpired = (conversation: Conversation, now: number) =>
  * The conversations a workspace drops when `incoming` is stored (ids), or a capacity refusal.
  * Expired completed ones go first, then the oldest completed ones until all fit the byte budget.
  * Unfinished ones are never dropped: a new one (or one reopened) is refused when
- * OPEN_REQUESTS_LIMIT already wait, or when it cannot fit once every completed one is gone. A
- * change to one already unfinished is kept even then, so an agent's reply is never lost.
+ * OPEN_REQUESTS_LIMIT already wait, and any unfinished one, new or changed, when it cannot fit
+ * once every completed one is gone (the stored one then stays as it was).
  */
 export function conversationRetention(stored: Conversation[], incoming: Conversation | undefined, now: number): string[] {
   const existing = incoming && stored.find((item) => item.id === incoming.id);
@@ -89,7 +93,7 @@ export function conversationRetention(stored: Conversation[], incoming: Conversa
     removed.add(item.id);
     size -= conversationBytes(item);
   }
-  if (size > CONVERSATION_BUDGET_BYTES && incoming && (admitted || !existing))
+  if (size > CONVERSATION_BUDGET_BYTES && incoming)
     throw new AgentRecordsError("capacity", "Requests to agents in this browser use all their space (1 MiB). Dismiss some first.");
   return [...removed];
 }
@@ -369,15 +373,17 @@ export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFact
         });
       });
     },
-    putConversation(workspace, conversation) {
+    putConversation(workspace, conversation, accept) {
       const scope = structuredClone(workspace), incoming = structuredClone(conversation), key = workspaceKey(scope);
-      return run([draftStores.conversations], "readwrite", (tx, read, done) => {
+      return run<boolean>([draftStores.conversations], "readwrite", (tx, read, done) => {
         const store = tx.objectStore(draftStores.conversations);
         read(store.getAll(), (records: ConversationRecord[]) => {
-          const removed = conversationRetention(records.filter((record) => record.workspace === key).map((record) => record.conversation), incoming, now());
+          const stored = records.filter((record) => record.workspace === key).map((record) => record.conversation);
+          if (accept && !accept(stored.find((item) => item.id === incoming.id && !conversationExpired(item, now())))) { done(false); return; }
+          const removed = conversationRetention(stored, incoming, now());
           for (const id of removed) store.delete(recordKey(scope, id));
           if (!removed.includes(incoming.id)) store.put({ workspace: key, conversation: incoming }, recordKey(scope, incoming.id));
-          done(undefined);
+          done(true);
         });
       });
     },

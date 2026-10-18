@@ -49,8 +49,8 @@ test("a new unfinished request is refused at 50 or when it cannot fit; one alrea
   const big = [sized("a", true, CONVERSATION_BUDGET_BYTES - 1000)];
   assert.throws(() => conversationRetention(big, sized("b", true, 2000), NOW), (error: unknown) =>
     capacity(error) && /1 MiB/.test((error as Error).message));
-  // An agent's reply growing a waiting request is kept, never lost.
-  assert.deepEqual(conversationRetention(big, sized("a", true, CONVERSATION_BUDGET_BYTES + 10), NOW), []);
+  // A waiting request grown past the budget by a reply is refused too.
+  assert.throws(() => conversationRetention(big, sized("a", true, CONVERSATION_BUDGET_BYTES + 10), NOW), capacity);
   // A completed one that cannot fit is simply not kept.
   assert.deepEqual(conversationRetention(big, sized("b", false, 2000), NOW), ["b"]);
 });
@@ -84,6 +84,34 @@ test("browser conversations refuse a 51st unfinished request before and at writi
   await records.putConversation(workspace, { ...item("req-0", false), content: { id: "req-0", state: "dismissed" } });
   await records.putConversation(workspace, item("req-new", true));
   assert.equal((await records.conversations(workspace)).filter((entry) => entry.unfinished).length, OPEN_REQUESTS_LIMIT);
+});
+
+test("an oversized update is refused and leaves the stored conversation and the budget as they were", async () => {
+  const fake = fakeIndexedDB(), records = indexedDbAgentRecords(draftDatabaseName, fake.factory, () => NOW);
+  const before = sized("open", true, CONVERSATION_BUDGET_BYTES / 2);
+  await records.putConversation(workspace, before);
+  await records.putConversation(workspace, sized("other", true, CONVERSATION_BUDGET_BYTES / 4));
+  await assert.rejects(records.putConversation(workspace, sized("open", true, CONVERSATION_BUDGET_BYTES)), capacity);
+  const kept = await records.conversations(workspace);
+  assert.deepEqual(kept.find((entry) => entry.id === "open"), before);
+  assert.ok(kept.reduce((sum, entry) => sum + new TextEncoder().encode(JSON.stringify(entry)).byteLength, 0) <= CONVERSATION_BUDGET_BYTES);
+});
+
+test("accept sees the stored conversation in the writing transaction: a dismissal another tab stored wins over stale progress", async () => {
+  const fake = fakeIndexedDB(), records = indexedDbAgentRecords(draftDatabaseName, fake.factory, () => NOW);
+  const open = item("req-1", true);
+  await records.putConversation(workspace, open);
+  // Two tabs: one dismisses, the other then brings an agent's reply it polled before.
+  const dismissed = { ...item("req-1", false), content: { id: "req-1", state: "dismissed" } };
+  const notDismissed = (stored: Conversation | undefined) => Boolean(stored && (stored.content as { state: string }).state !== "dismissed");
+  await records.putConversation(workspace, dismissed);
+  assert.equal(await records.putConversation(workspace, { ...open, content: { id: "req-1", state: "question" } }, notDismissed), false);
+  assert.deepEqual(await records.conversations(workspace), [dismissed]);
+  // Absent (never kept, or evicted): progress alone adopts nothing.
+  assert.equal(await records.putConversation(workspace, item("req-2", true), notDismissed), false);
+  assert.equal(await records.putConversation(workspace, { ...item("req-1", true), updatedAt: NOW + 1 }), true);
+  assert.equal(await records.putConversation(workspace, { ...item("req-1", true), content: { id: "req-1", state: "seen" } }, notDismissed), true);
+  assert.deepEqual((await records.conversations(workspace)).map((entry) => (entry.content as { state: string }).state), ["seen"]);
 });
 
 test("browser conversations evict the oldest completed ones to fit 1 MiB, and never unfinished ones", async () => {
