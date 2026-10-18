@@ -49,8 +49,8 @@ every 45 s (auto-answered by the relay without waking it); no HTTP.
   the background owner keeps it; an owner closing never promotes another tab ("The receiving tab closed…").
   The old owner learns of a takeover from the storage event or on resume, closes its socket and says "Another
   tab took over…". Lead note (a): a failed takeover stays durably paused with **Try again** and **Turn off**.
-  Takeover reloads drafts into the draft store and, when the open file's mounted text differs from the durable
-  snapshot, reopens it (this tab's newer typing stays).
+  Takeover settles the durable drafts into the draft store (a read any local change overtook is dropped) and
+  reopens the open file when it differs, was deleted, moved away or discarded, unless the user typed meanwhile.
 - **Commands.** Scope (workspace, tab, generation), shape, repository/branch and grant are checked; the socket,
   its handshake and liveness are rechecked after the admission read, before running. Text, structural and media
   commands run through tickets 06–08's fenced commits with `ownerGeneration` (new optional `AgentCommand` field):
@@ -79,21 +79,22 @@ tests/native-save/native-agent-live.spec.ts.
 
 **Commits** (PR #56). 645212bb (Sol build), d60c7761, 1fcb8dc5 (review 1), 096d8b23, 5f097e29 (review 2), c8a94068
 (landing fix: a repository briefly absent during a refresh counted as a workspace move and stopped the tab's context
-sharing; it now refuses commands meanwhile but is no move), c843474b (review 3).
+sharing; it now refuses commands meanwhile but is no move), c843474b (review 3), 9b649e8e (review 4).
 
-**Tests.** tests/agent-transport.test.ts (30): duplicate delivery in flight and after commit; stale
+**Tests.** tests/agent-transport.test.ts (32): duplicate delivery in flight and after commit; stale
 generation/tab/workspace and malformed commands; two tabs, focus, explicit takeover, old owner's late commit and
 resume (0 late commits); owner close without promotion; reset re-handshake without replay; server close → ≤5
 coordinated reconnects then pause; quota pause with 0 automatic attempts and single-flight Retry; failed takeover
 stays paused; workspace change; **live idle over simulated minutes: 0 HTTP calls**; missing pong; bfcache; absent
 route fallback; probe quota body and Retry-After; storage refusal; receiptless refusal; socket lost/reset during
 admission never runs (mutation checked); refresh absence keeps the socket, and a socket lost meanwhile reconnects
-when the workspace returns; storage refusal records a probe's quota/Retry-After (both mutation checked); `forEachAwait` workspace change at every ownership await.
+when the workspace returns, as does an attempt that ran during it; takeover reload (changed, deleted/moved,
+discarded open file; typing during the read wins); storage refusal records a probe's quota/Retry-After (both mutation checked); `forEachAwait` workspace change at every ownership await.
 native-agent-live.spec.ts (2): a mocked relay delivers a write_file and gets the correlated applied result; after
 it, 65 s visible + 65 s hidden make **0** `/api/agent/*` or `/mcp` requests (2 pings); a second tab open before
 the edit shows "Another tab…" + Take over, takes over with a higher generation and then shows the edit; the old
 tab says it was taken over. A copied token turns connected after one hub read on return, then 0 more.
-`npm run check` ok; `npm run lint` ok; `scripts/agents/unit.sh` pass 4366 fail 0 (by hand).
+`npm run check` ok; `npm run lint` ok; `scripts/agents/unit.sh` pass 4370 fail 0 (by hand).
 
 **Review** (gpt-6.1-sol, medium, read-only; run.log verified).
 Round 1 `RESULT: ok review … evidence .scratch/reviews/dor-14/20261018T053422Z`: fixed 3 (receiptless mutations
@@ -102,7 +103,11 @@ token never showed connected in socket mode). Round 2 `RESULT: ok review … evi
 .scratch/reviews/dor-14/20261018T053920Z`: fixed 2 (takeover left the open editor showing pre-takeover text; the
 first-upgrade probe ignored quota bodies and Retry-After). Round 3 (run by `kit pr`, `RESULT: ok review … evidence
 .scratch/reviews/dor-14/20261018T065727Z`): fixed 2 (a socket lost while a refresh briefly removed the workspace stayed
-"live" with no socket; the storage-refusal probe dropped quota and Retry-After). Rejected 0.
+"live" with no socket; the storage-refusal probe dropped quota and Retry-After). `kit pr` stopped before merge.
+Round 4 (run by `kit pr`, `RESULT: ok review … evidence .scratch/reviews/dor-14/20261018T072801Z`): fixed 3 (a
+reconnect attempt that ran during a refresh counted as success and stalled; takeover left a deleted, moved or
+discarded open file showing old text; takeover's refresh could replace newer typing: now `settleAgent`, and no
+reopen when the editor changed during the read). Rejected 0.
 
 **Kit.**
 - RESULT: ok doctor 7/7 checks passed
