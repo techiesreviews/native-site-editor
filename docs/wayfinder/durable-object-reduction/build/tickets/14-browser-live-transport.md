@@ -117,6 +117,8 @@ reopen when the editor changed during the read). Rejected 0.
 - RESULT: ok specs 1/1 passed (native-agent-live 2, after review 2)
 - First `kit pr`: RESULT: fail specs 4 of 145 failed: native-agent-live.spec.ts, native-discard.spec.ts, native-draft-storage.spec.ts, native-onboarding.spec.ts (refresh treated as a workspace move; two specs clicked Connect without the absent-relay route; live under load). After the fix: RESULT: ok specs 4/4 passed. Second `kit pr`: check, unit, lint, specs ok; PR #56 opened; CI failed in
   tests/agent-resume.test.ts ("SIGTERM records interrupted…", agent kit script timing, no code of this slice); rerun after review 3.
+- Fourth `kit pr`: RESULT: fail specs 1 of 145 failed: native-agent-live.spec.ts (the token test advanced the page clock past a
+  ping's 10 s pong deadline before the mocked pong arrived, under load; it now waits for each pong like the first test), then RESULT: ok specs 1/1 passed
 - RESULT: ok shots raw spec, out /home/ubulex/Projects/native-site-editor/.scratch/shots/dor-14/20261018 (live, other-owner, taken-over, quota; 1280 light, 390 dark)
 
 **Limits for later tickets.** Nothing on the Worker dispatches through the relay yet: on a real deployment an on
