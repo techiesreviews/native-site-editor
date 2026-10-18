@@ -154,10 +154,52 @@ test("Watch: at most 25 waits per activation, each held at most 25 s and within 
   b.watch.stop();
   b.tools.notify();
   assert.deepEqual(await b.value(short), { requests: [], watch: { state: "off" } });
-  // waitSeconds 0 never holds or counts.
+  // waitSeconds 0 never holds, but every call during Watch counts: 25 of them, across grants, exhaust it.
   b.watch.start(b.clock.now());
-  await b.value(b.run("wait_for_requests", {}, 0));
-  assert.equal(b.watch.read()?.waits, 0);
+  const until = b.watch.read()!.until;
+  for (let call = 0; call < WATCH_WAITS; call++) {
+    const result = await b.value(b.tools.run({ operation: "requests", tool: "wait_for_requests", args: {}, grantId: `grant-${call % 3}`, waitMs: 0 }, () => true, b.clock.now() + 9_000));
+    assert.equal(result.watch.state, call < WATCH_WAITS - 1 ? "on" : "paused");
+  }
+  assert.equal(b.clock.timers.size, 0);
+  assert.deepEqual(b.watch.read(), { startedAt: until - WATCH_MS, until, waits: WATCH_WAITS }, "no renewal");
+  assert.equal((await b.value(b.run("wait_for_requests", {}, 25_000))).watch.reason, "used");
+  // A call that returns a request during Watch counts too.
+  b.watch.start(b.clock.now());
+  b.ask(asked("req-counted"));
+  assert.equal((await b.value(b.run("wait_for_requests", {}, 25_000))).requests.length, 1);
+  assert.equal(b.watch.read()?.waits, 1);
+});
+
+test("a request changed after the wait read it (a reply, an answer) keeps that change; a stale connection writes nothing", async () => {
+  const b = browser();
+  b.ask(asked("req-race"));
+  const replied = { ...asked("req-race"), state: "done" as const, reply: { status: "done" as const, message: "Done by another agent.", at: 5 } };
+  const racing = createRequestTools({ workspace, watch: b.watch, now: b.clock.now, clock: b.clock,
+    // The read sees it open; a reply commits before the take's write.
+    list: async () => { const read = [...b.kept.values()].map(item => structuredClone(item)); b.kept.set("req-race", structuredClone(replied)); return read; },
+    save: async (request, accept) => { if (!accept(b.kept.get(request.id))) return false; b.kept.set(request.id, structuredClone(request)); return true; } });
+  const result = await racing.run({ operation: "requests", tool: "wait_for_requests", args: {}, grantId: "grant-a" }, () => true, b.clock.now() + 9_000);
+  assert.deepEqual((result as { value: any }).value.requests, []);
+  assert.deepEqual(b.kept.get("req-race"), replied, "the reply and its thread survive");
+  // A reply on a copy the user answered meanwhile is refused, never overwriting it.
+  b.kept.set("req-race", { ...asked("req-race"), state: "seen" });
+  const late = await racing.run({ operation: "requests", tool: "reply_to_request", args: { request: "req-race", status: "done", message: "Late." }, grantId: "grant-a" }, () => true, b.clock.now() + 9_000);
+  assert.equal(late.ok, false);
+  assert.match((late as { message: string }).message, /changed meanwhile/);
+  // Turned off (or the socket lost) while the read was pending: no reply and no take is written.
+  const c = browser();
+  c.ask(asked("req-off"));
+  const writes = c.writes();
+  let live = true;
+  const off = createRequestTools({ workspace, watch: c.watch, now: c.clock.now, clock: c.clock,
+    list: async () => { live = false; return [...c.kept.values()].map(item => structuredClone(item)); },
+    save: async (request, accept) => { if (!accept(c.kept.get(request.id))) return false; c.kept.set(request.id, structuredClone(request)); return true; } });
+  assert.deepEqual(((await off.run({ operation: "requests", tool: "wait_for_requests", args: {}, grantId: "g" }, () => live, c.clock.now() + 9_000)) as { value: any }).value.requests, []);
+  live = true;
+  assert.equal((await off.run({ operation: "requests", tool: "reply_to_request", args: { request: "req-off", status: "done", message: "x" }, grantId: "g" }, () => live, c.clock.now() + 9_000)).ok, false);
+  assert.equal(c.kept.get("req-off")!.state, "open");
+  assert.equal(c.writes(), writes);
 });
 
 test("a wait whose socket went takes nothing it could not deliver", async () => {
