@@ -53,31 +53,40 @@ export async function relayObjectName(workspace: AgentWorkspace): Promise<string
   return `agent-relay:${Array.from(new Uint8Array(hash), byte => byte.toString(16).padStart(2, "0")).join("")}`;
 }
 
-type BodyRead = { ok: true; value: JsonValue } | { ok: false; code: "timeout" | "too-large" | "invalid" };
+type BodyRead = { ok: true; value: JsonValue } | { ok: false; code: "timeout" | "too-large" | "cancelled" | "invalid" };
 /** Reads a dispatch body of at most `limit` bytes before `deadline` (epoch ms).
- * Expiry or overflow cancels the reader itself, so nothing keeps consuming the
- * body after the caller releases its reservation. */
-export async function readRelayBody(body: ReadableStream<Uint8Array> | null, limit: number, deadline: number): Promise<BodyRead> {
+ * Expiry, overflow or abort cancels the reader itself (no further pulls) and
+ * returns at once: the outcome never waits on the source's cancel promise. */
+export async function readRelayBody(body: ReadableStream<Uint8Array> | null, limit: number, deadline: number, signal?: AbortSignal): Promise<BodyRead> {
+  if (signal?.aborted) return { ok: false, code: "cancelled" };
   if (!body) return { ok: false, code: "invalid" };
   const reader = body.getReader();
   const chunks: Uint8Array[] = [];
   let total = 0;
   let timer: ReturnType<typeof setTimeout> | null = null;
-  const expired = new Promise<"timeout">(resolve => { timer = setTimeout(() => resolve("timeout"), Math.max(0, deadline - Date.now())); });
+  let onAbort = () => {};
+  const stopped = new Promise<"timeout" | "cancelled">(resolve => {
+    timer = setTimeout(() => resolve("timeout"), Math.max(0, deadline - Date.now()));
+    onAbort = () => resolve("cancelled");
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+  const stop = (code: "timeout" | "too-large" | "cancelled"): BodyRead => {
+    reader.cancel().catch(() => undefined);
+    return { ok: false, code };
+  };
   try {
     for (;;) {
-      const next = await Promise.race([reader.read(), expired]);
-      if (next === "timeout" || (!next.done && (total += next.value.byteLength) > limit)) {
-        await reader.cancel().catch(() => undefined);
-        return { ok: false, code: next === "timeout" ? "timeout" : "too-large" };
-      }
+      const next = await Promise.race([reader.read(), stopped]);
+      if (next === "timeout" || next === "cancelled") return stop(next);
       if (next.done) break;
+      if ((total += next.value.byteLength) > limit) return stop("too-large");
       chunks.push(next.value);
     }
   } catch {
     return { ok: false, code: "invalid" };
   } finally {
     clearTimeout(timer);
+    signal?.removeEventListener("abort", onAbort);
   }
   const joined = new Uint8Array(total);
   let offset = 0;
