@@ -13,6 +13,8 @@ interface Scope { workspace: AgentWorkspace; tabId: string; generation: number }
 interface Result { state: "applied" | "conflict" | "unknown"; message: string; result?: AgentCommand["result"]; operationId: string }
 type Socket = Pick<WebSocket, "readyState" | "send" | "close" | "addEventListener">;
 const operations = new Set(["update_active_draft", "create_file_draft", "write_file", "create_page", "set_page_details", "add_section", "make_component", "move_section", "remove_section", "move_file", "delete_file", "open_page", "inspect_preview", "list_media", "preview_media", "improve_images", "loop_video", "video_still", "write_subtitles", "frame_image", "place_media", "describe_media", "change_collection", "adding_settings", "remove_media", "keep_media", "restore_media", "replace_media"]);
+/** Mutating operations that have no durable receipt yet (ticket 08 "Not covered"); the rest reconcile through receipts. */
+const receiptless = new Set(["update_active_draft", "create_file_draft", "place_media", "frame_image", "loop_video"]);
 type Recovery = ReturnType<typeof browserAgentRecovery>;
 interface Registry {
   read: () => { tabId: string; generation: number } | undefined;
@@ -85,6 +87,8 @@ export function createLiveTransport(options: Options) {
   let heartbeat: number | undefined, pong: number | undefined;
   let recovery: Recovery | undefined, first = true, takeoverFlight: Promise<void> | undefined;
   const flights = new Map<string, { identity: string; promise: Promise<Result> }>();
+  /** Last 100 applied outcomes in this activation; receipts remain the durable proof. */
+  const settled = new Map<string, { identity: string; result: Result }>();
   const scope = (): Scope => ({ workspace, tabId: options.tabId, generation: generation! });
   const current = () => !stopped && options.current() !== undefined && workspaceKey(options.current()!) === key;
   const matches = (value: Partial<Scope>) => value.workspace && typeof value.workspace.account === "string" && workspaceKey(value.workspace) === key && value.tabId === options.tabId && value.generation === generation;
@@ -159,6 +163,11 @@ export function createLiveTransport(options: Options) {
           const identity = payloadIdentity(incoming as JsonValue), existing = flights.get(operationId);
           if (existing && existing.identity !== identity) result = refuse("This change's id is already running with different work.");
           else {
+            // Operations without a durable receipt (e.g. place_media) must not apply twice in this tab either.
+            const done = receiptless.has(incoming.operation) ? settled.get(operationId) : undefined;
+            if (done) {
+              result = done.identity === identity ? done.result : refuse("This change's id was already used for different work.");
+            } else {
             const work = existing ?? { identity, promise: (async (): Promise<Result> => {
               try {
                 const outcome = await options.run({ ...incoming as AgentCommand, ownerGeneration: generation! }, generation!);
@@ -171,6 +180,11 @@ export function createLiveTransport(options: Options) {
             flights.set(operationId, work);
             try { result = await work.promise; }
             finally { if (flights.get(operationId) === work) flights.delete(operationId); }
+            if (result.state === "applied" && receiptless.has(incoming.operation) && !settled.has(operationId)) {
+              settled.set(operationId, { identity, result });
+              if (settled.size > 100) settled.delete(settled.keys().next().value!);
+            }
+            }
           }
         }
       } catch (error) { result = refuse(error instanceof Error ? error.message : "Browser storage is unavailable."); }

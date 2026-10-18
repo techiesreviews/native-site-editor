@@ -393,3 +393,22 @@ test("back-forward cache pagehide preserves opt-in and pageshow resumes the owne
   a.window.dispatchEvent(Object.assign(new Event("pagehide"), { persisted: false }));
   assert.equal(a.transport.state().mode, "off"); assert.equal(f.timers.size, 0);
 });
+
+test("a receiptless mutation delivered again after it applied returns its outcome without running twice", async () => {
+  let runs = 0;
+  const f = fixture(), a = f.tab("a", { run: async () => { runs++; return { message: "Placed once." }; } });
+  await a.transport.start();
+  const placed = { ...command("place-1"), operation: "place_media" as const };
+  a.deliver(placed);
+  await until(() => a.sockets[0].messages("result").length === 1);
+  a.deliver(placed);
+  await until(() => a.sockets[0].messages("result").length === 2);
+  const results = a.sockets[0].messages("result");
+  assert.equal(runs, 1);
+  assert.deepEqual(results[1].result, results[0].result);
+  a.deliver({ ...placed, path: "other.html" });
+  await until(() => a.sockets[0].messages("result").length === 3);
+  assert.equal(a.sockets[0].messages("result")[2].result.state, "conflict");
+  assert.equal(runs, 1);
+  a.transport.stop();
+});
