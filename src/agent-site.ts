@@ -3,6 +3,7 @@
 // drafts), and how it applies the changes agents queue, each through the
 // same code the editor's own controls run, so it lands as an ordinary draft
 // with Undo. main.ts supplies the editor's state and actions.
+import { agentCommandSignals } from "./agent-tools";
 import { decodeHtmlEntities } from "./page-builder/html-entities";
 import type { MoveAt, MoveOutcome } from "./page-builder/block-move";
 import { expandStyleImports } from "../shared/css-imports";
@@ -905,6 +906,8 @@ const textOwners = new Map<string, Promise<{ records: AgentRecords; owner: Retur
 /** Carries a command's identity and exact reported outcome across the guarded commit boundary. */
 export async function prepareAgentText(command: AgentCommand, scope: DraftScope, store: DraftStore, current: () => boolean, flushTyping: (scope: DraftScope, paths: string[]) => void,
   afterSettle: () => void = () => {}) {
+  const signal = agentCommandSignals.get(command);
+  signal?.throwIfAborted();
   command = structuredClone(command);
   scope = { ...scope };
   // Storage refusals (src/agent-records.ts) say what happened; nothing was applied and drafts are as they were.
@@ -960,6 +963,7 @@ export async function prepareAgentText(command: AgentCommand, scope: DraftScope,
     let expectedRevision = 0, committed = false;
     let lastAfter = new Map<string, SavedDraft | undefined>();
     const check = async () => {
+      signal?.throwIfAborted();
       if (!current() || owner.paused) throw new Error("The repository or agent ownership changed meanwhile.");
       const state = await records.workspace(workspace);
       if (!current() || owner.paused || state.generation !== owner.generation || state.paused) throw new Error("The repository or agent ownership changed meanwhile.");
@@ -980,12 +984,14 @@ export async function prepareAgentText(command: AgentCommand, scope: DraftScope,
       },
       async commit(before, after, valid, plan) {
         if (committed) throw new Error("An agent command must use one guarded commit.");
+        signal?.throwIfAborted();
         store.stageAgent(after);
         if (command.operation !== "write_file") {
           // The recorded outcome is the reply: a duplicate delivery gets the same files, route and hash.
           outcome = await structuralOutcome(command, after, plan);
           receipt.outcome = JSON.parse(JSON.stringify(outcome)) as JsonValue;
         }
+        signal?.throwIfAborted();
         if (!current() || !valid()) throw new Error("The repository or source changed meanwhile.");
         try {
           const result = await owner.commit({ workspace, generation: owner.generation, expectedRevision,

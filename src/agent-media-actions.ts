@@ -1,3 +1,4 @@
+import { agentCommandSignals } from "./agent-tools";
 import { payloadIdentity, workspaceKey, type JsonValue } from "../shared/agent-command";
 import { textHash } from "../shared/agent";
 import { draftKey, type DraftStore } from "./drafts";
@@ -231,7 +232,8 @@ export async function applyAgentMedia(...parameters: Parameters<typeof executeAg
   const [ctx, input] = parameters;
   const command = structuredClone(input), args = command.args ?? {};
   const changing = mediaChanges(command.operation as import("../shared/agent-media").MediaTool, args);
-  const proof = mediaCommandProofs.get(input);
+  const signal = agentCommandSignals.get(input), mediaProof = mediaCommandProofs.get(input);
+  const proof = () => { signal?.throwIfAborted(); mediaProof?.(); };
   if (!changing) { parameters[0] = { ...ctx, agent: true }; return executeAgentMedia(...parameters); }
   const refuse = (error: unknown): never => {
     // Whether the edit was kept is unproven (src/agent-records.ts "unknown"): never claim nothing changed.
@@ -474,8 +476,8 @@ export async function applyAgentMedia(...parameters: Parameters<typeof executeAg
 /** Main's adapter lives in this lazy chunk, including all media preparation. */
 export async function runAgentMedia(controller: ReturnType<typeof createMediaController>, ports: MediaControllerPorts, command: AgentCommand,
   page = ports.source(command.path)) {
-  const since = ports.stamp(), proof = mediaCommandProofs.get(command);
-  const check = () => { proof?.(); if (!since.holds()) throw new Error("The editor changed branch or revision."); };
+  const since = ports.stamp(), proof = mediaCommandProofs.get(command), signal = agentCommandSignals.get(command);
+  const check = () => { signal?.throwIfAborted(); proof?.(); if (!since.holds()) throw new Error("The editor changed branch or revision."); };
   check();
   const improve = command.operation === "improve_images" ? controller.prepareImprove() : undefined;
   const target = () => ({ path: command.path, node: parseOutlineId(command.args!.element!)! });

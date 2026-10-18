@@ -4,7 +4,7 @@ import { prepareAgentEdit, type AgentEdit, type AgentStatus } from "../shared/ag
 import type { AgentReadResult } from "../shared/agent-read";
 import { SiteFiles } from "../shared/site-files";
 import { AgentRecordsError, type AgentRecords } from "./agent-records";
-import { createAgentTools } from "./agent-tools";
+import { agentCommandSignals, createAgentTools } from "./agent-tools";
 import { agentFileReader, type AgentReadPorts } from "./agent-tools-read";
 
 interface Options {
@@ -20,14 +20,15 @@ const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as JsonValue;
 export function createAgentEditTools(options: Options) {
   const flights = new Map<string, { identity: string; authorizationId: string; promise: Promise<AgentReadResult> }>();
   const { records, workspace, ports } = options;
-  async function execute(request: Request, generation: number, current: () => boolean): Promise<AgentReadResult> {
+  async function execute(request: Request, generation: number, current: () => boolean, signal?: AbortSignal): Promise<AgentReadResult> {
     const stamp = ports.stamp(), source = ports.files();
     const repoId = source?.repo.id, branch = source?.snapshot.branch, commit = source?.snapshot.commit;
-    let ran = false;
+    let ran = false, identity: string | undefined;
     // Once the executor ran, its own commit decided the outcome: a later revision change or lost
     // socket must never relabel committed work as a conflict (the transport drops a reply it cannot send).
     const check = () => {
       if (ran) return;
+      signal?.throwIfAborted();
       const now = ports.files();
       if (!current() || !stamp.holds() || now?.repo.id !== repoId || now?.snapshot.branch !== branch || now?.snapshot.commit !== commit)
         throw new Error("The editor changed branch or revision. Read the site again.");
@@ -38,7 +39,7 @@ export function createAgentEditTools(options: Options) {
     };
     try {
       check();
-      const identity = request.operation === "edit" ? await textHash(payloadIdentity(json({ tool: request.tool, args: request.args, branch: workspace.branch }))) : "";
+      identity = request.operation === "edit" ? await textHash(payloadIdentity(json({ tool: request.tool, args: request.args, branch: workspace.branch }))) : "";
       check();
       const running = request.operation === "edit" ? flights.get(request.id) : undefined;
       if (running) {
@@ -57,6 +58,11 @@ export function createAgentEditTools(options: Options) {
             return { ok: false, message: "This change's id was already used for different work. Nothing was changed." };
           return reply(receipt.outcome);
         }
+        const status = await records.status(workspace, request.id, request.grantId);
+        check();
+        if (status.status === "applied") return request.operation === "edit" && status.receipt.payloadIdentity !== identity
+          ? { ok: false, message: "This change's id was already used for different work. Nothing was changed." } : reply(status.receipt.outcome);
+        if (status.status === "cancelled") return { ok: true, value: { requestId: request.id, state: "cancelled", message: "Cancelled before commit. Nothing was changed." } };
         if (request.operation === "status") return { ok: true, value: { requestId: request.id, state: "unknown",
           message: "Change not found, or its receipt expired. The outcome is unknown; do not replay the change." } };
         if (!source) throw new Error("The editor is unavailable. Open the connected site and branch.");
@@ -67,7 +73,7 @@ export function createAgentEditTools(options: Options) {
         const shared = await ports.context();
         check();
         if (!shared) throw new Error("The editor is unavailable. Open the connected site and branch.");
-        const files = new SiteFiles(agentFileReader(source, shared.context), source.repo, shared.context, async hash => {
+        const files = new SiteFiles(agentFileReader(source, shared.context, signal), source.repo, shared.context, async hash => {
           check(); return shared.texts.get(hash);
         });
         const prepared = await prepareAgentEdit(request, shared.context, files);
@@ -78,7 +84,7 @@ export function createAgentEditTools(options: Options) {
           const expectedRevision = revision ?? (await records.workspace(workspace)).revision;
           check();
           const result = await records.commit({ workspace, generation, expectedRevision, expectedDrafts: [], drafts: [],
-            receipt: { operationId: request.id, authorizationId: request.grantId, payloadIdentity: identity, outcome,
+            receipt: { operationId: request.id, authorizationId: request.grantId, payloadIdentity: identity!, outcome,
               createdAt: Date.now(), issuedAt: request.createdAt } });
           check();
           return reply(result.receipt.outcome);
@@ -87,8 +93,10 @@ export function createAgentEditTools(options: Options) {
         const { input, operation } = prepared;
         const command: AgentCommand = { id: request.id, operation, content: input.content ?? "",
           branch: shared.context.branch, commit: shared.context.commit, ...input, repoId: workspace.repoId,
-          grantId: request.grantId, generation: request.generation, ownerGeneration: generation, requestIdentity: identity,
+          grantId: request.grantId, generation: request.generation, ownerGeneration: generation, requestIdentity: identity!,
           state: "pending", createdAt: request.createdAt };
+        if (signal) agentCommandSignals.set(command, signal);
+        signal?.throwIfAborted();
         ran = true;
         const outcome = await options.run(command);
         check();
@@ -108,21 +116,26 @@ export function createAgentEditTools(options: Options) {
       try { return await promise; }
       finally { if (flights.get(request.id) === flight) flights.delete(request.id); }
     } catch (error) {
+      // A commit may have won just before abort or a lost reply. Never relabel or undo that receipt.
+      const settled = await records.status(workspace, request.id, request.grantId).catch(() => undefined);
+      if (settled?.status === "applied") return request.operation === "edit" && settled.receipt.payloadIdentity !== identity
+        ? { ok: false, message: "This change's id was already used for different work. Nothing was changed." } : reply(settled.receipt.outcome);
+      if (settled?.status === "cancelled") return { ok: true, value: { requestId: request.id, state: "cancelled", message: "Cancelled before commit. Nothing was changed." } };
       const message = error instanceof Error ? error.message : "The browser edit failed.";
       const unknown = error instanceof AgentRecordsError && error.code === "unknown" || /unproven|outcome.*unknown|could not prove|could not confirm whether/i.test(message);
       return { ok: true, value: { requestId: request.id, state: unknown ? "unknown" : "conflict", message: unknown
         ? `${message} Check get_command_status; do not replay the change.` : message } };
     }
   }
-  type Input = { request: Request; generation: number; current: () => boolean };
-  const executor = ({ request, generation, current }: Input) => execute(request, generation, current);
+  type Input = { request: Request; generation: number; current: () => boolean; signal?: AbortSignal };
+  const executor = ({ request, generation, current, signal }: Input) => execute(request, generation, current, signal);
   const registry = createAgentTools<Input>({ edit_file: executor, write_file: executor, move_file: executor,
     delete_file: executor, create_page: executor, set_page_details: executor, open_page: executor,
     inspect_preview: executor, make_component: executor, add_section: executor, move_section: executor,
     remove_section: executor, get_command_status: executor });
   return {
-    run(request: Request, generation: number, current: () => boolean) {
-      return registry.run(request.operation === "status" ? "get_command_status" : request.tool, { request, generation, current });
+    run(request: Request, generation: number, current: () => boolean, signal?: AbortSignal) {
+      return registry.run(request.operation === "status" ? "get_command_status" : request.tool, { request, generation, current, signal });
     },
   };
 }

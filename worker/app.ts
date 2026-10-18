@@ -346,7 +346,7 @@ export async function handle(
   fetcher = requestFetch(fetcher, timing, ctx && ((promise) => ctx.waitUntil(promise)));
   let response: Response;
   try {
-    response = await route(request, env, url, fetcher);
+    response = await route(request, env, url, fetcher, ctx);
   } catch (error) {
     const quota = !(error instanceof HttpError) && isDailyQuotaError(error);
     const status = error instanceof HttpError ? error.status : quota ? 503 : 500;
@@ -404,6 +404,7 @@ async function route(
   env: Env,
   url: URL,
   fetcher: typeof fetch,
+  ctx?: { waitUntil(promise: Promise<unknown>): void },
 ): Promise<Response> {
   const path = url.pathname;
   if (path === "/__maintenance/inventory") return inventoryRoute(request, env);
@@ -605,7 +606,7 @@ async function route(
     // Loaded on first use: the MCP server and its schema library are most of
     // the bundle, and most isolates never serve /mcp.
     const { handleMcp } = await import("./mcp");
-    return handleMcp(request, connection, env, body);
+    return handleMcp(request, connection, env, body, ctx);
   }
   if (path === "/api/agent/relay") {
     // Cheap refusals happen before even the sign-in DO is read.

@@ -1,11 +1,12 @@
 import type { AgentCommand } from "../shared/agent";
 import type { AgentEdit, AgentStatus } from "../shared/agent-edit";
-import { mediaTools, type AgentMedia } from "../shared/agent-media";
+import { mediaChanges, mediaTools, type AgentMedia } from "../shared/agent-media";
 import type { AgentRead, AgentReadResult } from "../shared/agent-read";
 import { requestTools, type AgentRequests } from "../shared/agent-requests";
 import { payloadIdentity, workspaceKey, type AgentWorkspace, type JsonValue } from "../shared/agent-command";
 import { AgentFailureError, classifyAgentFailure, type AgentFailure } from "../shared/agent-failure";
 import { AgentRecordsError, type AgentRecords } from "./agent-records";
+import { agentCommandSignals } from "./agent-tools";
 import { createAgentOwner } from "./agent-owner";
 import { browserAgentRecovery } from "./agent-recovery";
 
@@ -32,14 +33,14 @@ interface Options {
   current: () => AgentWorkspace | undefined;
   records: AgentRecords;
   reload: (snapshot: Snapshot) => Promise<void>;
-  media?: (request: AgentMedia, generation: number, current: () => boolean, deadline: number, seen: { page: string | undefined }) => Promise<AgentReadResult>;
+  media?: (request: AgentMedia, generation: number, current: () => boolean, deadline: number, seen: { page: string | undefined }, signal?: AbortSignal) => Promise<AgentReadResult>;
   /** The live page source, read synchronously when a media command arrives: its proof starts there. */
   source?: (path: string) => string | undefined;
-  edit?: (request: AgentEdit | AgentStatus, generation: number, current: () => boolean) => Promise<AgentReadResult>;
-  read?: (read: AgentRead) => Promise<AgentReadResult>;
+  edit?: (request: AgentEdit | AgentStatus, generation: number, current: () => boolean, signal?: AbortSignal) => Promise<AgentReadResult>;
+  read?: (read: AgentRead, signal?: AbortSignal) => Promise<AgentReadResult>;
   /** Ticket 18: the request tools, answered from this browser's requests (a wait may be held under Watch). */
-  requests?: (request: AgentRequests, generation: number, current: () => boolean, deadline: number) => Promise<AgentReadResult>;
-  run: (command: AgentCommand, ownerGeneration: number) => Promise<{ message?: string; result?: AgentCommand["result"] } | void>;
+  requests?: (request: AgentRequests, generation: number, current: () => boolean, deadline: number, signal?: AbortSignal) => Promise<AgentReadResult>;
+  run: (command: AgentCommand, ownerGeneration: number, signal?: AbortSignal) => Promise<{ message?: string; result?: AgentCommand["result"] } | void>;
   listen: (state: State) => void;
   socket?: (url: string) => Socket;
   /** One plain route probe, only after the first socket attempt fails. */
@@ -96,6 +97,10 @@ export function createLiveTransport(options: Options) {
   let socket: Socket | undefined, handshaken = false, session = 0, release: (() => void) | undefined;
   let heartbeat: number | undefined, pong: number | undefined;
   let recovery: Recovery | undefined, first = true, takeoverFlight: Promise<void> | undefined;
+  const active = new Map<string, { source: Socket; stop: AbortController; dispose: () => void }>();
+  const cancelSocket = (source: Socket | undefined) => {
+    for (const call of active.values()) if (call.source === source) { call.stop.abort(); call.dispose(); }
+  };
   const flights = new Map<string, { identity: string; promise: Promise<Result> }>();
   const scope = (): Scope => ({ workspace, tabId: options.tabId, generation: generation! });
   // A workspace briefly absent (a refresh reloading the repository) is no move: the socket, ownership
@@ -112,6 +117,7 @@ export function createLiveTransport(options: Options) {
   }
   function close() {
     const old = socket;
+    cancelSocket(old);
     socket = undefined;
     opening = undefined;
     handshaken = false;
@@ -154,9 +160,9 @@ export function createLiveTransport(options: Options) {
     try { source.send(JSON.stringify({ type: "handshake", ...scope(), owner: true })); }
     catch { source.close(); }
   }
-  async function readCommand(source: Socket, value: Partial<Scope> & { id?: unknown; command?: unknown }, deadline: number, seen: { page: string | undefined }) {
+  async function readCommand(source: Socket, value: Partial<Scope> & { id?: unknown; command?: unknown }, deadline: number, seen: { page: string | undefined }, signal: AbortSignal) {
     const at = epoch, connection = session;
-    const valid = () => present() && socket === source && session === connection && handshaken && state.mode === "live" && source.readyState === 1;
+    const valid = () => !signal.aborted && present() && socket === source && session === connection && handshaken && state.mode === "live" && source.readyState === 1;
     let result: AgentReadResult;
     try {
       const read = value.command as AgentRead | AgentEdit | AgentStatus | AgentMedia | AgentRequests;
@@ -164,7 +170,8 @@ export function createLiveTransport(options: Options) {
         result = typeof value.id !== "string" || !value.id || !matches(value) || !valid() || !requestTools.includes(read.tool) ||
           typeof read.grantId !== "string" || !read.grantId || !read.args || typeof read.args !== "object" || Array.isArray(read.args) || !await prove(at) || !valid()
           ? { ok: false, message: "This request call is incomplete or belongs to another workspace, tab or generation. Call it again." }
-          : await options.requests?.(read, generation!, valid, deadline) ?? { ok: false, message: "Browser request tools are unavailable. Refresh the editor." };
+          // Finish an empty wait before the cancellation fence, leaving time for its final IndexedDB read and reply.
+          : await options.requests?.(read, generation!, valid, deadline - 100, signal) ?? { ok: false, message: "Browser request tools are unavailable. Refresh the editor." };
       } else {
         const editing = read.operation === "edit" || read.operation === "status" || read.operation === "media";
         if (typeof value.id !== "string" || !value.id || !matches(value) || !valid() || (editing ? (typeof read.id !== "string" || !/^[\w.:-]{1,128}$/.test(read.id) || typeof read.grantId !== "string" || !read.grantId ||
@@ -177,10 +184,10 @@ export function createLiveTransport(options: Options) {
             !await prove(at) || !valid())
           result = { ok: false, message: "This read is incomplete or belongs to another workspace, tab or generation. Read the site again." };
         else if (read.operation === "media") result = typeof read.path === "string" && mediaTools.includes(read.tool)
-          ? await options.media?.(read, generation!, valid, deadline, seen) ?? { ok: false, message: "Browser media tools are unavailable. Refresh the editor." }
+          ? await options.media?.(read, generation!, valid, deadline, seen, signal) ?? { ok: false, message: "Browser media tools are unavailable. Refresh the editor." }
           : { ok: false, message: "Unknown browser media tool." };
-        else if (editing) result = await options.edit?.(read, generation!, valid) ?? { ok: false, message: "Browser edit tools are unavailable. Refresh the editor." };
-        else result = await options.read?.(read) ?? { ok: false, message: "Browser read tools are unavailable. Refresh the editor." };
+        else if (editing) result = await options.edit?.(read, generation!, valid, signal) ?? { ok: false, message: "Browser edit tools are unavailable. Refresh the editor." };
+        else result = await options.read?.(read, signal) ?? { ok: false, message: "Browser read tools are unavailable. Refresh the editor." };
       }
     } catch (error) { result = { ok: false, message: error instanceof Error ? error.message : "The browser read failed." }; }
     if (socket !== source || !await prove(at).catch(() => false) || !valid()) return;
@@ -189,9 +196,9 @@ export function createLiveTransport(options: Options) {
       message = JSON.stringify({ type: "result", id: value.id, ...scope(), result: { ok: false, message: "The result is too large. Export a folder with export_site instead." } });
     try { source.send(message); } catch { source.close(); }
   }
-  async function command(source: Socket, value: Partial<Scope> & { id?: unknown; command?: unknown }, deadline: number, seen: { page: string | undefined }) {
+  async function command(source: Socket, value: Partial<Scope> & { id?: unknown; command?: unknown }, deadline: number, seen: { page: string | undefined }, signal: AbortSignal) {
     const at = epoch, connection = session;
-    if ((value.command as { operation?: unknown } | null)?.operation && ["read", "edit", "status", "media", "requests"].includes((value.command as { operation: string }).operation)) return readCommand(source, value, deadline, seen);
+    if ((value.command as { operation?: unknown } | null)?.operation && ["read", "edit", "status", "media", "requests"].includes((value.command as { operation: string }).operation)) return readCommand(source, value, deadline, seen, signal);
     const incoming = value.command as Partial<AgentCommand> | null;
     const operationId = typeof incoming?.id === "string" ? incoming.id : "";
     const refuse = (message: string): Result => ({ state: "conflict", message, operationId });
@@ -207,8 +214,9 @@ export function createLiveTransport(options: Options) {
     else {
       try {
         // Admission awaits IndexedDB: the socket, its handshake and liveness must still hold before the executor runs.
+        signal.throwIfAborted();
         const admitted = await prove(at);
-        if (!admitted || !present() || socket !== source || session !== connection || !handshaken || state.mode !== "live" || source.readyState !== 1)
+        if (signal.aborted || !admitted || !present() || socket !== source || session !== connection || !handshaken || state.mode !== "live" || source.readyState !== 1)
           result = refuse("Another tab took over agent changes, this site changed, or the connection was lost. Nothing was changed.");
         else {
           const identity = payloadIdentity(incoming as JsonValue), existing = flights.get(operationId);
@@ -216,7 +224,9 @@ export function createLiveTransport(options: Options) {
           else {
             const work = existing ?? { identity, promise: (async (): Promise<Result> => {
               try {
-                const outcome = await options.run({ ...incoming as AgentCommand, ownerGeneration: generation! }, generation!);
+                const command = { ...incoming as AgentCommand, ownerGeneration: generation! };
+                agentCommandSignals.set(command, signal);
+                const outcome = await options.run(command, generation!, signal);
                 return { state: "applied", message: outcome?.message ?? "Applied in the editor as an unsaved draft.", ...outcome, operationId };
               } catch (error) {
                 const message = error instanceof Error ? error.message : "The change could not be applied.";
@@ -270,6 +280,7 @@ export function createLiveTransport(options: Options) {
         try { value = JSON.parse(String(event.data)); } catch { return; }
         if (!value || typeof value !== "object") return;
         if (value.type === "reset" && value.handshakeRequired === true) {
+          cancelSocket(source);
           handshaken = false; session++; clearHeartbeat(); readiness = Promise.resolve(false); arm();
           show({ mode: "connecting" });
           void prove(at).then(ok => { if (ok && socket === source) handshake(source); }).catch(() => { source.close(); });
@@ -283,11 +294,13 @@ export function createLiveTransport(options: Options) {
             if (limit !== undefined) clock.clearTimeout(limit);
             show({ mode: "live" }); beat(source); resolve(); return true;
           }).catch(() => { source.close(); failed(); return false; });
+        } else if (value.type === "cancel" && matches(value) && (value.reason === "cancelled" || value.reason === "timeout")) {
+          const call = active.get(value.id);
+          if (call?.source === source) { call.stop.abort(); call.dispose(); }
         } else if (value.type === "command") {
           const arrived = session;
           // The relay's remaining total budget, counted from arrival here (never a fresh 10 s), less 1 s for transit.
-          // Clocks are never compared, so a frame delayed longer can still commit after the relay gave up: the Worker
-          // has then answered unknown and the receipt reconciles it. Relay-to-tab expiry is ticket 19's cancellation.
+          // An ordered cancel frame closes the remaining transit gap; the receipt decides a commit that already won.
           // A request wait (ticket 18) has the relay's longer wait budget, at most 25 s.
           const most = value.command?.operation === "requests" && value.command.tool === "wait_for_requests" ? 25_000 : 10_000;
           const remaining = typeof value.remainingMs === "number" && Number.isFinite(value.remainingMs) ? Math.min(most, Math.max(0, value.remainingMs)) : 10_000;
@@ -295,10 +308,25 @@ export function createLiveTransport(options: Options) {
           // Before any await (readiness, ownership proof, lazy executor): the page a media change's element id points into.
           const path = (value.command as { operation?: unknown; path?: unknown } | null)?.operation === "media" ? (value.command as { path?: unknown }).path : undefined;
           const seen = { page: typeof path === "string" && path ? options.source?.(path) : undefined };
-          // The relay may send a waiting command immediately after ready, before IndexedDB answers.
+          // Track before any await: an ordered cancel can arrive before readiness or the lazy executor.
+          if (typeof value.id !== "string" || active.has(value.id)) return;
+          const stop = new AbortController();
+          const incoming = value.command as { id?: string; grantId?: string; operation?: string; tool?: AgentMedia["tool"]; args?: AgentCommand["args"] } | undefined;
+          const mutation = matches(value) && incoming && typeof incoming.id === "string" && typeof incoming.grantId === "string" &&
+            (incoming.operation === "edit" || incoming.operation === "media" && mediaChanges(incoming.tool!, incoming.args ?? {}) ||
+              operations.has(incoming.operation ?? ""));
+          const abort = () => {
+            // The same IndexedDB stores serialize this tombstone against the eventual draft + receipt commit.
+            if (mutation) void records.cancel(workspace, incoming.id!, incoming.grantId!).catch(() => undefined);
+          };
+          stop.signal.addEventListener("abort", abort, { once: true });
+          const timer = clock.setTimeout(() => stop.abort(), Math.max(0, deadline - Date.now()));
+          const call = { source, stop, dispose: () => { clock.clearTimeout(timer); if (active.get(value.id) === call) active.delete(value.id); } };
+          active.set(value.id, call);
+          stop.signal.addEventListener("abort", call.dispose, { once: true });
           void readiness.then(() => {
-            if (session === arrived && socket === source) return command(source, value, deadline, seen);
-          }).catch(() => { source.close(); });
+            if (session === arrived && socket === source && !stop.signal.aborted) return command(source, value, deadline, seen, stop.signal);
+          }).catch(() => { source.close(); }).finally(() => { call.dispose(); stop.signal.removeEventListener("abort", abort); stop.signal.removeEventListener("abort", call.dispose); });
         }
       });
       const lost = () => {
@@ -306,6 +334,7 @@ export function createLiveTransport(options: Options) {
         failed();
         if (socket !== source) return;
         if (opening?.socket === source) opening = undefined;
+        cancelSocket(source);
         socket = undefined; handshaken = false; session++; clearHeartbeat();
         if (ready && current() && epoch === at) recovery?.report({ kind: "transient" });
       };

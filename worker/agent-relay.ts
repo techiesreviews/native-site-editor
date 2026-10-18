@@ -28,7 +28,9 @@ export interface RelayTarget {
   tabId?: string;
   generation?: number;
 }
+export interface RelayCancelKey { requestId: string | number; grantId: string }
 interface Pending {
+  cancelKey?: RelayCancelKey;
   socket: RelaySocket;
   scope: RelayScope;
   bytes: number;
@@ -219,7 +221,7 @@ export class AgentRelay {
   /** Sends to the current owner tab. A restored (post-hibernation) owner socket
    * gets the command after its fresh handshake, inside the same 10 s deadline;
    * with no owner socket at all the answer is immediate "editor-unavailable". */
-  dispatch(target: RelayTarget, command: JsonValue, signal?: AbortSignal, intake?: { started: number; reservation: RelayReservation }): Promise<Outcome> {
+  dispatch(target: RelayTarget, command: JsonValue, signal?: AbortSignal, intake?: { started: number; reservation: RelayReservation }, cancelKey?: RelayCancelKey): Promise<Outcome> {
     // The body's reservation becomes this call's own accounting in the same turn.
     intake?.reservation.release();
     const started = intake?.started ?? this.clock.now();
@@ -241,7 +243,7 @@ export class AgentRelay {
     // remainingMs is filled in at each send (at most 5 digits, measured at its widest): the tab fences
     // commits against this total deadline without comparing clocks.
     const candidate = JSON.stringify({ type: "command", id: placeholder, ...scope, remainingMs: 10_000, command });
-    const length = bytes(candidate);
+    const length = bytes(candidate) + (cancelKey ? bytes(JSON.stringify(cancelKey)) : 0);
     if (this.buffered + this.reserved.bytes + length > AgentRelay.maxBytes) return Promise.resolve(failure("too-large"));
     const deadline = started + (wait ?? 10_000);
     if (this.clock.now() >= deadline) return Promise.resolve(failure("timeout"));
@@ -250,14 +252,19 @@ export class AgentRelay {
     const framed = (now: number) => message.replace('"remainingMs":10000', `"remainingMs":${Math.max(0, Math.floor(deadline - now))}`);
     return new Promise(resolve => {
       const cancel = () => call.finish(failure("cancelled", call.unsent === undefined ? "unknown" : "not-sent"));
-      const call: Pending = { socket: receiver, scope, bytes: length, deadline, timer: undefined, finish: outcome => {
+      const call: Pending = { cancelKey, socket: receiver, scope, bytes: length, deadline, timer: undefined, finish: outcome => {
         if (!this.calls.delete(id)) return;
         if (this.waitId === id) this.waitId = undefined;
         this.buffered -= length;
+        const sent = call.unsent === undefined;
         call.unsent = undefined;
         this.clock.clearTimeout(call.timer);
         signal?.removeEventListener("abort", cancel);
         resolve(outcome);
+        if (sent && !outcome.ok && (outcome.code === "cancelled" || outcome.code === "timeout")) {
+          try { call.socket.send(JSON.stringify({ type: "cancel", id, ...call.scope, reason: outcome.code })); }
+          catch { this.disconnect(call.socket); }
+        }
       } };
       this.calls.set(id, call);
       if (wait !== undefined) this.waitId = id;
@@ -322,6 +329,13 @@ export class AgentRelay {
     else if (this.buffered + this.reserved.bytes + length > AgentRelay.maxBytes) call.finish(failure("too-large", "unknown"));
     else call.finish({ ok: true, result: value.result! });
     return true;
+  }
+
+  /** Only pending work from this grant and JSON-RPC id; no mailbox or replay. */
+  cancel(key: RelayCancelKey) {
+    for (const call of [...this.calls.values()])
+      if (call.cancelKey?.requestId === key.requestId && call.cancelKey.grantId === key.grantId)
+        call.finish(failure("cancelled", call.unsent === undefined ? "unknown" : "not-sent"));
   }
 
   disconnect(socket: RelaySocket) {
