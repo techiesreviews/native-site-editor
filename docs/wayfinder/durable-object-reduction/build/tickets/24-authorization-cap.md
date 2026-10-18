@@ -78,3 +78,23 @@ Kit:
 - RESULT: ok doctor 7/7 checks passed
 - RESULT: ok review git diff b72c6cb3ef793b9118bd5e43b3115acad6741bb2...HEAD evidence /home/ubulex/Projects/native-site-editor/.scratch/reviews/dor-24/20261018T005722Z
 - RESULT: ok specs none affected
+
+## Regression fix 24b (2026-10-18)
+
+Symptom: on dev, tests/native-save/native-mcp.spec.ts ("an MCP client connected by OAuth…") stopped at
+consent with "Too many unfinished connection requests". Kind: **test fixture bug, not production**. The
+browser fixture's fake SESSIONS object (tests/native-save/server.ts) had no `/oauth-pending` route, so the
+ledger POST fell through to the session read and returned the session record; `oauth.ts` saw no `allowed`
+and answered 429. The real SessionStore (worker/index.ts) was correct. Fix: the fixture runs the real
+`accountPending` on the `/oauth-pending` route, serialized per object (`serializeObject`, exported from
+tests/native-save/fake-hub.ts), and its session DELETE clears the ledger. Caps and spec unchanged.
+
+Commit: 60170569 (Claude). Tests: kit specs native-mcp.spec.ts reproduced the failure first, then passed 2x
+after the fix; `npm run check` ok, `npm run lint` ok, `scripts/agents/unit.sh` pass 4195 fail 0 (by hand).
+Review (Sol gpt-6.1-sol, medium, read-only): no defects.
+
+Kit:
+- RESULT: ok doctor 7/7 checks passed
+- RESULT: fail specs 1 of 1 failed: native-mcp.spec.ts (before the fix)
+- RESULT: ok specs 1/1 passed (twice, after the fix)
+- RESULT: ok review git diff 4a2cdb1985bc513f705f97b1694efaa2d041d998...HEAD evidence /home/ubulex/Projects/native-site-editor/.scratch/reviews/dor-24b/20261018T021007Z
