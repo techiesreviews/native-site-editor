@@ -156,3 +156,30 @@ for (const disturbance of ["clear", "account", "abandon"] as const) {
     });
   });
 }
+
+test("put and peek share the byte LRU: replacing a key counts once, peek refreshes recency", async () => {
+  const cache = new CleanSourceCache(() => "lex", 12);
+  cache.put("", "scope", "data.json", "aa");
+  cache.put("", "scope", "data.json", "bb");
+  assert.equal(cache.bytes, 4);
+  cache.put(repo, "x", "", "xx");
+  assert.equal(cache.peek("", "scope", "data.json"), "bb");
+  cache.put(repo, "y", "", "yyyy");
+  assert.equal(cache.peek(repo, "x"), undefined, "the least recent entry went first");
+  assert.equal(cache.peek("", "scope", "data.json"), "bb");
+  const gate = deferred(), late = cache.load(repo, "z", () => gate.promise);
+  cache.put(repo, "z", "", "zz");
+  gate.resolve("zz");
+  await late;
+  assert.equal(cache.bytes, 8, "a settle over a put replaces rather than adds");
+  assert.equal(cache.peek(repo, "z"), "zz");
+});
+
+test("peek never returns another account's media text", () => {
+  let account = "A";
+  const cache = new CleanSourceCache(() => account);
+  cache.put("", "scope", "CNAME", "a.example");
+  account = "B";
+  assert.equal(cache.peek("", "scope", "CNAME"), undefined);
+  assert.equal(cache.bytes, 0);
+});

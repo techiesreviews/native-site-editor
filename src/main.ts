@@ -1769,8 +1769,6 @@ let nativeSite: NativeSite | undefined;
 let nativeEngaged = false;
 const cleanSources = new CleanSourceCache(() => info?.user?.login);
 const nativeBaseSources = cleanSources.base;
-let mediaTextKey = "";
-const mediaText = new Map<string, string>();
 const mediaOpaqueText = new Map<string, { sha: string; text: string }>();
 const nativeComponentStyles = new Map<string, string>();
 const nativeMissingComponentStyles = new Set<string>();
@@ -2400,7 +2398,7 @@ function mediaTextSource(path: string, scope = draftScope()) {
     return cached?.sha === draft.sourceSha ? cached?.text : undefined;
   }
   if (held !== undefined || draft) return held;
-  return mediaTextKey === nativeTextIndexScopeKey() ? mediaText.get(path) : undefined;
+  return cleanSources.peek("", nativeTextIndexScopeKey(), path);
 }
 async function readMediaText(path: string) {
   const key = nativeTextIndexScopeKey(), repo = appStore.repository.value;
@@ -2420,8 +2418,7 @@ async function readMediaText(path: string) {
   if (key !== nativeTextIndexScopeKey() || !entry) return undefined;
   const source = await readFile(repo.full_name, entry.sha);
   if (key !== nativeTextIndexScopeKey()) return undefined;
-  if (mediaTextKey !== key) { mediaText.clear(); mediaTextKey = key; }
-  mediaText.set(path, source);
+  cleanSources.put("", key, path, source);
   return source;
 }
 function mediaOrigins() {
@@ -2468,11 +2465,7 @@ const mediaController = createMediaController({
   rememberSource: (path, source) => {
     // Native preview sources stay separate from the wider text index.
     if (/\.(?:html|css)$/i.test(path) || path === MEDIA_RECORDS_PATH) nativeBaseSources.set(path, source);
-    else {
-      const key = nativeTextIndexScopeKey();
-      if (mediaTextKey !== key) { mediaText.clear(); mediaTextKey = key; }
-      mediaText.set(path, source);
-    }
+    else cleanSources.put("", nativeTextIndexScopeKey(), path, source);
   },
   uploadedBlob: (scope, sha) => uploadBytes().get(uploadKey(scope, sha)),
   readBlob,
