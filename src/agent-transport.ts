@@ -31,7 +31,9 @@ interface Options {
   current: () => AgentWorkspace | undefined;
   records: AgentRecords;
   reload: (snapshot: Snapshot) => Promise<void>;
-  media?: (request: AgentMedia, generation: number, current: () => boolean, deadline: number) => Promise<AgentReadResult>;
+  media?: (request: AgentMedia, generation: number, current: () => boolean, deadline: number, seen: { page: string | undefined }) => Promise<AgentReadResult>;
+  /** The live page source, read synchronously when a media command arrives: its proof starts there. */
+  source?: (path: string) => string | undefined;
   edit?: (request: AgentEdit | AgentStatus, generation: number, current: () => boolean) => Promise<AgentReadResult>;
   read?: (read: AgentRead) => Promise<AgentReadResult>;
   run: (command: AgentCommand, ownerGeneration: number) => Promise<{ message?: string; result?: AgentCommand["result"] } | void>;
@@ -149,7 +151,7 @@ export function createLiveTransport(options: Options) {
     try { source.send(JSON.stringify({ type: "handshake", ...scope(), owner: true })); }
     catch { source.close(); }
   }
-  async function readCommand(source: Socket, value: Partial<Scope> & { id?: unknown; command?: unknown }, deadline: number) {
+  async function readCommand(source: Socket, value: Partial<Scope> & { id?: unknown; command?: unknown }, deadline: number, seen: { page: string | undefined }) {
     const at = epoch, connection = session;
     const valid = () => present() && socket === source && session === connection && handshaken && state.mode === "live" && source.readyState === 1;
     let result: AgentReadResult;
@@ -166,7 +168,7 @@ export function createLiveTransport(options: Options) {
           !await prove(at) || !valid())
         result = { ok: false, message: "This read is incomplete or belongs to another workspace, tab or generation. Read the site again." };
       else if (read.operation === "media") result = typeof read.path === "string" && mediaTools.includes(read.tool)
-        ? await options.media?.(read, generation!, valid, deadline) ?? { ok: false, message: "Browser media tools are unavailable. Refresh the editor." }
+        ? await options.media?.(read, generation!, valid, deadline, seen) ?? { ok: false, message: "Browser media tools are unavailable. Refresh the editor." }
         : { ok: false, message: "Unknown browser media tool." };
       else if (editing) result = await options.edit?.(read, generation!, valid) ?? { ok: false, message: "Browser edit tools are unavailable. Refresh the editor." };
       else result = await options.read?.(read) ?? { ok: false, message: "Browser read tools are unavailable. Refresh the editor." };
@@ -177,9 +179,9 @@ export function createLiveTransport(options: Options) {
       message = JSON.stringify({ type: "result", id: value.id, ...scope(), result: { ok: false, message: "The result is too large. Export a folder with export_site instead." } });
     try { source.send(message); } catch { source.close(); }
   }
-  async function command(source: Socket, value: Partial<Scope> & { id?: unknown; command?: unknown }, deadline: number) {
+  async function command(source: Socket, value: Partial<Scope> & { id?: unknown; command?: unknown }, deadline: number, seen: { page: string | undefined }) {
     const at = epoch, connection = session;
-    if ((value.command as { operation?: unknown } | null)?.operation && ["read", "edit", "status", "media"].includes((value.command as { operation: string }).operation)) return readCommand(source, value, deadline);
+    if ((value.command as { operation?: unknown } | null)?.operation && ["read", "edit", "status", "media"].includes((value.command as { operation: string }).operation)) return readCommand(source, value, deadline, seen);
     const incoming = value.command as Partial<AgentCommand> | null;
     const operationId = typeof incoming?.id === "string" ? incoming.id : "";
     const refuse = (message: string): Result => ({ state: "conflict", message, operationId });
@@ -278,9 +280,12 @@ export function createLiveTransport(options: Options) {
           // has then answered unknown and the receipt reconciles it. Relay-to-tab expiry is ticket 19's cancellation.
           const remaining = typeof value.remainingMs === "number" && Number.isFinite(value.remainingMs) ? Math.min(10_000, Math.max(0, value.remainingMs)) : 10_000;
           const deadline = Date.now() + remaining - 1_000;
+          // Before any await (readiness, ownership proof, lazy executor): the page a media change's element id points into.
+          const path = (value.command as { operation?: unknown; path?: unknown } | null)?.operation === "media" ? (value.command as { path?: unknown }).path : undefined;
+          const seen = { page: typeof path === "string" && path ? options.source?.(path) : undefined };
           // The relay may send a waiting command immediately after ready, before IndexedDB answers.
           void readiness.then(() => {
-            if (session === arrived && socket === source) return command(source, value, deadline);
+            if (session === arrived && socket === source) return command(source, value, deadline, seen);
           }).catch(() => { source.close(); });
         }
       });

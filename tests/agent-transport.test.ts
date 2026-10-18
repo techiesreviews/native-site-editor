@@ -409,6 +409,20 @@ test("a media dispatch's deadline is the relay's remaining budget from arrival, 
   a.transport.stop();
 });
 
+test("a media command's page is read on arrival, before readiness, ownership proof or executor loading", async () => {
+  let reads = 0, page = "<p>arrival</p>";
+  const seen: (string | undefined)[] = [];
+  const f = fixture(), a = f.tab("a", { source: path => { reads++; return path === "index.html" ? page : undefined; },
+    media: async (_request, _generation, _current, _deadline, admitted) => { seen.push(admitted.page); return { ok: true, value: {} }; } });
+  await a.transport.start();
+  a.deliver({ operation: "media", tool: "frame_image", path: "index.html", args: { element: "0", shape: "square" }, id: "arrival", grantId: "grant-1", createdAt: 0 });
+  // A manual edit after the frame arrived, while admission still awaits.
+  assert.equal(reads, 1); page = "<p>edited</p>";
+  await until(() => seen.length === 1);
+  assert.deepEqual(seen, ["<p>arrival</p>"]); assert.equal(reads, 1);
+  a.transport.stop();
+});
+
 test("media commands reach the receipt-capable executor on the live connection", async () => {
   let runs = 0;
   const f = fixture(), a = f.tab("a", { run: async () => { runs++; return { message: "Placed." }; } });
