@@ -120,7 +120,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
         method: "POST", headers: { "Content-Type": "application/json", "Content-Length": String(textBytes(body)),
           [AgentRelay.identityHeader]: JSON.stringify({ workspace: connection.workspace }) }, body,
       }));
-      return await response.json() as { ok: boolean; result?: AgentReadResult; code?: string };
+      return await response.json() as { ok: boolean; result?: AgentReadResult; code?: string; outcome?: "unknown" | "not-sent" };
     } catch { return { ok: false, code: "unknown-outcome" }; }
   }
   async function edit<K extends AgentEditTool>(tool: K, args: AgentEditArgsMap[K], requestId?: string, waitSeconds?: number) {
@@ -136,7 +136,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
       if ("unchanged" in prepared) return text(prepared.unchanged);
       return queue(prepared.operation, context, { ...prepared.input, requestId: request.id, waitSeconds: waitSeconds ?? (tool === "open_page" ? 5 : tool === "inspect_preview" ? 15 : 10) });
     }
-    return unknown(request.id, outcome.code);
+    return unknown(request.id, outcome.code, outcome.outcome);
   }
   function toolResult(result: AgentReadResult) {
     if (!result.ok) return failure(result.message);
@@ -144,7 +144,10 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     return value && typeof value === "object" && !Array.isArray(value) && ["conflict", "failed", "unknown"].includes(String(value.state))
       ? { isError: true, ...text(value) } : text(value);
   }
-  function unknown(id: string, code?: string) {
+  function unknown(id: string, code?: string, sent?: "unknown" | "not-sent") {
+    // The relay proves a command it never sent (busy, too large, expired before delivery): nothing ran.
+    if (sent === "not-sent") return { isError: true, ...text({ requestId: id, state: "failed",
+      message: `The editor did not receive this (${code ?? "not sent"}). Nothing was changed; try again in a moment.` }) };
     return { isError: true, ...text({ requestId: id, state: "unknown",
       message: `The change's outcome is unknown (${code ?? "connection lost"}). Check get_command_status; do not replay the change.` }) };
   }
@@ -327,7 +330,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     async ({ requestId }) => {
       const outcome = await dispatch({ operation: "status", id: requestId, grantId: connection.id, generation: grant.generation });
       if (outcome.ok && outcome.result) return toolResult(outcome.result);
-      if (outcome.code !== "editor-unavailable") return unknown(requestId, outcome.code);
+      if (outcome.code !== "editor-unavailable") return unknown(requestId, outcome.code, outcome.outcome);
       if (!connectionContext(connection.hub, connection.workspace))
         return failure(notSharingMessage(origin, connection.workspace, connection.hub?.context));
       const hub = await getHub(env, grant.sessionId);

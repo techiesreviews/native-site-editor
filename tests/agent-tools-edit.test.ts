@@ -279,6 +279,16 @@ test("legacy fallback only on editor-unavailable with matching context; timeout/
       assert.equal(result.state, "unknown"); assert.match(result.message, /get_command_status.*do not replay/);
       assert.equal(dispatches - before, 1); assert.equal(h.counters.byCategory.data.calls, 0); assert.equal(h.counters.waitedMs, 0);
     }
+    // A command the relay proves it never sent (busy, too large, expired before delivery) is no unknown outcome.
+    for (const code of ["busy", "too-large", "timeout"]) {
+      h.namespace.get = name => String(name).startsWith("agent-relay:") ? { fetch: async () => {
+        dispatches++; return Response.json({ ok: false, code, outcome: "not-sent" });
+      } } : get(name);
+      const before = dispatches;
+      const result = payload(await h.rpc("write_file", { path: "new.txt", content: "x", requestId: "unsent" }));
+      assert.equal(result.state, "failed"); assert.match(result.message, /did not receive.*Nothing was changed/);
+      assert.equal(dispatches - before, 1);
+    }
   } finally { h.namespace.get = get; await h.worker.dispose(); }
 });
 
