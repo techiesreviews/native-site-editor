@@ -124,7 +124,7 @@ async function oauth(worker: WorkerDispatch) {
   const authorize = () => worker.dispatchFetch(`${origin}/auth/mcp/authorize?${query}`, { headers: { Cookie: cookie }, redirect: "manual" });
   const consent = (nonce: string, decision = "allow", otherCookie = cookie, repository = repo.full_name) => worker.dispatchFetch(`${origin}/auth/mcp/authorize`, {
     method: "POST", headers: { Origin: origin, Cookie: otherCookie, "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ request: nonce, decision, repo: repository }).toString(), redirect: "manual",
+    body: new URLSearchParams({ request: nonce, decision, repo: repository, branch: "main" }).toString(), redirect: "manual",
   });
   const token = (code: string) => worker.dispatchFetch(`${origin}/auth/mcp/token`, {
     method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
