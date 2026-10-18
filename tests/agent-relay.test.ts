@@ -498,15 +498,16 @@ test("dispatch intake reserves capacity before reading bodies and expires a stal
     blockConcurrencyWhile() { throw new Error("Relay must not block concurrency"); } };
   const env: Env = { SESSIONS: { idFromName: name => name, get: () => ({ fetch: async () => new Response(null, { status: 404 }) }) }, ASSETS: { fetch: async () => new Response(null, { status: 404 }) } };
   const pulls: number[] = [], cancelled: number[] = [];
-  const stalled = (index: number, length = 1024) => new Request("https://session.internal/relay/dispatch", {
-    method: "POST", duplex: "half",
+  const stalled = (index: number, length = 1024, signal?: AbortSignal, cancel?: () => Promise<void>) => new Request("https://session.internal/relay/dispatch", {
+    method: "POST", duplex: "half", signal,
     headers: { "Content-Type": "application/json", "Content-Length": String(length), [AgentRelay.identityHeader]: JSON.stringify(scope) },
     // highWaterMark 0: the stream is pulled only when someone reads the body.
-    body: new ReadableStream({ pull() { pulls.push(index); return new Promise(() => {}); }, cancel() { cancelled.push(index); } }, { highWaterMark: 0 }),
+    body: new ReadableStream({ pull() { pulls.push(index); return new Promise(() => {}); }, cancel() { cancelled.push(index); return cancel?.(); } }, { highWaterMark: 0 }),
   } as RequestInit);
   const instance = new SessionStore(ctx, env);
   instance.webSocketMessage(editor, handshake());
-  const clock = new FakeClock(new UsageCounters());
+  const clockCounters = new UsageCounters();
+  const clock = new FakeClock(clockCounters);
   try {
     // Missing Content-Length is refused before any reading.
     const unsized = await instance.fetch(new Request("https://session.internal/relay/dispatch", { method: "POST", headers: { [AgentRelay.identityHeader]: JSON.stringify(scope) } }));
@@ -531,6 +532,24 @@ test("dispatch intake reserves capacity before reading bodies and expires a stal
     for (let turns = 0; turns < 20; turns++) await Promise.resolve();
     assert.deepEqual(pulls, [6]);
     assert.deepEqual(await (await after).json(), { ok: false, code: "timeout", outcome: "not-sent" });
+    // A source whose cancel never settles cannot hold the deadline or the slot.
+    const never = () => new Promise<void>(() => {});
+    const hung = await Promise.all(Array.from({ length: 5 }, (_, index) => instance.fetch(stalled(10 + index, 1024, undefined, never))));
+    for (const response of hung) assert.deepEqual(await response.json(), { ok: false, code: "timeout", outcome: "not-sent" });
+    // Abort while the body is stalled: prompt cancelled/not-sent, reader cancelled, slots free again.
+    cancelled.length = 0;
+    const controllers = Array.from({ length: 5 }, () => new AbortController());
+    const aborted = controllers.map((controller, index) => instance.fetch(stalled(20 + index, 1024, controller.signal, never)));
+    for (let turns = 0; turns < 20; turns++) await Promise.resolve();
+    const waitedBefore = clockCounters.waitedMs;
+    for (const controller of controllers) controller.abort();
+    for (const response of await Promise.all(aborted)) assert.deepEqual(await response.json(), { ok: false, code: "cancelled", outcome: "not-sent" });
+    assert.equal(clockCounters.waitedMs, waitedBefore);
+    assert.deepEqual(cancelled.sort(), [20, 21, 22, 23, 24]);
+    const freed = instance.fetch(stalled(30));
+    for (let turns = 0; turns < 20; turns++) await Promise.resolve();
+    assert.equal(pulls.includes(30), true);
+    assert.deepEqual(await (await freed).json(), { ok: false, code: "timeout", outcome: "not-sent" });
     assert.equal(editor.sent.some(message => JSON.parse(message).type === "command"), false);
   } finally {
     clock.uninstall();
