@@ -394,21 +394,42 @@ test("back-forward cache pagehide preserves opt-in and pageshow resumes the owne
   assert.equal(a.transport.state().mode, "off"); assert.equal(f.timers.size, 0);
 });
 
-test("a receiptless mutation delivered again after it applied returns its outcome without running twice", async () => {
+test("receiptless mutations are refused on the live connection before anything runs", async () => {
   let runs = 0;
-  const f = fixture(), a = f.tab("a", { run: async () => { runs++; return { message: "Placed once." }; } });
+  const f = fixture(), a = f.tab("a", { run: async () => { runs++; return { message: "Placed." }; } });
   await a.transport.start();
-  const placed = { ...command("place-1"), operation: "place_media" as const };
-  a.deliver(placed);
-  await until(() => a.sockets[0].messages("result").length === 1);
-  a.deliver(placed);
-  await until(() => a.sockets[0].messages("result").length === 2);
-  const results = a.sockets[0].messages("result");
-  assert.equal(runs, 1);
-  assert.deepEqual(results[1].result, results[0].result);
-  a.deliver({ ...placed, path: "other.html" });
-  await until(() => a.sockets[0].messages("result").length === 3);
-  assert.equal(a.sockets[0].messages("result")[2].result.state, "conflict");
-  assert.equal(runs, 1);
+  for (const operation of ["place_media", "frame_image", "loop_video", "update_active_draft", "create_file_draft"] as const)
+    a.deliver({ ...command(`receiptless-${operation}`), operation });
+  await until(() => a.sockets[0].messages("result").length === 5);
+  assert.deepEqual(a.sockets[0].messages("result").map(value => value.result.state), Array(5).fill("conflict"));
+  assert.equal(runs, 0);
   a.transport.stop();
+});
+
+test("a socket lost or reset while admission reads IndexedDB never reaches the executor", async () => {
+  for (const loss of ["close", "reset"] as const) {
+    const f = fixture();
+    let hold: (() => void) | undefined, holding = false;
+    const records = new Proxy(f.records, { get(target, name, receiver) {
+      const value = Reflect.get(target, name, receiver);
+      if (name !== "workspace") return value;
+      return async (...args: Parameters<typeof target.workspace>) => {
+        if (holding) await new Promise<void>(resolve => { hold = resolve; });
+        return target.workspace(...args);
+      };
+    } });
+    const a = f.tab("a", { records });
+    await a.transport.start();
+    holding = true;
+    a.deliver();
+    await until(() => hold !== undefined);
+    holding = false;
+    if (loss === "close") a.sockets[0].close();
+    else a.sockets[0].receive({ type: "reset", code: "unknown-outcome", handshakeRequired: true });
+    hold!();
+    await f.tick(1000);
+    assert.equal(f.counts().runs, 0, loss);
+    assert.equal(f.counts().commits, 0, loss);
+    a.transport.stop();
+  }
 });

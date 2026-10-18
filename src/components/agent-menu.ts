@@ -139,7 +139,13 @@ export function createAgentMenu(options: {
     transport = createLiveTransport({
       workspace: { account: options.account, repoId: repo.id, branch: repo.branch }, repo: repo.fullName, tabId,
       current: scope, records, reload: snapshot => options.reload?.(snapshot) ?? Promise.resolve(),
-      run: command => options.onCommand(command),
+      run: async command => {
+        const outcome = await options.onCommand(command);
+        // A command from a grant proves the agent uses it: no hub read is needed to show it connected.
+        const grant = hub.grants.find((each) => each.id === command.grantId);
+        if (grant && !grant.usedAt && live(at)) { grant.usedAt = Date.now(); paint(); }
+        return outcome;
+      },
       listen: next => {
         if (!live(at)) return;
         transportState = next;
@@ -856,7 +862,16 @@ export function createAgentMenu(options: {
     }
   }
   function wake() {
-    if (transportMode !== "legacy" || workspaceChanged) return;
+    if (workspaceChanged) return;
+    if (transportMode !== "legacy") {
+      // Socket mode never polls. Only while a copied token waits for its agent does returning to
+      // the tab read the hub once, so the menu learns the agent connected (at most one read per 2 s).
+      if (transportMode === "socket" && document.visibilityState === "visible" && state() === "waiting" && Date.now() - lastPoll >= 2000) {
+        lastPoll = Date.now();
+        void poll(true);
+      }
+      return;
+    }
     if (document.visibilityState === "visible") {
       sentRevision = -1;
       void poll(true);
