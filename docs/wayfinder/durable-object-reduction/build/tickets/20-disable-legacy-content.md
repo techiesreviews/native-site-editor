@@ -107,3 +107,8 @@ ticket 18's quiet answer.
 - Sol pass 1: RESULT: fail specs 7 of 12 failed (legacy specs not yet on the socket), then fixed in pass 2
 - Sol pass 2: RESULT: fail specs 1 of 15 failed: native-mcp.spec.ts (request order), fixed; RESULT: ok specs 2/2 passed
 - RESULT: ok specs 2/2 passed (native-agent-quiet 7, native-mcp 18; after the quiet-wait fix)
+
+Landed: PR #71, merged as 29f28da (`RESULT: ok merged #71 29f28da`; kit pr: tier full, check, unit, lint,
+`RESULT: ok specs 139/139 passed`, review, `RESULT: ok ci pr 71 e2e04bf green`). Round 2 (run by `kit pr`, gpt-6.1-sol,
+medium, read-only; `RESULT: ok review … evidence /home/ubulex/Projects/native-site-editor/.scratch/reviews/dor-20/20261018T213650Z`):
+no defects, no gaps. Rejected 0.
