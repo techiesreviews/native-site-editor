@@ -49,6 +49,7 @@ export interface RepositoryCache {
 export interface RepositoryCacheStore {
   key?: string;
   value?: RepositoryCache;
+  load?(): Promise<RepositoryCache | undefined>;
   save(value: RepositoryCache | undefined): Promise<void>;
 }
 
@@ -151,12 +152,19 @@ export const WORKFLOWS_PERMISSION_MESSAGE =
 
 export class GitHub {
   private objects: ObjectCache;
+  private repositoryLoad?: Promise<void>;
   constructor(
     private token: string,
     private fetcher: typeof fetch = fetch,
     private repositoryStore?: RepositoryCacheStore,
   ) {
     this.objects = new ObjectCache(fetcher);
+  }
+
+  private async loadRepositories() {
+    if (!this.repositoryStore?.load) return;
+    this.repositoryLoad ??= this.repositoryStore.load().then((value) => { this.repositoryStore!.value = value; });
+    await this.repositoryLoad;
   }
 
   async get<T>(path: string, limit?: number, fresh = false): Promise<T> {
@@ -254,6 +262,8 @@ export class GitHub {
   }
 
   async pages<T>(path: string, key?: string): Promise<T[]> {
+    if (path === "/user/installations" || /^\/user\/installations\/\d+\/repositories$/.test(path))
+      await this.loadRepositories();
     const result: T[] = [];
     for (let page = 1; page <= maxPages; page++) {
       const pagePath = `${path}${path.includes("?") ? "&" : "?"}per_page=100&page=${page}`;
@@ -297,6 +307,7 @@ export class GitHub {
 
   /** With maxAge 0, callers may share a request-local installation lookup for onboarding. */
   async repositories(login: string, maxAge = 0, installations?: Promise<OwnerInstallation[]>): Promise<Repository[]> {
+    await this.loadRepositories();
     const persisted = this.repositoryStore?.value;
     if (persisted && maxAge > 0 && Date.now() >= persisted.fetchedAt && Date.now() - persisted.fetchedAt < maxAge)
       return persisted.repositories;

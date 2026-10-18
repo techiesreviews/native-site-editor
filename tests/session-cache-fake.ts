@@ -4,6 +4,10 @@ import type { StoredSession } from "../worker/app";
 export async function repositoryCacheRequest(request: Request, records: Map<string, StoredSession>, id: string): Promise<Response | undefined> {
   if (new URL(request.url).pathname !== "/repository-cache") return;
   const session = records.get(id);
+  if (request.method === "GET") {
+    if (!session || session.kind !== "user" || session.expiresAt <= Date.now()) return new Response(null, { status: 404 });
+    return Response.json({ generation: session.repositoryCacheGeneration ?? 0, value: session.repositoryCache ?? null });
+  }
   if (request.method === "DELETE") {
     if (session?.kind === "user") {
       delete session.repositoryCache;
@@ -12,7 +16,10 @@ export async function repositoryCacheRequest(request: Request, records: Map<stri
   } else {
     const { token, generation, value } = await request.json() as any;
     if (!session || session.kind !== "user" || session.token !== token || session.expiresAt <= Date.now()) return new Response(null, { status: 401 });
-    if (generation === (session.repositoryCacheGeneration ?? 0)) session.repositoryCache = value ?? undefined;
+    if (generation === (session.repositoryCacheGeneration ?? 0)) {
+      session.repositoryCache = value && Buffer.byteLength(JSON.stringify(value)) <= 262144 ? value : undefined;
+      return new Response(null, { status: 204, headers: { "X-Repository-Cache-Generation": String(generation) } });
+    }
   }
   return new Response(null, { status: 204 });
 }

@@ -212,6 +212,7 @@ async function store(
   value?: StoredValue,
   consume = false,
 ) {
+  if (method === "PUT" || method === "DELETE") forgetRepositoryMemory(id);
   return env.SESSIONS.get(env.SESSIONS.idFromName(id)).fetch(
     new Request(`https://session.internal/${consume ? "consume" : ""}`, {
       method,
@@ -235,20 +236,75 @@ async function loadSession(env: Env, id: string): Promise<Session | null> {
   return value.kind === "user" && value.expiresAt > Date.now() ? { ...value, sessionId: id } : null;
 }
 
+interface RepositoryMemoryEntry {
+  sessionId: string;
+  expiresAt: number;
+  value?: RepositoryCache;
+}
+const repositoryMemory = new Map<string, RepositoryMemoryEntry>();
+const maxRepositoryMemoryEntries = 256;
+function forgetRepositoryMemory(id: string) {
+  for (const [key, entry] of repositoryMemory)
+    if (entry.sessionId === id) repositoryMemory.delete(key);
+}
+
 function sessionGitHub(user: Session, env: Env, fetcher: typeof fetch) {
+  const generation = user.repositoryCacheGeneration ?? 0;
+  const key = `${user.sessionId}\n${generation}\n${user.token}`;
+  let entry: RepositoryMemoryEntry | undefined;
   return new GitHub(user.token, fetcher, {
-    value: user.repositoryCache,
-    key: `${user.sessionId}\n${user.repositoryCacheGeneration ?? 0}`,
+    key,
+    async load() {
+      if (!user.sessionId) return;
+      for (const [storedKey, stored] of repositoryMemory)
+        if (stored.expiresAt <= Date.now()) repositoryMemory.delete(storedKey);
+      entry = repositoryMemory.get(key);
+      if (entry) {
+        repositoryMemory.delete(key);
+        repositoryMemory.set(key, entry);
+        return structuredClone(entry.value);
+      }
+      entry = { sessionId: user.sessionId, expiresAt: user.expiresAt };
+      repositoryMemory.set(key, entry);
+      if (repositoryMemory.size > maxRepositoryMemoryEntries)
+        repositoryMemory.delete(repositoryMemory.keys().next().value!);
+      const proof = entry;
+      try {
+        const response = await env.SESSIONS.get(env.SESSIONS.idFromName(user.sessionId)).fetch(
+          new Request("https://session.internal/repository-cache"),
+        );
+        if (response.status === 404) throw new HttpError(401, "Your GitHub session expired. Connect again.");
+        if (!response.ok) throw new Error("Repository cache read failed");
+        const saved = await response.json() as { generation: number; value: RepositoryCache | null };
+        if (repositoryMemory.get(key) !== proof || proof.expiresAt <= Date.now()) return;
+        if (saved.generation !== generation) {
+          repositoryMemory.delete(key);
+          return;
+        }
+        proof.value = saved.value ?? undefined;
+        return structuredClone(proof.value);
+      } catch (error) {
+        if (repositoryMemory.get(key) === proof) repositoryMemory.delete(key);
+        if (error instanceof HttpError && error.status === 401) throw error;
+        console.warn("Repository listing cache could not be loaded.");
+      }
+    },
     async save(value) {
       if (!user.sessionId) return;
+      const proof = entry;
+      // Saved without loading first: an older in-memory listing must not outlive this change.
+      if (!proof) repositoryMemory.delete(key);
       try {
         const response = await env.SESSIONS.get(env.SESSIONS.idFromName(user.sessionId)).fetch(
           new Request("https://session.internal/repository-cache", {
-            method: "PUT", body: JSON.stringify({ token: user.token, generation: user.repositoryCacheGeneration ?? 0, value: value ?? null }),
+            method: "PUT", body: JSON.stringify({ token: user.token, generation, value: value ?? null }),
           }),
         );
         if (response.status === 401) throw new HttpError(401, "Your GitHub session expired. Connect again.");
         if (!response.ok) console.warn("Repository listing cache could not be persisted.");
+        if (proof && repositoryMemory.get(key) === proof && proof.expiresAt > Date.now() &&
+          response.ok && response.headers.get("X-Repository-Cache-Generation") === String(generation))
+          proof.value = structuredClone(value);
       } catch (error) {
         if (error instanceof HttpError && error.status === 401) throw error;
         console.warn("Repository listing cache could not be persisted.");
@@ -257,6 +313,7 @@ function sessionGitHub(user: Session, env: Env, fetcher: typeof fetch) {
   });
 }
 async function invalidateRepositories(env: Env, id: string) {
+  forgetRepositoryMemory(id);
   const response = await env.SESSIONS.get(env.SESSIONS.idFromName(id)).fetch(
     new Request("https://session.internal/repository-cache", { method: "DELETE" }),
   );
