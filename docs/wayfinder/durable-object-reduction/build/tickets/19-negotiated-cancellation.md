@@ -104,3 +104,14 @@ cancelled change applied; an intake cancel held its slot until the 10 s deadline
 **Limits.** The cancel key is grant + JSON-RPC id: a client that restarts and reuses an id within 10 s of cancelling it
 gets that call refused as cancelled (safe: nothing changes). Explicit cancel of a call whose dispatch never reached the
 relay within 10 s is lost (then it behaves like a legacy disconnect: receipt reconciles).
+
+Landed: PR #69, merged as 1de3ae9 (`RESULT: ok merged #69 1de3ae9`; kit pr: tier full, check, unit, lint, specs, review, CI ok).
+
+Round 3 (run by `kit pr`, gpt-6.1-sol, medium, read-only; `RESULT: ok review … evidence
+/home/ubulex/Projects/native-site-editor/.scratch/reviews/dor-19/20261018T195557Z`): rejected 1 (P2: commit, wait past
+24 h, evict, then cancel a live delivery of the same operation id → status `cancelled` although that id applied once,
+long ago). Past ticket 06's 24 h retention an id carries no per-id evidence (expired receipts only raise the workspace
+horizon), and a fresh delivery of a reused id is a new agent call that could apply again (the same reasoning the lead
+accepted for ticket 16's rejected finding). The `cancelled` status describes that delivery only ("This delivery was
+cancelled before it committed. Nothing was changed by it."); nothing is undone or replayed. Proving older
+applications would need per-id records past retention, which ticket 06's budgets do not allow.
