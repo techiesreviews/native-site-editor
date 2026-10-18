@@ -170,7 +170,7 @@ export function createAgentMenu(options: {
     requestTools = createRequestTools({
       workspace, watch: agentWatch(workspace),
       list: async () => (await records.conversations(workspace)).map(item => item.content as unknown as AgentRequest),
-      save: (request, accept) => keep(workspace, request as StoredRequest, current => accept(current?.content as unknown as AgentRequest | undefined)),
+      save: (request, accept, owner) => keep(workspace, request as StoredRequest, current => accept(current?.content as unknown as AgentRequest | undefined), owner),
     });
     let editTools: Promise<ReturnType<typeof import("../agent-tools-edit")["createAgentEditTools"]>> | undefined;
     let mediaTools: Promise<ReturnType<typeof import("../agent-tools-media")["createAgentMediaTools"]>> | undefined;
@@ -208,13 +208,13 @@ export function createAgentMenu(options: {
         }
         return result;
       },
-      requests: async (request, current, deadline) => {
+      requests: async (request, generation, current, deadline) => {
         const tools = requestTools;
         if (!tools) return { ok: false, message: "Browser request tools are unavailable. Refresh the editor." };
         // An agent asking for requests is connected, as one sending a change is.
         const grant = hub.grants.find(each => each.id === request.grantId);
         if (grant && !grant.usedAt) { grant.usedAt = Date.now(); paint(); }
-        try { return await tools.run(request, current, deadline); }
+        try { return await tools.run(request, current, deadline, generation); }
         finally {
           if (request.tool !== "get_request") broadcast(workspaceKey(workspace));
           if (live(at)) { refreshWatch(); paint(); }
@@ -457,13 +457,13 @@ export function createAgentMenu(options: {
    * newer than, and never over one dismissed (perhaps by another tab meanwhile), and when none is
    * stored only if `adopt`: then this tab reads them again.
    */
-  async function keep(workspace: AgentWorkspace, request: StoredRequest, progress?: { adopt: boolean } | ((current?: { content: JsonValue }) => boolean)) {
+  async function keep(workspace: AgentWorkspace, request: StoredRequest, progress?: { adopt: boolean } | ((current?: { content: JsonValue }) => boolean), owner?: number) {
     const content = stored(request);
     const accept = typeof progress === "function" ? progress : progress ? (current?: { content: JsonValue }) => {
       const before = current?.content as unknown as StoredRequest | undefined;
       return before ? before.state !== "dismissed" && progressOf(content) >= progressOf(before) : progress.adopt;
     } : undefined;
-    const kept = await records.putConversation(workspace, { id: content.id, content: content as unknown as JsonValue, unfinished: isUnfinishedRequest(content.state), updatedAt: Date.now() }, accept);
+    const kept = await records.putConversation(workspace, { id: content.id, content: content as unknown as JsonValue, unfinished: isUnfinishedRequest(content.state), updatedAt: Date.now() }, accept, owner);
     if (disposed) return kept;
     // Shown at once; then read again, as the write may have evicted others and a read begun
     // before it may miss it.
@@ -1145,8 +1145,11 @@ export function createAgentMenu(options: {
         if (!trimmed || trimmed.length > REQUEST_TEXT_LIMIT) throw new Error(`An answer needs text (up to ${REQUEST_TEXT_LIMIT} characters).`);
         // The hub's own rule, on this browser's copy: the request waits for every agent again.
         const list = (await records.conversations(workspace)).map((item) => item.content as unknown as AgentRequest);
+        // Turned off, or another site or branch opened, during the read: nothing is kept (checked again at the write).
+        const still = () => live(at) && scopeKey() === key;
+        if (!still()) throw new Error("Remote agents or the open site changed meanwhile. Nothing was sent; answer again.");
         const { request: result, accept } = answerRequest(list, id, trimmed);
-        if (!await keep(workspace, result as StoredRequest, current => accept(current?.content as unknown as AgentRequest | undefined)).catch(refusal))
+        if (!await keep(workspace, result as StoredRequest, current => still() && accept(current?.content as unknown as AgentRequest | undefined)).catch(refusal))
           throw new Error("This request changed meanwhile (dismissed or answered in another tab). Open its card again.");
         requestsChanged(key);
         return;
