@@ -1114,7 +1114,10 @@ export function createAgentMenu(options: {
       if (transportMode === "socket") {
         // Live relay: the request stays in this browser and reaches agents over the socket.
         const request = localRequest(repo, text, element);
-        await keep(workspace, request).catch((error) => refusal(error, " Nothing was sent."));
+        // Turned off, or another site or branch opened, before the write commits: nothing is kept or announced.
+        const still = () => live(at) && scopeKey() === key;
+        const kept = await keep(workspace, request, () => still()).catch((error) => refusal(error, " Nothing was sent."));
+        if (!kept) throw new Error("Remote agents or the open site changed meanwhile. Nothing was sent; ask again.");
         requestsChanged(key);
         return request as PinRequest;
       }
