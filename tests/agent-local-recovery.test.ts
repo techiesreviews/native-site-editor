@@ -53,7 +53,7 @@ test("retention keeps 1,000 receipts: the oldest leave retired markers and raise
   assert.equal(decided.horizon, 500);
 });
 
-test("retention keeps 1 MiB: markers go after receipts, cancellations and revocations only age out", () => {
+test("retention keeps 1 MiB: receipts become markers; markers, cancellations and revocations only age out", () => {
   const big = "x".repeat(220 * 1024);
   const rows = Array.from({ length: 4 }, (_, index) => receiptRow(`op-${index}`, 1000 + index, 1000 + index, big));
   const fences: Parameters<typeof receiptRetention>[1] = [
@@ -91,6 +91,20 @@ test("a commit past 1,000 receipts evicts the oldest; its late delivery and a re
   }
   assert.equal((await records.workspace(workspace)).revision, revision);
   assert.equal(fake.stores.get("drafts")!.size, RECEIPT_LIMIT + 1, "drafts are never evicted");
+});
+
+test("an evicted id reused with a fresh issue time, other work and current proofs stays refused for the day", async () => {
+  const fixture = setup(), { fake, records } = fixture;
+  await records.commit(command("first"));
+  await commitMany(fixture, RECEIPT_LIMIT, "fill");
+  assert.equal(await records.receipt(workspace, "first", "grant"), undefined, "evicted");
+  const { revision } = await records.workspace(workspace);
+  const reused = command("first", "elsewhere.html");
+  reused.expectedRevision = revision;
+  reused.receipt.payloadIdentity = payloadIdentity({ other: "work" });
+  await assert.rejects(records.commit(reused), code("conflict"));
+  assert.equal((await records.workspace(workspace)).revision, revision);
+  assert.equal(fake.stores.get("drafts")!.has(draftKey(scope, "elsewhere.html")), false);
 });
 
 test("fences age out after a day; deliveries they refused stay refused by age and horizon", async () => {
@@ -218,16 +232,17 @@ test("a full storage whose receipt cannot be read reports the outcome unknown, n
 test("a download saves the open workspace's drafts, and nothing once the workspace moved on meanwhile", async () => {
   const saved: string[] = [], asked: string[] = [];
   const ports = { drafts: (wanted: typeof scope) => { asked.push(wanted.repo); return [draft("index.html", "unsaved")]; },
-    bytes: () => undefined, save: async (_zip: Uint8Array, name: string) => { saved.push(name); } };
+    bytes: () => undefined, saver: async () => (_zip: Uint8Array, name: string) => { saved.push(name); } };
   const input = { account: scope.account, repository: { id: scope.repoId, fullName: scope.repo, branch: scope.branch } };
-  // `current` turns false while the export is built: nothing is saved or reported.
-  let checks = 0;
-  assert.equal(await downloadUnsavedWork(input, () => checks++ < 0, ports), undefined);
+  // The workspace changes while the export is built, or while the save itself loads: nothing is saved.
+  let open = true;
+  assert.equal(await downloadUnsavedWork(input, () => false, ports), undefined);
+  assert.equal(await downloadUnsavedWork(input, () => open, { ...ports, saver: async () => { open = false; return ports.saver(); } }), undefined);
   assert.deepEqual(saved, []);
   const done = await downloadUnsavedWork(input, () => true, ports);
   assert.deepEqual(saved, ["site-unsaved-changes.zip"]);
   assert.deepEqual(done?.entries.map((entry) => [entry.path, entry.status]), [["index.html", "included"]]);
-  assert.deepEqual(asked, ["lex/site", "lex/site"]);
+  assert.deepEqual(asked, ["lex/site", "lex/site", "lex/site"]);
 });
 
 test("after a reload the failed edit is unknown and the committed drafts and receipts are all there", async () => {
@@ -284,6 +299,13 @@ test("the export holds each unsaved draft's text and the upload bytes this brows
   const failing = { ...bytes, get: () => Promise.reject(new Error("blocked")) };
   const blind = await buildRecoveryExport({ repository: "lex/site", scope, drafts, bytes: failing });
   assert.equal(blind.entries.find((entry) => entry.path === "images/photo.png")?.status, "missing");
+  // One upload's bytes fail while read: it is missing, and every other file is still in the export.
+  const broken = { ...bytes, get: async (key: string) => key === uploadKey(scope, "a".repeat(40))
+    ? Object.assign(new Blob([photo]), { arrayBuffer: () => Promise.reject(new DOMException("gone", "NotReadableError")) }) : bytes.get(key) };
+  const partial = await buildRecoveryExport({ repository: "lex/site", scope, drafts: [...drafts, { ...draft("images/second.png", ""), opaque: true, sourceSha: "f".repeat(40), upload: { size: 1, type: "image/png" } }],
+    bytes: { ...broken, get: async (key: string) => key === uploadKey(scope, "f".repeat(40)) ? new Blob([new Uint8Array([9])]) : broken.get(key) } });
+  assert.deepEqual(Object.keys(unzipStored(partial.zip)).sort(), ["README.txt", "changes.json", "files/images/second.png", "files/index.html", "files/new/page.html"]);
+  assert.equal(partial.entries.find((entry) => entry.path === "images/photo.png")?.status, "missing");
 });
 
 test("the budget constants are the accepted ones", () => {

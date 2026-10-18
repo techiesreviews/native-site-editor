@@ -50,8 +50,13 @@ export async function buildRecoveryExport(input: { repository: string; scope: Dr
     if (draft.deleted) { entry.status = "deleted"; continue; }
     if (!draft.opaque) { files[inside(draft.path)] = draft.content; continue; }
     // Bytes this browser keeps: an upload's, or an existing file's replaced ones.
-    const blob = draft.sourceSha && input.bytes ? await input.bytes.get(uploadKey(scope, draft.sourceSha)).catch(() => undefined) : undefined;
-    if (blob) files[inside(draft.path)] = new Uint8Array(await blob.arrayBuffer());
+    const read = async () => {
+      const blob = draft.sourceSha && input.bytes ? await input.bytes.get(uploadKey(scope, draft.sourceSha)) : undefined;
+      return blob && new Uint8Array(await blob.arrayBuffer());
+    };
+    // Unreadable bytes count as missing; the rest of the export goes on.
+    const bytes = await read().catch(() => undefined);
+    if (bytes) files[inside(draft.path)] = bytes;
     else entry.status = draft.upload || (draft.baseSha !== null && draft.sourceSha !== draft.baseSha) ? "missing" : "on-github";
   }
   files["changes.json"] = `${JSON.stringify({ repository: input.repository, branch: scope.branch, downloadedAt: at.toISOString(), changes: entries }, null, 2)}\n`;
@@ -65,12 +70,13 @@ export async function buildRecoveryExport(input: { repository: string; scope: Dr
 interface DownloadPorts {
   drafts(scope: DraftScope): SavedDraft[];
   bytes(): UploadBytes | undefined;
-  save(zip: Uint8Array, name: string): Promise<void>;
+  /** Loads the file save, which then runs at once (no await between the last check and it). */
+  saver(): Promise<(zip: Uint8Array, name: string) => void>;
 }
 const browserPorts: DownloadPorts = {
   drafts: (scope) => draftStore().list(scope),
   bytes: () => { try { return uploadBytes(); } catch { return undefined; /* No upload storage: uploads are listed as missing. */ } },
-  save: async (zip, name) => (await import("./site-download")).saveBytes(zip, name),
+  saver: async () => (await import("./site-download")).saveBytes,
 };
 
 /**
@@ -81,7 +87,8 @@ export async function downloadUnsavedWork(input: { account: string; repository: 
   current: () => boolean = () => true, ports: DownloadPorts = browserPorts) {
   const scope: DraftScope = { account: input.account, repoId: input.repository.id, repo: input.repository.fullName, branch: input.repository.branch };
   const result = await buildRecoveryExport({ repository: input.repository.fullName, scope, drafts: ports.drafts(scope), bytes: ports.bytes() });
+  const save = await ports.saver();
   if (!current()) return undefined;
-  await ports.save(result.zip, result.name);
+  save(result.zip, result.name);
   return result;
 }
