@@ -2,7 +2,9 @@ import { connectionPrompt } from "../agent-prompts";
 import { browserAgentRecovery, recordFailure, recoveryHolds } from "../agent-recovery";
 import { AgentFailureError, classifyAgentFailure } from "../../shared/agent-failure";
 import { button, node } from "../ui/dom";
-import { textBytes, type AgentCommand, type AgentElement } from "../../shared/agent";
+import { REQUEST_HTML_LIMIT, REQUEST_TEXT_LIMIT, textBytes, type AgentCommand, type AgentElement, type AgentRequest } from "../../shared/agent";
+import { requestOperation } from "../../shared/agent-requests";
+import { WATCH_WAITS, agentWatch, createRequestTools } from "../agent-watch";
 import { payloadIdentity, workspaceKey, type AgentWorkspace, type JsonValue } from "../../shared/agent-command";
 import { AgentRecordsError, agentStorageStatus, indexedDbAgentRecords, isUnfinishedRequest, type AgentRecords, type AgentStorageProblem } from "../agent-records";
 import type { createLiveTransport } from "../agent-transport";
@@ -32,8 +34,12 @@ import "./agent-menu.css";
 // socket and keeps background ownership. Polling, context/draft uploads and claim/ack below
 // remain reachable only when WebSocket or the relay route is unavailable.
 //
-// Ask agent in the edit bar sends a request about an element to the hub
-// (`ask`); agents fetch it with wait_for_requests and answer it. The
+// Ask agent in the edit bar keeps a request about an element. With the live
+// relay it stays in this browser: agents fetch it with wait_for_requests over the
+// socket and answer it (src/agent-watch.ts), and Ask, answer and dismiss make no
+// hub call. A wait answers at once unless the user turned on Watch here (at most
+// 10 minutes, shown with its deadline, then paused). Only the legacy fallback still
+// sends requests to the hub (`ask`), where agents take them the same way. The
 // browser keeps its own copy of each request (src/agent-records.ts, per
 // account, repository and branch), which is what the pins and this menu
 // show: it stays after remote agents are turned off or the tab reloads, is
@@ -132,6 +138,19 @@ export function createAgentMenu(options: {
   let pinned: ReturnType<typeof options.repository>;
   let workspaceChanged = false;
   let transportState: ReturnType<ReturnType<typeof createLiveTransport>["state"]> | undefined;
+  let requestTools: ReturnType<typeof createRequestTools> | undefined;
+  // Other tabs of this browser hear of a request asked or answered here (the receiving tab may be another).
+  const channel = typeof BroadcastChannel === "function" ? new BroadcastChannel("native-site-editor:agent-requests") : undefined;
+  channel?.addEventListener("message", event => {
+    if (disposed || event.data !== historyKey) return;
+    void loadHistory();
+    requestTools?.notify();
+  });
+  /** A request was kept here: a held wait looks again, at once and without polling. */
+  function requestsChanged(key: string) {
+    requestTools?.notify();
+    try { channel?.postMessage(key); } catch { /* Closed channel: this tab still woke. */ }
+  }
   async function activateSocket() {
     if (!remote || disposed || workspaceChanged || transportMode !== "pending" || !pinned) return;
     const at = activation, repo = pinned;
@@ -144,6 +163,12 @@ export function createAgentMenu(options: {
       if (grant && !grant.usedAt && live(at)) { grant.usedAt = Date.now(); paint(); }
       return outcome;
     };
+    const workspace = { account: options.account, repoId: repo.id, branch: repo.branch };
+    requestTools = createRequestTools({
+      workspace, watch: agentWatch(workspace),
+      list: async () => (await records.conversations(workspace)).map(item => item.content as unknown as AgentRequest),
+      save: (request, accept) => keep(workspace, request as StoredRequest, current => accept(current?.content as unknown as AgentRequest | undefined)),
+    });
     let editTools: Promise<ReturnType<typeof import("../agent-tools-edit")["createAgentEditTools"]>> | undefined;
     let mediaTools: Promise<ReturnType<typeof import("../agent-tools-media")["createAgentMediaTools"]>> | undefined;
     transport = createLiveTransport({
@@ -172,7 +197,18 @@ export function createAgentMenu(options: {
         const ports = options.tools, stamp = ports?.stamp();
         if (!ports || !stamp) return { ok: false, message: "Browser read tools are unavailable. Refresh the editor." };
         const { createAgentReadTools } = await import("../agent-tools-read");
-        return createAgentReadTools({ ...ports, stamp: () => stamp }).run(read.tool, read.args);
+        const result = await createAgentReadTools({ ...ports, stamp: () => stamp }).run(read.tool, read.args);
+        // The requests agents wait on live here now: count this browser's, not the hub's.
+        if (read.tool === "get_site" && result.ok && result.value && typeof result.value === "object" && !Array.isArray(result.value)) {
+          const kept = await records.conversations(workspace).catch(() => []);
+          result.value.openRequests = kept.filter(item => ["open", "seen"].includes((item.content as unknown as StoredRequest).state)).length;
+        }
+        return result;
+      },
+      requests: async (request, current, deadline) => {
+        const tools = requestTools;
+        if (!tools) return { ok: false, message: "Browser request tools are unavailable. Refresh the editor." };
+        try { return await tools.run(request, current, deadline); } finally { if (live(at)) { refreshWatch(); paint(); } }
       },
       run,
       listen: next => {
@@ -243,7 +279,16 @@ export function createAgentMenu(options: {
   const waitingOn = node("div", "agent-menu__waiting");
   waitingOn.id = "agent-waiting";
   waitingOn.setAttribute("role", "menu");
-  root.append(action, hint, links, trouble, waitingOn);
+  // Watch (ticket 18): the user lets agents wait for requests here, for at most ten minutes.
+  const watchRow = node("div", "agent-menu__watch");
+  const watchText = node("p", "agent-menu__watch-text");
+  const watchStart = button("Watch for requests", () => setWatch(true), "text-button agent-menu__link");
+  const watchStop = button("Stop watching", () => setWatch(false), "text-button agent-menu__link");
+  const watchLinks = node("span", "agent-menu__links");
+  watchLinks.append(watchStart, watchStop);
+  watchRow.append(watchText, watchLinks);
+  watchRow.hidden = true;
+  root.append(action, hint, links, watchRow, trouble, waitingOn);
   const flyout = mountFlyout({
     panel: waitingOn,
     label: "What agents wait on",
@@ -402,14 +447,14 @@ export function createAgentMenu(options: {
    * newer than, and never over one dismissed (perhaps by another tab meanwhile), and when none is
    * stored only if `adopt`: then this tab reads them again.
    */
-  async function keep(workspace: AgentWorkspace, request: StoredRequest, progress?: { adopt: boolean }) {
+  async function keep(workspace: AgentWorkspace, request: StoredRequest, progress?: { adopt: boolean } | ((current?: { content: JsonValue }) => boolean)) {
     const content = stored(request);
-    const accept = progress ? (current?: { content: JsonValue }) => {
+    const accept = typeof progress === "function" ? progress : progress ? (current?: { content: JsonValue }) => {
       const before = current?.content as unknown as StoredRequest | undefined;
       return before ? before.state !== "dismissed" && progressOf(content) >= progressOf(before) : progress.adopt;
     } : undefined;
     const kept = await records.putConversation(workspace, { id: content.id, content: content as unknown as JsonValue, unfinished: isUnfinishedRequest(content.state), updatedAt: Date.now() }, accept);
-    if (disposed) return;
+    if (disposed) return kept;
     // Shown at once; then read again, as the write may have evicted others and a read begun
     // before it may miss it.
     historyLoads++;
@@ -419,6 +464,7 @@ export function createAgentMenu(options: {
       tellRequests();
     }
     void loadHistory();
+    return kept;
   }
   // Another tab of this browser may have changed them: read them again when this one is seen.
   const reread = () => { if (document.visibilityState === "visible" && historyKey) void loadHistory(); };
@@ -542,6 +588,59 @@ export function createAgentMenu(options: {
     root.dataset.storage = problem?.reason ?? "";
     if (problem) troubleText.textContent = storageText(problem);
     download.disabled = exporting;
+    paintWatch(current);
+  }
+  // Watch's record is read on paint, on its own changes and on another tab's storage event; the
+  // countdown re-renders it each second from memory while it runs (no reads, no requests).
+  let watchReport: ReturnType<ReturnType<typeof agentWatch>["report"]> = { state: "off" }, watchWorkspace = "";
+  let watchTicker: ReturnType<typeof setInterval> | undefined;
+  const watchOf = () => { const workspace = pinned && scope(); return workspace && workspaceKey(workspace) === workspaceKey({ account: options.account, repoId: pinned!.id, branch: pinned!.branch }) ? agentWatch(workspace) : undefined; };
+  function refreshWatch() {
+    const watch = watchOf();
+    watchWorkspace = watch?.key ?? "";
+    try { watchReport = watch?.report() ?? { state: "off" }; } catch { watchReport = { state: "off" }; }
+  }
+  function paintWatch(current = state()) {
+    const shown = remote && transportMode === "socket" && current === "connected";
+    if (shown && !watchWorkspace) refreshWatch();
+    let report = shown ? watchReport : { state: "off" as const };
+    // Ended while shown: paused, without a new read.
+    if (report.state === "on" && Date.now() >= report.until) {
+      report = watchReport = { state: "paused", reason: "ended", at: report.until };
+      requestTools?.notify();
+    }
+    watchRow.hidden = !shown;
+    root.dataset.watch = shown ? report.state : "";
+    const ticking = shown && report.state === "on";
+    if (ticking && watchTicker === undefined) watchTicker = setInterval(() => paintWatch(), 1000);
+    if (!ticking && watchTicker !== undefined) { clearInterval(watchTicker); watchTicker = undefined; }
+    if (!shown) return;
+    const time = (at: number) => new Date(at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    watchStop.hidden = report.state !== "on";
+    watchStart.textContent = report.state === "off" ? "Watch for requests" : "Watch again";
+    watchStart.title = "Let your agent wait for your requests for the next 10 minutes";
+    if (report.state === "on") {
+      const left = Math.max(0, Math.ceil((report.until - Date.now()) / 1000));
+      watchText.textContent = `Watching for requests until ${time(report.until)} (${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")} left, ${report.waitsLeft} of ${WATCH_WAITS} waits left).`;
+    } else if (report.state === "paused") {
+      watchText.textContent = report.reason === "used"
+        ? `Watch paused: your agent used all ${WATCH_WAITS} waits. It stops waiting for requests; choose Watch again for 10 more minutes.`
+        : `Watch paused at ${time(report.at)}. Your agent stops waiting for requests; choose Watch again for 10 more minutes.`;
+    } else watchText.textContent = "Agents stop when nothing is waiting. After you send a request, ask your agent to continue, or choose Watch for requests to keep it waiting for up to 10 minutes.";
+  }
+  /** Only the user starts (or renews) and stops Watch; a stopped one releases a held wait at once. */
+  function setWatch(on: boolean) {
+    const watch = watchOf();
+    if (!watch) return;
+    try {
+      if (on) watch.start(); else watch.stop();
+    } catch {
+      say("This browser could not keep Watch: its storage is full or blocked.");
+      return;
+    }
+    refreshWatch();
+    if (!on) requestTools?.notify();
+    paint();
   }
   const unsubscribeStorage = storage.subscribe(() => paint());
   /** Downloads the open workspace's unsaved drafts and says what the file holds. */
@@ -650,6 +749,8 @@ export function createAgentMenu(options: {
     stopAutomatic();
     transport?.stop(); transport = undefined;
     transportState = undefined;
+    requestTools?.notify(); requestTools = undefined;
+    watchWorkspace = "";
     workspaceChanged = false;
     const paused = recovery && !recovery.allowAutomatic();
     recovery?.dispose();
@@ -957,6 +1058,13 @@ export function createAgentMenu(options: {
     paint();
   }
   const onStorage = (event: StorageEvent) => {
+    if (event.key && event.key === watchWorkspace) {
+      refreshWatch();
+      // Stopped or renewed in another tab: a wait held here looks again (and ends when Watch is off).
+      if (watchReport.state !== "on") requestTools?.notify();
+      paint();
+      return;
+    }
     if (event.key === AGENT_CONNECTED_KEY) {
       try { consentGranted(JSON.parse(event.newValue ?? "null")); } catch { /* Old or invalid announcements grant nothing. */ }
     }
@@ -993,6 +1101,13 @@ export function createAgentMenu(options: {
       await records.checkConversation(workspace, { id: planned.id, content: planned as unknown as JsonValue, unfinished: true, updatedAt: Date.now() }).catch((error) => refusal(error, " Nothing was sent."));
       // Turned off, or another site or branch opened, while storage answered: nothing is sent.
       if (!live(at) || scopeKey() !== key) throw new Error("Remote agents or the open site changed meanwhile. Nothing was sent; ask again.");
+      if (transportMode === "socket") {
+        // Live relay: the request stays in this browser and reaches agents over the socket.
+        const request = localRequest(repo, text, element);
+        await keep(workspace, request).catch((error) => refusal(error, " Nothing was sent."));
+        requestsChanged(key);
+        return request as PinRequest;
+      }
       const request: StoredRequest = await api("ask", { repository: repo, text, element }, false, at);
       try {
         await keep(workspace, request);
@@ -1015,6 +1130,16 @@ export function createAgentMenu(options: {
       const answered = { ...local, state: "open" as const, thread: [...(local.thread ?? []), { from: "user" as const, text, at: Date.now() }] };
       await records.checkConversation(workspace, { id, content: stored(answered) as unknown as JsonValue, unfinished: true, updatedAt: Date.now() }).catch((error) => refusal(error, " Nothing was sent."));
       if (!live(at) || scopeKey() !== key) throw new Error("Remote agents or the open site changed meanwhile. Nothing was sent; answer again.");
+      if (transportMode === "socket") {
+        const trimmed = text.trim();
+        if (!trimmed || trimmed.length > REQUEST_TEXT_LIMIT) throw new Error(`An answer needs text (up to ${REQUEST_TEXT_LIMIT} characters).`);
+        // The hub's own rule, on this browser's copy: the request waits for every agent again.
+        const list = (await records.conversations(workspace)).map((item) => item.content as unknown as AgentRequest);
+        const { result } = requestOperation(list, { type: "answer", id, text: trimmed }) as { result: StoredRequest };
+        if (!await keep(workspace, result, { adopt: false }).catch(refusal)) throw new Error("This request was dismissed.");
+        requestsChanged(key);
+        return;
+      }
       const request: StoredRequest = await api("answer", { id, text }, false, at);
       // Dismissed in another tab meanwhile: it stays dismissed (the hub hears of it on the next poll).
       await keep(workspace, request, { adopt: false }).catch(refusal);
@@ -1036,6 +1161,8 @@ export function createAgentMenu(options: {
         return;
       }
       if (!waiting || !remote) return;
+      // With the live relay agents read this browser's copy: nothing to tell the hub.
+      if (transportMode === "socket") { requestsChanged(workspaceKey(workspace)); return; }
       try {
         await api("dismiss", { id });
       } catch (error) {
@@ -1057,6 +1184,8 @@ export function createAgentMenu(options: {
       turnOff();
       window.removeEventListener("storage", onStorage);
       document.removeEventListener("visibilitychange", reread);
+      channel?.close();
+      if (watchTicker !== undefined) clearInterval(watchTicker);
       unsubscribeStorage();
       token = tokenId = undefined;
     },
@@ -1076,12 +1205,23 @@ function clip(text: string, limit: number) {
   return line.length > limit ? `${line.slice(0, limit - 1).trimEnd()}…` : line;
 }
 
-type StoredRequest = PinRequest & { repoId: number; branch?: string; repository?: string; seenAt?: number };
-/** A request as this browser keeps it: without its element's source or which connections had it. */
-function stored(request: StoredRequest & { returnedTo?: unknown }): StoredRequest {
-  const { returnedTo: _returned, ...rest } = request;
-  const { html: _html, htmlClipped: _clipped, lines: _lines, ...element } = request.element as AgentElement;
-  return JSON.parse(JSON.stringify({ ...rest, element }));
+type StoredRequest = PinRequest & { repoId: number; branch?: string; repository?: string; seenAt?: number; returnedTo?: string[] };
+/** A request as this browser keeps it. With the live relay it is the only copy, so it keeps its
+ * element's source (clipped) and which connections had it (at most 20), as the hub did. */
+function stored(request: StoredRequest): StoredRequest {
+  return JSON.parse(JSON.stringify(request));
+}
+/** Ask agent's request, made here as the hub makes one (worker/agent-schemas.ts validateAsk). */
+function localRequest(repo: { id: number; fullName: string; branch: string }, text: string, element: AgentElement): StoredRequest {
+  const asked = text.trim();
+  if (!asked || asked.length > REQUEST_TEXT_LIMIT) throw new Error(`A request needs text (up to ${REQUEST_TEXT_LIMIT} characters).`);
+  const html = element.html !== undefined && element.html.length > REQUEST_HTML_LIMIT ? element.html.slice(0, REQUEST_HTML_LIMIT) : element.html;
+  const createdAt = Date.now();
+  return stored({
+    id: `req-${crypto.randomUUID()}`, text: asked, createdAt, repoId: repo.id, repository: repo.fullName, branch: repo.branch, state: "open",
+    element: { ...element, ...(html !== undefined ? { html } : {}), ...(html !== element.html ? { htmlClipped: true } : {}) } as PinRequest["element"],
+    thread: [{ from: "user", text: asked, at: createdAt }],
+  });
 }
 // How far a request has come: its latest message or the time an agent took it. A poll answered
 // before the user's answer reached the hub is older and changes nothing here.

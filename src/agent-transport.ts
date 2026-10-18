@@ -2,6 +2,7 @@ import type { AgentCommand } from "../shared/agent";
 import type { AgentEdit, AgentStatus } from "../shared/agent-edit";
 import { mediaTools, type AgentMedia } from "../shared/agent-media";
 import type { AgentRead, AgentReadResult } from "../shared/agent-read";
+import { requestTools, type AgentRequests } from "../shared/agent-requests";
 import { payloadIdentity, workspaceKey, type AgentWorkspace, type JsonValue } from "../shared/agent-command";
 import { AgentFailureError, classifyAgentFailure, type AgentFailure } from "../shared/agent-failure";
 import { AgentRecordsError, type AgentRecords } from "./agent-records";
@@ -36,6 +37,8 @@ interface Options {
   source?: (path: string) => string | undefined;
   edit?: (request: AgentEdit | AgentStatus, generation: number, current: () => boolean) => Promise<AgentReadResult>;
   read?: (read: AgentRead) => Promise<AgentReadResult>;
+  /** Ticket 18: the request tools, answered from this browser's requests (a wait may be held under Watch). */
+  requests?: (request: AgentRequests, current: () => boolean, deadline: number) => Promise<AgentReadResult>;
   run: (command: AgentCommand, ownerGeneration: number) => Promise<{ message?: string; result?: AgentCommand["result"] } | void>;
   listen: (state: State) => void;
   socket?: (url: string) => Socket;
@@ -156,22 +159,29 @@ export function createLiveTransport(options: Options) {
     const valid = () => present() && socket === source && session === connection && handshaken && state.mode === "live" && source.readyState === 1;
     let result: AgentReadResult;
     try {
-      const read = value.command as AgentRead | AgentEdit | AgentStatus | AgentMedia;
-      const editing = read.operation === "edit" || read.operation === "status" || read.operation === "media";
-      if (typeof value.id !== "string" || !value.id || !matches(value) || !valid() || (editing ? (typeof read.id !== "string" || !/^[\w.:-]{1,128}$/.test(read.id) || typeof read.grantId !== "string" || !read.grantId ||
-            (read.operation === "edit" || read.operation === "media") && (!read.args || typeof read.args !== "object" || Array.isArray(read.args) || !Number.isFinite(read.createdAt))) : (!read.args || typeof read.args !== "object" || Array.isArray(read.args) ||
-          !["get_site", "list_files", "read_file", "export_site", "get_page", "get_selection"].includes(read.tool) ||
-          (read.tool === "read_file" && (typeof read.args.path !== "string" || !read.args.path || read.args.path.length > 1024)) ||
-          (read.tool === "get_page" && (typeof read.args.page !== "string" || !read.args.page || read.args.page.length > 1024)) ||
-          (read.args.folder !== undefined && (typeof read.args.folder !== "string" || read.args.folder.length > 1024)) ||
-          (read.args.source !== undefined && typeof read.args.source !== "boolean"))) ||
-          !await prove(at) || !valid())
-        result = { ok: false, message: "This read is incomplete or belongs to another workspace, tab or generation. Read the site again." };
-      else if (read.operation === "media") result = typeof read.path === "string" && mediaTools.includes(read.tool)
-        ? await options.media?.(read, generation!, valid, deadline, seen) ?? { ok: false, message: "Browser media tools are unavailable. Refresh the editor." }
-        : { ok: false, message: "Unknown browser media tool." };
-      else if (editing) result = await options.edit?.(read, generation!, valid) ?? { ok: false, message: "Browser edit tools are unavailable. Refresh the editor." };
-      else result = await options.read?.(read) ?? { ok: false, message: "Browser read tools are unavailable. Refresh the editor." };
+      const read = value.command as AgentRead | AgentEdit | AgentStatus | AgentMedia | AgentRequests;
+      if (read.operation === "requests") {
+        result = typeof value.id !== "string" || !value.id || !matches(value) || !valid() || !requestTools.includes(read.tool) ||
+          typeof read.grantId !== "string" || !read.grantId || !read.args || typeof read.args !== "object" || Array.isArray(read.args) || !await prove(at) || !valid()
+          ? { ok: false, message: "This request call is incomplete or belongs to another workspace, tab or generation. Call it again." }
+          : await options.requests?.(read, valid, deadline) ?? { ok: false, message: "Browser request tools are unavailable. Refresh the editor." };
+      } else {
+        const editing = read.operation === "edit" || read.operation === "status" || read.operation === "media";
+        if (typeof value.id !== "string" || !value.id || !matches(value) || !valid() || (editing ? (typeof read.id !== "string" || !/^[\w.:-]{1,128}$/.test(read.id) || typeof read.grantId !== "string" || !read.grantId ||
+              (read.operation === "edit" || read.operation === "media") && (!read.args || typeof read.args !== "object" || Array.isArray(read.args) || !Number.isFinite(read.createdAt))) : (!read.args || typeof read.args !== "object" || Array.isArray(read.args) ||
+            !["get_site", "list_files", "read_file", "export_site", "get_page", "get_selection"].includes(read.tool) ||
+            (read.tool === "read_file" && (typeof read.args.path !== "string" || !read.args.path || read.args.path.length > 1024)) ||
+            (read.tool === "get_page" && (typeof read.args.page !== "string" || !read.args.page || read.args.page.length > 1024)) ||
+            (read.args.folder !== undefined && (typeof read.args.folder !== "string" || read.args.folder.length > 1024)) ||
+            (read.args.source !== undefined && typeof read.args.source !== "boolean"))) ||
+            !await prove(at) || !valid())
+          result = { ok: false, message: "This read is incomplete or belongs to another workspace, tab or generation. Read the site again." };
+        else if (read.operation === "media") result = typeof read.path === "string" && mediaTools.includes(read.tool)
+          ? await options.media?.(read, generation!, valid, deadline, seen) ?? { ok: false, message: "Browser media tools are unavailable. Refresh the editor." }
+          : { ok: false, message: "Unknown browser media tool." };
+        else if (editing) result = await options.edit?.(read, generation!, valid) ?? { ok: false, message: "Browser edit tools are unavailable. Refresh the editor." };
+        else result = await options.read?.(read) ?? { ok: false, message: "Browser read tools are unavailable. Refresh the editor." };
+      }
     } catch (error) { result = { ok: false, message: error instanceof Error ? error.message : "The browser read failed." }; }
     if (socket !== source || !await prove(at).catch(() => false) || !valid()) return;
     let message = JSON.stringify({ type: "result", id: value.id, ...scope(), result });
@@ -181,7 +191,7 @@ export function createLiveTransport(options: Options) {
   }
   async function command(source: Socket, value: Partial<Scope> & { id?: unknown; command?: unknown }, deadline: number, seen: { page: string | undefined }) {
     const at = epoch, connection = session;
-    if ((value.command as { operation?: unknown } | null)?.operation && ["read", "edit", "status", "media"].includes((value.command as { operation: string }).operation)) return readCommand(source, value, deadline, seen);
+    if ((value.command as { operation?: unknown } | null)?.operation && ["read", "edit", "status", "media", "requests"].includes((value.command as { operation: string }).operation)) return readCommand(source, value, deadline, seen);
     const incoming = value.command as Partial<AgentCommand> | null;
     const operationId = typeof incoming?.id === "string" ? incoming.id : "";
     const refuse = (message: string): Result => ({ state: "conflict", message, operationId });
@@ -278,7 +288,9 @@ export function createLiveTransport(options: Options) {
           // The relay's remaining total budget, counted from arrival here (never a fresh 10 s), less 1 s for transit.
           // Clocks are never compared, so a frame delayed longer can still commit after the relay gave up: the Worker
           // has then answered unknown and the receipt reconciles it. Relay-to-tab expiry is ticket 19's cancellation.
-          const remaining = typeof value.remainingMs === "number" && Number.isFinite(value.remainingMs) ? Math.min(10_000, Math.max(0, value.remainingMs)) : 10_000;
+          // A request wait (ticket 18) has the relay's longer wait budget, at most 25 s.
+          const most = value.command?.operation === "requests" && value.command.tool === "wait_for_requests" ? 25_000 : 10_000;
+          const remaining = typeof value.remainingMs === "number" && Number.isFinite(value.remainingMs) ? Math.min(most, Math.max(0, value.remainingMs)) : 10_000;
           const deadline = Date.now() + remaining - 1_000;
           // Before any await (readiness, ownership proof, lazy executor): the page a media change's element id points into.
           const path = (value.command as { operation?: unknown; path?: unknown } | null)?.operation === "media" ? (value.command as { path?: unknown }).path : undefined;

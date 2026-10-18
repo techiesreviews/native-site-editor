@@ -151,3 +151,26 @@
 .agent-menu__storage .agent-menu__link {
   color: inherit;
 }
+/* Watch (ticket 18): its deadline and countdown, under the connection's hint. */
+.agent-menu__watch {
+  margin-block: 0 6px;
+  margin-inline: 26px 8px;
+  padding-inline-start: 8px;
+  border-inline-start: 2px solid var(--line);
+}
+.agent-menu__watch[hidden] {
+  display: none;
+}
+.agent-menu[data-watch="on"] .agent-menu__watch {
+  border-inline-start-color: var(--color-success);
+}
+.agent-menu__watch-text {
+  margin-block: 0 4px;
+  font-size: var(--type-small);
+  line-height: 1.5;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.agent-menu__watch .agent-menu__links {
+  margin: 0;
+}
