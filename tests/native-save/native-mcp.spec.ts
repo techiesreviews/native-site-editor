@@ -16,6 +16,9 @@ const indexSource = readFileSync(resolve("fixtures/native-starter", indexPath), 
 const pageErrors: string[] = [];
 
 test.beforeEach(async ({ page }) => {
+  // The HTTP fixture cannot upgrade relay sockets; keep this suite on the explicit legacy fallback.
+  await page.routeWebSocket("**/api/agent/relay?*", socket => socket.close());
+  await page.route("**/api/agent/relay", route => route.fulfill({ status: 404, body: "Not found" }));
   pageErrors.length = 0;
   page.on("pageerror", (error) => pageErrors.push(error.message));
 });

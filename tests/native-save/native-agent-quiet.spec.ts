@@ -1,6 +1,12 @@
 import { expect, test, type Page } from "@playwright/test";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 
+test.beforeEach(async ({ page }) => {
+  // This fixture has no relay WebSocket upgrade. Exercise the absent-route fallback explicitly.
+  await page.routeWebSocket("**/api/agent/relay?*", socket => socket.close());
+  await page.route("**/api/agent/relay", route => route.fulfill({ status: 404, body: "Not found" }));
+});
+
 // Remote agents are off in each tab until the user turns them on there
 // (src/components/agent-menu.ts). While off, the tab sends nothing to the
 // agent hub: every /api/agent/* request is one hub Durable Object call, so

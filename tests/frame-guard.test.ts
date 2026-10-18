@@ -23,6 +23,7 @@ const postAllowlist: AllowlistEntry[] = [
   { file: RUNTIME, match: "parent", reason: "The runtime's posts (emit and ready) are the frame side; preview-wire.test.ts pins their types and shapes.", count: 2 },
 ];
 const listenerAllowlist: AllowlistEntry[] = [
+  { file: "src/agent-transport.ts", match: "source", reason: "Pinned agent relay WebSocket, not a preview frame; transport tests prove socket, workspace, tab and generation checks." },
   { file: "src/drafts.ts", match: "channel", reason: DRAFTS },
   { file: "src/page-builder/media-optimise.ts", match: "worker", reason: OPTIMISER },
   { file: "src/page-builder/image-optimise.worker.ts", match: "self", reason: OPTIMISER_SIDE },
