@@ -88,3 +88,41 @@ test("live commands correlate results; visible and hidden idle sends no HTTP; an
   expect(handshakes[1].generation).toBeGreaterThan(handshakes[0].generation);
   await second.close();
 });
+
+test("a copied token shows connected after its agent uses it: one hub read on return, no polling", async ({ page, context, baseURL }) => {
+  const requests: string[] = [];
+  let grants: object[] = [];
+  await context.route("**/api/agent/hub", route => route.fulfill({ json: { grants, tabId: null, updatedAt: null, commands: [], requests: [] } }));
+  await context.route("**/api/agent/connect", route => {
+    grants = [{ id: "token-grant", repoId: 501, repo: "native-demo-user/native-demo", branch: "main", via: "token", createdAt: Date.now() }];
+    return route.fulfill({ json: { id: "token-grant", token: "ase_test" } });
+  });
+  await context.routeWebSocket("**/api/agent/relay?*", route => {
+    route.onMessage(message => {
+      if (message === "ping") { route.send("pong"); return; }
+      const value = JSON.parse(String(message));
+      if (value.type === "handshake") route.send(JSON.stringify({ ...value, type: "ready" }));
+    });
+  });
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await open(page, baseURL);
+  await page.clock.install();
+  page.on("request", request => {
+    const path = new URL(request.url()).pathname;
+    if (path.startsWith("/api/agent/") || path === "/mcp") requests.push(path);
+  });
+  await connect(page);
+  await expect(page.locator(".agent-menu")).toHaveAttribute("data-state", "waiting");
+  const before = requests.length;
+  await page.clock.runFor(65_000);
+  expect(requests.slice(before)).toEqual([]);
+  grants = [{ ...grants[0], usedAt: Date.now() }];
+  await visible(page, "hidden");
+  await visible(page, "visible");
+  await expect(page.locator(".agent-menu")).toHaveAttribute("data-state", "connected");
+  expect(requests.slice(before)).toEqual(["/api/agent/hub"]);
+  await page.clock.runFor(65_000);
+  await visible(page, "hidden");
+  await visible(page, "visible");
+  expect(requests.slice(before)).toEqual(["/api/agent/hub"]);
+});

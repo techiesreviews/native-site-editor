@@ -13,7 +13,7 @@ interface Scope { workspace: AgentWorkspace; tabId: string; generation: number }
 interface Result { state: "applied" | "conflict" | "unknown"; message: string; result?: AgentCommand["result"]; operationId: string }
 type Socket = Pick<WebSocket, "readyState" | "send" | "close" | "addEventListener">;
 const operations = new Set(["update_active_draft", "create_file_draft", "write_file", "create_page", "set_page_details", "add_section", "make_component", "move_section", "remove_section", "move_file", "delete_file", "open_page", "inspect_preview", "list_media", "preview_media", "improve_images", "loop_video", "video_still", "write_subtitles", "frame_image", "place_media", "describe_media", "change_collection", "adding_settings", "remove_media", "keep_media", "restore_media", "replace_media"]);
-/** Mutating operations that have no durable receipt yet (ticket 08 "Not covered"); the rest reconcile through receipts. */
+/** Mutations without an owner-fenced receipt yet (ticket 08 "Not covered"); refused live until tickets 16/17 route them. */
 const receiptless = new Set(["update_active_draft", "create_file_draft", "place_media", "frame_image", "loop_video"]);
 type Recovery = ReturnType<typeof browserAgentRecovery>;
 interface Registry {
@@ -87,8 +87,6 @@ export function createLiveTransport(options: Options) {
   let heartbeat: number | undefined, pong: number | undefined;
   let recovery: Recovery | undefined, first = true, takeoverFlight: Promise<void> | undefined;
   const flights = new Map<string, { identity: string; promise: Promise<Result> }>();
-  /** Last 100 applied outcomes in this activation; receipts remain the durable proof. */
-  const settled = new Map<string, { identity: string; result: Result }>();
   const scope = (): Scope => ({ workspace, tabId: options.tabId, generation: generation! });
   const current = () => !stopped && options.current() !== undefined && workspaceKey(options.current()!) === key;
   const matches = (value: Partial<Scope>) => value.workspace && typeof value.workspace.account === "string" && workspaceKey(value.workspace) === key && value.tabId === options.tabId && value.generation === generation;
@@ -156,18 +154,18 @@ export function createLiveTransport(options: Options) {
       incoming.repoId !== workspace.repoId || incoming.branch !== workspace.branch ||
       (incoming.args !== undefined && (!incoming.args || typeof incoming.args !== "object" || Array.isArray(incoming.args))))
       result = refuse("This agent change is incomplete or belongs to another site or branch. Read the site again.");
+    else if (receiptless.has(incoming.operation))
+      result = refuse(`${incoming.operation} cannot be applied over the live connection yet: it has no durable receipt. Nothing was changed.`);
     else {
       try {
-        if (!await prove(at)) result = refuse("Another tab took over agent changes, or this site changed.");
+        // Admission awaits IndexedDB: the socket, its handshake and liveness must still hold before the executor runs.
+        const admitted = await prove(at);
+        if (!admitted || socket !== source || session !== connection || !handshaken || state.mode !== "live" || source.readyState !== 1)
+          result = refuse("Another tab took over agent changes, this site changed, or the connection was lost. Nothing was changed.");
         else {
           const identity = payloadIdentity(incoming as JsonValue), existing = flights.get(operationId);
           if (existing && existing.identity !== identity) result = refuse("This change's id is already running with different work.");
           else {
-            // Operations without a durable receipt (e.g. place_media) must not apply twice in this tab either.
-            const done = receiptless.has(incoming.operation) ? settled.get(operationId) : undefined;
-            if (done) {
-              result = done.identity === identity ? done.result : refuse("This change's id was already used for different work.");
-            } else {
             const work = existing ?? { identity, promise: (async (): Promise<Result> => {
               try {
                 const outcome = await options.run({ ...incoming as AgentCommand, ownerGeneration: generation! }, generation!);
@@ -180,11 +178,6 @@ export function createLiveTransport(options: Options) {
             flights.set(operationId, work);
             try { result = await work.promise; }
             finally { if (flights.get(operationId) === work) flights.delete(operationId); }
-            if (result.state === "applied" && receiptless.has(incoming.operation) && !settled.has(operationId)) {
-              settled.set(operationId, { identity, result });
-              if (settled.size > 100) settled.delete(settled.keys().next().value!);
-            }
-            }
           }
         }
       } catch (error) { result = refuse(error instanceof Error ? error.message : "Browser storage is unavailable."); }
