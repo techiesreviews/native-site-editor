@@ -7,6 +7,7 @@ type Dialog = ReturnType<typeof createConfirmDialog>;
 export interface AgentSiteHostPorts {
   stamp(): Stamp;
   files?(): AgentReadFiles | undefined;
+  source?(path: string): string | undefined;
   load(): Promise<Pick<typeof import("./agent-site"), "buildAgentContext" | "agentAnswers">>;
   input(): AgentSiteInput | undefined;
   dialog(): Dialog | undefined;
@@ -37,7 +38,7 @@ export function createAgentSiteHost(ports: AgentSiteHostPorts) {
     }
   }
   function tools(build = context) {
-    return { stamp: () => ports.stamp(), context: build, files: () => ports.files?.() };
+    return { stamp: () => ports.stamp(), context: build, files: () => ports.files?.(), source: (path: string) => ports.source?.(path) };
   }
   return { context, withAnswers, tools };
 }

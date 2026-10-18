@@ -20,6 +20,8 @@ export interface AgentReadPorts {
   stamp(): Stamp;
   context(): Promise<SharedContext | undefined>;
   files(): AgentReadFiles | undefined;
+  /** The live source a page edit starts from (media place/frame/loop proofs). */
+  source?(path: string): string | undefined;
 }
 
 /** The browser's existing tree/blob readers and clean cache, pinned before any await. */

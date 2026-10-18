@@ -43,7 +43,7 @@ async function fixture(race?: AwaitRace) {
   const history: (() => void)[] = [];
   const snapshot: Snapshot = { branch: "main", commit, entries: [] };
   const context = await siteContext();
-  const toolsPorts = { stamp: () => ({ holds: () => valid, changed: () => undefined }),
+  const toolsPorts = { stamp: () => ({ holds: () => valid, changed: () => undefined }), source: (path: string) => text.get(path),
     context: async () => ({ context, texts: new Map<string, string>() }),
     files: () => ({ repo, snapshot, api: async <T>() => ({ entries: [] }) as T, read: async () => "", batch: async () => ({}), has: () => false }),
   } satisfies AgentReadPorts;
@@ -386,5 +386,22 @@ test("the media adapter keeps the page seen on arrival: a manual edit during mod
     await assert.rejects(runAgentMedia(f.controller, f.ports, changed, before), /changed/i, command.tool);
     assert.equal(f.history.length, 0); assert.equal(await f.records.receipt(workspace, command.id, command.grantId), undefined);
     assert.equal(f.storage.store.list({ ...workspace, repo: repo.full_name }).filter(draft => draft.path === "index.html").length, 0);
+  }
+});
+
+test("a page edited while the receipt lookup waits refuses frame and loop changes: the admission page is the proof", async () => {
+  for (const input of [request("frame_image", { element: "0.0.0", shape: "square" }, "admit-frame", "index.html"),
+    request("loop_video", { element: "0.0.1", looping: false }, "admit-loop", "index.html")]) {
+    const f = await fixture(), before = f.text.get("index.html")!, receipt = f.records.receipt, held = deferred<void>();
+    let first = true;
+    f.records.receipt = async (...args) => { if (first) { first = false; await held.promise; } return receipt(...args); };
+    const pending = f.run(input);
+    // Same repository, branch and commit: only the page proof sees the sibling inserted before the target.
+    f.text.set("index.html", before.replace("<section>", '<section><img src="/images/photo.svg" alt="new">'));
+    held.resolve();
+    const result = body(await pending);
+    assert.equal(result.state, "conflict", input.tool); assert.match(String(result.message), /changed in the editor meanwhile/);
+    assert.equal(f.counts().runs, 0); assert.equal(f.history.length, 0);
+    assert.equal(await receipt(workspace, input.id, input.grantId), undefined);
   }
 });
