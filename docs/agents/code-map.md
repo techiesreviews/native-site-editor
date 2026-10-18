@@ -211,7 +211,7 @@ One line per media-* module. Concern-level rows sit in the table above.
 | Card source-tree read guard | `tests/card-tree-guard.test.ts` |
 | Focused ports, exclusive timing and suite shards | `scripts/agents/port.sh`; `scripts/agents/timing.sh`; `scripts/agents/full-suite.sh`; `scripts/agents/suite-summary.mjs` |
 | Cold-load measurement and worktrees | `scripts/agents/cold.sh`; `scripts/agents/worktree.sh` |
-| Agent kit: front door, commands and helpers | `scripts/agents/kit`; `scripts/agents/kit.d/`; `scripts/agents/kit-lib.sh`; `scripts/agents/kit-lib.mjs` |
+| Agent kit: front door, commands and helpers | `scripts/agents/kit`; `scripts/agents/kit.d/`; `scripts/agents/kit-lib.sh`; `scripts/agents/kit-lib.mjs`; `scripts/agents/pr-tier.mjs` — `classify`, `checkSteps` |
 | Shared browser scenarios (specs and kit shots) | `tests/support/scenarios.ts` — `openEditor`, `openMedia`, `pickPicture`, `switchSiteMidUpload` |
 | Await-race helper for async writers | `tests/support/await-race.ts` — `forEachAwait` |
 
