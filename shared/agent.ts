@@ -259,13 +259,11 @@ export interface AgentRequest {
 
 /**
  * The most text a request (and each answer) holds, the source of its
- * element, how many wait at once, and the messages and text its thread keeps.
+ * element and how many wait at once (thread limits: shared/agent-requests.ts).
  */
 export const REQUEST_TEXT_LIMIT = 2000;
 export const REQUEST_HTML_LIMIT = 4096;
 export const OPEN_REQUESTS_LIMIT = 50;
-export const THREAD_LIMIT = 20;
-export const THREAD_TEXT_LIMIT = 8000;
 /**
  * The most an agent's reply to a request holds, and its question, which the
  * request's pin shows whole on one line.

@@ -15,13 +15,15 @@ const inWorkspace = (request: AgentRequest, action: any) =>
 import {
   OPEN_REQUESTS_LIMIT,
   REQUEST_TEXT_LIMIT,
-  THREAD_LIMIT,
-  THREAD_TEXT_LIMIT,
   requestThread,
   type AgentRequest,
   type AgentRequestMessage,
 } from "./agent";
 import { HttpError } from "./http-error";
+
+/** The messages and text a request's thread keeps (here, out of the boot bundle's shared/agent.ts). */
+export const THREAD_LIMIT = 20;
+export const THREAD_TEXT_LIMIT = 8000;
 
 // Requests kept in all, answered and dismissed ones included; the oldest
 // closed ones go first.
