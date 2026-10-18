@@ -77,7 +77,8 @@ takes over 25 000 ms).
 here from shared/agent.ts so boot stays 355 KB), worker/agent-requests.ts (re-export), shared/agent.ts,
 src/agent-watch.ts (new, lazy with the menu), src/agent-records.ts (`owner` fence), src/components/agent-menu.css
 (Watch row), worker/site-conventions.ts (loop wording), docs/mcp.md, docs/agents/code-map.md,
-tests/mcp-runtime.test.ts and tests/agent-usage.test.ts (legacy wait is quiet now).
+tests/mcp-runtime.test.ts and tests/agent-usage.test.ts (legacy wait is quiet now), tests/frame-guard.test.ts (the
+requests BroadcastChannel allowlisted).
 
 **Commits.** 5f68c933, d5da51ba, 32919ccc, 14dbf7c1, bc375199, 991107ec, 5db9ef97, 9186a978 (build; Claude),
 372d55b3 (review 1), 388de921 (review 2), a70f1aae (review 3); hashes before `kit pr`'s rebase.
