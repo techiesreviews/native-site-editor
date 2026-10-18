@@ -77,29 +77,32 @@ native-draft-storage.spec.ts, native-onboarding.spec.ts (the
 fixture server has no relay upgrade: these route a missing relay so they keep the legacy path), new
 tests/native-save/native-agent-live.spec.ts.
 
-**Commits.** 340290b7 (Sol build), 07b820be, 7cc05e42 (review 1), 90bf94a1, 7dd70fc0 (review 2), then the
-landing fix (a repository briefly absent during a refresh counted as a workspace move and stopped the tab's
-context sharing; it now refuses commands meanwhile but is no move).
+**Commits** (PR #56). 645212bb (Sol build), d60c7761, 1fcb8dc5 (review 1), 096d8b23, 5f097e29 (review 2), c8a94068
+(landing fix: a repository briefly absent during a refresh counted as a workspace move and stopped the tab's context
+sharing; it now refuses commands meanwhile but is no move), c843474b (review 3).
 
-**Tests.** tests/agent-transport.test.ts (27): duplicate delivery in flight and after commit; stale
+**Tests.** tests/agent-transport.test.ts (30): duplicate delivery in flight and after commit; stale
 generation/tab/workspace and malformed commands; two tabs, focus, explicit takeover, old owner's late commit and
 resume (0 late commits); owner close without promotion; reset re-handshake without replay; server close → ≤5
 coordinated reconnects then pause; quota pause with 0 automatic attempts and single-flight Retry; failed takeover
 stays paused; workspace change; **live idle over simulated minutes: 0 HTTP calls**; missing pong; bfcache; absent
 route fallback; probe quota body and Retry-After; storage refusal; receiptless refusal; socket lost/reset during
-admission never runs (mutation checked); `forEachAwait` workspace change at every ownership await.
+admission never runs (mutation checked); refresh absence keeps the socket, and a socket lost meanwhile reconnects
+when the workspace returns; storage refusal records a probe's quota/Retry-After (both mutation checked); `forEachAwait` workspace change at every ownership await.
 native-agent-live.spec.ts (2): a mocked relay delivers a write_file and gets the correlated applied result; after
 it, 65 s visible + 65 s hidden make **0** `/api/agent/*` or `/mcp` requests (2 pings); a second tab open before
 the edit shows "Another tab…" + Take over, takes over with a higher generation and then shows the edit; the old
 tab says it was taken over. A copied token turns connected after one hub read on return, then 0 more.
-`npm run check` ok; `npm run lint` ok; `scripts/agents/unit.sh` pass 4345 fail 0 (by hand).
+`npm run check` ok; `npm run lint` ok; `scripts/agents/unit.sh` pass 4366 fail 0 (by hand).
 
 **Review** (gpt-6.1-sol, medium, read-only; run.log verified).
 Round 1 `RESULT: ok review … evidence .scratch/reviews/dor-14/20261018T053422Z`: fixed 3 (receiptless mutations
 bypassed the owner fence: now refused live; a socket lost during the admission read still ran the command; a copied
 token never showed connected in socket mode). Round 2 `RESULT: ok review … evidence
 .scratch/reviews/dor-14/20261018T053920Z`: fixed 2 (takeover left the open editor showing pre-takeover text; the
-first-upgrade probe ignored quota bodies and Retry-After). Rejected 0.
+first-upgrade probe ignored quota bodies and Retry-After). Round 3 (run by `kit pr`, `RESULT: ok review … evidence
+.scratch/reviews/dor-14/20261018T065727Z`): fixed 2 (a socket lost while a refresh briefly removed the workspace stayed
+"live" with no socket; the storage-refusal probe dropped quota and Retry-After). Rejected 0.
 
 **Kit.**
 - RESULT: ok doctor 7/7 checks passed
@@ -107,7 +110,8 @@ first-upgrade probe ignored quota bodies and Retry-After). Rejected 0.
 - RESULT: ok specs 3/3 passed (native-agent-live, native-agent-quiet 5, native-lazy-panels 6)
 - RESULT: fail specs 1 of 3 failed: native-agent-recovery.spec.ts (disabled storage stopped before any socket; fixed in 90bf94a1), then RESULT: ok specs 1/1 passed; native-mcp 18 and native-mcp-media 5 passed
 - RESULT: ok specs 1/1 passed (native-agent-live 2, after review 2)
-- First `kit pr`: RESULT: fail specs 4 of 145 failed: native-agent-live.spec.ts, native-discard.spec.ts, native-draft-storage.spec.ts, native-onboarding.spec.ts (refresh treated as a workspace move; two specs clicked Connect without the absent-relay route; live under load). After the fix: RESULT: ok specs 4/4 passed
+- First `kit pr`: RESULT: fail specs 4 of 145 failed: native-agent-live.spec.ts, native-discard.spec.ts, native-draft-storage.spec.ts, native-onboarding.spec.ts (refresh treated as a workspace move; two specs clicked Connect without the absent-relay route; live under load). After the fix: RESULT: ok specs 4/4 passed. Second `kit pr`: check, unit, lint, specs ok; PR #56 opened; CI failed in
+  tests/agent-resume.test.ts ("SIGTERM records interrupted…", agent kit script timing, no code of this slice); rerun after review 3.
 - RESULT: ok shots raw spec, out /home/ubulex/Projects/native-site-editor/.scratch/shots/dor-14/20261018 (live, other-owner, taken-over, quota; 1280 light, 390 dark)
 
 **Limits for later tickets.** Nothing on the Worker dispatches through the relay yet: on a real deployment an on
