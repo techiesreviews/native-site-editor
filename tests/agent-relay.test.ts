@@ -42,6 +42,8 @@ function fixture() {
       now += ms; counters.waitedMs += ms;
       for (const [id, timer] of timers) if (timer.at <= now) { timers.delete(id); timer.run(); }
     },
+    /** Moves time without delivering timers (a delayed timer event). */
+    skip(ms: number) { now += ms; },
     id() { return (JSON.parse(editor.sent.at(-1)!) as { id: string }).id; },
     idle() { assert.equal(relay.pendingCount, 0); assert.equal(relay.bufferedBytes, 0); assert.equal(timers.size, 0); },
   };
@@ -194,6 +196,36 @@ test("a restored owner that never handshakes times out as not sent; a tab or gen
   assert.equal(h.timers.size, 0);
 });
 
+test("restoration keeps the explicit owner; a higher-generation socket that never handshook claims nothing", async () => {
+  const h = fixture();
+  const next = { ...scope, tabId: "next-tab", generation: 2 };
+  const other = socket(next);
+  h.relay.connect(other, next);
+  const restored = new AgentRelay([h.editor, other], h.clock);
+  assert.equal(restored.message(h.editor, handshake()), true);
+  const pending = restored.dispatch({ workspace: scope.workspace }, "to the owner");
+  assert.equal(JSON.parse(h.editor.sent.at(-1)!).tabId, scope.tabId);
+  restored.message(h.editor, reply(h.id()));
+  assert.deepEqual(await pending, { ok: true, result: { applied: true } });
+  // With no recorded claim at all there is no owner: nothing is elected.
+  const fresh = socket(next);
+  fresh.serializeAttachment({ ...next, role: "editor", handshaken: false });
+  assert.deepEqual(await new AgentRelay([fresh], h.clock).dispatch({ workspace: scope.workspace }, null), { ok: false, code: "editor-unavailable", outcome: "not-sent" });
+});
+
+test("a handshake after the deadline (timer delivery delayed) never sends the queued command", async () => {
+  const h = fixture();
+  const restored = new AgentRelay([h.editor], h.clock);
+  const sentBefore = h.editor.sent.length;
+  const waiting = restored.dispatch({ workspace: scope.workspace }, "expired edit");
+  h.skip(10_000);
+  assert.equal(restored.message(h.editor, handshake()), true);
+  assert.deepEqual(await waiting, { ok: false, code: "timeout", outcome: "not-sent" });
+  assert.equal(h.editor.sent.slice(sentBefore).some(message => JSON.parse(message).type === "command"), false);
+  assert.equal(restored.pendingCount, 0);
+  assert.equal(h.timers.size, 0);
+});
+
 test("explicit higher-generation takeover fences old owner and its pending results", async () => {
   const h = fixture();
   const pending = h.relay.dispatch(scope, "old edit"), oldId = h.id();
@@ -312,8 +344,9 @@ test("real SessionStore dispatch/results/cancel/timeout/close/error/reset write 
     blockConcurrencyWhile() { throw new Error("Relay must not block concurrency while awaiting browser work"); },
   };
   const env: Env = { SESSIONS: { idFromName: name => name, get: () => ({ fetch: async () => new Response(null, { status: 404 }) }) }, ASSETS: { fetch: async () => new Response(null, { status: 404 }) } };
+  const body = JSON.stringify({ content: "private draft payload" });
   const dispatch = (instance: SessionSurface, signal?: AbortSignal) => instance.fetch(new Request("https://session.internal/relay/dispatch", {
-    method: "POST", signal, headers: { "Content-Type": "application/json", [AgentRelay.identityHeader]: JSON.stringify(scope) }, body: JSON.stringify({ content: "private draft payload" }),
+    method: "POST", signal, headers: { "Content-Type": "application/json", "Content-Length": String(body.length), [AgentRelay.identityHeader]: JSON.stringify(scope) }, body,
   }));
   // Fetch body parsing is asynchronous: flush through the real dispatch until
   // its observable command is sent, without a wall-clock wait.
@@ -441,4 +474,47 @@ test("real runtime accepts hibernatable editor upgrade, scope handshake and ping
     assert.equal(await pong, "pong");
     ws.close(1000);
   } finally { await worker.dispose(); }
+});
+
+test("dispatch intake reserves capacity before reading bodies and expires a stalled body within the deadline", async () => {
+  const { SessionStore } = await sessionClass();
+  const editor = socket();
+  const original = Object.getOwnPropertyDescriptor(globalThis, "WebSocketRequestResponsePair");
+  Object.defineProperty(globalThis, "WebSocketRequestResponsePair", { configurable: true, value: class { constructor(public request: string, public response: string) {} } });
+  const ctx = { storage: new CountedStorage(new UsageCounters()), getWebSockets: () => [editor], setWebSocketAutoResponse() {},
+    blockConcurrencyWhile() { throw new Error("Relay must not block concurrency"); } };
+  const env: Env = { SESSIONS: { idFromName: name => name, get: () => ({ fetch: async () => new Response(null, { status: 404 }) }) }, ASSETS: { fetch: async () => new Response(null, { status: 404 }) } };
+  const pulls: number[] = [];
+  const stalled = (index: number, length = 1024) => new Request("https://session.internal/relay/dispatch", {
+    method: "POST", duplex: "half",
+    headers: { "Content-Type": "application/json", "Content-Length": String(length), [AgentRelay.identityHeader]: JSON.stringify(scope) },
+    // highWaterMark 0: the stream is pulled only when someone reads the body.
+    body: new ReadableStream({ pull() { pulls.push(index); return new Promise(() => {}); } }, { highWaterMark: 0 }),
+  } as RequestInit);
+  const instance = new SessionStore(ctx, env);
+  instance.webSocketMessage(editor, handshake());
+  const clock = new FakeClock(new UsageCounters());
+  try {
+    // Missing Content-Length is refused before any reading.
+    const unsized = await instance.fetch(new Request("https://session.internal/relay/dispatch", { method: "POST", headers: { [AgentRelay.identityHeader]: JSON.stringify(scope) } }));
+    assert.equal(unsized.status, 411);
+    // A declared size over 8 MiB is refused before reading.
+    pulls.length = 0;
+    assert.deepEqual(await (await instance.fetch(stalled(99, AgentRelay.maxBytes + 1))).json(), { ok: false, code: "too-large", outcome: "not-sent" });
+    assert.equal(pulls.includes(99), false);
+    clock.install();
+    const five = Array.from({ length: 5 }, (_, index) => instance.fetch(stalled(index)));
+    for (let turns = 0; turns < 20; turns++) await Promise.resolve();
+    pulls.length = 0;
+    // The sixth is busy while five bodies are still arriving; its body is never read.
+    assert.deepEqual(await (await instance.fetch(stalled(5))).json(), { ok: false, code: "busy", outcome: "not-sent" });
+    assert.equal(pulls.includes(5), false);
+    // Stalled bodies expire at the ten-second total deadline and are never sent.
+    for (const response of await Promise.all(five)) assert.deepEqual(await response.json(), { ok: false, code: "timeout", outcome: "not-sent" });
+    assert.equal(editor.sent.some(message => JSON.parse(message).type === "command"), false);
+  } finally {
+    clock.uninstall();
+    if (original) Object.defineProperty(globalThis, "WebSocketRequestResponsePair", original);
+    else Reflect.deleteProperty(globalThis, "WebSocketRequestResponsePair");
+  }
 });

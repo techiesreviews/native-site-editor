@@ -77,14 +77,34 @@ export class SessionStore extends DurableObject {
       // work is awaited outside blockConcurrencyWhile and never touches storage.
       const target = AgentRelay.readTarget(identity);
       if (url.pathname === "/relay/dispatch" && request.method === "POST" && target) {
+        // One total deadline from ingress; capacity is reserved before the body is read.
+        const started = Date.now();
+        const length = Number(request.headers.get("Content-Length"));
+        if (!request.headers.has("Content-Length") || !Number.isSafeInteger(length) || length < 0)
+          return new Response(null, { status: 411 });
+        const relay = this.relay();
+        const reservation = relay.reserve(length);
+        if ("ok" in reservation) return Response.json(reservation, { status: !reservation.ok && reservation.code === "too-large" ? 413 : 200 });
         let command: JsonValue;
-        try { command = await requestJson(request, AgentRelay.maxBytes) as JsonValue; }
-        catch (error) {
+        let timer: ReturnType<typeof setTimeout> | null = null;
+        try {
+          const expired = new Promise<"timeout">(resolve => { timer = setTimeout(() => resolve("timeout"), started + 10_000 - Date.now()); });
+          const body = await Promise.race([requestJson(request, length), expired]);
+          if (body === "timeout") {
+            void request.body?.cancel().catch(() => undefined);
+            return Response.json({ ok: false, code: "timeout", outcome: "not-sent" });
+          }
+          command = body as JsonValue;
+        } catch (error) {
           if (error instanceof HttpError && error.status === 413)
             return Response.json({ ok: false, code: "too-large", outcome: "not-sent" }, { status: 413 });
           return new Response(null, { status: 400 });
+        } finally {
+          clearTimeout(timer);
+          // Idempotent; on success dispatch() re-admits in this same synchronous turn.
+          reservation.release();
         }
-        return Response.json(await this.relay().dispatch(target, command, request.signal));
+        return Response.json(await relay.dispatch(target, command, request.signal, { started, reservation }));
       }
       return new Response(null, { status: 400 });
     }
