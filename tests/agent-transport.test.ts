@@ -450,3 +450,32 @@ test("browser storage refusing ownership selects the fallback only when the rela
     a.transport.stop();
   }
 });
+
+test("a failed first upgrade honours the probe's quota body and Retry-After", async () => {
+  {
+    const f = fixture();
+    let opened = 0;
+    const a = f.tab("a", { now: () => f.now(), socket: () => { opened++; return new FakeSocket(true); },
+      probe: async () => ({ status: 429, body: { error: "Today's allowance is used up.", code: "daily-quota", resetAt: 500_000 }, text: "", retryAfter: null }) });
+    await a.transport.start();
+    assert.equal(a.transport.state().mode, "quota");
+    await f.tick(300_000);
+    assert.equal(opened, 1, "zero automatic attempts while quota-paused");
+    a.transport.stop();
+  }
+  {
+    const f = fixture(), sockets: FakeSocket[] = [];
+    let failing = true;
+    const a = f.tab("a", { now: () => f.now(), socket: () => { const socket = new FakeSocket(failing); sockets.push(socket); return socket; },
+      probe: async () => ({ status: 503, text: "busy", retryAfter: "60" }) });
+    await a.transport.start();
+    assert.equal(sockets.length, 1);
+    failing = false;
+    await f.tick(59_000);
+    assert.equal(sockets.length, 1, "no reconnect before Retry-After");
+    await f.tick(10_000);
+    assert.equal(sockets.length, 2);
+    await until(() => a.transport.state().mode === "live");
+    a.transport.stop();
+  }
+});
