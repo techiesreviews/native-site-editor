@@ -55,21 +55,21 @@ Never hold `blockConcurrencyWhile` while awaiting the browser. Idle sockets must
 - Bounds per workspace: ≤5 pending commands and ≤8 MiB serialized payload (wire envelope; results and
   unfinished intake count against the same budget); 10 s total deadline from ingress. Worker-internal
   `POST /relay/dispatch` needs `Content-Length`, reserves a slot and bytes **before** reading the body, reads
-  with a reader that is cancelled on expiry/overflow, then hands the reservation to `dispatch` in the same turn.
+  with a reader that is cancelled (not awaited) on expiry, overflow or request abort, then hands the reservation to `dispatch` in the same turn.
   Entries leave on result, cancel (request signal), timeout and disconnect/error.
 - `worker/app.ts`: `GET /api/agent/relay?repo&branch&tabId&generation` (WebSocket upgrade only): same-origin,
   signed-in session, repository authorized through GitHub, then forwarded with Worker-built identity (no client
   headers/cookies cross); refusals happen before any relay DO call. `handle` passes a `101` response through.
 
 **Commits.** ea3da9a1 (Sol build), 840f3fe2 (owner-resolved dispatch; waking dispatch waits for handshake),
-64fe97b7 (review 1), 0b7ccad0 (review 2).
+64fe97b7 (review 1), 0b7ccad0 (review 2), 3442ea13 (review 3).
 
 **Tests.** New `tests/agent-relay.test.ts` (23): overload before allocation (6th busy, 8 MiB boundary,
 reservations); correlation/scope; no receiver and MCP sockets; restart loss and fresh handshake; explicit
 owner survives restore; late handshake never sends an expired command; takeover; cancel/timeout/disconnect
 release payloads and leave 0 timers; real `SessionStore` dispatch/result/cancel/timeout/close/error/reset with
 **0 keys and 0 bytes written** (usage harness counters); stalled-body intake (busy before reading, cancelled
-readers, deadline); upgrade route refusals and trusted headers; Miniflare upgrade + handshake + ping/pong.
+readers, deadline, abort, hung source cancel); upgrade route refusals and trusted headers; Miniflare upgrade + handshake + ping/pong.
 `npm run check` ok; `npm run lint` ok; `scripts/agents/unit.sh` pass 4207 fail 0 (by hand);
 `RESULT: ok specs none affected`.
 
@@ -78,7 +78,10 @@ Round 1 `RESULT: ok review … evidence .scratch/reviews/dor-13/20261018T013415Z
 that never claimed ownership; a delayed handshake sent expired commands; dispatch bodies were read before
 admission; body intake sat outside the deadline). Round 2 `RESULT: ok review … evidence
 .scratch/reviews/dor-13/20261018T013938Z`: fixed 2 (result admission ignored intake reservations; the stalled-body
-cancel hit a locked stream). Rejected 0.
+cancel hit a locked stream). Round 3 (run by `kit pr`, `RESULT: ok review … evidence
+.scratch/reviews/dor-13/20261018T014545Z`): fixed 2 (an aborted request kept its stalled body's slot until the
+deadline; awaiting a source's never-settling cancel could hold the deadline and slot; cancellation is now fired,
+not awaited). Rejected 0.
 
 **Evidence.** `RESULT: ok doctor 7/7 checks passed`; `RESULT: ok specs none affected`. Boot size not run:
 worker-only change, no `src/` imports.
