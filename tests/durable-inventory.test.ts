@@ -6,7 +6,7 @@ import test, { type TestContext } from "node:test";
 import { handle, type Env } from "../worker/app.ts";
 import { inventoryObject } from "../worker/agent-maintenance.ts";
 // @ts-expect-error Plain Node ESM intentionally has no declarations.
-import { inventoryReport, manifestPath, parseArgs, readManifest, reserveMaintenance, runInventory, sanitizeClassification, writeManifest } from "../scripts/agents/durable-inventory.mjs";
+import { inventoryReport, manifestPath, parseArgs, readManifest, reserveMaintenance, retryDeadline, runInventory, sanitizeClassification, writeManifest } from "../scripts/agents/durable-inventory.mjs";
 
 const token = "maintenance-secret-".repeat(3);
 const apiToken = "cloudflare-api-secret";
@@ -307,6 +307,8 @@ test("quota, Retry-After and inaccessible maintenance calls stop and remain char
   const { ports } = fixture(t);
   for (const status of [429, 503, 403]) {
     let calls = 0;
+    // Each status starts after the previous one's saved cooldown.
+    ports.clock = () => now + [429, 503, 403].indexOf(status) * 3_601_000;
     const result = await runInventory({ ...options, rescan: true }, { ...ports, fetch: async (url: string) => {
       if (url.includes("api.cloudflare.com")) return page([{ id: id(1), hasStoredData: true }, { id: id(2), hasStoredData: true }]);
       calls++; return Response.json({ code: "daily-quota", token }, { status, headers: { "Retry-After": "3600" } });
@@ -315,10 +317,38 @@ test("quota, Retry-After and inaccessible maintenance calls stop and remain char
     assert.equal(result.manifest.budget.count, [429, 503, 403].indexOf(status) + 1);
     assert.equal(result.manifest.objects[1].status, "pending");
   }
+  ports.clock = () => now + 3 * 3_601_000;
   const result = await runInventory({ ...options, rescan: true }, { ...ports, fetch: async (url: string) => url.includes("api.cloudflare.com")
     ? page([{ id: id(1), hasStoredData: true }, { id: id(2), hasStoredData: true }])
     : Response.json(blank(), { headers: { "Retry-After": "1" } }) });
   assert.equal(result.status, "paused"); assert.equal(result.report.pending, 1);
+});
+
+test("a saved Retry-After blocks resume, --rescan and other deployments until it passes", async t => {
+  const { path, ports } = fixture(t);
+  let calls = 0;
+  const limited = async (url: string) => {
+    calls++;
+    return url.includes("api.cloudflare.com") ? page([{ id: id(1), hasStoredData: true }]) : new Response(null, { status: 429, headers: { "Retry-After": "3600" } });
+  };
+  const first = await runInventory(options, { ...ports, fetch: limited });
+  assert.equal(first.status, "paused"); assert.equal(calls, 2); assert.equal(first.manifest.budget.count, 1);
+  const refuse = async () => { throw new Error("Must not fetch during the cooldown"); };
+  const resumed = await runInventory(options, { ...ports, clock: () => now + 3_599_000, fetch: refuse });
+  assert.equal(resumed.status, "paused"); assert.equal(resumed.manifest.budget.count, 1);
+  const rescan = await runInventory({ ...options, rescan: true }, { ...ports, clock: () => now + 3_599_000, fetch: refuse });
+  assert.equal(rescan.manifest.budget.count, 1);
+  await runInventory({ ...options, deployment: "other" }, { ...ports, path: join(path, "..", "other.json"), clock: () => now + 3_599_000, fetch: refuse });
+  const after = await runInventory(options, { ...ports, clock: () => now + 3_601_000, fetch: async (url: string) =>
+    url.includes("api.cloudflare.com") ? page([{ id: id(1), hasStoredData: true }]) : Response.json(blank()) });
+  assert.equal(after.report.classified, 1); assert.equal(after.manifest.budget.count, 2);
+});
+
+test("Retry-After accepts seconds and HTTP dates", () => {
+  assert.equal(retryDeadline(new Headers({ "Retry-After": "120" }), now), now + 120_000);
+  assert.equal(retryDeadline(new Headers({ "Retry-After": new Date(now + 60_000).toUTCString() }), now), now + 60_000);
+  assert.equal(retryDeadline(new Headers({ "Retry-After": "soon" }), now), 0);
+  assert.equal(retryDeadline(new Headers(), now), 0);
 });
 
 test("unknown, malformed and oversized classifications never claim complete coverage", async t => {
@@ -329,7 +359,8 @@ test("unknown, malformed and oversized classifications never claim complete cove
     { ...blank(), records: [{ kind: "app-config", count: 1, bytes: 1, eligibility: "review" }] },
     { error: "secret-draft-text" },
   ]) {
-    const result = await runInventory({ ...options, rescan: true }, { ...ports, fetch: async (url: string) => url.includes("api.cloudflare.com")
+    ports.clock = () => now + 3 * 3_601_000;
+  const result = await runInventory({ ...options, rescan: true }, { ...ports, fetch: async (url: string) => url.includes("api.cloudflare.com")
       ? page([{ id: id(1), hasStoredData: true }]) : Response.json(response) });
     assert.equal(result.report.complete, false);
     assert.equal(result.status, "paused");

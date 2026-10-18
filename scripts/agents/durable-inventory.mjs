@@ -25,6 +25,15 @@ export function reserveMaintenance(budget, now) {
   return true;
 }
 
+/** An authoritative Retry-After (seconds or HTTP date) as an absolute deadline, or 0. */
+export function retryDeadline(headers, now) {
+  const value = headers.get("Retry-After")?.trim();
+  if (!value) return 0;
+  if (/^\d+$/.test(value)) return now + Number(value) * 1000;
+  const date = Date.parse(value);
+  return Number.isFinite(date) ? Math.max(date, now) : 0;
+}
+
 /** Treat the maintenance response as untrusted; persist only this schema. */
 export function sanitizeClassification(value) {
   if (!object(value) || value.schema !== "durable-inventory" || value.version !== 1 ||
@@ -168,15 +177,22 @@ export async function runInventory(input, ports = {}) {
   try {
     try { lock = openSync(`${path}.lock`, "wx", 0o600); } catch { throw new Error("Inventory manifest is locked; inspect the previous run before removing its lock"); }
     const manifest = readManifest(path, options, clock());
+    let notBefore = 0;
     if (existsSync(budgetPath)) {
       let saved;
       try { saved = JSON.parse(readFileSync(budgetPath, "utf8")); } catch { throw new Error("Unreadable namespace budget"); }
       if (!object(saved) || saved.account !== options.account || saved.namespace !== options.namespace ||
           typeof saved.day !== "string" || !/^\d{4}-\d{2}-\d{2}$|^$/.test(saved.day) || !integer(saved.count)) throw new Error("Invalid namespace budget");
+      // The cooldown is namespace-wide: resume, --rescan and other deployment labels obey it.
+      if (integer(saved.notBefore)) notBefore = saved.notBefore;
       if (saved.day > manifest.budget.day) manifest.budget = { day: saved.day, count: saved.count };
       else if (saved.day === manifest.budget.day) manifest.budget.count = Math.max(saved.count, manifest.budget.count);
     }
-    const saveBudget = () => writeManifest(budgetPath, { account: options.account, namespace: options.namespace, ...manifest.budget });
+    const saveBudget = () => writeManifest(budgetPath, { account: options.account, namespace: options.namespace, ...manifest.budget, ...(notBefore ? { notBefore } : {}) });
+    const cooldown = result => {
+      const deadline = retryDeadline(result.headers, clock());
+      if (deadline > notBefore) { notBefore = deadline; saveBudget(); }
+    };
     saveBudget();
     const batch = { start: clock(), end: null, calls: 0, status: "running" };
     manifest.batches.push(batch);
@@ -188,6 +204,8 @@ export async function runInventory(input, ports = {}) {
     const pause = status => { batch.status = status; };
     try {
       for (;;) {
+        // No network call of any kind before an authoritative Retry-After passes.
+        if (clock() < notBefore) { pause("paused"); break; }
         const entry = manifest.objects.find(item => !attempted.has(item.id) && ["pending", "deferred", "inaccessible"].includes(item.status));
         if (entry) {
           if (processed >= options.limit) { pause("limited"); break; }
@@ -210,6 +228,7 @@ export async function runInventory(input, ports = {}) {
             entry.status = "deferred"; entry.checkedAt = clock(); pause("interrupted"); checkpoint(); break;
           }
           processed++;
+          cooldown(result);
           entry.checkedAt = clock();
           delete entry.classification;
           if (result.status === 401 || result.status === 403) {
@@ -240,6 +259,7 @@ export async function runInventory(input, ports = {}) {
         let result, body;
         try {
           result = await fetcher(url.href, { headers: { Authorization: `Bearer ${env.CLOUDFLARE_API_TOKEN}` }, redirect: "error" });
+          cooldown(result);
           if (result.status === 401 || result.status === 403) { manifest.permission = "inaccessible"; pause("inaccessible"); break; }
           if (!result.ok) { pause("paused"); break; }
           body = await result.json();
