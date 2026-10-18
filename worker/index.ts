@@ -4,11 +4,9 @@ import { DurableObject } from "cloudflare:workers";
 import { handle, type Env, type StoredValue } from "./app";
 import { admitRegistration, finalizeRegistration, isBudgetKey, pruneRegistration, releaseRegistration, REGISTRATION_ROUTE } from "./oauth-registration";
 import { accountPending, PENDING_KEY, PENDING_ROUTE, type PendingAction } from "./oauth-pending";
-import { HttpError, type RepositoryCache } from "./github";
+import type { RepositoryCache } from "./github";
 import type { GitHubAppConfig } from "./owner-setup";
-import { AgentRelay } from "./agent-relay";
-import { requestJson } from "./http";
-import type { JsonValue } from "../shared/agent-command";
+import { AgentRelay, readRelayBody } from "./agent-relay";
 
 interface RepositoryCacheChunks { chunks: number }
 const repositoryChunkPrefix = "repositoryCache:";
@@ -85,25 +83,13 @@ export class SessionStore extends DurableObject {
         const relay = this.relay();
         const reservation = relay.reserve(length);
         if ("ok" in reservation) return Response.json(reservation, { status: !reservation.ok && reservation.code === "too-large" ? 413 : 200 });
-        let command: JsonValue;
-        let timer: ReturnType<typeof setTimeout> | null = null;
-        try {
-          const expired = new Promise<"timeout">(resolve => { timer = setTimeout(() => resolve("timeout"), started + 10_000 - Date.now()); });
-          const body = await Promise.race([requestJson(request, length), expired]);
-          if (body === "timeout") {
-            void request.body?.cancel().catch(() => undefined);
-            return Response.json({ ok: false, code: "timeout", outcome: "not-sent" });
-          }
-          command = body as JsonValue;
-        } catch (error) {
-          if (error instanceof HttpError && error.status === 413)
-            return Response.json({ ok: false, code: "too-large", outcome: "not-sent" }, { status: 413 });
-          return new Response(null, { status: 400 });
-        } finally {
-          clearTimeout(timer);
-          // Idempotent; on success dispatch() re-admits in this same synchronous turn.
-          reservation.release();
-        }
+        let body;
+        try { body = await readRelayBody(request.body, length, started + 10_000); }
+        // Idempotent; on success dispatch() re-admits in this same synchronous turn.
+        finally { reservation.release(); }
+        if (!body.ok && body.code === "invalid") return new Response(null, { status: 400 });
+        if (!body.ok) return Response.json({ ok: false, code: body.code, outcome: "not-sent" }, { status: body.code === "too-large" ? 413 : 200 });
+        const command = body.value;
         return Response.json(await relay.dispatch(target, command, request.signal, { started, reservation }));
       }
       return new Response(null, { status: 400 });

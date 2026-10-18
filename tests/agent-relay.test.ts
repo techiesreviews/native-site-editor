@@ -103,6 +103,19 @@ test("exact byte admission boundary and result bytes share the same budget", asy
   h.idle();
 });
 
+test("result admission counts bytes reserved for unfinished intake", async () => {
+  const h = fixture();
+  const pending = h.relay.dispatch(scope, "edit"), id = h.id();
+  const intake = h.relay.reserve(7 * 1024 * 1024);
+  assert.ok("release" in intake);
+  assert.equal(h.relay.message(h.editor, reply(id, scope, "r".repeat(2 * 1024 * 1024))), true);
+  assert.deepEqual(await pending, { ok: false, code: "too-large", outcome: "unknown" });
+  assert.equal(h.relay.reservedCount, 1);
+  intake.release(); intake.release();
+  assert.equal(h.relay.reservedCount, 0);
+  h.idle();
+});
+
 test("correlation, socket, tab, workspace and owner generation must all match", async () => {
   const h = fixture();
   const pending = h.relay.dispatch(scope, { read: "index.html" });
@@ -484,12 +497,12 @@ test("dispatch intake reserves capacity before reading bodies and expires a stal
   const ctx = { storage: new CountedStorage(new UsageCounters()), getWebSockets: () => [editor], setWebSocketAutoResponse() {},
     blockConcurrencyWhile() { throw new Error("Relay must not block concurrency"); } };
   const env: Env = { SESSIONS: { idFromName: name => name, get: () => ({ fetch: async () => new Response(null, { status: 404 }) }) }, ASSETS: { fetch: async () => new Response(null, { status: 404 }) } };
-  const pulls: number[] = [];
+  const pulls: number[] = [], cancelled: number[] = [];
   const stalled = (index: number, length = 1024) => new Request("https://session.internal/relay/dispatch", {
     method: "POST", duplex: "half",
     headers: { "Content-Type": "application/json", "Content-Length": String(length), [AgentRelay.identityHeader]: JSON.stringify(scope) },
     // highWaterMark 0: the stream is pulled only when someone reads the body.
-    body: new ReadableStream({ pull() { pulls.push(index); return new Promise(() => {}); } }, { highWaterMark: 0 }),
+    body: new ReadableStream({ pull() { pulls.push(index); return new Promise(() => {}); }, cancel() { cancelled.push(index); } }, { highWaterMark: 0 }),
   } as RequestInit);
   const instance = new SessionStore(ctx, env);
   instance.webSocketMessage(editor, handshake());
@@ -511,6 +524,13 @@ test("dispatch intake reserves capacity before reading bodies and expires a stal
     assert.equal(pulls.includes(5), false);
     // Stalled bodies expire at the ten-second total deadline and are never sent.
     for (const response of await Promise.all(five)) assert.deepEqual(await response.json(), { ok: false, code: "timeout", outcome: "not-sent" });
+    // Each stalled reader was cancelled (no consumption continues) and its reservation released.
+    assert.deepEqual(cancelled.sort(), [0, 1, 2, 3, 4]);
+    pulls.length = 0;
+    const after = instance.fetch(stalled(6));
+    for (let turns = 0; turns < 20; turns++) await Promise.resolve();
+    assert.deepEqual(pulls, [6]);
+    assert.deepEqual(await (await after).json(), { ok: false, code: "timeout", outcome: "not-sent" });
     assert.equal(editor.sent.some(message => JSON.parse(message).type === "command"), false);
   } finally {
     clock.uninstall();
