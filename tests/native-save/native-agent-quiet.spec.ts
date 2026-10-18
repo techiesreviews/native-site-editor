@@ -286,3 +286,42 @@ test("live: waits are quiet by default; Watch holds one wait until Ask agent, sh
     await client.close();
   }
 });
+
+test("live: another tab of this browser shows the agent's progress on a request without a reload", { tag: "@live" }, async ({ page, context, baseURL }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await open(page, baseURL);
+  await page.locator(".repository-menu__trigger").click();
+  const made = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST");
+  await page.getByRole("button", { name: "Connect with MCP", exact: true }).click();
+  const { token } = await (await made).json() as { token: string };
+  const client = new Client({ name: "two-tab-agent", version: "1.0.0" });
+  await client.connect(new StreamableHTTPClientTransport(new URL(`${baseURL}/mcp`), { requestInit: { headers: { Authorization: `Bearer ${token}` } } }));
+  const call = async (name: string, args: Record<string, unknown> = {}) => {
+    const response = await client.callTool({ name, arguments: args });
+    expect(response.isError, JSON.stringify(response)).toBeFalsy();
+    return JSON.parse((response.content as { text: string }[])[0].text);
+  };
+  const other = await context.newPage();
+  try {
+    expect((await call("wait_for_requests")).requests).toEqual([]);
+    await expect(page.locator(".agent-menu__action")).toHaveText("Disconnect MCP");
+    await page.keyboard.press("Escape");
+    await page.frameLocator(".native-preview-frame").locator(".hero h1").click();
+    await page.getByRole("toolbar", { name: "Edit bar" }).getByRole("button", { name: "Ask agent" }).click();
+    await page.keyboard.type("Seen from the other tab");
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".agent-pin")).toHaveCount(1);
+    // A second tab of the same site shows the request from this browser's records (remote agents stay off there).
+    await open(other, baseURL);
+    const pin = other.locator(".agent-pin").first();
+    await expect(pin).toHaveAttribute("data-state", "open", { timeout: 15_000 });
+    const [request] = (await call("wait_for_requests")).requests;
+    expect(request.text).toBe("Seen from the other tab");
+    await expect(pin).toHaveAttribute("data-state", "seen");
+    await call("reply_to_request", { request: request.id, status: "question", message: "Which words?" });
+    await expect(pin).toHaveAttribute("data-state", "question");
+  } finally {
+    await other.close();
+    await client.close();
+  }
+});

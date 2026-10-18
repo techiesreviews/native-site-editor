@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { AgentRequest } from "../shared/agent";
 import type { AgentRequests } from "../shared/agent-requests";
-import { WATCH_MS, WATCH_WAITS, agentWatch, createRequestTools, watchKey } from "../src/agent-watch";
+import { WATCH_MS, WATCH_WAITS, agentWatch, answerRequest, createRequestTools, watchKey } from "../src/agent-watch";
 import { connectionPrompt } from "../src/agent-prompts";
 import { AgentRelay, relayObjectName, type RelayClock, type RelayScope, type RelaySocket } from "../worker/agent-relay";
 import { countedSocket, startCountedWorker } from "./fakes/counted-agent";
@@ -360,4 +360,57 @@ test("the copied prompt has no repeat-until-work loop and tells the agent to sto
   assert.match(prompt, /When it returns no requests, tell me you are ready and stop/);
   assert.match(prompt, /Watch is on/);
   assert.match(prompt, /at least 40 seconds/);
+});
+
+test("a wake or a Watch stop while a wait is still reading is not lost: no hold, no timer", async () => {
+  for (const during of ["stop", "ask"] as const) {
+    const b = browser();
+    b.watch.start(b.clock.now());
+    let release!: () => void;
+    const gate = new Promise<void>(done => { release = done; });
+    let first = true;
+    const tools = createRequestTools({ workspace, watch: b.watch, now: b.clock.now, clock: b.clock,
+      list: async () => { const read = [...b.kept.values()].map(item => structuredClone(item)); if (first) { first = false; await gate; } return read; },
+      save: async (request, accept) => { if (!accept(b.kept.get(request.id))) return false; b.kept.set(request.id, structuredClone(request)); return true; } });
+    const pending = tools.run({ operation: "requests", tool: "wait_for_requests", args: {}, grantId: "g", waitMs: 25_000 }, () => true, b.clock.now() + 24_000);
+    await settle();
+    if (during === "stop") b.watch.stop(); else b.kept.set("req-during", asked("req-during"));
+    tools.notify();
+    release();
+    const value = ((await pending) as { value: any }).value;
+    assert.equal(b.clock.timers.size, 0, during);
+    assert.equal(tools.holding, 0, during);
+    if (during === "stop") assert.deepEqual(value, { requests: [], watch: { state: "off" } });
+    else assert.deepEqual(value.requests.map((item: AgentRequest) => item.id), ["req-during"]);
+  }
+});
+
+test("the connection is checked inside the writing transaction: lost while a write waits, nothing is kept", async () => {
+  const b = browser();
+  b.ask(asked("req-commit"));
+  let live = true;
+  const tools = createRequestTools({ workspace, watch: b.watch, now: b.clock.now, clock: b.clock,
+    list: async () => [...b.kept.values()].map(item => structuredClone(item)),
+    // The transaction starts after the connection went (turned off, taken over).
+    save: async (request, accept) => { live = false; if (!accept(b.kept.get(request.id))) return false; b.kept.set(request.id, structuredClone(request)); return true; } });
+  const run = (tool: AgentRequests["tool"], args: AgentRequests["args"]) => tools.run({ operation: "requests", tool, args, grantId: "g" }, () => live, b.clock.now() + 9_000);
+  assert.deepEqual(((await run("wait_for_requests", {})) as { value: any }).value.requests, []);
+  assert.equal(b.kept.get("req-commit")!.state, "open");
+  b.kept.set("req-commit", { ...asked("req-commit"), state: "seen" });
+  live = true;
+  assert.equal((await run("reply_to_request", { request: "req-commit", status: "done", message: "Done." })).ok, false);
+  assert.equal(b.kept.get("req-commit")!.state, "seen");
+});
+
+test("two answers made from the same question: the second never overwrites the first", () => {
+  const question = { ...asked("req-q"), state: "question" as const, reply: { status: "question" as const, message: "Bold?", at: 2 },
+    thread: [{ from: "user" as const, text: "Change req-q", at: 1 }, { from: "agent" as const, text: "Bold?", at: 2, status: "question" as const }] };
+  let stored: AgentRequest = structuredClone(question);
+  const first = answerRequest([structuredClone(question)], "req-q", "Yes, bold");
+  const second = answerRequest([structuredClone(question)], "req-q", "No, larger");
+  assert.equal(first.accept(stored), true);
+  stored = first.request;
+  assert.equal(second.accept(stored), false);
+  assert.deepEqual(stored.thread!.map(item => item.text), ["Change req-q", "Bold?", "Yes, bold"]);
+  assert.equal(stored.state, "open");
 });

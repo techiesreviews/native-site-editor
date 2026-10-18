@@ -74,10 +74,19 @@ export interface RequestPorts {
 
 /** A change made on a copy read before an await is kept only over that same stored copy: a reply,
  * answer or dismissal committed meanwhile wins, and this change is dropped (never overwrites it). */
-const unchangedSince = (read: AgentRequest) => {
+const unchangedSince = (read: AgentRequest, current: () => boolean = () => true) => {
   const seen = JSON.stringify(read);
-  return (stored: AgentRequest | undefined) => Boolean(stored && stored.state !== "dismissed" && JSON.stringify(stored) === seen);
+  // Checked inside the writing transaction: the connection (or the user's tab) must still hold then.
+  return (stored: AgentRequest | undefined) => current() && Boolean(stored && stored.state !== "dismissed" && JSON.stringify(stored) === seen);
 };
+
+/** The user's answer from a request's card (the hub's rule), kept only over the copy it was made from:
+ * an answer from another tab meanwhile is never overwritten. */
+export function answerRequest(list: AgentRequest[], id: string, text: string) {
+  const read = structuredClone(list.find(request => request.id === id));
+  const { result } = requestOperation(list, { type: "answer", id, text }) as { result: AgentRequest };
+  return { request: result, accept: unchangedSince(read!) };
+}
 const ok = (value: unknown): AgentReadResult => ({ ok: true, value: JSON.parse(JSON.stringify(value)) as { [key: string]: JsonValue } });
 
 /** The tab's side of wait_for_requests, reply_to_request and get_selection(request). */
@@ -85,6 +94,8 @@ export function createRequestTools(ports: RequestPorts) {
   const now = ports.now ?? Date.now;
   const clock = ports.clock ?? { setTimeout: (callback: () => void, delay: number) => setTimeout(callback, delay), clearTimeout: (timer: unknown) => clearTimeout(timer as number) };
   const waiters = new Set<() => void>();
+  // Bumped by every notify: a wake that came while a wait was still reading is not lost.
+  let version = 0;
   const scope = { repoId: ports.workspace.repoId, branch: ports.workspace.branch };
   async function take(grantId: string, all: boolean, current: () => boolean) {
     const list = await ports.list();
@@ -95,7 +106,7 @@ export function createRequestTools(ports: RequestPorts) {
       // A connection gone stale (turned off, lost, taken over) marks nothing delivered.
       if (!current()) break;
       // One changed since the read (replied, answered, dismissed in another tab) is not handed out now.
-      if (await ports.save(request, unchangedSince(read.get(request.id)!))) taken.push(requestForAgent(request));
+      if (await ports.save(request, unchangedSince(read.get(request.id)!, current))) taken.push(requestForAgent(request));
     }
     return taken;
   }
@@ -112,11 +123,16 @@ export function createRequestTools(ports: RequestPorts) {
     // While Watch is on, every wait call counts against its 25 (whatever it returns); once it ended
     // or used them, calls still answer (quietly, at once) but are no longer counted or held.
     const used = ports.watch.report(started).state === "on" ? ports.watch.use(started) : undefined;
+    const seen = version;
     let requests = await take(command.grantId, all, current);
     const wanted = typeof command.waitMs === "number" && Number.isFinite(command.waitMs) ? Math.min(WAIT_MS, command.waitMs) : WAIT_MS;
     // Quiet by default: without Watch the answer is immediate.
     if (requests.length || !current() || !used || wanted <= 0) return ok({ requests, watch: ports.watch.report(now()) });
-    const ms = Math.min(deadline, used.until, started + wanted) - now();
+    // Watch is rechecked after the read: this activation must still run (not stopped, renewed or ended).
+    const still = ports.watch.read(now());
+    if (!still || still.startedAt !== used.startedAt || now() >= still.until) return ok({ requests, watch: ports.watch.report(now()) });
+    // A request or a Watch change during the read: look again at once instead of holding.
+    const ms = version !== seen ? 0 : Math.min(deadline, still.until, started + wanted) - now();
     if (ms > 0) await hold(ms);
     // The relay gave up or the socket went: take nothing it could not deliver.
     if (current()) requests = await take(command.grantId, all, current);
@@ -127,7 +143,7 @@ export function createRequestTools(ports: RequestPorts) {
     const list = await ports.list(), read = structuredClone(list.find(request => request.id === id));
     const { result } = requestOperation(list, { type: "reply", id, status, message, requestIds, ...scope }) as { result: AgentRequest };
     if (!current()) throw new HttpError(409, "The editor stopped receiving for this connection. Nothing was changed; reply again when it is on.");
-    if (!await ports.save(result, unchangedSince(read!)))
+    if (!await ports.save(result, unchangedSince(read!, current)))
       throw new HttpError(409, "The request changed meanwhile (the user answered or dismissed it). Read it again with get_selection before replying.");
     return ok({ id: result.id, state: result.state });
   }
@@ -147,7 +163,7 @@ export function createRequestTools(ports: RequestPorts) {
       }
     },
     /** A request arrived or changed here, or Watch stopped: every held wait looks again. */
-    notify() { for (const wake of [...waiters]) wake(); },
+    notify() { version++; for (const wake of [...waiters]) wake(); },
     get holding() { return waiters.size; },
   };
 }
