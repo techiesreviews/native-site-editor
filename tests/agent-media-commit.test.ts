@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { test, type TestContext } from "node:test";
+import { agentCommandSignals } from "../src/agent-tools";
+import { forEachAwait, type AwaitRace } from "./support/await-race";
 import { applyAgentMedia } from "../src/agent-media-actions";
 import type { AgentCommand } from "../shared/agent";
 import { indexedDbAgentRecords } from "../src/agent-records";
@@ -17,7 +19,8 @@ const storage = () => {
     get length() { return values.size; } };
 };
 let sequence = 0;
-async function setup(t: TestContext, extraMedia: string[] = []) {
+async function setup(t: TestContext, extraMedia: string[] = [], race?: AwaitRace) {
+  let racing = false;
   const drafts = fakeIndexedDB(), uploads = fakeIndexedDB();
   let recordsTransactions = 0, byteDeletes = 0, stages = 0, writes = 0, steps = 0, refreshes = 0;
   let live = true, model = '<video src="media/film.mp4"></video>', afterCommit = () => {}, beforeCommit = () => {};
@@ -37,7 +40,7 @@ async function setup(t: TestContext, extraMedia: string[] = []) {
             if (stages) assert.ok(uploads.stores.get("bytes")?.size, "bytes must be durable before the records transaction opens");
             beforeCommit();
             let complete: typeof tx.oncomplete;
-            Object.defineProperty(tx, "oncomplete", { get: () => complete, set(value: typeof complete) {
+            Object.defineProperty(tx, "oncomplete", { configurable: true, get: () => complete, set(value: typeof complete) {
               complete = event => { value?.call(tx, event); afterCommit(); };
             } });
           }
@@ -55,6 +58,19 @@ async function setup(t: TestContext, extraMedia: string[] = []) {
               };
               return store;
             };
+          }
+          if (race) {
+            // Delay promise delivery after the transaction outcome; do not hold the IDB queue itself.
+            const completion = Object.getOwnPropertyDescriptor(tx, "oncomplete");
+            let complete: typeof tx.oncomplete;
+            Object.defineProperty(tx, "oncomplete", { get: () => completion?.get ? completion.get.call(tx) : complete,
+              set(callback: typeof complete) {
+                const held: typeof complete = event => {
+                  if (racing) void race.port(`IDB ${name} ${mode} ${String(names)}`, async () => {})().then(() => callback?.call(tx, event));
+                  else callback?.call(tx, event);
+                };
+                if (completion?.set) completion.set.call(tx, held); else complete = held;
+              } });
           }
           return tx;
         };
@@ -94,7 +110,7 @@ async function setup(t: TestContext, extraMedia: string[] = []) {
     },
     history: () => { steps++; return true; }, refresh: () => { refreshes++; }, announce() {},
   } satisfies MediaDraftHost;
-  const context = {
+  const context: MediaWorkspaceContext = {
     key: "media", scope, drafts: store, get paths() { return paths(); }, items: [{ path: "media/film.mp4", size: 10 }, ...extraMedia.map(path => ({ path, size: 10 }))],
     pages: ["index.html"], components: {}, history: true,
     flushTyping() {}, assertLive: () => { if (!live) throw new Error("Repository changed"); },
@@ -105,6 +121,7 @@ async function setup(t: TestContext, extraMedia: string[] = []) {
     state: "pending", createdAt: Date.now(), args: { file: "media/film.mp4", text: "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nHello\n" } };
   const records = indexedDbAgentRecords(draftDatabaseName, factory);
   const run = (input = command) => applyAgentMedia(context, input, () => { throw new Error("Unexpected placement"); });
+  racing = true;
   return { scope, store, bytes, records, command, context, host, drafts, uploads, events, run,
     counts: () => ({ recordsTransactions, byteDeletes, stages, writes, steps, refreshes }), model: () => model,
     beforeCommit: (action: () => void) => { beforeCommit = action; }, afterCommit: (action: () => void) => { afterCommit = action; },
@@ -341,4 +358,47 @@ test("live media generation stays fenced when its owner is first built after tak
   assert.deepEqual(f.store.list(f.scope), []);
   assert.equal(f.counts().steps, 0);
   assert.equal(await f.records.receipt(f.scope, f.command.id, "grant"), undefined);
+});
+
+test("abort at every real media preparation, upload and commit await cancels without drafts or Undo, or preserves applied", async t => {
+  const digest = crypto.subtle.digest.bind(crypto.subtle);
+  let activeRace: AwaitRace | undefined;
+  t.mock.method(crypto.subtle, "digest", (...args: Parameters<typeof digest>) => activeRace ? activeRace.port("digest", digest)(...args) : digest(...args));
+  let cancelled = 0, applied = 0;
+  const count = await forEachAwait(race => {
+    const state: { fixture?: Awaited<ReturnType<typeof setup>>; stop: AbortController; before?: string; won?: boolean } = { stop: new AbortController() };
+    const done = (async () => {
+      const f = state.fixture = await setup(t, [], race); state.before = f.model();
+      f.context.agentRecords = f.records;
+      f.context.read = race.port("read", f.context.read.bind(f.context));
+      f.context.blob = race.port("blob", f.context.blob.bind(f.context));
+      f.context.applyBatch = race.port("applyBatch", f.context.applyBatch.bind(f.context));
+      f.host.entry = race.port("entry", f.host.entry);
+      f.host.bytes.put = race.port("upload", f.host.bytes.put);
+      f.store.fenceAgent = race.port("fenceAgent", f.store.fenceAgent.bind(f.store));
+      agentCommandSignals.set(f.command, state.stop.signal);
+      activeRace = race;
+      try { await f.run(); }
+      catch (error) { assert.match(String(error), /cancelled|abort|Nothing was changed/i); }
+      finally { activeRace = undefined; }
+    })();
+    return { state, done };
+  }, async ({ state }) => {
+    const f = state.fixture!;
+    state.stop.abort();
+    state.won = (await f.records.cancel(f.scope, f.command.id, "grant", { live: true })).status === "applied";
+  }, async ({ state }) => {
+    const f = state.fixture!, won = state.won!;
+    if (won) applied++; else cancelled++;
+    assert.equal((await f.records.status(f.scope, f.command.id, "grant")).status, won ? "applied" : "cancelled");
+    assert.equal(f.drafts.stores.get("drafts")!.size, won ? 3 : 0);
+    assert.equal(f.drafts.stores.get("receipts")!.size, won ? 1 : 0);
+    assert.equal(f.store.list(f.scope).length, won ? 3 : 0);
+    assert.equal(f.counts().steps, won ? 1 : 0);
+    if (won) assert.match(f.model(), /track/); else assert.equal(f.model(), state.before);
+    assert.equal(f.counts().byteDeletes, 0, "cancellation never undoes a committed or staged upload");
+  });
+  assert.ok(count >= 12, `covered ${count} media awaits`);
+  t.diagnostic(`Raced ${count} real media awaits: ${cancelled} cancelled, ${applied} applied.`);
+  assert.ok(cancelled > 0); assert.ok(applied > 0, "commit can win first; cancellation never undoes it");
 });

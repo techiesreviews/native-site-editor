@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test, type TestContext } from "node:test";
 import { textHash, type AgentCommand } from "../shared/agent.ts";
 import { applySiteCommand, prepareAgentText, type AgentSiteActions } from "../src/agent-site.ts";
+import { agentCommandSignals } from "../src/agent-tools.ts";
 import { indexedDbAgentRecords } from "../src/agent-records.ts";
 import { DraftStore, draftDatabaseName, draftKey, indexedDbDrafts, type DraftScope } from "../src/drafts.ts";
 import { createDraftStore } from "../src/draft-store.ts";
@@ -18,7 +19,7 @@ const storage = () => {
     removeItem: (key: string) => { data.delete(key); }, key: (index: number) => [...data.keys()][index] ?? null,
     get length() { return data.size; } };
 };
-async function setup(t: TestContext, race?: AwaitRace) {
+async function setup(t: TestContext, race?: AwaitRace, cancelRace?: AwaitRace) {
   const fake = fakeIndexedDB();
   for (const [name, value] of Object.entries({ indexedDB: fake.factory, IDBKeyRange: { bound: (lower: string, upper: string) => ({ lower, upper }) } })) {
     const descriptor = Object.getOwnPropertyDescriptor(globalThis, name);
@@ -77,7 +78,8 @@ async function setup(t: TestContext, race?: AwaitRace) {
   const edits = createGuardedEdits(agentWorkspace), manual = createGuardedEdits(workspace);
   const command: AgentCommand = { id: "operation", grantId: "grant", operation: "write_file", path: "index.html", branch: "main", commit: "commit",
     content: "agent", state: "pending", createdAt: Date.now(), expectedHash: await textHash("before") };
-  const prepare = (input = command) => prepareAgentText(input, scope, store, () => true, (scope, paths) => models.flushTyping(scope, paths));
+  const prepareText = (input = command) => prepareAgentText(input, scope, store, () => true, (scope, paths) => models.flushTyping(scope, paths));
+  const prepare = cancelRace ? cancelRace.port("prepareAgentText", prepareText) : prepareText;
   const run = async (input = command, changes = new Map([["index.html", input.content]]), open?: string, afterCommit?: () => void) => {
     const prepared = await prepare(input);
     if (prepared.duplicate) return prepared.duplicate;
@@ -92,6 +94,9 @@ async function setup(t: TestContext, race?: AwaitRace) {
         await race.port("staged", async () => {})();
         return prepared.context!.commit(...args);
       } };
+    if (cancelRace) context = { ...context!, check: cancelRace.port("check", () => prepared.context!.check!()),
+      fence: cancelRace.port("fence", (...args) => prepared.context!.fence(...args)),
+      commit: cancelRace.port("commit", (...args) => prepared.context!.commit(...args)) };
     try {
       const result = await edits.run(r => {
         for (const path of changes.keys()) r.source(path);
@@ -440,4 +445,69 @@ test("live transport generation stays fenced when the text owner is first built 
   assert.equal(f.history.length, 0);
   assert.equal(f.models.text(f.scope, "index.html"), "before");
   assert.equal(await f.records.receipt(f.scope, f.command.id, "grant"), undefined);
+});
+
+/** Hold transaction completion promises after their actual outcome; cancellation uses the same real fake-IDB queue. */
+function raceTransactions(factory: IDBFactory, race: AwaitRace) {
+  const open = factory.open.bind(factory);
+  factory.open = (...args) => {
+    const request = open(...args);
+    let success: typeof request.onsuccess;
+    Object.defineProperty(request, "onsuccess", { get: () => success, set(callback: typeof success) {
+      success = event => {
+        const db = request.result, transaction = db.transaction.bind(db);
+        db.transaction = (...args) => {
+          const tx = transaction(...args);
+          let complete: typeof tx.oncomplete;
+          Object.defineProperty(tx, "oncomplete", { get: () => complete, set(callback: typeof complete) {
+            complete = event => { void race.port(`IDB ${args[1]} ${String(args[0])}`, async () => {})().then(() => callback?.call(tx, event)); };
+          } });
+          return tx;
+        };
+        callback?.call(request, event);
+      };
+    } });
+    return request;
+  };
+}
+
+
+test("abort at every real text preparation and commit await cancels without drafts or Undo, or preserves applied", async t => {
+  const digest = crypto.subtle.digest.bind(crypto.subtle);
+  let activeRace: AwaitRace | undefined;
+  t.mock.method(crypto.subtle, "digest", (...args: Parameters<typeof digest>) => activeRace ? activeRace.port("digest", digest)(...args) : digest(...args));
+  let cancelled = 0, applied = 0;
+  const count = await forEachAwait(race => {
+    const state: { fixture?: Awaited<ReturnType<typeof setup>>; stop: AbortController; won?: boolean } = { stop: new AbortController() };
+    const done = (async () => {
+      const f = state.fixture = await setup(t, undefined, race);
+      raceTransactions(f.fake.factory, race);
+      f.store.fenceAgent = race.port("fenceAgent", f.store.fenceAgent.bind(f.store));
+      f.store.refresh = race.port("refresh", f.store.refresh.bind(f.store));
+      agentCommandSignals.set(f.command, state.stop.signal);
+      activeRace = race;
+      try { await f.run(); }
+      catch (error) { assert.match(String(error), /cancelled|abort/i); }
+      finally { activeRace = undefined; }
+    })();
+    return { state, done };
+  }, async ({ state }) => {
+    const f = state.fixture!;
+    state.stop.abort();
+    state.won = (await f.records.cancel(f.scope, f.command.id, "grant", { live: true })).status === "applied";
+  }, async ({ state }) => {
+    const f = state.fixture!, won = state.won!;
+    if (won) applied++; else cancelled++;
+    assert.equal((await f.records.status(f.scope, f.command.id, "grant")).status, won ? "applied" : "cancelled");
+    assert.equal(f.fake.stores.get("drafts")!.size, won ? 1 : 0);
+    assert.equal(f.fake.stores.get("receipts")!.size, won ? 1 : 0);
+    assert.equal(f.store.list(f.scope).length, won ? 1 : 0);
+    assert.equal(f.history.length, won ? 1 : 0);
+    assert.equal(f.models.text(f.scope, "index.html"), won ? "agent" : "before");
+    assert.equal(f.models.text(f.scope, "other.css"), "old css");
+    assert.equal(f.published(), won ? 1 : 0);
+  });
+  assert.ok(count >= 11, `covered ${count} text awaits`);
+  t.diagnostic(`Raced ${count} real text awaits: ${cancelled} cancelled, ${applied} applied.`);
+  assert.ok(cancelled > 0); assert.ok(applied > 0, "commit can win first; cancellation never undoes it");
 });

@@ -317,7 +317,7 @@ export function createLiveTransport(options: Options) {
               operations.has(incoming.operation ?? ""));
           const abort = () => {
             // The same IndexedDB stores serialize this tombstone against the eventual draft + receipt commit.
-            if (mutation) void records.cancel(workspace, incoming.id!, incoming.grantId!).catch(() => undefined);
+            if (mutation) void records.cancel(workspace, incoming.id!, incoming.grantId!, { live: true }).catch(() => undefined);
           };
           stop.signal.addEventListener("abort", abort, { once: true });
           const timer = clock.setTimeout(() => stop.abort(), Math.max(0, deadline - Date.now()));

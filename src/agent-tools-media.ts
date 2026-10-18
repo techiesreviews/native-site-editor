@@ -62,7 +62,7 @@ export function createAgentMediaTools(options: {
           const status = await records.status(workspace, request.id, request.grantId); check();
           if (status.status === "applied") return status.receipt.payloadIdentity === identity ? reply(status.receipt.outcome)
             : { ok: false, message: "This change's id was already used for different work. Nothing was changed." };
-          if (status.status === "cancelled") return { ok: true, value: { requestId: request.id, state: "cancelled", message: "Cancelled before commit. Nothing was changed." } };
+          if (status.status === "cancelled") return { ok: true, value: { requestId: request.id, state: "cancelled", message: "This delivery was cancelled before it committed. Nothing was changed by it." } };
         }
         check();
         if (!source || branch !== workspace.branch || repoId !== workspace.repoId) throw new Error("The editor is unavailable. Open the connected site and branch.");
@@ -72,7 +72,7 @@ export function createAgentMediaTools(options: {
         beforeCommit();
         mediaCommandProofs.set(command, beforeCommit);
         // Cancellation races the same records transaction as commit; a committed receipt wins.
-        const timer = changing && !signal ? setTimeout(() => { void records.cancel(workspace, request.id, request.grantId).catch(() => {}); }, Math.max(0, deadline - Date.now())) : undefined;
+        const timer = changing && !signal ? setTimeout(() => { void records.cancel(workspace, request.id, request.grantId, { live: true }).catch(() => {}); }, Math.max(0, deadline - Date.now())) : undefined;
         try {
           const outcome = await options.run(command);
           if (changing) {
@@ -98,7 +98,7 @@ export function createAgentMediaTools(options: {
       const settled = await records.status(workspace, request.id, request.grantId).catch(() => undefined);
       if (settled?.status === "applied") return settled.receipt.payloadIdentity === identity ? reply(settled.receipt.outcome)
         : { ok: false, message: "This change's id was already used for different work. Nothing was changed." };
-      if (settled?.status === "cancelled") return { ok: true, value: { requestId: request.id, state: "cancelled", message: "Cancelled before commit. Nothing was changed." } };
+      if (settled?.status === "cancelled") return { ok: true, value: { requestId: request.id, state: "cancelled", message: "This delivery was cancelled before it committed. Nothing was changed by it." } };
       const unknown = error instanceof AgentRecordsError && error.code === "unknown" || /unproven|outcome.*unknown|could not.*prov/i.test(message);
       return { ok: true, value: { requestId: request.id, state: unknown ? "unknown" : "conflict",
         message: unknown ? `${message} Check get_command_status; do not replay the change.` : message } };
