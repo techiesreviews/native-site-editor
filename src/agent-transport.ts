@@ -281,9 +281,9 @@ export function createLiveTransport(options: Options) {
       if (!recovery?.allowAutomatic()) return;
       if (first) {
         first = false;
-        const status = await (options.probe ?? (async () => (await fetch("/api/agent/relay")).status))().catch(() => 0);
+        const missing = await absent();
         if (!current() || epoch !== at) return;
-        if (status === 404) { halt("fallback"); return; }
+        if (missing) { halt("fallback"); return; }
       }
       recovery?.report({ kind: "transient" });
     }
@@ -319,8 +319,24 @@ export function createLiveTransport(options: Options) {
     })().finally(() => { takeoverFlight = undefined; });
     return takeoverFlight;
   }
+  /** One plain probe: only a missing relay route (404) selects the legacy fallback. */
+  async function absent() {
+    return await (options.probe ?? (async () => (await fetch("/api/agent/relay")).status))().catch(() => 0) === 404;
+  }
   async function start() {
-    try { await begin(); } catch { if (current()) halt("takeover-failed"); }
+    const at = epoch;
+    try { await begin(); } catch {
+      if (!current() || epoch !== at) return;
+      // Browser storage refused before any socket: no tab can own here. Without a relay route the
+      // legacy fallback still answers agents (refusing edits plainly); otherwise stay paused.
+      if (first) {
+        first = false;
+        const missing = await absent();
+        if (!current() || epoch !== at) return;
+        if (missing) { halt("fallback"); return; }
+      }
+      halt("takeover-failed");
+    }
   }
   async function begin() {
     if (!socketFactory) { show({ mode: "fallback" }); return; }

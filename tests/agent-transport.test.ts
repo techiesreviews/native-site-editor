@@ -433,3 +433,20 @@ test("a socket lost or reset while admission reads IndexedDB never reaches the e
     a.transport.stop();
   }
 });
+
+test("browser storage refusing ownership selects the fallback only when the relay route is absent", async () => {
+  for (const [status, mode] of [[404, "fallback"], [400, "takeover-failed"]] as const) {
+    const f = fixture();
+    const records = new Proxy(f.records, { get(target, name, receiver) {
+      if (name === "workspace") return async () => { throw new DOMException("The user denied permission to access the database.", "SecurityError"); };
+      return Reflect.get(target, name, receiver);
+    } });
+    let probes = 0;
+    const a = f.tab("a", { records, probe: async () => { probes++; return status; } });
+    await a.transport.start();
+    assert.equal(a.transport.state().mode, mode);
+    assert.equal(probes, 1);
+    assert.equal(a.sockets.length, 0);
+    a.transport.stop();
+  }
+});
