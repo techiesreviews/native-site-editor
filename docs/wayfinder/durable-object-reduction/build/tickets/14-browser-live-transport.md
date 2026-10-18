@@ -72,11 +72,14 @@ every 45 s (auto-answered by the relay without waking it); no HTTP.
 **Out-of-Files edits (needed).** shared/agent.ts (`ownerGeneration`), src/agent-site.ts and
 src/agent-media-actions.ts (owner generation fence), tests/agent-controller.test.ts, tests/agent-text-commit.test.ts,
 tests/agent-media-commit.test.ts (fence regressions), tests/frame-guard.test.ts (relay socket listener),
-tests/native-save/native-agent-quiet.spec.ts, native-lazy-panels.spec.ts, native-mcp.spec.ts, mcp-prompt.ts (the
+tests/native-save/native-agent-quiet.spec.ts, native-lazy-panels.spec.ts, native-mcp.spec.ts, mcp-prompt.ts,
+native-draft-storage.spec.ts, native-onboarding.spec.ts (the
 fixture server has no relay upgrade: these route a missing relay so they keep the legacy path), new
 tests/native-save/native-agent-live.spec.ts.
 
-**Commits.** 340290b7 (Sol build), 07b820be, 7cc05e42 (review 1), 90bf94a1, 7dd70fc0 (review 2).
+**Commits.** 340290b7 (Sol build), 07b820be, 7cc05e42 (review 1), 90bf94a1, 7dd70fc0 (review 2), then the
+landing fix (a repository briefly absent during a refresh counted as a workspace move and stopped the tab's
+context sharing; it now refuses commands meanwhile but is no move).
 
 **Tests.** tests/agent-transport.test.ts (27): duplicate delivery in flight and after commit; stale
 generation/tab/workspace and malformed commands; two tabs, focus, explicit takeover, old owner's late commit and
@@ -104,6 +107,7 @@ first-upgrade probe ignored quota bodies and Retry-After). Rejected 0.
 - RESULT: ok specs 3/3 passed (native-agent-live, native-agent-quiet 5, native-lazy-panels 6)
 - RESULT: fail specs 1 of 3 failed: native-agent-recovery.spec.ts (disabled storage stopped before any socket; fixed in 90bf94a1), then RESULT: ok specs 1/1 passed; native-mcp 18 and native-mcp-media 5 passed
 - RESULT: ok specs 1/1 passed (native-agent-live 2, after review 2)
+- First `kit pr`: RESULT: fail specs 4 of 145 failed: native-agent-live.spec.ts, native-discard.spec.ts, native-draft-storage.spec.ts, native-onboarding.spec.ts (refresh treated as a workspace move; two specs clicked Connect without the absent-relay route; live under load). After the fix: RESULT: ok specs 4/4 passed
 - RESULT: ok shots raw spec, out /home/ubulex/Projects/native-site-editor/.scratch/shots/dor-14/20261018 (live, other-owner, taken-over, quota; 1280 light, 390 dark)
 
 **Limits for later tickets.** Nothing on the Worker dispatches through the relay yet: on a real deployment an on

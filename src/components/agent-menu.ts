@@ -280,7 +280,8 @@ export function createAgentMenu(options: {
   function recoverWorkspace() {
     const repo = options.repository();
     if (!remote) return;
-    if (!workspaceChanged && pinned && (repo?.id !== pinned.id || repo.branch !== pinned.branch)) {
+    // Only another open repository or branch is a move: none while a refresh reloads it.
+    if (!workspaceChanged && pinned && repo && (repo.id !== pinned.id || repo.branch !== pinned.branch)) {
       workspaceChanged = true;
       activation++;
       stopAutomatic();
