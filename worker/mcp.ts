@@ -155,7 +155,8 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
       if (!result.ok) return failure(result.message);
       const value = result.value;
       if (!value || typeof value !== "object" || Array.isArray(value)) return failure("Invalid browser media result.");
-      if (["conflict", "failed", "unknown"].includes(String(value.state))) return { isError: true, ...text(value) };
+      // A cancelled change applied nothing: keep its state, never relabel it applied.
+      if (["conflict", "failed", "unknown", "cancelled"].includes(String(value.state))) return { isError: true, ...text(value) };
       const command: AgentCommand = { id: request.id, operation: tool, path: request.path, args: request.args,
         content: "", branch: connection.workspace.branch, commit: "", state: "applied", createdAt: request.createdAt,
         message: typeof value.message === "string" ? value.message : undefined, result: value.result as AgentCommand["result"] };
@@ -179,7 +180,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     if (value && typeof value === "object" && !Array.isArray(value) && value.result && typeof value.result === "object" && !Array.isArray(value.result) && typeof value.result.report === "string") {
       try { value = { ...value, result: JSON.parse(value.result.report) }; } catch { /* Keep the original report when it is not JSON. */ }
     }
-    return value && typeof value === "object" && !Array.isArray(value) && ["conflict", "failed", "unknown"].includes(String(value.state))
+    return value && typeof value === "object" && !Array.isArray(value) && ["conflict", "failed", "unknown", "cancelled"].includes(String(value.state))
       ? { isError: true, ...text(value) } : text(value);
   }
   function unknown(id: string, code?: string, sent?: "unknown" | "not-sent") {

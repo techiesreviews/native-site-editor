@@ -65,6 +65,8 @@ async function browser(socketFactory: (receive: (text: string) => void) => Brows
       return { message: "Applied once." };
     } finally { finished.resolve(); }
   } });
+  let mediaRuns = 0;
+  const media = createAgentMediaTools({ workspace, records, ports, run: async () => { mediaRuns++; } });
   let socket!: BrowserSocket;
   const recoveryStorage = new Map<string, string>();
   const transport = createLiveTransport({ workspace, repo: repo.full_name, tabId: scope.tabId, records,
@@ -78,10 +80,11 @@ async function browser(socketFactory: (receive: (text: string) => void) => Brows
     clock: { setTimeout: (callback, ms) => Number(setTimeout(callback, ms)), clearTimeout: timer => clearTimeout(timer) },
     socket: () => { socket = socketFactory(text => socket.receive(text)); queueMicrotask(() => socket.dispatchEvent(new Event("open"))); return socket; },
     edit: (request, generation, current, signal) => tools.run(request, generation, current, signal), run: async () => {},
+    media: (request, generation, current, deadline, seen, signal) => media.run(request, generation, current, deadline, seen, signal),
   });
   await transport.start();
   assert.equal(transport.state().mode, "live");
-  return { fake, records, transport, socket, tools, entered, before, after, finished, counts: () => ({ runs, history }),
+  return { fake, records, transport, socket, tools, entered, before, after, finished, counts: () => ({ runs, history }), mediaRuns: () => mediaRuns,
     status: (id: string, grant: string) => records.status(workspace, id, grant),
     close() { before.resolve(); after.resolve(); transport.stop(); } };
 }
@@ -143,6 +146,20 @@ test("runtime legacy disconnect alone keeps the tab command alive; another grant
     f.before.resolve(); f.after.resolve();
     await until(async () => (await f.status(id, f.grant.id)).status === "applied");
     assert.deepEqual(f.counts(), { runs: 1, history: 1 });
+  } finally { await f.dispose(); }
+});
+
+test("runtime media change cancelled before commit stays cancelled through MCP (never relabelled applied)", async () => {
+  const f = await runtime(), id = "media-cancelled";
+  try {
+    await f.records.cancel(workspace, id, f.grant.id, { live: true });
+    for (const modern of [true, false]) {
+      const body = await rpc(await f.call(id, modern, undefined, "adding_settings", { image: "smaller", requestId: id }));
+      assert.equal(body.result.isError, true);
+      assert.equal(payload(body.result).state, "cancelled");
+    }
+    assert.equal(f.mediaRuns(), 0, "a cancelled media change never runs");
+    assert.equal(f.fake.stores.get("receipts")!.size, 0);
   } finally { await f.dispose(); }
 });
 
@@ -418,14 +435,20 @@ test("SessionStore legacy cancel during body intake or before dispatch sends not
       const headers = { [AgentRelay.identityHeader]: JSON.stringify(identity) };
       const cancel = () => instance.fetch(new Request("https://relay/relay/cancel", { method: "POST", headers }));
       if (before) assert.equal((await cancel()).status, 202);
-      let body!: ReadableStreamDefaultController<Uint8Array>;
+      let body!: ReadableStreamDefaultController<Uint8Array>, readerCancelled = false;
       const text = JSON.stringify({ operation: "edit", tool: "write_file", id: identity.requestId, grantId: "grant", args: { path: "fresh.txt", content: "new" }, createdAt: Date.now() });
       const pending = instance.fetch(new Request("https://relay/relay/dispatch", { method: "POST", duplex: "half",
         headers: { ...headers, "Content-Length": String(new TextEncoder().encode(text).length) },
-        body: new ReadableStream<Uint8Array>({ start(controller) { body = controller; } }, { highWaterMark: 0 }) } as RequestInit));
+        body: new ReadableStream<Uint8Array>({ start(controller) { body = controller; }, cancel() { readerCancelled = true; } }, { highWaterMark: 0 }) } as RequestInit));
+      // Cancelled during intake: the body never finishes, yet the dispatch settles and frees its slot at once.
+      const cancelledAt = Date.now();
       if (!before) { assert.equal(instance.relayCore.reservedCount, 1); assert.equal((await cancel()).status, 202); }
-      body.enqueue(new TextEncoder().encode(text)); body.close();
+      else { body.enqueue(new TextEncoder().encode(text)); body.close(); }
       assert.deepEqual(await (await pending).json(), { ok: false, code: "cancelled", outcome: "not-sent" });
+      if (!before) {
+        assert.equal(readerCancelled, true, "the stalled body reader is cancelled");
+        assert.ok(Date.now() - cancelledAt < 2_000, "the slot is freed at the cancel, not at the 10 s intake deadline");
+      }
       assert.deepEqual(frames, []);
       assert.equal(instance.relayCore.pendingCount, 0); assert.equal(instance.relayCore.reservedCount, 0);
       assert.equal(instance.relayCore.reservedBytes, 0); assert.equal(instance.relayCore.bufferedBytes, 0);

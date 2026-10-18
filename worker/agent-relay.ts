@@ -22,7 +22,8 @@ type FailureCode = "editor-unavailable" | "busy" | "waiting" | "too-large" | "ca
 type Outcome = { ok: true; result: JsonValue } | { ok: false; code: FailureCode; outcome: "unknown" | "not-sent" };
 /** A dispatcher names the workspace; tab and generation are optional fences. The
  * relay resolves the current owner (an MCP grant does not know which tab owns). */
-export interface RelayReservation { readonly cancelled: boolean; release(): void }
+/** `signal` aborts when a matching cancel arrives during intake, so the body reader stops at once. */
+export interface RelayReservation { readonly cancelled: boolean; readonly signal: AbortSignal; release(): void }
 export interface RelayTarget {
   workspace: AgentWorkspace;
   tabId?: string;
@@ -124,7 +125,7 @@ export class AgentRelay {
   /** The workspace's one outstanding wait (ticket 18), in memory only. */
   private waitId: string | undefined;
   private reserved = { count: 0, bytes: 0 };
-  private intakes = new Map<{ cancelled: boolean; release(): void }, RelayCancelKey>();
+  private intakes = new Map<{ cancelled: boolean; stop: AbortController }, RelayCancelKey>();
   /** Brief cancellation memory only; lazy expiry leaves idle hibernation possible. */
   private recentCancels = new Map<string, number>();
 
@@ -193,7 +194,8 @@ export class AgentRelay {
     this.reserved.count++;
     this.reserved.bytes += length;
     let held = true;
-    const reservation = { cancelled: false, release: () => {
+    const stop = new AbortController();
+    const reservation = { cancelled: false, stop, signal: stop.signal, release: () => {
       if (!held) return;
       held = false;
       this.intakes.delete(reservation);
@@ -357,7 +359,7 @@ export class AgentRelay {
     this.recentCancels.set(id, this.clock.now() + 10_000);
     if (this.recentCancels.size > 32) this.recentCancels.delete(this.recentCancels.keys().next().value!);
     for (const [reservation, intakeKey] of this.intakes)
-      if (this.cancelId(intakeKey) === id) reservation.cancelled = true;
+      if (this.cancelId(intakeKey) === id) { reservation.cancelled = true; reservation.stop.abort(); }
     for (const call of [...this.calls.values()])
       if (call.cancelKey?.requestId === key.requestId && call.cancelKey.grantId === key.grantId)
         call.finish(failure("cancelled", call.unsent === undefined ? "unknown" : "not-sent"));
