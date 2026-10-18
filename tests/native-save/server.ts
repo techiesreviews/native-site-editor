@@ -161,7 +161,8 @@ import { createServer, preview, type Connect, type Plugin } from "vite";
 import { handle, type Env } from "../../worker/app.ts";
 import { admitRegistration, isBudgetKey, REGISTRATION_ROUTE } from "../../worker/oauth-registration.ts";
 import { clearHub, hubView, type HubStorage } from "../../worker/agent-store.ts";
-import { fakeHubRoute } from "./fake-hub.ts";
+import { fakeHubRoute, serializeObject } from "./fake-hub.ts";
+import { accountPending, PENDING_KEY, PENDING_ROUTE, type PendingAction } from "../../worker/oauth-pending.ts";
 import type { AgentHub } from "../../worker/agent-context.ts";
 import { tarball } from "../tar-helper.ts";
 import { NATIVE_STARTER_VERSION } from "../../worker/starter.ts";
@@ -1008,6 +1009,19 @@ function env(): Env {
               delete: async (key) => { await storage.delete([key]); return true; },
             }, ipHash, Date.now()));
           }
+          // The OAuth pending ledger, serialized per object as worker/index.ts runs it.
+          if (url.pathname === PENDING_ROUTE) {
+            if (request.method !== "POST") return new Response(null, { status: 405, headers: { Allow: "POST" } });
+            const action = await request.json() as PendingAction;
+            return serializeObject(id, async () => {
+              const result = await accountPending({
+                get: (key) => storage.get(key),
+                put: async (key, value) => storage.put({ [key]: value }),
+                delete: async (key) => { await storage.delete([key]); return true; },
+              }, action, Date.now());
+              return Response.json(result, { status: result.reason === "invalid" ? 400 : 200 });
+            });
+          }
           if (url.pathname === "/repository-cache") {
             if (request.method === "DELETE") {
               await storage.delete(["repositoryCache"]);
@@ -1032,6 +1046,7 @@ function env(): Env {
           }
           if (request.method === "DELETE") {
             await clearHub(storage);
+            await storage.delete([PENDING_KEY]);
             sessions.delete(id);
             return new Response(null, { status: 204 });
           }
