@@ -1,0 +1,120 @@
+import { textHash, type AgentCommand } from "../shared/agent";
+import { payloadIdentity, type AgentWorkspace, type JsonValue } from "../shared/agent-command";
+import { prepareAgentEdit, type AgentEdit, type AgentStatus } from "../shared/agent-edit";
+import type { AgentReadResult } from "../shared/agent-read";
+import { SiteFiles } from "../shared/site-files";
+import { AgentRecordsError, type AgentRecords } from "./agent-records";
+import { createAgentTools } from "./agent-tools";
+import { agentFileReader, type AgentReadPorts } from "./agent-tools-read";
+
+interface Options {
+  workspace: AgentWorkspace;
+  ports: AgentReadPorts;
+  records: AgentRecords;
+  run: (command: AgentCommand) => Promise<{ message?: string; result?: AgentCommand["result"] } | void>;
+}
+type Request = AgentEdit | AgentStatus;
+const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as JsonValue;
+
+/** Receipts precede preparation: replacements must never run twice against their own output. */
+export function createAgentEditTools(options: Options) {
+  const flights = new Map<string, { identity: string; authorizationId: string; promise: Promise<AgentReadResult> }>();
+  const { records, workspace, ports } = options;
+  async function execute(request: Request, generation: number, current: () => boolean): Promise<AgentReadResult> {
+    const stamp = ports.stamp(), source = ports.files();
+    const repoId = source?.repo.id, branch = source?.snapshot.branch, commit = source?.snapshot.commit;
+    let ran = false;
+    const check = () => {
+      const now = ports.files();
+      if (!current() || !ran && (!stamp.holds() || now?.repo.id !== repoId || now?.snapshot.branch !== branch || now?.snapshot.commit !== commit))
+        throw new Error("The editor changed branch or revision. Read the site again.");
+    };
+    const reply = (outcome: JsonValue): AgentReadResult => {
+      const body = outcome && typeof outcome === "object" && !Array.isArray(outcome) ? outcome : {};
+      return { ok: true, value: { requestId: request.id, state: "applied", message: null, ...body } };
+    };
+    try {
+      check();
+      const identity = request.operation === "edit" ? await textHash(payloadIdentity(json({ tool: request.tool, args: request.args, branch: workspace.branch }))) : "";
+      check();
+      const running = request.operation === "edit" ? flights.get(request.id) : undefined;
+      if (running) {
+        // Joining work still checks this grant's authorization before revealing its outcome.
+        await records.receipt(workspace, request.id, request.grantId);
+        check();
+        return running.identity === identity && running.authorizationId === request.grantId ? await running.promise
+          : { ok: false, message: "This change's id is already running with different work or authorization." };
+      }
+      // Reserve the flight before the receipt read: even a delayed lookup cannot start a second preparation.
+      const promise = (async (): Promise<AgentReadResult> => {
+        const receipt = await records.receipt(workspace, request.id, request.grantId);
+        check();
+        if (receipt) {
+          if (request.operation === "edit" && receipt.payloadIdentity !== identity)
+            return { ok: false, message: "This change's id was already used for different work. Nothing was changed." };
+          return reply(receipt.outcome);
+        }
+        if (request.operation === "status") return { ok: true, value: { requestId: request.id, state: "unknown",
+          message: "Change not found, or its receipt expired. The outcome is unknown; do not replay the change." } };
+        if (!source) throw new Error("The editor is unavailable. Open the connected site and branch.");
+        const shared = await ports.context();
+        check();
+        if (!shared) throw new Error("The editor is unavailable. Open the connected site and branch.");
+        const files = new SiteFiles(agentFileReader(source, shared.context), source.repo, shared.context, async hash => {
+          check(); return shared.texts.get(hash);
+        });
+        const prepared = await prepareAgentEdit(request, shared.context, files);
+        check();
+        // Unchanged requests and UI-only open_page also receive an owner-fenced receipt.
+        const record = async (outcome: JsonValue) => {
+          const state = await records.workspace(workspace);
+          check();
+          const result = await records.commit({ workspace, generation, expectedRevision: state.revision, expectedDrafts: [], drafts: [],
+            receipt: { operationId: request.id, authorizationId: request.grantId, payloadIdentity: identity, outcome,
+              createdAt: Date.now(), issuedAt: request.createdAt } });
+          check();
+          return reply(result.receipt.outcome);
+        };
+        if ("unchanged" in prepared) return record(json(prepared.unchanged));
+        const { input, operation } = prepared;
+        const command: AgentCommand = { id: request.id, operation, content: input.content ?? "",
+          branch: shared.context.branch, commit: shared.context.commit, ...input, repoId: workspace.repoId,
+          grantId: request.grantId, generation: request.generation, ownerGeneration: generation, requestIdentity: identity,
+          state: "pending", createdAt: request.createdAt };
+        ran = true;
+        const outcome = await options.run(command);
+        check();
+        if (operation === "open_page") return record(json(outcome ?? {}));
+        if (operation === "inspect_preview") {
+          let report: JsonValue = json(outcome?.result ?? {});
+          if (typeof outcome?.result?.report === "string") {
+            try { report = JSON.parse(outcome.result.report) as JsonValue; } catch { /* Keep the original report when it is not JSON. */ }
+          }
+          return reply(json({ ...outcome, result: report }));
+        }
+        return reply(json(outcome ?? {}));
+      })();
+      if (request.operation === "status") return await promise;
+      const flight = { identity, authorizationId: request.grantId, promise };
+      flights.set(request.id, flight);
+      try { return await promise; }
+      finally { if (flights.get(request.id) === flight) flights.delete(request.id); }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "The browser edit failed.";
+      const unknown = error instanceof AgentRecordsError && error.code === "unknown" || /unproven|outcome.*unknown|could not prove|could not confirm whether/i.test(message);
+      return { ok: true, value: { requestId: request.id, state: unknown ? "unknown" : "conflict", message: unknown
+        ? `${message} Check get_command_status; do not replay the change.` : message } };
+    }
+  }
+  type Input = { request: Request; generation: number; current: () => boolean };
+  const executor = ({ request, generation, current }: Input) => execute(request, generation, current);
+  const registry = createAgentTools<Input>({ edit_file: executor, write_file: executor, move_file: executor,
+    delete_file: executor, create_page: executor, set_page_details: executor, open_page: executor,
+    inspect_preview: executor, make_component: executor, add_section: executor, move_section: executor,
+    remove_section: executor, get_command_status: executor });
+  return {
+    run(request: Request, generation: number, current: () => boolean) {
+      return registry.run(request.operation === "status" ? "get_command_status" : request.tool, { request, generation, current });
+    },
+  };
+}

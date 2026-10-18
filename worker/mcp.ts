@@ -1,8 +1,8 @@
 // The MCP server for native sites: tools an agent needs to edit a site the
 // way its owner does in the visual editor. Reads execute against the receiving
 // browser tab's drafts and its GitHub readers at the revision shown there.
-// A matching shared snapshot remains a temporary fallback. Changes are validated here,
-// queued in the session's hub, and applied by the tab with the editor's own
+// A matching shared snapshot remains a temporary fallback. Edits dispatch once to
+// the receiving browser, which prepares and applies them with the editor's own
 // code, so it lands as an ordinary browser draft: the preview updates live,
 // and the user can undo it, discard it, and saves it to GitHub themselves.
 import { McpServer, createMcpHandler } from "@modelcontextprotocol/server";
@@ -24,7 +24,6 @@ import {
   picturePreviewRefusal,
   QUESTION_TEXT_LIMIT,
   REPLY_TEXT_LIMIT,
-  applyReplacements,
   textBytes,
   parseOutlineId,
   type AgentCommand,
@@ -35,18 +34,18 @@ import {
 import { MEDIA_ADDING_VALUES } from "../shared/media-records";
 import { touchesGithubConfig, GITHUB_CONFIG_REFUSED } from "../shared/protected-paths";
 import { requestForAgent, requestIdPattern } from "./agent-requests";
-import type { AgentPageOutline, EditorContext } from "../shared/types";
+import type { EditorContext } from "../shared/types";
 import { HttpError } from "./github";
 import { SiteFiles, writablePathProblem } from "./site-files";
 import { siteConventions, siteInstructions } from "./site-conventions";
 import { editorOrigin } from "./owner-setup";
 import { isNativeComponentTag } from "../shared/native-project";
-import { siteSummary, findPageRef, noHomePage, executeAgentRead, notSharingMessage as sharingMessage } from "../shared/agent-read";
+import { siteSummary, executeAgentRead, notSharingMessage as sharingMessage } from "../shared/agent-read";
+import { prepareAgentEdit, checkContent, type AgentEdit, type AgentEditArgsMap, type AgentEditTool } from "../shared/agent-edit";
 import { AgentRelay, relayObjectName } from "./agent-relay";
 import type { AgentRead, AgentReadResult } from "../shared/agent-read";
 
 type Connection = Awaited<ReturnType<typeof authenticateAgent>>;
-type Page = NonNullable<EditorContext["pages"]>[number];
 
 export function notSharingMessage(...args: Parameters<typeof sharingMessage>) {
   return sharingMessage(...args);
@@ -84,7 +83,7 @@ const waitSeconds = z
   .min(0)
   .max(25)
   .optional()
-  .describe("How long to wait for the editor tab to apply the change before returning (default 10). The change stays queued either way.");
+  .describe("Accepted for compatibility. Live commands have a ten-second total deadline; an unknown outcome must be checked with get_command_status.");
 const hash = z.string().regex(/^[a-f0-9]{64}$/);
 const pageRef = z
   .string()
@@ -113,14 +112,44 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     if (!context) throw new HttpError(409, notSharingMessage(origin, connection.workspace, hub?.context));
     return { hub, context, files: new SiteFiles(connection.github, connection.repo, context, (hash) => draftText(env, grant.sessionId, hash)) };
   }
+  async function dispatch(command: AgentRead | AgentEdit | { operation: "status"; id: string; grantId: string; generation?: number }) {
+    try {
+      const body = JSON.stringify(command);
+      const name = await relayObjectName(connection.workspace);
+      const response = await env.SESSIONS.get(env.SESSIONS.idFromName(name)).fetch(new Request("https://session.internal/relay/dispatch", {
+        method: "POST", headers: { "Content-Type": "application/json", "Content-Length": String(textBytes(body)),
+          [AgentRelay.identityHeader]: JSON.stringify({ workspace: connection.workspace }) }, body,
+      }));
+      return await response.json() as { ok: boolean; result?: AgentReadResult; code?: string };
+    } catch { return { ok: false, code: "unknown-outcome" }; }
+  }
+  async function edit<K extends AgentEditTool>(tool: K, args: AgentEditArgsMap[K], requestId?: string, waitSeconds?: number) {
+    const request = { operation: "edit", tool, args, id: requestId ?? `mcp-${crypto.randomUUID()}`,
+      grantId: connection.id, generation: grant.generation, createdAt: Date.now() } as AgentEdit;
+    const outcome = await dispatch(request);
+    if (outcome.ok && outcome.result) return toolResult(outcome.result);
+    if (outcome.code === "editor-unavailable") {
+      if (!connectionContext(connection.hub, connection.workspace))
+        return failure(notSharingMessage(origin, connection.workspace, connection.hub?.context));
+      const { context, files } = await current();
+      const prepared = await prepareAgentEdit(request, context, files);
+      if ("unchanged" in prepared) return text(prepared.unchanged);
+      return queue(prepared.operation, context, { ...prepared.input, requestId: request.id, waitSeconds: waitSeconds ?? (tool === "open_page" ? 5 : tool === "inspect_preview" ? 15 : 10) });
+    }
+    return unknown(request.id, outcome.code);
+  }
+  function toolResult(result: AgentReadResult) {
+    if (!result.ok) return failure(result.message);
+    const value = result.value;
+    return value && typeof value === "object" && !Array.isArray(value) && ["conflict", "failed", "unknown"].includes(String(value.state))
+      ? { isError: true, ...text(value) } : text(value);
+  }
+  function unknown(id: string, code?: string) {
+    return { isError: true, ...text({ requestId: id, state: "unknown",
+      message: `The change's outcome is unknown (${code ?? "connection lost"}). Check get_command_status; do not replay the change.` }) };
+  }
   async function readResult(read: AgentRead): Promise<AgentReadResult> {
-    const body = JSON.stringify(read);
-    const name = await relayObjectName(connection.workspace);
-    const response = await env.SESSIONS.get(env.SESSIONS.idFromName(name)).fetch(new Request("https://session.internal/relay/dispatch", {
-      method: "POST", headers: { "Content-Type": "application/json", "Content-Length": String(textBytes(body)),
-        [AgentRelay.identityHeader]: JSON.stringify({ workspace: connection.workspace }) }, body,
-    }));
-    const outcome = await response.json() as { ok: boolean; result?: AgentReadResult; code?: string };
+    const outcome = await dispatch(read);
     if (outcome.ok && outcome.result) {
       const result = outcome.result;
       if (read.tool === "get_site" && result.ok && result.value && typeof result.value === "object" && !Array.isArray(result.value)) {
@@ -149,27 +178,6 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     if (!result.ok) throw new HttpError(409, result.message);
     return result.value;
   }
-  function findPage(context: EditorContext, ref: string) {
-    const pages = context.pages;
-    if (!pages) throw new HttpError(400, noHomePage);
-    const page = findPageRef(pages, ref);
-    if (!page?.file) throw new HttpError(404, `No page ${ref}. get_site lists the pages.`);
-    return page as Page & { file: string };
-  }
-  function outlineOf(context: EditorContext, file: string): AgentPageOutline {
-    const outline = context.site?.outlines.find((item) => item.file === file);
-    if (!outline)
-      throw new HttpError(409, `The editor has no outline of ${file} yet. Try again in a moment.`);
-    return outline;
-  }
-  function checkHash(expected: string | undefined, actual: string, what: string) {
-    if (expected !== actual)
-      throw new HttpError(
-        409,
-        `${what} changed since you read it (its hash is now ${actual}). Read it again.`,
-      );
-  }
-
   async function queue(
     operation: AgentOperation,
     context: EditorContext,
@@ -312,15 +320,18 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     "get_command_status",
     {
       description:
-        "Check whether a queued change was applied by the editor tab, conflicted, or failed. Pending does not mean applied.",
+        "Look up a change receipt in the receiving browser. Without a receipt the outcome is unknown; never replay automatically.",
       inputSchema: z.object({ requestId: z.string().min(1).max(128) }),
       annotations: readOnly,
     },
     async ({ requestId }) => {
+      const outcome = await dispatch({ operation: "status", id: requestId, grantId: connection.id, generation: grant.generation });
+      if (outcome.ok && outcome.result) return toolResult(outcome.result);
+      if (outcome.code !== "editor-unavailable") return unknown(requestId, outcome.code);
+      if (!connectionContext(connection.hub, connection.workspace))
+        return failure(notSharingMessage(origin, connection.workspace, connection.hub?.context));
       const hub = await getHub(env, grant.sessionId);
-      const command = hub?.commands?.find(
-        (item) => item.id === requestId && item.grantId === connection.id,
-      );
+      const command = hub?.commands?.find(item => item.id === requestId && item.grantId === connection.id);
       return command ? status(command) : failure("Change not found, or its status expired.");
     },
   );
@@ -353,15 +364,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     async ({ path, expectedHash, edits, requestId, waitSeconds }) => {
       const problem = writablePathProblem(path);
       if (problem) return failure(problem);
-      const { context, files } = await current();
-      const file = await files.read(path);
-      if (!file) return failure(`${path} does not exist. Use write_file to create it.`);
-      checkHash(expectedHash, file.hash, path);
-      const edited = applyReplacements(file.content, edits);
-      if (!edited.ok) return failure(edited.error);
-      if (edited.text === file.content) return text({ state: "unchanged", message: "The edits change nothing." });
-      checkContent(edited.text);
-      return queue("write_file", context, { path, content: edited.text, expectedHash: file.hash, requestId, waitSeconds });
+      return edit("edit_file", { path, expectedHash, edits }, requestId, waitSeconds);
     },
   );
   server.registerTool(
@@ -383,24 +386,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
       if (problem) return failure(problem);
       if (isMediaUploadWrite(path)) return failure(OUTSIDE_MEDIA_REFUSED);
       checkContent(content);
-      const { context, files } = await current();
-      const file = await files.read(path);
-      if (file) {
-        if (!expectedHash)
-          return failure(`${path} exists (hash ${file.hash}). Pass that as expectedHash to replace it, or use edit_file.`);
-        checkHash(expectedHash, file.hash, path);
-        if (file.content === content) return text({ state: "unchanged", message: "The file already has this text." });
-      } else {
-        if (expectedHash) return failure(`${path} does not exist; omit expectedHash to create it.`);
-        if (await files.isFolder(path)) return failure(`${path} is a folder.`);
-        const parts = path.split("/");
-        for (let index = 1; index < parts.length; index++) {
-          const parent = parts.slice(0, index).join("/");
-          if (await files.read(parent).catch(() => undefined))
-            return failure(`${parent} is a file, so nothing can go in it.`);
-        }
-      }
-      return queue("write_file", context, { path, content, expectedHash: file?.hash ?? null, requestId, waitSeconds });
+      return edit("write_file", { path, content, expectedHash }, requestId, waitSeconds);
     },
   );
   server.registerTool(
@@ -421,13 +407,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
       const problem = writablePathProblem(path) ?? writablePathProblem(to);
       if (problem) return failure(problem);
       if (path === to) return failure("The new path is the same.");
-      const { context } = await current();
-      return queue("move_file", context, {
-        path,
-        args: { to, ...(keepOldUrl !== undefined ? { keepOldUrl } : {}) },
-        requestId,
-        waitSeconds,
-      });
+      return edit("move_file", { path, to, keepOldUrl }, requestId, waitSeconds);
     },
   );
   server.registerTool(
@@ -441,8 +421,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     async ({ path, requestId, waitSeconds }) => {
       const problem = writablePathProblem(path);
       if (problem) return failure(problem);
-      const { context } = await current();
-      return queue("delete_file", context, { path, requestId, waitSeconds });
+      return edit("delete_file", { path }, requestId, waitSeconds);
     },
   );
 
@@ -467,18 +446,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
       annotations: editing,
     },
     async ({ title, parent, slug, requestId, waitSeconds }) => {
-      const { context } = await current();
-      if (!context.pages) return failure(noHomePage);
-      const under = parent ? parent.replace(/^\/?/, "/").replace(/\/?$/, "/") : "/";
-      if (under !== "/" && !context.pages.some((page) => page.route === under))
-        return failure(`No page at ${under}. get_site lists the pages; a page at an .html URL has no subpages.`);
-      return queue("create_page", context, {
-        // The parent's folder: one new page there waits at a time.
-        path: under === "/" ? "." : under.slice(1, -1),
-        args: { parent: under, title, ...(slug ? { slug } : {}) },
-        requestId,
-        waitSeconds,
-      });
+      return edit("create_page", { title, parent, slug }, requestId, waitSeconds);
     },
   );
   server.registerTool(
@@ -497,17 +465,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     },
     async ({ page: ref, title, description, requestId, waitSeconds }) => {
       if (title === undefined && description === undefined) return failure("Give a title, a description, or both.");
-      const { context } = await current();
-      const page = findPage(context, ref);
-      return queue("set_page_details", context, {
-        path: page.file,
-        args: {
-          ...(title !== undefined ? { title } : {}),
-          ...(description !== undefined ? { description } : {}),
-        },
-        requestId,
-        waitSeconds,
-      });
+      return edit("set_page_details", { page: ref, title, description }, requestId, waitSeconds);
     },
   );
   server.registerTool(
@@ -518,12 +476,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
       annotations: { ...editing, readOnlyHint: true },
     },
     async ({ page: ref, requestId, waitSeconds }) => {
-      const { context } = await current();
-      const page = context.pages && findPageRef(context.pages, ref);
-      const path = page?.file ?? ref;
-      const problem = writablePathProblem(path, { readOnly: true });
-      if (problem) return failure(problem);
-      return queue("open_page", context, { path, requestId, waitSeconds: waitSeconds ?? 5 });
+      return edit("open_page", { page: ref }, requestId, waitSeconds);
     },
   );
 
@@ -545,20 +498,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     async ({ page: ref, element, selector, limit, requestId, waitSeconds }) => {
       if (element !== undefined && selector !== undefined) return failure("Give element or selector, not both.");
       if (element !== undefined && !parseOutlineId(element)) return failure(`${element} is not an element id; get_page lists them.`);
-      const { context } = await current();
-      const route = ref ?? context.site?.openRoute;
-      if (!route) return failure("The editor shows no page now. Give page.");
-      const page = findPage(context, route);
-      return queue("inspect_preview", context, {
-        path: page.file!,
-        args: {
-          ...(element !== undefined ? { element } : {}),
-          ...(selector !== undefined ? { selector } : {}),
-          ...(limit !== undefined ? { limit } : {}),
-        },
-        requestId,
-        waitSeconds: waitSeconds ?? 15,
-      });
+      return edit("inspect_preview", { page: ref, element, selector, limit }, requestId, waitSeconds);
     },
   );
 
@@ -739,27 +679,6 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
 
   // ---- Sections ----
 
-  function placement(outline: AgentPageOutline, before?: string, after?: string) {
-    if (before && after) throw new HttpError(400, "Give before or after, not both.");
-    const anchor = before ?? after;
-    if (anchor) {
-      const node = parseOutlineId(anchor);
-      const section = outline.sections.find((item) => item.id === anchor);
-      if (!node || !section) throw new HttpError(404, `No section ${anchor} on this page. get_page lists them.`);
-      const container = node.slice(0, -1).join(".");
-      return { container, index: node[node.length - 1] + (after ? 1 : 0) };
-    }
-    if (outline.containers.length !== 1)
-      throw new HttpError(
-        400,
-        outline.containers.length
-          ? "This page has several places for sections. Say before or after which section."
-          : "This page has no place for sections (no <main> or section container).",
-      );
-    const [only] = outline.containers;
-    return { container: only.id, index: only.children };
-  }
-
   server.registerTool(
     "make_component",
     {
@@ -779,23 +698,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     async ({ page: ref, element, tag, fixed, expectedHash, requestId, waitSeconds }) => {
       if (!parseOutlineId(element)) return failure(`${element} is not an element id; get_page lists them.`);
       if (!isNativeComponentTag(tag)) return failure(`<${tag}> is not a valid custom-element name.`);
-      const { context } = await current();
-      const page = findPage(context, ref);
-      const outline = outlineOf(context, page.file);
-      checkHash(expectedHash, outline.hash, page.file);
-      if (context.site?.components.some((item) => item.tag === tag)) return failure(`There is a component <${tag}> already.`);
-      const container = outline.containers.find((item) => item.id === element && (item.tag === "main" || item.tag === "body"));
-      if (container) return failure(`A <${container.tag}> cannot be a component.`);
-      const section = outline.sections.find((item) => item.id === element);
-      if (section?.tag.includes("-"))
-        return failure(/^site-(?:header|footer)$/.test(section.tag) ? `<${section.tag}> is the site's ${section.tag.slice(5)} component already.` : `<${section.tag}> is a component already.`);
-      return queue("make_component", context, {
-        path: page.file,
-        expectedHash,
-        args: { element, tag, ...(fixed !== undefined ? { fixed } : {}) },
-        requestId,
-        waitSeconds,
-      });
+      return edit("make_component", { page: ref, element, tag, fixed, expectedHash }, requestId, waitSeconds);
     },
   );
   server.registerTool(
@@ -815,21 +718,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
       annotations: editing,
     },
     async ({ page: ref, component, expectedHash, before, after, requestId, waitSeconds }) => {
-      const { context } = await current();
-      const page = findPage(context, ref);
-      const outline = outlineOf(context, page.file);
-      checkHash(expectedHash, outline.hash, page.file);
-      const known = context.site?.components.find((item) => item.tag === component);
-      if (!known) return failure(`No component <${component}>. get_site lists the components.`);
-      if (!known.section) return failure(`<${component}> is not a section component (its template is not one <section>), so it cannot go between sections.`);
-      const at = placement(outline, before, after);
-      return queue("add_section", context, {
-        path: page.file,
-        expectedHash,
-        args: { component, container: at.container, index: at.index },
-        requestId,
-        waitSeconds,
-      });
+      return edit("add_section", { page: ref, component, expectedHash, before, after }, requestId, waitSeconds);
     },
   );
   server.registerTool(
@@ -850,22 +739,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     },
     async ({ page: ref, section, expectedHash, before, after, requestId, waitSeconds }) => {
       if (!before && !after) return failure("Say before or after which section it goes.");
-      const { context } = await current();
-      const page = findPage(context, ref);
-      const outline = outlineOf(context, page.file);
-      checkHash(expectedHash, outline.hash, page.file);
-      const moving = outline.sections.find((item) => item.id === section);
-      if (!moving) return failure(`No section ${section} on this page. get_page lists them.`);
-      const at = placement(outline, before, after);
-      if (section.split(".").slice(0, -1).join(".") !== at.container)
-        return failure("A section moves among its own siblings only.");
-      return queue("move_section", context, {
-        path: page.file,
-        expectedHash,
-        args: { section, tag: moving.tag, container: at.container, index: at.index },
-        requestId,
-        waitSeconds,
-      });
+      return edit("move_section", { page: ref, section, expectedHash, before, after }, requestId, waitSeconds);
     },
   );
   server.registerTool(
@@ -876,19 +750,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
       annotations: removing,
     },
     async ({ page: ref, section, expectedHash, requestId, waitSeconds }) => {
-      const { context } = await current();
-      const page = findPage(context, ref);
-      const outline = outlineOf(context, page.file);
-      checkHash(expectedHash, outline.hash, page.file);
-      const removed = outline.sections.find((item) => item.id === section);
-      if (!removed) return failure(`No section ${section} on this page. get_page lists them.`);
-      return queue("remove_section", context, {
-        path: page.file,
-        expectedHash,
-        args: { section, tag: removed.tag },
-        requestId,
-        waitSeconds,
-      });
+      return edit("remove_section", { page: ref, section, expectedHash }, requestId, waitSeconds);
     },
   );
 
@@ -1056,11 +918,6 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     }),
   );
   return server;
-}
-
-function checkContent(content: string) {
-  if (textBytes(content) > AGENT_TEXT_LIMIT || content.includes("\0"))
-    throw new HttpError(400, `Drafts hold text files up to ${AGENT_TEXT_LIMIT / 1024 / 1024} MB.`);
 }
 
 export async function handleMcp(
