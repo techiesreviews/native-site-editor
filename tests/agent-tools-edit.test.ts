@@ -174,15 +174,20 @@ test("duplicate edit_file joins in flight and returns the receipt before re-read
   assert.match(body(await f.tools.run({ operation: "status", id: input.id, grantId: input.grantId }, 0, () => true)).message, /revoked/);
 });
 
-test("unchanged edits have receipts; stale preparation and unknown persistence never run again", async () => {
+test("unchanged edits apply nothing and record no receipt; stale preparation and unknown persistence never run again", async () => {
   const f = await fixture();
   const input = request("edit_file", { path: "index.html", expectedHash: f.context.site!.outlines[0].hash, edits: [{ oldText: "Welcome", newText: "Welcome" }] });
   const first = await f.run(input);
   assert.equal(body(first).state, "unchanged");
   assert.deepEqual(await f.run(input), first);
   assert.equal(f.commands.length, 0);
-  const saved = await f.records.receipt(workspace, input.id, input.grantId);
-  assert.ok(saved);
+  // No receipt: it would need a draft proof from before preparation (a manual edit meanwhile could not be fenced).
+  assert.equal(await f.records.receipt(workspace, input.id, input.grantId), undefined);
+  assert.equal(f.fake.stores.get("receipts")?.size ?? 0, 0);
+  // A redelivery after the text changed is a hash conflict, never an application.
+  f.context.drafts.push({ path: "index.html", baseSha: null, content: "Changed by hand", hash: await textHash("Changed by hand"), updatedAt: Date.now() });
+  assert.equal(body(await f.run(input)).state, "conflict");
+  assert.equal(f.commands.length, 0);
   f.stale();
   assert.equal(body(await f.run(request("delete_file", { path: "index.html" }, "stale"))).state, "conflict");
   const fresh = await fixture();
@@ -371,4 +376,29 @@ test("a changed revision at every preparation await never reaches the guarded ex
     return state;
   }, state => state.disturb(), state => assert.equal(state.writes, 0));
   assert.ok(points >= 3);
+});
+
+test("a revision change after the executor committed still reports applied, never conflict", async () => {
+  const f = await fixture();
+  let live = true;
+  const tools = createAgentEditTools({ workspace, ports: f.ports, records: f.records, run: async command => {
+    const outcome = { message: "Applied once.", result: { path: command.path } };
+    // The commit landed; the editor then moves to another revision (or the socket drops) before the reply.
+    f.stale(); live = false;
+    return outcome;
+  } });
+  const result = body(await tools.run(request("delete_file", { path: "index.html" }, "post-commit"), 0, () => live));
+  assert.equal(result.state, "applied"); assert.equal(result.message, "Applied once.");
+});
+
+test("get_command_status never turns an undelivered lookup into a failed change", async () => {
+  const h = await connected(), get = h.namespace.get;
+  try {
+    for (const outcome of ["not-sent", "unknown"]) {
+      h.namespace.get = name => String(name).startsWith("agent-relay:")
+        ? { fetch: async () => Response.json({ ok: false, code: "busy", outcome }) } : get(name);
+      const result = payload(await h.rpc("get_command_status", { requestId: "lost-reply" }));
+      assert.equal(result.state, "unknown"); assert.match(result.message, /do not replay/);
+    }
+  } finally { h.namespace.get = get; await h.worker.dispose(); }
 });
