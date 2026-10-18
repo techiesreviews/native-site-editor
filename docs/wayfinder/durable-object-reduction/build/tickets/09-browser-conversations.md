@@ -87,6 +87,10 @@ Kit:
 - RESULT: ok size boot 354 KB (±0 KB) vs dev@6635ffa, budget 355 KB
 - RESULT: fail specs 2 of 25 failed: native-components.spec.ts, native-lazy-panels.spec.ts (lazy-panels: hub-only request not adopted, fixed in b96e7274; components: unrelated slot field, passed on rerun)
 - RESULT: ok specs 4/4 passed (native-agent-quiet, native-components, native-lazy-panels, native-mcp)
+- After rebasing on 6635ffa1: RESULT: ok specs (native-agent-quiet 5, native-lazy-panels 6); native-mcp 14/15 with
+  `RESULT: fail specs 1 of 1 failed: native-mcp.spec.ts` ("an MCP client connected by OAuth reaches the open editor
+  tab": the consent page answers "Too many unfinished connection requests for this sign-in"). The same test fails on
+  plain dev 6635ffa1 (ticket 24's pending ledger on the native-save server); nothing in this slice touches OAuth.
 - RESULT: ok shots raw spec, out /home/ubulex/Projects/native-site-editor/.scratch/shots/dor-09/20261018-013725
 - RESULT: ok review git diff b72c6cb3…HEAD evidence /home/ubulex/Projects/native-site-editor/.scratch/reviews/dor-09/20261018T010846Z
 - RESULT: ok review git diff 6635ffa1…HEAD evidence /home/ubulex/Projects/native-site-editor/.scratch/reviews/dor-09/20261018T013852Z
