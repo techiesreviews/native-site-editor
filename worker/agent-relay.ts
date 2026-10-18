@@ -53,6 +53,39 @@ export async function relayObjectName(workspace: AgentWorkspace): Promise<string
   return `agent-relay:${Array.from(new Uint8Array(hash), byte => byte.toString(16).padStart(2, "0")).join("")}`;
 }
 
+type BodyRead = { ok: true; value: JsonValue } | { ok: false; code: "timeout" | "too-large" | "invalid" };
+/** Reads a dispatch body of at most `limit` bytes before `deadline` (epoch ms).
+ * Expiry or overflow cancels the reader itself, so nothing keeps consuming the
+ * body after the caller releases its reservation. */
+export async function readRelayBody(body: ReadableStream<Uint8Array> | null, limit: number, deadline: number): Promise<BodyRead> {
+  if (!body) return { ok: false, code: "invalid" };
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const expired = new Promise<"timeout">(resolve => { timer = setTimeout(() => resolve("timeout"), Math.max(0, deadline - Date.now())); });
+  try {
+    for (;;) {
+      const next = await Promise.race([reader.read(), expired]);
+      if (next === "timeout" || (!next.done && (total += next.value.byteLength) > limit)) {
+        await reader.cancel().catch(() => undefined);
+        return { ok: false, code: next === "timeout" ? "timeout" : "too-large" };
+      }
+      if (next.done) break;
+      chunks.push(next.value);
+    }
+  } catch {
+    return { ok: false, code: "invalid" };
+  } finally {
+    clearTimeout(timer);
+  }
+  const joined = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) { joined.set(chunk, offset); offset += chunk.byteLength; }
+  try { return { ok: true, value: JSON.parse(new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(joined)) as JsonValue }; }
+  catch { return { ok: false, code: "invalid" }; }
+}
+
 /** In-memory only: no storage port and no offline mailbox. The socket runtime
  * retains outstanding sends; their serialized bytes stay reserved until settled.
  * Wire heartbeat for ticket 14: the exact text "ping" gets the exact text "pong"
@@ -257,7 +290,7 @@ export class AgentRelay {
     const call = this.calls.get(value.id);
     if (!call || call.socket !== socket || !sameScope(call.scope, scope) || this.owner?.tabId !== scope.tabId || this.owner.generation !== scope.generation) return false;
     if (this.clock.now() >= call.deadline) call.finish(failure("timeout", "unknown"));
-    else if (this.buffered + length > AgentRelay.maxBytes) call.finish(failure("too-large", "unknown"));
+    else if (this.buffered + this.reserved.bytes + length > AgentRelay.maxBytes) call.finish(failure("too-large", "unknown"));
     else call.finish({ ok: true, result: value.result! });
     return true;
   }
