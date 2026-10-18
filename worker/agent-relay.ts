@@ -1,0 +1,208 @@
+import { workspaceKey, type AgentWorkspace, type JsonValue } from "../shared/agent-command";
+
+export interface RelayScope {
+  workspace: AgentWorkspace;
+  tabId: string;
+  generation: number;
+}
+export interface RelaySocket {
+  readonly readyState: number;
+  send(message: string): void;
+  close(code?: number, reason?: string): void;
+  serializeAttachment(value: unknown): void;
+  deserializeAttachment(): unknown;
+}
+export interface RelayClock {
+  now(): number;
+  setTimeout(callback: () => void, delay: number): unknown;
+  clearTimeout(timer: unknown): void;
+}
+type Attachment = RelayScope & { role: "editor"; handshaken: boolean; owner?: { tabId: string | null; generation: number } };
+type FailureCode = "editor-unavailable" | "busy" | "too-large" | "cancelled" | "timeout" | "unknown-outcome";
+type Outcome = { ok: true; result: JsonValue } | { ok: false; code: FailureCode; outcome: "unknown" | "not-sent" };
+interface Pending {
+  socket: RelaySocket;
+  scope: RelayScope;
+  bytes: number;
+  deadline: number;
+  timer: unknown;
+  finish(outcome: Outcome): void;
+}
+const utf8 = new TextEncoder();
+const bytes = (value: string) => utf8.encode(value).byteLength;
+const placeholder = "00000000-0000-0000-0000-000000000000";
+const failure = (code: FailureCode, outcome: "unknown" | "not-sent" = "not-sent"): Outcome => ({ ok: false, code, outcome });
+const sameScope = (a: RelayScope, b: RelayScope) => a.tabId === b.tabId && a.generation === b.generation && workspaceKey(a.workspace) === workspaceKey(b.workspace);
+
+/** Shared by the editor upgrade and future MCP dispatchers. Repository names can
+ * change; the repository id and case-insensitive GitHub account are the identity. */
+export async function relayObjectName(workspace: AgentWorkspace): Promise<string> {
+  const hash = await crypto.subtle.digest("SHA-256", utf8.encode(workspaceKey(workspace)));
+  return `agent-relay:${Array.from(new Uint8Array(hash), byte => byte.toString(16).padStart(2, "0")).join("")}`;
+}
+
+/** In-memory only: no storage port and no offline mailbox. The socket runtime
+ * retains outstanding sends; their serialized bytes stay reserved until settled.
+ * Wire heartbeat for ticket 14: the exact text "ping" gets the exact text "pong"
+ * through setWebSocketAutoResponse, without entering this module.
+ *
+ * The browser proves ownership through its durable owner transaction. A handshake
+ * explicitly claims that generation; dispatch must independently name the same
+ * tab and generation. Focus and ordinary socket activity never choose an owner. */
+export class AgentRelay {
+  static readonly maxBytes = 8 * 1024 * 1024;
+  static readonly identityHeader = "X-Agent-Relay-Identity";
+  private sockets = new Map<RelaySocket, Attachment>();
+  private owner: { tabId: string | null; generation: number } | undefined;
+  private workspace: string | undefined;
+  private calls = new Map<string, Pending>();
+  private buffered = 0;
+
+  constructor(sockets: RelaySocket[], private clock: RelayClock = {
+    now: () => Date.now(),
+    setTimeout: (callback, delay) => setTimeout(callback, delay),
+    clearTimeout: timer => clearTimeout(timer as ReturnType<typeof setTimeout>),
+  }) {
+    for (const socket of sockets) {
+      const value = socket.deserializeAttachment();
+      const scope = AgentRelay.readScope(value);
+      if (!scope || !value || typeof value !== "object" || !("role" in value) || value.role !== "editor" || socket.readyState !== 1) continue;
+      if (this.workspace && this.workspace !== workspaceKey(scope.workspace)) continue;
+      this.workspace = workspaceKey(scope.workspace);
+      const savedOwner = (value as Attachment).owner;
+      const owner = savedOwner && Number.isSafeInteger(savedOwner.generation) && savedOwner.generation >= scope.generation &&
+        (savedOwner.tabId === null || typeof savedOwner.tabId === "string") ? savedOwner : { tabId: scope.tabId, generation: scope.generation };
+      this.sockets.set(socket, { ...scope, role: "editor", handshaken: false });
+      if (!this.owner || owner.generation > this.owner.generation) this.owner = { ...owner };
+      else if (owner.generation === this.owner.generation && owner.tabId !== this.owner.tabId) this.owner.tabId = null;
+    }
+    this.reset();
+  }
+
+  static readScope(value: unknown): RelayScope | null {
+    if (!value || typeof value !== "object") return null;
+    const scope = value as Partial<RelayScope>;
+    const workspace = scope.workspace;
+    if (!workspace || typeof workspace.account !== "string" || !/^[a-z\d](?:[a-z\d-]{0,38})$/i.test(workspace.account) ||
+      !Number.isSafeInteger(workspace.repoId) || workspace.repoId <= 0 || typeof workspace.branch !== "string" || !workspace.branch || workspace.branch.length > 255 ||
+      typeof scope.tabId !== "string" || !/^[a-z\d_-]{1,128}$/i.test(scope.tabId) ||
+      !Number.isSafeInteger(scope.generation) || scope.generation! < 1) return null;
+    // Copy only metadata: never serialize an untrusted message or command body.
+    return { workspace: { account: workspace.account.toLowerCase(), repoId: workspace.repoId, branch: workspace.branch }, tabId: scope.tabId, generation: scope.generation! };
+  }
+
+  get pendingCount() { return this.calls.size; }
+  get bufferedBytes() { return this.buffered; }
+
+  connect(socket: RelaySocket, scope: RelayScope): boolean {
+    const identity = AgentRelay.readScope(scope);
+    if (!identity) return false;
+    scope = identity;
+    const key = workspaceKey(scope.workspace);
+    if (this.workspace && this.workspace !== key) return false;
+    this.workspace = key;
+    const metadata: Attachment = { ...scope, role: "editor", handshaken: false, ...(this.owner ? { owner: { ...this.owner } } : {}) };
+    socket.serializeAttachment(metadata);
+    this.sockets.set(socket, metadata);
+    return true;
+  }
+
+  /** Restart invalidates every old request, never replays it. In a real isolate
+   * loss the caller's promise is gone too (the internal HTTP request fails).
+   * Restored sockets receive an explicit unknown outcome for ALL old requests,
+   * without retaining their ids or payloads in attachments. Also usable by a
+   * host that can report an orderly reset before replacing its relay instance. */
+  reset() {
+    for (const call of [...this.calls.values()]) call.finish(failure("unknown-outcome", "unknown"));
+    for (const [socket, metadata] of this.sockets) {
+      metadata.handshaken = false;
+      metadata.owner = this.owner && { ...this.owner };
+      socket.serializeAttachment(metadata);
+      try { socket.send(JSON.stringify({ type: "reset", code: "unknown-outcome", handshakeRequired: true })); }
+      catch { this.disconnect(socket); }
+    }
+  }
+
+  dispatch(scope: RelayScope, command: JsonValue, signal?: AbortSignal): Promise<Outcome> {
+    const started = this.clock.now();
+    const identity = AgentRelay.readScope(scope);
+    if (!identity) return Promise.resolve(failure("editor-unavailable"));
+    scope = identity;
+    if (signal?.aborted) return Promise.resolve(failure("cancelled"));
+    const receiver = [...this.sockets].find(([socket, metadata]) => socket.readyState === 1 && metadata.handshaken && sameScope(metadata, scope) &&
+      this.owner?.tabId === scope.tabId && this.owner.generation === scope.generation)?.[0];
+    if (!receiver) return Promise.resolve(failure("editor-unavailable"));
+    if (this.calls.size >= 5) return Promise.resolve(failure("busy"));
+    // Measure the complete wire envelope before allocating a correlation id,
+    // promise, pending entry or timer. UUIDs have the placeholder's fixed width.
+    const candidate = JSON.stringify({ type: "command", id: placeholder, ...scope, command });
+    const length = bytes(candidate);
+    if (this.buffered + length > AgentRelay.maxBytes) return Promise.resolve(failure("too-large"));
+    const deadline = started + 10_000;
+    if (this.clock.now() >= deadline) return Promise.resolve(failure("timeout"));
+    const id = crypto.randomUUID();
+    const message = candidate.replace(placeholder, id);
+    return new Promise(resolve => {
+      const cancel = () => call.finish(failure("cancelled", "unknown"));
+      const call: Pending = { socket: receiver, scope, bytes: length, deadline, timer: undefined, finish: outcome => {
+        if (!this.calls.delete(id)) return;
+        this.buffered -= length;
+        this.clock.clearTimeout(call.timer);
+        signal?.removeEventListener("abort", cancel);
+        resolve(outcome);
+      } };
+      this.calls.set(id, call);
+      this.buffered += length;
+      call.timer = this.clock.setTimeout(() => call.finish(failure("timeout", "unknown")), deadline - this.clock.now());
+      signal?.addEventListener("abort", cancel, { once: true });
+      try { receiver.send(message); }
+      catch { this.disconnect(receiver); }
+    });
+  }
+
+  message(socket: RelaySocket, message: string | ArrayBuffer): boolean {
+    const metadata = this.sockets.get(socket);
+    if (!metadata || socket.readyState !== 1 || typeof message !== "string") return false;
+    const length = bytes(message);
+    if (length > AgentRelay.maxBytes) {
+      this.disconnect(socket);
+      socket.close(1009, "Relay message is too large.");
+      return false;
+    }
+    let value: { type?: string; id?: string; result?: JsonValue; owner?: boolean };
+    try { value = JSON.parse(message); } catch { return false; }
+    if (!value || typeof value !== "object") return false;
+    const scope = AgentRelay.readScope(value);
+    if (!scope || !sameScope(metadata, scope)) return false;
+    if (value.type === "handshake" && value.owner === true) {
+      if (this.owner && (scope.generation < this.owner.generation || (scope.generation === this.owner.generation && scope.tabId !== this.owner.tabId))) return false;
+      if ([...this.sockets].some(([other, otherMetadata]) => other !== socket && other.readyState === 1 && otherMetadata.handshaken && sameScope(otherMetadata, scope))) return false;
+      this.owner = { tabId: scope.tabId, generation: scope.generation };
+      for (const call of [...this.calls.values()]) if (!sameScope(call.scope, scope)) call.finish(failure("unknown-outcome", "unknown"));
+      // Carry the ownership fence on every surviving editor socket. Losing the
+      // new owner's socket followed by restart must not revive an old owner.
+      for (const [other, otherMetadata] of this.sockets) {
+        if (other !== socket) otherMetadata.handshaken = false;
+        otherMetadata.owner = { ...this.owner };
+        other.serializeAttachment(otherMetadata);
+      }
+      metadata.handshaken = true;
+      socket.serializeAttachment(metadata);
+      try { socket.send(JSON.stringify({ type: "ready", ...scope })); }
+      catch { this.disconnect(socket); return false; }
+      return true;
+    }
+    if (value.type !== "result" || !metadata.handshaken || typeof value.id !== "string" || !("result" in value)) return false;
+    const call = this.calls.get(value.id);
+    if (!call || call.socket !== socket || !sameScope(call.scope, scope) || this.owner?.tabId !== scope.tabId || this.owner.generation !== scope.generation) return false;
+    if (this.clock.now() >= call.deadline) call.finish(failure("timeout", "unknown"));
+    else if (this.buffered + length > AgentRelay.maxBytes) call.finish(failure("too-large", "unknown"));
+    else call.finish({ ok: true, result: value.result! });
+    return true;
+  }
+
+  disconnect(socket: RelaySocket) {
+    this.sockets.delete(socket);
+    for (const call of [...this.calls.values()]) if (call.socket === socket) call.finish(failure("unknown-outcome", "unknown"));
+  }
+}

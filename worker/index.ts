@@ -4,8 +4,11 @@ import { DurableObject } from "cloudflare:workers";
 import { handle, type Env, type StoredValue } from "./app";
 import { admitRegistration, finalizeRegistration, isBudgetKey, pruneRegistration, releaseRegistration, REGISTRATION_ROUTE } from "./oauth-registration";
 import { accountPending, PENDING_KEY, PENDING_ROUTE, type PendingAction } from "./oauth-pending";
-import type { RepositoryCache } from "./github";
+import { HttpError, type RepositoryCache } from "./github";
 import type { GitHubAppConfig } from "./owner-setup";
+import { AgentRelay } from "./agent-relay";
+import { requestJson } from "./http";
+import type { JsonValue } from "../shared/agent-command";
 
 interface RepositoryCacheChunks { chunks: number }
 const repositoryChunkPrefix = "repositoryCache:";
@@ -33,9 +36,58 @@ async function readRepositoryCache(storage: DurableObjectStorage | DurableObject
 }
 
 export class SessionStore extends DurableObject {
+  private relayCore?: AgentRelay;
+  private relay() {
+    if (!this.relayCore) {
+      // Exact application heartbeat strings for ticket 14; no JS timer/wake.
+      this.ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair("ping", "pong"));
+      this.relayCore = new AgentRelay(this.ctx.getWebSockets("editor"));
+    }
+    return this.relayCore;
+  }
+  webSocketMessage(socket: WebSocket, message: string | ArrayBuffer) {
+    this.relay().message(socket, message);
+  }
+  webSocketClose(socket: WebSocket, code: number, _reason: string, _wasClean: boolean) {
+    this.relay().disconnect(socket);
+    socket.close(code === 1005 || code === 1006 ? 1000 : code);
+  }
+  webSocketError(socket: WebSocket, _error: unknown) {
+    this.relay().disconnect(socket);
+    socket.close(1011, "Relay socket failed.");
+  }
   async fetch(request: Request): Promise<Response> {
     const storage = this.ctx.storage;
     const url = new URL(request.url);
+    if (url.pathname.startsWith("/relay/")) {
+      let identity: unknown;
+      try { identity = JSON.parse(request.headers.get(AgentRelay.identityHeader) ?? "null"); } catch { /* Refuse malformed trusted metadata. */ }
+      const scope = AgentRelay.readScope(identity);
+      if (!scope) return new Response(null, { status: 400 });
+      if (url.pathname === "/relay/connect" && request.method === "GET" && request.headers.get("Upgrade")?.toLowerCase() === "websocket") {
+        const relay = this.relay();
+        const { 0: client, 1: server } = new WebSocketPair();
+        this.ctx.acceptWebSocket(server, ["editor"]);
+        if (!relay.connect(server, scope)) {
+          server.close(1008, "Wrong relay workspace.");
+          return new Response(null, { status: 409 });
+        }
+        return new Response(null, { status: 101, webSocket: client });
+      }
+      // Worker-internal only: the public router never forwards this path. Browser
+      // work is awaited outside blockConcurrencyWhile and never touches storage.
+      if (url.pathname === "/relay/dispatch" && request.method === "POST") {
+        let command: JsonValue;
+        try { command = await requestJson(request, AgentRelay.maxBytes) as JsonValue; }
+        catch (error) {
+          if (error instanceof HttpError && error.status === 413)
+            return Response.json({ ok: false, code: "too-large", outcome: "not-sent" }, { status: 413 });
+          return new Response(null, { status: 400 });
+        }
+        return Response.json(await this.relay().dispatch(scope, command, request.signal));
+      }
+      return new Response(null, { status: 400 });
+    }
     if (url.pathname === PENDING_ROUTE) {
       if (request.method !== "POST") return new Response(null, { status: 405, headers: { Allow: "POST" } });
       const action = await request.json() as PendingAction;

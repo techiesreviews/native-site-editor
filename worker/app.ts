@@ -1,6 +1,7 @@
 import { requestJson } from "./http";
 import { ASSET_TYPES } from "../shared/asset-types";
 import { AGENT_RESULT_MAX } from "../shared/agent";
+import { AgentRelay, relayObjectName } from "./agent-relay";
 import {
   agentRecord,
   validAgentBranch,
@@ -373,6 +374,8 @@ export async function handle(
           status,
         );
   }
+  // Preserve the runtime's WebSocket endpoint on a successful upgrade.
+  if (response.status === 101) return response;
   const secured = new Response(response.body, response);
   secured.headers.set("X-Content-Type-Options", "nosniff");
   secured.headers.set("Referrer-Policy", "no-referrer");
@@ -599,6 +602,26 @@ async function route(
     // the bundle, and most isolates never serve /mcp.
     const { handleMcp } = await import("./mcp");
     return handleMcp(request, connection, env, body);
+  }
+  if (path === "/api/agent/relay") {
+    // Cheap refusals happen before even the sign-in DO is read.
+    if (request.method !== "GET" || request.headers.get("Upgrade")?.toLowerCase() !== "websocket")
+      throw new HttpError(400, "Use a WebSocket upgrade.");
+    if (request.headers.get("Origin") !== url.origin)
+      throw new HttpError(403, "Invalid request origin.");
+    const branch = url.searchParams.get("branch");
+    if (["repo", "branch", "tabId", "generation"].some(key => url.searchParams.getAll(key).length !== 1) || !validAgentBranch(branch))
+      throw new HttpError(400, "Choose a repository and branch.");
+    const user = await session(request, env);
+    if (!user) throw new SignedOutError(401, "Connect GitHub to use agent context.");
+    const repo = await sessionGitHub(user, env, fetcher).authorizeRepository(user.login, url.searchParams.get("repo") ?? "");
+    const scope = AgentRelay.readScope({ workspace: { account: user.login, repoId: repo.id, branch }, tabId: url.searchParams.get("tabId"), generation: Number(url.searchParams.get("generation")) });
+    if (!scope) throw new HttpError(400, "Choose an editor tab and owner generation.");
+    // Build fresh headers: no client-supplied trusted identity, cookies or bearer
+    // credentials cross into the workspace relay.
+    return env.SESSIONS.get(env.SESSIONS.idFromName(await relayObjectName(scope.workspace))).fetch(
+      new Request("https://session.internal/relay/connect", { headers: { Upgrade: "websocket", [AgentRelay.identityHeader]: JSON.stringify(scope) } }),
+    );
   }
   if (path.startsWith("/api/agent/")) {
     const user = await session(request, env);
