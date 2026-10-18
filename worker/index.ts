@@ -3,6 +3,7 @@ import { clearHub, hubOperation, hubView, readDraft, storeDrafts } from "./agent
 import { DurableObject } from "cloudflare:workers";
 import { handle, type Env, type StoredValue } from "./app";
 import { admitRegistration, finalizeRegistration, isBudgetKey, pruneRegistration, releaseRegistration, REGISTRATION_ROUTE } from "./oauth-registration";
+import { accountPending, PENDING_KEY, PENDING_ROUTE, type PendingAction } from "./oauth-pending";
 import type { RepositoryCache } from "./github";
 import type { GitHubAppConfig } from "./owner-setup";
 
@@ -17,6 +18,14 @@ export class SessionStore extends DurableObject {
   async fetch(request: Request): Promise<Response> {
     const storage = this.ctx.storage;
     const url = new URL(request.url);
+    if (url.pathname === PENDING_ROUTE) {
+      if (request.method !== "POST") return new Response(null, { status: 405, headers: { Allow: "POST" } });
+      const action = await request.json() as PendingAction;
+      return this.ctx.blockConcurrencyWhile(() => storage.transaction(async (transaction) => {
+        const result = await accountPending(transaction, action, Date.now());
+        return Response.json(result, { status: result.reason === "invalid" ? 400 : 200 });
+      }));
+    }
     // The agent hub, its context and draft texts (worker/agent-store.ts).
     if (url.pathname === "/agent-operation") {
       const action = await request.json();
@@ -100,11 +109,14 @@ export class SessionStore extends DurableObject {
       });
     }
     if (request.method === "DELETE") {
-      await clearRepositoryCache(storage);
-      await storage.delete("repositoryCacheGeneration");
-      await clearHub(storage);
-      await storage.deleteAlarm();
-      return new Response(null, { status: 204 });
+      return this.ctx.blockConcurrencyWhile(async () => {
+        await clearRepositoryCache(storage);
+        await storage.delete("repositoryCacheGeneration");
+        await clearHub(storage);
+        await storage.delete(PENDING_KEY);
+        await storage.deleteAlarm();
+        return new Response(null, { status: 204 });
+      });
     }
     const read = async () => storage.transaction(async (storage) => {
       if (url.pathname === "/config") {
@@ -147,6 +159,7 @@ export class SessionStore extends DurableObject {
       await clearRepositoryCache(this.ctx.storage);
       await this.ctx.storage.delete("repositoryCacheGeneration");
       await clearHub(this.ctx.storage);
+      await this.ctx.storage.delete(PENDING_KEY);
       await pruneRegistration(this.ctx.storage, Date.now(), (at) => this.ctx.storage.setAlarm(at));
     });
   }

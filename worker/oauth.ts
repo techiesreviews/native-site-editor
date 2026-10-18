@@ -14,12 +14,14 @@
 // revoked with the session or from the editor. There are no refresh tokens:
 // a connection lasts as long as the editor session (up to eight hours), then
 // the client asks the user to connect again. Everything is kept in the
-// existing SessionStore Durable Object; nothing else is needed.
+// existing SessionStore class. Unfinished requests and codes share a capped
+// ledger in the sign-in session's object (worker/oauth-pending.ts).
 import { createGrant, validAgentBranch } from "./agent-context";
 import type { Env, StoredSession } from "./app";
 import { GitHub, HttpError } from "./github";
 import { requestJson, requestText } from "./http";
 import { NO_IP_BUCKET, REGISTRATION_BUDGET, REGISTRATION_BYTES, REGISTRATION_ROUTE, type BudgetResult } from "./oauth-registration";
+import { PENDING_ROUTE, type PendingAction } from "./oauth-pending";
 import { escapeHtml } from "./owner-setup";
 
 export const OAUTH_SCOPE = "site";
@@ -107,6 +109,33 @@ async function load<T extends OAuthRecord>(env: Env, name: string, kind: T["kind
   const value = (await response.json()) as OAuthRecord;
   return value.kind === kind && value.expiresAt > Date.now() ? (value as T) : undefined;
 }
+
+async function pendingAction(env: Env, sessionId: string, action: PendingAction) {
+  const response = await env.SESSIONS.get(env.SESSIONS.idFromName(sessionId)).fetch(
+    new Request(`https://session.internal${PENDING_ROUTE}`, { method: "POST", body: JSON.stringify(action) }),
+  );
+  if (!response.ok) throw new Error("OAuth accounting unavailable");
+  return await response.json() as { allowed: boolean };
+}
+async function releasePending(env: Env, sessionId: string, id: string) {
+  try { await pendingAction(env, sessionId, { action: "release", id }); }
+  catch { /* An unavailable ledger stays occupied until the fixed expiry. */ }
+}
+async function allocatePending(env: Env, id: string, value: OAuthRequest | OAuthCode) {
+  try {
+    if (!(await record(env, id, "PUT", value)).ok) throw new Error("OAuth allocation failed");
+    return true;
+  } catch {
+    // A failed response may hide a successful write. Only a 404 proves absence.
+    try {
+      if ((await record(env, id)).status === 404) await releasePending(env, value.sessionId, id);
+    } catch { /* Unknown allocation stays counted until its fixed expiry. */ }
+    return false;
+  }
+}
+const pendingBytes = (value: OAuthRequest | OAuthCode) => new TextEncoder().encode(JSON.stringify(value)).byteLength;
+const pendingFull = "Too many unfinished connection requests for this sign-in. Finish or cancel one, or wait up to ten minutes.";
+const pendingUnavailable = "Connection requests are temporarily unavailable. Try again shortly.";
 
 export const resourceUrl = (origin: string) => `${origin}/mcp`;
 export const resourceMetadataUrl = (origin: string) =>
@@ -349,7 +378,15 @@ async function authorize(request: Request, env: Env, url: URL, deps: OAuthDeps) 
     ...(state !== undefined ? { state: state.slice(0, 1000) } : {}),
     expiresAt: Date.now() + REQUEST_LIFETIME,
   };
-  await record(env, `oauth-request:${nonce}`, "PUT", pending);
+  const id = `oauth-request:${nonce}`;
+  try {
+    const result = await pendingAction(env, user.id, { action: "reserve", id, bytes: pendingBytes(pending), expiresAt: pending.expiresAt });
+    if (!result.allowed) return errorPage(deps, "Connection limit reached", pendingFull, 429);
+  } catch {
+    return errorPage(deps, "Connection unavailable", pendingUnavailable, 503);
+  }
+  if (!await allocatePending(env, id, pending))
+    return errorPage(deps, "Connection unavailable", pendingUnavailable, 503);
   const choices = repositories
     .slice(0, 200)
     .map(
@@ -398,36 +435,54 @@ async function consent(request: Request, env: Env, url: URL, deps: OAuthDeps) {
   const pending = /^[a-f0-9]{64}$/.test(nonce)
     ? await load<OAuthRequest>(env, `oauth-request:${nonce}`, "oauth-request", true)
     : undefined;
-  if (!pending || !user || pending.sessionId !== user.id || pending.login !== user.login)
+  if (!pending)
     return errorPage(deps, "Consent expired", "This consent page expired or belongs to another sign-in. Start connecting again from the app.", 403);
-  if (form.get("decision") !== "allow")
-    return back(pending.redirectUri, { error: "access_denied", error_description: "The user cancelled.", state: pending.state }, url.origin);
-  const branches = form.getAll("branch"), repositories = form.getAll("repo");
-  if (repositories.length !== 1 || !repositories[0] || branches.length !== 1 || !validAgentBranch(branches[0]))
-    return errorPage(deps, "Choose a site and branch", "Choose exactly one repository and one valid branch for this connection.");
-  let repo;
+  let transitioned = false;
   try {
-    repo = await new GitHub(user.token, deps.fetcher).authorizeRepository(user.login, form.get("repo") ?? "");
-  } catch (error) {
-    return errorPage(deps, "Repository unavailable", error instanceof HttpError ? error.message : "That repository could not be used.", 403);
+    if (!user || pending.sessionId !== user.id || pending.login !== user.login)
+      return errorPage(deps, "Consent expired", "This consent page expired or belongs to another sign-in. Start connecting again from the app.", 403);
+    if (form.get("decision") !== "allow")
+      return back(pending.redirectUri, { error: "access_denied", error_description: "The user cancelled.", state: pending.state }, url.origin);
+    const branches = form.getAll("branch"), repositories = form.getAll("repo");
+    if (repositories.length !== 1 || !repositories[0] || branches.length !== 1 || !validAgentBranch(branches[0]))
+      return errorPage(deps, "Choose a site and branch", "Choose exactly one repository and one valid branch for this connection.");
+    let repo;
+    try {
+      repo = await new GitHub(user.token, deps.fetcher).authorizeRepository(user.login, form.get("repo") ?? "");
+    } catch (error) {
+      return errorPage(deps, "Repository unavailable", error instanceof HttpError ? error.message : "That repository could not be used.", 403);
+    }
+    const code = randomHex();
+    const grant: OAuthCode = {
+      kind: "oauth-code",
+      sessionId: pending.sessionId,
+      login: pending.login,
+      clientId: pending.clientId,
+      clientName: pending.clientName,
+      redirectUri: pending.redirectUri,
+      codeChallenge: pending.codeChallenge,
+      repoId: repo.id,
+      repo: repo.full_name,
+      branch: branches[0],
+      approval: pending.approval,
+      expiresAt: Date.now() + CODE_LIFETIME,
+    };
+    const id = `oauth-code:${hex(await sha256(code))}`;
+    transitioned = true;
+    try {
+      const result = await pendingAction(env, pending.sessionId, {
+        action: "transition", fromId: `oauth-request:${nonce}`, id, bytes: pendingBytes(grant), expiresAt: grant.expiresAt,
+      });
+      if (!result.allowed) return errorPage(deps, "Connection limit reached", pendingFull, 429);
+    } catch {
+      return errorPage(deps, "Connection unavailable", pendingUnavailable, 503);
+    }
+    if (!await allocatePending(env, id, grant))
+      return errorPage(deps, "Connection unavailable", pendingUnavailable, 503);
+    return back(pending.redirectUri, { code, state: pending.state }, url.origin);
+  } finally {
+    if (!transitioned) await releasePending(env, pending.sessionId, `oauth-request:${nonce}`);
   }
-  const code = randomHex();
-  const grant: OAuthCode = {
-    kind: "oauth-code",
-    sessionId: pending.sessionId,
-    login: pending.login,
-    clientId: pending.clientId,
-    clientName: pending.clientName,
-    redirectUri: pending.redirectUri,
-    codeChallenge: pending.codeChallenge,
-    repoId: repo.id,
-    repo: repo.full_name,
-    branch: branches[0],
-    approval: pending.approval,
-    expiresAt: Date.now() + CODE_LIFETIME,
-  };
-  await record(env, `oauth-code:${hex(await sha256(code))}`, "PUT", grant);
-  return back(pending.redirectUri, { code, state: pending.state }, url.origin);
 }
 
 async function token(request: Request, env: Env) {
@@ -453,7 +508,9 @@ async function token(request: Request, env: Env) {
   const verifier = form.get("code_verifier") ?? "";
   if (!/^[a-f0-9]{64}$/.test(code)) return oauthError("invalid_grant", "The authorization code is invalid.");
   if (!/^[A-Za-z0-9._~-]{43,128}$/.test(verifier)) return oauthError("invalid_grant", "A PKCE code_verifier is required.");
-  const grant = await load<OAuthCode>(env, `oauth-code:${hex(await sha256(code))}`, "oauth-code", true);
+  const id = `oauth-code:${hex(await sha256(code))}`;
+  const grant = await load<OAuthCode>(env, id, "oauth-code", true);
+  if (grant) await releasePending(env, grant.sessionId, id);
   if (!grant || !validAgentBranch(grant.branch) || !grant.approval) return oauthError("invalid_grant", "The authorization code expired or was already used. Connect again.");
   if (form.get("client_id") !== grant.clientId) return oauthError("invalid_grant", "The code was issued to another client.");
   if ((form.get("redirect_uri") ?? grant.redirectUri) !== grant.redirectUri)
