@@ -289,3 +289,21 @@ test("requests to agents stay on the branch they were asked on, and a rebound gr
   assert.equal(main.reply, undefined);
   assert.equal((await operateHub(f.env, sessionId, { type: "request", id: "req-preview", ...scope("preview", 2) })).id, "req-preview");
 });
+
+test("a claimed change outlives answered history, so rebind stays refused until it is answered", async () => {
+  const f = fixture(), { id } = await f.connect();
+  await operateHub(f.env, sessionId, { type: "context", tabId, context: await siteContext() });
+  await operateHub(f.env, sessionId, { type: "queue", command: command(id) });
+  assert.equal((await f.post("/api/agent/claim", { id: "change-1", grantId: id, tabId })).status, 200);
+  for (let at = 0; at < 30; at++) {
+    await operateHub(f.env, sessionId, { type: "queue", command: command(id, { id: `later-${at}`, path: `later-${at}.txt` }) });
+    await operateHub(f.env, sessionId, { type: "ack", id: `later-${at}`, grantId: id, tabId, state: "applied" });
+  }
+  const commands = (await getHub(f.env, sessionId))!.commands!;
+  assert.ok(commands.some((item) => item.id === "change-1" && item.state === "pending"));
+  assert.ok(commands.length <= 30);
+  const body = { id, repo: repo.full_name, repoId: repo.id, branch: "preview" };
+  assert.equal((await f.post("/api/agent/rebind", body)).status, 409);
+  await operateHub(f.env, sessionId, { type: "ack", id: "change-1", grantId: id, tabId, state: "applied" });
+  assert.equal((await f.post("/api/agent/rebind", body)).status, 200);
+});
