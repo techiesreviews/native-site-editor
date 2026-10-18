@@ -14,6 +14,8 @@
   "name": "native-site-editor",
   "main": "worker/index.ts",
   "compatibility_date": "2026-09-17",
+  // request.signal fires when an MCP client closes its response (2026-07-28 cancellation, worker/mcp.ts).
+  "compatibility_flags": ["enable_request_signal"],
   // The editor's address is https://native-site-editor.<your-subdomain>.workers.dev.
   // For your own domain, add it under the Worker's Settings → Domains & Routes
   // in Cloudflare, then add `<domain>/auth/callback` to your GitHub App's
