@@ -12,6 +12,19 @@ async function connect(page: Page) {
   await page.locator(".repository-menu__trigger").click();
   await page.getByRole("button", { name: "Connect with MCP", exact: true }).click();
 }
+async function countPongs(page: Page) {
+  await page.addInitScript(() => {
+    const NativeSocket = window.WebSocket;
+    window.WebSocket = class extends NativeSocket {
+      constructor(url: string | URL, protocols?: string | string[]) {
+        super(url, protocols);
+        this.addEventListener("message", event => {
+          if (event.data === "pong") document.documentElement.dataset.agentPongs = String(Number(document.documentElement.dataset.agentPongs ?? 0) + 1);
+        });
+      }
+    };
+  });
+}
 const visible = (page: Page, state: string) => page.evaluate(state => {
   Object.defineProperty(document, "visibilityState", { configurable: true, get: () => state });
   document.dispatchEvent(new Event("visibilitychange"));
@@ -33,17 +46,7 @@ test("live commands correlate results; visible and hidden idle sends no HTTP; an
       else if (value.type === "result") results.push(value);
     });
   });
-  await page.addInitScript(() => {
-    const NativeSocket = window.WebSocket;
-    window.WebSocket = class extends NativeSocket {
-      constructor(url: string | URL, protocols?: string | string[]) {
-        super(url, protocols);
-        this.addEventListener("message", event => {
-          if (event.data === "pong") document.documentElement.dataset.agentPongs = String(Number(document.documentElement.dataset.agentPongs ?? 0) + 1);
-        });
-      }
-    };
-  });
+  await countPongs(page);
   await open(page, baseURL);
   await page.clock.install();
   page.on("request", request => {
@@ -109,6 +112,7 @@ test("a copied token shows connected after its agent uses it: one hub read on re
     });
   });
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await countPongs(page);
   await open(page, baseURL);
   await page.clock.install();
   page.on("request", request => {
@@ -118,14 +122,19 @@ test("a copied token shows connected after its agent uses it: one hub read on re
   await connect(page);
   await expect(page.locator(".agent-menu")).toHaveAttribute("data-state", "waiting");
   const before = requests.length;
-  await page.clock.runFor(65_000);
+  // Stop at the ping so the mocked relay's pong arrives before its 10 s deadline (as above).
+  await page.clock.runFor(45_000);
+  await expect(page.locator("html")).toHaveAttribute("data-agent-pongs", "1");
+  await page.clock.runFor(20_000);
   expect(requests.slice(before)).toEqual([]);
   grants = [{ ...grants[0], usedAt: Date.now() }];
   await visible(page, "hidden");
   await visible(page, "visible");
   await expect(page.locator(".agent-menu")).toHaveAttribute("data-state", "connected");
   expect(requests.slice(before)).toEqual(["/api/agent/hub"]);
-  await page.clock.runFor(65_000);
+  await page.clock.runFor(30_000);
+  await expect(page.locator("html")).toHaveAttribute("data-agent-pongs", "2");
+  await page.clock.runFor(35_000);
   await visible(page, "hidden");
   await visible(page, "visible");
   expect(requests.slice(before)).toEqual(["/api/agent/hub"]);
