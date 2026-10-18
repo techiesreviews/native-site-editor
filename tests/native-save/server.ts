@@ -1051,7 +1051,7 @@ function env(connect?: RelayConnect, relaySession = "anonymous"): Env {
             const value = (await request.json()) as StoredSession;
             const previous = request.headers.get("X-Agent-Previous");
             const deadline = request.headers.get("X-Agent-Deadline");
-            if (previous && JSON.stringify(slot?.value) !== previous || deadline && Date.now() >= Number(deadline))
+            if (previous && (!slot || createHash("sha256").update(JSON.stringify(slot.value)).digest("hex") !== previous) || deadline && Date.now() >= Number(deadline))
               return new Response(null, { status: 409 });
             await storage.delete(["repositoryCache"]);
             await storage.put({ repositoryCacheGeneration: (await storage.get<number>("repositoryCacheGeneration") ?? 0) + 1 });
@@ -1060,7 +1060,7 @@ function env(connect?: RelayConnect, relaySession = "anonymous"): Env {
           }
           if (request.method === "DELETE") {
             const expected = request.headers.get("X-Agent-Delete");
-            if (expected && slot && JSON.stringify(slot.value) !== expected) return new Response(null, { status: 409 });
+            if (expected && slot && createHash("sha256").update(JSON.stringify(slot.value)).digest("hex") !== expected) return new Response(null, { status: 409 });
             await clearHub(storage);
             await storage.delete([PENDING_KEY]);
             sessions.delete(id);

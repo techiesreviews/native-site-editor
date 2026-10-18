@@ -8,13 +8,14 @@ import { relayObjectName } from "../worker/agent-relay";
 import { workspaceKey } from "../shared/agent-command";
 import { CountedStorage, UsageCounters, startCountedWorker } from "./fakes/counted-agent";
 import { editorTab, origin, repo, signIn } from "./mcp-harness";
+import { forEachAwait } from "./support/await-race";
 
 const workspace = { account: "lex", repoId: repo.id, branch: "main" };
 const key = workspaceKey(workspace);
 const grantId = (n: number) => n.toString(16).padStart(64, "0");
 type Ledger = { workspace: string; entries: MetadataResult["entries"] };
 const reserve = (n: number, bytes = 100, expiresAt = 1000): MetadataAction =>
-  ({ action: "reserve", workspace: key, id: grantId(n), bytes, expiresAt });
+  ({ action: "reserve", workspace: key, id: grantId(n), sessionId: grantId(800), generation: 1, bytes, expiresAt });
 const size = (value: unknown) => Buffer.byteLength(JSON.stringify(value));
 
 // Every operation count comes from the shared usage harness, including pure rules.
@@ -27,14 +28,14 @@ test("ledger refuses the sixth connection without eviction; retries, finalize an
   assert.equal((await accountMetadata(storage, reserve(1, 900), 2)).allowed, true);
   assert.deepEqual(await storage.get(METADATA_KEY), before);
   assert.equal(counters.byCategory.data.keysWritten, 0);
-  await accountMetadata(storage, { action: "finalize", workspace: key, id: grantId(1) }, 2);
+  await accountMetadata(storage, { action: "finalize", workspace: key, id: grantId(1), generation: 1 }, 2);
   counters.reset();
-  await accountMetadata(storage, { action: "finalize", workspace: key, id: grantId(1) }, 2);
-  await accountMetadata(storage, { action: "finalize", workspace: key, id: grantId(99) }, 2);
+  await accountMetadata(storage, { action: "finalize", workspace: key, id: grantId(1), generation: 1 }, 2);
+  await accountMetadata(storage, { action: "finalize", workspace: key, id: grantId(99), generation: 1 }, 2);
   assert.equal(counters.byCategory.data.keysWritten, 0);
-  await accountMetadata(storage, { action: "release", workspace: key, id: grantId(1) }, 2);
+  await accountMetadata(storage, { action: "release", workspace: key, id: grantId(1), generation: 1 }, 2);
   counters.reset();
-  await accountMetadata(storage, { action: "release", workspace: key, id: grantId(1) }, 2);
+  await accountMetadata(storage, { action: "release", workspace: key, id: grantId(1), generation: 1 }, 2);
   assert.equal(counters.byCategory.data.keysWritten, 0);
   assert.equal((await storage.get<Ledger>(METADATA_KEY))!.entries.length, 4);
   assert.equal((await accountMetadata(storage, reserve(6), 2)).allowed, true);
@@ -44,7 +45,7 @@ test("ledger admits exactly 64 KiB including UTF-8 ledger bytes; one byte over i
   const counters = new UsageCounters(), storage = new CountedStorage(counters);
   const workspace = '["é",1,"main"]';
   let bytes = 65000;
-  const ledger = () => ({ workspace, entries: [{ id: grantId(1), state: "pending", bytes, expiresAt: 1000, at: 1 }] });
+  const ledger = () => ({ workspace, entries: [{ id: grantId(1), sessionId: grantId(800), generation: 1, state: "pending", bytes, expiresAt: 1000, at: 1 }] });
   // Find the fixed point because the decimal byte count is itself stored.
   for (let n = 0; n < 3; n++) bytes = 64 * 1024 - size(ledger());
   const caps = { connections: 5, bytes: 64 * 1024 };
@@ -59,15 +60,38 @@ test("lazy expiry stops counting; empty ledgers preserve workspace ownership; st
   const counters = new UsageCounters(), storage = new CountedStorage(counters);
   const caps = { connections: 1, bytes: 4096 };
   const first = await accountMetadata(storage, reserve(1, 100, 2), 1, caps);
-  await accountMetadata(storage, { action: "finalize", workspace: key, id: grantId(1) }, 1, caps);
-  await accountMetadata(storage, { action: "release", workspace: key, id: grantId(1), expected: first.entries[0] }, 1, caps);
+  await accountMetadata(storage, { action: "finalize", workspace: key, id: grantId(1), generation: 1 }, 1, caps);
+  await accountMetadata(storage, { action: "release", workspace: key, id: grantId(1), generation: 1, expected: first.entries[0] }, 1, caps);
   assert.equal((await storage.get<Ledger>(METADATA_KEY))!.entries.length, 1);
   assert.equal((await accountMetadata(storage, reserve(2), 2, caps)).allowed, true);
-  await accountMetadata(storage, { action: "release", workspace: key, id: grantId(2) }, 2, caps);
+  await accountMetadata(storage, { action: "release", workspace: key, id: grantId(2), generation: 1 }, 2, caps);
   const writes = counters.byCategory.data.keysWritten;
   assert.equal((await accountMetadata(storage, { ...reserve(3), workspace: "other" }, 3, caps)).reason, "workspace");
   assert.equal(counters.byCategory.data.keysWritten, writes);
   assert.equal((await storage.get<Ledger>(METADATA_KEY))!.workspace, key);
+});
+
+test("newer reservations count ownership bytes, reject byte overflow, and fence stale completions", async () => {
+  const counters = new UsageCounters(), storage = new CountedStorage(counters);
+  const first = reserve(1);
+  const original = await accountMetadata(storage, first, 1);
+  const caps = { connections: 1, bytes: size(await storage.get(METADATA_KEY)) + 100 };
+  // Generation growth itself takes another ledger byte, even for an existing id.
+  assert.equal((await accountMetadata(storage, { ...first, generation: 10 }, 1, caps)).reason, "bytes");
+  assert.deepEqual((await storage.get<Ledger>(METADATA_KEY))!.entries, original.entries);
+  const newer = await accountMetadata(storage, { ...first, generation: 2 }, 2);
+  assert.equal(newer.entries.length, 1);
+  assert.equal(newer.entries[0].sessionId, grantId(800));
+  assert.equal(newer.entries[0].generation, 2);
+  counters.reset();
+  await accountMetadata(storage, first, 3);
+  await accountMetadata(storage, { action: "finalize", workspace: key, id: grantId(1), generation: 1 }, 3);
+  await accountMetadata(storage, { action: "release", workspace: key, id: grantId(1), generation: 1 }, 3);
+  assert.equal(counters.byCategory.data.keysWritten, 0);
+  assert.deepEqual((await storage.get<Ledger>(METADATA_KEY))!.entries, newer.entries);
+  await accountMetadata(storage, { action: "finalize", workspace: key, id: grantId(1), generation: 2 }, 3);
+  await accountMetadata(storage, { action: "release", workspace: key, id: grantId(1), generation: 2 }, 3);
+  assert.equal((await storage.get<Ledger>(METADATA_KEY))!.entries.length, 0);
 });
 
 async function fixture() {
@@ -173,7 +197,7 @@ for (const crash of ["before PUT", "after PUT", "session ended"] as const)
     try {
       const id = grantId(900);
       const grant: AgentGrant = { kind: "agent", ...h.input, generation: 1, createdAt: Date.now() };
-      await accountMetadata(h.storage(h.name), { ...reserve(900, 1000, grant.expiresAt) }, Date.now());
+      await accountMetadata(h.storage(h.name), { ...reserve(900, 1000, grant.expiresAt), sessionId: h.sessionId }, Date.now());
       if (crash !== "before PUT") await h.namespace.get(`agent:${id}`).fetch(new Request("https://session.internal/", { method: "PUT", body: JSON.stringify(grant) }));
       for (let n = 0; n < 4; n++) await connected(h);
       if (crash === "session ended") {
@@ -265,6 +289,112 @@ test("rebind reserves destination before fencing; capacity refusal changes neith
     await revokeGrant(h.env, source.id, h.sessionId);
     assert.equal((await h.ledger("preview"))!.entries.length, 4);
   } finally { await h.worker.dispose(); }
+});
+
+test("404 reconciliation confirms hub removal before admitting a replacement", async () => {
+  const h = await fixture();
+  try {
+    const first = await connected(h);
+    for (let n = 0; n < 4; n++) await connected(h);
+    const stop = intercept(h, async (_name, request, next) => {
+      if (new URL(request.url).pathname === "/agent-operation" &&
+          (await request.clone().json() as { type: string }).type === "remove-grant")
+        return Response.json({ error: "Hub unavailable" }, { status: 503 });
+      return next();
+    });
+    try {
+      await revokeGrant(h.env, first.id, h.sessionId);
+      assert.equal(await h.storage(`agent:${first.id}`).get("session"), undefined);
+      assert.equal((await connections(h)).length, 5);
+      const response = await h.connect();
+      const retained = (await connections(h)).filter(grant => grant.branch === "main");
+      const entries = (await h.ledger())!.entries;
+      assert.ok(retained.length <= entries.length, "every retained hub entry must remain counted");
+      assert.equal(response.status, 409);
+      assert.equal(entries.length, 5);
+      assert.equal(entries.find(entry => entry.id === first.id)!.sessionId, h.sessionId);
+    } finally { stop(); }
+    await connected(h);
+    assert.equal((await connections(h)).some(grant => grant.id === first.id), false);
+    assert.equal((await connections(h)).length, 5);
+    assert.equal((await h.ledger())!.entries.length, 5);
+  } finally { await h.worker.dispose(); }
+});
+
+test("Unicode branch and client survive rebind in both directions with record and hub agreement", async () => {
+  const h = await fixture();
+  try {
+    const { id } = await createGrant(h.env, { ...h.input, client: "日本語のクライアント" });
+    for (const branch of ["日本語", "main"]) {
+      const response = await h.tab.post("/api/agent/rebind", { id, repoId: repo.id, repo: repo.full_name, branch });
+      assert.equal(response.status, 200, await response.text());
+      const record = await getGrant(h.env, id);
+      const listed = (await connections(h)).find(grant => grant.id === id)!;
+      assert.equal(record.branch, branch);
+      assert.equal(record.client, "日本語のクライアント");
+      assert.equal(listed.branch, record.branch);
+      assert.equal(listed.client, record.client);
+      assert.equal(listed.generation, record.generation);
+      assert.equal((await h.ledger(branch))!.entries.length, 1);
+    }
+    // Force orphan cleanup through X-Agent-Delete for the Unicode record too.
+    for (let n = 0; n < 4; n++) await connected(h);
+    const hub = (await getHub(h.env, h.sessionId))!;
+    hub.grants = hub.grants.filter(grant => grant.id !== id);
+    await h.storage(`agent-hub:${h.sessionId}`).put("session", hub);
+    await connected(h);
+    assert.equal(await h.storage(`agent:${id}`).get("session"), undefined);
+    assert.equal((await h.ledger())!.entries.length, 5);
+  } finally { await h.worker.dispose(); }
+});
+
+test("overlapping A→B→A rebinds preserve A's newer reservation and refuse a sixth connection", async () => {
+  const runs: { h?: Fixture; id?: string; restore?: () => void }[] = [];
+  try {
+    const points = await forEachAwait(
+      race => {
+        const state: { h?: Fixture; id?: string; restore?: () => void } = {};
+        runs.push(state);
+        const done = (async () => {
+          const h = state.h = await fixture();
+          state.id = (await connected(h)).id;
+          for (let n = 0; n < 4; n++) await connected(h);
+          const finalize = race.port("A→B finalize", async (next: () => Promise<Response>) => next());
+          const destination = await relayObjectName({ ...workspace, branch: "preview" });
+          state.restore = intercept(h, async (name, request, next) => {
+            if (name === destination && new URL(request.url).pathname === METADATA_ROUTE &&
+                (await request.clone().json() as MetadataAction).action === "finalize")
+              return finalize(next);
+            return next();
+          });
+          const response = await h.tab.post("/api/agent/rebind", { id: state.id, repoId: repo.id, repo: repo.full_name, branch: "preview" });
+          assert.equal(response.status, 200, await response.text());
+        })();
+        return { state, done };
+      },
+      async ({ state }) => {
+        const response = await state.h!.tab.post("/api/agent/rebind", {
+          id: state.id, repoId: repo.id, repo: repo.full_name, branch: "main",
+        });
+        assert.equal(response.status, 200, await response.text());
+      },
+      async ({ state }) => {
+        const h = state.h!;
+        const record = await getGrant(h.env, state.id!);
+        assert.equal(record.branch, "main");
+        assert.equal(record.generation, 3);
+        assert.equal((await connections(h)).find(grant => grant.id === state.id)!.generation, 3);
+        assert.ok((await h.ledger())!.entries.some(entry => entry.id === state.id), "A keeps its reservation");
+        assert.equal((await h.ledger())!.entries.find(entry => entry.id === state.id)!.generation, 3);
+        assert.equal((await h.ledger())!.entries.length, 5);
+        assert.equal((await h.connect()).status, 409);
+        assert.equal((await h.ledger("preview"))!.entries.length, 0);
+      },
+    );
+    assert.equal(points, 1);
+  } finally {
+    for (const state of runs) { state.restore?.(); await state.h?.worker.dispose(); }
+  }
 });
 
 test("used tool traffic measures 0 ledger calls, 0 accounting keys written, 3 authentication calls and 1 dispatch", async () => {
@@ -391,7 +521,7 @@ for (const failure of ["session read", "hub read", "record delete"] as const)
     const h = await fixture();
     try {
       const id = grantId(900);
-      await accountMetadata(h.storage(h.name), reserve(900, 1000, h.input.expiresAt), Date.now() - 61000);
+      await accountMetadata(h.storage(h.name), { ...reserve(900, 1000, h.input.expiresAt), sessionId: h.sessionId }, Date.now() - 61000);
       await h.storage(`agent:${id}`).put("session", { kind: "agent", ...h.input, generation: 1 });
       for (let n = 0; n < 4; n++) await connected(h);
       const stop = intercept(h, async (name, request, next) => {

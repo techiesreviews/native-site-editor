@@ -189,7 +189,7 @@ async function reserveGrant(env: Env, id: string, grant: AgentGrant, listed: Hub
   const grown = { ...listed, repo, generation: Number.MAX_SAFE_INTEGER, usedAt: Number.MAX_SAFE_INTEGER,
     client: "\ud800".repeat(100) };
   const bytes = size({ ...grant, repo, generation: Number.MAX_SAFE_INTEGER }) + Math.max(size(listed), size(grown));
-  const action = { action: "reserve" as const, id, bytes, expiresAt: grant.expiresAt };
+  const action = { action: "reserve" as const, id, sessionId: grant.sessionId, generation: grant.generation, bytes, expiresAt: grant.expiresAt };
   let result = await metadata(env, grant, action);
   if (result.reason === "connections" || result.reason === "bytes") {
     await reconcileGrants(env, grant, result.entries);
@@ -203,17 +203,17 @@ async function reserveGrant(env: Env, id: string, grant: AgentGrant, listed: Hub
     throw new HttpError(503, "Agent connection capacity could not be checked. Try again.");
   }
   const entry = result.entries.find(entry => entry.id === id);
-  if (!entry) throw new HttpError(503, "Agent connection capacity could not be checked. Try again.");
+  if (!entry || entry.generation !== grant.generation) throw new HttpError(503, "Agent connection capacity could not be checked. Try again.");
   return entry.state === "pending" ? entry.at + 60_000 : Date.now() + 60_000;
 }
 
 async function finishGrant(env: Env, id: string, grant: AgentGrant) {
   // Pending and final both count. An unavailable finalize cannot free capacity.
-  const result = await metadata(env, grant, { action: "finalize", id }).catch(() => undefined);
-  return result ? result.entries.some(entry => entry.id === id) : undefined;
+  const result = await metadata(env, grant, { action: "finalize", id, generation: grant.generation }).catch(() => undefined);
+  return result ? result.entries.some(entry => entry.id === id && entry.generation === grant.generation) : undefined;
 }
-async function releaseGrant(env: Env, id: string, grant: Pick<AgentGrant, "login" | "repoId" | "branch">) {
-  await metadata(env, grant, { action: "release", id });
+async function releaseGrant(env: Env, id: string, grant: Pick<AgentGrant, "login" | "repoId" | "branch" | "generation">) {
+  await metadata(env, grant, { action: "release", id, generation: grant.generation });
 }
 async function removeHubGrant(env: Env, sessionId: string, id: string) {
   try { await operateHub(env, sessionId, { type: "remove-grant", id }); return true; }
@@ -242,14 +242,16 @@ async function reconcileGrants(env: Env, workspace: AgentGrant, entries: Metadat
     try {
       const response = await agentRecord(env, entry.id);
       if (response.status === 404) {
-        await metadata(env, workspace, { action: "release", id: entry.id, expected: entry });
+        // Record absence alone does not account for retained hub metadata.
+        if (await removeHubGrant(env, entry.sessionId, entry.id))
+          await metadata(env, workspace, { action: "release", id: entry.id, generation: entry.generation, expected: entry });
         continue;
       }
       if (!response.ok) continue;
       const grant = await response.json() as AgentGrant;
       if (grant.kind !== "agent") continue;
       if (workspaceKey(grantWorkspace(grant)) !== workspaceKey(grantWorkspace(workspace))) {
-        await metadata(env, workspace, { action: "release", id: entry.id, expected: entry });
+        await metadata(env, workspace, { action: "release", id: entry.id, generation: entry.generation, expected: entry });
         continue;
       }
       const sessionResponse = await durable(env, grant.sessionId).fetch(new Request("https://session.internal/"));
@@ -267,11 +269,11 @@ async function reconcileGrants(env: Env, workspace: AgentGrant, entries: Metadat
       // Conditional deletion protects a concurrently rebound record. A changed
       // record stays counted until the next capacity reconciliation.
       const deleted = await durable(env, `agent:${entry.id}`).fetch(new Request("https://session.internal/", {
-        method: "DELETE", headers: { "X-Agent-Delete": JSON.stringify(grant) },
+        method: "DELETE", headers: { "X-Agent-Delete": await tokenId(JSON.stringify(grant)) },
       }));
       if (!deleted.ok && deleted.status !== 404) continue;
       if (await removeHubGrant(env, grant.sessionId, entry.id))
-        await metadata(env, workspace, { action: "release", id: entry.id, expected: entry });
+        await metadata(env, workspace, { action: "release", id: entry.id, generation: entry.generation, expected: entry });
     } catch { /* Unknown is never zero. */ }
   }
 }
@@ -288,11 +290,16 @@ export async function rebindGrant(env: Env, id: string, previous: AgentGrant, ta
   const next = { ...listed, ...target, generation: grant.generation };
   delete next.approval;
   const deadline = await reserveGrant(env, id, grant, next);
+  // Hash, serialize and construct the request before advancing the hub. Raw
+  // Unicode JSON is not a valid header value; local preparation must not throw
+  // after fencing and leave the record on the old generation.
+  const record = durable(env, `agent:${id}`);
+  const write = new Request("https://session.internal/", {
+    method: "PUT", headers: { "X-Agent-Previous": await tokenId(JSON.stringify(previous)), "X-Agent-Deadline": String(deadline) }, body: JSON.stringify(grant),
+  });
   await operateHub(env, previous.sessionId, { type: "rebind-grant", id, ...target,
     generation: grant.generation, previous: previous.generation });
-  const saved = await durable(env, `agent:${id}`).fetch(new Request("https://session.internal/", {
-    method: "PUT", headers: { "X-Agent-Previous": JSON.stringify(previous), "X-Agent-Deadline": String(deadline) }, body: JSON.stringify(grant),
-  }));
+  const saved = await record.fetch(write);
   if (!saved.ok) throw new HttpError(503, "The connection could not be rebound. Connect the agent again.");
   await finishGrant(env, id, grant);
   if (workspaceKey(grantWorkspace(previous)) !== workspaceKey(grantWorkspace(grant)))
@@ -330,7 +337,7 @@ export async function revokeGrant(env: Env, id: string, sessionId: string) {
   if (grant && grant.sessionId !== sessionId) throw new HttpError(403, "This connection belongs to another editor session.");
   const hub = await getHub(env, sessionId);
   const listed = hub?.grants.find(item => item.id === id);
-  const workspace = grant ?? (listed && hub ? { login: hub.login, repoId: listed.repoId, branch: listed.branch } : undefined);
+  const workspace = grant ?? (listed && hub ? { login: hub.login, repoId: listed.repoId, branch: listed.branch, generation: listed.generation } : undefined);
   const deleted = await agentRecord(env, id, "DELETE");
   const absent = deleted.ok || deleted.status === 404;
   const removed = await removeHubGrant(env, sessionId, id);
@@ -353,7 +360,7 @@ export async function endSessionGrants(env: Env, sessionId: string, endSession: 
   }
   await endSession();
   for (const grant of deleted)
-    await releaseGrant(env, grant.id, { login: hub!.login, repoId: grant.repoId, branch: grant.branch }).catch(() => undefined);
+    await releaseGrant(env, grant.id, { login: hub!.login, repoId: grant.repoId, branch: grant.branch, generation: grant.generation }).catch(() => undefined);
 }
 
 /** The session's grant metadata, with all legacy content reads disabled. */
