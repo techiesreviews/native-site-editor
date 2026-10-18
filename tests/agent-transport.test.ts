@@ -589,3 +589,22 @@ test("takeover reload shows the durable drafts in the open file unless the user 
   assert.equal(await run(new Map(), [["k:index.html", { content: "old text" }]]), 0, "already shown");
   assert.equal(await run(new Map(), [["k:index.html", { content: "owner's edit" }]], true), 0, "typing during the read wins");
 });
+
+test("a first-failure probe whose headers or body never arrive counts as a network failure after 10 s", async t => {
+  for (const stall of ["headers", "body"] as const) {
+    let aborted = 0;
+    t.mock.method(globalThis, "fetch", (_url: string, init: RequestInit) => {
+      init.signal!.addEventListener("abort", () => { aborted++; });
+      return stall === "headers" ? new Promise(() => {}) : Promise.resolve({ status: 400, headers: new Headers(), text: () => new Promise(() => {}) });
+    });
+    const f = fixture();
+    const a = f.tab("a", { socket: () => new FakeSocket(true), probe: undefined });
+    const starting = a.transport.start();
+    await f.tick(10_000);
+    await starting;
+    assert.equal(a.transport.state().mode, "reconnecting", stall);
+    assert.equal(aborted, 1, "the stalled probe is aborted");
+    a.transport.stop();
+    t.mock.restoreAll();
+  }
+});
