@@ -615,7 +615,7 @@ test("agent collection actions call Media's rules, each undoable with no page op
     f.batches.push(batch);
   };
   const run = async (args: import("../shared/agent").AgentCommandArgs) => applyAgentMedia(await agentStorage.context(f.context), {
-    id: `collection-${++sequence}`, grantId: "collection-grant", operation: "change_collection", path: "", branch: "main", commit: "abc", content: "", state: "pending", createdAt: 0, args,
+    id: `collection-${++sequence}`, grantId: "collection-grant", operation: "change_collection", path: "", branch: "main", commit: "abc", content: "", state: "pending", createdAt: Date.now(), args,
   }, () => { throw new Error("Collections must not open a page"); });
   const records = () => parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH));
   await run({ action: "new", name: "Trip", files: ["images/a.png"] });

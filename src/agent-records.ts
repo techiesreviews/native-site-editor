@@ -2,7 +2,12 @@ import { payloadIdentity, workspaceKey, type AgentOutcome, type AgentReceipt, ty
 import { draftDatabaseName, draftKey, draftStores, openDraftDatabase, type SavedDraft } from "./drafts.ts";
 import { OPEN_REQUESTS_LIMIT, type AgentRequestState } from "../shared/agent.ts";
 
-interface WorkspaceRecord { revision: number; generation: number; paused?: boolean }
+/**
+ * `horizon`: the latest issue time (AgentReceipt.issuedAt) of an operation whose receipt or
+ * retired marker this workspace dropped. A delivery without a live receipt issued at or before
+ * it stays unknown and never applies as a fresh edit.
+ */
+interface WorkspaceRecord { revision: number; generation: number; paused?: boolean; horizon?: number }
 interface WorkspaceSnapshot extends WorkspaceRecord { drafts: [string, SavedDraft][] }
 /**
  * An Ask agent request as this browser keeps it for one workspace. `unfinished` ones wait for an
@@ -51,6 +56,118 @@ export interface AgentRecords {
   conversations: (workspace: AgentWorkspace) => Promise<Conversation[]>;
 }
 
+/**
+ * Small fences kept beside a workspace's receipts (in the `workspaces` store): a retired marker for
+ * a receipt evicted before its 24 hours ended (so an agent reusing that operation id meanwhile
+ * stays unknown), a cancellation tombstone and an authorization revocation. Each is kept 24 hours.
+ */
+type Fence = { retired: true; workspace: string; operationId: OperationId; issuedAt: number; createdAt: number } |
+  { cancelled: true; workspace: string; at: number } | { revoked: true; workspace: string; at: number };
+
+/** Per account/repository/branch workspace: receipts are kept 24 hours, at most 1,000 of them. */
+export const RECEIPT_RETENTION_MS = 24 * 60 * 60 * 1000;
+export const RECEIPT_LIMIT = 1000;
+/** Receipts and fences of one workspace, serialized ([key, value] JSON). */
+export const RECEIPT_BUDGET_BYTES = 1024 * 1024;
+/**
+ * A command issued longer ago than this is refused as unknown: the fences that would have
+ * refused its late delivery may have aged out (24 hours less one for clock differences).
+ */
+export const COMMAND_MAX_AGE_MS = 23 * 60 * 60 * 1000;
+const recordBytes = (key: string, value: unknown) => new TextEncoder().encode(JSON.stringify([key, value])).byteLength;
+const retiredKey = (workspace: string, operationId: OperationId) => JSON.stringify(["retired", workspace, operationId]);
+const fenceTime = (fence: Fence) => "retired" in fence ? fence.createdAt : fence.at;
+
+/**
+ * What one workspace drops to keep its receipts within 24 hours, RECEIPT_LIMIT and
+ * RECEIPT_BUDGET_BYTES, with `incoming` (a receipt about to be written, never dropped) counted.
+ * Aged-out receipts and fences go first; then the oldest receipts, each leaving a retired marker;
+ * then, while bytes still exceed, the oldest markers. Cancellations and revocations only age out
+ * (a fence is never refused or dropped early); if they and `incoming` cannot fit, `incoming` is
+ * refused before anything is written. `horizon` is the latest issue time of any receipt or marker
+ * dropped: the workspace keeps refusing deliveries issued at or before it.
+ */
+export function receiptRetention(receipts: [string, AgentReceipt][], fences: [string, Fence][], time: number, incoming?: [string, AgentReceipt]) {
+  const cutoff = time - RECEIPT_RETENTION_MS;
+  const remove: string[] = [];
+  let horizon = 0, size = incoming ? recordBytes(...incoming) : 0;
+  const raise = (issuedAt: unknown) => { if (typeof issuedAt === "number" && Number.isFinite(issuedAt)) horizon = Math.max(horizon, issuedAt); };
+  if (size > RECEIPT_BUDGET_BYTES) throw new AgentRecordsError("capacity", "Required edit receipt exceeds the workspace budget.");
+  const markers: [string, Extract<Fence, { retired: true }>][] = [];
+  for (const [key, fence] of fences) {
+    // Old records without a time (before these caps) count as aged out.
+    if (!(fenceTime(fence) > cutoff)) { remove.push(key); if ("retired" in fence) raise(fence.issuedAt); continue; }
+    size += recordBytes(key, fence);
+    if ("retired" in fence) markers.push([key, fence]);
+  }
+  const live = receipts.filter(([key, receipt]) => {
+    if (receipt.createdAt > cutoff) { size += recordBytes(key, receipt); return true; }
+    remove.push(key); raise(receipt.issuedAt); return false;
+  }).sort((a, b) => a[1].createdAt - b[1].createdAt || a[0].localeCompare(b[0]));
+  let count = live.length + (incoming ? 1 : 0);
+  const retire: [string, Fence][] = [];
+  for (const [key, receipt] of live) {
+    if (count <= RECEIPT_LIMIT && size <= RECEIPT_BUDGET_BYTES) break;
+    remove.push(key); raise(receipt.issuedAt); count--; size -= recordBytes(key, receipt);
+    const marker: [string, Extract<Fence, { retired: true }>] = [retiredKey(receipt.workspace, receipt.operationId),
+      { retired: true, workspace: receipt.workspace, operationId: receipt.operationId, issuedAt: receipt.issuedAt, createdAt: receipt.createdAt }];
+    retire.push(marker); markers.push(marker); size += recordBytes(...marker);
+  }
+  if (size > RECEIPT_BUDGET_BYTES) {
+    markers.sort((a, b) => a[1].createdAt - b[1].createdAt || a[0].localeCompare(b[0]));
+    for (const marker of markers) {
+      if (size <= RECEIPT_BUDGET_BYTES) break;
+      const made = retire.indexOf(marker);
+      if (made >= 0) retire.splice(made, 1); else remove.push(marker[0]);
+      raise(marker[1].issuedAt); size -= recordBytes(...marker);
+    }
+  }
+  if (incoming && size > RECEIPT_BUDGET_BYTES)
+    throw new AgentRecordsError("capacity", "This site's agent edit records are full in this browser; agent edits wait until older ones age out.");
+  return { remove, retire, horizon };
+}
+
+/** Why agent edits stopped in this browser, until the user chooses Try again (`resume`). */
+export interface AgentStorageProblem { reason: "full" | "unavailable"; message: string }
+const FULL_MESSAGE = "Agent storage transaction aborted: this browser's storage is full, so agent edits are stopped until the user frees space and chooses Try again in the project menu.";
+interface StorageStatus { problem?: AgentStorageProblem; stopped: boolean; listeners: Set<() => void> }
+const statuses = new WeakMap<object, StorageStatus>();
+const NO_STORAGE = {};
+const browserFactory = (): IDBFactory | undefined => { try { return globalThis.indexedDB ?? undefined; } catch { return undefined; } };
+function statusOf(factory: IDBFactory | undefined) {
+  const key = factory ?? NO_STORAGE;
+  let status = statuses.get(key);
+  if (!status) statuses.set(key, status = { stopped: false, listeners: new Set() });
+  return status;
+}
+function report(status: StorageStatus, problem: AgentStorageProblem, stop: boolean) {
+  status.problem = problem;
+  status.stopped ||= stop;
+  for (const listener of [...status.listeners]) listener();
+}
+/**
+ * This browser's agent storage: the problem that stopped or refused agent edits, if any. A full
+ * storage stops every agent edit (each is refused before mutation) until `resume`, the user's Try again.
+ */
+export function agentStorageStatus(factory: IDBFactory | undefined = browserFactory()) {
+  const status = statusOf(factory);
+  return {
+    get problem() { return status.problem; },
+    subscribe(listener: () => void) { status.listeners.add(listener); return () => { status.listeners.delete(listener); }; },
+    resume() {
+      if (!status.problem) return;
+      status.problem = undefined;
+      status.stopped = false;
+      for (const listener of [...status.listeners]) listener();
+    },
+  };
+}
+const quotaError = (error: unknown): boolean => {
+  for (let at = error, depth = 0; at && depth < 5; at = (at as { cause?: unknown }).cause, depth++)
+    if ((at as { name?: unknown }).name === "QuotaExceededError") return true;
+  return false;
+};
+
 export class AgentRecordsError extends Error {
   constructor(public readonly code: "unavailable" | "aborted" | "conflict" | "duplicate-id" | "revoked" | "cancelled" | "not-owner" | "capacity", message: string, cause?: unknown) {
     super(message, { cause });
@@ -98,41 +215,46 @@ export function conversationRetention(stored: Conversation[], incoming: Conversa
   return [...removed];
 }
 
-export function unavailableAgentRecords(): AgentRecords {
-  const refuse = () => Promise.reject(new AgentRecordsError("unavailable", "Agent storage is unavailable in this browser."));
-  return { reconcile: refuse, pause: refuse, snapshot: refuse, revoke: refuse, cancel: refuse, evictReceipts: refuse, commit: refuse, receipt: refuse, workspace: refuse, setGeneration: refuse, putConversation: refuse, checkConversation: refuse, conversations: refuse };
+export function unavailableAgentRecords(factory?: IDBFactory): AgentRecords {
+  const message = "Agent storage is unavailable in this browser.";
+  const refuse = () => Promise.reject(new AgentRecordsError("unavailable", message));
+  const status = statusOf(factory);
+  return { reconcile: refuse, pause: refuse, snapshot: refuse, revoke: refuse, cancel: refuse, evictReceipts: refuse,
+    commit: () => { report(status, { reason: "unavailable", message }, false); return refuse(); },
+    receipt: refuse, workspace: refuse, setGeneration: refuse, putConversation: refuse, checkConversation: refuse, conversations: refuse };
 }
 
-/** Agent writes never enter the manual editor's fallback or per-file retry path. */
-export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFactory | undefined = globalThis.indexedDB, now = Date.now): AgentRecords {
+const isFence = (value: unknown): value is Fence => typeof value === "object" && value !== null &&
+  typeof (value as { workspace?: unknown }).workspace === "string" &&
+  ((value as { retired?: unknown }).retired === true || (value as { cancelled?: unknown }).cancelled === true || (value as { revoked?: unknown }).revoked === true);
+const receiptKeyOf = (receipt: AgentReceipt) => JSON.stringify([receipt.workspace, receipt.operationId]);
+const group = <T>(rows: [string, T][], by: (value: T) => string) => {
+  const groups = new Map<string, [string, T][]>();
+  for (const row of rows) groups.set(by(row[1]), [...groups.get(by(row[1])) ?? [], row]);
+  return groups;
+};
+
+/**
+ * Agent writes never enter the manual editor's fallback or per-file retry path. A commit the
+ * browser refuses for lack of space (QuotaExceededError) is settled from its receipt first, then,
+ * once expired or older completed receipts and markers, completed conversations and
+ * `evictCaches` freed something, tried once more; failing again, it stops agent edits
+ * (agentStorageStatus) and unsaved drafts stay as they are.
+ */
+export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFactory | undefined = browserFactory(), now = Date.now,
+  options: { evictCaches?: () => Promise<number> } = {}): AgentRecords {
   if (!factory) return unavailableAgentRecords();
+  const status = statusOf(factory);
   const connection = openDraftDatabase(name, factory);
   const recordKey = (workspace: AgentWorkspace, id: string) => JSON.stringify([workspaceKey(workspace), id]);
   const initial = (): WorkspaceRecord => ({ revision: 0, generation: 0 });
   const revocationKey = (workspace: AgentWorkspace, authorizationId: string) => JSON.stringify(["revoked", workspaceKey(workspace), authorizationId]);
   const cancellationKey = (workspace: AgentWorkspace, operationId: OperationId, authorizationId: string) => JSON.stringify(["cancelled", workspaceKey(workspace), authorizationId, operationId]);
-  // A receipt removed (expired or evicted) leaves this small marker for its operation id, kept like
-  // cancellation tombstones: a late redelivery then stays unknown instead of applying afresh.
-  const retiredKey = (operationId: OperationId) => JSON.stringify(["retired", operationId]);
-  const retire = (workspaces: IDBObjectStore, operationId: OperationId) => workspaces.put({ retired: true }, retiredKey(operationId));
-  const expired = (receipt: AgentReceipt, time = now()) => receipt.createdAt <= time - 24 * 60 * 60 * 1000;
+  // Markers written before the caps (one per operation id, any workspace) are no longer made, and still refuse.
+  const legacyRetiredKey = (operationId: OperationId) => JSON.stringify(["retired", operationId]);
+  const expired = (receipt: AgentReceipt, time = now()) => receipt.createdAt <= time - RECEIPT_RETENTION_MS;
   const same = (value: SavedDraft | null | undefined) => value ? payloadIdentity(JSON.parse(JSON.stringify(value)) as JsonValue) : null;
   const belongs = (key: string, workspace: AgentWorkspace) => key.startsWith(draftKey({ ...workspace, repo: "" }, "").slice(0, -3));
-  const bytes = (key: string, receipt: AgentReceipt) => new TextEncoder().encode(JSON.stringify([key, receipt])).byteLength;
-  // All receipts are completed: pending work is never stored in this store.
-  const retention = (rows: [string, AgentReceipt][], time: number, incoming?: [string, AgentReceipt]) => {
-    const limit = 1024 * 1024;
-    if (incoming && bytes(...incoming) > limit) throw new AgentRecordsError("capacity", "Required edit receipt exceeds the workspace budget.");
-    rows.sort((a, b) => a[1].createdAt - b[1].createdAt || a[0].localeCompare(b[0]));
-    let size = rows.reduce((sum, row) => sum + bytes(...row), 0) + (incoming ? bytes(...incoming) : 0);
-    let count = rows.length + (incoming ? 1 : 0);
-    const removed: string[] = [];
-    for (const [key, receipt] of rows) {
-      if (!expired(receipt, time) && count <= 1000 && size <= limit) break;
-      removed.push(key); count--; size -= bytes(key, receipt);
-    }
-    return removed;
-  };
   type Read = <T>(request: IDBRequest<T>, use: (value: T) => void) => void;
   const run = async <T>(stores: string[], mode: IDBTransactionMode, work: (tx: IDBTransaction, read: Read, done: (result: T) => void) => void): Promise<T> => {
     let db: IDBDatabase;
@@ -158,15 +280,34 @@ export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFact
     });
   };
   const conflict = () => { throw new AgentRecordsError("conflict", "Agent workspace or draft changed."); };
-  return {
-    async commit(command) {
-      // Snapshot all proofs and writes before opening; callers may change during that await.
-      const { workspace, generation, expectedRevision, expectedDrafts, drafts, receipt } = structuredClone(command);
-      const key = workspaceKey(workspace), receiptKey = recordKey(workspace, receipt.operationId);
-      return run<CommitResult>([draftStores.drafts, draftStores.receipts, draftStores.workspaces], "readwrite", (tx, read, done) => {
-        const receipts = tx.objectStore(draftStores.receipts), workspaces = tx.objectStore(draftStores.workspaces), files = tx.objectStore(draftStores.drafts);
-        read(workspaces.get(revocationKey(workspace, receipt.authorizationId)), (revoked: unknown) => {
-          if (revoked) throw new AgentRecordsError("revoked", "Agent authorization has been revoked.");
+  /** Every fence and workspace record of the workspaces store, in one read. */
+  const readFences = (store: IDBObjectStore, read: Read, use: (fences: [string, Fence][], records: Map<string, WorkspaceRecord>) => void) =>
+    read(store.getAllKeys(), (keys) => read(store.getAll(), (values: unknown[]) => {
+      const fences: [string, Fence][] = [], records = new Map<string, WorkspaceRecord>();
+      keys.forEach((key, index) => {
+        const value = values[index];
+        if (isFence(value)) fences.push([String(key), value]);
+        else if (typeof (value as WorkspaceRecord | undefined)?.revision === "number") records.set(String(key), value as WorkspaceRecord);
+      });
+      use(fences, records);
+    }));
+  /** Writes what receiptRetention decided; resolves to the workspace's horizon after it. */
+  const retain = (receipts: IDBObjectStore, workspaces: IDBObjectStore, decided: ReturnType<typeof receiptRetention>, receiptKeys: Set<string>, horizon = 0) => {
+    for (const key of decided.remove) (receiptKeys.has(key) ? receipts : workspaces).delete(key);
+    for (const [key, fence] of decided.retire) workspaces.put(fence, key);
+    return Math.max(horizon, decided.horizon);
+  };
+  const withHorizon = (record: WorkspaceRecord, horizon: number): WorkspaceRecord => horizon > 0 ? { ...record, horizon } : record;
+  async function attempt(command: AgentCommit) {
+    const { workspace, generation, expectedRevision, expectedDrafts, drafts, receipt } = structuredClone(command);
+    const key = workspaceKey(workspace), receiptKey = recordKey(workspace, receipt.operationId);
+    return run<CommitResult>([draftStores.drafts, draftStores.receipts, draftStores.workspaces], "readwrite", (tx, read, done) => {
+      const receipts = tx.objectStore(draftStores.receipts), workspaces = tx.objectStore(draftStores.workspaces), files = tx.objectStore(draftStores.drafts);
+      read(workspaces.get(revocationKey(workspace, receipt.authorizationId)), (revoked: unknown) => {
+        if (revoked) throw new AgentRecordsError("revoked", "Agent authorization has been revoked.");
+        // A tombstone exists only where no live receipt did when cancel won.
+        read(workspaces.get(cancellationKey(workspace, receipt.operationId, receipt.authorizationId)), (cancelled: unknown) => {
+          if (cancelled) throw new AgentRecordsError("cancelled", "Agent operation has been cancelled.");
           read(receipts.getAll(), (all: AgentReceipt[]) => {
             // A live operation id cannot be rebound to another workspace or authorization.
             const recorded = all.find((value) => value.operationId === receipt.operationId);
@@ -179,34 +320,32 @@ export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFact
               done({ receipt: recorded, duplicate: true });
               return;
             }
-            read(workspaces.get(cancellationKey(workspace, receipt.operationId, receipt.authorizationId)), (cancelled: unknown) => {
-              if (cancelled) throw new AgentRecordsError("cancelled", "Agent operation has been cancelled.");
-              read(workspaces.get(retiredKey(receipt.operationId)), (retired: unknown) => {
+            read(workspaces.get(retiredKey(key, receipt.operationId)), (retired: unknown) => {
+              read(workspaces.get(legacyRetiredKey(receipt.operationId)), (legacy: unknown) => {
                 // Like an expired receipt: unknown, never applied afresh whatever proofs come with it.
-                if (retired) conflict();
+                if (retired || legacy) conflict();
                 read(workspaces.get(key), (stored: WorkspaceRecord | undefined) => {
-                  const current = stored ?? initial();
+                  const current = stored ?? initial(), time = now();
                   if (!receipt.authorizationId || !Number.isSafeInteger(generation) || !Number.isSafeInteger(expectedRevision) ||
                     current.paused || current.generation !== generation || current.revision !== expectedRevision) conflict();
+                  // Issued at or before a dropped receipt, or so long ago its fences may be gone: unknown.
+                  if (!Number.isFinite(receipt.issuedAt) || receipt.issuedAt <= (current.horizon ?? 0) || receipt.issuedAt <= time - COMMAND_MAX_AGE_MS) conflict();
                   const expected = new Map(expectedDrafts);
                   if (expected.size !== expectedDrafts.length || new Set(drafts.map(([key]) => key)).size !== drafts.length) conflict();
                   for (const [draft, value] of drafts) {
                     if (!belongs(draft, workspace) || !expected.has(draft) || (value &&
                       (workspaceKey(value) !== key || draftKey(value, value.path) !== draft))) conflict();
                   }
-                  const apply = () => {
-                    const committed: AgentReceipt = { ...receipt, workspace: key, generation, revision: current.revision + 1, createdAt: now() };
-                    const rows: [string, AgentReceipt][] = all.filter((value) => value.workspace === key).map((value) => [recordKey(workspace, value.operationId), value]);
-                    const byKey = new Map(rows);
-                    for (const expired of retention(rows, committed.createdAt, [receiptKey, committed])) {
-                      receipts.delete(expired);
-                      retire(workspaces, byKey.get(expired)!.operationId);
-                    }
+                  const apply = () => readFences(workspaces, read, (fences) => {
+                    const committed: AgentReceipt = { ...receipt, workspace: key, generation, revision: current.revision + 1, createdAt: time };
+                    const rows: [string, AgentReceipt][] = all.filter((value) => value.workspace === key).map((value) => [receiptKeyOf(value), value]);
+                    const decided = receiptRetention(rows, fences.filter(([, fence]) => fence.workspace === key), time, [receiptKey, committed]);
+                    const horizon = retain(receipts, workspaces, decided, new Set(rows.map(([key]) => key)), current.horizon);
                     for (const [draft, value] of drafts) value ? files.put(value, draft) : files.delete(draft);
                     receipts.put(committed, receiptKey);
-                    workspaces.put({ ...current, revision: committed.revision }, key);
+                    workspaces.put(withHorizon({ ...current, revision: committed.revision }, horizon), key);
                     done({ receipt: committed, duplicate: false });
-                  };
+                  });
                   let remaining = expectedDrafts.length;
                   if (!remaining) apply();
                   for (const [draft, wanted] of expectedDrafts) {
@@ -222,10 +361,88 @@ export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFact
           });
         });
       });
+    });
+  }
+  /** After a failed commit: its receipt, when the transaction landed after all (revocation rechecked first). */
+  const settle = (command: AgentCommit) => run<CommitResult | undefined>([draftStores.receipts, draftStores.workspaces], "readonly", (tx, read, done) => {
+    const { workspace, receipt: wanted } = command;
+    read(tx.objectStore(draftStores.workspaces).get(revocationKey(workspace, wanted.authorizationId)), (revoked: unknown) => {
+      if (revoked) throw new AgentRecordsError("revoked", "Agent authorization has been revoked.");
+      read(tx.objectStore(draftStores.receipts).get(recordKey(workspace, wanted.operationId)), (receipt: AgentReceipt | undefined) => {
+        const ours = receipt && !expired(receipt) && receipt.workspace === workspaceKey(workspace) && receipt.authorizationId === wanted.authorizationId &&
+          receipt.generation === command.generation && receipt.payloadIdentity === wanted.payloadIdentity;
+        // Landed on the revision it was planned against: this commit's own, still to be published.
+        done(ours ? { receipt, duplicate: receipt.revision !== command.expectedRevision + 1 } : undefined);
+      });
+    });
+  });
+  /**
+   * Browser storage is full: drops, in every workspace, aged-out records, receipts and markers of
+   * edits issued before `command` (their deliveries stay unknown under each workspace's horizon)
+   * and completed conversations. Unsaved drafts, unfinished conversations, cancellations and
+   * revocations stay. Resolves to how many records went.
+   */
+  const relieve = (command: AgentCommit) => run<number>([draftStores.receipts, draftStores.workspaces, draftStores.conversations], "readwrite", (tx, read, done) => {
+    const receipts = tx.objectStore(draftStores.receipts), workspaces = tx.objectStore(draftStores.workspaces), conversations = tx.objectStore(draftStores.conversations);
+    const time = now(), before = command.receipt.issuedAt;
+    read(receipts.getAll(), (all: AgentReceipt[]) => readFences(workspaces, read, (fences, records) => {
+      let freed = 0;
+      const byWorkspace = group(all.map((receipt): [string, AgentReceipt] => [receiptKeyOf(receipt), receipt]), (receipt) => receipt.workspace);
+      const fencesBy = group(fences, (fence) => fence.workspace);
+      for (const key of new Set([...byWorkspace.keys(), ...fencesBy.keys()])) {
+        const rows = byWorkspace.get(key) ?? [], marks = fencesBy.get(key) ?? [];
+        const decided = receiptRetention(rows, marks, time);
+        const gone = new Set(decided.remove);
+        for (const [rowKey, value] of [...rows, ...marks]) {
+          const issuedAt = "issuedAt" in value ? value.issuedAt : undefined;
+          if (issuedAt === undefined || gone.has(rowKey) || !(issuedAt < before)) continue;
+          gone.add(rowKey);
+          decided.horizon = Math.max(decided.horizon, issuedAt);
+        }
+        decided.remove = [...gone];
+        decided.retire = decided.retire.filter(([, fence]) => !("retired" in fence && fence.issuedAt < before));
+        const current = records.get(key) ?? initial();
+        const horizon = retain(receipts, workspaces, decided, new Set(rows.map(([rowKey]) => rowKey)), current.horizon);
+        if (horizon > (current.horizon ?? 0)) workspaces.put(withHorizon(current, horizon), key);
+        freed += decided.remove.length;
+      }
+      read(conversations.getAllKeys(), (keys) => read(conversations.getAll(), (values: ConversationRecord[]) => {
+        keys.forEach((key, index) => { if (!values[index].conversation.unfinished) { conversations.delete(key); freed++; } });
+        done(freed);
+      }));
+    }));
+  });
+  return {
+    async commit(command) {
+      // Snapshot all proofs and writes before opening; callers may change during that await.
+      const captured = structuredClone(command);
+      if (status.stopped) throw new AgentRecordsError("unavailable", FULL_MESSAGE);
+      try { return await attempt(captured); }
+      catch (error) {
+        if (error instanceof AgentRecordsError && error.code === "unavailable") report(status, { reason: "unavailable", message: error.message }, false);
+        if (!quotaError(error)) throw error;
+        let failure = error;
+        // The aborted transaction applied nothing; a receipt settles one that landed regardless.
+        const landed = await settle(captured).catch((problem: unknown) => {
+          if (problem instanceof AgentRecordsError && problem.code === "revoked") throw problem;
+          return undefined;
+        });
+        if (landed) return landed;
+        const freed = await relieve(captured).catch(() => 0) + await (options.evictCaches?.() ?? Promise.resolve(0)).catch(() => 0);
+        if (freed > 0) {
+          try { return await attempt(captured); }
+          catch (again) {
+            if (!quotaError(again)) throw again;
+            failure = again;
+          }
+        }
+        report(status, { reason: "full", message: FULL_MESSAGE }, true);
+        throw new AgentRecordsError("aborted", FULL_MESSAGE, failure);
+      }
     },
     cancel(workspace, operationId, authorizationId) {
       const key = recordKey(workspace, operationId), cancelledKey = cancellationKey(workspace, operationId, authorizationId);
-      const revokedKey = revocationKey(workspace, authorizationId);
+      const revokedKey = revocationKey(workspace, authorizationId), scope = workspaceKey(workspace);
       return run([draftStores.workspaces, draftStores.receipts], "readwrite", (tx, read, done) => {
         const workspaces = tx.objectStore(draftStores.workspaces), receipts = tx.objectStore(draftStores.receipts);
         read(workspaces.get(revokedKey), (revoked: unknown) => {
@@ -236,10 +453,9 @@ export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFact
               done({ status: "applied", receipt });
               return;
             }
-            if (receipt) { receipts.delete(key); retire(workspaces, operationId); }
             // This tombstone prevents future application, but cannot prove whether an
             // unknown operation applied before its receipt expired or was evicted.
-            workspaces.put({ cancelled: true }, cancelledKey);
+            workspaces.put({ cancelled: true, workspace: scope, at: now() } satisfies Fence, cancelledKey);
             done({ status: "unknown" });
           });
         });
@@ -300,7 +516,7 @@ export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFact
           // Generations only increase, so a fence once passed can never be reused.
           if (current.generation !== expected || !Number.isSafeInteger(next) || next <= current.generation) conflict();
           const change = () => {
-            const changed: WorkspaceRecord = { revision: current.revision, generation: next };
+            const changed = withHorizon({ revision: current.revision, generation: next }, current.horizon ?? 0);
             store.put(changed, key);
             done(changed);
           };
@@ -344,33 +560,26 @@ export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFact
     revoke(workspace, authorizationId) {
       const scope = structuredClone(workspace), key = workspaceKey(scope), revokedKey = revocationKey(scope, authorizationId);
       return run([draftStores.workspaces, draftStores.receipts], "readwrite", (tx, read, done) => {
-        tx.objectStore(draftStores.workspaces).put({ revoked: true }, revokedKey);
+        tx.objectStore(draftStores.workspaces).put({ revoked: true, workspace: key, at: now() } satisfies Fence, revokedKey);
         read(tx.objectStore(draftStores.receipts).getAll(), (receipts: AgentReceipt[]) => {
           // Report work that won before revocation; never undo committed drafts.
-          const live: AgentReceipt[] = [];
-          for (const receipt of receipts) {
-            if (receipt.workspace !== key) continue;
-            if (expired(receipt)) {
-              tx.objectStore(draftStores.receipts).delete(recordKey(scope, receipt.operationId));
-              retire(tx.objectStore(draftStores.workspaces), receipt.operationId);
-            }
-            else if (receipt.authorizationId === authorizationId) live.push(receipt);
-          }
-          done(live);
+          done(receipts.filter((receipt) => receipt.workspace === key && !expired(receipt) && receipt.authorizationId === authorizationId));
         });
       });
     },
     evictReceipts(workspace, time = now()) {
-      const key = workspaceKey(workspace), scope = structuredClone(workspace);
+      const key = workspaceKey(workspace);
       return run([draftStores.receipts, draftStores.workspaces], "readwrite", (tx, read, done) => {
-        const store = tx.objectStore(draftStores.receipts);
-        read(store.getAll(), (receipts: AgentReceipt[]) => {
-          const rows: [string, AgentReceipt][] = receipts.filter((receipt) => receipt.workspace === key).map((receipt) => [recordKey(scope, receipt.operationId), receipt]);
-          const byKey = new Map(rows);
-          const removed = retention(rows, time);
-          for (const key of removed) { store.delete(key); retire(tx.objectStore(draftStores.workspaces), byKey.get(key)!.operationId); }
-          done(removed.length);
-        });
+        const receipts = tx.objectStore(draftStores.receipts), workspaces = tx.objectStore(draftStores.workspaces);
+        read(receipts.getAll(), (all: AgentReceipt[]) => readFences(workspaces, read, (fences, records) => {
+          const rows: [string, AgentReceipt][] = all.filter((receipt) => receipt.workspace === key).map((receipt) => [receiptKeyOf(receipt), receipt]);
+          const receiptKeys = new Set(rows.map(([rowKey]) => rowKey));
+          const decided = receiptRetention(rows, fences.filter(([, fence]) => fence.workspace === key), time);
+          const current = records.get(key) ?? initial();
+          const horizon = retain(receipts, workspaces, decided, receiptKeys, current.horizon);
+          if (horizon > (current.horizon ?? 0)) workspaces.put(withHorizon(current, horizon), key);
+          done(decided.remove.filter((rowKey) => receiptKeys.has(rowKey)).length);
+        }));
       });
     },
     putConversation(workspace, conversation, accept) {

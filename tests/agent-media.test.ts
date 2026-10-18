@@ -119,7 +119,7 @@ test("tab commands return reports and previews and refuse documents before readi
   } satisfies Pick<import("../src/agent-site.ts").AgentSiteActions, "listMedia" | "previewMedia">;
   // These read commands only exercise media ports.
   const ports = actions as import("../src/agent-site.ts").AgentSiteActions;
-  const command = { id: "test", operation: "list_media", path: "images", branch: "main", commit: "abc", content: "", state: "pending", createdAt: 0,
+  const command = { id: "test", operation: "list_media", path: "images", branch: "main", commit: "abc", content: "", state: "pending", createdAt: Date.now(),
     args: { folder: "images", offset: 1, limit: 2 } } satisfies import("../shared/agent.ts").AgentCommand;
   assert.deepEqual(await applySiteCommand(ports, command), { message: "Listed 2 of 4 media files.", result: { report: '{"count":2,"total":4}' } });
   assert.deepEqual((await applySiteCommand(ports, { ...command, operation: "preview_media", path: "images/photo.webp" })).result, preview);
@@ -146,7 +146,7 @@ test("workspace reports show starting collections before the first save, as the 
 test("tab refuses upload-like writes and placement outside Media before mutations", async () => {
   const { applySiteCommand } = await import("../src/agent-site.ts");
   const { applyAgentMedia } = await import("../src/agent-media-actions.ts");
-  const command = { id: "upload", operation: "write_file", path: "images/new.png", branch: "main", commit: "abc", content: "bytes", state: "pending", createdAt: 0 } satisfies import("../shared/agent.ts").AgentCommand;
+  const command = { id: "upload", operation: "write_file", path: "images/new.png", branch: "main", commit: "abc", content: "bytes", state: "pending", createdAt: Date.now() } satisfies import("../shared/agent.ts").AgentCommand;
   // Refusals run before any action port is needed.
   const ports = {} as import("../src/agent-site.ts").AgentSiteActions;
   await assert.rejects(applySiteCommand(ports, command), /never upload, fetch or generate/);
@@ -203,7 +203,7 @@ test("specific media refusals precede missing authorization, missing store and u
     applyBatch: async () => { writes++; }, openPage: async () => {},
     removedCopies: { get: async () => undefined, put: async () => { copies++; }, delete: async () => { copies++; }, keys: async () => [] },
   } satisfies import("../src/page-builder/media-workspace").MediaWorkspaceContext;
-  const command = { id: "priority", grantId: "grant", operation: "remove_media", path: "", branch: "main", commit: "head", content: "", state: "pending", createdAt: 0,
+  const command = { id: "priority", grantId: "grant", operation: "remove_media", path: "", branch: "main", commit: "head", content: "", state: "pending", createdAt: Date.now(),
     args: { files: ["images/still.webp"] } } satisfies import("../shared/agent").AgentCommand;
   for (const mode of ["grant", "store", "indexeddb"] as const) {
     const ctx = mode === "indexeddb" ? { ...await storage.context(context), agentRecords: unavailableAgentRecords() } : context;

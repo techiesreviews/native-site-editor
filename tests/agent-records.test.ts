@@ -11,7 +11,9 @@ const partial = <T>(value: Partial<T>): T => value as T;
 
 const draft: SavedDraft = { version: 1, account: "Lex", repoId: 1, repo: "lex/site", branch: "main", path: "index.html", baseSha: null, original: "", content: "draft", updatedAt: 1 };
 const key = draftKey(draft, draft.path);
-const command = () => ({ workspace: { account: draft.account, repoId: draft.repoId, branch: draft.branch }, generation: 0, expectedRevision: 0, expectedDrafts: [[key, null]] as [string, SavedDraft | null][], drafts: [[key, { ...draft }]] as [string, SavedDraft | null][], receipt: { authorizationId: "grant-1", operationId: "operation-1", payloadIdentity: payloadIdentity({ edit: "draft" }), outcome: { changed: 1 }, createdAt: 100 } });
+// Issue times only increase, as an issuer's clock does between commands.
+let issued = Date.now();
+const command = () => ({ workspace: { account: draft.account, repoId: draft.repoId, branch: draft.branch }, generation: 0, expectedRevision: 0, expectedDrafts: [[key, null]] as [string, SavedDraft | null][], drafts: [[key, { ...draft }]] as [string, SavedDraft | null][], receipt: { authorizationId: "grant-1", operationId: "operation-1", payloadIdentity: payloadIdentity({ edit: "draft" }), outcome: { changed: 1 }, createdAt: 100, issuedAt: ++issued } });
 const storage = () => {
   const data = new Map<string, string>();
   return { getItem: (key: string) => data.get(key) ?? null, setItem: (key: string, value: string) => { data.set(key, value); }, removeItem: (key: string) => { data.delete(key); }, key: (index: number) => [...data.keys()][index] ?? null, get length() { return data.size; } };
