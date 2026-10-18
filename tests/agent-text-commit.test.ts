@@ -401,6 +401,25 @@ test("a manual write during the read-back of an unpublished agent commit wins ov
   assert.equal((await f.records.snapshot(f.scope)).drafts.find(([key]) => key === draftKey(f.scope, "index.html"))?.[1].content, "newer manual");
 });
 
+test("a manual discard during the read-back of an unpublished agent commit stays discarded", async t => {
+  const f = await setup(t);
+  let release!: () => void;
+  const started = new Promise<void>(resolve => { f.reads.started = resolve; });
+  const pending = f.run(undefined, undefined, undefined, () => {
+    f.memory.bumpGeneration();
+    f.reads.hold = new Promise(resolve => { release = resolve; });
+  });
+  await started;
+  // The read is holding the committed agent draft; the user discards it meanwhile.
+  f.store.remove(f.scope, "index.html");
+  await f.store.flush();
+  release();
+  await pending;
+  assert.equal(f.store.get(f.scope, "index.html"), undefined);
+  assert.equal((await f.records.snapshot(f.scope)).drafts.find(([key]) => key === draftKey(f.scope, "index.html")), undefined);
+  assert.ok(await f.records.receipt(f.scope, f.command.id, f.command.grantId!), "the agent's receipt still says it applied");
+});
+
 test("a durable manual draft newer than the mounted source is never overwritten", async t => {
   const f = await setup(t);
   f.store.save({ ...f.scope, version: 1, path: "index.html", baseSha: "a".repeat(40), original: "before", content: "newer manual", updatedAt: 2 });

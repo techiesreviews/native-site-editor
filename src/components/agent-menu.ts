@@ -4,7 +4,7 @@ import { AgentFailureError, classifyAgentFailure } from "../../shared/agent-fail
 import { button, node } from "../ui/dom";
 import { textBytes, type AgentCommand, type AgentElement } from "../../shared/agent";
 import { payloadIdentity, workspaceKey, type AgentWorkspace, type JsonValue } from "../../shared/agent-command";
-import { AgentRecordsError, indexedDbAgentRecords, isUnfinishedRequest, type AgentRecords } from "../agent-records";
+import { AgentRecordsError, agentStorageStatus, indexedDbAgentRecords, isUnfinishedRequest, type AgentRecords, type AgentStorageProblem } from "../agent-records";
 import type { SharedContext } from "../agent-site";
 import type { PinRequest } from "./agent-pins";
 import { agentHistoryKey } from "../controllers/agent-controller";
@@ -157,11 +157,24 @@ export function createAgentMenu(options: {
   off.title = "Stop remote agents in this tab. Their access stays; Connect with MCP turns them on again.";
   const links = node("span", "agent-menu__links");
   links.append(again, cancel, retry, off);
+  // Agent edits stopped because this browser cannot keep them: what to do, and a copy of the work.
+  const storage = agentStorageStatus();
+  const trouble = node("div", "agent-menu__storage");
+  trouble.setAttribute("role", "alert");
+  const troubleText = node("p", "agent-menu__storage-text");
+  let exporting = false;
+  const download = button("Download unsaved changes", () => void exportWork(), "text-button agent-menu__link");
+  const tryAgain = button("Try again", () => { storage.resume(); paint(); }, "text-button agent-menu__link");
+  tryAgain.title = "Let agents edit again once there is space; a full browser stops them again.";
+  const troubleLinks = node("span", "agent-menu__links");
+  troubleLinks.append(download, tryAgain);
+  trouble.append(troubleText, troubleLinks);
+  trouble.hidden = true;
   // What the connected agents wait on, beside Disconnect MCP.
   const waitingOn = node("div", "agent-menu__waiting");
   waitingOn.id = "agent-waiting";
   waitingOn.setAttribute("role", "menu");
-  root.append(action, hint, links, waitingOn);
+  root.append(action, hint, links, trouble, waitingOn);
   const flyout = mountFlyout({
     panel: waitingOn,
     label: "What agents wait on",
@@ -421,6 +434,31 @@ export function createAgentMenu(options: {
     if (pause && (recovering?.retryAt ?? 0) > Date.now()) pause += ` You can retry after ${new Date(recovering!.retryAt!).toLocaleString()}.`;
     hint.textContent = pause || notice?.text || text;
     hint.hidden = !hint.textContent;
+    const problem = storage.problem;
+    trouble.hidden = !problem || current === "closed";
+    root.dataset.storage = problem?.reason ?? "";
+    if (problem) troubleText.textContent = storageText(problem);
+    download.disabled = exporting;
+  }
+  const unsubscribeStorage = storage.subscribe(() => paint());
+  /** Downloads the open workspace's unsaved drafts and says what the file holds. */
+  async function exportWork() {
+    const repo = options.repository();
+    if (!repo || exporting) return;
+    exporting = true;
+    paint();
+    try {
+      const { downloadUnsavedWork } = await import("../agent-recovery-export");
+      const { name, entries } = await downloadUnsavedWork({ account: options.account, repository: repo });
+      const included = entries.filter((entry) => entry.status === "included").length;
+      const missing = entries.filter((entry) => entry.status === "missing").length;
+      say(`Downloaded ${name}: ${included} file${included === 1 ? "" : "s"}.${missing ? ` ${missing} uploaded file${missing === 1 ? " is" : "s are"} no longer in this browser; README.txt lists ${missing === 1 ? "it" : "them"}.` : ""}`);
+    } catch (error) {
+      say(`The download failed: ${(error as Error).message}. Your unsaved changes are still in this tab.`);
+    } finally {
+      exporting = false;
+      paint();
+    }
   }
   // The flyout: the questions waiting for the user (each shows its pin),
   // or what the agents have otherwise.
@@ -866,9 +904,17 @@ export function createAgentMenu(options: {
       turnOff();
       window.removeEventListener("storage", onStorage);
       document.removeEventListener("visibilitychange", reread);
+      unsubscribeStorage();
       token = tokenId = undefined;
     },
   };
+}
+
+/** What the user reads when this browser stopped keeping agent edits, and what to do. */
+function storageText(problem: AgentStorageProblem) {
+  return problem.reason === "full"
+    ? "Agent edits are stopped: this browser's storage is full, so it cannot keep new changes. Your unsaved changes are still in this tab. Download them to keep a copy, free up space in your browser or save your changes, then choose Try again."
+    : "Agent edits are off: this browser does not let the editor keep data here (private browsing or blocked site data). Your unsaved changes are only in this tab: download them to keep a copy before you close it.";
 }
 
 // A line of at most `limit` characters, with … when cut.

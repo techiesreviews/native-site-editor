@@ -6,7 +6,11 @@ const partial = <T>(value: Partial<T>): T => value as T;
 type Rows = Map<string, unknown>;
 export function fakeIndexedDB(legacy?: SavedDraft, beforeOpen?: () => Promise<void>) {
   const stores = new Map<string, Rows>(legacy ? [["drafts", new Map([[draftKey(legacy, legacy.path), structuredClone(legacy)]])]] : []);
-  const state = { version: legacy ? 1 : 0, openError: false, blocked: false, failPutAt: 0, failure: "AbortError", closed: 0 };
+  const state = { version: legacy ? 1 : 0, openError: false, blocked: false, failPutAt: 0, failure: "AbortError", closed: 0,
+    /** Every put into this store fails with `failure` while set (a storage that stays full). */
+    failPutsInto: undefined as string | undefined, refusedPuts: 0,
+    /** The next readwrite transaction commits, then reports an abort with this error (an uncertain outcome). */
+    abortAfterCommit: undefined as string | undefined };
   const connections: IDBDatabase[] = [];
   const transactions: (() => void)[] = [];
   let busy = false;
@@ -46,6 +50,11 @@ export function fakeIndexedDB(legacy?: SavedDraft, beforeOpen?: () => Promise<vo
               if (next) { next(); if (!ended) setImmediate(step); return; }
               ended = true;
               if (mode === "readwrite") for (const [name, rows] of local) stores.set(name, rows);
+              if (mode === "readwrite" && state.abortAfterCommit) {
+                Object.assign(tx, { error: new DOMException("Reported after commit", state.abortAfterCommit) });
+                state.abortAfterCommit = undefined;
+                tx.onabort?.call(tx, event); finish(); return;
+              }
               tx.oncomplete?.call(tx, event); finish();
             };
             const enqueue = <T>(action: () => T) => {
@@ -74,6 +83,7 @@ export function fakeIndexedDB(legacy?: SavedDraft, beforeOpen?: () => Promise<vo
                   const copy: unknown = structuredClone(value);
                   return enqueue(() => {
                     if (state.failPutAt && --state.failPutAt === 0) throw new DOMException("Injected storage failure", state.failure);
+                    if (state.failPutsInto === name) { state.refusedPuts++; throw new DOMException("Injected full storage", state.failure); }
                     local.get(name)!.set(String(key), copy); return key!;
                   });
                 },
