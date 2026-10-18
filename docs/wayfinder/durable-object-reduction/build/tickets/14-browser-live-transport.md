@@ -104,7 +104,7 @@ first-upgrade probe ignored quota bodies and Retry-After). Rejected 0.
 - RESULT: ok specs 3/3 passed (native-agent-live, native-agent-quiet 5, native-lazy-panels 6)
 - RESULT: fail specs 1 of 3 failed: native-agent-recovery.spec.ts (disabled storage stopped before any socket; fixed in 90bf94a1), then RESULT: ok specs 1/1 passed; native-mcp 18 and native-mcp-media 5 passed
 - RESULT: ok specs 1/1 passed (native-agent-live 2, after review 2)
-- RESULT: ok shots raw spec, out .scratch/shots/dor14 (live, other-owner, taken-over, quota; 1280 light, 390 dark)
+- RESULT: ok shots raw spec, out /home/ubulex/Projects/native-site-editor/.scratch/shots/dor-14/20261018 (live, other-owner, taken-over, quota; 1280 light, 390 dark)
 
 **Limits for later tickets.** Nothing on the Worker dispatches through the relay yet: on a real deployment an on
 tab now receives no hub-queued MCP commands until tickets 15–17 move tools onto the relay (the fixture keeps the
