@@ -1,9 +1,8 @@
 // Agent requests: what the user asks agents to do about an element, from
 // the edit bar's Ask agent (src/components/agent-menu.ts). With the live relay
 // the receiving browser tab keeps them (src/agent-records.ts conversations) and
-// answers the request tools over the socket (src/agent-watch.ts); the legacy hub
-// keeps them under "requests" (worker/agent-store.ts) until ticket 20. Both run
-// these rules: agents fetch them with wait_for_requests and answer them with
+// answers the request tools over the socket (src/agent-watch.ts). Agents
+// fetch them with wait_for_requests and answer them with
 // reply_to_request (worker/mcp.ts), and the tab shows each one as a pin on
 // its element until the user dismisses it. An agent's question the user
 // answers from the pin: the answer joins the request's thread and the
@@ -62,9 +61,8 @@ export function requestForAgent(request: AgentRequest) {
 }
 
 /**
- * One request action on the hub's list, inside the Durable Object's
- * concurrency block. Returns the list to store (unchanged when nothing
- * changed) and the answer.
+ * One request action on the browser's list. Returns the list to store
+ * (unchanged when nothing changed) and the answer.
  */
 export function requestOperation(list: AgentRequest[], action: any): { list: AgentRequest[]; changed: boolean; result: unknown } {
   const type = action?.type;
@@ -85,7 +83,8 @@ export function requestOperation(list: AgentRequest[], action: any): { list: Age
     const grantId = String(action.grantId ?? "");
     const now = Date.now();
     const taken: AgentRequest[] = [];
-    for (const request of list) {
+    // IndexedDB returns request ID order, so delivery must restore creation order.
+    for (const request of [...list].sort((a, b) => a.createdAt - b.createdAt)) {
       if (!inWorkspace(request, action) || !waiting(request)) continue;
       if (!action.all && request.returnedTo?.includes(grantId)) continue;
       request.state = "seen";
@@ -140,9 +139,6 @@ export function requestOperation(list: AgentRequest[], action: any): { list: Age
   }
   throw new HttpError(400, "Invalid agent action.");
 }
-
-export const isRequestAction = (type: unknown) =>
-  type === "ask" || type === "take-requests" || type === "request" || type === "reply" || type === "answer" || type === "dismiss";
 
 /** The request tools as one relay command to the receiving tab. `waitMs` (wait only) is
  * how long the agent will wait; the tab holds it only while the user's Watch is on. */

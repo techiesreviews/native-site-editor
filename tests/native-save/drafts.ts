@@ -1,13 +1,13 @@
 import { expect, type Page } from "@playwright/test";
 
 // The drafts this browser keeps (IndexedDB `native-site-editor-drafts`,
-// src/drafts.ts), once the page has written what it had pending: a
-// `pagehide` flushes at once, and a read begun after it sees the write.
+// src/drafts.ts), once the page has written what it had pending. Flush the
+// store directly: a synthetic pagehide would also close the live agent relay.
 export type StoredDraft = { path: string; content: string; deleted?: true; movedFrom?: string; [field: string]: unknown };
 
 export async function storedDrafts(page: Page): Promise<StoredDraft[]> {
   const drafts = await page.evaluate(async () => {
-    window.dispatchEvent(new Event("pagehide"));
+    await (await import("/src/drafts.ts")).draftStore().flush();
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
       const request = indexedDB.open("native-site-editor-drafts");
       request.onupgradeneeded = () => { if (!request.result.objectStoreNames.contains("drafts")) request.result.createObjectStore("drafts"); };

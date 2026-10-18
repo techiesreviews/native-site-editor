@@ -4,7 +4,7 @@ import type { AddingSettings } from "./media-records";
 
 /**
  * What an agent can ask the open editor tab to do. The Worker validates and
- * queues each one; the browser applies it through the same code the
+ * relays each one; the browser applies it through the same code the
  * editor's own controls use, so every change is an ordinary draft (Undo,
  * Discard changes, Publish by the user).
  *
@@ -135,17 +135,6 @@ export const INSPECTION_LIMIT = 24 * 1024;
 export const MEDIA_LIST_LIMIT = 40 * 1024;
 export const MEDIA_PREVIEW_LIMIT = 96 * 1024;
 export const MEDIA_PREVIEW_SIZE = 512;
-
-/** The maximum JSON in a browser command result: reports get room; other results are a few fields. */
-export function agentResultLimit(operation: AgentOperation) {
-  if (operation === "inspect_preview") return 2 * INSPECTION_LIMIT;
-  // Reports are JSON strings inside JSON: quotes and backslashes need slack.
-  if (["improve_images", "list_media", "restore_media", "remove_media", "keep_media"].includes(operation)) return 2 * MEDIA_LIST_LIMIT + 2048;
-  if (operation === "preview_media") return MEDIA_PREVIEW_LIMIT + 2048;
-  return 2048;
-}
-/** The largest result any operation may send over the live relay. */
-export const AGENT_RESULT_MAX = Math.max(...(["inspect_preview", "list_media", "preview_media"] as const).map(agentResultLimit));
 
 export const isPreviewablePicture = (path: string) => previewablePictures.test(path);
 export function mediaKind(path: string): "image" | "video" | "audio" | "document" | "other" {

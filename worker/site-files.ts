@@ -1,1 +1,1 @@
-export { SiteFiles, writablePathProblem } from "../shared/site-files";
+export { writablePathProblem } from "../shared/site-files";

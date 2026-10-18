@@ -20,7 +20,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
-import { INSPECTION_LIMIT, MEDIA_LIST_LIMIT, agentResultLimit, textHash } from "../shared/agent.ts";
+import { INSPECTION_LIMIT, MEDIA_LIST_LIMIT, textHash } from "../shared/agent.ts";
 import { isAgentMediaPath, mediaListReport } from "../src/agent-media.ts";
 import { mediaUsageRecords } from "../src/page-builder/media-usage.ts";
 import { parseMediaRecords } from "../shared/media-records.ts";
@@ -1044,7 +1044,7 @@ test("the tab reads, changes and resets adding settings with agent labels and no
   const apply = (args: AgentCommand["args"]) => applyAgentMedia(ctx, mediaCommand("adding_settings", args), target => f.controller.preparePlacement(target));
   const read = await apply({});
   assert.equal(read!.message, "Adding settings read.");
-  assert.ok(Buffer.byteLength(JSON.stringify(read!.result)) <= agentResultLimit("adding_settings"));
+  assert.ok(Buffer.byteLength(JSON.stringify(read!.result)) <= 2048);
   assert.deepEqual(JSON.parse(read!.result.report), { ...MEDIA_ADDING_DEFAULTS, isDefault: true, choices: MEDIA_ADDING_CHOICES });
   assert.equal(f.batches.length, 0);
   const changed = await apply({ image: "smaller", keepOriginal: true });

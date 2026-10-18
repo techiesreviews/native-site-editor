@@ -996,7 +996,7 @@ function env(connect?: RelayConnect, relaySession = "anonymous"): Env {
         fetch: async (request: Request): Promise<Response> => {
           const slot = sessions.get(id);
           const url = new URL(request.url);
-          // Real relay core over Node sockets; absent owners still permit the matching legacy fallback.
+          // Real relay core over Node sockets; absent owners refuse tools immediately.
           // Each demo sign-in has its own clone and browser ownership database, even though
           // all fixture accounts use DEMO_LOGIN. Tabs of that sign-in still share one relay.
           const relayResponse = await fakeRelayRoute(`${relaySession}:${id}`, request, connect);
