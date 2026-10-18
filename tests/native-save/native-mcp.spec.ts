@@ -986,10 +986,10 @@ function agentCalls(page: Page) {
 }
 
 test("Ask agent history stays in this browser: after Turn off and a reload its pins show, clearing and dismissing make no hub calls, and another branch has its own", async ({ page, baseURL }) => {
+  await open(page, baseURL);
   // Another branch of the same repository, with the same pages.
   const css = await (await page.request.get(`${baseURL}/__demo/file?path=styles/site.css`)).text();
   await page.request.post(`${baseURL}/__demo/branch`, { data: { name: "history", path: "styles/site.css", content: `${css}\n/* History. */\n` } });
-  await open(page, baseURL);
   const bar = page.getByRole("toolbar", { name: "Edit bar" });
   const heading = frame(page).locator(".hero h1");
   const client = await connectAgent(page, baseURL);
