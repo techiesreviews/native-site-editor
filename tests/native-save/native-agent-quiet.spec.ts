@@ -1,8 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 
-test.beforeEach(async ({ page }) => {
-  // This fixture has no relay WebSocket upgrade. Exercise the absent-route fallback explicitly.
+test.beforeEach(async ({ page }, info) => {
+  // Tagged @live: the fixture's real relay socket (ticket 15). The rest exercise the absent-route fallback.
+  if (info.tags.includes("@live")) return;
   await page.routeWebSocket("**/api/agent/relay?*", socket => socket.close());
   await page.route("**/api/agent/relay", route => route.fulfill({ status: 404, body: "Not found" }));
 });
@@ -174,4 +175,108 @@ test("the exact approval enables its repository and branch even after a delayed 
   const before = calls;
   await expect.poll(async () => { await page.clock.runFor(1000); return calls - before; }).toBe(3);
   await expect(page.locator(".agent-menu__action")).toHaveText("Connect with MCP");
+});
+
+// Ticket 18: quiet waiting and explicit Watch over the fixture's real Worker, relay and socket.
+test("live: waits are quiet by default; Watch holds one wait until Ask agent, shows its deadline, never renews itself and ends without disconnecting", { tag: "@live" }, async ({ page, context, baseURL }) => {
+  const frames: { tool?: string; remainingMs?: number }[] = [];
+  page.on("websocket", socket => {
+    if (!socket.url().includes("/api/agent/relay?")) return;
+    socket.on("framereceived", ({ payload }) => {
+      const message = String(payload);
+      if (!message.startsWith("{")) return;
+      const value = JSON.parse(message);
+      if (value.type === "command") frames.push({ tool: value.command?.tool, remainingMs: value.remainingMs });
+    });
+  });
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await open(page, baseURL);
+  await page.locator(".repository-menu__trigger").click();
+  const made = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST");
+  await page.getByRole("button", { name: "Connect with MCP", exact: true }).click();
+  const { token } = await (await made).json() as { token: string };
+  const client = new Client({ name: "watch-agent", version: "1.0.0" });
+  await client.connect(new StreamableHTTPClientTransport(new URL(`${baseURL}/mcp`), { requestInit: { headers: { Authorization: `Bearer ${token}` } } }));
+  const call = async (name: string, args: Record<string, unknown> = {}) => {
+    const response = await client.callTool({ name, arguments: args });
+    expect(response.isError, JSON.stringify(response)).toBeFalsy();
+    return JSON.parse((response.content as { text: string }[])[0].text);
+  };
+  const watchKey = 'native-site-editor:agent-watch:["native-demo-user",501,"main"]';
+  const record = () => page.evaluate(key => JSON.parse(localStorage.getItem(key) ?? "null"), watchKey);
+  try {
+    await expect.poll(() => page.locator(".agent-menu").getAttribute("data-state"), { timeout: 15_000 }).toMatch(/idle|waiting|connected/);
+    const requests = agentRequests(page);
+    // Quiet default: an empty wait answers at once with no "call again", over one socket command.
+    const started = Date.now();
+    const quiet = await call("wait_for_requests");
+    expect(Date.now() - started).toBeLessThan(8_000);
+    expect(quiet.requests).toEqual([]);
+    expect(quiet.hint).toContain("Do not call wait_for_requests again on your own");
+    expect(frames.map(frame => frame.tool)).toEqual(["wait_for_requests"]);
+
+    // The agent is connected; the menu offers Watch and says in plain words that agents stop.
+    const action = page.locator(".agent-menu__action");
+    await expect(action).toHaveText("Disconnect MCP");
+    const watchText = page.locator(".agent-menu__watch-text");
+    await expect(watchText).toContainText("ask your agent to continue");
+    await page.getByRole("button", { name: "Watch for requests" }).click();
+    await expect(watchText).toContainText(/Watching for requests until .+ \((10:00|9:5\d) left, 25 of 25 waits left\)/);
+    const watch = await record();
+    expect(Object.keys(watch).sort()).toEqual(["startedAt", "until", "waits"]);
+    expect(watch.until - watch.startedAt).toBe(600_000);
+    await page.screenshot({ path: test.info().outputPath("watch-on.png") });
+
+    // Watch: the wait is held (no answer yet), until the user asks from the edit bar.
+    let settled = false;
+    const held = call("wait_for_requests").finally(() => { settled = true; });
+    await expect.poll(() => frames.length).toBe(2);
+    expect(frames[1].remainingMs).toBeGreaterThan(20_000);
+    await page.waitForTimeout(1_500); // fixed-wait: proving the wait stays unanswered (a negative) while Watch is on
+    expect(settled, "held while Watch is on").toBe(false);
+    await page.keyboard.press("Escape");
+    await page.frameLocator(".native-preview-frame").locator(".hero h1").click();
+    const bar = page.getByRole("toolbar", { name: "Edit bar" });
+    await bar.getByRole("button", { name: "Ask agent" }).click();
+    await page.keyboard.type("Make this heading friendlier");
+    await page.keyboard.press("Enter");
+    const woken = await held;
+    expect(woken.requests.map((item: { text: string }) => item.text)).toEqual(["Make this heading friendlier"]);
+    expect(woken.watch.waitsLeft).toBe(24);
+    const [asked] = woken.requests;
+    expect(asked.element.html).toContain("<h1");
+    await expect(page.locator(".agent-pin").first()).toHaveAttribute("data-state", "seen");
+    // Ask, the held wait and the take made no hub call: they live in this browser and the socket.
+    expect(requests, "no /api/agent or polling while Watch waits").toEqual([]);
+
+    // Replying reaches the pin over the socket.
+    expect((await call("reply_to_request", { request: asked.id, status: "done", message: "Made it friendlier." })).state).toBe("done");
+    await expect(page.locator(".agent-pin").first()).toHaveAttribute("data-state", "done");
+    expect((await call("get_selection", { request: asked.id })).state).toBe("done");
+
+    // Empty results never renew Watch: its deadline stays, only the count moves.
+    const before = await record();
+    await call("wait_for_requests", { waitSeconds: 0 });
+    expect((await record()).until).toBe(before.until);
+
+    // Expiry (forced by its own record): the next wait answers at once, paused; no renewal, the
+    // connection stays and a separate edit still applies.
+    await page.evaluate(key => {
+      const value = JSON.parse(localStorage.getItem(key)!);
+      localStorage.setItem(key, JSON.stringify({ ...value, startedAt: value.startedAt - 600_000, until: Date.now() - 1 }));
+    }, watchKey);
+    const endedAt = Date.now();
+    const ended = await call("wait_for_requests");
+    expect(Date.now() - endedAt).toBeLessThan(8_000);
+    expect(ended.hint).toContain("Watch ended, so stop waiting");
+    await page.locator(".repository-menu__trigger").click();
+    await expect(watchText).toContainText("Watch paused at");
+    await expect(page.getByRole("button", { name: "Watch again" })).toBeVisible();
+    await page.screenshot({ path: test.info().outputPath("watch-paused.png") });
+    await expect(action).toHaveText("Disconnect MCP");
+    expect((await call("write_file", { path: "after-watch.txt", content: "still connected" })).state).toBe("applied");
+    expect(requests.filter(request => request.path === "/api/agent/revoke"), "expiry revokes nothing").toEqual([]);
+  } finally {
+    await client.close();
+  }
 });

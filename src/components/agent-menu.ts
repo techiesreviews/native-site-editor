@@ -208,6 +208,9 @@ export function createAgentMenu(options: {
       requests: async (request, current, deadline) => {
         const tools = requestTools;
         if (!tools) return { ok: false, message: "Browser request tools are unavailable. Refresh the editor." };
+        // An agent asking for requests is connected, as one sending a change is.
+        const grant = hub.grants.find(each => each.id === request.grantId);
+        if (grant && !grant.usedAt) { grant.usedAt = Date.now(); paint(); }
         try { return await tools.run(request, current, deadline); } finally { if (live(at)) { refreshWatch(); paint(); } }
       },
       run,
