@@ -1,3 +1,4 @@
+import { inventoryRoute } from "./agent-maintenance";
 import { requestJson } from "./http";
 import { ASSET_TYPES } from "../shared/asset-types";
 import { AGENT_RESULT_MAX } from "../shared/agent";
@@ -86,8 +87,10 @@ export interface Env {
   ASSETS: { fetch(request: Request): Promise<Response> };
   SESSIONS: {
     idFromName(name: string): any;
+    idFromString(id: string): any;
     get(id: any): { fetch(request: Request): Promise<Response> };
   };
+  MAINTENANCE_INVENTORY_TOKEN?: string;
   GITHUB_CLIENT_ID?: string;
   GITHUB_CLIENT_SECRET?: string;
   GITHUB_APP_SLUG?: string;
@@ -403,6 +406,7 @@ async function route(
   fetcher: typeof fetch,
 ): Promise<Response> {
   const path = url.pathname;
+  if (path === "/__maintenance/inventory") return inventoryRoute(request, env);
   if (isOAuthPath(path))
     return handleOAuth(request, env, url, {
       session: (request) => sessionWithId(request, env),
