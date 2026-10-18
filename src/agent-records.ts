@@ -33,8 +33,8 @@ type CancellationResult = { status: "unknown" | "cancelled" } | { status: "appli
 
 export interface AgentRecords {
   commit: (command: AgentCommit) => Promise<CommitResult>;
-  /** Fences future delivery; without a live receipt the past outcome remains unknown. */
-  cancel: (workspace: AgentWorkspace, operationId: OperationId, authorizationId: string) => Promise<CancellationResult>;
+  /** Fences future delivery. Only an abort of a live in-flight delivery can prove cancellation. */
+  cancel: (workspace: AgentWorkspace, operationId: OperationId, authorizationId: string, options?: { live: true }) => Promise<CancellationResult>;
   status: (workspace: AgentWorkspace, operationId: OperationId, authorizationId: string) => Promise<CancellationResult>;
   receipt: (workspace: AgentWorkspace, operationId: OperationId, authorizationId: string) => Promise<AgentReceipt | undefined>;
   /** With `owner`, the same transaction also proves that generation still owns the workspace unpaused. */
@@ -64,7 +64,7 @@ export interface AgentRecords {
  * stays unknown), a cancellation tombstone and an authorization revocation. Each is kept 24 hours.
  */
 type Fence = { retired: true; workspace: string; operationId: OperationId; issuedAt: number; createdAt: number } |
-  { cancelled: true; workspace: string; at: number; uncertain?: boolean } | { revoked: true; workspace: string; at: number };
+  { cancelled: true; workspace: string; at: number; definite?: boolean; uncertain?: boolean } | { revoked: true; workspace: string; at: number };
 
 /** Per account/repository/branch workspace: receipts are kept 24 hours, at most 1,000 of them. */
 export const RECEIPT_RETENTION_MS = 24 * 60 * 60 * 1000;
@@ -451,7 +451,7 @@ export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFact
         throw new AgentRecordsError("aborted", FULL_MESSAGE, failure);
       }
     },
-    cancel(workspace, operationId, authorizationId) {
+    cancel(workspace, operationId, authorizationId, options) {
       const key = recordKey(workspace, operationId), cancelledKey = cancellationKey(workspace, operationId, authorizationId);
       const revokedKey = revocationKey(workspace, authorizationId), scope = workspaceKey(workspace);
       return run([draftStores.workspaces, draftStores.receipts], "readwrite", (tx, read, done) => {
@@ -469,7 +469,7 @@ export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFact
               read(workspaces.get(retiredKey(scope, operationId)), (retired: unknown) => {
                 read(workspaces.get(legacyRetiredKey(operationId)), (legacy: unknown) => {
                   const uncertain = Boolean(receipt || retired || legacy || prior && "cancelled" in prior && prior.uncertain);
-                  workspaces.put({ cancelled: true, workspace: scope, at: now(), ...(uncertain ? { uncertain: true } : {}) } satisfies Fence, cancelledKey);
+                  workspaces.put({ cancelled: true, workspace: scope, at: now(), ...(options?.live && !uncertain ? { definite: true } : {}), ...(uncertain ? { uncertain: true } : {}) } satisfies Fence, cancelledKey);
                   done({ status: "unknown" });
                 });
               });
@@ -493,7 +493,7 @@ export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFact
             read(workspaces.get(retiredKey(scope, operationId)), (retired: unknown) => {
               read(workspaces.get(legacyRetiredKey(operationId)), (legacy: unknown) => {
                 read(workspaces.get(cancellationKey(workspace, operationId, authorizationId)), (cancelled: Fence | undefined) => {
-                  done({ status: !retired && !legacy && cancelled && "cancelled" in cancelled && !cancelled.uncertain && fenceTime(cancelled) > now() - RECEIPT_RETENTION_MS ? "cancelled" : "unknown" });
+                  done({ status: !retired && !legacy && cancelled && "cancelled" in cancelled && cancelled.definite && !cancelled.uncertain && fenceTime(cancelled) > now() - RECEIPT_RETENTION_MS ? "cancelled" : "unknown" });
                 });
               });
             });

@@ -62,7 +62,7 @@ export function createAgentEditTools(options: Options) {
         check();
         if (status.status === "applied") return request.operation === "edit" && status.receipt.payloadIdentity !== identity
           ? { ok: false, message: "This change's id was already used for different work. Nothing was changed." } : reply(status.receipt.outcome);
-        if (status.status === "cancelled") return { ok: true, value: { requestId: request.id, state: "cancelled", message: "Cancelled before commit. Nothing was changed." } };
+        if (status.status === "cancelled") return { ok: true, value: { requestId: request.id, state: "cancelled", message: "This delivery was cancelled before it committed. Nothing was changed by it." } };
         if (request.operation === "status") return { ok: true, value: { requestId: request.id, state: "unknown",
           message: "Change not found, or its receipt expired. The outcome is unknown; do not replay the change." } };
         if (!source) throw new Error("The editor is unavailable. Open the connected site and branch.");
@@ -120,7 +120,7 @@ export function createAgentEditTools(options: Options) {
       const settled = await records.status(workspace, request.id, request.grantId).catch(() => undefined);
       if (settled?.status === "applied") return request.operation === "edit" && settled.receipt.payloadIdentity !== identity
         ? { ok: false, message: "This change's id was already used for different work. Nothing was changed." } : reply(settled.receipt.outcome);
-      if (settled?.status === "cancelled") return { ok: true, value: { requestId: request.id, state: "cancelled", message: "Cancelled before commit. Nothing was changed." } };
+      if (settled?.status === "cancelled") return { ok: true, value: { requestId: request.id, state: "cancelled", message: "This delivery was cancelled before it committed. Nothing was changed by it." } };
       const message = error instanceof Error ? error.message : "The browser edit failed.";
       const unknown = error instanceof AgentRecordsError && error.code === "unknown" || /unproven|outcome.*unknown|could not prove|could not confirm whether/i.test(message);
       return { ok: true, value: { requestId: request.id, state: unknown ? "unknown" : "conflict", message: unknown
