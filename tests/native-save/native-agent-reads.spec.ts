@@ -57,7 +57,8 @@ test("all migrated MCP reads and the site resource answer from browser drafts; T
     const before = commands.length;
     const response = await client.callTool({ name, arguments: args });
     expect(response.isError, JSON.stringify(response)).toBeFalsy();
-    expect(commands.slice(before).map(value => value.command.tool)).toEqual([name]);
+    // Playwright delivers socket frame events asynchronously: the reply can arrive first.
+    await expect.poll(() => commands.slice(before).map(value => value.command.tool)).toEqual([name]);
     return JSON.parse((response.content as { text: string }[])[0].text);
   };
   try {
@@ -78,7 +79,7 @@ test("all migrated MCP reads and the site resource answer from browser drafts; T
     const before = commands.length;
     const resource = await client.readResource({ uri: "native-site://site" });
     const summary = JSON.parse((resource.contents[0] as { text: string }).text);
-    expect(commands.slice(before).map(value => value.command.tool)).toEqual(["get_site"]);
+    await expect.poll(() => commands.slice(before).map(value => value.command.tool)).toEqual(["get_site"]);
     expect(summary.changes).toContainEqual({ path: "index.html", kind: "M" });
     expect(summary.editor.previewSelection).toMatchObject({ tag: "h1" });
     expect(new Set(commands.map(value => value.id)).size).toBe(commands.length);
