@@ -60,6 +60,10 @@ export function createAgentEditTools(options: Options) {
         if (request.operation === "status") return { ok: true, value: { requestId: request.id, state: "unknown",
           message: "Change not found, or its receipt expired. The outcome is unknown; do not replay the change." } };
         if (!source) throw new Error("The editor is unavailable. Open the connected site and branch.");
+        // The revision proof is taken before preparation and carried into an unchanged receipt: an agent
+        // commit landing meanwhile refuses it. Such a receipt writes no drafts, so no manual work is touched.
+        const before = await records.workspace(workspace);
+        check();
         const shared = await ports.context();
         check();
         if (!shared) throw new Error("The editor is unavailable. Open the connected site and branch.");
@@ -68,19 +72,18 @@ export function createAgentEditTools(options: Options) {
         });
         const prepared = await prepareAgentEdit(request, shared.context, files);
         check();
-        // UI-only open_page also receives an owner-fenced receipt. An unchanged request applied nothing and
-        // gets none: a receipt would need a draft proof from before preparation, and a redelivery can only
-        // find the same text again (unchanged) or a newer one (hash conflict), never apply twice.
-        const record = async (outcome: JsonValue) => {
-          const state = await records.workspace(workspace);
+        // Unchanged requests and UI-only open_page also receive an owner-fenced receipt, so their id stays
+        // reserved for this work and grant (reuse for different work is refused like any other).
+        const record = async (outcome: JsonValue, revision?: number) => {
+          const expectedRevision = revision ?? (await records.workspace(workspace)).revision;
           check();
-          const result = await records.commit({ workspace, generation, expectedRevision: state.revision, expectedDrafts: [], drafts: [],
+          const result = await records.commit({ workspace, generation, expectedRevision, expectedDrafts: [], drafts: [],
             receipt: { operationId: request.id, authorizationId: request.grantId, payloadIdentity: identity, outcome,
               createdAt: Date.now(), issuedAt: request.createdAt } });
           check();
           return reply(result.receipt.outcome);
         };
-        if ("unchanged" in prepared) return { ok: true, value: { requestId: request.id, ...prepared.unchanged } };
+        if ("unchanged" in prepared) return record(json(prepared.unchanged), before.revision);
         const { input, operation } = prepared;
         const command: AgentCommand = { id: request.id, operation, content: input.content ?? "",
           branch: shared.context.branch, commit: shared.context.commit, ...input, repoId: workspace.repoId,

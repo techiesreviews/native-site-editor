@@ -47,8 +47,8 @@ guarded transformations and owner-fenced staged commits. Result contracts are ke
 - **Receipts first.** The receipt is looked up by operation id BEFORE preparation, against an identity over the tool
   request (tool + args + branch), not the derived text: a duplicate edit_file returns the recorded outcome instead of
   failing its now-stale hash, and is never applied again; the same id with different work or another grant is refused;
-  in-flight duplicates join one run. open_page also gets a receipt; unchanged requests (they apply nothing) and
-  inspect_preview write none.
+  in-flight duplicates join one run. Unchanged requests (fenced by the revision read before preparation; no
+  drafts written) and open_page also get a receipt, so their id stays reserved; inspect_preview writes none.
 - **get_command_status** is a receipt lookup in the tab over one dispatch (authorization rechecked by
   `records.receipt`); no receipt → `unknown`, never replayed.
 - **update_active_draft / create_file_draft** take the staged text commit (drafts + receipt), so they are no longer
@@ -116,3 +116,11 @@ record no receipt: a redelivery finds the same text again or a hash conflict, ne
 (mutation checked), the unchanged test now asserts no receipt and a conflict after a manual change.
 `npm run check` ok; `npm run lint` ok; `scripts/agents/unit.sh` pass 4403 fail 0 (by hand);
 RESULT: ok specs 2/2 passed (native-agent-edits, native-mcp 18).
+
+Follow-up 2 (landing review round 3 on PR #60, merged as 4a2d73d4, gpt-6.1-sol, medium, read-only; `RESULT: ok review …
+evidence /home/ubulex/Projects/native-site-editor/.scratch/reviews/dor-16/20261018T135243Z`): fixed 1 — round 2's
+"no unchanged receipt" left the id unreserved, so the same id could then run different work or another grant (P2).
+Unchanged requests record a receipt again, now committed against the workspace revision read before preparation
+(an agent commit meanwhile refuses it; it writes no drafts, so manual work is never touched). Test rewritten
+(reuse for different work, another grant, a new tools instance; agent commit during preparation), both mutations
+checked. Focused: tests/agent-tools-edit.test.ts pass 13 fail 0; check, unit, lint, specs by `kit pr`.

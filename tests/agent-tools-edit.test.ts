@@ -174,20 +174,35 @@ test("duplicate edit_file joins in flight and returns the receipt before re-read
   assert.match(body(await f.tools.run({ operation: "status", id: input.id, grantId: input.grantId }, 0, () => true)).message, /revoked/);
 });
 
-test("unchanged edits apply nothing and record no receipt; stale preparation and unknown persistence never run again", async () => {
+test("unchanged edits record a fenced receipt that reserves their id; stale preparation and unknown persistence never run again", async () => {
   const f = await fixture();
   const input = request("edit_file", { path: "index.html", expectedHash: f.context.site!.outlines[0].hash, edits: [{ oldText: "Welcome", newText: "Welcome" }] });
   const first = await f.run(input);
   assert.equal(body(first).state, "unchanged");
   assert.deepEqual(await f.run(input), first);
   assert.equal(f.commands.length, 0);
-  // No receipt: it would need a draft proof from before preparation (a manual edit meanwhile could not be fenced).
-  assert.equal(await f.records.receipt(workspace, input.id, input.grantId), undefined);
-  assert.equal(f.fake.stores.get("receipts")?.size ?? 0, 0);
-  // A redelivery after the text changed is a hash conflict, never an application.
-  f.context.drafts.push({ path: "index.html", baseSha: null, content: "Changed by hand", hash: await textHash("Changed by hand"), updatedAt: Date.now() });
-  assert.equal(body(await f.run(input)).state, "conflict");
+  assert.ok(await f.records.receipt(workspace, input.id, input.grantId));
+  assert.equal(f.fake.stores.get("drafts")?.size ?? 0, 0);
+  // The id stays reserved: different work, another grant, or a new tools instance over the same records is refused.
+  const reuse = request("delete_file", { path: "index.html" }, input.id);
+  assert.match(String(JSON.stringify(await f.run(reuse))), /already used for different work/);
+  assert.match(String(JSON.stringify(await f.run({ ...input, grantId: "other-grant" }))), /authorization differs/i);
+  const again = createAgentEditTools({ workspace, ports: f.ports, records: f.records, run: async () => assert.fail("must not run") });
+  assert.match(String(JSON.stringify(await again.run(reuse, 0, () => true))), /already used for different work/);
+  assert.deepEqual(await again.run(input, 0, () => true), first);
   assert.equal(f.commands.length, 0);
+  // The revision proof comes from before preparation: an agent commit landing meanwhile refuses the unchanged receipt.
+  const g = await fixture();
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const held = createAgentEditTools({ workspace, records: g.records, run: async () => assert.fail("must not run"),
+    ports: { ...g.ports, context: async () => { await gate; return g.ports.context(); } } });
+  const pending = held.run(request("edit_file", input.args, "held-unchanged"), 0, () => true);
+  await new Promise(resolve => setTimeout(resolve, 10));
+  assert.equal(body(await g.run(request("write_file", { path: "meanwhile.txt", content: "agent" }, "meanwhile"))).state, "applied");
+  release();
+  assert.notEqual(body(await pending).state, "unchanged");
+  assert.equal(await g.records.receipt(workspace, "held-unchanged", "grant"), undefined);
   f.stale();
   assert.equal(body(await f.run(request("delete_file", { path: "index.html" }, "stale"))).state, "conflict");
   const fresh = await fixture();
