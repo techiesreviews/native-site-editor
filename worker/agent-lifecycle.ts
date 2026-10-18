@@ -2,6 +2,11 @@
 export const DEADLINES_KEY = "alarm-deadlines";
 export const LIFECYCLE_KEY = "agent-lifecycle";
 export const DISCONNECT_GRACE = 5 * 60_000;
+/** After physical deletion a tombstone only has to outlast delayed work on that id
+ * (a reservation's 60 s deadline, a slow record PUT); the deleted record and hub
+ * entry already refuse authentication. Keeps the lifecycle record small. */
+export const TOMBSTONE_AFTER_DELETION = 10 * 60_000;
+const utf8Bytes = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).byteLength;
 export type Deadlines = Partial<Record<"session" | "registration" | "agent-cleanup", number>>;
 export interface LifecycleRecord {
   generation: number;
@@ -76,8 +81,19 @@ export class AgentLifecycle {
     else await this.save(next);
     return true;
   }
-  async complete(generation: number) {
+  /** Persistent lifecycle bytes, charged against the workspace's 64 KiB metadata budget.
+   * Expired tombstones are pruned here (lazily, like the ledger) before they are counted. */
+  async admissionBytes() {
     const current = await this.load();
+    const live = Object.fromEntries(Object.entries(current.cleaned).filter(([, expiry]) => expiry > this.now()));
+    if (Object.keys(live).length !== Object.keys(current.cleaned).length) await this.save({ ...current, cleaned: live });
+    return (await this.storage.get(LIFECYCLE_KEY)) === undefined ? 0 : utf8Bytes(await this.load());
+  }
+  async complete(generation: number, deleted: string[] = []) {
+    const loaded = await this.load();
+    const cleaned = Object.fromEntries(Object.entries(loaded.cleaned).filter(([, expiry]) => expiry > this.now()));
+    for (const id of deleted) if (cleaned[id]) cleaned[id] = Math.min(cleaned[id], this.now() + TOMBSTONE_AFTER_DELETION);
+    const current = { ...loaded, cleaned };
     if (current.disconnectDeadline !== undefined && (current.generation !== generation || current.disconnectDeadline > this.now())) {
       await this.save({ ...current, cleanupPending: undefined });
       await this.deadlines.set("agent-cleanup", current.disconnectDeadline);
