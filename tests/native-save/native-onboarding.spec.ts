@@ -380,12 +380,12 @@ test("the first save of an empty repository works after the tab has been open fo
 });
 
 test("a home page an agent writes switches the site on, and discarding all brings Start your site back", async ({ page, baseURL }) => {
+  // Route before navigation so queued-edit tests keep the legacy fallback.
+  await page.routeWebSocket("**/api/agent/relay?*", socket => socket.close());
+  await page.route("**/api/agent/relay", route => route.fulfill({ status: 404, body: "Not found" }));
   await control(page, baseURL, { repositories: "none", add: [{ name: "agent-repo", kind: "empty" }] });
   await openRepository(page, baseURL, "agent-repo");
   await expect(page.getByText("Empty repository")).toBeVisible({ timeout: 30_000 });
-  // The fixture server cannot upgrade relay sockets: route a missing relay so Connect keeps the legacy path.
-  await page.routeWebSocket("**/api/agent/relay?*", socket => socket.close());
-  await page.route("**/api/agent/relay", route => route.fulfill({ status: 404, body: "Not found" }));
   await page.locator(".repository-menu__trigger").click();
   await page.getByRole("button", { name: "Connect with MCP", exact: true }).click();
   await expect(page.locator(".agent-menu__hint")).toContainText("Paste it into Claude, Codex");

@@ -161,7 +161,8 @@ import { createServer, preview, type Connect, type Plugin } from "vite";
 import { handle, type Env } from "../../worker/app.ts";
 import { admitRegistration, isBudgetKey, REGISTRATION_ROUTE } from "../../worker/oauth-registration.ts";
 import { clearHub, hubView, type HubStorage } from "../../worker/agent-store.ts";
-import { fakeHubRoute, serializeObject } from "./fake-hub.ts";
+import { fakeHubRoute, fakeRelayRoute, serializeObject, type RelayConnect } from "./fake-hub.ts";
+import { installRelayUpgrade } from "./fake-websocket.ts";
 import { accountPending, PENDING_KEY, PENDING_ROUTE, type PendingAction } from "../../worker/oauth-pending.ts";
 import type { AgentHub } from "../../worker/agent-context.ts";
 import { tarball } from "../tar-helper.ts";
@@ -972,7 +973,7 @@ function newSessionId(): string {
   return createHash("sha256").update(`${Date.now()}:${Math.random()}`).digest("hex");
 }
 
-function env(): Env {
+function env(connect?: RelayConnect, relaySession = "anonymous"): Env {
   // eslint-disable-next-line no-restricted-syntax -- The local server implements only the Durable Object namespace surface exercised by worker requests.
   return {
     ...(process.env.ASE_NATIVE_STARTER_SOURCE === "native-static" ? { STARTER_SOURCE: "native-static" } : {}),
@@ -995,9 +996,11 @@ function env(): Env {
         fetch: async (request: Request): Promise<Response> => {
           const slot = sessions.get(id);
           const url = new URL(request.url);
-          // This HTTP-only fixture has no editor socket; MCP reads take the matching legacy fallback.
-          if (id.startsWith("agent-relay:") && url.pathname === "/relay/dispatch" && request.method === "POST")
-            return Response.json({ ok: false, code: "editor-unavailable", outcome: "not-sent" });
+          // Real relay core over Node sockets; absent owners still permit the matching legacy fallback.
+          // Each demo sign-in has its own clone and browser ownership database, even though
+          // all fixture accounts use DEMO_LOGIN. Tabs of that sign-in still share one relay.
+          const relayResponse = await fakeRelayRoute(`${relaySession}:${id}`, request, connect);
+          if (relayResponse) return relayResponse;
           // The agent hub, as worker/index.ts runs it.
           const storage = storageOf(id);
           const hubResponse = await fakeHubRoute(id, storage, request);
@@ -1136,6 +1139,25 @@ const onboardingOf = (id: string) => sessionOnboarding.get(id) ?? sessionOnboard
 // A repository's git for the head and file controls: the demo's, or one made or added by a test.
 const gitOf = (key: string, id: string | null, repoName: string | null) =>
   (repoName && onboardingOf(key).repos.get(repoName)?.git) || sessions.get(id ?? key)!.git!;
+
+// HTTP and WebSocket requests share the real Worker's session/repository authorization.
+async function workerResponse(req: Connect.IncomingMessage, bodyBuffer: Buffer, connect?: RelayConnect): Promise<Response> {
+  const request = toRequest(req, bodyBuffer);
+  // An MCP request carries an agent token, not a cookie: it reads the
+  // repositories of the editor session the token belongs to.
+  const bearer = /^Bearer (ase_[a-f0-9]{64})$/.exec(req.headers.authorization ?? "")?.[1];
+  const agentSession = bearer
+    ? (sessions.get(`agent:${createHash("sha256").update(bearer).digest("hex")}`)?.value as { sessionId?: string } | undefined)?.sessionId
+    : undefined;
+  const id = sessionCookie(req) ?? agentSession ?? null;
+  const slot = id ? sessions.get(id) : undefined;
+  const onboardingKey = cookieNamed(req, "ase_demo_browser") ?? id;
+  const git = slot?.git || initialGit;
+  if (slot && !slot.fixtureGits) slot.fixtureGits = new Map();
+  const fixtureGits = slot?.fixtureGits ?? new Map<string, Git>();
+
+  return handle(request, env(connect, id ?? "anonymous"), githubFetch(git, fixtureGits, (id && sessionActions.get(id)) || NO_ACTIONS, onboardingKey ? onboardingOf(onboardingKey) : newOnboarding(), id ? hostingOf(id) : newHosting()));
+}
 
 function workerMiddleware(): Connect.NextHandleFunction {
   const run = async (...[req, res, next]: Parameters<Connect.NextHandleFunction>) => {
@@ -1375,23 +1397,11 @@ function workerMiddleware(): Connect.NextHandleFunction {
     }
 
     const bodyBuffer = await readBody(req);
-    const request = toRequest(req, bodyBuffer);
-    // An MCP request carries an agent token, not a cookie: it reads the
-    // repositories of the editor session the token belongs to.
-    const bearer = /^Bearer (ase_[a-f0-9]{64})$/.exec(req.headers.authorization ?? "")?.[1];
-    const agentSession = bearer
-      ? (sessions.get(`agent:${createHash("sha256").update(bearer).digest("hex")}`)?.value as { sessionId?: string } | undefined)?.sessionId
-      : undefined;
-    const id = sessionCookie(req) ?? agentSession ?? null;
-    const slot = id ? sessions.get(id) : undefined;
-    const onboardingKey = cookieNamed(req, "ase_demo_browser") ?? id;
-    const git = slot?.git || initialGit;
-    if (slot && !slot.fixtureGits) slot.fixtureGits = new Map();
-    const fixtureGits = slot?.fixtureGits ?? new Map<string, Git>();
+    const id = sessionCookie(req);
     const delay = id ? (publishDelays.get(id) ?? 0) : 0;
     if (path === "/api/publish" && delay > 0)
       await new Promise((r) => setTimeout(r, delay));
-    const response = await handle(request, env(), githubFetch(git, fixtureGits, (id && sessionActions.get(id)) || NO_ACTIONS, onboardingKey ? onboardingOf(onboardingKey) : newOnboarding(), id ? hostingOf(id) : newHosting()));
+    const response = await workerResponse(req, bodyBuffer);
 
     res.statusCode = response.status;
     response.headers.forEach((value, key) => {
@@ -1485,6 +1495,7 @@ async function main() {
       preview: { host: "127.0.0.1", port: appPort, strictPort: true },
     });
     keepIdleConnections(server.httpServer);
+    installRelayUpgrade(server.httpServer, (request, connect) => workerResponse(request, Buffer.alloc(0), connect));
     const close = () => void server.close().catch(() => undefined).finally(() => process.exit(0));
     process.once("SIGTERM", close);
     process.once("SIGINT", close);
@@ -1524,7 +1535,10 @@ async function main() {
     },
   });
   await app.listen();
-  if (app.httpServer) keepIdleConnections(app.httpServer);
+  if (app.httpServer) {
+    keepIdleConnections(app.httpServer);
+    installRelayUpgrade(app.httpServer, (request, connect) => workerResponse(request, Buffer.alloc(0), connect));
+  }
   const cleanup = async () => {
     await app.close().catch(() => undefined);
   };

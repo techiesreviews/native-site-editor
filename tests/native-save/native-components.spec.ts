@@ -3,7 +3,10 @@ import { storedDraft } from "./drafts";
 import type { ComponentDeps } from "../../src/page-builder/components";
 import type { NativePreviewSelection } from "../../src/components/native-preview";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
-import { copyConnectionPrompt } from "./mcp-prompt";
+import { copyConnectionPrompt, useLegacyRelay } from "./mcp-prompt";
+
+// These specs exercise queued edits and the matching legacy context fallback.
+test.beforeEach(({ page }) => useLegacyRelay(page));
 
 // Components as first-class page builder objects (src/page-builder/components.ts,
 // docs/page-builder/components.md): the component accent on instances, the

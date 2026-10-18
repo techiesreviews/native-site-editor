@@ -3,7 +3,8 @@ import { expect, test, type Page, type WebSocketRoute } from "@playwright/test";
 import { textHash, type AgentCommand } from "../../shared/agent";
 import type { AgentRead } from "../../shared/agent-read";
 
-// Default native-save fixture. Relay mocked in the browser; the fixture's Worker stays unchanged.
+// Default native-save fixture. The first test injects commands before MCP edits migrate (ticket 16).
+// The token/idle test and native-agent-reads.spec.ts use the fixture's real relay socket.
 async function open(page: Page, baseURL: string | undefined) {
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
@@ -120,13 +121,6 @@ test("a copied token shows connected after its agent uses it: one hub read on re
     grants = [{ id: "token-grant", repoId: 501, repo: "native-demo-user/native-demo", branch: "main", via: "token", createdAt: Date.now() }];
     return route.fulfill({ json: { id: "token-grant", token: "ase_test" } });
   });
-  await context.routeWebSocket("**/api/agent/relay?*", route => {
-    route.onMessage(message => {
-      if (message === "ping") { route.send("pong"); return; }
-      const value = JSON.parse(String(message));
-      if (value.type === "handshake") route.send(JSON.stringify({ ...value, type: "ready" }));
-    });
-  });
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await countPongs(page);
   await open(page, baseURL);
@@ -138,7 +132,7 @@ test("a copied token shows connected after its agent uses it: one hub read on re
   await connect(page);
   await expect(page.locator(".agent-menu")).toHaveAttribute("data-state", "waiting");
   const before = requests.length;
-  // Stop at the ping so the mocked relay's pong arrives before its 10 s deadline (as above).
+  // Stop at the ping so the fixture relay's pong arrives before its 10 s deadline.
   await page.clock.runFor(45_000);
   await expect(page.locator("html")).toHaveAttribute("data-agent-pongs", "1");
   await page.clock.runFor(20_000);

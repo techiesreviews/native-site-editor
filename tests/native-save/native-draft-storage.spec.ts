@@ -67,11 +67,11 @@ test("an edit survives a reload made right after it", async ({ page, baseURL }) 
 });
 
 test("drafts totalling well over 5 MB are kept and survive a reload", async ({ page, baseURL }) => {
-  await open(page, baseURL);
-  await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
-  // The fixture server cannot upgrade relay sockets: route a missing relay so Connect keeps the legacy path.
+  // Route before navigation so queued-edit tests keep the legacy fallback.
   await page.routeWebSocket("**/api/agent/relay?*", socket => socket.close());
   await page.route("**/api/agent/relay", route => route.fulfill({ status: 404, body: "Not found" }));
+  await open(page, baseURL);
+  await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
   await page.locator(".repository-menu__trigger").click();
   await page.getByRole("button", { name: "Connect with MCP", exact: true }).click();
   await expect(page.getByRole("button", { name: "Waiting for connection…", exact: true })).toBeVisible();
