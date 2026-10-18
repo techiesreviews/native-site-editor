@@ -3,6 +3,7 @@ title: "Persist Ask agent history locally"
 type: task (AFK)
 status: closed
 assignee: dor-09
+landed: PR #48 (494dff2d)
 blocked_by: [06-atomic-text-edits]
 builder: claude
 phase: 2
@@ -53,7 +54,7 @@ and a waiting hub request this browser lacks is adopted. The server request path
 transport until ticket 20). Startup mounts the agent menu (0 requests) when a localStorage marker
 says the open workspace has requests to show, so agent records stay out of boot.
 
-Commits: 3b54d571, c8f53983, eb3aa5ec, e0999ef2 (spec), 93b0d076 (review 1), b96e7274, 224e3226 (review 2).
+Commits (as merged): 5dd1ccda, cdc685f5, d76c5789, fa3bc253 (spec), 4bbc5620 (review 1), 4f552370, 45011221 (review 2), ae6e7566, 494dff2d (Done).
 
 Out-of-Files edits (needed): tests/agent-records.test.ts (conversation records now carry
 `unfinished`/`updatedAt`); tests/native-save/native-mcp.spec.ts (new history scenario, as Done when
@@ -91,6 +92,8 @@ Kit:
   `RESULT: fail specs 1 of 1 failed: native-mcp.spec.ts` ("an MCP client connected by OAuth reaches the open editor
   tab": the consent page answers "Too many unfinished connection requests for this sign-in"). The same test fails on
   plain dev 6635ffa1 (ticket 24's pending ledger on the native-save server); nothing in this slice touches OAuth.
+- Landing: rebased on cb308bc1 (ticket 24b fixture fix); RESULT: ok size boot 355 KB (+1 KB) vs dev@cb308bc, budget 355 KB;
+  kit pr: check, unit, lint, specs, review, CI ok; RESULT: ok merged #48 494dff2.
 - RESULT: ok shots raw spec, out /home/ubulex/Projects/native-site-editor/.scratch/shots/dor-09/20261018-013725
 - RESULT: ok review git diff b72c6cb3…HEAD evidence /home/ubulex/Projects/native-site-editor/.scratch/reviews/dor-09/20261018T010846Z
 - RESULT: ok review git diff 6635ffa1…HEAD evidence /home/ubulex/Projects/native-site-editor/.scratch/reviews/dor-09/20261018T013852Z
