@@ -5,6 +5,7 @@ import type { Env, StoredSession } from "./app";
 import type { requestSummary } from "../shared/agent-requests";
 import { workspaceKey, type AgentWorkspace } from "../shared/agent-command";
 import { relayObjectName } from "./agent-relay";
+import { TOMBSTONE_AFTER_DELETION } from "./agent-lifecycle";
 import { METADATA_ROUTE, type MetadataOperation, type MetadataResult, type Entry } from "./agent-metadata";
 
 
@@ -491,7 +492,9 @@ export async function deleteCleanedGrants(env: Env, workspace: string, entries: 
     try {
       const response = await agentRecord(env, entry.id);
       if (!response.ok && response.status !== 404) continue;
-      const headers: Record<string, string> = { "X-Agent-Cleaned-Until": String(entry.expiresAt) };
+      // The record object's own fence against a delayed first PUT lives as briefly as the
+      // workspace tombstone that pays for it (that PUT is refused past its 60 s deadline anyway).
+      const headers: Record<string, string> = { "X-Agent-Cleaned-Until": String(Math.min(entry.expiresAt, Date.now() + TOMBSTONE_AFTER_DELETION)) };
       let matches = response.status === 404;
       if (response.ok) {
         const grant = await response.json() as AgentGrant;

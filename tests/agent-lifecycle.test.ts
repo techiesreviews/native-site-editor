@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { AgentLifecycle, AlarmDeadlines, DEADLINES_KEY, DISCONNECT_GRACE, LIFECYCLE_KEY, TOMBSTONE_AFTER_DELETION, type LifecycleRecord } from "../worker/agent-lifecycle";
+import { AgentLifecycle, AlarmDeadlines, DEADLINES_KEY, DISCONNECT_GRACE, LIFECYCLE_KEY, TOMBSTONE_AFTER_DELETION, RECORD_FENCE_BYTES, type LifecycleRecord } from "../worker/agent-lifecycle";
 import { AgentRelay, relayObjectName, type RelayScope, type RelaySocket } from "../worker/agent-relay";
 import { createGrant, getGrant, getHub, rebindGrant, revokeGrant } from "../worker/agent-context";
 import { METADATA_KEY, METADATA_ROUTE, type Ledger } from "../worker/agent-metadata";
@@ -538,6 +538,11 @@ test("cleanup tombstones count toward the 64 KiB workspace budget, shrink after 
     await h.close(h.name, h.editors[0]); h.advance(DISCONNECT_GRACE); await h.alarm(h.name);
     const after = (await h.record())!;
     assert.ok(after.cleaned[h.grant.id] <= h.now() + TOMBSTONE_AFTER_DELETION, "deleted grant keeps only a short tombstone");
+    const fence = await h.storage(`agent:${h.grant.id}`).get<number>("agent-cleaned-until");
+    assert.ok(fence !== undefined && fence <= h.now() + TOMBSTONE_AFTER_DELETION, "the record object's PUT fence is as short-lived");
+    // Admission charges each live tombstone for its record object's fence too.
+    const lifecycle = new AgentLifecycle(h.relayStorage as never, new AlarmDeadlines(h.relayStorage as never), h.now);
+    assert.equal(await lifecycle.admissionBytes(), new TextEncoder().encode(JSON.stringify(after)).byteLength + RECORD_FENCE_BYTES);
     // Fill the lifecycle record with live tombstones: admission must count them before allocating.
     const many = Object.fromEntries(Array.from({ length: 900 }, (_, n) => [n.toString(16).padStart(64, "0"), h.now() + 60_000]));
     await h.relayStorage.put(LIFECYCLE_KEY, { ...after, cleaned: { ...after.cleaned, ...many } });
