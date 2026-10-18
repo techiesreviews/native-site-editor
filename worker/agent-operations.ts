@@ -27,8 +27,14 @@ export function newHub(action: any): AgentHub | undefined {
   return { kind: "agent-hub", login, expiresAt, grants: [] };
 }
 
+export const lateConnection = "Saving the connection took too long. Connect the agent again.";
 /** Called inside the hub Durable Object's concurrency block. */
 export function agentOperation(hub: AgentHub, action: any) {
+  // A reservation's deadline: after it, reconciliation may have reclaimed the
+  // reservation, so a late add or rebind must not publish uncounted metadata.
+  if ((action.type === "add-grant" || action.type === "rebind-grant") && action.deadline !== undefined &&
+      !(Date.now() < Number(action.deadline)))
+    throw new HttpError(409, lateConnection);
   if (action.type === "add-grant") {
     const grant = action.grant as HubGrant;
     if (!hub.grants.some(item => item.id === grant.id) && hub.grants.length >= 20)

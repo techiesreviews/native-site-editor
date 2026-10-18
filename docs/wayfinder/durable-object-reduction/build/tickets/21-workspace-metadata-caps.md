@@ -94,3 +94,15 @@ fixed 2 (sign-out released while the separate hub stayed; reconcile deleted a co
 - RESULT: ok doctor 7/7 checks passed
 - RESULT: ok specs 14/14 passed (affected, after review 2)
 - Boot size not run: worker-only change, no `src/` imports.
+
+Landed: PR #73, merged as da57e0d (`RESULT: ok merged #73 da57e0d`; kit pr: tier full, check, unit, lint, specs,
+review, CI ok).
+
+Follow-up (landing review round 3, gpt-6.1-sol, medium, read-only; `RESULT: ok review … evidence
+/home/ubulex/Projects/native-site-editor/.scratch/reviews/dor-21/20261018T225652Z`): fixed 1 (P2) in a follow-up PR.
+A hub `add-grant` or `rebind-grant` held past its reservation's 60 s deadline could still write after
+reconciliation had reclaimed the reservation, leaving a hub entry no ledger counted. Both hub writes now carry the
+deadline and the hub refuses them inside its serialized write (409 "Saving the connection took too long. Connect
+the agent again."). Two new tests in tests/agent-metadata.test.ts (38) both fail without the fix: a late add-grant
+followed by a lost Worker leaves hub and ledger equal at 5; a late rebind leaves the connection on its old branch
+and generation, counted only there. Claude; focused unit.sh pass 38 + 59 fail 0, `npm run check` ok, lint ok.
