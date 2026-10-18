@@ -4421,6 +4421,8 @@ function agentContext(): Promise<SharedContext | undefined> {
   return withSiteIndexed(nativeTextIndexGate, buildAgentSiteContext);
 }
 const agentSiteHost = createAgentSiteHost({
+  files: () => appStore.repository.value && appStore.snapshot.value ? { repo: appStore.repository.value, snapshot: appStore.snapshot.value,
+    api, read: readFile, batch: readFiles, has: (repo, sha) => Boolean(cleanSources.get(repo, sha)) } : undefined,
   stamp: () => guardedEdits.stamp("repository"),
   load: loadAgentSite,
   input: () => {
@@ -5554,6 +5556,7 @@ const agentController = createAgentController<HTMLElement>({
   onError: errorMessage,
   createOptions: () => ({
     context: agentContext,
+    tools: agentSiteHost.tools(agentContext),
     onCommand: applyAgentSiteCommand,
     reload: async snapshot => {
       const scope = draftScope(), open = appStore.openFile.value, epoch = generation;

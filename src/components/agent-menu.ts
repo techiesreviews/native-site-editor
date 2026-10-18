@@ -6,6 +6,7 @@ import { textBytes, type AgentCommand, type AgentElement } from "../../shared/ag
 import { payloadIdentity, workspaceKey, type AgentWorkspace, type JsonValue } from "../../shared/agent-command";
 import { AgentRecordsError, agentStorageStatus, indexedDbAgentRecords, isUnfinishedRequest, type AgentRecords, type AgentStorageProblem } from "../agent-records";
 import type { createLiveTransport } from "../agent-transport";
+import type { AgentReadPorts } from "../agent-tools-read";
 import type { SharedContext } from "../agent-site";
 import type { PinRequest } from "./agent-pins";
 import { agentHistoryKey } from "../controllers/agent-controller";
@@ -92,6 +93,7 @@ export function createAgentMenu(options: {
   repository: () => { id: number; fullName: string; branch: string } | undefined;
   /** The context to share and its drafts' texts, built when it is sent. */
   context: () => Promise<SharedContext | undefined>;
+  tools?: AgentReadPorts;
   onCommand: (command: AgentCommand) => Promise<AgentCommandOutcome | void>;
   /** Whether an agent is connected changed. */
   onConnection?: (connected: boolean) => void;
@@ -139,6 +141,12 @@ export function createAgentMenu(options: {
     transport = createLiveTransport({
       workspace: { account: options.account, repoId: repo.id, branch: repo.branch }, repo: repo.fullName, tabId,
       current: scope, records, reload: snapshot => options.reload?.(snapshot) ?? Promise.resolve(),
+      read: async read => {
+        const ports = options.tools, stamp = ports?.stamp();
+        if (!ports || !stamp) return { ok: false, message: "Browser read tools are unavailable. Refresh the editor." };
+        const { createAgentReadTools } = await import("../agent-tools-read");
+        return createAgentReadTools({ ...ports, stamp: () => stamp }).run(read.tool, read.args);
+      },
       run: async command => {
         const outcome = await options.onCommand(command);
         // A command from a grant proves the agent uses it: no hub read is needed to show it connected.

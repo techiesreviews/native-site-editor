@@ -608,3 +608,48 @@ test("a first-failure probe whose headers or body never arrive counts as a netwo
     t.mock.restoreAll();
   }
 });
+
+test("live reads return JSON without a mutation run or receipt", async () => {
+  const f = fixture();
+  let reads = 0;
+  const a = f.tab("a", { read: async read => { reads++; return { ok: true, value: { path: read.args.path, content: "browser" } }; } });
+  await a.transport.start();
+  a.deliver({ operation: "read", tool: "read_file", args: { path: "index.html" } });
+  await until(() => a.sockets[0].messages("result").length === 1);
+  assert.deepEqual(a.sockets[0].messages("result")[0].result, { ok: true, value: { path: "index.html", content: "browser" } });
+  assert.equal(reads, 1);
+  assert.deepEqual(f.counts(), { http: 0, commits: 0, runs: 0 });
+  assert.equal(f.fake.stores.get("receipts")!.size, 0);
+  a.transport.stop();
+});
+
+test("live reads refuse stale scope and malformed inputs before execution", async () => {
+  const f = fixture();
+  let reads = 0;
+  const a = f.tab("a", { read: async () => { reads++; return { ok: true, value: null }; } });
+  await a.transport.start();
+  const read = { operation: "read", tool: "read_file", args: { path: "index.html" } };
+  for (const patch of [{ generation: 99 }, { tabId: "b" }, { workspace: { ...workspace, branch: "other" } }]) a.deliver(read, patch);
+  for (const patch of [{ tool: "invented" }, { args: [] }, { args: {} }, { args: { path: "x", source: "false" } }]) a.deliver({ ...read, ...patch });
+  await until(() => a.sockets[0].messages("result").length === 7);
+  assert.ok(a.sockets[0].messages("result").every(value => value.result.ok === false));
+  assert.equal(reads, 0);
+  a.transport.stop();
+});
+
+test("read results lost across reset or workspace move are never sent on a replacement session", async () => {
+  for (const move of [false, true]) {
+    const f = fixture();
+    let release!: () => void, admitted = false;
+    const a = f.tab("a", { read: async () => { admitted = true; await new Promise<void>(resolve => { release = resolve; }); return { ok: true, value: "old" }; } });
+    await a.transport.start();
+    a.deliver({ operation: "read", tool: "get_site", args: {} });
+    await until(() => admitted);
+    if (move) a.change({ ...workspace, branch: "other" });
+    else a.sockets[0].receive({ type: "reset", handshakeRequired: true });
+    release(); await drain();
+    assert.equal(a.sockets[0].messages("result").length, 0);
+    assert.equal(f.counts().commits, 0);
+    a.transport.stop();
+  }
+});

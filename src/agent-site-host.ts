@@ -1,3 +1,4 @@
+import type { AgentReadFiles } from "./agent-tools-read";
 import type { AgentSiteInput, SharedContext } from "./agent-site";
 import type { createConfirmDialog } from "./components/confirm-dialog";
 import type { Stamp } from "./guarded-edit";
@@ -5,6 +6,7 @@ import type { Stamp } from "./guarded-edit";
 type Dialog = ReturnType<typeof createConfirmDialog>;
 export interface AgentSiteHostPorts {
   stamp(): Stamp;
+  files?(): AgentReadFiles | undefined;
   load(): Promise<Pick<typeof import("./agent-site"), "buildAgentContext" | "agentAnswers">>;
   input(): AgentSiteInput | undefined;
   dialog(): Dialog | undefined;
@@ -34,5 +36,8 @@ export function createAgentSiteHost(ports: AgentSiteHostPorts) {
       ports.setDialog(real);
     }
   }
-  return { context, withAnswers };
+  function tools(build = context) {
+    return { stamp: () => ports.stamp(), context: build, files: () => ports.files?.() };
+  }
+  return { context, withAnswers, tools };
 }

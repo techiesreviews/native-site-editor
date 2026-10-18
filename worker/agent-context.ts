@@ -297,7 +297,7 @@ export async function authenticateAgent(
   // Authorize the pinned repository with a listing at most one minute old.
   // Reading the grant, sign-in session and hub still costs exactly three DO calls.
   const github = new GitHub(session.token, fetcher);
-  const hub = await getHub(env, grant.sessionId);
+  const hub = await getHub(env, grant.sessionId, { requests: true });
   const listed = hub?.grants.find((item) => item.id === id);
   if (!listed || listed.repoId !== grant.repoId || listed.repo !== grant.repo ||
       listed.branch !== grant.branch || listed.generation !== grant.generation)
