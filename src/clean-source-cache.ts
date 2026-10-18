@@ -45,11 +45,24 @@ export class CleanSourceCache {
   }
 
   get(repo: string, revision: string, path = ""): Promise<string> | undefined {
+    const text = this.peek(repo, revision, path);
+    return text === undefined ? this.pending.get(this.key(repo, revision, path)) : Promise.resolve(text);
+  }
+
+  /** Settled text, synchronously; a miss is read again through `load`. */
+  peek(repo: string, revision: string, path = "") {
     const key = this.key(repo, revision, path), text = this.entries.get(key);
-    if (text === undefined) return this.pending.get(key);
+    if (text !== undefined) this.put(repo, revision, path, text);
+    return text;
+  }
+
+  put(repo: string, revision: string, path: string, text: string) {
+    const key = this.key(repo, revision, path), previous = this.entries.get(key);
+    if (previous !== undefined) this.count(previous, -1);
     this.entries.delete(key);
     this.entries.set(key, text);
-    return Promise.resolve(text);
+    this.count(text, 1);
+    this.trim();
   }
 
   load(repo: string, revision: string, read: () => Promise<string>, path = "", live = () => true): Promise<string> {
@@ -57,11 +70,7 @@ export class CleanSourceCache {
     if (held) return held;
     const key = this.key(repo, revision, path), epoch = this.epoch, owner = this.owner;
     const requested = read().then(text => {
-      if (epoch === this.epoch && this.account() === owner && live()) {
-        this.entries.set(key, text);
-        this.count(text, 1);
-        this.trim();
-      }
+      if (epoch === this.epoch && this.account() === owner && live()) this.put(repo, revision, path, text);
       return text;
     });
     this.pending.set(key, requested);
