@@ -89,9 +89,11 @@ export function createLiveTransport(options: Options) {
   let recovery: Recovery | undefined, first = true, takeoverFlight: Promise<void> | undefined;
   const flights = new Map<string, { identity: string; promise: Promise<Result> }>();
   const scope = (): Scope => ({ workspace, tabId: options.tabId, generation: generation! });
-  const current = () => !stopped && options.current() !== undefined && workspaceKey(options.current()!) === key;
-  // A workspace briefly absent (a refresh reloading the repository) refuses commands but is no move.
+  // A workspace briefly absent (a refresh reloading the repository) is no move: the socket, ownership
+  // and recovery carry on, and only command admission waits for it (`present`).
   const moved = () => { const now = options.current(); return now !== undefined && workspaceKey(now) !== key; };
+  const current = () => !stopped && !moved();
+  const present = () => current() && options.current() !== undefined;
   const matches = (value: Partial<Scope>) => value.workspace && typeof value.workspace.account === "string" && workspaceKey(value.workspace) === key && value.tabId === options.tabId && value.generation === generation;
   function show(next: State) { if (!stopped) { state = next; options.listen(state); } }
   function clearHeartbeat() {
@@ -149,7 +151,7 @@ export function createLiveTransport(options: Options) {
     const operationId = typeof incoming?.id === "string" ? incoming.id : "";
     const refuse = (message: string): Result => ({ state: "conflict", message, operationId });
     let result: Result;
-    if (!matches(value) || !current() || !handshaken || state.mode !== "live")
+    if (!matches(value) || !present() || !handshaken || state.mode !== "live")
       result = refuse("This tab no longer receives agent changes for that workspace. Read the site again.");
     else if (typeof value.id !== "string" || !value.id || !incoming || typeof incoming !== "object" || !operationId || typeof incoming.operation !== "string" || !operations.has(incoming.operation) ||
       typeof incoming.path !== "string" || typeof incoming.content !== "string" || typeof incoming.commit !== "string" ||
@@ -163,7 +165,7 @@ export function createLiveTransport(options: Options) {
       try {
         // Admission awaits IndexedDB: the socket, its handshake and liveness must still hold before the executor runs.
         const admitted = await prove(at);
-        if (!admitted || socket !== source || session !== connection || !handshaken || state.mode !== "live" || source.readyState !== 1)
+        if (!admitted || !present() || socket !== source || session !== connection || !handshaken || state.mode !== "live" || source.readyState !== 1)
           result = refuse("Another tab took over agent changes, this site changed, or the connection was lost. Nothing was changed.");
         else {
           const identity = payloadIdentity(incoming as JsonValue), existing = flights.get(operationId);
@@ -186,8 +188,7 @@ export function createLiveTransport(options: Options) {
       } catch (error) { result = refuse(error instanceof Error ? error.message : "Browser storage is unavailable."); }
     }
     // Check the durable generation even when a frozen tab missed every ownership hint.
-    // While a refresh reloads the workspace (absent, not moved) the outcome is still this socket's to report.
-    if (socket !== source || current() && !await prove(at).catch(() => false)) return;
+    if (socket !== source || !await prove(at).catch(() => false)) return;
     // Correlation belongs to this socket and handshake epoch, never a replacement connection.
     if (socket === source && source.readyState === 1 && handshaken && session === connection && epoch === at && !stopped && !moved() && state.mode === "live") {
       try { source.send(JSON.stringify({ type: "result", id: value.id, ...scope(), result })); } catch { source.close(); }
@@ -195,12 +196,7 @@ export function createLiveTransport(options: Options) {
   }
   async function connect(valid: () => boolean) {
     const at = epoch;
-    if (!await prove(at) || !valid()) {
-      // A refresh briefly removed the workspace: this attempt failed, it did not succeed, so the
-      // coordinator keeps its budget running and tries again (a move or takeover already halted).
-      if (!current() && !moved() && !stopped && epoch === at) throw new AgentFailureError({ kind: "transient" });
-      return;
-    }
+    if (!await prove(at) || !valid()) return;
     close();
     const source = socketFactory!(`/api/agent/relay?${new URLSearchParams({ repo: options.repo, branch: workspace.branch, tabId: options.tabId, generation: String(generation) })}`);
     socket = source;
@@ -412,12 +408,7 @@ export function createLiveTransport(options: Options) {
   return {
     start, takeover, stop,
     state: () => state,
-    changed: () => {
-      if (stopped) return;
-      if (moved()) { halt("workspace-changed"); return; }
-      // The workspace is back after a refresh: a socket lost meanwhile reconnects through the coordinator.
-      if (current() && state.mode === "live" && !(socket?.readyState === 1 && handshaken)) check();
-    },
+    changed: () => { if (!stopped && moved()) halt("workspace-changed"); },
     retry: () => recovery?.retry() ?? Promise.resolve({}),
     report: (failure: AgentFailure) => { recovery?.report(failure); },
   };
