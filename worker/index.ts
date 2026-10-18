@@ -51,6 +51,13 @@ export class SessionStore extends DurableObject {
         (workspace === undefined || workspaceKey(scope.workspace) === workspace);
     }).length;
   }
+  /** A workspace without live agent grants has nothing to clean: closing its last tab writes nothing. */
+  private async lastEditorLost(detectedAt: number) {
+    if (this.eligible()) return;
+    const ledger = await this.ctx.storage.get<Ledger>(METADATA_KEY);
+    if (!ledger?.entries.some(entry => entry.state !== "cleaned" && entry.expiresAt > detectedAt)) return;
+    await this.lifecycle.presence(0, false, detectedAt);
+  }
   private fenceLoaded?: Promise<void>;
   private loadFence() {
     return this.fenceLoaded ??= this.lifecycle.load().then(record => {
@@ -76,22 +83,23 @@ export class SessionStore extends DurableObject {
   }
   async webSocketMessage(socket: WebSocket, message: string | ArrayBuffer) {
     const relay = this.relay();
-    // Only successful scope handshakes mutate lifecycle state; results stay memory-only.
-    if (!relay.message(socket, message) || !relay.isHandshaken(socket) || typeof message !== "string") return;
-    if ((JSON.parse(message) as { type?: string }).type !== "handshake") return;
+    // Only a socket's first successful handshake can end a grace; results stay memory-only
+    // (and are not parsed twice: a handshaken socket is already presence).
+    const before = relay.isHandshaken(socket);
+    if (!relay.message(socket, message) || before || !relay.isHandshaken(socket)) return;
     await this.ctx.blockConcurrencyWhile(() => this.lifecycle.presence(this.eligible(), true));
   }
   async webSocketClose(socket: WebSocket, code: number, _reason: string, _wasClean: boolean) {
     const detectedAt = Date.now();
     this.relay().disconnect(socket);
     try { socket.close(code === 1005 || code === 1006 ? 1000 : code); } catch { /* Already closed. */ }
-    await this.ctx.blockConcurrencyWhile(() => this.lifecycle.presence(this.eligible(), false, detectedAt));
+    await this.ctx.blockConcurrencyWhile(() => this.lastEditorLost(detectedAt));
   }
   async webSocketError(socket: WebSocket, _error: unknown) {
     const detectedAt = Date.now();
     this.relay().disconnect(socket);
     try { socket.close(1011, "Relay socket failed."); } catch { /* Already closed. */ }
-    await this.ctx.blockConcurrencyWhile(() => this.lifecycle.presence(this.eligible(), false, detectedAt));
+    await this.ctx.blockConcurrencyWhile(() => this.lastEditorLost(detectedAt));
   }
   async fetch(request: Request): Promise<Response> {
     const storage = this.ctx.storage;
