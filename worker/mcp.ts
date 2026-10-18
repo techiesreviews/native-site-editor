@@ -1031,7 +1031,7 @@ export async function handleMcp(
   if (early) return early;
   // JSON mode otherwise buffers until the command ends. workerd observes a disconnected HTTP client on
   // its next write, so send JSON whitespace while waiting (one JSON document, never SSE). The request
-  // signal requires enable_request_signal in production; runtime tests opt in without changing Wrangler.
+  // signal requires the enable_request_signal compatibility flag (set in every wrangler*.jsonc).
   let timer: ReturnType<typeof setInterval> | undefined, closed = false;
   const clean = () => { closed = true; if (timer !== undefined) clearInterval(timer); };
   const stream = new ReadableStream<Uint8Array>({

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { readFileSync } from "node:fs";
 import { setTimeout as delay } from "node:timers/promises";
 import { CLIENT_CAPABILITIES_META_KEY, CLIENT_INFO_META_KEY, PROTOCOL_VERSION_META_KEY } from "@modelcontextprotocol/server";
 import { createAgentRecovery } from "../src/agent-recovery";
@@ -234,7 +235,12 @@ test("every preparation and commit await serializes cancellation: cancelled mean
   assert.ok(count >= 5);
 });
 
-test("runtime production-date baseline: JSON abort requires enable_request_signal; no Wrangler flag is changed", async () => {
+test("every Wrangler config enables request.signal, which modern abort cancellation needs", () => {
+  for (const file of ["wrangler.jsonc", "wrangler.preview.jsonc", "wrangler.techies.jsonc"])
+    assert.match(readFileSync(file, "utf8"), /"compatibility_flags": \[[^\]]*"enable_request_signal"/, file);
+});
+
+test("runtime without enable_request_signal: a closed JSON response is not observed (why the configs set it)", async () => {
   const f = await runtime(false), stop = new AbortController(), id = "without-flag";
   try {
     const pending = f.call(id, true, stop.signal);

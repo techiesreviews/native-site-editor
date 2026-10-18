@@ -98,6 +98,7 @@ export async function fakeGitHub(request: Pick<Request, "url" | "method" | "json
   throw new Error(`Unexpected GitHub path: ${path}`);
 }
 
+/** `requestSignal` mirrors the wrangler configs (enable_request_signal); false shows the runtime without it. */
 export async function startWorker(options: { requestSignal?: boolean; streaming?: boolean } = {}) {
   const { outputFiles } = await build({
     entryPoints: ["worker/index.ts"],
@@ -119,7 +120,7 @@ export async function startWorker(options: { requestSignal?: boolean; streaming?
       ...(options.streaming ? { unsafeDirectSockets: [{ port: 0 }] } : {}),
       script: outputFiles[0].text,
       compatibilityDate: "2026-09-17",
-      ...(options.requestSignal ? { compatibilityFlags: ["enable_request_signal"] } : {}),
+      ...(options.requestSignal !== false ? { compatibilityFlags: ["enable_request_signal"] } : {}),
       durableObjects: { SESSIONS: { className: "SessionStore", useSQLite: true } },
       bindings: { GITHUB_CLIENT_ID: "test", GITHUB_CLIENT_SECRET: "test", GITHUB_APP_SLUG: "test" },
       outboundService: (request) => fakeGitHub(request, github),

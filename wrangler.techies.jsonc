@@ -12,6 +12,8 @@
   "name": "native-site-editor-sessions",
   "main": "worker/index.ts",
   "compatibility_date": "2026-09-17",
+  // request.signal fires when an MCP client closes its response (2026-07-28 cancellation, worker/mcp.ts).
+  "compatibility_flags": ["enable_request_signal"],
   "workers_dev": false,
   // Workers Logs keep the causes of unexpected errors (logged in worker/app.ts).
   "observability": { "enabled": true },
