@@ -889,7 +889,7 @@ async function structuralOutcome(command: AgentCommand, after: Map<string, Saved
     }
     case "make_component":
       return { message: `Made a component from element ${args.element} on ${path}; the page has the instance, unsaved.`,
-        result: { files: (plan?.creates ?? []).join(", "), ...await hash(path) } };
+        result: { files: [...new Set([...plan?.creates ?? [], ...after.keys()])].join(", "), ...await hash(path) } };
   }
   return { message: `Applied ${command.operation} to ${path} in the local drafts, unsaved.`, result: { path, ...await hash(path) } };
 }
