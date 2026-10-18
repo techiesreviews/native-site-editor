@@ -120,4 +120,6 @@ Follow-up (landing review round 4, gpt-6.1-sol, medium, read-only; `RESULT: ok r
 the socket Ask path checked the activation before its write but not inside it; the write transaction now rechecks the
 activation and workspace, and a refused write throws "Nothing was sent" with no broadcast. Rejected in part: a
 `forEachAwait` menu test (no agent-menu DOM harness, as tickets 09/14; one predicate inside the write).
-RESULT: ok specs 1/1 passed (native-agent-quiet 7).
+RESULT: ok specs 1/1 passed (native-agent-quiet 7). The first follow-up `kit pr` failed in tests/agent-usage.test.ts (the
+empty-wait test timed out: its idle fake clock jumped to the SDK 60 s timeout under load, as in tickets 14/17 CI); that
+test now runs on the real clock, since the quiet wait never sleeps.
