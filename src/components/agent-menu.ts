@@ -7,6 +7,7 @@ import { payloadIdentity, workspaceKey, type AgentWorkspace, type JsonValue } fr
 import { AgentRecordsError, indexedDbAgentRecords, isUnfinishedRequest, type AgentRecords } from "../agent-records";
 import type { SharedContext } from "../agent-site";
 import type { PinRequest } from "./agent-pins";
+import { agentHistoryKey } from "../controllers/agent-controller";
 import { mountFlyout } from "./flyout";
 import { gzip } from "./publish-menu";
 import "./agent-menu.css";
@@ -336,6 +337,14 @@ export function createAgentMenu(options: {
     const key = JSON.stringify(next);
     if (key === lastRequests) return;
     lastRequests = key;
+    // Startup mounts this menu for a workspace with requests to show (src/controllers/agent-controller.ts).
+    const workspace = scope();
+    if (workspace && historyKey === workspaceKey(workspace)) {
+      try {
+        if (next.length) localStorage.setItem(agentHistoryKey(workspace), "1");
+        else localStorage.removeItem(agentHistoryKey(workspace));
+      } catch { /* Storage full or blocked: the menu shows them once opened. */ }
+    }
     requests = [...next].sort((a, b) => a.createdAt - b.createdAt);
     options.onRequests?.(requests);
     flyout.refresh();

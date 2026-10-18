@@ -1,6 +1,6 @@
 import { effect } from "@preact/signals-core";
 import type { AgentElement } from "../../shared/agent";
-import type { AgentWorkspace } from "../../shared/agent-command";
+import { workspaceKey, type AgentWorkspace } from "../../shared/agent-command";
 import type { AppStore } from "../app-store";
 import type { AgentApproval, createAgentMenu } from "../components/agent-menu";
 
@@ -24,12 +24,15 @@ export interface AgentMenuPort<Root> {
 interface AgentEnvironment {
   window: Pick<EventTarget, "addEventListener" | "removeEventListener">;
 }
-/** Whether this browser keeps Ask agent requests for the workspace (read lazily, no network). */
-async function browserHistory(workspace: AgentWorkspace) {
-  const { indexedDbAgentRecords } = await import("../agent-records");
-  return (await indexedDbAgentRecords().conversations(workspace)).some((item) => (item.content as { state?: string } | null)?.state !== "dismissed");
+/**
+ * Set by the agent menu while this browser keeps Ask agent requests to show for a workspace, so
+ * startup can tell without loading the agent records (src/agent-records.ts holds the requests).
+ */
+export const agentHistoryKey = (workspace: AgentWorkspace) => `native-site-editor:agent-history:${workspaceKey(workspace)}`;
+function browserHistory(workspace: AgentWorkspace) {
+  try { return Promise.resolve(localStorage.getItem(agentHistoryKey(workspace)) !== null); }
+  catch { return Promise.resolve(false); }
 }
-
 /**
  * Owns lazy mounting of the agent menu for the current signed-in host. Remote agents are opt-in
  * per tab: startup and mounting make no agent requests; only Connect in the menu or a connection
