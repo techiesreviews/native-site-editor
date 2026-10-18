@@ -84,3 +84,11 @@ Kit:
 - RESULT: fail specs 1 of 157 failed: native-upload.spec.ts (ran beside the review; rerun alone: RESULT: ok specs 1/1 passed)
 - RESULT: ok review git diff e760068306bca55f71bb5371fd9729ac0588fb10...HEAD evidence /home/ubulex/Projects/native-site-editor/.scratch/reviews/dor-06/20261017T200944Z
 - RESULT: ok review git diff e760068306bca55f71bb5371fd9729ac0588fb10...HEAD evidence /home/ubulex/Projects/native-site-editor/.scratch/reviews/dor-06/20261017T203617Z
+
+Follow-up (landing review, Sol gpt-6.1-sol, medium, read-only; evidence
+/home/ubulex/Projects/native-site-editor/.scratch/reviews/dor-06/20261017T210759Z; PR #35 merged as fbfc8b4c
+before it was read): fixed 1 — the read-back of an unpublished agent commit could replace a newer manual write
+made during that read (the agent fence flushes it at once, so it was no longer pending) (P1). src/drafts.ts
+`settleAgent` counts this tab's changes per key and drops a read that any change overtook; the cross-tab
+`refresh` is unchanged. Test: "a manual write during the read-back ... wins over that read" (mutation checked).
+
