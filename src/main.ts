@@ -5556,16 +5556,11 @@ const agentController = createAgentController<HTMLElement>({
     context: agentContext,
     onCommand: applyAgentSiteCommand,
     reload: async snapshot => {
-      const scope = draftScope();
-      if (!scope) return;
-      const open = appStore.openFile.value, epoch = generation;
-      await draftStore().refresh([...new Set([...draftStore().list(scope).map(draft => draftKey(scope, draft.path)), ...snapshot.drafts.map(([key]) => key)])]);
-      // The open file shows the drafts this tab now owns, not text from before the other tab's edits.
-      if (open && epoch === generation && open === appStore.openFile.value && editorModule?.isMounted(open)) {
-        // Only text that came from the durable snapshot replaces the editor; this tab's newer typing stays.
-        const draft = draftStore().get(scope, open), stored = snapshot.drafts.find(([key]) => key === draftKey(scope, open))?.[1];
-        if (draft && !draft.deleted && draft.content === stored?.content && draft.content !== editorModule.getMountedSource(open)) await restoreFile(open, epoch);
-      }
+      const scope = draftScope(), open = appStore.openFile.value, epoch = generation;
+      if (scope) await (await import("./agent-transport")).reloadTakeover(snapshot, { open, key: path => draftKey(scope, path),
+        keys: () => draftStore().list(scope).map(draft => draftKey(scope, draft.path)), settle: keys => draftStore().settleAgent(keys),
+        draft: path => draftStore().get(scope, path), mounted: path => epoch === generation && path === appStore.openFile.value ? editorModule?.getMountedSource(path) : undefined,
+        restore: path => restoreFile(path, epoch) });
     },
     // Ask agent shows in the edit bar while an agent is connected.
     onConnection: (connected) => { setupController.noteAgent(connected); if (appStore.selection.value) pageStructureController.renderEditBar(appStore.selection.value); },

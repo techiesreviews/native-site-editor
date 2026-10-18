@@ -538,3 +538,39 @@ test("storage refusal with a quota or Retry-After probe answer records it; a lat
     a.transport.stop();
   }
 });
+
+test("a reconnect attempt that runs while the workspace is briefly absent fails and a later one goes live", async () => {
+  const f = fixture(), a = f.tab("a");
+  await a.transport.start();
+  a.sockets[0].close();
+  a.change(undefined);
+  await f.tick(4_000);
+  assert.equal(a.sockets.length, 1, "no socket for an absent workspace");
+  a.change({ ...workspace });
+  await f.tick(30_000);
+  assert.equal(a.sockets.length, 2);
+  await until(() => a.transport.state().mode === "live");
+  a.transport.stop();
+});
+
+test("takeover reload shows the durable drafts in the open file unless the user typed during the read", async () => {
+  const { reloadTakeover } = await import("../src/agent-transport.ts");
+  const run = async (memory: Map<string, { content?: string; deleted?: boolean }>, stored: [string, { content: string; deleted?: boolean }][], typed = false) => {
+    let editor = "old text", restored = 0;
+    await reloadTakeover({ generation: 2, revision: 1, paused: true, drafts: stored } as never, {
+      open: "index.html", key: path => `k:${path}`, keys: () => [...memory.keys()],
+      settle: async () => {
+        if (typed) editor = "typed meanwhile";
+        memory.clear();
+        for (const [key, value] of stored) memory.set(key, value);
+      },
+      draft: path => memory.get(`k:${path}`), mounted: () => editor, restore: async () => { restored++; },
+    });
+    return restored;
+  };
+  assert.equal(await run(new Map(), [["k:index.html", { content: "owner's edit" }]]), 1, "changed text");
+  assert.equal(await run(new Map(), [["k:index.html", { content: "", deleted: true }]]), 1, "deleted or moved away");
+  assert.equal(await run(new Map([["k:index.html", { content: "old text" }]]), []), 1, "discarded");
+  assert.equal(await run(new Map(), [["k:index.html", { content: "old text" }]]), 0, "already shown");
+  assert.equal(await run(new Map(), [["k:index.html", { content: "owner's edit" }]], true), 0, "typing during the read wins");
+});
