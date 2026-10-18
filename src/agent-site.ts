@@ -153,7 +153,10 @@ export function agentStructuralActions(workspace: EditorWorkspace, context: Agen
         verify();
         if ("done" in result) {
           const added: unknown = (result as Partial<SectionPlanned>).added;
-          planned = { after: result.select?.after, creates: result.creates?.map(file => file.path), ...typeof added === "string" && added ? { added } : {} };
+          // Make component names its files as the created ones plus the loader's page and stylesheet edits.
+          const loaderEdits = (result as { loader?: { edits?: Map<string, unknown> } }).loader?.edits;
+          const creates = result.creates?.map(file => file.path) ?? [];
+          planned = { after: result.select?.after, creates: [...new Set([...creates, ...loaderEdits?.keys() ?? []])], ...typeof added === "string" && added ? { added } : {} };
         }
         // historyOnly keeps the step on the staged commit; the plan's own selection follows once it applied.
         if ("done" in result && !result.select?.historyOnly && result.select?.after) selection = { after: result.select.after, flash: result.select.flash };
@@ -889,7 +892,7 @@ async function structuralOutcome(command: AgentCommand, after: Map<string, Saved
     }
     case "make_component":
       return { message: `Made a component from element ${args.element} on ${path}; the page has the instance, unsaved.`,
-        result: { files: [...new Set([...plan?.creates ?? [], ...after.keys()])].join(", "), ...await hash(path) } };
+        result: { files: (plan?.creates ?? []).join(", "), ...await hash(path) } };
   }
   return { message: `Applied ${command.operation} to ${path} in the local drafts, unsaved.`, result: { path, ...await hash(path) } };
 }
