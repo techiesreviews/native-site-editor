@@ -68,7 +68,6 @@ import { forgetBootMemory, memoryMatches, provenFiles, readBootMemory, writeBoot
 import { clearWizard, connectionFromOnboarding, readWizard, writeWizard, type Connection, type WizardRepo } from "./setup-wizard";
 import { forgetSignedIn } from "./auto-signin";
 
-import { AGENT_EXPLAINER, agentWhere } from "./onboarding-copy";
 import { createSetupChecklistController } from "./controllers/setup-checklist-controller";
 import type { SetupState } from "./setup-checklist";
 import { siteNameFromRepository, type StartingPoint } from "../shared/starting-point";
@@ -207,7 +206,13 @@ const loadAgentPrompts = lazyModule(async () => agentPrompts = await import("./a
 const loadWizard = lazyModule(async () => (await Promise.all([import("./components/setup-wizard"), loadAgentPrompts(), loadSetupActions()]))[0]);
 const loadGetStarted = lazyModule(async () => (await Promise.all([import("./components/get-started"), loadSetupActions()]))[0]);
 const loadStartSite = lazyModule(async () => (await Promise.all([import("./components/start-site"), loadSetupActions()]))[0]);
-const loadSpotlight = lazyModule(() => import("./components/spotlight"));
+// The agent copy is read only beside the spotlight that shows it.
+let onboardingCopy: typeof import("./onboarding-copy") | undefined;
+const loadSpotlight = lazyModule(async () => {
+  const [copy, spotlight] = await Promise.all([import("./onboarding-copy"), import("./components/spotlight")]);
+  onboardingCopy = copy;
+  return spotlight;
+});
 const loadAgentMenu = lazyModule(() => import("./components/agent-menu"));
 // The Site, Page and Navigation settings dialogs, loaded when one first opens.
 const loadSiteSettings = lazyModule(async () => {
@@ -3340,7 +3345,7 @@ const setupController = createSetupChecklistController({
   menu: () => repositoryMenu,
   connected: () => agentController.connected(),
   ensureAgent: () => agentController.ensure(),
-  agentText: () => [AGENT_EXPLAINER.join(" "), agentWhere()],
+  agentText: () => onboardingCopy ? [onboardingCopy.AGENT_EXPLAINER.join(" "), onboardingCopy.agentWhere()] : [],
   storage: localStorage,
   loadChecklist,
   loadSpotlight,
@@ -4580,17 +4585,8 @@ function makeAgentSiteActions(edits: GuardedEdits = guardedEdits, atomic = false
     return media.listWorkspaceMedia(ctx, request);
   },
   async previewMedia(path) {
-    const ctx = await mediaController.workspaceContext();
-    if (!ctx.paths.includes(path)) throw new (await loadAgentSite()).Conflict(`${path} is not in the site. list_media lists the media.`);
-    // An SVG written as text here (an edited one, a new unsaved one) previews its draft, as the canvas shows it.
-    const draft = /\.svg$/i.test(path) ? ctx.drafts.get(ctx.scope, path) : undefined;
-    const svg = draft && !draft.deleted && !draft.opaque && !draft.sourceSha && !draft.upload ? editorModule?.getMountedSource(path) ?? draft.content : undefined;
-    const blob = svg !== undefined ? new Blob([svg], { type: "image/svg+xml" }) : await ctx.blob(path);
-    const media = await import("./agent-media");
-    ctx.assertLive();
-    const preview = await media.previewPicture(blob, path);
-    ctx.assertLive();
-    return preview;
+    const [ctx, media] = await Promise.all([mediaController.workspaceContext(), import("./agent-media")]);
+    return media.previewWorkspaceMedia(ctx, path, path => editorModule?.getMountedSource(path));
   },
   async media(command) {
     const since = guardedEdits.stamp("repository");
@@ -5018,15 +5014,11 @@ function takeBootGuess(repo: Repository, branch: string): { snapshot: Promise<Sn
     // fresh snapshot has exactly the remembered read's content.
     for (const { sha } of guess.files && !token.abandoned ? provenFiles(guess.memory, snapshot.tree ?? snapshot.entries) : []) {
       // Readers await this cached promise and handle its rejection.
-      const live = () => !token.abandoned && boot.sessionTag() === tag;
       void cleanSources.load(repo.full_name, sha, () => guess.files!.then((files) => {
         const text = files.value.files[sha];
         if (files.sessionTag !== tag || typeof text !== "string") throw new Error();
         return text;
-      }).catch((error: unknown) => {
-        if (!live()) throw error;
-        return api<{ content: string }>("file", { repo: repo.full_name, sha }).then((file) => file.content);
-      }), "", live);
+      }).catch(() => api<{ content: string }>("file", { repo: repo.full_name, sha }).then((file) => file.content)));
     }
     return snapshot;
   }, fresh);
@@ -5534,7 +5526,6 @@ async function disconnect() {
   try {
     const response = await fetch("/auth/logout", { method: "POST" });
     if (!response.ok) throw new Error("Could not disconnect. Try again.");
-    cleanSources.clear();
     // 204: that was the last account on this browser, so nothing continues by itself next time.
     if (response.status === 204) forgetSignedIn(storage("local"));
     forgetBootMemory(storage("local"));
@@ -5585,10 +5576,8 @@ const boot = createBootController({
   loadDrafts: (login) => draftStore().load(login),
   onDraftError: () => { draftStore().onError = (message) => errorMessage(new Error(message)); },
   session: () => info,
-  adoptSession: (session) => {
-    if (info?.user?.login !== session.user?.login) cleanSources.clear();
-    info = session;
-  },
+  // The source cache keys by account and drops another account's entries itself.
+  adoptSession: (session) => { info = session; },
   enterWorkspace: () => {
     resumeWorkspaceLink();
     mountWorkspace();

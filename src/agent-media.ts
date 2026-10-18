@@ -97,6 +97,18 @@ export async function listWorkspaceMedia(ctx: MediaWorkspaceContext, request: { 
   return JSON.stringify(mediaListReport({ ...request, items: ctx.items, paths: ctx.paths, records, note, usage, online: records ? mediaOnlineVideos(records, Object.fromEntries(Object.entries(sources).filter((entry): entry is [string, string] => entry[1] !== undefined)), ctx.paths) : [] }));
 }
 
+/** preview_media: an SVG written as text here (an edited one, a new unsaved one) previews its draft, as the canvas shows it. */
+export async function previewWorkspaceMedia(ctx: MediaWorkspaceContext, path: string, mounted: (path: string) => string | undefined) {
+  if (!ctx.paths.includes(path)) throw new (await import("./agent-site")).Conflict(`${path} is not in the site. list_media lists the media.`);
+  const draft = /\.svg$/i.test(path) ? ctx.drafts.get(ctx.scope, path) : undefined;
+  const svg = draft && !draft.deleted && !draft.opaque && !draft.sourceSha && !draft.upload ? mounted(path) ?? draft.content : undefined;
+  const blob = svg !== undefined ? new Blob([svg], { type: "image/svg+xml" }) : await ctx.blob(path);
+  ctx.assertLive();
+  const preview = await previewPicture(blob, path);
+  ctx.assertLive();
+  return preview;
+}
+
 export async function previewPicture(blob: Blob, path: string) {
   if (!isPreviewablePicture(path)) throw new Error(picturePreviewRefusal(path));
   let image: ImageBitmap | HTMLImageElement;

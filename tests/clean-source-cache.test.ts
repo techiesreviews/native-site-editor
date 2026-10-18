@@ -138,18 +138,17 @@ test("repository, immutable revision and path isolate entries", async () => {
   assert.equal(await cache.get(repo, "commit", "index.html"), "page");
 });
 
-for (const disturbance of ["clear", "account", "abandon"] as const) {
+for (const disturbance of ["clear", "account"] as const) {
   test(`late settlement after ${disturbance} cannot populate the cache at any await`, async () => {
     await forEachAwait(race => {
-      const state = { account: "A", live: true };
+      const state = { account: "A" };
       const cache = new CleanSourceCache(() => state.account);
       const read = race.port("read", () => Promise.resolve("private"));
-      const done = cache.load(repo, "sha", read, "", () => state.live);
+      const done = cache.load(repo, "sha", read);
       return { cache, state, done };
     }, run => {
       if (disturbance === "clear") run.cache.clear();
       if (disturbance === "account") run.state.account = "B";
-      if (disturbance === "abandon") run.state.live = false;
     }, run => {
       assert.equal(run.cache.bytes, 0);
       assert.equal(run.cache.get(repo, "sha"), undefined);
