@@ -537,9 +537,11 @@ async function token(request: Request, env: Env) {
       client: grant.clientName,
     });
   } catch (error) {
-    return oauthError(error instanceof HttpError && error.status === 409 ? "access_denied" : "temporarily_unavailable",
+    // RFC 6749 token errors: the consumed code cannot be retried, so capacity is invalid_grant.
+    const full = error instanceof HttpError && error.status === 409;
+    return oauthError(full ? "invalid_grant" : "temporarily_unavailable",
       error instanceof HttpError ? error.message : "The agent connection could not be saved. Try again.",
-      error instanceof HttpError && error.status === 409 ? 409 : 503);
+      full ? 400 : 503);
   }
   return json(
     {

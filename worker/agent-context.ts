@@ -337,11 +337,23 @@ export async function revokeGrant(env: Env, id: string, sessionId: string) {
   if (absent && removed && workspace?.branch) await releaseGrant(env, id, workspace).catch(() => undefined);
 }
 
-export async function revokeSessionGrants(env: Env, sessionId: string) {
-  try {
-    const hub = await getHub(env, sessionId);
-    for (const grant of hub?.grants ?? []) await revokeGrant(env, grant.id, sessionId).catch(() => undefined);
-  } catch { /* Sign-out proceeds; capacity reconciliation handles leftovers. */ }
+/**
+ * Sign-out: delete every listed grant record, end the session (which clears its
+ * hub), then release each deleted grant's workspace reservation. 1 + 2n calls, not
+ * a full revoke per grant; anything missed is left to capacity reconciliation.
+ */
+export async function endSessionGrants(env: Env, sessionId: string, endSession: () => Promise<unknown>) {
+  const hub = await getHub(env, sessionId).catch(() => undefined);
+  const deleted: HubGrant[] = [];
+  for (const grant of hub?.grants ?? []) {
+    try {
+      const response = await agentRecord(env, grant.id, "DELETE");
+      if (response.ok || response.status === 404) deleted.push(grant);
+    } catch { /* Unknown stays counted. */ }
+  }
+  await endSession();
+  for (const grant of deleted)
+    await releaseGrant(env, grant.id, { login: hub!.login, repoId: grant.repoId, branch: grant.branch }).catch(() => undefined);
 }
 
 /** The session's grant metadata, with all legacy content reads disabled. */
