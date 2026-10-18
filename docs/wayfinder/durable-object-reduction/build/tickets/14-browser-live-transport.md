@@ -79,22 +79,23 @@ tests/native-save/native-agent-live.spec.ts.
 
 **Commits** (PR #56). 645212bb (Sol build), d60c7761, 1fcb8dc5 (review 1), 096d8b23, 5f097e29 (review 2), c8a94068
 (landing fix: a repository briefly absent during a refresh counted as a workspace move and stopped the tab's context
-sharing; it now refuses commands meanwhile but is no move), c843474b (review 3), 9b649e8e (review 4).
+sharing; it now refuses commands meanwhile but is no move), c843474b (review 3), 9b649e8e (review 4), 6162a6e7 (review 5).
 
-**Tests.** tests/agent-transport.test.ts (32): duplicate delivery in flight and after commit; stale
+**Tests.** tests/agent-transport.test.ts (33): duplicate delivery in flight and after commit; stale
 generation/tab/workspace and malformed commands; two tabs, focus, explicit takeover, old owner's late commit and
 resume (0 late commits); owner close without promotion; reset re-handshake without replay; server close → ≤5
 coordinated reconnects then pause; quota pause with 0 automatic attempts and single-flight Retry; failed takeover
 stays paused; workspace change; **live idle over simulated minutes: 0 HTTP calls**; missing pong; bfcache; absent
 route fallback; probe quota body and Retry-After; storage refusal; receiptless refusal; socket lost/reset during
-admission never runs (mutation checked); refresh absence keeps the socket, and a socket lost meanwhile reconnects
-when the workspace returns, as does an attempt that ran during it; takeover reload (changed, deleted/moved,
+admission never runs (mutation checked); a workspace briefly absent during a refresh refuses commands but keeps the
+socket, reconnects a socket lost meanwhile, enters bounded recovery when the first connection fails then, and honours
+quota recorded then (mutation checked); takeover reload (changed, deleted/moved,
 discarded open file; typing during the read wins); storage refusal records a probe's quota/Retry-After (both mutation checked); `forEachAwait` workspace change at every ownership await.
 native-agent-live.spec.ts (2): a mocked relay delivers a write_file and gets the correlated applied result; after
 it, 65 s visible + 65 s hidden make **0** `/api/agent/*` or `/mcp` requests (2 pings); a second tab open before
 the edit shows "Another tab…" + Take over, takes over with a higher generation and then shows the edit; the old
 tab says it was taken over. A copied token turns connected after one hub read on return, then 0 more.
-`npm run check` ok; `npm run lint` ok; `scripts/agents/unit.sh` pass 4370 fail 0 (by hand).
+`npm run check` ok; `npm run lint` ok; `scripts/agents/unit.sh` pass 4371 fail 0 (by hand).
 
 **Review** (gpt-6.1-sol, medium, read-only; run.log verified).
 Round 1 `RESULT: ok review … evidence .scratch/reviews/dor-14/20261018T053422Z`: fixed 3 (receiptless mutations
@@ -108,12 +109,19 @@ Round 4 (run by `kit pr`, `RESULT: ok review … evidence .scratch/reviews/dor-1
 reconnect attempt that ran during a refresh counted as success and stalled; takeover left a deleted, moved or
 discarded open file showing old text; takeover's refresh could replace newer typing: now `settleAgent`, and no
 reopen when the editor changed during the read). Rejected 0.
+Round 5 (run by `kit pr`, `RESULT: ok review … evidence .scratch/reviews/dor-14/20261018T083742Z`): fixed 2 (quota
+recorded while a refresh briefly removed the workspace was ignored; a first connection failing then stalled in
+"connecting"). Root fix: an absent workspace is no move; socket, ownership and recovery carry on and only command
+admission waits for the workspace. Rejected in part: a browser spec for that ordering (a refresh's absence cannot be
+ordered against a socket failure deterministically in the fixture; the unit tests drive each order).
 
 **Kit.**
 - RESULT: ok doctor 7/7 checks passed
 - RESULT: ok size boot 355 KB (±0 KB) vs dev@38a5a54, budget 355 KB
 - RESULT: ok specs 3/3 passed (native-agent-live, native-agent-quiet 5, native-lazy-panels 6)
-- RESULT: fail specs 1 of 3 failed: native-agent-recovery.spec.ts (disabled storage stopped before any socket; fixed in 90bf94a1), then RESULT: ok specs 1/1 passed; native-mcp 18 and native-mcp-media 5 passed
+- RESULT: fail specs 1 of 3 failed: native-agent-recovery.spec.ts (disabled storage stopped before any socket; fixed in 90bf94a1), then RESULT: ok specs 1/1 passed
+- Fifth `kit pr`: specs ok; CI failed in tests/agent-usage.test.ts ("an empty default wait takes requests 18 times…": MCP
+  client request timed out on the runner; worker harness, no code of this slice); native-mcp 18 and native-mcp-media 5 passed
 - RESULT: ok specs 1/1 passed (native-agent-live 2, after review 2)
 - First `kit pr`: RESULT: fail specs 4 of 145 failed: native-agent-live.spec.ts, native-discard.spec.ts, native-draft-storage.spec.ts, native-onboarding.spec.ts (refresh treated as a workspace move; two specs clicked Connect without the absent-relay route; live under load). After the fix: RESULT: ok specs 4/4 passed. Second `kit pr`: check, unit, lint, specs ok; PR #56 opened; CI failed in
   tests/agent-resume.test.ts ("SIGTERM records interrupted…", agent kit script timing, no code of this slice); rerun after review 3.
