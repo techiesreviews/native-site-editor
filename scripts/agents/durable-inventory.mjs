@@ -254,7 +254,8 @@ export async function runInventory(input, ports = {}) {
         if (pages++ >= 100 || cursors.has(manifest.cursor)) { pause("paused"); break; }
         cursors.add(manifest.cursor);
         const url = new URL(`https://api.cloudflare.com/client/v4/accounts/${options.account}/workers/durable_objects/namespaces/${options.namespace}/objects`);
-        url.searchParams.set("limit", String(options.limit - processed));
+        // The API takes 10 at least; extra IDs wait as pending in the checkpoint.
+        url.searchParams.set("limit", String(Math.max(10, options.limit - processed)));
         if (manifest.cursor !== null) url.searchParams.set("cursor", manifest.cursor);
         let result, body;
         try {

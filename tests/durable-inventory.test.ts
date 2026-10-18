@@ -150,7 +150,8 @@ test("classification exposes only counts, bytes, expiry, generation and eligibil
   assert.deepEqual(kind("unknown")[0], { kind: "unknown", count: 1, bytes: size(records[15][1]), eligibility: "review" });
   const json = JSON.stringify(value);
   for (const secret of [...secrets, "unknown-token", "secret-config", "secret-cache-content", "plain-draft", "binary-draft", "secret-pending-hash", "secret-ip-hash"]) assert.ok(!json.includes(secret), secret);
-  assert.deepEqual(stored.calls, [{ startAfter: undefined, limit: 128 }]);
+  assert.deepEqual(stored.calls[0], { startAfter: undefined, limit: 8 });
+  assert.ok(stored.calls.every(call => call.limit <= 8));
 });
 
 test("an orphan repository cache is expired; an expired session's cache expires with it", async () => {
@@ -194,11 +195,28 @@ test("storage pagination stops at key or byte cap and returns partial counts", a
   const value = await (await inventoryObject(internal(), stored.storage, now)).json() as Classification;
   assert.equal(value.status, "deferred"); assert.equal(value.reason, "oversized");
   assert.equal(value.totalKeys, 2048); assert.equal(value.totalBytes, 2048 * 4);
-  assert.equal(stored.calls.length, 16); assert.ok(stored.calls.every(call => call.limit === 128));
-  assert.equal(stored.calls[1].startAfter, `key-${id(127)}`);
-  const heavy = memory([["context", { text: "x".repeat(8 * 1024 * 1024) }], ["z", "unread"]]);
+  // 8 values of the 2 MiB maximum fit the 16 MiB read cap; 7 once any bytes are read.
+  assert.deepEqual(stored.calls.slice(0, 2), [{ startAfter: undefined, limit: 8 }, { startAfter: `key-${id(7)}`, limit: 7 }]);
+  assert.equal(stored.calls.length, 1 + Math.ceil(2040 / 7));
+  const heavy = memory([["context", { text: "x".repeat(16 * 1024 * 1024) }], ["z", "unread"]]);
   const large = await (await inventoryObject(internal(), heavy.storage, now)).json() as Classification;
   assert.equal(large.status, "deferred"); assert.equal(large.totalKeys, 1); assert.equal(heavy.calls.length, 1);
+});
+
+test("pages shrink with the read bytes left, so 1 MiB drafts never load past the cap", async () => {
+  const mib = 1024 * 1024;
+  const stored = memory(Array.from({ length: 128 }, (_, index) => [`draft:${id(index)}`, new Uint8Array(mib)] as [string, unknown]));
+  let returned = 0;
+  const list = stored.storage.list.bind(stored.storage);
+  stored.storage.list = async (options: { startAfter?: string; limit: number }) => {
+    const page = await list(options);
+    for (const value of page.values()) returned += (value as Uint8Array).byteLength;
+    return page;
+  };
+  const value = await (await inventoryObject(internal(), stored.storage, now)).json() as Classification;
+  assert.equal(value.status, "deferred"); assert.equal(value.totalBytes, 16 * mib);
+  assert.ok(returned <= 18 * mib, `returned ${returned}`);
+  assert.ok(stored.calls.every(call => call.limit <= 8));
 });
 
 test("discovery follows 3 opaque cursor pages, skips empty IDs and sanitizes the manifest", async t => {
@@ -270,7 +288,11 @@ test("batch limit defers the rest; new pass enumerates afresh and retains the bu
     if (url.includes("api.cloudflare.com")) { calls.push("list"); return page([{ id: id(1), hasStoredData: true }, { id: id(2), hasStoredData: true }]); }
     calls.push(JSON.parse(String(init.body)).id); return Response.json(blank());
   };
-  const first = await runInventory({ ...options, limit: 1 }, { ...ports, fetch: fetcher });
+  const first = await runInventory({ ...options, limit: 1 }, { ...ports, fetch: async (url: string, init: RequestInit) => {
+    // Cloudflare refuses a list limit below 10, even for a 1-object batch.
+    if (url.includes("api.cloudflare.com")) assert.equal(new URL(url).searchParams.get("limit"), "10");
+    return fetcher(url, init);
+  } });
   assert.equal(first.report.pending, 1); assert.equal(first.report.complete, false);
   await runInventory(options, { ...ports, fetch: fetcher });
   assert.deepEqual(calls, ["list", id(1), id(2)]);

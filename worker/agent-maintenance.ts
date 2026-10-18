@@ -20,6 +20,11 @@ interface RecordSummary {
   inlineContext?: boolean;
 }
 const internalPath = "/maintenance/inventory";
+// Per-invocation bounds; past them the object is deferred as oversized.
+const maxKeys = 2048;
+const maxReadBytes = 16 * 1024 * 1024;
+/** The SQLite-backed Durable Object storage maximum for one value. */
+const maxValueBytes = 2 * 1024 * 1024;
 const number = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 const object = (value: unknown): Record<string, unknown> | undefined =>
   value !== null && typeof value === "object" && !Array.isArray(value) && !ArrayBuffer.isView(value) && !(value instanceof ArrayBuffer)
@@ -141,16 +146,20 @@ export async function inventoryObject(request: Request, storage: InventoryStorag
   let totalKeys = 0, totalBytes = 0, startAfter: string | undefined, oversized = false;
   const items: RecordSummary[] = [];
   for (;;) {
-    const page = await storage.list({ startAfter, limit: 128 });
+    // list() loads every value it returns: size each page by the read bytes
+    // left and the largest value SQLite storage holds, so one page cannot
+    // materialize more than the cap (plus at most one value past it).
+    const limit = Math.min(128, Math.max(1, Math.floor((maxReadBytes - totalBytes) / maxValueBytes)));
+    const page = await storage.list({ startAfter, limit });
     for (const [key, value] of page) {
       const item = describe(key, value, now);
       items.push(item);
       totalKeys++;
       totalBytes += item.bytes;
       startAfter = key;
-      if (totalKeys >= 2048 || totalBytes >= 8 * 1024 * 1024) { oversized = true; break; }
+      if (totalKeys >= maxKeys || totalBytes >= maxReadBytes) { oversized = true; break; }
     }
-    if (oversized || page.size < 128) break;
+    if (oversized || page.size < limit) break;
   }
   // The repository cache is disposable and follows its sign-in session (the
   // alarm clears it at expiry); without a session it is an orphan. A partial
