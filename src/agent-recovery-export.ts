@@ -61,13 +61,27 @@ export async function buildRecoveryExport(input: { repository: string; scope: Dr
   return { zip: zipFiles(files, at), name, entries };
 }
 
-/** Downloads this tab's unsaved drafts of the open workspace; resolves to what the file holds. */
-export async function downloadUnsavedWork(input: { account: string; repository: { id: number; fullName: string; branch: string } }) {
+/** Where the download reads and saves (the tab's draft store, upload bytes and a file save; tests inject them). */
+interface DownloadPorts {
+  drafts(scope: DraftScope): SavedDraft[];
+  bytes(): UploadBytes | undefined;
+  save(zip: Uint8Array, name: string): Promise<void>;
+}
+const browserPorts: DownloadPorts = {
+  drafts: (scope) => draftStore().list(scope),
+  bytes: () => { try { return uploadBytes(); } catch { return undefined; /* No upload storage: uploads are listed as missing. */ } },
+  save: async (zip, name) => (await import("./site-download")).saveBytes(zip, name),
+};
+
+/**
+ * Downloads this tab's unsaved drafts of the open workspace; resolves to what the file holds, or
+ * undefined (nothing downloaded) once `current` says the menu or workspace moved on meanwhile.
+ */
+export async function downloadUnsavedWork(input: { account: string; repository: { id: number; fullName: string; branch: string } },
+  current: () => boolean = () => true, ports: DownloadPorts = browserPorts) {
   const scope: DraftScope = { account: input.account, repoId: input.repository.id, repo: input.repository.fullName, branch: input.repository.branch };
-  let bytes: UploadBytes | undefined;
-  try { bytes = uploadBytes(); } catch { /* No upload storage: uploads are listed as missing. */ }
-  const result = await buildRecoveryExport({ repository: input.repository.fullName, scope, drafts: draftStore().list(scope), bytes });
-  const { saveBytes } = await import("./site-download");
-  saveBytes(result.zip, result.name);
+  const result = await buildRecoveryExport({ repository: input.repository.fullName, scope, drafts: ports.drafts(scope), bytes: ports.bytes() });
+  if (!current()) return undefined;
+  await ports.save(result.zip, result.name);
   return result;
 }

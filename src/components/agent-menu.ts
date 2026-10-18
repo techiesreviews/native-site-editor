@@ -443,21 +443,26 @@ export function createAgentMenu(options: {
   const unsubscribeStorage = storage.subscribe(() => paint());
   /** Downloads the open workspace's unsaved drafts and says what the file holds. */
   async function exportWork() {
-    const repo = options.repository();
+    const repo = options.repository(), key = scopeKey();
     if (!repo || exporting) return;
+    // The workspace whose drafts are read; another one opened, or the menu gone, downloads nothing.
+    const current = () => !disposed && scopeKey() === key;
     exporting = true;
     paint();
     try {
       const { downloadUnsavedWork } = await import("../agent-recovery-export");
-      const { name, entries } = await downloadUnsavedWork({ account: options.account, repository: repo });
+      if (!current()) return;
+      const done = await downloadUnsavedWork({ account: options.account, repository: repo }, current);
+      if (!done || !current()) return;
+      const { name, entries } = done;
       const included = entries.filter((entry) => entry.status === "included").length;
       const missing = entries.filter((entry) => entry.status === "missing").length;
       say(`Downloaded ${name}: ${included} file${included === 1 ? "" : "s"}.${missing ? ` ${missing} uploaded file${missing === 1 ? " is" : "s are"} no longer in this browser; README.txt lists ${missing === 1 ? "it" : "them"}.` : ""}`);
     } catch (error) {
-      say(`The download failed: ${(error as Error).message}. Your unsaved changes are still in this tab.`);
+      if (current()) say(`The download failed: ${(error as Error).message}. Your unsaved changes are still in this tab.`);
     } finally {
       exporting = false;
-      paint();
+      if (!disposed) paint();
     }
   }
   // The flyout: the questions waiting for the user (each shows its pin),

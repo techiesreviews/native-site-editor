@@ -135,6 +135,7 @@ export function receiptRetention(receipts: [string, AgentReceipt][], fences: [st
 /** Why agent edits stopped in this browser, until the user chooses Try again (`resume`). */
 export interface AgentStorageProblem { reason: "full" | "unavailable"; message: string }
 const FULL_MESSAGE = "Agent storage transaction aborted: this browser's storage is full, so agent edits are stopped until the user frees space and chooses Try again in the project menu.";
+const UNKNOWN_MESSAGE = "This browser's storage is full and could not confirm whether the change was kept; agent edits are stopped. Read the files again before trying it again.";
 interface StorageStatus { problem?: AgentStorageProblem; stopped: boolean; listeners: Set<() => void> }
 const statuses = new WeakMap<object, StorageStatus>();
 const NO_STORAGE = {};
@@ -174,7 +175,8 @@ const quotaError = (error: unknown): boolean => {
 };
 
 export class AgentRecordsError extends Error {
-  constructor(public readonly code: "unavailable" | "aborted" | "conflict" | "duplicate-id" | "revoked" | "cancelled" | "not-owner" | "capacity", message: string, cause?: unknown) {
+  /** `unknown`: whether the edit was kept could not be proven either way (never "nothing changed"). */
+  constructor(public readonly code: "unavailable" | "aborted" | "conflict" | "duplicate-id" | "revoked" | "cancelled" | "not-owner" | "capacity" | "unknown", message: string, cause?: unknown) {
     super(message, { cause });
     this.name = "AgentRecordsError";
   }
@@ -433,12 +435,14 @@ export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFact
       catch (error) {
         if (!quotaError(error)) throw error;
         let failure = error;
-        // The aborted transaction applied nothing; a receipt settles one that landed regardless.
-        const landed = await settle(captured).catch((problem: unknown) => {
+        // An aborted transaction applied nothing, yet a receipt settles one that landed regardless;
+        // a receipt that cannot be read leaves the outcome unknown, never "nothing changed".
+        const reconcile = () => settle(captured).then((landed) => ({ landed, unreadable: false }), (problem: unknown) => {
           if (problem instanceof AgentRecordsError && problem.code === "revoked") throw problem;
-          return undefined;
+          return { landed: undefined, unreadable: true };
         });
-        if (landed) return landed;
+        let settled = await reconcile();
+        if (settled.landed) return settled.landed;
         const freed = await relieve(captured).catch(() => 0) + await (options.evictCaches?.() ?? Promise.resolve(0)).catch(() => 0);
         if (freed > 0) {
           try { return await attempt(captured); }
@@ -446,8 +450,11 @@ export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFact
             if (!quotaError(again)) throw again;
             failure = again;
           }
+          settled = await reconcile();
+          if (settled.landed) return settled.landed;
         }
         report(status, { reason: "full", message: FULL_MESSAGE }, true);
+        if (settled.unreadable) throw new AgentRecordsError("unknown", UNKNOWN_MESSAGE, failure);
         throw new AgentRecordsError("aborted", FULL_MESSAGE, failure);
       }
     },

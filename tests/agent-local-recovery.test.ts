@@ -4,7 +4,7 @@ import {
   AgentRecordsError, COMMAND_MAX_AGE_MS, RECEIPT_BUDGET_BYTES, RECEIPT_LIMIT, RECEIPT_RETENTION_MS, agentStorageStatus,
   indexedDbAgentRecords, receiptRetention, unavailableAgentRecords, type AgentCommit,
 } from "../src/agent-records.ts";
-import { buildRecoveryExport } from "../src/agent-recovery-export.ts";
+import { buildRecoveryExport, downloadUnsavedWork } from "../src/agent-recovery-export.ts";
 import { draftDatabaseName, draftKey, type SavedDraft } from "../src/drafts.ts";
 import { memoryUploadBytes, uploadKey } from "../src/uploads.ts";
 import { unzipStored } from "../src/zip.ts";
@@ -192,6 +192,42 @@ test("an uncertain commit that landed is settled from its receipt and applied ex
   const again = await records.commit({ ...input, expectedRevision: 0 });
   assert.equal(again.duplicate, true);
   assert.equal((await records.workspace(workspace)).revision, 1);
+});
+
+test("a retry that lands but reports a full storage is settled from its receipt: applied once, no stop", async () => {
+  const { fake, records, status } = setup();
+  await records.putConversation(workspace, { id: "done", content: {}, unfinished: false, updatedAt: Date.now() });
+  fake.state.failure = "QuotaExceededError"; fake.state.failPutAt = 1;
+  // The relief transaction completes; the retry after it commits, then reports the abort.
+  fake.state.abortAfterCommit = "QuotaExceededError"; fake.state.abortAfterCommitSkip = 1;
+  const result = await records.commit(command("retried"));
+  assert.equal(result.duplicate, false);
+  assert.equal((await records.workspace(workspace)).revision, 1);
+  assert.equal(fake.stores.get("drafts")!.size, 1);
+  assert.equal(status.problem, undefined);
+});
+
+test("a full storage whose receipt cannot be read reports the outcome unknown, never nothing changed", async () => {
+  const { fake, records, status } = setup();
+  fake.state.failure = "QuotaExceededError"; fake.state.failPutsInto = "receipts"; fake.state.failReadonly = true;
+  await assert.rejects(records.commit(command("unproven")), (error: unknown) =>
+    code("unknown")(error) && /could not confirm whether the change was kept/.test((error as Error).message) && !/Nothing was changed/.test((error as Error).message));
+  assert.equal(status.problem?.reason, "full");
+});
+
+test("a download saves the open workspace's drafts, and nothing once the workspace moved on meanwhile", async () => {
+  const saved: string[] = [], asked: string[] = [];
+  const ports = { drafts: (wanted: typeof scope) => { asked.push(wanted.repo); return [draft("index.html", "unsaved")]; },
+    bytes: () => undefined, save: async (_zip: Uint8Array, name: string) => { saved.push(name); } };
+  const input = { account: scope.account, repository: { id: scope.repoId, fullName: scope.repo, branch: scope.branch } };
+  // `current` turns false while the export is built: nothing is saved or reported.
+  let checks = 0;
+  assert.equal(await downloadUnsavedWork(input, () => checks++ < 0, ports), undefined);
+  assert.deepEqual(saved, []);
+  const done = await downloadUnsavedWork(input, () => true, ports);
+  assert.deepEqual(saved, ["site-unsaved-changes.zip"]);
+  assert.deepEqual(done?.entries.map((entry) => [entry.path, entry.status]), [["index.html", "included"]]);
+  assert.deepEqual(asked, ["lex/site", "lex/site"]);
 });
 
 test("after a reload the failed edit is unknown and the committed drafts and receipts are all there", async () => {
