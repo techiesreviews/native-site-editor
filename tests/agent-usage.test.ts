@@ -80,8 +80,10 @@ test("an empty default wait (legacy fallback) takes requests once and returns at
     // callTool lazily lists tools for validation; exclude that separate call.
     await client.listTools();
     h.counters.reset();
-    h.clock.install();
+    // No virtual clock: the quiet wait never sleeps, and an idle fake clock would jump to the SDK's 60 s timeout under load.
+    const started = Date.now();
     const result = payload(await client.callTool({ name: "wait_for_requests", arguments: {} }));
+    assert.ok(Date.now() - started < 5000);
     assert.deepEqual(result.requests, []);
     assert.doesNotMatch(result.hint, /again now/);
     assert.equal(h.counters.log.filter(row => row.category === "control" && row.action === "take-requests").length, 1);
