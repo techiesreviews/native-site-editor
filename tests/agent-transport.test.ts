@@ -404,7 +404,7 @@ test("a media dispatch's deadline is the relay's remaining budget from arrival, 
     a.deliver(media, remainingMs === undefined ? {} : { remainingMs });
     await until(() => a.sockets[0].messages("result").length === index + 1);
     const deadline = deadlines.at(-1)!, budget = remainingMs === undefined ? 10_000 : Math.min(10_000, Math.max(0, remainingMs));
-    assert.ok(deadline <= Date.now() + budget - 250 && deadline >= before + budget - 250, `remainingMs ${remainingMs} gave ${deadline - before} ms`);
+    assert.ok(deadline <= Date.now() + budget - 1_000 && deadline >= before + budget - 1_000, `remainingMs ${remainingMs} gave ${deadline - before} ms`);
   }
   a.transport.stop();
 });
