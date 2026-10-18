@@ -159,7 +159,10 @@ export class SessionStore extends DurableObject {
         const reservedAt = Date.now();
         if (action && action.action !== "release" && await this.lifecycle.denied(action.id))
           return Response.json({ allowed: false, reason: "cleaned", entries: [] });
-        const result = await storage.transaction(transaction => accountMetadata(transaction, action, reservedAt));
+        // Cleanup tombstones are workspace agent metadata too (decision 05: 64 KiB in total).
+        const lifecycleBytes = action?.action === "reserve" ? await this.lifecycle.admissionBytes() : 0;
+        const result = await storage.transaction(transaction => accountMetadata(transaction, action, reservedAt,
+          { connections: 5, bytes: 64 * 1024 - lifecycleBytes }));
         if (result.allowed && action.action === "reserve") await this.lifecycle.presence(this.eligible(action.workspace), false, reservedAt);
         return Response.json(result, { status: result.reason === "invalid" ? 400 : 200 });
       });
@@ -360,7 +363,7 @@ export class SessionStore extends DurableObject {
         await accountMetadata(this.ctx.storage, { workspace: work.workspace, action: "release", id: entry.id,
           generation: entry.generation, expected: entry }, Date.now());
       const remaining = await this.ctx.storage.get<Ledger>(METADATA_KEY);
-      if (!remaining?.entries.some(entry => entry.state === "cleaned")) await this.lifecycle.complete(work.generation);
+      if (!remaining?.entries.some(entry => entry.state === "cleaned")) await this.lifecycle.complete(work.generation, removed.map(entry => entry.id));
     });
     if (removed.length !== work.entries.length) throw new Error("Agent cleanup incomplete; retry scheduled");
   }

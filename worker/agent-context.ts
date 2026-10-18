@@ -320,13 +320,15 @@ export async function rebindGrant(env: Env, id: string, previous: AgentGrant, ta
   const finalized = await finishGrant(env, id, grant);
   if (finalized === false || finalized === undefined && Date.now() >= deadline || !await sourceIsLive()) {
     // Cleanup may have fenced the source or destination while this write was in
-    // flight. Never report a successful rebind or leave this generation usable.
+    // flight. Never report a successful rebind or leave this generation usable:
+    // removing the hub entry denies authentication first (as revoke does), so a
+    // failed record deletion cannot leave the token working. Either step alone
+    // denies; the reservation is released only when both are definite.
+    const removed = await removeHubGrant(env, grant.sessionId, id, grant.generation);
     const deleted = await record.fetch(new Request("https://session.internal/", {
       method: "DELETE", headers: { "X-Agent-Delete": await tokenId(JSON.stringify(grant)) },
     })).catch(() => undefined);
-    if (deleted?.ok || deleted?.status === 404) {
-      if (await removeHubGrant(env, grant.sessionId, id, grant.generation)) await releaseGrant(env, id, grant).catch(() => undefined);
-    }
+    if (removed && (deleted?.ok || deleted?.status === 404)) await releaseGrant(env, id, grant).catch(() => undefined);
     throw new HttpError(401, "This connection was cleaned up. Connect the agent again.");
   }
   if (workspaceKey(grantWorkspace(previous)) !== workspaceKey(grantWorkspace(grant)))
@@ -496,10 +498,15 @@ export async function deleteCleanedGrants(env: Env, workspace: string, entries: 
         matches = workspaceKey(grantWorkspace(grant)) === workspace && grant.generation <= entry.generation;
         if (matches) headers["X-Agent-Delete"] = await tokenId(JSON.stringify(grant));
       }
-      if (matches) {
-        const deleted = await durable(env, `agent:${entry.id}`).fetch(new Request("https://session.internal/", { method: "DELETE", headers }));
-        if (!deleted.ok && deleted.status !== 404) continue;
+      if (!matches) {
+        // Rebound away (another workspace or a newer generation): this workspace's
+        // entry is stale, as reconcile treats it. The hub entry belongs to the new
+        // binding and stays; without this, retries would run until the grant expires.
+        removed.push(entry);
+        continue;
       }
+      const deleted = await durable(env, `agent:${entry.id}`).fetch(new Request("https://session.internal/", { method: "DELETE", headers }));
+      if (!deleted.ok && deleted.status !== 404) continue;
       if (await removeHubGrant(env, entry.sessionId, entry.id, entry.generation)) removed.push(entry);
     } catch { /* Retain the ledger and deny access until retry establishes absence. */ }
   }

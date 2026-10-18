@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { AgentLifecycle, AlarmDeadlines, DEADLINES_KEY, DISCONNECT_GRACE, LIFECYCLE_KEY, type LifecycleRecord } from "../worker/agent-lifecycle";
+import { AgentLifecycle, AlarmDeadlines, DEADLINES_KEY, DISCONNECT_GRACE, LIFECYCLE_KEY, TOMBSTONE_AFTER_DELETION, type LifecycleRecord } from "../worker/agent-lifecycle";
 import { AgentRelay, relayObjectName, type RelayScope, type RelaySocket } from "../worker/agent-relay";
 import { createGrant, getGrant, getHub, rebindGrant, revokeGrant } from "../worker/agent-context";
 import { METADATA_KEY, METADATA_ROUTE, type Ledger } from "../worker/agent-metadata";
@@ -495,4 +495,64 @@ test("storage latency does not move detection time or the five-minute eligibilit
   await loss;
   assert.equal((await lifecycle.load()).disconnectDeadline, 100 + DISCONNECT_GRACE);
   assert.equal(await storage.getAlarm(), 100 + DISCONNECT_GRACE);
+});
+
+test("rebind racing source cleanup: a failed compensating delete still leaves the destination generation unusable", async () => {
+  const h = await fixture();
+  const get = h.namespace.get;
+  const destination = await relayObjectName({ ...workspace, branch: "other" });
+  let release!: () => void, entered!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  try {
+    const previous = await getGrant(h.env, h.grant.id);
+    h.namespace.get = name => ({ async fetch(request) {
+      if (String(name) === destination && new URL(request.url).pathname === METADATA_ROUTE) {
+        const body = await request.clone().json() as { action?: string };
+        if (body.action === "finalize") { entered(); await held; }
+      }
+      if (String(name) === `agent:${h.grant.id}` && request.method === "DELETE") return new Response(null, { status: 503 });
+      return get(name).fetch(request);
+    } });
+    const rebinding = rebindGrant(h.env, h.grant.id, previous, { repoId: repo.id, repo: repo.full_name, branch: "other" });
+    const rejected = assert.rejects(rebinding, { status: 401 });
+    await started;
+    // The source workspace loses its last editor and is cleaned while the destination finalize is held.
+    await h.close(h.name, h.editors[0]); h.advance(DISCONNECT_GRACE); await h.alarm(h.name);
+    assert.deepEqual((await h.ledger())!.entries, [], "a grant already rebound away releases the source entry, no endless retries");
+    assert.equal(await h.relayStorage.getAlarm(), null);
+    release(); await rejected;
+    const rpc = await h.worker.dispatchFetch(origin + "/mcp", { method: "POST", headers: {
+      Authorization: `Bearer ${h.grant.token}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream",
+    }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }) });
+    assert.equal(rpc.status, 401, "hub removal denies before the failed record deletion");
+    assert.equal((await getHub(h.env, h.sessionId))!.grants.some(grant => grant.id === h.grant.id), false);
+    const counted = (await h.storage(destination).get<Ledger>(METADATA_KEY))!.entries.some(entry => entry.id === h.grant.id);
+    assert.equal(counted, true, "an uncertain record deletion stays counted in the destination");
+  } finally { release(); h.namespace.get = get; await h.dispose(); }
+});
+
+test("cleanup tombstones count toward the 64 KiB workspace budget, shrink after deletion and expire without another disconnect", async () => {
+  const h = await fixture();
+  try {
+    await h.close(h.name, h.editors[0]); h.advance(DISCONNECT_GRACE); await h.alarm(h.name);
+    const after = (await h.record())!;
+    assert.ok(after.cleaned[h.grant.id] <= h.now() + TOMBSTONE_AFTER_DELETION, "deleted grant keeps only a short tombstone");
+    // Fill the lifecycle record with live tombstones: admission must count them before allocating.
+    const many = Object.fromEntries(Array.from({ length: 900 }, (_, n) => [n.toString(16).padStart(64, "0"), h.now() + 60_000]));
+    await h.relayStorage.put(LIFECYCLE_KEY, { ...after, cleaned: { ...after.cleaned, ...many } });
+    await h.reconnect();
+    const refuse = async () => {
+      const response = await h.namespace.get(h.name).fetch(new Request(`https://session.internal${METADATA_ROUTE}`, {
+        method: "POST", body: JSON.stringify({ action: "reserve", workspace: workspaceKey(workspace), id: "f".repeat(64),
+          generation: 1, sessionId: h.sessionId, bytes: 100, expiresAt: h.input.expiresAt }),
+      }));
+      return (await response.json()) as { allowed: boolean; reason?: string };
+    };
+    assert.deepEqual(await refuse(), { allowed: false, reason: "bytes", entries: [] } as never);
+    // Without any new disconnect, expired tombstones are pruned on the next admission.
+    h.advance(TOMBSTONE_AFTER_DELETION + 1);
+    assert.equal((await refuse()).allowed, true);
+    assert.deepEqual(Object.keys((await h.record())!.cleaned), []);
+  } finally { await h.dispose(); }
 });
