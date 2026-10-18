@@ -384,3 +384,63 @@ test("isolate memory evicts the oldest of more than 256 sign-in entries", async 
     assert.ok(h.counters.readKeys.filter(isCacheKey).length > 0);
   } finally { await h.worker.dispose(); }
 });
+
+test("a slow fallback read cannot restore a listing that repository creation replaced", async () => {
+  const { handle } = await import("../worker/app.ts");
+  const { repositoryCacheRequest } = await import("./session-cache-fake.ts");
+  const origin = "https://editor.example";
+  const id = "d".repeat(64);
+  const created = { ...repo, id: 2, name: "new-site", full_name: "lex/new-site" };
+  const records = new Map<string, any>([[id, {
+    kind: "user", token: "slow-token", login: "lex", avatar_url: "", expiresAt: Date.now() + 60_000, repositoryCacheGeneration: 1,
+    repositoryCache: { fetchedAt: Date.now(), repositories: [repo], installations: [{ id: 1, login: "lex", type: "User" }], pages: {} },
+  }]]);
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  let fallbackReads = 0;
+  const env: any = {
+    GITHUB_CLIENT_ID: "c", GITHUB_CLIENT_SECRET: "s", GITHUB_APP_SLUG: "test-editor",
+    ASSETS: { fetch: async () => new Response("UI") },
+    SESSIONS: {
+      idFromName: (name: string) => name,
+      get: (key: string) => ({
+        fetch: async (request: Request) => {
+          if (new URL(request.url).pathname === "/repository-cache" && request.method === "GET") {
+            // Request A takes the old snapshot now and answers only after B has finished.
+            const answer = await repositoryCacheRequest(request, records, key);
+            if (++fallbackReads === 1) await held;
+            return answer!;
+          }
+          const cache = await repositoryCacheRequest(request, records, key);
+          if (cache) return cache;
+          const { repositoryCache: _, ...session } = records.get(key) ?? {};
+          return records.has(key) ? Response.json(session) : new Response(null, { status: 404 });
+        },
+      }),
+    },
+  };
+  let repositories = [repo];
+  const github: typeof fetch = async (input, init) => {
+    const path = new URL(String(input)).pathname;
+    if (path === "/user/installations") return Response.json({ installations: [{ id: 1, account: { login: "lex", type: "User" } }] });
+    if (path === "/user/installations/1/repositories") return Response.json({ repositories });
+    if (path === "/user/repos" && init?.method === "POST") {
+      repositories = [repo, created];
+      return Response.json({ ...created, private: false }, { status: 201 });
+    }
+    throw new Error(`Unexpected ${init?.method ?? "GET"} ${path}`);
+  };
+  const cookie = `__Host-ase_session=${id}`;
+  const list = () => handle(new Request(`${origin}/api/repositories`, { headers: { Cookie: cookie } }), env, github);
+  const a = list();
+  while (fallbackReads === 0) await new Promise((resolve) => setTimeout(resolve, 1));
+  const b = await handle(new Request(`${origin}/api/repositories`, {
+    method: "POST", headers: { Origin: origin, Cookie: cookie, "Content-Type": "application/json" },
+    body: JSON.stringify({ name: "new-site", private: false }),
+  }), env, github);
+  assert.equal(b.status, 201, await b.clone().text());
+  release();
+  await (await a).arrayBuffer();
+  const after = await (await list()).json() as { full_name: string }[];
+  assert.ok(after.some((entry) => entry.full_name === "lex/new-site"), "the listing after creation includes the new repository");
+});
