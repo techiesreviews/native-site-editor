@@ -405,9 +405,12 @@ test("real SessionStore dispatch/results/cancel/timeout/close/error/reset write 
       assert.deepEqual(await (await dispatch(timeoutInstance)).json(), { ok: false, code: "timeout", outcome: "unknown" });
       assert.equal(counters.waitedMs, 10_000);
     } finally { clock.uninstall(); }
-    const persisted = await storage.list();
-    assert.deepEqual([...persisted.keys()], ["agent-lifecycle"]);
-    assert.ok(!JSON.stringify([...persisted]).includes("private draft payload"));
+    // No agent grants in this workspace: closing the last tab has nothing to clean and writes nothing.
+    for (const count of Object.values(counters.byCategory)) {
+      assert.equal(count.keysWritten, 0); assert.equal(count.bytesWritten, 0);
+    }
+    assert.equal(counters.retainedBytes, 0);
+    assert.deepEqual(await storage.list(), new Map());
   } finally {
     if (original) Object.defineProperty(globalThis, "WebSocketRequestResponsePair", original);
     else Reflect.deleteProperty(globalThis, "WebSocketRequestResponsePair");
