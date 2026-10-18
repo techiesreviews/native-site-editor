@@ -1043,6 +1043,7 @@ function env(connect?: RelayConnect, relaySession = "anonymous"): Env {
             }
             return new Response(null, { status: 204 });
           }
+          if (!["/", "/consume", "/config"].includes(url.pathname)) return new Response(null, { status: 404 });
           if (request.method === "PUT") {
             const value = (await request.json()) as StoredSession;
             await storage.delete(["repositoryCache"]);
@@ -1060,7 +1061,7 @@ function env(connect?: RelayConnect, relaySession = "anonymous"): Env {
             return new Response(null, { status: 404 });
           if (url.pathname === "/consume") sessions.delete(id);
           // eslint-disable-next-line no-restricted-syntax -- The session fake stores AgentHub records through its shared StoredValue slot.
-          if (slot.value.kind === "agent-hub") return Response.json(await hubView(storage, slot.value as unknown as AgentHub, url));
+          if (slot.value.kind === "agent-hub") return Response.json(hubView(slot.value as unknown as AgentHub));
           return Response.json(slot.value.kind === "user" ? { ...slot.value, repositoryCache: await storage.get("repositoryCache"), repositoryCacheGeneration: await storage.get<number>("repositoryCacheGeneration") ?? 0 } : slot.value);
         },
       }),

@@ -135,20 +135,16 @@ test("concurrent fake hub operations keep both grants", async () => {
   assert.deepEqual((await storage.get<AgentHub>("session"))!.grants.map((grant) => grant.id), ["first", "second"]);
 });
 
-test("concurrent fake draft-text stores keep both texts", async () => {
+test("concurrent obsolete draft uploads and reads are refused without storing texts", async () => {
   const storage = memoryStorage();
-  const drafts = ["a", "b"].map((name) => ({ path: `${name}.html`, baseSha: null, updatedAt: 1, hash: name.repeat(64) }));
-  await storage.put({ session: { kind: "agent-hub", ...hub, grants: [] }, context: { drafts } });
-  const responses = await Promise.all(drafts.map(({ hash, path }) =>
-    fakeHubRoute("drafts-hub", storage, new Request("https://session.internal/agent-drafts", {
-      method: "POST", body: JSON.stringify([{ hash, content: path }]),
-    })),
-  ));
-  for (const response of responses) assert.deepEqual(await response?.json(), { stored: 1 });
-  assert.deepEqual(await storage.get("drafts"), Object.fromEntries(drafts.map(({ hash, path }) => [hash, path.length])));
-  for (const { hash, path } of drafts) {
-    const read = await fakeHubRoute("drafts-hub", storage, new Request(`https://session.internal/agent-draft?hash=${hash}`));
-    assert.equal(await read?.text(), path);
+  await storage.put({ session: { kind: "agent-hub", ...hub, grants: [] } });
+  const responses = await Promise.all(["a", "b"].map(name => fakeHubRoute("drafts-hub", storage,
+    new Request("https://session.internal/agent-drafts", { method: "POST", body: JSON.stringify([{ hash: name.repeat(64), content: name }]) }))));
+  for (const response of responses) assert.equal(response?.status, 404);
+  assert.equal(await storage.get("drafts"), undefined);
+  for (const name of ["a", "b"]) {
+    assert.equal(await storage.get(`draft:${name.repeat(64)}`), undefined);
+    assert.equal((await fakeHubRoute("drafts-hub", storage, new Request(`https://session.internal/agent-draft?hash=${name.repeat(64)}`)))?.status, 404);
   }
 });
 

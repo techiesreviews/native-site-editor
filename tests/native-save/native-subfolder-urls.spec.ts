@@ -1,10 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { storedDraft } from "./drafts";
-import { copyConnectionPrompt, useLegacyRelay } from "./mcp-prompt";
+import { copyConnectionPrompt, waitForConnection } from "./mcp-prompt";
 
-// These specs exercise queued edits and the matching legacy context fallback.
-test.beforeEach(({ page }) => useLegacyRelay(page));
+// These specs exercise edits through the fixture relay socket.
 
 // Default fixture group: native-subfolder (532).
 async function open(page: Page, baseURL: string | undefined) {
@@ -44,6 +43,7 @@ test("agent move_file writes the same sub-folder links and redirect", async ({ p
   const client = new Client({ name: "subfolder-agent", version: "1.0.0" });
   try {
     await client.connect(new StreamableHTTPClientTransport(new URL(url), { requestInit: { headers: { Authorization: `Bearer ${token}` } } }));
+    await waitForConnection(page);
     await expect(page.getByRole("button", { name: "Disconnect MCP", exact: true })).toBeVisible({ timeout: 15_000 });
     await page.keyboard.press("Escape");
     const response = await client.callTool({ name: "move_file", arguments: { path: "notes/first-note/index.html", to: "notes/hello/index.html", keepOldUrl: true } });

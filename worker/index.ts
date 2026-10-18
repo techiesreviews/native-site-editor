@@ -1,6 +1,6 @@
 import { inventoryObject } from "./agent-maintenance";
 import type { AgentHub } from "./agent-context";
-import { clearHub, hubOperation, hubView, readDraft, storeDrafts } from "./agent-store";
+import { clearHub, hubOperation, hubView } from "./agent-store";
 import { DurableObject } from "cloudflare:workers";
 import { handle, type Env, type StoredValue } from "./app";
 import { admitRegistration, finalizeRegistration, isBudgetKey, pruneRegistration, releaseRegistration, REGISTRATION_ROUTE } from "./oauth-registration";
@@ -112,19 +112,13 @@ export class SessionStore extends DurableObject {
         return Response.json(result, { status: result.reason === "invalid" ? 400 : 200 });
       }));
     }
-    // The agent hub, its context and draft texts (worker/agent-store.ts).
+    // Grant metadata operations only; obsolete content routes have no handler.
     if (url.pathname === "/agent-operation") {
       const action = await request.json();
       return this.ctx.blockConcurrencyWhile(() =>
         hubOperation(storage, action, (at) => storage.setAlarm(at)),
       );
     }
-    if (url.pathname === "/agent-drafts" && request.method === "POST") {
-      const texts = (await request.json()) as { hash: string; content: string }[];
-      return this.ctx.blockConcurrencyWhile(() => storeDrafts(storage, texts));
-    }
-    if (url.pathname === "/agent-draft")
-      return readDraft(storage, url.searchParams.get("hash") ?? "");
     // Anonymous OAuth client registration budgets, on a fixed-name instance
     // (worker/oauth-registration.ts). One transaction keeps counts exact.
     if (url.pathname === REGISTRATION_ROUTE) {
@@ -186,6 +180,7 @@ export class SessionStore extends DurableObject {
         return new Response(null, { status: 204, headers: { "X-Repository-Cache-Generation": String(generation) } });
       });
     }
+    if (!["/", "/config", "/consume"].includes(url.pathname)) return new Response(null, { status: 404 });
     if (request.method === "PUT") {
       if (url.pathname === "/config") {
         return this.ctx.blockConcurrencyWhile(async () => {
@@ -225,7 +220,7 @@ export class SessionStore extends DurableObject {
         return new Response(null, { status: 404 });
       if (url.pathname === "/consume") await storage.delete("session");
       if (value.kind === "agent-hub")
-        return Response.json(await hubView(storage, value as AgentHub, url));
+        return Response.json(hubView(value as AgentHub));
       return Response.json(value.kind === "user" ? { ...value, repositoryCache: undefined, repositoryCacheGeneration: snapshot.get("repositoryCacheGeneration") ?? 0 } : value);
     });
     return url.pathname === "/consume" ? this.ctx.blockConcurrencyWhile(read) : read();

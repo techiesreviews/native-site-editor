@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { test, expect, type Page } from "@playwright/test";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
-import { copyConnectionPrompt } from "./mcp-prompt";
+import { copyConnectionPrompt, waitForConnection } from "./mcp-prompt";
 
 // These specs exercise the real fixture relay socket and browser media executor.
 
@@ -29,7 +29,7 @@ async function connectAgent(page: Page, baseURL: string | undefined) {
   );
   // Returning from the agent app refreshes grant metadata once; live mode has no hub polling.
   await expect.poll(async () => {
-    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await waitForConnection(page);
     return page.getByRole("button", { name: "Disconnect MCP", exact: true }).isVisible();
   }).toBe(true);
   await expect(page.getByRole("button", { name: "Disconnect MCP", exact: true })).toBeVisible({ timeout: 15_000 });

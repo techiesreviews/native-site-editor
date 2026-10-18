@@ -1,3 +1,4 @@
+import { waitForConnection } from "./mcp-prompt";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
@@ -67,9 +68,6 @@ test("an edit survives a reload made right after it", async ({ page, baseURL }) 
 });
 
 test("drafts totalling well over 5 MB are kept and survive a reload", async ({ page, baseURL }) => {
-  // Route before navigation so queued-edit tests keep the legacy fallback.
-  await page.routeWebSocket("**/api/agent/relay?*", socket => socket.close());
-  await page.route("**/api/agent/relay", route => route.fulfill({ status: 404, body: "Not found" }));
   await open(page, baseURL);
   await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
   await page.locator(".repository-menu__trigger").click();
@@ -83,6 +81,7 @@ test("drafts totalling well over 5 MB are kept and survive a reload", async ({ p
   const client = new Client({ name: "playwright-agent", version: "1.0.0" });
   await client.connect(new StreamableHTTPClientTransport(new URL(url), { requestInit: { headers: { Authorization: `Bearer ${token}` } } }));
   try {
+    await waitForConnection(page);
     await expect(page.getByRole("button", { name: "Disconnect MCP", exact: true })).toBeVisible({ timeout: 15_000 });
     await page.keyboard.press("Escape");
     const call = async (name: string, args: Record<string, unknown> = {}) => {

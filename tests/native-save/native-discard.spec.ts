@@ -5,10 +5,9 @@ import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/cli
 import { discardAllChanges, publishActions, publishButton, showPublish, showPublishActions } from "./publish";
 import { sampleContrast, type Pixel } from "./tone-contrast";
 import { storedDrafts } from "./drafts";
-import { copyConnectionPrompt, useLegacyRelay } from "./mcp-prompt";
+import { copyConnectionPrompt, waitForConnection } from "./mcp-prompt";
 
-// These specs exercise queued edits and the matching legacy context fallback.
-test.beforeEach(({ page }) => useLegacyRelay(page));
+// These specs exercise edits through the fixture relay socket.
 
 // Discard changes in the Publish menu drops every draft of the branch (after a
 // question naming them); a draft that is GitHub's version again goes on its
@@ -63,12 +62,14 @@ async function connectAgent(page: Page, baseURL: string | undefined) {
   expect(url).toBe(`${baseURL}/mcp`);
   const client = new Client({ name: "playwright-agent", version: "1.0.0" });
   await client.connect(new StreamableHTTPClientTransport(new URL(url), { requestInit: { headers: { Authorization: `Bearer ${token}` } } }));
+  await waitForConnection(page);
   await expect(page.getByRole("button", { name: "Disconnect MCP", exact: true })).toBeVisible({ timeout: 15_000 });
   await page.keyboard.press("Escape");
   const call = async (name: string, args: Record<string, unknown> = {}) => {
     const response = await client.callTool({ name, arguments: args });
-    const body = JSON.parse((response as { content: { text: string }[] }).content[0].text);
-    expect(response.isError, `${name}: ${JSON.stringify(body)}`).toBeFalsy();
+    const raw = (response as { content: { text: string }[] }).content[0].text;
+    expect(response.isError, `${name}: ${raw}`).toBeFalsy();
+    const body = JSON.parse(raw);
     return body;
   };
   // Replaces a file's text as the agent's write_file does.

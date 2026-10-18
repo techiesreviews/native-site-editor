@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { authenticateAgent, connectionContext, createGrant, getGrant, getHub, operateHub, type AgentGrant, type AgentHub } from "../worker/agent-context.ts";
+import { authenticateAgent, createGrant, getGrant, getHub, operateHub, type AgentGrant, type AgentHub } from "../worker/agent-context.ts";
 import { handle, type Env } from "../worker/app.ts";
 import { hubView, type HubStorage } from "../worker/agent-store.ts";
 import { handleOAuth, type OAuthDeps } from "../worker/oauth.ts";
@@ -10,7 +10,6 @@ import { notSharingMessage } from "../worker/mcp.ts";
 import type { AgentCommand } from "../shared/agent.ts";
 import { fakeHubRoute } from "./native-save/fake-hub.ts";
 import { fakeGitHub, githubState, origin, repo, siteContext } from "./mcp-harness.ts";
-import { forEachAwait } from "./support/await-race.ts";
 
 const sessionId = "a".repeat(64);
 const tabId = "tab-workspace-test";
@@ -39,7 +38,7 @@ function fixture() {
           const response = await fakeHubRoute(name, storage, request);
           if (response) return response;
           const hub = await storage.get<AgentHub>("session");
-          return hub ? Response.json(await hubView(storage, hub, url)) : new Response(null, { status: 404 });
+          return hub ? Response.json(hubView(hub)) : new Response(null, { status: 404 });
         }
         if (url.pathname === "/repository-cache") return new Response(null, { status: 204 });
         // Pending-authorization caps have their own tests (tests/oauth-pending.test.ts).
@@ -75,19 +74,18 @@ for (const other of [
 ]) test(`shared context ${JSON.stringify(other)} never redirects a grant`, async () => {
   const f = fixture(), { token } = await f.connect();
   const context = { ...await siteContext(), ...other };
-  await operateHub(f.env, sessionId, { type: "context", tabId, context });
+  await f.storage.put({ context });
   f.calls.length = 0;
   const connection = await authenticateAgent(requestFor(token), f.env, f.fetcher);
   assert.equal(f.calls.length, 3, "authentication reads grant, sign-in and hub only");
   assert.equal(connection.repo.full_name, repo.full_name);
   assert.deepEqual(connection.workspace, { account: "lex", repoId: repo.id, repo: repo.full_name, branch: "main" });
-  assert.equal(connectionContext(connection.hub, connection.workspace), undefined);
+  assert.equal(connection.hub?.context, undefined);
   const message = notSharingMessage(origin, connection.workspace, context);
   assert.ok(message.includes(`${repo.full_name} on branch main`));
   assert.ok(message.includes(`${context.repository.fullName} on branch ${context.branch}`));
   assert.match(message, /connect the agent again from the tab you want/);
-  await operateHub(f.env, sessionId, { type: "context", tabId, context: await siteContext() });
-  assert.ok(connectionContext(await getHub(f.env, sessionId), connection.workspace));
+  assert.equal((await getHub(f.env, sessionId))?.context, undefined);
 });
 
 test("a branchless legacy grant requires reconnection", async () => {
@@ -98,23 +96,14 @@ test("a branchless legacy grant requires reconnection", async () => {
     { status: 401, message: "This connection was made before connections were tied to one branch; connect the agent again." });
 });
 
-for (const change of ["rebound", "removed", "repo", "branch", "generation"] as const) test(`queue and claim refuse a ${change} grant and persist its failed result`, async () => {
+for (const change of ["rebound", "removed"] as const) test(`legacy pending commands fail on grant ${change}; content operations stay refused`, async () => {
   const f = fixture(), { id } = await f.connect();
-  await operateHub(f.env, sessionId, { type: "context", tabId, context: await siteContext() });
-  const queued = command(id);
-  await operateHub(f.env, sessionId, { type: "queue", command: queued });
+  const hub = (await f.storage.get<AgentHub>("session"))!;
+  await f.storage.put({ session: { ...hub, commands: [command(id, { claimedBy: tabId })] } });
   if (change === "rebound") await operateHub(f.env, sessionId, { type: "rebind-grant", id, repoId: repo.id, repo: repo.full_name, branch: "preview", previous: 1, generation: 2 });
-  else if (change === "removed") await operateHub(f.env, sessionId, { type: "remove-grant", id });
-  else {
-    const hub = (await f.storage.get<AgentHub>("session"))!;
-    if (change === "repo") hub.grants[0].repoId++;
-    if (change === "branch") hub.grants[0].branch = "preview";
-    if (change === "generation") hub.grants[0].generation++;
-    await f.storage.put({ session: hub });
-  }
-  await assert.rejects(operateHub(f.env, sessionId, { type: "queue", command: command(id, { id: "change-2" }) }), { status: 409 });
-  await assert.rejects(operateHub(f.env, sessionId, { type: "claim", id: queued.id, grantId: id, tabId }), { status: 409 });
-  const result = (await getHub(f.env, sessionId))!.commands![0];
+  else await operateHub(f.env, sessionId, { type: "remove-grant", id });
+  for (const type of ["queue", "claim", "ack"]) await assert.rejects(operateHub(f.env, sessionId, { type }), { status: 400 });
+  const result = (await f.storage.get<AgentHub>("session"))!.commands![0];
   assert.equal(result.state, "failed");
   assert.match(result.message!, /moved to another workspace.*rebound/);
 });
@@ -134,32 +123,6 @@ test("rebind endpoint checks ownership, authorizes the receiver, and increments 
   assert.equal((await getHub(f.env, sessionId))!.grants[0].generation, 2);
   assert.equal((await f.post("/api/agent/rebind", { ...body, branch: "next" })).status, 200);
   assert.equal((await getGrant(f.env, id)).generation, 3);
-});
-
-test("claim racing a rebind never claims after the generation changes", async () => {
-  const count = await forEachAwait((race) => {
-    const f = fixture();
-    const run = { f, id: "", result: undefined as Response | undefined, done: Promise.resolve() };
-    run.done = (async () => {
-      run.id = (await f.connect()).id;
-      await operateHub(f.env, sessionId, { type: "context", tabId, context: await siteContext() });
-      await operateHub(f.env, sessionId, { type: "queue", command: command(run.id) });
-      // A tab claims from a hub view fetched before the rebind finishes.
-      const read = race.port("read pending command", () => getHub(f.env, sessionId));
-      const pending = (await read())!.commands![0];
-      run.result = await f.post("/api/agent/claim", { id: pending.id, grantId: run.id, tabId });
-    })();
-    return run;
-  }, async ({ f, id }) => {
-    const response = await f.post("/api/agent/rebind", { id, repo: repo.full_name, repoId: repo.id, branch: "preview" });
-    assert.equal(response.status, 200);
-  }, async ({ f, result }) => {
-    assert.equal(result?.status, 409);
-    const pending = (await getHub(f.env, sessionId))!.commands![0];
-    assert.equal(pending.claimedBy, undefined);
-    assert.equal(pending.state, "failed");
-  });
-  assert.equal(count, 1);
 });
 
 const clientId = `mcp_${"c".repeat(32)}`;
@@ -223,18 +186,14 @@ for (const branch of [undefined, "", "bad..branch", "a b", "a\\b", "a@{b", "a/",
   });
 }
 
-test("a late claim for an old generation leaves the rebound generation's commands intact", async () => {
+test("a late legacy claim after rebind is gone and cannot change stored commands", async () => {
   const f = fixture(), { id } = await f.connect();
-  await operateHub(f.env, sessionId, { type: "context", tabId, context: await siteContext() });
-  await operateHub(f.env, sessionId, { type: "queue", command: command(id) });
+  const hub = (await f.storage.get<AgentHub>("session"))!;
+  await f.storage.put({ session: { ...hub, commands: [command(id)] } });
   assert.equal((await f.post("/api/agent/rebind", { id, repo: repo.full_name, repoId: repo.id, branch: "preview" })).status, 200);
-  await operateHub(f.env, sessionId, { type: "context", tabId, context: { ...await siteContext(), branch: "preview" } });
-  await operateHub(f.env, sessionId, { type: "queue", command: command(id, { id: "change-2", generation: 2, branch: "preview" }) });
-  await assert.rejects(operateHub(f.env, sessionId, { type: "claim", id: "change-1", grantId: id, tabId }), { status: 409 });
-  const commands = (await getHub(f.env, sessionId))!.commands!;
-  assert.equal(commands[0].state, "failed");
-  assert.equal(commands[1].state, "pending");
-  assert.equal((await f.post("/api/agent/claim", { id: "change-2", grantId: id, tabId })).status, 200);
+  const before = await f.storage.get<AgentHub>("session");
+  assert.equal((await f.post("/api/agent/claim", { id: "change-1", grantId: id, tabId })).status, 410);
+  assert.deepEqual(await f.storage.get("session"), before);
 });
 
 test("concurrent rebinds advance one generation without overwriting its receiver", async () => {
@@ -247,66 +206,15 @@ test("concurrent rebinds advance one generation without overwriting its receiver
   assert.equal(grant.branch, listed.branch);
 });
 
-test("rebind waits while a tab applies a claimed change of the connection", async () => {
+test("a legacy claimed change never blocks rebind, regardless of its age", async () => {
   const f = fixture(), { id } = await f.connect();
-  await operateHub(f.env, sessionId, { type: "context", tabId, context: await siteContext() });
-  await operateHub(f.env, sessionId, { type: "queue", command: command(id) });
-  assert.equal((await f.post("/api/agent/claim", { id: "change-1", grantId: id, tabId })).status, 200);
-  const body = { id, repo: repo.full_name, repoId: repo.id, branch: "preview" };
-  // The claimed change may be applying in the tab: the connection keeps its workspace.
-  assert.equal((await f.post("/api/agent/rebind", body)).status, 409);
-  assert.equal((await getGrant(f.env, id)).generation, 1);
-  assert.equal((await getHub(f.env, sessionId))!.grants[0].branch, "main");
-  // However long ago the change was made: a paused tab may still apply it.
-  const stored = (await f.storage.get<AgentHub>("session"))!;
-  stored.commands![0].createdAt -= 3_600_000;
-  await f.storage.put({ session: stored });
-  assert.equal((await f.post("/api/agent/rebind", body)).status, 409);
-  await operateHub(f.env, sessionId, { type: "ack", id: "change-1", grantId: id, tabId, state: "applied" });
-  assert.equal((await f.post("/api/agent/rebind", body)).status, 200);
-  assert.equal((await getGrant(f.env, id)).generation, 2);
-});
-
-test("requests to agents stay on the branch they were asked on, and a rebound grant reads or answers none", async () => {
-  const f = fixture();
-  const { id } = await f.connect();
-  const element = { file: "index.html", id: "0", tag: "h1", text: "Hello" };
-  const asked = (request: string, branch?: string) => ({ id: request, text: "Change it", createdAt: Date.now(), repoId: repo.id, repository: repo.full_name, ...(branch ? { branch } : {}), state: "open", element, thread: [] });
-  await operateHub(f.env, sessionId, { type: "ask", request: asked("req-main", "main") });
-  await operateHub(f.env, sessionId, { type: "ask", request: asked("req-preview", "preview") });
-  await operateHub(f.env, sessionId, { type: "ask", request: asked("req-legacy") });
-  const scope = (branch: string, generation: number) => ({ grantId: id, repoId: repo.id, branch, generation });
-  const taken = await operateHub(f.env, sessionId, { type: "take-requests", ...scope("main", 1), all: true });
-  assert.deepEqual(taken.requests.map((item: { id: string }) => item.id), ["req-main"]);
-  for (const request of ["req-preview", "req-legacy"]) {
-    await assert.rejects(operateHub(f.env, sessionId, { type: "request", id: request, ...scope("main", 1) }), { status: 404 });
-    await assert.rejects(operateHub(f.env, sessionId, { type: "reply", id: request, ...scope("main", 1), status: "done", message: "ok" }), { status: 404 });
-  }
-  // An agent action captured before a rebind (old generation and branch) is refused once it lands.
+  const hub = (await f.storage.get<AgentHub>("session"))!;
+  await f.storage.put({ session: { ...hub, commands: [command(id, { claimedBy: tabId, createdAt: Date.now() - 3_600_000 })] } });
   assert.equal((await f.post("/api/agent/rebind", { id, repo: repo.full_name, repoId: repo.id, branch: "preview" })).status, 200);
-  await assert.rejects(operateHub(f.env, sessionId, { type: "take-requests", ...scope("main", 1), all: true }), { status: 409 });
-  await assert.rejects(operateHub(f.env, sessionId, { type: "request", id: "req-main", ...scope("main", 1) }), { status: 409 });
-  await assert.rejects(operateHub(f.env, sessionId, { type: "reply", id: "req-main", ...scope("main", 1), status: "done", message: "late" }), { status: 409 });
-  await assert.rejects(operateHub(f.env, sessionId, { type: "take-requests", ...scope("preview", 1), all: true }), { status: 409 });
-  const main = (await getHub(f.env, sessionId, { requests: true }))!.requests!.find((item) => item.id === "req-main")!;
-  assert.equal(main.reply, undefined);
-  assert.equal((await operateHub(f.env, sessionId, { type: "request", id: "req-preview", ...scope("preview", 2) })).id, "req-preview");
-});
-
-test("a claimed change outlives answered history, so rebind stays refused until it is answered", async () => {
-  const f = fixture(), { id } = await f.connect();
-  await operateHub(f.env, sessionId, { type: "context", tabId, context: await siteContext() });
-  await operateHub(f.env, sessionId, { type: "queue", command: command(id) });
-  assert.equal((await f.post("/api/agent/claim", { id: "change-1", grantId: id, tabId })).status, 200);
-  for (let at = 0; at < 30; at++) {
-    await operateHub(f.env, sessionId, { type: "queue", command: command(id, { id: `later-${at}`, path: `later-${at}.txt` }) });
-    await operateHub(f.env, sessionId, { type: "ack", id: `later-${at}`, grantId: id, tabId, state: "applied" });
-  }
-  const commands = (await getHub(f.env, sessionId))!.commands!;
-  assert.ok(commands.some((item) => item.id === "change-1" && item.state === "pending"));
-  assert.ok(commands.length <= 30);
-  const body = { id, repo: repo.full_name, repoId: repo.id, branch: "preview" };
-  assert.equal((await f.post("/api/agent/rebind", body)).status, 409);
-  await operateHub(f.env, sessionId, { type: "ack", id: "change-1", grantId: id, tabId, state: "applied" });
-  assert.equal((await f.post("/api/agent/rebind", body)).status, 200);
+  assert.equal((await getGrant(f.env, id)).generation, 2);
+  const stored = (await f.storage.get<AgentHub>("session"))!;
+  assert.equal(stored.grants[0].branch, "preview");
+  assert.equal(stored.commands![0].state, "failed");
+  assert.equal((await f.post("/api/agent/ack", { id: "change-1", grantId: id, tabId, state: "applied" })).status, 410);
+  assert.equal((await f.storage.get<AgentHub>("session"))!.commands![0].state, "failed");
 });

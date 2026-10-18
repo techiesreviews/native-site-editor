@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, test, type Locator, type Page, type Route } from "@playwright/test";
 import { storedDraft, storedDrafts } from "./drafts";
-import { copyConnectionPrompt, useLegacyRelay } from "./mcp-prompt";
+import { copyConnectionPrompt, waitForConnection } from "./mcp-prompt";
 
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 
@@ -17,7 +17,6 @@ const indexSource = readFileSync(resolve("fixtures/native-starter", indexPath), 
 const pageErrors: string[] = [];
 
 test.beforeEach(async ({ page }) => {
-  await useLegacyRelay(page);
   pageErrors.length = 0;
   page.on("pageerror", (error) => pageErrors.push(error.message));
 });
@@ -48,6 +47,7 @@ async function connectAgent(page: Page, baseURL: string | undefined) {
   await client.connect(
     new StreamableHTTPClientTransport(new URL(url), { requestInit: { headers: { Authorization: `Bearer ${token}` } } }),
   );
+  await waitForConnection(page);
   await expect(page.getByRole("button", { name: "Disconnect MCP", exact: true })).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole("button", { name: "Disconnect MCP", exact: true })).toHaveAttribute("title", /playwright-agent connected/);
   await page.keyboard.press("Escape");
@@ -379,13 +379,13 @@ test("an agent connects with this tab's prompt while an earlier prompt is still 
   await open(page, baseURL);
   const stale = `ase_${"0".repeat(64)}`;
   await page.evaluate((token) => navigator.clipboard.writeText(`Server: \`${location.origin}/mcp\`\n\nAuthorization: \`Bearer ${token}\``), stale);
-  // Hold the tab's first context share, so its prompt is copied only after it is released.
+  // Hold the tab's first connection check, so its prompt is copied only after it is released.
   let release!: () => void;
   const released = new Promise<void>((done) => (release = done));
   let held!: () => void;
   const holding = new Promise<void>((done) => (held = done));
   let first = true;
-  await page.route("**/api/agent/context", async (route) => {
+  await page.route("**/api/agent/connections", async (route) => {
     if (first) {
       first = false;
       held();
@@ -395,7 +395,7 @@ test("an agent connects with this tab's prompt while an earlier prompt is still 
   });
   const connecting = connectAgent(page, baseURL);
   await holding;
-  // clipboard-ready: the tab cannot have copied its prompt while its context share is held.
+  // clipboard-ready: the tab cannot have copied its prompt while its connection check is held.
   expect(await page.evaluate(() => navigator.clipboard.readText())).toContain(stale);
   release();
   const client = await connecting;
@@ -459,6 +459,7 @@ test("an MCP client connected by OAuth reaches the open editor tab",async ({ pag
   try {
     await expect.poll(async () => result(await client.callTool({ name: "get_site", arguments: {} })).editor?.openFile, { timeout: 15_000 }).toBe(indexPath);
     await page.locator(".repository-menu__trigger").click();
+    await waitForConnection(page);
     await expect(page.getByRole("button", { name: "Disconnect MCP", exact: true })).toHaveAttribute("title", /Playwright OAuth connected/);
     const opened = result(await client.callTool({ name: "open_page", arguments: { page: "/about/" } }));
     expect(opened.state).toBe("applied");
@@ -1064,12 +1065,13 @@ test("Ask agent history stays in this browser: after Turn off and a reload its p
     await expect(pins).toHaveCount(0);
     expect(calls, "local conversation actions").toEqual([]);
 
-    // On again, the hub hears of the dismissed question: agents no longer get it.
+    // On again, the receiving tab reads the local dismissal: agents no longer get it.
     await page.locator(".repository-menu__trigger").click();
     await page.getByRole("button", { name: "Connect with MCP", exact: true }).click();
+    await waitForConnection(page);
     await expect(page.getByRole("button", { name: "Disconnect MCP", exact: true })).toBeVisible({ timeout: 15_000 });
     await page.keyboard.press("Escape");
-    await expect.poll(() => calls.includes("POST /api/agent/dismiss"), { timeout: 15_000 }).toBe(true);
+    expect(calls.includes("POST /api/agent/dismiss")).toBe(false);
     expect((await call("wait_for_requests", { all: true, waitSeconds: 0 })).requests).toEqual([]);
     await expect(pins).toHaveCount(0);
   } finally {

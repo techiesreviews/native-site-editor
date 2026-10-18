@@ -35,7 +35,7 @@ const visible = (page: Page, state: string) => page.evaluate(state => {
 test("live commands correlate results; visible and hidden idle sends no HTTP; another tab requires explicit takeover", async ({ page, context, baseURL }) => {
   const requests: string[] = [], results: any[] = [], handshakes: any[] = [];
   let socket: WebSocketRoute | undefined;
-  await context.route("**/api/agent/hub", route => route.fulfill({ json: {
+  await context.route("**/api/agent/connections", route => route.fulfill({ json: {
     grants: [{ id: "live-grant", repoId: 501, repo: "native-demo-user/native-demo", branch: "main", via: "oauth", client: "Live agent", createdAt: Date.now() }],
     tabId: null, updatedAt: null, commands: [], requests: [],
   } }));
@@ -58,7 +58,7 @@ test("live commands correlate results; visible and hidden idle sends no HTTP; an
   await connect(page);
   await expect(page.locator(".agent-menu")).toHaveAttribute("data-state", "connected");
   await expect.poll(() => handshakes.length).toBe(1);
-  expect(requests).toEqual(["/api/agent/hub"]);
+  expect(requests).toEqual(["/api/agent/connections"]);
   // A second tab already showing the page before the owner's edit (its editor holds the old text).
   const second = await context.newPage();
   await open(second, baseURL);
@@ -116,7 +116,7 @@ test("live commands correlate results; visible and hidden idle sends no HTTP; an
 test("a copied token shows connected after its agent uses it: one hub read on return, no polling", async ({ page, context, baseURL }) => {
   const requests: string[] = [];
   let grants: object[] = [];
-  await context.route("**/api/agent/hub", route => route.fulfill({ json: { grants, tabId: null, updatedAt: null, commands: [], requests: [] } }));
+  await context.route("**/api/agent/connections", route => route.fulfill({ json: { grants, tabId: null, updatedAt: null, commands: [], requests: [] } }));
   await context.route("**/api/agent/connect", route => {
     grants = [{ id: "token-grant", repoId: 501, repo: "native-demo-user/native-demo", branch: "main", via: "token", createdAt: Date.now() }];
     return route.fulfill({ json: { id: "token-grant", token: "ase_test" } });
@@ -141,11 +141,11 @@ test("a copied token shows connected after its agent uses it: one hub read on re
   await visible(page, "hidden");
   await visible(page, "visible");
   await expect(page.locator(".agent-menu")).toHaveAttribute("data-state", "connected");
-  expect(requests.slice(before)).toEqual(["/api/agent/hub"]);
+  expect(requests.slice(before)).toEqual(["/api/agent/connections"]);
   await page.clock.runFor(30_000);
   await expect(page.locator("html")).toHaveAttribute("data-agent-pongs", "2");
   await page.clock.runFor(35_000);
   await visible(page, "hidden");
   await visible(page, "visible");
-  expect(requests.slice(before)).toEqual(["/api/agent/hub"]);
+  expect(requests.slice(before)).toEqual(["/api/agent/connections"]);
 });

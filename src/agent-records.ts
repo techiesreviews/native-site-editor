@@ -78,7 +78,7 @@ export const RECEIPT_BUDGET_BYTES = 1024 * 1024;
 export const COMMAND_MAX_AGE_MS = 23 * 60 * 60 * 1000;
 /**
  * On a full storage, completed receipts older than this may go before their 24 hours: a lost
- * reply is asked again within minutes (the hub keeps answers five minutes).
+ * reply is asked again within the browser receipt retention period.
  */
 export const QUOTA_RECEIPT_AGE_MS = 10 * 60 * 1000;
 const recordBytes = (key: string, value: unknown) => new TextEncoder().encode(JSON.stringify([key, value])).byteLength;

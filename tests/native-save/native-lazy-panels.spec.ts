@@ -1,11 +1,5 @@
 import { expect, test } from "@playwright/test";
 
-test.beforeEach(async ({ page }) => {
-  // This fixture has no relay WebSocket upgrade. Exercise the absent-route fallback explicitly.
-  await page.routeWebSocket("**/api/agent/relay?*", socket => socket.close());
-  await page.route("**/api/agent/relay", route => route.fulfill({ status: 404, body: "Not found" }));
-});
-
 // Real request boundaries: the keyboard layer remains available before the UI loads.
 test("editor boot leaves optional panels unloaded and the first palette key opens it", async ({ page, baseURL }) => {
   const requests: string[] = [];
@@ -33,30 +27,32 @@ test("editor boot leaves optional panels unloaded and the first palette key open
   expect(feature("agent-pins")).toBe(false);
 });
 
-test("once Connect turns remote agents on, a transient hub failure retries and restores requests after the grant was revoked", async ({ page, baseURL }) => {
+test("a failed connection check keeps browser requests and never adopts hub content or starts polling", async ({ page, baseURL }) => {
   let calls = 0;
-  await page.route("**/api/agent/hub", async (route) => {
-    if (++calls === 1) { await route.fulfill({ status: 503, json: { error: "Try again" } }); return; }
-    await route.fulfill({ json: {
-      grants: [], tabId: null, updatedAt: null, commands: [], requests: [{
-        id: "restored-question", repoId: 501, branch: "main", text: "Change the heading", state: "question", createdAt: Date.now() - 10_000,
-        reply: { status: "question", message: "Which heading?", at: Date.now() },
-        element: { file: "index.html", route: "/", id: "hero", tag: "h1", selector: ".hero h1" },
-      }],
-    } });
+  await page.route("**/api/agent/connections", async route => {
+    calls++;
+    await route.fulfill({ status: 503, json: { error: "Try again" } });
   });
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
   expect(calls, "remote agents are off until the user turns them on").toBe(0);
+  await page.evaluate(async () => {
+    const { indexedDbAgentRecords } = await import("/src/agent-records.ts");
+    const request = { id: "req-restored-question", repoId: 501, branch: "main", text: "Change the heading", state: "question", createdAt: Date.now(),
+      reply: { status: "question", message: "Which heading?", at: Date.now() },
+      element: { file: "index.html", route: "/", id: "1.0", tag: "h1", text: "A native browser preview", selector: ".hero h1" } };
+    await indexedDbAgentRecords().putConversation({ account: "native-demo-user", repoId: 501, branch: "main" },
+      { id: request.id, content: request, unfinished: true, updatedAt: Date.now() });
+  });
   await page.locator(".repository-menu__trigger").click();
   await page.getByRole("button", { name: "Connect with MCP", exact: true }).click();
   await expect(page.locator(".agent-pin__question")).toHaveText("Which heading?", { timeout: 15_000 });
-  expect(calls).toBeGreaterThanOrEqual(2);
+  expect(calls).toBe(1);
 });
 
 test("first OAuth storage event keeps the short retries while its grant arrives", async ({ page, baseURL }) => {
   let calls = 0;
-  await page.route("**/api/agent/hub", async (route) => {
+  await page.route("**/api/agent/connections", async (route) => {
     const grants = ++calls >= 3 ? [{ id: "oauth-restored", branch: "main", approval: "lazy-approval", repoId: 501, repo: "native-demo-user/native-demo", via: "oauth", createdAt: Date.now() }] : [];
     await route.fulfill({ json: { grants, tabId: null, updatedAt: null, commands: [], requests: [] } });
   });

@@ -1,10 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { storedDraft, storedDrafts } from "./drafts";
-import { copyConnectionPrompt, useLegacyRelay } from "./mcp-prompt";
+import { copyConnectionPrompt } from "./mcp-prompt";
 
-// These specs exercise queued edits and the matching legacy context fallback.
-test.beforeEach(({ page }) => useLegacyRelay(page));
+// These specs exercise edits through the fixture relay socket.
 
 // Deleting a page with its card: the card's edit to Home is computed when the
 // confirm dialog opens. A write to Home while it is open (an editor or agent

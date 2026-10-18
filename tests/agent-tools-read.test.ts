@@ -202,7 +202,7 @@ async function connected() {
   const tab = editorTab(h.worker, cookie);
   const response = await tab.post("/api/agent/connect", { repo: repo.full_name, repoId: repo.id, branch: "main" });
   const { token } = await response.json() as { token: string };
-  const hub = await tab.hub();
+  const hub = await (await h.worker.dispatchFetch(origin + "/api/agent/connections", { headers: { Cookie: cookie } })).json();
   const sessionId = h.counters.log.find(row => row.name.startsWith("agent-hub:"))!.name;
   const rpc = async (method: string, params?: object) => {
     const response = await h.worker.dispatchFetch(origin + "/mcp", { method: "POST", headers: {
@@ -271,40 +271,33 @@ test("live read_file/get_site/resource/prompt: 3 auth + 1 real SessionStore disp
   } finally { await h.worker.dispose(); }
 });
 
-test("no receiver is immediate, get_site unavailable; only a matching legacy snapshot permits fallback", async () => {
+test("no receiver refuses every read immediately, even with matching legacy content", async () => {
   const h = await connected();
   try {
-    h.clock.install(); h.counters.reset();
-    const unavailable = payload(await h.rpc("tools/call", { name: "get_site", arguments: {} }));
-    assert.equal(unavailable.available, false);
-    assert.match(unavailable.note, /not sharing/);
-    assert.equal(h.counters.waitedMs, 0);
-    assert.equal(h.counters.log.length, 4);
-    const noFile = await h.rpc("tools/call", { name: "read_file", arguments: { path: "index.html" } });
-    assert.equal(noFile.isError, true);
     const context = await siteContext();
-    await h.tab.share(context);
-    h.counters.reset();
-    const legacy = payload(await h.rpc("tools/call", { name: "read_file", arguments: { path: "about/index.html" } }));
-    assert.match(legacy.content, /About the studio/);
-    assert.equal(h.counters.byCategory.auth.calls, 3);
-    assert.equal(h.counters.byCategory.control.calls, 1);
-    assert.equal(h.counters.waitedMs, 0);
-    context.branch = "other";
-    await h.tab.share(context);
-    const mismatch = payload(await h.rpc("tools/call", { name: "get_site", arguments: {} }));
-    assert.equal(mismatch.available, false);
-    assert.match(mismatch.note, /branch other/);
+    for (const branch of ["other", "main"]) {
+      await h.storage(h.sessionId).put("context", { ...context, branch });
+      for (const [name, args] of [["get_site", {}], ["read_file", { path: "about/index.html" }]] as const) {
+        h.counters.reset();
+        const result = await h.rpc("tools/call", { name, arguments: args });
+        assert.equal(Boolean(result.isError), name !== "get_site");
+        assert.match(String(name === "get_site" ? payload(result).note : payload(result)), /not sharing/);
+        assert.equal(h.counters.byCategory.auth.calls, 3);
+        assert.equal(h.counters.byCategory.control.calls, 1);
+        assert.equal(h.counters.byCategory.data.calls, 0);
+        assert.equal(h.counters.waitedMs, 0);
+        assert.ok(!h.counters.readKeys.includes("context"));
+      }
+    }
   } finally { await h.worker.dispose(); }
 });
-
 
 test("relay failures are clear errors and never retry or fall back to a legacy snapshot", async () => {
   const h = await connected();
   const get = h.namespace.get;
   let dispatches = 0;
   try {
-    await h.tab.share(await siteContext());
+    await h.storage(h.counters.log.find(row => row.name.startsWith("agent-hub:"))!.name).put("context", await siteContext());
     for (const code of ["busy", "too-large", "timeout", "cancelled", "unknown-outcome"]) {
       h.namespace.get = name => String(name).startsWith("agent-relay:") ? { fetch: async () => {
         dispatches++; return Response.json({ ok: false, code, outcome: "unknown" });
