@@ -3,6 +3,7 @@ title: "Bound disposable browser source caching"
 type: task (AFK)
 status: closed
 assignee: dor-11
+landed: PR #50 (03ef775)
 blocked_by: [07-atomic-structural-edits]
 builder: sol
 phase: 2
