@@ -65,7 +65,7 @@ async function abortAgentCommit(page: Page) {
     IDBObjectStore.prototype.put = function (...args) {
       if (this.name === "receipts" && this.transaction.objectStoreNames.contains("drafts")) {
         IDBObjectStore.prototype.put = put;
-        throw new DOMException("Injected storage failure", "QuotaExceededError");
+        throw new DOMException("Injected storage failure", "AbortError");
       }
       return put.apply(this, args);
     };
