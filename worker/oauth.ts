@@ -523,17 +523,24 @@ async function token(request: Request, env: Env) {
   const session = sessionResponse.ok ? ((await sessionResponse.json()) as StoredSession) : undefined;
   if (session?.kind !== "user" || session.login !== grant.login || session.expiresAt <= Date.now())
     return oauthError("invalid_grant", "The editor session ended. Sign in to the editor and connect again.");
-  const issued = await createGrant(env, {
-    sessionId: grant.sessionId,
-    login: grant.login,
-    repoId: grant.repoId,
-    repo: grant.repo,
-    branch: grant.branch,
-    approval: grant.approval,
-    expiresAt: session.expiresAt,
-    via: "oauth",
-    client: grant.clientName,
-  });
+  let issued;
+  try {
+    issued = await createGrant(env, {
+      sessionId: grant.sessionId,
+      login: grant.login,
+      repoId: grant.repoId,
+      repo: grant.repo,
+      branch: grant.branch,
+      approval: grant.approval,
+      expiresAt: session.expiresAt,
+      via: "oauth",
+      client: grant.clientName,
+    });
+  } catch (error) {
+    return oauthError(error instanceof HttpError && error.status === 409 ? "access_denied" : "temporarily_unavailable",
+      error instanceof HttpError ? error.message : "The agent connection could not be saved. Try again.",
+      error instanceof HttpError && error.status === 409 ? 409 : 503);
+  }
   return json(
     {
       access_token: issued.token,

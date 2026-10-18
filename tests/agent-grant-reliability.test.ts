@@ -40,12 +40,18 @@ function grantEnv() {
   const storage = memoryStorage();
   const fail = { use: false };
   const counts = { puts: 0 };
+  const ledgers = new Map<string, HubStorage>();
   const env: Env = {
     ASSETS: { fetch: async () => new Response("UI") },
     SESSIONS: {
       idFromName: (name) => name,
       get: (id: string) => ({
         fetch: async (request) => {
+          if (id.startsWith("agent-relay:")) {
+            const ledger = ledgers.get(id) ?? memoryStorage();
+            ledgers.set(id, ledger);
+            return (await fakeHubRoute(id, ledger, request))!;
+          }
           if (id === `agent-hub:${sessionId}`) {
             if (new URL(request.url).pathname === "/agent-operation") {
               const action = await request.json() as { type: string };

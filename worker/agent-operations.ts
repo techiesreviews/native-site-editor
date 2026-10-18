@@ -31,7 +31,9 @@ export function newHub(action: any): AgentHub | undefined {
 export function agentOperation(hub: AgentHub, action: any) {
   if (action.type === "add-grant") {
     const grant = action.grant as HubGrant;
-    hub.grants = [...hub.grants.filter((item) => item.id !== grant.id), grant].slice(-20);
+    if (!hub.grants.some(item => item.id === grant.id) && hub.grants.length >= 20)
+      throw new HttpError(409, "This editor session already has 20 agent connections. Disconnect one in the editor's agent menu first.");
+    hub.grants = [...hub.grants.filter((item) => item.id !== grant.id), grant];
   } else if (action.type === "use-grant") {
     const grant = hub.grants.find((item) => item.id === action.id);
     if (grant) {

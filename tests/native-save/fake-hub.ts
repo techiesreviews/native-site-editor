@@ -1,6 +1,7 @@
 // Mirrors worker/index.ts: read JSON first, then serialize hub writes per object.
 import { hubOperation, type HubStorage } from "../../worker/agent-store.ts";
 import { AgentRelay, readRelayBody, type RelayScope } from "../../worker/agent-relay.ts";
+import { accountMetadata, METADATA_ROUTE, type MetadataAction } from "../../worker/agent-metadata.ts";
 
 export type RelayConnect = (relay: AgentRelay, scope: RelayScope) => Response;
 const relays = new Map<string, AgentRelay>();
@@ -47,6 +48,16 @@ export async function serializeObject(id: string, operation: () => Promise<Respo
 
 export async function fakeHubRoute(id: string, storage: HubStorage, request: Request): Promise<Response | undefined> {
   const url = new URL(request.url);
+  if (url.pathname === METADATA_ROUTE) {
+    if (request.method !== "POST") return new Response(null, { status: 405 });
+    const action = await request.json() as MetadataAction;
+    return serializeObject(id, async () => {
+      const result = await accountMetadata({
+        get: key => storage.get(key), put: async (key, value) => storage.put({ [key]: value }),
+      }, action, Date.now());
+      return Response.json(result, { status: result.reason === "invalid" ? 400 : 200 });
+    });
+  }
   if (url.pathname === "/agent-operation") {
     const action = await request.json();
     return serializeObject(id, () => hubOperation(storage, action, async () => undefined));

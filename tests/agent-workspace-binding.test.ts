@@ -27,6 +27,7 @@ function fixture() {
   const github = githubState();
   const fetcher: typeof fetch = (input, init) => fakeGitHub(new Request(input, init), github);
   const calls: string[] = [];
+  const ledgers = new Map<string, Map<string, unknown>>();
   const env: Env = {
     ASSETS: { fetch: async () => new Response(null, { status: 404 }) },
     SESSIONS: {
@@ -34,6 +35,16 @@ function fixture() {
       get: (name: string) => ({ fetch: async (request) => {
         calls.push(name);
         const url = new URL(request.url);
+        if (name.startsWith("agent-relay:") && url.pathname === "/agent-metadata") {
+          const values = ledgers.get(name) ?? new Map<string, unknown>();
+          ledgers.set(name, values);
+          const ledger: HubStorage = {
+            get: async <T>(key: string) => structuredClone(values.get(key)) as T | undefined,
+            put: async entries => { for (const [key, value] of Object.entries(entries)) values.set(key, structuredClone(value)); },
+            delete: async keys => { for (const key of keys) values.delete(key); },
+          };
+          return (await fakeHubRoute(name, ledger, request))!;
+        }
         if (name === `agent-hub:${sessionId}`) {
           const response = await fakeHubRoute(name, storage, request);
           if (response) return response;
