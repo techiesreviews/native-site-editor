@@ -50,11 +50,11 @@ export class SessionStore extends DurableObject {
   }
   webSocketClose(socket: WebSocket, code: number, _reason: string, _wasClean: boolean) {
     this.relay().disconnect(socket);
-    socket.close(code === 1005 || code === 1006 ? 1000 : code);
+    try { socket.close(code === 1005 || code === 1006 ? 1000 : code); } catch { /* Already closed. */ }
   }
   webSocketError(socket: WebSocket, _error: unknown) {
     this.relay().disconnect(socket);
-    socket.close(1011, "Relay socket failed.");
+    try { socket.close(1011, "Relay socket failed."); } catch { /* Already closed. */ }
   }
   async fetch(request: Request): Promise<Response> {
     const storage = this.ctx.storage;
@@ -63,8 +63,7 @@ export class SessionStore extends DurableObject {
       let identity: unknown;
       try { identity = JSON.parse(request.headers.get(AgentRelay.identityHeader) ?? "null"); } catch { /* Refuse malformed trusted metadata. */ }
       const scope = AgentRelay.readScope(identity);
-      if (!scope) return new Response(null, { status: 400 });
-      if (url.pathname === "/relay/connect" && request.method === "GET" && request.headers.get("Upgrade")?.toLowerCase() === "websocket") {
+      if (url.pathname === "/relay/connect" && scope && request.method === "GET" && request.headers.get("Upgrade")?.toLowerCase() === "websocket") {
         const relay = this.relay();
         const { 0: client, 1: server } = new WebSocketPair();
         this.ctx.acceptWebSocket(server, ["editor"]);
@@ -76,7 +75,8 @@ export class SessionStore extends DurableObject {
       }
       // Worker-internal only: the public router never forwards this path. Browser
       // work is awaited outside blockConcurrencyWhile and never touches storage.
-      if (url.pathname === "/relay/dispatch" && request.method === "POST") {
+      const target = AgentRelay.readTarget(identity);
+      if (url.pathname === "/relay/dispatch" && request.method === "POST" && target) {
         let command: JsonValue;
         try { command = await requestJson(request, AgentRelay.maxBytes) as JsonValue; }
         catch (error) {
@@ -84,7 +84,7 @@ export class SessionStore extends DurableObject {
             return Response.json({ ok: false, code: "too-large", outcome: "not-sent" }, { status: 413 });
           return new Response(null, { status: 400 });
         }
-        return Response.json(await this.relay().dispatch(scope, command, request.signal));
+        return Response.json(await this.relay().dispatch(target, command, request.signal));
       }
       return new Response(null, { status: 400 });
     }

@@ -155,17 +155,40 @@ test("restart explicitly loses pending outcomes and requires fresh scope handsha
   const restored = new AgentRelay([h.editor], h.clock);
   assert.deepEqual(JSON.parse(h.editor.sent.at(-1)!), { type: "reset", code: "unknown-outcome", handshakeRequired: true });
   assert.deepEqual(h.editor.deserializeAttachment(), { ...scope, role: "editor", handshaken: false, owner: { tabId: scope.tabId, generation: scope.generation } });
-  assert.deepEqual(await restored.dispatch(scope, "new"), { ok: false, code: "editor-unavailable", outcome: "not-sent" });
+  // A dispatch that wakes the object waits for the owner's fresh handshake
+  // (inside its deadline) instead of failing or sending to an unproven socket.
+  const sentBefore = h.editor.sent.length;
+  const pending = restored.dispatch({ workspace: scope.workspace }, "new");
+  assert.equal(h.editor.sent.length, sentBefore);
+  assert.equal(restored.pendingCount, 1);
   assert.equal(restored.message(h.editor, reply(oldId)), false);
   assert.equal(restored.message(h.editor, handshake()), true);
-  assert.equal(restored.message(h.editor, reply(oldId)), false);
-  const pending = restored.dispatch(scope, "new");
+  assert.equal(JSON.parse(h.editor.sent.at(-2)!).type, "ready");
   const newId = h.id();
+  assert.equal(restored.message(h.editor, reply(oldId)), false);
   assert.notEqual(newId, oldId);
   assert.equal(restored.message(h.editor, reply(oldId)), false);
   assert.equal(restored.pendingCount, 1);
   restored.message(h.editor, reply(newId));
   assert.deepEqual(await pending, { ok: true, result: { applied: true } });
+  assert.equal(restored.pendingCount, 0);
+  assert.equal(restored.bufferedBytes, 0);
+  assert.equal(h.timers.size, 0);
+});
+
+test("a restored owner that never handshakes times out as not sent; a tab or generation fence mismatch is unavailable", async () => {
+  const h = fixture();
+  assert.deepEqual(await h.relay.dispatch({ workspace: scope.workspace, tabId: "other-tab" }, null), { ok: false, code: "editor-unavailable", outcome: "not-sent" });
+  assert.deepEqual(await h.relay.dispatch({ workspace: scope.workspace, generation: 2 }, null), { ok: false, code: "editor-unavailable", outcome: "not-sent" });
+  const restored = new AgentRelay([h.editor], h.clock);
+  const sentBefore = h.editor.sent.length;
+  const waiting = restored.dispatch({ workspace: scope.workspace }, "never sent");
+  h.advance(10_000);
+  assert.deepEqual(await waiting, { ok: false, code: "timeout", outcome: "not-sent" });
+  assert.equal(h.editor.sent.length, sentBefore);
+  const closing = restored.dispatch({ workspace: scope.workspace }, "never sent");
+  restored.disconnect(h.editor);
+  assert.deepEqual(await closing, { ok: false, code: "editor-unavailable", outcome: "not-sent" });
   assert.equal(restored.pendingCount, 0);
   assert.equal(restored.bufferedBytes, 0);
   assert.equal(h.timers.size, 0);
@@ -317,11 +340,14 @@ test("real SessionStore dispatch/results/cancel/timeout/close/error/reset write 
     instance.webSocketClose(editor, 1000, "closed", true);
     assert.deepEqual(await (await closed).json(), { ok: false, code: "unknown-outcome", outcome: "unknown" });
     editor.readyState = 1;
-    // A new object reconstructs only metadata and requires the handshake.
+    // A new object reconstructs only metadata and requires the handshake: the
+    // waking dispatch is held (not sent) until the owner's fresh handshake.
     const errorInstance = new SessionStore(ctx, env);
-    assert.deepEqual(await (await dispatch(errorInstance)).json(), { ok: false, code: "editor-unavailable", outcome: "not-sent" });
-    errorInstance.webSocketMessage(editor, handshake()); editor.sent.length = 0;
-    const errored = dispatch(errorInstance); await sent();
+    editor.sent.length = 0;
+    const errored = dispatch(errorInstance);
+    for (let turns = 0; turns < 50; turns++) await Promise.resolve();
+    assert.equal(editor.sent.some(message => JSON.parse(message).type === "command"), false);
+    errorInstance.webSocketMessage(editor, handshake()); await sent();
     errorInstance.webSocketError(editor, new Error("network"));
     assert.deepEqual(await (await errored).json(), { ok: false, code: "unknown-outcome", outcome: "unknown" });
     editor.readyState = 1;
