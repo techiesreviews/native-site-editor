@@ -123,3 +123,5 @@ activation and workspace, and a refused write throws "Nothing was sent" with no 
 RESULT: ok specs 1/1 passed (native-agent-quiet 7). The first follow-up `kit pr` failed in tests/agent-usage.test.ts (the
 empty-wait test timed out: its idle fake clock jumped to the SDK 60 s timeout under load, as in tickets 14/17 CI); that
 test now runs on the real clock, since the quiet wait never sleeps.
+The second follow-up `kit pr`: RESULT: fail specs 1 of 19 failed: native-agent-reads.spec.ts (a socket frame event
+counted before Playwright delivered it, seen twice in this slice); the spec now polls for the frame, RESULT: ok specs 1/1 passed.
