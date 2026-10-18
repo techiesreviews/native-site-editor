@@ -49,27 +49,16 @@ Your changes appear in my editor as unsaved drafts; I review them and save them 
 
 /**
  * What to paste into an agent so it talks to the editor over a temporary,
- * direct connection (curl, no MCP configuration), then watches for requests
- * or does `task`. The server is stateless and answers in JSON, so each
+ * direct connection (curl, no MCP configuration), then takes the waiting requests
+ * once (quiet: no loop; only the user's Watch keeps it waiting) or does `task`.
+ * The server is stateless and answers in JSON, so each
  * JSON-RPC message is one POST.
  */
 export function connectionPrompt(url: string, token: string, repo: string, task?: string) {
   const code = (text: string) => `\`${text}\``;
   const work = task
     ? `Then: ${task}`
-    : `Then watch for my requests without spending a turn on each empty wait: run this loop as one shell command (in the background if your tools can wake you when it exits), which calls ${code("wait_for_requests")} until a request arrives or something fails, then prints the response:
-
-\`\`\`bash
-while :; do
-  r=$(curl -s --max-time 70 ${url} \\
-    -H "Authorization: Bearer ${token}" -H "Content-Type: application/json" \\
-    -H "Accept: application/json, text/event-stream" \\
-    -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"wait_for_requests","arguments":{"waitSeconds":50}}}')
-  case "$r" in *"No requests yet"*) ;; *) echo "$r"; break ;; esac
-done
-\`\`\`
-
-Make the requested changes as unsaved editor drafts and answer each through ${code("reply_to_request")}: done when you made the change, answered when you replied without changing the site, question (at most 60 characters) when you need my input; my answer to a question arrives through the loop as well. Then run the loop again. If your shell stops the loop on a timeout, start it again. Follow whichever site I open. Continue until I say stop.`;
+    : `Then call ${code("wait_for_requests")} once. Make each requested change as an unsaved editor draft and answer it through ${code("reply_to_request")}: done when you made the change, answered when you replied without changing the site, question (at most 60 characters) when you need my input. When it returns no requests, tell me you are ready and stop: do not call it again on your own and do not run it in a loop. I ask you to continue when I send a request from the editor. Only when its answer says my Watch is on (I turn it on in the editor's agent menu, for at most 10 minutes) call it again right away, as its hint says. Follow whichever site I open.`;
   return `Connect to Native Site Editor for this conversation using a temporary, direct MCP connection over streamable HTTP, so you can help me edit my site ${repo}.
 
 Server: ${code(url)}
@@ -78,7 +67,7 @@ Authorization: ${code(`Bearer ${token}`)}
 
 **Use curl to send MCP JSON-RPC requests. Do not modify MCP configuration, install anything, create helper files, or restart yourself.** Keep the token in memory; never save it or repeat it in responses. Curl works; Python's default HTTP client receives Cloudflare Error 1010.
 
-Send each JSON-RPC message as its own POST with the headers ${code("Authorization")}, ${code("Content-Type: application/json")} and ${code("Accept: application/json, text/event-stream")}; the response body is the JSON-RPC result. The server is stateless, so there is no session id to keep. Start with ${code("initialize")} (protocolVersion "2025-11-25"), then use ${code("tools/call")}, ${code("prompts/get")} and ${code("resources/read")}. Give curl a timeout of at least 70 seconds: wait_for_requests holds the request open for up to waitSeconds (at most 50).
+Send each JSON-RPC message as its own POST with the headers ${code("Authorization")}, ${code("Content-Type: application/json")} and ${code("Accept: application/json, text/event-stream")}; the response body is the JSON-RPC result. The server is stateless, so there is no session id to keep. Start with ${code("initialize")} (protocolVersion "2025-11-25"), then use ${code("tools/call")}, ${code("prompts/get")} and ${code("resources/read")}. Give curl a timeout of at least 40 seconds: while my Watch is on, wait_for_requests holds the request open for up to waitSeconds (at most 25).
 
 Initialize the MCP connection, call ${code("get_site")}, and read the ${code("watch_editor")} prompt. ${work}
 

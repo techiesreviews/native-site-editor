@@ -18,7 +18,7 @@ export interface RelayClock {
   clearTimeout(timer: unknown): void;
 }
 type Attachment = RelayScope & { role: "editor"; handshaken: boolean; owner?: { tabId: string | null; generation: number } };
-type FailureCode = "editor-unavailable" | "busy" | "too-large" | "cancelled" | "timeout" | "unknown-outcome";
+type FailureCode = "editor-unavailable" | "busy" | "waiting" | "too-large" | "cancelled" | "timeout" | "unknown-outcome";
 type Outcome = { ok: true; result: JsonValue } | { ok: false; code: FailureCode; outcome: "unknown" | "not-sent" };
 /** A dispatcher names the workspace; tab and generation are optional fences. The
  * relay resolves the current owner (an MCP grant does not know which tab owns). */
@@ -44,6 +44,14 @@ const placeholder = "00000000-0000-0000-0000-000000000000";
 const failure = (code: FailureCode, outcome: "unknown" | "not-sent" = "not-sent"): Outcome => ({ ok: false, code, outcome });
 /** A call lost before it reached the browser was never sent; after, its outcome is unknown. */
 const lost = (call: { unsent?: unknown }) => call.unsent === undefined ? failure("unknown-outcome", "unknown") : failure("editor-unavailable");
+/** Ticket 18: a wait_for_requests the tab may hold while the user's Watch is on. It gets its own total
+ * deadline of 10–25 s (the agent's waitMs; the tab answers at once without Watch) and one per workspace. */
+export const WAIT_LIMIT_MS = 25_000;
+function waitBudget(command: JsonValue): number | undefined {
+  if (!command || typeof command !== "object" || Array.isArray(command) || command.operation !== "requests" || command.tool !== "wait_for_requests") return undefined;
+  const wanted = typeof command.waitMs === "number" && Number.isFinite(command.waitMs) ? command.waitMs : WAIT_LIMIT_MS;
+  return Math.min(WAIT_LIMIT_MS, Math.max(10_000, Math.floor(wanted)));
+}
 const sameScope = (a: RelayScope, b: RelayScope) => a.tabId === b.tabId && a.generation === b.generation && workspaceKey(a.workspace) === workspaceKey(b.workspace);
 
 /** Shared by the editor upgrade and future MCP dispatchers. Repository names can
@@ -111,6 +119,8 @@ export class AgentRelay {
   private workspace: string | undefined;
   private calls = new Map<string, Pending>();
   private buffered = 0;
+  /** The workspace's one outstanding wait (ticket 18), in memory only. */
+  private waitId: string | undefined;
   private reserved = { count: 0, bytes: 0 };
 
   constructor(sockets: RelaySocket[], private clock: RelayClock = {
@@ -156,6 +166,7 @@ export class AgentRelay {
   }
 
   get pendingCount() { return this.calls.size; }
+  get waiting() { return this.waitId !== undefined; }
   get reservedCount() { return this.reserved.count; }
 
   /** Holds a pending slot and `length` bytes while a dispatch body is still
@@ -223,6 +234,8 @@ export class AgentRelay {
     if (!entry) return Promise.resolve(failure("editor-unavailable"));
     const [receiver, receiverMetadata] = entry;
     if (this.calls.size + this.reserved.count >= 5) return Promise.resolve(failure("busy"));
+    const wait = waitBudget(command);
+    if (wait !== undefined && this.waitId !== undefined) return Promise.resolve(failure("waiting"));
     // Measure the complete wire envelope before allocating a correlation id,
     // promise, pending entry or timer. UUIDs have the placeholder's fixed width.
     // remainingMs is filled in at each send (at most 5 digits, measured at its widest): the tab fences
@@ -230,7 +243,7 @@ export class AgentRelay {
     const candidate = JSON.stringify({ type: "command", id: placeholder, ...scope, remainingMs: 10_000, command });
     const length = bytes(candidate);
     if (this.buffered + this.reserved.bytes + length > AgentRelay.maxBytes) return Promise.resolve(failure("too-large"));
-    const deadline = started + 10_000;
+    const deadline = started + (wait ?? 10_000);
     if (this.clock.now() >= deadline) return Promise.resolve(failure("timeout"));
     const id = crypto.randomUUID();
     const message = candidate.replace(placeholder, id);
@@ -239,6 +252,7 @@ export class AgentRelay {
       const cancel = () => call.finish(failure("cancelled", call.unsent === undefined ? "unknown" : "not-sent"));
       const call: Pending = { socket: receiver, scope, bytes: length, deadline, timer: undefined, finish: outcome => {
         if (!this.calls.delete(id)) return;
+        if (this.waitId === id) this.waitId = undefined;
         this.buffered -= length;
         call.unsent = undefined;
         this.clock.clearTimeout(call.timer);
@@ -246,6 +260,7 @@ export class AgentRelay {
         resolve(outcome);
       } };
       this.calls.set(id, call);
+      if (wait !== undefined) this.waitId = id;
       this.buffered += length;
       const now = this.clock.now();
       call.timer = this.clock.setTimeout(() => call.finish(failure("timeout", call.unsent === undefined ? "unknown" : "not-sent")), deadline - now);
