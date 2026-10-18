@@ -263,7 +263,8 @@ test("live: waits are quiet by default; Watch holds one wait until Ask agent, sh
     // connection stays and a separate edit still applies.
     await page.evaluate(key => {
       const value = JSON.parse(localStorage.getItem(key)!);
-      localStorage.setItem(key, JSON.stringify({ ...value, startedAt: value.startedAt - 600_000, until: Date.now() - 1 }));
+      const until = Date.now() - 1;
+      localStorage.setItem(key, JSON.stringify({ ...value, startedAt: until - 600_000, until }));
     }, watchKey);
     const endedAt = Date.now();
     const ended = await call("wait_for_requests");
