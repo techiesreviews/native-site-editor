@@ -347,9 +347,11 @@ export function createLiveTransport(options: Options) {
       // legacy fallback still answers agents (refusing edits plainly); otherwise stay paused.
       if (first) {
         first = false;
-        const { missing } = await absent();
+        const { missing, failure } = await absent();
         if (!current() || epoch !== at) return;
         if (missing) { halt("fallback"); return; }
+        // A quota answer or Retry-After is recorded for the workspace: a later takeover waits for it.
+        if (failure.kind === "quota" || failure.kind === "transient" && failure.retryAt !== undefined) { recover(); recovery!.report(failure); }
       }
       halt("takeover-failed");
     }
@@ -405,7 +407,12 @@ export function createLiveTransport(options: Options) {
   return {
     start, takeover, stop,
     state: () => state,
-    changed: () => { if (!stopped && moved()) halt("workspace-changed"); },
+    changed: () => {
+      if (stopped) return;
+      if (moved()) { halt("workspace-changed"); return; }
+      // The workspace is back after a refresh: a socket lost meanwhile reconnects through the coordinator.
+      if (current() && state.mode === "live" && !(socket?.readyState === 1 && handshaken)) check();
+    },
     retry: () => recovery?.retry() ?? Promise.resolve({}),
     report: (failure: AgentFailure) => { recovery?.report(failure); },
   };

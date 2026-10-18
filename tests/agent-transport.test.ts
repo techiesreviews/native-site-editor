@@ -496,3 +496,45 @@ test("a workspace briefly absent during a refresh refuses commands but keeps the
   assert.equal(f.counts().runs, 1);
   a.transport.stop();
 });
+
+test("a socket lost while the workspace is briefly absent reconnects through the coordinator once it returns", async () => {
+  const f = fixture(), a = f.tab("a");
+  await a.transport.start();
+  a.change(undefined);
+  a.sockets[0].close();
+  await f.tick(5_000);
+  assert.equal(a.sockets.length, 1, "no reconnect while the workspace is absent");
+  a.change({ ...workspace });
+  await f.tick(5_000);
+  assert.equal(a.sockets.length, 2);
+  await until(() => a.transport.state().mode === "live");
+  assert.equal(a.sockets[1].messages("handshake").length, 1);
+  a.transport.stop();
+});
+
+test("storage refusal with a quota or Retry-After probe answer records it; a later takeover opens no socket before it ends", async () => {
+  for (const answer of [
+    { status: 429, body: { error: "Today's allowance is used up.", code: "daily-quota", resetAt: 10_000_000 }, text: "", retryAfter: "60" },
+    { status: 503, text: "busy", retryAfter: "60" },
+  ]) {
+    const f = fixture();
+    let refusing = true;
+    const records = new Proxy(f.records, { get(target, name, receiver) {
+      const value = Reflect.get(target, name, receiver);
+      if (name !== "workspace") return value;
+      return async (...args: Parameters<typeof target.workspace>) => {
+        if (refusing) throw new DOMException("The user denied permission to access the database.", "SecurityError");
+        return target.workspace(...args);
+      };
+    } });
+    const a = f.tab("a", { records, now: () => f.now(), probe: async () => answer });
+    await a.transport.start();
+    assert.equal(a.transport.state().mode, "takeover-failed");
+    refusing = false;
+    await a.transport.takeover();
+    await f.tick(30_000);
+    assert.equal(a.sockets.length, 0, `no socket before Retry-After (${answer.status})`);
+    assert.equal(a.transport.state().mode, answer.status === 429 ? "quota" : "reconnecting");
+    a.transport.stop();
+  }
+});
