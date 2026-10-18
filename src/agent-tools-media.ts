@@ -21,6 +21,9 @@ export function createAgentMediaTools(options: {
   const executor = async ({ request, generation, current, deadline = Date.now() + 10_000 }: Input): Promise<AgentReadResult> => {
     const stamp = ports.stamp(), source = ports.files(), branch = source?.snapshot.branch, commit = source?.snapshot.commit, repoId = source?.repo.id;
     const changing = mediaChanges(request.tool, request.args);
+    // A page change's element id points into the page as it is on admission: that source is the proof to commit.
+    const pageChange = changing && ["place_media", "frame_image", "loop_video"].includes(request.tool) && ports.source !== undefined;
+    const page = pageChange ? ports.source!(request.path) : undefined;
     // The relay's total deadline as the transport measured it on arrival (src/agent-transport.ts): never a fresh 10 s.
     let applied = false;
     const check = () => {
@@ -31,6 +34,8 @@ export function createAgentMediaTools(options: {
     };
     const beforeCommit = () => {
       check();
+      if (pageChange && ports.source!(request.path) !== page)
+        throw new Error(`${request.path} changed in the editor meanwhile. Read it again with get_page; nothing was changed.`);
       if (Date.now() >= deadline) throw new Error("The media command deadline passed. Cancelled before commit; nothing was changed.");
     };
     const reply = (outcome: JsonValue): AgentReadResult => ({ ok: true, value: { requestId: request.id, state: "applied", message: null,

@@ -4425,6 +4425,7 @@ const agentSiteHost = createAgentSiteHost({
   files: () => appStore.repository.value && appStore.snapshot.value ? { repo: appStore.repository.value, snapshot: appStore.snapshot.value,
     api, read: readFile, batch: readFiles, has: (repo, sha) => Boolean(cleanSources.get(repo, sha)) } : undefined,
   stamp: () => guardedEdits.stamp("repository"),
+  source: path => mediaPorts.source(path),
   load: loadAgentSite,
   input: () => {
     const scope = draftScope();
