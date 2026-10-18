@@ -943,7 +943,7 @@ export async function prepareAgentText(command: AgentCommand, scope: DraftScope,
     let outcome: AgentCommandOutcome = command.operation === "write_file"
       ? { message: `${command.expectedHash === null ? "Created" : "Changed"} ${command.path} in the editor as an unsaved draft.`, result: { path: command.path, hash: contentHash } }
       : { message: `Applied ${command.operation} to the local drafts.`, ...(command.operation === "create_page" ? {} : { result: { path: command.operation === "move_file" ? command.args?.to ?? command.path : command.path } }) };
-    const receipt = { authorizationId: command.grantId, operationId: command.id, payloadIdentity: identity, outcome: JSON.parse(JSON.stringify(outcome)) as JsonValue, createdAt: Date.now() };
+    const receipt = { authorizationId: command.grantId, operationId: command.id, payloadIdentity: identity, outcome: JSON.parse(JSON.stringify(outcome)) as JsonValue, createdAt: Date.now(), issuedAt: command.createdAt };
     const existing = await records.receipt(workspace, command.id, command.grantId);
     if (!current()) throw new Error("The repository changed meanwhile.");
     if (existing) {

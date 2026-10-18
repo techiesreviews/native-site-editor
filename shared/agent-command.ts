@@ -27,7 +27,13 @@ export interface AgentReceipt {
   generation: number;
   revision: number;
   outcome: JsonValue;
+  /** When this browser committed it (its 24 hours count from here). */
   createdAt: number;
+  /**
+   * When the command was issued, by its issuer's clock (AgentCommand.createdAt). Once a receipt
+   * is gone, a delivery issued at or before the workspace's retired horizon stays unknown.
+   */
+  issuedAt: number;
 }
 
 export type AgentOutcome = { operationId: OperationId; status: "unknown" } |

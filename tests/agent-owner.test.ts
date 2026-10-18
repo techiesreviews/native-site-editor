@@ -9,10 +9,12 @@ import { fakeIndexedDB } from "./support/fake-agent-indexeddb.ts";
 
 const draft: SavedDraft = { version: 1, account: "lex", repoId: 1, repo: "lex/site", branch: "main", path: "index.html", baseSha: null, original: "", content: "agent", updatedAt: 1 };
 const key = draftKey(draft, draft.path);
+// Issue times only increase, as an issuer's clock does between commands.
+let issued = Date.now();
 const command = (): AgentCommit => ({
   workspace: { account: draft.account, repoId: draft.repoId, branch: draft.branch },
   generation: 0, expectedRevision: 0, expectedDrafts: [[key, null]], drafts: [[key, { ...draft }]],
-  receipt: { operationId: "one", authorizationId: "grant", payloadIdentity: payloadIdentity({ content: "agent" }), outcome: { changed: 1 }, createdAt: 1 },
+  receipt: { operationId: "one", authorizationId: "grant", payloadIdentity: payloadIdentity({ content: "agent" }), outcome: { changed: 1 }, createdAt: 1, issuedAt: ++issued },
 });
 const code = (expected: AgentRecordsError["code"]) => (error: unknown) => error instanceof AgentRecordsError && error.code === expected;
 function setup() {
@@ -55,7 +57,8 @@ test("expired receipt is unknown; late delivery cannot become a fresh edit", asy
   assert.deepEqual(transfer.outcomes, [{ operationId: "one", status: "unknown" }]);
   await assert.rejects(records.commit(input), code("conflict"));
   assert.deepEqual([...fake.stores.get("drafts")!.values()], [draft]);
-  assert.deepEqual(await records.workspace(draft), { revision: 1, generation: 1 });
+  // The dropped receipt left its issue time as the workspace's horizon.
+  assert.deepEqual(await records.workspace(draft), { revision: 1, generation: 1, horizon: input.receipt.issuedAt });
   assert.equal(fake.stores.get("receipts")!.size, 0, "0 late commits");
 });
 
@@ -67,7 +70,7 @@ test("eviction fences same-generation redelivery by its original expected revisi
   // Fresh proofs (the text restored, current revision) cannot turn the evicted id into a new edit.
   input.expectedRevision = 1; input.expectedDrafts = [[key, draft]];
   await assert.rejects(records.commit(input), code("conflict"));
-  assert.deepEqual(await records.workspace(draft), { revision: 1, generation: 0 });
+  assert.deepEqual(await records.workspace(draft), { revision: 1, generation: 0, horizon: input.receipt.issuedAt });
 });
 
 for (const elapsed of [24 * 60 * 60 * 1000 - 1, 24 * 60 * 60 * 1000, 24 * 60 * 60 * 1000 + 1]) test(`outcome lookups enforce receipt age ${elapsed} without eviction`, async () => {
@@ -91,7 +94,7 @@ for (const elapsed of [24 * 60 * 60 * 1000 - 1, 24 * 60 * 60 * 1000, 24 * 60 * 6
   assert.equal(fake.stores.get("receipts")!.size, 1);
 });
 
-for (const lookup of ["cancel", "revoke"] as const) test(`${lookup} prunes expired outcomes without claiming application`, async () => {
+for (const lookup of ["cancel", "revoke"] as const) test(`${lookup} never claims an expired outcome; the next sweep drops it`, async () => {
   const { records, fake, clock } = setup(), input = command();
   await records.commit(input);
   clock(101 + 24 * 60 * 60 * 1000);
@@ -100,9 +103,10 @@ for (const lookup of ["cancel", "revoke"] as const) test(`${lookup} prunes expir
     input.expectedRevision = 1; input.expectedDrafts = [[key, draft]];
     await assert.rejects(records.commit(input), code("cancelled"));
   } else assert.deepEqual(await records.revoke(draft, "grant"), []);
+  assert.equal(await records.evictReceipts(draft), 1);
   assert.equal(fake.stores.get("receipts")!.size, 0);
   assert.deepEqual([...fake.stores.get("drafts")!.values()], [draft]);
-  assert.deepEqual(await records.workspace(draft), { revision: 1, generation: 0 });
+  assert.deepEqual(await records.workspace(draft), { revision: 1, generation: 0, horizon: input.receipt.issuedAt });
 });
 
 test("unknown cancellation durably fences delivery without claiming a known past outcome", async () => {

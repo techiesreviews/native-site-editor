@@ -1134,7 +1134,7 @@ function agentMediaFixture(source = '<section><img src="/images/old.png" alt="Ol
 }
 let mediaSequence = 0;
 function mediaCommand(operation: AgentCommand["operation"], args: AgentCommand["args"] = {}): AgentCommand {
-  return { id: `media-test-${++mediaSequence}`, grantId: "media-grant", operation, args, path: ["place_media", "frame_image", "loop_video"].includes(operation) ? "index.html" : "", branch: "main", commit: "head", content: "", state: "pending", createdAt: 0 };
+  return { id: `media-test-${++mediaSequence}`, grantId: "media-grant", operation, args, path: ["place_media", "frame_image", "loop_video"].includes(operation) ? "index.html" : "", branch: "main", commit: "head", content: "", state: "pending", createdAt: Date.now() };
 }
 
 test("an agent placement equals the editor's markup for the same place, including picture replacement", async () => {

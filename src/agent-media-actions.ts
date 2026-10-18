@@ -284,7 +284,7 @@ export async function applyAgentMedia(...parameters: Parameters<typeof executeAg
     const { records, owner } = await loading.catch(validateBeforeRefusal);
     assertCurrent();
     const receipt = { operationId: command.id, authorizationId: command.grantId, payloadIdentity: identity,
-      outcome: {} as JsonValue, createdAt: Date.now() };
+      outcome: {} as JsonValue, createdAt: Date.now(), issuedAt: command.createdAt };
     const existing = await records.receipt(workspace, command.id, command.grantId).catch(validateBeforeRefusal);
     assertCurrent();
     if (existing) {
