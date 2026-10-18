@@ -51,6 +51,9 @@ export function agentOperation(hub: AgentHub, action: any) {
     delete grant.approval;
     failPending(hub, action.id);
   } else if (action.type === "remove-grant") {
+    const grant = hub.grants.find((item) => item.id === action.id);
+    if (grant && action.generation !== undefined && grant.generation !== action.generation)
+      throw new HttpError(409, staleConnection);
     hub.grants = hub.grants.filter((item) => item.id !== action.id);
     failPending(hub, action.id);
   } else {

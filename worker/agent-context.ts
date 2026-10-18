@@ -215,8 +215,8 @@ async function finishGrant(env: Env, id: string, grant: AgentGrant) {
 async function releaseGrant(env: Env, id: string, grant: Pick<AgentGrant, "login" | "repoId" | "branch" | "generation">) {
   await metadata(env, grant, { action: "release", id, generation: grant.generation });
 }
-async function removeHubGrant(env: Env, sessionId: string, id: string) {
-  try { await operateHub(env, sessionId, { type: "remove-grant", id }); return true; }
+async function removeHubGrant(env: Env, sessionId: string, id: string, generation?: number) {
+  try { await operateHub(env, sessionId, { type: "remove-grant", id, generation }); return true; }
   catch {
     // getHub intentionally hides failed reads; accounting needs a definite 404.
     try {
@@ -243,23 +243,35 @@ async function reconcileGrants(env: Env, workspace: AgentGrant, entries: Metadat
       const response = await agentRecord(env, entry.id);
       if (response.status === 404) {
         // Record absence alone does not account for retained hub metadata.
-        if (await removeHubGrant(env, entry.sessionId, entry.id))
+        if (await removeHubGrant(env, entry.sessionId, entry.id, entry.generation))
           await metadata(env, workspace, { action: "release", id: entry.id, generation: entry.generation, expected: entry });
         continue;
       }
       if (!response.ok) continue;
       const grant = await response.json() as AgentGrant;
       if (grant.kind !== "agent") continue;
-      if (workspaceKey(grantWorkspace(grant)) !== workspaceKey(grantWorkspace(workspace))) {
+      const hubResponse = await durable(env, `agent-hub:${grant.sessionId}`).fetch(new Request("https://session.internal/?context=0"));
+      if (!hubResponse.ok && hubResponse.status !== 404) continue;
+      const hub = hubResponse.ok ? await hubResponse.json() as AgentHub : undefined;
+      const listed = hub?.grants?.find(item => item.id === entry.id);
+      const scope = workspaceKey(grantWorkspace(workspace));
+      if (hub && listed && listed.generation > grant.generation) {
+        // The hub fence precedes the record PUT. The destination's reservation
+        // covers both records, so the source can release without deleting either.
+        if (workspaceKey({ account: hub.login, repoId: listed.repoId, branch: listed.branch }) !== scope) {
+          await metadata(env, workspace, { action: "release", id: entry.id, generation: entry.generation, expected: entry });
+          continue;
+        }
+        // Here we are the destination. Its deadlined PUT can still complete
+        // during grace; after grace cleanup below prevents an orphaned fence.
+        if (entry.at + 60_000 > Date.now()) continue;
+      } else if (workspaceKey(grantWorkspace(grant)) !== scope) {
         await metadata(env, workspace, { action: "release", id: entry.id, generation: entry.generation, expected: entry });
         continue;
       }
       const sessionResponse = await durable(env, grant.sessionId).fetch(new Request("https://session.internal/"));
-      const hubResponse = await durable(env, `agent-hub:${grant.sessionId}`).fetch(new Request("https://session.internal/?context=0"));
-      if ((!sessionResponse.ok && sessionResponse.status !== 404) || (!hubResponse.ok && hubResponse.status !== 404)) continue;
+      if (!sessionResponse.ok && sessionResponse.status !== 404) continue;
       const session = sessionResponse.ok ? await sessionResponse.json() as StoredSession : undefined;
-      const hub = hubResponse.ok ? await hubResponse.json() as AgentHub : undefined;
-      const listed = hub?.grants?.find(item => item.id === entry.id);
       if (session?.kind === "user" && session.login === grant.login && session.expiresAt > Date.now() &&
           hub?.kind === "agent-hub" && hub.expiresAt > Date.now() && listed && listed.repoId === grant.repoId &&
           listed.repo === grant.repo && listed.branch === grant.branch && listed.generation === grant.generation) {
@@ -272,7 +284,7 @@ async function reconcileGrants(env: Env, workspace: AgentGrant, entries: Metadat
         method: "DELETE", headers: { "X-Agent-Delete": await tokenId(JSON.stringify(grant)) },
       }));
       if (!deleted.ok && deleted.status !== 404) continue;
-      if (await removeHubGrant(env, grant.sessionId, entry.id))
+      if (await removeHubGrant(env, grant.sessionId, entry.id, listed?.generation ?? entry.generation))
         await metadata(env, workspace, { action: "release", id: entry.id, generation: entry.generation, expected: entry });
     } catch { /* Unknown is never zero. */ }
   }
@@ -345,9 +357,9 @@ export async function revokeGrant(env: Env, id: string, sessionId: string) {
 }
 
 /**
- * Sign-out: delete every listed grant record, end the session (which clears its
- * hub), then release each deleted grant's workspace reservation. 1 + 2n calls, not
- * a full revoke per grant; anything missed is left to capacity reconciliation.
+ * Sign-out: delete every listed grant record, end the session, delete its separate
+ * hub, then release each definitely deleted grant's workspace reservation. 3 + 2n
+ * calls, without a full revoke per grant; unknown outcomes stay counted.
  */
 export async function endSessionGrants(env: Env, sessionId: string, endSession: () => Promise<unknown>) {
   const hub = await getHub(env, sessionId).catch(() => undefined);
@@ -359,6 +371,10 @@ export async function endSessionGrants(env: Env, sessionId: string, endSession: 
     } catch { /* Unknown stays counted. */ }
   }
   await endSession();
+  try {
+    const response = await durable(env, `agent-hub:${sessionId}`).fetch(new Request("https://session.internal/", { method: "DELETE" }));
+    if (!response.ok && response.status !== 404) return;
+  } catch { return; /* Logout still succeeds; uncertain hub deletion stays counted. */ }
   for (const grant of deleted)
     await releaseGrant(env, grant.id, { login: hub!.login, repoId: grant.repoId, branch: grant.branch, generation: grant.generation }).catch(() => undefined);
 }
