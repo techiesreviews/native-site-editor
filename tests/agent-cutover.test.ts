@@ -174,8 +174,12 @@ test("matching legacy content never enables a fallback for any MCP tool family",
     ] as const) {
       h.counters.reset();
       const result = await h.rpc("tools/call", { name, arguments: args });
-      assert.equal(Boolean(result.isError), name !== "get_site", name);
-      assert.match(String(name === "get_site" ? payload(result).note : payload(result)), /not sharing/);
+      // get_site and the quiet wait (ticket 18) answer without an error; the rest refuse.
+      const quiet = name === "get_site" || name === "wait_for_requests";
+      assert.equal(Boolean(result.isError), !quiet, name);
+      if (name === "wait_for_requests") assert.deepEqual(payload(result).requests, []);
+      assert.match(String(name === "get_site" ? payload(result).note : name === "wait_for_requests" ? payload(result).hint : payload(result)),
+        name === "wait_for_requests" ? /No editor tab receives requests/ : /not sharing/);
       assert.equal(h.counters.byCategory.auth.calls, 3);
       assert.equal(h.counters.byCategory.control.calls, 1);
       assert.equal(h.counters.byCategory.data.calls, 0);
