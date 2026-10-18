@@ -297,15 +297,23 @@ export function createAgentMenu(options: {
     const key = scopeKey();
     if (key !== historyKey && key !== loadingKey) void loadHistory();
   }
-  /** Keeps one request in this browser and shows it; refuses (throws) at capacity. */
-  async function keep(workspace: AgentWorkspace, request: StoredRequest) {
+  /**
+   * Keeps one request in this browser and shows it; refuses (throws) at capacity. With
+   * `progressOnly`, an agent's progress from the hub is kept only over a stored request it is newer
+   * than, and never over one dismissed (perhaps by another tab meanwhile): this tab reads them again.
+   */
+  async function keep(workspace: AgentWorkspace, request: StoredRequest, progressOnly = false) {
     const content = stored(request);
-    await records.putConversation(workspace, { id: content.id, content: content as unknown as JsonValue, unfinished: isUnfinishedRequest(content.state), updatedAt: Date.now() });
+    const accept = progressOnly ? (current?: { content: JsonValue }) => {
+      const before = current?.content as unknown as StoredRequest | undefined;
+      return Boolean(before && before.state !== "dismissed" && progress(content) >= progress(before));
+    } : undefined;
+    const kept = await records.putConversation(workspace, { id: content.id, content: content as unknown as JsonValue, unfinished: isUnfinishedRequest(content.state), updatedAt: Date.now() }, accept);
     if (disposed) return;
     // A read begun before this write may miss it: read again once it is kept.
-    const superseded = loadingKey !== undefined;
+    const superseded = loadingKey !== undefined || !kept;
     if (superseded) { historyLoads++; loadingKey = undefined; }
-    if (workspaceKey(workspace) === historyKey) {
+    if (kept && workspaceKey(workspace) === historyKey) {
       history.set(content.id, content);
       tellRequests();
     }
@@ -328,7 +336,7 @@ export function createAgentMenu(options: {
       }
       const next = stored(item);
       if (progress(next) < progress(local) || payloadIdentity(next as unknown as JsonValue) === payloadIdentity(local as unknown as JsonValue)) continue;
-      await keep(workspace, next).catch(() => undefined);
+      await keep(workspace, next, true).catch((error: unknown) => say(refusalText(error)));
     }
   }
   // The open workspace's requests, told only when they changed.
@@ -779,12 +787,15 @@ export function createAgentMenu(options: {
     },
     /** Ask agent: a request about an element, for agents to fetch, kept in this browser. */
     async ask(text: string, element: AgentElement) {
-      const repo = options.repository(), workspace = scope();
+      const repo = options.repository(), workspace = scope(), at = activation;
       if (!repo || !workspace) throw new Error("Open a site first.");
+      const key = workspaceKey(workspace);
       // Refused before anything is sent when this browser cannot keep it.
       const planned = stored({ id: "req-planned", text, createdAt: Date.now(), repoId: repo.id, branch: repo.branch, repository: repo.fullName, state: "open", element, thread: [{ from: "user", text, at: Date.now() }] });
       await records.checkConversation(workspace, { id: planned.id, content: planned as unknown as JsonValue, unfinished: true, updatedAt: Date.now() }).catch((error) => refusal(error, " Nothing was sent."));
-      const request: StoredRequest = await api("ask", { repository: repo, text, element });
+      // Turned off, or another site or branch opened, while storage answered: nothing is sent.
+      if (!live(at) || scopeKey() !== key) throw new Error("Remote agents or the open site changed meanwhile. Nothing was sent; ask again.");
+      const request: StoredRequest = await api("ask", { repository: repo, text, element }, false, at);
       try {
         await keep(workspace, request);
       } catch (error) {
@@ -798,14 +809,16 @@ export function createAgentMenu(options: {
     },
     /** Answer an agent's question from its pin: the request waits for agents again. */
     async answer(id: string, text: string) {
-      const workspace = scope();
+      const workspace = scope(), at = activation;
       if (!remote) throw new Error("Remote agents are off in this tab. Choose Connect with MCP in the project menu, then send your answer.");
       if (!workspace || !history.has(id)) throw new Error("This request is not in this site's history any more.");
-      const local = history.get(id)!;
+      const local = history.get(id)!, key = workspaceKey(workspace);
       if (!isUnfinishedRequest(local.state))
         await records.checkConversation(workspace, { id, content: stored(local) as unknown as JsonValue, unfinished: true, updatedAt: Date.now() }).catch((error) => refusal(error, " Nothing was sent."));
-      const request: StoredRequest = await api("answer", { id, text });
-      await keep(workspace, request).catch(refusal);
+      if (!live(at) || scopeKey() !== key) throw new Error("Remote agents or the open site changed meanwhile. Nothing was sent; answer again.");
+      const request: StoredRequest = await api("answer", { id, text }, false, at);
+      // Dismissed in another tab meanwhile: it stays dismissed (the hub hears of it on the next poll).
+      await keep(workspace, request, true).catch(refusal);
       void poll(true);
     },
     /**
