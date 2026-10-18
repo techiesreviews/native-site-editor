@@ -3,6 +3,7 @@ title: "Bound receipts and export recoverable work"
 type: task (AFK)
 status: closed
 assignee: dor-10
+landed: PR #51 (065aa4f5)
 blocked_by: [08-atomic-media-edits, 09-browser-conversations]
 builder: claude
 phase: 2
@@ -75,7 +76,7 @@ tests/mcp-runtime.test.ts (commands issued now, not at 0); tests/native-save/nat
 injected receipt failure is an AbortError: a quota one would now stop agent edits); tests/agent-text-
 commit.test.ts (lead follow-up: the deletion race Sol flagged in ticket 06).
 
-Tests: tests/agent-local-recovery.test.ts (17): retention count/bytes/age and capacity; past 1,000 the
+Tests: tests/agent-local-recovery.test.ts (18): retention count/bytes/age and capacity; past 1,000 the
 evicted id stays unknown for its late delivery and for reuse with a fresh issue time, other work and
 current proofs; tombstone/revocation age-out with late deliveries still refused; 23-hour age; quota relief
 keeps unfinished conversations, tombstones and recent receipts and applies once; still full stops before
@@ -105,3 +106,9 @@ Kit:
 - RESULT: ok shots raw spec, out /home/ubulex/Projects/native-site-editor/.scratch/shots/dor-10/20261018-035533
 - RESULT: ok review git diff 5825912b…HEAD evidence /home/ubulex/Projects/native-site-editor/.scratch/reviews/dor-10/20261018T035821Z
 - RESULT: ok review git diff 5825912b…HEAD evidence /home/ubulex/Projects/native-site-editor/.scratch/reviews/dor-10/20261018T040245Z
+- Landing: kit pr rebased on 5825912b; check, unit, lint, specs, review, CI ok; RESULT: ok merged #51 065aa4f.
+  Landing review (gpt-6.1-sol, `.scratch/reviews/dor-10/20261018T043028Z`): no defects; validation gap added
+  after merge (follow-up PR): quota relief turns a live receipt over ten minutes old into a marker, its
+  redelivery and reuse with a fresh issue time stay refused, drafts and another workspace's generation and
+  revision unchanged (mutation checked). Menu-level forEachAwait export race: not added (no agent-menu DOM
+  harness; the helper's stale paths are unit-tested).

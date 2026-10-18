@@ -157,6 +157,28 @@ test("full storage: expired receipts and completed history go, unfinished work s
   assert.equal(status.problem, undefined);
 });
 
+test("quota relief turns a live receipt over ten minutes old into a marker: its id stays refused, other workspaces keep their state", async () => {
+  const start = Date.now();
+  const { fake, records, clock } = setup(start - 11 * 60 * 1000);
+  const old = command("old");
+  await records.commit(old);
+  const elsewhere = { ...workspace, branch: "other" }, otherKey = draftKey({ ...scope, branch: "other" }, "x.html");
+  await records.commit({ ...command("other-op", "x.html"), workspace: elsewhere, expectedDrafts: [[otherKey, null]],
+    drafts: [[otherKey, { ...draft("x.html"), branch: "other" }]] });
+  await records.setGeneration(elsewhere, 0, 3);
+  clock(start);
+  fake.state.failure = "QuotaExceededError"; fake.state.failPutAt = 1;
+  await records.commit({ ...command("now"), expectedRevision: 1 });
+  assert.equal(await records.receipt(workspace, "old", "grant"), undefined, "converted, not kept");
+  assert.deepEqual([...fake.stores.get("workspaces")!.keys()].filter((key) => key.startsWith('["retired"')).length, 2);
+  // Redelivered, or reused with a fresh issue time and current proofs: refused, nothing written.
+  for (const late of [{ ...old, expectedRevision: 2 }, { ...command("old", "again.html"), expectedRevision: 2 }])
+    await assert.rejects(records.commit(late), code("conflict"));
+  assert.deepEqual([...fake.stores.get("drafts")!.keys()].sort(), [draftKey(scope, "now.html"), draftKey(scope, "old.html"), otherKey].sort());
+  const other = await records.workspace(elsewhere);
+  assert.deepEqual([other.revision, other.generation], [1, 3]);
+});
+
 test("storage still full after relief stops agent edits before any write; Try again lets them through", async () => {
   const { fake, records, status } = setup();
   await records.putConversation(workspace, { id: "done", content: {}, unfinished: false, updatedAt: Date.now() });
