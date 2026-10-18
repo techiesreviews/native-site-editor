@@ -74,6 +74,11 @@ export const RECEIPT_BUDGET_BYTES = 1024 * 1024;
  * refused its late delivery may have aged out (24 hours less one for clock differences).
  */
 export const COMMAND_MAX_AGE_MS = 23 * 60 * 60 * 1000;
+/**
+ * On a full storage, completed receipts older than this may go before their 24 hours: a lost
+ * reply is asked again within minutes (the hub keeps answers five minutes).
+ */
+export const QUOTA_RECEIPT_AGE_MS = 10 * 60 * 1000;
 const recordBytes = (key: string, value: unknown) => new TextEncoder().encode(JSON.stringify([key, value])).byteLength;
 const retiredKey = (workspace: string, operationId: OperationId) => JSON.stringify(["retired", workspace, operationId]);
 const fenceTime = (fence: Fence) => "retired" in fence ? fence.createdAt : fence.at;
@@ -377,9 +382,9 @@ export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFact
     });
   });
   /**
-   * Browser storage is full: drops, in every workspace, aged-out records, receipts and markers of
-   * edits issued before `command` (their deliveries stay unknown under each workspace's horizon)
-   * and completed conversations. Unsaved drafts, unfinished conversations, cancellations and
+   * Browser storage is full: drops, in every workspace, aged-out records, receipts and markers
+   * older than QUOTA_RECEIPT_AGE_MS of edits issued before `command` (their deliveries stay
+   * unknown under each workspace's horizon) and completed conversations. Unsaved drafts, unfinished conversations, cancellations and
    * revocations stay. Resolves to how many records went.
    */
   const relieve = (command: AgentCommit) => run<number>([draftStores.receipts, draftStores.workspaces, draftStores.conversations], "readwrite", (tx, read, done) => {
@@ -394,8 +399,9 @@ export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFact
         const decided = receiptRetention(rows, marks, time);
         const gone = new Set(decided.remove);
         for (const [rowKey, value] of [...rows, ...marks]) {
-          const issuedAt = "issuedAt" in value ? value.issuedAt : undefined;
-          if (issuedAt === undefined || gone.has(rowKey) || !(issuedAt < before)) continue;
+          // Receipts and retired markers carry both times; cancellations and revocations stay.
+          if (!("issuedAt" in value) || gone.has(rowKey) || !(value.issuedAt < before) || !(value.createdAt <= time - QUOTA_RECEIPT_AGE_MS)) continue;
+          const issuedAt = value.issuedAt;
           gone.add(rowKey);
           decided.horizon = Math.max(decided.horizon, issuedAt);
         }

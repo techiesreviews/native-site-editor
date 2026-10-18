@@ -133,3 +133,21 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.agent-menu__storage {
+  margin: 2px 8px 6px;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: var(--warning-bg);
+  color: var(--warning-fg);
+}
+.agent-menu__storage-text {
+  margin: 0 0 6px;
+  font-size: var(--type-small);
+  line-height: 1.5;
+}
+.agent-menu__storage .agent-menu__links {
+  margin: 0;
+}
+.agent-menu__storage .agent-menu__link {
+  color: inherit;
+}
