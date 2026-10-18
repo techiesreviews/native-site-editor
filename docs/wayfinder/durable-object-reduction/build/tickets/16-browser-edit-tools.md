@@ -124,3 +124,10 @@ Unchanged requests record a receipt again, now committed against the workspace r
 (an agent commit meanwhile refuses it; it writes no drafts, so manual work is never touched). Test rewritten
 (reuse for different work, another grant, a new tools instance; agent commit during preparation), both mutations
 checked. Focused: tests/agent-tools-edit.test.ts pass 13 fail 0; check, unit, lint, specs by `kit pr`.
+
+Follow-up 3 (landing review round 4 on PR #63, merged as b9839d2, gpt-6.1-sol, medium, read-only; `RESULT: ok review …
+evidence /home/ubulex/Projects/native-site-editor/.scratch/reviews/dor-16/20261018T141944Z`): no defects. Fixed the nit:
+the unchanged-receipt race now waits for an explicit "context entered" promise instead of a 10 ms delay. Rejected in
+part the `forEachAwait` request for the unchanged receipt: ownership, revocation and cancellation are proved inside
+`records.commit`'s transaction (ticket 06/07 tests), and the preparation awaits are already covered by "a changed
+revision at every preparation await never reaches the guarded executor".
