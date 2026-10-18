@@ -45,10 +45,10 @@ own `runner-extras.md` (next to its map) wins where it differs.
   `.scratch/agent-brief.md` with ticket path, Files list and acceptance, and run
   `scripts/agents/agent.sh build "$PWD" .scratch/agent-brief.md --model <model> --effort <effort>`
   in the background. Inspect the report and diff; stay inside the ticket's Files; fix defects, then commit.
-- Add unit coverage for pure rules. Run `npm run check`, `scripts/agents/unit.sh` and `npm run lint`.
-- Browser specs: `scripts/agents/kit specs --affected` (or `kit specs <spec…>`) picks fixture groups and labels
-  known failures; `scripts/agents/full-suite.sh 3` only for shared plumbing. Rerun once before calling a new
-  failure flaky. A spec that also fails on plain dev: say so in `decide` and stop.
+- Add unit coverage for pure rules. While building, run focused checks for what you changed: `scripts/agents/unit.sh
+  <files>`, `npm run check` when types moved, `scripts/agents/kit specs --affected` (or `kit specs <spec…>`; `full-suite.sh 3`
+  only for shared plumbing). `kit pr` runs the full set scaled to the change; don't run it all yourself first. Rerun a
+  failing spec once before calling it flaky; one that also fails on plain dev: say so in `decide` and stop.
 - Credit whichever model built the change: `Co-Authored-By: <model name> <noreply@<vendor>>`
   (Sol: `GPT-6.1-Sol <noreply@openai.com>`; Claude: `Claude Opus 5.5 <noreply@anthropic.com>`).
 
@@ -68,9 +68,9 @@ decisions, evidence; details go there, not in the report), set `status: closed` 
 
 ## Land
 
-- Editor slices: `scripts/agents/kit pr --ticket <ticket>` in the background. It rebases, runs the
-  checks and affected specs, opens the PR into `dev`, posts the review, waits for CI and merges.
-  The merged PR is the finish line; put its number in `landed:`. Fix CI failures you caused.
+- Editor slices: `scripts/agents/kit pr --ticket <ticket>` in the background. It rebases, runs the checks for the
+  change's tier (docs, css, tests or full; `--full` forces all), opens the PR into `dev`, posts the review, waits for CI
+  and merges. The merged PR is the finish line; put its number in `landed:`. Fix CI failures you caused.
 - Starter slices: rebase on `origin/dev` and push `HEAD:dev` under
   `flock /tmp/cb-starter-merge.lock`; rerun touched tests after overlapping upstream changes.
 - Prototypes finish with their branch and evidence; skip landing.
