@@ -248,27 +248,30 @@ function forgetRepositoryMemory(id: string) {
     if (entry.sessionId === id) repositoryMemory.delete(key);
 }
 
+/** Most recently used last; the oldest entry goes past the bound. */
+function remember(key: string, entry: RepositoryMemoryEntry) {
+  repositoryMemory.delete(key);
+  repositoryMemory.set(key, entry);
+  if (repositoryMemory.size > maxRepositoryMemoryEntries)
+    repositoryMemory.delete(repositoryMemory.keys().next().value!);
+}
+
 function sessionGitHub(user: Session, env: Env, fetcher: typeof fetch) {
   const generation = user.repositoryCacheGeneration ?? 0;
   const key = `${user.sessionId}\n${generation}\n${user.token}`;
-  let entry: RepositoryMemoryEntry | undefined;
   return new GitHub(user.token, fetcher, {
     key,
     async load() {
       if (!user.sessionId) return;
       for (const [storedKey, stored] of repositoryMemory)
         if (stored.expiresAt <= Date.now()) repositoryMemory.delete(storedKey);
-      entry = repositoryMemory.get(key);
+      const entry = repositoryMemory.get(key);
       if (entry) {
-        repositoryMemory.delete(key);
-        repositoryMemory.set(key, entry);
+        remember(key, entry);
         return structuredClone(entry.value);
       }
-      entry = { sessionId: user.sessionId, expiresAt: user.expiresAt };
-      repositoryMemory.set(key, entry);
-      if (repositoryMemory.size > maxRepositoryMemoryEntries)
-        repositoryMemory.delete(repositoryMemory.keys().next().value!);
-      const proof = entry;
+      const proof: RepositoryMemoryEntry = { sessionId: user.sessionId, expiresAt: user.expiresAt };
+      remember(key, proof);
       try {
         const response = await env.SESSIONS.get(env.SESSIONS.idFromName(user.sessionId)).fetch(
           new Request("https://session.internal/repository-cache"),
@@ -291,21 +294,25 @@ function sessionGitHub(user: Session, env: Env, fetcher: typeof fetch) {
     },
     async save(value) {
       if (!user.sessionId) return;
-      const proof = entry;
-      // Saved without loading first: an older in-memory listing must not outlive this change.
-      if (!proof) repositoryMemory.delete(key);
+      // Every save replaces the shared entry, so a slower fallback read or an older save
+      // that still holds the previous entry cannot restore the listing this save replaces.
+      const proof: RepositoryMemoryEntry = { sessionId: user.sessionId, expiresAt: user.expiresAt };
+      remember(key, proof);
       try {
         const response = await env.SESSIONS.get(env.SESSIONS.idFromName(user.sessionId)).fetch(
           new Request("https://session.internal/repository-cache", {
             method: "PUT", body: JSON.stringify({ token: user.token, generation, value: value ?? null }),
           }),
         );
+        const current = repositoryMemory.get(key) === proof;
+        if (current && response.ok && proof.expiresAt > Date.now() &&
+          response.headers.get("X-Repository-Cache-Generation") === String(generation))
+          proof.value = structuredClone(value);
+        else if (current) repositoryMemory.delete(key);
         if (response.status === 401) throw new HttpError(401, "Your GitHub session expired. Connect again.");
         if (!response.ok) console.warn("Repository listing cache could not be persisted.");
-        if (proof && repositoryMemory.get(key) === proof && proof.expiresAt > Date.now() &&
-          response.ok && response.headers.get("X-Repository-Cache-Generation") === String(generation))
-          proof.value = structuredClone(value);
       } catch (error) {
+        if (repositoryMemory.get(key) === proof) repositoryMemory.delete(key);
         if (error instanceof HttpError && error.status === 401) throw error;
         console.warn("Repository listing cache could not be persisted.");
       }
