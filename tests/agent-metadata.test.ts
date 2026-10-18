@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createHash } from "node:crypto";
 import { accountMetadata, METADATA_KEY, METADATA_ROUTE, type MetadataAction, type MetadataResult } from "../worker/agent-metadata";
-import { createGrant, getGrant, getHub, revokeGrant, type AgentGrant, type AgentHub } from "../worker/agent-context";
+import { createGrant, getGrant, getHub, operateHub, rebindGrant, revokeGrant, type AgentGrant, type AgentHub } from "../worker/agent-context";
 import type { Env } from "../worker/app";
 import { relayObjectName } from "../worker/agent-relay";
 import { workspaceKey } from "../shared/agent-command";
@@ -268,6 +268,62 @@ test("revoke twice, missing record, wrong session and revoke after logout preser
   } finally { await h.worker.dispose(); }
 });
 
+for (const outcome of ["ok", "404", "503", "lost reply"] as const)
+  test(`sign-out deletes the separate hub before releasing reservations (${outcome})`, async () => {
+    const h = await fixture();
+    const grants = [];
+    let restore: (() => void) | undefined;
+    try {
+      for (let n = 0; n < 5; n++) grants.push(await connected(h, n < 3 ? "main" : "preview"));
+      restore = intercept(h, async (name, request, next) => {
+        if (name === `agent-hub:${h.sessionId}` && request.method === "DELETE") {
+          if (outcome === "503") return new Response(null, { status: 503 });
+          await next();
+          if (outcome === "lost reply") throw new Error("Lost hub DELETE reply");
+          return new Response(null, { status: outcome === "404" ? 404 : 204 });
+        }
+        return next();
+      });
+      h.counters.reset();
+      const response = await h.tab.post("/auth/logout", {});
+      assert.equal(response.status, 204);
+      assert.match(response.headers.get("set-cookie")!, /session=;.*Max-Age=0/);
+      assert.equal(await h.storage(h.sessionId).get("session"), undefined);
+      for (const grant of grants)
+        assert.equal(await h.storage(`agent:${grant.id}`).get("session"), undefined);
+      assert.equal(Boolean(await h.storage(`agent-hub:${h.sessionId}`).get("session")), outcome === "503");
+      const definite = outcome === "ok" || outcome === "404";
+      assert.equal((await h.ledger())!.entries.length, definite ? 0 : 3);
+      assert.equal((await h.ledger("preview"))!.entries.length, definite ? 0 : 2);
+      if (definite) {
+        const calls = h.counters.log.filter(row => row.path.startsWith("/"));
+        assert.equal(calls.length, 3 + 2 * grants.length, "sign-out call count");
+        const session = calls.findIndex(row => row.name === h.sessionId);
+        const hub = calls.findIndex(row => row.category === "lifecycle" && row.name === `agent-hub:${h.sessionId}`);
+        assert.ok(session >= 0 && hub > session);
+        assert.ok(calls.slice(0, hub).every(row => row.path !== METADATA_ROUTE),
+          "hub deletion must precede capacity release");
+      }
+      assert.equal(h.counters.log.filter(row => row.path === "/agent-operation").length, 0,
+        "sign-out must not perform full per-grant revokes");
+    } finally { restore?.(); await h.worker.dispose(); }
+  });
+
+test("sign-out keeps a reservation when record deletion is uncertain even after deleting the hub", async () => {
+  const h = await fixture();
+  let restore: (() => void) | undefined;
+  try {
+    const first = await connected(h), second = await connected(h);
+    restore = intercept(h, async (name, request, next) =>
+      name === `agent:${first.id}` && request.method === "DELETE" ? new Response(null, { status: 503 }) : next());
+    assert.equal((await h.tab.post("/auth/logout", {})).status, 204);
+    assert.equal(await h.storage(`agent-hub:${h.sessionId}`).get("session"), undefined);
+    assert.ok(await h.storage(`agent:${first.id}`).get("session"));
+    assert.equal(await h.storage(`agent:${second.id}`).get("session"), undefined);
+    assert.deepEqual((await h.ledger())!.entries.map(entry => entry.id), [first.id]);
+  } finally { restore?.(); await h.worker.dispose(); }
+});
+
 test("rebind reserves destination before fencing; capacity refusal changes neither record nor hub", async () => {
   const h = await fixture();
   try {
@@ -289,6 +345,193 @@ test("rebind reserves destination before fencing; capacity refusal changes neith
     await revokeGrant(h.env, source.id, h.sessionId);
     assert.equal((await h.ledger("preview"))!.entries.length, 4);
   } finally { await h.worker.dispose(); }
+});
+
+test("source reconciliation releases only its reservation while a rebind record PUT is held", async () => {
+  const runs: { h?: Fixture; id?: string; status?: number; replacement?: string; restore?: () => void }[] = [];
+  try {
+    const points = await forEachAwait(
+      race => {
+        const state: typeof runs[number] = {};
+        const previous = runs.pop();
+        runs.push(state);
+        const done = (async () => {
+          previous?.restore?.();
+          await previous?.h?.worker.dispose();
+          const h = state.h = await fixture();
+          state.id = (await connected(h)).id;
+          for (let n = 0; n < 4; n++) await connected(h);
+          // Hold before dispatching the PUT, after the hub has advanced.
+          const beforePut = race.port("rebind record PUT", async () => {});
+          state.restore = intercept(h, async (name, request, next) => {
+            if (name === `agent:${state.id}` && request.method === "PUT") await beforePut();
+            return next();
+          });
+          const response = await h.tab.post("/api/agent/rebind", {
+            id: state.id, repoId: repo.id, repo: repo.full_name, branch: "preview",
+          });
+          state.status = response.status;
+        })();
+        return { state, done };
+      },
+      async ({ state }) => {
+        const h = state.h!;
+        assert.equal((await getGrant(h.env, state.id!)).generation, 1);
+        const listed = (await connections(h)).find(grant => grant.id === state.id)!;
+        assert.equal(listed.generation, 2);
+        assert.equal(listed.branch, "preview");
+        state.replacement = (await connected(h)).id;
+        assert.equal((await getGrant(h.env, state.id!)).generation, 1, "source reconciliation must not delete the moving record");
+        assert.deepEqual((await connections(h)).find(grant => grant.id === state.id), listed);
+        assert.equal((await h.ledger())!.entries.some(entry => entry.id === state.id), false);
+        assert.equal((await h.ledger("preview"))!.entries.find(entry => entry.id === state.id)!.state, "pending");
+      },
+      async ({ state }) => {
+        const h = state.h!;
+        assert.equal(state.status, 200);
+        const record = await getGrant(h.env, state.id!);
+        assert.equal(record.branch, "preview");
+        assert.equal(record.generation, 2);
+        assert.equal((await connections(h)).find(grant => grant.id === state.id)!.generation, 2);
+        const source = (await h.ledger())!.entries;
+        assert.equal(source.length, 5);
+        assert.ok(source.some(entry => entry.id === state.replacement));
+        assert.equal(source.some(entry => entry.id === state.id), false);
+        const destination = (await h.ledger("preview"))!.entries;
+        assert.equal(destination.length, 1);
+        assert.equal(destination[0].id, state.id);
+        assert.equal(destination[0].generation, 2);
+        assert.equal(destination[0].state, "final");
+        assert.equal((await h.connect()).status, 409);
+      },
+    );
+    assert.equal(points, 1);
+  } finally {
+    for (const state of runs) { state.restore?.(); await state.h?.worker.dispose(); }
+  }
+});
+
+test("destination reconciliation keeps a pending rebind through grace, then deletes its record and observed hub generation", async () => {
+  const runs: { h?: Fixture; id?: string; status?: number; restore?: () => void }[] = [];
+  const now = Date.now;
+  try {
+    const points = await forEachAwait(
+      race => {
+        const state: typeof runs[number] = {};
+        const previous = runs.pop();
+        runs.push(state);
+        const done = (async () => {
+          previous?.restore?.();
+          await previous?.h?.worker.dispose();
+          const h = state.h = await fixture();
+          state.id = (await connected(h)).id;
+          for (let n = 0; n < 4; n++) await connected(h, "preview");
+          const beforePut = race.port("destination rebind record PUT", async () => {});
+          state.restore = intercept(h, async (name, request, next) => {
+            if (name === `agent:${state.id}` && request.method === "PUT") await beforePut();
+            return next();
+          });
+          const response = await h.tab.post("/api/agent/rebind", {
+            id: state.id, repoId: repo.id, repo: repo.full_name, branch: "preview",
+          });
+          state.status = response.status;
+        })();
+        return { state, done };
+      },
+      async ({ state }) => {
+        const h = state.h!;
+        const pending = (await h.ledger("preview"))!.entries.find(entry => entry.id === state.id)!;
+        assert.equal(pending.state, "pending");
+        assert.equal((await h.connect("preview")).status, 409);
+        assert.equal((await getGrant(h.env, state.id!)).generation, 1);
+        assert.equal((await connections(h)).find(grant => grant.id === state.id)!.generation, 2);
+        Date.now = () => pending.at + 60_000;
+        await connected(h, "preview");
+        assert.equal(await h.storage(`agent:${state.id}`).get("session"), undefined);
+        assert.equal((await connections(h)).some(grant => grant.id === state.id), false);
+      },
+      async ({ state }) => {
+        const h = state.h!;
+        assert.equal(state.status, 503);
+        assert.equal(await h.storage(`agent:${state.id}`).get("session"), undefined,
+          "the delayed PUT must not restore a connection after its deadline");
+        const entries = (await h.ledger("preview"))!.entries;
+        assert.equal(entries.length, 5);
+        assert.equal(entries.some(entry => entry.id === state.id), false);
+        assert.equal((await connections(h)).filter(grant => grant.branch === "preview").length, 5);
+      },
+    );
+    assert.equal(points, 1);
+  } finally {
+    Date.now = now;
+    for (const state of runs) { state.restore?.(); await state.h?.worker.dispose(); }
+  }
+});
+
+test("hub removal rejects a stale generation and leaves unconditional callers unchanged", async () => {
+  const h = await fixture();
+  try {
+    const { id } = await connected(h);
+    await operateHub(h.env, h.sessionId, { type: "rebind-grant", id, repoId: repo.id,
+      repo: repo.full_name, branch: "preview", previous: 1, generation: 2 });
+    await assert.rejects(operateHub(h.env, h.sessionId, { type: "remove-grant", id, generation: 1 }), { status: 409 });
+    assert.equal((await connections(h))[0].generation, 2);
+    await operateHub(h.env, h.sessionId, { type: "remove-grant", id, generation: 2 });
+    assert.equal((await connections(h)).length, 0);
+    const other = await connected(h);
+    await operateHub(h.env, h.sessionId, { type: "remove-grant", id: other.id });
+    assert.equal((await connections(h)).length, 0);
+  } finally { await h.worker.dispose(); }
+});
+
+test("404 reconciliation cannot remove a hub generation advanced while removal is pending", async () => {
+  const runs: { h?: Fixture; id?: string; grant?: AgentGrant; restore?: () => void; status?: number }[] = [];
+  try {
+    const points = await forEachAwait(
+      race => {
+        const state: typeof runs[number] = {};
+        const previous = runs.pop();
+        runs.push(state);
+        const done = (async () => {
+          previous?.restore?.();
+          await previous?.h?.worker.dispose();
+          const h = state.h = await fixture();
+          state.id = (await connected(h)).id;
+          state.grant = await getGrant(h.env, state.id);
+          for (let n = 0; n < 4; n++) await connected(h);
+          await h.namespace.get(`agent:${state.id}`).fetch(new Request("https://session.internal/", { method: "DELETE" }));
+          const beforeRemove = race.port("reconcile hub removal", async () => {});
+          state.restore = intercept(h, async (_name, request, next) => {
+            if (new URL(request.url).pathname === "/agent-operation") {
+              const action = await request.clone().json() as { type: string; id: string };
+              if (action.type === "remove-grant" && action.id === state.id) await beforeRemove();
+            }
+            return next();
+          });
+          state.status = (await h.connect()).status;
+        })();
+        return { state, done };
+      },
+      async ({ state }) => {
+        // A rebind that already captured the record can still fence the hub;
+        // its conditional PUT fails, leaving destination metadata counted.
+        const h = state.h!;
+        await assert.rejects(rebindGrant(h.env, state.id!, state.grant!, {
+          repoId: repo.id, repo: repo.full_name, branch: "preview",
+        }), { status: 503 });
+      },
+      async ({ state }) => {
+        const h = state.h!;
+        assert.equal(state.status, 409);
+        assert.equal((await connections(h)).find(grant => grant.id === state.id)!.generation, 2);
+        assert.equal((await h.ledger())!.entries.length, 5);
+        assert.equal((await h.ledger("preview"))!.entries[0].generation, 2);
+      },
+    );
+    assert.equal(points, 1);
+  } finally {
+    for (const state of runs) { state.restore?.(); await state.h?.worker.dispose(); }
+  }
 });
 
 test("404 reconciliation confirms hub removal before admitting a replacement", async () => {
