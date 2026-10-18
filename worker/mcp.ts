@@ -330,7 +330,8 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     async ({ requestId }) => {
       const outcome = await dispatch({ operation: "status", id: requestId, grantId: connection.id, generation: grant.generation });
       if (outcome.ok && outcome.result) return toolResult(outcome.result);
-      if (outcome.code !== "editor-unavailable") return unknown(requestId, outcome.code, outcome.outcome);
+      // A status lookup that was not delivered says nothing about the change itself: unknown.
+      if (outcome.code !== "editor-unavailable") return unknown(requestId, outcome.code);
       if (!connectionContext(connection.hub, connection.workspace))
         return failure(notSharingMessage(origin, connection.workspace, connection.hub?.context));
       const hub = await getHub(env, grant.sessionId);

@@ -24,9 +24,12 @@ export function createAgentEditTools(options: Options) {
     const stamp = ports.stamp(), source = ports.files();
     const repoId = source?.repo.id, branch = source?.snapshot.branch, commit = source?.snapshot.commit;
     let ran = false;
+    // Once the executor ran, its own commit decided the outcome: a later revision change or lost
+    // socket must never relabel committed work as a conflict (the transport drops a reply it cannot send).
     const check = () => {
+      if (ran) return;
       const now = ports.files();
-      if (!current() || !ran && (!stamp.holds() || now?.repo.id !== repoId || now?.snapshot.branch !== branch || now?.snapshot.commit !== commit))
+      if (!current() || !stamp.holds() || now?.repo.id !== repoId || now?.snapshot.branch !== branch || now?.snapshot.commit !== commit)
         throw new Error("The editor changed branch or revision. Read the site again.");
     };
     const reply = (outcome: JsonValue): AgentReadResult => {
@@ -65,7 +68,9 @@ export function createAgentEditTools(options: Options) {
         });
         const prepared = await prepareAgentEdit(request, shared.context, files);
         check();
-        // Unchanged requests and UI-only open_page also receive an owner-fenced receipt.
+        // UI-only open_page also receives an owner-fenced receipt. An unchanged request applied nothing and
+        // gets none: a receipt would need a draft proof from before preparation, and a redelivery can only
+        // find the same text again (unchanged) or a newer one (hash conflict), never apply twice.
         const record = async (outcome: JsonValue) => {
           const state = await records.workspace(workspace);
           check();
@@ -75,7 +80,7 @@ export function createAgentEditTools(options: Options) {
           check();
           return reply(result.receipt.outcome);
         };
-        if ("unchanged" in prepared) return record(json(prepared.unchanged));
+        if ("unchanged" in prepared) return { ok: true, value: { requestId: request.id, ...prepared.unchanged } };
         const { input, operation } = prepared;
         const command: AgentCommand = { id: request.id, operation, content: input.content ?? "",
           branch: shared.context.branch, commit: shared.context.commit, ...input, repoId: workspace.repoId,

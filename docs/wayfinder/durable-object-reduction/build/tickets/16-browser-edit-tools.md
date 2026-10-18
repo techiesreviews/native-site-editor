@@ -47,7 +47,8 @@ guarded transformations and owner-fenced staged commits. Result contracts are ke
 - **Receipts first.** The receipt is looked up by operation id BEFORE preparation, against an identity over the tool
   request (tool + args + branch), not the derived text: a duplicate edit_file returns the recorded outcome instead of
   failing its now-stale hash, and is never applied again; the same id with different work or another grant is refused;
-  in-flight duplicates join one run. Unchanged requests and open_page also get a receipt; inspect_preview writes none.
+  in-flight duplicates join one run. open_page also gets a receipt; unchanged requests (they apply nothing) and
+  inspect_preview write none.
 - **get_command_status** is a receipt lookup in the tab over one dispatch (authorization rechecked by
   `records.receipt`); no receipt → `unknown`, never replayed.
 - **update_active_draft / create_file_draft** take the staged text commit (drafts + receipt), so they are no longer
@@ -102,3 +103,16 @@ control path, which ticket 07 forbids; text edits still need a current hash; leg
 - RESULT: ok size boot 355 KB (±0 KB) vs dev@fb3ba43, budget 355 KB
 - RESULT: ok specs 147/147 passed (`--affected`)
 - RESULT: ok specs 1/1 passed (native-agent-edits, after review 1)
+
+Landed: PR #59, merged as 3a0d9ad8 (`RESULT: ok merged #59 3a0d9ad`; kit pr: check, unit, lint, specs, review, CI ok).
+
+Follow-up (landing review round 2, gpt-6.1-sol, medium, read-only; `RESULT: ok review … evidence
+/home/ubulex/Projects/native-site-editor/.scratch/reviews/dor-16/20261018T131941Z`; read after the merge): fixed 3 in a
+follow-up PR — a status lookup the relay never delivered was reported as a failed change (it is now `unknown`; only
+mutation dispatches map not-sent to failed); a revision change or lost socket after the executor committed relabeled
+the edit a conflict (after the executor runs, its own commit decides the reply); an unchanged receipt was committed
+against a revision read after preparation, so a manual edit meanwhile could not be fenced (unchanged requests now
+record no receipt: a redelivery finds the same text again or a hash conflict, never an application). Tests: two new
+(mutation checked), the unchanged test now asserts no receipt and a conflict after a manual change.
+`npm run check` ok; `npm run lint` ok; `scripts/agents/unit.sh` pass 4403 fail 0 (by hand);
+RESULT: ok specs 2/2 passed (native-agent-edits, native-mcp 18).
