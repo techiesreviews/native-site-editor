@@ -3,7 +3,7 @@ import { browserAgentRecovery, recordFailure, recoveryHolds } from "../agent-rec
 import { AgentFailureError, classifyAgentFailure } from "../../shared/agent-failure";
 import { button, node } from "../ui/dom";
 import { textBytes, type AgentCommand, type AgentElement } from "../../shared/agent";
-import { workspaceKey, type AgentWorkspace, type JsonValue } from "../../shared/agent-command";
+import { payloadIdentity, workspaceKey, type AgentWorkspace, type JsonValue } from "../../shared/agent-command";
 import { AgentRecordsError, indexedDbAgentRecords, isUnfinishedRequest, type AgentRecords } from "../agent-records";
 import type { SharedContext } from "../agent-site";
 import type { PinRequest } from "./agent-pins";
@@ -273,13 +273,12 @@ export function createAgentMenu(options: {
   const records = options.records ?? indexedDbAgentRecords();
   let history = new Map<string, StoredRequest>();
   let historyKey = "", loadingKey: string | undefined, historyLoads = 0;
-  const channel = typeof BroadcastChannel === "function" ? new BroadcastChannel(CONVERSATIONS_CHANNEL) : undefined;
   const scope = (): AgentWorkspace | undefined => {
     const repo = options.repository();
     return repo ? { account: options.account, repoId: repo.id, branch: repo.branch } : undefined;
   };
   const scopeKey = () => { const current = scope(); return current ? workspaceKey(current) : ""; };
-  /** Reads the workspace's requests again: on opening it, and when another tab changed them. */
+  /** Reads the workspace's requests: on opening it, and when the tab is seen again. */
   async function loadHistory() {
     const current = scope(), key = current ? workspaceKey(current) : "", load = ++historyLoads;
     loadingKey = key;
@@ -301,13 +300,19 @@ export function createAgentMenu(options: {
   async function keep(workspace: AgentWorkspace, request: StoredRequest) {
     const content = stored(request);
     await records.putConversation(workspace, { id: content.id, content: content as unknown as JsonValue, unfinished: isUnfinishedRequest(content.state), updatedAt: Date.now() });
-    const key = workspaceKey(workspace);
-    channel?.postMessage(key);
-    if (key !== historyKey || disposed) return;
-    history.set(content.id, content);
-    tellRequests();
+    if (disposed) return;
+    // A read begun before this write may miss it: read again once it is kept.
+    const superseded = loadingKey !== undefined;
+    if (superseded) { historyLoads++; loadingKey = undefined; }
+    if (workspaceKey(workspace) === historyKey) {
+      history.set(content.id, content);
+      tellRequests();
+    }
+    if (superseded) void loadHistory();
   }
-  if (channel) channel.onmessage = (event) => { if (event.data === historyKey && historyKey) void loadHistory(); };
+  // Another tab of this browser may have changed them: read them again when this one is seen.
+  const reread = () => { if (document.visibilityState === "visible" && historyKey) void loadHistory(); };
+  document.addEventListener("visibilitychange", reread);
   // While remote agents are on, a poll brings the agents' progress on the requests asked here.
   async function mergeHub(at: number) {
     const workspace = scope();
@@ -321,7 +326,7 @@ export function createAgentMenu(options: {
         continue;
       }
       const next = stored(item);
-      if (progress(next) < progress(local) || JSON.stringify(next) === JSON.stringify(local)) continue;
+      if (progress(next) < progress(local) || payloadIdentity(next as unknown as JsonValue) === payloadIdentity(local as unknown as JsonValue)) continue;
       await keep(workspace, next).catch(() => undefined);
     }
   }
@@ -768,7 +773,7 @@ export function createAgentMenu(options: {
       const repo = options.repository(), workspace = scope();
       if (!repo || !workspace) throw new Error("Open a site first.");
       // Refused before anything is sent when this browser cannot keep it.
-      const planned = stored({ id: "req-planned", text, createdAt: Date.now(), repoId: repo.id, repository: repo.fullName, state: "open", element, thread: [{ from: "user", text, at: Date.now() }] });
+      const planned = stored({ id: "req-planned", text, createdAt: Date.now(), repoId: repo.id, branch: repo.branch, repository: repo.fullName, state: "open", element, thread: [{ from: "user", text, at: Date.now() }] });
       await records.checkConversation(workspace, { id: planned.id, content: planned as unknown as JsonValue, unfinished: true, updatedAt: Date.now() }).catch((error) => refusal(error, " Nothing was sent."));
       const request: StoredRequest = await api("ask", { repository: repo, text, element });
       try {
@@ -829,7 +834,7 @@ export function createAgentMenu(options: {
       flyout.destroy();
       turnOff();
       window.removeEventListener("storage", onStorage);
-      channel?.close();
+      document.removeEventListener("visibilitychange", reread);
       token = tokenId = undefined;
     },
   };
@@ -841,9 +846,7 @@ function clip(text: string, limit: number) {
   return line.length > limit ? `${line.slice(0, limit - 1).trimEnd()}…` : line;
 }
 
-/** Tabs of this browser tell each other a workspace's requests changed (its workspace key). */
-const CONVERSATIONS_CHANNEL = "native-site-editor:agent-conversations";
-type StoredRequest = PinRequest & { repoId: number; repository?: string; seenAt?: number };
+type StoredRequest = PinRequest & { repoId: number; branch?: string; repository?: string; seenAt?: number };
 /** A request as this browser keeps it: without its element's source or which connections had it. */
 function stored(request: StoredRequest & { returnedTo?: unknown }): StoredRequest {
   const { returnedTo: _returned, ...rest } = request;
