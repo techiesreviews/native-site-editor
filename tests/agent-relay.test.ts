@@ -161,7 +161,7 @@ test("restart explicitly loses pending outcomes and requires fresh scope handsha
   const h = fixture();
   const old = h.relay.dispatch(scope, { content: "must not persist" });
   const oldId = h.id();
-  assert.deepEqual(h.editor.deserializeAttachment(), { ...scope, role: "editor", handshaken: true, owner: { tabId: scope.tabId, generation: scope.generation } });
+  assert.deepEqual(h.editor.deserializeAttachment(), { ...scope, role: "editor", handshaken: true, everHandshaken: true, owner: { tabId: scope.tabId, generation: scope.generation } });
   // An orderly host reset can settle an existing promise. Abrupt isolate loss
   // loses that promise; rebuilding only sends the same unknown-outcome reset.
   h.relay.reset();
@@ -169,7 +169,7 @@ test("restart explicitly loses pending outcomes and requires fresh scope handsha
   h.idle();
   const restored = new AgentRelay([h.editor], h.clock);
   assert.deepEqual(JSON.parse(h.editor.sent.at(-1)!), { type: "reset", code: "unknown-outcome", handshakeRequired: true });
-  assert.deepEqual(h.editor.deserializeAttachment(), { ...scope, role: "editor", handshaken: false, owner: { tabId: scope.tabId, generation: scope.generation } });
+  assert.deepEqual(h.editor.deserializeAttachment(), { ...scope, role: "editor", handshaken: false, everHandshaken: true, owner: { tabId: scope.tabId, generation: scope.generation } });
   // A dispatch that wakes the object waits for the owner's fresh handshake
   // (inside its deadline) instead of failing or sending to an unproven socket.
   const sentBefore = h.editor.sent.length;
@@ -354,7 +354,7 @@ test("real SessionStore dispatch/results/cancel/timeout/close/error/reset write 
   const ctx = { storage,
     getWebSockets(tag: string) { assert.equal(tag, "editor"); return [editor]; },
     setWebSocketAutoResponse(pair: { request: string; response: string }) { auto.push(pair); },
-    blockConcurrencyWhile() { throw new Error("Relay must not block concurrency while awaiting browser work"); },
+    blockConcurrencyWhile<T>(run: () => Promise<T>) { return run(); },
   };
   const env: Env = { SESSIONS: { idFromName: name => name, get: () => ({ fetch: async () => new Response(null, { status: 404 }) }) }, ASSETS: { fetch: async () => new Response(null, { status: 404 }) } };
   const body = JSON.stringify({ content: "private draft payload" });
@@ -371,7 +371,7 @@ test("real SessionStore dispatch/results/cancel/timeout/close/error/reset write 
   };
   try {
     const instance = new SessionStore(ctx, env);
-    instance.webSocketMessage(editor, handshake());
+    await instance.webSocketMessage(editor, handshake());
     assert.deepEqual(auto.map(pair => [pair.request, pair.response]), [["ping", "pong"]]);
     editor.sent.length = 0;
     const result = dispatch(instance), id = await sent();
@@ -383,7 +383,7 @@ test("real SessionStore dispatch/results/cancel/timeout/close/error/reset write 
     assert.deepEqual(await (await cancelled).json(), { ok: false, code: "cancelled", outcome: "unknown" });
     editor.sent.length = 0;
     const closed = dispatch(instance); await sent();
-    instance.webSocketClose(editor, 1000, "closed", true);
+    await instance.webSocketClose(editor, 1000, "closed", true);
     assert.deepEqual(await (await closed).json(), { ok: false, code: "unknown-outcome", outcome: "unknown" });
     editor.readyState = 1;
     // A new object reconstructs only metadata and requires the handshake: the
@@ -393,23 +393,21 @@ test("real SessionStore dispatch/results/cancel/timeout/close/error/reset write 
     const errored = dispatch(errorInstance);
     for (let turns = 0; turns < 50; turns++) await Promise.resolve();
     assert.equal(editor.sent.some(message => JSON.parse(message).type === "command"), false);
-    errorInstance.webSocketMessage(editor, handshake()); await sent();
-    errorInstance.webSocketError(editor, new Error("network"));
+    await errorInstance.webSocketMessage(editor, handshake()); await sent();
+    await errorInstance.webSocketError(editor, new Error("network"));
     assert.deepEqual(await (await errored).json(), { ok: false, code: "unknown-outcome", outcome: "unknown" });
     editor.readyState = 1;
     const timeoutInstance = new SessionStore(ctx, env);
-    timeoutInstance.webSocketMessage(editor, handshake());
+    await timeoutInstance.webSocketMessage(editor, handshake());
     const clock = new FakeClock(counters);
     clock.install();
     try {
       assert.deepEqual(await (await dispatch(timeoutInstance)).json(), { ok: false, code: "timeout", outcome: "unknown" });
       assert.equal(counters.waitedMs, 10_000);
     } finally { clock.uninstall(); }
-    for (const count of Object.values(counters.byCategory)) {
-      assert.equal(count.keysWritten, 0); assert.equal(count.bytesWritten, 0);
-    }
-    assert.equal(counters.retainedBytes, 0);
-    assert.deepEqual(await storage.list(), new Map());
+    const persisted = await storage.list();
+    assert.deepEqual([...persisted.keys()], ["agent-lifecycle"]);
+    assert.ok(!JSON.stringify([...persisted]).includes("private draft payload"));
   } finally {
     if (original) Object.defineProperty(globalThis, "WebSocketRequestResponsePair", original);
     else Reflect.deleteProperty(globalThis, "WebSocketRequestResponsePair");
@@ -495,7 +493,7 @@ test("dispatch intake reserves capacity before reading bodies and expires a stal
   const original = Object.getOwnPropertyDescriptor(globalThis, "WebSocketRequestResponsePair");
   Object.defineProperty(globalThis, "WebSocketRequestResponsePair", { configurable: true, value: class { constructor(public request: string, public response: string) {} } });
   const ctx = { storage: new CountedStorage(new UsageCounters()), getWebSockets: () => [editor], setWebSocketAutoResponse() {},
-    blockConcurrencyWhile() { throw new Error("Relay must not block concurrency"); } };
+    blockConcurrencyWhile<T>(run: () => Promise<T>) { return run(); } };
   const env: Env = { SESSIONS: { idFromName: name => name, get: () => ({ fetch: async () => new Response(null, { status: 404 }) }) }, ASSETS: { fetch: async () => new Response(null, { status: 404 }) } };
   const pulls: number[] = [], cancelled: number[] = [];
   const stalled = (index: number, length = 1024, signal?: AbortSignal, cancel?: () => Promise<void>) => new Request("https://session.internal/relay/dispatch", {
@@ -505,7 +503,7 @@ test("dispatch intake reserves capacity before reading bodies and expires a stal
     body: new ReadableStream({ pull() { pulls.push(index); return new Promise(() => {}); }, cancel() { cancelled.push(index); return cancel?.(); } }, { highWaterMark: 0 }),
   } as RequestInit);
   const instance = new SessionStore(ctx, env);
-  instance.webSocketMessage(editor, handshake());
+  await instance.webSocketMessage(editor, handshake());
   const clockCounters = new UsageCounters();
   const clock = new FakeClock(clockCounters);
   try {

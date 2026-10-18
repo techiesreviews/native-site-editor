@@ -339,6 +339,7 @@ test("usage harness: idle quiet wait vs Watch wait over the real relay — 3 aut
   };
   try {
     h.attach(name, editor, JSON.stringify({ type: "handshake", ...scope, owner: true }));
+    await h.settle(name);
     h.clock.install();
     // Idle (no Watch): one dispatch, answered at once, a hint that does not ask to repeat.
     const idle = await measure("idle wait", () => h.rpc("wait_for_requests", {}));

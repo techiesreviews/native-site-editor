@@ -1,5 +1,5 @@
 import { inventoryObject } from "./agent-maintenance";
-import { tokenId, type AgentHub } from "./agent-context";
+import { tokenId, deleteCleanedGrants, type AgentHub } from "./agent-context";
 import { clearHub, hubOperation, hubView } from "./agent-store";
 import { DurableObject } from "cloudflare:workers";
 import { handle, type Env, type StoredValue } from "./app";
@@ -8,7 +8,9 @@ import { accountPending, PENDING_KEY, PENDING_ROUTE, type PendingAction } from "
 import type { RepositoryCache } from "./github";
 import type { GitHubAppConfig } from "./owner-setup";
 import { AgentRelay, readRelayBody } from "./agent-relay";
-import { accountMetadata, METADATA_ROUTE, type MetadataAction } from "./agent-metadata";
+import { accountMetadata, METADATA_KEY, METADATA_ROUTE, type Ledger, type MetadataAction } from "./agent-metadata";
+import { workspaceKey } from "../shared/agent-command";
+import { AgentLifecycle, AlarmDeadlines, LIFECYCLE_KEY } from "./agent-lifecycle";
 
 interface RepositoryCacheChunks { chunks: number }
 const repositoryChunkPrefix = "repositoryCache:";
@@ -36,7 +38,34 @@ async function readRepositoryCache(storage: DurableObjectStorage | DurableObject
 }
 
 export class SessionStore extends DurableObject {
+  private deadlines = new AlarmDeadlines(this.ctx.storage);
+  private lifecycle = new AgentLifecycle(this.ctx.storage, this.deadlines);
   private relayCore?: AgentRelay;
+  private eligible(workspace?: string) {
+    const sockets = this.ctx.getWebSockets("editor");
+    if (this.relayCore) return this.relayCore.eligibleEditors(sockets, workspace);
+    return sockets.filter(socket => {
+      const value = socket.deserializeAttachment() as { role?: string; everHandshaken?: boolean; handshaken?: boolean } | null;
+      const scope = AgentRelay.readScope(value);
+      return socket.readyState === 1 && value?.role === "editor" && (value.everHandshaken ?? value.handshaken) === true && scope &&
+        (workspace === undefined || workspaceKey(scope.workspace) === workspace);
+    }).length;
+  }
+  private fenceLoaded?: Promise<void>;
+  private loadFence() {
+    return this.fenceLoaded ??= this.lifecycle.load().then(record => {
+      this.relay().refuse(Object.keys(record.cleaned).filter(id => record.cleaned[id] > Date.now()));
+    });
+  }
+  private registrationStorage() {
+    const storage = this.ctx.storage;
+    return {
+      get: storage.get.bind(storage), put: storage.put.bind(storage), delete: storage.delete.bind(storage),
+      list: storage.list.bind(storage), transaction: storage.transaction.bind(storage),
+      getAlarm: async () => (await this.deadlines.read()).registration ?? null,
+      deleteAlarm: () => this.deadlines.set("registration"),
+    };
+  }
   private relay() {
     if (!this.relayCore) {
       // Exact application heartbeat strings for ticket 14; no JS timer/wake.
@@ -45,16 +74,24 @@ export class SessionStore extends DurableObject {
     }
     return this.relayCore;
   }
-  webSocketMessage(socket: WebSocket, message: string | ArrayBuffer) {
-    this.relay().message(socket, message);
+  async webSocketMessage(socket: WebSocket, message: string | ArrayBuffer) {
+    const relay = this.relay();
+    // Only successful scope handshakes mutate lifecycle state; results stay memory-only.
+    if (!relay.message(socket, message) || !relay.isHandshaken(socket) || typeof message !== "string") return;
+    if ((JSON.parse(message) as { type?: string }).type !== "handshake") return;
+    await this.ctx.blockConcurrencyWhile(() => this.lifecycle.presence(this.eligible(), true));
   }
-  webSocketClose(socket: WebSocket, code: number, _reason: string, _wasClean: boolean) {
+  async webSocketClose(socket: WebSocket, code: number, _reason: string, _wasClean: boolean) {
+    const detectedAt = Date.now();
     this.relay().disconnect(socket);
     try { socket.close(code === 1005 || code === 1006 ? 1000 : code); } catch { /* Already closed. */ }
+    await this.ctx.blockConcurrencyWhile(() => this.lifecycle.presence(this.eligible(), false, detectedAt));
   }
-  webSocketError(socket: WebSocket, _error: unknown) {
+  async webSocketError(socket: WebSocket, _error: unknown) {
+    const detectedAt = Date.now();
     this.relay().disconnect(socket);
     try { socket.close(1011, "Relay socket failed."); } catch { /* Already closed. */ }
+    await this.ctx.blockConcurrencyWhile(() => this.lifecycle.presence(this.eligible(), false, detectedAt));
   }
   async fetch(request: Request): Promise<Response> {
     const storage = this.ctx.storage;
@@ -90,6 +127,7 @@ export class SessionStore extends DurableObject {
         const length = Number(request.headers.get("Content-Length"));
         if (!request.headers.has("Content-Length") || !Number.isSafeInteger(length) || length < 0)
           return new Response(null, { status: 411 });
+        await this.loadFence();
         const relay = this.relay();
         const reservation = relay.reserve(length, cancelKey);
         if ("ok" in reservation) return Response.json(reservation, { status: !reservation.ok && reservation.code === "too-large" ? 413 : 200 });
@@ -109,10 +147,14 @@ export class SessionStore extends DurableObject {
       // Internal only: app.ts constructs workspace identity after authorization.
       if (request.method !== "POST") return new Response(null, { status: 405, headers: { Allow: "POST" } });
       const action = await request.json() as MetadataAction;
-      return this.ctx.blockConcurrencyWhile(() => storage.transaction(async (transaction) => {
-        const result = await accountMetadata(transaction, action, Date.now());
+      return this.ctx.blockConcurrencyWhile(async () => {
+        const reservedAt = Date.now();
+        if (action && action.action !== "release" && await this.lifecycle.denied(action.id))
+          return Response.json({ allowed: false, reason: "cleaned", entries: [] });
+        const result = await storage.transaction(transaction => accountMetadata(transaction, action, reservedAt));
+        if (result.allowed && action.action === "reserve") await this.lifecycle.presence(this.eligible(action.workspace), false, reservedAt);
         return Response.json(result, { status: result.reason === "invalid" ? 400 : 200 });
-      }));
+      });
     }
     if (url.pathname === PENDING_ROUTE) {
       if (request.method !== "POST") return new Response(null, { status: 405, headers: { Allow: "POST" } });
@@ -126,7 +168,7 @@ export class SessionStore extends DurableObject {
     if (url.pathname === "/agent-operation") {
       const action = await request.json();
       return this.ctx.blockConcurrencyWhile(() =>
-        hubOperation(storage, action, (at) => storage.setAlarm(at)),
+        hubOperation(storage, action, (at) => this.deadlines.set("session", at)),
       );
     }
     // Anonymous OAuth client registration budgets, on a fixed-name instance
@@ -144,7 +186,7 @@ export class SessionStore extends DurableObject {
         }
         if (action !== undefined || !isBudgetKey(ipHash) || typeof expiresAt !== "number" || !Number.isSafeInteger(expiresAt) || expiresAt <= Date.now())
           return new Response(null, { status: 400 });
-        return Response.json(await admitRegistration(storage, ipHash, Date.now(), (at) => storage.setAlarm(at), { clientId, expiresAt }));
+        return Response.json(await admitRegistration(this.registrationStorage(), ipHash, Date.now(), (at) => this.deadlines.set("registration", at), { clientId, expiresAt }));
       });
     }
     if (url.pathname === "/repository-cache") {
@@ -202,6 +244,8 @@ export class SessionStore extends DurableObject {
       }
       const value = (await request.json()) as StoredValue;
       return this.ctx.blockConcurrencyWhile(async () => {
+        if (value.kind === "agent" && (await storage.get<number>("agent-cleaned-until") ?? 0) > Date.now())
+          return new Response(null, { status: 409 });
         const deadline = request.headers.get("X-Agent-Deadline");
         if (deadline && Date.now() >= Number(deadline)) return new Response(null, { status: 409 });
         const previous = request.headers.get("X-Agent-Previous");
@@ -214,7 +258,7 @@ export class SessionStore extends DurableObject {
         // a record after its reservation may have been reclaimed.
         if (deadline && Date.now() >= Number(deadline)) return new Response(null, { status: 409 });
         await storage.put("session", value);
-        await storage.setAlarm(value.expiresAt);
+        await this.deadlines.set("session", value.expiresAt);
         return new Response(null, { status: 204 });
       });
     }
@@ -225,11 +269,16 @@ export class SessionStore extends DurableObject {
           const current = await storage.get<StoredValue>("session");
           if (current && await tokenId(JSON.stringify(current)) !== expected) return new Response(null, { status: 409 });
         }
+        // Physical agent cleanup also fences a delayed first PUT on this id.
+        const cleanedUntil = Number(request.headers.get("X-Agent-Cleaned-Until"));
+        if (Number.isSafeInteger(cleanedUntil) && cleanedUntil > Date.now())
+          await storage.put("agent-cleaned-until", Math.max(cleanedUntil, await storage.get<number>("agent-cleaned-until") ?? 0));
         await clearRepositoryCache(storage);
         await storage.delete("repositoryCacheGeneration");
         await clearHub(storage);
         await storage.delete(PENDING_KEY);
-        await storage.deleteAlarm();
+        const fenceExpiry = await storage.get<number>("agent-cleaned-until");
+        await this.deadlines.set("session", fenceExpiry && fenceExpiry > Date.now() ? fenceExpiry : undefined);
         return new Response(null, { status: 204 });
       });
     }
@@ -250,19 +299,62 @@ export class SessionStore extends DurableObject {
     return url.pathname === "/consume" ? this.ctx.blockConcurrencyWhile(read) : read();
   }
   async alarm() {
-    await this.ctx.blockConcurrencyWhile(async () => {
-      const client = await this.ctx.storage.get<StoredValue>("session");
-      if (client?.kind === "oauth-client") {
-        if (client.expiresAt <= Date.now()) await this.ctx.storage.delete(["session", "repositoryCacheGeneration"]);
-        else await this.ctx.storage.setAlarm(client.expiresAt);
-        return;
+    // Everything inside this gate is local storage/socket metadata only.
+    const work = await this.ctx.blockConcurrencyWhile(async () => {
+      const storage = this.ctx.storage;
+      const table = await this.deadlines.read();
+      const now = Date.now();
+      if (table.session !== undefined && table.session <= now) {
+        const session = await storage.get<StoredValue>("session");
+        if (session && session.expiresAt > now) await this.deadlines.set("session", session.expiresAt);
+        else {
+          await clearRepositoryCache(storage);
+          await storage.delete("repositoryCacheGeneration");
+          await clearHub(storage);
+          await storage.delete(PENDING_KEY);
+          await storage.delete("agent-cleaned-until");
+          await this.deadlines.set("session");
+        }
       }
-      await clearRepositoryCache(this.ctx.storage);
-      await this.ctx.storage.delete("repositoryCacheGeneration");
-      await clearHub(this.ctx.storage);
-      await this.ctx.storage.delete(PENDING_KEY);
-      await pruneRegistration(this.ctx.storage, Date.now(), (at) => this.ctx.storage.setAlarm(at));
+      if (table.registration !== undefined && table.registration <= now) {
+        // Keep the due purpose until pruning succeeds; a failed local write retries it.
+        let next: number | undefined;
+        await pruneRegistration({ ...this.registrationStorage(), deleteAlarm: async () => { next = undefined; } },
+          now, async at => { next = at; });
+        await this.deadlines.set("registration", next);
+      }
+      if (table["agent-cleanup"] === undefined || table["agent-cleanup"] > now) {
+        await this.deadlines.schedule(await this.deadlines.read());
+        return undefined;
+      }
+      const record = await this.lifecycle.load();
+      const ledger = await storage.get<Ledger>(METADATA_KEY);
+      if (!ledger) { await this.lifecycle.complete(record.generation); return undefined; }
+      if (await this.lifecycle.fence(record.generation, this.eligible(), ledger.entries, next => storage.transaction(async transaction => {
+        for (const entry of ledger.entries) entry.state = "cleaned";
+        await transaction.put(METADATA_KEY, ledger);
+        await transaction.put(LIFECYCLE_KEY, next);
+      }))) this.relay().refuse(ledger.entries.map(entry => entry.id));
+      const entries = ledger.entries.filter(entry => entry.state === "cleaned");
+      if (!entries.length) {
+        await this.lifecycle.complete(record.generation);
+        return undefined;
+      }
+      // Explicit retry survives exhaustion of the platform's automatic retries.
+      await this.deadlines.set("agent-cleanup", Math.min(now + 30_000, (await this.lifecycle.load()).disconnectDeadline ?? Infinity));
+      return { workspace: ledger.workspace, entries, generation: record.generation };
     });
+    if (!work) return;
+    // No browser or namespace fetch may run while the concurrency gate is held.
+    const removed = await deleteCleanedGrants(this.env as Env, work.workspace, work.entries);
+    await this.ctx.blockConcurrencyWhile(async () => {
+      for (const entry of removed)
+        await accountMetadata(this.ctx.storage, { workspace: work.workspace, action: "release", id: entry.id,
+          generation: entry.generation, expected: entry }, Date.now());
+      const remaining = await this.ctx.storage.get<Ledger>(METADATA_KEY);
+      if (!remaining?.entries.some(entry => entry.state === "cleaned")) await this.lifecycle.complete(work.generation);
+    });
+    if (removed.length !== work.entries.length) throw new Error("Agent cleanup incomplete; retry scheduled");
   }
 }
 

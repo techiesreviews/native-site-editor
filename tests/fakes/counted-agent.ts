@@ -90,8 +90,9 @@ export class CountedStorage {
     }
     return typeof key === "string" ? Boolean(deleted) : deleted;
   }
-  async list({ prefix = "" } = {}) {
-    const keys = [...this.values.keys()].filter(key => key.startsWith(prefix)).sort();
+  async list({ prefix = "", start, end, limit = Infinity }: { prefix?: string; start?: string; end?: string; limit?: number } = {}) {
+    const keys = [...this.values.keys()].filter(key => key.startsWith(prefix) &&
+      (start === undefined || key >= start) && (end === undefined || key < end)).sort().slice(0, limit);
     return this.get(keys);
   }
   async transaction<T>(fn: (storage: CountedStorage) => Promise<T>) {
@@ -194,7 +195,7 @@ export class FakeClock {
   }
 }
 
-type Instance = { fetch(request: Request): Promise<Response>; alarm(): Promise<void>; webSocketMessage(socket: RelaySocket, message: string): void };
+type Instance = { fetch(request: Request): Promise<Response>; alarm(): Promise<void>; webSocketMessage(socket: RelaySocket, message: string): Promise<void>; webSocketClose(socket: RelaySocket, code: number, reason: string, clean: boolean): Promise<void>; webSocketError(socket: RelaySocket, error: unknown): Promise<void> };
 type FakeContext = { getWebSockets(): RelaySocket[]; setWebSocketAutoResponse(value: unknown): void; storage: CountedStorage; blockConcurrencyWhile<T>(fn: () => Promise<T>): Promise<T> };
 async function loadWorker() {
   const { outputFiles } = await build({
@@ -217,7 +218,8 @@ export async function startCountedWorker() {
   const runtime = await loadWorker();
   const counters = new UsageCounters(), clock = new FakeClock(counters), github = githubState();
   const sockets = new Map<string, RelaySocket[]>();
-  const objects = new Map<string, { instance: Instance; storage: CountedStorage; idle(): Promise<unknown> }>();
+  const gates = new Set<string>();
+  const objects = new Map<string, { instance: Instance; storage: CountedStorage; ctx: FakeContext; idle(): Promise<unknown> }>();
   function object(name: string) {
     let entry = objects.get(name);
     if (!entry) {
@@ -225,12 +227,15 @@ export async function startCountedWorker() {
       // One queue per object mirrors blockConcurrencyWhile across concurrent calls.
       let blocked = Promise.resolve<unknown>(undefined);
       const ctx: FakeContext = { getWebSockets: () => sockets.get(name) ?? [], setWebSocketAutoResponse() {}, storage, blockConcurrencyWhile(fn) {
-        const result = blocked.then(fn);
+        const result = blocked.then(async () => {
+          gates.add(name);
+          try { return await fn(); } finally { gates.delete(name); }
+        });
         blocked = result.catch(() => undefined);
         return result;
       } };
       // Events (fetches, alarms) wait for an active block, as the runtime holds them.
-      entry = { storage, instance: new runtime.SessionStore(ctx, env), idle: () => blocked };
+      entry = { storage, ctx, instance: new runtime.SessionStore(ctx, env), idle: () => blocked };
       objects.set(name, entry);
     }
     return entry;
@@ -278,9 +283,20 @@ export async function startCountedWorker() {
       // Metadata admission can wake this object before any relay/socket work.
       if (sockets.has(name)) throw new Error("A socket is already attached to this relay");
       sockets.set(name, [socket]);
-      object(name).instance.webSocketMessage(socket, handshake);
+      void object(name).instance.webSocketMessage(socket, handshake);
     },
-    message(name: string, socket: RelaySocket, message: string) { object(name).instance.webSocketMessage(socket, message); },
+    message(name: string, socket: RelaySocket, message: string) { void object(name).instance.webSocketMessage(socket, message); },
+    handshake(name: string, socket: RelaySocket, message: string) { return object(name).instance.webSocketMessage(socket, message); },
+    settle(name: string) { return object(name).idle(); },
+    inCriticalSection: (name: string) => gates.has(name),
+    /** Simulate a wake with runtime-retained editor attachments. */
+    restoreEditors(name: string, editors: RelaySocket[]) {
+      sockets.set(name, editors);
+      const entry = object(name);
+      entry.instance = new runtime.SessionStore(entry.ctx, env);
+    },
+    close(name: string, socket: RelaySocket) { return object(name).instance.webSocketClose(socket, 1000, "closed", true); },
+    error(name: string, socket: RelaySocket) { return object(name).instance.webSocketError(socket, new Error("Lost socket")); },
     async alarm(name: string) {
       const operation: Operation = { category: "lifecycle", name, path: "alarm" };
       counters.log.push(operation);
