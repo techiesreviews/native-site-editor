@@ -1,3 +1,4 @@
+import { inventoryObject } from "./agent-maintenance";
 import type { AgentHub } from "./agent-context";
 import { clearHub, hubOperation, hubView, readDraft, storeDrafts } from "./agent-store";
 import { DurableObject } from "cloudflare:workers";
@@ -57,6 +58,7 @@ export class SessionStore extends DurableObject {
   async fetch(request: Request): Promise<Response> {
     const storage = this.ctx.storage;
     const url = new URL(request.url);
+    if (url.pathname === "/maintenance/inventory") return inventoryObject(request, storage);
     if (url.pathname.startsWith("/relay/")) {
       let identity: unknown;
       try { identity = JSON.parse(request.headers.get(AgentRelay.identityHeader) ?? "null"); } catch { /* Refuse malformed trusted metadata. */ }
