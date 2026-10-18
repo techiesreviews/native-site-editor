@@ -46,7 +46,7 @@ args + branch; duplicate → recorded outcome, id/grant reuse refused, in-flight
 then through ticket 08's durable media commit (bytes first, then drafts + receipt in one owner-fenced transaction).
 - **place_media, frame_image (trim), loop_video** now stage too: their media-controller transforms run against
   buffering ports, so trim/placement bytes are staged first and the page draft + receipt commit together; the page
-  source seen on arrival (before any module load) is the commit proof. The live `receiptless` refusal is gone.
+  source the tab sees on admission (before the receipt lookup and any module load) is the commit proof. The live `receiptless` refusal is gone.
 - **Deadline.** The relay stamps `remainingMs` on each command frame at send (after any delayed handshake); the tab
   fences the commit at arrival + remaining − 1 s and cancels before commit (records tombstone) when it passes; the 10 s
   is never restarted and clocks are never compared. A commit that still lands after the relay gave up (frame delayed
@@ -65,17 +65,20 @@ then through ticket 08's durable media commit (bytes first, then drafts + receip
 **Out-of-Files edits (needed).** shared/agent-media.ts (new: request contract, read/change split), worker/agent-relay.ts
 (`remainingMs` per frame; deadline fence needs the relay's own clock), src/agent-transport.ts (media dispatch kind,
 receiptless set removed, arrival deadline), src/components/agent-menu.ts (lazy media registry), src/main.ts (adapter
-moved into the lazy chunk, boot ±0), src/agent-site.ts (read forms of frame/loop never navigate),
+moved into the lazy chunk, boot ±0), src/agent-site.ts (read forms of frame/loop never navigate), src/agent-tools-read.ts + src/agent-site-host.ts (optional
+live `source` port for that proof),
 tests/agent-transport.test.ts, tests/agent-relay.test.ts, tests/mcp-runtime.test.ts, tests/native-save/native-mcp-media.spec.ts
 (now over the fixture socket, no `useLegacyRelay`).
 
-**Commits.** 539fb211 (Sol build), 52611a17, 70574618, 3d48d86a (review 1), ed44987b (review 2) (Claude).
+**Commits.** 539fb211 (Sol build), 52611a17, 70574618, 3d48d86a (review 1), ed44987b (review 2), 84192dd3 (review 3) (Claude); hashes before
+`kit pr`'s rebase.
 
 **Tests.** New tests/agent-tools-media.test.ts (13): registry and read forms without receipts; read-only loop never
 navigates; duplicate/in-flight join/id and grant reuse; deadline, relay budget, cancel, disconnect before commit apply
 nothing; oversized reads; trim bytes durable before the records transaction, no second encode; `forEachAwait` revision
 change at every await for adding_settings, frame_image and loop_video; the main adapter refuses when the page is edited
-during module/workspace loading (mutation checked); real relay: **3 auth + 1 dispatch, 0 result polls, 0 server draft
+during module/workspace loading, and the executor refuses when the page is edited while its receipt lookup waits
+(both mutation checked); real relay: **3 auth + 1 dispatch, 0 result polls, 0 server draft
 fetches**; commit after the deadline → Worker unknown, status applied; post-run receipt AbortError → unknown, status
 applied (mutation checked); relay failures never retry, too-large after delivery → unknown (mutation checked). Relay:
 frame carries the remaining budget after a delayed handshake. Transport: deadline = arrival + remaining − 1 s.
@@ -91,9 +94,15 @@ margin can still commit after the relay gave up): one-way latency cannot be boun
 is 1 s, and such a commit is reported unknown by the Worker and reconciled by its receipt, never silent; telling the tab
 when the relay expires a call is ticket 19's relay/executor cancellation. Not added: a place_media await race in Node
 (it decodes through DOM Image; it stages through the same proof as frame/loop).
+Round 3 (run by `kit pr`, `RESULT: ok review … evidence .scratch/reviews/dor-17/20261018T145248Z`): fixed 1 (the page
+proof was still taken after the executor's hashing and receipt lookup: now on admission, through an optional live
+`source` port). Rejected 0. `kit pr` was stopped before merge to land the fix.
 
 **Kit.**
 - RESULT: ok doctor 7/7 checks passed
 - RESULT: ok size boot 355 KB (±0 KB) vs dev@b9839d2, budget 355 KB
 - RESULT: ok specs 5/5 passed (native-mcp-media 5, native-agent-edits, native-agent-reads, native-agent-live 2, native-mcp 18)
 - RESULT: ok specs 2/2 passed (native-mcp-media 5, native-agent-live 2; after review 2)
+- First `kit pr`: check, unit, lint, specs ok; PR #65 opened; stopped while CI ran (review 3 fix)
+- RESULT: ok size boot 355 KB (±0 KB) vs dev@57d25a1, budget 355 KB (after review 3)
+- RESULT: ok specs 4/4 passed (native-mcp-media 5, native-agent-live 2, native-agent-reads, native-agent-edits; after review 3)
