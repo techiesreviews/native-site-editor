@@ -17,13 +17,11 @@ export function createAgentMediaTools(options: {
 }) {
   const { workspace, ports, records } = options;
   const flights = new Map<string, { identity: string; grantId: string; promise: Promise<AgentReadResult> }>();
-  type Input = { request: AgentMedia; generation: number; current: () => boolean };
-  const executor = async ({ request, generation, current }: Input): Promise<AgentReadResult> => {
+  type Input = { request: AgentMedia; generation: number; current: () => boolean; deadline?: number };
+  const executor = async ({ request, generation, current, deadline = Date.now() + 10_000 }: Input): Promise<AgentReadResult> => {
     const stamp = ports.stamp(), source = ports.files(), branch = source?.snapshot.branch, commit = source?.snapshot.commit, repoId = source?.repo.id;
     const changing = mediaChanges(request.tool, request.args);
-    // The relay's 10 s deadline counted from arrival in this tab: the Worker's clock is not this browser's.
-    // Arrival is later than the relay's start, so a late commit is reported unknown and reconciled by its receipt.
-    const deadline = Date.now() + 10_000;
+    // The relay's total deadline as the transport measured it on arrival (src/agent-transport.ts): never a fresh 10 s.
     let applied = false;
     const check = () => {
       if (applied) return;
@@ -64,9 +62,11 @@ export function createAgentMediaTools(options: {
         try {
           const outcome = await options.run(command);
           if (changing) {
-            const receipt = await records.receipt(workspace, request.id, request.grantId);
+            // After the run, a failed lookup cannot prove "nothing changed": the outcome is unknown, never a conflict.
+            const receipt = await records.receipt(workspace, request.id, request.grantId).catch(() => undefined);
             if (receipt) { applied = true; return reply(receipt.outcome); }
-            throw new Error("The media outcome could not be proven. Check get_command_status; do not replay the change.");
+            return { ok: true, value: { requestId: request.id, state: "unknown",
+              message: "The media outcome could not be proven. Check get_command_status; do not replay the change." } };
           }
           beforeCommit();
           const result = reply(json(outcome ?? {}));
@@ -87,5 +87,5 @@ export function createAgentMediaTools(options: {
     }
   };
   const registry = createAgentTools<Input>(Object.fromEntries(mediaTools.map(tool => [tool, executor])));
-  return { run: (request: AgentMedia, generation: number, current: () => boolean) => registry.run(request.tool, { request, generation, current }) };
+  return { run: (request: AgentMedia, generation: number, current: () => boolean, deadline?: number) => registry.run(request.tool, { request, generation, current, deadline }) };
 }
