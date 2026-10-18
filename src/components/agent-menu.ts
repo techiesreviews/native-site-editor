@@ -746,7 +746,8 @@ export function createAgentMenu(options: {
         }
         // A change claimed before Turn off is still answered, so the agent knows its outcome.
         await api("ack", { tabId, id: command.id, grantId: command.grantId, ...ack }, false, at);
-        say(ack.message);
+        // While storage stops agent edits, the alert below already says why each one is refused.
+        if (!storage.problem) say(ack.message);
       }
     } catch (error) {
       if (!disposed && live(at)) showError(error);
