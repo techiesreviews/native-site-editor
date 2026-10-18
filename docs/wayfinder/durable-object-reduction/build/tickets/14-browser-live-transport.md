@@ -134,3 +134,14 @@ tab now receives no hub-queued MCP commands until tickets 15–17 move tools ont
 legacy path). In socket mode Ask agent progress arrives only on explicit hub reads (ticket 18). A browser cannot
 read a refused upgrade's status, so quota/sign-out are learned only from the first-failure probe or other hub
 calls; later reconnect failures count as transient.
+
+Landed: PR #56, merged as fce9d233 (`RESULT: ok merged #56 fce9d23`; kit pr: check, unit, lint, specs 145, review, CI ok).
+
+Follow-up (landing review round 6, gpt-6.1-sol, medium, read-only; evidence
+/home/ubulex/Projects/native-site-editor/.scratch/reviews/dor-14/20261018T091031Z; read after the merge): fixed 2 in a
+follow-up PR — the menu dropped the transport's quota, pause and takeover updates while a refresh briefly removed the
+repository (it now accepts every update of the same activation unless the workspace really moved); the first-failure
+relay probe had no deadline (headers and body now share a 10 s limit with abort, then count as a network failure; test
+mutation checked). Rejected in part: a menu-level test of the absence window (no agent-menu DOM harness; the guard is
+one condition). `scripts/agents/unit.sh` pass 4372 fail 0; RESULT: ok specs 2/2 passed (native-agent-live, native-agent-quiet).
+

@@ -147,7 +147,9 @@ export function createAgentMenu(options: {
         return outcome;
       },
       listen: next => {
-        if (!live(at)) return;
+        // Same activation, even while a refresh briefly removes the repository: quota, pause and
+        // takeover updates must not be lost (a real move sets workspaceChanged and a new activation).
+        if (disposed || !remote || activation !== at || workspaceChanged) return;
         transportState = next;
         if (next.mode === "fallback") {
           transportMode = "legacy";

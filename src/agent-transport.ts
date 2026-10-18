@@ -35,7 +35,7 @@ interface Options {
   socket?: (url: string) => Socket;
   /** One plain route probe, only after the first socket attempt fails. */
   now?: () => number;
-  probe?: () => Promise<number | { status: number; body?: unknown; text?: string; retryAfter?: string | null }>;
+  probe?: (signal: AbortSignal) => Promise<number | { status: number; body?: unknown; text?: string; retryAfter?: string | null }>;
   registry?: Registry;
   recovery?: (reconnect: (current: () => boolean) => Promise<void>) => Recovery;
   clock?: { setTimeout: (callback: () => void, delay: number) => number; clearTimeout: (timer: number) => void };
@@ -329,12 +329,16 @@ export function createLiveTransport(options: Options) {
   /** One plain probe: only a missing relay route (404) selects the legacy fallback. Any other
    * answer is classified in full, so a quota body or Retry-After reaches the coordinator. */
   async function absent(): Promise<{ missing: boolean; failure: AgentFailure }> {
-    const answer = await (options.probe ?? (async () => {
-      const response = await fetch("/api/agent/relay"), text = await response.text();
+    // Headers and body share one 10 s deadline: a stalled probe is a network failure, never a wait.
+    const stop = new AbortController();
+    let limit: number | undefined;
+    const expired = new Promise<undefined>(resolve => { limit = clock.setTimeout(() => { stop.abort(); resolve(undefined); }, 10_000); });
+    const answer = await Promise.race([(options.probe ?? (async (signal: AbortSignal) => {
+      const response = await fetch("/api/agent/relay", { signal }), text = await response.text();
       let body: unknown;
       try { body = JSON.parse(text); } catch { /* Cloudflare's 1027 answer is HTML. */ }
       return { status: response.status, body, text, retryAfter: response.headers.get("Retry-After") };
-    }))().catch(() => undefined);
+    }))(stop.signal).catch(() => undefined), expired]).finally(() => clock.clearTimeout(limit!));
     const probe = typeof answer === "number" ? { status: answer } : answer;
     if (probe?.status === 404) return { missing: true, failure: { kind: "other" } };
     const failure = classifyAgentFailure({ ...probe, networkError: !probe, now: (options.now ?? Date.now)() });
