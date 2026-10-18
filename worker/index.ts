@@ -1,5 +1,5 @@
 import { inventoryObject } from "./agent-maintenance";
-import type { AgentHub } from "./agent-context";
+import { tokenId, type AgentHub } from "./agent-context";
 import { clearHub, hubOperation, hubView } from "./agent-store";
 import { DurableObject } from "cloudflare:workers";
 import { handle, type Env, type StoredValue } from "./app";
@@ -205,7 +205,8 @@ export class SessionStore extends DurableObject {
         const deadline = request.headers.get("X-Agent-Deadline");
         if (deadline && Date.now() >= Number(deadline)) return new Response(null, { status: 409 });
         const previous = request.headers.get("X-Agent-Previous");
-        if (previous && JSON.stringify(await storage.get<StoredValue>("session")) !== previous)
+        const current = previous ? await storage.get<StoredValue>("session") : undefined;
+        if (previous && (!current || await tokenId(JSON.stringify(current)) !== previous))
           return new Response(null, { status: 409 });
         await clearRepositoryCache(storage);
         await storage.put("repositoryCacheGeneration", (await storage.get<number>("repositoryCacheGeneration") ?? 0) + 1);
@@ -222,7 +223,7 @@ export class SessionStore extends DurableObject {
         const expected = request.headers.get("X-Agent-Delete");
         if (expected) {
           const current = await storage.get<StoredValue>("session");
-          if (current && JSON.stringify(current) !== expected) return new Response(null, { status: 409 });
+          if (current && await tokenId(JSON.stringify(current)) !== expected) return new Response(null, { status: 409 });
         }
         await clearRepositoryCache(storage);
         await storage.delete("repositoryCacheGeneration");
