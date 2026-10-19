@@ -89,3 +89,15 @@ results JSON and `error-context.md` files (up to 300 KB) to find one assertion.
   `.scratch/ke-05-review-npm-test.log`) and `npm run lint` passed. Kit doctor again reported
   `RESULT: ok doctor 7/7 checks passed`; affected specs reported `RESULT: ok specs none affected`.
   Declined: none. Follow-up changes remain unstaged for the runner's commit and independent re-review.
+- Matcher-label review follow-up: accepted the P2 defect at
+  `6140a6ae:scripts/agents/specs-digest.mjs:22` and its validation gap. One parser now recognizes
+  matcher-specific expected/received label suffixes and supplies the same bounded values to the
+  excerpt and extracted fields. New `to-contain.json` and `to-have-length.json` fixtures use error
+  messages captured from the installed Playwright matchers. Coverage checks value/array labels,
+  received length before array details, 10,000-character values throughout the digest, absence of
+  original long strings and the ten-line bound. The new regressions failed before the fix
+  (33 passed, 3 failed; `.scratch/unit/20261019T102436-2.log`) and passed afterward
+  (36/36; `.scratch/unit/20261019T102523-2.log`). `npm run check`, `npm test` (4,757/4,757;
+  `.scratch/ke-05-labels-npm-test.log`) and `npm run lint` passed. Kit evidence:
+  `RESULT: ok doctor 7/7 checks passed`; `RESULT: ok specs none affected`.
+  Declined: none. Changes remain unstaged for the runner's commit and independent re-review.

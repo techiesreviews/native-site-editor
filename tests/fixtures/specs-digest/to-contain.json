@@ -1,0 +1,20 @@
+{
+  "suites": [{
+    "specs": [{
+      "file": "tests/native-save/label.spec.ts",
+      "line": 42,
+      "title": "contains the saved title",
+      "tests": [{
+        "projectName": "native-save",
+        "status": "unexpected",
+        "expectedStatus": "passed",
+        "results": [{
+          "status": "failed",
+          "errors": [{
+            "message": "expect(received).toContain(expected) // indexOf\n\nExpected value: \"Saved\"\nReceived array: [\"Draft\"]"
+          }]
+        }]
+      }]
+    }]
+  }]
+}

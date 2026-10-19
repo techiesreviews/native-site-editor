@@ -18,19 +18,21 @@ function digest(spec, test, titles, { logPath, entries }) {
   const error = attempt?.errors?.[0] ?? attempt?.error;
   const message = clean(error?.message ?? error?.value ?? error?.stack ?? "No error recorded").trim();
   // Bound assertion values before either the excerpt or extracted fields render them.
-  const messageLines = message.split(/\r?\n/).map(line => oneLine(line).replace(
-    /^((?:expected|received)(?: (?:string|pattern|substring))?:\s*)(.*)$/i,
-    (_, label, value) => `${label}${short(value)}`,
-  ));
+  const messageLines = message.split(/\r?\n/).map(line => {
+    const text = oneLine(line);
+    // Playwright labels include value, array, length and other matcher-specific suffixes.
+    const assertion = /^((expected|received)(?:\s+[^:]+)?):\s*(.*)$/i.exec(text);
+    const value = assertion ? short(assertion[3]) : undefined;
+    return { text: assertion ? `${assertion[1]}: ${value}` : text, name: assertion?.[2].toLowerCase(), value };
+  });
   const known = knownFailure(spec, entries);
   const label = known ? ` [${known.status === "flaky" ? "known flaky" : "known failing on dev"}]` : "";
   const project = test.projectName && test.projectName !== "native-save" ? ` [${oneLine(test.projectName)}]` : "";
   const lines = [`${oneLine(spec.file)}:${spec.line ?? 0}${project} ${oneLine([...titles, spec.title].filter(Boolean).join(" > "))}${label}`];
-  lines.push(...messageLines.slice(0, 3).map(line => `  ${oneLine(line)}`));
+  lines.push(...messageLines.slice(0, 3).map(line => `  ${line.text}`));
   for (const name of ["expected", "received"]) {
-    const value = messageLines.map(line => new RegExp(`^\\s*${name}(?: (?:string|pattern|substring))?:\\s*(.*)$`, "i").exec(line))
-      .find(Boolean)?.[1];
-    if (value !== undefined) lines.push(`  ${name}: ${short(oneLine(value))}`);
+    const value = messageLines.find(line => line.name === name)?.value;
+    if (value !== undefined) lines.push(`  ${name}: ${value}`);
   }
   const frame = appFrame(error?.stack ?? message);
   if (frame) lines.push(`  ${oneLine(frame)}`);
