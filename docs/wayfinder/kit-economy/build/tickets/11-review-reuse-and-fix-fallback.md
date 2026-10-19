@@ -82,3 +82,17 @@ and it only takes review findings (ticket 09's runner had to hand-roll
 - Dogfood: `kit doctor` and `kit unit --affected` helped by checking the worktree and selecting
   both focused files plus the helper's parser tests. `kit slice` could not be executed under
   this turn's no-commit/no-agent contract; live slice dogfood remains for the runner.
+
+- Review follow-up (1e056f13): accepted the fresh-builder discovery defect and two-round
+  coverage gap. Fresh builders now use the normal `.scratch/agent/build-*` directory;
+  discovery compares run start times so an older slice builder cannot hide a newer run.
+  The regression starts with no resumable builder, selects an explicit model, receives
+  remaining findings, then runs `kit fix` again and checks the same session/model resumes.
+  It also covers an older slice builder becoming resumable between rounds.
+  Reproduction: `RESULT: fail unit 19/20 (1 files)` before the fix
+  (`.scratch/unit/20261019T120257-21.log`). Declined: none.
+- Follow-up validation: `RESULT: ok doctor 7/7 checks passed`;
+  `RESULT: ok unit 78/78 (3 files) log .scratch/unit/20261019T120328-31.log`;
+  `RESULT: ok specs none affected`. `npm run check`, `npm run lint` (417 tickets,
+  0 export-check failures) and `git diff --check` passed. Follow-up changes remain unstaged
+  for the runner to commit and re-review; this turn created no commits.
