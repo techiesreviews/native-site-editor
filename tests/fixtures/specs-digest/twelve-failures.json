@@ -1,0 +1,16 @@
+{
+  "suites": [{ "file": "tests/native-save/label.spec.ts", "specs": [
+    { "title": "failure 1", "line": 1, "tests": [{ "status": "unexpected", "results": [{ "status": "failed", "errors": [{ "message": "Error 1" }] }] }] },
+    { "title": "failure 2", "line": 2, "tests": [{ "status": "unexpected", "results": [{ "status": "failed", "errors": [{ "message": "Error 2" }] }] }] },
+    { "title": "failure 3", "line": 3, "tests": [{ "status": "unexpected", "results": [{ "status": "failed", "errors": [{ "message": "Error 3" }] }] }] },
+    { "title": "failure 4", "line": 4, "tests": [{ "status": "unexpected", "results": [{ "status": "failed", "errors": [{ "message": "Error 4" }] }] }] },
+    { "title": "failure 5", "line": 5, "tests": [{ "status": "unexpected", "results": [{ "status": "failed", "errors": [{ "message": "Error 5" }] }] }] },
+    { "title": "failure 6", "line": 6, "tests": [{ "status": "unexpected", "results": [{ "status": "failed", "errors": [{ "message": "Error 6" }] }] }] },
+    { "title": "failure 7", "line": 7, "tests": [{ "status": "unexpected", "results": [{ "status": "failed", "errors": [{ "message": "Error 7" }] }] }] },
+    { "title": "failure 8", "line": 8, "tests": [{ "status": "unexpected", "results": [{ "status": "failed", "errors": [{ "message": "Error 8" }] }] }] },
+    { "title": "failure 9", "line": 9, "tests": [{ "status": "unexpected", "results": [{ "status": "failed", "errors": [{ "message": "Error 9" }] }] }] },
+    { "title": "failure 10", "line": 10, "tests": [{ "status": "unexpected", "results": [{ "status": "failed", "errors": [{ "message": "Error 10" }] }] }] },
+    { "title": "failure 11", "line": 11, "tests": [{ "status": "unexpected", "results": [{ "status": "failed", "errors": [{ "message": "Error 11" }] }] }] },
+    { "title": "failure 12", "line": 12, "tests": [{ "status": "unexpected", "results": [{ "status": "failed", "errors": [{ "message": "Error 12" }] }] }] }
+  ] }]
+}

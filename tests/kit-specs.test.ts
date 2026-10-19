@@ -7,10 +7,84 @@ import { dirname, join, resolve } from "node:path";
 import test, { type TestContext } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { combineOutcomes, importsOf, namedSpecs, planShards, removedStrings, routeSpecs, selectAffected, selectionLine, SHARD_MIN_SPECS, shardCount, specGroups, summarizeRun } from "../scripts/agents/specs-affected.mjs";
+import { specsDigest } from "../scripts/agents/specs-digest.mjs";
 
 const kit = resolve("scripts/agents/kit");
 const save = (name: string) => `tests/native-save/${name}.spec.ts`;
 const preview = "tests/native-preview/preview.spec.ts";
+
+const digestFixture = (name: string) => JSON.parse(readFileSync(new URL(`./fixtures/specs-digest/${name}.json`, import.meta.url), "utf8"));
+const digestRun = (name: string) => ({ report: digestFixture(name), logPath: "/logs/default.log" });
+
+test("digest shows text assertions, expected/received, app frame and attachment paths within ten lines", () => {
+  const digest = specsDigest([digestRun("assertion")]);
+  assert.equal(digest, [
+    "tests/native-save/label.spec.ts:42 Editor > toolbar > shows the saved title",
+    "  Error: expect(locator).toHaveText(expected) failed",
+    "  Locator: getByRole('heading')",
+    '  Expected string: "Saved"',
+    '  expected: "Saved"',
+    '  received: "Draft"',
+    "  at /repo/tests/native-save/label.spec.ts:45:7",
+    "  log: /logs/default.log",
+    "  context: /artifacts/error-context.md",
+    "  trace: /artifacts/trace.zip",
+  ].join("\n"));
+  assert.doesNotMatch(digest, /\x1b|Call log|DO NOT PRINT|extra-trace|screen\.png|\[native-save\]/);
+});
+
+test("timeout digest keeps three message lines without inventing values, frames or attachments", () => {
+  const digest = specsDigest([digestRun("timeout")]);
+  assert.match(digest, /^tests\/native-save\/label.spec.ts:18 \[firefox\] waits for the toolbar\n/);
+  assert.match(digest, /Test timeout of 30000ms exceeded\.\n  Waiting for toolbar\n  Still waiting\n  log:/);
+  assert.doesNotMatch(digest, /expected:|received:|Hidden fourth|context:|trace:|\bat /);
+});
+
+test("thrown error skips dependency, Playwright and node frames for the first app frame", () => {
+  const digest = specsDigest([digestRun("thrown")]);
+  assert.match(digest, /TypeError: Cannot read properties of undefined/);
+  assert.match(digest, /at openEditor \(\/repo\/src\/editor.ts:21:9\)/);
+  assert.doesNotMatch(digest, /node_modules|runner.js|node:|label.spec.ts:72/);
+});
+
+test("retried flaky tests, expected failures and skipped tests have no digest", () => {
+  assert.equal(specsDigest([digestRun("flaky")]), "");
+  assert.equal(specsDigest([{ report: undefined, logPath: "/logs/missing.log" }]), "");
+});
+
+test("digest retains known flaky and known failing labels using the inherited spec file", () => {
+  for (const [status, label] of [["flaky", "known flaky"], ["failing", "known failing on dev"]]) {
+    const digest = specsDigest([digestRun("assertion")], { entries: [{ spec: "native-save/label.spec.ts", title: "shows the saved title", status }] });
+    assert.ok(digest.split("\n")[0].endsWith(` [${label}]`));
+  }
+});
+
+test("expected and received values are each cut to 160 characters", () => {
+  const report = digestFixture("assertion");
+  report.suites[0].suites[0].specs[0].tests[0].results[0].errors[0].message = `Error: toHaveText failed\nExpected: ${"x".repeat(200)}\nReceived string: ${"y".repeat(200)}`;
+  const digest = specsDigest([{ report, logPath: "/logs/long.log" }]);
+  for (const [label, value] of [["expected", "x"], ["received", "y"]]) {
+    const line = digest.split("\n").find(line => line.startsWith(`  ${label}: `));
+    assert.equal(line, `  ${label}: ${value.repeat(159)}…`);
+  }
+});
+
+test("twelve failed tests in one spec cap at ten with a remainder and no digest exceeds ten lines", () => {
+  const digest = specsDigest([digestRun("twelve-failures")], { directory: "/logs/run-1" });
+  assert.equal(digest.split("\n\n").length, 11);
+  assert.match(digest, /label.spec.ts:10 failure 10\n/);
+  assert.doesNotMatch(digest, /failure 11|failure 12/);
+  assert.ok(digest.endsWith("… and 2 more failing tests (/logs/run-1)"));
+  // The cap applies across runs too, while retaining each run's log path.
+  const runs = Array.from({ length: 12 }, (_, index) => ({ ...digestRun("assertion"), logPath: `/logs/shard-${index}.log` }));
+  const combined = specsDigest(runs, { directory: "/logs/run-2" });
+  assert.match(combined, /log: \/logs\/shard-9.log/);
+  assert.doesNotMatch(combined, /shard-10.log/);
+  assert.ok(combined.endsWith("… and 2 more failing tests (/logs/run-2)"));
+  for (const output of [digest, combined, ...["assertion", "timeout", "thrown", "flaky"].map(name => specsDigest([digestRun(name)]))]) {
+    for (const block of output.split("\n\n")) assert.ok(block.split("\n").length <= 10, block);
+  }
+});
 
 function fixture(t: TestContext) {
   const root = mkdtempSync(join(tmpdir(), "kit-specs-"));
@@ -595,6 +669,31 @@ test("fake runner exercises port wrapper, reports, known failure labels and fail
   assert.equal(pass.status, 0, pass.stderr);
   assert.match(pass.stdout, /✓ tests\/native-preview\/preview.spec.ts \(1 passed\)/);
   assert.match(pass.stdout, /RESULT: ok specs 2\/2 passed\n$/);
+});
+
+test("fake runner prints the failure digest after spec outcomes and adds nothing on success", t => {
+  const f = fixture(t);
+  const spec = { ...digestFixture("assertion").suites[0].suites[0].specs[0], file: save("label") };
+  f.put("reports.json", JSON.stringify({ "native-save": { suites: [{ specs: [spec] }] } }));
+  const failed = f.run(["label.spec.ts"], { FAKE_EXIT: "1" });
+  assert.equal(failed.status, 1, failed.stderr);
+  assert.match(failed.stdout, /✗ tests\/native-save\/label.spec.ts:.*\ntests\/native-save\/label.spec.ts:42 shows the saved title\n/);
+  assert.match(failed.stdout, /  expected: "Saved"\n  received: "Draft"/);
+  const logPath = failed.stdout.match(/^log: (.+)$/m)?.[1];
+  assert.ok(logPath);
+  assert.ok(failed.stdout.includes(`  log: ${logPath}\n`));
+  assert.match(failed.stdout, /  context: \/artifacts\/error-context.md\n  trace: \/artifacts\/trace.zip\nRESULT: fail specs 1 of 1 failed: label.spec.ts\n$/);
+  assert.doesNotMatch(failed.stdout, /fake browser output|DO NOT PRINT ATTACHMENT CONTENTS/);
+
+  f.put("reports.json", JSON.stringify({ "native-save": digestFixture("flaky") }));
+  const passed = f.run(["label.spec.ts"]);
+  assert.equal(passed.status, 0, passed.stderr);
+  const lines = passed.stdout.trim().split("\n");
+  assert.equal(lines.length, 4, passed.stdout);
+  assert.match(lines[0], /^owner: /);
+  assert.match(lines[1], /^log: /);
+  assert.equal(lines[2], "✓ tests/native-save/label.spec.ts (2 passed, 1 skipped)");
+  assert.equal(lines[3], "RESULT: ok specs 1/1 passed");
 });
 
 test("missing, malformed and zero-result reports fail; stale port reports are not reused", t => {

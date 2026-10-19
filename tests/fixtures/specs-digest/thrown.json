@@ -1,0 +1,21 @@
+{
+  "suites": [{
+    "specs": [{
+      "file": "tests/native-save/label.spec.ts",
+      "line": 70,
+      "title": "loads the editor",
+      "tests": [{
+        "status": "unexpected",
+        "expectedStatus": "passed",
+        "results": [{
+          "status": "failed",
+          "errors": [{
+            "message": "TypeError: Cannot read properties of undefined",
+            "stack": "TypeError: Cannot read properties of undefined\n    at helper (/repo/node_modules/some-package/src/helper.js:1:2)\n    at runner (/repo/playwright/lib/worker/runner.js:3:4)\n    at task (node:internal/tests/task.js:5:6)\n    at openEditor (/repo/src/editor.ts:21:9)\n    at /repo/tests/native-save/label.spec.ts:72:3"
+          }],
+          "attachments": []
+        }]
+      }]
+    }]
+  }]
+}
