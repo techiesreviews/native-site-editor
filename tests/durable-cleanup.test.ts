@@ -508,3 +508,20 @@ test("a fresh complete scan can prove a lost-response object is empty; pre-reser
   assert.equal(verified.status, "complete"); assert.equal(verified.report.unresolvedCommands, 3);
   assert.equal(verified.report.deleted, 0); assert.equal(verified.report.deferred, 0);
 });
+
+test("a per-key pass that kept preserved records verifies; expired content found again is reappearance", async t => {
+  const f = fixture(t);
+  await runCleanup({ ...options, delete: true }, { ...f.ports, fetch: async () => reply({ method: "keys", deletedKeys: 3, keptKeys: 2, invocations: 1 }) });
+  const rescan = (records: { kind: string; count: number; bytes: number; eligibility: string }[], at: number) =>
+    runInventory({ ...options, rescan: true }, { ...f.ports, clock: () => now + at,
+      env: { CLOUDFLARE_API_TOKEN: "fake", MAINTENANCE_INVENTORY_TOKEN: token },
+      fetch: async (url: string) => url.includes("api.cloudflare.com") ? Response.json({ success: true, result: [{ id: id(1), hasStoredData: true }] }) :
+        Response.json({ schema: "durable-inventory", version: 1, status: "classified", fingerprint: id(2000 + at), totalKeys: records.length,
+          totalBytes: 20, alarm: now + 60_000, records }) });
+  await rescan([{ kind: "sign-in-session", count: 1, bytes: 10, eligibility: "expired" }], 1000);
+  const again = await runCleanup({ ...options, verify: true }, f.ports);
+  assert.equal(again.report.reappeared, 1); assert.equal(again.report.complete, false); assert.ok(existsSync(f.path));
+  await rescan([{ kind: "record-fence", count: 1, bytes: 10, eligibility: "preserve" }, { kind: "alarm-deadlines", count: 1, bytes: 10, eligibility: "preserve" }], 2000);
+  const verified = await runCleanup({ ...options, verify: true }, f.ports);
+  assert.equal(verified.report.reappeared, 0); assert.equal(verified.status, "complete"); assert.ok(!existsSync(f.path));
+});
