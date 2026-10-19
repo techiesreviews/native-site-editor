@@ -1,8 +1,8 @@
 ---
 title: "kit preview: a timeout on every deploy step"
 type: task (AFK)
-status: ready-for-agent
-assignee:
+status: closed
+assignee: ke-08
 blocked_by: [04-kit-slice]
 builder: sol
 ---
@@ -46,3 +46,34 @@ fd). Only the lock wait (`flock -w 900`) and the live-bundle check (`KIT_PREVIEW
 - Sol review via `kit review --ticket` with no open findings; landed via `kit pr --ticket` into
   `dev` with CI green.
 - Dogfood: built with `kit slice`; the Done section says where it helped or failed.
+
+## Done (2026-10-19)
+
+- Behaviour: git steps (including root/owner discovery) have a 2m deadline and deploy has a
+  10m deadline. `ASE_PREVIEW_TIMEOUT` accepts positive integer seconds or `s/m/h`, capped at
+  2147483 seconds; invalid values exit 2 before taking the lock. It also bounds network
+  verification, which retains its existing live/built bundle result on failure.
+- On a subprocess deadline, signal the whole group with SIGTERM, then SIGKILL after 500ms;
+  reap the leader and wait for remaining live members before removing `dist/` and
+  `.wrangler/tmp/` and releasing the lock. Preserve the cached worktree and `node_modules`.
+  Report `RESULT: fail preview <step> timed out after <duration> (killed pgid <pid>)`.
+- Tests: `scripts/agents/unit.sh tests/kit-preview.test.ts` passed 24/24. Coverage includes
+  hanging fake npm/wrangler and child (both ignoring TERM, or the leader exiting first),
+  hanging git fetch/checkout, immediate lock acquisition, cleanup and worktree reuse,
+  invalid durations, and a hanging HTTP verification. Existing deploy/verify tests pass.
+  `npm run check`, `npm test` (4757/4757), and `npm run lint` passed.
+- Kit evidence: `RESULT: ok doctor 7/7 checks passed`; `RESULT: ok specs none affected`;
+  `RESULT: ok job ke08-check exit 0`; `RESULT: ok job ke08-test exit 0`;
+  `RESULT: ok job ke08-lint exit 0`; `RESULT: ok job ke08-focused exit 0`.
+  Logs: `.scratch/kit-jobs/ke08-{check,test,lint,focused}/log`;
+  focused unit log: `.scratch/unit/20261019T104357-39.log`.
+- Operations: the lead already killed the two hung deploys, pids 3167057 and 3167195,
+  on 2026-10-19. This builder ran no preview deploys; tests use isolated fake tools.
+- Commits: none; all changes are unstaged for the runner, as required by the build contract.
+- Review decisions: local diff inspection found no remaining defects. Independent Sol/medium
+  `kit review --ticket` and `kit pr --ticket` into `dev` with green CI remain for the runner;
+  they were not run because this build contract prohibits agents, commits and pushes.
+- Dogfood: inspected `kit slice --help`; building with `kit slice` would launch a builder,
+  commit and land, conflicting with this run's contract. Used `kit bg` and `kit wait job`
+  for validation instead. Detached jobs died without an exit status when their terminal
+  calls closed; keeping `kit wait job` attached to the launch terminal succeeded.
