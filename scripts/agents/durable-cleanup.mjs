@@ -200,7 +200,11 @@ export async function runCleanup(input, ports = {}) {
       const rows = accounting ? options.rowsPerObject + keys * options.rowsPerKey : 0;
       // Older checkpoints without wakeDay retain their conservative call bound;
       // the handler refuses any unreserved wake before writing.
-      if (!integer(rows) || !reserveMaintenance(ledger.budget, clock(), wakeDay ? 1 : allowance, rows, wakeDay)) { status = "limited"; break; }
+      // The retained-record wake deletes what is left (at most every key) and
+      // rewrites its deadline table: reserve those rows on the day it runs.
+      const wakeRows = accounting && wakeDay ? options.rowsPerObject + (keys + 1) * options.rowsPerKey : 0;
+      if (!integer(rows) || !integer(wakeRows) ||
+          !reserveMaintenance(ledger.budget, clock(), wakeDay ? 1 : allowance, rows, wakeDay, wakeRows)) { status = "limited"; break; }
       ledger.save();
       if (!outcome) {
         outcome = { key, expected: entry.classification.fingerprint, status: "reserved", deletedKeys: 0, unresolvedCommands: 0, allowance, keys };

@@ -181,7 +181,7 @@ test("live legacy content requires browser recovery; pending commands remain unr
 });
 
 test("legacy expiry requires five-minute clock margin and every grant expiry; orphan mirrors can expire", async () => {
-  const hub = { kind: "agent-hub", expiresAt: now - 300_000, grants: [{ expiresAt: now + 10 }], context: {} };
+  const hub = { kind: "agent-hub", expiresAt: now - 300_000, grants: [{ id: "grant", expiresAt: now + 10 }], context: {} };
   const store = memory([["session", hub], ["drafts", {}]]);
   assert.equal((await clean(store)).reason, "awaiting-browser-recovery");
   hub.grants = [];
@@ -699,4 +699,56 @@ test("a per-key pass that kept preserved records verifies; expired content found
   await rescan([{ kind: "record-fence", count: 1, bytes: 10, eligibility: "preserve" }, { kind: "alarm-deadlines", count: 1, bytes: 10, eligibility: "preserve" }], 2000);
   const verified = await runCleanup({ ...options, verify: true }, f.ports);
   assert.equal(verified.report.reappeared, 0); assert.equal(verified.status, "complete"); assert.ok(!existsSync(f.path));
+});
+
+test("an expired hub with a malformed nested grant needs review and is never deleted", async () => {
+  for (const grants of [[null], [{}], [{ id: 7 }], [{ id: "a", expiresAt: "soon" }], [{ id: "a" }, 7]]) {
+    const store = memory([["session", { kind: "agent-hub", grants, expiresAt: now - 400_000 }]]);
+    const outcome = await clean(store);
+    assert.equal(outcome.status, "review");
+    assert.equal(outcome.deletedKeys, 0);
+    assert.equal(store.calls.all, 0); assert.deepEqual(store.calls.deletes, []); assert.deepEqual(store.calls.writes, []);
+    assert.equal(store.map.size, 1);
+  }
+});
+
+test("rows for a retained-record wake are reserved on its UTC day and count first after rollover", async () => {
+  const budget: Record<string, unknown> = { day: "", count: 0, rows: 0 };
+  const today = now, tomorrow = "2026-10-20";
+  // A per-key cleanup today: 1 call + 3 rows now, its wake and 4 rows tomorrow.
+  assert.equal(reserveMaintenance(budget, today, 1, 3, tomorrow, 4), true);
+  assert.equal(budget.count, 1); assert.equal(budget.rows, 3);
+  assert.deepEqual(budget.scheduled, { [tomorrow]: 1 }); assert.deepEqual(budget.scheduledRows, { [tomorrow]: 4 });
+  // Tomorrow's batches cannot take the rows the wake needs.
+  assert.equal(reserveMaintenance(budget, today, 0, 0, tomorrow, 4997), false);
+  const next = Date.UTC(2026, 9, 20, 0, 1);
+  assert.equal(reserveMaintenance(budget, next, 1, 4997), false);
+  assert.equal(reserveMaintenance(budget, next, 1, 4996), true);
+  assert.equal(budget.count, 2); assert.equal(budget.rows, 5000);
+  assert.deepEqual(budget.scheduled, {}); assert.deepEqual(budget.scheduledRows, {});
+  // Same-day wake rows are charged to today.
+  const same: Record<string, unknown> = { day: "", count: 0, rows: 0 };
+  assert.equal(reserveMaintenance(same, today, 1, 2, "2026-10-19", 5), true);
+  assert.equal(same.count, 2); assert.equal(same.rows, 7);
+});
+
+test("cleanup reserves the wake's rows from accounting: remaining keys plus the deadline table", async t => {
+  const f = fixture(t);
+  f.manifest.objects[0].classification.totalKeys = 3;
+  f.manifest.objects[0].classification.records = [
+    { kind: "legacy-agent-hub", count: 1, bytes: 10, eligibility: "expired" },
+    { kind: "record-fence", count: 1, bytes: 10, eligibility: "preserve", latestExpiresAt: Date.UTC(2026, 9, 21, 3) } as never,
+    { kind: "alarm-deadlines", count: 1, bytes: 10, eligibility: "preserve" },
+  ];
+  f.save();
+  writeManifest(f.cleanupPath, { schema: "durable-cleanup-checkpoint", version: 1, account: "account", namespace: "namespace", deployment: "preview",
+    canary: Array.from({ length: 10 }, (_, n) => id(500 + n)), objects: [], lastBatch: 0 });
+  const bodies: { wakeDay?: string }[] = [];
+  await runCleanup({ ...options, delete: true, canaryVerified: true, rowsPerKey: 2, rowsPerObject: 3 }, { ...f.ports,
+    fetch: async (_url: string, init: { body: string }) => { bodies.push(JSON.parse(init.body)); return reply({ method: "keys", invocations: 2 }); } });
+  assert.equal(bodies[0].wakeDay, "2026-10-21");
+  const ledger = json(f.budgetPath);
+  assert.equal(ledger.rows, 3 + 3 * 2);
+  assert.deepEqual(ledger.scheduled, { "2026-10-21": 1 });
+  assert.deepEqual(ledger.scheduledRows, { "2026-10-21": 3 + (3 + 1) * 2 });
 });
