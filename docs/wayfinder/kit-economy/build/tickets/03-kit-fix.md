@@ -1,8 +1,8 @@
 ---
 title: "kit fix: send review findings back to the builder"
 type: task (AFK)
-status: ready-for-agent
-assignee:
+status: closed
+assignee: ke-03
 blocked_by: [01-kit-pr-stops-on-findings]
 builder: sol
 ---
@@ -71,3 +71,24 @@ whose `status.json` says `done` just prints its saved report.
 - The unit tests for the change pass (`scripts/agents/unit.sh tests/kit-fix.test.ts tests/agent-resume.test.ts tests/kit-review.test.ts`).
 - Sol review via `kit review --ticket` with no open findings; landed via `kit pr --ticket` into
   `dev` with CI green.
+
+## Done (2026-10-19)
+
+- Added `kit fix`: selects the newest HEAD-covering review in the main-root owner folder,
+  reuses `openFindings()` and kit root/owner helpers, resumes the newest matching builder,
+  commits its fixes with model credit, and reviews again with declined findings and reasons.
+  Clean reviews start nothing; missing/unreadable evidence, missing builders, unchanged builders
+  without fresh declines, builder failures, and remaining findings fail clearly.
+- Added `agent.sh --resume DIR --brief FILE` for completed and failed sessions, preserving
+  CLI/model/effort and appending reports/logs after waiting for a live runner. The original
+  no-brief resume behavior remains unchanged. Documented both commands.
+- Focused validation: `scripts/agents/unit.sh tests/kit-fix.test.ts tests/agent-resume.test.ts
+  tests/kit-review.test.ts` reports 56 passing tests, zero failures in its TAP log; the known
+  unit-summary counts error is ignored as instructed. All fake CLI/review scratch artifacts
+  live in temporary repositories and are removed by test cleanup.
+- `npm run check` and `npm run lint` passed. Full `npm test` was intentionally excluded by this ticket's
+  focused-unit instruction. Review, commit, `kit pr`, and CI confirmation remain with the runner;
+  this build leaves all changes unstaged and performs no deployment.
+- Branch-specific round briefs live under `.scratch/kit-fix/<encoded-branch>/round-N.md`.
+  Declined reasons pass to the normal review brief via the child-only `ASE_REVIEW_DECLINED` list.
+- Dogfood: (runner fills in)
