@@ -9,20 +9,36 @@ import { pathToFileURL } from "node:url";
 const idPattern = /^[a-f0-9]{64}$/;
 const integer = value => Number.isSafeInteger(value) && value >= 0;
 const object = value => value && typeof value === "object" && !Array.isArray(value);
+const utcDay = value => typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) &&
+  Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value;
+const scheduledBudget = value => value === undefined || (object(value) &&
+  Object.entries(value).every(([day, count]) => utcDay(day) && integer(count)));
 const kinds = new Set(["sign-in-session", "one-time-sign-in", "agent-grant", "legacy-agent-hub", "oauth-client", "oauth-request", "oauth-code", "app-config", "legacy-context", "legacy-drafts", "legacy-requests", "oauth-pending", "registration-limiter", "repository-cache", "relay-metadata", "alarm-deadlines", "agent-lifecycle", "record-fence", "workspace-ledger", "unknown"]);
 const eligibilities = new Set(["preserve", "expired", "legacy-candidate", "review"]);
 const statuses = new Set(["pending", "empty", "classified", "deferred", "unknown", "inaccessible"]);
 const batchStatuses = new Set(["running", "complete", "limited", "paused", "inaccessible", "interrupted"]);
 
 /** Shared with ticket 28: reserve and checkpoint BEFORE invoking maintenance. */
-export function reserveMaintenance(budget, now, calls = 1, rows = 0) {
-  if (!integer(calls) || !integer(rows)) throw new Error("Invalid maintenance reservation");
+export function reserveMaintenance(budget, now, calls = 1, rows = 0, wakeDay) {
+  if (!integer(calls) || !integer(rows) || (wakeDay !== undefined && !utcDay(wakeDay)))
+    throw new Error("Invalid maintenance reservation");
   const day = new Date(now).toISOString().slice(0, 10);
   if (budget.day > day) return false;
-  if (budget.day !== day) { budget.day = day; budget.count = 0; if (budget.rows !== undefined) budget.rows = 0; }
+  if (!scheduledBudget(budget.scheduled)) throw new Error("Invalid maintenance budget");
+  if (budget.day !== day) {
+    budget.day = day; budget.count = budget.scheduled?.[day] ?? 0;
+    if (budget.rows !== undefined) budget.rows = 0;
+    if (budget.scheduled) budget.scheduled = Object.fromEntries(Object.entries(budget.scheduled).filter(([at]) => at > day));
+  }
   if (!integer(budget.count)) throw new Error("Invalid maintenance budget");
-  if (budget.count + calls > 1000 || (budget.rows ?? 0) + rows > 5000) return false;
-  budget.count += calls;
+  // One immediate call and an optional retained-record wake must fit together.
+  // An old crash reservation cannot authorize a wake on a day already past.
+  if (wakeDay !== undefined && wakeDay < day) return false;
+  const today = calls + Number(wakeDay === day);
+  if (budget.count + today > 1000 || (budget.rows ?? 0) + rows > 5000 ||
+      (wakeDay > day && (budget.scheduled?.[wakeDay] ?? 0) + 1 > 1000)) return false;
+  budget.count += today;
+  if (wakeDay > day) budget.scheduled = { ...budget.scheduled, [wakeDay]: (budget.scheduled?.[wakeDay] ?? 0) + 1 };
   if (rows) budget.rows = (budget.rows ?? 0) + rows;
   return true;
 }
@@ -98,17 +114,25 @@ export function maintenanceLock(path, label) {
   return () => { closeSync(descriptor); rmSync(`${path}.lock`, { force: true }); };
 }
 export function maintenanceBudget(path, options, previous, clock) {
+  if (!scheduledBudget(previous.scheduled)) throw new Error("Invalid namespace budget");
   let budget = { account: options.account, namespace: options.namespace, ...previous };
   if (existsSync(path)) {
     let saved;
     try { saved = JSON.parse(readFileSync(path, "utf8")); } catch { throw new Error("Unreadable namespace budget"); }
     if (!object(saved) || saved.account !== options.account || saved.namespace !== options.namespace ||
         typeof saved.day !== "string" || !/^\d{4}-\d{2}-\d{2}$|^$/.test(saved.day) || !integer(saved.count) ||
-        (saved.rows !== undefined && !integer(saved.rows)) || (saved.notBefore !== undefined && !integer(saved.notBefore)))
+        (saved.rows !== undefined && !integer(saved.rows)) || (saved.notBefore !== undefined && !integer(saved.notBefore)) ||
+        !scheduledBudget(saved.scheduled))
       throw new Error("Invalid namespace budget");
     // Preserve the whole ledger (including fields another maintenance tool owns).
     budget = { ...saved };
-    if (previous.day > saved.day) { budget.day = previous.day; budget.count = previous.count; budget.rows = previous.rows ?? 0; }
+    for (const [day, count] of Object.entries(previous.scheduled ?? {})) {
+      if (day > budget.day) budget.scheduled = { ...budget.scheduled, [day]: Math.max(budget.scheduled?.[day] ?? 0, count) };
+    }
+    if (previous.day > saved.day) {
+      reserveMaintenance(budget, Date.parse(previous.day), 0);
+      budget.count = Math.max(budget.count, previous.count); budget.rows = previous.rows ?? 0;
+    }
     else if (previous.day === saved.day) budget.count = Math.max(saved.count, previous.count);
   }
   const save = () => writeManifest(path, budget);
@@ -136,9 +160,11 @@ export function readManifest(path, options, now) {
   if (!object(source) || source.schema !== "durable-inventory-manifest" || source.version !== 1 ||
       source.account !== options.account || source.namespace !== options.namespace || source.deployment !== options.deployment ||
       !object(source.budget) || typeof source.budget.day !== "string" || !/^\d{4}-\d{2}-\d{2}$|^$/.test(source.budget.day) || !integer(source.budget.count) ||
+      !scheduledBudget(source.budget.scheduled) ||
       !Array.isArray(source.objects) || !Array.isArray(source.batches) || !(source.cursor === null || typeof source.cursor === "string"))
     throw new Error("Invalid or mismatched inventory manifest");
-  const budget = { day: source.budget.day, count: source.budget.count };
+  const budget = { day: source.budget.day, count: source.budget.count,
+    ...(source.budget.scheduled !== undefined ? { scheduled: { ...source.budget.scheduled } } : {}) };
   if (options.rescan) return fresh(options, now, budget);
   const manifest = fresh(options, now, budget);
   manifest.cursor = source.cursor;
