@@ -42,6 +42,9 @@ async function connectAgent(page: Page, baseURL: string | undefined) {
   const { url, token } = await copyConnectionPrompt(page);
   await expect(page.getByRole("button", { name: "Waiting for connection…", exact: true })).toBeVisible();
   await expect(page.locator(".agent-menu")).toHaveAttribute("data-state", "waiting");
+  // Waiting shows only its links: no explainer line and no Turn off.
+  await expect(page.locator(".agent-menu__hint")).toBeHidden();
+  await expect(page.getByRole("button", { name: "Turn off", exact: true })).toHaveCount(0);
   expect(url).toBe(`${baseURL}/mcp`);
   const client = new Client({ name: "playwright-agent", version: "1.0.0" });
   await client.connect(
