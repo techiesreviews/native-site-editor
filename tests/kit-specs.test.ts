@@ -116,6 +116,39 @@ test("toContain values are capped everywhere, including value and array labels i
   }
 });
 
+for (const [fixture, expected, received] of [
+  ["to-equal-object", '"b": 3,', '"b": 2,'],
+  ["to-equal-array", "3,", "2,"],
+]) {
+  test(`${fixture} digest summarizes both differing values from an actual Playwright unified diff`, () => {
+    const digest = specsDigest([digestRun(fixture)]);
+    assert.ok(digest.includes(`\n  expected: ${expected}\n  received: ${received}\n`));
+    assert.ok(digest.split("\n").length <= 10);
+  });
+}
+
+test("unified diff summaries and excerpt values are capped at 160 characters within ten lines", () => {
+  const expected = "x".repeat(10_000), received = "y".repeat(10_000);
+  for (const compact of [false, true]) {
+    const report = digestFixture("to-equal-object");
+    const error = report.suites[0].specs[0].tests[0].results[0].errors[0];
+    error.message = error.message.replace('"b": 3,', `"b": "${expected}",`).replace('"b": 2,', `"b": "${received}",`);
+    // A diff-only message also places a changed value within the three-line excerpt.
+    if (compact) error.message = error.message.split("\n").filter((line: string) => /^[+-]/.test(line)).join("\n");
+    const digest = specsDigest([{ report, logPath: "/logs/equal.log" }]);
+    for (const [name, value] of [["expected", "x"], ["received", "y"]]) {
+      const summary = digest.split("\n").find(line => line.startsWith(`  ${name}: `))?.slice(`  ${name}: `.length);
+      assert.ok(summary?.startsWith(`"b": "${value}`));
+      assert.equal(summary.length, 160);
+      assert.ok(summary.endsWith("…"));
+    }
+    if (compact) assert.equal(digest.split("\n")[3].slice("  - ".length).length, 160);
+    assert.ok(!digest.includes(expected));
+    assert.ok(!digest.includes(received));
+    assert.ok(digest.split("\n").length <= 10);
+  }
+});
+
 test("twelve failed tests in one spec cap at ten with a remainder and no digest exceeds ten lines", () => {
   const digest = specsDigest([digestRun("twelve-failures")], { directory: "/logs/run-1" });
   assert.equal(digest.split("\n\n").length, 11);
@@ -128,7 +161,7 @@ test("twelve failed tests in one spec cap at ten with a remainder and no digest 
   assert.match(combined, /log: \/logs\/shard-9.log/);
   assert.doesNotMatch(combined, /shard-10.log/);
   assert.ok(combined.endsWith("… and 2 more failing tests (/logs/run-2)"));
-  for (const output of [digest, combined, ...["assertion", "timeout", "thrown", "flaky", "to-contain", "to-have-length"].map(name => specsDigest([digestRun(name)]))]) {
+  for (const output of [digest, combined, ...["assertion", "timeout", "thrown", "flaky", "to-contain", "to-have-length", "to-equal-object", "to-equal-array"].map(name => specsDigest([digestRun(name)]))]) {
     for (const block of output.split("\n\n")) assert.ok(block.split("\n").length <= 10, block);
   }
 });

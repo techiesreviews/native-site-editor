@@ -101,3 +101,15 @@ results JSON and `error-context.md` files (up to 300 KB) to find one assertion.
   `.scratch/ke-05-labels-npm-test.log`) and `npm run lint` passed. Kit evidence:
   `RESULT: ok doctor 7/7 checks passed`; `RESULT: ok specs none affected`.
   Declined: none. Changes remain unstaged for the runner's commit and independent re-review.
+- Unified-diff review follow-up: accepted the P2 defect at
+  `94318500:scripts/agents/specs-digest.mjs:24` and its validation gap. Unified diff headers now
+  select removed and added lines for expected/received summaries, capped at 160 characters;
+  changed values in the excerpt are bounded too. Unchanged context and header counts do not
+  displace differing values. Object and array fixtures capture actual installed Playwright
+  `toEqual()` messages. Tests check both differing values, 10,000-character values, diff-only
+  excerpts, attachment paths and the ten-line limit. The regressions failed before the fix
+  (36 passed, 3 failed; `.scratch/unit/20261019T110635-2.log`) and passed afterward
+  (39/39; `.scratch/unit/20261019T110741-2.log`). `npm run check`, `npm test` (4,778/4,778;
+  `.scratch/ke-05-diff-npm-test.log`) and `npm run lint` passed. Kit evidence:
+  `RESULT: ok doctor 7/7 checks passed`; `RESULT: ok specs none affected`.
+  Declined: none. Changes remain unstaged for the runner's commit and independent re-review.

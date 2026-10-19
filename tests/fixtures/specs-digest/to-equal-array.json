@@ -1,0 +1,20 @@
+{
+  "suites": [{
+    "specs": [{
+      "file": "tests/native-save/label.spec.ts",
+      "line": 51,
+      "title": "matches the saved array",
+      "tests": [{
+        "projectName": "native-save",
+        "status": "unexpected",
+        "expectedStatus": "passed",
+        "results": [{
+          "status": "failed",
+          "errors": [{
+            "message": "expect(received).toEqual(expected) // deep equality\n\n- Expected  - 1\n+ Received  + 1\n\n  Array [\n    1,\n-   3,\n+   2,\n  ]"
+          }]
+        }]
+      }]
+    }]
+  }]
+}
