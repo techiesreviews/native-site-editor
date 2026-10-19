@@ -1,8 +1,8 @@
 ---
 title: "kit pr: stop on open review findings"
 type: task (AFK)
-status: ready-for-agent
-assignee:
+status: closed
+assignee: ke-01
 blocked_by: []
 builder: sol
 ---
@@ -65,3 +65,28 @@ Durable Object build merged with findings still open.
 - The unit tests for the change pass (`scripts/agents/unit.sh tests/kit-pr.test.ts tests/review-findings.test.ts`).
 - Sol review via `kit review --ticket` with no open findings; landed via `kit pr --ticket` into
   `dev` with CI green.
+
+## Done (2026-10-19)
+
+- Added the pure `openFindings(resultMd)` parser for separate and inline groups, em-dash and bold
+  headings, commit prefixes and multiline items. Defects and validation gaps count unless they
+  start with “none”; nits do not count. Missing completion or Defects markers fail closed with one
+  unreadable-format finding. Inline fixtures derive from sampled `dor-*` review formats.
+- `kit pr` checks both saved covering reviews and fresh review evidence before waiting for CI or
+  merging. It prints at most 15 findings, truncates each to 160 characters and reports the total
+  and result path on failure. A new commit triggers a new review; clean reviews merge as before.
+- Added lead-only `--waive "<reason>"`, validated through `kitOwner()`. Successful merges record
+  the count and reason in a PR comment and a REST PATCH of the body. Help and the kit entry document
+  the option and stop rule; the docs tier remains unchanged.
+- Validation: 53 focused tests cover format variants, nits, validation gaps, unreadable or missing
+  evidence, saved/fresh findings and clean reviews, output caps, reruns after a new commit, lead
+  authorization and waiver audit text. `npm run check`, `npm run lint` and `git diff --check` pass.
+  The full unit suite was not run, following the builder brief's focused-only rule.
+- Evidence: `RESULT: ok doctor 7/7 checks passed`; focused command:
+  `NODE_OPTIONS=--test-reporter=spec scripts/agents/unit.sh tests/kit-pr.test.ts tests/review-findings.test.ts`,
+  log `.scratch/unit/20261019T080521-2.log`. Earlier non-TTY runs passed all 53 tests but the wrapper
+  rejected TAP counts; explicitly selecting the spec reporter satisfies its summary format.
+- Review, commit and landing are left to the runner under the builder contract. Changes remain
+  unstaged; no agents, commits, pushes or deployments were started.
+
+Dogfood: none yet (first ticket)
