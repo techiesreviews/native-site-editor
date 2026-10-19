@@ -131,3 +131,21 @@ commit, review, fixes, close, `kit pr`), relaunching jobs and re-reading output 
   `npm run lint`, and `git diff --check` passed. Kit results: `RESULT: ok doctor 7/7 checks passed`;
   `RESULT: ok specs none affected`. No full unit suite, live review, push or merge was run.
 - Declined: none.
+
+
+### Additional review fixes (2026-10-19)
+
+- Fresh slices now check staged, unstaged and untracked work before creating the state directory,
+  brief or builder run. A dirty worktree fails without changing its files or index. Existing state
+  bypasses only this initial cleanliness check so failed build/commit phases still resume.
+- A saved queued slice with a different local HEAD explicitly refuses `--no-pr`, instead of
+  reporting the old queued revision as reviewed clean. This refusal preserves queue state and
+  local HEAD so the original PR wait can still be resumed normally.
+- Regression tests cover all three kinds of unrelated work, with unchanged files, index, HEAD
+  and no builder calls or initialized slice state. A queue-timeout test advances local HEAD and
+  verifies `--no-pr` fails without claiming review success or altering saved queue state.
+- Validation: `scripts/agents/unit.sh tests/kit-slice.test.ts tests/kit-fix.test.ts
+  tests/kit-commit.test.ts` passed 53, failed 0; log `.scratch/unit/20261019T093547-2.log`.
+  `npm run check`, `npm run lint`, and `git diff --check` passed. Kit results:
+  `RESULT: ok doctor 7/7 checks passed`; `RESULT: ok specs none affected`.
+- Declined: none.
