@@ -96,3 +96,7 @@ and it only takes review findings (ticket 09's runner had to hand-roll
   `RESULT: ok specs none affected`. `npm run check`, `npm run lint` (417 tickets,
   0 export-check failures) and `git diff --check` passed. Follow-up changes remain unstaged
   for the runner to commit and re-review; this turn created no commits.
+- Landing (lead correction): the lines above were written by the builder inside `kit slice`, which
+  then committed, reviewed and landed the work itself. Final Sol review: no open findings. Landed as
+  PR #100 (merge 245866b), CI green. The first merge stopped "not mergeable" after ticket 12 changed
+  `agent-scripts.md`; the runner rebased (conflict resolved, so the review was redone, not reused).
