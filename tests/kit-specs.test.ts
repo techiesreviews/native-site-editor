@@ -117,6 +117,19 @@ test("toContain values are capped everywhere, including value and array labels i
 });
 
 for (const [fixture, expected, received] of [
+  ["to-have-property", "3", "2"],
+  ["to-have-property-object", '"value": 3,', '"value": 2,'],
+]) {
+  test(`${fixture} digest selects assertion values before property path metadata`, () => {
+    const digest = specsDigest([digestRun(fixture)]);
+    assert.ok(digest.includes(".toHaveProperty(path, value)"));
+    assert.ok(digest.includes('  Expected path: "a"'));
+    assert.ok(digest.includes(`\n  expected: ${expected}\n  received: ${received}\n`));
+    assert.ok(digest.split("\n").length <= 10);
+  });
+}
+
+for (const [fixture, expected, received] of [
   ["to-equal-object", '"b": 3,', '"b": 2,'],
   ["to-equal-array", "3,", "2,"],
   ["to-contain-text", "Saved", "Draft"],
