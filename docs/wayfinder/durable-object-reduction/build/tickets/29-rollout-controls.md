@@ -91,6 +91,10 @@ off-tab consent check could stop a newer connection: the reply now must come fro
 (P2 "ship relay/Watch/lifecycle off": the lead's slice decision keeps today's agreed behaviour on; nothing deploys here, and
 production enablement stays Lex's separate action). Rejected the suggested browser race test (no agent-menu DOM harness, as
 tickets 09/14/18; the guard is one captured-activation predicate).
+Round 2 (run by `kit pr` on PR #80, evidence `/home/ubulex/Projects/native-site-editor/.scratch/reviews/dor-29/20261019T014655Z`):
+no defects. Gaps left open: the same browser race test (reason above) and a successful Retry after the relay is switched back on
+(the transport's Retry reopens through the normal path tickets 14/03 already test; noted for ticket 30's rollout evidence).
+Landing: rebased over ticket 26 (one conflict in tests/native-save/server.ts: both added `/__demo/*` fixture controls; kept both).
 
 **Kit.**
 - RESULT: ok doctor 7/7 checks passed
