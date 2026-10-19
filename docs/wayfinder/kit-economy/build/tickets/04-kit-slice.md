@@ -100,9 +100,21 @@ commit, review, fixes, close, `kit pr`), relaunching jobs and re-reading output 
 - Dogfood: `kit doctor`: `RESULT: ok doctor 7/7 checks passed`; `kit specs --affected` reported none affected.
   Slice/fix orchestration was exercised against isolated fake commands, with real temporary Git
   commits and hooks. No build or review workers were launched, per the builder brief.
-- Commits: _runner to fill; implementation left unstaged_.
-- Review decisions and evidence: _runner to fill after review_.
-- Landed PR / CI: _runner to fill_.
+- Commits: 48f8f39b (build), 975dbf41 (review fixes round 1), 5798a315 (round 2), plus this note.
+- Review decisions and evidence (Sol gpt-6.1-sol, medium, via `kit review` / `kit fix`):
+  review 20261019T092419Z: 3 findings (P1 commit redirect by a hook branch switch, P2 hidden PR
+  failure on exhaustion, P2 `ok queued` not handled) → fixed in round 1; review 20261019T093438Z:
+  2 findings (dirty worktree swept into the builder commit, queued state skipping HEAD
+  re-review with `--no-pr`) → fixed in round 2; final `RESULT: ok fix clean`. Declined: none.
+  Lead note: the P1 fix keeps a temporary detached HEAD git-dir (in the OS temp dir, removed in
+  `finally`) plus `update-ref <new> <old>`; no lock files and no private index, so a killed run
+  cannot block the worktree, but it is more than the plain `git commit` the lead asked for.
+- Landed PR / CI: via `kit pr --ticket` (see the PR).
+- Dogfood (runner): `kit bg` + `kit wait job --timeout 9m` ran build, review and both fix rounds
+  without pid lookups (helped). `kit fix` resumed Sol with the findings, committed and re-reviewed
+  in one job each (helped); it has no way to pass a runner note (e.g. a lead constraint) to the
+  builder. `scripts/agents/unit.sh` printed "unit report lacks pass/fail counts" although the log
+  had `# pass 53 / # fail 0` (failed; ticket 07 territory).
 
 
 ### Review fixes (2026-10-19)
