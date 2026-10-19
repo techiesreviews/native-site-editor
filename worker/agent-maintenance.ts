@@ -1,5 +1,6 @@
 // Restricted maintenance: never use the ordinary session read, which may consume
 // expired records or include credentials. All output is constructed explicitly.
+import { agentControls } from "./agent-controls";
 import type { Env } from "./app";
 
 interface InventoryStorage {
@@ -85,10 +86,12 @@ async function maintenanceRoute(request: Request, sessions: Env["SESSIONS"], tok
     return response({ error: cleanup ? "Cleanup unavailable" : "Inventory unavailable" }, 503);
   }
 }
-export function inventoryRoute(request: Request, env: Pick<Env, "SESSIONS" | "MAINTENANCE_INVENTORY_TOKEN">) {
+export function inventoryRoute(request: Request, env: Pick<Env, "SESSIONS" | "MAINTENANCE_INVENTORY_TOKEN" | "AGENT_LEGACY_MAINTENANCE">) {
+  if (!agentControls(env).legacyMaintenance) return response({ error: "Not found" }, 404);
   return maintenanceRoute(request, env.SESSIONS, env.MAINTENANCE_INVENTORY_TOKEN, false);
 }
-export function cleanupRoute(request: Request, env: Pick<Env, "SESSIONS" | "MAINTENANCE_CLEANUP_TOKEN">) {
+export function cleanupRoute(request: Request, env: Pick<Env, "SESSIONS" | "MAINTENANCE_CLEANUP_TOKEN" | "AGENT_LEGACY_MAINTENANCE">) {
+  if (!agentControls(env).legacyMaintenance) return response({ error: "Not found" }, 404);
   return maintenanceRoute(request, env.SESSIONS, env.MAINTENANCE_CLEANUP_TOKEN, true);
 }
 

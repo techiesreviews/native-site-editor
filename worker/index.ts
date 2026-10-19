@@ -1,3 +1,4 @@
+import { agentControls } from "./agent-controls";
 import { cleanupObject, inventoryObject } from "./agent-maintenance";
 import { tokenId, deleteCleanedGrants, type AgentHub } from "./agent-context";
 import { clearHub, hubOperation, hubView } from "./agent-store";
@@ -339,6 +340,11 @@ export class SessionStore extends DurableObject {
       }
       if (table["agent-cleanup"] === undefined || table["agent-cleanup"] > now) {
         await this.deadlines.schedule(await this.deadlines.read());
+        return undefined;
+      }
+      if (!agentControls(this.env as Env).lifecycleCleanup) {
+        // Keep the purpose resumable, without repeatedly waking on its old deadline.
+        await this.deadlines.set("agent-cleanup", now + 6 * 60 * 60 * 1000);
         return undefined;
       }
       const record = await this.lifecycle.load();

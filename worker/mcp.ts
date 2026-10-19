@@ -1,3 +1,4 @@
+import { agentControls, AGENTS_PAUSED, WATCH_PAUSED } from "./agent-controls";
 // The MCP server for native sites: tools an agent needs to edit a site the
 // way its owner does in the visual editor. Reads execute against the receiving
 // browser tab's drafts and its GitHub readers at the revision shown there.
@@ -37,6 +38,16 @@ import { checkContent, type AgentEdit, type AgentEditArgsMap, type AgentEditTool
 import { AgentRelay, relayObjectName } from "./agent-relay";
 import type { AgentRead, AgentReadResult } from "../shared/agent-read";
 import { mediaChanges, type AgentMedia } from "../shared/agent-media";
+
+/** A stable refusal before authentication; tool callers can show this result directly. */
+export function pausedMcp(body: any) {
+  const tool = body?.method === "tools/call";
+  return Response.json({ jsonrpc: "2.0", id: body?.id ?? null, ...(tool
+    ? { result: { isError: true, content: [{ type: "text", text: AGENTS_PAUSED }], code: "agents-paused" } }
+    : { error: { code: -32003, message: AGENTS_PAUSED, data: { code: "agents-paused" } } }) }, {
+    status: tool ? 200 : 403, headers: { "Cache-Control": "no-store" },
+  });
+}
 
 type Exchange = { started?: () => void; cancelled?: boolean; requestId?: string | number; signal?: AbortSignal; waitUntil?: (promise: Promise<unknown>) => void };
 
@@ -99,6 +110,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
   );
 
   async function dispatch(command: AgentRead | AgentEdit | AgentMedia | AgentRequests | { operation: "status"; id: string; grantId: string; generation?: number }) {
+    if (!agentControls(env).relay) return { ok: true, result: { ok: false as const, message: AGENTS_PAUSED } };
     try {
       const body = JSON.stringify(command);
       const name = await relayObjectName(connection.workspace);
@@ -713,7 +725,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
   /** Quiet by default: an empty answer never asks the agent to repeat unless the user's Watch is on. */
   function waited(requests: unknown[], watch: WatchReport, hint?: string) {
     const shown = watch.state === "on" ? { watch: { until: new Date(watch.until).toISOString(), waitsLeft: watch.waitsLeft } } : {};
-    if (requests.length) return text({ repository: connection.repo.full_name, requests, note: requestNote, ...shown });
+    if (requests.length) return text({ repository: connection.repo.full_name, requests, note: requestNote, ...shown, ...(hint ? { hint } : {}) });
     return text({ repository: connection.repo.full_name, requests: [], ...shown, hint: hint ?? (
       watch.state === "on"
         ? `No requests yet. The user turned on Watch in the editor for about ${minutes(watch.until)} more minute${minutes(watch.until) === 1 ? "" : "s"} (${watch.waitsLeft} wait${watch.waitsLeft === 1 ? "" : "s"} left), so you may call wait_for_requests again now.`
@@ -735,11 +747,11 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
       annotations: { ...readOnly, idempotentHint: false },
     },
     async ({ all, waitSeconds: wait }) => {
-      const outcome = await requestCommand("wait_for_requests", { all: Boolean(all) }, (wait ?? 25) * 1000);
+      const outcome = await requestCommand("wait_for_requests", { all: Boolean(all) }, agentControls(env).watch ? (wait ?? 25) * 1000 : 0);
       if (outcome.ok && outcome.result) {
         if (!outcome.result.ok) return failure(outcome.result.message);
         const value = outcome.result.value as unknown as { requests?: unknown[]; watch?: WatchReport };
-        return waited(Array.isArray(value?.requests) ? value.requests : [], value?.watch ?? { state: "off" });
+        return waited(Array.isArray(value?.requests) ? value.requests : [], agentControls(env).watch ? value?.watch ?? { state: "off" } : { state: "off" }, agentControls(env).watch ? undefined : WATCH_PAUSED);
       }
       if (outcome.code === "editor-unavailable")
         return waited([], { state: "off" }, "No editor tab receives requests for this site now. Stop here: tell the user to open the site in the editor and turn on remote agents, then to ask you to continue.");
@@ -882,6 +894,7 @@ export async function handleMcp(
   parsedBody: unknown,
   context?: { waitUntil(promise: Promise<unknown>): void },
 ) {
+  if (!agentControls(env).relay) return pausedMcp(parsedBody);
   const origin = editorOrigin(env, new URL(request.url).origin);
   const classification = classifyInboundRequest({ httpMethod: request.method, body: parsedBody,
     protocolVersionHeader: request.headers.get("MCP-Protocol-Version") ?? undefined,

@@ -96,7 +96,7 @@ test("connections and MCP authentication read grant metadata without context, dr
     h.counters.reset();
     const response = await h.dispatchFetch(origin + "/api/agent/connections", { headers: { Cookie: h.cookie } });
     assert.equal(response.status, 200);
-    assert.deepEqual(Object.keys(await response.json()), ["grants"]);
+    assert.deepEqual(Object.keys(await response.json()), ["grants", "controls"]);
     assert.ok(!h.counters.readKeys.some(key => /^(context|draft:|drafts|requests)/.test(key)));
     assert.equal(Object.values(h.counters.byCategory).reduce((sum, count) => sum + count.keysWritten, 0), 0);
     h.counters.reset();

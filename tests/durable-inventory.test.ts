@@ -51,7 +51,7 @@ function page(objects: { id: string; hasStoredData: boolean }[], cursor?: string
 
 test("public inventory gates authorization and validates IDs before exactly one DO call", async () => {
   const calls: Request[] = [], ids: string[] = [];
-  const environment: Env = {
+  const environment: Env = { AGENT_LEGACY_MAINTENANCE: "on",
     ASSETS: { fetch: async () => new Response("asset") },
     SESSIONS: {
       idFromName: () => { throw new Error("No named discovery"); },
@@ -91,7 +91,7 @@ test("public inventory gates authorization and validates IDs before exactly one 
 
 test("public paths never forward the internal maintenance route", async () => {
   let calls = 0;
-  const environment: Env = {
+  const environment: Env = { AGENT_LEGACY_MAINTENANCE: "on",
     ASSETS: { fetch: async () => new Response("asset") },
     SESSIONS: {
       idFromName: () => { calls++; return ""; }, idFromString: () => { calls++; return ""; },

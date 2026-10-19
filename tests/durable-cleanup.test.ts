@@ -83,7 +83,7 @@ const json = (path: string) => JSON.parse(readFileSync(path, "utf8"));
 
 test("cleanup public route is separately disabled and authenticates before any DO work", async () => {
   const calls: Request[] = [], ids: string[] = [];
-  const environment: Env = { ASSETS: { fetch: async () => new Response("asset") }, SESSIONS: {
+  const environment: Env = { AGENT_LEGACY_MAINTENANCE: "on", ASSETS: { fetch: async () => new Response("asset") }, SESSIONS: {
     idFromName: () => { throw new Error("No named discovery"); },
     idFromString: value => { ids.push(value); return value; },
     get: () => ({ fetch: async request => { calls.push(request); return reply(); } }),
@@ -113,7 +113,7 @@ test("cleanup public route is separately disabled and authenticates before any D
 
 test("route redacts thrown runtime errors and non-OK internal response bodies", async () => {
   for (const throws of [true, false]) {
-    const environment: Env = { ASSETS: { fetch: async () => new Response("asset") }, MAINTENANCE_CLEANUP_TOKEN: token,
+    const environment: Env = { AGENT_LEGACY_MAINTENANCE: "on", ASSETS: { fetch: async () => new Response("asset") }, MAINTENANCE_CLEANUP_TOKEN: token,
       SESSIONS: { idFromName: () => "", idFromString: value => value,
         get: () => ({ fetch: async () => { if (throws) throw new Error(token); return new Response(token, { status: 503, headers: { "Retry-After": "120" } }); } }) } };
     const result = await handle(new Request("https://editor.example/__maintenance/cleanup", { method: "POST",

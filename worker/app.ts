@@ -1,3 +1,4 @@
+import { agentControls, agentsPaused, type AgentControlEnv } from "./agent-controls";
 import { cleanupRoute, inventoryRoute } from "./agent-maintenance";
 import { requestJson } from "./http";
 import { ASSET_TYPES } from "../shared/asset-types";
@@ -80,7 +81,7 @@ interface InstallPending {
 export type StoredSession = Session | OAuthState | InstallPending | AgentGrant | AgentHub | OAuthRecord;
 export type StoredValue = StoredSession | OwnerSetupState;
 
-export interface Env {
+export interface Env extends AgentControlEnv {
   ASSETS: { fetch(request: Request): Promise<Response> };
   SESSIONS: {
     idFromName(name: string): any;
@@ -414,6 +415,15 @@ async function route(
   if (OBSOLETE_AGENT_ROUTES.has(path)) return Response.json({
     error: "This editor was updated. Reload this tab to keep using agents.", code: "editor-updated",
   }, { status: 410, headers: { "Cache-Control": "no-store" } });
+  if (!agentControls(env).relay) {
+    if (path === "/mcp") {
+      const { pausedMcp } = await import("./mcp");
+      const body = request.method === "POST" ? await requestJson(request, 3 * 1024 * 1024) : undefined;
+      return pausedMcp(body);
+    }
+    if (["/api/agent/relay", "/api/agent/connect", "/api/agent/rebind", "/api/agent/connections"].includes(path))
+      return agentsPaused();
+  }
   if (path === "/__maintenance/cleanup") return cleanupRoute(request, env);
   if (path === "/__maintenance/inventory") return inventoryRoute(request, env);
   if (isOAuthPath(path))
@@ -680,13 +690,13 @@ async function route(
     // Explicit connection checks only; old bundles' polling uses the obsolete /hub route.
     if (path === "/api/agent/connections" && request.method === "GET") {
       const hub = await getHub(env, sessionId);
-      return json({ grants: hub?.grants ?? [] });
+      return json({ grants: hub?.grants ?? [], controls: { watch: agentControls(env).watch } });
     }
     if (path === "/api/agent/revoke" && request.method === "POST") {
       const data = await requestJson(request, 4096);
       const ids: string[] = data?.all
         ? ((await getHub(env, sessionId))?.grants ?? [])
-            .filter((grant) => data.repoId === undefined || grant.repoId === data.repoId)
+            .filter((grant) => (data.repoId === undefined || grant.repoId === data.repoId) && (data.branch === undefined || grant.branch === data.branch))
             .map((grant) => grant.id)
         : [String(data?.id ?? "")];
       for (const id of ids) {

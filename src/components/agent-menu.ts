@@ -36,7 +36,7 @@ interface HubGrant {
 }
 interface HubState {
   grants: HubGrant[];
-
+  controls?: { watch: boolean };
 }
 
 export interface AgentApproval {
@@ -82,6 +82,8 @@ export function createAgentMenu(options: {
   let lastRead = 0;
   let consentChecks: ReturnType<typeof setTimeout>[] = [];
   let retrying = false;
+  let ownerPaused = false;
+  let watchAllowed = true;
   let transport: ReturnType<typeof createLiveTransport> | undefined;
   let transportMode: "pending" | "socket" = "pending";
   let pinned: ReturnType<typeof options.repository>;
@@ -105,7 +107,7 @@ export function createAgentMenu(options: {
     try { channel?.postMessage(key); } catch { /* Closed channel: they read again when seen. */ }
   }
   async function activateSocket() {
-    if (!remote || disposed || workspaceChanged || transportMode !== "pending" || !pinned) return;
+    if (!remote || disposed || ownerPaused || workspaceChanged || transportMode !== "pending" || !pinned) return;
     const at = activation, repo = pinned;
     const { createLiveTransport } = await import("../agent-transport");
     if (!live(at) || transportMode !== "pending") return;
@@ -176,6 +178,7 @@ export function createAgentMenu(options: {
         // takeover updates must not be lost (a real move sets workspaceChanged and a new activation).
         if (disposed || !remote || activation !== at || workspaceChanged) return;
         transportState = next;
+        ownerPaused = next.mode === "paused" && Boolean(next.message);
         paint();
       },
     });
@@ -203,7 +206,14 @@ export function createAgentMenu(options: {
   // Stops this tab's remote work; the agents' access stays for when it is turned on again.
   const off = button("Turn off", () => turnOff(), "text-button agent-menu__link");
   const retry = button("Retry", () => {
-    if (!transport || retrying) return;
+    if (retrying) return;
+    if (ownerPaused && !transport) {
+      retrying = true;
+      turnOff();
+      void turnOn().finally(() => { retrying = false; paint(); });
+      return;
+    }
+    if (!transport) return;
     retrying = true;
     paint();
     void transport.retry().finally(() => { retrying = false; paint(); });
@@ -258,7 +268,7 @@ export function createAgentMenu(options: {
   async function api(action: string, body?: unknown, at?: number) {
     const sent = body === undefined ? undefined : JSON.stringify(body);
     if (at !== undefined && !live(at)) throw new Error("Remote agents were turned off.");
-    if (transportMode === "socket" && !workspaceChanged && ["quota", "paused", "reconnecting"].includes(transportState?.mode ?? "")) throw new AgentFailureError({ kind: "other" }, "Remote agents are paused.");
+    if (action !== "revoke" && transportMode === "socket" && !workspaceChanged && ["quota", "paused", "reconnecting"].includes(transportState?.mode ?? "")) throw new AgentFailureError({ kind: "other" }, "Remote agents are paused.");
     // A failure counts only for the workspace that sent the request: not one opened since.
     const source = transport;
     const report = (error: AgentFailureError) => {
@@ -282,6 +292,17 @@ export function createAgentMenu(options: {
     let result;
     try { result = JSON.parse(text); } catch { /* Cloudflare's 1027 answer is HTML. */ }
     if (!response.ok) {
+      if (result?.code === "agents-paused") {
+        if (remote && (at === undefined || live(at))) {
+          stopAutomatic();
+          transport?.stop(); transport = undefined;
+          ownerPaused = true;
+          transportMode = "socket";
+          transportState = { mode: "paused", message: result.error };
+          paint();
+        }
+        throw new AgentFailureError({ kind: "other" }, result.error);
+      }
       throw report(new AgentFailureError(classifyAgentFailure({ status: response.status, body: result, text, retryAfter: response.headers.get("Retry-After"), now: Date.now() }), result?.error));
     }
     return result ?? {};
@@ -440,7 +461,9 @@ export function createAgentMenu(options: {
             ? "Turn on remote agents in this tab and copy a prompt that connects Claude, Codex or another agent"
             : "Copy a prompt that connects Claude, Codex or another agent to this site";
     links.hidden = changing || current === "off" || current === "closed";
-    again.hidden = cancel.hidden = current !== "waiting";
+    again.hidden = current !== "waiting";
+    cancel.hidden = current !== "waiting" && !ownerPaused;
+    cancel.textContent = ownerPaused ? "Disconnect MCP" : "Cancel";
     const recovering = transportState;
     takeover.hidden = !["other-owner", "taken-over", "takeover-failed"].includes(current);
     takeover.textContent = current === "takeover-failed" ? "Try again" : "Take over";
@@ -457,7 +480,8 @@ export function createAgentMenu(options: {
           ? "Remote agents are off in this tab. Choose Connect with MCP to turn them on."
           : "";
     let pause = "";
-    if (recovering?.mode === "quota") {
+    if (ownerPaused || recovering?.message) pause = recovering?.message ?? "Remote agents are paused by the site owner.";
+    else if (recovering?.mode === "quota") {
       pause = QUOTA_PAUSE;
       if (recovering.resetAt !== undefined) pause += ` It should work again after ${new Date(recovering.resetAt).toLocaleString()} (midnight UTC).`;
     } else if (recovering?.mode === "unavailable") pause = "This browser can't keep a live connection for agents.";
@@ -502,10 +526,17 @@ export function createAgentMenu(options: {
     }
     watchRow.hidden = !shown;
     root.dataset.watch = shown ? report.state : "";
-    const ticking = shown && report.state === "on";
+    const ticking = shown && watchAllowed && report.state === "on";
     if (ticking && watchTicker === undefined) watchTicker = setInterval(() => paintWatch(), 1000);
     if (!ticking && watchTicker !== undefined) { clearInterval(watchTicker); watchTicker = undefined; }
     if (!shown) return;
+    watchStart.hidden = !watchAllowed;
+    if (!watchAllowed) {
+      root.dataset.watch = "paused";
+      watchStop.hidden = true;
+      watchText.textContent = "Watch is paused by the site owner. Agents still get requests when they ask.";
+      return;
+    }
     const time = (at: number) => new Date(at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
     watchStop.hidden = report.state !== "on";
     watchStart.textContent = report.state === "off" ? "Watch for requests" : "Watch again";
@@ -522,7 +553,7 @@ export function createAgentMenu(options: {
   /** Only the user starts (or renews) and stops Watch; a stopped one releases a held wait at once. */
   function setWatch(on: boolean) {
     const watch = watchOf();
-    if (!watch) return;
+    if (!watch || on && !watchAllowed) return;
     try {
       if (on) watch.start(); else watch.stop();
     } catch {
@@ -615,6 +646,7 @@ export function createAgentMenu(options: {
     if (!options.repository() || changing) return;
     startRemote();
     await readConnections();
+    if (ownerPaused) return;
     await activateSocket();
     if (state() === "connected") say("Remote agents are on. If an agent you connected before stopped, ask it to continue.");
     else if (state() === "idle") await start(task);
@@ -623,6 +655,7 @@ export function createAgentMenu(options: {
   function startRemote() {
     if (remote || disposed) return;
     remote = true;
+    ownerPaused = false;
     activation++;
     pinned = options.repository();
     workspaceChanged = false;
@@ -636,6 +669,7 @@ export function createAgentMenu(options: {
   function turnOff() {
     if (!remote) return;
     remote = false;
+    ownerPaused = false;
     activation++;
     stopAutomatic();
     transport?.stop(); transport = undefined;
@@ -711,7 +745,8 @@ export function createAgentMenu(options: {
     changing = true;
     paint();
     try {
-      for (const grant of liveGrants()) await api("revoke", { id: grant.id });
+      if (ownerPaused && pinned) await api("revoke", { all: true, repoId: pinned.id, branch: pinned.branch });
+      else for (const grant of liveGrants()) await api("revoke", { id: grant.id });
       token = tokenId = undefined;
       changing = false;
       turnOff();
@@ -742,6 +777,7 @@ export function createAgentMenu(options: {
       const next: HubState = await api("connections", undefined, at);
       if (!live(at)) return;
       hub = next;
+      watchAllowed = next.controls?.watch !== false;
       lastRead = Date.now();
       paint();
     } catch (error) { if (live(at)) showError(error); }
@@ -794,6 +830,7 @@ export function createAgentMenu(options: {
     consentChecks = [];
     startRemote();
     hub = found;
+    watchAllowed = found.controls?.watch !== false;
     await activateSocket();
     paint();
   }

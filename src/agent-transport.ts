@@ -13,7 +13,7 @@ import { browserAgentRecovery } from "./agent-recovery";
 type Snapshot = Awaited<ReturnType<AgentRecords["snapshot"]>>;
 type Mode = "connecting" | "live" | "other-owner" | "taken-over" | "taking-over" | "takeover-failed" |
   "reconnecting" | "paused" | "quota" | "workspace-changed" | "unavailable" | "off";
-interface State { mode: Mode; closed?: boolean; resetAt?: number; retryAt?: number }
+interface State { mode: Mode; message?: string; closed?: boolean; resetAt?: number; retryAt?: number }
 interface Scope { workspace: AgentWorkspace; tabId: string; generation: number }
 interface Result { state: "applied" | "conflict" | "unknown"; message: string; result?: AgentCommand["result"]; operationId: string }
 type Socket = Pick<WebSocket, "readyState" | "send" | "close" | "addEventListener">;
@@ -43,7 +43,7 @@ interface Options {
   run: (command: AgentCommand, ownerGeneration: number, signal?: AbortSignal) => Promise<{ message?: string; result?: AgentCommand["result"] } | void>;
   listen: (state: State) => void;
   socket?: (url: string) => Socket;
-  /** One plain route probe, only after the first socket attempt fails. */
+  /** One plain route probe after a failed socket upgrade. */
   now?: () => number;
   probe?: (signal: AbortSignal) => Promise<number | { status: number; body?: unknown; text?: string; retryAfter?: string | null }>;
   registry?: Registry;
@@ -96,6 +96,7 @@ export function createLiveTransport(options: Options) {
   let opening: { socket: Socket; current: () => boolean } | undefined;
   let socket: Socket | undefined, handshaken = false, session = 0, release: (() => void) | undefined;
   let heartbeat: number | undefined, pong: number | undefined;
+  let ownerPaused = false;
   let recovery: Recovery | undefined, first = true, takeoverFlight: Promise<void> | undefined;
   const active = new Map<string, { source: Socket; stop: AbortController; dispose: () => void }>();
   const cancelSocket = (source: Socket | undefined) => {
@@ -344,11 +345,27 @@ export function createLiveTransport(options: Options) {
   }
   function recover() {
     if (recovery) return;
-    recovery = (options.recovery ?? (reconnect => browserAgentRecovery(workspace, options.tabId, reconnect)))(connect);
+    recovery = (options.recovery ?? (reconnect => browserAgentRecovery(workspace, options.tabId, reconnect)))(async valid => {
+      try { await connect(valid); }
+      catch (error) {
+        if (!current() || !valid()) throw error;
+        // A site may be paused after an earlier successful connection. Classify
+        // the failed upgrade before the recovery budget schedules another one.
+        const probe = await absent();
+        if (!current() || !valid()) throw error;
+        if (probe.paused) {
+          ownerPaused = true;
+          close();
+          throw new AgentFailureError({ kind: "other" });
+        }
+        throw new AgentFailureError(probe.failure);
+      }
+    });
     recovery.subscribe(() => {
       if (!current() || generation === undefined) return;
       const next = recovery?.state();
       if (!next) return;
+      if (ownerPaused) { close(); show({ mode: "paused", message: "Remote agents are paused by the site owner." }); return; }
       if (next.mode === "ok") { if (handshaken && socket?.readyState === 1) show({ mode: "live" }); return; }
       // Quota stays recorded during manual Retry. Its lease renewal must not cancel that
       // same pending handshake; a fresh quota report invalidates current() and closes it.
@@ -358,6 +375,7 @@ export function createLiveTransport(options: Options) {
   }
   async function open() {
     recover();
+    if (ownerPaused) return;
     if (!recovery!.allowAutomatic()) { const next = recovery!.state(); show({ ...next, mode: next.mode === "ok" ? "connecting" : next.mode }); return; }
     show({ mode: "connecting" });
     const at = epoch;
@@ -371,6 +389,12 @@ export function createLiveTransport(options: Options) {
         first = false;
         const probe = await absent();
         if (!current() || epoch !== at) return;
+        if (probe.paused) {
+          ownerPaused = true;
+          recovery?.dispose(); recovery = undefined;
+          show({ mode: "paused", message: "Remote agents are paused by the site owner." });
+          return;
+        }
         failure = probe.failure;
       }
       recovery?.report(failure);
@@ -408,7 +432,7 @@ export function createLiveTransport(options: Options) {
     return takeoverFlight;
   }
   /** One plain probe classifies every failure, including a missing relay, through recovery. */
-  async function absent(): Promise<{ failure: AgentFailure }> {
+  async function absent(): Promise<{ failure: AgentFailure; paused?: boolean }> {
     // Headers and body share one 10 s deadline: a stalled probe is a network failure, never a wait.
     const stop = new AbortController();
     let limit: number | undefined;
@@ -420,8 +444,9 @@ export function createLiveTransport(options: Options) {
       return { status: response.status, body, text, retryAfter: response.headers.get("Retry-After") };
     }))(stop.signal).catch(() => undefined), expired]).finally(() => clock.clearTimeout(limit!));
     const probe = typeof answer === "number" ? { status: answer } : answer;
+    const paused = Boolean(probe?.body && typeof probe.body === "object" && "code" in probe.body && probe.body.code === "agents-paused");
     const failure = classifyAgentFailure({ ...probe, networkError: !probe, now: (options.now ?? Date.now)() });
-    return { failure: failure.kind === "other" ? { kind: "transient" } : failure };
+    return { failure: failure.kind === "other" ? { kind: "transient" } : failure, paused };
   }
   async function start() {
     const at = epoch;
@@ -490,7 +515,10 @@ export function createLiveTransport(options: Options) {
     start, takeover, stop,
     state: () => state,
     changed: () => { if (!stopped && moved()) halt("workspace-changed"); },
-    retry: () => recovery?.retry() ?? Promise.resolve({}),
+    retry: () => {
+      if (ownerPaused) { ownerPaused = false; first = true; return recovery ? recovery.retry() : open(); }
+      return recovery?.retry() ?? Promise.resolve({});
+    },
     report: (failure: AgentFailure) => { recovery?.report(failure); },
   };
 }

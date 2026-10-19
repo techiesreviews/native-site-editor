@@ -1,3 +1,4 @@
+import { agentControls, agentsPaused } from "./agent-controls";
 // OAuth 2.1 for the MCP endpoint, as the MCP authorization spec asks, so the
 // editor can be added to claude.ai, Claude Desktop or Claude Code by its URL:
 //
@@ -195,6 +196,7 @@ export async function handleOAuth(request: Request, env: Env, url: URL, deps: OA
   const origin = url.origin;
   if (request.method === "OPTIONS" && !path.startsWith("/auth/mcp/authorize"))
     return new Response(null, { status: 204, headers: cors });
+  if (!agentControls(env).relay && ["/auth/mcp/authorize", "/auth/mcp/token"].includes(path)) return agentsPaused(cors);
   if (path.startsWith("/.well-known/oauth-protected-resource")) {
     if (path !== "/.well-known/oauth-protected-resource" && path !== "/.well-known/oauth-protected-resource/mcp")
       return json({ error: "Not found." }, 404);
