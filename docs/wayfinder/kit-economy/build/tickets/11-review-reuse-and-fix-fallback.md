@@ -1,7 +1,8 @@
 ---
 title: "kit pr reuses a clean review on a moved base; kit fix without a builder record"
 type: task (AFK)
-status: ready-for-agent
+status: closed
+assignee: ke-11
 blocked_by: [01-kit-pr-stops-on-findings, 03-kit-fix]
 builder: sol
 ---
@@ -56,3 +57,28 @@ and it only takes review findings (ticket 09's runner had to hand-roll
 - Sol review via `kit review --ticket` with no open findings; landed via `kit pr --ticket` into
   `dev` with CI green.
 - Dogfood: built with `kit slice`; the Done section says where it helped or failed.
+
+## Done (2026-10-19)
+
+- Behaviour: `kit pr` compares stable patch IDs from saved refs and current refs. A clean,
+  unchanged patch reuses its review after rebasing; changed patches, including changed conflict resolutions,
+  require review. Missing refs, malformed/empty IDs and incomplete reviews cannot establish reuse.
+- Behaviour: `kit fix` starts a fresh builder when no resumable builder record exists, announces
+  the fallback and selects `--builder`, the latest matching slice model, or `gpt-6.1-sol`.
+  `--note FILE` supplies verbatim failure evidence without requiring review findings. Saved rounds
+  retain the note, builder session and commit/review phase for retries.
+- Commits: none in this builder turn; changes remain unstaged for the runner, per the build contract.
+- Tests: `scripts/agents/kit doctor` — `RESULT: ok doctor 7/7 checks passed`;
+  `scripts/agents/kit unit --affected` — `RESULT: ok unit 77/77 (3 files)`
+  (full log: `.scratch/unit/20261019T115849-31.log`). Covers patch equality, moved bases,
+  conflict resolutions, fresh fallback with/without slice state, explicit model, notes and retry recovery.
+- Checks: `npm run check` and `npm run lint` passed (417 tickets checked; export check had
+  0 failures); `scripts/agents/kit specs --affected` — `RESULT: ok specs none affected`.
+  `git diff --check` passed; the index is empty and HEAD remains `5ee9564e`.
+- Review decisions: retained exact-ref finding enforcement; extended patch-based reuse only to
+  clean completed reviews. An explicitly invalid `--run` remains an error.
+  Independent Sol review, `kit pr --ticket`, merge and green CI remain runner acceptance steps:
+  this turn's contract prohibits commits, pushes and spawning agents.
+- Dogfood: `kit doctor` and `kit unit --affected` helped by checking the worktree and selecting
+  both focused files plus the helper's parser tests. `kit slice` could not be executed under
+  this turn's no-commit/no-agent contract; live slice dogfood remains for the runner.
