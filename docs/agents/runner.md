@@ -91,6 +91,8 @@ decisions, evidence; details go there, not in the report), set `status: closed` 
 ## Land
 
 The default `kit slice` path calls `kit pr` after a clean review and reports the merged PR and SHA.
+When `kit pr` queues the PR, the slice saves the queued head and waits for its actual merged SHA
+(up to two hours per invocation); retries resume that wait without reopening or requeuing the PR.
 It never passes `--waive`. For a failed landing, rerun the same slice; it resumes the PR phase.
 
 Manual fallback:

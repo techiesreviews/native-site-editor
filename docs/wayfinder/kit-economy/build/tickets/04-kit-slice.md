@@ -78,9 +78,10 @@ commit, review, fixes, close, `kit pr`), relaunching jobs and re-reading output 
   lines. `--no-pr` stops reviewed clean; exhausted findings open/update a PR with `--no-merge`,
   list the findings and fail without passing `--waive`.
 - Shared helper: extended the existing `scripts/agents/kit-lib.mjs` with `commitBuilderWork` and
-  model author mapping, used by both slice and fix. Normal Git staging and commit hooks replace
-  fix's private Git directory/index and manual index/HEAD locks. Branch and HEAD checks before
-  staging and after commit reject stale scope, empty work and hooks that move the branch or HEAD.
+  model author mapping, used by both slice and fix. Both use the worktree's normal index and
+  commit hooks, with a temporary detached HEAD for safe commit creation and expected-old-SHA
+  publication to only the captured branch. Git owns reference locks; no manual index/HEAD locks.
+  Scope and parent checks reject stale scope, empty work and hooks that move HEAD.
 - Tests: `tests/kit-slice.test.ts` fakes agent/review/fix/pr commands through executable env
   overrides and exercises briefs, ordering, success, fix rounds, exhaustion, no-PR, retries of
   every phase, saved evidence, changed HEAD and bounded failure output. `tests/kit-commit.test.ts`
@@ -102,3 +103,31 @@ commit, review, fixes, close, `kit pr`), relaunching jobs and re-reading output 
 - Commits: _runner to fill; implementation left unstaged_.
 - Review decisions and evidence: _runner to fill after review_.
 - Landed PR / CI: _runner to fill_.
+
+
+### Review fixes (2026-10-19)
+
+- Exhaustion now accepts only the expected review-findings refusal identifying an opened PR,
+  or a successful `opened` RESULT. Other failures surface as `fail slice pr` with the PR command's
+  reason and at most 15 PR log lines, instead of being hidden behind exhausted findings.
+- Queued PRs persist their PR number and reviewed head before waiting. The slice queries merge
+  state until merged, reports the actual merge SHA, rejects a changed PR head, and resumes the
+  same wait after lookup errors or timeouts without invoking `kit pr` again.
+- The P1 publication finding required changing the initial no-private-Git-context design:
+  normal commits can publish onto a branch switched during a pre-commit hook before a later
+  scope check catches it. The shared helper now creates the commit against a temporary detached
+  HEAD using the normal index and hooks, rechecks scope, and compare-and-swaps only the captured
+  branch against the expected old SHA. The context is removed in `finally`; it creates no manual
+  Git lock files and no private index. A late switch cannot redirect publication to another branch.
+- Regression coverage: held pre-commit hook with another branch at the same HEAD, no foreign
+  branch commit and no review; linked worktree isolation; switch immediately before publication;
+  exhausted-round PR creation failure and bounded digest; queue success and retry after lookup
+  error or timeout; changed queued PR head; a rerun after successful merge does not reopen the PR.
+- Validation: focused unit files passed 49, failed 0 twice; final log
+  `.scratch/unit/20261019T093151-2.log`. Shared-helper-only run passed 13, failed 0.
+  Earlier runs (20/26, 20/26, helper 10/1, 21/28 pass/fail) exposed unsupported combinations of
+  HEAD verification and branch updates in a single Git transaction; replaced that approach with
+  detached commit creation and expected-old-SHA publication to the named branch. `npm run check`,
+  `npm run lint`, and `git diff --check` passed. Kit results: `RESULT: ok doctor 7/7 checks passed`;
+  `RESULT: ok specs none affected`. No full unit suite, live review, push or merge was run.
+- Declined: none.
