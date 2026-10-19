@@ -127,6 +127,24 @@ async function agePending(h: Fixture) {
 
 test("eight concurrent Worker connects admit exactly five; other branches, repositories and accounts are independent", async () => {
   const h = await fixture();
+  const recordCalls: { name: string; method: string }[] = [];
+  let reserves = 0;
+  const finalized = new Set<string>();
+  let release!: () => void;
+  const allFinalized = new Promise<void>(resolve => { release = resolve; });
+  const restore = intercept(h, async (name, request, next) => {
+    if (name.startsWith("agent:")) recordCalls.push({ name, method: request.method });
+    const action = new URL(request.url).pathname === METADATA_ROUTE ? await request.clone().json() as MetadataAction : undefined;
+    // Deliver one reservation after the five admitted grants finish. A refusal
+    // can then reconcile finalized records instead of skipping pending entries.
+    if (action?.action === "reserve" && ++reserves === 8) await allFinalized;
+    const response = await next();
+    if (action?.action === "finalize" && response.ok) {
+      finalized.add(action.id);
+      if (finalized.size === 5) release();
+    }
+    return response;
+  });
   try {
     h.counters.reset();
     const responses = await Promise.all(Array.from({ length: 8 }, () => h.connect()));
@@ -136,7 +154,12 @@ test("eight concurrent Worker connects admit exactly five; other branches, repos
     for (const response of refused) assert.match(await response.text(), /already has 5 agent connections on this branch.*Disconnect one/);
     assert.equal((await h.ledger())!.entries.length, 5);
     assert.equal((await connections(h)).length, 5);
-    assert.equal(h.counters.log.filter(row => row.name.startsWith("agent:") && row.path === "/").length, 5, "grant record call count excludes refused allocations");
+    const admitted = await Promise.all(responses.filter(response => response.status === 200)
+      .map(async response => `agent:${(await response.json() as { id: string }).id}`));
+    assert.deepEqual(recordCalls.filter(call => call.method === "PUT").map(call => call.name).sort(), admitted.sort(),
+      "each admitted connection allocates one grant record; refused allocations write none");
+    assert.ok(recordCalls.some(call => call.method === "GET"), "late refusal reconciles finalized records");
+    assert.ok(recordCalls.every(call => admitted.includes(call.name)), "refused allocations make no grant record calls");
     await connected(h, "preview");
     for (const change of [{ login: "other" }, { repoId: 987 }])
       await createGrant(h.env, { ...h.input, ...change });
@@ -146,7 +169,7 @@ test("eight concurrent Worker connects admit exactly five; other branches, repos
     const before = await h.ledger();
     await h.alarm(h.name);
     assert.deepEqual(await h.ledger(), before);
-  } finally { await h.worker.dispose(); }
+  } finally { restore(); await h.worker.dispose(); }
 });
 
 for (const step of ["record PUT", "add-grant"] as const)
