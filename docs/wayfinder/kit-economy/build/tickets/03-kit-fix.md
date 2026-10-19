@@ -83,7 +83,7 @@ whose `status.json` says `done` just prints its saved report.
   CLI/model/effort and appending reports/logs after waiting for a live runner. The original
   no-brief resume behavior remains unchanged. Documented both commands.
 - Focused validation: `scripts/agents/unit.sh tests/kit-fix.test.ts tests/agent-resume.test.ts
-  tests/kit-review.test.ts` reports 56 passing tests, zero failures in its TAP log; the known
+  tests/kit-review.test.ts` reports 60 passing tests, zero failures; the known
   unit-summary counts error is ignored as instructed. All fake CLI/review scratch artifacts
   live in temporary repositories and are removed by test cleanup.
 - `npm run check` and `npm run lint` passed. Full `npm test` was intentionally excluded by this ticket's
@@ -91,4 +91,13 @@ whose `status.json` says `done` just prints its saved report.
   this build leaves all changes unstaged and performs no deployment.
 - Branch-specific round briefs live under `.scratch/kit-fix/<encoded-branch>/round-N.md`.
   Declined reasons pass to the normal review brief via the child-only `ASE_REVIEW_DECLINED` list.
+- Review follow-up: preserve the original branch/HEAD proof after the builder and every later
+  await. Hold the real Git HEAD/index locks while staging in a private index and committing
+  with temporary detached metadata (normal hooks still run). Publish only the captured branch
+  with an expected-old-HEAD check; discard temporary metadata/indexes and release locks on
+  failures. The next review must cover the commit produced by this round.
+- Race coverage uses `forEachAwait` to hold the fake builder, switch branches or advance HEAD,
+  then release it; both cases fail before staging/committing and start no review. Additional
+  tests prove checkout is blocked during the validation hook, hook-induced HEAD changes fail
+  without publishing fixes, and the private index/locks are cleaned up.
 - Dogfood: (runner fills in)
