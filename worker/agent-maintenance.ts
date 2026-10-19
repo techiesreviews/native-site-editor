@@ -220,6 +220,13 @@ async function classify(storage: InventoryStorage, now: number) {
     }
     // No signed browser acknowledgement exists in this slice. Old server content
     // is never recovery proof: only absolute expiry plus the clock margin is.
+    // Hub grants (HubGrant) are objects with a string id; an expiry, when a
+    // grant carries one, must be valid. Anything else is an unknown schema, so
+    // the hub needs review instead of an expiry guess.
+    if (hub && Array.isArray(hubValue?.grants) && hubValue.grants.some(grant => {
+      const entry = object(grant);
+      return !entry || typeof entry.id !== "string" || (entry.expiresAt !== undefined && !number(entry.expiresAt));
+    })) hub.item.eligibility = "review";
     if (hub && hub.item.eligibility !== "review") {
       const expiries = [hub.item.latestExpiresAt!, ...(Array.isArray(hubValue?.grants)
         ? hubValue.grants.map(grant => object(grant)?.expiresAt).filter(number) : [])];

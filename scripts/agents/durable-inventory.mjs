@@ -19,27 +19,31 @@ const statuses = new Set(["pending", "empty", "classified", "deferred", "unknown
 const batchStatuses = new Set(["running", "complete", "limited", "paused", "inaccessible", "interrupted"]);
 
 /** Shared with ticket 28: reserve and checkpoint BEFORE invoking maintenance. */
-export function reserveMaintenance(budget, now, calls = 1, rows = 0, wakeDay) {
-  if (!integer(calls) || !integer(rows) || (wakeDay !== undefined && !utcDay(wakeDay)))
+export function reserveMaintenance(budget, now, calls = 1, rows = 0, wakeDay, wakeRows = 0) {
+  if (!integer(calls) || !integer(rows) || !integer(wakeRows) || (wakeDay !== undefined && !utcDay(wakeDay)))
     throw new Error("Invalid maintenance reservation");
   const day = new Date(now).toISOString().slice(0, 10);
   if (budget.day > day) return false;
-  if (!scheduledBudget(budget.scheduled)) throw new Error("Invalid maintenance budget");
+  if (!scheduledBudget(budget.scheduled) || !scheduledBudget(budget.scheduledRows)) throw new Error("Invalid maintenance budget");
   if (budget.day !== day) {
     budget.day = day; budget.count = budget.scheduled?.[day] ?? 0;
-    if (budget.rows !== undefined) budget.rows = 0;
+    // Rows reserved earlier for a retained-record wake on this day count first.
+    if (budget.rows !== undefined || budget.scheduledRows?.[day] !== undefined) budget.rows = budget.scheduledRows?.[day] ?? 0;
     if (budget.scheduled) budget.scheduled = Object.fromEntries(Object.entries(budget.scheduled).filter(([at]) => at > day));
+    if (budget.scheduledRows) budget.scheduledRows = Object.fromEntries(Object.entries(budget.scheduledRows).filter(([at]) => at > day));
   }
   if (!integer(budget.count)) throw new Error("Invalid maintenance budget");
   // One immediate call and an optional retained-record wake must fit together.
   // An old crash reservation cannot authorize a wake on a day already past.
   if (wakeDay !== undefined && wakeDay < day) return false;
   const today = calls + Number(wakeDay === day);
-  if (budget.count + today > 1000 || (budget.rows ?? 0) + rows > 5000 ||
-      (wakeDay > day && (budget.scheduled?.[wakeDay] ?? 0) + 1 > 1000)) return false;
+  const rowsToday = rows + (wakeDay === day ? wakeRows : 0);
+  if (budget.count + today > 1000 || (budget.rows ?? 0) + rowsToday > 5000 ||
+      (wakeDay > day && ((budget.scheduled?.[wakeDay] ?? 0) + 1 > 1000 || (budget.scheduledRows?.[wakeDay] ?? 0) + wakeRows > 5000))) return false;
   budget.count += today;
   if (wakeDay > day) budget.scheduled = { ...budget.scheduled, [wakeDay]: (budget.scheduled?.[wakeDay] ?? 0) + 1 };
-  if (rows) budget.rows = (budget.rows ?? 0) + rows;
+  if (wakeDay > day && wakeRows) budget.scheduledRows = { ...budget.scheduledRows, [wakeDay]: (budget.scheduledRows?.[wakeDay] ?? 0) + wakeRows };
+  if (rowsToday) budget.rows = (budget.rows ?? 0) + rowsToday;
   return true;
 }
 
@@ -122,7 +126,7 @@ export function maintenanceBudget(path, options, previous, clock) {
     if (!object(saved) || saved.account !== options.account || saved.namespace !== options.namespace ||
         typeof saved.day !== "string" || !/^\d{4}-\d{2}-\d{2}$|^$/.test(saved.day) || !integer(saved.count) ||
         (saved.rows !== undefined && !integer(saved.rows)) || (saved.notBefore !== undefined && !integer(saved.notBefore)) ||
-        !scheduledBudget(saved.scheduled))
+        !scheduledBudget(saved.scheduled) || !scheduledBudget(saved.scheduledRows))
       throw new Error("Invalid namespace budget");
     // Preserve the whole ledger (including fields another maintenance tool owns).
     budget = { ...saved };
