@@ -46,8 +46,8 @@ own `runner-extras.md` (next to its map) wins where it differs.
 - Manual fallback: `builder: claude`: implement directly. `builder: sol` (or another model): write `.scratch/agent-brief.md`
   with ticket path, Files list and acceptance, and run `scripts/agents/agent.sh build "$PWD" .scratch/agent-brief.md --model
   <model> --effort <effort>` in the background. Inspect the report and diff; stay inside the ticket's Files; then commit.
-- Add unit coverage for pure rules. While building, run focused checks for what you changed: `scripts/agents/unit.sh
-  <files>`, `npm run check` when types moved, `scripts/agents/kit specs --affected` (or `kit specs <spec…>`; `full-suite.sh 3`
+- Add unit coverage for pure rules. While building, run `scripts/agents/kit unit --affected` (or `scripts/agents/unit.sh
+  <files>`), `npm run check` when types moved, `scripts/agents/kit specs --affected` (or `kit specs <spec…>`; `full-suite.sh 3`
   only for shared plumbing). `kit pr` runs the full set scaled to the change; don't run it all yourself first. Rerun a
   failing spec once before calling it flaky; one that also fails on plain dev: say so in `decide` and stop.
 - Credit whichever model built the change: `Co-Authored-By: <model name> <noreply@<vendor>>`

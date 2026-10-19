@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, watch, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test, { type TestContext } from "node:test";
@@ -281,11 +281,17 @@ test("help, discovery and invalid arguments do not invoke a measurement", t => {
 for (const signal of ["SIGINT", "SIGTERM"] satisfies NodeJS.Signals[]) {
   test(`measurement forwards ${signal} and leaves no successful cache`, async t => {
     const f = fixture(t);
+    const readyFile = join(f.root, ".scratch/ready");
+    let ready!: () => void;
+    const readiness = new Promise<void>(resolve => { ready = resolve; });
+    // Subscribe before spawning; the file is written only after the handler is installed.
+    const watcher = watch(join(f.root, ".scratch"), () => { if (existsSync(readyFile)) ready(); });
+    t.after(() => watcher.close());
     // This runner stays alive until it receives the signal, then records it and exits.
     f.put(".scratch/signal.cjs", `#!${process.execPath}
 const { writeFileSync } = require("node:fs");
 process.on(${JSON.stringify(signal)}, () => { writeFileSync(${JSON.stringify(join(f.root, ".scratch/signal"))}, ${JSON.stringify(signal)}); process.exit(1); });
-console.log("ready");
+writeFileSync(${JSON.stringify(readyFile)}, "ready");
 setInterval(() => {}, 1000);
 `);
     chmodSync(join(f.root, ".scratch/signal.cjs"), 0o755);
@@ -297,16 +303,8 @@ setInterval(() => {}, 1000);
     child.stdout.on("data", data => { stdout += data; });
     child.stderr.on("data", data => { stderr += data; });
     const closed = once(child, "close");
-    await t.test("runner ready", async () => {
-      // Read the owned log until the runner installs its signal handler.
-      const deadline = Date.now() + 5000;
-      while (true) {
-        const log = /^log: (.+)$/m.exec(stdout)?.[1];
-        if (log && existsSync(log) && readFileSync(log, "utf8").includes("ready")) break;
-        assert.ok(Date.now() < deadline, stderr + stdout);
-        await new Promise(accept => setTimeout(accept, 10));
-      }
-    });
+    await Promise.race([readiness, closed.then(() => { throw new Error(`runner exited before ready: ${stderr}${stdout}`); })]);
+    watcher.close();
     child.kill(signal);
     const [status] = await closed;
     result({ status, stdout, stderr }, signal === "SIGINT" ? 130 : 143, /fail size interrupted by SIG/);
