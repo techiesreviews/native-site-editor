@@ -1,0 +1,183 @@
+# Preview evidence, Gate 2 (2026-10-19)
+
+Raw notes behind the Gate 2 rows P1–P6 and P8 in [rollout.md](rollout.md). P7 (canary cleanup) was not run.
+Worker `native-site-editor-preview`, https://preview-editor.techies.tools. All times UTC.
+Release commit `58fd637b` (app code unchanged up to `eef16b5d`, which moved `dev` during the run: docs, scripts and tests only).
+Test site: `techiesreviews/Empty` (started with Starter site, published once at 13:46). Browser: T3 preview tab, default profile,
+signed in as `techiesreviews`. Agent side: curl JSON-RPC to `/mcp` with the Bearer token from Connect with MCP; the token was
+kept in a 0600 scratch file and deleted at the end. No tokens, cookies or draft text are recorded here.
+
+## Before the rows
+
+- The CI preview deploy did **not** deploy: `deploy-preview.yml` runs on every `dev` push but the repository has no
+  `CLOUDFLARE_API_TOKEN` secret, so its Deploy step prints "No CLOUDFLARE_API_TOKEN secret yet" and exits 0 (run
+  39255263382 for `58fd637b`). The live version at the start was `7bcdbf07` (09:37). So CI could not replace a switch
+  deployment during this run, and preview only changes when someone runs `npm run deploy:preview` / `kit preview`.
+- Deployed the release commit by hand: `6e751b85-1b8c-4387-9152-e749c52fffa0` (13:44:49), all switches at the committed values.
+- Preview SessionStore namespace `7407bb63063b452da0d235ac504b3099`. Analytics: Cloudflare GraphQL
+  `durableObjectsInvocationsAdaptiveGroups` and `durableObjectsPeriodicGroups` per minute and per `objectId`, read with the
+  wrangler OAuth token. Adaptive/periodic groups are sampled aggregates, not billing. `inboundWebsocketMsgCount` reads 0 for every
+  object all day even while the tab sent frames; only `outboundWebsocketMsgCount` moves.
+- **Other traffic**: someone else used preview during the whole run (object `b08f9bcc…`, ~200 requests and ~58 GB-s between
+  13:45 and 14:20, plus about ten small objects). Namespace totals are therefore not this run's; the numbers below are for this
+  workspace's object `1303eed4…` (identified by timing: first seen at the 14:00 connect, frames matching the tab's log).
+- Browser limits: the T3 tab only renders while its inline preview is open (with `open: false` requestAnimationFrame never fires and
+  the editor canvas never loads), so the tab was opened visible. Its `document.visibilityState`/`hidden` are pinned to "visible"
+  as own non-configurable properties, so a **hidden tab could not be produced or simulated**. Network evidence came from a
+  fetch/WebSocket wrapper injected into the page (method, path, status, frame type only) plus Resource Timing.
+
+## P1 — signed-in steps (version `6e751b85`)
+
+- Remote off, fresh tab, never connected: load 13:47:45, menu opened 13:49:07 (shows only Connect with MCP). 13:49:08–14:00:29
+  (11 min visible, includes the menu, a manual edit and a save): **0 agent requests, 0 sockets**; the only requests were the save
+  (`POST /api/publish` 200 at 14:00:20, `/api/snapshot`, `/api/change-status`).
+- Manual: added a paragraph (Undo enabled, Publish enabled), Publish → "Saved to GitHub" 14:00:20.
+- Remote off with an existing grant (after reload, 14:14:55): menu opened 14:15:18, 0 agent requests, 0 sockets until Connect.
+- Remote on: Connect with MCP 14:00:35 → `GET /api/agent/connections`, `POST /api/agent/connect`, `GET /api/agent/connections`,
+  one socket (handshake/ready 14:00:37). Agent: `initialize` 200 (14:01:15), `tools/list` 36 tools, `read_file index.html`
+  (hash `0fa5b97a…`), `edit_file` requestId `g2-p1-edit-1` → applied (hash `e0da0fab…`) 14:01:44–46, the identical call again →
+  the same receipt (applied, same hash) 14:01:46–47, `get_command_status` → applied, same hash. One **Undo** restored the original
+  file (read_file hash back to `0fa5b97a…`, marker text gone): one Undo step for the two calls.
+- DO (object `1303eed4`): 14:00 3 req, 14:01 10 req, 1.99 s active, 0.255 GB-s, rows read 2 / written 0, 8 frames out; 14:02 3 req.
+- Each tool call after a quiet gap began with the relay sending `reset` and the tab re-handshaking (14:01:22, 14:01:45, 14:02:04):
+  the object had been evicted and a fresh isolate restored the hibernated socket. Calls 1 s apart did not reset.
+
+## P2 — hibernation (version `6e751b85`)
+
+- Connected idle, tab visible, no tool calls: 14:03:08–14:13:09 (10 min). Tab log: 0 HTTP requests; 13 `ping` → `pong` pairs every
+  45 s (14:03:34 … 14:12:35); no other frames.
+- DO object `1303eed4` per minute: **no rows at all 14:03–14:13** (0 requests, 0 active time, 0 rows, 0 frames), so pings were
+  answered by the auto-response without waking the object and active duration did not grow between messages.
+- Hidden half: **not measured** (the browser tool cannot hide a tab; see limits above).
+
+## P3 — deployment restart (versions `1c301438`, `685e1f53`, `36ceb129`, `6dcb1f47`)
+
+Four redeploys of the same commit with `npm run deploy:preview`. The wrapper held the tab's `result` frames when asked, so an edit
+could be waiting while the new version went live.
+
+1. 14:13:57 upload; tab main thread busy 14:14:01.7–14:14:31.7; edit `g2-p3-edit-1` 14:14:03 → `failed`, "The editor did not receive
+   this (timeout). Nothing was changed" (the restored socket had not handshaken, so the command was never sent; no command frame in
+   the tab). Version `1c301438`. Later `get_command_status` → unknown ("not found").
+2. Version `685e1f53` (created 14:15:50) went live before the edit (14:15:52), so this was not a restart test. Edit `g2-p3-edit-2`
+   applied in the tab, result held → agent got **unknown** "Check get_command_status; do not replay"; after releasing,
+   `get_command_status` → applied.
+3. Same with version `36ceb129` (live 14:17:30.7, edit 14:17:30.9). Edit `g2-p3-edit-3` → unknown, then status → applied.
+4. **The restart row**: edit `g2-p3-edit-4` sent 14:18:17.5, command reached the tab 14:18:18.78 (result held), version `6dcb1f47`
+   went live 14:18:21.77, the relay sent `cancel` at the 10 s deadline 14:18:28.75 and the agent got **unknown** (timeout, "do not
+   replay"). Releasing the held result at 14:18:42.87 woke the new version: `reset` → handshake → ready (14:18:43.0), the stale result
+   was ignored. `get_command_status` 14:18:45 → **applied** (hash `47b933b8…`); the file has the change exactly once. No command was
+   re-sent by the relay or the tab (one command frame per request id in all four runs).
+- The tab's socket never closed across the four deploys (one socket 14:15:23 → tab close 14:29:51); every new version took it over
+  with `reset` + fresh handshake on its next event. The deploy did not abort the in-flight call: the old instance finished it at its
+  deadline. The "waiting edit" was produced by holding the tab's result, not by a real network loss.
+- DO object `1303eed4`: 14:14–14:18 about 10 s active per minute (the 10 s deadlines), 1 DO error in 14:15 (status not read).
+
+## P4 — detection vs deletion (version `6dcb1f47`)
+
+Probe: `read_file` with the token every 10 s from 14:29:52.
+1. Last editor tab closed: 14:29:51–14:29:52.4 (`t3_preview_close` returned before 14:29:52.400).
+2. Server noticed: by 14:29:53.45 (first probe 14:29:52.585, 0.87 s: "The editor tab is not sharing a site right now"); the
+   object wrote 2 rows in 14:29.
+3. Cleanup deadline (noticed + 5 min): about 14:34:52–14:34:53.
+4. Deleted: between 14:34:49.3 (last probe still "not sharing") and 14:34:59.14 (HTTP 401 "Agent connection expired or was
+   revoked."). The object wrote 6 rows in 14:34 (12 read), nothing else in 14:30–14:33 beyond the probes (5–6 requests, ~20 ms a minute).
+- Survived: a new tab at 14:35:13 was still signed in (`/api/session` 200), listed repositories and opened Empty (App config intact),
+  and showed the unsaved draft (Publish 1, the agent's last change on the page).
+
+## P5 — Watch (version `6dcb1f47`)
+
+- Watch off: `wait_for_requests` 14:18:58 answered in 0.48 s, `requests: []`, hint "Do not call wait_for_requests again on your own".
+- Watch turned on 14:19:05 ("until 4:29 PM (9:59 left, 25 waits left)"). Back-to-back waits (waitSeconds 25): held waits 14:19:11
+  (25.1 s), one interrupted client call (curl stopped; the server kept that wait open, so the next 14 calls 14:19:49–59 answered at
+  once "Another wait for this site's requests is already open (one at a time)" and did not use the budget), then 14:20:32–14:28:27
+  twenty held waits of 24.2–25.2 s (waitsLeft 22 → 3), the last 14:28:52 held 13.0 s and ended at the deadline 14:29:05
+  ("The user's Watch ended, so stop waiting"). 13 more calls 14:29:05–18 each answered in 0.2–1.5 s with the same hint.
+- **Stopped by itself at 14:29:05.09, 10 min after turning on; 23 waits held (≤ 25)**. The menu then read "Watch paused at 4:29 PM."
+- Separate edit after: `g2-p5-edit-1` 14:29:30 → applied.
+- DO object `1303eed4` during Watch: about 57 s active per minute, 7.3 GB-s per minute (14:20–14:27), 4–6 requests a minute; 14:28
+  31.7 s; 14:29 0.25 s. Watch waits are the cost Watch is meant to have.
+
+## P6 — switches one at a time
+
+New connection 14:36:29 (new token; the old one was deleted in P4).
+
+**`AGENT_RELAY` off — version `519dae9d-2bec-49d5-9878-e83fd8ef4a97` (live 14:37:06).**
+- Agent: `tools/call read_file` → 200 with tool error "Remote agents are paused by the site owner." (`agents-paused`);
+  `tools/list` → 403 JSON-RPC -32003 same text; `POST /api/agent/connect` → 403.
+- The already-open socket stayed open (ping/pong 14:37:14).
+- After reload, menu opened: 0 requests. Connect with MCP 14:37:48 → one `GET /api/agent/connections` 403, the menu shows
+  "Remote agents are paused by the site owner." with **Disconnect MCP** and **Retry**, no socket. 14:37:49–14:41:09: 0 requests,
+  0 sockets (no reconnect loop, no polling).
+- Manual edit (added a paragraph) 14:38; after reload 14:41:15 still signed in, the paragraph and the agent's earlier draft kept.
+
+**`AGENT_RELAY` back on, `AGENT_WATCH` off — version `5c762253-6976-4f1c-9982-ec6dbc2e88b9` (live 14:41:58).**
+- The tab still showed the pause (Connect clicked 14:41:36). **Retry** 14:42:13 → one `GET /api/agent/connections` 200, socket
+  handshake/ready 14:42:14.9, menu "Disconnect MCP" — reconnected with the existing grant, no new token.
+- Watch off: the menu shows "Watch is paused by the site owner."; `wait_for_requests` (waitSeconds 25) 14:42:21 answered in 1.1 s
+  with hint "Watch is paused by the site owner. Agents still get requests when they ask."
+- Agent edit `g2-p6-watchoff-edit` → applied; manual paragraph added; Undo enabled.
+
+**`AGENT_WATCH` back on, `AGENT_LIFECYCLE_CLEANUP` off — version `0a4e708d-a128-4661-af73-96f931c60d91` (live 14:42:53).**
+- The connected tab kept showing "Watch is paused by the site owner." (no button) after the deploy, after opening the menu and after a
+  focus event: the menu only re-reads `/api/agent/connections` on Connect / consent checks / while waiting, so a connected tab does not
+  learn that Watch is back on. After reload + Connect with MCP (14:43:42, one `/connections` 200) it showed "Watch again"; Watch
+  14:43:51 "until 4:53 PM (25 waits left)"; `wait_for_requests` (waitSeconds 5) 14:43:53 held 6.5 s, waitsLeft 24. Stop watching 14:44:05.
+- Cleanup off: last tab closed 14:44:05.5–14:44:06.1 (first probe 14:44:06.5 already "not sharing"); deadline about 14:49:06.
+  Probes every 30 s 14:44:06–14:51:55: always "not sharing", never 401, so the grant was kept 2 min 49 s past its deadline. The
+  object wrote 1 row in 14:49 (4 read): the alarm rewrote its deadline (postponed 6 h) instead of the 6 rows of P4's deletion.
+  Other minutes 14:44–14:51: only the probes (2 requests, under 10 ms active a minute). DO statuses other than success all day for
+  this object: four `clientDisconnected` (14:15, 14:36, 14:42, 14:43 = tab reloads/closes).
+
+**`AGENT_LIFECYCLE_CLEANUP` back on — version `3005bc6a-d4a4-4535-bc93-ce7a04d85e96` (live 14:53:10), all three on.**
+- 14:53:20 probe: still "not sharing" (grant still there; nothing deletes it before the postponed wake).
+- **Deleted at the next wake: not measured.** The postponed wake is about 20:49 UTC (alarm 14:49 + 6 h), after this run. The
+  grant was deliberately left untouched for it (no tab connected afterwards: a handshake would clear the pending cleanup). Re-check:
+  object `1303eed4…` in `durableObjectsPeriodicGroups` should show rows written (about 6, as in P4 14:34) in the 20:49 minute, and
+  the editor's Connect with MCP for Empty should then find no connected agent (`/api/agent/connections` grants 0 instead of 1).
+
+## P8 — rollback rehearsal
+
+**All three off — version `8b9c4d27-511d-4e96-8a2d-d7c404d00cbf` (live 14:54:09).** Tab loaded 14:53:30 under the all-on version.
+- Old-tab routes from that tab: `GET /api/agent/hub`, `POST /api/agent/context`, `POST /api/agent/claim` → **410**
+  `editor-updated` "This editor was updated. Reload this tab to keep using agents." (also 410 without a cookie).
+- Agent: `wait_for_requests` and `read_file` → tool error "Remote agents are paused by the site owner." (`agents-paused`).
+- Menu: Connect with MCP 14:54:26 → one `GET /api/agent/connections` 403, the pause message with Disconnect MCP and Retry, no socket.
+  **14:54:27–14:59:35: 0 requests, 0 sockets** (no reconnect loop, no polling).
+- Reload 14:59:38: signed in (`/api/session` 200), drafts kept (Publish 1, earlier agent and manual changes on the page), 0 agent
+  requests on load; a manual paragraph added, Undo enabled.
+- DO object `1303eed4`: **0 requests 14:54–14:59** (one probe each in 14:53 and 15:00). Namespace 14:54:10–15:00:20: 32 requests,
+  all on other objects (other users and this tab's ordinary session calls).
+
+**All back on — version `fb3a29a8-7856-46cc-a5c9-eea8a1e7a837` (live 15:00:22),** deployed with `npm run deploy:preview` from an
+unmodified tree at `origin/dev` `eef16b5d` (no app change since `58fd637b`); vars `"on","on","on","off","off"`.
+- 15:00:43 agent probe: "not sharing" (relay serving again, no tab connected); `tools/list` 200. Tab
+  `GET /api/agent/connections` 200, `controls.watch: true`, 1 grant (the P6 grant waiting for its 20:49 wake).
+
+## Product observations
+
+1. **Connected tab does not learn that Watch is back on** (minor). After `AGENT_WATCH` returns to "on", a tab that was connected
+   while it was off keeps "Watch is paused by the site owner." with no button, even after opening the menu or focusing the window;
+   it only re-reads `/api/agent/connections` on Connect, consent checks or while waiting. Reload + Connect fixes it. Version
+   `0a4e708d`, 14:42:53–14:43:42. This matches ticket 29's "learns it on its existing explicit reads (no new requests)", but the
+   owner's "back on" is invisible to an open tab.
+2. **CI does not deploy preview** (no `CLOUDFLARE_API_TOKEN` secret; see above), so preview was 5 h behind `dev` before this run.
+3. An interrupted client call (curl killed) left its Watch wait open on the server until its 25 s ran out; the following calls were
+   answered "Another wait … is already open (one at a time)" without using the wait budget. Expected by design; noted for agents.
+
+## Deployments made (all `npm run deploy:preview` from the worktree)
+
+| Time | Version | Switches (relay, Watch, lifecycle, legacy, modern) | Why |
+| --- | --- | --- | --- |
+| 13:44:49 | `6e751b85-1b8c-4387-9152-e749c52fffa0` | on, on, on, off, off | release commit `58fd637b` (preview was `7bcdbf07`) |
+| 14:14:02 | `1c301438-48b6-4b23-81fd-a7affbed1381` | committed | P3 restart 1 |
+| 14:15:50 | `685e1f53-3978-4e4f-a25a-8353662ad861` | committed | P3 restart 2 |
+| 14:17:30 | `36ceb129-3ac6-405a-b0dc-33add3e2657d` | committed | P3 restart 3 |
+| 14:18:21 | `6dcb1f47-1a00-4cce-99c4-8f7f9324fed1` | committed | P3 restart 4 (the row) |
+| 14:37:06 | `519dae9d-2bec-49d5-9878-e83fd8ef4a97` | off, on, on, off, off | P6 relay off |
+| 14:41:58 | `5c762253-6976-4f1c-9982-ec6dbc2e88b9` | on, off, on, off, off | P6 relay on, Watch off |
+| 14:42:53 | `0a4e708d-a128-4661-af73-96f931c60d91` | on, on, off, off, off | P6 Watch on, cleanup off |
+| 14:53:10 | `3005bc6a-d4a4-4535-bc93-ce7a04d85e96` | on, on, on, off, off | P6 cleanup on |
+| 14:54:09 | `8b9c4d27-511d-4e96-8a2d-d7c404d00cbf` | off, off, off, off, off | P8 rollback |
+| 15:00:22 | `fb3a29a8-7856-46cc-a5c9-eea8a1e7a837` | on, on, on, off, off | final, clean tree at `origin/dev` `eef16b5d` |
+
+The switch changes were never committed.
