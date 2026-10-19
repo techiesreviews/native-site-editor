@@ -9,19 +9,21 @@ import { pathToFileURL } from "node:url";
 const idPattern = /^[a-f0-9]{64}$/;
 const integer = value => Number.isSafeInteger(value) && value >= 0;
 const object = value => value && typeof value === "object" && !Array.isArray(value);
-const kinds = new Set(["sign-in-session", "one-time-sign-in", "agent-grant", "legacy-agent-hub", "oauth-client", "oauth-request", "oauth-code", "app-config", "legacy-context", "legacy-drafts", "legacy-requests", "oauth-pending", "registration-limiter", "repository-cache", "relay-metadata", "unknown"]);
+const kinds = new Set(["sign-in-session", "one-time-sign-in", "agent-grant", "legacy-agent-hub", "oauth-client", "oauth-request", "oauth-code", "app-config", "legacy-context", "legacy-drafts", "legacy-requests", "oauth-pending", "registration-limiter", "repository-cache", "relay-metadata", "alarm-deadlines", "agent-lifecycle", "record-fence", "workspace-ledger", "unknown"]);
 const eligibilities = new Set(["preserve", "expired", "legacy-candidate", "review"]);
 const statuses = new Set(["pending", "empty", "classified", "deferred", "unknown", "inaccessible"]);
 const batchStatuses = new Set(["running", "complete", "limited", "paused", "inaccessible", "interrupted"]);
 
 /** Shared with ticket 28: reserve and checkpoint BEFORE invoking maintenance. */
-export function reserveMaintenance(budget, now) {
+export function reserveMaintenance(budget, now, calls = 1, rows = 0) {
+  if (!integer(calls) || !integer(rows)) throw new Error("Invalid maintenance reservation");
   const day = new Date(now).toISOString().slice(0, 10);
   if (budget.day > day) return false;
-  if (budget.day !== day) { budget.day = day; budget.count = 0; }
+  if (budget.day !== day) { budget.day = day; budget.count = 0; if (budget.rows !== undefined) budget.rows = 0; }
   if (!integer(budget.count)) throw new Error("Invalid maintenance budget");
-  if (budget.count >= 1000) return false;
-  budget.count++;
+  if (budget.count + calls > 1000 || (budget.rows ?? 0) + rows > 5000) return false;
+  budget.count += calls;
+  if (rows) budget.rows = (budget.rows ?? 0) + rows;
   return true;
 }
 
@@ -59,6 +61,7 @@ export function sanitizeClassification(value) {
   });
   return {
     schema: "durable-inventory", version: 1, status: value.status,
+    ...(typeof value.fingerprint === "string" && idPattern.test(value.fingerprint) ? { fingerprint: value.fingerprint } : {}),
     ...(value.status === "deferred" ? { reason: "oversized" } : {}),
     totalKeys: value.totalKeys, totalBytes: value.totalBytes, alarm: value.alarm, records,
   };
@@ -79,6 +82,41 @@ export function writeManifest(path, manifest) {
     writeFileSync(temporary, `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600, flag: "wx" });
     renameSync(temporary, path);
   } finally { rmSync(temporary, { force: true }); }
+}
+
+/** Shared namespace ledger and lock, independent of deployment and manifest overrides. */
+export function maintenanceBudgetPath(options, ports, path) {
+  return ports.budgetPath ?? join(ports.path ? dirname(path) :
+    dirname(manifestPath({ ...options, manifest: undefined }, ports.cwd)), `${options.account}-${options.namespace}.budget.json`);
+}
+export function maintenanceLock(path, label) {
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  chmodSync(dirname(path), 0o700);
+  let descriptor;
+  try { descriptor = openSync(`${path}.lock`, "wx", 0o600); }
+  catch { throw new Error(`${label} is locked; inspect the previous run before removing its lock`); }
+  return () => { closeSync(descriptor); rmSync(`${path}.lock`, { force: true }); };
+}
+export function maintenanceBudget(path, options, previous, clock) {
+  let budget = { account: options.account, namespace: options.namespace, ...previous };
+  if (existsSync(path)) {
+    let saved;
+    try { saved = JSON.parse(readFileSync(path, "utf8")); } catch { throw new Error("Unreadable namespace budget"); }
+    if (!object(saved) || saved.account !== options.account || saved.namespace !== options.namespace ||
+        typeof saved.day !== "string" || !/^\d{4}-\d{2}-\d{2}$|^$/.test(saved.day) || !integer(saved.count) ||
+        (saved.rows !== undefined && !integer(saved.rows)) || (saved.notBefore !== undefined && !integer(saved.notBefore)))
+      throw new Error("Invalid namespace budget");
+    // Preserve the whole ledger (including fields another maintenance tool owns).
+    budget = { ...saved };
+    if (previous.day > saved.day) { budget.day = previous.day; budget.count = previous.count; budget.rows = previous.rows ?? 0; }
+    else if (previous.day === saved.day) budget.count = Math.max(saved.count, previous.count);
+  }
+  const save = () => writeManifest(path, budget);
+  const cooldown = (result, fallback = 0) => {
+    const deadline = retryDeadline(result.headers, clock()) || (fallback ? clock() + fallback : 0);
+    if (deadline > (budget.notBefore ?? 0)) { budget.notBefore = deadline; save(); }
+  };
+  return { budget, save, cooldown };
 }
 
 function fresh(options, now, budget = { day: "", count: 0 }) {
@@ -142,7 +180,7 @@ export function inventoryReport(manifest) {
   return report;
 }
 
-function validate(options) {
+export function validate(options) {
   for (const field of ["account", "namespace", "deployment"])
     if (typeof options[field] !== "string" || !/^[a-zA-Z0-9_-]{1,128}$/.test(options[field])) throw new Error(`Invalid --${field}`);
   if (!Number.isInteger(options.limit) || options.limit < 1 || options.limit > 100) throw new Error("--limit must be between 1 and 100");
@@ -165,34 +203,16 @@ export async function runInventory(input, ports = {}) {
   const path = ports.path ?? manifestPath(options, ports.cwd);
   // A namespace has one budget across deployment labels and manifest overrides.
   // Injected test paths isolate the ledger alongside their test manifest.
-  const budgetPath = ports.budgetPath ?? join(ports.path ? dirname(path) : dirname(manifestPath({ ...options, manifest: undefined }, ports.cwd)), `${options.account}-${options.namespace}.budget.json`);
-  mkdirSync(dirname(budgetPath), { recursive: true, mode: 0o700 });
-  chmodSync(dirname(budgetPath), 0o700);
-  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-  chmodSync(dirname(path), 0o700);
-  // One writer per manifest. A crashed process leaves a lock for operator review;
-  // never silently steal a possibly live maintenance budget reservation.
-  let lock, namespaceLock;
-  try { namespaceLock = openSync(`${budgetPath}.lock`, "wx", 0o600); } catch { throw new Error("Namespace budget is locked; inspect the previous run before removing its lock"); }
+  const budgetPath = maintenanceBudgetPath(options, ports, path);
+  const releaseNamespace = maintenanceLock(budgetPath, "Namespace budget");
+  let releaseManifest;
   try {
-    try { lock = openSync(`${path}.lock`, "wx", 0o600); } catch { throw new Error("Inventory manifest is locked; inspect the previous run before removing its lock"); }
+    releaseManifest = maintenanceLock(path, "Inventory manifest");
     const manifest = readManifest(path, options, clock());
-    let notBefore = 0;
-    if (existsSync(budgetPath)) {
-      let saved;
-      try { saved = JSON.parse(readFileSync(budgetPath, "utf8")); } catch { throw new Error("Unreadable namespace budget"); }
-      if (!object(saved) || saved.account !== options.account || saved.namespace !== options.namespace ||
-          typeof saved.day !== "string" || !/^\d{4}-\d{2}-\d{2}$|^$/.test(saved.day) || !integer(saved.count)) throw new Error("Invalid namespace budget");
-      // The cooldown is namespace-wide: resume, --rescan and other deployment labels obey it.
-      if (integer(saved.notBefore)) notBefore = saved.notBefore;
-      if (saved.day > manifest.budget.day) manifest.budget = { day: saved.day, count: saved.count };
-      else if (saved.day === manifest.budget.day) manifest.budget.count = Math.max(saved.count, manifest.budget.count);
-    }
-    const saveBudget = () => writeManifest(budgetPath, { account: options.account, namespace: options.namespace, ...manifest.budget, ...(notBefore ? { notBefore } : {}) });
-    const cooldown = result => {
-      const deadline = retryDeadline(result.headers, clock());
-      if (deadline > notBefore) { notBefore = deadline; saveBudget(); }
-    };
+    const ledger = maintenanceBudget(budgetPath, options, manifest.budget, clock);
+    manifest.budget = ledger.budget;
+    const saveBudget = () => ledger.save();
+    const cooldown = result => ledger.cooldown(result);
     saveBudget();
     const batch = { start: clock(), end: null, calls: 0, status: "running" };
     manifest.batches.push(batch);
@@ -205,7 +225,7 @@ export async function runInventory(input, ports = {}) {
     try {
       for (;;) {
         // No network call of any kind before an authoritative Retry-After passes.
-        if (clock() < notBefore) { pause("paused"); break; }
+        if (clock() < ledger.budget.notBefore) { pause("paused"); break; }
         const entry = manifest.objects.find(item => !attempted.has(item.id) && ["pending", "deferred", "inaccessible"].includes(item.status));
         if (entry) {
           if (processed >= options.limit) { pause("limited"); break; }
@@ -294,8 +314,8 @@ export async function runInventory(input, ports = {}) {
     ports.stdout?.(line);
     return { manifest, report, status: batch.status, line };
   } finally {
-    if (lock !== undefined) { closeSync(lock); rmSync(`${path}.lock`, { force: true }); }
-    closeSync(namespaceLock); rmSync(`${budgetPath}.lock`, { force: true });
+    releaseManifest?.();
+    releaseNamespace();
   }
 }
 
