@@ -1,10 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { chromium, type Page } from "@playwright/test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { checkLayout, type LayoutFinding, type LayoutKind } from "../scripts/agents/shots/layout-check.ts";
 
 test("shot layout checks in Chromium", async (t) => {
-  const browser = await chromium.launch({ headless: true });
+  const temporary = await mkdtemp(join(tmpdir(), "kit-shots-layout-"));
+  t.after(() => rm(temporary, { recursive: true, force: true }));
+  const browser = await chromium.launch({ headless: true, env: { ...process.env, TMPDIR: temporary, TMP: temporary, TEMP: temporary } });
   const fixture = async (html: string, width = 1000, css = "", setup?: (page: Page) => Promise<void>): Promise<LayoutFinding[]> => {
     const page = await browser.newPage({ viewport: { width, height: 700 } });
     try {
