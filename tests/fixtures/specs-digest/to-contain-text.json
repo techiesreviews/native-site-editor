@@ -1,0 +1,25 @@
+{
+  "suites": [{
+    "specs": [{
+      "file": "tests/native-save/label.spec.ts",
+      "line": 52,
+      "title": "contains the saved multiline title",
+      "tests": [{
+        "projectName": "native-save",
+        "status": "unexpected",
+        "expectedStatus": "passed",
+        "results": [{
+          "status": "failed",
+          "errors": [{
+            "message": "expect(locator).toContainText(expected) failed\n\nLocator: getByRole('heading')\nTimeout: 1ms\n- Expected substring  - 1\n+ Received string     + 1\n\n  Title\n- Saved\n+ Draft\n\n",
+            "stack": "Error: expect(locator).toContainText(expected) failed\n    at /repo/tests/native-save/label.spec.ts:52:7"
+          }],
+          "attachments": [
+            { "name": "error-context", "path": "/artifacts/error-context.md" },
+            { "name": "trace", "path": "/artifacts/trace.zip" }
+          ]
+        }]
+      }]
+    }]
+  }]
+}
