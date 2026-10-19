@@ -1,8 +1,8 @@
 ---
 title: "kit slice: one command runs a ticket from brief to merged PR"
 type: task (AFK)
-status: ready-for-agent
-assignee:
+status: closed
+assignee: ke-04
 blocked_by: [01-kit-pr-stops-on-findings, 02-kit-bg-jobs, 03-kit-fix]
 builder: sol
 ---
@@ -67,3 +67,38 @@ commit, review, fixes, close, `kit pr`), relaunching jobs and re-reading output 
 - The unit tests for the change pass (`scripts/agents/unit.sh tests/kit-slice.test.ts`).
 - Sol review via `kit review --ticket` with no open findings; landed via `kit pr --ticket` into
   `dev` with CI green.
+
+
+## Done (2026-10-19)
+
+- Behaviour: added executable `kit slice` with help, model selection, generated ticket brief,
+  build, commit, review, bounded fix rounds and PR phases. Saved state resumes unfinished phases,
+  re-reviews moved HEADs, records builder and review paths, round count and PR number, and retains
+  phase logs. Console output is phase status lines, a single final RESULT, and at most 15 failure
+  lines. `--no-pr` stops reviewed clean; exhausted findings open/update a PR with `--no-merge`,
+  list the findings and fail without passing `--waive`.
+- Shared helper: extended the existing `scripts/agents/kit-lib.mjs` with `commitBuilderWork` and
+  model author mapping, used by both slice and fix. Normal Git staging and commit hooks replace
+  fix's private Git directory/index and manual index/HEAD locks. Branch and HEAD checks before
+  staging and after commit reject stale scope, empty work and hooks that move the branch or HEAD.
+- Tests: `tests/kit-slice.test.ts` fakes agent/review/fix/pr commands through executable env
+  overrides and exercises briefs, ordering, success, fix rounds, exhaustion, no-PR, retries of
+  every phase, saved evidence, changed HEAD and bounded failure output. `tests/kit-commit.test.ts`
+  uses temporary Git repositories and per-test hooks for commits, credits, wrong branch/HEAD,
+  empty work, hook interference and absence of leftover locks. Adapted the two lock-design tests
+  in `tests/kit-fix.test.ts`; retained held-builder branch/HEAD coverage.
+- Validation: `scripts/agents/unit.sh tests/kit-slice.test.ts tests/kit-fix.test.ts
+  tests/kit-commit.test.ts` passed 40, failed 0 (log:
+  `.scratch/unit/20261019T092059-2.log`). Two earlier runs passed 38/38; the expanded coverage
+  initially passed 39 and failed one assertion expecting commit output from the fake fix command;
+  corrected it to assert the actual saved RESULT output. `npm run check` and `npm run lint`
+  passed. Full `npm test` was excluded by the brief's focused-unit restriction.
+  `kit specs --affected`: `RESULT: ok specs none affected`.
+- Docs: runner Build/Review/Land, the kit command index, runner extras template and this build's
+  runner brief now describe `kit slice` as the default and retain the manual fallback.
+- Dogfood: `kit doctor`: `RESULT: ok doctor 7/7 checks passed`; `kit specs --affected` reported none affected.
+  Slice/fix orchestration was exercised against isolated fake commands, with real temporary Git
+  commits and hooks. No build or review workers were launched, per the builder brief.
+- Commits: _runner to fill; implementation left unstaged_.
+- Review decisions and evidence: _runner to fill after review_.
+- Landed PR / CI: _runner to fill_.
