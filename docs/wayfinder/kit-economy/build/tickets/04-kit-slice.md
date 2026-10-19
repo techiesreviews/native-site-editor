@@ -161,3 +161,27 @@ commit, review, fixes, close, `kit pr`), relaunching jobs and re-reading output 
   `npm run check`, `npm run lint`, and `git diff --check` passed. Kit results:
   `RESULT: ok doctor 7/7 checks passed`; `RESULT: ok specs none affected`.
 - Declined: none.
+
+
+### Fix-round recovery and race coverage (2026-10-19)
+
+- `kit fix` now saves branch-local pending progress before resuming the builder and after its
+  builder and commit steps. A rejected commit hook leaves the saved round in its commit step;
+  retrying preserves staged edits and declined reasons without calling the builder again.
+  A failed review resumes at review using the recorded commit SHA. Completed rounds remove
+  pending state, including when their review still has findings.
+- `kit slice` records the outstanding fix invocation and delegates pending commit/review recovery
+  to that round instead of treating its newly committed HEAD as unrelated work. `kit fix` checks
+  the saved branch and expected HEAD before resuming. Successful recovery counts the round once.
+- Tests use real `kit fix`, `agent.sh`, normal Git hooks and the shared commit helper with a fake
+  model executable. A rejected fix commit and a failed fix review each recover on rerun, retaining
+  the edits with no repeated build/resume, no extra round, and a successful PR phase.
+- Four `forEachAwait` cases hold slice build/review commands while switching branches or advancing
+  HEAD. Each rejects stale scope before subsequent commits, fix commands or landing.
+- A pending-fix regression advances HEAD before retry and verifies the saved scope is rejected,
+  without rebuilding, resuming the builder, reviewing or landing unrelated work.
+- Validation: fix/helper unit files passed 26/26; the initial combined run passed 59/59; the final
+  focused run passed 60, failed 0 (`.scratch/unit/20261019T095045-2.log`). `npm run check`,
+  `npm run lint`, and `git diff --check` passed. Kit results:
+  `RESULT: ok doctor 7/7 checks passed`; `RESULT: ok specs none affected`.
+- Declined: none.
