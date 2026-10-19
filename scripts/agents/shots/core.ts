@@ -9,7 +9,7 @@ export type Step =
   | { kind: "scroll"; direction: "down" | "up" }
   | { kind: "wait"; text: string };
 export type Scenario = { screen: Screen; name?: string; steps: string[] };
-export type Options = { screens: Screen[]; widths: number[]; themes: Theme[]; steps?: string; spec?: string; out?: string };
+export type Options = { screens: Screen[]; widths: number[]; themes: Theme[]; steps?: string; spec?: string; out?: string; files?: boolean };
 
 export function screenName(value: string): Screen {
   if (!screens.includes(value as Screen)) throw new Error(`Unknown screen: ${value}. Screens: ${screens.join(", ")}`);
@@ -22,9 +22,10 @@ export function parseArgs(args: string[]): Options {
   for (let i = 0; i < args.length; i++) {
     const flag = args[i];
     if (!flag.startsWith("-")) { options.screens.push(screenName(flag)); continue; }
-    if (!["--width", "--theme", "--steps", "--spec", "--out"].includes(flag)) throw new Error(`Unknown flag: ${flag}`);
+    if (!["--width", "--theme", "--steps", "--spec", "--out", "--files"].includes(flag)) throw new Error(`Unknown flag: ${flag}`);
     if (seen.has(flag)) throw new Error(`Repeated flag: ${flag}`);
     seen.add(flag);
+    if (flag === "--files") { options.files = true; continue; }
     const value = args[++i];
     if (!value || value.startsWith("--")) throw new Error(`Missing value for ${flag}`);
     if (flag === "--width") {
@@ -39,7 +40,7 @@ export function parseArgs(args: string[]): Options {
     else options.out = value;
   }
   options.screens = [...new Set(options.screens)];
-  if (options.spec && (options.screens.length || options.steps || seen.has("--width") || seen.has("--theme"))) throw new Error("--spec accepts only --out; raw specs control their own matrix");
+  if (options.spec && (options.screens.length || options.steps || seen.has("--width") || seen.has("--theme") || seen.has("--files"))) throw new Error("--spec accepts only --out; raw specs control their own matrix");
   if (options.steps && options.screens.length) throw new Error("--steps supplies its own screen; omit screen arguments");
   if (!options.screens.length && !options.steps && !options.spec) throw new Error(`Choose a screen: ${screens.join(", ")}`);
   return options;
@@ -99,15 +100,18 @@ export function nextEncoding(current: Encoding): Encoding | null {
   return width === current.width && height === current.height ? null : { quality: 20, width, height };
 }
 
-export type Shot = { screen: Screen; name?: string; width: number; theme: Theme; files: { path: string; bytes: number }[]; attempts: number; failures: { attempt: number; step: string; error: string }[]; layout: unknown[]; ok: boolean };
+export type Shot = { screen: Screen; name?: string; width: number; height?: number; theme: Theme; files: { path: string; bytes: number }[]; attempts: number; failures: { attempt: number; step: string; error: string }[]; layout: unknown[]; ok: boolean };
 export function makeIndex(shots: Shot[]) {
   return { version: 1, screens: shots, files: shots.flatMap(shot => shot.files), failures: shots.flatMap(shot => shot.failures.map(failure => ({ screen: shot.screen, name: shot.name, width: shot.width, theme: shot.theme, ...failure }))), outputFailures: [] as { step: string; error: string }[], layoutFindings: shots.flatMap(shot => shot.layout.map(finding => ({ screen: shot.screen, width: shot.width, theme: shot.theme, finding }))) };
 }
 
 const escape = (value: string) => value.replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]!);
-export function contactHtml(shots: Shot[]) {
-  // One row per screen with its sizes and themes side by side; a before/after
-  // pair gets its own row per size and theme so the two sit next to each other.
+const padding = 20, header = 40, gap = 16, heading = 28, caption = 48;
+const maxWidth = 1600, maxHeight = 2400;
+type Tile = { shot: Shot; label: string; width: number; imageWidth: number; imageHeight: number };
+type Row = { label: string; paired: boolean; tiles: Tile[]; width: number; height: number };
+
+function contactRows(shots: Shot[]): Row[] {
   const pairs = new Set(shots.filter(shot => shot.name === "after").map(shot => `${shot.screen}|${shot.width}|${shot.theme}`)
     .filter(key => shots.some(shot => shot.name === "before" && `${shot.screen}|${shot.width}|${shot.theme}` === key)));
   const groups = new Map<string, { paired: boolean; shots: Shot[] }>();
@@ -118,21 +122,83 @@ export function contactHtml(shots: Shot[]) {
     group.shots.push(shot);
     groups.set(key, group);
   }
-  const rows = [...groups].map(([label, { paired, shots: group }]) => {
-    if (paired) group.sort((a, b) => (a.name === "before" ? -1 : b.name === "before" ? 1 : 0));
-    return `<section><h2>${escape(label)}</h2><div class="row${paired ? " paired" : ""}">${group.map(shot => {
-      const caption = paired ? shot.name! : `${shot.width}px · ${shot.theme}`;
-      const file = shot.files.find(file => file.path.endsWith(".webp"));
-      return `<figure><figcaption>${escape(caption)}${shot.ok ? "" : " — failed"}</figcaption>${file ? `<img src="${escape(encodeURI(file.path))}" alt="${escape(`${label} ${caption}`)}">` : "<p>No screenshot</p>"}</figure>`;
-    }).join("")}</div></section>`;
-  }).join("\n");
+  const rows: Row[] = [];
+  for (const [label, group] of groups) {
+    if (group.paired) group.shots.sort((a, b) => (a.name === "before" ? -1 : b.name === "before" ? 1 : 0));
+    let row: Row = { label, paired: group.paired, tiles: [], width: 0, height: 0 };
+    for (const shot of group.shots) {
+      const height = shot.height ?? 900;
+      // Preserve narrow shots at CSS width; exceptionally tall shots must also fit a whole sheet.
+      const scale = Math.min(1, 400 / shot.width, (maxHeight - 2 * padding - header - heading - caption) / height);
+      const imageWidth = Math.max(1, Math.floor(shot.width * scale));
+      const imageHeight = Math.max(1, Math.floor(height * scale));
+      const width = Math.max(200, imageWidth);
+      if (row.tiles.length && row.width + gap + width > maxWidth - 2 * padding) {
+        rows.push(row);
+        row = { label, paired: group.paired, tiles: [], width: 0, height: 0 };
+      }
+      row.width += (row.tiles.length ? gap : 0) + width;
+      row.height = Math.max(row.height, heading + caption + imageHeight);
+      row.tiles.push({ shot, label: `${shot.screen} · ${shot.width}px · ${shot.theme}${shot.name ? ` · ${shot.name}` : ""}${shot.ok ? "" : " — failed"}`, width, imageWidth, imageHeight });
+    }
+    if (row.tiles.length) rows.push(row);
+  }
+  return rows;
+}
+
+function renderContact(rows: Row[], width: number) {
+  const sections = rows.map(row => `<section><h2>${escape(row.label)}</h2><div class="row${row.paired ? " paired" : ""}">${row.tiles.map(tile => {
+    // The small per-shot WebP may already have lost dimensions. Compose from the original PNG.
+    const file = tile.shot.files.find(file => file.path.endsWith(".png")) ?? tile.shot.files.find(file => file.path.endsWith(".webp"));
+    return `<figure style="inline-size:${tile.width}px"><figcaption>${escape(tile.label)}</figcaption>${file ? `<img style="inline-size:${tile.imageWidth}px;block-size:${tile.imageHeight}px" src="${escape(encodeURI(file.path))}" alt="${escape(tile.label)}">` : `<p style="block-size:${tile.imageHeight}px">No screenshot</p>`}</figure>`;
+  }).join("")}</div></section>`).join("\n");
   return `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Kit shots</title><style>
   :root{font:14px system-ui;overflow-wrap:break-word;color:oklch(.2 0 none);background:oklch(.96 0 none)}
-  body{margin:0;padding:20px}h1{font-size:22px}h2{font-size:16px;margin-block:20px 8px}
-  main{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,180px),1fr));gap:0 16px}
-  section:has(figure + figure){grid-column:1/-1}
-  .row.paired{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .row{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,150px),1fr));gap:12px}
-  figure{margin:0;min-inline-size:0}figcaption{padding-block:6px}img{display:block;inline-size:100%;block-size:auto;max-block-size:420px;object-position:top;object-fit:contain}
-  </style><h1>Kit shots</h1><main>${rows}</main></html>`;
+  *{box-sizing:border-box}body{margin:0;padding:${padding}px;inline-size:${width}px}
+  h1{font-size:22px;line-height:28px;margin:0;block-size:${header}px}h2{font-size:16px;line-height:20px;margin:0;block-size:${heading}px}
+  main{display:grid;gap:${gap}px}.row{display:flex;align-items:start;gap:${gap}px}
+  figure{margin:0;flex:none;min-inline-size:0}figcaption{block-size:${caption}px;line-height:20px;padding-block:4px;overflow:clip}
+  img{display:block;object-fit:contain;object-position:top}p{margin:0}
+  </style><h1>Kit shots</h1><main>${sections}</main></html>`;
+}
+
+/** Deterministic geometry; pagination never splits a row or a before/after pair. */
+export function contactSheets(shots: Shot[]) {
+  const pages: { rows: Row[]; width: number; height: number }[] = [];
+  let page = { rows: [] as Row[], width: 2 * padding + 200, height: 2 * padding + header };
+  for (const row of contactRows(shots)) {
+    const extra = (page.rows.length ? gap : 0) + row.height;
+    if (page.rows.length && page.height + extra > maxHeight) {
+      pages.push(page);
+      page = { rows: [], width: 2 * padding + 200, height: 2 * padding + header };
+    }
+    page.height += (page.rows.length ? gap : 0) + row.height;
+    page.width = Math.max(page.width, row.width + 2 * padding);
+    page.rows.push(row);
+  }
+  pages.push(page);
+  return pages.map((page, index) => ({ ...page, path: pages.length === 1 ? "contact.webp" : `contact-${index + 1}.webp`, html: renderContact(page.rows, page.width) }));
+}
+
+/** Standalone HTML for small callers; capture uses the paginated contactSheets plans. */
+export function contactHtml(shots: Shot[]) {
+  const rows = contactRows(shots);
+  return renderContact(rows, Math.max(240, ...rows.map(row => row.width + 2 * padding)));
+}
+
+/** Pure initial encoding bounds, shared by the encoder and its stepping tests. */
+export function initialEncoding(width: number, height: number, contact = false): Encoding {
+  const scale = Math.min(1, (contact ? maxWidth : 16000) / width, (contact ? maxHeight : 16000) / height);
+  return { width: Math.max(1, Math.floor(width * scale)), height: Math.max(1, Math.floor(height * scale)), quality: 85 };
+}
+
+/** Shared normal/compare output contract. Child capture output belongs on stderr. */
+export function contactOutput(index: ReturnType<typeof makeIndex>, out: string, files = false) {
+  const path = (file: string) => `${out}/${file}`;
+  const contacts = index.files.filter(file => /^contact(?:-\d+)?\.webp$/.test(file.path)).map(file => path(file.path));
+  const listing = files ? [...index.files.map(file => `${path(file.path)} (${file.bytes} bytes)`), path("index.json")] : [`${index.files.length} files: ${path("index.json")}`];
+  return {
+    lines: [...contacts.map(file => `contact: ${file}`), ...listing],
+    summary: `contact ${contacts[0] ?? "none"}${contacts.length > 1 ? ` +${contacts.length - 1} more` : ""}`,
+  };
 }

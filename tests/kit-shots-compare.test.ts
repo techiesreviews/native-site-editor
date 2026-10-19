@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, readlink, realpath, rm, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { pathToFileURL } from "node:url";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 import { baseKey, beforeShots, breakGuard, breakStale, ensureBase, hasLiveLease, isHit, lockHolder, planBase, pruneTargets, saveCache, setupLock, splitCompare, toolingFiles, toolingHash } from "../scripts/agents/shots/compare.mjs";
@@ -343,13 +344,14 @@ test("beforeShots rewrites filenames without mutating cache and pairs before fir
   assert.equal(source.files[0].path, "custom.png");
   const html = contactHtml([shot({ name: "after" }), before]);
   assert.equal((html.match(/class="row paired"/g) ?? []).length, 1);
-  assert.ok(html.indexOf("<figcaption>before") < html.indexOf("<figcaption>after"));
+  assert.ok(html.indexOf("· before</figcaption>") < html.indexOf("· after</figcaption>"));
 });
 
 const comparePath = resolve("scripts/agents/shots/compare.mjs");
 const fakeCapture = `#!/usr/bin/env node
 import { mkdirSync, readFileSync, writeFileSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
+const { makeIndex, contactSheets } = await import(process.env.TEST_SHOTS_CORE);
 const args = process.argv.slice(2);
 const value = flag => args[args.indexOf(flag) + 1];
 const scenario = JSON.parse(readFileSync(value('--steps'), 'utf8'));
@@ -375,7 +377,9 @@ const shots = widths.flatMap(width => themes.map(theme => {
   return { screen: scenario.screen, name: scenario.name, width, theme, files, ok: !failed, attempts: 1, failures: [], layout: [] };
 }));
 previous = previous.filter(shot => !shots.some(next => next.screen === shot.screen && next.name === shot.name && next.width === shot.width && next.theme === shot.theme));
-writeFileSync(join(out, 'index.json'), JSON.stringify({ version: 1, screens: [...previous, ...shots] }));
+const index = makeIndex([...previous, ...shots]);
+for (const sheet of contactSheets(index.screens)) { writeFileSync(join(out, sheet.path), 'stub'); index.files.push({ path: sheet.path, bytes: 4 }); console.log('contact: ' + join(out, sheet.path)); }
+writeFileSync(join(out, 'index.json'), JSON.stringify(index));
 console.log(join(out, 'index.json'));
 console.log('RESULT: ok child stdout');
 console.error('RESULT: fail child stderr');
@@ -408,11 +412,14 @@ test("compare coordinates fake captures, remote refs, cache reuse and partial ma
   const currentSha = commit(repo);
   git(repo, "branch", "-f", "dev", currentSha);
   const log = join(dir, "events.jsonl");
-  const env = { ...process.env, KIT_ROOT: repo, KIT_MAIN_ROOT: mainRoot, ASE_NATIVE_SAVE_FIXTURE: fixtureLink, ASE_NATIVE_SAVE_FIXTURE_KIND: "actual", ASE_KIT_SHOTS_REQUEST: "inherited", ASE_KIT_SHOTS_APP_ROOT: "inherited-invalid-root", ASE_TEST_PORT: "9999", TEST_LOG: log };
+  const env = { ...process.env, KIT_ROOT: repo, KIT_MAIN_ROOT: mainRoot, ASE_NATIVE_SAVE_FIXTURE: fixtureLink, ASE_NATIVE_SAVE_FIXTURE_KIND: "actual", ASE_KIT_SHOTS_REQUEST: "inherited", ASE_KIT_SHOTS_APP_ROOT: "inherited-invalid-root", ASE_TEST_PORT: "9999", TEST_LOG: log, TEST_SHOTS_CORE: pathToFileURL(resolve("scripts/agents/shots/core.ts")).href };
   const run = (args: string[], extraEnv = {}) => spawnSync(process.execPath, ["--import", "tsx", comparePath, ...args], { env: { ...env, ...extraEnv }, cwd: process.cwd(), encoding: "utf8", timeout: 30_000 });
   const args = ["editor", "--compare", "dev", "--width", "390", "--out", out];
   const first = run(args);
   assert.equal(first.status, 0, first.stderr);
+  assert.equal(first.stdout.split("\n")[0], `contact: ${out}/contact.webp`);
+  assert.ok(first.stdout.trim().split("\n").at(-1)?.includes(`contact ${out}/contact.webp`));
+  assert.doesNotMatch(first.stdout, /\.png/);
   assert.match(first.stdout, new RegExp(`shots compare dev@${baseSha.slice(0, 7)}: base 0 cached, 2 shot; after ok`));
   assert.equal((first.stdout.match(/^RESULT:/gm) ?? []).length, 1);
   assert.doesNotMatch(first.stderr, /RESULT:/);
@@ -425,6 +432,12 @@ test("compare coordinates fake captures, remote refs, cache reuse and partial ma
   assert.match(second.stdout, /base 2 cached, 0 shot; after ok/);
   const third = run(["editor", "--compare", "dev", "--width", "390,768", "--out", out]);
   assert.equal(third.status, 0, third.stderr);
+  const contacts = [`contact: ${out}/contact-1.webp`, `contact: ${out}/contact-2.webp`];
+  assert.deepEqual(third.stdout.split("\n").slice(0, 2), contacts);
+  assert.ok(third.stdout.trim().split("\n").at(-1)?.includes(`contact ${out}/contact-1.webp +1 more`));
+  const listed = run([...args, "--files"]);
+  assert.equal(listed.status, 0, listed.stderr);
+  assert.ok(listed.stdout.includes(`${out}/editor-before-390-light.png (6 bytes)`));
   assert.match(third.stdout, /base 2 cached, 2 shot; after ok/);
   const events = (await readFile(log, "utf8")).trim().split("\n").map(line => JSON.parse(line));
   assert.deepEqual(events.filter(event => event.scenario.name === "before").map(event => event.widths), [[390], [768]]);
