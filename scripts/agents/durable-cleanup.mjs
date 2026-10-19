@@ -15,6 +15,7 @@ const hex = value => typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
 const identity = id => createHash("sha256").update(id).digest("hex");
 const statuses = new Set(["reserved", "deleted", "kept", "deferred", "review", "inaccessible"]);
 const reasons = new Set(["oversized", "changed", "present", "awaiting-browser-recovery", "budget"]);
+const methods = new Set(["deleteAll", "keys"]);
 
 function candidate(entry) {
   const value = entry.classification;
@@ -47,7 +48,8 @@ function loadCheckpoint(path, options) {
     seen.add(entry.key);
     return { key: entry.key, expected: entry.expected, status: entry.status,
       deletedKeys: entry.deletedKeys, unresolvedCommands: entry.unresolvedCommands, allowance: entry.allowance, keys: entry.keys,
-      ...(reasons.has(entry.reason) ? { reason: entry.reason } : {}) };
+      ...(reasons.has(entry.reason) ? { reason: entry.reason } : {}),
+      ...(methods.has(entry.method) ? { method: entry.method } : {}) };
   });
   return fresh;
 }
@@ -61,6 +63,7 @@ function sanitizeResult(value) {
       (value.status === "deleted" && (!["keys", "deleteAll"].includes(value.method) || value.deletedKeys < 1)) ||
       (value.status !== "deleted" && value.deletedKeys !== 0)) throw new Error("Invalid cleanup result");
   return { status: value.status, reason: reasons.has(value.reason) ? value.reason : undefined,
+    method: value.status === "deleted" ? value.method : undefined,
     deletedKeys: value.deletedKeys, unresolvedCommands: value.unresolvedCommands, invocations: value.invocations };
 }
 
@@ -85,7 +88,10 @@ function reportFor(manifest, checkpoint, verification = false) {
         (!verification && ["deferred", "inaccessible", "review"].includes(outcome?.status))) report.deferred++;
     // The source inventory predates the deletion. Only the subsequent scan can
     // establish reappearance; an old manifest must never report false races.
-    if (verification && outcome?.deletedKeys > 0 && entry.hasStoredData && entry.classification?.totalKeys !== 0) report.reappeared++;
+    // A per-key pass keeps preserved records by design: only expired content
+    // found again counts. A deleteAll object must have no stored data left.
+    if (verification && outcome?.deletedKeys > 0 && (outcome.method === "keys" ? category === "eligible" :
+      entry.hasStoredData && entry.classification?.totalKeys !== 0)) report.reappeared++;
   }
   if (manifest.permission === "inaccessible") report.inaccessible++;
   for (const entry of checkpoint.objects) {
@@ -224,6 +230,7 @@ export async function runCleanup(input, ports = {}) {
       outcome.deletedKeys = Math.max(outcome.deletedKeys, clean.deletedKeys);
       outcome.unresolvedCommands = Math.max(outcome.unresolvedCommands, clean.unresolvedCommands);
       if (clean.reason) outcome.reason = clean.reason;
+      if (clean.method) outcome.method = clean.method;
       save();
       if (excess > 0) break;
       if (result.headers.has("Retry-After")) { status = "paused"; break; }
