@@ -51,8 +51,8 @@ real cause before changing anything.
   record call targets an admitted ID. All original admission, refusal-message,
   ledger, connection, independence and alarm assertions remain. No sleeps or
   timeouts were added or lengthened.
-- Commits: none created; implementation and ticket edits remain unstaged for
-  the runner. The runner must commit before reviewing and landing the fix.
+- Commits: `kit slice` committed the builder's change as 876f7caf (landed as 3ab9ee0c) after
+  the ticket commit.
 - Validation: `scripts/agents/kit doctor` reported
   `RESULT: ok doctor 7/7 checks passed`. `scripts/agents/kit unit --affected`
   reported `RESULT: ok unit 38/38 (1 files) log .scratch/unit/20261019T110229-31.log`;
@@ -76,23 +76,16 @@ real cause before changing anything.
   `RESULT: ok unit 38/38 (1 files) log .scratch/unit/20261019T110154-865.log`.
   Job result: `RESULT: ok job ke-10-proof-final exit 0`.
   Load cleanup: `RESULT: ok bg stop ke-10-load pgid 23`.
-- Review decisions: `KIT_MAIN_ROOT="$PWD" ASE_OWNER=ke-10 scripts/agents/kit review --ticket docs/wayfinder/kit-economy/build/tickets/10-agent-metadata-flake.md`
-  ran with `gpt-6.1-sol`, medium effort and read-only permissions. Its RESULT
-  said ok, but the report could not inspect files because
-  `app-server socket directory must be a user-owned directory with mode 0700`.
-  The findings parser counts three unassessed items; this is **not a clean
-  review**. Evidence: `.scratch/reviews/ke-10/20261019T105652Z/`. Its prepared
-  diff covers committed ticket text, not the unstaged fix. No defect finding
-  was accepted or rejected; the runner must obtain a covering clean review.
-- Dogfood: `ASE_OWNER=ke-10 scripts/agents/kit slice --ticket docs/wayfinder/kit-economy/build/tickets/10-agent-metadata-flake.md --builder sol`
-  resumed an existing build phase and attempted a builder launch, which failed
-  before a verified model or final report. Result:
-  `RESULT: fail slice build: command exited 1; see /home/ubulex/Projects/native-site-editor-build-ke-10-metadata-flake/.scratch/kit-slice/10-agent-metadata-flake/build.log`.
-  This did not build the fix; the saved state should have been checked before
-  invoking it under the no-spawn contract. `kit bg`, `kit wait job`, and
-  `kit unit` helped run and retain the load proof and stop the CPU workers.
-- Landing remains pending: `ASE_OWNER=ke-10 scripts/agents/kit pr --ticket docs/wayfinder/kit-economy/build/tickets/10-agent-metadata-flake.md`
-  reported `RESULT: fail guards: uncommitted changes`. No commit, push, merge,
-  or deploy was performed. The runner still needs a clean Sol review and
-  `kit pr --ticket` into `dev` with green CI; closing this implementation
-  handoff does not claim those acceptance steps passed.
+- Review: the builder's own in-sandbox `kit review` run could not read files
+  (`app-server socket directory must be … mode 0700`) and is superseded. The
+  covering review from `kit slice` (Sol `gpt-6.1-sol`, medium, read-only,
+  `.scratch/reviews/ke-10/20261019T110342Z`) found no Spec or Standards
+  defects and no validation gaps; `kit fix` ran 0 rounds.
+- Landed: `kit slice` → `kit pr` merged PR #96 into `dev` as ffe925b2, CI green.
+- Dogfood: the runner's `kit bg slice-10 -- kit slice … --builder sol --effort high`
+  plus `kit wait job slice-10 --timeout 9m` (3 waits) helped: one job built,
+  committed, reviewed and landed the ticket. Failed: the Sol builder ran
+  `kit review`, `kit slice` and `kit pr` itself from inside the build sandbox
+  (all failed there) and wrote Done text claiming the work was unlanded, which
+  this follow-up corrects; `kit slice` also wrote its review under the root
+  checkout's `.scratch/reviews/` instead of the worktree's.
