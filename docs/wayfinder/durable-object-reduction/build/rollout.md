@@ -39,7 +39,7 @@ are the ones release depends on. For each, write the deployment version, the tim
 | P3 | Deployment restart | Deploy preview again while an edit is waiting. The tab reconnects; the lost edit shows as unknown until checked; nothing is re-sent. | not yet measured |
 | P4 | Detection vs deletion timing | Close the last editor tab. Record: time closed, time the server noticed, cleanup deadline (noticed + 5 min), time the record was actually deleted. These are four separate times. Sign-in, drafts and App config survive. | not yet measured |
 | P5 | Watch | Turn Watch on; it stops by itself within ten minutes; at most 25 waits; a separate edit still works after it stops. | not yet measured |
-| P6 | Switches off and on | For each of `AGENT_RELAY`, `AGENT_WATCH`, `AGENT_LIFECYCLE_CLEANUP`: deploy preview with it `"off"`, check the paused message and that manual editing and drafts still work, then back `"on"` and check **Retry** reconnects (ticket 29 left this on-again Retry for here). | not yet measured |
+| P6 | Switches off and on | Deploy preview with one switch `"off"` at a time, then back `"on"`. Each time manual editing and drafts must keep working. **`AGENT_RELAY`**: off shows "Remote agents are paused by the site owner." with Retry and Disconnect MCP; back on, **Retry** reconnects (ticket 29 left this for here). **`AGENT_WATCH`**: off, a wait answers at once with the paused hint; back on, a new Watch activation holds waits again. **`AGENT_LIFECYCLE_CLEANUP`**: off, close the last tab and check the record is still there after its five-minute deadline (postponed 6 h); back on, check it is deleted at the next wake. There is no message for this switch. | not yet measured |
 | P7 | Canary cleanup with row counts | See "Canary cleanup" below. Record scanned / classified / deleted / deferred / unknown, DO requests and rows written for the canary window. | not yet measured |
 | P8 | Rollback rehearsal | With all three switches off at once: no reconnect loop, no polling, sign-in and drafts kept, old tabs answered 410 (reload message). Then all back on. | not yet measured |
 
@@ -148,7 +148,7 @@ CLOUDFLARE_API_TOKEN=… node scripts/agents/durable-report.mjs \
 - With `--zone` and `--host` it also splits each window: migration (accepted `/__maintenance/*` calls, at least one DO
   call each), stale old tabs (410 answers on removed routes: Worker requests, no DO work), and steady operation (DO
   requests minus migration). Watch cannot be separated: its waits share `/mcp` with every other agent call. Compare a
-  window without Watch use to see it. The production Worker has `workers_dev` off, so all its traffic goes through
+  window without Watch use to see it. If the zone figures cannot be read for either window, the report says not comparable. The production Worker has `workers_dev` off, so all its traffic goes through
   the zone. Requests from other sites on the zone are excluded by `--host`.
 - A dataset that returns nothing for a window shows **no data**, not zero, and gets no change.
 - DO errors are listed by invocation status. A status is not proof of a quota error.

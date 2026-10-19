@@ -80,3 +80,13 @@ P2 empty datasets became zeros and -100%: now no data. P2 scripts are not execut
 **Limits.** The GraphQL field and filter names follow the baseline research; `namespaceId` filters on the periodic and
 storage datasets and the zone path filters are unverified until the lead's first real run (a refusal prints not comparable
 with the redacted reason). Watch cannot be separated in these datasets. The historical exhausted dimension stays unverified.
+
+Landed: PR #83, merged as 8c6e9f8 (`RESULT: ok merged #83 8c6e9f8`; kit pr: tier full, check, unit, lint, specs, review, CI ok).
+
+Follow-up (landing review round 2, gpt-6.1-sol, medium, read-only; evidence
+/home/ubulex/Projects/native-site-editor/.scratch/reviews/dor-30/20261019T024532Z; read after the merge): fixed 2 in a
+follow-up PR. P2: a failed, malformed or truncated zone answer still allowed `comparable` and percentages; asked-for
+attribution that cannot be read now makes the pair not comparable (new test: three failures in either window, 12 tests).
+P2: rollout P6 asked every switch for a paused message and Retry; each switch now has its own check (relay: message and
+Retry; Watch: immediate wait, then a new activation holds; lifecycle cleanup: record kept past its deadline, deleted at the
+next wake once on). Claude; focused unit.sh pass 12 fail 0, eslint ok.

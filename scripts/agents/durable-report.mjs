@@ -215,6 +215,8 @@ export async function runReport(options, ports = {}) {
       ? readZone(await graphql(fetcher, token, zoneQuery, { ...variables, zone: options.zone, host: options.host }))
       : undefined;
     if (zone?.failure && zone.detail) zone.failure = `${zone.failure} (${redact(zone.detail, secrets)})`;
+    // Asked-for attribution that cannot be read makes the windows unreadable as a pair.
+    if (zone?.failure) reasons.push(`${name}: ${zone.failure}`);
     data[name] = { window, totals: account.totals, zone };
   }
   const metrics = compareMetrics(data.before.totals, data.after.totals, reasons);

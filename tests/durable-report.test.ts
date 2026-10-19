@@ -182,6 +182,21 @@ test("redaction: GraphQL errors that echo the token or ids never reach the outpu
   assert.equal(redact("x".repeat(500), []).length, 160);
 });
 
+test("asked-for zone attribution that fails in either window makes the pair not comparable", async () => {
+  const bad: unknown[] = [new Response("no", { status: 403 }), { data: { viewer: { zones: [{ agent: [] }] } } },
+    { data: { viewer: { zones: [{ agent: Array.from({ length: 1000 }, () => ({ count: 1, dimensions: {} })), maintenance: [], mcp: [] }] } } }];
+  const reasons = [/the zone analytics query was refused \(permission refused\)/, /the zone analytics answer had an unknown shape/,
+    /the zone groups were cut off at the query limit/];
+  for (const [index, answer] of bad.entries()) for (const side of ["before", "after"]) {
+    const zone = side === "before" ? [answer, zoneAnswer(1, 1, 1)] : [zoneAnswer(1, 1, 1), answer];
+    const { result, text } = await run({ zone: zoneId, host: "editor.techies.tools" },
+      { account: [accountAnswer(95_517, 9, 9, 9, 9), accountAnswer(9_500, 1, 1, 1, 1)], zone });
+    assert.equal(result.status, "not-comparable");
+    assert.match(text, new RegExp(`Not comparable: ${side}: ${reasons[index].source}`));
+    assert.doesNotMatch(text, /%/);
+  }
+});
+
 test("attribution without zone data says not measured; Watch is never separated", () => {
   const totals = readAccount(accountAnswer(100, 1, 1, 1, 1)).totals;
   assert.deepEqual(attribute(totals, undefined), [
