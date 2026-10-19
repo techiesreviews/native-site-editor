@@ -119,3 +119,12 @@ The first audit also found these four matching folders in the ke-08 worktree. Th
 - Follow-up validation: `RESULT: ok doctor 7/7 checks passed`; ticket consistency and `git diff --check` passed. No source code changed, so the previously recorded unit, check and lint results remain applicable.
 
 Declined: none.
+
+### Runner cleanup (2026-10-19, ke-09)
+
+- Rescanned `.scratch/agent/` in all 13 live worktrees with the same predicates (`state: failed`,
+  `exitCode: 2`, brief under `/tmp/kit-doctor-*`, `worktree` equal to the containing checkout).
+  14 folders matched: the 8 `t3-837034a2`, 2 `fix-agent-menu-tidy` and 4
+  `fix-nested-component-editing` folders listed above. Deleted all 14; a rescan finds 0.
+- The 12 `ke-05-specs-digest` folders above were already gone with that worktree; the 4 ke-08
+  folders no longer matched. Nothing else was touched.
