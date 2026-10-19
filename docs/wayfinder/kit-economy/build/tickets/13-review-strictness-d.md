@@ -130,6 +130,9 @@ sentences, the severity scale, follow-ups in the PR and the ticket's Done, `--wa
 
 ## Done (2026-10-19)
 
+- Reviews accept top-level Spec/Standards groups without a Defects heading, while retaining
+  completion-marker and defect-group checks. The round-2 Standards P1 plus validation-gap
+  shape parses as two open findings.
 - Reviews request P0–P3 after each defect location; parsing accepts the documented variants,
   preserves missing severity as null and never assigns severity to validation gaps.
 - Every finding blocks before three completed branch fix rounds. Afterwards only P0/P1 defects,
@@ -144,14 +147,16 @@ sentences, the severity scale, follow-ups in the PR and the ticket's Done, `--wa
   CI and merging use the new head. Lead waivers remain separate from non-blocking follow-ups.
 - Ticket-only work after a successful slice retains review/fix coverage and triggers a new landing
   attempt. Follow-up commits run hooks on a detached HEAD and publish only the captured branch
-  with its expected old SHA. Race coverage checks branch/HEAD changes before staging, after staging
-  and during a held pre-commit hook, with no stale commit pushed or merged.
+  with its expected old SHA. A private index stages only the ticket; commit paths and the captured
+  ticket blob are checked before publishing. Other files retain their real-index and worktree state.
+  Race coverage checks branch/HEAD changes and unrelated edits before staging, after staging and
+  during a held pre-commit hook. A hook that stages another path cannot publish that commit.
 - Unit coverage exercises severity variants, pending rounds, strict and relaxed PR gates, bare-origin
   pushes, ticket commits, follow-up idempotence, waiver behaviour and slice resume after failed CI.
-  `kit unit --affected` passes 218/218 across five files (log:
-  `.scratch/unit/20261019T135111-31.log`); focused PR/slice regressions pass 105/105 (log:
-  `.scratch/unit/20261019T134948-22.log`). Earlier focused `kit-fix.test.ts` passes 20/20 (log:
-  `.scratch/unit/20261019T133954-21.log`). `npm run check` and `npm run lint` pass;
+  `kit unit --affected` passes 224/224 across five files (log:
+  `.scratch/unit/20261019T135809-31.log`); focused parser/PR regressions pass 143/143 (log:
+  `.scratch/unit/20261019T135645-22.log`). Focused `kit-fix.test.ts` passes 20/20 (log:
+  `.scratch/unit/20261019T135809-21.log`). `npm run check` and `npm run lint` pass;
   `kit specs --affected` reports none affected. Kit doctor passes 7/7.
 - Commits: changes left unstaged for the slice runner.
 - Dogfood: this builder received the slice's bounded Files and validation contract. Kit doctor and
