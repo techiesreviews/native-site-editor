@@ -8,6 +8,45 @@ Tickets live in [tickets/](tickets/), one slice each, landed through `kit pr` in
 Tickets run in parallel lanes (browser correctness 07–11; relay 12–13; server caps 23→24→22), joining at 14 (browser live transport) and 25 (disconnect lifecycle). `blocked_by` holds the lanes; parallel slices that share a file (mostly `worker/index.ts`, `worker/app.ts`, `worker/oauth.ts`, `src/main.ts`) resolve the overlap when `kit pr` rebases. Source plan: a read-only Sol audit of `38039dda`
 (2026-10-17); its file:line evidence is summarised under "Current code" below.
 
+## Status (2026-10-19)
+
+All 30 tickets landed on `dev` and run on preview-editor.techies.tools. Production is not deployed:
+that needs Lex's explicit go-ahead ([rollout.md](rollout.md)). Local evidence: [validation.md](validation.md).
+Related lead PRs: #28, #34, #53 (build docs); #45 (flaky spec); #61, #62 (kit pr check tiers).
+
+| Ticket | PRs |
+| --- | --- |
+| 01 | #29 |
+| 02 | #30 |
+| 03 | #31 |
+| 04 | #32 |
+| 05 | #33 |
+| 06 | #35, #37 |
+| 07 | #44, #46 |
+| 08 | #38 |
+| 09 | #48, #49 |
+| 10 | #51, #52 |
+| 11 | #50 |
+| 12 | #39, #41 |
+| 13 | #43 |
+| 14 | #56, #57 |
+| 15 | #58 |
+| 16 | #59, #60, #63, #64 |
+| 17 | #65, #66 |
+| 18 | #67, #68 |
+| 19 | #69, #70 |
+| 20 | #71, #72 |
+| 21 | #73, #74 |
+| 22 | #42 |
+| 23 | #36 |
+| 24 | #40, #47 |
+| 25 | #75, #76 |
+| 26 | #79, #81 |
+| 27 | #54, #55 |
+| 28 | #77, #78 |
+| 29 | #80, #82 |
+| 30 | #83, #84 |
+
 ## Runner extras
 
 Read with [runner.md](../../../agents/runner.md). Where they differ, this section wins.
