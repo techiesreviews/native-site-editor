@@ -41,7 +41,7 @@ async function connectAgent(page: Page, baseURL: string | undefined) {
   await page.locator(".repository-menu__trigger").click();
   const { url, token } = await copyConnectionPrompt(page);
   await expect(page.getByRole("button", { name: "Waiting for connection…", exact: true })).toBeVisible();
-  await expect(page.locator(".agent-menu__hint")).toContainText("Paste it into Claude, Codex");
+  await expect(page.locator(".agent-menu")).toHaveAttribute("data-state", "waiting");
   expect(url).toBe(`${baseURL}/mcp`);
   const client = new Client({ name: "playwright-agent", version: "1.0.0" });
   await client.connect(
@@ -988,7 +988,7 @@ function agentCalls(page: Page) {
   return seen;
 }
 
-test("Ask agent history stays in this browser: after Turn off and a reload its pins show, clearing and dismissing make no hub calls, and another branch has its own", async ({ page, baseURL }) => {
+test("Ask agent history stays in this browser: after a reload its pins show, clearing and dismissing make no hub calls, and another branch has its own", async ({ page, baseURL }) => {
   await open(page, baseURL);
   // Another branch of the same repository, with the same pages.
   const css = await (await page.request.get(`${baseURL}/__demo/file?path=styles/site.css`)).text();
@@ -1020,10 +1020,7 @@ test("Ask agent history stays in this browser: after Turn off and a reload its p
     await expect(page.locator('.agent-pin[data-state="done"]')).toHaveCount(1);
     await expect(page.locator('.agent-pin[data-state="question"]')).toHaveCount(1);
 
-    // Turned off: the pins stay, and so do they after a reload, from this browser alone.
-    await page.locator(".repository-menu__trigger").click();
-    await page.getByRole("button", { name: "Turn off", exact: true }).click();
-    await page.keyboard.press("Escape");
+    // The pins stay after a reload, which turns remote agents off, from this browser alone.
     await expect(pins).toHaveCount(2);
     const calls = agentCalls(page);
     await page.reload();

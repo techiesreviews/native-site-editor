@@ -21,7 +21,7 @@ async function connectAgent(page: Page, baseURL: string | undefined) {
   await page.locator(".repository-menu__trigger").click();
   const { url, token } = await copyConnectionPrompt(page);
   await expect(page.getByRole("button", { name: "Waiting for connection…", exact: true })).toBeVisible();
-  await expect(page.locator(".agent-menu__hint")).toContainText("Paste it into Claude, Codex");
+  await expect(page.locator(".agent-menu")).toHaveAttribute("data-state", "waiting");
   expect(url).toBe(`${baseURL}/mcp`);
   const client = new Client({ name: "playwright-agent", version: "1.0.0" });
   await client.connect(

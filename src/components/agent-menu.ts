@@ -184,7 +184,7 @@ export function createAgentMenu(options: {
     });
     await transport.start().catch((error: unknown) => { if (live(at)) say((error as Error).message); });
   }
-  // Grants this tab saw before Turn off: a later approval elsewhere never turns them back on.
+  // Grants this tab saw before it turned off: a later approval elsewhere never turns them back on.
   const declined = new Set<string>();
 
   // One button: "Connect with MCP" makes a token and copies a prompt that
@@ -203,8 +203,6 @@ export function createAgentMenu(options: {
   hint.setAttribute("role", "status");
   const again = button("Copy again", () => void copyPrompt(), "text-button agent-menu__link");
   const cancel = button("Cancel", () => void revoke(), "text-button agent-menu__link");
-  // Stops this tab's remote work; the agents' access stays for when it is turned on again.
-  const off = button("Turn off", () => turnOff(), "text-button agent-menu__link");
   const retry = button("Retry", () => {
     if (retrying) return;
     if (ownerPaused && !transport) {
@@ -218,14 +216,13 @@ export function createAgentMenu(options: {
     paint();
     void transport.retry().finally(() => { retrying = false; paint(); });
   }, "text-button agent-menu__link");
-  off.title = "Stop remote agents in this tab. Their access stays; Connect with MCP turns them on again.";
   const links = node("span", "agent-menu__links");
   const takeover = button("Take over", () => {
     void transport?.takeover().catch((error: unknown) => showError(error));
   }, "text-button agent-menu__link");
   const move = button("Move agents here", () => void moveHere(), "text-button agent-menu__link");
   const another = button("Connect another agent", () => { turnOff(); void turnOn(); }, "text-button agent-menu__link");
-  links.append(again, cancel, retry, takeover, move, another, off);
+  links.append(again, cancel, retry, takeover, move, another);
   // Agent edits stopped because this browser cannot keep them: what to do, and a copy of the work.
   const storage = agentStorageStatus();
   const trouble = node("div", "agent-menu__storage");
@@ -475,12 +472,6 @@ export function createAgentMenu(options: {
     move.textContent = returned ? "Turn on again" : "Move agents here";
     retry.hidden = !["paused", "quota"].includes(current);
     retry.disabled = retrying || (recovering?.retryAt ?? 0) > Date.now();
-    const text =
-      current === "waiting"
-        ? "Prompt copied. Paste it into Claude, Codex or another agent."
-        : current === "off"
-          ? "Remote agents are off in this tab. Choose Connect with MCP to turn them on."
-          : "";
     let pause = "";
     if (ownerPaused || recovering?.message) pause = recovering?.message ?? "Remote agents are paused by the site owner.";
     else if (recovering?.mode === "quota") {
@@ -491,14 +482,13 @@ export function createAgentMenu(options: {
     else if (recovering?.mode === "reconnecting") pause = "Reconnecting to remote agents…";
     if (pause && (recovering?.retryAt ?? 0) > Date.now()) pause += ` You can retry after ${new Date(recovering!.retryAt!).toLocaleString()}.`;
     const liveCopy: Record<string, string> = {
-      connecting: "Connecting remote agents…", live: "Remote agents are on in this tab.",
-      "other-owner": transportState?.closed ? "The receiving tab closed. Choose Take over to receive agent changes here." : "Another tab receives agent changes for this site. Choose Take over to receive them here.",
+      "other-owner": transportState?.closed ? "The receiving tab closed." : "Another tab receives agent changes for this site.",
       "taken-over": "Another tab took over agent changes for this site.",
       "taking-over": "Taking over agent changes…",
       "takeover-failed": "Agent changes are paused for this site until a tab takes over.",
     };
-    const moved = workspaceChanged && pinned ? `Agents are connected to ${pinned.fullName} on ${pinned.branch}; this tab now shows ${options.repository()?.fullName ?? "no site"} on ${options.repository()?.branch ?? "no branch"}.${scopeKey() === workspaceKey({ account: options.account, repoId: pinned.id, branch: pinned.branch }) ? " Choose Turn on again to reconnect." : ""}` : "";
-    hint.textContent = moved || pause || notice?.text || text || (transportMode === "socket" ? liveCopy[transportState?.mode ?? "connecting"] : "");
+    const moved = workspaceChanged && pinned ? `Agents are connected to ${pinned.fullName} on ${pinned.branch}; this tab now shows ${options.repository()?.fullName ?? "no site"} on ${options.repository()?.branch ?? "no branch"}.` : "";
+    hint.textContent = moved || pause || notice?.text || (transportMode === "socket" ? liveCopy[transportState?.mode ?? ""] ?? "" : "");
     hint.hidden = !hint.textContent;
     const problem = storage.problem;
     trouble.hidden = !problem || current === "closed";
@@ -536,7 +526,8 @@ export function createAgentMenu(options: {
     if (!watchAllowed) {
       root.dataset.watch = "paused";
       watchStop.hidden = true;
-      watchText.textContent = "Watch is paused by the site owner. Agents still get requests when they ask.";
+      watchText.textContent = "Watch is paused by the site owner.";
+      watchText.hidden = false;
       return;
     }
     const time = (at: number) => new Date(at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
@@ -548,9 +539,10 @@ export function createAgentMenu(options: {
       watchText.textContent = `Watching for requests until ${time(report.until)} (${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")} left, ${report.waitsLeft} ${report.waitsLeft === 1 ? "wait" : "waits"} left).`;
     } else if (report.state === "paused") {
       watchText.textContent = report.reason === "used"
-        ? `Watch paused: your agent used all ${WATCH_WAITS} waits. It stops waiting for requests; choose Watch again for 10 more minutes.`
-        : `Watch paused at ${time(report.at)}. Your agent stops waiting for requests; choose Watch again for 10 more minutes.`;
-    } else watchText.textContent = "Agents stop when nothing is waiting. After you send a request, ask your agent to continue, or choose Watch for requests to keep it waiting for up to 10 minutes.";
+        ? `Watch paused: your agent used all ${WATCH_WAITS} waits.`
+        : `Watch paused at ${time(report.at)}.`;
+    } else watchText.textContent = "";
+    watchText.hidden = !watchText.textContent;
   }
   /** Only the user starts (or renews) and stops Watch; a stopped one releases a held wait at once. */
   function setWatch(on: boolean) {
@@ -650,8 +642,7 @@ export function createAgentMenu(options: {
     await readConnections();
     if (ownerPaused) return;
     await activateSocket();
-    if (state() === "connected") say("Remote agents are on. If an agent you connected before stopped, ask it to continue.");
-    else if (state() === "idle") await start(task);
+    if (state() === "idle") await start(task);
   }
   const live = (at: number) => !disposed && remote && !workspaceChanged && activation === at && options.repository()?.id === pinned?.id && options.repository()?.branch === pinned?.branch;
   function startRemote() {

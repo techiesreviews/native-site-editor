@@ -81,7 +81,7 @@ async function openCards(page: Page, baseURL: string | undefined) {
 async function connectAgent(page: Page) {
   await page.locator(".repository-menu__trigger").click();
   const { url, token } = await copyConnectionPrompt(page);
-  await expect(page.locator(".agent-menu__hint")).toContainText("Paste it into Claude, Codex");
+  await expect(page.locator(".agent-menu")).toHaveAttribute("data-state", "waiting");
   const client = new Client({ name: "delete-card-race", version: "1.0.0" });
   await client.connect(new StreamableHTTPClientTransport(new URL(url), { requestInit: { headers: { Authorization: `Bearer ${token}` } } }));
   await page.keyboard.press("Escape");
