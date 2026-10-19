@@ -218,6 +218,11 @@ async function classify(storage: InventoryStorage, now: number) {
       if (session?.eligibility === "preserve") item.eligibility = "preserve";
       else if (item.eligibility === "review") item.eligibility = session && session.eligibility !== "review" ? session.eligibility : "expired";
     }
+    // The pending authorization ledger lives with its sign-in session: ordinary
+    // session expiry removes it (worker/index.ts alarm), so an expired session
+    // takes it along. Under a live session its own entry expiries decide.
+    if (session?.eligibility === "expired")
+      for (const item of items) if (item.kind === "oauth-pending" && item.eligibility !== "review") item.eligibility = "expired";
     // No signed browser acknowledgement exists in this slice. Old server content
     // is never recovery proof: only absolute expiry plus the clock margin is.
     // Hub grants (HubGrant) are objects with a string id; an expiry, when a
@@ -333,7 +338,10 @@ export async function cleanupObject(request: Request, storage: CleanupStorage, o
   const fence = remaining.find(entry => entry.key === "agent-cleaned-until");
   // Each record enforces its own absolute expiry. A single wake at the latest
   // expiry can clear both; an earlier wake would reschedule itself for the session.
-  const times = [object(session?.value)?.expiresAt, fence?.value].filter(number);
+  // An orphan pending ledger (no session) keeps its entries' own expiry; the
+  // same wake removes it, since the session alarm clears it without a session.
+  const pending = remaining.find(entry => entry.key === "oauth-pending")?.item.latestExpiresAt;
+  const times = [object(session?.value)?.expiresAt, fence?.value, pending].filter(number);
   const deadline = times.length ? Math.max(...times) : Infinity;
   const invocations = Number.isFinite(deadline) ? 2 : 1;
   if (invocations > input.allowance || (Number.isFinite(deadline) && utcDay(deadline) !== input.wakeDay))

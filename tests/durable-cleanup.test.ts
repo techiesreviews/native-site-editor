@@ -54,7 +54,7 @@ async function clean(store: ReturnType<typeof memory>, input: { expected?: strin
   const classification = await inventory(store, input.now);
   const expected = input.expected ?? classification.fingerprint;
   const retained = classification.records.filter(record => record.eligibility === "preserve" &&
-    ["sign-in-session", "record-fence"].includes(record.kind)).map(record => record.latestExpiresAt ?? 0);
+    ["sign-in-session", "record-fence", "oauth-pending"].includes(record.kind)).map(record => record.latestExpiresAt ?? 0);
   const wakeDay = retained.length ? day(Math.max(...retained)) : undefined;
   return (await cleanupObject(internal({ expected, allowance: input.allowance ?? 10, wakeDay }), store.storage,
     { sockets: input.sockets ?? 0, now: input.now ?? now })).json();
@@ -751,4 +751,27 @@ test("cleanup reserves the wake's rows from accounting: remaining keys plus the 
   assert.equal(ledger.rows, 3 + 3 * 2);
   assert.deepEqual(ledger.scheduled, { "2026-10-21": 1 });
   assert.deepEqual(ledger.scheduledRows, { "2026-10-21": 3 + (3 + 1) * 2 });
+});
+
+test("an expired sign-in takes its unexpired pending ledger along; an orphan ledger keeps a wake at its expiry", async () => {
+  const signedOut = memory([["session", { kind: "user", expiresAt: now - 1 }], ["oauth-pending", { live: { expiresAt: now + 60_000 } }]]);
+  const gone = await clean(signedOut);
+  assert.equal(gone.method, "deleteAll"); assert.equal(signedOut.map.size, 0); assert.equal(signedOut.alarm, null);
+  const orphan = memory([["agent-cleaned-until", now - 1], ["oauth-pending", { live: { expiresAt: now + 60_000 } }]]);
+  const kept = await clean(orphan, { allowance: 2 });
+  assert.equal(kept.method, "keys"); assert.equal(kept.invocations, 2);
+  assert.deepEqual([...orphan.map.keys()].sort(), ["alarm-deadlines", "oauth-pending"]);
+  assert.equal(orphan.alarm, now + 60_000); assert.deepEqual(orphan.map.get("alarm-deadlines"), { session: now + 60_000 });
+});
+
+test("a presence deferral is retried by the next explicit run with an unchanged fingerprint", async t => {
+  const f = fixture(t);
+  let calls = 0;
+  const first = await runCleanup({ ...options, delete: true }, { ...f.ports,
+    fetch: async () => { calls++; return reply({ status: "deferred", reason: "present", method: undefined, deletedKeys: 0, keptKeys: 1 }); } });
+  assert.equal(first.status, "complete"); assert.equal(json(f.cleanupPath).objects[0].reason, "present");
+  const second = await runCleanup({ ...options, delete: true }, { ...f.ports, fetch: async () => { calls++; return reply(); } });
+  assert.equal(calls, 2); assert.equal(second.report.deleted, 1); assert.equal(json(f.cleanupPath).objects[0].status, "deleted");
+  await runCleanup({ ...options, delete: true }, { ...f.ports, fetch: async () => { calls++; return reply(); } });
+  assert.equal(calls, 2);
 });
