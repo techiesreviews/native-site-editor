@@ -49,14 +49,23 @@ Only with the lead's go-ahead. The cleanup secrets are set with `wrangler secret
 
 1. Set `AGENT_LEGACY_MAINTENANCE` to `"on"` in the deployment's wrangler file and deploy; set `MAINTENANCE_INVENTORY_TOKEN`
    and `MAINTENANCE_CLEANUP_TOKEN` (each at least 32 characters) as secrets.
-2. Inventory: `scripts/agents/durable-inventory.mjs --account ID --namespace ID --deployment preview --maintenance-url https://preview-editor.techies.tools --limit 10`.
-3. Plan (no network): `scripts/agents/durable-cleanup.mjs … --deployment preview` and read the plan.
-4. Ten canaries: `scripts/agents/durable-cleanup.mjs … --delete` until it stops with `canary-complete`.
-5. Row count: run `durable-report.mjs` (below) with the canary hour as `--after`. Rows written in that hour, minus a quiet
-   hour's rows, divided by keys deleted, is the `--rows-per-key` figure. Record it with the window.
-6. Batches (at most 100 per run, 1,000 maintenance calls and 5,000 written rows per UTC day are enforced by the scripts):
-   `--delete --canary-verified --rows-per-key N --rows-per-object N`.
-7. `durable-inventory.mjs --rescan`, then `durable-cleanup.mjs --verify`. Record its redacted totals. Unknown or
+2. Inventory: `node scripts/agents/durable-inventory.mjs --account ID --namespace ID --deployment preview --maintenance-url https://preview-editor.techies.tools --limit 10`.
+3. Plan (no network): `node scripts/agents/durable-cleanup.mjs … --deployment preview` and read the plan.
+4. Canaries, **one at a time**: `node scripts/agents/durable-cleanup.mjs … --delete --limit 1`, each in its own UTC hour with
+   nothing else using preview, until it stops with `canary-complete` (ten in total).
+5. Row bounds, per canary. From the cleanup checkpoint (main checkout `.scratch/durable-inventory/preview-<namespace>.cleanup.json`)
+   record its method (`deleteAll` or `keys`), its key count and any retained wake day. From `durable-report.mjs` (below,
+   with that hour as `--after`; it prints raw numbers even when it says not comparable) record rows written in that hour
+   minus a quiet hour's rows, and the same for the wake's hour on its later day.
+   - The canaries must include at least one `deleteAll` object, one per-key (`keys`) object and one with a retained wake.
+   - Pick whole numbers `rowsPerObject` and `rowsPerKey` so that, for **every** canary, its rows are at most
+     `rowsPerObject + keys × rowsPerKey`, and its wake's rows at most `rowsPerObject + (keys + 1) × rowsPerKey`
+     (this is what the script reserves). Round up and add margin.
+   - If any canary could not be measured on its own (other traffic in its hour, no data, a missing method or wake),
+     there is no bound: do **not** run batches. Record "needs accounting".
+6. Batches only with those bounds (at most 100 per run; the scripts enforce 1,000 maintenance calls and 5,000 written rows
+   per UTC day and never raise them): `--delete --canary-verified --rows-per-key N --rows-per-object N`.
+7. `node scripts/agents/durable-inventory.mjs … --rescan`, then `node scripts/agents/durable-cleanup.mjs … --verify`. Record its redacted totals. Unknown or
    inaccessible objects mean cleanup is **not** complete.
 8. Set `AGENT_LEGACY_MAINTENANCE` back to `"off"` and deploy; delete both secrets.
 
@@ -123,7 +132,7 @@ value. The token comes only from the `CLOUDFLARE_API_TOKEN` environment variable
 Analytics read for `--zone`). It prints ids only as short hashes.
 
 ```sh
-CLOUDFLARE_API_TOKEN=… scripts/agents/durable-report.mjs \
+CLOUDFLARE_API_TOKEN=… node scripts/agents/durable-report.mjs \
   --account ACCOUNT_ID --namespace SESSIONS_NAMESPACE_ID \
   --before 2026-10-15T00:00:00Z/2026-10-16T00:00:00Z \
   --after  2026-10-29T00:00:00Z/2026-10-30T00:00:00Z \
@@ -141,6 +150,7 @@ CLOUDFLARE_API_TOKEN=… scripts/agents/durable-report.mjs \
   requests minus migration). Watch cannot be separated: its waits share `/mcp` with every other agent call. Compare a
   window without Watch use to see it. The production Worker has `workers_dev` off, so all its traffic goes through
   the zone. Requests from other sites on the zone are excluded by `--host`.
+- A dataset that returns nothing for a window shows **no data**, not zero, and gets no change.
 - DO errors are listed by invocation status. A status is not proof of a quota error.
 - These are analytics aggregates, possibly sampled; they are not billing counts. "Max stored bytes" is the metric's
   largest value, not the total data stored. Before claiming the numbers mean anything, check that the switch values

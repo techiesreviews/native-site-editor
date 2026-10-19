@@ -61,7 +61,11 @@ export function readAccount(body) {
   const { invocations, periodic, storage } = accounts[0] ?? {};
   if (!Array.isArray(invocations) || !Array.isArray(periodic) || !Array.isArray(storage)) return { failure: "the analytics answer had an unknown shape" };
   if (invocations.length >= groupLimit) return { failure: "the invocation groups were cut off at the query limit" };
-  const totals = { requests: 0, errors: 0, rowsRead: 0, rowsWritten: 0, duration: 0, storedBytes: 0, statuses: {} };
+  // An empty dataset is absent evidence, not zero usage: its metrics stay undefined.
+  const totals = { statuses: {} };
+  if (invocations.length) Object.assign(totals, { requests: 0, errors: 0 });
+  if (periodic.length) Object.assign(totals, { duration: 0, rowsRead: 0, rowsWritten: 0 });
+  if (storage.length) totals.storedBytes = 0;
   for (const group of invocations) {
     const { requests, errors } = group?.sum ?? {};
     if (!number(requests) || !number(errors)) return { failure: "the analytics answer had an unknown shape" };
@@ -120,9 +124,9 @@ export function attribute(totals, zone) {
       ["Watch", "not separable: Watch waits share /mcp with every agent call"], ["Stale-client Worker requests (410 editor-updated)", reason]];
   }
   const { counts } = zone;
-  rows.push(["Steady operation (DO requests)", totals
+  rows.push(["Steady operation (DO requests)", totals?.requests !== undefined
     ? `at most ${format(Math.max(0, totals.requests - counts.maintenance))} (DO requests minus accepted maintenance requests; includes Watch)`
-    : "not measured: no DO totals"]);
+    : "not measured: no DO request data"]);
   rows.push(["Migration (maintenance DO calls)", `at least ${format(counts.maintenance)} (one per accepted maintenance request; nested calls and later retention wakes are not visible here)` +
     (counts.maintenanceRefused ? `; ${format(counts.maintenanceRefused)} other answers, at most one DO call each` : "")]);
   rows.push(["Watch", `not separable: Watch waits share /mcp (${format(counts.mcp)} /mcp Worker requests in total)`]);
@@ -130,11 +134,11 @@ export function attribute(totals, zone) {
   return rows;
 }
 
-/** Metric rows; `change` only when every comparability reason is absent. */
+/** Metric rows; `change` only when every comparability reason is absent and both windows hold data. */
 export function compareMetrics(before, after, reasons) {
   return METRICS.map(([key, label]) => {
     const from = before?.[key], to = after?.[key];
-    const change = reasons.length ? "not comparable" : from === to ? "no change" : from === 0 ? "new (was 0)"
+    const change = reasons.length ? "not comparable" : from === undefined || to === undefined ? "no data" : from === to ? "no change" : from === 0 ? "new (was 0)"
       : `${(to - from) / from * 100 >= 0 ? "+" : ""}${((to - from) / from * 100).toFixed(1)}%`;
     return { key, label, before: from, after: to, change };
   });
@@ -228,11 +232,13 @@ export async function runReport(options, ports = {}) {
     lines.push("", `Attribution, ${name} window:`);
     for (const [label, value] of attribute(totals, zone)) lines.push(`- ${label}: ${value}`);
     const statuses = Object.entries(totals?.statuses ?? {});
-    lines.push(`- DO errors by invocation status: ${statuses.length ? statuses.map(([status, count]) => `${status} ${format(count)}`).join(", ") : "none"} (a status alone does not prove a quota error)`);
+    lines.push(`- DO errors by invocation status: ${statuses.length ? statuses.map(([status, count]) => `${status} ${format(count)}`).join(", ") : totals?.errors === undefined ? "no data" : "none"} (a status alone does not prove a quota error)`);
   }
   lines.push("", reasons.length
     ? `Not comparable: ${reasons.join("; ")}. No change or saving is claimed.`
     : "Comparable windows. Changes describe these two windows only; they do not prove the historical quota problem is fixed.");
+  if (metrics.some(row => row.change === "no data"))
+    lines.push("No data: a dataset returned nothing for a window. That is missing evidence, not zero use; no change is claimed for it.");
   lines.push("Adaptive datasets can be sampled. Max stored bytes is the metric's maximum, not a total of all stored data.");
   const status = reasons.length ? "not-comparable" : "comparable";
   lines.push(`RESULT: ${status} durable-report ${metrics.map(row => `${row.key}=${row.change.replace(/ /g, "-")}`).join(" ")}`);
