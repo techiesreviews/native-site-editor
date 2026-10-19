@@ -165,6 +165,27 @@ test("takeover while the owner is frozen: on resume the old owner says taken ove
   } finally { await h.client.close(); await second.close(); }
 });
 
+test("discarded owner page: a fresh page recovers drafts and receipts from IndexedDB; nothing is replayed", async ({ page, context, baseURL }) => {
+  const h = await connect(page, baseURL);
+  const fresh = await context.newPage(), traffic = frames(fresh);
+  try {
+    expect((await h.call("write_file", { path: "discarded.txt", content: "Kept in the browser", requestId: "before-discard" })).state).toBe("applied");
+    const before = await durable(page);
+    await page.close(); // The renderer and its memory are gone; only IndexedDB remains.
+    await open(fresh, baseURL); await enable(fresh);
+    await expect.poll(() => traffic.ready().length).toBe(1);
+    expect(traffic.ready()[0].generation!).toBeGreaterThan(h.traffic.ready()[0].generation!);
+    expect(traffic.commands()).toHaveLength(0);
+    expect(await durable(fresh)).toEqual(before);
+    expect(await h.call("get_command_status", { requestId: "before-discard" })).toMatchObject({ state: "applied" });
+    expect(await h.call("write_file", { path: "discarded.txt", content: "Kept in the browser", requestId: "before-discard" })).toMatchObject({ state: "applied" });
+    expect((await h.call("read_file", { path: "discarded.txt" })).content).toBe("Kept in the browser");
+    expect(await durable(fresh)).toEqual(before);
+    // Only the three calls above reached the fresh page: status, the duplicate, the read.
+    expect(traffic.commands().map(frame => frame.command?.tool)).toEqual([undefined, "write_file", "read_file"]);
+  } finally { await h.client.close(); await fresh.close(); }
+});
+
 test("relay reset (hibernation restore, socket kept): re-handshake, lost edit stays unknown, no replay; browser draft and sign-in survive", async ({ page, baseURL }) => {
   const h = await connect(page, baseURL);
   let pending: Promise<unknown> | undefined;
