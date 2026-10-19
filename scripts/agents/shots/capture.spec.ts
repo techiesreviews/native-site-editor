@@ -1,12 +1,11 @@
 import { test, expect } from "@playwright/test";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
-import { contactHtml, expandMatrix, makeIndex, type Options, type Scenario, type Shot } from "./core";
+import { expandMatrix, makeIndex, type Options, type Scenario, type Shot } from "./core";
 import { runScenario } from "./scenarios";
 import { runStep } from "./steps";
 import { checkLayout } from "./layout-check";
-import { smallWebp, writeIndex } from "./output";
+import { smallWebp, writeContacts, writeIndex } from "./output";
 
 test("named screens on the real starter", { tag: "@actual" }, async ({ browser, baseURL }) => {
   const request = JSON.parse(process.env.ASE_KIT_SHOTS_REQUEST!) as { options: Options; scenarios: Scenario[]; out: string; previous: Shot[] };
@@ -37,6 +36,7 @@ test("named screens on the real starter", { tag: "@actual" }, async ({ browser, 
           shot.layout = await step("checkLayout", () => checkLayout(page));
           const stem = `${scenario.screen}${scenario.name ? `-${scenario.name}` : ""}-${width}-${theme}`;
           const png = await step("screenshot", () => page.screenshot({ fullPage: true, animations: "disabled" }));
+          shot.height = png.readUInt32BE(20);
           await writeFile(join(out, `${stem}.png`), png);
           shot.files = [{ path: `${stem}.png`, bytes: png.length }];
           const webp = await step("encode WebP", () => smallWebp(encoder, png, 40_000));
@@ -55,16 +55,7 @@ test("named screens on the real starter", { tag: "@actual" }, async ({ browser, 
     }
     const index = makeIndex(shots);
     try {
-      const html = contactHtml(shots);
-      const htmlPath = join(out, "contact.html");
-      await writeFile(htmlPath, html);
-      index.files.push({ path: "contact.html", bytes: Buffer.byteLength(html) });
-      await encoder.setViewportSize({ width: 1000, height: 900 });
-      await encoder.goto(pathToFileURL(htmlPath).href);
-      await encoder.locator("img").evaluateAll(images => Promise.all(images.map(image => (image as HTMLImageElement).decode())));
-      const contact = await smallWebp(encoder, await encoder.screenshot({ fullPage: true }), 300_001);
-      await writeFile(join(out, "contact.webp"), contact);
-      index.files.push({ path: "contact.webp", bytes: contact.length });
+      index.files.push(...await writeContacts(encoder, shots, out));
       await writeIndex(indexPath, index);
     } catch (error) {
       index.outputFailures.push({ step: "contact sheet", error: error instanceof Error ? error.message : String(error) });

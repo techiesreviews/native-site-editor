@@ -8,7 +8,8 @@ import { createInterface } from "node:readline";
 import { setTimeout as delay } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 import { kitMainRoot, kitOwner, kitResult, kitRoot, nodeEnv } from "../kit-lib.mjs";
-import { parseArgs, parseSteps } from "./core.ts";
+import { contactOutput, parseArgs, parseSteps } from "./core.ts";
+import { findingsSections } from "./findings-list.ts";
 
 export function splitCompare(args) {
   const rest = [];
@@ -118,7 +119,7 @@ async function run(command, args, { cwd, env = process.env, forward = false }) {
   children.add(child);
   let stdout = "", stderr = "";
   const readers = [];
-  for (const [stream, output] of [[child.stdout, process.stdout], [child.stderr, process.stderr]]) {
+  for (const [stream, output] of [[child.stdout, process.stderr], [child.stderr, process.stderr]]) {
     if (forward) {
       const reader = createInterface({ input: stream, crlfDelay: Infinity });
       // A predicate can also hide lines, such as paths in a run folder deleted afterwards.
@@ -337,13 +338,14 @@ async function capture(root, scenario, name, out, widths, themes, env, stamp) {
   try {
     await writeFile(file, JSON.stringify({ screen: scenario.screen, steps: scenario.steps, name }));
     return await run(join(root, "scripts/agents/kit.d/shots"), ["--steps", file, "--out", out, ...matrixArgs(widths, themes)], {
-      cwd: root, env: { ...env, KIT_ROOT: root }, forward: name === "before" ? line => !line.startsWith(out) : true,
+      cwd: root, env: { ...env, KIT_ROOT: root }, forward: line => !line.startsWith(out) && !line.startsWith("contact:") && !/^\d+ files:/.test(line),
     });
   } finally { await rm(file, { force: true }); }
 }
 
 export async function main(args = process.argv.slice(2)) {
   let ref = "(unknown)", sha = "???????", out = "(not created)", hits = 0, misses = 0, after = "not run", failed = false, release;
+  let contactSummary = "contact none", fileCount = 0;
   const signals = ["SIGINT", "SIGTERM", "SIGHUP"];
   const handlers = signals.map(signal => () => {
     interrupted = signal;
@@ -439,6 +441,12 @@ export async function main(args = process.argv.slice(2)) {
     }
     after = afterFailed ? "fail" : "ok";
     failed ||= afterFailed;
+    const index = JSON.parse(await readFile(join(out, "index.json"), "utf8"));
+    const output = contactOutput(index, out, options.files);
+    contactSummary = output.summary;
+    fileCount = index.files.length;
+    for (const line of output.lines) console.log(line);
+    for (const line of findingsSections(index.screens)) console.log(line);
   } catch (error) {
     failed = true;
     console.error(error instanceof Error ? error.message : String(error));
@@ -446,7 +454,7 @@ export async function main(args = process.argv.slice(2)) {
     await release?.();
     signals.forEach((signal, index) => process.off(signal, handlers[index]));
     process.exitCode = failed ? 1 : 0;
-    kitResult(failed ? "fail" : "ok", `shots compare ${ref}@${sha.slice(0, 7)}: base ${hits} cached, ${misses} shot; after ${after}; out ${out}`);
+    kitResult(failed ? "fail" : "ok", `shots compare ${ref}@${sha.slice(0, 7)}: base ${hits} cached, ${misses} shot; after ${after}; ${fileCount} files, ${contactSummary}; out ${out}`);
   }
 }
 

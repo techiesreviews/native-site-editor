@@ -5,14 +5,16 @@ import { isAbsolute, join, relative, resolve } from "node:path";
 // @ts-expect-error Shared kit helpers are plain JavaScript without declarations.
 import { kitMainRoot, kitOwner, kitResult, kitRoot, nodeEnv } from "../kit-lib.mjs";
 import { findingsSections } from "./findings-list";
-import { parseArgs, parseSteps, screens, type Shot } from "./core";
+import { contactOutput, parseArgs, parseSteps, screens, type Shot } from "./core";
 
-const help = `Usage: kit shots <screen...> [--width 390,1280] [--theme light|dark] [--out dir]
+const help = `Usage: kit shots <screen...> [--width 390,1280] [--theme light|dark] [--out dir] [--files]
        kit shots --steps .scratch/scenario.json|yaml [matrix flags] [--out dir]
        kit shots --spec .scratch/example.spec.ts [--out dir]
 
 Screens: ${screens.join(", ")}
 No screen: list screens and fail. Default matrix: 390,768,1280 x light,dark.
+Contact sheets first: at most 1600 x 2400 px, 300 KB each; whole rows split into contact-N.webp.
+--files lists every file path; default prints only the file count and index.json.
 Default output: <kitMainRoot>/.scratch/shots/<owner>/<YYYYMMDD-HHMMSS>/.
 Steps files must resolve under this checkout's or main checkout's .scratch/.
 JSON: {"screen":"media-gallery","steps":["hover first tile"],"name":"after"}
@@ -28,8 +30,8 @@ must live under this checkout's .scratch/ (shots.sh rule).
 Real starter: ~/Projects/native-site-editor-starter; ASE_NATIVE_SAVE_FIXTURE overrides it.
 `;
 
-async function run(command: string, args: string[], env: NodeJS.ProcessEnv) {
-  const child = spawn(command, args, { cwd: kitRoot(), env, stdio: "inherit" });
+async function run(command: string, args: string[], env: NodeJS.ProcessEnv, diagnostics = true) {
+  const child = spawn(command, args, { cwd: kitRoot(), env, stdio: ["inherit", diagnostics ? process.stderr : "inherit", "inherit"] });
   const signals: NodeJS.Signals[] = ["SIGINT", "SIGTERM", "SIGHUP"];
   const handlers = signals.map(signal => () => { child.kill(signal); });
   signals.forEach((signal, index) => process.on(signal, handlers[index]));
@@ -73,7 +75,7 @@ async function main() {
     await mkdir(out, { recursive: true });
     const env = nodeEnv({ ...process.env, ASE_NATIVE_SAVE_FIXTURE: fixture, ASE_NATIVE_SAVE_FIXTURE_KIND: process.env.ASE_NATIVE_SAVE_FIXTURE_KIND ?? "actual" });
     if (spec) {
-      const status = await run(join(root, "scripts/agents/shots.sh"), [out, spec], env);
+      const status = await run(join(root, "scripts/agents/shots.sh"), [out, spec], env, false);
       process.exitCode = status;
       kitResult(status ? "fail" : "ok", `shots raw spec, out ${out}`);
       return;
@@ -85,17 +87,17 @@ async function main() {
     env.ASE_KIT_SHOTS_REQUEST = JSON.stringify({ options, scenarios, out, previous });
     const status = await run(join(root, "scripts/agents/port.sh"), [join(root, "node_modules/.bin/playwright"), "test", "--config", join(root, "scripts/agents/shots/config.ts")], env);
     const index = JSON.parse(await readFile(join(out, "index.json"), "utf8"));
-    for (const file of index.files) console.log(`${join(out, file.path)} (${file.bytes} bytes)`);
-    console.log(join(out, "index.json"));
+    const output = contactOutput(index, out, options.files);
+    for (const line of output.lines) console.log(line);
     for (const line of findingsSections(index.screens)) console.log(line);
     const failed = index.screens.filter((shot: Shot) => !shot.ok).length + (index.outputFailures?.length ?? 0);
     const findings = index.layoutFindings.length;
     process.exitCode = status || (failed ? 1 : 0);
-    kitResult(process.exitCode ? "fail" : "ok", `shots ${index.files.length} files, ${failed} failed, ${findings} layout findings, out ${out}`);
+    kitResult(process.exitCode ? "fail" : "ok", `shots ${index.files.length} files, ${failed} failed, ${findings} layout findings, ${output.summary}, out ${out}`);
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;
-    kitResult("fail", `shots 0 files, 1 failed, 0 layout findings, out ${out}`);
+    kitResult("fail", `shots 0 files, 1 failed, 0 layout findings, contact none, out ${out}`);
   }
 }
 

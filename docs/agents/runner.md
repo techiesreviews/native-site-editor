@@ -56,8 +56,8 @@ own `runner-extras.md` (next to its map) wins where it differs.
 ## Screenshots
 
 For visible changes: `scripts/agents/kit shots <screen…>` (or `--steps .scratch/<file>`; `--compare dev`
-for before/after). Inspect the contact sheet and layout findings; fix visible defects. At most one
-retake per scenario. Raw Playwright scenarios (`--spec`): [20-line example](agent-scripts.md#screenshots).
+for before/after). View only the contact sheet(s) printed first (`contact.webp` or `contact-N.webp`, each ≤1600 × 2400 px and ≤300 KB) and layout findings; fix visible defects.
+Open a single PNG only for a specific finding, never the same PNG twice. At most one retake per scenario. Raw Playwright scenarios (`--spec`): [20-line example](agent-scripts.md#screenshots).
 
 ## Review and close
 
