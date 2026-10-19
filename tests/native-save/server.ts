@@ -976,6 +976,7 @@ function newSessionId(): string {
 function env(connect?: RelayConnect, relaySession = "anonymous"): Env {
   // eslint-disable-next-line no-restricted-syntax -- The local server implements only the Durable Object namespace surface exercised by worker requests.
   return {
+    ...agentControlsBySession.get(relaySession),
     ...(process.env.ASE_NATIVE_STARTER_SOURCE === "native-static" ? { STARTER_SOURCE: "native-static" } : {}),
     ASSETS: { fetch: async (request: Request) => {
       const path = new URL(request.url).pathname;
@@ -1140,6 +1141,7 @@ function mintSession(): string {
 
 // Test-only latency injected before the worker handles a publish, scoped to the
 // browser session. Public demo mode does not expose this control channel.
+const agentControlsBySession = new Map<string, Pick<Env, "AGENT_RELAY" | "AGENT_WATCH">>();
 const publishDelays = new Map<string, number>();
 const sessionActions = new Map<string, FakeActions>();
 const sessionOnboarding = new Map<string, Onboarding>();
@@ -1233,6 +1235,15 @@ function workerMiddleware(): Connect.NextHandleFunction {
       if (path === "/__demo/relay-restart" && req.method === "POST") {
         res.setHeader("Content-Type", "application/json");
         return res.end(JSON.stringify({ closed: restartFixtureRelays(id!) }));
+      }
+      if (path === "/__demo/agent-controls" && req.method === "POST") {
+        const controls = JSON.parse(bodyBuffer.toString()) as { relay?: boolean; watch?: boolean };
+        agentControlsBySession.set(id!, {
+          AGENT_RELAY: controls.relay === false ? "off" : "on",
+          AGENT_WATCH: controls.watch === false ? "off" : "on",
+        });
+        res.statusCode = 204;
+        return res.end();
       }
       if (path === "/__demo/slow") {
         publishDelays.set(id, Math.max(0, Number(url.searchParams.get("ms") ?? "0") || 0));

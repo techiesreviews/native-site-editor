@@ -23,6 +23,16 @@
   // other addresses serving the same editor, which get sign-in callbacks.
   // Self-hosting: set EDITOR_ORIGIN to your address and drop EDITOR_ALIASES.
   "vars": {
+    // Off pauses remote connections and agent tools; existing grants are kept.
+    "AGENT_RELAY": "on",
+    // Off makes waits immediate; agents can still ask for requests.
+    "AGENT_WATCH": "on",
+    // Off postpones agent lifecycle cleanup; session expiry still runs.
+    "AGENT_LIFECYCLE_CLEANUP": "on",
+    // Off hides both legacy maintenance routes, even with their secrets set.
+    "AGENT_LEGACY_MAINTENANCE": "off",
+    // Off keeps modern registration unavailable; it is not implemented yet.
+    "AGENT_MODERN_REGISTRATION": "off",
     "EDITOR_ORIGIN": "https://editor.techies.tools",
     "EDITOR_ALIASES": "https://native-site-editor.pages.dev",
   },

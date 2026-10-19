@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { storedDrafts } from "./drafts";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 
 // Agent HTTP requests are counted separately from socket frames and normal editor traffic.
@@ -296,4 +297,87 @@ test("live: another tab of this browser shows the agent's progress on a request 
     await other.close();
     await client.close();
   }
+});
+
+test("relay paused by owner: one explicit attempt, one manual Retry, no reconnect loop; manual edits and browser drafts survive", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const heading = page.frameLocator(".native-preview-frame").locator(".hero h1");
+  await heading.dblclick();
+  await expect(heading).toHaveAttribute("contenteditable", /.+/);
+  await heading.fill("Draft before pause");
+  await page.keyboard.press("Escape");
+  await expect.poll(async () => (await storedDrafts(page)).find(draft => draft.path === "index.html")?.content).toContain("Draft before pause");
+  const before = await storedDrafts(page);
+  const grant = await (await page.request.post(`${baseURL}/api/agent/connect`, { headers: { Origin: baseURL! }, data: { repo: "native-demo-user/native-demo", repoId: 501, branch: "main" } })).json() as { id: string };
+  expect(grant.id).toBeTruthy();
+  expect((await page.request.post(`${baseURL}/__demo/agent-controls`, { data: { relay: false } })).status()).toBe(204);
+  await page.clock.install();
+  const requests = agentRequests(page);
+  let sockets = 0;
+  page.on("websocket", socket => { if (socket.url().includes("/api/agent/relay")) sockets++; });
+  await page.locator(".repository-menu__trigger").click();
+  await page.clock.runFor(65_000);
+  expect(requests, "opening the remote-off menu stays quiet").toEqual([]);
+  await page.getByRole("button", { name: "Connect with MCP", exact: true }).click();
+  const hint = page.locator(".agent-menu__hint");
+  await expect(hint).toHaveText("Remote agents are paused by the site owner.");
+  expect(requests).toEqual([{ method: "GET", path: "/api/agent/connections" }]);
+  await page.screenshot({ path: test.info().outputPath("owner-paused.png") });
+  await page.clock.runFor(600_000);
+  await setVisibility(page, "hidden");
+  await page.clock.runFor(65_000);
+  await setVisibility(page, "visible");
+  await page.clock.runFor(65_000);
+  expect(requests).toHaveLength(1);
+  await page.getByRole("button", { name: "Retry", exact: true }).click();
+  await expect.poll(() => requests.length).toBe(2);
+  await expect(hint).toHaveText("Remote agents are paused by the site owner.");
+  await page.clock.runFor(600_000);
+  expect(requests).toEqual(Array.from({ length: 2 }, () => ({ method: "GET", path: "/api/agent/connections" })));
+  expect(sockets).toBe(0);
+  expect(await storedDrafts(page)).toEqual(before);
+  await page.keyboard.press("Escape");
+  await heading.dblclick();
+  await heading.fill("Manual edit during pause");
+  await page.keyboard.press("Escape");
+  await expect.poll(async () => (await storedDrafts(page)).find(draft => draft.path === "index.html")?.content).toContain("Manual edit during pause");
+  await page.reload();
+  await expect(heading).toHaveText("Manual edit during pause", { timeout: 30_000 });
+  expect((await storedDrafts(page)).find(draft => draft.path === "index.html")?.content).toContain("Manual edit during pause");
+  expect(requests).toHaveLength(2);
+  // Removing access remains possible even though the paused check cannot list grants.
+  await page.locator(".repository-menu__trigger").click();
+  await page.getByRole("button", { name: "Connect with MCP", exact: true }).click();
+  await expect(hint).toHaveText("Remote agents are paused by the site owner.");
+  await page.getByRole("button", { name: "Disconnect MCP", exact: true }).click();
+  await expect(hint).toContainText("Remote agents are off in this tab.");
+  expect(requests.at(-1)).toEqual({ method: "POST", path: "/api/agent/revoke" });
+  await page.request.post(`${baseURL}/__demo/agent-controls`, { data: { relay: true } });
+  const remaining = await (await page.request.get(`${baseURL}/api/agent/connections`)).json() as { grants: { id: string }[] };
+  expect(remaining.grants.some(entry => entry.id === grant.id)).toBe(false);
+});
+
+test("Watch paused by owner: the existing connection check updates the menu; quiet tools and edits remain available", async ({ page, context, baseURL }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await open(page, baseURL);
+  expect((await page.request.post(`${baseURL}/__demo/agent-controls`, { data: { watch: false } })).status()).toBe(204);
+  await page.locator(".repository-menu__trigger").click();
+  const made = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST");
+  await page.getByRole("button", { name: "Connect with MCP", exact: true }).click();
+  const { token } = await (await made).json() as { token: string };
+  const client = new Client({ name: "watch-paused", version: "1" });
+  await client.connect(new StreamableHTTPClientTransport(new URL(`${baseURL}/mcp`), { requestInit: { headers: { Authorization: `Bearer ${token}` } } }));
+  try {
+    const requests = agentRequests(page);
+    const result = await client.callTool({ name: "wait_for_requests", arguments: {} });
+    await expect(page.locator(".agent-menu__action")).toHaveText("Disconnect MCP", { timeout: 15_000 });
+    await expect(page.locator(".agent-menu__watch-text")).toHaveText("Watch is paused by the site owner. Agents still get requests when they ask.");
+    await expect(page.getByRole("button", { name: "Watch for requests", exact: true })).toBeHidden();
+    expect(result.isError).toBeFalsy();
+    const value = JSON.parse((result.content as { text: string }[])[0].text);
+    expect(value.requests).toEqual([]);
+    expect(value.hint).toBe("Watch is paused by the site owner. Agents still get requests when they ask.");
+    expect((await client.callTool({ name: "write_file", arguments: { path: "watch-paused.txt", content: "still available" } })).isError).toBeFalsy();
+    expect(requests).toEqual([]);
+  } finally { await client.close(); }
 });

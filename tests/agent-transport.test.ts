@@ -189,7 +189,7 @@ test("server close reconnects through bounded recovery, drops old results and pa
   const f = fixture(), a = f.tab("a"); await a.transport.start(); a.fail(); a.sockets[0].close();
   await f.tick(120_000);
   assert.equal(a.sockets.length, 6); assert.equal(a.transport.state().mode, "paused");
-  assert.equal(f.counts().http, 0); assert.equal(f.counts().runs, 0); a.transport.stop();
+  assert.equal(f.counts().http, 5); assert.equal(f.counts().runs, 0); a.transport.stop();
 });
 
 test("quota recorded by another tab closes live socket, zero automatic attempts; manual Retry is single-flight and respects cooldown", async () => {
@@ -234,13 +234,13 @@ test("missing pong closes socket and reconnects; freeze/resume restores heartbea
   assert.equal(a.sockets[0].readyState, 3); assert.equal(a.sockets.length, 2); a.transport.stop();
 });
 
-test("every failed relay probe enters recovery with one probe and no fallback", async () => {
+test("failed relay upgrades probe before recovery and never fall back to polling", async () => {
   for (const status of [404, 400, 401, 429, 503]) {
     const f = fixture(); let probes = 0;
     const a = f.tab("a", { socket: () => new FakeSocket(true), probe: () => { probes++; return Promise.resolve(status); } });
     await a.transport.start();
     assert.equal(a.transport.state().mode, "reconnecting");
-    await f.tick(120_000); assert.equal(probes, 1); a.transport.stop();
+    await f.tick(120_000); assert.equal(probes, 6); a.transport.stop();
   }
 });
 
@@ -699,5 +699,46 @@ test("browser edit and receipt dispatches carry the owner fence; stale scope nev
   await until(() => a.sockets[0].messages("result").length === 4);
   assert.deepEqual(edits, [{ operation: "edit", generation: 1 }, { operation: "status", generation: 1 }]);
   assert.equal(a.sockets[0].messages("result").filter(value => value.result.ok === false).length, 2);
+  a.transport.stop();
+});
+
+
+test("an owner-paused relay stops automatic reconnects; each manual Retry tries once and never replays", async () => {
+  const f = fixture();
+  let probes = 0;
+  const a = f.tab("a", { probe: async () => { probes++; return { status: 403, body: { code: "agents-paused", error: "Remote agents are paused by the site owner." } }; } });
+  await a.transport.start();
+  a.fail();
+  a.sockets[0].close();
+  await f.tick(1000);
+  await until(() => a.transport.state().mode === "paused");
+  assert.equal(a.transport.state().message, "Remote agents are paused by the site owner.");
+  const attempts = a.sockets.length;
+  await f.tick(600_000);
+  assert.equal(a.sockets.length, attempts);
+  assert.equal(probes, 1);
+  await Promise.all([a.transport.retry(), a.transport.retry()]);
+  assert.equal(a.sockets.length, attempts + 1);
+  assert.equal(probes, 2);
+  await f.tick(600_000);
+  assert.equal(a.sockets.length, attempts + 1);
+  assert.equal(f.counts().runs, 0);
+  a.transport.stop();
+});
+
+test("an initial owner-paused upgrade never enters the automatic retry loop", async () => {
+  const f = fixture();
+  let probes = 0;
+  const a = f.tab("a", { socket: () => new FakeSocket(true), probe: async () => { probes++; return { status: 403, body: { code: "agents-paused" } }; } });
+  await a.transport.start();
+  assert.equal(a.transport.state().mode, "paused");
+  assert.equal(a.transport.state().message, "Remote agents are paused by the site owner.");
+  await f.tick(600_000);
+  assert.equal(probes, 1);
+  await a.transport.retry();
+  assert.equal(probes, 2);
+  await f.tick(600_000);
+  assert.equal(probes, 2);
+  assert.equal(f.counts().runs, 0);
   a.transport.stop();
 });
