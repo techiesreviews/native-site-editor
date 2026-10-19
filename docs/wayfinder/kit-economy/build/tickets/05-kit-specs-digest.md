@@ -79,3 +79,13 @@ results JSON and `error-context.md` files (up to 300 KB) to find one assertion.
   runner-owned commit/review/landing. Nested `kit bg` validation jobs died without exit records in
   this execution environment (`RESULT: fail job ke-05-check died without exit status`, and the same
   for `ke-05-test`, `ke-05-lint`, `ke-05-doc-tests`); foreground sessions completed all checks instead.
+- Review follow-up: accepted the P2 truncation defect at `3f37d22b:scripts/agents/specs-digest.mjs:25`
+  and its validation gap. Expected/received values are now capped before both the message excerpt
+  and extracted fields render them. The regression uses 10,000-character values, checks all four
+  rendered values and the first three message lines, and rejects the original long strings anywhere
+  in the digest. It failed before the fix (32 passed, 1 failed;
+  `.scratch/unit/20261019T101856-2.log`) and passed afterward (33/33;
+  `.scratch/unit/20261019T102003-2.log`). Follow-up `npm run check`, `npm test` (4,754/4,754;
+  `.scratch/ke-05-review-npm-test.log`) and `npm run lint` passed. Kit doctor again reported
+  `RESULT: ok doctor 7/7 checks passed`; affected specs reported `RESULT: ok specs none affected`.
+  Declined: none. Follow-up changes remain unstaged for the runner's commit and independent re-review.

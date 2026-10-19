@@ -17,7 +17,11 @@ function digest(spec, test, titles, { logPath, entries }) {
   const attempt = test.results?.findLast(result => result.status !== test.expectedStatus && result.status !== "skipped") ?? test.results?.at(-1);
   const error = attempt?.errors?.[0] ?? attempt?.error;
   const message = clean(error?.message ?? error?.value ?? error?.stack ?? "No error recorded").trim();
-  const messageLines = message.split(/\r?\n/);
+  // Bound assertion values before either the excerpt or extracted fields render them.
+  const messageLines = message.split(/\r?\n/).map(line => oneLine(line).replace(
+    /^((?:expected|received)(?: (?:string|pattern|substring))?:\s*)(.*)$/i,
+    (_, label, value) => `${label}${short(value)}`,
+  ));
   const known = knownFailure(spec, entries);
   const label = known ? ` [${known.status === "flaky" ? "known flaky" : "known failing on dev"}]` : "";
   const project = test.projectName && test.projectName !== "native-save" ? ` [${oneLine(test.projectName)}]` : "";
