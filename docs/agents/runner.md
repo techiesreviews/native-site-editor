@@ -41,6 +41,23 @@ own `runner-extras.md` (next to its map) wins where it differs.
 
 ## Build and tests
 
+Default for an editor ticket: start one resumable job, then wait once:
+
+```sh
+scripts/agents/kit bg slice-<NN> -- scripts/agents/kit slice --ticket <ticket> --builder sol --effort high
+scripts/agents/kit wait job slice-<NN> --timeout 2h
+```
+
+Claude waits with `run_in_background: true`. `kit slice` writes the brief, builds, commits with
+model credit, reviews, runs up to three `kit fix` rounds, then lands through `kit pr`. Use the
+build's selected builder; `sol` maps to `gpt-6.1-sol`. Its final RESULT names the PR and SHA or
+failed phase; failure output is limited to 15 lines. Logs and state live under
+`.scratch/kit-slice/<ticket-slug>/`. Rerun the same command after resolving a failed phase;
+finished phases are retained, and a moved HEAD triggers another review. `--no-pr` stops after
+a clean review; raising `--rounds` allows more fixes. Exhausted findings leave the PR unmerged.
+
+Manual fallback when `kit slice` cannot run:
+
 - `builder: claude`: implement directly. `builder: sol` (or another model): write
   `.scratch/agent-brief.md` with ticket path, Files list and acceptance, and run
   `scripts/agents/agent.sh build "$PWD" .scratch/agent-brief.md --model <model> --effort <effort>`
@@ -60,13 +77,23 @@ retake per scenario. Raw Playwright scenarios (`--spec`): [20-line example](agen
 
 ## Review and close
 
-One Sol review: `scripts/agents/kit review --ticket <ticket>` in the background (evidence lands in the
+The default `kit slice` path runs review and sends findings back through `kit fix`; the builder's
+brief includes closing the ticket with a Done section, `status: closed` and its owner as assignee.
+On failure inspect the printed digest and phase log, resolve the cause, then rerun `kit slice`.
+Record any declined findings with reasons; open findings block landing.
+
+Manual fallback: one Sol review: `scripts/agents/kit review --ticket <ticket>` in the background (evidence lands in the
 main root `.scratch/reviews/<owner>/`; `kit pr` posts it on the PR). Verify findings, fix and commit
 real defects; re-review once when fixes are substantial; record rejected findings with reasons.
 Then, in the same branch: append `## Done (YYYY-MM-DD)` to the ticket (behaviour, commits, tests, review
 decisions, evidence; details go there, not in the report), set `status: closed` and `assignee: <owner>`.
 
 ## Land
+
+The default `kit slice` path calls `kit pr` after a clean review and reports the merged PR and SHA.
+It never passes `--waive`. For a failed landing, rerun the same slice; it resumes the PR phase.
+
+Manual fallback:
 
 - Editor slices: `scripts/agents/kit pr --ticket <ticket>` in the background. It rebases, runs the checks for the
   change's tier (docs, css, tests or full; `--full` forces all), opens the PR into `dev`, posts the review, waits for CI

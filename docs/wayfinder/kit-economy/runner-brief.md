@@ -10,11 +10,15 @@ The lead sends this with a ticket path and an owner id (`ke-NN`).
    (or the same `scripts/agents/worktree.sh` from any worktree on origin/dev).
    Work only in the returned worktree; use `git -C <worktree>` or guard every `cd` with `|| exit 1`.
    Run `scripts/agents/kit doctor` first and fix every ✗.
-3. **Once ticket 04 has landed (tickets 05–09):** run the whole ticket with one job and wait once:
+3. **Default once ticket 04 has landed (tickets 05–09):** run the whole ticket with one resumable job and wait once:
    `scripts/agents/kit bg slice-<NN> -- scripts/agents/kit slice --ticket <ticket> --builder sol --effort high`,
    then `scripts/agents/kit wait job slice-<NN> --timeout 2h` with `run_in_background: true`.
    On `RESULT: fail slice <phase>: …` read only the printed lines, fix what is yours to fix
-   (never hand-edit for review findings), rerun the same `kit slice` (it resumes), and go to 8.
+   (never hand-edit for review findings), then rerun the same `kit slice`; it resumes the failed phase.
+   The job handles steps 4–7, including closing the ticket. On success go to 8.
+   Logs and state: `.scratch/kit-slice/<ticket-slug>/`; `--no-pr` stops reviewed clean,
+   and exhausted findings leave the PR unmerged. Manual fallback follows for tickets 01–04
+   or when the lead explicitly requires it.
 4. **Before ticket 04 (tickets 01–04):** write `.scratch/agent-brief.md` (ticket path, Files list,
    Done when, and "append `## Done (YYYY-MM-DD)`, set `status: closed`, `assignee: <owner>`") and
    run `scripts/agents/agent.sh build "$PWD" .scratch/agent-brief.md --model gpt-6.1-sol --effort high`

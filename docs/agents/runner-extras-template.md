@@ -6,7 +6,9 @@ for this build only. The lead's notes live in [lead-log.md](lead-log.md).
 
 - **Base.** Branch from `origin/<base>`; land into `<base>` with
   `scripts/agents/kit pr --ticket <ticket>` (or say why a slice cannot).
-- **Builder.** Which model builds by default, and when a runner may build itself.
+- **Builder.** Select the model for `kit slice --ticket <ticket> --builder <model>`
+  (default path under `kit bg`, then `kit wait job`); name any exception requiring
+  the manual fallback in runner.md.
 - **Review.** One Sol review through `scripts/agents/kit review --ticket <ticket>`,
   unless the lead says otherwise.
 - **Out of bounds.** Files, folders or services no runner may touch in this build
