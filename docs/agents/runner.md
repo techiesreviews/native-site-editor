@@ -42,7 +42,7 @@ own `runner-extras.md` (next to its map) wins where it differs.
 ## Build and tests
 
 - **Default:** from a clean worktree, `scripts/agents/kit bg slice-<NN> -- scripts/agents/kit slice --ticket <ticket> --builder sol`,
-  then `kit wait job slice-<NN> --timeout 2h` (brief, build, commit, review, ≤3 `kit fix` rounds, `kit pr`; a rerun resumes).
+  then `kit wait job slice-<NN> --timeout 2h` (brief, build, commit, review, ≤3 `kit fix` rounds, `kit pr`; a rerun resumes). Every open finding blocks before three completed rounds; afterwards P2/P3 defects and validation gaps proceed as follow-ups, while P0/P1 defects, defects without readable severity and unreadable reviews leave the PR unmerged. A covering review survives ticket-only commits on resume.
 - Manual fallback: `builder: claude`: implement directly. `builder: sol` (or another model): write `.scratch/agent-brief.md`
   with ticket path, Files list and acceptance, and run `scripts/agents/agent.sh build "$PWD" .scratch/agent-brief.md --model
   <model> --effort <effort>` in the background. Inspect the report and diff; stay inside the ticket's Files; then commit.
@@ -63,14 +63,14 @@ Open a single PNG only for a specific finding, never the same PNG twice. At most
 
 `kit slice` reviews, runs `kit fix` rounds and has the builder close the ticket. Manual fallback: one Sol review,
 `scripts/agents/kit review --ticket <ticket>` in the background (evidence: main root `.scratch/reviews/<owner>/`). Verify
-findings, fix and commit real defects; re-review after substantial fixes; record rejected findings with reasons. Then
+findings, fix and commit real defects; re-review after substantial fixes; record rejected findings with reasons. Defects carry severity after the location: P0 = data loss, security hole, broken build/tests or wholly broken change; P1 = wrong user/runner behaviour or a broken "Done when" item; P2 = minor real defect; P3 = cosmetic/style (validation gaps have no severity). All findings block until three completed fix rounds, then only P0/P1 defects, defects without readable severity and unreadable reviews block. Then
 append `## Done (YYYY-MM-DD)` to the ticket (behaviour, commits, tests, review decisions, evidence), set `status: closed`, `assignee: <owner>`.
 
 ## Land
 
 - Editor slices (`kit slice` does this, never with `--waive`): `scripts/agents/kit pr --ticket <ticket>` in the background.
   It rebases, runs the checks for the change's tier (docs, css, tests or full; `--full` forces all), opens the PR into
-  `dev`, posts the review, waits for CI and merges. The merged PR is the finish line; put its number in `landed:`. Fix CI failures you caused.
+  `dev`, posts the review, waits for CI and merges. After three completed fix rounds, non-blocking findings go in a PR comment/body and the ticket's Done `### Follow-ups` in a new commit before CI; that ticket-only commit retains review coverage. Lead-only `--waive "<reason>"` still overrides blockers and is recorded separately; slices never pass it. The merged PR is the finish line; put its number in `landed:`. Fix CI failures you caused.
 - Starter slices: rebase on `origin/dev` and push `HEAD:dev` under
   `flock /tmp/cb-starter-merge.lock`; rerun touched tests after overlapping upstream changes.
 - Prototypes finish with their branch and evidence; skip landing.
