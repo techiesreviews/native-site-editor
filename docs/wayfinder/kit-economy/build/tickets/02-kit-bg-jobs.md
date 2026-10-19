@@ -1,8 +1,8 @@
 ---
 title: "kit bg: background jobs by name, and kit wait job"
 type: task (AFK)
-status: ready-for-agent
-assignee:
+status: closed
+assignee: ke-02
 blocked_by: []
 builder: sol
 ---
@@ -62,3 +62,18 @@ Today a runner starts a long job, then waits with `kit wait pid <pid> --timeout 
 - The unit tests for the change pass (`scripts/agents/unit.sh tests/kit-bg.test.ts tests/kit-wait.test.ts tests/agent-hooks.test.ts`).
 - Sol review via `kit review --ticket` with no open findings; landed via `kit pr --ticket` into
   `dev` with CI green.
+
+## Done (2026-10-19)
+
+- Added executable `kit bg`: detached `setsid` + `nohup` jobs with `/dev/null` stdin, an independent process group, combined logs and persistent command/cwd/time/pid/pgid/exit records. Live names are refused; finished records are replaced; list reports running, exit N or died with age and log path.
+- Added group-only stop with a 2s TERM grace and KILL escalation, including TERM-resistant descendants. Additional process-start identity records protect against reused PIDs; a per-name `flock` serializes start/stop and releases if the launcher dies.
+- Added `kit wait job`: fresh-process recovery from records, bounded-memory log scanning, at most 15 tail lines plus the last job RESULT, original exit status, dead-without-status failure and timeout 124 without stopping the job.
+- Added lifecycle, argv/cwd/stdin, live-name, concurrent-name, process-group/sibling isolation, parent-exit, restart, exit 0/3, tail/RESULT, killed-job, timeout and guard coverage. New tests use temporary job roots and clean them up. Replaced one existing PID test's fixed lifetime with a condition-based release after its first observed scan.
+- Updated the kit command index and runner waiting guidance, preserving the runner's documentation guard.
+- Validation on Node 24.21.0: focused `scripts/agents/unit.sh tests/kit-bg.test.ts tests/kit-wait.test.ts tests/agent-hooks.test.ts` passed 272/272; `npm run check` and `npm run lint` passed; `npm test` passed 4640/4640; browser selection reported no affected specs. Unit runs use `NODE_OPTIONS=--test-reporter=spec` because the existing summary reads spec-reporter counts, while this terminal defaults to TAP.
+- Evidence: `RESULT: ok doctor 7/7 checks passed`; focused run via the new commands: `RESULT: ok job ke-02-unit exit 0` (log `.scratch/unit/20261019T080916-40.log`); full suite: `RESULT: ok job ke-02-full exit 0` (log `.scratch/kit-jobs/ke-02-full/log`); `RESULT: ok specs none affected`. The unit wrapper itself emits counts and a log path, not a RESULT line.
+- Initial validation used the shell's Node 22 and TAP reporter: its full run failed 8 assertions, including the runner length guard, an existing PID timing race and environment-sensitive tests. The doc/test fixes and supported Node/reporter rerun above passed all tests. An initial detached dogfood invocation was killed when the terminal sandbox's PID namespace closed; start and wait in one terminal invocation worked, and the parent-exit unit test passed.
+- Deviation: none in command behavior. Per the builder contract, changes remain unstaged; independent review and landing belong to the runner. No commits, pushes, deploys, stashes or delegated agents.
+
+Dogfood: [runner to fill; builder exercised named focused-unit and full-suite jobs above]
+Review: [runner to fill]
