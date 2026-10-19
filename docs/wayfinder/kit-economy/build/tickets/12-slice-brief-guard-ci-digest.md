@@ -91,6 +91,15 @@ for the failing child test.
   the runner owns the tier's full checks.
 - Review decisions: no independent review is claimed by the builder. The parent slice
   records its Sol review and landing after committing these changes.
+- Review follow-up: accepted the diagnostic-wrapped TAP finding and its validation gap.
+  The CI parser now removes node:test's `# ` diagnostic prefix before parsing child failures.
+  A clean-guard fixture proves the child name, source and first error appear even when
+  the child is absent from both the assertion's retained 12,000 characters and the log tail.
+  The fixture failed before the fix (`RESULT: fail unit 40/41`) and passed afterward:
+  `RESULT: ok unit 129/129 (5 files) log .scratch/unit/20261019T120310-31.log`.
+  The clean-guard also passed 706 child tests from 23 files;
+  `RESULT: ok specs none affected`; `npm run lint` and `git diff --check` passed.
+  No findings declined. Follow-up changes remain unstaged for the runner.
 - Dogfood: built by the existing `kit slice --ticket` run, recorded under
   `.scratch/kit-slice/12-slice-brief-guard-ci-digest/` (Sol, high). It supplied the brief and
   preserved phase state. Its old brief copied landing requirements into the builder task;
