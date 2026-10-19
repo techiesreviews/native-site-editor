@@ -319,7 +319,9 @@ export async function rebindGrant(env: Env, id: string, previous: AgentGrant, ta
   const saved = await record.fetch(write);
   if (!saved.ok) throw new HttpError(503, "The connection could not be rebound. Connect the agent again.");
   const finalized = await finishGrant(env, id, grant);
-  if (finalized === false || finalized === undefined && Date.now() >= deadline || !await sourceIsLive()) {
+  // An unanswered final check counts as cleaned: compensation runs rather than leave
+  // the destination generation authorized on an unknown source state.
+  if (finalized === false || finalized === undefined && Date.now() >= deadline || !await sourceIsLive().catch(() => false)) {
     // Cleanup may have fenced the source or destination while this write was in
     // flight. Never report a successful rebind or leave this generation usable:
     // removing the hub entry denies authentication first (as revoke does), so a
