@@ -33,6 +33,8 @@ jobs:
       - run: npx playwright install chromium-headless-shell
       - run: npm run check
       - run: npm test
+      - name: Kit tests leave no trace
+        run: npm run test:kit-clean
       - run: npm run lint
       # Enforces the cold-start byte budget in tests/perf/byte-budget.ts (355 KB).
       - name: Byte budget

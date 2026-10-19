@@ -1,7 +1,8 @@
 ---
 title: "Slice brief keeps landing out of the builder; clean-guard runs once; CI digest names the failing test"
 type: task (AFK)
-status: ready-for-agent
+status: closed
+assignee: ke-12
 blocked_by: [04-kit-slice, 09-kit-tests-leave-no-trace]
 builder: sol
 ---
@@ -66,3 +67,33 @@ for the failing child test.
 - Sol review via `kit review --ticket` with no open findings; landed via `kit pr --ticket` into
   `dev` with CI green.
 - Dogfood: built with `kit slice`; the Done section says where it helped or failed.
+
+## Done (2026-10-19)
+
+- Behaviour: the slice builder brief forbids nested build and landing commands, requires
+  focused unit checks and type checks when types move, and reserves review and landing
+  records for the slice. The builder describes behaviour, tests and commits only.
+- Behaviour: `npm test` excludes the clean-guard; `npm run test:kit-clean` runs it separately
+  in CI. The PR full tier adds that check only for agent scripts or `tests/kit-*.test.ts`.
+  The rule lives in `pr-tier.mjs`; `kit.d/pr` adds only its command entry because the existing
+  step dispatcher accepts named commands only.
+- Behaviour: CI failure digests print up to ten test lines with available source locations
+  and first errors before the existing tail. Pure fixtures cover nested TAP, Node spec,
+  Playwright, gh prefixes, ANSI/CRLF, duplicate names, empty logs and the limit.
+- Commits: changes left unstaged for the runner; the builder made no commits.
+- Tests: `RESULT: ok doctor 7/7 checks passed`;
+  `RESULT: ok unit 127/127 (5 files) log .scratch/unit/20261019T115847-31.log`.
+  The clean-guard passed, running 704 child tests from 23 files without leftovers.
+  After the duplicate-name fixture was added:
+  `RESULT: ok unit 49/49 (2 files) log .scratch/unit/20261019T120012-21.log`.
+  `RESULT: ok specs none affected`; `npm run check`, `npm run lint` and
+  `git diff --check` passed. The default glob selects every unit file except the guard;
+  the runner owns the tier's full checks.
+- Review decisions: no independent review is claimed by the builder. The parent slice
+  records its Sol review and landing after committing these changes.
+- Dogfood: built by the existing `kit slice --ticket` run, recorded under
+  `.scratch/kit-slice/12-slice-brief-guard-ci-digest/` (Sol, high). It supplied the brief and
+  preserved phase state. Its old brief copied landing requirements into the builder task;
+  the explicit build contract prevented recursive commands here, and generated-brief
+  coverage now checks the permanent restriction. `kit unit --affected` selected the five
+  relevant unit files; `kit specs --affected` correctly selected none.
