@@ -59,10 +59,21 @@ test("digest retains known flaky and known failing labels using the inherited sp
   }
 });
 
-test("expected and received values are each cut to 160 characters", () => {
+test("expected and received values are cut to 160 characters everywhere in the digest", () => {
   const report = digestFixture("assertion");
-  report.suites[0].suites[0].specs[0].tests[0].results[0].errors[0].message = `Error: toHaveText failed\nExpected: ${"x".repeat(200)}\nReceived string: ${"y".repeat(200)}`;
+  const expected = "x".repeat(10_000), received = "y".repeat(10_000);
+  report.suites[0].suites[0].specs[0].tests[0].results[0].errors[0].message = `Error: toHaveText failed\nExpected: ${expected}\nReceived string: ${received}`;
   const digest = specsDigest([{ report, logPath: "/logs/long.log" }]);
+  assert.deepEqual(digest.split("\n").slice(1, 4), [
+    "  Error: toHaveText failed",
+    `  Expected: ${"x".repeat(159)}…`,
+    `  Received string: ${"y".repeat(159)}…`,
+  ]);
+  const values = [...digest.matchAll(/^\s*(?:expected|received)(?: (?:string|pattern|substring))?:\s*(.*)$/gim)];
+  assert.equal(values.length, 4);
+  for (const match of values) assert.ok(match[1].length <= 160);
+  assert.ok(!digest.includes(expected));
+  assert.ok(!digest.includes(received));
   for (const [label, value] of [["expected", "x"], ["received", "y"]]) {
     const line = digest.split("\n").find(line => line.startsWith(`  ${label}: `));
     assert.equal(line, `  ${label}: ${value.repeat(159)}…`);
