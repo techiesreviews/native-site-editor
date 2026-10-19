@@ -76,7 +76,7 @@ Other test files are written in full. Titles after each file identify the test t
 ## Local checks (2026-10-19)
 
 Recorded in the ticket's Done section with the kit RESULT lines. The budget file runs in a few seconds; the lifecycle
-spec has eight cases.
+spec has nine cases.
 
 ## PREVIEW — release lead only
 
