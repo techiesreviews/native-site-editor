@@ -78,7 +78,7 @@ function liveGroup(pgid: number) {
       const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
       const fields = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
       return !["Z", "X"].includes(fields[0]) && Number(fields[2]) === pgid;
-    } catch (error) { if (error instanceof Error && "code" in error && error.code === "ENOENT") return false; throw error; }
+    } catch (error) { if (error instanceof Error && "code" in error && (error.code === "ENOENT" || error.code === "ESRCH")) return false; throw error; }
   }).map(Number);
 }
 
