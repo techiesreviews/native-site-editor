@@ -1,0 +1,25 @@
+{
+  "suites": [{
+    "specs": [{
+      "file": "tests/native-save/label.spec.ts",
+      "line": 48,
+      "title": "matches the saved object",
+      "tests": [{
+        "projectName": "native-save",
+        "status": "unexpected",
+        "expectedStatus": "passed",
+        "results": [{
+          "status": "failed",
+          "errors": [{
+            "message": "expect(received).toEqual(expected) // deep equality\n\n- Expected  - 1\n+ Received  + 1\n\n  Object {\n    \"a\": 1,\n-   \"b\": 3,\n+   \"b\": 2,\n  }",
+            "stack": "Error: expect(received).toEqual(expected)\n    at /repo/tests/native-save/label.spec.ts:48:7"
+          }],
+          "attachments": [
+            { "name": "error-context", "path": "/artifacts/error-context.md" },
+            { "name": "trace", "path": "/artifacts/trace.zip" }
+          ]
+        }]
+      }]
+    }]
+  }]
+}
