@@ -6,8 +6,8 @@ const oneLine = value => clean(value).replace(/[\r\n\u2028\u2029]/g, " ").trim()
 const short = value => value.length > 160 ? `${value.slice(0, 159)}…` : value;
 
 function unifiedDiff(lines) {
-  const header = lines.findIndex((line, index) => /^-\s+Expected(?:\s+-\s+\d+)?\s*$/i.test(line) &&
-    /^\+\s+Received(?:\s+\+\s+\d+)?\s*$/i.test(lines[index + 1] ?? ""));
+  const header = lines.findIndex((line, index) => /^-\s+Expected(?:\s+[a-z]+)*(?:\s+-\s+\d+)?\s*$/i.test(line) &&
+    /^\+\s+Received(?:\s+[a-z]+)*(?:\s+\+\s+\d+)?\s*$/i.test(lines[index + 1] ?? ""));
   if (header < 0) return { lines, values: {} };
   const changes = { expected: [], received: [] };
   let active = true;
