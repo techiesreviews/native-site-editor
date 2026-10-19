@@ -1,0 +1,18 @@
+{
+  "suites": [{
+    "specs": [{
+      "file": "tests/native-save/label.spec.ts",
+      "line": 18,
+      "title": "waits for the toolbar",
+      "tests": [{
+        "projectName": "firefox",
+        "expectedStatus": "passed",
+        "status": "unexpected",
+        "results": [{
+          "status": "timedOut",
+          "error": { "message": "Test timeout of 30000ms exceeded.\nWaiting for toolbar\nStill waiting\nHidden fourth line" }
+        }]
+      }]
+    }]
+  }]
+}

@@ -1,0 +1,27 @@
+{
+  "suites": [{
+    "specs": [{
+      "file": "tests/native-save/label.spec.ts",
+      "line": 90,
+      "title": "passes on retry",
+      "tests": [{
+        "status": "flaky",
+        "expectedStatus": "passed",
+        "results": [
+          { "status": "failed", "retry": 0, "errors": [{ "message": "Temporary failure" }] },
+          { "status": "passed", "retry": 1, "errors": [] }
+        ]
+      }]
+    }, {
+      "file": "tests/native-save/label.spec.ts",
+      "line": 95,
+      "title": "expected failure",
+      "tests": [{ "status": "expected", "expectedStatus": "failed", "results": [{ "status": "failed" }] }]
+    }, {
+      "file": "tests/native-save/label.spec.ts",
+      "line": 99,
+      "title": "skipped",
+      "tests": [{ "status": "skipped", "expectedStatus": "skipped", "results": [{ "status": "skipped" }] }]
+    }]
+  }]
+}

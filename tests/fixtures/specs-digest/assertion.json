@@ -1,0 +1,31 @@
+{
+  "suites": [{
+    "title": "Editor",
+    "file": "tests/native-save/label.spec.ts",
+    "suites": [{
+      "title": "toolbar",
+      "specs": [{
+        "title": "shows the saved title",
+        "line": 42,
+        "tests": [{
+          "projectName": "native-save",
+          "status": "unexpected",
+          "expectedStatus": "passed",
+          "results": [{
+            "status": "failed",
+            "errors": [{
+              "message": "\u001b[31mError: expect(locator).toHaveText(expected) failed\u001b[0m\nLocator: getByRole('heading')\nExpected string: \"Saved\"\nReceived string: \"Draft\"\nCall log: hidden detail",
+              "stack": "Error: expect(locator).toHaveText(expected) failed\n    at expect (/repo/node_modules/playwright/lib/matchers.js:10:2)\n    at /repo/tests/native-save/label.spec.ts:45:7"
+            }],
+            "attachments": [
+              { "name": "screenshot", "path": "/artifacts/screen.png", "body": "DO NOT PRINT ATTACHMENT CONTENTS" },
+              { "name": "error-context", "path": "/artifacts/error-context.md" },
+              { "name": "trace", "path": "/artifacts/trace.zip" },
+              { "name": "trace", "path": "/artifacts/extra-trace.zip" }
+            ]
+          }]
+        }]
+      }]
+    }]
+  }]
+}
