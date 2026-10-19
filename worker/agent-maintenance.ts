@@ -1,4 +1,4 @@
-// Read-only maintenance: never use the ordinary session read, which may consume
+// Restricted maintenance: never use the ordinary session read, which may consume
 // expired records or include credentials. All output is constructed explicitly.
 import type { Env } from "./app";
 
@@ -19,7 +19,6 @@ interface RecordSummary {
   commandsByState?: { pending: number; applied: number; conflict: number; failed: number; unknown: number };
   inlineContext?: boolean;
 }
-const internalPath = "/maintenance/inventory";
 // Per-invocation bounds; past them the object is deferred as oversized.
 const maxKeys = 2048;
 const maxReadBytes = 16 * 1024 * 1024;
@@ -37,9 +36,8 @@ function response(body: unknown, status = 200) {
   return Response.json(body, { status, headers: { "Cache-Control": "no-store", ...(status === 405 ? { Allow: "POST" } : {}) } });
 }
 
-/** Separately authorized public ingress; authorization precedes all DO work. */
-export async function inventoryRoute(request: Request, env: Pick<Env, "SESSIONS" | "MAINTENANCE_INVENTORY_TOKEN">) {
-  const token = env.MAINTENANCE_INVENTORY_TOKEN;
+/** Both maintenance routes authenticate before parsing or touching the namespace. */
+async function authorize(request: Request, token: string | undefined) {
   if (!token || token.length < 32) return response({ error: "Not found" }, 404);
   const supplied = request.headers.get("Authorization")?.match(/^Bearer (.+)$/)?.[1] ?? "";
   const digests = await Promise.all([token, supplied].map(async (value) =>
@@ -48,21 +46,41 @@ export async function inventoryRoute(request: Request, env: Pick<Env, "SESSIONS"
   for (let index = 0; index < 32; index++) difference |= digests[0][index] ^ digests[1][index];
   if (!supplied || difference !== 0) return response({ error: "Unauthorized" }, 401);
   if (request.method !== "POST") return response({ error: "Use POST" }, 405);
+}
+const hex = (value: unknown): value is string => typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
+function cleanupInput(value: unknown) {
+  const input = object(value);
+  return input && hex(input.expected) && number(input.allowance) && input.allowance >= 1
+    ? { expected: input.expected, allowance: input.allowance } : undefined;
+}
+async function maintenanceRoute(request: Request, sessions: Env["SESSIONS"], token: string | undefined, cleanup: boolean) {
+  const denied = await authorize(request, token);
+  if (denied) return denied;
   let input: unknown;
   try { input = await request.json(); } catch { return response({ error: "Invalid body" }, 400); }
   const id = object(input)?.id;
-  if (typeof id !== "string" || !/^[a-f0-9]{64}$/.test(id)) return response({ error: "Invalid id" }, 400);
+  const deletion = cleanup ? cleanupInput(input) : undefined;
+  if (!hex(id) || (cleanup && !deletion)) return response({ error: "Invalid body" }, 400);
   try {
-    const result = await env.SESSIONS.get(env.SESSIONS.idFromString(id)).fetch(
-      new Request(`https://session.internal${internalPath}`, { method: "POST" }),
+    const result = await sessions.get(sessions.idFromString(id)).fetch(
+      new Request(`https://session.internal/maintenance/${cleanup ? "cleanup" : "inventory"}`, {
+        method: "POST", ...(cleanup ? { body: JSON.stringify(deletion) } : {}),
+      }),
     );
+    // Internal failures must not forward runtime text supplied by the platform.
+    if (!result.ok) return response({ error: cleanup ? "Cleanup unavailable" : "Inventory unavailable" }, 503);
     const headers = new Headers(result.headers);
     headers.set("Cache-Control", "no-store");
     return new Response(result.body, { status: result.status, headers });
   } catch {
-    // Runtime error messages may contain credentials or object identifiers.
-    return response({ error: "Inventory unavailable" }, 503);
+    return response({ error: cleanup ? "Cleanup unavailable" : "Inventory unavailable" }, 503);
   }
+}
+export function inventoryRoute(request: Request, env: Pick<Env, "SESSIONS" | "MAINTENANCE_INVENTORY_TOKEN">) {
+  return maintenanceRoute(request, env.SESSIONS, env.MAINTENANCE_INVENTORY_TOKEN, false);
+}
+export function cleanupRoute(request: Request, env: Pick<Env, "SESSIONS" | "MAINTENANCE_CLEANUP_TOKEN">) {
+  return maintenanceRoute(request, env.SESSIONS, env.MAINTENANCE_CLEANUP_TOKEN, true);
 }
 
 function describe(key: string, value: unknown, now: number): RecordSummary {
@@ -100,6 +118,24 @@ function describe(key: string, value: unknown, now: number): RecordSummary {
       summary.commandsByState = states;
       if (!Array.isArray(record!.grants) || (record!.commands !== undefined && !Array.isArray(record!.commands)) || states.unknown)
         summary.eligibility = "review";
+    }
+  } else if (key === "agent-cleaned-until") {
+    summary.kind = "record-fence";
+    if (expiry(value)) summary.eligibility = (value as number) <= now ? "expired" : "preserve";
+  } else if (key === "agent-metadata") {
+    summary.kind = "workspace-ledger";
+    if (record && typeof record.workspace === "string" && Array.isArray(record.entries)) summary.eligibility = "preserve";
+  } else if (key === "alarm-deadlines") {
+    summary.kind = "alarm-deadlines";
+    if (record && Object.entries(record).every(([purpose, at]) =>
+      ["session", "registration", "agent-cleanup"].includes(purpose) && expiry(at))) summary.eligibility = "preserve";
+  } else if (key === "agent-lifecycle") {
+    summary.kind = "agent-lifecycle";
+    if (record && number(record.generation) && object(record.cleaned) && Object.values(object(record.cleaned)!).every(number) &&
+        (record.disconnectDeadline === undefined || expiry(record.disconnectDeadline))) {
+      summary.generation = record.generation;
+      for (const at of Object.values(object(record.cleaned)!)) expiry(at);
+      summary.eligibility = "preserve";
     }
   } else if (key === "config") {
     summary.kind = "app-config";
@@ -140,11 +176,10 @@ function describe(key: string, value: unknown, now: number): RecordSummary {
   return summary;
 }
 
-/** Internal handler uses only list/getAlarm; no writes, consumption or alarms. */
-export async function inventoryObject(request: Request, storage: InventoryStorage, now = Date.now()) {
-  if (request.method !== "POST") return response({ error: "Use POST" }, 405);
+/** One bounded classifier shared by inventory and deletion under the concurrency gate. */
+async function classify(storage: InventoryStorage, now: number) {
   let totalKeys = 0, totalBytes = 0, startAfter: string | undefined, oversized = false;
-  const items: RecordSummary[] = [];
+  const entries: { key: string; value: unknown; item: RecordSummary }[] = [];
   for (;;) {
     // list() loads every value it returns: size each page by the read bytes
     // left and the largest value SQLite storage holds, so one page cannot
@@ -153,7 +188,7 @@ export async function inventoryObject(request: Request, storage: InventoryStorag
     const page = await storage.list({ startAfter, limit });
     for (const [key, value] of page) {
       const item = describe(key, value, now);
-      items.push(item);
+      entries.push({ key, value, item });
       totalKeys++;
       totalBytes += item.bytes;
       startAfter = key;
@@ -161,17 +196,55 @@ export async function inventoryObject(request: Request, storage: InventoryStorag
     }
     if (oversized || page.size < limit) break;
   }
-  // The repository cache is disposable and follows its sign-in session (the
-  // alarm clears it at expiry); without a session it is an orphan. A partial
-  // (oversized) read may not have reached "session", so it stays for review.
-  const session = items.find((item) => item.kind === "sign-in-session");
-  for (const item of items) if (item.kind === "repository-cache" && item.eligibility === "review" && !oversized)
-    item.eligibility = session && session.eligibility !== "review" ? session.eligibility : "expired";
+  const items = entries.map(entry => entry.item);
+  const storedSession = entries.find(entry => entry.key === "session");
+  const session = items.find(item => item.kind === "sign-in-session");
+  const hub = entries.find(entry => entry.item.kind === "legacy-agent-hub");
+  const hubValue = object(hub?.value);
+  const legacy = entries.filter(entry => ["legacy-context", "legacy-drafts", "legacy-requests"].includes(entry.item.kind));
+  const hasContent = legacy.length > 0 || hubValue?.context !== undefined ||
+    (Array.isArray(hubValue?.commands) && hubValue.commands.length > 0);
+  if (!oversized) {
+    for (const item of items) if (item.kind === "repository-cache") {
+      if (session?.eligibility === "preserve") item.eligibility = "preserve";
+      else if (item.eligibility === "review") item.eligibility = session && session.eligibility !== "review" ? session.eligibility : "expired";
+    }
+    // No signed browser acknowledgement exists in this slice. Old server content
+    // is never recovery proof: only absolute expiry plus the clock margin is.
+    if (hub && hub.item.eligibility !== "review") {
+      const expiries = [hub.item.latestExpiresAt!, ...(Array.isArray(hubValue?.grants)
+        ? hubValue.grants.map(grant => object(grant)?.expiresAt).filter(number) : [])];
+      const expiresAt = Math.max(...expiries) + (hasContent ? 5 * 60_000 : 0);
+      if (number(hubValue?.generation)) hub.item.generation = hubValue.generation;
+      hub.item.eligibility = expiresAt <= now ? "expired" : hasContent ? "legacy-candidate" : "preserve";
+    }
+    for (const entry of legacy) if (entry.item.eligibility !== "review") {
+      if (hub) entry.item.eligibility = hub.item.eligibility === "expired" ? "expired" : "legacy-candidate";
+      else if (!storedSession) entry.item.eligibility = "expired";
+    }
+    const metadata = items.filter(item => ["alarm-deadlines", "agent-lifecycle"].includes(item.kind));
+    if (items.filter(item => !metadata.includes(item)).every(item => item.eligibility === "expired"))
+      for (const item of metadata) if (item.eligibility !== "review" &&
+          !(item.kind === "agent-lifecycle" && (item.latestExpiresAt ?? 0) > now)) item.eligibility = "expired";
+  }
+  const tuples = [...entries].sort((a, b) => a.key < b.key ? -1 : a.key > b.key ? 1 : 0).map(({ key, value, item }) => {
+    const record = object(value);
+    const grants = Array.isArray(record?.grants) ? record.grants.map(grant => {
+      const entry = object(grant);
+      return [entry?.id ?? null, entry?.generation ?? null, entry?.expiresAt ?? null];
+    }).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))) : null;
+    return [key, item.kind, item.eligibility, item.bytes, [item.generation ?? null, grants],
+      [item.earliestExpiresAt ?? null, item.latestExpiresAt ?? null,
+        item.kind === "alarm-deadlines" ? Object.entries(record ?? {}).sort(([a], [b]) => a.localeCompare(b)) :
+          item.kind === "agent-lifecycle" ? Object.entries(object(record?.cleaned) ?? {}).sort(([a], [b]) => a.localeCompare(b)) : null]];
+  });
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(tuples)));
+  const fingerprint = [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, "0")).join("");
   const summaries = new Map<string, RecordSummary>();
   for (const item of items) {
     const group = `${item.kind}:${item.eligibility}:${item.generation ?? ""}`;
     const previous = summaries.get(group);
-    if (!previous) summaries.set(group, item);
+    if (!previous) summaries.set(group, { ...item });
     else {
       previous.count += item.count;
       previous.bytes += item.bytes;
@@ -180,10 +253,83 @@ export async function inventoryObject(request: Request, storage: InventoryStorag
     }
   }
   const records = [...summaries.values()];
-  return response({
-    schema: "durable-inventory", version: 1,
+  return { entries, oversized, fingerprint, inventory: {
+    schema: "durable-inventory", version: 1, fingerprint,
     status: oversized ? "deferred" : records.length && records.every((record) => record.kind === "unknown") ? "unknown" : "classified",
     ...(oversized ? { reason: "oversized" } : {}), totalKeys, totalBytes,
     alarm: (await storage.getAlarm?.()) ?? null, records,
+  } };
+}
+
+/** Read-only: never consumes ordinary session records. */
+export async function inventoryObject(request: Request, storage: InventoryStorage, now = Date.now()) {
+  if (request.method !== "POST") return response({ error: "Use POST" }, 405);
+  return response((await classify(storage, now)).inventory);
+}
+
+interface CleanupStorage extends InventoryStorage {
+  deleteAll(): Promise<void>;
+  delete(keys: string[]): Promise<number>;
+  deleteAlarm(): Promise<void>;
+  setAlarm(at: number): Promise<void>;
+  put(key: string, value: unknown): Promise<void>;
+}
+/** Caller holds blockConcurrencyWhile throughout. No namespace or browser calls. */
+export async function cleanupObject(request: Request, storage: CleanupStorage, options: { sockets: number; now?: number }) {
+  if (request.method !== "POST") return response({ error: "Use POST" }, 405);
+  let input;
+  try { input = cleanupInput(await request.json()); } catch { /* Invalid JSON has no storage effects. */ }
+  if (!input) return response({ error: "Invalid body" }, 400);
+  const now = options.now ?? Date.now();
+  const current = await classify(storage, now);
+  const { entries, fingerprint } = current;
+  const unresolvedCommands = entries.reduce((sum, entry) => sum +
+    (entry.item.commandsByState?.pending ?? 0) + (entry.item.commandsByState?.unknown ?? 0), 0);
+  let keptKeys = entries.length;
+  const answer = (status: string, reason?: string, method?: string, deletedKeys = 0, invocations = 1) => response({
+    schema: "durable-cleanup", version: 1, status, ...(reason ? { reason } : {}), ...(method ? { method } : {}),
+    deletedKeys, keptKeys: keptKeys - deletedKeys, unresolvedCommands, invocations, fingerprint,
   });
+  if (current.oversized) return answer("deferred", "oversized");
+  if (entries.some(({ item }) => item.kind === "unknown" || item.eligibility === "review")) return answer("review");
+  if (!entries.length) return answer("kept");
+  if (fingerprint !== input.expected) return answer("deferred", "changed");
+  if (options.sockets > 0) return answer("deferred", "present");
+  if (entries.some(({ item }) => item.eligibility === "legacy-candidate")) return answer("deferred", "awaiting-browser-recovery");
+  const expired = entries.filter(({ item }) => item.eligibility === "expired");
+  if (!expired.length) return answer("kept");
+  if (expired.length === entries.length) {
+    await storage.deleteAlarm();
+    await storage.deleteAll();
+    return answer("deleted", undefined, "deleteAll", expired.length);
+  }
+  const remaining = entries.filter(({ item }) => item.eligibility !== "expired");
+  const deadlines = object(remaining.find(entry => entry.key === "alarm-deadlines")?.value);
+  // Lifecycle/registration retry chains have no finite invocation bound here.
+  // Leave their records and alarms to normal lifecycle ownership, without writes.
+  if (deadlines?.["agent-cleanup"] !== undefined || deadlines?.registration !== undefined ||
+      remaining.some(entry => entry.item.kind === "registration-limiter") ||
+      remaining.some(entry => entry.item.kind === "agent-lifecycle" &&
+        (object(entry.value)?.disconnectDeadline !== undefined || object(entry.value)?.cleanupPending === true)))
+    return answer("deferred", "budget");
+  const session = remaining.find(entry => entry.key === "session");
+  const fence = remaining.find(entry => entry.key === "agent-cleaned-until");
+  // Each record enforces its own absolute expiry. A single wake at the latest
+  // expiry can clear both; an earlier wake would reschedule itself for the session.
+  const times = [object(session?.value)?.expiresAt, fence?.value].filter(number);
+  const deadline = times.length ? Math.max(...times) : Infinity;
+  const invocations = Number.isFinite(deadline) ? 2 : 1;
+  if (invocations > input.allowance) return answer("deferred", "budget");
+  // Remove stale purposes before deleting their data. A surviving session/fence
+  // needs one local alarm wake; no alarm points at the removed legacy content.
+  if (Number.isFinite(deadline)) {
+    if (!deadlines) keptKeys++;
+    await storage.put("alarm-deadlines", { session: deadline });
+    await storage.setAlarm(deadline);
+  } else {
+    await storage.deleteAlarm();
+  }
+  const keys = expired.map(entry => entry.key);
+  for (let offset = 0; offset < keys.length; offset += 128) await storage.delete(keys.slice(offset, offset + 128));
+  return answer("deleted", undefined, "keys", keys.length, invocations);
 }

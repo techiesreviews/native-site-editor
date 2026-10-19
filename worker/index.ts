@@ -1,4 +1,4 @@
-import { inventoryObject } from "./agent-maintenance";
+import { cleanupObject, inventoryObject } from "./agent-maintenance";
 import { tokenId, deleteCleanedGrants, type AgentHub } from "./agent-context";
 import { clearHub, hubOperation, hubView } from "./agent-store";
 import { DurableObject } from "cloudflare:workers";
@@ -104,6 +104,7 @@ export class SessionStore extends DurableObject {
   async fetch(request: Request): Promise<Response> {
     const storage = this.ctx.storage;
     const url = new URL(request.url);
+    if (url.pathname === "/maintenance/cleanup") return this.ctx.blockConcurrencyWhile(() => cleanupObject(request, storage, { sockets: this.ctx.getWebSockets().length }));
     if (url.pathname === "/maintenance/inventory") return inventoryObject(request, storage);
     if (url.pathname.startsWith("/relay/")) {
       let identity: unknown;

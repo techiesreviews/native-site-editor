@@ -1,4 +1,4 @@
-import { inventoryRoute } from "./agent-maintenance";
+import { cleanupRoute, inventoryRoute } from "./agent-maintenance";
 import { requestJson } from "./http";
 import { ASSET_TYPES } from "../shared/asset-types";
 import { AgentRelay, relayObjectName } from "./agent-relay";
@@ -88,6 +88,7 @@ export interface Env {
     get(id: any): { fetch(request: Request): Promise<Response> };
   };
   MAINTENANCE_INVENTORY_TOKEN?: string;
+  MAINTENANCE_CLEANUP_TOKEN?: string;
   GITHUB_CLIENT_ID?: string;
   GITHUB_CLIENT_SECRET?: string;
   GITHUB_APP_SLUG?: string;
@@ -413,6 +414,7 @@ async function route(
   if (OBSOLETE_AGENT_ROUTES.has(path)) return Response.json({
     error: "This editor was updated. Reload this tab to keep using agents.", code: "editor-updated",
   }, { status: 410, headers: { "Cache-Control": "no-store" } });
+  if (path === "/__maintenance/cleanup") return cleanupRoute(request, env);
   if (path === "/__maintenance/inventory") return inventoryRoute(request, env);
   if (isOAuthPath(path))
     return handleOAuth(request, env, url, {
