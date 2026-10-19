@@ -1,6 +1,6 @@
 # Preview evidence, Gate 2 (2026-10-19)
 
-Raw notes behind the Gate 2 rows P1–P6 and P8 in [rollout.md](rollout.md). P7 (canary cleanup) was not run.
+Raw notes behind the Gate 2 rows P1–P8 in [rollout.md](rollout.md). P7 (canary cleanup): phase A only (see below).
 Worker `native-site-editor-preview`, https://preview-editor.techies.tools. All times UTC.
 Release commit `58fd637b` (app code unchanged up to `eef16b5d`, which moved `dev` during the run: docs, scripts and tests only).
 Test site: `techiesreviews/Empty` (started with Starter site, published once at 13:46). Browser: T3 preview tab, default profile,
@@ -153,6 +153,49 @@ unmodified tree at `origin/dev` `eef16b5d` (no app change since `58fd637b`); var
 - 15:00:43 agent probe: "not sharing" (relay serving again, no tab connected); `tools/list` 200. Tab
   `GET /api/agent/connections` 200, `controls.watch: true`, 1 grant (the P6 grant waiting for its 20:49 wake).
 
+## P7 phase A — inventory, plan, first canary (versions `1e720519`, `418fb9c6`, `7deda2d0`)
+
+Lead's go-ahead for preview only. `AGENT_LEGACY_MAINTENANCE` set to `"on"` in `wrangler.preview.jsonc` (uncommitted) and
+deployed with `npm run deploy:preview`: version `1e720519-3d21-4f17-81ce-12359d1d1339` (15:05:53), switches on, on, on, **on**, off.
+`MAINTENANCE_INVENTORY_TOKEN` and `MAINTENANCE_CLEANUP_TOKEN` (64 hex each, random) put with `wrangler secret put` from stdin:
+versions `418fb9c6-a31d-4c21-92eb-eddcd7453929` (15:06:07) and `7deda2d0-f1dc-4cba-802d-6be7eb413323` (15:06:10, live).
+Deviation from rollout step 1: the hourly job needs the two values, so they are kept in one 0600 scratch file (not committed,
+never printed); the lead shreds it when P7 ends.
+
+**Inventory** (`durable-inventory.mjs`, namespace `7407bb63…`, manifest in the main checkout `.scratch/durable-inventory/`).
+- `--limit 10` (as written in step 2) cannot list: the script asks the object-list API for `max(10, limit − processed)` ids and
+  the API answers **400, code 10077 "Malformed parameter: limit is too low" for every limit below 100** (checked 10, 11, 20,
+  50, 99; 100 and 1000 work). The run 15:06:29 ended `paused` with nothing scanned (0 maintenance calls). Ticket 27's "list API
+  minimum of 10" is wrong; see product observation 4. The remaining passes used `--limit 100` (the script's maximum).
+- 15:07:16 `limited` (100 listed, 80 classified, 20 empty); 15:07:52 `paused` (129 / 105 / 24; the follow-up list of 71 hit the
+  same 400); 15:08:04 **`complete`**: **scanned 129, classified 105, empty 24, deferred 0, unknown 0, inaccessible 0, pending 0**,
+  permission confirmed. 105 maintenance calls charged (namespace budget, UTC day 2026-10-19).
+- Records found: sign-in session 3, app config 1, repository cache 6 preserved + 2 expired, agent grant 2, legacy agent hub 3
+  (all `preserve`, none `legacy-candidate`), agent lifecycle 4, alarm deadlines 9, workspace ledger 4. No unknown or review records.
+
+**Plan** (`durable-cleanup.mjs` without `--delete`, no network), 15:08: eligible **2**, deferred 0, review 0,
+awaiting-browser-recovery 0, oversized 0, needs-reinventory 0. Both eligible objects have the same shape: 3 keys, one expired
+orphan repository cache, plus a live agent grant and its alarm deadlines (`preserve`). So both are **per-key (`keys`) with a
+retained wake on 2026-10-19**; **no `deleteAll` object exists**.
+- `1bd18a14…`: grant expires 21:41:20 UTC (retained wake then).
+- `70d8822f…`: grant expires 15:31:04 UTC, before its canary hour; its own expiry may rewrite the object, in which case its canary
+  is deferred `changed` (safe: nothing written) and needs a rescan.
+
+**First canary** (`--delete --limit 1`), 15:08:49.7–15:08:50.5 UTC (hour 15, no earlier canary; the read-only inventory touched
+the same objects at 15:07):
+`RESULT: limited durable-cleanup {"scanned":129,"classified":105,"deleted":1,"deferred":1,...,"unresolvedCommands":0,"complete":false}`
+(`limited` = stopped at `--limit 1`; the script exits 1 for it). Checkpoint (main checkout
+`.scratch/durable-inventory/preview-7407bb63….cleanup.json`): object `1bd18a14…` (hash `6a218001…`), status deleted, **method
+`keys`, 3 keys, 1 deleted, retained wake day 2026-10-19** (at about 21:41 UTC), allowance 2. Budget after: 107 calls today.
+Row accounting (rollout step 5) is the lead's: object `1bd18a14…`, rows written in hour 15 and in its wake's hour 21.
+
+**Remaining canaries**: kit job `p7-canaries` (`.scratch/p7-canaries.sh`, log `.scratch/p7-canaries.log`, both uncommitted),
+started 15:09:41. It runs exactly one `--delete --limit 1` at HH:02 UTC of each new hour (first 16:02) and stops on
+`canary-complete`, at ten canaries in total, when a run adds no canary (nothing eligible left), or on any error (exit non-zero).
+With 2 eligible objects it should run `70d8822f…` at 16:02 and stop at 17:02. No batches or `--canary-verified` were run.
+Since no `deleteAll` canary can exist, rollout step 5 cannot give bounds; but nothing is left for batches after the two canaries.
+`AGENT_LEGACY_MAINTENANCE` stays on and both secrets stay set until the lead finishes P7 (steps 7–8).
+
 ## Product observations
 
 1. **Connected tab does not learn that Watch is back on** (minor). After `AGENT_WATCH` returns to "on", a tab that was connected
@@ -163,6 +206,9 @@ unmodified tree at `origin/dev` `eef16b5d` (no app change since `58fd637b`); var
 2. **CI does not deploy preview** (no `CLOUDFLARE_API_TOKEN` secret; see above), so preview was 5 h behind `dev` before this run.
 3. An interrupted client call (curl killed) left its Watch wait open on the server until its 25 s ran out; the following calls were
    answered "Another wait … is already open (one at a time)" without using the wait budget. Expected by design; noted for agents.
+4. **Inventory cannot list with `--limit` below 100** (P7). The Cloudflare object-list API rejects `limit` < 100 (400, code 10077),
+   but `durable-inventory.mjs` asks for `max(10, limit − processed)`, so `--limit 10` (rollout step 2) never lists and every pass
+   that tops up a page below 100 stops `paused`. Fix: always list 100 (or more) and keep extras pending; update step 2.
 
 ## Deployments made (all `npm run deploy:preview` from the worktree)
 
@@ -179,5 +225,8 @@ unmodified tree at `origin/dev` `eef16b5d` (no app change since `58fd637b`); var
 | 14:53:10 | `3005bc6a-d4a4-4535-bc93-ce7a04d85e96` | on, on, on, off, off | P6 cleanup on |
 | 14:54:09 | `8b9c4d27-511d-4e96-8a2d-d7c404d00cbf` | off, off, off, off, off | P8 rollback |
 | 15:00:22 | `fb3a29a8-7856-46cc-a5c9-eea8a1e7a837` | on, on, on, off, off | final, clean tree at `origin/dev` `eef16b5d` |
+| 15:05:53 | `1e720519-3d21-4f17-81ce-12359d1d1339` | on, on, on, on, off | P7 phase A, legacy maintenance on (from `9ec761d8`, app code = `eef16b5d`) |
+| 15:06:07 | `418fb9c6-a31d-4c21-92eb-eddcd7453929` | on, on, on, on, off | P7 secret `MAINTENANCE_INVENTORY_TOKEN` |
+| 15:06:10 | `7deda2d0-f1dc-4cba-802d-6be7eb413323` | on, on, on, on, off | P7 secret `MAINTENANCE_CLEANUP_TOKEN` (live) |
 
 The switch changes were never committed.
