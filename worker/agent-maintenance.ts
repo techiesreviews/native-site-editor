@@ -48,10 +48,14 @@ async function authorize(request: Request, token: string | undefined) {
   if (request.method !== "POST") return response({ error: "Use POST" }, 405);
 }
 const hex = (value: unknown): value is string => typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
+const utcDay = (at: number) => new Date(at).toISOString().slice(0, 10);
 function cleanupInput(value: unknown) {
   const input = object(value);
-  return input && hex(input.expected) && number(input.allowance) && input.allowance >= 1
-    ? { expected: input.expected, allowance: input.allowance } : undefined;
+  const wakeDay = input?.wakeDay;
+  const validDay = wakeDay === undefined || (typeof wakeDay === "string" && /^\d{4}-\d{2}-\d{2}$/.test(wakeDay) &&
+    Number.isFinite(Date.parse(wakeDay)) && utcDay(Date.parse(wakeDay)) === wakeDay);
+  return input && hex(input.expected) && number(input.allowance) && input.allowance >= 1 && validDay
+    ? { expected: input.expected, allowance: input.allowance, wakeDay: wakeDay as string | undefined } : undefined;
 }
 async function maintenanceRoute(request: Request, sessions: Env["SESSIONS"], token: string | undefined, cleanup: boolean) {
   const denied = await authorize(request, token);
@@ -325,7 +329,8 @@ export async function cleanupObject(request: Request, storage: CleanupStorage, o
   const times = [object(session?.value)?.expiresAt, fence?.value].filter(number);
   const deadline = times.length ? Math.max(...times) : Infinity;
   const invocations = Number.isFinite(deadline) ? 2 : 1;
-  if (invocations > input.allowance) return answer("deferred", "budget");
+  if (invocations > input.allowance || (Number.isFinite(deadline) && utcDay(deadline) !== input.wakeDay))
+    return answer("deferred", "budget");
   // Remove stale purposes before deleting their data. A surviving session/fence
   // needs one local alarm wake; no alarm points at the removed legacy content.
   if (Number.isFinite(deadline)) {

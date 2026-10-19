@@ -11,6 +11,9 @@ import {
 
 const integer = value => Number.isSafeInteger(value) && value >= 0;
 const hex = value => typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
+const utcDay = at => new Date(at).toISOString().slice(0, 10);
+const validDay = value => typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) &&
+  Number.isFinite(Date.parse(value)) && utcDay(Date.parse(value)) === value;
 // Checkpoints need correlation for crash resume/verification, never raw DO ids.
 const identity = id => createHash("sha256").update(id).digest("hex");
 const statuses = new Set(["reserved", "deleted", "kept", "deferred", "review", "inaccessible"]);
@@ -26,6 +29,13 @@ function candidate(entry) {
   if (value.records.some(record => record.eligibility === "legacy-candidate")) return "awaiting-browser-recovery";
   return entry.status === "classified" && value.status === "classified" && value.records.some(record => record.eligibility === "expired")
     ? "eligible" : "kept";
+}
+
+function retainedWakeDay(classification) {
+  const times = classification.records.filter(record => record.eligibility === "preserve" &&
+    ["sign-in-session", "one-time-sign-in", "agent-grant", "legacy-agent-hub", "oauth-client", "oauth-request", "oauth-code", "record-fence"].includes(record.kind))
+    .map(record => record.latestExpiresAt).filter(integer);
+  return times.length ? utcDay(Math.max(...times)) : undefined;
 }
 
 function loadCheckpoint(path, options) {
@@ -44,10 +54,12 @@ function loadCheckpoint(path, options) {
   fresh.objects = source.objects.map(entry => {
     if (!entry || !hex(entry.key) || seen.has(entry.key) || !hex(entry.expected) || !statuses.has(entry.status) ||
         !integer(entry.deletedKeys) || !integer(entry.unresolvedCommands) ||
-        ![1, 2].includes(entry.allowance) || !integer(entry.keys) || entry.keys > 2048) throw new Error("Invalid cleanup entry");
+        ![1, 2].includes(entry.allowance) || !integer(entry.keys) || entry.keys > 2048 ||
+        (entry.wakeDay !== undefined && (!validDay(entry.wakeDay) || entry.allowance !== 2))) throw new Error("Invalid cleanup entry");
     seen.add(entry.key);
     return { key: entry.key, expected: entry.expected, status: entry.status,
       deletedKeys: entry.deletedKeys, unresolvedCommands: entry.unresolvedCommands, allowance: entry.allowance, keys: entry.keys,
+      ...(entry.wakeDay !== undefined ? { wakeDay: entry.wakeDay } : {}),
       ...(reasons.has(entry.reason) ? { reason: entry.reason } : {}),
       ...(methods.has(entry.method) ? { method: entry.method } : {}) };
   });
@@ -182,11 +194,13 @@ export async function runCleanup(input, ports = {}) {
       if (!batchMode && keys > 128) continue;
       // At most one local retained-session/fence wake. Unbounded lifecycle chains
       // are refused by the handler before mutation; there are no nested fetches.
-      const allowance = retry ? outcome.allowance :
-        entry.classification.records.some(record => record.eligibility === "preserve") ? 2 : 1;
+      const wakeDay = retry ? outcome.wakeDay : retainedWakeDay(entry.classification);
+      const allowance = retry ? outcome.allowance : wakeDay ? 2 : 1;
       // Conservatively charge both terms, even when the reply chooses per-key.
       const rows = accounting ? options.rowsPerObject + keys * options.rowsPerKey : 0;
-      if (!integer(rows) || !reserveMaintenance(ledger.budget, clock(), allowance, rows)) { status = "limited"; break; }
+      // Older checkpoints without wakeDay retain their conservative call bound;
+      // the handler refuses any unreserved wake before writing.
+      if (!integer(rows) || !reserveMaintenance(ledger.budget, clock(), wakeDay ? 1 : allowance, rows, wakeDay)) { status = "limited"; break; }
       ledger.save();
       if (!outcome) {
         outcome = { key, expected: entry.classification.fingerprint, status: "reserved", deletedKeys: 0, unresolvedCommands: 0, allowance, keys };
@@ -195,6 +209,7 @@ export async function runCleanup(input, ports = {}) {
       if (!batchMode && !checkpoint.canary.includes(key)) checkpoint.canary.push(key);
       if (!retry) {
         outcome.expected = entry.classification.fingerprint; outcome.allowance = allowance; outcome.keys = keys;
+        outcome.wakeDay = wakeDay;
         const unresolved = entry.classification.records.reduce((sum, record) =>
           sum + (record.commandsByState?.pending ?? 0) + (record.commandsByState?.unknown ?? 0), 0);
         outcome.unresolvedCommands = Math.max(outcome.unresolvedCommands, unresolved);
@@ -208,7 +223,7 @@ export async function runCleanup(input, ports = {}) {
       try {
         result = await fetcher(`${origin}/__maintenance/cleanup`, { method: "POST", redirect: "error",
           headers: { Authorization: `Bearer ${env.MAINTENANCE_CLEANUP_TOKEN}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ id: entry.id, expected: outcome.expected, allowance }) });
+          body: JSON.stringify({ id: entry.id, expected: outcome.expected, allowance, wakeDay }) });
       } catch { status = "interrupted"; save(); break; }
       ledger.cooldown(result, [429, 503].includes(result.status) ? 60_000 : 0);
       if (result.status === 401 || result.status === 403) {

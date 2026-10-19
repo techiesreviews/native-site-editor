@@ -7,12 +7,15 @@ import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 import { handle, type Env } from "../worker/app.ts";
 import { cleanupObject, inventoryObject } from "../worker/agent-maintenance.ts";
+import { startCountedWorker } from "./fakes/counted-agent.ts";
+import { forEachAwait } from "./support/await-race.ts";
 // @ts-expect-error Plain Node ESM intentionally has no declarations.
 import { parseArgs, runCleanup } from "../scripts/agents/durable-cleanup.mjs";
 // @ts-expect-error Plain Node ESM intentionally has no declarations.
-import { maintenanceLock, readManifest, runInventory, sanitizeClassification, writeManifest } from "../scripts/agents/durable-inventory.mjs";
+import { maintenanceBudget, maintenanceLock, readManifest, reserveMaintenance, runInventory, sanitizeClassification, writeManifest } from "../scripts/agents/durable-inventory.mjs";
 
 const now = Date.UTC(2026, 9, 19, 12);
+const day = (at: number) => new Date(at).toISOString().slice(0, 10);
 const token = "cleanup-secret-".repeat(4);
 const id = (n: number) => n.toString(16).padStart(64, "0");
 const options = { account: "account", namespace: "namespace", deployment: "preview", maintenanceUrl: "https://editor.example" };
@@ -21,7 +24,7 @@ const internal = (body?: unknown) => new Request("https://session.internal/maint
 });
 interface Classification {
   schema: string; version: number; status: string; fingerprint: string; totalKeys: number;
-  totalBytes: number; alarm: number | null; records: { kind: string; count: number; bytes: number; eligibility: string }[];
+  totalBytes: number; alarm: number | null; records: { kind: string; count: number; bytes: number; eligibility: string; latestExpiresAt?: number }[];
 }
 interface Outcome {
   schema: string; version: number; status: string; reason?: string; method?: string; deletedKeys: number;
@@ -48,8 +51,12 @@ async function inventory(store: ReturnType<typeof memory>, time = now): Promise<
   return (await inventoryObject(internal(), store.storage, time)).json();
 }
 async function clean(store: ReturnType<typeof memory>, input: { expected?: string; allowance?: number; sockets?: number; now?: number } = {}): Promise<Outcome> {
-  const expected = input.expected ?? (await inventory(store, input.now)).fingerprint;
-  return (await cleanupObject(internal({ expected, allowance: input.allowance ?? 10 }), store.storage,
+  const classification = await inventory(store, input.now);
+  const expected = input.expected ?? classification.fingerprint;
+  const retained = classification.records.filter(record => record.eligibility === "preserve" &&
+    ["sign-in-session", "record-fence"].includes(record.kind)).map(record => record.latestExpiresAt ?? 0);
+  const wakeDay = retained.length ? day(Math.max(...retained)) : undefined;
+  return (await cleanupObject(internal({ expected, allowance: input.allowance ?? 10, wakeDay }), store.storage,
     { sockets: input.sockets ?? 0, now: input.now ?? now })).json();
 }
 function fixture(t: TestContext, count = 1) {
@@ -216,6 +223,76 @@ test("fingerprints detect generation, expiry, key and same-size nested grant cha
   }
 });
 
+test("real SessionStore gates generation updates at every cleanup storage await", async () => {
+  for (const method of ["deleteAll", "keys"] as const) {
+    const count = await forEachAwait(race => {
+      const run: {
+        runtime?: Awaited<ReturnType<typeof startCountedWorker>>;
+        done: Promise<void>; update?: Promise<Response>; outcome?: Outcome;
+        next: { kind: string; generation: number; expiresAt: number };
+      } = { done: Promise.resolve(), next: { kind: "user", generation: 8, expiresAt: Date.now() + 86_400_000 } };
+      run.done = (async () => {
+        const runtime = run.runtime = await startCountedWorker();
+        const storage = runtime.storage("cleanup-race");
+        await storage.put("session", { kind: "agent", generation: 7, expiresAt: Date.now() - 60_000 });
+        // Force a per-key path with a retained fence, or a wholly disposable object.
+        if (method === "keys") await storage.put("agent-cleaned-until", run.next.expiresAt);
+        const stub = runtime.namespace.get("cleanup-race");
+        const classification = await (await stub.fetch(new Request("https://session.internal/maintenance/inventory", { method: "POST" }))).json() as Classification;
+        const list = storage.list.bind(storage), getAlarm = storage.getAlarm.bind(storage);
+        const deleteAll = storage.deleteAll.bind(storage), remove = storage.delete.bind(storage);
+        const deleteAlarm = storage.deleteAlarm.bind(storage), setAlarm = storage.setAlarm.bind(storage), put = storage.put.bind(storage);
+        Object.assign(storage, {
+          list: race.port("list", (input: Parameters<typeof list>[0]) => list(input)),
+          getAlarm: race.port("getAlarm", () => getAlarm()),
+          deleteAll: race.port("deleteAll", () => deleteAll()),
+          delete: race.port("delete", (keys: string[]) => remove(keys)),
+          deleteAlarm: race.port("deleteAlarm", () => deleteAlarm()),
+          setAlarm: race.port("setAlarm", (at: number) => setAlarm(at)),
+          put: race.port("put", (key: string, value: unknown) => put(key, value)),
+        });
+        try {
+          run.outcome = await (await stub.fetch(internal({ expected: classification.fingerprint,
+            allowance: 2, wakeDay: method === "keys" ? day(run.next.expiresAt) : undefined }))).json() as Outcome;
+        } finally { await runtime.worker.dispose(); }
+      })();
+      return run;
+    }, run => {
+      const runtime = run.runtime!;
+      assert.equal(runtime.inCriticalSection("cleanup-race"), true);
+      // Start the concurrent event, but do not await it while cleanup holds the
+      // gate. forEachAwait now releases cleanup; the queued writer follows it.
+      run.update = runtime.namespace.get("cleanup-race").fetch(new Request("https://session.internal/", {
+        method: "PUT", body: JSON.stringify(run.next),
+      }));
+    }, async run => {
+      assert.equal((await run.update!).status, 204);
+      assert.equal(run.outcome?.method, method);
+      const storage = run.runtime!.storage("cleanup-race");
+      assert.deepEqual(await storage.get("session"), run.next);
+      assert.equal(await storage.get("repositoryCacheGeneration"), 1);
+      assert.equal(await storage.get("repositoryCache"), undefined);
+      assert.deepEqual(await storage.get("alarm-deadlines"), { session: run.next.expiresAt });
+      assert.equal(await storage.getAlarm(), run.next.expiresAt);
+      if (method === "keys") assert.equal(await storage.get("agent-cleaned-until"), run.next.expiresAt);
+    });
+    assert.ok(count >= 5, `${method} must exercise classification and deletion awaits`);
+  }
+});
+
+test("missing or mismatched wake day defers budget before any storage mutation", async () => {
+  for (const wakeDay of [undefined, day(now - 86_400_000), day(now + 2 * 86_400_000)]) {
+    const store = memory([["session", { kind: "user", expiresAt: now + 86_400_000 }],
+      ["oauth-pending", { expired: { expiresAt: now - 1 } }]]);
+    const before = structuredClone([...store.map]);
+    const expected = (await inventory(store)).fingerprint;
+    const result = await (await cleanupObject(internal({ expected, allowance: 2, wakeDay }), store.storage, { sockets: 0, now })).json() as Outcome;
+    assert.equal(result.status, "deferred"); assert.equal(result.reason, "budget"); assert.equal(result.invocations, 1);
+    assert.deepEqual(store.calls, { deletes: [], all: 0, deleteAlarm: 0, writes: [] });
+    assert.deepEqual([...store.map], before); assert.equal(store.alarm, now);
+  }
+});
+
 test("expiry is rechecked now: crossing expiry requires reinventory, extension prevents deletion", async () => {
   const session = { kind: "agent", generation: 1, expiresAt: now + 10 };
   const store = memory([["session", session]]); const expected = (await inventory(store)).fingerprint;
@@ -291,6 +368,104 @@ test("inventory and cleanup share invocation ceiling; row ledger and future fiel
   const next = fixture(t);
   const result = await runCleanup({ ...options, delete: true }, { ...next.ports, budgetPath: f.budgetPath, fetch: async () => { throw new Error("No budget"); } });
   assert.equal(result.status, "limited"); assert.equal(json(f.budgetPath).count, 1000);
+});
+
+test("cleanup reserves the latest retained expiry day before calling; both daily ceilings apply", async t => {
+  for (const sameDay of [false, true]) {
+    const f = fixture(t);
+    const expiry = now + (sameDay ? 1000 : 86_400_000);
+    const store = memory([["session", { kind: "user", expiresAt: expiry }],
+      ["agent-cleaned-until", expiry + 1000], ["oauth-pending", { old: { expiresAt: now - 1 } }]]);
+    f.manifest.objects[0].classification = await inventory(store); f.save();
+    const wakeDay = day(expiry + 1000);
+    writeManifest(f.budgetPath, { account: options.account, namespace: options.namespace, day: day(now),
+      count: sameDay ? 999 : 998, scheduled: sameDay ? {} : { [wakeDay]: 1000 } });
+    const blocked = await runCleanup({ ...options, delete: true }, { ...f.ports, fetch: async () => { throw new Error("No room for wake"); } });
+    assert.equal(blocked.status, "limited");
+    assert.equal(json(f.budgetPath).count, sameDay ? 999 : 998);
+    writeManifest(f.budgetPath, { ...json(f.budgetPath), count: sameDay ? 998 : 999, scheduled: sameDay ? {} : { [wakeDay]: 999 } });
+    let calls = 0;
+    await runCleanup({ ...options, delete: true }, { ...f.ports, fetch: async (_url: string, init: RequestInit) => {
+      calls++;
+      assert.equal(json(f.budgetPath).count, 1000);
+      assert.deepEqual(json(f.budgetPath).scheduled, sameDay ? {} : { [wakeDay]: 1000 });
+      assert.equal(json(f.cleanupPath).objects[0].wakeDay, wakeDay);
+      assert.equal(JSON.parse(String(init.body)).wakeDay, wakeDay);
+      return cleanupObject(internal(JSON.parse(String(init.body))), store.storage, { sockets: 0, now });
+    } });
+    assert.equal(calls, 1); assert.equal(store.alarm, expiry + 1000);
+    assert.equal(json(f.cleanupPath).objects[0].status, "deleted");
+  }
+});
+
+test("midnight imports 500 reserved wakes: inventory and cleanup admit only 500 more calls together", async t => {
+  const f = fixture(t, 520);
+  await runCleanup({ ...options, delete: true }, { ...f.ports, fetch: async () => reply() });
+  const tomorrow = now + 86_400_000, laterDay = day(now + 2 * 86_400_000);
+  writeManifest(f.budgetPath, { ...json(f.budgetPath), count: 1000, rows: 4999,
+    scheduled: { [day(now)]: 7, [day(tomorrow)]: 500, [laterDay]: 41 } });
+  let inventoryCalls = 0, cleanupCalls = 0;
+  const inspect = (path: string) => runInventory({ ...options, limit: 100 }, { ...f.ports, path: join(f.dir, path), clock: () => tomorrow,
+    env: { CLOUDFLARE_API_TOKEN: "fake", MAINTENANCE_INVENTORY_TOKEN: token },
+    fetch: async (url: string) => {
+      if (url.includes("api.cloudflare.com")) return Response.json({ success: true,
+        result: Array.from({ length: 101 }, (_, n) => ({ id: id(n + 1000), hasStoredData: true })) });
+      inventoryCalls++; return Response.json(f.manifest.objects[0].classification);
+    } });
+  const remove = () => runCleanup({ ...options, delete: true, canaryVerified: true, rowsPerKey: 1, rowsPerObject: 1, limit: 100 },
+    { ...f.ports, clock: () => tomorrow, fetch: async () => { cleanupCalls++; return reply(); } });
+  await inspect("first.json");
+  assert.equal(json(f.budgetPath).count, 600); assert.equal(json(f.budgetPath).rows, 0);
+  assert.deepEqual(json(f.budgetPath).scheduled, { [laterDay]: 41 });
+  await remove(); await inspect("second.json"); await remove(); await remove();
+  assert.equal(inventoryCalls, 200); assert.equal(cleanupCalls, 300);
+  assert.equal(json(f.budgetPath).count, 1000); assert.equal(json(f.budgetPath).rows, 600);
+  assert.equal((await inspect("last.json")).status, "limited");
+  assert.equal((await remove()).status, "limited");
+  assert.equal(inventoryCalls + cleanupCalls, 500);
+  assert.deepEqual(json(f.budgetPath).scheduled, { [laterDay]: 41 });
+});
+
+test("future reservations validate, survive manifest reload, and roll forward after skipped days", t => {
+  const f = fixture(t);
+  const previous = { day: day(now), count: 20, scheduled: { [day(now + 86_400_000)]: 500, [day(now + 2 * 86_400_000)]: 30 } };
+  f.manifest.budget = previous; f.save();
+  assert.deepEqual(readManifest(f.path, options, now).budget.scheduled, previous.scheduled);
+  assert.deepEqual(readManifest(f.path, { ...options, rescan: true }, now).budget.scheduled, previous.scheduled);
+  const ledger = maintenanceBudget(f.budgetPath, options, previous, () => now);
+  assert.equal(reserveMaintenance(ledger.budget, now + 2 * 86_400_000), true);
+  assert.equal(ledger.budget.count, 31); assert.deepEqual(ledger.budget.scheduled, {});
+  // A manifest ahead of the shared ledger must not erase that day's wake charge.
+  writeManifest(f.budgetPath, { account: options.account, namespace: options.namespace, ...previous });
+  assert.equal(maintenanceBudget(f.budgetPath, options, { day: day(now + 86_400_000), count: 5 }, () => now).budget.count, 500);
+  for (const scheduled of [null, [], { "2026-02-30": 1 }, { "tomorrow": 1 }, { [day(now)]: -1 }, { [day(now)]: 1.5 }]) {
+    writeManifest(f.budgetPath, { account: options.account, namespace: options.namespace, day: day(now), count: 0, scheduled });
+    assert.throws(() => maintenanceBudget(f.budgetPath, options, { day: "", count: 0 }, () => now), /Invalid namespace budget/);
+  }
+});
+
+test("lost-response retries reuse wakeDay despite rescan and charge both days again without refunds", async t => {
+  const f = fixture(t);
+  const expiry = now + 86_400_000;
+  const store = memory([["session", { kind: "user", expiresAt: expiry }], ["oauth-pending", { old: { expiresAt: now - 1 } }]]);
+  f.manifest.objects[0].classification = await inventory(store); f.save();
+  const first = await runCleanup({ ...options, delete: true }, { ...f.ports, fetch: async (_url: string, init: RequestInit) => {
+    assert.equal((await (await cleanupObject(internal(JSON.parse(String(init.body))), store.storage, { sockets: 0, now })).json() as Outcome).status, "deleted");
+    throw new Error("Lost response");
+  } });
+  assert.equal(first.status, "interrupted");
+  assert.equal(json(f.budgetPath).count, 1); assert.deepEqual(json(f.budgetPath).scheduled, { [day(expiry)]: 1 });
+  assert.equal(json(f.cleanupPath).objects[0].wakeDay, day(expiry));
+  f.manifest.objects[0].classification.records[0].latestExpiresAt = expiry + 86_400_000; f.save();
+  await runCleanup({ ...options, delete: true }, { ...f.ports, fetch: async (_url: string, init: RequestInit) => {
+    const body = JSON.parse(String(init.body));
+    assert.equal(body.wakeDay, day(expiry)); assert.equal(body.allowance, 2);
+    assert.equal(json(f.budgetPath).count, 2); assert.deepEqual(json(f.budgetPath).scheduled, { [day(expiry)]: 2 });
+    return cleanupObject(internal(body), store.storage, { sockets: 0, now });
+  } });
+  assert.equal(store.calls.deletes.length, 1);
+  // The second response needed no wake; both reservations remain charged.
+  assert.deepEqual(json(f.budgetPath).scheduled, { [day(expiry)]: 2 });
 });
 
 test("crash after reserve re-sends once, charges twice, and never deletes twice", async t => {
