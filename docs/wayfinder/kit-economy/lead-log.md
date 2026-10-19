@@ -17,6 +17,7 @@
 | 10 agent-metadata flake (added) | #96, #99 | `kit slice` |
 | 11 review reuse, kit fix fallback (added) | #100 | `kit slice` |
 | 12 slice brief, clean-guard step, CI digest (added) | #101 | `kit slice` |
+| 13 review strictness D (added, Lex 2026-10-19) | #103 | `kit slice` + one lead `kit fix --note` |
 | kit-preview test ESRCH (lead) | #98 | lead |
 
 The two hung `kit preview` wrangler deploys (pids 3167057, 3167195) were killed at the start.
@@ -55,3 +56,18 @@ fix rounds, then a re-review after a rebase raised a new finding (fixed by ticke
 - Still open: subagent runners cannot sleep on a background job, so a long job costs one check-in
   per 9 minutes (`kit wait job --timeout 9m`); merges that conflict on `agent-scripts.md` are found
   only after CI; `kit slice` cannot take a lead note (runners added notes to the ticket instead).
+
+### Ticket 13 (review strictness D, PR #103)
+
+- Lex chose option D on 2026-10-19: every finding blocks during the three `kit fix` rounds; after them only
+  P0/P1 defects (and defects without a readable severity) block; P2/P3 and validation gaps merge as follow-ups
+  on the PR and in the ticket's Done. `--waive` is unchanged.
+- First landing under the new rule: three rounds, one validation gap left, merged with it listed as a follow-up.
+- Failed: round 2's review wrote `Spec:`/`Standards:` without a `Defects:` heading, so `kit fix` refused it as
+  unreadable and the slice stopped. The lead sent the findings with `kit fix --note` (the ticket now accepts that
+  shape) and had to edit `.scratch/kit-slice/<slug>/state.json` (head, review, rounds 3) so the rerun resumed
+  instead of re-reviewing: `kit slice` does not pick up a manual `kit fix` round.
+- Follow-ups: (1) the review's validation gap — a test that a rejected follow-up commit recovers on rerun;
+  (2) severity is the first `P0`–`P3` token in an item's first 80 characters, so a path like `p2.ts` before the
+  real severity would read as P2 (fail-open); anchor it after the location; (3) `kit slice` should adopt a newer
+  covering review and the branch's completed rounds after a manual `kit fix`.
