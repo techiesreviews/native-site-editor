@@ -135,6 +135,10 @@ sentences, the severity scale, follow-ups in the PR and the ticket's Done, `--wa
 - Every finding blocks before three completed branch fix rounds. Afterwards only P0/P1 defects,
   defects without readable severity and unreadable reviews block. Pending rounds do not count;
   round discovery reads the main root with a worktree fallback for current `kit fix` storage.
+- Slice strictness uses completed branch rounds, including manual fixes, while its invocation
+  budget remains local to the slice. Pending rounds do not relax the gate.
+- Follow-ups match only bare or dated completion headings; `## Done when` acceptance criteria
+  stay unchanged when a separate dated Done section must be created.
 - Non-blocking follow-ups appear in the PR comment/body and the ticket's Done subsection. A
   ticket-only commit preserves review coverage; reruns reuse it without duplicating follow-ups.
   CI and merging use the new head. Lead waivers remain separate from non-blocking follow-ups.
@@ -144,9 +148,9 @@ sentences, the severity scale, follow-ups in the PR and the ticket's Done, `--wa
   and during a held pre-commit hook, with no stale commit pushed or merged.
 - Unit coverage exercises severity variants, pending rounds, strict and relaxed PR gates, bare-origin
   pushes, ticket commits, follow-up idempotence, waiver behaviour and slice resume after failed CI.
-  `kit unit --affected` passes 213/213 across five files (log:
-  `.scratch/unit/20261019T134632-31.log`); focused PR/slice regressions pass 100/100 (log:
-  `.scratch/unit/20261019T134521-23.log`). Earlier focused `kit-fix.test.ts` passes 20/20 (log:
+  `kit unit --affected` passes 218/218 across five files (log:
+  `.scratch/unit/20261019T135111-31.log`); focused PR/slice regressions pass 105/105 (log:
+  `.scratch/unit/20261019T134948-22.log`). Earlier focused `kit-fix.test.ts` passes 20/20 (log:
   `.scratch/unit/20261019T133954-21.log`). `npm run check` and `npm run lint` pass;
   `kit specs --affected` reports none affected. Kit doctor passes 7/7.
 - Commits: changes left unstaged for the slice runner.
