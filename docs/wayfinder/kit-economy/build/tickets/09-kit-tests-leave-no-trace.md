@@ -109,3 +109,13 @@ The first audit also found these four matching folders in the ke-08 worktree. Th
 /home/ubulex/Projects/native-site-editor-build-ke-08-preview-timeout/.scratch/agent/build-1792406761561-553744-2TggRg
 /home/ubulex/Projects/native-site-editor-build-ke-08-preview-timeout/.scratch/agent/build-1792406761683-553898-uLHlq1
 ```
+
+### Review follow-up (2026-10-19)
+
+- Accepted finding `7a1a36fc:docs/wayfinder/kit-economy/build/tickets/09-kit-tests-leave-no-trace.md:73` (P2): the required external cleanup remains incomplete; this finding is not declined.
+- Rechecked all 26 listed folders: each is a real directory with `state: failed`, `exitCode: 2`, a `/tmp/kit-doctor-*/missing.md` brief and a `worktree` matching its containing checkout.
+- Attempted the one-off deletion through the ordinary sandboxed runner. The first removal failed with `Read-only file system '/home/ubulex/.t3/worktrees/native-site-editor/t3-837034a2/.scratch/agent/build-1792244035216-1588313-OBMiGG'`. Deleted 0/26; all remaining folders were left untouched. This session cannot request elevated filesystem access.
+- Resolution still required from the owning runner with write access to the listed worktrees: recheck the same status, brief and worktree predicates immediately before removing each listed folder, then record the removals here. No cleanup completion is claimed.
+- Follow-up validation: `RESULT: ok doctor 7/7 checks passed`; ticket consistency and `git diff --check` passed. No source code changed, so the previously recorded unit, check and lint results remain applicable.
+
+Declined: none.
