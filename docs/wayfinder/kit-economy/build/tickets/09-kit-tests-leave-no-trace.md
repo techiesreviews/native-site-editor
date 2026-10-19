@@ -26,6 +26,11 @@ worktree, where a later `agent.sh --resume` or `kit fix` (ticket 03) could pick 
   `tests/agent-resume.test.ts`) in a child `tsx --test`, and asserts no new folder appeared there and
   no `kit-doctor-*` / test temp dirs were left in `os.tmpdir()` by that run. It must not recurse
   into itself.
+- **Lead addition (2026-10-19).** Ticket 04's runner saw `kit fix` pick a builder folder that
+  unit tests run inside `kit pr` had left in `.scratch/agent`. The guard must cover every test
+  file that `kit pr` runs and that calls `agent.sh` or `kit`: at least `tests/kit-fix*.test.ts`,
+  `tests/kit-slice*.test.ts`, `tests/agent-resume.test.ts`, `tests/agent-run*.test.ts` and any
+  other test that spawns `agent.sh`/`kit`, not only `kit doctor`.
 - **One-off cleanup** of existing leftovers, documented in Done, not automated: list folders under
   `.scratch/agent/` of the live worktrees whose `status.json` has `"state": "failed"`, `"exitCode": 2`
   and a `brief` under `/tmp/kit-doctor-*` (or another test temp path); delete only those, and list
@@ -46,6 +51,9 @@ worktree, where a later `agent.sh --resume` or `kit fix` (ticket 03) could pick 
   checked in Done).
 - A unit test in `tests/kit-tests-clean.test.ts` proves `agent.sh build <worktree> <missing brief>` exits 2 and creates no
   `.scratch/agent` folder.
+- The guard test runs every test file that `kit pr` runs and that calls `agent.sh` or `kit`
+  (kit-fix, kit-slice, agent-resume, agent-run and the rest), and none of them leaves a folder
+  in the real worktree's `.scratch/agent` (lead addition).
 - Done lists the leftover folders found and deleted (or "none").
 - The unit tests for the change pass (`scripts/agents/unit.sh tests/kit-tests-clean.test.ts tests/kit-doctor.test.ts tests/agent-scripts.test.ts`).
 - Sol review via `kit review --ticket` with no open findings; landed via `kit pr --ticket` into
