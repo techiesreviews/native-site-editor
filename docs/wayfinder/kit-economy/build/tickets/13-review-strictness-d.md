@@ -1,8 +1,8 @@
 ---
 title: "Review strictness D: strict for three fix rounds, then only serious findings block"
 type: task (AFK)
-status: open
-assignee:
+status: closed
+assignee: ke-13
 blocked_by: [01-kit-pr-stops-on-findings, 04-kit-slice, 11-review-reuse-and-fix-fallback, 12-slice-brief-guard-ci-digest]
 builder: sol
 ---
@@ -126,3 +126,25 @@ sentences, the severity scale, follow-ups in the PR and the ticket's Done, `--wa
 - Sol review via `kit review --ticket` under the rules above; landed via `kit pr --ticket` into `dev`
   with CI green.
 - Dogfood: built with `kit slice`; the Done section says where it helped or failed.
+
+
+## Done (2026-10-19)
+
+- Reviews request P0–P3 after each defect location; parsing accepts the documented variants,
+  preserves missing severity as null and never assigns severity to validation gaps.
+- Every finding blocks before three completed branch fix rounds. Afterwards only P0/P1 defects,
+  defects without readable severity and unreadable reviews block. Pending rounds do not count;
+  round discovery reads the main root with a worktree fallback for current `kit fix` storage.
+- Non-blocking follow-ups appear in the PR comment/body and the ticket's Done subsection. A
+  ticket-only commit preserves review coverage; reruns reuse it without duplicating follow-ups.
+  CI and merging use the new head. Lead waivers remain separate from non-blocking follow-ups.
+- Unit coverage exercises severity variants, pending rounds, strict and relaxed PR gates, bare-origin
+  pushes, ticket commits, follow-up idempotence, waiver behaviour and slice resume after failed CI.
+  `kit unit --affected` passes 206/206 across five files (log:
+  `.scratch/unit/20261019T134056-31.log`); focused `kit-fix.test.ts` passes 20/20 (log:
+  `.scratch/unit/20261019T133954-21.log`). `npm run check` and `npm run lint` pass;
+  `kit specs --affected` reports none affected. Kit doctor passes 7/7.
+- Commits: changes left unstaged for the slice runner.
+- Dogfood: this builder received the slice's bounded Files and validation contract. Kit doctor and
+  focused unit selection helped exercise the runner changes locally; review and landing remain
+  the outer slice's responsibility under the builder contract.
