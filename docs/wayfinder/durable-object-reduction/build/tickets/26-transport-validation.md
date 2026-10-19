@@ -88,3 +88,8 @@ browser is already covered by native-agent-live.spec.ts (65 s visible + 65 s hid
 **Limits.** Local only: no deployed hibernation or duration, real deployment restart, silent-loss latency, renderer discard,
 legacy inventory/migration accounting or rollback evidence; those are the preview checklist. Preview needs the release
 lead's authorization.
+
+Landed: PR #79, merged as e4d480a (`RESULT: ok merged #79 e4d480a`; kit pr: tier tests, check, unit, lint, specs, review,
+CI ok). Landing review (gpt-6.1-sol, medium, read-only; evidence
+/home/ubulex/Projects/native-site-editor/.scratch/reviews/dor-26/20261019T013843Z): defects none, gaps none; one nit fixed
+here (validation.md said eight lifecycle cases; there are nine).
