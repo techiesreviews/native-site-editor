@@ -1,8 +1,8 @@
 ---
 title: "kit unit --affected, and timing tests that pass under load"
 type: task (AFK)
-status: ready-for-agent
-assignee:
+status: closed
+assignee: ke-07
 blocked_by: [04-kit-slice]
 builder: sol
 ---
@@ -79,3 +79,50 @@ b. The build contract in `scripts/agents/agent-run.mjs` (`buildContract`, the bu
    round. Change it to: run the focused unit files for the change (`scripts/agents/kit unit
    --affected` once this ticket's command exists, else `scripts/agents/unit.sh <files>`) and
    `npm run check` when types moved; `kit pr` runs the full tier. Update its test.
+
+## Done (2026-10-19)
+
+- Behaviour: added executable `kit unit [files…] [--affected [--base REF]] [--list]`.
+  Affected selection combines merge-base, staged, unstaged and untracked changes, follows
+  imports transitively (including surviving importers of deleted modules), and prints changed,
+  imports or via reasons. Docs-only selections run nothing; test status, counts, file count and
+  log path appear in the final RESULT. `unit.sh` pins the spec reporter; count parsing accepts
+  spec and TAP reports, ANSI colours, whitespace and CRLF. The build footer now requests
+  focused units and type checks when types moved, leaving the full tier to `kit pr`.
+- Timing checks now wait on the timed-out child exiting and reporting its timeout rather than
+  asserting total startup speed; size interruptions wait for a file written after the signal
+  handler is installed; pid waits release a held child and await its close, while timeout
+  checks hold the child open until teardown; Media waits for `refreshDescriptions`; resume
+  polling accepts only complete JSONL call records. The first focused load run exposed an
+  empty/partially written calls file (156 pass, 1 fail); the JSONL fix resolved it.
+  `agent-usage.test.ts` needed no change: it passed the focused checks and all three load runs.
+- Validation: `scripts/agents/kit doctor` returned `RESULT: ok doctor 7/7 checks passed`.
+  `scripts/agents/unit.sh tests/kit-unit.test.ts` passed 7/0
+  (`.scratch/unit/20261019T102122-3.log`). The six named timing/usage/resume files plus
+  `tests/agent-scripts.test.ts` passed 150/0 (`.scratch/unit/20261019T102151-948.log`).
+  `scripts/agents/kit unit --affected` returned
+  `RESULT: ok unit 169/169 (8 files) log .scratch/unit/20261019T102207-5874.log`.
+  `npm run check`, `npm run lint` and `npm test` passed; npm test reported 4753/0
+  (`.scratch/ke07-npm-test.log`). `scripts/agents/kit specs --affected` returned
+  `RESULT: ok specs none affected`. `--list` selected eight unit files and ran nothing.
+- Load proof: started 16 CPU workers with
+  `scripts/agents/kit bg load -- bash -c 'for i in $(seq "$(nproc)"); do yes > /dev/null & done; wait'`,
+  ran `scripts/agents/unit.sh` three times, and stopped the generator with
+  `scripts/agents/kit bg --stop load` (`RESULT: ok bg stop load pgid 23`).
+  `/proc/loadavg` one-minute readings before runs were 37.82, 57.32 and 45.91; a reading
+  during run 1 reached 76.10. Results: run 1, 4753 pass/0 fail
+  (`.scratch/unit/20261019T101302-37.log`); run 2, 4753/0
+  (`.scratch/unit/20261019T101647-46478.log`); run 3, 4753/0
+  (`.scratch/unit/20261019T101840-89017.log`). All had zero cancellations and skips.
+- Commits and review decisions: changes are intentionally unstaged; this builder made no
+  commits or pushes and started no agents. Independent Sol review via `kit review --ticket`,
+  commits, `kit pr --ticket` and CI/landing into `dev` remain the calling runner's phases,
+  as required by the build contract. No independent review or landing is claimed here.
+- Dogfood: the calling `kit slice` generated `.scratch/agent-brief.md`, saved progress in
+  `.scratch/kit-slice/07-kit-unit-affected/state.json`, and invoked this builder. Its persisted
+  brief/build state made ownership and the unstaged handoff clear. Kit background jobs must
+  stay inside the owning shell session in this sandbox: an initial detached focused job died
+  when that shell exited; the successful load proof kept the shell alive and stopped its load
+  group on exit. The old footer still requested the full npm test; this change corrects future
+  builder contracts. `kit unit --affected` also selected the unchanged `kit-review.test.ts`
+  importer, demonstrating the focused selection during this build.

@@ -248,10 +248,11 @@ test("a file brought back outside Media shows its kept records on the page at on
   const removed = (sha: string) => JSON.stringify({ version: 2, collections: [], files: {}, removed: [
     { path: "images/old.png", sha, date: new Date().toISOString().slice(0, 10), record: { places: { "index.html": { decorative: true } } } },
   ] });
-  const f = fixture();
+  const ready = deferred();
+  const f = fixture({ refreshDescriptions: () => ready.resolve() });
   f.sources.set(".editor/media.json", removed("sha"));
   f.controller.placeState("index.html", "/images/old.png", "");
-  await new Promise(resolve => setTimeout(resolve, 0));
+  await ready.promise;
   // The branch holds the removed blob again (Files' or Save's Restore): its Decorative mark is back.
   assert.equal(f.controller.placeState("index.html", "/images/old.png", "")?.state, "decorative");
   // Other bytes at that address are not the removed file.
