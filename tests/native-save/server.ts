@@ -161,7 +161,7 @@ import { createServer, preview, type Connect, type Plugin } from "vite";
 import { handle, type Env } from "../../worker/app.ts";
 import { admitRegistration, isBudgetKey, REGISTRATION_ROUTE } from "../../worker/oauth-registration.ts";
 import { clearHub, hubView, type HubStorage } from "../../worker/agent-store.ts";
-import { fakeHubRoute, fakeRelayRoute, serializeObject, type RelayConnect } from "./fake-hub.ts";
+import { fakeHubRoute, fakeRelayRoute, resetFixtureRelays, restartFixtureRelays, serializeObject, type RelayConnect } from "./fake-hub.ts";
 import { installRelayUpgrade } from "./fake-websocket.ts";
 import { accountPending, PENDING_KEY, PENDING_ROUTE, type PendingAction } from "../../worker/oauth-pending.ts";
 import type { AgentHub } from "../../worker/agent-context.ts";
@@ -1226,6 +1226,14 @@ function workerMiddleware(): Connect.NextHandleFunction {
         return res.end();
       }
       const key = browser ?? id!;
+      if (path === "/__demo/relay-reset" && req.method === "POST") {
+        res.setHeader("Content-Type", "application/json");
+        return res.end(JSON.stringify({ reset: resetFixtureRelays(id!) }));
+      }
+      if (path === "/__demo/relay-restart" && req.method === "POST") {
+        res.setHeader("Content-Type", "application/json");
+        return res.end(JSON.stringify({ closed: restartFixtureRelays(id!) }));
+      }
       if (path === "/__demo/slow") {
         publishDelays.set(id, Math.max(0, Number(url.searchParams.get("ms") ?? "0") || 0));
         res.statusCode = 204;

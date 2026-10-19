@@ -13,6 +13,17 @@ function frame(opcode: number, payload: Buffer): Buffer {
   return Buffer.concat([header, payload]);
 }
 
+const open = new Map<AgentRelay, Set<NodeRelaySocket>>();
+
+/** Test-only deployment restart: the server closes every socket of this relay, as workerd does
+ * when an isolate is replaced. Returns how many open sockets were closed. */
+export function closeRelaySockets(relay: AgentRelay, code = 1012, reason = "Service restart"): number {
+  const sockets = [...open.get(relay) ?? []];
+  for (const socket of sockets) socket.close(code, reason);
+  open.delete(relay);
+  return sockets.length;
+}
+
 /** Small RFC 6455 adapter for fixture text messages; relay rules stay in AgentRelay. */
 class NodeRelaySocket implements RelaySocket {
   private attachment: unknown;
@@ -22,7 +33,7 @@ class NodeRelaySocket implements RelaySocket {
   private accepted = false;
   private closing = false;
   constructor(private socket: Duplex, private relay: AgentRelay) {
-    socket.once("close", () => relay.disconnect(this));
+    socket.once("close", () => { open.get(relay)?.delete(this); relay.disconnect(this); });
     socket.on("error", () => { relay.disconnect(this); socket.destroy(); });
   }
   get readyState() { return this.socket.destroyed || this.closing ? 3 : this.accepted ? 1 : 0; }
@@ -44,6 +55,7 @@ class NodeRelaySocket implements RelaySocket {
     const hash = createHash("sha1").update(key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").digest("base64");
     this.socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${hash}\r\n\r\n`);
     this.accepted = true;
+    open.set(this.relay, (open.get(this.relay) ?? new Set()).add(this));
     this.socket.on("data", (chunk: Buffer) => this.receive(chunk));
     if (head.length) this.receive(head);
   }
