@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import test from "node:test";
 import { handle, type Env } from "../worker/app.ts";
 // @ts-expect-error Plain Node ESM intentionally has no declarations.
@@ -141,6 +142,31 @@ test("not comparable: different weekday, or a failed, refused, truncated or empt
     assert.match(text, /\| DO requests \| 5 \| - \| not comparable \|/);
     assert.doesNotMatch(text, /%/);
   }
+});
+
+test("empty datasets are missing evidence, never zero use or a reduction", async () => {
+  const full = () => accountAnswer(95_517, 9, 9, 9, 9);
+  const empty = (part: object) => ({ data: { viewer: { accounts: [{ ...full().data.viewer.accounts[0], ...part }] } } });
+  const cases: [object, string[]][] = [
+    [{ invocations: [] }, ["requests", "errors"]],
+    [{ periodic: [] }, ["rowsRead", "rowsWritten", "duration"]],
+    [{ storage: [] }, ["storedBytes"]],
+    [{ invocations: [], periodic: [], storage: [] }, ["requests", "errors", "rowsRead", "rowsWritten", "duration", "storedBytes"]],
+  ];
+  for (const [part, missing] of cases) for (const answers of [[full(), empty(part)], [empty(part), full()]]) {
+    const { result, text } = await run({}, { account: answers, zone: [] });
+    assert.equal(result.status, "comparable");
+    for (const row of result.metrics as { key: string; change: string }[])
+      assert.equal(row.change, missing.includes(row.key) ? "no data" : "no change", row.key);
+    assert.doesNotMatch(text, /%/);
+    assert.match(text, /No data: a dataset returned nothing for a window\. That is missing evidence, not zero use/);
+    if (missing.includes("requests")) assert.match(text, /Steady operation \(DO requests\): not measured/);
+  }
+});
+
+test("the documented command runs: node scripts/agents/durable-report.mjs --help", () => {
+  const out = execFileSync(process.execPath, ["scripts/agents/durable-report.mjs", "--help"], { encoding: "utf8", env: {} });
+  assert.match(out, /^Usage: durable-report\.mjs --account ID --namespace ID --before START\/END --after START\/END/);
 });
 
 test("redaction: GraphQL errors that echo the token or ids never reach the output", async () => {
