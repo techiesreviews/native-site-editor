@@ -44,7 +44,8 @@ random when the machine is busy, which sends runners into reruns.
 ## Files
 
 - `scripts/agents/kit.d/unit` (new)
-- `scripts/agents/unit.sh` (only if needed)
+- `scripts/agents/unit.sh`, `scripts/agents/unit-summary.mjs` (count parsing, lead addition a)
+- `scripts/agents/agent-run.mjs` and its test in `tests/agent-scripts.test.ts` (build contract, lead addition b)
 - `tests/kit-unit.test.ts` (new)
 - `tests/agent-unit-timeout.test.ts`, `tests/kit-size.test.ts`, `tests/kit-wait.test.ts`,
   `tests/media-controller.test.ts`, `tests/agent-usage.test.ts`, `tests/agent-resume.test.ts`
@@ -64,4 +65,17 @@ random when the machine is busy, which sends runners into reruns.
   fixed files).
 - Sol review via `kit review --ticket` with no open findings; landed via `kit pr --ticket` into
   `dev` with CI green.
+- Lead addition a: `unit.sh` no longer prints "unit report lacks pass/fail counts" when the log has the counts; a unit test feeds a real-shaped log and checks the counts.
+- Lead addition b: the build contract in `agent-run.mjs` names focused unit files (`kit unit --affected`), `npm run check` when types moved, and leaves the full tier to `kit pr`; its test checks the new wording and that `npm test` is gone.
 - Dogfood: built with `kit slice`; the Done section says where it helped or failed.
+
+## Lead additions (2026-10-19)
+
+a. `scripts/agents/unit.sh` prints a false "problem: unit report lacks pass/fail counts"
+   (thrown in `scripts/agents/unit-summary.mjs`) even when the log has the counts; three runners
+   saw it today. Fix the count parsing so every real node test report shape is read, and test it.
+b. The build contract in `scripts/agents/agent-run.mjs` (`buildContract`, the build footer) tells
+   every builder to run the whole `npm test`; that overrode briefs and ran ~4,370 tests every fix
+   round. Change it to: run the focused unit files for the change (`scripts/agents/kit unit
+   --affected` once this ticket's command exists, else `scripts/agents/unit.sh <files>`) and
+   `npm run check` when types moved; `kit pr` runs the full tier. Update its test.
