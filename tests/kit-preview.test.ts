@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
 import { setTimeout as delay } from "node:timers/promises";
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -26,6 +26,7 @@ const wrangler = `#!/usr/bin/env node
 const fs = require("node:fs"), env = process.env;
 fs.appendFileSync(env.FAKE_CALLS, JSON.stringify({ tool: "wrangler", args: process.argv.slice(2), cwd: process.cwd(), ci: env.CI, color: env.NO_COLOR }) + "\\n");
 if (fs.existsSync("dist/stale.js")) throw new Error("stale dist was not removed");
+if (env.FAKE_HANG === "deploy") { require(env.FAKE_HANG_SCRIPT); return; }
 if (env.FAKE_DEPLOY_HOLD) {
   process.on("SIGTERM", () => fs.writeFileSync(env.FAKE_DEPLOY_HOLD + ".term", ""));
   fs.writeFileSync(env.FAKE_DEPLOY_HOLD + ".started", "");
@@ -49,6 +50,37 @@ if (!env.FAKE_NO_VERSION) {
 }
 console.log("RESULT: ok child output stays in the log");
 `;
+
+const hang = `
+const fs = require("node:fs"), { spawn } = require("node:child_process"), env = process.env;
+for (const path of ["dist/assets", ".wrangler/tmp"]) {
+  fs.mkdirSync(env.FAKE_HANG_DIR + "/" + path, { recursive: true });
+  fs.writeFileSync(env.FAKE_HANG_DIR + "/" + path + "/partial", "partial");
+}
+fs.writeFileSync(env.FAKE_HANG_DIR + "/.wrangler/keep.txt", "keep");
+process.on("SIGTERM", () => {
+  fs.writeFileSync(env.FAKE_HANG_PIDS + ".term", "");
+  if (env.FAKE_HANG_EXIT) process.exit(0);
+});
+const child = spawn(process.execPath, ["-e", \`
+  const fs = require("node:fs");
+  process.on("SIGTERM", () => fs.writeFileSync(process.env.FAKE_HANG_PIDS + ".child-term", ""));
+  process.send("ready");
+  setInterval(() => {}, 1000);
+\`], { stdio: ["ignore", "ignore", "ignore", ...(env.FAKE_HANG === "deploy" ? [3] : []), "ipc"] });
+child.once("message", () => fs.writeFileSync(env.FAKE_HANG_PIDS, JSON.stringify({ leader: process.pid, child: child.pid })));
+setInterval(() => {}, 1000);
+`;
+
+function liveGroup(pgid: number) {
+  return readdirSync("/proc").filter(pid => /^\d+$/.test(pid)).filter(pid => {
+    try {
+      const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+      const fields = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
+      return !["Z", "X"].includes(fields[0]) && Number(fields[2]) === pgid;
+    } catch (error) { if (error instanceof Error && "code" in error && error.code === "ENOENT") return false; throw error; }
+  }).map(Number);
+}
 
 async function fixture(t: TestContext) {
   const dir = mkdtempSync(join(tmpdir(), "kit-preview-"));
@@ -77,7 +109,7 @@ async function fixture(t: TestContext) {
     writeFileSync(join(bin, name), contents); chmodSync(join(bin, name), 0o755);
   }
   const env: NodeJS.ProcessEnv = { ...process.env };
-  for (const key of Object.keys(env)) if (key.startsWith("KIT_") || key.startsWith("FAKE_") || key.startsWith("GIT_")) delete env[key];
+  for (const key of Object.keys(env)) if (key.startsWith("KIT_") || key.startsWith("FAKE_") || key.startsWith("GIT_") || key === "ASE_PREVIEW_TIMEOUT") delete env[key];
   Object.assign(env, {
     PATH: `${bin}:${process.env.PATH}`, KIT_ROOT: root, KIT_MAIN_ROOT: main, ASE_OWNER: "kit-preview-test",
     KIT_PREVIEW_LOCK: join(dir, "preview.lock"), KIT_PREVIEW_URL: `http://127.0.0.1:${address.port}/`,
@@ -101,6 +133,7 @@ async function fixture(t: TestContext) {
   const modules = join(root, "node_modules");
   mkdirSync(join(modules, ".bin"), { recursive: true });
   const deployDir = join(main, ".scratch/preview-deploy");
+  writeFileSync(join(dir, "hang.cjs"), hang);
 
   async function run(args: string[] = [], overrides: NodeJS.ProcessEnv = {}, entry = preview, onOutput?: (text: string) => void) {
     const child = spawn(entry, entry === kit ? ["preview", ...args] : args, { cwd: root, env: { ...env, ...overrides } });
@@ -127,6 +160,7 @@ test("help and invalid arguments do not prepare or deploy anything", async t => 
   for (const flag of ["--help", "-h"]) {
     const result = await f.run([flag]);
     assert.equal(result.status, 0); assert.match(result.stdout, /Usage: kit preview/);
+    assert.match(result.stdout, /ASE_PREVIEW_TIMEOUT/);
   }
   for (const args of [["--wat"], ["--help", "--wat"], ["extra"]]) {
     const result = await f.run(args);
@@ -135,6 +169,71 @@ test("help and invalid arguments do not prepare or deploy anything", async t => 
   }
   assert.equal(existsSync(f.deployDir), false); assert.deepEqual(f.calls(), []);
 });
+
+test("invalid preview timeouts exit 2 before acquiring a lock or preparing a worktree", async t => {
+  const f = await fixture(t);
+  for (const value of ["", "0", "-1", "1.5", "1ms", "1d", " 1s", "1s ", "2147484", "999999999999999999h"]) {
+    const result = await f.run(["--dry-run"], { ASE_PREVIEW_TIMEOUT: value });
+    assert.equal(result.status, 2, value);
+    assert.match(result.stdout, /RESULT: fail preview invalid ASE_PREVIEW_TIMEOUT:/);
+  }
+  assert.equal(existsSync(f.env.KIT_PREVIEW_LOCK!), false);
+  assert.equal(existsSync(f.deployDir), false); assert.deepEqual(f.calls(), []);
+});
+
+test("preview timeouts accept seconds and s/m/h durations", async t => {
+  const f = await fixture(t);
+  for (const value of ["2", "2s", "1m", "1h", "2147483"]) {
+    const result = await f.run(["--dry-run"], { ASE_PREVIEW_TIMEOUT: value });
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+  }
+});
+
+for (const [step, exits] of [["deploy", false], ["deploy", true], ["git fetch", false], ["git checkout", false]] as const) {
+  test(`${step} timeout kills its group, cleans partial output and releases the lock${exits ? " after the leader exits on TERM" : ""}`, { timeout: 8_000 }, async t => {
+    const f = await fixture(t);
+    assert.equal((await f.run(["--dry-run"])).status, 0);
+    const pidsFile = join(f.dir, "hang-pids.json");
+    if (step.startsWith("git ")) {
+      const realGit = spawnSync("sh", ["-c", "command -v git"], { env: f.env, encoding: "utf8" });
+      assert.equal(realGit.status, 0, realGit.stderr);
+      writeFileSync(join(f.bin, "git"), `#!/usr/bin/env node
+const args = process.argv.slice(2);
+if ("git " + (args[0] === "-C" ? args[2] : args[0]) === process.env.FAKE_HANG) require(process.env.FAKE_HANG_SCRIPT);
+else process.exit(require("node:child_process").spawnSync(${JSON.stringify(realGit.stdout.trim())}, args, { stdio: "inherit" }).status ?? 1);
+`);
+      chmodSync(join(f.bin, "git"), 0o755);
+    }
+    try {
+      const start = Date.now();
+      const result = await f.run([], {
+        ASE_PREVIEW_TIMEOUT: "1s", FAKE_HANG: step, FAKE_HANG_EXIT: exits ? "1" : "",
+        FAKE_HANG_SCRIPT: join(f.dir, "hang.cjs"), FAKE_HANG_DIR: f.deployDir, FAKE_HANG_PIDS: pidsFile,
+      });
+      assert.ok(Date.now() - start < 5_000, result.stdout);
+      assert.equal(result.status, 1, result.stdout + result.stderr);
+      const pids: { leader: number; child: number } = JSON.parse(readFileSync(pidsFile, "utf8"));
+      assert.ok(result.stdout.endsWith(`RESULT: fail preview ${step} timed out after 1s (killed pgid ${pids.leader})\n`), result.stdout);
+      assert.ok(existsSync(pidsFile + ".term"), "leader did not receive SIGTERM");
+      assert.ok(existsSync(pidsFile + ".child-term"), "child did not receive SIGTERM");
+      assert.deepEqual(liveGroup(pids.leader), [], `group ${pids.leader}, including child ${pids.child}, survived`);
+      assert.equal(spawnSync("flock", ["-n", f.env.KIT_PREVIEW_LOCK!, "true"]).status, 0, "lock is still held");
+      assert.equal(existsSync(join(f.deployDir, "dist")), false);
+      assert.equal(existsSync(join(f.deployDir, ".wrangler/tmp")), false);
+      assert.equal(readFileSync(join(f.deployDir, ".wrangler/keep.txt"), "utf8"), "keep");
+      assert.ok(lstatSync(join(f.deployDir, "node_modules")).isSymbolicLink());
+      const retry = await f.run(["--dry-run"]);
+      assert.equal(retry.status, 0, retry.stdout + retry.stderr);
+      assert.match(retry.stdout, /reused/); assert.doesNotMatch(retry.stdout, /waiting for preview lock/);
+      assert.equal(f.requests.length, 0);
+    } finally {
+      if (existsSync(pidsFile)) {
+        const pids: { leader: number } = JSON.parse(readFileSync(pidsFile, "utf8"));
+        if (liveGroup(pids.leader).length) process.kill(-pids.leader, "SIGKILL");
+      }
+    }
+  });
+}
 
 test("dry run creates an isolated detached origin/dev worktree without deploying", async t => {
   const f = await fixture(t);
@@ -252,6 +351,16 @@ test("an HTTP response that never finishes is bounded by the verification deadli
   assert.equal(result.status, 1);
   assert.ok(result.stdout.endsWith(`RESULT: fail preview ${version} ${f.sha} live unreachable != built ${built}\n`));
   assert.ok(Date.now() - start < 5_000);
+});
+
+test("ASE_PREVIEW_TIMEOUT also caps a hanging network verification", async t => {
+  const f = await fixture(t); f.setLive(() => "hang");
+  const start = Date.now();
+  const result = await f.run([], { ASE_PREVIEW_TIMEOUT: "1s", KIT_PREVIEW_VERIFY_MS: "10000" });
+  assert.equal(result.status, 1);
+  assert.ok(result.stdout.endsWith(`RESULT: fail preview ${version} ${f.sha} live unreachable != built ${built}\n`), result.stdout);
+  assert.ok(Date.now() - start < 5_000);
+  assert.equal(spawnSync("flock", ["-n", f.env.KIT_PREVIEW_LOCK!, "true"]).status, 0);
 });
 
 test("deploy failure tails 30 lines, preserves the log and releases the lock", async t => {
