@@ -83,7 +83,7 @@ whose `status.json` says `done` just prints its saved report.
   CLI/model/effort and appending reports/logs after waiting for a live runner. The original
   no-brief resume behavior remains unchanged. Documented both commands.
 - Focused validation: `scripts/agents/unit.sh tests/kit-fix.test.ts tests/agent-resume.test.ts
-  tests/kit-review.test.ts` reports 60 passing tests, zero failures; the known
+  tests/kit-review.test.ts` reports 62 passing tests, zero failures; the known
   unit-summary counts error is ignored as instructed. All fake CLI/review scratch artifacts
   live in temporary repositories and are removed by test cleanup.
 - `npm run check` and `npm run lint` passed. Full `npm test` was intentionally excluded by this ticket's
@@ -100,4 +100,8 @@ whose `status.json` says `done` just prints its saved report.
   then release it; both cases fail before staging/committing and start no review. Additional
   tests prove checkout is blocked during the validation hook, hook-induced HEAD changes fail
   without publishing fixes, and the private index/locks are cleaned up.
+- Concurrent-resume follow-up: a brief-bearing caller that loses a generation claim waits for
+  that generation, then retries its own prompt; plain resumes retain their existing deduplication.
+  Codex and Claude regression tests force two different briefs to contend for generation 1 and
+  verify both prompts reach the saved session serially, with two appended reports and resumes.
 - Dogfood: (runner fills in)
