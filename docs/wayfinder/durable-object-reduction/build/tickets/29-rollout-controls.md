@@ -94,9 +94,12 @@ tickets 09/14/18; the guard is one captured-activation predicate).
 Round 2 (run by `kit pr` on PR #80, evidence `/home/ubulex/Projects/native-site-editor/.scratch/reviews/dor-29/20261019T014655Z`):
 no defects. Gaps left open: the same browser race test (reason above) and a successful Retry after the relay is switched back on
 (the transport's Retry reopens through the normal path tickets 14/03 already test; noted for ticket 30's rollout evidence).
+Round 3 (run by `kit pr` after the rebase, evidence `/home/ubulex/Projects/native-site-editor/.scratch/reviews/dor-29/20261019T022450Z`): no defects; the same two gaps.
 Landing: rebased over ticket 26 (one conflict in tests/native-save/server.ts: both added `/__demo/*` fixture controls; kept both).
 
 **Kit.**
 - RESULT: ok doctor 7/7 checks passed
 - RESULT: ok specs 1/1 passed (native-agent-quiet, 9)
 - RESULT: ok size boot 355 KB (±0 KB) vs dev@b7b0127, budget 355 KB
+
+Landed: PR #80, merged as f26279d (`RESULT: ok merged #80 f26279d`; kit pr: tier full, check, unit, lint, specs, review, CI ok).
