@@ -108,10 +108,11 @@ test("route redacts thrown runtime errors and non-OK internal response bodies", 
   for (const throws of [true, false]) {
     const environment: Env = { ASSETS: { fetch: async () => new Response("asset") }, MAINTENANCE_CLEANUP_TOKEN: token,
       SESSIONS: { idFromName: () => "", idFromString: value => value,
-        get: () => ({ fetch: async () => { if (throws) throw new Error(token); return new Response(token, { status: 503 }); } }) } };
+        get: () => ({ fetch: async () => { if (throws) throw new Error(token); return new Response(token, { status: 503, headers: { "Retry-After": "120" } }); } }) } };
     const result = await handle(new Request("https://editor.example/__maintenance/cleanup", { method: "POST",
       headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ id: id(1), expected: id(2), allowance: 1 }) }), environment);
     assert.equal(result.status, 503); assert.deepEqual(await result.json(), { error: "Cleanup unavailable" });
+    if (!throws) assert.equal(result.headers.get("Retry-After"), "120");
   }
 });
 
@@ -199,6 +200,7 @@ test("oversized objects and open sockets defer without deleting", async () => {
   assert.equal((await clean(large)).reason, "oversized"); assert.equal(large.calls.all, 0);
   const store = memory([["session", { kind: "user", expiresAt: 1 }]]);
   assert.equal((await clean(store, { sockets: 1 })).reason, "present"); assert.equal(store.calls.all, 0);
+  assert.equal((await clean(memory([]), { sockets: 1 })).reason, "present");
 });
 
 test("fingerprints detect generation, expiry, key and same-size nested grant changes", async () => {
@@ -433,4 +435,76 @@ test("CLI validates options, prints help and never echoes secrets on failure", a
     const failure = error as { stderr: Buffer };
     assert.ok(!failure.stderr.toString().includes(token)); assert.match(failure.stderr.toString(), /RESULT: failed durable-cleanup/);
   }
+});
+
+test("retained session and fence need one wake at their latest expiry; live lifecycle fences survive", async () => {
+  const store = memory([["session", { kind: "user", expiresAt: now + 200 }], ["agent-cleaned-until", now + 100],
+    ["repositoryCache:expired", { expiresAt: now - 1 }], ["oauth-pending", { old: { expiresAt: now - 1 } }]]);
+  const result = await clean(store, { allowance: 2 });
+  assert.equal(result.invocations, 2); assert.equal(store.alarm, now + 200);
+  assert.equal(store.map.has("repositoryCache:expired"), true); assert.equal(store.map.has("oauth-pending"), false);
+  assert.equal(result.keptKeys, store.map.size);
+  const fenced = memory([["agent-lifecycle", { generation: 7, cleaned: { [id(1)]: now + 100 } }]]);
+  assert.equal((await clean(fenced)).status, "kept"); assert.equal(fenced.calls.all, 0);
+});
+
+test("an empty pass can be verified later; old inventory never falsely reports reappearance", async t => {
+  const f = fixture(t);
+  const first = await runCleanup({ ...options, delete: true }, { ...f.ports, fetch: async () => reply() });
+  assert.equal(first.report.reappeared, 0); assert.equal(first.report.deferred, 0);
+  const empty = fixture(t, 0);
+  await runCleanup({ ...options, delete: true }, { ...empty.ports, fetch: async () => { throw new Error("No candidates"); } });
+  assert.ok(existsSync(empty.cleanupPath));
+  empty.manifest.scanTime = now + 10; empty.manifest.batches = [{ start: now + 10, end: now + 10, status: "complete", calls: 0 }]; empty.save();
+  assert.equal((await runCleanup({ ...options, verify: true }, empty.ports)).status, "complete");
+});
+
+test("quota without Retry-After still saves a cooldown and no repeated call is made", async t => {
+  const f = fixture(t); let calls = 0;
+  await runCleanup({ ...options, delete: true }, { ...f.ports, fetch: async () => { calls++; return new Response(null, { status: 429 }); } });
+  assert.equal(json(f.budgetPath).notBefore, now + 60_000);
+  assert.equal((await runCleanup({ ...options, delete: true }, { ...f.ports, fetch: async () => { calls++; return reply(); } })).status, "paused");
+  assert.equal(calls, 1);
+});
+
+test("hard crash keeps fail-closed locks; inspected lock removal resumes the reserved operation", async t => {
+  const f = fixture(t);
+  const code = `import { runCleanup } from './scripts/agents/durable-cleanup.mjs';
+    await runCleanup(${JSON.stringify({ ...options, delete: true })}, {
+      path: ${JSON.stringify(f.path)}, clock: () => ${now}, env: { MAINTENANCE_CLEANUP_TOKEN: 'x'.repeat(32) },
+      fetch: async () => process.exit(99)
+    });`;
+  assert.throws(() => execFileSync(process.execPath, ["--input-type=module", "-e", code], { stdio: "pipe" }));
+  assert.equal(json(f.budgetPath).count, 1); assert.equal(json(f.cleanupPath).objects[0].status, "reserved");
+  await assert.rejects(runCleanup({ ...options, delete: true }, f.ports), /Namespace budget is locked/);
+  // These test-owned locks have been inspected after the child exited. Production
+  // operators must do the same; neither tool silently steals another run's lock.
+  for (const path of [f.path, f.cleanupPath, f.budgetPath]) rmSync(`${path}.lock`);
+  let calls = 0;
+  await runCleanup({ ...options, delete: true }, { ...f.ports, fetch: async () => { calls++; return reply(); } });
+  assert.equal(calls, 1); assert.equal(json(f.budgetPath).count, 2);
+});
+
+test("reserved operation resumes against an empty rescan without losing its original cost bound", async t => {
+  const f = fixture(t); let calls = 0;
+  await runCleanup({ ...options, delete: true }, { ...f.ports, fetch: async () => { throw new Error("Lost response"); } });
+  f.manifest.objects[0] = { id: id(1), hasStoredData: false, status: "empty" }; f.save();
+  await runCleanup({ ...options, delete: true }, { ...f.ports, fetch: async (_url: string, init: RequestInit) => {
+    calls++; assert.deepEqual(JSON.parse(String(init.body)), { id: id(1), expected: id(1000), allowance: 1 });
+    return reply({ status: "kept", method: undefined, deletedKeys: 0, keptKeys: 0 });
+  } });
+  assert.equal(calls, 1); assert.equal(json(f.budgetPath).count, 2);
+});
+
+test("a fresh complete scan can prove a lost-response object is empty; pre-reserved command count survives", async t => {
+  const f = fixture(t);
+  f.manifest.objects[0].classification.records[0].commandsByState = { pending: 3, unknown: 0 };
+  // Legacy command totals are sanitized only on their owning hub record.
+  f.manifest.objects[0].classification.records[0].kind = "legacy-agent-hub"; f.save();
+  await runCleanup({ ...options, delete: true }, { ...f.ports, fetch: async () => { throw new Error("Lost response"); } });
+  f.manifest.objects[0] = { id: id(1), hasStoredData: false, status: "empty" };
+  f.manifest.scanTime = now + 10; f.manifest.batches = [{ start: now + 10, end: now + 11, calls: 0, status: "complete" }]; f.save();
+  const verified = await runCleanup({ ...options, verify: true }, f.ports);
+  assert.equal(verified.status, "complete"); assert.equal(verified.report.unresolvedCommands, 3);
+  assert.equal(verified.report.deleted, 0); assert.equal(verified.report.deferred, 0);
 });

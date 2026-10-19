@@ -68,7 +68,12 @@ async function maintenanceRoute(request: Request, sessions: Env["SESSIONS"], tok
       }),
     );
     // Internal failures must not forward runtime text supplied by the platform.
-    if (!result.ok) return response({ error: cleanup ? "Cleanup unavailable" : "Inventory unavailable" }, 503);
+    if (cleanup && !result.ok) {
+      const failed = response({ error: "Cleanup unavailable" }, 503);
+      const retry = result.headers.get("Retry-After");
+      if (retry) failed.headers.set("Retry-After", retry);
+      return failed;
+    }
     const headers = new Headers(result.headers);
     headers.set("Cache-Control", "no-store");
     return new Response(result.body, { status: result.status, headers });
@@ -223,9 +228,10 @@ async function classify(storage: InventoryStorage, now: number) {
       else if (!storedSession) entry.item.eligibility = "expired";
     }
     const metadata = items.filter(item => ["alarm-deadlines", "agent-lifecycle"].includes(item.kind));
-    if (items.filter(item => !metadata.includes(item)).every(item => item.eligibility === "expired"))
-      for (const item of metadata) if (item.eligibility !== "review" &&
-          !(item.kind === "agent-lifecycle" && (item.latestExpiresAt ?? 0) > now)) item.eligibility = "expired";
+    if (items.filter(item => !metadata.includes(item)).every(item => item.eligibility === "expired") &&
+        metadata.every(item => item.eligibility !== "review" &&
+          !(item.kind === "agent-lifecycle" && (item.latestExpiresAt ?? 0) > now)))
+      for (const item of metadata) item.eligibility = "expired";
   }
   const tuples = [...entries].sort((a, b) => a.key < b.key ? -1 : a.key > b.key ? 1 : 0).map(({ key, value, item }) => {
     const record = object(value);
@@ -292,7 +298,7 @@ export async function cleanupObject(request: Request, storage: CleanupStorage, o
   });
   if (current.oversized) return answer("deferred", "oversized");
   if (entries.some(({ item }) => item.kind === "unknown" || item.eligibility === "review")) return answer("review");
-  if (!entries.length) return answer("kept");
+  if (!entries.length) return options.sockets > 0 ? answer("deferred", "present") : answer("kept");
   if (fingerprint !== input.expected) return answer("deferred", "changed");
   if (options.sockets > 0) return answer("deferred", "present");
   if (entries.some(({ item }) => item.eligibility === "legacy-candidate")) return answer("deferred", "awaiting-browser-recovery");

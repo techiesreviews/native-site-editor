@@ -42,10 +42,11 @@ function loadCheckpoint(path, options) {
   const seen = new Set();
   fresh.objects = source.objects.map(entry => {
     if (!entry || !hex(entry.key) || seen.has(entry.key) || !hex(entry.expected) || !statuses.has(entry.status) ||
-        !integer(entry.deletedKeys) || !integer(entry.unresolvedCommands)) throw new Error("Invalid cleanup entry");
+        !integer(entry.deletedKeys) || !integer(entry.unresolvedCommands) ||
+        ![1, 2].includes(entry.allowance) || !integer(entry.keys) || entry.keys > 2048) throw new Error("Invalid cleanup entry");
     seen.add(entry.key);
     return { key: entry.key, expected: entry.expected, status: entry.status,
-      deletedKeys: entry.deletedKeys, unresolvedCommands: entry.unresolvedCommands,
+      deletedKeys: entry.deletedKeys, unresolvedCommands: entry.unresolvedCommands, allowance: entry.allowance, keys: entry.keys,
       ...(reasons.has(entry.reason) ? { reason: entry.reason } : {}) };
   });
   return fresh;
@@ -67,22 +68,30 @@ function reportFor(manifest, checkpoint, verification = false) {
   const report = { scanned: 0, classified: 0, deleted: 0, deferred: 0, unknown: 0, review: 0, inaccessible: 0,
     reappeared: 0, unresolvedCommands: 0, complete: false };
   const previous = new Map(checkpoint.objects.map(entry => [entry.key, entry]));
+  const seen = new Set();
   for (const entry of manifest.objects) {
-    const outcome = previous.get(identity(entry.id));
+    const key = identity(entry.id);
+    seen.add(key);
+    const outcome = previous.get(key);
     if (entry.status !== "pending") report.scanned++;
     if (entry.status === "classified") report.classified++;
     if (entry.status === "unknown") report.unknown++;
-    if (entry.status === "inaccessible") report.inaccessible++;
     const category = candidate(entry);
-    if (category === "review") report.review++;
-    else if (category !== "kept") report.deferred++;
-    if (outcome?.deletedKeys > 0 && entry.hasStoredData && entry.classification?.totalKeys !== 0) report.reappeared++;
+    if (category === "review" || (!verification && outcome?.status === "review")) report.review++;
+    if (entry.status === "inaccessible" || (!verification && outcome?.status === "inaccessible")) report.inaccessible++;
+    const handled = !verification && outcome?.expected === entry.classification?.fingerprint &&
+      ["deleted", "kept"].includes(outcome?.status);
+    if ((category !== "kept" && category !== "review" && !handled) || (!verification && outcome?.status === "reserved") ||
+        (!verification && ["deferred", "inaccessible", "review"].includes(outcome?.status))) report.deferred++;
+    // The source inventory predates the deletion. Only the subsequent scan can
+    // establish reappearance; an old manifest must never report false races.
+    if (verification && outcome?.deletedKeys > 0 && entry.hasStoredData && entry.classification?.totalKeys !== 0) report.reappeared++;
   }
   if (manifest.permission === "inaccessible") report.inaccessible++;
   for (const entry of checkpoint.objects) {
     if (entry.deletedKeys > 0) report.deleted++;
     report.unresolvedCommands += entry.unresolvedCommands;
-    if (entry.status === "reserved" || (!verification && ["inaccessible", "review", "deferred"].includes(entry.status))) report.deferred++;
+    if (!verification && !seen.has(entry.key) && entry.status === "reserved") report.deferred++;
   }
   return report;
 }
@@ -122,7 +131,7 @@ export async function runCleanup(input, ports = {}) {
       // A failed or reserved outcome must be reclassified in the fresh scan.
       const unresolved = checkpoint.objects.some(outcome => {
         const entry = manifest.objects.find(item => identity(item.id) === outcome.key);
-        return outcome.status === "reserved" || (entry && candidate(entry) !== "kept");
+        return entry && candidate(entry) !== "kept";
       });
       report.complete = Boolean(fresh && !unresolved && !report.deferred && !report.review && !report.unknown && !report.inaccessible && !report.reappeared);
       if (report.complete) { rmSync(cleanupPath); rmSync(path); }
@@ -144,6 +153,7 @@ export async function runCleanup(input, ports = {}) {
     const ledger = maintenanceBudget(budgetPath, options, manifest.budget, clock);
     ledger.save();
     const save = () => { checkpoint.lastBatch = Math.max(checkpoint.lastBatch, clock()); writeManifest(cleanupPath, checkpoint); };
+    save(); // An empty pass still needs a checkpoint for a later verified rescan.
     const fetcher = ports.fetch ?? ((...args) => fetch(...args));
     let status = "complete", processed = 0;
     // A reserved entry is retried first, using its original expected digest.
@@ -154,27 +164,35 @@ export async function runCleanup(input, ports = {}) {
       const key = identity(entry.id);
       let outcome = checkpoint.objects.find(item => item.key === key);
       const retry = outcome?.status === "reserved";
-      if (!retry && candidate(entry) !== "eligible") continue;
+      const category = candidate(entry);
+      if (retry && ["review", "oversized"].includes(category)) { status = "needs-reinventory"; break; }
+      if (!retry && category !== "eligible") continue;
       if (!retry && outcome && outcome.expected === entry.classification.fingerprint &&
           (["deleted", "kept", "review", "inaccessible"].includes(outcome.status) || outcome.reason)) continue;
       if (clock() < (ledger.budget.notBefore ?? 0)) { status = "paused"; break; }
       if (processed >= options.limit) { status = "limited"; break; }
       if (!batchMode && !checkpoint.canary.includes(key) && checkpoint.canary.length >= 10) { status = "canary-complete"; break; }
-      if (!batchMode && entry.classification?.totalKeys > 128) continue;
-      if (!entry.classification?.fingerprint) { status = "needs-reinventory"; break; }
+      const keys = retry ? outcome.keys : entry.classification.totalKeys;
+      if (!batchMode && keys > 128) continue;
       // At most one local retained-session/fence wake. Unbounded lifecycle chains
       // are refused by the handler before mutation; there are no nested fetches.
-      const allowance = entry.classification.records.some(record => record.eligibility === "preserve") ? 2 : 1;
+      const allowance = retry ? outcome.allowance :
+        entry.classification.records.some(record => record.eligibility === "preserve") ? 2 : 1;
       // Conservatively charge both terms, even when the reply chooses per-key.
-      const rows = accounting ? options.rowsPerObject + entry.classification.totalKeys * options.rowsPerKey : 0;
+      const rows = accounting ? options.rowsPerObject + keys * options.rowsPerKey : 0;
       if (!integer(rows) || !reserveMaintenance(ledger.budget, clock(), allowance, rows)) { status = "limited"; break; }
       ledger.save();
       if (!outcome) {
-        outcome = { key, expected: entry.classification.fingerprint, status: "reserved", deletedKeys: 0, unresolvedCommands: 0 };
+        outcome = { key, expected: entry.classification.fingerprint, status: "reserved", deletedKeys: 0, unresolvedCommands: 0, allowance, keys };
         checkpoint.objects.push(outcome);
       }
       if (!batchMode && !checkpoint.canary.includes(key)) checkpoint.canary.push(key);
-      if (!retry) outcome.expected = entry.classification.fingerprint;
+      if (!retry) {
+        outcome.expected = entry.classification.fingerprint; outcome.allowance = allowance; outcome.keys = keys;
+        const unresolved = entry.classification.records.reduce((sum, record) =>
+          sum + (record.commandsByState?.pending ?? 0) + (record.commandsByState?.unknown ?? 0), 0);
+        outcome.unresolvedCommands = Math.max(outcome.unresolvedCommands, unresolved);
+      }
       outcome.status = "reserved";
       delete outcome.reason;
       checkpoint.lastBatch = clock();
@@ -220,6 +238,7 @@ Without --delete, print a local plan with zero network calls. --delete runs at m
 ten canaries across runs (<=128 keys each). Batches require --canary-verified and
 preview row accounting. Never escalates automatically. --verify requires a newer,
 complete inventory --rescan and removes checkpoints only on passing verification.
+After a process crash, inspect stale .lock files before removing them and resuming.
 Secret: MAINTENANCE_CLEANUP_TOKEN (environment only).`;
 export function parseArgs(args) {
   const options = {};
@@ -230,9 +249,10 @@ export function parseArgs(args) {
   for (let index = 0; index < args.length; index++) {
     const flag = args[index];
     if (flag === "--help") return { help: true };
-    const field = flags[flag] ?? fields[flag];
+    const boolean = Object.hasOwn(flags, flag);
+    const field = boolean ? flags[flag] : Object.hasOwn(fields, flag) ? fields[flag] : undefined;
     if (!field || Object.hasOwn(options, field)) throw new Error("Invalid cleanup arguments; use --help");
-    if (flags[flag]) { options[field] = true; continue; }
+    if (boolean) { options[field] = true; continue; }
     if (!args[index + 1] || args[index + 1].startsWith("--")) throw new Error("Missing cleanup argument");
     const value = args[++index];
     options[field] = ["limit", "rowsPerKey", "rowsPerObject"].includes(field) ? Number(value) : value;
