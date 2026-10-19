@@ -41,7 +41,7 @@ own `runner-extras.md` (next to its map) wins where it differs.
 
 ## Build and tests
 
-Default for an editor ticket: start one resumable job, then wait once:
+Default for an editor ticket: start from a clean worktree, start one resumable job, then wait once:
 
 ```sh
 scripts/agents/kit bg slice-<NN> -- scripts/agents/kit slice --ticket <ticket> --builder sol --effort high
@@ -55,6 +55,9 @@ failed phase; failure output is limited to 15 lines. Logs and state live under
 `.scratch/kit-slice/<ticket-slug>/`. Rerun the same command after resolving a failed phase;
 finished phases are retained, and a moved HEAD triggers another review. `--no-pr` stops after
 a clean review; raising `--rounds` allows more fixes. Exhausted findings leave the PR unmerged.
+A fresh slice refuses staged, unstaged or untracked changes before creating state. Retries retain
+the builder's pending work. A queued slice with a moved local HEAD refuses `--no-pr`; its saved
+queue remains available for a normal wait retry.
 
 Manual fallback when `kit slice` cannot run:
 
