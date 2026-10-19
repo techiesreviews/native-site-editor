@@ -69,9 +69,9 @@ Other test files are written in full. Titles after each file identify the test t
 | Browser upload preservation | Bytes and drafts recover together | One record transaction; reload recovers drafts, receipt and bytes. | `tests/agent-media-commit.test.ts` — agent bytes complete before one records transaction, then publish without a second draft write; reload recovers all three |
 | Private immutable cache | Bounded memory; account/revision isolation | 32 MiB clean-text cap; account changes fence pending reads; required baselines stay pinned. | `tests/clean-source-cache.test.ts` — default cap is 32 MiB of UTF-16 text, including surrogate pairs; account changes and sign-out never return another account's entry or pending load |
 | Mixed old/new tabs | Refuse obsolete writers before DO work; no content mirrors | Obsolete routes: 0 DO calls. Stale tabs can still consume Worker HTTP traffic. | `tests/agent-cutover.test.ts` — every obsolete route rejects all methods before session, origin, account or DO work |
-| Legacy discovery / cleanup accounting | Cursor inventory; sanitized classification; preserve unknown and active records | Not locally measured by ticket 26. Unknown legacy occupancy prevents an aggregate storage claim. | Pending ticket 27 inventory evidence; no transport test proves completeness. |
-| Migration limits | 10-object canary; ≤100/batch; ≤1,000 maintenance DO calls/UTC day; accepted 5,000 Cloudflare written-row gate | Not locally measured. Separate migration run and preview accounting required; fake keys are not Cloudflare rows. | Pending ticket 27 and preview accounting. |
-| Independent controls / rollback | Pause relay, Watch, registration and cleanup independently; preserve manual work and data | Obsolete writers refused locally. Release controls and rollback deployment are not locally measured. | Release-lead runbook evidence required; no rollback performed here. |
+| Legacy discovery / cleanup accounting | Cursor inventory; sanitized classification; preserve unknown and active records | Not locally measured by ticket 26. Unknown legacy occupancy prevents an aggregate storage claim. | `tests/durable-inventory.test.ts` (ticket 27: paging, permissions, resume, redaction); `tests/durable-cleanup.test.ts` (ticket 28). Real inventory is [rollout.md](rollout.md) P7. |
+| Migration limits | 10-object canary; ≤100/batch; ≤1,000 maintenance DO calls/UTC day; accepted 5,000 Cloudflare written-row gate | Budgets enforced locally by the scripts; fake keys are not Cloudflare rows. Row accounting comes from the preview canary. | `tests/durable-cleanup.test.ts` — canary cap, batch gates, UTC-day calls and rows; preview canary: [rollout.md](rollout.md) P7. |
+| Independent controls / rollback | Pause relay, Watch, registration and cleanup independently; preserve manual work and data | All 32 switch combinations fail safely locally (0 DO work when paused). Rollback deployment is not locally measured. | `tests/agent-controls.test.ts` (ticket 29); release and rollback steps: [rollout.md](rollout.md) (P6, P8, Rollback). |
 
 ## Local checks (2026-10-19)
 
@@ -79,6 +79,9 @@ Recorded in the ticket's Done section with the kit RESULT lines. The budget file
 spec has nine cases.
 
 ## PREVIEW — release lead only
+
+The release order, Lex's production gate, switch defaults, rollback and the window comparison are in
+[rollout.md](rollout.md). Compare analytics windows with `scripts/agents/durable-report.mjs` (see rollout.md).
 
 Target: https://preview-editor.techies.tools. Every row is **not yet measured**.
 Sign in with an authorized test account. Use a disposable repository and branch.
