@@ -270,7 +270,7 @@ export function createAgentMenu(options: {
     if (at !== undefined && !live(at)) throw new Error("Remote agents were turned off.");
     if (action !== "revoke" && transportMode === "socket" && !workspaceChanged && ["quota", "paused", "reconnecting"].includes(transportState?.mode ?? "")) throw new AgentFailureError({ kind: "other" }, "Remote agents are paused.");
     // A failure counts only for the workspace that sent the request: not one opened since.
-    const source = transport;
+    const source = transport, sentFrom = { remote, activation, pinned };
     const report = (error: AgentFailureError) => {
       if (transport === source && (at === undefined || live(at))) failed(error);
       return error;
@@ -293,7 +293,9 @@ export function createAgentMenu(options: {
     try { result = JSON.parse(text); } catch { /* Cloudflare's 1027 answer is HTML. */ }
     if (!response.ok) {
       if (result?.code === "agents-paused") {
-        if (remote && (at === undefined || live(at))) {
+        // Only the activation that sent it may pause: a reply from before Turn on, or from an
+        // earlier activation or workspace, never stops a newer connection.
+        if (sentFrom.remote && remote && activation === sentFrom.activation && pinned === sentFrom.pinned && (at === undefined || live(at))) {
           stopAutomatic();
           transport?.stop(); transport = undefined;
           ownerPaused = true;
