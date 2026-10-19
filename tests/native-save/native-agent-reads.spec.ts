@@ -8,7 +8,6 @@ import { editorMounted } from "./drafts";
 test("all migrated MCP reads and the site resource answer from browser drafts; a reload refuses immediately", async ({ page, context, baseURL }) => {
   const commands: { id: string; command: { tool: string } }[] = [];
   const messages: string[] = [], agentHttp: string[] = [], errors: string[] = [];
-  let closed = false;
   page.on("pageerror", error => errors.push(error.message));
   page.on("websocket", socket => {
     if (!socket.url().includes("/api/agent/relay?")) return;
@@ -20,7 +19,6 @@ test("all migrated MCP reads and the site resource answer from browser drafts; a
         if (value.type === "command") commands.push(value);
       }
     });
-    socket.on("close", () => { closed = true; });
   });
   page.on("request", request => {
     const path = new URL(request.url()).pathname;
@@ -86,7 +84,8 @@ test("all migrated MCP reads and the site resource answer from browser drafts; a
     expect(agentHttp.filter(path => /\/(context|drafts|claim|ack)$/.test(path))).toEqual([]);
 
     await page.reload();
-    await expect.poll(() => closed).toBe(true);
+    // The reloaded tab has remote agents off: the hub sees no editor once the old socket goes.
+    await expect.poll(async () => JSON.parse(((await client.callTool({ name: "get_site", arguments: {} })).content as { text: string }[])[0].text).available).toBe(false);
     // Retain the grant: a reload stops this tab's remote agents, unlike Disconnect MCP which revokes it.
     const count = commands.length, started = Date.now();
     const unavailable = await client.callTool({ name: "read_file", arguments: { path: "index.html" } });
