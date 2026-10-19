@@ -187,11 +187,13 @@ test("live: waits are quiet by default; Watch holds one wait until Ask agent, sh
     expect(quiet.hint).toContain("Do not call wait_for_requests again on your own");
     expect(frames.map(frame => frame.tool)).toEqual(["wait_for_requests"]);
 
-    // The agent is connected; the menu offers Watch and says in plain words that agents stop.
+    // The agent is connected; the menu offers Watch, with no explainer lines and no Turn off.
     const action = page.locator(".agent-menu__action");
     await expect(action).toHaveText("Disconnect MCP");
     const watchText = page.locator(".agent-menu__watch-text");
-    await expect(watchText).toContainText("ask your agent to continue");
+    await expect(watchText).toBeHidden();
+    await expect(page.locator(".agent-menu__hint")).toBeHidden();
+    await expect(page.getByRole("button", { name: "Turn off", exact: true })).toHaveCount(0);
     await page.getByRole("button", { name: "Watch for requests" }).click();
     await expect(watchText).toContainText(/Watching for requests until .+ \((10:00|9:5\d) left, 25 waits left\)/);
     const watch = await record();
