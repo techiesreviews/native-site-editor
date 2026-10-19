@@ -46,11 +46,12 @@ test("remote agents off: startup, the agent menu and idle visible or hidden tabs
     await page.clock.runFor(65_000);
     expect(requests, "startup").toEqual([]);
 
-    // Opening the menu mounts it and says plainly that remote agents are off.
+    // Opening the menu mounts it, with remote agents off.
     await page.locator(".repository-menu__trigger").click();
     const action = page.locator(".agent-menu__action");
     await expect(action).toHaveText("Connect with MCP");
-    await expect(page.locator(".agent-menu__hint")).toHaveText("Remote agents are off in this tab. Choose Connect with MCP to turn them on.");
+    await expect(page.locator(".agent-menu")).toHaveAttribute("data-state", "off");
+    await expect(page.locator(".agent-menu__hint")).toBeHidden();
     await page.clock.runFor(65_000);
     await page.keyboard.press("Escape");
     expect(requests, "menu opening").toEqual([]);
@@ -66,20 +67,23 @@ test("remote agents off: startup, the agent menu and idle visible or hidden tabs
     await page.locator(".repository-menu__trigger").click();
     await action.click();
     await expect(action).toHaveText("Disconnect MCP", { timeout: 15_000 });
-    await expect(page.locator(".agent-menu__hint")).toContainText("If an agent you connected before stopped, ask it to continue.");
     expect(requests.filter((request) => request.path === "/api/agent/connect"), "no new token for a connected agent").toEqual([]);
     expect(requests.some((request) => request.path === "/api/agent/connections")).toBe(true);
     const idle = requests.length;
     await page.clock.runFor(65_000);
     expect(requests.slice(idle), "live idle has no polling or uploads").toEqual([]);
     expect(requests.some(request => /\/(context|drafts|claim|ack|pause)$/.test(request.path))).toBe(false);
-    await page.getByRole("button", { name: "Turn off", exact: true }).click();
+    // A reload turns them off again: remote agents stay off until Connect with MCP.
+    await page.reload();
+    await open(page, baseURL);
+    await page.locator(".repository-menu__trigger").click();
     await expect(action).toHaveText("Connect with MCP");
+    await page.keyboard.press("Escape");
     const after = requests.length;
     await page.clock.runFor(65_000);
     await setVisibility(page, "hidden");
     await page.clock.runFor(65_000);
-    expect(requests.slice(after), "after Turn off").toEqual([]);
+    expect(requests.slice(after), "after a reload").toEqual([]);
     expect((await client.listTools()).tools.length).toBeGreaterThan(0);
   } finally {
     await client.close();
@@ -106,7 +110,7 @@ test("an approval with another approval id or another repository or branch does 
   expect(calls).toBe(3);
   await page.locator(".repository-menu__trigger").click();
   await expect(page.locator(".agent-menu__action")).toHaveText("Connect with MCP");
-  await expect(page.locator(".agent-menu__hint")).toContainText("Remote agents are off in this tab.");
+  await expect(page.locator(".agent-menu")).toHaveAttribute("data-state", "off");
 });
 
 for (const receiver of [{ repo: "native-demo-user/other", branch: "main" }, { repo: "native-demo-user/native-demo", branch: "other" }]) {
@@ -122,11 +126,11 @@ for (const receiver of [{ repo: "native-demo-user/other", branch: "main" }, { re
     })), receiver);
     await page.clock.runFor(65_000);
     expect(requests).toEqual([]);
-    await expect(page.locator(".agent-menu__hint")).toContainText("Remote agents are off in this tab.");
+    await expect(page.locator(".agent-menu")).toHaveAttribute("data-state", "off");
   });
 }
 
-test("the exact approval enables its repository and branch even after a delayed token exchange, but Turn off declines it", async ({ page, baseURL }) => {
+test("the exact approval enables its repository and branch even after a delayed token exchange", async ({ page, baseURL }) => {
   const approval = { at: Date.now(), repo: "native-demo-user/native-demo", branch: "main", approval: "exact-approval" };
   let calls = 0;
   await page.route("**/api/agent/connections", async (route) => {
@@ -143,11 +147,6 @@ test("the exact approval enables its repository and branch even after a delayed 
   })), approval);
   await announce();
   await expect.poll(async () => { await page.clock.runFor(1000); return page.locator(".agent-menu__action").textContent(); }).toBe("Disconnect MCP");
-  await page.getByRole("button", { name: "Turn off", exact: true }).click();
-  await announce();
-  const before = calls;
-  await expect.poll(async () => { await page.clock.runFor(1000); return calls - before; }).toBe(3);
-  await expect(page.locator(".agent-menu__action")).toHaveText("Connect with MCP");
 });
 
 // Ticket 18: quiet waiting and explicit Watch over the fixture's real Worker, relay and socket.
@@ -350,7 +349,7 @@ test("relay paused by owner: one explicit attempt, one manual Retry, no reconnec
   await page.getByRole("button", { name: "Connect with MCP", exact: true }).click();
   await expect(hint).toHaveText("Remote agents are paused by the site owner.");
   await page.getByRole("button", { name: "Disconnect MCP", exact: true }).click();
-  await expect(hint).toContainText("Remote agents are off in this tab.");
+  await expect(page.locator(".agent-menu")).toHaveAttribute("data-state", "off");
   expect(requests.at(-1)).toEqual({ method: "POST", path: "/api/agent/revoke" });
   await page.request.post(`${baseURL}/__demo/agent-controls`, { data: { relay: true } });
   const remaining = await (await page.request.get(`${baseURL}/api/agent/connections`)).json() as { grants: { id: string }[] };
@@ -371,7 +370,7 @@ test("Watch paused by owner: the existing connection check updates the menu; qui
     const requests = agentRequests(page);
     const result = await client.callTool({ name: "wait_for_requests", arguments: {} });
     await expect(page.locator(".agent-menu__action")).toHaveText("Disconnect MCP", { timeout: 15_000 });
-    await expect(page.locator(".agent-menu__watch-text")).toHaveText("Watch is paused by the site owner. Agents still get requests when they ask.");
+    await expect(page.locator(".agent-menu__watch-text")).toHaveText("Watch is paused by the site owner.");
     await expect(page.getByRole("button", { name: "Watch for requests", exact: true })).toBeHidden();
     expect(result.isError).toBeFalsy();
     const value = JSON.parse((result.content as { text: string }[])[0].text);

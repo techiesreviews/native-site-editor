@@ -660,7 +660,7 @@ test("child selections omit template entry while root entry rejects stale or mis
 test("Make component refuses a page replacement made while it loads", async ({ page, baseURL }) => {
   await page.locator(".repository-menu__trigger").click();
   const { url, token } = await copyConnectionPrompt(page);
-  await expect(page.locator(".agent-menu__hint")).toContainText("Paste it into Claude, Codex");
+  await expect(page.locator(".agent-menu")).toHaveAttribute("data-state", "waiting");
   expect(url).toBe(`${baseURL}/mcp`);
   const client = new Client({ name: "components-review-agent", version: "1.0.0" });
   await client.connect(new StreamableHTTPClientTransport(new URL(url), { requestInit: { headers: { Authorization: `Bearer ${token}` } } }));

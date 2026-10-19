@@ -5,7 +5,7 @@ import { textHash } from "../../shared/agent";
 import { editorMounted } from "./drafts";
 
 // Default native-save fixture: real Worker, AgentRelay and browser socket, no socket routes/mocks.
-test("all migrated MCP reads and the site resource answer from browser drafts; Turn off refuses immediately", async ({ page, context, baseURL }) => {
+test("all migrated MCP reads and the site resource answer from browser drafts; a reload refuses immediately", async ({ page, context, baseURL }) => {
   const commands: { id: string; command: { tool: string } }[] = [];
   const messages: string[] = [], agentHttp: string[] = [], errors: string[] = [];
   let closed = false;
@@ -85,11 +85,9 @@ test("all migrated MCP reads and the site resource answer from browser drafts; T
     expect(new Set(commands.map(value => value.id)).size).toBe(commands.length);
     expect(agentHttp.filter(path => /\/(context|drafts|claim|ack)$/.test(path))).toEqual([]);
 
-    await page.locator(".repository-menu__trigger").click();
-    await page.getByRole("button", { name: "Turn off", exact: true }).click();
-    await expect(page.locator(".agent-menu")).toHaveAttribute("data-state", "off");
+    await page.reload();
     await expect.poll(() => closed).toBe(true);
-    // Retain the grant: Turn off stops this tab, unlike Disconnect MCP which revokes it.
+    // Retain the grant: a reload stops this tab's remote agents, unlike Disconnect MCP which revokes it.
     const count = commands.length, started = Date.now();
     const unavailable = await client.callTool({ name: "read_file", arguments: { path: "index.html" } });
     expect(unavailable.isError).toBe(true);
