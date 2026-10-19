@@ -101,3 +101,13 @@ objects keep the manifest and block a complete claim. A hard crash leaves fail-c
 **Kit.**
 - RESULT: ok doctor 7/7 checks passed
 - Boot size not run: worker and scripts only, no `src/` imports.
+
+Landed: PR #77, merged as c3e34ee (`RESULT: ok merged #77 c3e34ee`; kit pr: tier full, check, unit, lint, specs, review, CI ok).
+
+Follow-up (landing review round 3, gpt-6.1-sol, medium, read-only; evidence
+/home/ubulex/Projects/native-site-editor/.scratch/reviews/dor-28/20261019T005150Z; read after the merge): fixed 2 in a
+follow-up PR. P2: a `present` deferral was skipped forever when the fingerprint did not change (closing sockets writes
+nothing); the next explicit run now retries it within budget. P2: an expired sign-in with an unexpired `oauth-pending`
+ledger took the per-key path and stranded the ledger with no alarm; the ledger now follows an expired session (as the
+ordinary session alarm does), and an orphan ledger's expiry joins the retained-record wake (and its reserved wake day).
+New tests in tests/durable-cleanup.test.ts (47). Claude; focused unit.sh pass 67 fail 0, `npm run check` ok, eslint ok.

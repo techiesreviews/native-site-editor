@@ -33,7 +33,7 @@ function candidate(entry) {
 
 function retainedWakeDay(classification) {
   const times = classification.records.filter(record => record.eligibility === "preserve" &&
-    ["sign-in-session", "one-time-sign-in", "agent-grant", "legacy-agent-hub", "oauth-client", "oauth-request", "oauth-code", "record-fence"].includes(record.kind))
+    ["sign-in-session", "one-time-sign-in", "agent-grant", "legacy-agent-hub", "oauth-client", "oauth-request", "oauth-code", "record-fence", "oauth-pending"].includes(record.kind))
     .map(record => record.latestExpiresAt).filter(integer);
   return times.length ? utcDay(Math.max(...times)) : undefined;
 }
@@ -186,7 +186,7 @@ export async function runCleanup(input, ports = {}) {
       if (retry && ["review", "oversized"].includes(category)) { status = "needs-reinventory"; break; }
       if (!retry && category !== "eligible") continue;
       if (!retry && outcome && outcome.expected === entry.classification.fingerprint &&
-          (["deleted", "kept", "review", "inaccessible"].includes(outcome.status) || outcome.reason)) continue;
+          (["deleted", "kept", "review", "inaccessible"].includes(outcome.status) || (outcome.reason && outcome.reason !== "present"))) continue;
       if (clock() < (ledger.budget.notBefore ?? 0)) { status = "paused"; break; }
       if (processed >= options.limit) { status = "limited"; break; }
       if (!batchMode && !checkpoint.canary.includes(key) && checkpoint.canary.length >= 10) { status = "canary-complete"; break; }
