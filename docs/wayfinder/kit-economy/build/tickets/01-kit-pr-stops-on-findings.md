@@ -88,5 +88,15 @@ Durable Object build merged with findings still open.
   rejected TAP counts; explicitly selecting the spec reporter satisfies its summary format.
 - Review, commit and landing are left to the runner under the builder contract. Changes remain
   unstaged; no agents, commits, pushes or deployments were started.
+- Review round 1: after a behind refusal rebases to a new HEAD, `kit pr` now obtains a saved
+  covering review or runs `kit review --pr N` and applies the same findings gate before another
+  CI wait or merge. Waiver counts reflect the latest review. The behind-retry tests prove that a
+  clean second review merges and a finding in the second review exits 1 with its result path,
+  without another CI wait or merge.
+- Round 1 validation under Node 24.21.0: all 54 focused tests pass using the command above
+  (log `.scratch/unit/20261019T081435-2.log`); `npm run check`, `npm run lint` and
+  `git diff --check` pass. Doctor: `RESULT: ok doctor 7/7 checks passed`. `npm test` was omitted
+  because it runs the full unit suite, which this fix brief explicitly excludes. No new review
+  agent or landing was run, following the same brief.
 
 Dogfood: none yet (first ticket)
