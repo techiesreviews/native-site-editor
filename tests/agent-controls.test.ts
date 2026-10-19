@@ -79,7 +79,7 @@ test("all 32 combinations independently gate routes before DO work, retain grant
     for (const switches of combinations) {
       Object.assign(env, switches);
       const control = agentControls(env);
-      for (const [path, method] of [["/api/agent/relay", "GET"], ["/api/agent/connect", "POST"], ["/api/agent/rebind", "POST"], ["/api/agent/connections", "GET"], ["/auth/mcp/authorize", "GET"], ["/auth/mcp/authorize", "POST"], ["/auth/mcp/token", "POST"]]) {
+      for (const [path, method] of [["/api/agent/relay", "GET"], ["/api/agent/connect", "POST"], ["/api/agent/rebind", "POST"], ["/api/agent/connections", "GET"], ["/auth/mcp/register", "POST"], ["/auth/mcp/authorize", "GET"], ["/auth/mcp/authorize", "POST"], ["/auth/mcp/token", "POST"]]) {
         h.counters.reset();
         const response = await send(path, method, {}, false);
         if (!control.relay) {

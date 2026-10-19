@@ -11,16 +11,15 @@ const enabled = (value: string | undefined, fallback: boolean) =>
   value === undefined ? fallback : typeof value === "string" && value.trim().toLowerCase() === "on";
 
 export function agentControls(env: AgentControlEnv) {
-  const controls = {
+  return {
     relay: enabled(env.AGENT_RELAY, true),
     watch: enabled(env.AGENT_WATCH, true),
     lifecycleCleanup: enabled(env.AGENT_LIFECYCLE_CLEANUP, true),
     legacyMaintenance: enabled(env.AGENT_LEGACY_MAINTENANCE, false),
-    modernRegistration: enabled(env.AGENT_MODERN_REGISTRATION, false),
+    // Modern registration is not implemented yet: AGENT_MODERN_REGISTRATION is read by no code
+    // path, and even an explicit "on" stays off until that later change.
+    modernRegistration: false,
   };
-  // Modern registration is not implemented. Even an explicit "on" stays off.
-  controls.modernRegistration = false;
-  return controls;
 }
 
 export const AGENTS_PAUSED = "Remote agents are paused by the site owner.";
