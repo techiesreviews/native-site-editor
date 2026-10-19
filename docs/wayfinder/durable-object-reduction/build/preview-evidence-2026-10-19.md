@@ -1,6 +1,6 @@
 # Preview evidence, Gate 2 (2026-10-19)
 
-Raw notes behind the Gate 2 rows P1–P8 in [rollout.md](rollout.md). P7 (canary cleanup): phase A only (see below).
+Raw notes behind the Gate 2 rows P1–P8 in [rollout.md](rollout.md). P7 (canary cleanup): phases A and B (see below).
 Worker `native-site-editor-preview`, https://preview-editor.techies.tools. All times UTC.
 Release commit `58fd637b` (app code unchanged up to `eef16b5d`, which moved `dev` during the run: docs, scripts and tests only).
 Test site: `techiesreviews/Empty` (started with Starter site, published once at 13:46). Browser: T3 preview tab, default profile,
@@ -134,6 +134,12 @@ New connection 14:36:29 (new token; the old one was deleted in P4).
   grant was deliberately left untouched for it (no tab connected afterwards: a handshake would clear the pending cleanup). Re-check:
   object `1303eed4…` in `durableObjectsPeriodicGroups` should show rows written (about 6, as in P4 14:34) in the 20:49 minute, and
   the editor's Connect with MCP for Empty should then find no connected agent (`/api/agent/connections` grants 0 instead of 1).
+- **Re-checked 22:36–22:40 (P7 phase B): deleted at the next wake, 20:49 UTC.** Object `1303eed4…` (alarm 20:49:06 in the phase A
+  manifest) in 20:49: 1 request, 6 rows written, 8 read, 0.51 s active, the same 6 rows as P4's deletion at 14:34. In the same
+  minute object `1bd18a14…` wrote 3 rows (and 2 more at 20:59); that object is this grant's record (created at the 14:36
+  connection with 3 rows written, read by every probe 14:44–14:51). Nothing else touched either object 15:09–20:48. The 22:38
+  rescan found `1303eed4…` with 2 keys (lifecycle and workspace ledger, no alarm) and `1bd18a14…` with 0 keys; no agent grant is
+  left in the namespace. `/api/agent/connections` was not read (it needs a signed-in browser tab).
 
 ## P8 — rollback rehearsal
 
@@ -196,6 +202,46 @@ With 2 eligible objects it should run `70d8822f…` at 16:02 and stop at 17:02. 
 Since no `deleteAll` canary can exist, rollout step 5 cannot give bounds; but nothing is left for batches after the two canaries.
 `AGENT_LEGACY_MAINTENANCE` stays on and both secrets stay set until the lead finishes P7 (steps 7–8).
 
+## P7 phase B — canary 2, row accounting, rescan, verify, switch-off (versions `7deda2d0` → `aba83912`)
+
+**Canary 2** (job `p7-canaries`) 16:02:04: `RESULT: complete durable-cleanup {"scanned":129,"classified":105,"deleted":1,`
+`"deferred":0,"unknown":0,...,"complete":false}`; object `70d8822f…` (checkpoint key `5ce7f606…`) **kept**, 0 of 3 keys
+deleted, no method, wake day 2026-10-19. The 17:02 run stopped on a transient `wrangler whoami` failure; the lead ran it by hand
+at 17:06:05: nothing left (plan eligible 2, both handled), so the canary set is two objects. Both maintenance tokens were exposed
+in a session log at about 17:05 and rotated at once (`wrangler secret put`); they are now deleted (below).
+
+**Row accounting (rollout step 5).** Checkpoint `.scratch/durable-inventory/preview-7407bb63….cleanup.json` (main checkout);
+checkpoint keys are hashes, matched to objects by the `expected` fingerprint in the manifest. Rows from GraphQL
+`durableObjectsPeriodicGroups` per `objectId` and minute (sampled aggregates, not billing), read 22:36–22:40.
+
+| Canary | Object (checkpoint key) | Method, keys, retained wake | Canary hour rows written | Quiet hour (17) | Wake hour rows written |
+| --- | --- | --- | --- | --- | --- |
+| 1, 15:08:50 | `1bd18a14…` (`6a218001…`) | `keys`, 3 keys, 1 deleted; wake 2026-10-19 21:41:20 | hour 15: **2** (all in 15:08; 15:00 and 15:07 were reads with 0 rows) | 0 | hour 21: **0**; the 21:41 wake never ran. Hour 20: 5 (3 at 20:49, 2 at 20:59) from P6's cleanup deleting this grant record, not from the canary |
+| 2, 16:02:04 | `70d8822f…` (`5ce7f606…`) | kept, no method, 3 keys, 0 deleted; wake day 2026-10-19 (manifest alarm 15:31:04, before the canary) | hour 16: **0** (1 request, 1 row read) | 0 | not observed: 3 rows at 15:13 (before the canary, other traffic; why it was kept), nothing after 16:02 to 22:40; the rescan found it with 0 keys |
+
+- Quiet hour: the whole namespace had no analytics rows 17:00–19:59, so the quiet-hour subtraction is 0 for both objects.
+- Other traffic: hour 15 also had the read-only inventory touching all 129 objects and other users' objects writing rows; hour 16
+  had two other objects; hour 20 had P6's wake. Per-object numbers exclude them, but canary 1's wake could not be seen on its own.
+- **Result: no bound.** There is no `deleteAll` object, canary 1's wake never ran on its own, and canary 2 deleted nothing, so
+  `rowsPerObject`/`rowsPerKey` cannot be picked (step 5: "needs accounting"). **No batches were run, and none are needed**:
+  nothing eligible was left after the two canaries.
+
+**Rescan and verify (step 7).** `durable-inventory.mjs --rescan --limit 100`: 22:38:01 `limited` (100 scanned, 80 classified,
+20 empty); resumed 22:38:32 `paused` (132 / 108 / 24; the follow-up list below 100 hit code 10077 again); 22:38:49 **`complete`**:
+`RESULT: complete durable-inventory {"scanned":132,"classified":108,"deferred":0,"unknown":0,"inaccessible":0,"empty":24,`
+`"pending":0,"complete":true}`, permission confirmed, list complete. Records: agent lifecycle 4, workspace ledger 4, alarm
+deadlines 1, repository cache 3 (preserve), sign-in session 1, app config 1; no agent grant, legacy hub, expired cache or unknown
+record. `durable-cleanup.mjs --verify` 22:39:08:
+`RESULT: complete durable-cleanup {"scanned":132,"classified":108,"deleted":1,"deferred":0,"unknown":0,"review":0,`
+`"inaccessible":0,"reappeared":0,"unresolvedCommands":0,"complete":true}` — **verification passed**, nothing unknown or
+inaccessible. Maintenance calls charged on UTC day 2026-10-19: 217 (limit 1,000).
+
+**Switch-off (step 8).** `wrangler.preview.jsonc` restored (`git checkout`), clean tree at `b25ed9d0` (app code = `eef16b5d`),
+`npm run deploy:preview`: version `4e9dafa5-7bd7-42f4-849f-23cefe0cc013` (22:39:31), vars on, on, on, off, off.
+`wrangler secret delete MAINTENANCE_INVENTORY_TOKEN` → `05be07d5-2b78-4f15-be11-608611cb80b3` (22:39:59);
+`MAINTENANCE_CLEANUP_TOKEN` → `aba83912-7016-42bc-8305-b07a75c4f4c6` (22:40:02, **live**, same vars). `wrangler secret list`: neither
+secret left. `POST /__maintenance/inventory` → 404. The scratch secrets file, the helper and the job script were shredded.
+
 ## Product observations
 
 1. **Connected tab does not learn that Watch is back on** (minor). After `AGENT_WATCH` returns to "on", a tab that was connected
@@ -209,6 +255,14 @@ Since no `deleteAll` canary can exist, rollout step 5 cannot give bounds; but no
 4. **Inventory cannot list with `--limit` below 100** (P7). The Cloudflare object-list API rejects `limit` < 100 (400, code 10077),
    but `durable-inventory.mjs` asks for `max(10, limit − processed)`, so `--limit 10` (rollout step 2) never lists and every pass
    that tops up a page below 100 stops `paused`. Fix: always list 100 (or more) and keep extras pending; update step 2.
+
+## Known issues found during release checks
+
+1. `durable-inventory.mjs` with `--limit` below 100 fails: Cloudflare's object-list API answers 400, code 10077 ("limit is too
+   low"), and a pass that tops up a page below 100 stops `paused` (observation 4; rollout step 2 says `--limit 10`).
+2. A tab connected while Watch was off keeps "Watch is paused by the site owner." after Watch is back on, until reload
+   (observation 1).
+3. P2's hidden-tab half is not measurable in the T3 browser (`visibilityState` is pinned to "visible").
 
 ## Deployments made (all `npm run deploy:preview` from the worktree)
 
@@ -227,6 +281,10 @@ Since no `deleteAll` canary can exist, rollout step 5 cannot give bounds; but no
 | 15:00:22 | `fb3a29a8-7856-46cc-a5c9-eea8a1e7a837` | on, on, on, off, off | final, clean tree at `origin/dev` `eef16b5d` |
 | 15:05:53 | `1e720519-3d21-4f17-81ce-12359d1d1339` | on, on, on, on, off | P7 phase A, legacy maintenance on (from `9ec761d8`, app code = `eef16b5d`) |
 | 15:06:07 | `418fb9c6-a31d-4c21-92eb-eddcd7453929` | on, on, on, on, off | P7 secret `MAINTENANCE_INVENTORY_TOKEN` |
-| 15:06:10 | `7deda2d0-f1dc-4cba-802d-6be7eb413323` | on, on, on, on, off | P7 secret `MAINTENANCE_CLEANUP_TOKEN` (live) |
+| 15:06:10 | `7deda2d0-f1dc-4cba-802d-6be7eb413323` | on, on, on, on, off | P7 secret `MAINTENANCE_CLEANUP_TOKEN` |
+| ~17:05 | (secret changes) | on, on, on, on, off | P7 both maintenance secrets rotated after exposure |
+| 22:39:31 | `4e9dafa5-7bd7-42f4-849f-23cefe0cc013` | on, on, on, off, off | P7 end, clean tree `b25ed9d0` (app code = `eef16b5d`) |
+| 22:39:59 | `05be07d5-2b78-4f15-be11-608611cb80b3` | on, on, on, off, off | secret `MAINTENANCE_INVENTORY_TOKEN` deleted |
+| 22:40:02 | `aba83912-7016-42bc-8305-b07a75c4f4c6` | on, on, on, off, off | secret `MAINTENANCE_CLEANUP_TOKEN` deleted (live) |
 
 The switch changes were never committed.
