@@ -31,13 +31,13 @@ own `runner-extras.md` (next to its map) wins where it differs.
 
 ## Waiting
 
-- Long jobs (`agent.sh build`, `kit review`, `kit pr`, `kit specs`, full suites): Claude runs them with
-  `run_in_background: true` and waits for the notice; Codex runs them in the foreground or its background terminal.
-- To wait on your own job, process, log or CI run, use `scripts/agents/kit wait pid|output|ci`.
-  Never write `until … sleep` or `pgrep -f` loops; the Bash hook rejects them.
-- **After an app restart** your jobs are gone: `scripts/agents/kit status [map]` shows what landed and which
-  PRs are open; `scripts/agents/agent.sh --resume <out-dir>` continues a builder run (or waits on a live one);
-  rerunning `kit pr --ticket <ticket>` finishes a landing, reusing the open PR and the saved review.
+- Start long jobs with `scripts/agents/kit bg <name> -- <command…>`; their group, records and log in `.scratch/kit-jobs/<name>/` survive app exit.
+- Wait with `scripts/agents/kit wait job <name> --timeout 2h`. Claude runs them with `run_in_background: true`: one notice instead of many 9-minute check-ins.
+  Codex runs them in the foreground or its background terminal. Timeout 124 means still running; wait again.
+- `kit bg --list` shows state and log paths; `kit bg --stop <name>` stops only that group. Other owned processes, logs or CI: `scripts/agents/kit wait pid|output|ci`.
+  Never look up pids with `ps | grep`; never write `until … sleep` or `pgrep -f` loops.
+- **After an app restart**, reconnect with `kit bg --list` and `kit wait job <name>` first; `scripts/agents/kit status [map]` shows landed work and open PRs.
+  `scripts/agents/agent.sh --resume <out-dir>` continues a builder; rerunning `kit pr --ticket <ticket>` reuses the open PR and saved review.
 
 ## Build and tests
 
