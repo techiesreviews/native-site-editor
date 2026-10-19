@@ -104,4 +104,9 @@ whose `status.json` says `done` just prints its saved report.
   that generation, then retries its own prompt; plain resumes retain their existing deduplication.
   Codex and Claude regression tests force two different briefs to contend for generation 1 and
   verify both prompts reach the saved session serially, with two appended reports and resumes.
-- Dogfood: (runner fills in)
+- Reviews (Sol gpt-6.1-sol, medium): 20261019T084039Z (1 standards defect, branch/HEAD race) → fix round 1;
+  20261019T085003Z (1 spec defect, concurrent brief resumes) → fix round 2; 20261019T085329Z clean.
+  Declined: none.
+- Dogfood: the runner used its own `kit fix` for both review rounds (commits 19dd3d66, 1c36de24):
+  each round resumed the Sol builder session, committed "Review fixes round N" with the Sol
+  co-author line and re-reviewed in one command; no hand edits. `agent.sh --resume --brief` worked through it.
