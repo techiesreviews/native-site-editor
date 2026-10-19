@@ -162,3 +162,8 @@ sentences, the severity scale, follow-ups in the PR and the ticket's Done, `--wa
 - Dogfood: this builder received the slice's bounded Files and validation contract. Kit doctor and
   focused unit selection helped exercise the runner changes locally; review and landing remain
   the outer slice's responsibility under the builder contract.
+
+### Follow-ups
+
+- Validation gaps (gap): Add a regression that rejects the follow-up commit through a pre-commit hook, removes the rejection, then reruns `kit pr --ticket`. Assert recovery succeeds, ti
+
