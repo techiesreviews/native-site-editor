@@ -46,7 +46,10 @@ function digest(spec, test, titles, { logPath, entries }) {
     // Playwright labels include value, array, length and other matcher-specific suffixes.
     const assertion = /^((expected|received)(?:\s+[^:]+)?):\s*(.*)$/i.exec(text);
     const value = assertion ? short(assertion[3]) : undefined;
-    return { text: assertion ? `${assertion[1]}: ${value}` : text, name: assertion?.[2].toLowerCase(), value };
+    return {
+      text: assertion ? `${assertion[1]}: ${value}` : text,
+      name: assertion?.[2].toLowerCase(), label: assertion?.[1].toLowerCase(), value,
+    };
   });
   const known = knownFailure(spec, entries);
   const label = known ? ` [${known.status === "flaky" ? "known flaky" : "known failing on dev"}]` : "";
@@ -54,7 +57,8 @@ function digest(spec, test, titles, { logPath, entries }) {
   const lines = [`${oneLine(spec.file)}:${spec.line ?? 0}${project} ${oneLine([...titles, spec.title].filter(Boolean).join(" > "))}${label}`];
   lines.push(...messageLines.slice(0, 3).map(line => `  ${line.text}`));
   for (const name of ["expected", "received"]) {
-    const value = messageLines.find(line => line.name === name)?.value ?? diff.values[name];
+    // Property paths identify the assertion target; they are not assertion values.
+    const value = diff.values[name] ?? messageLines.find(line => line.name === name && line.label !== `${name} path`)?.value;
     if (value !== undefined) lines.push(`  ${name}: ${value}`);
   }
   const frame = appFrame(error?.stack ?? message);

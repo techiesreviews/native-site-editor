@@ -56,6 +56,7 @@ results JSON and `error-context.md` files (up to 300 KB) to find one assertion.
 
 ## Done (2026-10-19)
 
+- Round 5: toHaveProperty expected/received (lead-run fresh build)
 - Behaviour: added the pure `specsDigest()` report formatter and printed it after spec outcomes only
   on failure. Each failed test gets at most 10 lines: ANSI-free message, expected/received values
   capped at 160 characters, first app/test frame, known-failure label, and log/context/trace paths.

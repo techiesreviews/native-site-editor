@@ -1,0 +1,25 @@
+{
+  "suites": [{
+    "specs": [{
+      "file": "tests/native-save/label.spec.ts",
+      "line": 54,
+      "title": "matches the property value",
+      "tests": [{
+        "projectName": "native-save",
+        "status": "unexpected",
+        "expectedStatus": "passed",
+        "results": [{
+          "status": "failed",
+          "errors": [{
+            "message": "expect(received).toHaveProperty(path, value)\n\nExpected path: \"a\"\n\nExpected value: 3\nReceived value: 2",
+            "stack": "Error: expect(received).toHaveProperty(path, value)\n    at /repo/tests/native-save/label.spec.ts:54:7"
+          }],
+          "attachments": [
+            { "name": "error-context", "path": "/artifacts/error-context.md" },
+            { "name": "trace", "path": "/artifacts/trace.zip" }
+          ]
+        }]
+      }]
+    }]
+  }]
+}
