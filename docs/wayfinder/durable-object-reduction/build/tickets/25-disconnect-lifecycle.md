@@ -100,3 +100,15 @@ deadline). Pre-ticket-21 grants are in no ledger, so this cleanup cannot see the
 - RESULT: ok doctor 7/7 checks passed
 - RESULT: ok specs none affected
 - Boot size not run: worker-only change, no `src/` imports.
+
+Landed: PR #75, merged as 18799f2 (`RESULT: ok merged #75 18799f2`; kit pr: tier full, check, unit, lint, specs, review, CI ok).
+
+Follow-up (landing review round 3, gpt-6.1-sol, medium, read-only; evidence
+/home/ubulex/Projects/native-site-editor/.scratch/reviews/dor-25/20261018T235339Z; read after the merge): fixed 2 in a
+follow-up PR. P1: a rebind whose final source check failed (503) after source cleanup skipped compensation and left the token
+working; an unanswered check now counts as cleaned and compensates hub-first. P2: admission charged only the existing
+lifecycle record, so presence and the fence could add bytes after an exact-cap admission; admission now reserves the
+lifecycle record at its widest plus its deadline table, and each reservation pays the tombstone, record fence and
+"final"→"cleaned" growth a cleanup would add. New tests in tests/agent-lifecycle.test.ts (22): exact 64 KiB fill then fence
+keeps retained metadata within 64 KiB (66,132 bytes without the fix); failed final source check → 401. Both mutation checked.
+Claude; focused unit.sh pass 138 fail 0, `npm run check` ok, eslint ok.

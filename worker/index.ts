@@ -10,7 +10,7 @@ import type { GitHubAppConfig } from "./owner-setup";
 import { AgentRelay, readRelayBody } from "./agent-relay";
 import { accountMetadata, METADATA_KEY, METADATA_ROUTE, type Ledger, type MetadataAction } from "./agent-metadata";
 import { workspaceKey } from "../shared/agent-command";
-import { AgentLifecycle, AlarmDeadlines, LIFECYCLE_KEY } from "./agent-lifecycle";
+import { AgentLifecycle, AlarmDeadlines, CLEANUP_GROWTH_BYTES, LIFECYCLE_KEY } from "./agent-lifecycle";
 
 interface RepositoryCacheChunks { chunks: number }
 const repositoryChunkPrefix = "repositoryCache:";
@@ -161,6 +161,8 @@ export class SessionStore extends DurableObject {
           return Response.json({ allowed: false, reason: "cleaned", entries: [] });
         // Cleanup tombstones are workspace agent metadata too (decision 05: 64 KiB in total).
         const lifecycleBytes = action?.action === "reserve" ? await this.lifecycle.admissionBytes() : 0;
+        // Each reservation also pays for the tombstone and record fence a cleanup would leave.
+        if (action?.action === "reserve" && Number.isSafeInteger(action.bytes) && action.bytes > 0) action.bytes += CLEANUP_GROWTH_BYTES;
         const result = await storage.transaction(transaction => accountMetadata(transaction, action, reservedAt,
           { connections: 5, bytes: 64 * 1024 - lifecycleBytes }));
         if (result.allowed && action.action === "reserve") await this.lifecycle.presence(this.eligible(action.workspace), false, reservedAt);

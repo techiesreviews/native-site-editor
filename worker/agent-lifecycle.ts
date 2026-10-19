@@ -9,7 +9,13 @@ export const TOMBSTONE_AFTER_DELETION = 10 * 60_000;
 const utf8Bytes = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).byteLength;
 /** What a cleaned grant's own object keeps meanwhile (its PUT fence and deadline table),
  * measured at its widest; charged per live tombstone (decision 05 counts separate objects). */
+/** A cleanup turns each ledger entry into a tombstone (64-hex id and expiry) and a record
+ * fence; every reservation pays that growth in advance. */
+export const TOMBSTONE_GROWTH_BYTES = utf8Bytes({ ["f".repeat(64)]: Number.MAX_SAFE_INTEGER }) +
+  // The ledger entry's own state grows from "final" to "cleaned".
+  utf8Bytes("cleaned") - utf8Bytes("final");
 export const RECORD_FENCE_BYTES = utf8Bytes({ "agent-cleaned-until": Number.MAX_SAFE_INTEGER, "alarm-deadlines": { session: Number.MAX_SAFE_INTEGER } });
+export const CLEANUP_GROWTH_BYTES = TOMBSTONE_GROWTH_BYTES + RECORD_FENCE_BYTES;
 export type Deadlines = Partial<Record<"session" | "registration" | "agent-cleanup", number>>;
 export interface LifecycleRecord {
   generation: number;
@@ -90,8 +96,12 @@ export class AgentLifecycle {
     const current = await this.load();
     const live = Object.fromEntries(Object.entries(current.cleaned).filter(([, expiry]) => expiry > this.now()));
     if (Object.keys(live).length !== Object.keys(current.cleaned).length) await this.save({ ...current, cleaned: live });
-    if ((await this.storage.get(LIFECYCLE_KEY)) === undefined) return 0;
-    return utf8Bytes(await this.load()) + Object.keys(live).length * RECORD_FENCE_BYTES;
+    // Reserve the record at its widest (a pending deadline, a cleaned generation) and the
+    // agent-cleanup deadline table, whether or not they exist yet: presence() may write
+    // them after this admission.
+    const max = Number.MAX_SAFE_INTEGER;
+    const widest = { ...current, cleaned: live, generation: max, disconnectDeadline: max, cleanedGeneration: max, cleanupPending: true };
+    return utf8Bytes(widest) + utf8Bytes({ [DEADLINES_KEY]: { "agent-cleanup": max } }) + Object.keys(live).length * RECORD_FENCE_BYTES;
   }
   async complete(generation: number, deleted: string[] = []) {
     const loaded = await this.load();

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { AgentLifecycle, AlarmDeadlines, DEADLINES_KEY, DISCONNECT_GRACE, LIFECYCLE_KEY, TOMBSTONE_AFTER_DELETION, RECORD_FENCE_BYTES, type LifecycleRecord } from "../worker/agent-lifecycle";
+import { AgentLifecycle, AlarmDeadlines, DEADLINES_KEY, DISCONNECT_GRACE, LIFECYCLE_KEY, TOMBSTONE_AFTER_DELETION, RECORD_FENCE_BYTES, CLEANUP_GROWTH_BYTES, type LifecycleRecord } from "../worker/agent-lifecycle";
 import { AgentRelay, relayObjectName, type RelayScope, type RelaySocket } from "../worker/agent-relay";
 import { createGrant, getGrant, getHub, rebindGrant, revokeGrant } from "../worker/agent-context";
 import { METADATA_KEY, METADATA_ROUTE, type Ledger } from "../worker/agent-metadata";
@@ -10,6 +10,7 @@ import { origin, repo, signIn } from "./mcp-harness";
 import { workspaceKey } from "../shared/agent-command";
 
 const workspace = { account: "lex", repoId: repo.id, branch: "main" };
+const size = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).byteLength;
 const handshake = (scope: RelayScope) => JSON.stringify({ type: "handshake", ...scope, owner: true });
 function editor(tabId = "tab", generation = 1) {
   const scope = { workspace, tabId, generation };
@@ -542,7 +543,9 @@ test("cleanup tombstones count toward the 64 KiB workspace budget, shrink after 
     assert.ok(fence !== undefined && fence <= h.now() + TOMBSTONE_AFTER_DELETION, "the record object's PUT fence is as short-lived");
     // Admission charges each live tombstone for its record object's fence too.
     const lifecycle = new AgentLifecycle(h.relayStorage as never, new AlarmDeadlines(h.relayStorage as never), h.now);
-    assert.equal(await lifecycle.admissionBytes(), new TextEncoder().encode(JSON.stringify(after)).byteLength + RECORD_FENCE_BYTES);
+    const max = Number.MAX_SAFE_INTEGER;
+    const widest = { ...after, generation: max, disconnectDeadline: max, cleanedGeneration: max, cleanupPending: true };
+    assert.equal(await lifecycle.admissionBytes(), size(widest) + size({ [DEADLINES_KEY]: { "agent-cleanup": max } }) + RECORD_FENCE_BYTES);
     // Fill the lifecycle record with live tombstones: admission must count them before allocating.
     const many = Object.fromEntries(Array.from({ length: 900 }, (_, n) => [n.toString(16).padStart(64, "0"), h.now() + 60_000]));
     await h.relayStorage.put(LIFECYCLE_KEY, { ...after, cleaned: { ...after.cleaned, ...many } });
@@ -560,4 +563,78 @@ test("cleanup tombstones count toward the 64 KiB workspace budget, shrink after 
     assert.equal((await refuse()).allowed, true);
     assert.deepEqual(Object.keys((await h.record())!.cleaned), []);
   } finally { await h.dispose(); }
+});
+
+test("a workspace filled to exactly 64 KiB stays within it after the disconnect fence writes lifecycle, deadline and tombstones", async () => {
+  const h = await fixture();
+  const get = h.namespace.get;
+  let release!: () => void, entered!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  try {
+    const reserve = async (id: string, bytes: number) => {
+      const response = await h.namespace.get(h.name).fetch(new Request(`https://session.internal${METADATA_ROUTE}`, {
+        method: "POST", body: JSON.stringify({ action: "reserve", workspace: workspaceKey(workspace), id, generation: 1,
+          sessionId: h.sessionId, bytes, expiresAt: h.input.expiresAt }) }));
+      return ((await response.json()) as { allowed: boolean }).allowed;
+    };
+    const probe = "e".repeat(64);
+    const releaseProbe = () => h.namespace.get(h.name).fetch(new Request(`https://session.internal${METADATA_ROUTE}`, {
+      method: "POST", body: JSON.stringify({ action: "release", workspace: workspaceKey(workspace), id: probe, generation: 1 }) }));
+    for (const id of ["a", "b", "c"].map(letter => letter.repeat(64))) assert.ok(await reserve(id, 15_000));
+    let low = 1, high = 64 * 1024;
+    while (low < high) {
+      const mid = Math.ceil((low + high) / 2);
+      if (await reserve(probe, mid)) { await releaseProbe(); low = mid; } else high = mid - 1;
+    }
+    assert.equal(await reserve(probe, low + 1), false, "one byte more is refused for its size");
+    assert.ok(await reserve("d".repeat(64), low), "the last reservation lands exactly on the boundary");
+    h.namespace.get = name => ({ async fetch(request) {
+      if (String(name).startsWith("agent:") && request.method === "GET") { entered(); await held; }
+      return get(name).fetch(request);
+    } });
+    await h.close(h.name, h.editors[0]); h.advance(DISCONNECT_GRACE);
+    const alarm = h.alarm(h.name).catch(() => undefined);
+    await started;
+    const ledger = (await h.ledger())!;
+    assert.ok(ledger.entries.every(entry => entry.state === "cleaned"));
+    const record = (await h.record())!;
+    const tombstones = Object.keys(record.cleaned).length;
+    // External record bytes as requested (the fixture grant's request is its entry less the growth charge).
+    const grantEntry = ledger.entries.find(entry => entry.id === h.grant.id)!;
+    const external = 3 * 15_000 + low + grantEntry.bytes - CLEANUP_GROWTH_BYTES;
+    const deadlines = size({ [DEADLINES_KEY]: await h.relayStorage.get(DEADLINES_KEY) });
+    const physical = size(ledger) + external + size(record) + deadlines + tombstones * RECORD_FENCE_BYTES;
+    assert.ok(physical <= 64 * 1024, `retained agent metadata ${physical} bytes stays within 64 KiB`);
+    release(); await alarm;
+  } finally { release(); h.namespace.get = get; await h.dispose(); }
+});
+
+test("rebind whose final source check fails after source cleanup compensates instead of leaving the token authorized", async () => {
+  const h = await fixture();
+  const get = h.namespace.get;
+  const destination = await relayObjectName({ ...workspace, branch: "other" });
+  let release!: () => void, entered!: () => void, sourceDown = false;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  try {
+    const previous = await getGrant(h.env, h.grant.id);
+    h.namespace.get = name => ({ async fetch(request) {
+      const path = new URL(request.url).pathname;
+      if (String(name) === destination && path === METADATA_ROUTE && (await request.clone().json() as { action?: string }).action === "finalize") { entered(); await held; }
+      if (sourceDown && String(name) === h.name && path === METADATA_ROUTE) return new Response(null, { status: 503 });
+      return get(name).fetch(request);
+    } });
+    const rebinding = rebindGrant(h.env, h.grant.id, previous, { repoId: repo.id, repo: repo.full_name, branch: "other" });
+    const rejected = assert.rejects(rebinding);
+    await started;
+    await h.close(h.name, h.editors[0]); h.advance(DISCONNECT_GRACE); await h.alarm(h.name);
+    sourceDown = true;
+    release(); await rejected;
+    const rpc = await h.worker.dispatchFetch(origin + "/mcp", { method: "POST", headers: {
+      Authorization: `Bearer ${h.grant.token}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream",
+    }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }) });
+    assert.equal(rpc.status, 401, "an unanswered final check never leaves the destination generation authorized");
+    assert.equal((await getHub(h.env, h.sessionId))!.grants.some(grant => grant.id === h.grant.id), false);
+  } finally { release(); h.namespace.get = get; await h.dispose(); }
 });
