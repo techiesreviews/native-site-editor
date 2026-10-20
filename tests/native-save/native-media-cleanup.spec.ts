@@ -112,7 +112,7 @@ test("using the unused file on a page takes it out of the count", async ({ page,
     editor.replaceActiveRange({ path: "index.html", start: at, end: at, expected: "", text: '<img src="/images/spare.svg" alt="Spare" width="40" height="40">' });
   });
   await expectCount(page, 1);
-  // With nothing to suggest, Clean up in More says why.
+  // With nothing to suggest, Clean up in More is greyed out.
   await page.evaluate(async () => {
     const editor = await import("/src/components/code-editor.ts");
     const model = editor.getMountedSource("index.html")!;
@@ -123,7 +123,9 @@ test("using the unused file on a page takes it out of the count", async ({ page,
   await pane(page).getByRole("button", { name: "More", exact: true }).click();
   const item = page.getByRole("menuitem", { name: /^Clean up/ });
   await expect(item).toHaveAttribute("aria-disabled", "true");
-  await expect(item).toHaveAccessibleDescription("Nothing to clean up: every file is used or marked Always keep.");
+  // Greyed out with no note (Lex, 2026-10-20).
+  await expect(item).toHaveAccessibleDescription("");
+  await expect(item.locator(".row-menu__note")).toHaveCount(0);
 });
 
 test("removing a used file warns with its page, then allows; after publishing, Recently removed restores it and the page shows it again", async ({ page, baseURL }) => {

@@ -1,7 +1,7 @@
 import { button, node } from "../ui/dom";
 import { input } from "./media-library-fields";
 import { icon } from "../icons";
-import { cleanUpMenuItem } from "./media-clean-up-menu";
+import { cleanUpMenuItem, nothingToCleanUp } from "./media-clean-up-menu";
 import type { MediaCleanUpKind } from "./media-clean-up";
 import {
   bytesText, cleanedMessage, cleanUpGroupNames, cleanUpLimit, cleanUpTitle, groupLine, itemLine, keepSelected,
@@ -22,6 +22,8 @@ export interface CleanUpHost extends LibrarySheetContext {
 }
 
 const checking = "Checking which files are used again. Removing waits until it is done.";
+/** Why the screen has nothing to review: More's greyed-out item has no note when nothing is suggested. */
+const emptyReason = (disabled: string | true | undefined) => disabled === true ? nothingToCleanUp : disabled ?? "";
 
 type Phase = { at: "groups" } | { at: "review"; kind: MediaCleanUpKind } | { at: "confirm"; kind: MediaCleanUpKind };
 
@@ -98,7 +100,7 @@ export function showCleanUp(sheet: LibrarySheet, h: CleanUpHost) {
         notice.append(node("span", "", cleanedMessage(removed).split(". ")[0] + "."), again);
         element.append(notice);
       }
-      if (!ready) element.append(node("p", "media-check__empty", live ? cleanUpMenuItem(live).disabled ?? "" : "Still checking which files are used."));
+      if (!ready) element.append(node("p", "media-check__empty", live ? emptyReason(cleanUpMenuItem(live).disabled) : "Still checking which files are used."));
       else {
         const list = node("ul", "media-cleanup__groups");
         for (const group of live.groups) {
