@@ -20,6 +20,8 @@ Change:
 - **An image the editor makes for an empty image slot uses the placeholder too**: `fillMarkup`'s image case and the default card template in `cards.ts`, with the placeholder file created in the same step when missing. Each caller that writes such markup must carry the `creates` (guarded edit) so the file and the page change are one step. `card-swap.ts`'s `src=""` is overwritten at once with the kept image; leave it.
 - `worker/site-conventions.ts`: if the conventions tell agents how to add an image without a real one, say to use `/images/placeholder.svg` (copy into the starter's AGENTS.md and refresh the fixture if the chapter changes); otherwise no change.
 
+**Lead decision (2026-10-20, after the first build run):** the rail's Media block is not only images; Add → Media's picker also placed videos, audio, PDFs and online videos. The placeholder now stands for any media: the Media block (click and drop, on a page) always inserts the placeholder image first, and **Replace on a placeholder image opens the Media picker for any media** (picture, video, audio, download, online video), placing it in the placeholder's place as one Undo step, as Add → Media placed it before. Other pictures keep today's Replace rule (a picture spot takes a picture or a video). The `native-media-video.spec.ts` cases that placed media through Add → Media now go Media block → placeholder → Replace → pick, and still check the same outcome (player, still, card, one Undo for the replacement). Keep the edits already in the worktree; continue from them.
+
 ## Files
 
 Read the whole ticket (What above) first.
