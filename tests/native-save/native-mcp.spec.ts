@@ -161,6 +161,34 @@ test("make_component drafts files and whole-element slots in one undo step", { t
   }
 });
 
+test("make_component on the page's plain header writes its component and changes this page only", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const source = readFileSync(resolve("tests/fixtures/native-make-component-bands.html"), "utf8");
+  expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: indexPath, content: source } })).ok()).toBe(true);
+  await page.reload();
+  await expect(frame(page).getByRole("banner")).toBeVisible({ timeout: 30_000 });
+  const client = await connectAgent(page, baseURL);
+  const call = async (name: string, args: Record<string, unknown>) => {
+    const response = await client.callTool({ name, arguments: args });
+    expect(response.isError, JSON.stringify(response)).toBeFalsy();
+    return result(response);
+  };
+  try {
+    const before = (await call("read_file", { path: "about/index.html" })).content;
+    const home = await call("get_page", { page: "/" });
+    // The plain header is the fixture's first body child, element 0.
+    const made = await call("make_component", { page: "/", element: "0", tag: "site-page-header", expectedHash: home.hash });
+    expect(made.state).toBe("applied");
+    expect((await call("read_file", { path: "components/site-page-header/site-page-header.html" })).content).toContain("<header");
+    expect((await call("read_file", { path: "components/site-page-header/site-page-header.css" })).content).toContain(":host");
+    expect((await call("read_file", { path: indexPath })).content).toContain("<site-page-header>");
+    expect((await call("read_file", { path: "about/index.html" })).content).toBe(before);
+    await undo(page).click();
+    await expect.poll(async () => (await call("read_file", { path: indexPath })).content).toBe(source);
+    for (const extension of ["html", "css"]) expect(await draft(page, `components/site-page-header/site-page-header.${extension}`)).toBeUndefined();
+  } finally { await client.close(); }
+});
+
 test("make_component refuses a heading and an image with the allowed containers and writes no drafts", async ({ page, baseURL }) => {
   await open(page, baseURL);
   const client = await connectAgent(page, baseURL);
@@ -178,7 +206,7 @@ test("make_component refuses a heading and an image with the allowed containers 
         page: "/", element: selected.id, tag: "refused-part", expectedHash: home.hash,
       } });
       expect(response.isError).toBe(true);
-      expect(JSON.stringify(result(response))).toContain(`Make component works only on section, div, article, aside, figure, nav, or header/footer inside article, aside, main, nav or section; <${tag}> cannot become a component here.`);
+      expect(JSON.stringify(result(response))).toContain(`Make component works only on section, div, article, aside, figure, nav, header or footer; <${tag}> cannot become a component here.`);
     }
     expect(await draft(page, indexPath)).toBeUndefined();
     for (const path of ["components/refused-part/refused-part.html", "components/refused-part/refused-part.css"]) {

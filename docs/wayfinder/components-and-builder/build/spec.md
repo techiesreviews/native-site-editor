@@ -134,7 +134,11 @@ marked ★ (`builder: claude ★`). Every slice gets the Sol review above.
   fallback ([04](../tickets/04-prototype-making-components.md) §7), and this
   page's items become instances of it in the same undo step (decision 4).
 - **The element's page CSS is copied into the new component**, rewritten so
-  it looks the same; page CSS is left alone (decision 2).
+  it looks the same; page CSS is left alone (decision 2). Make component also
+  accepts the page's own header/footer, replacing this page's element only
+  (decision 10, amended 2026-10-20; slice 104). Sticky/fixed positioning,
+  offsets and z-index move to the host; the plan notes that move or any
+  positioning it cannot carry.
 - **One variant parser in `shared/`** ([06](../tickets/06-research-variant-discovery.md),
   [07](../tickets/07-variant-contract.md) §1–4): component CSS, site CSS
   naming the tag, `:host()` in site CSS, global attributes, class rules for
@@ -302,7 +306,7 @@ marked ★ (`builder: claude ★`). Every slice gets the Sol review above.
 7. **Placeholder image:** the site file `images/placeholder.svg`, written the first time an Image block is inserted (same undo step), then reused.
 8. **No making mode; one way to mark slots** (changed by Lex after handoff, 2026-10-09: "When making a component, why is there a modal? I just want it created, the code should know how."): Make component creates at once with the default slot rule, the card component and the copied page CSS, named automatically from its first heading (else `section-1`, `section-2`…), in one undo step, and then opens Edit component mode on the new instance, where the plan's notes show in the bar. Slots are marked there with ticket 14's label chip (after the element name, the same control as the Structure badge): click toggles slot ↔ fixed, double-click edits the name in place; Structure badges; right-click Make slot, Rename slot, Remove slot. No canvas chips, no "+ slot" on hover. The component is renamed by double-clicking its tag in the mode's bar (slice 76). + New component keeps its small name form. Supersedes the making mode of ticket 04 §2–4 and slices 22–25 as first written.
 9. **Names without a hyphen** get a prefix from what they were made from: `section-`, `card-`, else `block-`; + New component's form shows the result as typed, and so does renaming in Edit component mode's bar.
-10. **Make component works on containers only:** `section`, `div`, `article`, `aside`, `figure`, `nav`, or a `header`/`footer` inside article, aside, main, nav or section. Headings, paragraphs, other text elements, images, links, buttons, lists and forms are refused, as are document elements (including `<main>` and `<body>`), head content, the page's own header/footer, components and anything inside an instance.
+10. **Make component works on containers only** (amended by Lex, 2026-10-20; slice 104): `section`, `div`, `article`, `aside`, `figure`, `nav`, `header` or `footer`, including the page's own header/footer. Only this page's element becomes an instance; other pages keep their copies. Headings, paragraphs, other text elements, images, links, buttons, lists and forms are refused, as are document elements (including `<main>` and `<body>`), head content, components and anything inside an instance. The starter's `<site-header>` and `<site-footer>` remain components with Edit component.
 11. **Touch drag** is out of scope for this run; click-insert works on touch.
 12. **Content kept aside on a look swap** lives in the editor while the new card's "Link to a page…" combobox is open (a swap back restores it; slice 101 narrowed it from "while the page is open"); it is gone once the card is filled, the combobox closes, or after a reload or page switch; nothing is written to the HTML.
 
@@ -335,5 +339,7 @@ marked ★ (`builder: claude ★`). Every slice gets the Sol review above.
   Lex's word.
 
 **Amended (Lex, 2026-10-09):** decision 10 narrowed: Make component only on container elements (section, div, article, aside, figure, nav, a non-page header/footer), not on text, images, links, buttons or lists (slice 80).
+
+**Amended (Lex, 2026-10-20):** decision 10 also allows the page's own header/footer, on this page only (slice 104). Remove and tone bands keep `isPageHeaderFooter` as their rule.
 
 **Amended (Lex, 2026-10-09):** Edit component mode has no "Show this page's content / Show placeholders" toggle: the mode always shows the template's placeholders; its bar is "Editing <tag> · used on N pages ▾ · note · Done" (slice 89).
