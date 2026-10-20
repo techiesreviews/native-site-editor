@@ -54,7 +54,6 @@
 }
 @media (pointer: coarse) {
   .media-library button { min-height: 44px; } .media-library input[type="checkbox"] { width: 24px; height: 24px; }
-  .media-library__keys { display: none; }
 }
 /* A setting's switch (Adding settings' Keep original, File details' Decorative and Always keep,
    Vimeo's own bar): still a tick box for keyboards and assistive tech. */

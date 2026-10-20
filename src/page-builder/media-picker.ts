@@ -144,7 +144,7 @@ export interface MediaImportRequest {
 /** Clean up in the Media pane: More's item (with the count), and for the review it opens the
  * suggestions, whether the badge shows, and Dismiss. */
 export interface MediaCleanUpEntry {
-  item(): { label: string; disabled?: string };
+  item(): { label: string; disabled?: string | true };
   state(): { suggestions: MediaCleanUpSuggestions } | undefined;
   /** Improve images in More (ticket 11), with its own count beside Clean up's. */
   improve?: MediaImproveEntry;

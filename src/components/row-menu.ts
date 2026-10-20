@@ -7,8 +7,8 @@ export interface MenuItem {
   run: () => void;
   /** Shown beside the label, as a hint (a key such as F2). */
   shortcut?: string;
-  /** Why the action is unavailable: the item shows it and does nothing. */
-  disabled?: string;
+  /** Why the action is unavailable: the item shows it and does nothing (`true`: no reason shown). */
+  disabled?: string | true;
   /** A choice among its section's items: shown checked or not (`menuitemradio`). */
   checked?: boolean;
   /** Consecutive items with the same section form a group under that heading. */
@@ -72,11 +72,13 @@ export function createRowMenu(host: HTMLElement, onClose?: () => void) {
         if (entry.disabled) {
           // Still focusable, as a disabled menu item should be, with its reason.
           item.setAttribute("aria-disabled", "true");
-          item.title = entry.disabled;
-          const note = node("span", "row-menu__note", entry.disabled);
-          note.id = `row-menu-note-${++noteIds}`;
-          item.setAttribute("aria-describedby", note.id);
-          item.append(note);
+          if (entry.disabled !== true) {
+            item.title = entry.disabled;
+            const note = node("span", "row-menu__note", entry.disabled);
+            note.id = `row-menu-note-${++noteIds}`;
+            item.setAttribute("aria-describedby", note.id);
+            item.append(note);
+          }
         }
         if (entry.shortcut) {
           const hint = node("span", "row-menu__shortcut", entry.shortcut);

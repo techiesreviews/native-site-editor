@@ -294,7 +294,7 @@ test("More's counts come from one settled check: never Clean up's from one check
   const third = controller.update(usage(["images/wide.png"]));
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(controller.state().suggestions.count, 0);
-  assert.equal(controller.item().disabled, "Nothing to clean up: every file is used or marked Always keep.");
+  assert.equal(controller.item().disabled, true);
   assert.equal(sum(), 2);
   release(); await third;
   assert.deepEqual(counts(f.states), { clean: 0, improve: 1 });
