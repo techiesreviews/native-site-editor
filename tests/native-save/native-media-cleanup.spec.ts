@@ -227,6 +227,8 @@ test("unused images appear in Clean up; removing them puts them in Recently remo
 
   // With nothing left to suggest, Clean up still opens for Undo, which brings both back to their addresses.
   await more("Clean up");
+  // More's item has no note, but the screen still says why it is empty.
+  await expect(pane(page).getByText("Nothing to clean up: every file is used or marked Always keep.", { exact: true })).toBeVisible();
   await pane(page).getByRole("button", { name: "Undo", exact: true }).click();
   await expect(page.locator(".editor-toast__text")).toContainText("Brought back 2 files to their addresses.");
   await expect(pane(page).getByRole("button", { name: "Undo", exact: true })).toHaveCount(0);
