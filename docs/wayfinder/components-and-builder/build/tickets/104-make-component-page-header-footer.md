@@ -1,0 +1,26 @@
+---
+title: "Make component on the page's own header and footer, this page only"
+type: task (AFK)
+status: open
+assignee:
+blocked_by: [80-make-component-containers-only]
+builder: sol
+phase: 3
+---
+
+## What
+
+Lex (2026-10-20), amending decision 10 and ticket 80: Make component is also offered on the page's own `<header>` and `<footer>` (the ones not inside article, aside, main, nav or section). It works as it does for a section: the element on **this page only** becomes an instance of the new component; other pages keep their own copies. The remaining refusals stay (document elements, `<main>`, `<body>`, head content, components, anything inside an instance; the starter's `<site-header>`/`<site-footer>` are components and keep Edit component).
+
+- `makeComponentOffered` (`src/page-builder/component-model.ts`): a header/footer is offered wherever a section would be; `isPageHeaderFooter` stays the one rule for Remove and tone bands (`src/page-builder/rules/page-bands.ts`, unchanged). Update `makeComponentContainers` so agent refusals name header and footer without the "inside …" condition.
+- Everything that uses it follows: the edit bar, the Structure ⋯ menu and right-click, and the `make_component` MCP tool (`makeFromAgent` in `src/page-builder/components.ts`; the tool description in `worker/mcp.ts` stops saying it refuses the page's own header/footer).
+- The page must look and behave the same after making it. Check the plan and its copied CSS (`component-css.ts`, ticket 64) on a page header that is `position: sticky` (or `fixed`) with `top`/`z-index`, as site headers commonly are: wrapped in the new instance (a block host as tall as the header), a sticky header would stop sticking. If so, the made component keeps it working (for example, the positioning moves to the host), or the plan's notes say what changed. Same for rules that reach the header through its place on the page (`body > header`): the plan's notes list what was not carried, as for other elements.
+- The banner/contentinfo landmark: confirm the header inside the instance is still exposed as the page's banner (and the footer as contentinfo) in the preview; if not, note it in the ticket's Done.
+- Docs: spec decision 10's amendment and the Phase-2 bullet (`docs/wayfinder/components-and-builder/build/spec.md`), `docs/page-builder/components.md`, and the Components chapter of `worker/site-conventions.ts` if it says the page's header/footer is refused (copy into the starter's AGENTS.md and refresh the fixture if the chapter changes).
+
+## Done when
+
+- `tests/make-component-offer.test.ts`: the page's header and footer (`[]`, `html > body`, `html > body > div` ancestors) are offered; a header/footer inside an instance or in head is still refused.
+- A browser spec on a page with a plain `<header>` and `<footer>` (sticky header): Make component on the edit bar and in Structure turns the header into an instance on that page only, a second page with the same header is unchanged, one Undo restores it, and the header still sticks after scrolling.
+- `native-mcp.spec.ts` (or its unit equivalent): `make_component` on the page's header succeeds and writes the component; the existing refusals (heading, image, component) still hold.
+- `kit specs --affected` passes.
