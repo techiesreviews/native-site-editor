@@ -724,7 +724,7 @@ test("Make component refuses main, shared header/footer and instance contents", 
   await expect(bar(page).getByRole("button", { name: "Make component", exact: true })).toHaveCount(0);
 });
 
-test("Make component refuses plain page landmarks but offers a card and its header", async ({ page, baseURL }) => {
+test("Make component offers plain page landmarks as well as a card and its header", async ({ page, baseURL }) => {
   const response = await page.request.get(`${baseURL}/__demo/file?path=index.html`);
   const source = (await response.text())
     .replace('<site-header data-key="header"></site-header>', '<header data-key="plain-header"><p>Page header</p></header>')
@@ -737,7 +737,7 @@ test("Make component refuses plain page landmarks but offers a card and its head
   for (const name of ["Header", "Footer"]) {
     await row(page, name).locator(".page-structure__label").click();
     await expect(bar(page).locator(".edit-bar__kind")).toHaveText(name);
-    await expect(bar(page).getByRole("button", { name: "Make component", exact: true })).toHaveCount(0);
+    await expect(bar(page).getByRole("button", { name: "Make component", exact: true })).toBeVisible();
   }
   const article = row(page, "Article");
   await article.locator(".page-structure__label").click();
