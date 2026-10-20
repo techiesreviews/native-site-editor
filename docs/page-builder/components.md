@@ -148,7 +148,9 @@ name is changed afterwards in Edit component mode.
 - Only this page's element becomes an instance; other pages keep their copies.
   For a sticky or fixed header/footer, positioning, offsets and z-index move to
   the host, keeping the header/footer in normal flow inside it. Conditional
-  rules keep their conditions; inline positioning follows too. State-dependent
+  rules keep their conditions; inline positioning follows too. A full-width
+  (`width: 100%` or `inline-size: 100%`) band also sizes the host to avoid a
+  fixed host shrinking to its content. State-dependent or variable-based
   positioning stays in place with a note that sticky behaviour may change.
   The inner header/footer keeps its banner/contentinfo landmark in the preview.
 - A site whose pages do not load `components/components.js` is noted.

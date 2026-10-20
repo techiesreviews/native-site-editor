@@ -665,22 +665,30 @@ function bandPosition(plan: MakeComponentPlan, page: Match, element: SourceEleme
   if (element.name !== "header" && element.name !== "footer") return unchanged;
   const property = (declaration: string) => declaration.slice(0, declaration.indexOf(":")).trim().toLowerCase();
   const positioned = (declaration: string) => /^(?:position|top|right|bottom|left|inset(?:-(?:block|inline)(?:-(?:start|end))?)?|z-index)$/.test(property(declaration));
+  // A fixed host otherwise shrink-wraps: the inner band's 100% would then refer to that narrower box.
+  const fullWidth = (declaration: string) => /^(?:width|inline-size)\s*:\s*100%\s*(?:!\s*important)?$/i.test(declaration);
+  const hostDeclaration = (declaration: string) => positioned(declaration) || fullWidth(declaration) || property(declaration).startsWith("--");
   const candidates = sheets.flatMap(sheet => flatRules(sheet.source, sheet.path).flatMap(rule =>
     rule.selectors.filter(selector => matches(page, element, selector) && !compoundsOf(selector)?.some(compound =>
       compound.simples.some(simple => simple.type === "pseudo" && (simple.element || ["before", "after", "first-line", "first-letter"].includes(simple.name)))))
       .map(selector => ({ ...rule, selector }))));
   const inline = attributeOf(page, element, "style") ?? "";
   const inlineDeclarations = flatRules(`band { ${inline} }`, cssPath)[0]?.declarations ?? [];
-  if (![...candidates.flatMap(rule => rule.declarations), ...inlineDeclarations].some(declaration => /^position\s*:\s*(?:sticky|fixed)\b/i.test(declaration))) return unchanged;
+  const declarations = [...candidates.flatMap(rule => rule.declarations), ...inlineDeclarations];
+  // Custom properties can be inherited or conditional; this source-only plan cannot resolve their computed value.
+  if (declarations.some(declaration => property(declaration) === "position" && /\bvar\s*\(/i.test(declaration))) {
+    return { ...unchanged, notes: [`The ${element.name}'s variable-based positioning was not moved to the host; sticky positioning may be bounded by the component's height.`] };
+  }
+  if (!declarations.some(declaration => /^position\s*:\s*(?:sticky|fixed)\b/i.test(declaration))) return unchanged;
   // State selectors cannot be collapsed to a host rule without changing when they apply.
-  if (candidates.some(rule => hasStatePseudo(rule.selector) && rule.declarations.some(positioned))) {
+  if (candidates.some(rule => hasStatePseudo(rule.selector) && rule.declarations.some(declaration => positioned(declaration) || fullWidth(declaration)))) {
     return { ...unchanged, notes: [`The ${element.name}'s state-dependent positioning was not moved to the host; sticky positioning may be bounded by the component's height.`] };
   }
   // All host rules have the same selector. Sort by the original specificity, keeping source order for ties.
   const rules: Bucket["rules"] = candidates.sort((a, b) => compareSpecificity(specificity(a.selector), specificity(b.selector)))
-    .map(rule => ({ ...rule, selectors: [":host"], declarations: rule.declarations.filter(declaration => positioned(declaration) || property(declaration).startsWith("--")) }))
+    .map(rule => ({ ...rule, selectors: [":host"], declarations: rule.declarations.filter(hostDeclaration) }))
     .filter(rule => rule.declarations.length);
-  if (inlineDeclarations.length) rules.push({ path: cssPath, selectors: [":host"], wrappers: [], declarations: inlineDeclarations.filter(declaration => positioned(declaration) || property(declaration).startsWith("--")) });
+  if (inlineDeclarations.length) rules.push({ path: cssPath, selectors: [":host"], wrappers: [], declarations: inlineDeclarations.filter(hostDeclaration) });
   // Inline !important also beats highly specific important page rules on the inner element.
   let template = plan.template;
   const root = elementsOf(parseSource(template))[0];

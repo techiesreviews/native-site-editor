@@ -1,7 +1,7 @@
 ---
 title: "Make component on the page's own header and footer, this page only"
 type: task (AFK)
-status: open
+status: closed
 assignee: claude-release-lead
 blocked_by: [80-make-component-containers-only]
 builder: sol
@@ -27,6 +27,7 @@ Read the whole ticket (What above) first.
 - `src/page-builder/component-css.ts`, `src/page-builder/component-plans.ts` (only for the sticky/fixed header)
 - `worker/mcp.ts` (the `make_component` description), `worker/site-conventions.ts` (only if the chapter says it)
 - `tests/make-component-offer.test.ts`, a new or existing `tests/native-save/native-make-component*.spec.ts` and its fixture page, `tests/native-save/native-mcp.spec.ts` or a unit test
+- `tests/native-save/native-components.spec.ts` (the obsolete page header/footer refusal assertion, explicitly requested in review round 1)
 - `docs/wayfinder/components-and-builder/build/spec.md`, `docs/page-builder/components.md`, this ticket
 
 ## Done when
@@ -39,9 +40,9 @@ Read the whole ticket (What above) first.
 ## Done (2026-10-20)
 
 - The page's plain header and footer are offered by Make component, including outside sectioning content. Document elements, head content, components and instance contents keep their refusals. Only this page becomes an instance; other pages retain their copies.
-- Sticky/fixed header and footer positioning, offsets and z-index move to the component host, including inline positioning and conditional stylesheet rules. The inner element stays in normal flow, even against highly specific important rules. State-dependent positioning remains in place with a plan note explaining the sticky limitation.
+- Sticky/fixed header and footer positioning, offsets and z-index move to the component host, including inline positioning and conditional stylesheet rules. Full-width declarations (`width: 100%` and `inline-size: 100%`) also size the host so fixed headers retain their width. The inner element stays in normal flow, even against highly specific important rules. State-dependent and variable-based positioning remain in place with a plan note explaining the sticky limitation.
 - Browser checks confirm the header remains a banner and the footer remains contentinfo in the preview after conversion.
-- `RESULT: ok doctor 7/7 checks passed`; `RESULT: ok unit 2434/2434 (165 files)`. `npm run check` and `npm run lint` passed. The seven focused offer/CSS unit checks passed.
-- All six new browser checks passed on the final implementation: edit bar and Structure conversion, sticky/fixed scrolling, host height and z-index, page isolation, landmarks and one Undo. The focused MCP header check passed and verified component files, page isolation and one Undo.
-- The affected browser run found an obsolete expectation in `tests/native-save/native-components.spec.ts:727`: "Make component refuses plain page landmarks but offers a card and its header" still expects no Make component button on the page's header/footer. The run was stopped; this test file is outside the ticket's Files. The ticket remains open until that expectation can be updated and the affected run passes.
-- Commits: none; changes remain unstaged.
+- `RESULT: ok doctor 7/7 checks passed`; `RESULT: ok unit 2436/2436 (165 files)`. `npm run check` and `npm run lint` passed. All nine focused offer/CSS unit checks passed, including stylesheet and inline variable positioning.
+- All seven header/footer browser checks passed: edit bar and Structure conversion, sticky/fixed scrolling, host height and z-index, fixed full-width measurements before and after conversion, page isolation, landmarks, one Undo and the variable-positioning limitation note. The fixture verifies the header's original position before conversion. The MCP spec's 19 checks passed, including component files, page isolation, one Undo and existing refusals.
+- `tests/native-save/native-components.spec.ts` now expects Make component on the page's plain header and footer; all 19 checks passed. Focused header specs: `RESULT: ok specs 1/1 passed` (7 tests). Full affected run: `RESULT: ok specs 118/118 passed`, including default, actual-starter, native-static and preview fixture groups. Evidence: `.scratch/kit-specs/run-Iv1FJL/`.
+- Commits: `df21404e` contains the initial implementation. Follow-up changes are left unstaged for the runner.

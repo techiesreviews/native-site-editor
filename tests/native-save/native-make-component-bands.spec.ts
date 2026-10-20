@@ -6,13 +6,15 @@ import { editorMounted, effectiveSource, storedDraft } from "./drafts";
 const source = readFileSync("tests/fixtures/native-make-component-bands.html", "utf8");
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 
-async function open(page: Page, baseURL: string | undefined, position: "sticky" | "fixed" = "sticky") {
+async function open(page: Page, baseURL: string | undefined, position: "sticky" | "fixed" | "variable" = "sticky") {
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await expect(frame(page).locator(".hero h1")).toBeVisible({ timeout: 30_000 });
   const css = await (await page.request.get(`${baseURL}/__demo/file?path=styles/site.css`)).text();
   for (const [path, content] of [
     ["index.html", source], ["about/index.html", source],
-    ["styles/site.css", `${css}\nbody { margin: 0; } body > header.page-header.page-header { position: ${position} !important; top: 0; z-index: 20; }
+    ["styles/site.css", `${css}\nbody { margin: 0; } header.page-header.page-header {
+      --pin: sticky; position: ${position === "variable" ? "var(--pin)" : position} !important; top: 0; z-index: 20;
+      ${position === "fixed" ? "left: 0; width: 100%;" : ""} }
       .page-header { padding: 16px; background: white; } .page-header h2 { margin: 0; }
       main { min-block-size: 2200px; } .page-footer { padding: 16px; }`],
   ]) {
@@ -23,7 +25,7 @@ async function open(page: Page, baseURL: string | undefined, position: "sticky" 
   await expect(frame(page).getByRole("banner")).toBeVisible();
 }
 
-async function make(page: Page, band: "header" | "footer", entry: "edit bar" | "Structure") {
+async function make(page: Page, band: "header" | "footer", entry: "edit bar" | "Structure", note?: RegExp) {
   const row = page.getByRole("tree", { name: "Page structure" }).getByRole("treeitem", { name: new RegExp(`^${band === "header" ? "Header" : "Footer"}\\b`) }).first();
   if (entry === "edit bar") {
     await row.locator(".page-structure__label").first().click();
@@ -34,6 +36,7 @@ async function make(page: Page, band: "header" | "footer", entry: "edit bar" | "
     await page.getByRole("menuitem", { name: "Make component", exact: true }).click();
   }
   await expect(page.locator(".edit-mode__title")).toHaveText(`Editing<block-page-${band}>`);
+  if (note) await expect(page.locator(".edit-mode__note")).toContainText(note);
   await page.getByRole("button", { name: "Done editing component", exact: true }).click();
 }
 
@@ -41,15 +44,18 @@ for (const entry of ["edit bar", "Structure"] as const) {
   for (const position of ["sticky", "fixed"] as const) {
     test(`${entry} makes the page's ${position} header on this page only; one Undo restores it`, async ({ page, baseURL }) => {
       await open(page, baseURL, position);
+      await expect(frame(page).locator("header")).toHaveCSS("position", position);
       const before = await effectiveSource(page, baseURL, "index.html");
       const top = () => frame(page).locator("header").evaluate(el => el.getBoundingClientRect().top);
       const height = await frame(page).locator("header").evaluate(el => el.getBoundingClientRect().height);
+      const width = await frame(page).locator("header").evaluate(el => el.getBoundingClientRect().width);
       await make(page, "header", entry);
       const host = frame(page).locator("block-page-header");
       await expect(host).toHaveCount(1);
       await expect(host).toHaveCSS("position", position);
       await expect(host).toHaveCSS("z-index", "20");
       expect(await host.evaluate(el => el.getBoundingClientRect().height)).toBeCloseTo(height, 0);
+      expect(await frame(page).locator("header").evaluate(el => el.getBoundingClientRect().width)).toBeCloseTo(width, 0);
       await expect(frame(page).getByRole("banner")).toHaveCount(1);
       await expect(frame(page).getByRole("contentinfo")).toHaveCount(1);
       await expect.poll(async () => (await storedDraft(page, "components/block-page-header/block-page-header.html"))?.content).toContain("<header");
@@ -78,3 +84,10 @@ for (const entry of ["edit bar", "Structure"] as const) {
     for (const extension of ["html", "css"]) await expect.poll(() => storedDraft(page, `components/block-page-footer/block-page-footer.${extension}`)).toBeUndefined();
   });
 }
+
+test("variable-based sticky positioning has an explicit limitation note", async ({ page, baseURL }) => {
+  await open(page, baseURL, "variable");
+  await expect(frame(page).locator("header")).toHaveCSS("position", "sticky");
+  await make(page, "header", "edit bar", /variable-based positioning was not moved to the host; sticky positioning may be bounded by the component's height/);
+  await expect.poll(async () => (await storedDraft(page, "components/block-page-header/block-page-header.html"))?.content).not.toContain("position: static !important");
+});

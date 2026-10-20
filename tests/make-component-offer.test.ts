@@ -80,3 +80,19 @@ test("state-dependent band positioning is left in place with a plan note", () =>
   assert.match(plan.notes.join(" "), /state-dependent positioning was not moved/);
   assert.ok(!plan.css.includes("position: static !important"));
 });
+
+test("a full-width fixed band's width also reaches its host", () => {
+  const plan = positionedBand('<header><h2>Title</h2></header>', "header { position: fixed; top: 0; left: 0; width: 100%; }");
+  assert.match(plan.css, /:host \{\s+position: fixed;\s+top: 0;\s+left: 0;\s+width: 100%;/);
+});
+
+test("variable-based band positioning is left in place with an explicit limitation note", () => {
+  for (const [markup, css] of [
+    ["<header><h2>Title</h2></header>", "header { --pin: sticky; position: var(--pin); top: 0; }"],
+    ['<header style="--pin: sticky; position: var(--pin); top: 0"><h2>Title</h2></header>', ""],
+  ]) {
+    const plan = positionedBand(markup, css);
+    assert.match(plan.notes.join(" "), /variable-based positioning was not moved to the host; sticky positioning may be bounded by the component's height/);
+    assert.ok(!plan.template.includes("position: static !important"));
+  }
+});
