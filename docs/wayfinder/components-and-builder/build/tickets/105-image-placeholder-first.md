@@ -30,6 +30,7 @@ Read the whole ticket (What above) first.
 - `src/page-builder/component-model.ts` (`fillMarkup`), `src/page-builder/cards.ts`, `src/page-builder/components.ts` (callers of `fillMarkup` that write)
 - where `ports.media` for block insertion is wired (`src/main.ts` or its controller), only to remove the insert path
 - `worker/site-conventions.ts` (only if needed)
+- Replace on a placeholder: `src/page-builder/media-spot-popup.ts`, `src/page-builder/image-popup*.ts`, `src/page-builder/media-spot-rules.ts` and the picker's place/use path; `tests/native-save/native-media-video.spec.ts`
 - tests: `tests/block-insert-controller.test.ts`, `tests/block-insert.test.ts`, `tests/component-model.test.ts`, `tests/card-fill.test.ts`, the browser specs that click or drop Image on a page (find them with `kit specs --affected --list`)
 - docs: `docs/page-builder/components.md` or `docs/NATIVE-PROJECT.md` where they say Image opens the picker; this ticket
 
