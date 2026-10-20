@@ -28,6 +28,8 @@ test("persistent pane searches, filters, shows details and retains drafts throug
   await mount(page, baseURL);
   const panel = pane(page);
   await expect(page.locator("dialog.media-library")).toHaveCount(0);
+  // The footer has no keyboard hints (Lex, 2026-10-20).
+  await expect(panel.locator(".media-library__footer")).toHaveText("Drop files anywhere here");
   await panel.getByLabel("Search media", { exact: true }).fill("studio-desk");
   await expect(panel.locator(".media-library__card")).toHaveCount(1);
   await panel.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true }).click();
