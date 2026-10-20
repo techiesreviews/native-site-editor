@@ -20,7 +20,6 @@ import { siteAddress } from "../../shared/site-path-prefix";
 
 import { RESERVED_CUSTOM_ELEMENT_NAMES } from "../../shared/custom-element-names";
 import { asciiLower, decodeEntity, isSectionTemplate, startTagAttribute, startTags, textRangeInSource, type StartTag } from "../../shared/html-source";
-import { isPageHeaderFooter, PAGE_BAND_ANCESTORS } from "./rules/page-bands";
 import { CARD_ITEM_TAGS, itemKind } from "./rules/items";
 import { INLINE_FORMATTING, TEXT_RUN_TAGS } from "./rules/text-level";
 import { decodeHtmlEntities } from "./html-entities";
@@ -1100,23 +1099,18 @@ export function tagNameProblem(name: string, taken: Iterable<string>) {
 }
 
 /** The containers Make component accepts, also named in agent refusals. */
-export const makeComponentContainers = `section, div, article, aside, figure, nav, or header/footer inside ${[...PAGE_BAND_ANCESTORS].slice(0, -1).join(", ")} or ${[...PAGE_BAND_ANCESTORS].at(-1)}`;
+export const makeComponentContainers = "section, div, article, aside, figure, nav, header or footer";
 
 /**
  * Whether Make component is offered for the page container at the end of
  * `chain` (lowercase tag names from the file's root element down): section,
- * div, article, aside, figure, nav, or a header/footer inside article, aside,
- * main, nav or section. Refuses document elements, head content, the page's
- * own header/footer, components and anything inside an instance.
+ * div, article, aside, figure, nav, header or footer. Refuses document
+ * elements, head content, components and anything inside an instance.
  */
 export function makeComponentOffered(chain: readonly string[]): boolean {
   const tag = chain.at(-1);
   if (!tag || chain.includes("head") || chain.some((name) => name.includes("-"))) return false;
-  // The page's header and footer (HTML-AAM banner and contentinfo): not inside sectioning content or <main>.
-  if (tag === "header" || tag === "footer") {
-    return !isPageHeaderFooter(tag, chain.slice(0, -1));
-  }
-  return ["section", "div", "article", "aside", "figure", "nav"].includes(tag);
+  return ["section", "div", "article", "aside", "figure", "nav", "header", "footer"].includes(tag);
 }
 
 const slug = (text: string, words = 3) => text.toLowerCase().replace(/&[a-z]+;/g, " ").replace(/[^a-z0-9]+/g, " ").trim().split(" ").filter(Boolean).slice(0, words).join("-");

@@ -2,7 +2,7 @@
 title: "Make component on the page's own header and footer, this page only"
 type: task (AFK)
 status: open
-assignee:
+assignee: claude-release-lead
 blocked_by: [80-make-component-containers-only]
 builder: sol
 phase: 3
@@ -35,3 +35,13 @@ Read the whole ticket (What above) first.
 - A browser spec on a page with a plain `<header>` and `<footer>` (sticky header): Make component on the edit bar and in Structure turns the header into an instance on that page only, a second page with the same header is unchanged, one Undo restores it, and the header still sticks after scrolling.
 - `native-mcp.spec.ts` (or its unit equivalent): `make_component` on the page's header succeeds and writes the component; the existing refusals (heading, image, component) still hold.
 - `kit specs --affected` passes.
+
+## Done (2026-10-20)
+
+- The page's plain header and footer are offered by Make component, including outside sectioning content. Document elements, head content, components and instance contents keep their refusals. Only this page becomes an instance; other pages retain their copies.
+- Sticky/fixed header and footer positioning, offsets and z-index move to the component host, including inline positioning and conditional stylesheet rules. The inner element stays in normal flow, even against highly specific important rules. State-dependent positioning remains in place with a plan note explaining the sticky limitation.
+- Browser checks confirm the header remains a banner and the footer remains contentinfo in the preview after conversion.
+- `RESULT: ok doctor 7/7 checks passed`; `RESULT: ok unit 2434/2434 (165 files)`. `npm run check` and `npm run lint` passed. The seven focused offer/CSS unit checks passed.
+- All six new browser checks passed on the final implementation: edit bar and Structure conversion, sticky/fixed scrolling, host height and z-index, page isolation, landmarks and one Undo. The focused MCP header check passed and verified component files, page isolation and one Undo.
+- The affected browser run found an obsolete expectation in `tests/native-save/native-components.spec.ts:727`: "Make component refuses plain page landmarks but offers a card and its header" still expects no Make component button on the page's header/footer. The run was stopped; this test file is outside the ticket's Files. The ticket remains open until that expectation can be updated and the affected run passes.
+- Commits: none; changes remain unstaged.

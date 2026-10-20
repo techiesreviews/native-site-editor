@@ -112,8 +112,8 @@ cannot be kept (several top-level elements). One undo step.
 ## Make component
 
 *Make component* in the edit bar for a container of a page (section, div,
-article, aside, figure, nav, or a header/footer inside sectioning content;
-not a component or anything inside one; slice 80) makes it a component at once, with no
+article, aside, figure, nav, header or footer, including the page's own header
+and footer; not a component or anything inside one; slices 80 and 104) makes it a component at once, with no
 dialog (build slice 22). The name is automatic (`automaticComponentName`,
 `component-names.ts`): the prefix for what it was made from (`section-`,
 `card-` for an article or a "card" class, else `block-`) and the first three
@@ -145,6 +145,12 @@ name is changed afterwards in Edit component mode.
   would stop reaching the element once it is an instance is copied into the
   new stylesheet, rewritten to start at it (after `:host { display: block; }`);
   the site's stylesheets stay as they are. Rules that can't follow are noted.
+- Only this page's element becomes an instance; other pages keep their copies.
+  For a sticky or fixed header/footer, positioning, offsets and z-index move to
+  the host, keeping the header/footer in normal flow inside it. Conditional
+  rules keep their conditions; inline positioning follows too. State-dependent
+  positioning stays in place with a note that sticky behaviour may change.
+  The inner header/footer keeps its banner/contentinfo landmark in the preview.
 - A site whose pages do not load `components/components.js` is noted.
 
 The new files are drafts; writing them and replacing the element is one undo
