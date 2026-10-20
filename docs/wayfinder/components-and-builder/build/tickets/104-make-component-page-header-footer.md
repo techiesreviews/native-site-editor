@@ -18,6 +18,17 @@ Lex (2026-10-20), amending decision 10 and ticket 80: Make component is also off
 - The banner/contentinfo landmark: confirm the header inside the instance is still exposed as the page's banner (and the footer as contentinfo) in the preview; if not, note it in the ticket's Done.
 - Docs: spec decision 10's amendment and the Phase-2 bullet (`docs/wayfinder/components-and-builder/build/spec.md`), `docs/page-builder/components.md`, and the Components chapter of `worker/site-conventions.ts` if it says the page's header/footer is refused (copy into the starter's AGENTS.md and refresh the fixture if the chapter changes).
 
+## Files
+
+Read the whole ticket (What above) first.
+
+- `src/page-builder/component-model.ts` (`makeComponentOffered`, `makeComponentContainers`)
+- `src/page-builder/components.ts` (`makeFromAgent`, only if its refusal changes)
+- `src/page-builder/component-css.ts`, `src/page-builder/component-plans.ts` (only for the sticky/fixed header)
+- `worker/mcp.ts` (the `make_component` description), `worker/site-conventions.ts` (only if the chapter says it)
+- `tests/make-component-offer.test.ts`, a new or existing `tests/native-save/native-make-component*.spec.ts` and its fixture page, `tests/native-save/native-mcp.spec.ts` or a unit test
+- `docs/wayfinder/components-and-builder/build/spec.md`, `docs/page-builder/components.md`, this ticket
+
 ## Done when
 
 - `tests/make-component-offer.test.ts`: the page's header and footer (`[]`, `html > body`, `html > body > div` ancestors) are offered; a header/footer inside an instance or in head is still refused.
