@@ -1,7 +1,7 @@
 ---
 title: Re-check the tech-debt notes and small follow-ups on today's code
 type: research (AFK)
-status: open
+status: closed
 assignee: claude (research subagent)
 blocked_by: []
 ---
@@ -28,3 +28,27 @@ Follow-ups seen 2026-10-17 (not tickets yet):
 - `kit specs --affected` does not map changes to `tests/native-save/server.ts` to the MCP specs.
 
 Say for each which tickets of [Re-check the architecture review on today's code](01-research-architecture-review.md)'s candidates it would naturally ride with, if any.
+
+## Resolution (2026-10-22)
+
+Re-checked at `dev @ 89ac5e0e`, every command through Agent Kit.
+
+- **Still real:**
+  - TD 01: `main.ts` is 5,650 lines (5,833 at the review's base). The big blocks are ticket 01's candidates: native site runtime about 1,100 lines (#2), boot and snapshot about 400 (#1), agent about 355 (#4). It shrinks with those slices (L in total), not as its own slice.
+  - TD 02: `kit size` reads 355 of 355 KB, 0–0.5 KB left, for the last 23 measured commits. Any slice that adds boot code fails. Lazy-loading file and page actions is M; raising the budget is Lex's call.
+  - TD 06: all seven boot-memory limits still hold. A guess is still not abandoned when `loadRepositories` clears the selection, and sign-out has no test (S each, with #1). No read timeout (M).
+  - TD 10: all limits still hold (inferred from code). They ride with #2 and #5.
+  - Media: each refresh and each search keystroke rebuilds every tile, measured at about 100 ms per 1,000 tiles. Waiting for a pause in typing is S; updating tiles in place is M.
+  - `discardFile()`: with no user the controller still asks, then does nothing (unit probe). The UI cannot reach it today. S, with #8 and TD 08.
+- **Confirmed as described:** TD 11. Only the keyboard shortcut is silent: the Undo and Redo buttons grey out (browser probe). Recommend wontfix.
+- **Can't reproduce:** TD 04 (server logs are now captured, ports are locked, no recurrence). The `kit-wait` and `kit-preview` flakes (22/22 at load 13–35, plus 6 full unit suites). `native-code-folding` (16/16 under load). Their fixes landed on 2026-10-17 (TD 09, agent-kit 42).
+- **Fixed:** `kit specs --affected` now picks the agent and MCP specs for a `server.ts` change (agent-kit 43; re-checked: 15 selected).
+- **Behaviour questions for ticket 04,** each with a recommended answer:
+  - Byte budget: keep the limit and load rare actions later.
+  - Slow GitHub on reopen: offer Try again after about 15 s, as its own slice.
+  - Boot memory kept until sign-out: keep.
+  - Typing flicker in Page Structure: leave.
+  - Undo/Redo message: no.
+  - Media smoothness: do the search pause now.
+
+Findings: `docs/wayfinder/clean-up-before-features/research/02-debt-and-follow-ups.md` on branch `research/cbf-02-debt-and-follow-ups`, commit `eacf2e88` (not merged).

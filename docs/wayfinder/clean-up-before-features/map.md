@@ -27,6 +27,7 @@ A decided, ordered build plan for the clean-up Lex asked for before any new feat
 
 - [Decide how Lex checks the clean-up as it lands](tickets/03-grill-testing-rhythm.md#resolution-2026-10-22): every piece to preview as it passes; Lex checks once at the end; one production release after his "ship it"; a what-to-test list whenever he asks; two-line note per piece, screenshots only for visible changes
 - [Re-check the architecture review on today's code](tickets/01-research-architecture-review.md): #1 workspace session, #2 native site runtime and #3 shared site rules stay Strong and grew; #4 becomes an agent operation table, plus new N1 (agent edits prepared twice in the tab), both Worth exploring; #5 and #6 Worth exploring; #7 parked; #8 mostly done; order #1, #2, #3, #4+N1, #6, #5, #8
+- [Re-check the tech-debt notes and small follow-ups on today's code](tickets/02-research-debt-and-follow-ups.md): still real: main.ts 5,650 lines (shrinks with #1, #2, #4); byte budget full at 355 of 355 KB; boot-memory and Page Structure limits hold (ride with #1, #2, #5); media redraws every tile (about 100 ms per 1,000); discardFile asks for nothing (S, with #8). Undo/Redo silence is keyboard-only (wontfix suggested). TD 04 and the three flakes can't be reproduced; kit specs and server.ts is fixed
 
 ## Not yet specified
 
