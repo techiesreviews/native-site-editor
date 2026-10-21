@@ -85,7 +85,7 @@ Ask Lex in plain words, with the gate 1 and 2 results attached:
 > "The new agent connection passed all local checks and the preview steps. Shall we put it on the live editor
 > (editor.techies.tools) with the switches below? If anything looks wrong we switch it off; we never go back to polling."
 
-- [x] Lex's answer, date and the commit he approved: "ship it" (after the plain-words summary of gates 1 and 2 and their gaps), 2026-10-21, `b0bf769`. Deployed as production version `3e562baf-da65-4f07-9884-eb69ad472216`. Release step 1 (baseline report) was skipped: no `CLOUDFLARE_API_TOKEN` in the release shell; step 3 (first-hour sign-in, edit, agent) is Lex's.
+- [x] Lex's answer, date and the commit he approved: "ship it" (after the plain-words summary of gates 1 and 2 and their gaps), 2026-10-21, `b0bf769`. Deployed as production version `3e562baf-da65-4f07-9884-eb69ad472216`. Release step 1 (baseline report) was skipped: no `CLOUDFLARE_API_TOKEN` in the release shell; step 3 (first-hour sign-in, edit, agent): Lex reported it done on 2026-10-22.
 
 ## Switches to deploy with
 
