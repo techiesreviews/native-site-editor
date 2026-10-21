@@ -25,6 +25,8 @@ A decided, ordered build plan for the clean-up Lex asked for before any new feat
 
 <!-- one line per closed ticket: [title](tickets/file.md): gist -->
 
+- [Decide how Lex checks the clean-up as it lands](tickets/03-grill-testing-rhythm.md#resolution-2026-10-22): every piece to preview as it passes; Lex checks once at the end; one production release after his "ship it"; a what-to-test list whenever he asks; two-line note per piece, screenshots only for visible changes
+
 ## Not yet specified
 
 - How `main.ts` size ([tech-debt 01](../../work/tech-debt/issues/01-main-ts-size.md)) relates to candidates #2 (native site runtime) and #8 (pass-throughs): likely the same slices; settle after ticket 01.
