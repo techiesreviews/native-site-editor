@@ -452,3 +452,41 @@ test("a new default card uses the placeholder and creates its missing file in on
     }
   } finally { await browser.close(); }
 });
+
+test("filling a plain card without a page image fills its empty image with the prefixed placeholder in one undo step", async () => {
+  const { build } = await import("esbuild");
+  const { chromium } = await import("@playwright/test");
+  const bundle = await build({ stdin: { contents: `import { cardsFixture } from './tests/fakes/cards-fixture'; globalThis.placeholderCardsFixture = cardsFixture;`, resolveDir: process.cwd() }, bundle: true, write: false, format: "iife", platform: "browser" });
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.addScriptTag({ content: bundle.outputFiles[0].text });
+    for (const image of ["empty", "existing"] as const) for (const present of [false, true]) {
+      const result = await page.evaluate(async ({ image, present }) => {
+        const src = image === "empty" ? "" : "/my-site/images/real.svg";
+        const home = `<!doctype html><html><body><main><section><h2>Work</h2><div class="cards"><article><h3>One</h3><p>Body</p><img src="${src}" alt=""></article><article><h3>Two</h3><p>Other body</p><img src="${src}" alt=""></article></div></section></main></body></html>`;
+        const about = '<!doctype html><html><head><title>About</title><meta name="description" content="About our work"></head><body><main><h1>About</h1></main></body></html>';
+        const branch = { "index.html": home, "about/index.html": about,
+          ".editor/config.json": '{"site":{"url":"https://example.test/my-site/"}}', ...(present ? { "images/placeholder.svg": "Existing placeholder" } : {}) };
+        const { controller, m } = placeholderCardsFixture(branch, { routes: { "/": "index.html", "/about/": "about/index.html" }, components: {} });
+        const card = { path: "index.html", node: [0, 0, 1, 0] };
+        const filled = await controller.preview.fillCard(card, "/about/");
+        const after = m.source("index.html"), markup = controller.preview.cardText(card), placeholder = m.source("images/placeholder.svg"), steps = m.steps().length;
+        const unchangedPage = m.source("about/index.html") === about;
+        const undone = m.undo();
+        return { filled, after, markup, placeholder, steps, unchangedPage, undone, restored: m.source("index.html") === home, fileAfterUndo: m.source("images/placeholder.svg") };
+      }, { image, present });
+      assert.deepEqual(result.filled, { title: "About", route: "/about/" });
+      assert.ok(result.markup?.includes('<a href="/my-site/about/">About</a>'));
+      assert.ok(result.markup?.includes('<p>About our work</p>'));
+      assert.ok(result.markup?.includes(`src="/my-site/images/${image === "empty" ? "placeholder" : "real"}.svg"`));
+      assert.equal(result.steps, 1);
+      assert.equal(result.unchangedPage, true);
+      assert.equal(result.undone && result.restored, true);
+      if (present) assert.equal(result.placeholder, "Existing placeholder");
+      else if (image === "empty") assert.match(result.placeholder!, /<svg/);
+      else assert.equal(result.placeholder, undefined);
+      assert.equal(result.fileAfterUndo, present ? "Existing placeholder" : undefined);
+    }
+  } finally { await browser.close(); }
+});
