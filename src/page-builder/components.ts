@@ -622,7 +622,8 @@ export function createComponentTools(deps: ComponentDeps) {
         ? { kind: "checkbox", label: field.label, checked: field.value === "on", ...note, onChange: (on) => pick(field, on ? "on" : "") }
         : { kind: "select", label: field.label, caption: true, options: field.options, value: field.value, ...note, onChange: (choice) => pick(field, choice) };
     });
-    return fields.length > 2 ? [{ kind: "fields", label: "Variants", title: `${button ? "Button" : componentLabel(at.tag)} variants`, fields }] : fields;
+    // Variants always gather under one Variants button, however few there are.
+    return fields.length ? [{ kind: "fields", label: "Variants", title: `${button ? "Button" : componentLabel(at.tag)} variants`, fields }] : [];
   }
 
   // ---- Edit component. ----

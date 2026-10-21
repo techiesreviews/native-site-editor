@@ -4,6 +4,13 @@ import { openPickerOn } from "./open-picker";
 // Default fixture group: native-variants (541), on its separate blocks page.
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const bar = (page: Page) => page.getByRole("toolbar", { name: "Edit bar", exact: true });
+// Variant fields sit behind the edit bar's Variants button; open it once and act in its popover.
+async function variants(page: Page) {
+  const fields = page.getByRole("dialog", { name: "Variants" });
+  if (!(await fields.isVisible())) await bar(page).getByRole("button", { name: "Variants", exact: true }).click();
+  await expect(fields).toBeVisible();
+  return fields;
+}
 const source = (page: Page) => page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("blocks.html")!);
 async function undo(page: Page) {
   expect(await page.evaluate(async () => (await import("/src/components/code-editor.ts")).runVisualHistory("undo", "blocks.html"))).toBe(true);
@@ -50,12 +57,15 @@ test("Button offers site Variant and Size, retains Address, Default removes attr
   await expect(row.locator(".page-structure__kind")).toHaveAttribute("title", "Button");
   const icon = (name: string) => page.getByRole("treeitem", { name, exact: true }).locator(".page-structure__kind svg").innerHTML();
   expect(await icon("Button Button")).not.toBe(await icon("Link Plain link"));
-  const variant = bar(page).getByRole("combobox", { name: "Variant", exact: true });
-  const size = bar(page).getByRole("combobox", { name: "Size", exact: true });
+  await expect(bar(page).getByRole("button", { name: "Variants", exact: true })).toHaveAttribute("title", "Button variants");
+  await expect(bar(page).getByRole("combobox", { name: "Variant", exact: true })).toHaveCount(0);
+  const fields = await variants(page);
+  const variant = fields.getByRole("combobox", { name: "Variant", exact: true });
+  const size = fields.getByRole("combobox", { name: "Size", exact: true });
   await expect(variant.locator("option")).toHaveText(["Default", "Secondary", "Ghost"]);
   await expect(size.locator("option")).toHaveText(["Default", "Small", "Large"]);
   await expect(bar(page).getByRole("button", { name: "Address", exact: true })).toBeVisible();
-  await expect(bar(page).getByRole("combobox", { name: "Color scheme", exact: true })).toHaveCount(0);
+  await expect(fields.getByRole("combobox", { name: "Color scheme", exact: true })).toHaveCount(0);
   const before = await source(page);
   await variant.selectOption({ label: "Secondary" });
   const secondary = before.replace('<a class="btn" href="#">', '<a class="btn" href="#" data-variant="secondary">');
@@ -123,7 +133,7 @@ test("Heading, Paragraph, Section and ordinary links have no variant controls", 
 test("Button without matching stylesheet rules shows no variant fields", async ({ page }) => {
   // The variant reader is loaded (Variant shows) before the rules go away.
   await frame(page).getByRole("link", { name: "Button", exact: true }).click();
-  await expect(bar(page).getByRole("combobox", { name: "Variant", exact: true })).toBeVisible();
+  await expect(bar(page).getByRole("button", { name: "Variants", exact: true })).toBeVisible();
   await frame(page).getByRole("heading", { name: "Block edit bars" }).click();
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Heading");
   await page.evaluate(async () => {

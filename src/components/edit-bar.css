@@ -172,6 +172,59 @@
 .edit-bar__select:hover {
   background: var(--hover);
 }
+/* The open list matches the bar's own menus: its panel, hover and current
+   tints, where the browser lets a select be styled (others keep their own). */
+@supports (appearance: base-select) {
+  .edit-bar__select,
+  .edit-bar__select::picker(select) {
+    appearance: base-select;
+  }
+  .edit-bar__select {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .edit-bar__select::picker-icon {
+    color: var(--muted);
+  }
+  .edit-bar__select::picker(select) {
+    margin-block: 4px;
+    border: 0;
+    border-radius: var(--radius-panel);
+    padding: var(--panel-padding);
+    background: var(--panel-surface);
+    color: var(--text);
+    font-size: var(--type-base);
+    box-shadow: var(--shadow);
+  }
+  .edit-bar__select option {
+    min-block-size: var(--size-control);
+    border-radius: var(--radius);
+    padding: 4px 8px;
+    white-space: nowrap;
+  }
+  .edit-bar__select option::checkmark {
+    display: none;
+  }
+  .edit-bar__select option:checked {
+    background: var(--current);
+    font-weight: 600;
+  }
+  .edit-bar__select option:focus-visible {
+    background: var(--hover);
+    outline: var(--focus-ring);
+    outline-offset: -2px;
+  }
+  .edit-bar__select option:active {
+    background: var(--pressed);
+    color: var(--on-pressed);
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .edit-bar__select option:hover {
+      background: var(--hover);
+    }
+  }
+}
 .edit-bar__button:focus-visible,
 .edit-bar__select:focus-visible {
   outline: var(--focus-ring);
