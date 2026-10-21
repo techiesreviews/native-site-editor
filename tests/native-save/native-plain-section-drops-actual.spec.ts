@@ -66,20 +66,14 @@ test("a block dropped at a plain section's top or bottom edge goes in that secti
 
 test("an image in a selected Div drags itself, and the selection box follows the Div as it grows", { tag: "@actual" }, async ({ page, baseURL }) => {
   await open(page, baseURL);
-  // Lex's steps on the rail: Section, Heading, Heading, Div, Media (a picture chosen in its picker), Button.
+  // Lex's steps on the rail: Section, Heading, Heading, Div, Media (the placeholder), Button.
   for (const name of ["Section", "Heading", "Heading", "Div", "Media", "Button"]) {
     const before = await source(page);
     await rail(page).getByRole("button", { name, exact: true }).click();
-    if (name === "Media") {
-      const picker = page.getByRole("dialog", { name: "Choose media", exact: true });
-      await picker.getByRole("button", { name: "Choose images/studio-desk.svg", exact: true }).click();
-      await picker.getByRole("button", { name: "Use image", exact: true }).click();
-      await expect(picker).toHaveCount(0);
-    }
     await expect.poll(() => source(page)).not.toBe(before);
   }
   const div = "main > section:last-child > div";
-  await expect.poll(async () => flat(await source(page))).toMatch(/<section class="flow"><h2>Heading<\/h2><h2>Heading<\/h2><div class="flow"><img [^>]*src="\/images\/studio-desk\.svg"[^>]*><a class="btn" href="#">Button<\/a><\/div><\/section><\/main>/);
+  await expect.poll(async () => flat(await source(page))).toMatch(/<section class="flow"><h2>Heading<\/h2><h2>Heading<\/h2><div class="flow"><img [^>]*src="\/images\/placeholder\.svg"[^>]*><a class="btn" href="#">Button<\/a><\/div><\/section><\/main>/);
   await expect(frame(page).locator(`${div} > img`)).toBeVisible();
   // Over the image's top, at the Div's edge (a Div has no padding): before the image, in the Div.
   await dragFromRail(page, "Paragraph", await pointIn(page, `${div} > img`, 0.5, 0, 3));
@@ -113,7 +107,7 @@ test("an image in a selected Div drags itself, and the selection box follows the
   await expect(ghost(page)).toHaveAttribute("data-where", "Into Section › after Heading");
   await page.mouse.up();
   // The move's re-check (slice 88) makes the page's only image, now on the first screen, its priority holder.
-  await expect.poll(async () => flat(await source(page))).toMatch(/<h2>Get in touch<\/h2><img fetchpriority="high" [^>]*src="\/images\/studio-desk\.svg"[^>]*><p>/);
+  await expect.poll(async () => flat(await source(page))).toMatch(/<h2>Get in touch<\/h2><img fetchpriority="high" [^>]*src="\/images\/placeholder\.svg"[^>]*><p>/);
   expect(flat(await source(page))).toContain('<div class="flow"><a class="btn" href="#">Button</a></div>');
   // One Undo takes back the move and its re-check together.
   expect(await undo(page)).toBe(true);

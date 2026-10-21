@@ -1,8 +1,7 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
-import { editorMounted } from "./drafts";
+import { editorMounted, storedDraft } from "./drafts";
 
 // Default fixture group: native-cards (#repo=540), a Section › Div (grid) › two cards.
-const dot = { name: "dot.svg", mimeType: "image/svg+xml", buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="40" height="30"><rect width="40" height="30" fill="teal"/></svg>') };
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const rail = (page: Page) => page.getByRole("navigation", { name: "Blocks" });
 const ghost = (page: Page) => page.locator(".pb-drag-ghost");
@@ -137,12 +136,15 @@ test("an empty Div shows its drop area, and a Section snaps between page bands",
   await expect(ghost(page)).toHaveAttribute("data-where", "Into Div (stack) › empty");
   await expect(page.locator(".pb-drop__area")).toHaveText("Drop into the empty Div (stack)");
   await page.mouse.up();
-  // Media dropped opens the Media picker for that spot; Use puts the picture there.
-  const picker = page.getByRole("dialog", { name: "Choose media", exact: true });
-  await picker.locator("input[type=file]").setInputFiles(dot);
-  await expect(picker.locator(".media-library__chosen-name")).toHaveText("dot.svg");
-  await picker.getByRole("button", { name: "Use image", exact: true }).click();
-  await expect(frame(page).locator("#services > div.flow > img")).toBeVisible();
+  const image = frame(page).locator("#services > div.flow > img");
+  await expect(image).toHaveAttribute("src", /^data:image\/svg\+xml/);
+  await expect(image).toBeVisible();
+  await expect.poll(() => image.evaluate(img => (img as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+  await expect(page.getByRole("dialog", { name: "Choose media", exact: true })).toHaveCount(0);
+  await expect.poll(() => storedDraft(page, "images/placeholder.svg")).toMatchObject({ content: expect.stringContaining("<svg") });
+  expect(await page.evaluate(async () => (await import("/src/components/code-editor.ts")).runVisualHistory("undo", "index.html"))).toBe(true);
+  await expect(image).toHaveCount(0);
+  await expect.poll(() => storedDraft(page, "images/placeholder.svg")).toBeUndefined();
   // A Section over a card goes between bands: after #work when below its middle.
   await dragFromRail(page, "Section", await pointIn(page, "#work .cards card-project", 0.5, 0.9));
   await expect(ghost(page)).toHaveAttribute("data-where", /^Between page bands › /);

@@ -2,7 +2,8 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, test, type Browser, type Locator, type Page } from "@playwright/test";
 import { requireActualFixture } from "./fixture-contract";
-import { storedDrafts } from "./drafts";
+import { storedDraft, storedDrafts } from "./drafts";
+import { PLACEHOLDER_IMAGE_PATH, placeholderImageSvg } from "../../src/page-builder/native-elements";
 import { publishButton } from "./publish";
 
 requireActualFixture();
@@ -213,16 +214,21 @@ test("Structure fills, hides and edits optional slots, and only authored bytes a
   // 4. Show an image in the third card (an empty slot), Undo, Redo, then hide it again
   // with the eye, with Undo and Redo of that too.
   const title2 = '<h3 slot="title">Meadow Row Allotments</h3>';
-  const P6 = P5.replace(title2, `<img slot="image" src="" alt="">\n          ${title2}`);
+  const P6 = P5.replace(title2, `<img slot="image" src="/images/placeholder.svg" alt="">\n          ${title2}`);
   await toggle(page, 2, "Image", true);
   await expect.poll(() => mounted(page)).toBe(P6);
   await done(page, 2, "Image");
   await agree(page, 2, "Image", "image", "figure.media", true);
+  const image = frame(page).locator('card-project').nth(2).locator('img[slot="image"]');
+  await expect.poll(() => image.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBeGreaterThan(0);
+  await expect.poll(() => storedDraft(page, PLACEHOLDER_IMAGE_PATH)).toMatchObject({ content: placeholderImageSvg });
   await history(page, "undo");
   await expect.poll(() => mounted(page)).toBe(P5);
+  await expect.poll(() => storedDraft(page, PLACEHOLDER_IMAGE_PATH)).toBeUndefined();
   await agree(page, 2, "Image", "image", "figure.media", false);
   await history(page, "redo");
   await expect.poll(() => mounted(page)).toBe(P6);
+  await expect.poll(() => storedDraft(page, PLACEHOLDER_IMAGE_PATH)).toMatchObject({ content: placeholderImageSvg });
   await agree(page, 2, "Image", "image", "figure.media", true);
   await toggle(page, 2, "Image", false);
   await expect.poll(() => mounted(page)).toBe(P5);
@@ -263,15 +269,16 @@ test("Structure fills, hides and edits optional slots, and only authored bytes a
   expect(P7).not.toMatch(RESIDUE);
   expect(T1).not.toMatch(RESIDUE);
 
-  // The drafts kept for publishing are exactly these two files' bytes.
+  // Hiding the image leaves its reusable file; only authored bytes are published.
   const drafts = await storedDrafts(page);
-  expect(drafts.map((draft) => [draft.path, draft.content])).toEqual([[CARD, T1], [PAGE, P7]]);
+  expect(drafts.map((draft) => [draft.path, draft.content])).toEqual([[CARD, T1], [PLACEHOLDER_IMAGE_PATH, placeholderImageSvg], [PAGE, P7]]);
 
   await publishButton(page).click();
   await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
   await page.keyboard.press("Escape");
   expect(await branchFile(page, baseURL, PAGE)).toBe(P7);
   expect(await branchFile(page, baseURL, CARD)).toBe(T1);
+  expect(await branchFile(page, baseURL, PLACEHOLDER_IMAGE_PATH)).toBe(placeholderImageSvg);
 
   // Served as plain files with no .editor folder and scripts off: the page as written, no slot
   // content for the hidden slots, no editor attributes.

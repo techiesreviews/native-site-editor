@@ -3,7 +3,7 @@
 // on the page at once but are kept only by Done (one Undo step); ✕ or Escape put everything back.
 // Trim, zoom and turn (slice 41) save a trimmed copy for this spot only; so do straighten and flip
 // in the large editor (slice 42), whose Cancel goes back to the popup as it was.
-// Default fixture: index.html's hero image is images/placeholder.svg (no alt); images/studio-desk.svg is unused.
+// Ordinary-picture popup tests use a separate SVG; placeholder Replace chooses any media immediately.
 import { expect, test, type Page } from "@playwright/test";
 import { openEditor, pickPicture } from "../support/scenarios";
 import { storedDraft, storedDrafts } from "./drafts";
@@ -21,6 +21,14 @@ const heroTag = async (page: Page) => (await source(page)).match(/<img\b[^>]*cla
 
 async function open(page: Page, baseURL: string | undefined) {
   await openEditor(page, baseURL);
+  const picture = await page.request.get(`${baseURL}/__demo/file?path=images/placeholder.svg`);
+  const home = await page.request.get(`${baseURL}/__demo/file?path=index.html`);
+  expect(picture.ok() && home.ok()).toBe(true);
+  for (const [path, content] of [
+    ["images/popup-picture.svg", await picture.text()],
+    ["index.html", (await home.text()).replace('src="/images/placeholder.svg"', 'src="/images/popup-picture.svg"')],
+  ]) expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path, content } })).ok()).toBe(true);
+  await page.reload();
   await expect(frame(page).locator(".hero img")).toBeVisible({ timeout: 30_000 });
   await expect(page.locator("#content [role='textbox']").first()).toBeAttached({ timeout: 30_000 });
 }

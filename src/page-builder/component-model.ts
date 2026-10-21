@@ -1,3 +1,4 @@
+import { PLACEHOLDER_IMAGE_PATH } from "./native-elements";
 import { siteAddress } from "../../shared/site-path-prefix";
 // Components as the page builder sees them, read from source and edited as
 // source (docs/page-builder/components.md). No DOM here, so it runs in the
@@ -668,7 +669,7 @@ export function withoutDataKeys(html: string) {
  * `<span slot>` (bare, for the unnamed slot). An empty slot gets an element
  * of its kind: an image, a link, or a line of text.
  */
-export function fillMarkup(template: string, slot: TemplateSlot, text?: string): string {
+export function fillMarkup(template: string, slot: TemplateSlot, text?: string, prefix = ""): string {
   const name = slot.name;
   const trimAscii = (value: string) => value.replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g, "");
   const parts = slot.element.children.filter(node => node.type === "element" || trimAscii(template.slice(node.start, node.end)).length > 0);
@@ -696,7 +697,7 @@ export function fillMarkup(template: string, slot: TemplateSlot, text?: string):
     }).join("");
   }
   const slotAttribute = name ? ` slot="${escapeAttribute(name)}"` : "";
-  if (slot.kind === "image") return `<img${slotAttribute} src="" alt="">`;
+  if (slot.kind === "image") return `<img${slotAttribute} src="${escapeAttribute(siteAddress(PLACEHOLDER_IMAGE_PATH, prefix))}" alt="">`;
   if (slot.kind === "link") return `<a${slotAttribute} href="">${escapeText(text ?? label)}</a>`;
   return name ? `<span${slotAttribute}>${escapeText(text ?? label)}</span>` : escapeText(text ?? label);
 }

@@ -1,8 +1,8 @@
 ---
 title: "Every added image starts as the placeholder, even on a new site"
 type: task (AFK)
-status: open
-assignee:
+status: closed
+assignee: claude-release-lead
 blocked_by: [10-block-set]
 builder: sol
 phase: 3
@@ -39,3 +39,11 @@ Read the whole ticket (What above) first.
 - Unit: Image click and drop on a page insert `<img>` with the placeholder and create `images/placeholder.svg` when it is missing (and not when present), one step; an empty image slot fill and a new default card use the placeholder.
 - Browser: on a site with no `images/placeholder.svg`, clicking Image and dropping Image each add a visible placeholder image (natural width > 0), the file appears in the drafts, the picker does not open, and one Undo removes image and file. The existing specs that expected the picker on insert are updated to the new behaviour (not loosened).
 - `kit specs --affected` passes.
+
+## Done (2026-10-21)
+
+- Clicking or dropping Media inserts and selects the placeholder immediately, without opening the picker. A missing `images/placeholder.svg` is created with the page change in one Undo step; existing files are kept.
+- Empty image-slot fills and default card markup use the placeholder, with missing files created in the same guarded step. Site prefixes, including HTML-escaped prefixes, are respected.
+- Replace on a placeholder opens the picker for pictures, video, audio, downloads and online video. Replacement keeps its component slot and undoes in one step. Other pictures retain their existing replacement rules.
+- Validation: `kit doctor` passed 7/7; `kit unit --affected` passed 1,994/1,994 across 133 files; `kit specs --affected` passed 132/132 specs. After the escaped-prefix fix, all eight touched browser specs passed again (64 tests). `npm run check` and `npm run lint` passed. Phone and desktop Image popup screenshots passed with zero layout findings.
+- Commits: none; changes are left unstaged for the slice runner.

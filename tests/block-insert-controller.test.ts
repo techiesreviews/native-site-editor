@@ -6,7 +6,7 @@ import { createMemoryWorkspace } from "./fakes/memory-workspace.ts";
 import { PLACEHOLDER_IMAGE_PATH, placeholderImageSvg } from "../src/page-builder/native-elements.ts";
 
 const page = '<!doctype html><html><head><title>Home</title></head><body><main><section class="flow"><h2>Work</h2></section></main></body></html>';
-function setup(overrides: Partial<Pick<BlockInsertPorts, "target" | "media">> = {}, files: Record<string, string> = { "index.html": page }) {
+function setup(overrides: Partial<Pick<BlockInsertPorts, "target">> = {}, files: Record<string, string> = { "index.html": page }) {
   const components = Object.fromEntries(Object.keys(files).filter(path => path.startsWith("components/")).map(path => [path.split("/").at(-1)!.replace(/\.html$/, ""), path]));
   const m = createMemoryWorkspace({ branch: files, open: "index.html", site: { routes: { "/": "index.html" }, components } });
   const edits = createGuardedEdits(m.workspace);
@@ -23,21 +23,25 @@ const selected = (m: ReturnType<typeof createMemoryWorkspace>) => {
   return request && { path: request.path, node: request.node };
 };
 
-test("Media on a page writes nothing: the picker opens for the spot the click or drop found", async () => {
-  const places: unknown[] = [];
-  const { controller, m } = setup({ media: place => { places.push(place); } });
-  await controller.click("media");
-  await controller.drop("media", { parent: [0, 0], index: 0, where: "Into Section › before Heading" }, page);
-  assert.deepEqual(places, [{ path: "index.html", parent: [0, 0], index: 1, wrap: false, slot: undefined }, { path: "index.html", parent: [0, 0], index: 0, slot: undefined }]);
-  assert.equal(m.steps().length, 0);
-  assert.equal(m.source(PLACEHOLDER_IMAGE_PATH), undefined);
-  // A drop measured on bytes the page no longer has opens nothing.
-  await controller.drop("media", { parent: [0, 0], index: 0, where: "" }, page.replace("<main>", "<main><p>Gone</p>"));
-  assert.equal(places.length, 2);
-  assert.match(m.refusals.at(-1)!, /still updating/);
-});
+for (const action of ["click", "drop"] as const) {
+  for (const present of [false, true]) {
+    test(`Image ${action} inserts the placeholder, ${present ? "reusing the existing file" : "creating its file"}, in one undo step`, async () => {
+      const files = { "index.html": page, ...(present ? { [PLACEHOLDER_IMAGE_PATH]: "Existing image" } : {}) };
+      const { controller, m } = setup({}, files);
+      if (action === "click") await controller.click("media");
+      else await controller.drop("media", { parent: [0, 0], index: 1, where: "After Heading" }, page);
+      assert.match(m.source("index.html")!, /<img src="\/images\/placeholder.svg" alt="" width="640" height="400">/);
+      assert.equal(m.source(PLACEHOLDER_IMAGE_PATH), present ? "Existing image" : placeholderImageSvg);
+      assert.equal(m.steps().length, 1);
+      assert.deepEqual(selected(m), { path: "index.html", node: [0, 0, 1] });
+      assert.equal(m.undo(), true);
+      assert.equal(m.source("index.html"), page);
+      assert.equal(m.source(PLACEHOLDER_IMAGE_PATH), present ? "Existing image" : undefined);
+    });
+  }
+}
 
-test("Media in a component's template (and without a picker) writes the stand-in picture in the same step; later ones reuse it", async () => {
+test("Image insertion writes the placeholder in the same step; later ones reuse it", async () => {
   const { controller, m } = setup();
   await controller.click("media");
   assert.equal(m.steps().length, 1);

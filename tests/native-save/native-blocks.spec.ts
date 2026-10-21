@@ -5,7 +5,6 @@ import { editorMounted, storedDraft } from "./drafts";
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const rail = (page: Page) => page.getByRole("navigation", { name: "Blocks" });
 const label = (page: Page) => page.locator(".pb-flash-label");
-const dot = { name: "dot.svg", mimeType: "image/svg+xml", buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="40" height="30"><rect width="40" height="30" fill="teal"/></svg>') };
 const source = async (page: Page) => (await editorMounted(page), page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html")));
 const flat = (html: string | undefined) => (html ?? "").replace(/\s+(?=<)/g, "");
 async function undo(page: Page) {
@@ -70,29 +69,23 @@ test("a rail click immediately after typing keeps the text and inserts after the
   await expect(lead).toHaveText(originalText!);
 });
 
-test("Media opens the Media picker for that spot: Cancel adds nothing; Use adds the picture there, one undo step", async ({ page, baseURL }) => {
+test("Image click creates a visible placeholder and its missing file, no picker, one undo step", async ({ page, baseURL }) => {
   await open(page, baseURL, 540, ".hero h1");
   const original = await source(page);
-  await frame(page).locator(".hero h1").click();
-  const media = rail(page).getByRole("button", { name: "Media", exact: true });
-  await media.click();
-  const picker = page.getByRole("dialog", { name: "Choose media", exact: true });
-  await picker.getByRole("button", { name: "Cancel", exact: true }).click();
-  await expect(picker).toHaveCount(0);
-  expect(await source(page)).toBe(original);
-  await media.click();
-  // This site has no pictures yet: one added in the picker is chosen, then saved and placed by Use.
-  await picker.locator("input[type=file]").setInputFiles(dot);
-  await expect(picker.locator(".media-library__chosen-name")).toHaveText("dot.svg");
-  await picker.getByRole("button", { name: "Use image", exact: true }).click();
-  await expect(picker).toHaveCount(0);
-  await expect.poll(async () => flat(await source(page))).toMatch(/<h1>Small websites that stay yours<\/h1><img [^>]*src="\/[^"]*dot\.svg"[^>]*><p class="lead">/);
-  // No stand-in picture is written; the new picture shows and is selected.
   expect(await storedDraft(page, "images/placeholder.svg")).toBeUndefined();
-  await expect(frame(page).locator(".hero h1 + img")).toBeVisible();
+  await frame(page).locator(".hero h1").click();
+  await rail(page).getByRole("button", { name: "Media", exact: true }).click();
+  await expect.poll(async () => flat(await source(page))).toMatch(/<h1>Small websites that stay yours<\/h1><img src="\/images\/placeholder.svg" alt="" width="640" height="400"><p class="lead">/);
+  await expect(page.getByRole("dialog", { name: "Choose media", exact: true })).toHaveCount(0);
+  await expect.poll(() => storedDraft(page, "images/placeholder.svg")).toMatchObject({ content: expect.stringContaining("<svg") });
+  const image = frame(page).locator(".hero h1 + img");
+  await expect(image).toBeVisible();
+  await expect.poll(() => image.evaluate(img => (img as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
   await expect(page.getByRole("toolbar", { name: "Edit bar", exact: true }).locator(".edit-bar__kind")).toHaveText("Image");
   await undo(page);
   await expect.poll(() => source(page)).toBe(original);
+  await expect(image).toHaveCount(0);
+  await expect.poll(() => storedDraft(page, "images/placeholder.svg")).toBeUndefined();
 });
 
 test("a selected instance takes a click-insert in its items slot, one undo step; one without an items slot refuses in red", async ({ page, baseURL }) => {

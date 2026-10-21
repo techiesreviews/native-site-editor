@@ -1,3 +1,6 @@
+import type { createComponentTools } from "../src/page-builder/components.ts";
+import type { createGuardedEdits } from "../src/guarded-edit.ts";
+import type { createMemoryWorkspace } from "./fakes/memory-workspace.ts";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
@@ -207,7 +210,8 @@ test("fill markup copies the fallback element with the slot attribute, or makes 
   assert.equal(fillMarkup(starter, title), `<h2 slot="title">A short, clear headline.</h2>`);
   assert.equal(fillMarkup(starter, title, "Ours"), `<h2 slot="title">Ours</h2>`);
   assert.equal(fillMarkup(starter, primary), `<a slot="primary" href="/about/#contact">Get in touch</a>`);
-  assert.equal(fillMarkup(starter, image), `<img slot="image" src="" alt="">`);
+  assert.equal(fillMarkup(starter, image), `<img slot="image" src="/images/placeholder.svg" alt="">`);
+  assert.equal(fillMarkup(starter, image, undefined, "/my-site"), `<img slot="image" src="/my-site/images/placeholder.svg" alt="">`);
   assert.equal(fillMarkup(starter, link), `<a slot="link" href="">Link</a>`);
   assert.equal(fillMarkup(starter, rest), "Default");
 });
@@ -1217,4 +1221,82 @@ test("component image-slot choices publish encoded addresses under the site fold
   const { componentImageChoices } = await import("../src/page-builder/component-model");
   assert.deepEqual(componentImageChoices(["media/a.webp", "media/a b.webp"], "/my-site"), ["/my-site/media/a.webp", "/my-site/media/a%20b.webp"]);
   assert.deepEqual(componentImageChoices(["media/a.webp"], ""), ["/media/a.webp"]);
+});
+
+declare global {
+  var placeholderSlotTools: typeof createComponentTools;
+  var placeholderSlotEdits: typeof createGuardedEdits;
+  var placeholderSlotWorkspace: typeof createMemoryWorkspace;
+}
+
+test("empty image slot fills create their placeholder atomically through canvas and Structure", async () => {
+  const { build } = await import("esbuild");
+  const { chromium } = await import("@playwright/test");
+  const bundle = await build({
+    stdin: { contents: `
+      import { createComponentTools } from './src/page-builder/components';
+      import { createGuardedEdits } from './src/guarded-edit';
+      import { createMemoryWorkspace } from './tests/fakes/memory-workspace';
+      globalThis.placeholderSlotTools = createComponentTools;
+      globalThis.placeholderSlotEdits = createGuardedEdits;
+      globalThis.placeholderSlotWorkspace = createMemoryWorkspace;
+    `, resolveDir: process.cwd() },
+    bundle: true, write: false, format: "iife", platform: "browser", loader: { ".css": "empty", ".svg": "text" },
+  });
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    // tsx preserves names in serialized evaluate callbacks through this helper.
+    await page.addScriptTag({ content: "globalThis.__name = (fn) => fn;" + bundle.outputFiles[0].text });
+    for (const via of ["canvas", "structure"]) for (const present of [false, true]) for (const prefix of ["", "/my-site", "/a&b"]) {
+      const result = await page.evaluate(async ({ via, present, prefix }) => {
+        const path = "index.html", templatePath = "components/test-card/test-card.html", imagePath = "images/placeholder.svg";
+        const source = '<test-card><span slot="title">Kept</span></test-card>';
+        const template = '<figure><slot name="image"></slot></figure><h2><slot name="title">Title</slot></h2>';
+        const site = { routes: { "/": path }, components: { "test-card": templatePath } };
+        const m = placeholderSlotWorkspace({ branch: { [path]: source, [templatePath]: template,
+          ".editor/config.json": JSON.stringify({ site: { url: `https://example.test${prefix}/` } }),
+          ...(present ? { [imagePath]: "Existing image" } : {}) }, open: path, site });
+        const guarded = placeholderSlotEdits(m.workspace);
+        let pending = Promise.resolve<unknown>(undefined);
+        const edits: ReturnType<typeof createGuardedEdits> = { ...guarded, run(plan, options) { const result = guarded.run(plan, options); pending = result; return result; } };
+        const selection = { path, node: [0], tag: "test-card", text: "", reason: "click" as const, selectors: [] };
+        // Only the editor ports used by this slot action; guarded edits own its actual writes and history.
+        const editor = { isMounted: () => true, getMountedSource: () => m.source(path), captureHistoryHost: () => ({ isCurrent: () => true }),
+          replaceActiveRanges(ranges: { start: number; end: number; text: string }[]) {
+            const outcome = guarded.now(r => { r.source(path); return { edits: new Map([[path, ranges]]), done: "Image shown", undone: "Image hidden" }; }, { anchor: path });
+            if (!outcome.ok) throw new Error(outcome.message);
+          } };
+        const panelHost = document.createElement("div"), codeTitle = document.createElement("div");
+        document.body.append(panelHost, codeTitle);
+        const tools = placeholderSlotTools({ structureFields: via === "structure", site: () => site, edits,
+          sources: () => Object.fromEntries(m.files().map(path => [path, m.source(path)!])), editor: () => editor as never,
+          currentPath: () => path, selection: () => selection, previewPage: () => path, preview: () => ({ selectAfterUpdate() {}, selectNode() {} }),
+          openFile: async () => true, announce() {}, error(error) { throw error; }, images: () => [], prefix: () => prefix,
+          chooseImage: async () => undefined, links: () => [], pageLabel: path => path, panelHost, codeTitle, canvasComponent() {}, refreshBar() {},
+          variantFiles: { site: () => undefined, read: () => undefined },
+        });
+        let accepted: boolean;
+        if (via === "canvas") {
+          tools.show(selection);
+          accepted = tools.fillInstanceSlot({ pagePath: path, pageNode: [0], tag: "test-card", templatePath, stamp: edits.stamp(),
+            expectedPageSource: source, expectedTemplateSource: template, expectedSelection: selection, isCurrent: () => true }, "image");
+        } else accepted = tools.structure(path, [0])!.setVisible("image", true);
+        await pending;
+        const after = m.source(path), image = m.source(imagePath), steps = m.steps().length;
+        const undone = m.undo();
+        const result = { accepted, after, image, steps, undone, restored: m.source(path), imageAfterUndo: m.source(imagePath) };
+        tools.destroy(); panelHost.remove(); codeTitle.remove();
+        return result;
+      }, { via, present, prefix });
+      assert.equal(result.accepted, true);
+      assert.ok(result.after?.includes(`<img slot="image" src="${prefix.replaceAll("&", "&amp;")}/images/placeholder.svg" alt="">`));
+      assert.equal(result.steps, 1);
+      assert.equal(result.undone, true);
+      assert.equal(result.restored, '<test-card><span slot="title">Kept</span></test-card>');
+      if (present) assert.equal(result.image, "Existing image");
+      else assert.match(result.image!, /<svg/);
+      assert.equal(result.imageAfterUndo, present ? "Existing image" : undefined);
+    }
+  } finally { await browser.close(); }
 });

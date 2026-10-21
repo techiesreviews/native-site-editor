@@ -253,3 +253,19 @@ slide and transition. Touch edits with one tap on the complete name without requ
 a hover reveal. The section grip still drags, and a drag release cannot also edit.
 Context carets stay separate selection actions. Stale root actions retain their
 source/selection guards, and missing template sources provide no edit action.
+
+## New images
+
+Clicking or dropping the Image block (the rail's Media button) inserts
+`<img src="/images/placeholder.svg" alt="" width="640" height="400">` immediately,
+with the site's URL prefix when needed. The image is selected; use its edit bar
+to replace it afterwards. Replace on this placeholder opens the Media picker for
+pictures, videos, audio, downloads and online videos. The chosen media replaces
+the placeholder in one Undo step. Other pictures keep their usual replacement
+rules. Insertion does not open the media picker. The first
+image creates `images/placeholder.svg` when missing, in the same Undo step as
+the page change. Existing placeholder files are kept.
+
+Filling an empty image slot and the default card image use the same placeholder.
+Their writes create the missing file alongside the page change, so one Undo
+removes both.

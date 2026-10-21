@@ -6,7 +6,7 @@ import "./components/refusal-note.css";
 import { createRowMenu } from "./components/row-menu";
 import { elementMenuItems as collectElementMenuItems, type ElementMenuTarget } from "./components/element-menu";
 import type { InsertChoice, InsertPoint } from "./components/insert-controls";
-import { nativeChoiceMarkup } from "./page-builder/native-elements";
+import { nativeChoiceMarkup, placeholderImageCreates } from "./page-builder/native-elements";
 import { nativeDestinations, nativeMarkupInsertEdit } from "./page-builder/native-operations";
 import { INLINE_FORMATTING, TEXT_LINE_TAGS, TEXT_TAGS } from "./page-builder/rules/text-level";
 import type { VariantFiles, VariantSite } from "../shared/variant-lookup";
@@ -824,25 +824,26 @@ async function insertNativeComponent(point: InsertPoint, choice: InsertChoice) {
   const captured = nativeAddPoints.get(point), moved = "The insertion source changed. Choose the destination again.";
   if (captured && (captured.epoch !== generation || captured.scope !== setupScope() || versionView)) { errorMessage(new Error(moved)); return; }
   if (!nativePreview || !nativeSite || !Object.values(nativeSite.routes).includes(path)) return;
-  // Media opens the Media picker for that gap; Use inserts the chosen file (the bytes must hold).
-  if (choice.tag === "native:media") {
-    if (captured && nativeEffectiveSource(path) !== captured.source) errorMessage(new Error(moved));
-    else void mediaController.insertMedia({ path, parent: point.parent, index: point.index });
-    return;
-  }
   const selected = appStore.selection.value;
   const before = selected?.node ? { path: selected.path, node: [...selected.node] } : undefined;
   // The page opens first when another file is in the editor (Edit component mode on a template it
   // uses ends then): the repository and branch hold, as the page's bytes do.
   const since = guardedEdits.stamp("repository");
-  const outcome = await guardedEdits.run(r => addSectionStep(r, { path, select: [...point.parent, point.index], message: `${choice.label} added`, before,
-    loader: native ? undefined : nativeComponentLoaderPlan,
-    edit(page) {
-      if (native && captured && page !== captured.source) return moved;
-      const edit = native ? nativeMarkupInsertEdit(page, point.parent, point.index, nativeChoiceMarkup(choice.tag, undefined, nativeSitePrefix(r.source(NATIVE_CONFIG_PATH)))!)
-        : nativeInsertEdit(page, point.parent, point.index, choice.tag, r.template(choice.tag)?.source ?? "");
-      return edit ? [edit] : `${choice.label} was not added: the HTML around that spot could not be located exactly in ${path}.`;
-    } }), { since, anchor: path, guard: () => !versionView });
+  const outcome = await guardedEdits.run(async r => {
+    const plan = await addSectionStep(r, { path, select: [...point.parent, point.index], message: `${choice.label} added`, before,
+      loader: native ? undefined : nativeComponentLoaderPlan,
+      edit(page) {
+        if (native && captured && page !== captured.source) return moved;
+        const edit = native ? nativeMarkupInsertEdit(page, point.parent, point.index, nativeChoiceMarkup(choice.tag, undefined, nativeSitePrefix(r.source(NATIVE_CONFIG_PATH)))!)
+          : nativeInsertEdit(page, point.parent, point.index, choice.tag, r.template(choice.tag)?.source ?? "");
+        return edit ? [edit] : `${choice.label} was not added: the HTML around that spot could not be located exactly in ${path}.`;
+      } });
+    if ("done" in plan && native) {
+      const prefix = nativeSitePrefix(r.source(NATIVE_CONFIG_PATH));
+      plan.creates = placeholderImageCreates(r, nativeChoiceMarkup(choice.tag, undefined, prefix)!, prefix);
+    }
+    return plan;
+  }, { since, anchor: path, guard: () => !versionView });
   if (!outcome.ok || outcome.message) errorMessage(new Error(!outcome.ok && outcome.reason === "stale" ? moved : outcome.message));
 }
 
@@ -949,7 +950,6 @@ const blockInsertPorts: BlockInsertPorts = {
     return selection?.path === path ? { path, node: selection.node, painted: selection.paintedSource } : { path, node: host?.node, painted: host?.paintedSource };
   },
   edits: guardedEdits,
-  media: place => void mediaController.insertMedia(place),
   refuse: (reason, pointer) => {
     if (pointer) { refuse(reason, { pointer }); return; }
     nativePreview?.flashRefusal(reason);

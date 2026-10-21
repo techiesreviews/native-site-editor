@@ -44,20 +44,33 @@ async function loopSwitch(page: Page) {
   await expect(popup).toBeVisible();
   return popup.getByRole("switch", { name: "Loop silently", exact: true });
 }
-/** Add → Media (the blocks beside the Add panel), after the section's words: the picker lists every kind. */
+/** The Media block starts as a placeholder; Replace offers every media kind. */
+async function replaceNewMedia(page: Page) {
+  await page.getByRole("navigation", { name: "Blocks" }).getByRole("button", { name: "Media", exact: true }).click();
+  const image = frame(page).locator('#scene > img[src$="placeholder.svg"], #scene > img[src^="data:image/svg+xml"]');
+  await expect(image).toBeVisible();
+  await expect.poll(() => image.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBeGreaterThan(0);
+  await expect(page.getByRole("dialog", { name: "Choose media", exact: true })).toHaveCount(0);
+  const before = await mounted(page);
+  await bar(page).locator(".edit-bar__media").click();
+  await page.getByRole("dialog", { name: "Image", exact: true }).getByRole("button", { name: "Replace", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "Choose media", exact: true })).toBeVisible();
+  return before;
+}
+/** Replace the new Media block after the section's words. */
 async function addMedia(page: Page, file: string, use: string) {
   await frame(page).locator("#scene p").click();
-  await page.getByRole("navigation", { name: "Blocks", exact: true }).getByRole("button", { name: "Media", exact: true }).click();
+  const before = await replaceNewMedia(page);
   const picker = page.getByRole("dialog", { name: "Choose media", exact: true });
-  await expect(picker.locator(".media-library__place")).toContainText("Add media");
+  await expect(picker.locator(".media-library__place")).toContainText("Replace media");
   await picker.getByRole("button", { name: `Choose ${file}`, exact: true }).click();
   await picker.getByRole("button", { name: use, exact: true }).click();
   await expect(picker).toHaveCount(0);
+  return before;
 }
 test("Add → Media places a video with its still and the player; the canvas keeps it still; one Undo", { tag: "@smoke" }, async ({ page, baseURL }) => {
   await open(page, baseURL, false);
-  const before = await mounted(page);
-  await addMedia(page, "media/clip.mp4", "Use video");
+  const before = await addMedia(page, "media/clip.mp4", "Use video");
   await expect.poll(() => mounted(page)).toContain('<video src="/media/clip.mp4" poster="/images/placeholder.svg" controls preload="none" playsinline width="320" height="180"></video>');
   const source = await mounted(page);
   expect(source).toContain('<script type="module" src="/scripts/media-player.js"></script>');
@@ -69,7 +82,7 @@ test("Add → Media places a video with its still and the player; the canvas kee
   await expect(video).not.toHaveAttribute("controls");
   expect(await video.evaluate(element => (element as HTMLVideoElement).paused)).toBe(true);
   await expect(bar(page).getByRole("button", { name: "Media", exact: true })).toBeVisible();
-  // One Undo takes back the video, the head links and the player files.
+  // One Undo restores the placeholder and takes back the head links and player files.
   await page.locator(".code-editor__undo").first().click();
   await expect.poll(() => mounted(page)).toBe(before);
   for (const path of ["scripts/media-player.js", "scripts/media-online.js", "styles/media-player.css"]) expect(await storedDraft(page, path)).toBeUndefined();
@@ -77,13 +90,18 @@ test("Add → Media places a video with its still and the player; the canvas kee
 test("Add → Media places an audio file with its length and a PDF card that opens; both stay still on the canvas", async ({ page, baseURL }) => {
   await open(page, baseURL, false, { "media/song.mp3": "seeded audio bytes", "media/price-list.pdf": "%PDF-1.4 seeded" },
     { "media/song.mp3": { duration: 75.4, description: { text: "Opening song" } }, "media/price-list.pdf": { still: "images/placeholder.svg" } });
-  await addMedia(page, "media/song.mp3, 1:15", "Use audio");
+  const beforeAudio = await addMedia(page, "media/song.mp3, 1:15", "Use audio");
   await expect.poll(() => mounted(page)).toContain('<audio src="/media/song.mp3" controls preload="none" data-duration="75" aria-label="Opening song"></audio>');
   const audio = frame(page).locator("#scene > audio");
   await expect(audio).toBeVisible();
   await audio.click();
   expect(await audio.evaluate(element => (element as HTMLAudioElement).paused)).toBe(true);
-  await addMedia(page, "media/price-list.pdf", "Use file");
+  const withAudio = await mounted(page);
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(() => mounted(page)).toBe(beforeAudio);
+  await page.locator(".code-editor__redo").first().click();
+  await expect.poll(() => mounted(page)).toBe(withAudio);
+  const beforeDownload = await addMedia(page, "media/price-list.pdf", "Use file");
   // The new card is selected, named for what it is.
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Download");
   await expect.poll(() => mounted(page)).toContain('<a class="download-card" href="/media/price-list.pdf"><img src="/images/placeholder.svg" alt="" width="320" height="180" loading="lazy" decoding="async"><span class="download-card-name">price-list</span><span class="download-card-meta">PDF · ');
@@ -93,8 +111,30 @@ test("Add → Media places an audio file with its length and a PDF card that ope
   expect(source.match(/src="\/scripts\/media-player.js"/g)).toHaveLength(1);
   expect(source.match(/href="\/styles\/media-player.css"/g)).toHaveLength(1);
   await expect(frame(page).locator("#scene .download-card")).toBeVisible();
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(() => mounted(page)).toBe(beforeDownload);
+  await page.locator(".code-editor__redo").first().click();
+  await expect.poll(() => mounted(page)).toBe(source);
   await save(page);
   expect(await saved(page, baseURL)).toContain('class="download-card"');
+});
+test("placeholder Replace accepts a picture; Cancel keeps the placeholder and one Undo restores it", async ({ page, baseURL }) => {
+  await open(page, baseURL, false);
+  await frame(page).locator("#scene p").click();
+  const before = await replaceNewMedia(page);
+  const picker = page.getByRole("dialog", { name: "Choose media", exact: true });
+  await picker.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(picker).toHaveCount(0);
+  expect(await mounted(page)).toBe(before);
+  await bar(page).locator(".edit-bar__media").click();
+  await page.getByRole("dialog", { name: "Image", exact: true }).getByRole("button", { name: "Replace", exact: true }).click();
+  await picker.getByRole("button", { name: "Choose images/studio-desk.svg", exact: true }).click();
+  await picker.getByRole("button", { name: "Use image", exact: true }).click();
+  await expect(picker).toHaveCount(0);
+  await expect.poll(() => mounted(page)).toMatch(/<img[^>]*src="\/images\/studio-desk.svg"/);
+  await expect(frame(page).locator("#scene > img")).toBeVisible();
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(() => mounted(page)).toBe(before);
 });
 test("a picture spot's picker offers videos too: a chosen video loops silently there, keeping the spot's slot and words", async ({ page, baseURL }) => {
   await open(page, baseURL, false);
@@ -283,7 +323,7 @@ test("the paste field opens from its button and places a pasted Vimeo link; the 
   // Vimeo answers nothing here: the video is placed without its picture.
   await page.route("https://vimeo.com/api/**", route => route.fulfill({ status: 404, body: "" }));
   await frame(page).locator("#scene p").click();
-  await page.getByRole("navigation", { name: "Blocks", exact: true }).getByRole("button", { name: "Media", exact: true }).click();
+  await replaceNewMedia(page);
   const picker = page.getByRole("dialog", { name: "Choose media", exact: true });
   // No "Choose one file" line: an empty status and a disabled "Use".
   await expect(picker.locator(".media-library__chosen-text")).toHaveText("");
@@ -304,8 +344,7 @@ test("Add → Media places a pasted YouTube address with its still and play butt
   await page.route("https://www.youtube.com/oembed**", route => { calls.push(route.request().url()); return route.fulfill({ headers: cors, contentType: "application/json", body: JSON.stringify({ title: "Stub film" }) }); });
   await page.route("https://i.ytimg.com/**", route => { calls.push(route.request().url()); return route.fulfill({ headers: cors, contentType: "image/jpeg", body: still }); });
   await frame(page).locator("#scene p").click();
-  const blocks = page.getByRole("navigation", { name: "Blocks", exact: true }).getByRole("button", { name: "Media", exact: true });
-  await blocks.click();
+  const placeholder = await replaceNewMedia(page);
   const picker = page.getByRole("dialog", { name: "Choose media", exact: true });
   const address = await revealPaste(picker);
   const useLink = picker.locator(".media-library__online").getByRole("button", { name: "Use", exact: true });
@@ -328,6 +367,13 @@ test("Add → Media places a pasted YouTube address with its still and play butt
   // Selected as a Video, named by its still (no name prompt).
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Video");
   await expect(bar(page).getByText("Needs a name")).toHaveCount(0);
+  const placed = await mounted(page);
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(() => mounted(page)).toBe(placeholder);
+  expect(await storedDraft(page, "media/videos/stub-film.webp")).toBeUndefined();
+  expect(await storedDraft(page, "scripts/media-online.js")).toBeUndefined();
+  await page.locator(".code-editor__redo").first().click();
+  await expect.poll(() => mounted(page)).toBe(placed);
   // Media lists it under Video with the YouTube mark and the page that shows it.
   await openMedia(page);
   const library = page.getByRole("region", { name: "Media", exact: true });
@@ -354,7 +400,7 @@ test("Add → Media places a pasted YouTube address with its still and play butt
   // Placed again from the picker: no service call.
   const before = calls.length;
   await frame(page).locator("#scene p").click();
-  await blocks.click();
+  await replaceNewMedia(page);
   await picker.getByRole("button", { name: "Choose YouTube video Stub film", exact: true }).click();
   await expect(picker.locator(".media-library__chosen-name")).toHaveText("Stub film · YouTube");
   await picker.getByRole("button", { name: "Use video", exact: true }).click();
@@ -401,9 +447,8 @@ test("an online Vimeo video's details switch Vimeo's own bar on everywhere; Remo
 // the preview's stylesheet reader looped on the new media-player.css and the editor froze.
 test("a video added inside Add → Media's picker is placed with the player as text files; the editor stays responsive; one Undo", async ({ page, baseURL }) => {
   await open(page, baseURL, false);
-  const before = await mounted(page);
   await frame(page).locator("#scene p").click();
-  await page.getByRole("navigation", { name: "Blocks", exact: true }).getByRole("button", { name: "Media", exact: true }).click();
+  const before = await replaceNewMedia(page);
   const picker = page.getByRole("dialog", { name: "Choose media", exact: true });
   await picker.locator(".media-library__upload-input").setInputFiles({ name: "walk.mp4", mimeType: "video/mp4", buffer: Buffer.from(CLIP, "base64") });
   // Playwright's Chromium cannot encode it again: it is added unchanged.

@@ -32,8 +32,6 @@ export interface BlockInsertPorts {
   readonly edits: Pick<GuardedEdits, "run" | "stamp" | "peek">;
   /** Shows a refusal or a recorded step's refresh error at the selection. */
   readonly refuse: (reason: string, pointer?: { x: number; y: number }) => void;
-  /** Media on a page: the Media picker opens for this gap; Use inserts the chosen file there. */
-  readonly media?: (place: { path: string; parent: number[]; index: number; wrap?: boolean; slot?: string }) => void;
 }
 export interface BlockInsert {
   path: string;
@@ -89,16 +87,6 @@ export function createBlockInsertController(ports: BlockInsertPorts) {
   /** A rail button clicked: the block goes where the selection (`at`, when the click was) says, or the reason flashes. */
   async function click(kind: NativeElementKind, at = ports.target(), since: Stamp = ports.edits.stamp()) {
     if (!at) { ports.refuse("Open a page to add blocks to it."); return; }
-    // Media on a page writes nothing yet: the picker opens for the place, read on the bytes now.
-    if (kind === "media" && at.template === undefined && ports.media) {
-      const source = ports.edits.peek.source(at.path);
-      if (source === undefined) { ports.refuse("Open a page to add blocks to it."); return; }
-      if (at.node && at.painted !== undefined && !nativeEditInside(at.painted, source, at.node)) { ports.refuse("The page is still updating. Try again in a moment."); return; }
-      const target = clickTarget(source, kind, at.node, tag => ports.edits.peek.template(tag)?.source);
-      if (!target.ok) { ports.refuse(target.reason); return; }
-      if (since.holds()) ports.media({ path: at.path, parent: target.parent, index: target.index, wrap: target.wrap, slot: target.slot });
-      return;
-    }
     // The bytes the click's place is read on: those painted around the selection, else
     // the bytes now; the page opening for the step must not change them.
     const clicked = at.node && at.painted !== undefined ? undefined : ports.edits.peek.source(at.path);
@@ -124,13 +112,6 @@ export function createBlockInsertController(ports: BlockInsertPorts) {
    */
   async function drop(kind: NativeElementKind, place: { parent: number[]; index: number; where: string; slot?: string }, painted: string | undefined, at = ports.target(), pointer?: { x: number; y: number }, since: Stamp = ports.edits.stamp()) {
     if (!at) { ports.refuse("Open a page to add blocks to it.", pointer); return; }
-    if (kind === "media" && at.template === undefined && ports.media) {
-      const source = ports.edits.peek.source(at.path);
-      const typed = painted !== undefined && source !== undefined && at.node !== undefined && !within(place.parent, at.node) && nativeEditInside(painted, source, at.node);
-      if (source === undefined || painted !== source && !typed) { ports.refuse("The page is still updating. Try again in a moment.", pointer); return; }
-      if (since.holds()) ports.media({ path: at.path, parent: place.parent, index: place.index, slot: place.slot });
-      return;
-    }
     report(await ports.edits.run(r => {
       const source = r.source(at.path);
       if (source === undefined) return { refuse: "Open a page to add blocks to it." };
