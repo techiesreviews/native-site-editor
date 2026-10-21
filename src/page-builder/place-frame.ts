@@ -139,7 +139,7 @@ export function readPlaceFrame(tagText: string, records?: MediaRecords, pagePath
   return { file: path || undefined, shape, focus, ...(focus === undefined ? { focusRaw } : {}), trimmed: !!trimmedFrom, ...(trimmedFrom ? { source: trimmedFrom.source, trim: structuredClone(trimmedFrom.trim) } : {}) };
 }
 
-export type PlaceFramePorts = Pick<MediaControllerPorts, "source" | "openFile" | "restoreFile" | "viewingVersion" | "measureImage" | "locateElement" | "change">;
+export type PlaceFramePorts = Pick<MediaControllerPorts, "source" | "openFile" | "restoreFile" | "viewingVersion" | "measureImage" | "locateElement" | "change" | "selected">;
 export interface PlaceFrameProof { stamp: Stamp; epoch: number; source: string; expected: string }
 
 /** A page-only, one-Undo edit. Measurement failure leaves download sizing untouched. */
@@ -175,6 +175,8 @@ export async function framePlace(ports: PlaceFramePorts, target: { path: string;
     text = mediaAttributes(text, attrs);
   }
   const range = current();
-  if (!ports.change(target.path, proof.source, [...page.edits, { start: range.tag.start, end: range.tag.end, text }], target.node,
+  // A press on another element (which closes the popup and saves) keeps that element selected.
+  const select = ports.selected?.(target.path, target.node) === false ? undefined : target.node;
+  if (!ports.change(target.path, proof.source, [...page.edits, { start: range.tag.start, end: range.tag.end, text }], select,
     change.shape !== undefined ? "Image shape changed" : "Focus point moved")) throw new Error("The image place could not be changed.");
 }
