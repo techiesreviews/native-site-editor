@@ -201,8 +201,11 @@ export async function openImagePopup(options: ImagePopupOptions) {
   async function replace() {
     const { openMediaPicker } = await options.load();
     if (closed) return;
+    // A picture spot (a slotted image) keeps its own rule below, even as the placeholder: a picture or a looping video.
+    const parent = (ports.locateElement ?? locateNativeElementRange)(source!, target.node.slice(0, -1));
+    const spot = isPictureSpot(expected) || parent?.tag.name === "picture" && isPictureSpot(source!.slice(parent.tag.start, parent.tag.end));
     // The Media block starts as this image; Replace chooses any media for its place.
-    if (placed === PLACEHOLDER_IMAGE_PATH) {
+    if (placed === PLACEHOLDER_IMAGE_PATH && !spot) {
       if (!stamp.holds() || !options.live() || ports.source(target.path) !== source || ports.viewingVersion()) return;
       const frame = frameChange(start, { shape: shapeNow(), focus: centred, component: state.component }, true);
       close();
@@ -228,8 +231,6 @@ export async function openImagePopup(options: ImagePopupOptions) {
     }
     const words = mediaExistingAlt(expected)?.trim();
     // A picture spot also takes a video, which loops silently there: placed at once, closing the popup (slice 119).
-    const parent = (ports.locateElement ?? locateNativeElementRange)(source!, target.node.slice(0, -1));
-    const spot = isPictureSpot(expected) || parent?.tag.name === "picture" && isPictureSpot(source!.slice(parent.tag.start, parent.tag.end));
     await openMediaPicker({ accept: spot ? SPOT_ACCEPT : "image/*", chosenNote: spot ? spotNote : undefined, report: ports, place: `${ports.placeLabel?.(target.path) ?? target.path} · ${words || "Image"}`,
       onPick: async (image, cancelled, held) => {
         if (spot && pickedVideo(image, held)) {
