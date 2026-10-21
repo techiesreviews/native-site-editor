@@ -106,7 +106,9 @@ export async function placeMediaImage(
   if ([...expectedAssets].some(([path, version]) => ctx.assetVersion(path) !== version)) throw new Error("The image changed while preparing placement. Try again.");
   if (!spotVideo && !copies?.uploads.length && !removes.length && (after.records === records || !readable)) {
     if ([...prefixSources].some(([path, source]) => ports.source(path) !== source)) throw new Error("The site address changed. Try again.");
-    if (!ports.change(target.path, latest, edits, next, "Image replaced")) throw new Error("The image could not be replaced.");
+    // An element pressed meanwhile (closing the Image popup, which saves) stays selected.
+    const select = ports.selected?.(target.path, target.node) === false ? undefined : next;
+    if (!ports.change(target.path, latest, edits, select, "Image replaced")) throw new Error("The image could not be replaced.");
     if (note) ports.announce(`Image replaced.${note}`);
     return;
   }

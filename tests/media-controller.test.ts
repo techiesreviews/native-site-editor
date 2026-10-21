@@ -457,6 +457,16 @@ for (const artDirected of [false, true]) test(`picker unwraps a picture in one c
   assert.doesNotMatch(page, /<source|<picture/); assert.match(page, /class="hero"/); assert.match(page, /slot="hero"/); assert.match(page, /src="\/images\/new.png"/);
   assert.deepEqual(told, artDirected ? ["Image replaced. The new picture is now used on all screens."] : []);
 });
+test("a replacement written after another element was selected keeps that selection", async () => {
+  const calls: Parameters<MediaControllerPorts["change"]>[] = [];
+  let selected = true;
+  const f = fixture({ change: (...args) => { calls.push(args); return true; }, selected: () => selected });
+  f.sources.set("index.html", '<section><img src="/images/old.png" alt="Old alt"></section>');
+  await f.controller.chooseImage({ path: "index.html", node: [0, 0] });
+  selected = false;
+  await f.pick()!.onPick!({ path: "images/new.png", alt: "New" }, () => false);
+  assert.equal(calls.length, 1); assert.equal(calls[0][3], undefined);
+});
 test("Decorative picture cleanup and records share one batch", async () => {
   const batches: Parameters<MediaControllerPorts["applyBatch"]>[2][] = [], told: string[] = [];
   const f = fixture({
