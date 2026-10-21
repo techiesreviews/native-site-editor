@@ -3,7 +3,7 @@
 // file, Use places it, Cancel keeps the placement; full-screen on phones.
 // Default fixture: index.html's hero image is images/placeholder.svg (no alt); images/studio-desk.svg is unused.
 import { expect, test, type Page } from "@playwright/test";
-import { openEditor, openImagePicker } from "../support/scenarios";
+import { openEditor, pickPicture, openImagePicker } from "../support/scenarios";
 import { storedDraft } from "./drafts";
 
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
@@ -166,6 +166,33 @@ test("the picker has the pane's Filter, + and More, shows only images, and keeps
   await picker(page).getByRole("button", { name: "Use image", exact: true }).click();
   // The place had no alt: it takes the new file's description.
   await expect.poll(() => source(page)).toMatch(/src="\/images\/studio-desk\.svg"[^>]*alt="A studio desk"|alt="A studio desk"[^>]*src="\/images\/studio-desk\.svg"/);
+});
+
+test("a Decorative place keeps its mark when its picture is swapped; one Undo brings both back", async ({ page, baseURL }) => {
+  await page.goto(baseURL!);
+  const seeded = { version: 2, collections: [], files: { "images/placeholder.svg": { places: { "index.html": { decorative: true } } } } };
+  expect((await page.request.post(`${baseURL}/__demo/external-edit`, { data: { path: ".editor/media.json", content: JSON.stringify(seeded) } })).status()).toBe(204);
+  await open(page, baseURL);
+  await pickPicture(page, ".hero img");
+  await expect(bar(page).getByRole("button", { name: /Not described yet/ })).toHaveCount(0);
+  const marked = await source(page);
+  await openPicker(page);
+  await expect(picker(page).locator(".media-library__place")).toHaveText("Home · Image");
+  await picker(page).getByRole("button", { name: "Choose images/studio-desk.svg", exact: true }).click();
+  await picker(page).getByRole("button", { name: "Use image", exact: true }).click();
+  await expect(page.locator("#status")).toHaveText("Image replaced");
+  await expect.poll(() => source(page)).toContain('src="/images/studio-desk.svg"');
+  expect(await source(page)).toMatch(/<img[^>]*src="\/images\/studio-desk\.svg"[^>]*alt=""|<img[^>]*alt=""[^>]*src="\/images\/studio-desk\.svg"/);
+  const moved = await records(page);
+  expect(moved?.files?.["images/studio-desk.svg"]?.places?.["index.html"]?.decorative).toBe(true);
+  expect(moved?.files?.["images/placeholder.svg"]?.places?.["index.html"]).toBeUndefined();
+  await pickPicture(page, ".hero img");
+  await expect(bar(page).getByRole("button", { name: /Not described yet/ })).toHaveCount(0);
+  // The swap and the moved mark are one step.
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(() => source(page)).toBe(marked);
+  // The records are back to the seeded file: no draft is left, or one equal to it.
+  await expect.poll(async () => (await records(page)) ?? seeded).toEqual(seeded);
 });
 
 test("a file dropped on a page's image is added and chosen in the picker, placed only by Use", async ({ page, baseURL }) => {
