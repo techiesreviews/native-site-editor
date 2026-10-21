@@ -10,7 +10,8 @@
 // every component selector (shared/slotted-css.ts):
 //   - compounds that matched ancestors outside the element are dropped
 //     (`main .intro h2` → `.intro h2`); one that matched the element through
-//     its `id`, which moves to the instance, becomes `:host`;
+//     its `id`, which moves to the instance, becomes `:host` (for a boxless
+//     page band, `:host > header` or `:host > footer` keeps styling its box);
 //   - a subject's `:not([slot])` becomes `:where([slot])` when it becomes a
 //     slotted part, so its base reset and heading size follow it into the
 //     component and still leave the template's own elements alone;
@@ -34,6 +35,7 @@ import { compareSpecificity, specificity, splitSelectorList } from "../../shared
 import { resolveImportPath, rewriteCssUrls } from "../../shared/css-imports";
 import { blockEnd, preludeEnd, skipSpace, slottedTwin } from "../../shared/slotted-css";
 import { parseSource, startTagAttributes, type InstanceRange, type MakeComponentPlan, type PlannedSlot, type SourceElement, type SourceNode } from "./component-model";
+import { isPageHeaderFooter } from "./rules/page-bands";
 
 // ---- Stylesheets as flat style rules. ----
 
@@ -722,8 +724,13 @@ function rewrite(page: Match, node: SourceElement, part: string, compounds: Comp
       }
       text += s.slice(cursor, first.end);
       // What is left of the compound after the id, when it names no element (`:hover`, `::before`), takes the root's tag.
-      lead = text ? (/^[:[]/.test(text) ? `${territory.rootTag}${text}` : text)
-        : compounds[from + 1]?.combinator === ">" ? `:host > ${territory.rootTag}` : ":host";
+      const inner = text ? (/^[:[]/.test(text) ? `${territory.rootTag}${text}` : text) : territory.rootTag;
+      // A page band's host has no box. Keep its anchor id on the instance,
+      // but apply the entire compound (including states) to the inner band.
+      const ancestors: string[] = [];
+      for (let parent = root.parent; parent; parent = parent.parent) ancestors.push(parent.name);
+      lead = ids.length && isPageHeaderFooter(root.name, ancestors) ? `:host > ${inner}`
+        : text ? inner : compounds[from + 1]?.combinator === ">" ? `:host > ${territory.rootTag}` : ":host";
     }
   }
   return lead + s.slice(first.end);
