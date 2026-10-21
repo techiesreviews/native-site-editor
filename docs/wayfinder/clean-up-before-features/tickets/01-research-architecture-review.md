@@ -1,7 +1,7 @@
 ---
 title: Re-check the architecture review on today's code
 type: research (AFK)
-status: open
+status: closed
 assignee: claude (research subagent)
 blocked_by: []
 ---
@@ -22,3 +22,21 @@ Candidates from 2026-10-12:
 8. **Delete pass-throughs:** cards-controller and 24 forwarders in `main.ts`. Housekeeping.
 
 Round 1 questions left unanswered on 2026-10-12, to re-check and carry into [Decide the architecture review's behaviour questions](05-grill-architecture-choices.md): should a page address be strict (lowercase letters, digits, dashes)? When the live site and the editor disagree, which wins? Should #7 be parked?
+
+## Resolution (2026-10-22)
+
+Re-measured at `dev @ 89ac5e0e` against `edc0f76f`.
+
+- **Kept as Strong:**
+  - #1 Workspace session (L). It grew: 66 generation guards, 58 hand-written "still current?" checks, six same-workspace comparisons that differ.
+  - #2 Native site runtime (L). Still about 1,255 `main.ts` lines; the effective source is now read three ways and "new draft paths" nine.
+  - #3 Shared site-operation rules (M). It grew: three page-address rules, eleven "is a file" sites.
+- **Reshaped:** #4 Agent relay. The Durable Object build turned it into a missing operation table: one tool is spelled in 6–7 files (Worth exploring, M).
+- **Unchanged, Worth exploring:** #5 Page Structure model and #6 optional-slot rule.
+- **Parked:** #7 (Speculative).
+- **Mostly fixed:** #8, by tech-debt 08. The cards-controller and four one-liners are left (S).
+- **New:** N1, agent edits prepared twice in the same tab (Worth exploring, M–L).
+
+Recommended order: #1, #2, #3, #4 + N1, #6, #5, #8; #7 parked. The behaviour questions, each with a recommended answer, are listed for [ticket 05](05-grill-architecture-choices.md).
+
+Findings: `docs/wayfinder/clean-up-before-features/research/01-architecture-review.md` on branch `research/cbf-01-architecture-review`, commit `4fe31db3` (not merged).
