@@ -103,6 +103,36 @@ section::before {
 `);
 });
 
+for (const band of ["header", "footer"]) {
+  test(`a page ${band}'s id rules style its inner box, keeping states and conditions`, () => {
+    const page = `<html><body><div><${band} id="masthead" class="band"><h2>Title</h2><nav class="actions"><a href="/">Home</a></nav></${band}></div></body></html>`;
+    const range = rangeOf(page, band);
+    const raw = makeComponentPlan(page, range, "page-band", {}, []);
+    assert.ok(!("error" in raw));
+    const plan = withPageCss(raw, page, range, "page-band", [{ path: "styles/site.css", source: `
+      #masthead { position: sticky; top: 0; background: red; padding: 20px; width: 100%; }
+      #masthead:hover { top: 20px; background: blue; padding: 24px; }
+      ${band}#masthead.band:hover > .actions { outline: 1px solid; }
+      #masthead .actions { gap: 4px; }
+      @media (max-width: 600px) {
+        @supports (position: sticky) { #masthead { width: auto; } }
+      }` }]);
+    const rules = flatRules(copied(plan.css), "component.css");
+    assert.deepEqual(rules.map(rule => rule.selectors), [
+      [`:host > ${band}`], [`:host > ${band}:hover`],
+      [`:host > ${band}.band:hover > .actions`], [`:host > ${band} .actions`], [`:host > ${band}`],
+    ]);
+    assert.deepEqual(rules[0].declarations, ["position: sticky", "top: 0", "background: red", "padding: 20px", "width: 100%"]);
+    assert.deepEqual(rules[1].declarations, ["top: 20px", "background: blue", "padding: 24px"]);
+    assert.deepEqual(rules[4].wrappers, ["@media (max-width: 600px)", "@supports (position: sticky)"]);
+    assert.deepEqual(rules[4].declarations, ["width: auto"]);
+    assert.match(plan.css, /^:host \{\n  display: contents;/);
+    assert.match(plan.instance, /<page-band id="masthead">/);
+    assert.doesNotMatch(plan.template, /id="masthead"/);
+    assert.deepEqual(plan.notes, []);
+  });
+}
+
 test("at-rule wrappers kept, @layer dropped, order kept", () => {
   const plan = made(intro, `@layer sections {
   .intro h2 { color: red; }

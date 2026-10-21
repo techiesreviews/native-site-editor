@@ -8,18 +8,25 @@ const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const bar = (page: Page) => page.getByRole("toolbar", { name: "Edit bar", exact: true });
 const row = (page: Page, band: "header" | "footer") => page.getByRole("tree", { name: "Page structure" }).locator(`[data-node="${band === "header" ? 0 : 2}"]`).first();
 
-async function open(page: Page, baseURL: string | undefined, position: "sticky" | "fixed" = "sticky") {
+async function open(page: Page, baseURL: string | undefined, position: "sticky" | "fixed" = "sticky", idStyled = false) {
   await page.setViewportSize({ width: 1600, height: 1000 });
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await expect(frame(page).locator(".hero h1")).toBeVisible({ timeout: 30_000 });
   const css = await (await page.request.get(`${baseURL}/__demo/file?path=styles/site.css`)).text();
-  for (const [path, content] of [
-    ["index.html", source], ["about/index.html", source],
-    ["styles/site.css", `${css}\nbody { margin: 0; } header.page-header.page-header {
+  const pageSource = idStyled ? source.replace('<header class="page-header">', '<header id="masthead" class="page-header">') : source;
+  const headerCss = idStyled ? `
+      #masthead { position: sticky !important; --offset: 0px; top: var(--offset); z-index: 20;
+        background: rgb(180, 20, 30); padding: 20px; width: 100%; box-sizing: border-box; }
+      #masthead:hover { --offset: 20px; background: rgb(20, 40, 180); padding: 24px; }
+      @media (max-width: 600px) { @supports (position: sticky) { #masthead { width: 75%; } } }
+    ` : `header.page-header.page-header {
       --pin: sticky; position: ${position === "sticky" ? "var(--pin)" : "fixed"} !important; --offset: 0px; top: var(--offset); z-index: 20;
       ${position === "fixed" ? "left: 0; width: 100%;" : ""} }
       header.page-header:hover { --offset: 20px; }
-      @media (max-width: 600px) { header.page-header.page-header { width: auto; } }
+      @media (max-width: 600px) { header.page-header.page-header { width: auto; } }`;
+  for (const [path, content] of [
+    ["index.html", pageSource], ["about/index.html", pageSource],
+    ["styles/site.css", `${css}\nbody { margin: 0; } ${headerCss}
       [data-tone="dark"] { --band-bg: rgb(17, 17, 17); }
       .page-header { padding: 16px; background: var(--band-bg, white); } .page-header h2 { margin: 0; }
       main { min-block-size: 2200px; } .page-footer { padding: 16px; }`],
@@ -31,6 +38,40 @@ async function open(page: Page, baseURL: string | undefined, position: "sticky" 
   await expect(frame(page).getByRole("banner")).toBeVisible();
   await expect(frame(page).locator("header")).toHaveCSS("position", position);
 }
+
+test("an ID-styled page header keeps its scrolled box, hover styles and responsive width; the instance keeps the anchor", async ({ page, baseURL }) => {
+  await open(page, baseURL, "sticky", true);
+  const header = frame(page).locator("header");
+  const snapshot = async (narrow: boolean, hovered: boolean) => {
+    await headerWidth(page, narrow);
+    await scrolledOffset(page, hovered);
+    await expect(header).toHaveCSS("background-color", hovered ? "rgb(20, 40, 180)" : "rgb(180, 20, 30)");
+    await expect(header).toHaveCSS("padding", hovered ? "24px" : "20px");
+    return header.evaluate(el => {
+      const rect = el.getBoundingClientRect(), style = getComputedStyle(el);
+      return { top: rect.top, width: rect.width, background: style.backgroundColor, padding: style.padding };
+    });
+  };
+  const before = [];
+  for (const narrow of [false, true]) for (const hovered of [false, true]) before.push(await snapshot(narrow, hovered));
+  await headerWidth(page, false);
+  await make(page, "header", "edit bar");
+  await expect(frame(page).locator("block-page-header")).toHaveAttribute("id", "masthead");
+  await expect(header).not.toHaveAttribute("id");
+  let index = 0;
+  for (const narrow of [false, true]) for (const hovered of [false, true]) {
+    const after = await snapshot(narrow, hovered), original = before[index++];
+    expect(after.top).toBeCloseTo(original.top, 0);
+    expect(after.width).toBeCloseTo(original.width, 0);
+    expect(after.background).toBe(original.background);
+    expect(after.padding).toBe(original.padding);
+  }
+  const css = (await storedDraft(page, "components/block-page-header/block-page-header.css"))!.content;
+  expect(css).toContain(":host > header {");
+  expect(css).toContain(":host > header:hover {");
+  expect(css).toContain("@media (max-width: 600px)");
+  expect(css).toContain("@supports (position: sticky)");
+});
 
 async function make(page: Page, band: "header" | "footer", entry: "edit bar" | "Structure") {
   if (entry === "edit bar") {

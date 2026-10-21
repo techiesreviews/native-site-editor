@@ -15,6 +15,7 @@ Lex (2026-10-20), amending decision 10 and ticket 80: Make component is also off
 - `makeComponentOffered` (`src/page-builder/component-model.ts`): a header/footer is offered wherever a section would be; `isPageHeaderFooter` stays the one rule for Remove and tone bands (`src/page-builder/rules/page-bands.ts`, unchanged). Update `makeComponentContainers` so agent refusals name header and footer without the "inside …" condition.
 - Everything that uses it follows: the edit bar, the Structure ⋯ menu and right-click, and the `make_component` MCP tool (`makeFromAgent` in `src/page-builder/components.ts`; the tool description in `worker/mcp.ts` stops saying it refuses the page's own header/footer).
 - The page must look and behave the same after making it. A page-owned header/footer gets `:host { display: contents; }`, so the host makes no box and the inner band keeps its positioning, offsets, width, states, custom properties and media rules. Do not transfer positioning declarations to the host. Sectioning headers/footers retain the ordinary block host. Keep the normal copied page CSS and notes for rules that cannot follow (ticket 64).
+- A page-owned band's anchor ID stays on the instance. Copied rules whose root compound matched that ID target the inner band (`:host > header` or `:host > footer`), retaining the compound's classes/states, the rest of the selector and its conditional wrappers. Copied band rules must not style the boxless host instead of the visible band.
 - Selection from canvas and Structure, selection/hover outlines, the label and edit bar measure a boxless instance by what it shows, reusing ticket 34's band bounds. Tone still works. Remove and drag keep their existing protection for page headers/footers outside main.
 - The banner/contentinfo landmark: confirm the header inside the instance is still exposed as the page's banner (and the footer as contentinfo) in the preview; if not, note it in the ticket's Done.
 - Docs: spec decision 10's amendment and the Phase-2 bullet (`docs/wayfinder/components-and-builder/build/spec.md`), `docs/page-builder/components.md`, and the Components chapter of `worker/site-conventions.ts` if it says the page's header/footer is refused (copy into the starter's AGENTS.md and refresh the fixture if the chapter changes).
@@ -30,6 +31,7 @@ Read the whole ticket (What above) first.
 - `worker/mcp.ts` (the `make_component` description), `worker/site-conventions.ts` (only if the chapter says it)
 - `tests/make-component-offer.test.ts`, a new or existing `tests/native-save/native-make-component*.spec.ts` and its fixture page, `tests/native-save/native-mcp.spec.ts` or a unit test
 - `tests/native-save/native-components.spec.ts` (the obsolete page header/footer refusal assertion, explicitly requested in review round 1)
+- `tests/component-css.test.ts` (page-band ID selectors, explicitly requested in round 3)
 - `docs/wayfinder/components-and-builder/build/spec.md`, `docs/page-builder/components.md`, this ticket
 
 ## Done when
@@ -53,4 +55,12 @@ Read the whole ticket (What above) first.
 - Revalidated the unchanged implementation: `RESULT: ok doctor 7/7 checks passed`; `RESULT: ok unit 2435/2435 (165 files)`. `npm run check` and `npm run lint` passed.
 - Full affected browser validation passed: `RESULT: ok specs 127/127 passed`, with 952 tests passed, no failures or skips, across default, actual-starter, native-static and preview groups. This includes all seven band cases, the MCP header creation/refusals and the legacy page-landmark offer check. Evidence: `.scratch/kit-specs/run-KAv332/`; command log: `.scratch/104-round2-affected-retry.log`.
 - Earlier attempts hit the Watch spec's immediate WebSocket-frame assertion. An unchanged focused rerun and a clean committed-baseline run each passed all nine Watch tests; the full affected retry passed too. No Watch source or test changes were made.
+- No new commits; changes remain unstaged for the runner.
+
+## Done (2026-10-21)
+
+- A page-owned header/footer retains its anchor ID on the instance. Copied ID rules target the inner band rather than the boxless host, retaining states, descendant selectors and media/supports conditions; ordinary block-component rewriting is unchanged.
+- New header/footer unit cases reproduce the lost ID styles and pass with the fix. The new browser case preserves an ID-styled sticky header's scrolled position, background, padding and responsive width before/after conversion, resting and hovered at wide and narrow viewports. All eight band browser cases pass: `RESULT: ok specs 1/1 passed`; evidence: `.scratch/kit-specs/run-NzxBxr/`.
+- `RESULT: ok doctor 7/7 checks passed`; focused CSS units: `RESULT: ok unit 24/24 (1 files)`; affected units: `RESULT: ok unit 2437/2437 (165 files)`. `npm run check` and `npm run lint` pass.
+- Full affected browser validation: `RESULT: ok specs 127/127 passed`, with 953 tests passed across default, actual-starter, native-static and preview groups. Evidence: `.scratch/kit-specs/run-hA5RgY/`; command log: `.scratch/104-round3-affected.log`.
 - No new commits; changes remain unstaged for the runner.

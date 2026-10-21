@@ -149,8 +149,11 @@ name is changed afterwards in Edit component mode.
   A page-owned header/footer uses `:host { display: contents; }`: the host
   makes no box, so the inner band keeps its original sticky/fixed positioning,
   offsets, sizing, states, custom properties and media rules. No positioning
-  declarations move to the host. Sectioning headers/footers keep the ordinary
-  block host. The inner header/footer keeps its banner/contentinfo landmark.
+  declarations move to the host. The instance keeps the band's anchor ID;
+  copied ID selectors target the inner header/footer, including their states,
+  descendants and conditional wrappers, so they still style the visible box.
+  Sectioning headers/footers keep the ordinary block host. The inner
+  header/footer keeps its banner/contentinfo landmark.
   The editor measures a boxless instance by what its template shows, for its
   selection/hover outlines, label and edit bar, as it already does for page
   bands and component editing. Tone remains available; the page's header/footer

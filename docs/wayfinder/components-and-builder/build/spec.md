@@ -138,7 +138,9 @@ marked ★ (`builder: claude ★`). Every slice gets the Sol review above.
   accepts the page's own header/footer, replacing this page's element only
   (decision 10, amended 2026-10-20; slice 104). A page-owned header/footer
   uses a `display: contents` host so its inner band keeps its original
-  positioning, sizing, states, custom properties and media rules. Other
+  positioning, sizing, states, custom properties and media rules. Its anchor
+  ID stays on the instance; copied rules matching the band's ID target the
+  inner header/footer, keeping states and conditional wrappers. Other
   containers keep their block host; the normal copied-CSS notes still apply.
 - **One variant parser in `shared/`** ([06](../tickets/06-research-variant-discovery.md),
   [07](../tickets/07-variant-contract.md) §1–4): component CSS, site CSS
