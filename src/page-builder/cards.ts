@@ -406,6 +406,11 @@ export function createCards(deps: CardsDeps) {
     const title = pageTitle(page, route).title;
     // Plain cards map the same facts onto their first body paragraph and image.
     let rows = cardFill({ template: text ?? `<slot name="title"><h3>Title</h3></slot><slot name="body"><p></p></slot><slot name="image">${nativeElementMarkup("media", {}, prefix(reads))}</slot><slot name="link"></slot>`, page: { route, source: page }, siteUrl: nativeSiteSettings(reads.source(NATIVE_CONFIG_PATH)).url }).rows.map(row => text === undefined ? { ...row, slot: undefined } : row);
+    const image = text === undefined ? tree.elements(element).find(child => tree.view.name(child) === "img") : undefined;
+    // An empty plain-card image takes the default when the page has no image of its own.
+    if (image && !tree.attribute(image, "src")?.value.trim()) {
+      for (const row of rows) if (row.role === "image" && row.status === "kept") row.status = "filled";
+    }
     const plain = text === undefined ? itemPageFill(from, grid!.noun, title, routeAddress(route, prefix(reads)), rows) : undefined;
     if (plain) rows = plain.rows;
     const filled = text !== undefined ? cardFillMarkup(from, text, rows) : plain?.markup;

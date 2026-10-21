@@ -271,3 +271,5 @@ the page change. Existing placeholder files are kept.
 Filling an empty image slot and the default card image use the same placeholder.
 Their writes create the missing file alongside the page change, so one Undo
 removes both.
+Filling a plain card from a page without a social image fills the card's empty
+image with the placeholder. A picture already in the card is kept.
