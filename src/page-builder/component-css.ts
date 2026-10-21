@@ -645,63 +645,15 @@ export function withPageCss(plan: MakeComponentPlan, source: string, range: Inst
   }
 
   const cssPath = (name: string) => `components/${name}/${name}.css`;
-  const positioned = bandPosition(plan, page, element, sheets, cssPath(tag));
   return {
     ...plan,
-    template: positioned.template,
-    css: plan.css + written(own.rules, cssPath(tag)) + positioned.css,
-    notes: [...plan.notes, ...strandedNote(own.stranded), ...positioned.notes],
+    css: plan.css + written(own.rules, cssPath(tag)),
+    notes: [...plan.notes, ...strandedNote(own.stranded)],
     cards: plan.cards.map((card, index) => ({
       ...card,
       css: card.css + written(buckets[index].rules, cssPath(card.tag)),
       notes: [...card.notes, ...strandedNote(buckets[index].stranded)],
     })),
-  };
-}
-
-/** A sticky band must stick as a host: its inner element would be bounded by the host's own height. */
-function bandPosition(plan: MakeComponentPlan, page: Match, element: SourceElement, sheets: readonly { path: string; source: string }[], cssPath: string) {
-  const unchanged = { template: plan.template, css: "", notes: [] as string[] };
-  if (element.name !== "header" && element.name !== "footer") return unchanged;
-  const property = (declaration: string) => declaration.slice(0, declaration.indexOf(":")).trim().toLowerCase();
-  const positioned = (declaration: string) => /^(?:position|top|right|bottom|left|inset(?:-(?:block|inline)(?:-(?:start|end))?)?|z-index)$/.test(property(declaration));
-  // A fixed host otherwise shrink-wraps: the inner band's 100% would then refer to that narrower box.
-  const fullWidth = (declaration: string) => /^(?:width|inline-size)\s*:\s*100%\s*(?:!\s*important)?$/i.test(declaration);
-  const hostDeclaration = (declaration: string) => positioned(declaration) || fullWidth(declaration) || property(declaration).startsWith("--");
-  const candidates = sheets.flatMap(sheet => flatRules(sheet.source, sheet.path).flatMap(rule =>
-    rule.selectors.filter(selector => matches(page, element, selector) && !compoundsOf(selector)?.some(compound =>
-      compound.simples.some(simple => simple.type === "pseudo" && (simple.element || ["before", "after", "first-line", "first-letter"].includes(simple.name)))))
-      .map(selector => ({ ...rule, selector }))));
-  const inline = attributeOf(page, element, "style") ?? "";
-  const inlineDeclarations = flatRules(`band { ${inline} }`, cssPath)[0]?.declarations ?? [];
-  const declarations = [...candidates.flatMap(rule => rule.declarations), ...inlineDeclarations];
-  // Custom properties can be inherited or conditional; this source-only plan cannot resolve their computed value.
-  if (declarations.some(declaration => property(declaration) === "position" && /\bvar\s*\(/i.test(declaration))) {
-    return { ...unchanged, notes: [`The ${element.name}'s variable-based positioning was not moved to the host; sticky positioning may be bounded by the component's height.`] };
-  }
-  if (!declarations.some(declaration => /^position\s*:\s*(?:sticky|fixed)\b/i.test(declaration))) return unchanged;
-  // State selectors cannot be collapsed to a host rule without changing when they apply.
-  if (candidates.some(rule => hasStatePseudo(rule.selector) && rule.declarations.some(declaration => positioned(declaration) || fullWidth(declaration)))) {
-    return { ...unchanged, notes: [`The ${element.name}'s state-dependent positioning was not moved to the host; sticky positioning may be bounded by the component's height.`] };
-  }
-  // All host rules have the same selector. Sort by the original specificity, keeping source order for ties.
-  const rules: Bucket["rules"] = candidates.sort((a, b) => compareSpecificity(specificity(a.selector), specificity(b.selector)))
-    .map(rule => ({ ...rule, selectors: [":host"], declarations: rule.declarations.filter(hostDeclaration) }))
-    .filter(rule => rule.declarations.length);
-  if (inlineDeclarations.length) rules.push({ path: cssPath, selectors: [":host"], wrappers: [], declarations: inlineDeclarations.filter(hostDeclaration) });
-  // Inline !important also beats highly specific important page rules on the inner element.
-  let template = plan.template;
-  const root = elementsOf(parseSource(template))[0];
-  const style = root && startTagAttributes(template, root.tag).find(attribute => attribute.name === "style");
-  if (root) {
-    const kept = [...inlineDeclarations.filter(declaration => property(declaration) !== "position"), "position: static !important"].join("; ");
-    const escaped = kept.replaceAll("&", "&amp;").replaceAll('"', "&quot;");
-    template = template.slice(0, style?.start ?? root.tag.end - 1) + ` style="${escaped}"` + template.slice(style?.end ?? root.tag.end - 1);
-  }
-  return {
-    template,
-    css: written(rules, cssPath),
-    notes: [`The ${element.name}'s positioning, offsets and z-index moved to the component host to preserve sticky or fixed positioning.`],
   };
 }
 
