@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { makeComponentOffered, makeComponentPlan, parseSource } from "../src/page-builder/component-model.ts";
+import { descendants, makeComponentOffered, makeComponentPlan, parseSource } from "../src/page-builder/component-model.ts";
 import { withPageCss } from "../src/page-builder/component-css.ts";
 
 test("Make component is offered on each page container kind", () => {
@@ -44,55 +44,45 @@ test("Make component offers page headers and footers as well as sectioning heade
   }
 });
 
-function positionedBand(markup: string, css: string) {
-  const element = parseSource(markup).find(node => node.type === "element");
-  assert.ok(element?.type === "element");
+function bandPlan(markup: string, css = "") {
+  const element = [...descendants(parseSource(markup))].find(node => node.name === "header" || node.name === "footer");
+  assert.ok(element);
   const range = { tag: element.tag, start: element.start, end: element.end, close: element.close };
   const plan = makeComponentPlan(markup, range, "site-band");
   assert.ok(!("error" in plan));
   return withPageCss(plan, markup, range, "site-band", [{ path: "styles/site.css", source: css }]);
 }
 
-test("sticky and fixed band positioning follows the host, including conditional offsets and original specificity", () => {
-  for (const band of ["header", "footer"]) for (const position of ["sticky", "fixed"]) {
-    const plan = positionedBand(`<${band} class="band"><h2>Title</h2></${band}>`, `
-      .band { position: ${position}; inset-block-start: 0; z-index: 20; }
-      ${band} { z-index: 1; }
-      @media (max-width: 40em) { .band { position: static; inset-block-start: auto; } }
-    `);
-    assert.match(plan.css, new RegExp(`:host \\{\\s+position: ${position};`));
-    assert.ok(plan.css.indexOf("z-index: 1;") < plan.css.indexOf("z-index: 20;"));
-    assert.match(plan.css, /@media \(max-width: 40em\) \{\s+:host \{\s+position: static;\s+inset-block-start: auto;/);
-    assert.match(plan.template, new RegExp(`<${band}[^>]*style="position: static !important"`));
-    assert.match(plan.notes.join(" "), /positioning, offsets and z-index moved to the component host/);
+test("page header/footer hosts make no box, including through document and div ancestors", () => {
+  for (const band of ["header", "footer"]) for (const [open, close] of [
+    ["", ""], ["<html><body>", "</body></html>"], ["<html><body><div>", "</div></body></html>"],
+  ]) {
+    assert.equal(bandPlan(`${open}<${band}><h2>Title</h2></${band}>${close}`).css, ":host {\n  display: contents;\n}\n");
   }
 });
 
-test("inline important positioning moves to the host without dropping other inline styles", () => {
-  const plan = positionedBand('<header style="position: sticky !important; top: 0; z-index: 30; padding: 1rem"><h2>Title</h2></header>', "");
-  assert.match(plan.css, /:host \{\s+position: sticky !important;\s+top: 0;\s+z-index: 30;/);
-  assert.ok(!plan.template.includes("position: sticky"));
-  assert.match(plan.template, /style="top: 0; z-index: 30; padding: 1rem; position: static !important"/);
+test("sectioning header/footer hosts retain the ordinary block layout", () => {
+  for (const ancestor of ["article", "aside", "main", "nav", "section"]) for (const band of ["header", "footer"]) {
+    assert.equal(bandPlan(`<${ancestor}><div><${band}><h2>Title</h2></${band}></div></${ancestor}>`).css, ":host {\n  display: block;\n}\n");
+  }
 });
 
-test("state-dependent band positioning is left in place with a plan note", () => {
-  const plan = positionedBand("<header><h2>Title</h2></header>", "header { position: sticky; top: 0; } header:hover { top: 2rem; }");
-  assert.match(plan.notes.join(" "), /state-dependent positioning was not moved/);
-  assert.ok(!plan.css.includes("position: static !important"));
+test("inline positioning and custom properties stay on the inner band", () => {
+  const style = "--pin: sticky; position: var(--pin) !important; top: 0; z-index: 30; padding: 1rem";
+  const plan = bandPlan(`<header style="${style}"><h2>Title</h2></header>`);
+  assert.ok(plan.template.includes(`style="${style}"`));
+  assert.equal(plan.css, ":host {\n  display: contents;\n}\n");
+  assert.deepEqual(plan.notes, []);
 });
 
-test("a full-width fixed band's width also reaches its host", () => {
-  const plan = positionedBand('<header><h2>Title</h2></header>', "header { position: fixed; top: 0; left: 0; width: 100%; }");
-  assert.match(plan.css, /:host \{\s+position: fixed;\s+top: 0;\s+left: 0;\s+width: 100%;/);
-});
-
-test("variable-based band positioning is left in place with an explicit limitation note", () => {
-  for (const [markup, css] of [
-    ["<header><h2>Title</h2></header>", "header { --pin: sticky; position: var(--pin); top: 0; }"],
-    ['<header style="--pin: sticky; position: var(--pin); top: 0"><h2>Title</h2></header>', ""],
+test("hover-dependent offsets and responsive fixed widths never become unconditional host styles", () => {
+  for (const css of [
+    "header { --pin: sticky; position: var(--pin); --offset: 0px; top: var(--offset); } header:hover { --offset: 20px; }",
+    "header { position: fixed; top: 0; left: 0; width: 100%; } @media (max-width: 40em) { header { width: auto; } }",
   ]) {
-    const plan = positionedBand(markup, css);
-    assert.match(plan.notes.join(" "), /variable-based positioning was not moved to the host; sticky positioning may be bounded by the component's height/);
-    assert.ok(!plan.template.includes("position: static !important"));
+    const plan = bandPlan("<header><h2>Title</h2></header>", css);
+    assert.equal(plan.css, ":host {\n  display: contents;\n}\n");
+    assert.ok(!plan.template.includes("position: static"));
+    assert.deepEqual(plan.notes, []);
   }
 });

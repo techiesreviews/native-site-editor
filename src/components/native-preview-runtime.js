@@ -691,7 +691,7 @@ import { domView } from "../page-builder/rules/tree.ts";
       box.style.display = "none";
       return;
     }
-    var rect = target.getBoundingClientRect();
+    var rect = rectOf(target);
     if (!rect.width && !rect.height) {
       box.style.display = "none";
       return;
@@ -975,7 +975,7 @@ import { domView } from "../page-builder/rules/tree.ts";
   // Brings `el` into view below the site's own sticky header (topInset), or
   // to the top of the frame when it is taller than what is left.
   function revealEdited(el, smooth) {
-    var r = el === editHost() ? editRect(el) : el.getBoundingClientRect();
+    var r = el === editHost() ? editRect(el) : rectOf(el);
     if (!r) return;
     var inset = topInset(el), gap = 12;
     var room = window.innerHeight - inset - gap * 2;
@@ -1774,8 +1774,9 @@ import { domView } from "../page-builder/rules/tree.ts";
   }
 
   function rectOf(el) {
-    var r = el.getBoundingClientRect();
-    return { top: r.top, left: r.left, width: r.width, height: r.height, bottom: r.bottom, right: r.right };
+    // A boxless instance spans what its template shows (the same bounds as a page band).
+    var r = bandRect(el, 0);
+    return { top: r.top, left: r.left, width: r.width, height: r.height, bottom: r.top + r.height, right: r.left + r.width };
   }
 
   // How far down the page's own sticky or fixed top bar (a site header)
@@ -1946,9 +1947,9 @@ import { domView } from "../page-builder/rules/tree.ts";
   // added is centred under the site's sticky header with room above it for the
   // edit bar; one taller than that shows from its top (rules/reveal.ts).
   function revealWithBar(el, smooth) {
-    var box = el.getBoundingClientRect();
+    var box = rectOf(el);
     var calm = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    // An element without a box of its own (display: contents) is brought into view as the browser sees fit.
+    // With no shown bounds, let the browser bring it into view.
     if (!box.width && !box.height) { el.scrollIntoView({ block: "center", behavior: smooth && !calm ? "smooth" : "auto" }); return; }
     // Scrolling boxes on the page show it first (at once, the nearest way, as
     // scrollIntoView does); then the page brings it in with the bar's room above.
@@ -1957,7 +1958,7 @@ import { domView } from "../page-builder/rules/tree.ts";
       var style = getComputedStyle(at), port = at.getBoundingClientRect();
       if (at.scrollHeight > at.clientHeight && /^(auto|scroll)$/.test(style.overflowY)) at.scrollTop += nearest(box.top, box.bottom, port.top, port.bottom);
       if (at.scrollWidth > at.clientWidth && /^(auto|scroll)$/.test(style.overflowX)) at.scrollLeft += nearest(box.left, box.right, port.left, port.right);
-      box = el.getBoundingClientRect();
+      box = rectOf(el);
     }
     var dy = revealOffset({ top: box.top, bottom: box.bottom, height: window.innerHeight, inset: topInset(el) });
     var dx = nearest(box.left, box.right, 0, document.documentElement.clientWidth);
@@ -3316,7 +3317,7 @@ import { domView } from "../page-builder/rules/tree.ts";
       var value = style.getPropertyValue(name);
       if (value) styles[name] = value;
     });
-    var r = el.getBoundingClientRect();
+    var r = rectOf(el);
     var out = {
       file: ownerPath(el),
       tag: el.localName,
@@ -3726,7 +3727,7 @@ import { domView } from "../page-builder/rules/tree.ts";
     });
   }
   function canvasDrawLabel(el) {
-    var rect = el && el.isConnected && el.getBoundingClientRect();
+    var rect = el && el.isConnected && rectOf(el);
     if (!rect || (!rect.width && !rect.height)) { canvasLabel.style.display = "none"; return; }
     var color = canvasColor(el);
     canvasLabel.textContent = canvasHoverText(el);
@@ -3968,7 +3969,7 @@ import { domView } from "../page-builder/rules/tree.ts";
       if (!wanted) return;
       // Already selected: nothing to report, but it is still brought into sight.
       if (wanted !== selected) canvasSelect(wanted, "refresh");
-      var rect = wanted.getBoundingClientRect();
+      var rect = rectOf(wanted);
       if (rect.bottom < 0 || rect.top > window.innerHeight) revealWithBar(wanted, true);
       return;
     }

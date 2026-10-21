@@ -21,6 +21,7 @@ import { siteAddress } from "../../shared/site-path-prefix";
 import { RESERVED_CUSTOM_ELEMENT_NAMES } from "../../shared/custom-element-names";
 import { asciiLower, decodeEntity, isSectionTemplate, startTagAttribute, startTags, textRangeInSource, type StartTag } from "../../shared/html-source";
 import { CARD_ITEM_TAGS, itemKind } from "./rules/items";
+import { isPageHeaderFooter } from "./rules/page-bands";
 import { INLINE_FORMATTING, TEXT_RUN_TAGS } from "./rules/text-level";
 import { decodeHtmlEntities } from "./html-entities";
 import { hasHeadingSlot as headingSlotIn, isCardTag, isItemsSlot } from "./rules/cards";
@@ -1459,8 +1460,9 @@ function planComponent(source: string, range: InstanceRange, tag: string, choice
   if (!element?.close) return { error: "The element's end tag could not be found in the source." };
   if (element.name.includes("-")) return { error: "This is a component already." };
   if (["main", "body", "html", "head"].includes(element.name)) return { error: `A <${element.name}> cannot be a component.` };
-  const host = ancestry(source, range.start).slice(0, -1).find((el) => el.name.includes("-"));
-  if (host) return { error: `This is inside the component instance <${host.name}>; edit the component instead.` };
+  const ancestors = ancestry(source, range.start).slice(0, -1).map(el => el.name);
+  const host = ancestors.find(name => name.includes("-"));
+  if (host) return { error: `This is inside the component instance <${host}>; edit the component instead.` };
   if ([...descendants([element])].some((el) => el.name === "slot")) return { error: "This element holds slots of a component; make the component from the page instead." };
 
   // The id goes to the instance, where links to it still find it; the template and any copy of the element keep the rest.
@@ -1681,7 +1683,7 @@ function planComponent(source: string, range: InstanceRange, tag: string, choice
   const stretched = Boolean(title && !title.fixed && title.name === "title");
   return {
     template,
-    css: `:host {\n  display: block;\n${stretched ? "  position: relative;\n" : ""}}\n`,
+    css: `:host {\n  display: ${isPageHeaderFooter(element.name, ancestors) ? "contents" : "block"};\n${stretched ? "  position: relative;\n" : ""}}\n`,
     instance,
     slots,
     notes: stretched ? ["The whole card stays clickable through its title link."] : [],

@@ -136,9 +136,10 @@ marked ★ (`builder: claude ★`). Every slice gets the Sol review above.
 - **The element's page CSS is copied into the new component**, rewritten so
   it looks the same; page CSS is left alone (decision 2). Make component also
   accepts the page's own header/footer, replacing this page's element only
-  (decision 10, amended 2026-10-20; slice 104). Sticky/fixed positioning,
-  offsets and z-index move to the host; the plan notes that move or any
-  positioning it cannot carry.
+  (decision 10, amended 2026-10-20; slice 104). A page-owned header/footer
+  uses a `display: contents` host so its inner band keeps its original
+  positioning, sizing, states, custom properties and media rules. Other
+  containers keep their block host; the normal copied-CSS notes still apply.
 - **One variant parser in `shared/`** ([06](../tickets/06-research-variant-discovery.md),
   [07](../tickets/07-variant-contract.md) §1–4): component CSS, site CSS
   naming the tag, `:host()` in site CSS, global attributes, class rules for

@@ -143,16 +143,18 @@ name is changed afterwards in Edit component mode.
   page are one undo step.
 - **The page CSS that styled it follows** (build slice 64): a rule that
   would stop reaching the element once it is an instance is copied into the
-  new stylesheet, rewritten to start at it (after `:host { display: block; }`);
+  new stylesheet, rewritten to start at it (after the host display rule);
   the site's stylesheets stay as they are. Rules that can't follow are noted.
 - Only this page's element becomes an instance; other pages keep their copies.
-  For a sticky or fixed header/footer, positioning, offsets and z-index move to
-  the host, keeping the header/footer in normal flow inside it. Conditional
-  rules keep their conditions; inline positioning follows too. A full-width
-  (`width: 100%` or `inline-size: 100%`) band also sizes the host to avoid a
-  fixed host shrinking to its content. State-dependent or variable-based
-  positioning stays in place with a note that sticky behaviour may change.
-  The inner header/footer keeps its banner/contentinfo landmark in the preview.
+  A page-owned header/footer uses `:host { display: contents; }`: the host
+  makes no box, so the inner band keeps its original sticky/fixed positioning,
+  offsets, sizing, states, custom properties and media rules. No positioning
+  declarations move to the host. Sectioning headers/footers keep the ordinary
+  block host. The inner header/footer keeps its banner/contentinfo landmark.
+  The editor measures a boxless instance by what its template shows, for its
+  selection/hover outlines, label and edit bar, as it already does for page
+  bands and component editing. Tone remains available; the page's header/footer
+  outside main keeps its existing protection against Remove and drag.
 - A site whose pages do not load `components/components.js` is noted.
 
 The new files are drafts; writing them and replacing the element is one undo
