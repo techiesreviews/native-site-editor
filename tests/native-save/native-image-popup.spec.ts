@@ -113,6 +113,22 @@ test("Replace keeps the shape chosen before it and centres the picture, in one U
   await expect.poll(() => source(page)).toBe(before);
 });
 
+test("selecting another element closes the popup and keeps its shape and focus as one Undo step", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const before = await source(page);
+  await openPopup(page);
+  await chooseShape(page, "Square");
+  await dot(page).focus();
+  await page.keyboard.press("ArrowLeft");
+  await expect(frame(page).locator(".hero img")).toHaveCSS("object-position", "48% 50%");
+  // A press on another element on the page moves the bar there: the popup closes and keeps its changes.
+  await frame(page).locator(".hero h1").click();
+  await expect(popup(page)).toHaveCount(0);
+  await expect.poll(() => heroTag(page)).toContain("aspect-ratio: 1 / 1; object-fit: cover; object-position: 48% 50%");
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(() => source(page)).toBe(before);
+});
+
 test("arrow keys move the dot; Close keeps the change as one Undo step; Escape keeps it too", async ({ page, baseURL }) => {
   await open(page, baseURL);
   const before = await source(page);
