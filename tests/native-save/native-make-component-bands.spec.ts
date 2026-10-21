@@ -59,7 +59,8 @@ test("an ID-styled page header keeps its scrolled box, hover styles and responsi
   await headerWidth(page, false);
   await make(page, "header", "edit bar");
   await expect(frame(page).locator("block-page-header")).toHaveAttribute("id", "masthead");
-  await expect(header).not.toHaveAttribute("id");
+  // The inner band keeps the id too (its own tree): the page's id rules still style it, cascade and all.
+  await expect(header).toHaveAttribute("id", "masthead");
   let index = 0;
   for (const narrow of [false, true]) for (const hovered of [false, true]) {
     const after = await snapshot(narrow, hovered), original = before[index++];
@@ -69,10 +70,8 @@ test("an ID-styled page header keeps its scrolled box, hover styles and responsi
     expect(after.padding).toBe(original.padding);
   }
   const css = (await storedDraft(page, "components/block-page-header/block-page-header.css"))!.content;
-  expect(css).toContain(":host > :is(header, #masthead) {");
-  expect(css).toContain(":host > :is(header, #masthead):hover {");
-  expect(css).toContain("@media (max-width: 600px)");
-  expect(css).toContain("@supports (position: sticky)");
+  expect(css).not.toContain("#masthead");
+  expect((await storedDraft(page, "components/block-page-header/block-page-header.html"))!.content).toContain('<header id="masthead"');
 });
 
 async function make(page: Page, band: "header" | "footer", entry: "edit bar" | "Structure") {

@@ -104,7 +104,7 @@ section::before {
 });
 
 for (const band of ["header", "footer"]) {
-  test(`a page ${band}'s id rules style its inner box, keeping states and conditions`, () => {
+  test(`a page ${band} keeps its id inside, so its id rules, states and conditions need no copy`, () => {
     const page = `<html><body><div><${band} id="masthead" class="band"><h2>Title</h2><nav class="actions"><a href="/">Home</a></nav></${band}></div></body></html>`;
     const range = rangeOf(page, band);
     const raw = makeComponentPlan(page, range, "page-band", {}, []);
@@ -117,19 +117,12 @@ for (const band of ["header", "footer"]) {
       @media (max-width: 600px) {
         @supports (position: sticky) { #masthead { width: auto; } }
       }` }]);
-    const rules = flatRules(copied(plan.css), "component.css");
-    assert.deepEqual(rules.map(rule => rule.selectors), [
-      // `:is(band, #masthead)`: matches the inner box without its id and keeps the id's specificity (review round 3).
-      [`:host > :is(${band}, #masthead)`], [`:host > :is(${band}, #masthead):hover`],
-      [`:host > ${band}:is(${band}, #masthead).band:hover > .actions`], [`:host > :is(${band}, #masthead) .actions`], [`:host > :is(${band}, #masthead)`],
-    ]);
-    assert.deepEqual(rules[0].declarations, ["position: sticky", "top: 0", "background: red", "padding: 20px", "width: 100%"]);
-    assert.deepEqual(rules[1].declarations, ["top: 20px", "background: blue", "padding: 24px"]);
-    assert.deepEqual(rules[4].wrappers, ["@media (max-width: 600px)", "@supports (position: sticky)"]);
-    assert.deepEqual(rules[4].declarations, ["width: auto"]);
+    // The band keeps its id inside, so the stylesheets its shadow root clones style it as the page did
+    // (same specificity and order, review round 3): nothing needs copying.
+    assert.equal(copied(plan.css), "");
     assert.match(plan.css, /^:host \{\n  display: contents;/);
     assert.match(plan.instance, /<page-band id="masthead">/);
-    assert.doesNotMatch(plan.template, /id="masthead"/);
+    assert.ok(plan.template.startsWith(`<${band} id="masthead" class="band">`), plan.template);
     assert.deepEqual(plan.notes, []);
   });
 }
