@@ -76,13 +76,6 @@ export function pictureHint(shape: PopupShape, zoomed = false) {
   return focusApplies(shape) || zoomed ? DOT_HINT : "The whole picture shows.";
 }
 
-/** What Replace says at the top of the popup: the shape stays, the picture is centred, a trim is dropped. */
-export function replaceNotice(file: string, shape: PopupShape, trimmed: boolean) {
-  const name = file.split("/").pop() || file;
-  const kept = focusApplies(shape) ? `The ${shapeLabel(shape)} shape stays and the picture is centred.` : "The shape stays Original.";
-  return `${name} is in. ${kept}${trimmed ? " Trimming made for the old picture was dropped." : ""}`;
-}
-
 /** The shape a place keeps: Free trimming leaves the trimmed copy its own shape, as Original. */
 export const placeShapeOf = (shape: PopupShape): PopupShape => shape === "free" ? "original" : shape;
 

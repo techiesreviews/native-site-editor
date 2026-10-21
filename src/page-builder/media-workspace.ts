@@ -156,6 +156,99 @@ export interface MediaShareRequest {
 }
 
 /** Repository adapter; the panel never writes directly to drafts, bytes or source models. */
+const today = (ctx: MediaWorkspaceContext) => new Date((ctx.now ?? Date.now)()).toISOString().slice(0, 10);
+const familyPaths = (path: string, paths: string[]) => {
+  const family = mediaFamilyOf(path, paths);
+  return family ? familyMembers(family) : [path];
+};
+const committedSha = (ctx: MediaWorkspaceContext, path: string) => {
+  if (!ctx.paths.includes(path)) return undefined;
+  const draft = ctx.drafts.get(ctx.scope, path);
+  return draft ? draft.opaque && !draft.upload ? draft.sourceSha : undefined : ctx.assetVersion(path);
+};
+/** Files about to be removed, onto Recently removed: their history SHA, or a browser copy kept 30 days. */
+export const removedRecords = async (ctx: MediaWorkspaceContext, records: MediaRecords, paths: string[]) => {
+  const date = today(ctx);
+  // `prepare` already gave files that are back their records; only expiry is left.
+  let next = pruneRemoved(records, date);
+  const remaining = new Set(paths);
+  for (const path of [...paths].sort((a, b) => familyPaths(b, ctx.paths).length - familyPaths(a, ctx.paths).length)) {
+    if (!remaining.has(path)) continue;
+    const members = familyPaths(path, ctx.paths).filter(member => remaining.has(member));
+    const family = [];
+    for (const member of members) {
+      const sha = ctx.history ? committedSha(ctx, member) : undefined;
+      if (sha) family.push({ path: member, sha });
+      else {
+        if (!ctx.removedCopies) throw new Error("Recently removed browser storage is unavailable.");
+        const draft = ctx.drafts.get(ctx.scope, member);
+        const blob = draft && !draft.opaque ? new Blob([draft.content]) : await ctx.blob(member);
+        ctx.assertLive();
+        const browserKey = `removed:${date}:${await gitBlobSha(new Uint8Array(await blob.arrayBuffer()))}`;
+        ctx.assertLive();
+        await ctx.removedCopies.put(browserKey, blob);
+        ctx.assertLive();
+        family.push({ path: member, browserKey });
+      }
+      remaining.delete(member);
+    }
+    next = recordRemoval(next, { main: path, family, date });
+  }
+  return next;
+};
+/** Expired Recently removed browser copies go after a batch that removed files. */
+export const sweepRemoved = async (ctx: MediaWorkspaceContext) => {
+  if (ctx.agent) return;
+  try {
+    if (ctx.removedCopies) {
+      await sweepRemovedCopies(ctx.removedCopies, today(ctx));
+    }
+  } catch { /* Expired browser bytes can wait until the next successful batch. */ }
+};
+
+/** Every text file read for a usage scan, `overrides` standing in for files being changed. `complete`
+ * is false when any could not be read: never remove when unsure. `seen` hears each file read. */
+async function usageText(ctx: MediaWorkspaceContext, paths: string[], overrides: Record<string, string>, seen: (file: string, value: string) => void) {
+  const text: Record<string, string> = { ...overrides };
+  let complete = true;
+  const files = paths.filter(file => file !== MEDIA_RECORDS_PATH && !(file in overrides) && isMediaTextFile(file));
+  for (let index = 0; index < files.length; index += 12) {
+    const values = await Promise.all(files.slice(index, index + 12).map(async file => [file, await ctx.read(file).catch(() => undefined)] as const));
+    ctx.assertLive();
+    for (const [file, value] of values) {
+      if (value === undefined) { complete = false; continue; }
+      text[file] = value;
+      seen(file, value);
+    }
+  }
+  return { text, complete };
+}
+
+/** A place stops showing `from` (its picture replaced): a trimmed copy nothing else uses goes with its
+ * family in the same step, as re-trimming drops its previous copy. Originals, sharing pictures and
+ * Always keep files stay, and so does anything when a file cannot be read. `page` is the changed page
+ * without that place. Returns the paths to remove; their revisions and the text read join the proofs. */
+export async function unusedTrimmedCopy(ctx: MediaWorkspaceContext, input: {
+  from: string | undefined; records: MediaRecords; paths: string[]; prefix: string; page: { path: string; text: string };
+  expectedSources: Map<string, string | undefined>; expectedAssets: Map<string, string | undefined>;
+}): Promise<string[]> {
+  const { from, records, paths } = input;
+  if (!from || !records.files[from]?.trimmedFrom || records.files[from].sharing || !paths.includes(from)) return [];
+  if (mediaFamilies(paths).some(family => family.sharing === from)) return [];
+  const members = familyPaths(from, paths);
+  if (members.some(member => records.files[member]?.alwaysKeep)) return [];
+  const versions = familyVersions(ctx, members);
+  const read = new Map<string, string>();
+  const { text, complete } = await usageText(ctx, paths, { [input.page.path]: input.page.text }, (file, value) => read.set(file, value));
+  const usage = wideUsage(members, text, ctx, input.prefix);
+  if (!complete || members.some(member => usage[member].files.length)) return [];
+  for (const [file, value] of read) if (!input.expectedSources.has(file)) input.expectedSources.set(file, value);
+  for (const [member, version] of versions) input.expectedAssets.set(member, version);
+  return members;
+}
+const familyVersions = (ctx: MediaWorkspaceContext, paths: string[]) =>
+  new Map(paths.map(path => [path, ctx.assetVersion(path)]));
+
 export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContext>) {
   let session: MediaWorkspaceContext | undefined;
   const active = () => {
@@ -221,7 +314,6 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     await ctx.applyBatch(batch);
     // Refresh belongs to the transaction host, so no fallible second mutation follows it.
   };
-  const today = (ctx: MediaWorkspaceContext) => new Date((ctx.now ?? Date.now)()).toISOString().slice(0, 10);
   /** When a file is added now (slice 103): Media lists the newest first. */
   const addedNow = (ctx: MediaWorkspaceContext) => new Date((ctx.now ?? Date.now)()).toISOString();
   /** The Git blob SHA of the present bytes of every path Recently removed names, to see which are back. */
@@ -234,48 +326,6 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       if (sha) out.set(path, sha);
     }
     return out;
-  };
-  const committedSha = (ctx: MediaWorkspaceContext, path: string) => {
-    if (!ctx.paths.includes(path)) return undefined;
-    const draft = ctx.drafts.get(ctx.scope, path);
-    return draft ? draft.opaque && !draft.upload ? draft.sourceSha : undefined : ctx.assetVersion(path);
-  };
-  const removedRecords = async (ctx: MediaWorkspaceContext, records: MediaRecords, paths: string[]) => {
-    const date = today(ctx);
-    // `prepare` already gave files that are back their records; only expiry is left.
-    let next = pruneRemoved(records, date);
-    const remaining = new Set(paths);
-    for (const path of [...paths].sort((a, b) => familyPaths(b, ctx.paths).length - familyPaths(a, ctx.paths).length)) {
-      if (!remaining.has(path)) continue;
-      const members = familyPaths(path, ctx.paths).filter(member => remaining.has(member));
-      const family = [];
-      for (const member of members) {
-        const sha = ctx.history ? committedSha(ctx, member) : undefined;
-        if (sha) family.push({ path: member, sha });
-        else {
-          if (!ctx.removedCopies) throw new Error("Recently removed browser storage is unavailable.");
-          const draft = ctx.drafts.get(ctx.scope, member);
-          const blob = draft && !draft.opaque ? new Blob([draft.content]) : await ctx.blob(member);
-          ctx.assertLive();
-          const browserKey = `removed:${date}:${await gitBlobSha(new Uint8Array(await blob.arrayBuffer()))}`;
-          ctx.assertLive();
-          await ctx.removedCopies.put(browserKey, blob);
-          ctx.assertLive();
-          family.push({ path: member, browserKey });
-        }
-        remaining.delete(member);
-      }
-      next = recordRemoval(next, { main: path, family, date });
-    }
-    return next;
-  };
-  const sweep = async (ctx: MediaWorkspaceContext) => {
-    if (ctx.agent) return;
-    try {
-      if (ctx.removedCopies) {
-        await sweepRemovedCopies(ctx.removedCopies, today(ctx));
-      }
-    } catch { /* Expired browser bytes can wait until the next successful batch. */ }
   };
   const recordsEdit = (batch: MediaWorkspaceBatch, before: MediaRecords, records: MediaRecords) => {
     const next = serializeMediaRecords(records);
@@ -329,12 +379,6 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     if (plan.redirects !== undefined) batch.edits.set("_redirects", plan.redirects);
     return plan.records;
   };
-  const familyPaths = (path: string, paths: string[]) => {
-    const family = mediaFamilyOf(path, paths);
-    return family ? familyMembers(family) : [path];
-  };
-  const familyVersions = (ctx: MediaWorkspaceContext, paths: string[]) =>
-    new Map(paths.map(path => [path, ctx.assetVersion(path)]));
   const importMedia = async (requests: MediaImportRequest[], place?: MediaPlacement) => {
     session?.assertLive();
     const ctx = await context();
@@ -445,8 +489,14 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       batch.edits.set(place.path, typeof placed === "string" ? placed : placed.page);
       if (typeof placed !== "string" && placed.records) next = placed.records;
     }
+    if (place?.deletes?.length) {
+      assetGuard(batch, place.deletes);
+      batch.deletes.push(...place.deletes);
+      next = await removedRecords(ctx, next, place.deletes);
+    }
     recordsEdit(batch, metadata, next);
     await commit(ctx, batch);
+    if (place?.deletes?.length) await sweepRemoved(ctx);
     return paths;
   };
   const trimCopy = async ({ source, trim, previous, result, place, sourceVersion }: MediaTrimRequest) => {
@@ -504,20 +554,9 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     let previousStillUsed = true;
     if (previous) {
       const members = familyPaths(previous, batch.expectedPaths);
-      const text: Record<string, string> = {};
-      let complete = true;
-      text[place.path] = placed.page;
-      const files = batch.expectedPaths.filter(file => file !== MEDIA_RECORDS_PATH && file !== place.path && isMediaTextFile(file));
-      for (let index = 0; index < files.length; index += 12) {
-        const values = await Promise.all(files.slice(index, index + 12).map(async file => [file, await ctx.read(file).catch(() => undefined)] as const));
-        ctx.assertLive();
-        for (const [file, value] of values) {
-          // Never remove when unsure: an unreadable file keeps the previous copy.
-          if (value === undefined) { complete = false; continue; }
-          text[file] = value;
-          if (!batch.expectedAssets.has(file)) batch.expectedSources.set(file, value);
-        }
-      }
+      // Never remove when unsure: an unreadable file keeps the previous copy.
+      const { text, complete } = await usageText(ctx, batch.expectedPaths, { [place.path]: placed.page },
+        (file, value) => { if (!batch.expectedAssets.has(file)) batch.expectedSources.set(file, value); });
       const usage = wideUsage(members, text, ctx, batchPrefix(batch));
       previousStillUsed = !complete || members.some(member => usage[member].files.length > 0);
     }
@@ -530,7 +569,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       path: output.variantWidth ? mediaCopyName(path, output.variantWidth) : path, blob: output.blob,
     });
     await commit(ctx, batch);
-    if (plan.removes.length) await sweep(ctx);
+    if (plan.removes.length) await sweepRemoved(ctx);
     return path;
   };
   const replace = async (request: MediaReplaceRequest, agent = false, ports: { encode?: typeof import("./media-optimise").optimiseMedia } = {}) => {
@@ -628,7 +667,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     request.undo?.(ctx.undoReceipt?.());
     for (const note of plan.notes) request.notice?.(note);
     if (plan.artDirected.length) request.notice?.("The new picture is now used on all screens.");
-    await sweep(ctx);
+    await sweepRemoved(ctx);
     return plan.main;
   };
   const share = async (request: MediaShareRequest) => {
@@ -674,19 +713,10 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       [path]: { sharing: true, trimmedFrom: { source, trim: structuredClone(trim) } } } };
     let removes: string[] = [];
     if (previous && !metadata.files[previous]?.alwaysKeep && !mediaFamilies(ctx.paths).some(family => family.sharing === previous)) {
-      const members = familyPaths(previous, batch.expectedPaths), text: Record<string, string> = {};
-      let complete = true;
-      const files = batch.expectedPaths.filter(file => file !== MEDIA_RECORDS_PATH && isMediaTextFile(file));
-      for (let index = 0; index < files.length; index += 12) {
-        const values = await Promise.all(files.slice(index, index + 12).map(async file => [file, await ctx.read(file).catch(() => undefined)] as const));
-        ctx.assertLive();
-        for (const [file, value] of values) {
-          if (value === undefined) { complete = false; continue; }
-          text[file] = batch.edits.get(file) ?? value;
-          if (!batch.expectedAssets.has(file) && !batch.expectedSources.has(file)) batch.expectedSources.set(file, value);
-        }
-      }
-      for (const [file, value] of batch.edits) if (file !== MEDIA_RECORDS_PATH) text[file] = value;
+      const members = familyPaths(previous, batch.expectedPaths);
+      const edited = Object.fromEntries([...batch.edits].filter(([file]) => file !== MEDIA_RECORDS_PATH));
+      const { text, complete } = await usageText(ctx, batch.expectedPaths, edited,
+        (file, value) => { if (!batch.expectedAssets.has(file) && !batch.expectedSources.has(file)) batch.expectedSources.set(file, value); });
       const usage = wideUsage(members, text, ctx, batchPrefix(batch));
       if (complete && !members.some(member => usage[member].files.length || metadata.files[member]?.alwaysKeep)) {
         batch.deletes.push(...members);
@@ -697,7 +727,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     recordsEdit(batch, metadata, next);
     batch.uploads.push({ path, blob: output.blob });
     await commit(ctx, batch);
-    if (removes.length) await sweep(ctx);
+    if (removes.length) await sweepRemoved(ctx);
     return path;
   };
   return {
@@ -877,7 +907,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
         next = { ...next, removed: next.removed?.map((entry, index, entries) => index === entries.length - 1 ? { ...entry, onlineVideo: record } : entry) };
         batch.deletes.push(...paths);
       }
-      recordsEdit(batch, metadata, next); await commit(ctx, batch); await sweep(ctx);
+      recordsEdit(batch, metadata, next); await commit(ctx, batch); await sweepRemoved(ctx);
     },
     async adding(change, agent = false) {
       // Adding settings live in the site's records, so they travel with the site and undo like any change.
@@ -1054,7 +1084,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       batch.deletes.push(...unique);
       recordsEdit(batch, metadata, await removedRecords(ctx, metadata, unique));
       await commit(ctx, batch);
-      await sweep(ctx);
+      await sweepRemoved(ctx);
     },
     async restore(entries: { path: string; id: string }[], agent = false, expected?: Map<string, string | undefined>) {
       const ctx = active();
@@ -1079,7 +1109,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       }
       recordsEdit(batch, metadata, next);
       await commit(ctx, batch);
-      await sweep(ctx);
+      await sweepRemoved(ctx);
     },
     async removedBlob({ path, id }) {
       // A removed file's picture for Recently removed: its history blob, or this browser's copy.

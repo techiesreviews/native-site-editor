@@ -23,11 +23,11 @@ export async function placeMediaImage(
   const changed = "This image changed while the picker was open. Select it again.";
   if (!stamp.holds()) throw new Error("The repository changed. Choose an image again.");
   if (ports.openFile() !== target.path) await ports.restoreFile(target.path, epoch);
-  const [rules, io, references, html, entities, ctx, collections, frames, looping] = await Promise.all([
+  const [rules, io, references, html, entities, ctx, collections, frames, looping, workspace] = await Promise.all([
     import("./media-descriptions"), import("../../shared/media-records"),
     import("./media-references"), import("../../shared/html-source"),
     import("./html-entities"), workspaceContext(), import("./media-collections"), frame && import("./place-frame"),
-    import("./looping-video"),
+    import("./looping-video"), import("./media-workspace"),
   ]);
   const expectedPaths = [...ctx.paths];
   const mainVersion = ctx.assetVersion(image.path);
@@ -57,6 +57,12 @@ export async function placeMediaImage(
   // Unreadable records never block a swap, and are never overwritten (slice 13).
   let records = io.parseMediaRecords(undefined), readable = true;
   try { records = collections.readSiteMediaRecords(metadata, ctx.items.map(item => item.path)); } catch { readable = false; }
+  // A trimmed copy this place showed and nothing else uses goes in the same step (never when unsure).
+  const expectedAssets = new Map(proof.asset ? [[proof.asset.path, proof.asset.version]] : []);
+  const usageSources = new Map<string, string | undefined>();
+  const removes = readable ? await workspace.unusedTrimmedCopy(ctx, { from, records, paths: expectedPaths, prefix,
+    page: { path: target.path, text: base.slice(0, range.tag.start) + base.slice(range.tag.start + standIn.length) }, expectedSources: usageSources, expectedAssets }) : [];
+  ctx.assertLive();
   let copies: Awaited<ReturnType<typeof import("./media-older-copies")["makeOlderCopies"]>>;
   let copyNote = "";
   const older = await import("./media-older-copies");
@@ -72,7 +78,6 @@ export async function placeMediaImage(
   if (cancelled()) return;
   if (!stamp.holds() || ports.source(target.path) !== latest || ports.source(io.MEDIA_RECORDS_PATH) !== metadata) throw new Error(changed);
   if (copies?.uploads.length) image = { ...image, variants: copies.variants };
-  const expectedAssets = new Map(proof.asset ? [[proof.asset.path, proof.asset.version]] : []);
   // New copies were made from this revision of the main: a newer one refuses the whole step.
   if (copies?.uploads.length && !expectedAssets.has(image.path)) expectedAssets.set(image.path, mainVersion);
   const placement = mediaPlaceSwap(base, target, standIn, image, measured, locate, framed, prefix);
@@ -81,8 +86,9 @@ export async function placeMediaImage(
   // Files added in the picker are saved with the placement and its records: one Undo step.
   if (held) {
     if (cancelled()) return;
-    const saved = await held.save({ path: target.path, source: latest, stale: changed, live: () => !cancelled(), records: { text: metadata }, expectedSources: prefixSources,
-      ...copies?.uploads.length ? { uploads: copies.uploads, expectedAssets, expectedPaths } : {},
+    const saved = await held.save({ path: target.path, source: latest, stale: changed, live: () => !cancelled(), records: { text: metadata }, expectedSources: new Map([...usageSources, ...prefixSources]),
+      ...copies?.uploads.length || removes.length ? { uploads: copies?.uploads ?? [], expectedAssets, expectedPaths } : {},
+      ...removes.length ? { deletes: removes } : {},
       apply: (paths, _requests, current) => {
         const selected = held.image(paths), picked = copies?.uploads.length ? { ...selected, variants: copies.variants } : selected, after = rules.swapPlaceImage(current, target.path, from, picked.path, initialAlt, swap(undefined, picked).page, prefix);
         return { page: swap(after.alt, picked).page, records: after.records };
@@ -97,14 +103,17 @@ export async function placeMediaImage(
   if (cancelled()) return;
   // Agent decoding captures the file revision before its first await.
   if ([...expectedAssets].some(([path, version]) => ctx.assetVersion(path) !== version)) throw new Error("The image changed while preparing placement. Try again.");
-  if (!spotVideo && !copies?.uploads.length && (after.records === records || !readable)) {
+  if (!spotVideo && !copies?.uploads.length && !removes.length && (after.records === records || !readable)) {
     if ([...prefixSources].some(([path, source]) => ports.source(path) !== source)) throw new Error("The site address changed. Try again.");
     if (!ports.change(target.path, latest, edits, next, "Image replaced")) throw new Error("The image could not be replaced.");
     if (note) ports.announce(`Image replaced.${note}`);
     return;
   }
+  const nextRecords = removes.length ? await workspace.removedRecords(ctx, after.records, removes) : after.records;
+  ctx.assertLive();
   await ctx.applyBatch({ label: "Image replaced", expectedPaths,
-    expectedSources: new Map([...prefixSources, [target.path, latest], [io.MEDIA_RECORDS_PATH, metadata]]), expectedAssets, ...copies?.uploads.length ? { live: () => !cancelled() && stamp.holds() } : {},
-    edits: new Map([[target.path, page], ...readable && after.records !== records ? [[io.MEDIA_RECORDS_PATH, io.serializeMediaRecords(after.records)] as [string, string]] : []]), moves: [], deletes: [], restores: [], uploads: copies?.uploads ?? [] });
+    expectedSources: new Map([...usageSources, ...prefixSources, [target.path, latest], [io.MEDIA_RECORDS_PATH, metadata]]), expectedAssets, ...copies?.uploads.length || removes.length ? { live: () => !cancelled() && stamp.holds() } : {},
+    edits: new Map([[target.path, page], ...readable && nextRecords !== records ? [[io.MEDIA_RECORDS_PATH, io.serializeMediaRecords(nextRecords)] as [string, string]] : []]), moves: [], deletes: removes, restores: [], uploads: copies?.uploads ?? [] });
+  if (removes.length) await workspace.sweepRemoved(ctx);
   ports.announce(`Image replaced${note ? "." + note : ""}`);
 }

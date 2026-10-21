@@ -145,7 +145,7 @@ for (const picture of ["existing", "uploaded"] as const) {
     const popup = page.getByRole("dialog", { name: "Image", exact: true });
     await popup.getByRole("button", { name: /^Shape:/ }).click();
     await popup.getByRole("menuitemradio", { name: "Square", exact: true }).click();
-    await popup.getByRole("button", { name: "Done", exact: true }).click();
+    await popup.getByRole("button", { name: "Close", exact: true }).click();
     await expect(popup).toHaveCount(0);
     await expect.poll(() => mounted(page)).toContain("aspect-ratio: 1 / 1");
     await expect(image).toHaveCSS("aspect-ratio", "1 / 1");

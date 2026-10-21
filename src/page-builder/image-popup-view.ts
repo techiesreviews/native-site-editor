@@ -80,6 +80,8 @@ const HINTS_KEY = "ase.image-popup.hints";
 export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost, events: ImagePopupEvents, fixed?: ImagePopupFixed) {
   const frameView = mountMediaPopupFrame(host, {
     title: fixed ? "Social image" : "Image", opener: ".edit-bar__media", className: fixed ? "image-popup--fixed" : undefined,
+    // Each change shows on the page as it is made and closing keeps it; the social image keeps Done.
+    closeLabel: fixed ? undefined : "Close",
     cancel: () => events.cancel(),
     escape: () => { if (!shapes.open) return false; shapes.toggle(false); shapeButton.focus(); return true; },
     resized: () => layoutPicture(),
@@ -149,7 +151,7 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
   const largeButton = actionButton("image-popup__icon", () => events.large());
   largeButton.append(svg(largeIcon, 18)); largeButton.setAttribute("aria-label", "Open large editor"); largeButton.title = "Open large editor";
   if (!fixed) frameView.tools.prepend(largeButton);
-  foot.append(doneButton);
+  if (fixed) foot.append(doneButton);
 
   // The picture (turned as it will be) fits the well under the shape menu; the frame shows what the place shows.
   const size = () => state.size ?? { width: picture.naturalWidth || 4, height: picture.naturalHeight || 3 };
