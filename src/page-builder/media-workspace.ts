@@ -227,7 +227,7 @@ async function usageText(ctx: MediaWorkspaceContext, paths: string[], overrides:
 /** A place stops showing `from` (its picture replaced): a trimmed copy nothing else uses goes with its
  * family in the same step, as re-trimming drops its previous copy. Originals, sharing pictures and
  * Always keep files stay, and so does anything when a file cannot be read, or when `chosen` (the place's
- * new picture) is of the same family. `page` is the changed page without that place. Returns the paths to
+ * new picture) is of the same family. `page` is the page as the replacement writes it. Returns the paths to
  * remove; their revisions and the text read join the proofs, and a proof already taken is never replaced. */
 export async function unusedTrimmedCopy(ctx: MediaWorkspaceContext, input: {
   from: string | undefined; chosen: string; records: MediaRecords; paths: string[]; prefix: string; page: { path: string; text: string };
