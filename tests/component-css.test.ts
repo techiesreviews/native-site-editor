@@ -119,8 +119,9 @@ for (const band of ["header", "footer"]) {
       }` }]);
     const rules = flatRules(copied(plan.css), "component.css");
     assert.deepEqual(rules.map(rule => rule.selectors), [
-      [`:host > ${band}`], [`:host > ${band}:hover`],
-      [`:host > ${band}.band:hover > .actions`], [`:host > ${band} .actions`], [`:host > ${band}`],
+      // `:is(band, #masthead)`: matches the inner box without its id and keeps the id's specificity (review round 3).
+      [`:host > :is(${band}, #masthead)`], [`:host > :is(${band}, #masthead):hover`],
+      [`:host > ${band}:is(${band}, #masthead).band:hover > .actions`], [`:host > :is(${band}, #masthead) .actions`], [`:host > :is(${band}, #masthead)`],
     ]);
     assert.deepEqual(rules[0].declarations, ["position: sticky", "top: 0", "background: red", "padding: 20px", "width: 100%"]);
     assert.deepEqual(rules[1].declarations, ["top: 20px", "background: blue", "padding: 24px"]);

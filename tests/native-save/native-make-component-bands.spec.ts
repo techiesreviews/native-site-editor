@@ -13,12 +13,14 @@ async function open(page: Page, baseURL: string | undefined, position: "sticky" 
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await expect(frame(page).locator(".hero h1")).toBeVisible({ timeout: 30_000 });
   const css = await (await page.request.get(`${baseURL}/__demo/file?path=styles/site.css`)).text();
-  const pageSource = idStyled ? source.replace('<header class="page-header">', '<header id="masthead" class="page-header">') : source;
+  const pageSource = idStyled ? source.replace('<header class="page-header">', '<header id="masthead" class="page-header band">') : source;
   const headerCss = idStyled ? `
-      #masthead { position: sticky !important; --offset: 0px; top: var(--offset); z-index: 20;
+      #masthead { position: sticky; --offset: 0px; top: var(--offset); z-index: 20;
         background: rgb(180, 20, 30); padding: 20px; width: 100%; box-sizing: border-box; }
       #masthead:hover { --offset: 20px; background: rgb(20, 40, 180); padding: 24px; }
       @media (max-width: 600px) { @supports (position: sticky) { #masthead { width: 75%; } } }
+      /* Loses to the id rules on the page; must still lose inside the component (review round 3). */
+      .page-header.band { position: static; background: rgb(0, 128, 0); padding: 4px; }
     ` : `header.page-header.page-header {
       --pin: sticky; position: ${position === "sticky" ? "var(--pin)" : "fixed"} !important; --offset: 0px; top: var(--offset); z-index: 20;
       ${position === "fixed" ? "left: 0; width: 100%;" : ""} }
@@ -67,8 +69,8 @@ test("an ID-styled page header keeps its scrolled box, hover styles and responsi
     expect(after.padding).toBe(original.padding);
   }
   const css = (await storedDraft(page, "components/block-page-header/block-page-header.css"))!.content;
-  expect(css).toContain(":host > header {");
-  expect(css).toContain(":host > header:hover {");
+  expect(css).toContain(":host > :is(header, #masthead) {");
+  expect(css).toContain(":host > :is(header, #masthead):hover {");
   expect(css).toContain("@media (max-width: 600px)");
   expect(css).toContain("@supports (position: sticky)");
 });

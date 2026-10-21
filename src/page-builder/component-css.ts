@@ -726,10 +726,21 @@ function rewrite(page: Match, node: SourceElement, part: string, compounds: Comp
       // What is left of the compound after the id, when it names no element (`:hover`, `::before`), takes the root's tag.
       const inner = text ? (/^[:[]/.test(text) ? `${territory.rootTag}${text}` : text) : territory.rootTag;
       // A page band's host has no box. Keep its anchor id on the instance,
-      // but apply the entire compound (including states) to the inner band.
+      // but apply the entire compound (including states) to the inner band,
+      // its id written as `:is(header, #id)`: it matches without the id and
+      // keeps the id's specificity, so the rule still wins where it did.
       const ancestors: string[] = [];
       for (let parent = root.parent; parent; parent = parent.parent) ancestors.push(parent.name);
-      lead = ids.length && isPageHeaderFooter(root.name, ancestors) ? `:host > ${inner}`
+      let band = "";
+      if (ids.length && isPageHeaderFooter(root.name, ancestors)) {
+        cursor = first.start;
+        for (const simple of [...ids, ...tags].sort((a, b) => a.start - b.start)) {
+          band += s.slice(cursor, simple.start) + (simple.type === "tag" ? territory.rootTag : `:is(${territory.rootTag}, ${s.slice(simple.start, simple.end)})`);
+          cursor = simple.end;
+        }
+        band += s.slice(cursor, first.end);
+      }
+      lead = band ? `:host > ${band}`
         : text ? inner : compounds[from + 1]?.combinator === ">" ? `:host > ${territory.rootTag}` : ":host";
     }
   }
