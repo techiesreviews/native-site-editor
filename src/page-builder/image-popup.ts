@@ -29,6 +29,7 @@ import type { MediaPopupHost } from "./media-popup-frame";
 import { isPictureSpot } from "./looping-video";
 import { SPOT_ACCEPT, pickedVideo, placeSpotVideo, spotNote } from "./media-spot-pick";
 import { PLACEHOLDER_IMAGE_PATH } from "./native-elements";
+import { mediaKind } from "./media-library-filter";
 
 /** What the editor lends the popup: where it stands, and the page's live look. */
 export interface ImagePopupHost extends MediaPopupHost {
@@ -203,11 +204,19 @@ export async function openImagePopup(options: ImagePopupOptions) {
     // The Media block starts as this image; Replace chooses any media for its place.
     if (placed === PLACEHOLDER_IMAGE_PATH) {
       if (!stamp.holds() || !options.live() || ports.source(target.path) !== source || ports.viewingVersion()) return;
+      const frame = frameChange(start, { shape: shapeNow(), focus: centred, component: state.component }, true);
       close();
       const place = { path: target.path, parent: target.node.slice(0, -1), index: target.node.at(-1)!, replaces: true };
       const proof = { stamp, epoch, source: source! };
       await openMediaPicker({ report: ports, place: `${ports.placeLabel?.(target.path) ?? target.path} · Replace media`,
         onPick: async (chosen, cancelled, held) => {
+          const added = held?.chosen?.()?.request, extension = added?.result?.outputs[0]?.extension;
+          const kind = mediaKind(added ? extension ? `added.${extension}` : added.file.name : chosen.path);
+          if (kind === "image") {
+            await placeMediaImage(ports, options.workspaceContext, target, chosen,
+              { ...proof, expected, initialAlt: mediaExistingAlt(expected) }, cancelled, held, frame);
+            return;
+          }
           const { placeChosenMedia } = await import("./media-insert");
           await placeChosenMedia(ports, options.workspaceContext, { kind: "insert", place }, chosen, proof, cancelled, held);
         },

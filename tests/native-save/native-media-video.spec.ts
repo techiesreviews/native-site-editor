@@ -136,6 +136,48 @@ test("placeholder Replace accepts a picture; Cancel keeps the placeholder and on
   await page.locator(".code-editor__undo").first().click();
   await expect.poll(() => mounted(page)).toBe(before);
 });
+for (const picture of ["existing", "uploaded"] as const) {
+  test(`placeholder Replace keeps its class and Square shape for an ${picture} picture, one Undo`, async ({ page, baseURL }) => {
+    await open(page, baseURL, '<img class="hero-image" src="/images/placeholder.svg" alt="Harbour at dawn" width="640" height="400" style="margin-left: 9px">');
+    const image = frame(page).locator("#scene > img");
+    await image.click();
+    await bar(page).locator(".edit-bar__media").click();
+    const popup = page.getByRole("dialog", { name: "Image", exact: true });
+    await popup.getByRole("button", { name: /^Shape:/ }).click();
+    await popup.getByRole("menuitemradio", { name: "Square", exact: true }).click();
+    await popup.getByRole("button", { name: "Done", exact: true }).click();
+    await expect(popup).toHaveCount(0);
+    await expect.poll(() => mounted(page)).toContain("aspect-ratio: 1 / 1");
+    await expect(image).toHaveCSS("aspect-ratio", "1 / 1");
+    const before = await mounted(page);
+    expect(before).toContain("aspect-ratio: 1 / 1");
+    await bar(page).locator(".edit-bar__media").click();
+    await popup.getByRole("button", { name: "Replace", exact: true }).click();
+    const picker = page.getByRole("dialog", { name: "Choose media", exact: true });
+    if (picture === "existing") {
+      await picker.getByRole("button", { name: "Choose images/studio-desk.svg", exact: true }).click();
+    } else {
+      await picker.locator("input[type=file]").setInputFiles({ name: "replacement.svg", mimeType: "image/svg+xml",
+        buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="80" height="40"><rect width="80" height="40" fill="teal"/></svg>') });
+      await expect(picker.locator(".media-library__chosen-name")).toHaveText("replacement.svg");
+    }
+    await picker.getByRole("button", { name: "Use image", exact: true }).click();
+    await expect(picker).toHaveCount(0);
+    await expect.poll(() => mounted(page)).toContain(picture === "existing" ? 'src="/images/studio-desk.svg"' : 'src="/media/images/replacement.svg"');
+    await expect(image).toHaveClass("hero-image");
+    await expect(image).toHaveAttribute("alt", "Harbour at dawn");
+    await expect(image).toHaveCSS("aspect-ratio", "1 / 1");
+    await expect(image).toHaveCSS("object-fit", "cover");
+    await expect(image).toHaveCSS("margin-left", "9px");
+    await expect.poll(() => image.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBeGreaterThan(0);
+    if (picture === "uploaded") expect(await storedDraft(page, "media/images/replacement.svg")).toBeDefined();
+    await page.locator(".code-editor__undo").first().click();
+    await expect.poll(() => mounted(page)).toBe(before);
+    await expect(image).toHaveClass("hero-image");
+    await expect(image).toHaveCSS("aspect-ratio", "1 / 1");
+    if (picture === "uploaded") expect(await storedDraft(page, "media/images/replacement.svg")).toBeUndefined();
+  });
+}
 test("a picture spot's picker offers videos too: a chosen video loops silently there, keeping the spot's slot and words", async ({ page, baseURL }) => {
   await open(page, baseURL, false);
   const at = (await mounted(page)).indexOf("<p>Section words</p>");
