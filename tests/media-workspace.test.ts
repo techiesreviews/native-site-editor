@@ -793,9 +793,9 @@ test("a re-trim never reuses an address on the Recently removed list", async () 
   assert.equal(await f.host.trim(request), "media/images/a-crop-4.webp");
 });
 // A replaced place's old picture (the picker's Use, the popup's Replace): an unused trimmed copy goes with its family.
-async function unusedAfterReplace(f: ReturnType<typeof trimFixture>, from = oldTrim) {
-  const expectedSources = new Map<string, string | undefined>(), expectedAssets = new Map<string, string | undefined>();
-  const removes = await unusedTrimmedCopy(f.context, { from, records: parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)), paths: f.context.paths, prefix: "",
+async function unusedAfterReplace(f: ReturnType<typeof trimFixture>, from = oldTrim, chosen = "images/unused.png", proofs: [string, string][] = []) {
+  const expectedSources = new Map<string, string | undefined>(), expectedAssets = new Map<string, string | undefined>(proofs);
+  const removes = await unusedTrimmedCopy(f.context, { from, chosen, records: parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)), paths: f.context.paths, prefix: "",
     page: { path: "index.html", text: "<p>The place, without its picture</p>" }, expectedSources, expectedAssets });
   return { removes, expectedSources, expectedAssets };
 }
@@ -822,6 +822,17 @@ test("a replaced place's trimmed copy still used elsewhere, kept always, unreada
   assert.deepEqual(unsure.removes, []); assert.equal(unsure.expectedAssets.size, 0);
   // Originals are never removed, used or not.
   assert.deepEqual((await unusedAfterReplace(trimFixture(), "images/unused.png")).removes, []);
+});
+test("choosing the place's own trimmed copy, or one of its sizes, again keeps the whole family", async () => {
+  for (const chosen of [oldTrim, oldSmall]) {
+    const same = await unusedAfterReplace(trimFixture(), oldTrim, chosen);
+    assert.deepEqual(same.removes, []); assert.equal(same.expectedAssets.size, 0);
+  }
+});
+test("a proof the caller already holds for a family member is kept, and a moved revision refuses", async () => {
+  const held = await unusedAfterReplace(trimFixture(), oldTrim, "images/unused.png", [[oldTrim, "old-v1"]]);
+  assert.deepEqual(held.removes, [oldTrim, oldSmall]);
+  await assert.rejects(unusedAfterReplace(trimFixture(), oldTrim, "images/unused.png", [[oldTrim, "older-v0"]]), /changed while preparing placement/);
 });
 test("pixels prepared from an older original refuse without saving anything", async () => {
   for (const sourceVersion of ["a-v0", undefined]) {

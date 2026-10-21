@@ -60,7 +60,7 @@ export async function placeMediaImage(
   // A trimmed copy this place showed and nothing else uses goes in the same step (never when unsure).
   const expectedAssets = new Map(proof.asset ? [[proof.asset.path, proof.asset.version]] : []);
   const usageSources = new Map<string, string | undefined>();
-  const removes = readable ? await workspace.unusedTrimmedCopy(ctx, { from, records, paths: expectedPaths, prefix,
+  const removes = readable ? await workspace.unusedTrimmedCopy(ctx, { from, chosen: image.path, records, paths: expectedPaths, prefix,
     page: { path: target.path, text: base.slice(0, range.tag.start) + base.slice(range.tag.start + standIn.length) }, expectedSources: usageSources, expectedAssets }) : [];
   ctx.assertLive();
   let copies: Awaited<ReturnType<typeof import("./media-older-copies")["makeOlderCopies"]>>;
