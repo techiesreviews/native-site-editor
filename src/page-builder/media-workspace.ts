@@ -226,24 +226,30 @@ async function usageText(ctx: MediaWorkspaceContext, paths: string[], overrides:
 
 /** A place stops showing `from` (its picture replaced): a trimmed copy nothing else uses goes with its
  * family in the same step, as re-trimming drops its previous copy. Originals, sharing pictures and
- * Always keep files stay, and so does anything when a file cannot be read. `page` is the changed page
- * without that place. Returns the paths to remove; their revisions and the text read join the proofs. */
+ * Always keep files stay, and so does anything when a file cannot be read, or when `chosen` (the place's
+ * new picture) is of the same family. `page` is the changed page without that place. Returns the paths to
+ * remove; their revisions and the text read join the proofs, and a proof already taken is never replaced. */
 export async function unusedTrimmedCopy(ctx: MediaWorkspaceContext, input: {
-  from: string | undefined; records: MediaRecords; paths: string[]; prefix: string; page: { path: string; text: string };
+  from: string | undefined; chosen: string; records: MediaRecords; paths: string[]; prefix: string; page: { path: string; text: string };
   expectedSources: Map<string, string | undefined>; expectedAssets: Map<string, string | undefined>;
 }): Promise<string[]> {
   const { from, records, paths } = input;
   if (!from || !records.files[from]?.trimmedFrom || records.files[from].sharing || !paths.includes(from)) return [];
   if (mediaFamilies(paths).some(family => family.sharing === from)) return [];
   const members = familyPaths(from, paths);
-  if (members.some(member => records.files[member]?.alwaysKeep)) return [];
+  // Choosing the same picture (or one of its copies) again keeps the family the page goes on showing.
+  if (members.some(member => records.files[member]?.alwaysKeep || member === input.chosen || familyPaths(input.chosen, paths).includes(member))) return [];
   const versions = familyVersions(ctx, members);
   const read = new Map<string, string>();
   const { text, complete } = await usageText(ctx, paths, { [input.page.path]: input.page.text }, (file, value) => read.set(file, value));
   const usage = wideUsage(members, text, ctx, input.prefix);
   if (!complete || members.some(member => usage[member].files.length)) return [];
   for (const [file, value] of read) if (!input.expectedSources.has(file)) input.expectedSources.set(file, value);
-  for (const [member, version] of versions) input.expectedAssets.set(member, version);
+  for (const [member, version] of versions) {
+    // A caller's earlier proof stands: a revision that moved since it was taken refuses the step.
+    if (input.expectedAssets.has(member) && input.expectedAssets.get(member) !== version) throw new Error("The image changed while preparing placement. Try again.");
+    input.expectedAssets.set(member, version);
+  }
   return members;
 }
 const familyVersions = (ctx: MediaWorkspaceContext, paths: string[]) =>
