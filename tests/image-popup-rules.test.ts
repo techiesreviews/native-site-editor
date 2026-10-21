@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { POPUP_SHAPES, focusApplies, focusAt, frameBadge, frameChange, nudgeFocus, placePopup, popupMessage, pictureHint, placeShapeOf, replaceNotice, seenHints, shapeLabel, shapeRatio, sheetScroll } from "../src/page-builder/image-popup-rules";
+import { POPUP_SHAPES, focusApplies, focusAt, frameBadge, frameChange, nudgeFocus, placePopup, popupMessage, pictureHint, placeShapeOf, seenHints, shapeLabel, shapeRatio, sheetScroll } from "../src/page-builder/image-popup-rules";
 import { readPlaceFrame, writePlaceFrame } from "../src/page-builder/place-frame";
 import type { MediaRecords } from "../shared/media-records";
 
@@ -60,11 +60,6 @@ test("the message is blue for this spot only, yellow when a new picture is saved
   assert.equal(popupMessage({ newPicture: true, recrop: true }).text, "Updates this spot's trimmed picture");
   assert.equal(pictureHint("square"), "Drag the dot to what matters most.");
   assert.equal(pictureHint("original"), "The whole picture shows.");
-});
-
-test("Replace says the shape stays, the picture is centred and a trim was dropped", () => {
-  assert.equal(replaceNotice("images/studio-desk.svg", "square", false), "studio-desk.svg is in. The Square shape stays and the picture is centred.");
-  assert.equal(replaceNotice("a.webp", "original", true), "a.webp is in. The shape stays Original. Trimming made for the old picture was dropped.");
 });
 
 test("Done writes only what changed", () => {

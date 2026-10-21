@@ -1,6 +1,7 @@
 // The Image button and the image popup (media-manager build slice 39, ticket 09 "Entry point and
-// popup"): one Image button with a state badge; the popup's shape menu, focus dot and Replace show
-// on the page at once but are kept only by Done (one Undo step); ✕ or Escape put everything back.
+// popup"): one Image button with a state badge; the popup's shape menu and focus dot show on the page
+// at once and closing the popup (Close, Escape, a press outside) keeps them as one Undo step; there is
+// no Done. Replace closes the popup and places the chosen picture at once, as its own Undo step.
 // Trim, zoom and turn (slice 41) save a trimmed copy for this spot only; so do straighten and flip
 // in the large editor (slice 42), whose Cancel goes back to the popup as it was.
 // Ordinary-picture popup tests use a separate SVG; placeholder Replace chooses any media immediately.
@@ -44,7 +45,7 @@ async function chooseShape(page: Page, label: string) {
   await expect(popup(page).getByRole("button", { name: `Shape: ${label}`, exact: true })).toBeVisible();
 }
 
-test("Image → Square, move the focus dot, Done: the page has the shape and object-position; Undo restores", { tag: "@smoke" }, async ({ page, baseURL }) => {
+test("Image → Square, move the focus dot, Close: the page has the shape and object-position; Undo restores", { tag: "@smoke" }, async ({ page, baseURL }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await open(page, baseURL);
   const before = await source(page);
@@ -56,7 +57,7 @@ test("Image → Square, move the focus dot, Done: the page has the shape and obj
   await expect(popup(page)).toBeVisible();
   await expect(popup(page).getByRole("status").filter({ hasText: "Only changes this spot" })).toBeVisible();
   await chooseShape(page, "Square");
-  // The page shows the shape at once; nothing is written before Done.
+  // The page shows the shape at once; nothing is written before the popup closes.
   await expect(frame(page).locator(".hero img")).toHaveAttribute("style", /aspect-ratio: 1 \/ 1; object-fit: cover/);
   expect(await source(page)).toBe(before);
   // Drag the dot to the left edge, half way down.
@@ -66,37 +67,38 @@ test("Image → Square, move the focus dot, Done: the page has the shape and obj
   await page.mouse.move(box.x + box.width * 0.2, box.y + box.height * 0.5, { steps: 4 });
   await page.mouse.up();
   await expect(dot(page)).toHaveAttribute("aria-valuetext", /^20% across, 50% down/);
-  await popup(page).getByRole("button", { name: "Done", exact: true }).click();
+  await popup(page).getByRole("button", { name: "Close", exact: true }).click();
   await expect(popup(page)).toHaveCount(0);
   await expect.poll(() => heroTag(page)).toMatch(/style="aspect-ratio: 1 \/ 1; object-fit: cover; object-position: 20% 50%"/);
   await expect(frame(page).locator(".hero img")).toHaveCSS("object-position", "20% 50%");
   await pickPicture(page, ".hero img");
   await expect(imageButton(page)).toHaveAttribute("title", /· Square$/);
-  // Done was one step.
+  // Closing kept it as one step.
   await page.locator(".code-editor__undo").first().click();
   await expect.poll(() => source(page)).toBe(before);
 });
 
-test("Escape cancels a Replace made in the popup: the page and its picture stay as they were", async ({ page, baseURL }) => {
+test("Replace in the popup closes it and places the chosen picture at once; one Undo restores the original", async ({ page, baseURL }) => {
   await open(page, baseURL);
   const before = await source(page);
   const shown = await frame(page).locator(".hero img").getAttribute("src");
   await openPopup(page);
+  // Replace closes the popup first; there is no Done step for a replacement.
   await popup(page).getByRole("button", { name: "Replace", exact: true }).click();
+  await expect(popup(page)).toHaveCount(0);
   await picker(page).getByRole("button", { name: "Choose images/studio-desk.svg", exact: true }).click();
   await picker(page).getByRole("button", { name: "Use image", exact: true }).click();
   await expect(picker(page)).toHaveCount(0);
-  await expect(popup(page).getByRole("status").filter({ hasText: "studio-desk.svg is in." })).toBeVisible();
-  // The page shows the new picture before Done.
-  await expect.poll(() => frame(page).locator(".hero img").getAttribute("src")).not.toBe(shown);
-  await page.keyboard.press("Escape");
   await expect(popup(page)).toHaveCount(0);
+  await expect(page.locator("#status")).toHaveText("Image replaced");
+  await expect.poll(() => heroTag(page)).toMatch(/src="\/images\/studio-desk\.svg"/);
+  await expect.poll(() => frame(page).locator(".hero img").getAttribute("src")).not.toBe(shown);
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(() => source(page)).toBe(before);
   await expect(frame(page).locator(".hero img")).toHaveAttribute("src", shown!);
-  expect(await source(page)).toBe(before);
-  await expect(imageButton(page)).toBeFocused();
 });
 
-test("Replace and Done swap the picture in one Undo step", async ({ page, baseURL }) => {
+test("Replace keeps the shape chosen before it and centres the picture, in one Undo step", async ({ page, baseURL }) => {
   await open(page, baseURL);
   const before = await source(page);
   await openPopup(page);
@@ -104,15 +106,14 @@ test("Replace and Done swap the picture in one Undo step", async ({ page, baseUR
   await popup(page).getByRole("button", { name: "Replace", exact: true }).click();
   await picker(page).getByRole("button", { name: "Choose images/studio-desk.svg", exact: true }).click();
   await picker(page).getByRole("button", { name: "Use image", exact: true }).click();
-  await expect(popup(page).getByRole("status").filter({ hasText: "The 16:9 shape stays and the picture is centred." })).toBeVisible();
-  await popup(page).getByRole("button", { name: "Done", exact: true }).click();
+  await expect(popup(page)).toHaveCount(0);
   await expect(page.locator("#status")).toHaveText("Image replaced");
   await expect.poll(() => heroTag(page)).toMatch(/src="\/images\/studio-desk\.svg"[^>]*style="aspect-ratio: 16 \/ 9; object-fit: cover"|style="aspect-ratio: 16 \/ 9; object-fit: cover"[^>]*src="\/images\/studio-desk\.svg"/);
   await page.locator(".code-editor__undo").first().click();
   await expect.poll(() => source(page)).toBe(before);
 });
 
-test("arrow keys move the dot; ✕ closes without changes", async ({ page, baseURL }) => {
+test("arrow keys move the dot; Close keeps the change as one Undo step; Escape keeps it too", async ({ page, baseURL }) => {
   await open(page, baseURL);
   const before = await source(page);
   await openPopup(page);
@@ -125,19 +126,27 @@ test("arrow keys move the dot; ✕ closes without changes", async ({ page, baseU
   await page.keyboard.press("Shift+ArrowUp");
   await expect(dot(page)).toHaveAttribute("aria-valuetext", /^46% across, 40% down/);
   await expect(frame(page).locator(".hero img")).toHaveCSS("object-position", "46% 40%");
-  await popup(page).getByRole("button", { name: "Close without changes", exact: true }).click();
+  await popup(page).getByRole("button", { name: "Close", exact: true }).click();
   await expect(popup(page)).toHaveCount(0);
-  await expect(frame(page).locator(".hero img")).not.toHaveAttribute("style", /aspect-ratio/);
-  expect(await source(page)).toBe(before);
-  // Done after the keys writes them. The hint seen last time is now only the dot's description (slice 109).
+  await expect.poll(() => heroTag(page)).toContain("aspect-ratio: 4 / 5; object-fit: cover; object-position: 46% 40%");
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(() => source(page)).toBe(before);
+  // Escape after the keys keeps them too. The hint seen last time is now only the dot's description (slice 109).
   await openPopup(page);
   await chooseShape(page, "Tall 4:5");
   await expect(popup(page).locator(".image-popup__hint")).toHaveClass(/sr-only/);
   await expect(dot(page)).toHaveAccessibleDescription("Drag the dot to what matters most.");
   await dot(page).focus();
   await page.keyboard.press("ArrowRight");
-  await popup(page).getByRole("button", { name: "Done", exact: true }).click();
+  await page.keyboard.press("Escape");
+  await expect(popup(page)).toHaveCount(0);
   await expect.poll(() => heroTag(page)).toContain("object-position: 52% 50%");
+  // Opened and closed with no change, nothing is written.
+  const kept = await source(page);
+  await openPopup(page);
+  await popup(page).getByRole("button", { name: "Close", exact: true }).click();
+  await expect(popup(page)).toHaveCount(0);
+  expect(await source(page)).toBe(kept);
 });
 
 test("a phone shows the popup as a bottom sheet with 44 px targets", async ({ page, baseURL }) => {
@@ -150,24 +159,23 @@ test("a phone shows the popup as a bottom sheet with 44 px targets", async ({ pa
   expect(Math.round(sheet.y + sheet.height)).toBe(844);
   expect(sheet.height).toBeLessThanOrEqual(844 * 0.85 + 1);
   for (const target of [popup(page).getByRole("button", { name: /^Shape:/ }), popup(page).getByRole("button", { name: "Replace", exact: true }),
-    popup(page).getByRole("button", { name: "Done", exact: true }), popup(page).getByRole("button", { name: "Close without changes", exact: true })]) {
+    popup(page).getByRole("button", { name: "Close", exact: true })]) {
     const size = (await target.boundingBox())!;
     expect(size.height).toBeGreaterThanOrEqual(44);
   }
-  await expect(popup(page).getByRole("button", { name: "Done", exact: true })).toBeInViewport();
+  await expect(popup(page).getByRole("button", { name: "Close", exact: true })).toBeInViewport();
   // Only the computer preview: the page itself is the phone view.
   await expect(popup(page).locator(".image-popup__device--phone")).toBeHidden();
   await expect(popup(page).locator(".image-popup__device--computer")).toBeVisible();
   // Slice 109: labels sit above their controls, the picture takes the full width, and the previews
-  // and Done show without scrolling; the message line sits above the buttons.
+  // and the message show without scrolling.
   const rows = (await popup(page).locator(".image-popup__rows").boundingBox())!, preview = (await popup(page).locator(".image-popup__device--computer").boundingBox())!;
   expect(preview.y + preview.height).toBeLessThanOrEqual(rows.y + rows.height + 0.5);
   expect(await popup(page).locator(".image-popup__rows").evaluate(element => element.scrollHeight <= element.clientHeight)).toBe(true);
   const well = (await popup(page).locator(".image-popup__well").boundingBox())!, label = (await popup(page).locator(".image-popup__row--picture > .image-popup__label").boundingBox())!;
   expect(well.width).toBeGreaterThanOrEqual(390 - 2 * 14 - 1);
   expect(label.y + label.height).toBeLessThanOrEqual(well.y + 0.5);
-  const message = (await popup(page).locator(".image-popup__message").boundingBox())!, done = (await popup(page).getByRole("button", { name: "Done", exact: true }).boundingBox())!;
-  expect(message.y + message.height).toBeLessThanOrEqual(done.y + 0.5);
+  await expect(popup(page).locator(".image-popup__message")).toBeInViewport({ ratio: 1 });
 });
 
 // A raster picture to trim (the fixture's are SVGs, which cannot be): four coloured quarters.
@@ -178,7 +186,7 @@ const quarters = (page: Page) => page.evaluate(() => {
   [["#d22", 0, 0], ["#2a2", 400, 0], ["#22d", 0, 200], ["#dd2", 400, 200]].forEach(([colour, x, y]) => { context.fillStyle = colour as string; context.fillRect(x as number, y as number, 400, 200); });
   return canvas.toDataURL("image/jpeg", 0.9).split(",")[1];
 });
-// Slice 94: on a phone the shape menu stands clear of the sheet's pinned message and Done strip.
+// Slice 94: on a phone the shape menu stands clear of the sheet's pinned message.
 test("a phone's shape menu is whole on screen, uncovered, and Free can be pressed", async ({ page, baseURL }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await open(page, baseURL);
@@ -188,6 +196,9 @@ test("a phone's shape menu is whole on screen, uncovered, and Free can be presse
   await picker(page).locator('input[name="media-upload"]').setInputFiles({ name: "Phone.jpg", mimeType: "image/jpeg", buffer: Buffer.from(await quarters(page), "base64") });
   await expect(picker(page).getByRole("button", { name: "Choose Phone.jpg", exact: true })).toHaveAttribute("aria-pressed", "true");
   await picker(page).getByRole("button", { name: "Use image", exact: true }).click();
+  await expect(popup(page)).toHaveCount(0);
+  await expect.poll(() => heroTag(page)).toMatch(/src="\/media\/images\/phone\.webp"/);
+  await openPopup(page);
   await expect(popup(page).getByRole("slider", { name: "Zoom" })).toBeVisible();
   const entries = popup(page).getByRole("menuitemradio");
   const wholeAndOnTop = async () => {
@@ -197,7 +208,7 @@ test("a phone's shape menu is whole on screen, uncovered, and Free can be presse
       await expect(entry).toBeInViewport({ ratio: 1 });
       const box = (await entry.boundingBox())!;
       expect(box.height).toBeGreaterThanOrEqual(44);
-      // Nothing (the message, Done) covers it.
+      // Nothing (the message) covers it.
       expect(await entry.evaluate((item, at) => item.contains(document.elementFromPoint(at.x, at.y)), { x: box.x + box.width / 2, y: box.y + box.height / 2 })).toBe(true);
     }
   };
@@ -210,7 +221,7 @@ test("a phone's shape menu is whole on screen, uncovered, and Free can be presse
   await wholeAndOnTop();
   await popup(page).getByRole("menuitemradio", { name: "Square", exact: true }).click();
   await expect(popup(page).getByRole("button", { name: "Shape: Square", exact: true })).toBeVisible();
-  await expect(popup(page).getByRole("button", { name: "Done", exact: true })).toBeInViewport({ ratio: 1 });
+  await expect(popup(page).locator(".image-popup__message")).toBeInViewport({ ratio: 1 });
   // Room neither under nor over the button (a phone on its side): the menu stays on screen and scrolls.
   await page.setViewportSize({ width: 320, height: 280 });
   await popup(page).getByRole("button", { name: /^Shape:/ }).click();
@@ -232,12 +243,12 @@ test.describe("on a touch phone", () => {
     await open(page, baseURL);
     await openPopup(page);
     await chooseShape(page, "Square");
-    // The smallest phones: the picture fills what the sheet shows between its head and its pinned Done.
+    // The smallest phones: the picture fills what the sheet shows between its head and its pinned message.
     await page.setViewportSize({ width: 320, height: 568 });
     const rows = popup(page).locator(".image-popup__rows");
     await expect.poll(() => rows.evaluate(element => element.scrollHeight > element.clientHeight)).toBe(true);
     const where = await dot(page).getAttribute("aria-valuetext");
-    // A finger swipes up from the picture's visible part (its lower half sits under the pinned Done).
+    // A finger swipes up from the picture's visible part (its lower half sits under the pinned message).
     const well = (await popup(page).locator(".image-popup__picbox").boundingBox())!, shown = (await rows.boundingBox())!;
     const x = Math.round(well.x + well.width * 0.2), y = Math.round(Math.min(well.y + well.height, shown.y + shown.height) - 12);
     const cdp = await page.context().newCDPSession(page);
@@ -246,7 +257,7 @@ test.describe("on a touch phone", () => {
     await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
     await expect.poll(() => rows.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
     await expect(dot(page)).toHaveAttribute("aria-valuetext", where!);
-    await expect(popup(page).getByRole("button", { name: "Done", exact: true })).toBeInViewport({ ratio: 1 });
+    await expect(popup(page).locator(".image-popup__message")).toBeInViewport({ ratio: 1 });
     // A tap on the picture still puts the dot there.
     await rows.evaluate(element => element.scrollTo(0, 0));
     const picture = (await popup(page).locator(".image-popup__picbox").boundingBox())!;
@@ -254,7 +265,7 @@ test.describe("on a touch phone", () => {
     await expect(dot(page)).not.toHaveAttribute("aria-valuetext", where!);
     await expect(dot(page)).toBeFocused();
 
-    // A phone on its side: the whole sheet scrolls; a swipe on the picture moves it, not the dot; Done stays uncovered.
+    // A phone on its side: the whole sheet scrolls; a swipe on the picture moves it, not the dot; the message stays uncovered.
     await page.setViewportSize({ width: 320, height: 280 });
     const sheet = popup(page);
     await sheet.evaluate(element => element.scrollTo(0, 0));
@@ -266,7 +277,7 @@ test.describe("on a touch phone", () => {
     await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
     await expect.poll(() => sheet.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
     await expect(dot(page)).toHaveAttribute("aria-valuetext", moved!);
-    for (const target of [sheet.getByRole("button", { name: "Done", exact: true }), sheet.locator(".image-popup__message")]) {
+    for (const target of [sheet.locator(".image-popup__message")]) {
       await expect(target).toBeInViewport({ ratio: 1 });
       const box = (await target.boundingBox())!;
       expect(await target.evaluate((element, at) => element.contains(document.elementFromPoint(at.x, at.y)), { x: box.x + box.width / 2, y: box.y + box.height / 2 })).toBe(true);
@@ -282,6 +293,9 @@ test("on a phone the large editor's Shape ends a row of labelled tools and opens
   await picker(page).locator('input[name="media-upload"]').setInputFiles({ name: "Wide.jpg", mimeType: "image/jpeg", buffer: Buffer.from(await quarters(page), "base64") });
   await expect(picker(page).getByRole("button", { name: "Choose Wide.jpg", exact: true })).toHaveAttribute("aria-pressed", "true");
   await picker(page).getByRole("button", { name: "Use image", exact: true }).click();
+  await expect(popup(page)).toHaveCount(0);
+  await expect.poll(() => heroTag(page)).toMatch(/src="\/media\/images\/wide\.webp"/);
+  await openPopup(page);
   await popup(page).getByRole("button", { name: "Open large editor", exact: true }).click();
   const editor = page.getByRole("dialog", { name: "Edit image", exact: true });
   // Slice 110: seven tools, each an icon over an 11 px label, 56 px tall; Shape names the current shape.
@@ -343,6 +357,11 @@ async function replaceWith(page: Page, name: string, mimeType: string, base64: s
   await expect(picker(page).getByRole("button", { name: `Choose ${name}`, exact: true })).toHaveAttribute("aria-pressed", "true");
   await picker(page).getByRole("button", { name: "Use image", exact: true }).click();
   await expect(picker(page)).toHaveCount(0);
+  // The picture is placed at once and the popup closes; open it again on the new picture.
+  await expect(popup(page)).toHaveCount(0);
+  const stem = name.replace(/\.[^.]+$/, "").toLowerCase();
+  await expect.poll(() => heroTag(page)).toMatch(new RegExp(`src="/media/images/${stem}\\.`));
+  await openPopup(page);
 }
 
 // Slice 109 (and slice 106's checkerboard): a see-through picture sits on the light checkerboard in the
@@ -405,8 +424,6 @@ test("Free trim saves a -crop copy for this spot only; re-opening shows the trim
   await expect(picker(page).getByRole("button", { name: "Choose Quarters.jpg", exact: true })).toHaveAttribute("aria-pressed", "true");
   await picker(page).getByRole("button", { name: "Use image", exact: true }).click();
   await expect(picker(page)).toHaveCount(0);
-  await expect(popup(page).getByRole("slider", { name: "Zoom" })).toBeVisible();
-  await popup(page).getByRole("button", { name: "Done", exact: true }).click();
   await expect(popup(page)).toHaveCount(0);
   await expect.poll(() => heroTag(page)).toMatch(/src="\/media\/images\/quarters\.webp"/);
   const original = "media/images/quarters.webp";
@@ -419,7 +436,7 @@ test("Free trim saves a -crop copy for this spot only; re-opening shows the trim
   await dragCorner(page, "se", -0.5, -0.3);
   await expect(popup(page).getByRole("status").filter({ hasText: "Saves a new picture for this spot" })).toBeVisible();
   await expect(frame(page).locator(".hero img")).toHaveAttribute("src", /^data:image\//);
-  await popup(page).getByRole("button", { name: "Done", exact: true }).click();
+  await popup(page).getByRole("button", { name: "Close", exact: true }).click();
   await expect(page.locator("#status")).toContainText("Picture trimmed: media/images/quarters-crop.webp.", { timeout: 30_000 });
   await expect.poll(() => heroTag(page)).toMatch(/src="\/media\/images\/quarters-crop\.webp"/);
   // A new file with its record; the original is unchanged and stays for other places.
@@ -432,11 +449,11 @@ test("Free trim saves a -crop copy for this spot only; re-opening shows the trim
   await pickPicture(page, ".hero img");
   await expect(imageButton(page)).toHaveAttribute("title", /· Trimmed$/);
 
-  // Re-opened and left as it was, Done changes nothing.
+  // Re-opened and left as it was, closing changes nothing.
   const trimmed = await source(page), drafts = JSON.stringify(await storedDrafts(page));
   await imageButton(page).click();
   await expect(popup(page).locator(".image-popup__where")).toHaveText("quarters.webp");
-  await popup(page).getByRole("button", { name: "Done", exact: true }).click();
+  await popup(page).getByRole("button", { name: "Close", exact: true }).click();
   await expect(popup(page)).toHaveCount(0);
   expect(await source(page)).toBe(trimmed);
   expect(JSON.stringify(await storedDrafts(page))).toBe(drafts);
@@ -454,13 +471,13 @@ test("Free trim saves a -crop copy for this spot only; re-opening shows the trim
   expect(trim.x - box.x).toBeLessThan(3);
   // Re-trimming writes a fresh name; the earlier copy, used nowhere else, goes to Recently removed.
   await dragCorner(page, "nw", 0.2, 0.2);
-  await popup(page).getByRole("button", { name: "Done", exact: true }).click();
+  await popup(page).getByRole("button", { name: "Close", exact: true }).click();
   await expect.poll(() => heroTag(page), { timeout: 30_000 }).toMatch(/src="\/media\/images\/quarters-crop-2\.webp"/);
   const again = await records(page);
   expect(again.files["media/images/quarters-crop-2.webp"].trimmedFrom.source).toBe(original);
   expect(again.files["media/images/quarters-crop.webp"]).toBeUndefined();
   expect(again.removed.map((entry: { path: string }) => entry.path)).toContain("media/images/quarters-crop.webp");
-  // Replace on a trimmed spot, then zoom: the copy is cut from the new picture; the old copy, used nowhere else, goes.
+  // Replace on a trimmed spot drops the trim; then zoom: the copy is cut from the new picture; the old copy, used nowhere else, goes.
   await pickPicture(page, ".hero img");
   await expect(imageButton(page)).toHaveAttribute("title", /· Trimmed$/);
   await imageButton(page).click();
@@ -468,17 +485,25 @@ test("Free trim saves a -crop copy for this spot only; re-opening shows the trim
   await picker(page).locator('input[name="media-upload"]').setInputFiles({ name: "Second.jpg", mimeType: "image/jpeg", buffer: Buffer.from(await quarters(page), "base64") });
   await expect(picker(page).getByRole("button", { name: "Choose Second.jpg", exact: true })).toHaveAttribute("aria-pressed", "true");
   await picker(page).getByRole("button", { name: "Use image", exact: true }).click();
-  await expect(popup(page).getByRole("status").filter({ hasText: "Trimming made for the old picture was dropped." })).toBeVisible();
+  await expect(popup(page)).toHaveCount(0);
+  await expect.poll(() => heroTag(page)).toMatch(/src="\/media\/images\/second\.webp"/);
+  await openPopup(page);
   await popup(page).getByRole("slider", { name: "Zoom" }).fill("200");
-  await popup(page).getByRole("button", { name: "Done", exact: true }).click();
+  await popup(page).getByRole("button", { name: "Close", exact: true }).click();
   await expect.poll(() => heroTag(page), { timeout: 30_000 }).toMatch(/src="\/media\/images\/second-crop\.webp"/);
   const replaced = await records(page);
   expect(replaced.files["media/images/second-crop.webp"].trimmedFrom.source).toBe("media/images/second.webp");
+  // Replace removed the earlier trimmed copy, used nowhere else, in its own step.
   expect(replaced.files["media/images/quarters-crop-2.webp"]).toBeUndefined();
+  expect(replaced.removed.map((entry: { path: string }) => entry.path)).toContain("media/images/quarters-crop-2.webp");
   expect(replaced.files[original]?.trimmedFrom).toBeUndefined();
-  // Done was one Undo step: the earlier copy is back in the spot.
+  // The zoom's close and the replacement are one Undo step each: the earlier copy is back after two.
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(() => heroTag(page)).toMatch(/src="\/media\/images\/second\.webp"/);
   await page.locator(".code-editor__undo").first().click();
   await expect.poll(() => heroTag(page)).toMatch(/src="\/media\/images\/quarters-crop-2\.webp"/);
+  // That Undo brought the copy back with its record.
+  expect((await records(page)).files["media/images/quarters-crop-2.webp"]?.trimmedFrom.source).toBe(original);
 });
 
 test("Undo of a re-trim keeps the unsaved picture available to trim again", async ({ page, baseURL }) => {
@@ -490,21 +515,19 @@ test("Undo of a re-trim keeps the unsaved picture available to trim again", asyn
   await expect(picker(page).getByRole("button", { name: "Choose Quarters.jpg", exact: true })).toHaveAttribute("aria-pressed", "true");
   await picker(page).getByRole("button", { name: "Use image", exact: true }).click();
   await expect(picker(page)).toHaveCount(0);
-  await expect(popup(page).getByRole("slider", { name: "Zoom" })).toBeVisible();
-  await popup(page).getByRole("button", { name: "Done", exact: true }).click();
   await expect(popup(page)).toHaveCount(0);
   await expect.poll(() => heroTag(page)).toMatch(/src="\/media\/images\/quarters\.webp"/);
 
   await openPopup(page);
   await chooseShape(page, "Free");
   await dragCorner(page, "se", -0.5, -0.3);
-  await popup(page).getByRole("button", { name: "Done", exact: true }).click();
+  await popup(page).getByRole("button", { name: "Close", exact: true }).click();
   await expect(page.locator("#status")).toContainText("Picture trimmed: media/images/quarters-crop.webp.", { timeout: 30_000 });
   await expect.poll(() => heroTag(page)).toMatch(/src="\/media\/images\/quarters-crop\.webp"/);
 
   await openPopup(page);
   await dragCorner(page, "nw", 0.2, 0.2);
-  await popup(page).getByRole("button", { name: "Done", exact: true }).click();
+  await popup(page).getByRole("button", { name: "Close", exact: true }).click();
   await expect(page.locator("#status")).toContainText("Picture trimmed: media/images/quarters-crop-2.webp.", { timeout: 30_000 });
   await expect.poll(() => heroTag(page)).toMatch(/src="\/media\/images\/quarters-crop-2\.webp"/);
   // Each completed file change sweeps unreferenced upload bytes, including the removed first trim.
@@ -513,7 +536,7 @@ test("Undo of a re-trim keeps the unsaved picture available to trim again", asyn
 
   await openPopup(page);
   await dragCorner(page, "se", -0.1, -0.1);
-  await popup(page).getByRole("button", { name: "Done", exact: true }).click();
+  await popup(page).getByRole("button", { name: "Close", exact: true }).click();
   await expect(page.locator("#status")).toContainText("Picture trimmed: media/images/quarters-crop-2.webp.", { timeout: 30_000 });
   await expect(popup(page)).toHaveCount(0);
   await expect.poll(() => heroTag(page)).toMatch(/src="\/media\/images\/quarters-crop-2\.webp"/);
@@ -528,13 +551,14 @@ test("Zoom and Turn save a trimmed copy; back at 100 % and unturned only the spo
   await picker(page).locator('input[name="media-upload"]').setInputFiles({ name: "Turned.jpg", mimeType: "image/jpeg", buffer: Buffer.from(await quarters(page), "base64") });
   await expect(picker(page).getByRole("button", { name: "Choose Turned.jpg", exact: true })).toHaveAttribute("aria-pressed", "true");
   await picker(page).getByRole("button", { name: "Use image", exact: true }).click();
+  await expect(popup(page)).toHaveCount(0);
+  await expect.poll(() => heroTag(page)).toMatch(/src="\/media\/images\/turned\.webp"/);
+  await openPopup(page);
   await expect(popup(page).getByRole("slider", { name: "Zoom" })).toBeVisible();
-  // Slice 109: Turn ends the Zoom row; the message shares Done's line; Open large editor is in the head.
+  // Slice 109: Turn ends the Zoom row; Open large editor is in the head.
   await chooseShape(page, "Square");
   const zoomRow = popup(page).locator(".image-popup__row", { has: page.getByRole("slider", { name: "Zoom" }) });
   for (const name of ["Turn left", "Turn right"]) await expect(zoomRow.getByRole("button", { name, exact: true })).toBeVisible();
-  const line = (await popup(page).locator(".image-popup__message").boundingBox())!, done = (await popup(page).getByRole("button", { name: "Done", exact: true }).boundingBox())!;
-  expect(Math.abs(line.y + line.height / 2 - (done.y + done.height / 2))).toBeLessThanOrEqual(2);
   await expect(popup(page).locator(".image-popup__head").getByRole("button", { name: "Open large editor", exact: true })).toBeVisible();
   // The dot's hint is never shown; it is only the dot's description.
   const hint = popup(page).locator(".image-popup__hint");
@@ -560,12 +584,12 @@ test("Zoom and Turn save a trimmed copy; back at 100 % and unturned only the spo
   await popup(page).getByRole("button", { name: "Turn left", exact: true }).click();
   await expect(popup(page).locator(".image-popup__turn")).toHaveAttribute("aria-label", "Turn, now 0°");
   await expect(message).toHaveText("Only changes this spot");
-  // Turned and zoomed in, Done saves one trimmed copy with the picture: one Undo step puts the SVG back.
+  // Turned and zoomed in, closing saves one trimmed copy: one Undo step puts the untrimmed photo back.
   const before = await source(page);
   await popup(page).getByRole("button", { name: "Turn right", exact: true }).click();
   await zoom.fill("200");
   await expect(message).toHaveText("Saves a new picture for this spot");
-  await popup(page).getByRole("button", { name: "Done", exact: true }).click();
+  await popup(page).getByRole("button", { name: "Close", exact: true }).click();
   await expect(page.locator("#status")).toContainText("Picture trimmed: media/images/turned-crop.webp.", { timeout: 30_000 });
   await expect.poll(() => heroTag(page)).toMatch(/src="\/media\/images\/turned-crop\.webp"/);
   // The 800 × 400 picture turned is 400 × 800; at 200 % half of each side stays.
@@ -573,13 +597,16 @@ test("Zoom and Turn save a trimmed copy; back at 100 % and unturned only the spo
   const saved = (await records(page)).files["media/images/turned-crop.webp"].trimmedFrom;
   expect(saved.source).toBe("media/images/turned.webp");
   expect(saved.trim).toMatchObject({ x: 0.25, y: 0.25, width: 0.5, height: 0.5, turn: 90 });
-  // Slice 109: about Brizy's height. Opened again (no Replace note, its hints seen), a fixed shape at
+  // Slice 109: about Brizy's height. Opened again (its hints seen), a fixed shape at
   // 1280 is at most 450 px tall.
   await openPopup(page);
   await chooseShape(page, "Square");
   await expect(popup(page).locator(".image-popup__notice")).toBeHidden();
   expect((await popup(page).boundingBox())!.height).toBeLessThanOrEqual(450);
-  await popup(page).getByRole("button", { name: "Close without changes", exact: true }).click();
+  // Closing keeps Square as its own step, so two Undo steps put the untrimmed photo back.
+  await popup(page).getByRole("button", { name: "Close", exact: true }).click();
+  await expect(popup(page)).toHaveCount(0);
+  await page.locator(".code-editor__undo").first().click();
   await page.locator(".code-editor__undo").first().click();
   await expect.poll(() => source(page)).toBe(before);
 });
@@ -606,7 +633,7 @@ test("the large editor carries the popup's state; Cancel returns to the popup un
   await expect(picker(page).getByRole("button", { name: "Choose Level.jpg", exact: true })).toHaveAttribute("aria-pressed", "true");
   await picker(page).getByRole("button", { name: "Use image", exact: true }).click();
   await expect(picker(page)).toHaveCount(0);
-  await popup(page).getByRole("button", { name: "Done", exact: true }).click();
+  await expect(popup(page)).toHaveCount(0);
   await expect.poll(() => heroTag(page)).toMatch(/src="\/media\/images\/level\.webp"/);
 
   // The popup's shape is carried into the large window.
@@ -841,14 +868,14 @@ test("a slotted component image opens on its shape; other choices and restoring 
   await expect(dot(page)).toBeVisible();
   await chooseShape(page, "Square");
   await expect(popup(page).getByRole("status").filter({ hasText: "This Photo card will look different from the others." })).toBeVisible();
-  await popup(page).getByRole("button", { name: "Done", exact: true }).click();
+  await popup(page).getByRole("button", { name: "Close", exact: true }).click();
   await expect.poll(tag).toContain("aspect-ratio: 1 / 1");
   const square = await source(page);
   await image.click();
   await imageButton(page).click();
   await chooseShape(page, "Photo card's shape (4:3)");
   await expect(popup(page).getByRole("status").filter({ hasText: "will look different" })).toBeHidden();
-  await popup(page).getByRole("button", { name: "Done", exact: true }).click();
+  await popup(page).getByRole("button", { name: "Close", exact: true }).click();
   await expect.poll(tag).not.toMatch(/aspect-ratio|object-fit/);
   await expect(image).toHaveCSS("aspect-ratio", "4 / 3");
   await page.locator(".code-editor__undo").first().click();
@@ -859,13 +886,13 @@ test("a slotted component image opens on its shape; other choices and restoring 
   await image.click();
   await imageButton(page).click();
   await chooseShape(page, "Original");
-  await popup(page).getByRole("button", { name: "Done", exact: true }).click();
+  await popup(page).getByRole("button", { name: "Close", exact: true }).click();
   await expect.poll(tag).toContain("aspect-ratio: auto");
   await expect(image).toHaveCSS("object-fit", "contain");
   await image.click();
   await imageButton(page).click();
   await expect(popup(page).getByRole("button", { name: "Shape: Original", exact: true })).toBeVisible();
-  await popup(page).getByRole("button", { name: "Close without changes", exact: true }).click();
+  await popup(page).getByRole("button", { name: "Close", exact: true }).click();
   // A template fallback clicked from the page cannot expose a popup writing to its template.
   await frame(page).locator("photo-card[data-fallback] img").click();
   await expect(popup(page)).toHaveCount(0);
@@ -885,8 +912,7 @@ test("a Free trim on a component's picture shows the trimmed copy whole, not cro
   await expect(picker(page).getByRole("button", { name: "Choose Quarters.jpg", exact: true })).toHaveAttribute("aria-pressed", "true");
   await picker(page).getByRole("button", { name: "Use image", exact: true }).click();
   await expect(picker(page)).toHaveCount(0);
-  await expect(popup(page).getByRole("button", { name: "Shape: Photo card's shape (4:3)", exact: true })).toBeVisible();
-  await popup(page).getByRole("button", { name: "Done", exact: true }).click();
+  await expect(popup(page)).toHaveCount(0);
   await expect.poll(tag).toMatch(/src="\/media\/images\/quarters\.webp"/);
   expect(await tag()).not.toMatch(/aspect-ratio/);
   // Free: the trimmed copy has its own shape, so the place undoes the component's crop.
@@ -895,37 +921,41 @@ test("a Free trim on a component's picture shows the trimmed copy whole, not cro
   await chooseShape(page, "Free");
   await expect(popup(page).getByRole("status").filter({ hasText: "This Photo card will look different from the others." })).toBeVisible();
   await dragCorner(page, "se", -0.5, -0.3);
-  await popup(page).getByRole("button", { name: "Done", exact: true }).click();
+  await popup(page).getByRole("button", { name: "Close", exact: true }).click();
   await expect(page.locator("#status")).toContainText("Picture trimmed: media/images/quarters-crop.webp.", { timeout: 30_000 });
   await expect.poll(tag).toMatch(/src="\/media\/images\/quarters-crop\.webp"/);
   expect(await tag()).toMatch(/aspect-ratio: auto/);
   await expect(image).toHaveCSS("aspect-ratio", "auto");
-  // Re-opened untouched, Done writes nothing.
+  // Re-opened untouched, closing writes nothing.
   const trimmed = await source(page);
   await image.click();
   await imageButton(page).click();
   await expect(popup(page).getByRole("button", { name: "Shape: Free", exact: true })).toBeVisible();
-  await popup(page).getByRole("button", { name: "Done", exact: true }).click();
+  await popup(page).getByRole("button", { name: "Close", exact: true }).click();
   await expect(popup(page)).toHaveCount(0);
   expect(await source(page)).toBe(trimmed);
 });
 
-test("zoom on a component's own shape saves a copy the component still crops; Replace's note stands beside the component note", async ({ page, baseURL }) => {
+test("zoom on a component's own shape saves a copy the component still crops; a shape of the place's own shows the component note", async ({ page, baseURL }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await open(page, baseURL);
   const image = await seedPhotoCard(page, baseURL);
   const tag = async () => (await source(page)).match(/<img[^>]*slot="image"[^>]*>/)?.[0] ?? "";
   await image.click();
   await imageButton(page).click();
-  // Square first, then Replace: both notes show.
-  await chooseShape(page, "Square");
+  // A photo first (SVGs cannot be trimmed); Replace places it at once and closes the popup.
   await popup(page).getByRole("button", { name: "Replace", exact: true }).click();
   await picker(page).locator('input[name="media-upload"]').setInputFiles({ name: "Quarters.jpg", mimeType: "image/jpeg", buffer: Buffer.from(await quarters(page), "base64") });
   await expect(picker(page).getByRole("button", { name: "Choose Quarters.jpg", exact: true })).toHaveAttribute("aria-pressed", "true");
   await picker(page).getByRole("button", { name: "Use image", exact: true }).click();
   await expect(picker(page)).toHaveCount(0);
-  const note = popup(page).getByRole("status").filter({ hasText: "is in." });
-  await expect(note).toContainText("This Photo card will look different from the others.");
+  await expect(popup(page)).toHaveCount(0);
+  await expect.poll(tag).toMatch(/src="\/media\/images\/quarters\.webp"/);
+  await image.click();
+  await imageButton(page).click();
+  // A shape of the place's own shows the component note.
+  await chooseShape(page, "Square");
+  await expect(popup(page).getByRole("status").filter({ hasText: "This Photo card will look different from the others." })).toBeVisible();
   // Back to the component's shape, zoomed in: a trimmed copy, cropped by the component, with no shape of the place's own.
   await chooseShape(page, "Photo card's shape (4:3)");
   await expect(popup(page).getByRole("status").filter({ hasText: "will look different" })).toHaveCount(0);
@@ -960,18 +990,18 @@ test("zoom on a component's own shape saves a copy the component still crops; Re
   await expect(popup(page).getByRole("button", { name: "Shape: Photo card's shape (4:3)", exact: true })).toBeVisible();
   await popup(page).getByRole("slider", { name: "Zoom" }).fill("200");
   await expect(popup(page).getByRole("status").filter({ hasText: "Saves a new picture for this spot" })).toBeVisible();
-  await popup(page).getByRole("button", { name: "Done", exact: true }).click();
+  await popup(page).getByRole("button", { name: "Close", exact: true }).click();
   await expect(page.locator("#status")).toContainText("Picture trimmed: media/images/quarters-crop.webp.", { timeout: 30_000 });
   await expect.poll(tag).toMatch(/src="\/media\/images\/quarters-crop\.webp"/);
   expect(await tag()).not.toMatch(/aspect-ratio|object-fit/);
   await expect(image).toHaveCSS("aspect-ratio", "4 / 3");
-  // Re-opened on the original with the zoom put back, on the component's shape; untouched, Done writes nothing.
+  // Re-opened on the original with the zoom put back, on the component's shape; untouched, closing writes nothing.
   const zoomed = await source(page);
   await image.click();
   await imageButton(page).click();
   await expect(popup(page).getByRole("button", { name: "Shape: Photo card's shape (4:3)", exact: true })).toBeVisible();
   await expect(popup(page).locator(".image-popup__zoom output")).toHaveText("200 %");
-  await popup(page).getByRole("button", { name: "Done", exact: true }).click();
+  await popup(page).getByRole("button", { name: "Close", exact: true }).click();
   await expect(popup(page)).toHaveCount(0);
   expect(await source(page)).toBe(zoomed);
 });

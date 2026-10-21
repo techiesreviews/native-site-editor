@@ -1,7 +1,7 @@
 import { agentMediaStorage } from "./support/agent-media-workspace";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { applyMediaWorkspaceBatch, createMediaWorkspace, type MediaWorkspaceBatch, type MediaWorkspaceContext } from "../src/page-builder/media-workspace";
+import { applyMediaWorkspaceBatch, createMediaWorkspace, unusedTrimmedCopy, type MediaWorkspaceBatch, type MediaWorkspaceContext } from "../src/page-builder/media-workspace";
 import { MEDIA_RECORDS_PATH, parseMediaRecords } from "../shared/media-records";
 import { memoryUploadBytes, gitBlobSha } from "../src/uploads";
 
@@ -791,6 +791,37 @@ test("a re-trim never reuses an address on the Recently removed list", async () 
   const request = f.request();
   request.place.records = { text: f.text.get(MEDIA_RECORDS_PATH) };
   assert.equal(await f.host.trim(request), "media/images/a-crop-4.webp");
+});
+// A replaced place's old picture (the picker's Use, the popup's Replace): an unused trimmed copy goes with its family.
+async function unusedAfterReplace(f: ReturnType<typeof trimFixture>, from = oldTrim) {
+  const expectedSources = new Map<string, string | undefined>(), expectedAssets = new Map<string, string | undefined>();
+  const removes = await unusedTrimmedCopy(f.context, { from, records: parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)), paths: f.context.paths, prefix: "",
+    page: { path: "index.html", text: "<p>The place, without its picture</p>" }, expectedSources, expectedAssets });
+  return { removes, expectedSources, expectedAssets };
+}
+test("a replaced place's unused trimmed copy is removed with its family, its revisions and the text read as proofs", async () => {
+  const f = trimFixture(), { removes, expectedSources, expectedAssets } = await unusedAfterReplace(f);
+  assert.deepEqual(removes, [oldTrim, oldSmall]);
+  assert.deepEqual([...expectedAssets], [[oldTrim, "old-v1"], [oldSmall, "old-v1"]]);
+  assert.equal(expectedSources.get("styles/site.css"), f.text.get("styles/site.css"));
+  assert.equal(expectedSources.has("index.html"), false);
+});
+test("a replaced place's trimmed copy still used elsewhere, kept always, unreadable text or an original stays", async () => {
+  const used = trimFixture();
+  used.paths.add("other.html"); used.text.set("other.html", '<img src="/' + oldSmall + '">');
+  assert.deepEqual((await unusedAfterReplace(used)).removes, []);
+  const kept = trimFixture(), records = parseMediaRecords(kept.text.get(MEDIA_RECORDS_PATH));
+  records.files[oldSmall].alwaysKeep = true;
+  kept.text.set(MEDIA_RECORDS_PATH, JSON.stringify(records));
+  assert.deepEqual((await unusedAfterReplace(kept)).removes, []);
+  const unreadable = trimFixture();
+  unreadable.paths.add("unreadable.js");
+  const read = unreadable.context.read.bind(unreadable.context);
+  unreadable.context.read = async path => path === "unreadable.js" ? undefined : read(path);
+  const unsure = await unusedAfterReplace(unreadable);
+  assert.deepEqual(unsure.removes, []); assert.equal(unsure.expectedAssets.size, 0);
+  // Originals are never removed, used or not.
+  assert.deepEqual((await unusedAfterReplace(trimFixture(), "images/unused.png")).removes, []);
 });
 test("pixels prepared from an older original refuse without saving anything", async () => {
   for (const sourceVersion of ["a-v0", undefined]) {

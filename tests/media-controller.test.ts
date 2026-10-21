@@ -494,6 +494,48 @@ test("held picker files unwrap a picture through the single save transaction", a
   assert.deepEqual(told, ["Image replaced. The new picture is now used on all screens."]);
 });
 
+test("replacing a place's unused trimmed copy removes it with its family in the same step, through the batch and held files", async () => {
+  const trim = "media/images/a-crop.webp", small = "media/images/a-crop-480.webp", recordsText = JSON.stringify({ version: 2, collections: [], files: {
+    [trim]: { trimmedFrom: { source: "images/old.png", trim: { x: 0.1, y: 0.1, width: 0.5, height: 0.5 } } } } });
+  const setup = (used = false) => {
+    const batches: Parameters<MediaControllerPorts["applyBatch"]>[2][] = [];
+    const f = fixture({ applyBatch: async (_scope, _stamp, batch) => { batches.push(batch); } });
+    const paths = ["index.html", "images/old.png", trim, small, ".editor/media.json", ...used ? ["other.html"] : []];
+    f.ports.workspace = () => ({ repo: f.scope.repo, scope: f.scope, identity: "workspace:1", site: { routes: { "/": "index.html", ...used ? { "/other/": "other.html" } : {} }, components: {} }, nativePaths: paths, drafts: { list: () => f.records, get: () => undefined, save: () => true, remove: () => true } });
+    f.sources.set("index.html", `<section><img src="/${trim}" alt="Old alt"></section>`);
+    f.sources.set(".editor/media.json", recordsText);
+    if (used) f.sources.set("other.html", `<img src="/${small}">`);
+    return { f, batches };
+  };
+  // The picker's Use: the page, the records and the removal are one batch (one Undo step).
+  const plain = setup();
+  await plain.f.controller.chooseImage({ path: "index.html", node: [0, 0] });
+  await plain.f.pick()!.onPick!({ path: "images/new.png", alt: "New" }, () => false);
+  assert.equal(plain.f.changes.length, 0); assert.equal(plain.batches.length, 1);
+  const batch = plain.batches[0];
+  assert.deepEqual(batch.deletes, [trim, small]);
+  assert.match(batch.edits.get("index.html")!, /src="\/images\/new.png"/);
+  const records = JSON.parse(batch.edits.get(".editor/media.json")!);
+  assert.equal(records.files[trim], undefined);
+  assert.equal(records.removed[0].path, trim); assert.deepEqual(records.removed[0].family.map((member: { path: string }) => member.path), [small]);
+  assert.equal(batch.expectedAssets.get(trim), "sha"); assert.equal(batch.expectedAssets.get(small), "sha");
+  // Still used on another page: a plain swap, nothing removed.
+  const used = setup(true);
+  await used.f.controller.chooseImage({ path: "index.html", node: [0, 0] });
+  await used.f.pick()!.onPick!({ path: "images/new.png", alt: "New" }, () => false);
+  assert.equal(used.batches.length, 0); assert.equal(used.f.changes.length, 1);
+  // Files added in the picker: the placement carries the removal into their one save.
+  const heldCase = setup();
+  let captured: import("../src/page-builder/media-picker").MediaPlacement | undefined;
+  const image = { path: "images/new.png", alt: "New" };
+  const held: MediaHeldFiles = { image: () => image, save: async place => { captured = place; return { paths: [image.path], placed: true, note: "" }; } };
+  const source = heldCase.f.sources.get("index.html")!;
+  await placeMediaImage(heldCase.f.ports, () => heldCase.f.controller.workspaceContext(), { path: "index.html", node: [0, 0] }, image,
+    { stamp: heldCase.f.ports.stamp(), epoch: 0, source, expected: `<img src="/${trim}" alt="Old alt">`, initialAlt: "Old alt" }, () => false, held);
+  assert.deepEqual(captured?.deletes, [trim, small]);
+  assert.equal(captured?.expectedAssets?.get(trim), "sha");
+});
+
 test("older placement batches copies and srcset, carries held uploads, and handles failure, cancel and drift", async () => {
   const descriptor = Object.getOwnPropertyDescriptor(globalThis, "Worker");
   let fail = false, huge = false, requests = 0, during: () => void = () => {};

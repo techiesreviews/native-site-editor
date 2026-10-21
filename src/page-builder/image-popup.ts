@@ -9,7 +9,7 @@ import { NATIVE_CONFIG_PATH, nativeSitePrefix } from "../../shared/native-projec
 // its Done is this Done; its Cancel puts the popup back as it was.
 import type { MediaControllerPorts, MediaModule } from "../controllers/media-controller";
 import type { MediaWorkspaceContext } from "./media-workspace";
-import type { MediaBox, MediaImage } from "./media-markup";
+import type { MediaBox } from "./media-markup";
 import { mediaExistingAlt } from "./media-attributes";
 import { locateNativeElementRange } from "../native-source-location";
 import { framePlace, inlineStyle, writePlaceFrame, type PlaceFocus, type PlaceFrameChange } from "./place-frame";
@@ -19,8 +19,8 @@ import { decodeHtmlEntities } from "./html-entities";
 import { mediaResolvePath } from "./media-references";
 import { startTags, startTagAttribute } from "../../shared/html-source";
 import { MEDIA_RECORDS_PATH, parseMediaRecords, type MediaRecords } from "../../shared/media-records";
-import { frameChange, replaceNotice, shapeRatio, type PopupRect, type PopupShape } from "./image-popup-rules";
-import { makesNewPicture, placeShape, popupTrim, restoreCut, sameTrim, trimmable, turnBy, uncut, zoomTo, type TrimRect } from "./image-popup-trim";
+import { frameChange, shapeRatio, type PopupRect, type PopupShape } from "./image-popup-rules";
+import { placeShape, popupTrim, restoreCut, sameTrim, trimmable, turnBy, uncut, zoomTo, type TrimRect } from "./image-popup-trim";
 import { chooseShape, editKey, type PopupEdit } from "./image-large-rules";
 import { trimGeometry } from "./trim-geometry";
 import { componentFrame, componentPicture } from "./component-shapes";
@@ -93,12 +93,11 @@ export async function openImagePopup(options: ImagePopupOptions) {
   const edit = (): PopupEdit => structuredClone({ shape: state.shape, focus: state.focus, cut: state.cut, around: state.around, aroundFocus: state.aroundFocus });
   // A re-opened trim left as it was saves nothing, even where converting it back is not exact.
   const opened = editKey(edit());
-  let replacement: MediaImage | undefined;
   let closed = false;
   // A trimmed copy is saved when the result is one; the place shows another picture when it is not
-  // the one it has (a replacement, or a re-crop taken back to the original).
+  // the one it has (a re-crop taken back to the original).
   const trimNow = () => state.trimmable && state.size ? popupTrim(state.size, state.shape, state.focus, state.cut) : undefined;
-  const swapped = () => Boolean(replacement) || (Boolean(restored) && !trimNow());
+  const swapped = () => Boolean(restored) && !trimNow();
   const centred = { x: 50, y: 50 };
   // The shape the place keeps (around a Free trim, Original or a re-opened place's own) and what changes in it.
   const shapeNow = () => placeShape(state.shape, state.around);
@@ -123,7 +122,7 @@ export async function openImagePopup(options: ImagePopupOptions) {
   const measure = async () => {
     const trim = trimNow(), change = frameNow();
     const style = trim ? trimStyle() : change?.shape !== undefined ? inlineStyle(writePlaceFrame(expected, change)) : undefined;
-    const image = trim ? { ...state.cutSize } : replacement ?? (swapped() ? { ...state.size } : {});
+    const image = trim ? { ...state.cutSize } : swapped() ? { ...state.size } : {};
     const key = JSON.stringify([style, image]);
     if (key === measured) return;
     const asked = ++measuring;
@@ -168,13 +167,19 @@ export async function openImagePopup(options: ImagePopupOptions) {
     view.remove();
     options.closed();
   }
-  // ✕, Escape or a press elsewhere; once Done is writing, it finishes (the window shows it busy).
-  const cancel = () => { if (!state.busy) close(); };
+  // There is no Done: the page shows each change as it is made, and ✕, Escape or a press elsewhere
+  // keeps it. A page that changed meanwhile (or another press owning the bar) only closes; once
+  // writing, it finishes (the window shows it busy).
+  const cancel = () => {
+    if (state.busy) return;
+    if (stamp.holds() && options.live() && ports.source(target.path) === source && !ports.viewingVersion()) void done();
+    else close();
+  };
   async function done() {
     if (state.busy) return;
     const trim = trimNow(), proof = { stamp, epoch, source: source!, expected }, initialAlt = mediaExistingAlt(expected);
     // A re-crop left as it was keeps its copy; at most the place's shape changes.
-    const same = restored && !replacement && trim && (sameTrim(trim, restored.trim) || editKey(edit()) === opened);
+    const same = restored && trim && (sameTrim(trim, restored.trim) || editKey(edit()) === opened);
     const shape = kept(), change = same ? (frameNow()?.shape !== undefined ? shape : undefined) : frameNow();
     if (!trim && !swapped() && !change || same && !change) { close(); return; }
     state.busy = true; redraw();
@@ -185,7 +190,7 @@ export async function openImagePopup(options: ImagePopupOptions) {
         await trimPlace(ports, options.workspaceContext, target,
           { source: state.file, sourceVersion: state.version, trim, frame: { ...shape, focus: trimFocus() } }, proof);
       } else if (!same && swapped()) {
-        const image = replacement ?? mediaImageForPlacement(state.file, state.size ?? {}, (await options.workspaceContext()).paths);
+        const image = mediaImageForPlacement(state.file, state.size ?? {}, (await options.workspaceContext()).paths);
         await placeMediaImage(ports, options.workspaceContext, target, image, { ...proof, initialAlt }, () => false, undefined, change);
       } else if (change) {
         await framePlace(ports, target, change, proof);
@@ -204,20 +209,21 @@ export async function openImagePopup(options: ImagePopupOptions) {
     // A picture spot (a slotted image) keeps its own rule below, even as the placeholder: a picture or a looping video.
     const parent = (ports.locateElement ?? locateNativeElementRange)(source!, target.node.slice(0, -1));
     const spot = isPictureSpot(expected) || parent?.tag.name === "picture" && isPictureSpot(source!.slice(parent.tag.start, parent.tag.end));
+    if (!stamp.holds() || !options.live() || ports.source(target.path) !== source || ports.viewingVersion()) return;
+    // Replace places the choice at once, with no Done: the popup closes first. The shape chosen
+    // so far stays (Free leaves Original), the focus goes to the middle and a trim or turn is dropped.
+    const frame = frameChange(start, { shape: shapeNow(), focus: centred, component: state.component }, true);
+    close();
+    const proof = { stamp, epoch, source: source! }, imageProof = { ...proof, expected, initialAlt: mediaExistingAlt(expected) };
     // The Media block starts as this image; Replace chooses any media for its place.
     if (placed === PLACEHOLDER_IMAGE_PATH && !spot) {
-      if (!stamp.holds() || !options.live() || ports.source(target.path) !== source || ports.viewingVersion()) return;
-      const frame = frameChange(start, { shape: shapeNow(), focus: centred, component: state.component }, true);
-      close();
       const place = { path: target.path, parent: target.node.slice(0, -1), index: target.node.at(-1)!, replaces: true };
-      const proof = { stamp, epoch, source: source! };
       await openMediaPicker({ report: ports, place: `${ports.placeLabel?.(target.path) ?? target.path} · Replace media`,
         onPick: async (chosen, cancelled, held) => {
           const added = held?.chosen?.()?.request, extension = added?.result?.outputs[0]?.extension;
           const kind = mediaKind(added ? extension ? `added.${extension}` : added.file.name : chosen.path);
           if (kind === "image") {
-            await placeMediaImage(ports, options.workspaceContext, target, chosen,
-              { ...proof, expected, initialAlt: mediaExistingAlt(expected) }, cancelled, held, frame);
+            await placeMediaImage(ports, options.workspaceContext, target, chosen, imageProof, cancelled, held, frame);
             return;
           }
           const { placeChosenMedia } = await import("./media-insert");
@@ -230,29 +236,11 @@ export async function openImagePopup(options: ImagePopupOptions) {
       return;
     }
     const words = mediaExistingAlt(expected)?.trim();
-    // A picture spot also takes a video, which loops silently there: placed at once, closing the popup (slice 119).
+    // A picture spot also takes a video, which loops silently there (slice 119).
     await openMediaPicker({ accept: spot ? SPOT_ACCEPT : "image/*", chosenNote: spot ? spotNote : undefined, report: ports, place: `${ports.placeLabel?.(target.path) ?? target.path} · ${words || "Image"}`,
       onPick: async (image, cancelled, held) => {
-        if (spot && pickedVideo(image, held)) {
-          if (closed) return;
-          close();
-          await placeSpotVideo(ports, options.workspaceContext, target, image, { stamp, epoch, source: source! }, cancelled, held);
-          return;
-        }
-        // Files added in the picker are kept in Media now; the place changes only on Done.
-        let picked = image;
-        if (held) { const saved = await held.save(); picked = held.image(saved.paths); }
-        if (cancelled() || closed) return;
-        const loaded = await load(picked.path);
-        if (closed) return;
-        // The shape stays (Free leaves Original); the focus goes to the middle; a trim or turn is dropped.
-        const trimmed = read.trimmed || makesNewPicture(state.shape, state.cut);
-        replacement = picked;
-        Object.assign(state, { file: picked.path, url: loaded?.url, image: loaded?.image, size: loaded?.size, version: loaded?.version,
-          trimmable: Boolean(loaded?.size && trimmable(picked.path)), recrop: false, cut: uncut(), shape: shapeNow(), around: undefined, aroundFocus: undefined, focus: { ...centred } });
-        state.notice = replaceNotice(picked.path, state.shape, trimmed);
-        view.draw(true);
-        update();
+        if (spot && pickedVideo(image, held)) await placeSpotVideo(ports, options.workspaceContext, target, image, proof, cancelled, held);
+        else await placeMediaImage(ports, options.workspaceContext, target, image, imageProof, cancelled, held, frame);
       } }).catch((error: unknown) => ports.error(error));
   }
 

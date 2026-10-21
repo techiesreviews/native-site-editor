@@ -111,6 +111,9 @@ export interface MediaPlacement {
   live?: () => boolean;
   /** The records text the placement was decided on; the batch refuses newer records. */
   records?: { text: string | undefined };
+  /** Files the placement leaves unused (a replaced place's trimmed copy): removed in the same batch,
+   * onto Recently removed. Their revisions are in `expectedAssets`. */
+  deletes?: string[];
 }
 /** A value placed by its address (a component's image slot): `edit` returns the page's text with
  * `url` in it. When new files are saved with it, `placed` turns true: the caller writes nothing more. */
