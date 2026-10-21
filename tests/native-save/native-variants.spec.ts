@@ -3,7 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 // Default fixture group. Variants in the edit bar (tickets 07 §5 and 71):
 // a dropdown per variant and a checkbox per yes/no variant on a selected
 // instance, read from its component's CSS and the site's (shared/variants.ts);
-// past two, behind one Variants button. The fixture `native-variants`
+// always behind one Variants button. The fixture `native-variants`
 // (id 541, fixtures/native-variants): a section-split with Layout (its
 // content-left only on wide screens) and the global Color scheme; two
 // card-tips with Size, Emphasis (tag-named site CSS), Featured (wide screens only), Pinned and
@@ -11,6 +11,13 @@ import { expect, test, type Page } from "@playwright/test";
 // owns Open, so the edit bar excludes it; Pinned must be written as "true".
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const bar = (page: Page) => page.getByRole("toolbar", { name: "Edit bar", exact: true });
+// Variant fields sit behind the edit bar's Variants button; open it once and act in its popover.
+async function variants(page: Page) {
+  const fields = page.getByRole("dialog", { name: "Variants" });
+  if (!(await fields.isVisible())) await bar(page).getByRole("button", { name: "Variants", exact: true }).click();
+  await expect(fields).toBeVisible();
+  return fields;
+}
 const source = (page: Page) => page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html")!);
 async function undo(page: Page) {
   expect(await page.evaluate(async () => (await import("/src/components/code-editor.ts")).runVisualHistory("undo", "index.html"))).toBe(true);
@@ -32,7 +39,7 @@ async function selectInstance(page: Page, heading: string, kind: string) {
 
 test("picking a variant writes its attribute and the default removes it, one undo step each", { tag: "@smoke" }, async ({ page }) => {
   await selectInstance(page, "Two columns", "Section split");
-  const layout = bar(page).getByRole("combobox", { name: "Layout", exact: true });
+  const layout = (await variants(page)).getByRole("combobox", { name: "Layout", exact: true });
   await expect(layout).toHaveValue("");
   const before = await source(page);
   expect(before).toContain("<section-split>");
@@ -40,10 +47,10 @@ test("picking a variant writes its attribute and the default removes it, one und
   await layout.selectOption({ label: "Centered" });
   await expect.poll(() => source(page)).toBe(before.replace("<section-split>", '<section-split data-layout="centered">'));
   await expect(frame(page).locator("section-split")).toHaveAttribute("data-layout", "centered");
-  await expect(bar(page).getByRole("combobox", { name: "Layout", exact: true })).toHaveValue("=centered");
+  await expect((await variants(page)).getByRole("combobox", { name: "Layout", exact: true })).toHaveValue("=centered");
   const centered = await source(page);
 
-  await bar(page).getByRole("combobox", { name: "Layout", exact: true }).selectOption({ label: "Default" });
+  await (await variants(page)).getByRole("combobox", { name: "Layout", exact: true }).selectOption({ label: "Default" });
   await expect.poll(() => source(page)).toBe(before);
   await expect(frame(page).locator("section-split")).not.toHaveAttribute("data-layout", /.*/);
 
@@ -53,13 +60,14 @@ test("picking a variant writes its attribute and the default removes it, one und
   await expect.poll(() => source(page)).toBe(before);
 });
 
-test("two variants sit in the bar; a value styled only on wide screens says so", async ({ page }) => {
+test("even two variants sit behind Variants; a value styled only on wide screens says so", async ({ page }) => {
   await selectInstance(page, "Two columns", "Section split");
-  await expect(bar(page).getByRole("button", { name: "Variants" })).toHaveCount(0);
-  const layout = bar(page).getByRole("combobox", { name: "Layout", exact: true });
+  await expect(bar(page).getByRole("combobox", { name: "Layout", exact: true })).toHaveCount(0);
+  const fields = await variants(page);
+  const layout = fields.getByRole("combobox", { name: "Layout", exact: true });
   await expect(layout.locator("option")).toHaveText(["Default", "Content left (wide screens only)", "Centered"]);
   // The global attribute from the site's CSS is offered on every component.
-  await expect(bar(page).getByRole("combobox", { name: "Color scheme", exact: true }).locator("option")).toHaveText(["Default", "Dark"]);
+  await expect(fields.getByRole("combobox", { name: "Color scheme", exact: true }).locator("option")).toHaveText(["Default", "Dark"]);
 });
 
 test("past two variants they sit behind Variants: Custom kept, a yes/no checkbox, wide screens only", async ({ page }) => {

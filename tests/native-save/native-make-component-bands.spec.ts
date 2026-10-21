@@ -184,8 +184,10 @@ test("a boxless header selects from canvas and Structure, offers Tone, and keeps
   await row(page, "header").locator(".page-structure__label").first().click();
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Block page header");
   await expectOutline(page, "header");
-  const tone = bar(page).getByRole("combobox", { name: "Tone", exact: true });
+  await bar(page).getByRole("button", { name: "Variants", exact: true }).click();
+  const tone = page.getByRole("dialog", { name: "Variants" }).getByRole("combobox", { name: "Tone", exact: true });
   await tone.selectOption({ label: "Dark" });
+  await page.keyboard.press("Escape");
   await expect(frame(page).locator("block-page-header")).toHaveAttribute("data-tone", "dark");
   await expect(header).toHaveCSS("background-color", "rgb(17, 17, 17)");
   await expect(bar(page).getByRole("button", { name: "Remove", exact: true })).toHaveCount(0);

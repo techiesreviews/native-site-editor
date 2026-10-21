@@ -200,8 +200,12 @@ test('the Starter site drafted into an empty repository offers Layout and Tone o
     await heading.click({ position: { x: 5, y: 5 } });
     await heading.press('Escape');
     await expect(bar.locator('.edit-bar__kind')).toHaveText('Section hero');
-    await expect(bar.getByRole('combobox', { name: 'Layout', exact: true }).locator('option')).toHaveText(['Default', 'Centered']);
-    await expect(bar.getByRole('combobox', { name: 'Tone', exact: true }).locator('option')).toHaveText(['No tone (follows the page)', 'Light', 'Dark', 'Brand', 'Accent']);
+    // Variants sit behind one Variants button.
+    await bar.getByRole('button', { name: 'Variants', exact: true }).click();
+    const variants = page.getByRole('dialog').filter({ has: page.getByRole('combobox', { name: 'Layout', exact: true }) });
+    await expect(variants.getByRole('combobox', { name: 'Layout', exact: true }).locator('option')).toHaveText(['Default', 'Centered']);
+    await expect(variants.getByRole('combobox', { name: 'Tone', exact: true }).locator('option')).toHaveText(['No tone (follows the page)', 'Light', 'Dark', 'Brand', 'Accent']);
+    await page.keyboard.press('Escape');
   };
   await heroFields();
   expect((await (await page.request.get(`${baseURL}/__demo/head?repo=starter-drafts`)).json()).commit, 'drafts only').toBeNull();
