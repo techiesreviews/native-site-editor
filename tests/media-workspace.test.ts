@@ -829,6 +829,15 @@ test("choosing the place's own trimmed copy, or one of its sizes, again keeps th
     assert.deepEqual(same.removes, []); assert.equal(same.expectedAssets.size, 0);
   }
 });
+test("an SVG read for the scan is proved by its revision, not by text the host may not hold", async () => {
+  const f = trimFixture();
+  f.paths.add("images/logo.svg"); f.bytes.set("images/logo.svg", new Blob(["<svg/>"])); f.versions.set("images/logo.svg", "logo-v1");
+  f.text.set("images/logo.svg", "<svg/>");
+  const { removes, expectedSources, expectedAssets } = await unusedAfterReplace(f);
+  assert.deepEqual(removes, [oldTrim, oldSmall]);
+  assert.equal(expectedSources.has("images/logo.svg"), false);
+  assert.equal(expectedAssets.get("images/logo.svg"), "logo-v1");
+});
 test("a proof the caller already holds for a family member is kept, and a moved revision refuses", async () => {
   const held = await unusedAfterReplace(trimFixture(), oldTrim, "images/unused.png", [[oldTrim, "old-v1"]]);
   assert.deepEqual(held.removes, [oldTrim, oldSmall]);
