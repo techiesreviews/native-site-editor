@@ -61,7 +61,8 @@ export async function placeMediaImage(
   const expectedAssets = new Map(proof.asset ? [[proof.asset.path, proof.asset.version]] : []);
   const usageSources = new Map<string, string | undefined>();
   const removes = readable ? await workspace.unusedTrimmedCopy(ctx, { from, chosen: image.path, records, paths: expectedPaths, prefix,
-    page: { path: target.path, text: base.slice(0, range.tag.start) + base.slice(range.tag.start + standIn.length) }, expectedSources: usageSources, expectedAssets }) : [];
+    // The scan reads the page as the replacement will write it: kept attributes (an inline background) still count.
+    page: { path: target.path, text: mediaPlaceSwap(base, target, standIn, image, measured, locate, framed, prefix).swap(undefined).page }, expectedSources: usageSources, expectedAssets }) : [];
   ctx.assertLive();
   let copies: Awaited<ReturnType<typeof import("./media-older-copies")["makeOlderCopies"]>>;
   let copyNote = "";
