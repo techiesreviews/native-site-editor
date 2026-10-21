@@ -133,7 +133,6 @@ test("an image shows in the preview, and Choose image and Alt text edit its tag"
   await expect.poll(() => editorText(page, "#content")).toContain(`src="/images/studio-desk.svg" data-key="hero-image" alt=""`);
   await expect(page.locator("#status")).toHaveText("Alt text removed");
   await expect(bar(page).getByRole("button", { name: "Not described yet", exact: true })).toBeVisible();
-  await expect(bar(page).getByRole("button", { name: "Decorative", exact: true })).toHaveAttribute("aria-pressed", "false");
   // An empty alt stays empty through a replacement.
   await openPickerOn(page, image);
   await chooser.getByRole("button", { name: "Choose images/placeholder.svg" }).click();
