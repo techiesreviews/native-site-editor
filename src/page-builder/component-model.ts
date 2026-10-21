@@ -1466,8 +1466,10 @@ function planComponent(source: string, range: InstanceRange, tag: string, choice
   if ([...descendants([element])].some((el) => el.name === "slot")) return { error: "This element holds slots of a component; make the component from the page instead." };
 
   // The id goes to the instance, where links to it still find it; the template and any copy of the element keep the rest.
+  // A page's own header/footer keeps it in the template too (its own tree, so no clash): the page rules the shadow
+  // root clones still match the band that shows, with their specificity and order, as the boxless host cannot.
   const id = startTagAttribute(written, element.tag, "id");
-  const unkeyed = id ? written.slice(0, id.start) + written.slice(id.end) : written;
+  const unkeyed = id && !isPageHeaderFooter(element.name, ancestors) ? written.slice(0, id.start) + written.slice(id.end) : written;
   let html = unkeyed;
   let root = elements(parseSource(html))[0];
   if (!root?.close) return { error: "The element's end tag could not be found in the source." };

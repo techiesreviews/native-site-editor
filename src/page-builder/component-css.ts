@@ -10,8 +10,9 @@
 // every component selector (shared/slotted-css.ts):
 //   - compounds that matched ancestors outside the element are dropped
 //     (`main .intro h2` → `.intro h2`); one that matched the element through
-//     its `id`, which moves to the instance, becomes `:host` (for a boxless
-//     page band, `:host > header` or `:host > footer` keeps styling its box);
+//     its `id`, which moves to the instance, becomes `:host` (a boxless page
+//     header/footer keeps its id inside too, so the cloned page rules match
+//     its box as they did, cascade and all, and nothing is copied for them);
 //   - a subject's `:not([slot])` becomes `:where([slot])` when it becomes a
 //     slotted part, so its base reset and heading size follow it into the
 //     component and still leave the template's own elements alone;
@@ -585,7 +586,7 @@ export function withPageCss(plan: MakeComponentPlan, source: string, range: Inst
   const cardHosts = new Map([...items].map(([item]) => [item, instance(item, plan.cards[cardOf.get(item)!].tag, host)]));
   fill(host, [...main.slotted, ...cardHosts.keys()].sort((a, b) => a.start - b.start).map((el) => cardHosts.get(el) ?? el));
   for (const [item, territory] of items) fill(cardHosts.get(item)!, territory.slotted);
-  // A template on its own (`bare`): the root without its id, under its template tag. As its shadow root holds it
+  // A template on its own (`bare`): the root without its id (a page band keeps it), under its template tag. As its shadow root holds it
   // (`shadow`), each part slotted whole is a `<slot>` where it was, a repeated group one `<slot>` where its items were.
   const templates = new Map<Territory, { bare: Match; shadow: Match }>();
   const templateOf = (territory: Territory) => {
@@ -593,7 +594,7 @@ export function withPageCss(plan: MakeComponentPlan, source: string, range: Inst
     if (made) return made;
     const root = territory.root;
     const attributes = new Map(attributesOf(page, root));
-    attributes.delete("id");
+    if (!pageBand(root)) attributes.delete("id");
     // The slotted elements carry their `slot` attributes, as the page writes them.
     const bare: Match = { html: source, top, boundary: root, attributes: new Map([[root, attributes], ...territory.slotted.map((el): [SourceElement, Map<string, string>] => [el, withSlot(el, attributesOf(page, el))])]), names: new Map([[root, territory.rootTag]]) };
     const shadow: Match = { ...bare, attributes: new Map(bare.attributes), names: new Map(bare.names), siblings: new Map() };
@@ -696,6 +697,13 @@ function strandedNote(stranded: string[]) {
     + `The component's CSS can't reach what ${one ? "it styles" : "they style"} once the element is a component; nothing was copied for ${one ? "it" : "them"}.`];
 }
 
+/** A page's own header/footer: its template keeps the id (component-model.ts). */
+function pageBand(root: SourceElement) {
+  const ancestors: string[] = [];
+  for (let parent = root.parent; parent; parent = parent.parent) ancestors.push(parent.name);
+  return isPageHeaderFooter(root.name, ancestors);
+}
+
 /**
  * `part`, which matches `node` in the page, rewritten to start at the
  * territory's root: the fewest compounds dropped so that the rest matches
@@ -712,8 +720,9 @@ function rewrite(page: Match, node: SourceElement, part: string, compounds: Comp
   const root = territory.root;
   if (matchCompound(alone, root, first)) {
     // The root's id moves to the instance: a compound that matched it by that id is the host.
-    const id = attributeOf(page, root, "id");
-    const ids = first.simples.filter((simple) => simple.type === "id" && simple.name === id);
+    // A page band keeps its id inside too (component-model.ts), so the compound stays as written.
+    const id = pageBand(root) ? undefined : attributeOf(page, root, "id");
+    const ids = id === undefined ? [] : first.simples.filter((simple) => simple.type === "id" && simple.name === id);
     // A root whose tag changes (a link-wrapped card becomes an `article`) is matched by its new tag.
     const tags = root.name !== territory.rootTag ? first.simples.filter((simple) => simple.type === "tag" && simple.name === root.name) : [];
     if (ids.length || tags.length) {
@@ -724,24 +733,8 @@ function rewrite(page: Match, node: SourceElement, part: string, compounds: Comp
       }
       text += s.slice(cursor, first.end);
       // What is left of the compound after the id, when it names no element (`:hover`, `::before`), takes the root's tag.
-      const inner = text ? (/^[:[]/.test(text) ? `${territory.rootTag}${text}` : text) : territory.rootTag;
-      // A page band's host has no box. Keep its anchor id on the instance,
-      // but apply the entire compound (including states) to the inner band,
-      // its id written as `:is(header, #id)`: it matches without the id and
-      // keeps the id's specificity, so the rule still wins where it did.
-      const ancestors: string[] = [];
-      for (let parent = root.parent; parent; parent = parent.parent) ancestors.push(parent.name);
-      let band = "";
-      if (ids.length && isPageHeaderFooter(root.name, ancestors)) {
-        cursor = first.start;
-        for (const simple of [...ids, ...tags].sort((a, b) => a.start - b.start)) {
-          band += s.slice(cursor, simple.start) + (simple.type === "tag" ? territory.rootTag : `:is(${territory.rootTag}, ${s.slice(simple.start, simple.end)})`);
-          cursor = simple.end;
-        }
-        band += s.slice(cursor, first.end);
-      }
-      lead = band ? `:host > ${band}`
-        : text ? inner : compounds[from + 1]?.combinator === ">" ? `:host > ${territory.rootTag}` : ":host";
+      lead = text ? (/^[:[]/.test(text) ? `${territory.rootTag}${text}` : text)
+        : compounds[from + 1]?.combinator === ">" ? `:host > ${territory.rootTag}` : ":host";
     }
   }
   return lead + s.slice(first.end);
