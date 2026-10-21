@@ -23,7 +23,7 @@ import type { MediaBox } from "./media-markup";
 import type { PlaceFocus } from "./place-frame";
 import type { ImagePopupHost } from "./image-popup";
 import { componentShapeNotice, type ComponentPicture } from "./component-shapes";
-import { focusAt, nudgeFocus, pictureHint, popupMessage, seenHints, shapeRatio, sheetScroll, type PopupShape } from "./image-popup-rules";
+import { DOT_HINT, focusAt, nudgeFocus, pictureHint, popupMessage, seenHints, shapeRatio, sheetScroll, type PopupShape } from "./image-popup-rules";
 import { MAX_ZOOM, cutArea, dotApplies, makesNewPicture, moveFree, placeShape, nudgeFree, resizeFree, shownTrim, turnText, turnedSize, zoomPercent, type PictureSize, type PopupCut, type TrimRect } from "./image-popup-trim";
 import { trimGeometry } from "./trim-geometry";
 import { markTransparency } from "./media-transparency";
@@ -214,7 +214,8 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
     turnLeft.title = `Turn left (now ${turnNow})`; turnRight.title = `Turn right (now ${turnNow})`;
     const said = pictureHint(state.shape, state.cut.zoom > 1.001);
     hint.textContent = said;
-    if (!seen.has(said)) shown.add(said);
+    // The dot's hint is never shown, only read out as the dot's description.
+    if (!seen.has(said) && said !== DOT_HINT) shown.add(said);
     hint.classList.toggle("sr-only", !shown.has(said));
     const line = fixed?.message ?? popupMessage({ newPicture: state.trimmable && makesNewPicture(state.shape, state.cut), recrop: state.recrop });
     message.className = `image-popup__message image-popup__message--${line.tone}`;

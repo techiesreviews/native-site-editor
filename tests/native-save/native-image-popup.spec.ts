@@ -13,7 +13,7 @@ const bar = (page: Page) => page.getByRole("toolbar", { name: "Edit bar" });
 const popup = (page: Page) => page.getByRole("dialog", { name: "Image", exact: true });
 // A picture spot's Replace also lists videos (slice 119): its picker is "Choose image or video".
 const picker = (page: Page) => page.getByRole("dialog", { name: /^Choose image( or video)?$/ });
-// Named "Image" with its badge (the bar's name chip is "Image" too).
+// The Media button; the place's shape is in its tooltip.
 const imageButton = (page: Page) => bar(page).locator(".edit-bar__media");
 const dot = (page: Page) => popup(page).getByRole("slider", { name: "Focus dot" });
 const source = (page: Page) => page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html")!);
@@ -49,8 +49,8 @@ test("Image → Square, move the focus dot, Done: the page has the shape and obj
   await open(page, baseURL);
   const before = await source(page);
   await pickPicture(page, ".hero img");
-  // One Image button with its state badge, where Choose image… was.
-  await expect(imageButton(page)).toHaveText("MediaOriginal");
+  // One Media button, where Choose image… was; the place's shape is in its tooltip.
+  await expect(imageButton(page)).toHaveAttribute("title", /· Original$/);
   await expect(bar(page).getByRole("button", { name: "Choose image…" })).toHaveCount(0);
   await imageButton(page).click();
   await expect(popup(page)).toBeVisible();
@@ -71,7 +71,7 @@ test("Image → Square, move the focus dot, Done: the page has the shape and obj
   await expect.poll(() => heroTag(page)).toMatch(/style="aspect-ratio: 1 \/ 1; object-fit: cover; object-position: 20% 50%"/);
   await expect(frame(page).locator(".hero img")).toHaveCSS("object-position", "20% 50%");
   await pickPicture(page, ".hero img");
-  await expect(imageButton(page)).toHaveText("MediaSquare");
+  await expect(imageButton(page)).toHaveAttribute("title", /· Square$/);
   // Done was one step.
   await page.locator(".code-editor__undo").first().click();
   await expect.poll(() => source(page)).toBe(before);
@@ -430,7 +430,7 @@ test("Free trim saves a -crop copy for this spot only; re-opening shows the trim
   expect(paths).toContain("media/images/quarters-crop.webp");
   expect((await storedDraft(page, original))?.deleted).toBeUndefined();
   await pickPicture(page, ".hero img");
-  await expect(imageButton(page)).toHaveText("MediaTrimmed");
+  await expect(imageButton(page)).toHaveAttribute("title", /· Trimmed$/);
 
   // Re-opened and left as it was, Done changes nothing.
   const trimmed = await source(page), drafts = JSON.stringify(await storedDrafts(page));
@@ -462,7 +462,7 @@ test("Free trim saves a -crop copy for this spot only; re-opening shows the trim
   expect(again.removed.map((entry: { path: string }) => entry.path)).toContain("media/images/quarters-crop.webp");
   // Replace on a trimmed spot, then zoom: the copy is cut from the new picture; the old copy, used nowhere else, goes.
   await pickPicture(page, ".hero img");
-  await expect(imageButton(page)).toHaveText("MediaTrimmed");
+  await expect(imageButton(page)).toHaveAttribute("title", /· Trimmed$/);
   await imageButton(page).click();
   await popup(page).getByRole("button", { name: "Replace", exact: true }).click();
   await picker(page).locator('input[name="media-upload"]').setInputFiles({ name: "Second.jpg", mimeType: "image/jpeg", buffer: Buffer.from(await quarters(page), "base64") });
@@ -536,10 +536,10 @@ test("Zoom and Turn save a trimmed copy; back at 100 % and unturned only the spo
   const line = (await popup(page).locator(".image-popup__message").boundingBox())!, done = (await popup(page).getByRole("button", { name: "Done", exact: true }).boundingBox())!;
   expect(Math.abs(line.y + line.height / 2 - (done.y + done.height / 2))).toBeLessThanOrEqual(2);
   await expect(popup(page).locator(".image-popup__head").getByRole("button", { name: "Open large editor", exact: true })).toBeVisible();
-  // The hint shows the first time; it stays as the dot's description.
+  // The dot's hint is never shown; it is only the dot's description.
   const hint = popup(page).locator(".image-popup__hint");
   await expect(hint).toHaveText("Drag the dot to what matters most.");
-  await expect(hint).not.toHaveClass(/sr-only/);
+  await expect(hint).toHaveClass(/sr-only/);
   await expect(dot(page)).toHaveAccessibleDescription("Drag the dot to what matters most.");
   await chooseShape(page, "Original");
   const message = popup(page).locator(".image-popup__message");
@@ -834,7 +834,8 @@ test("a slotted component image opens on its shape; other choices and restoring 
   const before = await source(page);
   const tag = async () => (await source(page)).match(/<img[^>]*slot="image"[^>]*>/)?.[0] ?? "";
   await image.click();
-  await expect(imageButton(page)).toHaveText("MediaPhoto card's shape");
+  await expect(imageButton(page)).toHaveText("Media");
+  await expect(imageButton(page)).toHaveAttribute("title", /· Photo card's shape$/);
   await imageButton(page).click();
   await expect(popup(page).getByRole("button", { name: "Shape: Photo card's shape (4:3)", exact: true })).toBeVisible();
   await expect(dot(page)).toBeVisible();

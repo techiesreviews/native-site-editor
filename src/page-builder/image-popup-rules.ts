@@ -67,10 +67,13 @@ export function seenHints(stored: string | null) {
   } catch { return new Set<string>(); }
 }
 
+/** The focus dot's hint: its description for screen readers, never shown under the picture. */
+export const DOT_HINT = "Drag the dot to what matters most.";
+
 /** The hint under the picture. */
 export function pictureHint(shape: PopupShape, zoomed = false) {
   if (shape === "free") return "Drag the corners to trim.";
-  return focusApplies(shape) || zoomed ? "Drag the dot to what matters most." : "The whole picture shows.";
+  return focusApplies(shape) || zoomed ? DOT_HINT : "The whole picture shows.";
 }
 
 /** What Replace says at the top of the popup: the shape stays, the picture is centred, a trim is dropped. */
