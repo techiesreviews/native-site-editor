@@ -838,6 +838,15 @@ test("an SVG read for the scan is proved by its revision, not by text the host m
   assert.equal(expectedSources.has("images/logo.svg"), false);
   assert.equal(expectedAssets.get("images/logo.svg"), "logo-v1");
 });
+test("an unsaved upload read for the scan (a subtitle) is proved by its revision, not by its text", async () => {
+  const f = trimFixture(), vtt = "media/clip.vtt";
+  f.paths.add(vtt); f.text.set(vtt, "WEBVTT"); f.versions.set(vtt, "vtt-upload-v1");
+  f.context.drafts = { ...f.context.drafts, get: (_scope, path) => path === vtt ? { opaque: true, upload: true } as never : undefined };
+  const { removes, expectedSources, expectedAssets } = await unusedAfterReplace(f);
+  assert.deepEqual(removes, [oldTrim, oldSmall]);
+  assert.equal(expectedSources.has(vtt), false);
+  assert.equal(expectedAssets.get(vtt), "vtt-upload-v1");
+});
 test("a proof the caller already holds for a family member is kept, and a moved revision refuses", async () => {
   const held = await unusedAfterReplace(trimFixture(), oldTrim, "images/unused.png", [[oldTrim, "old-v1"]]);
   assert.deepEqual(held.removes, [oldTrim, oldSmall]);
