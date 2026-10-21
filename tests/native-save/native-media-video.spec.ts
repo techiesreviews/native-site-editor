@@ -195,6 +195,25 @@ test("a picture spot's picker offers videos too: a chosen video loops silently t
   await frame(page).locator("#scene video").click();
   await expect(await loopSwitch(page)).toBeDisabled();
 });
+test("a placeholder in a picture spot keeps the spot's rule on Replace: a video loops silently there (as in the picture-spot test above); one Undo restores it", async ({ page, baseURL }) => {
+  await open(page, baseURL, false);
+  const at = (await mounted(page)).indexOf("<p>Section words</p>");
+  await page.evaluate(async ({ at }) => (await import("/src/components/code-editor.ts")).replaceActiveRange({ path: "index.html", start: at, end: at, expected: "",
+    text: '<img slot="photo" class="spot" src="/images/placeholder.svg" alt="Harbour at dawn" width="640" height="400">' }), { at });
+  const before = await mounted(page);
+  await frame(page).locator("#scene img.spot").click();
+  await bar(page).locator(".edit-bar__media").click();
+  await page.getByRole("dialog", { name: "Image", exact: true }).getByRole("button", { name: "Replace", exact: true }).click();
+  // Not "Choose media": a picture spot takes a picture or a video (review P1, PR #108).
+  const picker = page.getByRole("dialog", { name: "Choose image or video", exact: true });
+  await picker.getByRole("button", { name: "Choose media/clip.mp4", exact: true }).click();
+  await expect(picker.locator(".media-library__chosen-name")).toHaveText("clip.mp4 · loops silently here");
+  await picker.getByRole("button", { name: "Use video", exact: true }).click();
+  await expect(picker).toHaveCount(0);
+  await expect.poll(() => mounted(page)).toContain('<video src="/media/clip.mp4" poster="/images/placeholder.svg" controls muted loop playsinline slot="photo" class="spot" width="640" height="400" aria-label="Harbour at dawn"></video>');
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(() => mounted(page)).toBe(before);
+});
 test("selected video loops silently, saves with player, then returns to play with sound on tap", async ({ page, baseURL }) => {
   await open(page, baseURL);
   const video = frame(page).locator("#scene > video");
