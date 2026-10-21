@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { applyMediaWorkspaceBatch, createMediaWorkspace, unusedTrimmedCopy, type MediaWorkspaceBatch, type MediaWorkspaceContext } from "../src/page-builder/media-workspace";
 import { MEDIA_RECORDS_PATH, parseMediaRecords } from "../shared/media-records";
 import { memoryUploadBytes, gitBlobSha } from "../src/uploads";
+import { forEachAwait } from "./support/await-race";
 
 function fixture() {
   const text = new Map<string, string>([
@@ -851,6 +852,36 @@ test("a proof the caller already holds for a family member is kept, and a moved 
   const held = await unusedAfterReplace(trimFixture(), oldTrim, "images/unused.png", [[oldTrim, "old-v1"]]);
   assert.deepEqual(held.removes, [oldTrim, oldSmall]);
   await assert.rejects(unusedAfterReplace(trimFixture(), oldTrim, "images/unused.png", [[oldTrim, "older-v0"]]), /changed while preparing placement/);
+});
+// A scanned page changed, or an SVG's revision moved, at any await of the scan: the replacement refuses whole.
+test("a change to scanned text or an SVG's revision during the trimmed-copy scan refuses the whole replacement", async () => {
+  const logo = "images/logo.svg";
+  for (const change of ["text", "svg"] as const) {
+    const count = await forEachAwait(race => {
+      const f = trimFixture();
+      f.paths.add(logo); f.bytes.set(logo, new Blob(["<svg/>"])); f.versions.set(logo, "logo-v1"); f.text.set(logo, "<svg/>");
+      const read = f.context.read.bind(f.context);
+      f.context.read = race.port("read", (path: string) => read(path));
+      const done = (async () => {
+        const expectedSources = new Map<string, string | undefined>([["index.html", f.text.get("index.html")]]), expectedAssets = new Map<string, string | undefined>();
+        const removes = await unusedTrimmedCopy(f.context, { from: oldTrim, chosen: "images/a.png", records: parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)), paths: f.context.paths, prefix: "",
+          page: { path: "index.html", text: '<img src="/images/a.png">' }, expectedSources, expectedAssets });
+        assert.deepEqual(removes, [oldTrim, oldSmall]);
+        await f.context.applyBatch({ label: "Image replaced", expectedPaths: f.context.paths, expectedSources, expectedAssets,
+          edits: new Map([["index.html", '<img src="/images/a.png">']]), moves: [], deletes: removes, restores: [], uploads: [] });
+      })().then(() => undefined, (error: unknown) => error);
+      return { f, done };
+    }, ({ f }) => {
+      if (change === "text") f.text.set("styles/site.css", ".hero { background: none; }");
+      else f.versions.set(logo, "logo-v2");
+    }, async ({ f, done }) => {
+      assert.match(String(await done), /changed while preparing/);
+      assert.equal(f.history.length, 0);
+      assert.ok(f.bytes.has(oldTrim)); assert.ok(f.bytes.has(oldSmall));
+      assert.equal(f.text.get("index.html"), '<img src="/media/images/a-crop.webp" srcset="/media/images/a-crop-480.webp 480w">');
+    });
+    assert.ok(count > 0);
+  }
 });
 test("pixels prepared from an older original refuse without saving anything", async () => {
   for (const sourceVersion of ["a-v0", undefined]) {

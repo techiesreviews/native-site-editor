@@ -497,12 +497,12 @@ test("held picker files unwrap a picture through the single save transaction", a
 test("replacing a place's unused trimmed copy removes it with its family in the same step, through the batch and held files", async () => {
   const trim = "media/images/a-crop.webp", small = "media/images/a-crop-480.webp", recordsText = JSON.stringify({ version: 2, collections: [], files: {
     [trim]: { trimmedFrom: { source: "images/old.png", trim: { x: 0.1, y: 0.1, width: 0.5, height: 0.5 } } } } });
-  const setup = (used = false) => {
+  const setup = (used = false, style = "") => {
     const batches: Parameters<MediaControllerPorts["applyBatch"]>[2][] = [];
     const f = fixture({ applyBatch: async (_scope, _stamp, batch) => { batches.push(batch); } });
     const paths = ["index.html", "images/old.png", trim, small, ".editor/media.json", ...used ? ["other.html"] : []];
     f.ports.workspace = () => ({ repo: f.scope.repo, scope: f.scope, identity: "workspace:1", site: { routes: { "/": "index.html", ...used ? { "/other/": "other.html" } : {} }, components: {} }, nativePaths: paths, drafts: { list: () => f.records, get: () => undefined, save: () => true, remove: () => true } });
-    f.sources.set("index.html", `<section><img src="/${trim}" alt="Old alt"></section>`);
+    f.sources.set("index.html", `<section><img src="/${trim}" alt="Old alt"${style}></section>`);
     f.sources.set(".editor/media.json", recordsText);
     if (used) f.sources.set("other.html", `<img src="/${small}">`);
     return { f, batches };
@@ -534,6 +534,22 @@ test("replacing a place's unused trimmed copy removes it with its family in the 
     { stamp: heldCase.f.ports.stamp(), epoch: 0, source, expected: `<img src="/${trim}" alt="Old alt">`, initialAlt: "Old alt" }, () => false, held);
   assert.deepEqual(captured?.deletes, [trim, small]);
   assert.equal(captured?.expectedAssets?.get(trim), "sha");
+  // The place's own inline style still shows the copy: the page as the replacement writes it keeps it in use.
+  const style = ` style="background-image:url('/${trim}')"`;
+  const styled = setup(false, style);
+  await styled.f.controller.chooseImage({ path: "index.html", node: [0, 0] });
+  await styled.f.pick()!.onPick!({ path: "images/new.png", alt: "New" }, () => false);
+  assert.equal(styled.batches.length, 0); assert.equal(styled.f.changes.length, 1);
+  assert.match(styled.f.changes[0], /src="\/images\/new.png"/);
+  assert.ok(styled.f.changes[0].includes(`background-image:url('/${trim}')`));
+  const styledHeld = setup(false, style);
+  let kept: import("../src/page-builder/media-picker").MediaPlacement | undefined;
+  const keeping: MediaHeldFiles = { image: () => image, save: async place => { kept = place; return { paths: [image.path], placed: true, note: "" }; } };
+  await placeMediaImage(styledHeld.f.ports, () => styledHeld.f.controller.workspaceContext(), { path: "index.html", node: [0, 0] }, image,
+    { stamp: styledHeld.f.ports.stamp(), epoch: 0, source: styledHeld.f.sources.get("index.html")!, expected: `<img src="/${trim}" alt="Old alt"${style}>`, initialAlt: "Old alt" }, () => false, keeping);
+  assert.ok(kept); assert.equal(kept.deletes, undefined);
+  const page = kept.apply([image.path], [], { version: 2, collections: [], files: {} });
+  assert.ok((typeof page === "string" ? page : page.page).includes(`background-image:url('/${trim}')`));
 });
 
 test("older placement batches copies and srcset, carries held uploads, and handles failure, cancel and drift", async () => {
