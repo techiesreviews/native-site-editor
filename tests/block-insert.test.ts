@@ -2,13 +2,24 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { blockMarkup, clickTarget, itemsSlotRule, templateClickTarget, templateDropRefusal, type BlockTarget } from "../src/page-builder/block-insert.ts";
 import { applyGuardedSourceEdit, nativeMarkupInsertEdit, nativeMoveEdit, nativeOutline } from "../src/page-builder/native-operations.ts";
-import type { NativeElementKind } from "../src/page-builder/native-elements.ts";
+import { placeholderImageCreates, placeholderImageSvg, type NativeElementKind } from "../src/page-builder/native-elements.ts";
+import { insertAtPlace } from "../src/page-builder/media-insert.ts";
 
 // Body paths: <site-header> [0], <main> [1], <site-footer> [2].
 const page = (main: string) => `<!doctype html><html><head><title>T</title></head><body><site-header></site-header><main class="page">${main}</main><site-footer></site-footer></body></html>`;
 const home = page('<section-hero><h1 slot="title">Hi</h1></section-hero><section class="flow" id="work"><h2>Recent work</h2><p>Intro</p><div class="cards"><card-project><h3 slot="title">A</h3></card-project></div><ul><li>One</li></ul></section><section class="flow"><h2>Contact</h2></section>');
 const ok = (target: BlockTarget) => { assert.ok(target.ok, target.ok ? "" : target.reason); return target; };
 const at = (target: BlockTarget) => { const t = ok(target); return { parent: t.parent, index: t.index, wrap: t.wrap }; };
+
+test("replacing a placeholder with any media keeps its component slot and neighbouring content", () => {
+  const placeholder = '<img slot="media&amp;more" src="/images/placeholder.svg" alt="">';
+  const source = page(`<section-hero>${placeholder}<h1 slot="title">Kept</h1></section-hero>`);
+  for (const markup of ['<img src="/images/photo.svg" alt="">', '<video controls></video>', '<audio controls></audio>', '<a href="/file.pdf">Download</a>', '<a class="online-video" href="https://vimeo.com/1"><img src="/images/still.svg"></a>']) {
+    const tag = /^<([a-z]+)/.exec(markup)![1];
+    assert.equal(insertAtPlace(source, { path: "index.html", parent: [1, 0], index: 0, replaces: true }, markup),
+      source.replace(placeholder, markup.replace(`<${tag}`, `<${tag} slot="media&amp;more"`)));
+  }
+});
 
 test("a selected Section or Div takes the block inside, at the end", () => {
   assert.deepEqual(at(clickTarget(home, "paragraph", [1, 1])), { parent: [1, 1], index: 4, wrap: false });
@@ -275,4 +286,16 @@ test("a place measured in a template's preview is checked against the template's
 
 test("block image markup carries an explicit site prefix", () => {
   assert.equal(blockMarkup(home, "media", [1, 2], false, undefined, "/my-site"), '<img src="/my-site/images/placeholder.svg" alt="" width="640" height="400">');
+});
+
+test("placeholder file creation recognises escaped site prefixes and keeps existing files", () => {
+  for (const prefix of ["", "/my-site", "/a&b"]) {
+    const markup = blockMarkup(home, "media", [1, 2], false, undefined, prefix);
+    assert.deepEqual(placeholderImageCreates({ exists: () => false }, markup, prefix),
+      [{ path: "images/placeholder.svg", content: placeholderImageSvg }]);
+    assert.deepEqual(placeholderImageCreates({ exists: () => true }, markup, prefix), []);
+  }
+  for (const markup of ['<img src="/images/photo.svg">', '<!-- <img src="/images/placeholder.svg"> -->', '<p>Text</p>']) {
+    assert.deepEqual(placeholderImageCreates({ exists: () => false }, markup), []);
+  }
 });

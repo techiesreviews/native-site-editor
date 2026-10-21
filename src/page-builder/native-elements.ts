@@ -1,4 +1,6 @@
 // Static, portable HTML. Keys identify editor choices, never published attributes.
+import { startTags, startTagAttribute } from "../../shared/html-source";
+import type { Reads } from "../guarded-edit";
 import { siteAddress } from "../../shared/site-path-prefix";
 import { decodeHtmlEntities } from "./html-entities";
 import type { AddChoice } from "./add-catalog";
@@ -27,6 +29,12 @@ export const placeholderImageSvg = `<svg xmlns="http://www.w3.org/2000/svg" view
     <path d="m248 248 45-45 30 30 30-45 39 60"/>
   </g>
 </svg>`;
+/** Carry the placeholder file alongside markup that uses it, without replacing an existing file. */
+export function placeholderImageCreates(reads: Pick<Reads, "exists">, markup: string, prefix = "") {
+  const address = siteAddress(PLACEHOLDER_IMAGE_PATH, prefix);
+  const uses = startTags(markup).some(tag => tag.name === "img" && decodeHtmlEntities(startTagAttribute(markup, tag, "src")?.value ?? "", true) === address);
+  return uses && !reads.exists(PLACEHOLDER_IMAGE_PATH) ? [{ path: PLACEHOLDER_IMAGE_PATH, content: placeholderImageSvg }] : [];
+}
 const escape = (value: string) => value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
 /** Validate a raw attribute value without changing the value written to HTML. */
 export function nativeElementUrlProblem(raw: string, allowed: readonly string[] = ["http", "https", "mailto", "tel", "about:blank"], decodeSourceEntities = true): string | undefined {
@@ -60,8 +68,7 @@ export function nativeElementMarkup(kind: NativeElementKind, options: NativeElem
       return `<h${level}>${escape(options.text ?? "Heading")}</h${level}>`;
     }
     case "paragraph": return `<p>${escape(options.text ?? "Text")}</p>`;
-    // Media on a page opens the Media picker and inserts the chosen file (media-insert.ts); this stand-in
-    // picture is what the Add panel previews and what a component's template takes.
+    // Every new image starts with the site placeholder; replacement comes afterwards.
     case "media": {
       // The placeholder's own size; another src has its size set when it is chosen.
       const size = options.src === undefined ? ` width="${PLACEHOLDER_IMAGE_WIDTH}" height="${PLACEHOLDER_IMAGE_HEIGHT}"` : "";

@@ -431,7 +431,12 @@ test("Add → Media with an older 2000px JPEG adds its copies and the picture in
   const before = await source(), preview = page.frameLocator(".native-preview-frame");
   await preview.locator(".hero h1").click();
   await page.getByRole("navigation", { name: "Blocks", exact: true }).getByRole("button", { name: "Media", exact: true }).click();
-  const picker = page.getByRole("dialog", { name: "Choose media", exact: true });
+  const inserted = preview.locator(".hero h1 + img");
+  await expect(inserted).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Choose media", exact: true })).toHaveCount(0);
+  const withPlaceholder = await source();
+  await inserted.dblclick();
+  const picker = page.getByRole("dialog", { name: "Choose image", exact: true });
   await picker.getByRole("button", { name: `Choose ${main}`, exact: true }).click();
   await picker.getByRole("button", { name: "Use image", exact: true }).click();
   await expect(picker).toBeHidden();
@@ -445,6 +450,8 @@ test("Add → Media with an older 2000px JPEG adds its copies and the picture in
   const repository = await page.request.get(`${baseURL}/__demo/file?path=${encodeURIComponent(main)}`);
   expect((await repository.body()).equals(Buffer.from(base64, "base64"))).toBe(true);
   await page.locator(".code-editor__undo").first().click();
-  await expect.poll(source).toBe(before);
+  await expect.poll(source).toBe(withPlaceholder);
   await expect.poll(async () => (await stored()).filter(draft => copies.includes(draft.path)).length).toBe(0);
+  await page.locator(".code-editor__undo").first().click();
+  await expect.poll(source).toBe(before);
 });

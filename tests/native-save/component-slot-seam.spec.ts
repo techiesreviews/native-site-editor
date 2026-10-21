@@ -116,7 +116,7 @@ test("canvas fill-in and Structure Show write identical source for every slot sh
     const out: any[] = [];
     for (const entry of cases) {
       const run = (via: "canvas" | "structure") => {
-        let sources: Record<string, string> = { [pagePath]: entry.page, [templatePath]: entry.template };
+        let sources: Record<string, string> = { [pagePath]: entry.page, [templatePath]: entry.template, "images/placeholder.svg": "<svg/>" };
         let transactions = 0;
         const selection: any = { path: pagePath, node: [0], tag: "test-card", text: "", reason: "click", selectors: [] };
         const panelHost = document.createElement("div"), codeTitle = document.createElement("div");
@@ -134,7 +134,7 @@ test("canvas fill-in and Structure Show write identical source for every slot sh
             }
           },
         };
-        const edits = createGuardedEdits(createMemoryWorkspace().workspace);
+        const edits = createGuardedEdits(createMemoryWorkspace({ branch: { "images/placeholder.svg": "<svg/>" } }).workspace);
         const tools = createComponentTools({
           structureFields: via === "structure",
           site: () => ({ components: { "test-card": templatePath }, routes: { "/": pagePath } }), edits,
@@ -177,5 +177,5 @@ test("canvas fill-in and Structure Show write identical source for every slot sh
   expect(results.map((entry) => [entry.name, entry.canvas.exact])).toEqual([["link", true], ["image", true], ["cta", false], ["note", false], ["", false]]);
   // The exact bytes of two shapes, so "identical" is not identically wrong.
   expect(results[0].canvas.filled).toBe('<test-card>\n  <span slot="title">Kept</span>\n  <a slot="link" href="">Link</a>\n</test-card>');
-  expect(results[1].canvas.filled).toBe('<test-card>\n  <img slot="image" src="" alt="">\n  <span slot="title">Kept</span>\n</test-card>');
+  expect(results[1].canvas.filled).toBe('<test-card>\n  <img slot="image" src="/images/placeholder.svg" alt="">\n  <span slot="title">Kept</span>\n</test-card>');
 });

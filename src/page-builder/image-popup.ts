@@ -28,6 +28,7 @@ import { loadPicture, mountImagePopupView, trimmedPreview, type ImagePopupState 
 import type { MediaPopupHost } from "./media-popup-frame";
 import { isPictureSpot } from "./looping-video";
 import { SPOT_ACCEPT, pickedVideo, placeSpotVideo, spotNote } from "./media-spot-pick";
+import { PLACEHOLDER_IMAGE_PATH } from "./native-elements";
 
 /** What the editor lends the popup: where it stands, and the page's live look. */
 export interface ImagePopupHost extends MediaPopupHost {
@@ -199,6 +200,23 @@ export async function openImagePopup(options: ImagePopupOptions) {
   async function replace() {
     const { openMediaPicker } = await options.load();
     if (closed) return;
+    // The Media block starts as this image; Replace chooses any media for its place.
+    if (placed === PLACEHOLDER_IMAGE_PATH) {
+      if (!stamp.holds() || !options.live() || ports.source(target.path) !== source || ports.viewingVersion()) return;
+      close();
+      const place = { path: target.path, parent: target.node.slice(0, -1), index: target.node.at(-1)!, replaces: true };
+      const proof = { stamp, epoch, source: source! };
+      await openMediaPicker({ report: ports, place: `${ports.placeLabel?.(target.path) ?? target.path} · Replace media`,
+        onPick: async (chosen, cancelled, held) => {
+          const { placeChosenMedia } = await import("./media-insert");
+          await placeChosenMedia(ports, options.workspaceContext, { kind: "insert", place }, chosen, proof, cancelled, held);
+        },
+        onlineVideo: async (video, cancelled, picker) => {
+          const { placeOnlineVideo } = await import("./online-video-place");
+          await placeOnlineVideo(ports, options.workspaceContext, { place }, video, picker, proof, cancelled);
+        } }).catch((error: unknown) => ports.error(error));
+      return;
+    }
     const words = mediaExistingAlt(expected)?.trim();
     // A picture spot also takes a video, which loops silently there: placed at once, closing the popup (slice 119).
     const parent = (ports.locateElement ?? locateNativeElementRange)(source!, target.node.slice(0, -1));

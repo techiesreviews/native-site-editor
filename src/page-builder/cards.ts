@@ -1,4 +1,5 @@
 import { rootRoute, routeAddress } from "../../shared/site-path-prefix";
+import { nativeElementMarkup, placeholderImageCreates } from "./native-elements";
 import { selectionAfterRemove } from "./remove";
 // Cards: grids of repeated items in the editor (docs/page-builder/cards.md).
 // Add card places a blank card first. Component cards and collection items
@@ -306,7 +307,7 @@ export function createCards(deps: CardsDeps) {
       const fresh = route && before !== undefined && slotAdd(before, parent, slotName, tag => template(reads, tag), look);
       if (fresh) {
         result = { path, node: [...parent, fresh.index] };
-        return { edits: new Map([[path, [fresh.edit]]]), select: { after: result },
+        return { creates: placeholderImageCreates(reads, fresh.edit.text, prefix(reads)), edits: new Map([[path, [fresh.edit]]]), select: { after: result },
           done: `${capital(fresh.noun)} added to ${fresh.label}${look ? ` as ${look.label}` : ""}`,
           undone: `Undid adding the ${fresh.noun}.` };
       }
@@ -316,7 +317,7 @@ export function createCards(deps: CardsDeps) {
       const copy = cardMarkup(reads, source, route, grid, last);
       const node = [...grid.parent, last.index + 1];
       if (canFill(reads, grid.kind.split(".")[0], grid, copy.text)) result = { path, node };
-      return { edits: new Map([[path, [insertAfterEdit(source, last.range, copy.text)]]]), select: { after: { path, node } },
+      return { creates: placeholderImageCreates(reads, copy.text, prefix(reads)), edits: new Map([[path, [insertAfterEdit(source, last.range, copy.text)]]]), select: { after: { path, node } },
         done: copy.reset ? `${capital(grid.noun)} added to ${grid.label}` : `${capital(grid.noun)} added to ${grid.label}, a copy of the last one (its text could not be reset)`,
         undone: `Undid adding the ${grid.noun}.` };
     }, { anchor: path });
@@ -383,7 +384,7 @@ export function createCards(deps: CardsDeps) {
       const css = await hostCss(reads, lookTemplate.path, swapped.titleLinked);
       const noun = itemNoun(look.tag);
       result = { kept: swapped.kept, notShown: swapped.notShown, text: swapped.markup };
-      return cardPlan(card, { start: range.start, end: range.end, text: swapped.markup }, css,
+      return cardPlan(reads, card, { start: range.start, end: range.end, text: swapped.markup }, css,
         `${capital(noun)} is now ${look.label}`, `Undid changing the ${noun}'s look.`);
     }, { anchor: card.path });
     return accepted(outcome, "The page changed meanwhile; choose the look again.") ? result : undefined;
@@ -404,7 +405,7 @@ export function createCards(deps: CardsDeps) {
     const from = source.slice(range.start, range.end);
     const title = pageTitle(page, route).title;
     // Plain cards map the same facts onto their first body paragraph and image.
-    let rows = cardFill({ template: text ?? '<slot name="title"><h3>Title</h3></slot><slot name="body"><p></p></slot><slot name="image"><img src="" alt=""></slot><slot name="link"></slot>', page: { route, source: page }, siteUrl: nativeSiteSettings(reads.source(NATIVE_CONFIG_PATH)).url }).rows.map(row => text === undefined ? { ...row, slot: undefined } : row);
+    let rows = cardFill({ template: text ?? `<slot name="title"><h3>Title</h3></slot><slot name="body"><p></p></slot><slot name="image">${nativeElementMarkup("media", {}, prefix(reads))}</slot><slot name="link"></slot>`, page: { route, source: page }, siteUrl: nativeSiteSettings(reads.source(NATIVE_CONFIG_PATH)).url }).rows.map(row => text === undefined ? { ...row, slot: undefined } : row);
     const plain = text === undefined ? itemPageFill(from, grid!.noun, title, routeAddress(route, prefix(reads)), rows) : undefined;
     if (plain) rows = plain.rows;
     const filled = text !== undefined ? cardFillMarkup(from, text, rows) : plain?.markup;
@@ -423,7 +424,7 @@ export function createCards(deps: CardsDeps) {
       if (!fill) return { refuse: "That card or page is not there any more." };
       const css = await hostCss(reads, fill.templatePath, fill.titleLinked);
       result = fill.result;
-      return cardPlan(card, fill.edit, css, `${capital(fill.noun)} filled from ${fill.result.title}`, `Undid filling the ${fill.noun}.`);
+      return cardPlan(reads, card, fill.edit, css, `${capital(fill.noun)} filled from ${fill.result.title}`, `Undid filling the ${fill.noun}.`);
     }, { anchor: card.path });
     return accepted(outcome, "The page changed meanwhile; choose the page again.") ? result : undefined;
   }
@@ -440,9 +441,9 @@ export function createCards(deps: CardsDeps) {
   }
 
   /** The card range and optional host CSS share one step. */
-  function cardPlan(card: NewCard, edit: RangeEdit, css: Awaited<ReturnType<typeof hostCss>>, done: string, undone: string): Planned {
+  function cardPlan(reads: Reads, card: NewCard, edit: RangeEdit, css: Awaited<ReturnType<typeof hostCss>>, done: string, undone: string): Planned {
     const edits: Planned["edits"] = new Map([[card.path, [edit]]]);
-    const creates: NonNullable<Planned["creates"]> = [];
+    const creates: NonNullable<Planned["creates"]> = placeholderImageCreates(reads, edit.text, prefix(reads));
     if (css) {
       if (css.before === undefined) creates.push({ path: css.path, content: css.after });
       else edits.set(css.path, css.after);
@@ -498,7 +499,7 @@ export function createCards(deps: CardsDeps) {
       if (fill.edit.text === source.slice(fill.edit.start, fill.edit.end)) return { refuse: `Nothing on this ${fill.noun} takes a page's title or address.` };
       const css = await hostCss(reads, fill.templatePath, fill.titleLinked);
       result = fill.result;
-      const plan = cardPlan(card, fill.edit, css,
+      const plan = cardPlan(reads, card, fill.edit, css,
         `Created the page ${fill.result.title} at ${fill.result.route} and filled the ${fill.noun} from it`, `Undid creating the page ${fill.result.title} and filling the ${fill.noun}.`);
       plan.creates!.push({ path: target.value.file, content });
       return plan;
@@ -642,7 +643,7 @@ export function createCards(deps: CardsDeps) {
         const copy = cardMarkup(reads, source, route, grid, last, { title, route: target.value.route });
 
         return {
-          creates: [{ path: target.value.file, content }],
+          creates: [...placeholderImageCreates(reads, copy.text, prefix(reads)), { path: target.value.file, content }],
           edits: new Map([[file, [insertAfterEdit(source, last.range, copy.text)]]]),
           open: target.value.file,
           done: `Created the page ${title} at ${target.value.route}, with its ${grid.noun} in ${where}.`,

@@ -33,14 +33,14 @@ import { renameSlotChip } from "../components/slot-chip";
 import { slotMenuItems } from "./slot-menu";
 import { refuse as showRefusal } from "../components/refusal-note";
 import { isButtonBlock } from "./block-fields";
-import { nativeElementUrlProblem } from "./native-elements";
+import { nativeElementUrlProblem, placeholderImageCreates } from "./native-elements";
 import { nativeComponentFrameSelected } from "./native-component-selection";
 import { startTags } from "../../shared/html-source";
 import { mountComponentPanelResize } from "./component-panel-resize";
 import { mountDropdown } from "../components/dropdown";
 import { icon } from "../icons";
 import { button, node } from "../ui/dom";
-import { nativePageBody, type NativeSite } from "../../shared/native-project";
+import { NATIVE_CONFIG_PATH, nativeSitePrefix, nativePageBody, type NativeSite } from "../../shared/native-project";
 import type { NativePreviewSelection } from "../components/native-preview";
 import type { CheckboxControl, EditBarControl, EditBarModel, SelectControl } from "../components/edit-bar";
 import type { VariantField } from "./variant-fields";
@@ -388,6 +388,22 @@ export function createComponentTools(deps: ComponentDeps) {
       return false;
     }
     const source = deps.sources()[path] ?? "";
+    // A synthesized image and its missing site file must share a guarded receipt.
+    const prefix = deps.prefix();
+    if (placeholderImageCreates(deps.edits.peek, edits.map(edit => edit.text).join(""), prefix).length) {
+      const since = deps.edits.stamp();
+      const templates = Object.values(site()?.components ?? {}).map(path => ({ path, source: deps.sources()[path] }));
+      void deps.edits.run(r => {
+        if (r.source(path) !== source || nativeSitePrefix(r.source(NATIVE_CONFIG_PATH)) !== prefix
+          || templates.some(template => r.source(template.path) !== template.source)) return { refuse: STALE_MESSAGE };
+        return { edits: new Map([[path, edits]]), creates: placeholderImageCreates(r, edits.map(edit => edit.text).join(""), prefix),
+          select: { after: next ? { path, node: next } : undefined }, done: message, undone: `Undid: ${message}` };
+      }, { since, anchor: path }).then(outcome => {
+        if (outcome.message) refuse(outcome.message);
+        if (outcome.ok) deps.preview()?.flushPendingUpdate?.();
+      }).catch(deps.error);
+      return true;
+    }
     preview?.selectAfterUpdate(next ? { path, node: next } : undefined);
     try {
       editor.replaceActiveRanges(edits.filter((edit) => edit.text !== source.slice(edit.start, edit.end))
@@ -406,6 +422,10 @@ export function createComponentTools(deps: ComponentDeps) {
     const editor = deps.editor();
     if (!editor || !editable(path)) return;
     const source = deps.sources()[path] ?? "";
+    if (placeholderImageCreates(deps.edits.peek, edit.text, deps.prefix()).length) {
+      change(path, [edit], message, next);
+      return;
+    }
     if (edit.start === edit.end && !edit.text) return;
     deps.preview()?.selectAfterUpdate({ path, node: next });
     try {
@@ -1313,7 +1333,7 @@ export function createComponentTools(deps: ComponentDeps) {
       return attributeEdit(at.source, element.tag, name, value);
     }
     if (fill?.length) { refuse("Select it in the preview to change it."); return undefined; }
-    let markup = fillMarkup(at.template, slot);
+    let markup = fillMarkup(at.template, slot, undefined, deps.prefix());
     const tag = startTags(markup)[0];
     if (!tag || tag.start !== 0 || !openingSourceSafe(markup, tag)) return undefined;
     const set = attributeEdit(markup, tag, name, value);
@@ -1339,7 +1359,7 @@ export function createComponentTools(deps: ComponentDeps) {
     if (!at || !slot) return false;
     const label = slotLabel(slotName);
     if (on) {
-      const edit = fillInsertEdit(at.source, at.instance, at.slots, slotName, fillMarkup(at.template, slot));
+      const edit = fillInsertEdit(at.source, at.instance, at.slots, slotName, fillMarkup(at.template, slot, undefined, deps.prefix()));
       if (!edit) { refuse("The instance's end tag could not be found in the source."); return false; }
       const kind = slotValue(at.source, at.template, at.instance, slot).kind;
       const accepted = change(at.path, [edit], `${label} shown`, at.node);
@@ -1955,7 +1975,7 @@ export function createComponentTools(deps: ComponentDeps) {
         if (!at || !slot) return false;
         let changed: boolean;
         if (on) {
-          const edit = fillInsertEdit(at.source, at.instance, at.slots, name, fillMarkup(at.template, slot));
+          const edit = fillInsertEdit(at.source, at.instance, at.slots, name, fillMarkup(at.template, slot, undefined, deps.prefix()));
           changed = !!edit && change(path, [edit], `${slotLabel(name)} shown`, at.node);
         } else {
           changed = change(path, fillRemoveEdits(at.source, at.instance, name), `${slotLabel(name)} ${at.states.get(name)?.whenEmpty === "fallback" ? "reset to the component’s default" : "hidden"}`, at.node);

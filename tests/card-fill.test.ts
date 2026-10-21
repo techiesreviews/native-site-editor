@@ -415,3 +415,40 @@ test("card fill always prefixes an internal route named like the site folder", (
   assert.equal(rows.find(row => row.role === "link")?.href, "/my-site/my-site/");
   assert.ok(cardFillMarkup('<card-x></card-x>', template, rows).includes('href="/my-site/my-site/"'));
 });
+
+// Exercise the writer with the browser parser, not only the pure fill rows.
+declare global {
+  var placeholderCardsFixture: typeof import("./fakes/cards-fixture.ts").cardsFixture;
+}
+
+test("a new default card uses the placeholder and creates its missing file in one undo step", async () => {
+  const { build } = await import("esbuild");
+  const { chromium } = await import("@playwright/test");
+  const bundle = await build({ stdin: { contents: `import { cardsFixture } from './tests/fakes/cards-fixture'; globalThis.placeholderCardsFixture = cardsFixture;`, resolveDir: process.cwd() }, bundle: true, write: false, format: "iife", platform: "browser" });
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.addScriptTag({ content: bundle.outputFiles[0].text });
+    for (const present of [false, true]) {
+      const result = await page.evaluate(async present => {
+        const home = '<!doctype html><html><body><main><section><h2>Work</h2><div class="cards"><article><h3>One</h3><p>Body</p><img src="/my-site/images/placeholder.svg"></article><article><h3>Two</h3><p>Body</p><img src="/my-site/images/placeholder.svg"></article></div></section></main></body></html>';
+        const branch = { "index.html": home, "about/index.html": '<!doctype html><html><head><title>About</title></head><body><main><h1>About</h1></main></body></html>',
+          ".editor/config.json": '{"site":{"url":"https://example.test/my-site/"}}', ...(present ? { "images/placeholder.svg": "Existing placeholder" } : {}) };
+        const { controller, m } = placeholderCardsFixture(branch, { routes: { "/": "index.html", "/about/": "about/index.html" }, components: {} });
+        const card = await controller.preview.addCard({ path: "index.html", parent: [0, 0, 1], index: -1, row: false });
+        if (!card) throw new Error("Card was not added");
+        const before = home;
+        const after = m.source("index.html"), added = controller.preview.cardText(card), placeholder = m.source("images/placeholder.svg"), steps = m.steps().length;
+        const undone = m.undo();
+        return { after, added, placeholder, steps, undone, restored: m.source("index.html") === before, fileAfterUndo: m.source("images/placeholder.svg") };
+      }, present);
+      assert.match(result.after!, /src="\/my-site\/images\/placeholder.svg"/);
+      assert.match(result.added!, /src="\/my-site\/images\/placeholder.svg"/);
+      assert.equal(result.steps, 1);
+      assert.equal(result.undone && result.restored, true);
+      if (present) assert.equal(result.placeholder, "Existing placeholder");
+      else assert.match(result.placeholder!, /<svg/);
+      assert.equal(result.fileAfterUndo, present ? "Existing placeholder" : undefined);
+    }
+  } finally { await browser.close(); }
+});

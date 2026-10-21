@@ -9,7 +9,7 @@ import type { Stamp } from "../guarded-edit";
 import type { MediaWorkspaceContext } from "./media-workspace";
 import type { MediaHeldFiles, MediaImportRequest } from "./media-picker";
 import type { MediaImage } from "./media-markup";
-import type { ElementRange } from "../../shared/html-source";
+import { startTags, startTagAttribute, type ElementRange } from "../../shared/html-source";
 import { MEDIA_RECORDS_PATH, parseMediaRecords, serializeMediaRecords, type MediaFileRecord, type MediaRecords } from "../../shared/media-records";
 import { isMediaLibraryPath, mediaKind } from "./media-library-filter";
 import { mediaFamilyOf } from "./media-families";
@@ -24,6 +24,7 @@ import { swapPlaceImage } from "./media-descriptions";
 import { audioMarkup, downloadCardMarkup, mediaPlayerPlan, pageMediaLanguage, type MediaPlayerKind } from "./player-markup";
 import { isPictureSpot, loopsFromStart, pictureSpotVideo, placedVideoMarkup } from "./looping-video";
 import { decodeImage } from "./media-byte-cache";
+import { decodeHtmlEntities } from "./html-entities";
 
 /** A gap in a page (a body path and index, as the block rail and the Add panel find it). */
 export interface MediaInsertPlace {
@@ -60,6 +61,13 @@ export function insertAtPlace(source: string, place: MediaInsertPlace, markup: s
   if (place.replaces) {
     // The whole element (its children and end tag too) gives way to the new markup, in its line.
     const old = locatePageElement(source, [...place.parent, place.index]);
+    // A placeholder in a component keeps its assigned slot for every kind of replacement.
+    const slot = old && startTagAttribute(source, old.tag, "slot");
+    const tag = slot && startTags(markup)[0];
+    if (slot && tag && !startTagAttribute(markup, tag, "slot")) {
+      const at = tag.start + 1 + tag.name.length;
+      markup = markup.slice(0, at) + ` slot="${mediaEscape(decodeHtmlEntities(slot.value, true))}"` + markup.slice(at);
+    }
     return old && source.slice(0, old.start) + markup + source.slice(old.end);
   }
   const text = place.wrap ? `<section class="flow">\n  ${markup}\n</section>` : markup;
