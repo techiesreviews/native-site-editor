@@ -261,7 +261,9 @@ Clicking or dropping the Image block (the rail's Media button) inserts
 with the site's URL prefix when needed. The image is selected; use its edit bar
 to replace it afterwards. Replace on this placeholder opens the Media picker for
 pictures, videos, audio, downloads and online videos. The chosen media replaces
-the placeholder in one Undo step. Other pictures keep their usual replacement
+the placeholder in one Undo step. A picture replacement keeps the placeholder's
+classes, other non-media attributes and shape, with focus centred for the new
+picture. Other pictures keep their usual replacement
 rules. Insertion does not open the media picker. The first
 image creates `images/placeholder.svg` when missing, in the same Undo step as
 the page change. Existing placeholder files are kept.
