@@ -56,7 +56,8 @@ export interface MediaControllerPorts {
   openFile(): string | undefined;
   viewingVersion(): boolean;
   restoreFile(path: string, generation: number): Promise<unknown>;
-  change(path: string, source: string, edits: NativeTextEdit[], node: number[], message: string): boolean;
+  /** One page edit; `node` is selected after it, or undefined keeps the selection the user moved to meanwhile. */
+  change(path: string, source: string, edits: NativeTextEdit[], node: number[] | undefined, message: string): boolean;
   /** DOM parser seam for source-only controller tests. Production uses the existing locator. */
   locateElement?: (source: string, node: number[]) => { tag: { name: string; start: number; end: number } } | undefined;
   galleryHost(): HTMLElement;

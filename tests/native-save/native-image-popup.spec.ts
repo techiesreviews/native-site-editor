@@ -125,6 +125,10 @@ test("selecting another element closes the popup and keeps its shape and focus a
   await frame(page).locator(".hero h1").click();
   await expect(popup(page)).toHaveCount(0);
   await expect.poll(() => heroTag(page)).toContain("aspect-ratio: 1 / 1; object-fit: cover; object-position: 48% 50%");
+  // The heading pressed stays selected after the save redraws the page.
+  await expect(bar(page).locator(".edit-bar__kind")).toHaveText(/Heading/);
+  await page.waitForTimeout(500); // fixed-wait: the bug moved the selection back only after the redraw, so absence needs a settle
+  await expect(bar(page).locator(".edit-bar__kind")).toHaveText(/Heading/);
   await page.locator(".code-editor__undo").first().click();
   await expect.poll(() => source(page)).toBe(before);
 });
