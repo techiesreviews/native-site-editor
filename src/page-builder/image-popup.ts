@@ -1,12 +1,12 @@
 import { NATIVE_CONFIG_PATH, nativeSitePrefix } from "../../shared/native-project";
 // The image popup (media-manager ticket 09 "Entry point and popup", build slice 39), opened by
 // the edit bar's Image button: the whole picture with the shape menu and the focus dot, Replace,
-// small phone and computer previews, the one-line message and Done. The page shows each change
-// at once (an `image-look` on the canvas), but nothing is written until Done, which is one Undo
-// step; ✕ or Escape put everything back, a replacement included. Zoom, Turn and Free trimming
-// (slice 41) save a Trimmed copy for this spot only; a trimmed spot re-opens on the full original
-// with its trim put back. Open large editor (slice 42) edits the same state in a large window:
-// its Done is this Done; its Cancel puts the popup back as it was.
+// small phone and computer previews and the one-line message. There is no Done: the page shows
+// each change at once (an `image-look` on the canvas), and closing (Close, Escape, a press
+// elsewhere) writes it as one Undo step. Replace closes the popup and places the choice at once.
+// Zoom, Turn and Free trimming (slice 41) save a Trimmed copy for this spot only; a trimmed spot
+// re-opens on the full original with its trim put back. Open large editor (slice 42) edits the
+// same state in a large window: its Done writes and closes; its Cancel puts the popup back.
 import type { MediaControllerPorts, MediaModule } from "../controllers/media-controller";
 import type { MediaWorkspaceContext } from "./media-workspace";
 import type { MediaBox } from "./media-markup";
