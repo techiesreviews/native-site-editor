@@ -2,7 +2,7 @@ import { componentImageChoices } from "./component-model";
 import type { AnnounceAs } from "../components/toast-rules";
 import type { MediaPathPlacement } from "./media-picker";
 import { componentRenameStep, madeFiles, madeMessage, makeComponentStep, newComponentStep, slotChipPlan, templateRemovalPlan, type LoaderPlanner, type MadePlanned, type NewPlanned, type RenamePlanned, type SlotChipPlanned } from "./component-plans";
-import { STALE_MESSAGE, type GuardedEdits, type Outcome, type Stamp } from "../guarded-edit";
+import { STALE_MESSAGE, type GuardedEdits, type Outcome, type RunOptions, type Stamp } from "../guarded-edit";
 import { createComponentMode, EnterTimeout, scopeHolds, type Level } from "./component-mode";
 import type { ElementMenuTarget } from "../components/element-menu";
 import type { MenuItem } from "../components/row-menu";
@@ -380,7 +380,7 @@ export function createComponentTools(deps: ComponentDeps) {
   const editable = (path: string) => deps.currentPath() === path && Boolean(deps.editor()?.isMounted(path));
 
   /** One change to `path` as one undo step; `next` is selected once the preview shows it. */
-  function change(path: string, edits: RangeEdit[], message: string, next?: number[]) {
+  function change(path: string, edits: RangeEdit[], message: string, next?: number[], proof?: Pick<RunOptions, "since" | "guard">) {
     const editor = deps.editor();
     const preview = deps.preview();
     if (!editor || !editable(path)) {
@@ -391,14 +391,14 @@ export function createComponentTools(deps: ComponentDeps) {
     // A synthesized image and its missing site file must share a guarded receipt.
     const prefix = deps.prefix();
     if (placeholderImageCreates(deps.edits.peek, edits.map(edit => edit.text).join(""), prefix).length) {
-      const since = deps.edits.stamp();
+      const since = proof?.since ?? deps.edits.stamp();
       const templates = Object.values(site()?.components ?? {}).map(path => ({ path, source: deps.sources()[path] }));
       void deps.edits.run(r => {
         if (r.source(path) !== source || nativeSitePrefix(r.source(NATIVE_CONFIG_PATH)) !== prefix
           || templates.some(template => r.source(template.path) !== template.source)) return { refuse: STALE_MESSAGE };
         return { edits: new Map([[path, edits]]), creates: placeholderImageCreates(r, edits.map(edit => edit.text).join(""), prefix),
           select: { after: next ? { path, node: next } : undefined }, done: message, undone: `Undid: ${message}` };
-      }, { since, anchor: path }).then(outcome => {
+      }, { since, anchor: path, guard: proof?.guard }).then(outcome => {
         if (outcome.message) refuse(outcome.message);
         if (outcome.ok) deps.preview()?.flushPendingUpdate?.();
       }).catch(deps.error);
@@ -1275,22 +1275,25 @@ export function createComponentTools(deps: ComponentDeps) {
 
   /** Fills one native named assignment only while its captured host is still active. */
   function fillInstanceSlot(target: ComponentInstanceSlotTarget, name: string): boolean {
-    const selection = deps.selection();
     const sameNode = (a: number[] | undefined, b: number[]) => Boolean(a && a.length === b.length && a.every((part, index) => part === b[index]));
-    if (!target.isCurrent() || !target.stamp.holds()
-      || selection !== target.expectedSelection || selection.host
-      || selection.path !== target.pagePath || selection.tag !== target.tag || !sameNode(selection.node, target.pageNode)
-      || deps.previewPage() !== target.pagePath || !editable(target.pagePath)
-      || site()?.components[target.tag] !== target.templatePath
-      || deps.sources()[target.pagePath] !== target.expectedPageSource
-      || deps.sources()[target.templatePath] !== target.expectedTemplateSource
-      || deps.editor()?.getMountedSource(target.pagePath) !== target.expectedPageSource) return false;
+    const isCurrent = () => {
+      const selection = deps.selection();
+      return target.isCurrent() && target.stamp.holds()
+        && selection === target.expectedSelection && !selection.host
+        && selection.path === target.pagePath && selection.tag === target.tag && sameNode(selection.node, target.pageNode)
+        && deps.previewPage() === target.pagePath && editable(target.pagePath)
+        && site()?.components[target.tag] === target.templatePath
+        && deps.sources()[target.pagePath] === target.expectedPageSource
+        && deps.sources()[target.templatePath] === target.expectedTemplateSource
+        && deps.editor()?.getMountedSource(target.pagePath) === target.expectedPageSource;
+    };
+    if (!isCurrent()) return false;
     const at = current();
     if (!at || at.within !== undefined || at.path !== target.pagePath || !sameNode(at.node, target.pageNode)
       || at.tag !== target.tag || at.templatePath !== target.templatePath
       || at.source !== target.expectedPageSource || at.template !== target.expectedTemplateSource
       || !at.slots.some((slot) => slot.name === name) || at.states.get(name)?.filled !== false) return false;
-    return setSlotOn(name, true);
+    return setSlotOn(name, true, { since: target.stamp, guard: isCurrent });
   }
 
   /** Text typed into a slot's field: its text, an image's address or alt text, a link's address. */
@@ -1353,7 +1356,7 @@ export function createComponentTools(deps: ComponentDeps) {
   }
 
   /** Switches a slot on (the page fills it, from the template's fallback) or off (the page's content goes). */
-  function setSlotOn(slotName: string, on: boolean): boolean {
+  function setSlotOn(slotName: string, on: boolean, proof?: Pick<RunOptions, "since" | "guard">): boolean {
     const at = current();
     const slot = at?.slots.find((entry) => entry.name === slotName);
     if (!at || !slot) return false;
@@ -1362,13 +1365,13 @@ export function createComponentTools(deps: ComponentDeps) {
       const edit = fillInsertEdit(at.source, at.instance, at.slots, slotName, fillMarkup(at.template, slot, undefined, deps.prefix()));
       if (!edit) { refuse("The instance's end tag could not be found in the source."); return false; }
       const kind = slotValue(at.source, at.template, at.instance, slot).kind;
-      const accepted = change(at.path, [edit], `${label} shown`, at.node);
+      const accepted = change(at.path, [edit], `${label} shown`, at.node, proof);
       if (accepted) focusNext = `${kind === "image" ? "src" : kind === "link" ? "href" : "text"}:${slotName}`;
       return accepted;
     } else {
       const edits = fillRemoveEdits(at.source, at.instance, slotName);
       const reset = at.states.get(slotName)?.whenEmpty === "fallback";
-      return change(at.path, edits, reset ? `${label} reset to the component's default` : `${label} hidden`, at.node);
+      return change(at.path, edits, reset ? `${label} reset to the component's default` : `${label} hidden`, at.node, proof);
     }
   }
 

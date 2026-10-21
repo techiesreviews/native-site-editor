@@ -1227,6 +1227,7 @@ declare global {
   var placeholderSlotTools: typeof createComponentTools;
   var placeholderSlotEdits: typeof createGuardedEdits;
   var placeholderSlotWorkspace: typeof createMemoryWorkspace;
+  var placeholderSlotAwait: typeof import("./support/await-race.ts").forEachAwait;
 }
 
 test("empty image slot fills create their placeholder atomically through canvas and Structure", async () => {
@@ -1297,6 +1298,85 @@ test("empty image slot fills create their placeholder atomically through canvas 
       if (present) assert.equal(result.image, "Existing image");
       else assert.match(result.image!, /<svg/);
       assert.equal(result.imageAfterUndo, present ? "Existing image" : undefined);
+    }
+  } finally { await browser.close(); }
+});
+
+test("empty image slot fills retain the captured selection and host proof across every creation await", async () => {
+  const { build } = await import("esbuild");
+  const { chromium } = await import("@playwright/test");
+  const bundle = await build({
+    stdin: { contents: `
+      import { createComponentTools } from './src/page-builder/components';
+      import { createGuardedEdits } from './src/guarded-edit';
+      import { createMemoryWorkspace } from './tests/fakes/memory-workspace';
+      import { forEachAwait } from './tests/support/await-race';
+      globalThis.placeholderSlotTools = createComponentTools;
+      globalThis.placeholderSlotEdits = createGuardedEdits;
+      globalThis.placeholderSlotWorkspace = createMemoryWorkspace;
+      globalThis.placeholderSlotAwait = forEachAwait;
+    `, resolveDir: process.cwd() },
+    bundle: true, write: false, format: "iife", platform: "browser", loader: { ".css": "empty", ".svg": "text" },
+  });
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.addScriptTag({ content: "globalThis.__name = (fn) => fn;" + bundle.outputFiles[0].text });
+    for (const stale of ["selection", "isCurrent"] as const) {
+      const points = await page.evaluate(async stale => {
+        const path = "index.html", templatePath = "components/test-card/test-card.html", imagePath = "images/placeholder.svg";
+        const source = '<test-card><span slot="title">Kept</span></test-card><p>Newer selection</p>';
+        const template = '<figure><slot name="image"></slot></figure><h2><slot name="title">Title</slot></h2>';
+        const site = { routes: { "/": path }, components: { "test-card": templatePath } };
+        return placeholderSlotAwait(race => {
+          const m = placeholderSlotWorkspace({ branch: { [path]: source, [templatePath]: template }, open: path, site });
+          const captured = { path, node: [0], tag: "test-card", text: "", reason: "click" as const, selectors: [] };
+          const newer = { ...captured, node: [1], tag: "p", text: "Newer selection" };
+          let selection = captured, current = true, disturbed = false;
+          let queued: { path: string; node: number[] } | undefined;
+          const errors: unknown[] = [];
+          const workspace = { ...m.workspace,
+            createProblem: race.port("placeholder creation", (file: string) => m.workspace.createProblem(file)),
+            branchText: race.port("page base", (file: string) => m.workspace.branchText(file)),
+            select(request: { path: string; node: number[] } | undefined) { m.workspace.select(request); queued = request; },
+          };
+          const guarded = placeholderSlotEdits(workspace);
+          let pending = Promise.resolve<unknown>(undefined);
+          const edits: ReturnType<typeof createGuardedEdits> = { ...guarded, run(plan, options) {
+            const result = guarded.run(race.port("slot plan", async (reads: import("../src/guarded-edit.ts").Reads) => plan(reads)), options);
+            pending = result;
+            return result;
+          } };
+          const editor = { isMounted: () => true, getMountedSource: () => m.source(path), captureHistoryHost: () => ({ isCurrent: () => current }) };
+          const panelHost = document.createElement("div"), codeTitle = document.createElement("div");
+          document.body.append(panelHost, codeTitle);
+          const tools = placeholderSlotTools({ site: () => site, edits,
+            sources: () => Object.fromEntries(m.files().map(file => [file, m.source(file)!])), editor: () => editor as never,
+            currentPath: () => path, selection: () => selection, previewPage: () => path,
+            preview: () => ({ selectAfterUpdate(request) { queued = request; }, selectNode(request) { selection = { ...captured, ...request }; },
+              flushPendingUpdate() { if (queued) { selection = { ...captured, ...queued }; queued = undefined; } } }),
+            openFile: async () => true, announce() {}, error(error) { errors.push(error); }, images: () => [], prefix: () => "",
+            chooseImage: async () => undefined, links: () => [], pageLabel: file => file, panelHost, codeTitle, canvasComponent() {}, refreshBar() {},
+            variantFiles: { site: () => undefined, read: () => undefined },
+          });
+          tools.show(captured);
+          const accepted = tools.fillInstanceSlot({ pagePath: path, pageNode: [0], tag: "test-card", templatePath, stamp: edits.stamp(),
+            expectedPageSource: source, expectedTemplateSource: template, expectedSelection: captured, isCurrent: () => current }, "image");
+          const done = pending.then(() => {
+            if (!accepted || errors.length) throw new Error("The slot action failed to start cleanly.");
+            if (!disturbed && (m.steps().length !== 1 || !m.source(path)?.includes('/images/placeholder.svg') || !m.source(imagePath)?.includes('<svg')))
+              throw new Error("The control fill did not create the image and its file as one step.");
+          }).finally(() => { tools.destroy(); panelHost.remove(); codeTitle.remove(); });
+          return { done, m, invalidate() { disturbed = true; if (stale === "selection") selection = newer; else current = false; },
+            selectionHeld: () => selection === (stale === "selection" ? newer : captured), pendingSelection: () => queued };
+        }, run => run.invalidate(), run => {
+          if (run.m.source(path) !== source) throw new Error("A stale fill changed the page.");
+          if (run.m.source(imagePath) !== undefined) throw new Error("A stale fill created the placeholder file.");
+          if (run.m.steps().length) throw new Error("A stale fill recorded an Undo step.");
+          if (!run.selectionHeld() || run.pendingSelection()) throw new Error("A stale fill replaced or queued over the current selection.");
+        });
+      }, stale);
+      assert.ok(points >= 3, `${stale}: plan, creation and page-base awaits must all be exercised`);
     }
   } finally { await browser.close(); }
 });
