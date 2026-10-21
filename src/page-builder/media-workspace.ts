@@ -239,9 +239,10 @@ export async function unusedTrimmedCopy(ctx: MediaWorkspaceContext, input: {
   const members = familyPaths(from, paths);
   // Choosing the same picture (or one of its copies) again keeps the family the page goes on showing.
   if (members.some(member => records.files[member]?.alwaysKeep || member === input.chosen || familyPaths(input.chosen, paths).includes(member))) return [];
-  // Media files read for the scan (SVG is text too) are proved by their revision, taken before the read,
-  // as `prepare` does: the host may hold no source for an upload or a move.
-  const media = new Set(ctx.items.map(item => item.path).filter(path => paths.includes(path) && isMediaTextFile(path)));
+  // Media files (SVG is text too) and any upload or move (a subtitle, say) are proved by their revision,
+  // taken before the read, as `prepare` does: the host holds no source text for them.
+  const items = new Set(ctx.items.map(item => item.path));
+  const media = new Set(paths.filter(path => isMediaTextFile(path) && (items.has(path) || ctx.drafts.get(ctx.scope, path)?.opaque)));
   const versions = familyVersions(ctx, [...new Set([...members, ...media])]);
   const read = new Map<string, string>();
   const { text, complete } = await usageText(ctx, paths, { [input.page.path]: input.page.text }, (file, value) => { if (!media.has(file)) read.set(file, value); });
