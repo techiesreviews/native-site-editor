@@ -62,7 +62,6 @@ test("an agent places an undescribed file, then describes the file and fills the
     await image.click();
     const bar = page.getByRole("toolbar", { name: "Edit bar" });
     await expect(bar.getByRole("button", { name: "Not described yet", exact: true })).toBeVisible();
-    await expect(bar.getByRole("button", { name: "Decorative", exact: true })).toHaveAttribute("aria-pressed", "false");
     const words = "A studio desk, described after placement";
     expect((await call("describe_media", { file, text: words })).state).toBe("applied");
     await expect(image).toHaveAttribute("alt", words);
@@ -200,7 +199,7 @@ test("an agent sets Square and focus, then trims that place; Media shows the cop
     await expect(image).toHaveCSS("aspect-ratio", "1 / 1");
     await expect(image).toHaveCSS("object-position", "20% 70%");
     await image.click();
-    await expect(page.getByRole("toolbar", { name: "Edit bar" }).locator(".edit-bar__media")).toHaveText("MediaSquare");
+    await expect(page.getByRole("toolbar", { name: "Edit bar" }).locator(".edit-bar__media")).toHaveAttribute("title", /· Square$/);
     const square = await source();
     const trimmed = await call("frame_image", { path: indexPath, element, trim: { zoom: 2 } });
     expect(trimmed.state).toBe("applied"); expect(trimmed.result.path).toMatch(/agent-frame-crop\.(webp|png)$/);

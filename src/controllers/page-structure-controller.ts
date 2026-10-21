@@ -531,9 +531,10 @@ export function createPageStructureController(ports: PageStructurePorts) {
       const src = attribute("src");
       const alt = attribute("alt");
       // One Media button (slice 119; the Image button of media ticket 09) opens the image popup: picture,
-      // shape, focus and Replace; on an empty picture spot, the picker adds media.
+      // shape, focus and Replace; on an empty picture spot, the picker adds media. The place's shape
+      // shows only in its tooltip, so the bar stays short.
       const frame = node && ports.mediaPlaceFrame?.(path, node, source.slice(range.tag.start, range.tag.end));
-      controls.push({ kind: "button", label: "Media", leading: "image", badge: frame?.badge, expanded: Boolean(frame?.open), className: "edit-bar__media", names: true,
+      controls.push({ kind: "button", label: "Media", leading: "image", expanded: Boolean(frame?.open), className: "edit-bar__media", names: true,
         title: `Picture: shape, focus and Replace${frame?.badge ? ` · ${frame.badge}` : ""}`,
         onPress: () => { if (node) { if (ports.editImage) ports.editImage({ path, node }); else void ports.chooseMediaForImage({ path, node, width: selection.rect?.width }); } } });
       const description = ports.mediaPlaceState?.(path, src?.value ?? "", alt?.value);
@@ -549,10 +550,6 @@ export function createPageStructureController(ports: PageStructurePorts) {
         // A place's by-agent mark is the agent's text, so editing it clears the mark in this same Undo step.
         onClose: () => editor.closeActiveEditGroup(path),
       });
-      controls.push({ kind: "button", label: "Decorative", pressed: description?.state === "decorative",
-        disabled: description?.fileDecorative && description.state === "decorative",
-        title: description?.fileDecorative ? "This file is Decorative. Change it in the image library." : undefined,
-        onPress: () => { if (node) { editor.closeActiveEditGroup(path); void ports.changeMediaPlace?.(path, node, description?.state !== "decorative"); } } });
     }
     // Empty links need an accessible name. Buttons expose the native accessible
     // label field above, alongside their separate form submission name.
