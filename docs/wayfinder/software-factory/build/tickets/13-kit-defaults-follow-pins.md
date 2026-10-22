@@ -62,4 +62,4 @@ scripts/agents/kit.d/slice:30:  flags.model = flags.builder === "sol" ? "gpt-6.1
 
 Only the two `sol` alias expansions remain; no default or budget-family line names the full model.
 
-Code commit: `2f82047a Default kit builds and reviews to Claude Opus 5.5`.
+Code commit: `2a43dbe9 Default kit builds and reviews to Claude Opus 5.5`.
