@@ -76,3 +76,15 @@ The five reported failures were caused by the tests; no source file changed. The
 **Checks.** `kit unit --affected` ok 26/26; `kit specs --affected` ok 3/3 (37 tests); `npm run lint` and `npm run check` clean.
 
 - Lead split (2026-10-22): after three Claude fix rounds the `native-editor-toast` spec still went 4/5 under load (review P1) and the media-library ring check can still miss on a very slow machine (review P2, `FRESH_RING_MS` 2.4 s). Both move to [Two specs still sensitive under heavy load](16-toast-and-ring-specs-under-load.md); this slice lands the agent-usage, agent-local-recovery, lazy-panels and media-library tile fixes.
+
+### Follow-ups
+
+- Spec (P2): c4819693:docs/wayfinder/software-factory/build/tickets/14-load-sensitive-tests.md:4 — P2: The lead split says this slice lands the agent-usage, agent-local-reco
+- Spec (P2): c4819693:docs/wayfinder/software-factory/build/tickets/16-toast-and-ring-specs-under-load.md:14 — P2: Ticket 14's Done (line 72) found the cause of the toast fa
+- Spec (P2): c4819693:docs/wayfinder/software-factory/build/tickets/16-toast-and-ring-specs-under-load.md:15 — P2: The ticket points at `tests/native-save/native-media-libra
+- Spec (P3): 8ec15439:docs/wayfinder/software-factory/build/tickets/14-load-sensitive-tests.md:66 — P3: The Done section says the ring check now reports a slow machine "inst
+- Spec (P3): c4819693:docs/wayfinder/software-factory/build/tickets/14-load-sensitive-tests.md:74 — P3: The Commits line lists e9661903, d3bd5c47 and 9e518aee, and line 68 r
+- Spec (P3): c4819693:docs/wayfinder/software-factory/build/tickets/14-load-sensitive-tests.md:72 — P3: Line 72 says "the ticket stays open for a lead decision". The appende
+- Standards (P3): 8ec15439:tests/native-save/native-editor-toast.spec.ts:178 — P3: `page.clock.resume()` runs only on the success path, at the end of the test body. The Async wri
+- Validation gaps (gap): tests/native-save/native-lazy-panels.spec.ts:276-279: the `/after-timers` barrier assumes Playwright handles a route request from the page only after every earl
+
