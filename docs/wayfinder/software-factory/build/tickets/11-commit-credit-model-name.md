@@ -44,3 +44,8 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Lead finish (2026-10-22): after the free worker's correction round, the lead closed the last review gaps with asserts for `opus[1m]` and `gpt-4o-mini`.
 - Review follow-up (2026-10-22): a state saved before `buildModel` credits the model the state last recorded before this run (switched or not, tested both ways), so an old state resumed without a switch credits its own builder (an earlier rebuild under it is no longer misread as the pre-switch model); old states with several switches after the build remain a best guess. Tests add a date plus `[1m]` id, `buildModel` after a switch before the build finished, and the unswitched old-state resume. Mixed-case ids such as `GPT-6.1-SOL` and `Claude-Opus-5-5` keep their case-insensitive display names.
 - Second review follow-up (2026-10-22): that guess is now saved as `buildModel` when an old state with a finished build is loaded, so a further switch and resume keeps the original credit; tested with two Luna resumes after a Sol build.
+
+### Follow-ups
+
+- Validation gaps (gap): Mixed-case aliases are untested. `builderAuthor` lowercases the alias before title-casing it (`kit-lib.mjs:177-178`), but the alias loop in `tests/kit-commit.te
+
