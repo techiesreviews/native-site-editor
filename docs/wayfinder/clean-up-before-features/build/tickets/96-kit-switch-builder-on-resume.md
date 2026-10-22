@@ -39,3 +39,10 @@ Found on 2026-10-22 when GPT-6.1 Sol hit its usage limit mid-slice (slices 11 an
 ## Kit commands and evidence
 
 Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runner.md)). No `src/` files; may run beside any slice. Built by the free OpenCode worker through T3 `delegate_task` (one attempt plus one correction), reviewed by Claude (`ASE_REVIEW_MODEL=claude-opus-5-5 kit review --ticket <this ticket>`), landed by the lead with `kit pr --ticket <this ticket>`.
+
+## Done (2026-10-22)
+
+- `kit slice` resumes a saved slice with a different `--builder` or `--effort`: finished phases are kept, the old model is recorded in `state.previousModels`, one line reads `builder switched: <old> -> <new>`, and later fix rounds use the new model instead of the saved builder run. A different ticket or branch still refuses.
+- `kit fix --builder M` resumes only a saved builder session whose model is `M`, otherwise starts a fresh builder with `M`; without `--builder` discovery is unchanged.
+- Runner docs no longer ask for a `landed:` field and point to `kit status [map]` for ticket landings; the `kit slice` and `kit fix` lines describe the builder switch and model matching.
+- Tests: `scripts/agents/kit unit tests/kit-slice.test.ts tests/kit-fix.test.ts` 68/68, `scripts/agents/kit unit --affected` 68/68, `scripts/agents/kit unit tests/agent-scripts.test.ts tests/kit-status.test.ts` 27/27, `npm run check` and `kit doctor` 7/7.
