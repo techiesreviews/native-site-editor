@@ -1,7 +1,7 @@
 ---
 title: Decide the architecture review's behaviour questions
 type: grilling (HITL)
-status: open
+status: closed
 assignee: Lex + claude (grilling)
 blocked_by: [01-research-architecture-review]
 ---
@@ -32,3 +32,16 @@ For the candidates [Re-check the architecture review on today's code](01-researc
   - One real check of an agent's change, in the tab against what the preview shows; the Worker keeps shape checks only: yes.
   - Builders and models: Lex asked to verify the current models (round 4).
   - Lex asked to systematize how code work is done ("software factory"); asked in round 4.
+- 2026-10-22, round 4: builders confirmed (below); a separate "software factory" map is charted now, and the clean-up does not wait for it.
+
+## Resolution (2026-10-22)
+
+Settled with Lex over four rounds (detail in the comments above):
+
+1. **Build order:** #1 Workspace session, #2 Native site runtime, #3 Shared site rules, #4 agent operation table with N1 (one real check of an agent change, in the tab), #6 empty optional parts, #8 leftovers; further slices bring `src/main.ts` to about 500 lines, guarded by a ceiling check that drops after each slice. #5 and #7 parked.
+2. **Work never stops when you switch** site, branch or page: it finishes where it started, nothing lands elsewhere, and a notification icon on that project and branch opens its changes.
+3. **Agents see exactly the preview**, unsaved typing included, are told where Lex is working, and a change to that exact part waits until he clicks away. Real multiplayer is its own feature after the clean-up.
+4. **Strict new page addresses** (lowercase, digits, dashes, at most 80); existing addresses stay. Section names stay as they are.
+5. **Empty optional parts** behave exactly as the site's own code does in the version opened.
+6. **One account rule** in the Workspace session: GitHub logins ignore capitals; a local-folder project is a separate workspace kind.
+7. **Builders:** Claude Opus 5.5 for large, delicate slices (#1, #2, #4/N1); GPT-6.1 Sol for medium slices and every code review (`kit review`); OpenCode free models for tiny, fully specified fixes only once T3 lists a verified zero-cost model (none listed on 2026-10-22), otherwise Sol. GPT-6 Luna untested, not used.

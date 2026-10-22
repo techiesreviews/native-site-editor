@@ -1,7 +1,7 @@
 ---
 title: Decide the tech-debt and small-fix behaviour questions
 type: grilling (HITL)
-status: open
+status: closed
 assignee: Lex + claude (grilling)
 blocked_by: [02-research-debt-and-follow-ups]
 ---
@@ -20,3 +20,7 @@ For the items [Re-check the tech-debt notes and small follow-ups on today's code
   - "Nothing to undo/redo" for the keyboard shortcut: no (greyed buttons are enough); TD 11 becomes wontfix.
   - Media: search waits for a pause in typing, and a refresh redraws only changed tiles: both.
   - **New defect from Lex:** editing an image with the edit bar (for example zooming in and moving it to the side) redraws the image and it flickers. Goes into the plan as a diagnose-and-fix slice.
+
+## Resolution (2026-10-22)
+
+Lex: fix everything still real. In the plan: rarely used code loads when Media or the Pages and files manager opens (byte budget kept at 355 KB); GitHub not answering on reopen retries automatically 3 times, then says so in the existing toast; Page Structure typing flicker fixed; Media search waits for a typing pause and refresh redraws only changed tiles; `discardFile()` stops asking when it can do nothing; **new:** the Image edit bar's redraw and flicker while zooming or moving. Kept as is: remembering the last site until sign-out (local folders will open the project overview instead). Closed: TD 04 and the kit-wait, kit-preview and code-folding flakes (not reproducible), `kit specs` for `server.ts` (fixed). TD 11 (silent Undo/Redo shortcut) is wontfix.
