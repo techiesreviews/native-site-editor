@@ -2,6 +2,8 @@
 
 Automated checks for mistakes made during Phase 5 (retro, 2026-10-08). Each one is mechanical and gives the same result on every run.
 
+- **`main.ts` line ceiling** (`tests/main-ts-ceiling.test.ts`, part of `npm test`): fails above `CEILING`; at 50 or more lines below it, asks to lower the ceiling to the count rounded up to a multiple of 10.
+
 ## Hooks
 
 Claude Code loads `.claude/settings.json`; Codex loads `.codex/hooks.json`. Both call
