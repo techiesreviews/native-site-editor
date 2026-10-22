@@ -388,7 +388,62 @@ test("an agent's change to the template typed in ends the edit; the template sta
   } finally { await agent.client.close(); }
 });
 
-test("an agent's new page while a template part is typed ends the edit (its step reopens the file open), but the template stays open and the mode on", async ({ page, baseURL }) => {
+/** The field kept through a change elsewhere: focused, connected, its text and caret as they were, nothing ended. */
+async function keepsTyping(page: Page, field: ReturnType<typeof tree>, typed: string) {
+  await expect(field).toBeFocused();
+  await expect(field).toHaveValue(typed);
+  expect(await field.evaluate((field: HTMLTextAreaElement) => [field.selectionStart, field.selectionEnd, field.isConnected])).toEqual([3, 3, true]);
+  await expect(page.getByRole("status").filter({ hasText: "ended:" })).toHaveCount(0);
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", FOOTER);
+}
+
+test("an agent's edit to another file (a stylesheet) while a template part is typed keeps the field, its text and caret, and the template open", async ({ page, baseURL }) => {
+  const agent = await connectAgent(page, baseURL);
+  try {
+    const { field, typed } = await typeInFooterTemplate(page, agent);
+    await field.evaluate((field: HTMLTextAreaElement) => field.setSelectionRange(3, 3));
+    await agent.edit("styles/site.css", "  --ink: #20231f;", "  --ink: #20231f;\n  --agent: #123456;");
+    await expect.poll(async () => (await agent.read("styles/site.css")).content).toContain("--agent: #123456;");
+    await keepsTyping(page, field, typed);
+  } finally { await agent.client.close(); }
+});
+
+test("another tab's change to the page while a template part is typed keeps the field, its text and caret", async ({ page, baseURL, context }) => {
+  const agent = await connectAgent(page, baseURL);
+  try {
+    const { field, typed } = await typeInFooterTemplate(page, agent);
+    await field.evaluate((field: HTMLTextAreaElement) => field.setSelectionRange(3, 3));
+    // Another tab of the site changes index.html in its code pane: not this tab's agent write.
+    const other = await context.newPage();
+    await other.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+    await editorMounted(other);
+    await other.evaluate(async () => {
+      const editor = await import("/src/components/code-editor.ts");
+      const text = editor.getMountedSource("index.html")!, from = '<main class="page" data-key="main">', start = text.indexOf(from);
+      editor.replaceActiveRange({ path: "index.html", start, end: start + from.length, text: `<aside data-key="tab-note"><p>Tab note</p></aside>\n${from}`, expected: from });
+    });
+    // This tab's drafts have it (the agent reads through this tab); its typing goes on.
+    await expect.poll(async () => (await agent.read("index.html")).content).toContain("Tab note");
+    await other.close();
+    await keepsTyping(page, field, typed);
+  } finally { await agent.client.close(); }
+});
+
+test("Done with a part of the template marked marks its instance", async ({ page }) => {
+  const footer = tree(page).getByRole("treeitem", { name: /^Site footer/ });
+  await footer.hover();
+  await footer.getByRole("button", { name: "Edit component", exact: true }).click();
+  const note = tree(page).locator(`[role=treeitem][data-node="@${FOOTER}:0.0"]`);
+  await note.locator(".page-structure__text").click();
+  await expect(note).toHaveAttribute("aria-selected", "true");
+  await page.locator(".canvas-bar").getByRole("button", { name: "Done editing component", exact: true }).click();
+  await expect(note).toHaveCount(0);
+  await expect(footer).toHaveAttribute("aria-selected", "true");
+});
+
+// Known gap, not the decided behaviour (raised to the lead): a step that creates a file reopens the
+// file open (src/guarded-edit/commit.ts), so the edit ends. This records today's outcome until decided.
+test("known gap: an agent's new page while a template part is typed ends the edit (its step reopens the file open), but the template stays open and the mode on", async ({ page, baseURL }) => {
   const agent = await connectAgent(page, baseURL);
   try {
     const { note, field } = await typeInFooterTemplate(page, agent);
