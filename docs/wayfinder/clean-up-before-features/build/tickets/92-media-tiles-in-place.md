@@ -2,7 +2,7 @@
 title: "Media refresh redraws only changed tiles"
 type: task (AFK)
 status: open
-assignee:
+assignee: lead-92 (this session)
 builder: sol
 blocked_by: [91-media-search-pause]
 ---
