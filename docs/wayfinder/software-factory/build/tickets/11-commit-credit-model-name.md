@@ -1,7 +1,7 @@
 ---
 title: Commit credit names the model, also after a builder switch
 type: task (AFK)
-status: open
+status: closed
 assignee: lead-sf11 (free worker build)
 builder: opencode/deepseek-v4.1-flash-free
 blocked_by: []
@@ -40,4 +40,4 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 
 - `builderAuthor` now names the model instead of echoing its id: `claude-opus-5-5` → `Claude Opus 5.5`, Claude families with an optional date or `[1m]` suffix → `Claude <Family> <major>.<minor>`, bare `opus`/`sonnet`/`haiku`/`fable` → `Claude <Alias>`, and `gpt-*` → upper-case `GPT-…`; every other id keeps its current name and vendor.
 - A slice now saves the model that ran its build phase and credits the build commit with that model, so a switch before the commit no longer credits the incoming builder; fix rounds keep crediting their own round's model.
-- `tests/kit-commit.test.ts` covers each mapping and that a build under `gpt-6.1-sol` resumed with `gpt-6-luna` keeps the Sol build credit while the next fix round is credited to Luna; the suite passed via `kit unit` (66/66 focused, 125/125 affected) and `npm run check`.
+- `tests/kit-commit.test.ts` covers each mapping, including a date-only id such as `claude-opus-4-20250514` that keeps its raw id rather than reading the date as a minor version; `tests/kit-slice.test.ts` proves a build under `gpt-6.1-sol` resumed with `gpt-6-luna` keeps the Sol build credit while the next fix round is credited to Luna, and that a state saved before this change (no `buildModel`) credits its resumed builder. The suite passed via `kit unit` (67/67 focused, 126/126 affected) and `npm run check`.
