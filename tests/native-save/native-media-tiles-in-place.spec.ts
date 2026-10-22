@@ -149,6 +149,11 @@ async function mountHarness(page: import("@playwright/test").Page, baseURL: stri
       blob: async (path: string) => { blobs.push(path); return new Blob([files.get(path) ?? ""], { type: "image/svg+xml" }); },
       metadata: async () => {}, collections: async () => {}, rename: async () => {}, remove: async () => {}, openPage: async () => {},
       import: async () => [],
+      // File details' Save: a new name moves the file.
+      details: async (path: string, _changes: unknown, name?: string) => {
+        if (!name) return;
+        files.set(path.replace(/[^/]+$/, name), files.get(path)!); files.delete(path);
+      },
     } satisfies MediaPickerHost;
     const host = document.createElement("div");
     host.style.cssText = "position:fixed;inset:20px;background:var(--surface);z-index:1000";
@@ -194,3 +199,25 @@ test("a picker refresh keeps a held file's tile first, with focus on its Cancel"
   await expect(cancel).toBeFocused();
   await media.dispose();
 });
+
+test("a rename, which clears the picture cache, reloads a kept tile whose bytes changed", async ({ page, baseURL }) => {
+  const media = await mountHarness(page, baseURL, false);
+  await media.set("media/z.svg", "red"); await media.refresh();
+  const tile = page.locator('.media-library__card[data-path="media/x.svg"]');
+  await expect(page.locator(".media-library__card img[src]")).toHaveCount(2);
+  const firstSrc = await tile.locator("img").getAttribute("src");
+  // New bytes under the same name, with no version to tell them apart: only the cache clear shows them.
+  await media.set("media/x.svg", "blue");
+  await page.getByRole("button", { name: "Details for media/z.svg", exact: true }).click();
+  await page.getByLabel("File name", { exact: true }).fill("w.svg");
+  await page.getByRole("button", { name: "Save details", exact: true }).click();
+  await expect(page.locator('.media-library__card[data-path="media/w.svg"]')).toHaveCount(1);
+  // File details reopen on the renamed file; the tiles load their pictures once in view.
+  await expect(page.getByLabel("File name", { exact: true })).toHaveValue("w.svg");
+  await page.getByRole("button", { name: "Back", exact: true }).click();
+  await expect(tile.locator("img[src]")).toHaveCount(1);
+  await expect.poll(() => tile.locator("img").getAttribute("src")).not.toBe(firstSrc);
+  expect((await media.blobs()).filter(path => path === "media/x.svg")).toHaveLength(2);
+  await media.dispose();
+});
+
