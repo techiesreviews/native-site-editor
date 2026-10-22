@@ -11,6 +11,7 @@ import type { AgentReadPorts } from "../agent-tools-read";
 import type { SharedContext } from "../agent-site";
 import type { PinRequest } from "./agent-pins";
 import { agentHistoryKey } from "../controllers/agent-controller";
+import { resumeAgents } from "../agent-resume";
 import { mountFlyout } from "./flyout";
 import "./agent-menu.css";
 
@@ -802,18 +803,18 @@ export function createAgentMenu(options: {
     } catch (error) { if (live(at)) showError(error); }
     finally { reading = false; }
   }
-  /** Remote agents remembered on for the open site come back on (a reload, a new tab), using the
-   * connections the agents already have: no new prompt or token. */
+  /** Remote agents remembered on for the open site come back on (src/agent-resume.ts). */
   async function resume() {
     const repo = options.repository();
     if (remote || disposed || changing || !repo || !agentsOn(site(repo))) return;
-    startRemote();
-    const at = activation, read = lastRead;
-    await readConnections();
-    if (!live(at) || ownerPaused) return;
-    // Disconnected, signed out or past 8 hours: nothing to come back to. An unanswered read keeps them on.
-    if (lastRead !== read && !liveGrants().length) { turnOff(true); return; }
-    await activateSocket();
+    await resumeAgents({
+      start: () => { startRemote(); return activation; },
+      live: at => live(at) && !ownerPaused,
+      read: async () => { const read = lastRead; await readConnections(); return lastRead !== read; },
+      granted: () => liveGrants().length > 0,
+      forget: () => turnOff(true),
+      open: activateSocket,
+    });
   }
   function wake() {
     if (!workspaceChanged && document.visibilityState === "visible" && state() === "waiting" && Date.now() - lastRead >= 2000)

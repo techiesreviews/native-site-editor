@@ -180,7 +180,7 @@ test("matching legacy content never enables a fallback for any MCP tool family",
       assert.equal(Boolean(result.isError), !quiet, name);
       if (name === "wait_for_requests") assert.deepEqual(payload(result).requests, []);
       assert.match(JSON.stringify(name === "get_site" ? payload(result).note : name === "wait_for_requests" ? payload(result).hint : payload(result)),
-        name === "wait_for_requests" ? /The editor isn't open/ : /The editor isn't open/);
+        /The editor isn't open/);
       assert.equal(h.counters.byCategory.auth.calls, 3);
       assert.equal(h.counters.byCategory.control.calls, 1);
       assert.equal(h.counters.byCategory.data.calls, 0);
