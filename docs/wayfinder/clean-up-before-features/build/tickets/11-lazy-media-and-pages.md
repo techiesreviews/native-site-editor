@@ -2,7 +2,7 @@
 title: "Rarely used code loads when Media or the Pages & files manager opens"
 type: task (AFK)
 status: open
-assignee:
+assignee: claude runner (lead: this session)
 builder: sol
 blocked_by: [10-main-ts-ceiling]
 ---
