@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import type { LibraryGridHost, LibraryGridShell, LibraryGridState, LibraryTile } from "../../src/page-builder/media-library-grid";
-import type { MediaLibrary, MediaLibraryItem, MediaOnlineVideo } from "../../src/page-builder/media-picker";
+import type { MediaLibrary, MediaLibraryItem, MediaOnlineVideo, MediaPickerHost } from "../../src/page-builder/media-picker";
+import type { MediaUsageRecords } from "../../src/page-builder/media-usage";
 
 // Default fixture group. Ticket 92: a redraw keeps each tile whose look is unchanged, rebuilds changed
 // ones, removes gone ones and orders them as the list; the grid module is driven directly with a small fake shell.
@@ -21,9 +22,9 @@ test("a media refresh rebuilds only changed tiles, follows the new order and wat
     dialog.append(grid); document.body.append(dialog);
     const shell = { search: el("input"), summary: el("p"), grid, browse: el("section"), dialog, bulk: el("div"), bulkCount: el("button"), takeOut: el("button"), removeFiles: el("button") } satisfies LibraryGridShell;
     const blob = new Blob(['<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"/>'], { type: "image/svg+xml" }), url = URL.createObjectURL(blob);
-    let stamp = "0";
+    let stamp = "0", records: MediaUsageRecords | undefined;
     const host = {
-      alive: () => true, details() {}, records: () => undefined, usage() {}, recover() {}, sync() {}, restoreFocus: true, choose() {}, online() {},
+      alive: () => true, details() {}, records: () => records, usage() {}, recover() {}, sync() {}, restoreFocus: true, choose() {}, online() {},
       bytes: async () => ({ url, blob, width: 4, height: 4 }), objectUrl: () => url, stamp: () => stamp,
     } satisfies LibraryGridHost;
     const selected = new Set<string>(), observers = new Set<IntersectionObserver>(), tiles = new Map<string, LibraryTile>();
@@ -58,6 +59,12 @@ test("a media refresh rebuilds only changed tiles, follows the new order and wat
     const selection = { kept: kept(fourth), checked: cards().map(card => card.querySelector<HTMLInputElement>("input[type=checkbox]")!.checked) };
     stamp = "1"; draw(["d", "e", "b", "a"], { c: "2" });
     const stamped = kept(fourth).every(same => !same);
+    // Newer usage repaints the badge on the same tile.
+    const fifth = cards(), badge = () => card("b").querySelector<HTMLElement>(".media-library__usage")!;
+    const unchecked = [badge().getAttribute("aria-label"), badge().dataset.usage];
+    records = { reach: "text", pending: [], unreadable: [], families: [{ main: "media/b.svg", members: ["media/b.svg"], checked: true, pages: ["index.html"], otherUses: [] }] };
+    draw(["d", "e", "b", "a"], { c: "2" });
+    const usage = { kept: kept(fifth), before: unchecked, after: [badge().getAttribute("aria-label"), badge().dataset.usage] };
     selected.clear();
     // A moved tile keeps focus on its thumbnail or its round.
     draw(["a", "b", "c", "d"]);
@@ -100,13 +107,14 @@ test("a media refresh rebuilds only changed tiles, follows the new order and wat
     drawLibrary([], [video(["index.html"])]);
     const onlineTiles = { kept: onlineKept, rebuilt: grid.querySelector(".is-online") !== onlineCard && grid.querySelectorAll(".is-online").length === 1 };
     window.IntersectionObserver = Native; dialog.remove();
-    return { oneChanged, reordered, swapped, selection, stamped, focus, choice, list, empty, back, size, onlineTiles };
+    return { oneChanged, reordered, swapped, selection, stamped, usage, focus, choice, list, empty, back, size, onlineTiles };
   });
   expect(result.oneChanged).toEqual({ kept: [true, true, false, true], watched: 1, observers: 4 });
   expect(result.reordered).toEqual({ paths: ["d", "c", "b", "a"], kept: [true, true, true, true], watched: 0 });
   expect(result.swapped).toEqual({ paths: ["d", "e", "b", "a"], kept: [true, false, true, true], watched: 1, observers: 4, pendingFirst: true });
   expect(result.selection).toEqual({ kept: [true, true, true, true], checked: [false, false, true, false] });
   expect(result.stamped).toBe(true);
+  expect(result.usage).toEqual({ kept: [true, true, true, true], before: ["Not checked yet", "not-checked"], after: ["Used on 1 page", "used-on-pages"] });
   expect(result.focus).toEqual({ thumb: true, round: true, paths: ["c", "b", "d", "a"] });
   expect(result.choice).toEqual({ kept: [true, true], pressed: ["false", "true"], chosen: [false, true] });
   expect(result.list).toEqual({ kept: [false, false], listClass: true, sizes: 2 });
@@ -114,4 +122,75 @@ test("a media refresh rebuilds only changed tiles, follows the new order and wat
   expect(result.back).toEqual({ cards: 2, empties: 0, children: 2, tiles: 2 });
   expect(result.size).toEqual({ loaded: true, kept: true, after: true });
   expect(result.onlineTiles).toEqual({ kept: true, rebuilt: true });
+});
+
+type TilesHarness = { refresh(): Promise<void>; files: Map<string, string>; blobs: string[]; dispose(): void };
+const harness = (page: import("@playwright/test").Page) => ({
+  refresh: () => page.evaluate(() => (window as typeof window & { tilesHarness: TilesHarness }).tilesHarness.refresh()),
+  set: (path: string, colour: string | undefined) => page.evaluate(([path, colour]) => {
+    const { files } = (window as typeof window & { tilesHarness: TilesHarness }).tilesHarness;
+    if (colour) files.set(path!, `<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8" fill="${colour}"/></svg>`);
+    else files.delete(path!);
+  }, [path, colour]),
+  blobs: () => page.evaluate(() => (window as typeof window & { tilesHarness: TilesHarness }).tilesHarness.blobs),
+  dispose: () => page.evaluate(() => (window as typeof window & { tilesHarness: TilesHarness }).tilesHarness.dispose()),
+});
+/** A Media view (or the picker, `modal`) over files the test changes; no versions, as the repository adapter. */
+async function mountHarness(page: import("@playwright/test").Page, baseURL: string | undefined, modal: boolean) {
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html", { timeout: 30_000 });
+  await page.evaluate(async modal => {
+    const viewPath = "/src/page-builder/media-library-view.ts";
+    const { createMediaLibraryView } = await import(/* @vite-ignore */ viewPath) as typeof import("../../src/page-builder/media-library-view");
+    const files = new Map<string, string>([["media/x.svg", '<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8" fill="red"/></svg>']]);
+    const blobs: string[] = [];
+    const adapter = {
+      load: async () => ({ key: "tiles", collections: [], metadata: {}, usage: {}, items: [...files.keys()].map(path => ({ path })) }),
+      blob: async (path: string) => { blobs.push(path); return new Blob([files.get(path) ?? ""], { type: "image/svg+xml" }); },
+      metadata: async () => {}, collections: async () => {}, rename: async () => {}, remove: async () => {}, openPage: async () => {},
+      import: async () => [],
+    } satisfies MediaPickerHost;
+    const host = document.createElement("div");
+    host.style.cssText = "position:fixed;inset:20px;background:var(--surface);z-index:1000";
+    document.body.append(host);
+    const dialog = modal ? document.createElement("dialog") : undefined;
+    dialog?.classList.add("media-library", "media-library--picker");
+    const view = createMediaLibraryView(modal ? document.body : host, adapter, {}, dialog);
+    await view.ready;
+    Object.assign(window, { tilesHarness: { refresh: () => view.refresh(), files, blobs, dispose: () => { view.dispose(); host.remove(); } } satisfies TilesHarness });
+  }, modal);
+  return harness(page);
+}
+
+test("a removed file's name taken again shows its new picture", async ({ page, baseURL }) => {
+  const media = await mountHarness(page, baseURL, false);
+  const tile = page.locator('.media-library__card[data-path="media/x.svg"]');
+  await expect(tile.locator("img[src]")).toHaveCount(1);
+  const firstSrc = await tile.locator("img").getAttribute("src");
+  await page.evaluate(() => { (window as typeof window & { firstTile?: Element | null }).firstTile = document.querySelector('.media-library__card[data-path="media/x.svg"]'); });
+  await media.set("media/x.svg", undefined); await media.refresh();
+  await expect(tile).toHaveCount(0);
+  // Another file under the same name, with no version to tell them apart.
+  await media.set("media/x.svg", "blue"); await media.refresh();
+  await expect(tile.locator("img[src]")).toHaveCount(1);
+  expect(await page.evaluate(() => (window as typeof window & { firstTile?: Element | null }).firstTile === document.querySelector('.media-library__card[data-path="media/x.svg"]'))).toBe(false);
+  expect(await tile.locator("img").getAttribute("src")).not.toBe(firstSrc);
+  expect((await media.blobs()).filter(path => path === "media/x.svg")).toHaveLength(2);
+  await media.dispose();
+});
+
+test("a picker refresh keeps a held file's tile first, with focus on its Cancel", async ({ page, baseURL }) => {
+  const media = await mountHarness(page, baseURL, true);
+  const picker = page.locator("dialog.media-library--picker");
+  await expect(picker.locator(".media-library__card")).toHaveCount(1);
+  await picker.locator('input[name="media-upload"]').setInputFiles({ name: "held.svg", mimeType: "image/svg+xml", buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12"/>') });
+  const held = picker.locator(".media-library__pending").first();
+  await expect(held).toHaveAttribute("data-state", "ready", { timeout: 30_000 });
+  const cancel = held.locator(".media-library__pending-cancel");
+  await cancel.focus();
+  await media.set("media/y.svg", "green"); await media.refresh();
+  await expect(picker.locator(".media-library__card")).toHaveCount(2);
+  expect(await picker.locator(".media-library__grid").evaluate(grid => grid.firstElementChild?.classList.contains("media-library__pending"))).toBe(true);
+  await expect(cancel).toBeFocused();
+  await media.dispose();
 });

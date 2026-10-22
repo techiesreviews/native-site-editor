@@ -163,7 +163,13 @@ export function createMediaLibraryView(
     const age = performance.now() - fresh.at;
     // Kept tiles outlive the ring; one moved later would play it again.
     if (age > FRESH_RING_MS) { fresh = undefined; cards.forEach(card => card.classList.remove("is-new")); return; }
-    for (const card of cards) { card.classList.add("is-new"); card.style.setProperty("--new-delay", `-${Math.round(age)}ms`); }
+    for (const card of cards) {
+      card.classList.add("is-new");
+      // A ring still playing on a kept tile keeps its place; a new or moved tile's ring starts at its age.
+      const ring = card.getAnimations({ subtree: true }).find(animation => animation instanceof CSSAnimation && animation.animationName === "media-new");
+      const played = typeof ring?.currentTime === "number" ? ring.currentTime : 0;
+      card.style.setProperty("--new-delay", `${Math.round(played - age)}ms`);
+    }
   }
   const adding = createMediaAdding(grid, shell.adding, {
     hold: Boolean(modal),
