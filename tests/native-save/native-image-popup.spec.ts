@@ -803,6 +803,38 @@ test("a page drawn again while the next trim decodes keeps the trim shown until 
   await expect(hero).toHaveAttribute("src", pending);
 });
 
+test("assets arriving while the next trim decodes keep the trim shown until that one is ready", async ({ page, baseURL }) => {
+  const hero = await openStepsPicture(page, baseURL);
+  const own = await hero.getAttribute("src");
+  const decodes = await holdDecodes(hero);
+  await popup(page).getByRole("slider", { name: "Zoom" }).focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(zoomOutput(page)).toHaveText("105 %");
+  await expect.poll(async () => (await decodes.srcs()).length).toBeGreaterThan(0);
+  const first = await decodes.srcs();
+  await decodes.release(first.length - 1);
+  const shown = first[first.length - 1];
+  await expect(hero).toHaveAttribute("src", shown);
+  await page.keyboard.press("ArrowRight");
+  await expect(zoomOutput(page)).toHaveText("110 %");
+  await expect.poll(async () => (await decodes.srcs()).length).toBeGreaterThan(first.length);
+  const pending = (await decodes.srcs()).at(-1)!;
+  // An asset arrives (as the host sends one read late) while that trim is held.
+  const frames = await hero.evaluate(el => new Promise<(string | null)[]>(done => {
+    const seen: (string | null)[] = [];
+    const sample = () => { seen.push(el.getAttribute("src")); if (seen.length < 6) requestAnimationFrame(sample); else done(seen); };
+    const update = (window as Window & Ticket93Update).ticket93Update as { source: string };
+    const assets = { source: update.source, type: "assets", assetChanges: { set: { "images/ticket-93-late.png": "data:image/png;base64,AAAA" } } };
+    window.dispatchEvent(new MessageEvent("message", { data: assets, source: parent }));
+    requestAnimationFrame(sample);
+  }));
+  expect(frames).not.toContain(own);
+  expect(frames).toEqual(Array(6).fill(shown));
+  const all = await decodes.srcs();
+  for (let index = first.length; index < all.length; index++) await decodes.release(index);
+  await expect(hero).toHaveAttribute("src", pending);
+});
+
 test("zooming in the large editor never shows the page's own picture between steps", async ({ page, baseURL }) => {
   const hero = await openStepsPicture(page, baseURL);
   const own = await probeSources(hero);
@@ -884,12 +916,16 @@ test("a see-through picture's previews keep the checkerboard on every zoom step,
     await expect(largeSpot).toHaveAttribute("data-transparent", "");
   }
   expect(await removed()).toEqual([]);
+  // A preview whose picture fails to load drops the mark, which described the picture before.
+  await largeSpot.evaluate(image => { (image as HTMLImageElement).src = "data:image/png;base64,AAAA"; });
+  await expect(largeSpot).not.toHaveAttribute("data-transparent");
 });
 
-test("a trim that decodes late never replaces a newer one, nor the picture once the popup has closed", async ({ page, baseURL }) => {
+// Each row of the settle matrix for a trim that has lost: released late, or failing late, it writes nothing.
+for (const [late, settle] of [["decodes", "release"], ["fails to decode", "reject"]] as const) test(`a trim that ${late} late never replaces a newer one, nor the picture once the popup has closed`, async ({ page, baseURL }) => {
   const hero = await openStepsPicture(page, baseURL);
   const own = await hero.getAttribute("src");
-  const { srcs: held, release } = await holdDecodes(hero);
+  const decodes = await holdDecodes(hero), { srcs: held, release } = decodes, lose = decodes[settle];
   const settled = () => settledSrc(hero);
   const zoom = popup(page).getByRole("slider", { name: "Zoom" });
   await zoom.focus();
@@ -902,12 +938,12 @@ test("a trim that decodes late never replaces a newer one, nor the picture once 
   await expect.poll(async () => (await held()).length).toBeGreaterThan(one);
   // Nothing shows until a trim has decoded: the page keeps its own picture.
   expect(await settled()).toBe(own);
-  // The newest trim decodes first and shows; the older ones, released after, are dropped.
+  // The newest trim decodes first and shows; the older ones, settled after, are dropped.
   const trims = await held();
   const newest = trims[trims.length - 1];
   await release(trims.length - 1);
   await expect(hero).toHaveAttribute("src", newest);
-  for (let index = 0; index < trims.length - 1; index++) await release(index);
+  for (let index = 0; index < trims.length - 1; index++) await lose(index);
   expect(await settled()).toBe(newest);
   // A step still decoding when the popup closes never reaches the page afterwards.
   await page.keyboard.press("ArrowRight");
@@ -917,7 +953,7 @@ test("a trim that decodes late never replaces a newer one, nor the picture once 
   expect(await settled()).toBe(newest);
   await popup(page).getByRole("button", { name: "Close", exact: true }).click();
   await expect(page.locator("#status")).toContainText("Picture trimmed", { timeout: 30_000 });
-  for (let index = trims.length; index < trims.length + pending.length; index++) await release(index);
+  for (let index = trims.length; index < trims.length + pending.length; index++) await lose(index);
   expect(pending).not.toContain(await settled());
 });
 

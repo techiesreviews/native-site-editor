@@ -3881,11 +3881,13 @@ import { domView } from "../page-builder/rules/tree.ts";
     };
     if (!el || wanted.src === undefined || el.getAttribute("src") === wanted.src || (record.shown && record.shown.src === wanted.src)) { show(); return; }
     // Until then the picture already shown stays (put back at once after a render).
-    if (record.shown) writeLook(record, record.shown);
+    if (record.shown) { writeLook(record, record.shown); scheduleBoxes(); }
     // The picture shown keeps its place until the new one can be drawn (the
     // page's <img> then decodes it again, from memory). Each decode settles as:
     // resolved, it shows unless a later look showed first or the look was
-    // dropped (Close); rejected, the same, showing what the browser makes of
+    // dropped (Close); an older look whose decode ends before any newer one
+    // shows is shown on purpose, so a drag keeps moving instead of waiting
+    // for the drag to stop; rejected, the same, showing what the browser makes of
     // that picture as the page would; never settling, a later look or Close
     // takes the place, so nothing waits on it.
     var next = new Image();
