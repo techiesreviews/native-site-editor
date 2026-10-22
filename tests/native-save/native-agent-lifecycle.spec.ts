@@ -182,6 +182,21 @@ test("a remembered site stays on when its connections check goes unanswered, and
   } finally { await h.client.close(); }
 });
 
+test("a permission past its 8 hours while the sign-in lasts: the list leaves it out, so a reload forgets the site and opens no socket", async ({ page, baseURL }) => {
+  const h = await connect(page, baseURL);
+  try {
+    // What GET /api/agent/connections answers once createdAt + 8 hours has passed (tests/mcp-oauth.test.ts proves the filter).
+    await page.route("**/api/agent/connections", route => route.fulfill({ status: 200, contentType: "application/json",
+      body: JSON.stringify({ grants: [], controls: { watch: true } }) }));
+    await page.reload();
+    await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
+    await expect.poll(() => remembered(page, "main")).toEqual([null]);
+    await page.locator(".repository-menu__trigger").click();
+    await expect(page.locator(".agent-menu")).toHaveAttribute("data-state", "off");
+    expect(h.traffic.ready(), "no socket for an ended permission").toHaveLength(1);
+  } finally { await h.client.close(); }
+});
+
 test("an ended sign-in forgets the remembered site: after a reload agents are off with no socket", async ({ page, baseURL }) => {
   const h = await connect(page, baseURL);
   try {

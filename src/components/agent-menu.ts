@@ -11,7 +11,7 @@ import type { AgentReadPorts } from "../agent-tools-read";
 import type { SharedContext } from "../agent-site";
 import type { PinRequest } from "./agent-pins";
 import { agentHistoryKey } from "../controllers/agent-controller";
-import { resumeAgents } from "../agent-resume";
+import { resumeAgents, serialReads } from "../agent-resume";
 import { mountFlyout } from "./flyout";
 import "./agent-menu.css";
 
@@ -90,7 +90,6 @@ export function createAgentMenu(options: {
   let token: string | undefined,
     tokenId: string | undefined;
   let disposed = false,
-    reading = false,
     changing = false,
     remote = false,
     // Each Connect and Turn off starts a new activation; work begun in an older one writes nothing.
@@ -788,30 +787,24 @@ export function createAgentMenu(options: {
     }
   }
 
-  /** Explicit metadata refresh; never loads or uploads site content. */
-  /** True when this read answered and set the connections for the current activation. A read
-   * already in flight skips this one, unless `wait`: then this one waits for it and reads for itself. */
-  let inFlight: Promise<boolean> | undefined;
-  async function readConnections(wait = false): Promise<boolean> {
-    if (wait) while (inFlight) await inFlight;
-    if (disposed || !remote || reading || workspaceChanged) return false;
-    reading = true;
+  // One connections read at a time (src/agent-resume.ts).
+  const reads = serialReads(async () => {
+    if (disposed || !remote || workspaceChanged) return false;
     const at = activation;
-    const read = (async () => {
-      try {
-        const next: HubState = await api("connections", undefined, at);
-        if (!live(at)) return false;
-        hub = next;
-        watchAllowed = next.controls?.watch !== false;
-        lastRead = Date.now();
-        paint();
-        return true;
-      } catch (error) { if (live(at)) showError(error); return false; }
-      finally { reading = false; inFlight = undefined; }
-    })();
-    inFlight = read;
-    return read;
-  }
+    try {
+      const next: HubState = await api("connections", undefined, at);
+      if (!live(at)) return false;
+      hub = next;
+      watchAllowed = next.controls?.watch !== false;
+      lastRead = Date.now();
+      paint();
+      return true;
+    } catch (error) { if (live(at)) showError(error); return false; }
+  });
+  /** Explicit metadata refresh; never loads or uploads site content. True when this read answered
+   * and set the connections for the current activation. A read already in flight skips this one,
+   * unless `wait`: then this one waits for it and reads for itself (src/agent-resume.ts). */
+  function readConnections(wait = false) { return reads.run(wait); }
   /** Remote agents remembered on for the open site come back on (src/agent-resume.ts). */
   async function resume() {
     const repo = options.repository();

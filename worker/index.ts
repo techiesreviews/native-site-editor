@@ -365,6 +365,8 @@ export class SessionStore extends DurableObject {
     if (!work) return;
     // No browser or namespace fetch may run while the concurrency gate is held.
     const removed = work.legacy.length ? await removeCleanedGrants(this.env as Env, work.workspace, work.legacy) : [];
+    // Per session hub, not per workspace: no writer stores these fields now, so clearing them for
+    // the session's other workspaces loses nothing.
     const cleared = await clearTemporaryData(this.env as Env, work.sessions);
     await this.ctx.blockConcurrencyWhile(async () => {
       for (const entry of removed)

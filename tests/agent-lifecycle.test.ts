@@ -52,16 +52,16 @@ async function fixture(tabs = 1) {
   };
   const hubStorage = h.storage(`agent-hub:${sessionId}`);
   /** Temporary agent data as older hubs kept it: drafts mirror, context, requests and inline receipts. */
-  const seedTemporary = async () => {
-    const hub = await hubStorage.get<object>("session");
-    await hubStorage.put({ session: { ...hub, context: { secret: "context" }, commands: [{ id: "receipt", state: "applied" }], tabId: "old" },
+  const seedTemporary = async (storage = hubStorage) => {
+    const hub = await storage.get<object>("session");
+    await storage.put({ session: { ...hub, context: { secret: "context" }, commands: [{ id: "receipt", state: "applied" }], tabId: "old" },
       context: { secret: "context" }, drafts: { ["d".repeat(64)]: 1 }, ["draft:" + "d".repeat(64)]: "draft text", requests: [{ id: "request" }] });
   };
   /** Temporary data still stored: separate keys, and fields kept inline in the hub record. */
-  const leftovers = async () => {
+  const leftovers = async (storage = hubStorage) => {
     const present = [];
-    for (const key of ["context", "drafts", "requests", "draft:" + "d".repeat(64)]) if (await hubStorage.get(key) !== undefined) present.push(key);
-    const hub = await hubStorage.get<Record<string, unknown>>("session");
+    for (const key of ["context", "drafts", "requests", "draft:" + "d".repeat(64)]) if (await storage.get(key) !== undefined) present.push(key);
+    const hub = await storage.get<Record<string, unknown>>("session");
     return { present, inline: Object.keys(hub ?? {}).filter(key => !["kind", "login", "expiresAt", "grants"].includes(key)) };
   };
   /** One MCP tool call through the real Worker, as an agent makes it. */
@@ -332,6 +332,31 @@ test("an earlier version's fenced entry for a grant since rebound away is only r
     assert.equal((await h.tool("read_file", { path: "index.html" })).status, 200, "the token still authenticates");
     assert.equal((await h.record())!.cleanupPending, undefined);
   } finally { await h.dispose(); }
+});
+
+test("grants from two sessions in one workspace: the grace clears both hubs; one that fails is retried in 30 s before the claim ends", async () => {
+  const h = await fixture();
+  const get = h.namespace.get;
+  try {
+    const other = (await signIn(h.worker)).cookie.split("=")[1];
+    await createGrant(h.env, { ...h.input, sessionId: other });
+    const otherHub = h.storage(`agent-hub:${other}`);
+    await h.seedTemporary(); await h.seedTemporary(otherHub);
+    await h.close(h.name, h.editors[0]);
+    h.advance(DISCONNECT_GRACE);
+    let failing = true;
+    h.namespace.get = name => ({ fetch: request => failing && name === `agent-hub:${other}` && new URL(request.url).pathname === TEMPORARY_ROUTE
+      ? Promise.resolve(new Response(null, { status: 503 })) : get(name).fetch(request) });
+    await assert.rejects(h.alarm(h.name), /incomplete/);
+    assert.deepEqual(await h.leftovers(), { present: [], inline: [] }, "the hub that answered is cleared");
+    assert.equal((await h.leftovers(otherHub)).present.length, 4, "the failed hub keeps its data until the retry");
+    assert.equal((await h.record())!.cleanupPending, true);
+    assert.equal(await h.relayStorage.getAlarm(), h.now() + 30_000);
+    failing = false; h.advance(30_000); await h.alarm(h.name);
+    assert.deepEqual(await h.leftovers(otherHub), { present: [], inline: [] });
+    assert.equal((await h.record())!.cleanupPending, undefined);
+    assert.equal(await h.relayStorage.getAlarm(), null);
+  } finally { h.namespace.get = get; await h.dispose(); }
 });
 
 test("one grace both finishes an earlier version's removal and clears a live connection's temporary data; the claim ends only when both succeed", async () => {

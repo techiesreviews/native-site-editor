@@ -6,7 +6,6 @@ import { handle, type Env } from "../worker/app.ts";
 import { hubView, type HubStorage } from "../worker/agent-store.ts";
 import { handleOAuth, type OAuthDeps } from "../worker/oauth.ts";
 import { PENDING_ROUTE } from "../worker/oauth-pending.ts";
-import { notSharingMessage } from "../shared/agent-read.ts";
 import type { AgentCommand } from "../shared/agent.ts";
 import { fakeHubRoute } from "./native-save/fake-hub.ts";
 import { fakeGitHub, githubState, origin, repo, siteContext } from "./mcp-harness.ts";
@@ -51,6 +50,8 @@ function fixture() {
           const hub = await storage.get<AgentHub>("session");
           return hub ? Response.json(hubView(hub)) : new Response(null, { status: 404 });
         }
+        // No editor tab receives here: the relay's answer for every dispatch (tests/agent-lifecycle.test.ts runs the real one).
+        if (name.startsWith("agent-relay:") && url.pathname === "/relay/dispatch") return Response.json({ ok: false, code: "editor-unavailable", outcome: "not-sent" });
         if (url.pathname === "/repository-cache") return new Response(null, { status: 204 });
         // Pending-authorization caps have their own tests (tests/oauth-pending.test.ts).
         if (url.pathname === PENDING_ROUTE) return Response.json({ allowed: true });
@@ -92,10 +93,15 @@ for (const other of [
   assert.equal(connection.repo.full_name, repo.full_name);
   assert.deepEqual(connection.workspace, { account: "lex", repoId: repo.id, repo: repo.full_name, branch: "main" });
   assert.equal(connection.hub?.context, undefined);
-  const message = notSharingMessage(origin, connection.workspace, context);
-  assert.ok(message.includes(`${repo.full_name} on branch main`));
-  assert.ok(message.includes(`${context.repository.fullName} on branch ${context.branch}`));
-  assert.match(message, /connect the agent again from the tab you want/);
+  // A tool waits for the connection's own site; the stale shared context names nothing.
+  const called = await handle(new Request(origin + "/mcp", { method: "POST", headers: { Authorization: `Bearer ${token}`,
+    "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "read_file", arguments: { path: "index.html" } } }) }), f.env, f.fetcher);
+  assert.equal(called.status, 200);
+  const raw = (await called.text()).trim();
+  const answer = JSON.parse(JSON.parse(raw.startsWith("event:") ? raw.split("data: ")[1].split("\n")[0] : raw).result.content[0].text);
+  assert.equal(answer.state, "waiting");
+  assert.ok(answer.message.startsWith(`The editor isn't open for ${repo.full_name} on branch main.`), answer.message);
   assert.equal((await getHub(f.env, sessionId))?.context, undefined);
 });
 

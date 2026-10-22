@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { resumeAgents } from "../src/agent-resume.ts";
+import { resumeAgents, serialReads } from "../src/agent-resume.ts";
 import { forEachAwait } from "./support/await-race.ts";
 
 // The agent menu's state around resumeAgents (src/components/agent-menu.ts): the open site, this
@@ -63,3 +63,31 @@ for (const how of ["switch", "destroy", "disconnect"] as const) {
     }
   });
 }
+
+test("connections reads: a skipped read answers false; two waiters behind a read in flight each make their own read, one after another", async () => {
+  const log: string[] = [];
+  const releases: (() => void)[] = [];
+  let reads = 0;
+  const queue = serialReads(() => {
+    const n = ++reads;
+    log.push(`start ${n}`);
+    return new Promise<boolean>(resolve => releases.push(() => { log.push(`end ${n}`); resolve(true); }));
+  });
+  const first = queue.run();
+  assert.equal(queue.busy, true);
+  assert.equal(await queue.run(), false, "a read asked meanwhile without waiting is skipped");
+  const second = queue.run(true), third = queue.run(true);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(log, ["start 1"], "waiters do not read while one is in flight");
+  releases[0]();
+  assert.equal(await first, true);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(log, ["start 1", "end 1", "start 2"], "one waiter reads; the other still waits");
+  releases[1]();
+  await new Promise(resolve => setImmediate(resolve));
+  releases[2]();
+  assert.deepEqual([await second, await third], [true, true], "each waiter gets its own read's answer");
+  assert.deepEqual(log, ["start 1", "end 1", "start 2", "end 2", "start 3", "end 3"]);
+  assert.equal(queue.busy, false, "nothing left in flight");
+  assert.equal(reads, 3);
+});
