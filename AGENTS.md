@@ -1,5 +1,6 @@
 # Agents
 
+Start here: `docs/agents/kitchen.md` (the kitchen rulebook) gives every station from idea to release, who decides, and the builder and reviewer pins.
 Finding code: read `docs/agents/code-map.md`.
 Running a build slice: follow `docs/agents/runner.md` (order of steps: build, review, `kit pr`, report).
 Agent commands: `scripts/agents/kit <command> --help`; one line each in `docs/agents/agent-scripts.md#kit`.

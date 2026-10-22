@@ -9,8 +9,8 @@ for this build only. The lead's notes live in [lead-log.md](lead-log.md).
 - **Builder.** Select the model for `kit slice --ticket <ticket> --builder <model>`
   (default path under `kit bg`, then `kit wait job`); name any exception requiring
   the manual fallback in runner.md.
-- **Review.** One Sol review through `scripts/agents/kit review --ticket <ticket>`,
-  unless the lead says otherwise.
+- **Review.** Which slices get a second opinion beyond the Claude review, per the pins in
+  [kitchen.md](../../agents/kitchen.md#who-cooks-pins-from-2026-10-22).
 - **Out of bounds.** Files, folders or services no runner may touch in this build
   (beyond runner.md's rules: no subagents, no preview deploys, never `main`).
 - **Screenshots.** Which screens to shoot (`kit shots <screen…>`) and whether to
