@@ -481,8 +481,9 @@ test("adding a file keeps the tiles and pictures already shown; its ring goes on
   await expect(panel.locator(".media-library__card")).toHaveCount(1);
   await page.waitForFunction(() => "ringShownAt" in window);
   // The ring carries on where it was, not as far again ahead. The redraw sets the ring to its age
-  // since the tile first wore it (the moment recorded above), so a late first frame cancels out;
-  // both times are read on the document timeline, so a late frame now shifts neither.
+  // since the tile first wore it (the moment recorded above), so a late first frame cancels out.
+  // That moment is on the performance clock, which shares the timeline's origin; the timeline lags
+  // it by at most a frame, so elapsed read on the timeline can only come out short.
   const ring = await added.evaluate(card => {
     const animation = card.getAnimations({ subtree: true }).find(each => each instanceof CSSAnimation && each.animationName === "media-new")!;
     const played = Number(animation.effect!.getComputedTiming().localTime) - Number(animation.effect!.getTiming().delay);
