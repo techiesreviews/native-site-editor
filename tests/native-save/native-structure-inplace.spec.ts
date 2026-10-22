@@ -232,7 +232,7 @@ test("another file's paint keeps the typing field connected, with its text and c
   }));
   try {
     await page.keyboard.press("Escape");
-    // Hold the agent's write until the field has typed and positioned its caret.
+    // The file's hash now; the agent writes once the field has typed and positioned its caret.
     const path = "components/site-footer/site-footer.html";
     const read = await client.callTool({ name: "read_file", arguments: { path } });
     const original = JSON.parse((read.content as { text: string }[])[0].text) as { hash: string };
