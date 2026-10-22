@@ -356,6 +356,8 @@ test("an agent's page edit while a template part is typed keeps the field, its t
     await page.keyboard.press("End");
     await page.keyboard.type(" more");
     await expect.poll(async () => (await agent.read(path)).content).toContain("Footer typed more");
+    // The preview shows it at the footer's new place.
+    await expect(frame(page).locator("site-footer footer p")).toContainText("Footer typed more");
     await expect(field).not.toHaveAttribute("data-detached", "true");
     // Leaving the field: the tree catches up. The page moved under Edit component mode, so the mode
     // ends and the footer, one row lower, is marked. The hand-set fold and the default one stay with their elements.
@@ -403,29 +405,24 @@ test("an agent's edit to another file (a stylesheet) while a template part is ty
     const { field, typed } = await typeInFooterTemplate(page, agent);
     await field.evaluate((field: HTMLTextAreaElement) => field.setSelectionRange(3, 3));
     await agent.edit("styles/site.css", "  --ink: #20231f;", "  --ink: #20231f;\n  --agent: #123456;");
-    await expect.poll(async () => (await agent.read("styles/site.css")).content).toContain("--agent: #123456;");
+    // Painted: the preview has the stylesheet's change.
+    await expect.poll(() => frame(page).locator("html").evaluate(html => getComputedStyle(html).getPropertyValue("--agent").trim())).toBe("#123456");
     await keepsTyping(page, field, typed);
   } finally { await agent.client.close(); }
 });
 
-test("another tab's change to the page while a template part is typed keeps the field, its text and caret", async ({ page, baseURL, context }) => {
+test("an agent's edit to another page while a template part is typed keeps the field, its text and caret, and the template open", async ({ page, baseURL }) => {
   const agent = await connectAgent(page, baseURL);
   try {
     const { field, typed } = await typeInFooterTemplate(page, agent);
     await field.evaluate((field: HTMLTextAreaElement) => field.setSelectionRange(3, 3));
-    // Another tab of the site changes index.html in its code pane: not this tab's agent write.
-    const other = await context.newPage();
-    await other.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
-    await editorMounted(other);
-    await other.evaluate(async () => {
-      const editor = await import("/src/components/code-editor.ts");
-      const text = editor.getMountedSource("index.html")!, from = '<main class="page" data-key="main">', start = text.indexOf(from);
-      editor.replaceActiveRange({ path: "index.html", start, end: start + from.length, text: `<aside data-key="tab-note"><p>Tab note</p></aside>\n${from}`, expected: from });
-    });
-    // This tab's drafts have it (the agent reads through this tab); its typing goes on.
-    await expect.poll(async () => (await agent.read("index.html")).content).toContain("Tab note");
-    await other.close();
+    await agent.edit("about/index.html", "About this project</h1>", "About this project, by an agent</h1>");
+    await expect.poll(async () => (await agent.read("about/index.html")).content).toContain("by an agent");
     await keepsTyping(page, field, typed);
+    // Leaving the field, the template stays open: the agent's page was not opened over it.
+    await field.evaluate((field: HTMLTextAreaElement) => field.blur());
+    await expect(field).toHaveCount(0);
+    await expect(page.locator("#current-page")).toHaveAttribute("data-path", FOOTER);
   } finally { await agent.client.close(); }
 });
 

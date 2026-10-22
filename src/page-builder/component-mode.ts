@@ -203,7 +203,7 @@ export function createComponentMode(ports: ComponentModePorts): ComponentMode {
   let nth: { key: string; index: number; count: number } | undefined;
   // Where it went on the last page source read for that (memoised like `placed`).
   let went: { source: string; nth: object; node: readonly number[] | undefined } | undefined;
-  // Where the frame was last told the instance is (JSON of its node; "" for no mode).
+  // Where the frame was last told the instance is (JSON of its node; "" for no mode, or no instance shown).
   let told = "";
 
   /** A `tag` element is still at `node` of the page's bytes. */
