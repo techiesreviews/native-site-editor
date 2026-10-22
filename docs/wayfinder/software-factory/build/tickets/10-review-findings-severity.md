@@ -45,3 +45,14 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Review decisions: round 1, six findings fixed (bulleted `Defects` heading counts again; tests and evidence added). Round 2, five fixed (unbulleted labels in nits or gaps stay text; long-location window and far-off evidence tests). Round 3, four fixed (a `Spec defects` / `Standards defects` heading no longer hides an earlier top-level `Spec:` group; Done section merged into this current statement). None declined; optional nits on the fallback reading the location and on `LOCATION` matching `Round:3` left as is under the lead decision.
 - Tests pin: a 150-character path before `— P2:`, `(P1)` and `**P3**`, the 40-character window with a long location, far-off evidence after long and short locations, the no-separator, line:column and Markdown-link locations, and every heading case above.
 - Tests (round 3, working tree on `d8da9353`): `ASE_OWNER=lead-sf10 scripts/agents/kit unit tests/review-findings.test.ts tests/kit-pr.test.ts` — `RESULT: ok unit 163/163 (2 files)`; `ASE_OWNER=lead-sf10 scripts/agents/kit unit --affected` — `RESULT: ok unit 163/163 (2 files)`; `npm run lint` — exit 0.
+
+### Follow-ups
+
+- Spec (P2): 253c07ee:docs/wayfinder/software-factory/build/tickets/10-review-findings-severity.md:44 — P2: The "Code commits" line lists `69e232f0`, `75e32d69`, `93348a5d`,
+- Spec (P2): 253c07ee:docs/wayfinder/software-factory/build/tickets/10-review-findings-severity.md:47 — P2: The test evidence says it was taken on "working tree on `d8da9353
+- Spec (P3): 253c07ee:docs/wayfinder/software-factory/build/tickets/10-review-findings-severity.md:42 — P3: The sentence "Once one has opened, later bare `Spec:` / `Standard
+- Standards (P3): 253c07ee:scripts/agents/review-findings.mjs:68 — P3: The comment "Once a 'Spec defects' / 'Standards defects' heading opens, later bare Spec:/Standards: lines a
+- Validation gaps (gap): No test pins that a bare `Standards:` line directly after a `Spec defects:` heading still switches the group, for example `Spec defects:\n- a.ts:1 — P1: x\nStan
+- Validation gaps (gap): No test covers a non-location prefix that `LOCATION` still strips, such as `Round:3 — evidence … P1` with the P-token past 80 characters. Add one that pins whet
+- Validation gaps (gap): No test mixes an explicit `Defects:` heading with a later `Spec defects:` heading (`Defects: none\nSpec defects:\n- a.ts:1 — P1: x\nValidation gaps: none.`). Ad
+
