@@ -28,8 +28,9 @@ export function wireMediaLibraryInput(
     else searchTimer = setTimeout(redrawSearch, 150);
   }, { signal });
   search.addEventListener("keydown", event => {
-    if (event.key === "Enter") { event.preventDefault(); redrawSearch(); }
-    // Tab redraws before focus moves, so focus lands in the filtered grid.
+    if (event.isComposing) return; // an IME's Enter confirms a word, not the search
+    if (event.key === "Enter") { event.preventDefault(); if (searchTimer !== undefined) redrawSearch(); }
+    // Tab redraws before focus moves, so the next focus stop sees the filtered grid.
     else if (event.key === "Tab" && searchTimer !== undefined) redrawSearch();
   }, { signal });
   search.addEventListener("blur", () => {
@@ -47,9 +48,9 @@ export function wireMediaLibraryInput(
   }, { signal });
   // A press that ends without a click on the grid (released elsewhere, or a blocked click) still redraws.
   const released = () => { if (pressing && searchTimer === undefined) searchTimer = setTimeout(redrawSearch, 150); };
-  const page: EventTarget = grid.ownerDocument ?? dialog; // the whole page: a release outside Media counts too
-  page.addEventListener("pointerup", released, { signal });
-  page.addEventListener("pointercancel", released, { signal });
+  // The whole page: a release outside Media counts too.
+  grid.ownerDocument.addEventListener("pointerup", released, { signal });
+  grid.ownerDocument.addEventListener("pointercancel", released, { signal });
   grid.addEventListener("keydown", (event) => {
     const buttons = [...grid.querySelectorAll<HTMLButtonElement>(".media-library__thumbnail")];
     const at = buttons.indexOf(document.activeElement as HTMLButtonElement);

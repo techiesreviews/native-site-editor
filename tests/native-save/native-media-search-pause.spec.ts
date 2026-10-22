@@ -39,6 +39,7 @@ test("search redraws after the pause, keeping focus and caret in the field", asy
   await search(page).click();
   await page.keyboard.type("cat");
   await page.keyboard.press("ArrowLeft");
+  // The clock is paused, so nothing has redrawn yet: these hold the state at 149 ms.
   await page.clock.runFor(149);
   await expect(thumbnails(page)).toHaveCount(9);
   await expect(count(page)).toHaveText("9 of 9 files");
@@ -93,9 +94,44 @@ test("selection clicked while the search waits stays selected, on the box and on
   await search(page).fill("");
   await search(page).click();
   await page.keyboard.type("dog-");
-  await library(page).getByLabel("Select images/dog-2.svg", { exact: true }).click({ force: true });
+  await library(page).getByLabel("Select images/dog-2.svg", { exact: true }).click({ force: true }); // the box itself sits under its round
   await page.clock.runFor(1);
   await expect(library(page).getByLabel("Select images/dog-2.svg", { exact: true })).toBeChecked();
   await expect(library(page).getByLabel("Select images/dog-1.svg", { exact: true })).toBeChecked();
   await expect(selected).toHaveText("2 selected");
+});
+
+test("Enter, clearing and Tab apply the search at once; the count and focus follow", async ({ page, baseURL }) => {
+  await mountLibrary(page, baseURL);
+  await search(page).click();
+  await page.keyboard.type("cat");
+  await page.keyboard.press("Enter");
+  await expect(count(page)).toHaveText("3 of 9 files");
+  await expect(search(page)).toBeFocused();
+  expect(await search(page).evaluate((input: HTMLInputElement) => [input.selectionStart, input.selectionEnd])).toEqual([3, 3]);
+
+  await search(page).fill("");
+  await expect(count(page)).toHaveText("9 of 9 files");
+
+  await page.keyboard.type("cat");
+  await page.keyboard.press("Tab");
+  await expect(thumbnails(page)).toHaveCount(3);
+  await expect(count(page)).toHaveText("3 of 9 files");
+  await expect(library(page).locator("button:focus")).toHaveCount(1); // the next stop in Media, not the page
+});
+
+test("a press released outside Media still applies the waiting search", async ({ page, baseURL }) => {
+  await mountLibrary(page, baseURL);
+  await search(page).click();
+  await page.keyboard.type("dog");
+  const tile = await library(page).getByRole("button", { name: "Details for images/dog-1.svg", exact: true }).boundingBox();
+  await page.mouse.move(tile!.x + tile!.width / 2, tile!.y + tile!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(5, 5);
+  await page.mouse.up();
+  await page.clock.runFor(149);
+  await expect(thumbnails(page)).toHaveCount(9);
+  await page.clock.runFor(1);
+  await expect(thumbnails(page)).toHaveCount(3);
+  await expect(count(page)).toHaveText("3 of 9 files");
 });
