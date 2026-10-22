@@ -26,7 +26,9 @@ test("Site settings' Update links shows a visible toast naming the count, whose 
   await expect(dialog(page)).toBeHidden();
 
   const said = "Site settings applied as drafts. Updated 9 links in 4 files to the new address. Added the .nojekyll file GitHub Pages needs. Publish to keep them.";
-  await expect(toast(page)).toBeVisible();
+  // Held under the pointer from the start: on a busy machine the checks below outlast its 6 s.
+  // The drafts' own save timer must run, so the clock is not paused here.
+  await toast(page).hover();
   await expect(toast(page)).toBeInViewport({ ratio: 1 });
   await expect(toast(page).locator(".editor-toast__text")).toHaveText(said);
   // The live region still says it, for screen readers.
@@ -148,6 +150,9 @@ test("a question that opens while a toast shows is not put inside the toast, and
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
   await open(page, baseURL);
+  // Paused as above: on a busy machine the toast's 6 s ran out before the question closed.
+  await page.clock.install();
+  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1_000));
   await page.evaluate(async () => {
     const { showToast } = await import("/src/components/toast.ts");
     showToast("Added 2 files as drafts.");
