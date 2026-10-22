@@ -183,3 +183,5 @@ GPT-6.1 Sol hit its usage limit on 2026-10-22 (blocked until 2026-10-27 20:26; L
 
 - 2026-10-22: `tests/agent-usage.test.ts:69` ("an empty wait without a receiver answers quietly at once…") failed once (6 !== 3) during slice 20's `kit pr` with five runners loading the machine; 3/3 passes alone. Timing-sensitive under load.
 - 2026-10-22: `kit slice`/`kit pr` leave the ticket's `landed:` empty and keep the builder's "changes remain unstaged" Done line (tickets 10, 20, 94); the lead fills them in by hand. Fix in the kit.
+- 2026-10-22 (slice 91): when Sol is out, `kit fix` still resumes the saved Sol builder session, and the saved slice state locks the builder model (the runner edited `.scratch` `state.json`/`pending.json` by hand). Fix in the kit: honour `--builder`/`ASE_BUILD_MODEL` on resume.
+- 2026-10-22 (slice 91): `native-editor-toast.spec.ts` timed out once during `kit pr` under heavy load; passed alone.
