@@ -1,0 +1,33 @@
+---
+title: "Two specs still sensitive under heavy load: editor toast, media ring"
+type: task (AFK)
+status: open
+assignee:
+builder: claude
+blocked_by: [14-load-sensitive-tests]
+---
+
+## Goal
+
+Split from [Three load-sensitive tests pass on a busy machine](14-load-sensitive-tests.md) on 2026-10-22. After three fix rounds there:
+
+- `tests/native-save/native-editor-toast.spec.ts` passed 4/5 beside a full `kit unit` run (both failures in the layers test; see slice 14's Done and review `lead-sf14/20261022T203657Z`).
+- `tests/native-save/native-media-library.spec.ts:225`: the fresh-ring check fails when more than 2.4 s (`FRESH_RING_MS`, `src/page-builder/media-library-view.ts:165`) pass between the tile first wearing the ring and the search redraw.
+
+## Decided behaviour
+
+Diagnose first (`mattpocock-skills:diagnosing-bugs`). Wait for states, not times; use the page clock where a product timer is involved; do not raise timeouts and do not add entries to `tests/known-failures.json`. If the ring timing is a real product issue on slow machines, say so in Done and ask the lead before changing product behaviour.
+
+## Files
+
+- `tests/native-save/native-editor-toast.spec.ts`
+- `tests/native-save/native-media-library.spec.ts`
+
+## Done when
+
+- Each spec passes 5 times in a row beside a full `scripts/agents/kit unit` run.
+- `scripts/agents/kit specs --affected` green.
+
+## Kit commands and evidence
+
+Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runner.md)). `kit bg slice-sf16 -- scripts/agents/kit slice --ticket <this ticket> --builder claude-opus-5-5`.
