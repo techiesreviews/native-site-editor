@@ -48,3 +48,12 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - With `--builder`, an explicit `--run DIR` that is missing, unreadable or belongs to another worktree errors with `invalid builder run for this worktree`; a readable run of another model is named on a `--run <dir> is <model>; starting fresh with <model>` line and a fresh builder starts. The usage text and `docs/agents/agent-scripts.md` document this.
 - Runner docs no longer ask for a ticket `landed:` field and point to `kit status [map]` for ticket landings; the runner's Report keeps its `landed:` line for the lead. A slice switched while its fix round is paused in the commit or review step lets that round finish under its saved model (no `--builder`/`--effort` for that call); the switch applies from the next round. The `kit slice` and `kit fix` lines describe the builder/effort switch, pending-round re-targeting and model/effort matching.
 - Tests: `scripts/agents/kit unit tests/kit-slice.test.ts tests/kit-fix.test.ts` 73/73 (including a switch during a half-done fix round, an effort switch reaching `kit fix` and its builder, a pending commit/review refusal, and `--run` missing/foreign/other-model with `--builder`), `scripts/agents/kit unit --affected` 73/73, `scripts/agents/kit unit tests/agent-scripts.test.ts tests/kit-status.test.ts` 27/27, `npm run check` and `kit doctor` 7/7.
+
+### Follow-ups
+
+- Spec (P2): c304bf6b:scripts/agents/kit.d/slice:61 — P2: Switching models can put the wrong model in the commit credit. Suppose a slice's `build` phase finished but its `co
+- Spec (P3): db66d555:scripts/agents/kit.d/fix:117 — P3: The comment "Rounds saved before effort was recorded ran at the high default" is only true for rounds that started a
+- Validation gaps (gap): Commit credit after a switch, in `tests/kit-slice.test.ts`: make the commit phase fail once with the existing `reject-fix` style pre-commit hook. Then resume wi
+- Validation gaps (gap): A second fix round after a switch, with the real `kit fix`: after a switched slice (`state.build` deleted, so no `--run`), let round 1 leave findings open (`CLE
+- Validation gaps (gap): An old builder-step `pending.json` without `effort` that resumed a `medium` builder: run `kit fix --builder gpt-6.1-sol --effort medium` and assert no `builder 
+
