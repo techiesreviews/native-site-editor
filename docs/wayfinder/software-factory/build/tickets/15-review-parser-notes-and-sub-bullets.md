@@ -47,3 +47,12 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Tests (`tests/review-findings.test.ts`): trimmed copies of the four 2026-10-22 reviews (lead-sf11, lead-sf12, lead-92, lead-sf10) parse to the findings a person counts, none blocking; none groups with notes and sub-bullets; a real P1 in a later group after none notes still blocks; both slice-10 follow-ups (late defects heading in four forms; bulleted bare group in a defects-label section). Six of the new and changed tests fail against the old parser. Review round 1 added: a P1 after none notes in a defects-label section, late inline labels (bold, with a severity, after Optional nits, plain text), and bullets under a none gap group. Review round 2 added: a bulleted `- Standards: none` with a note after a Spec finding, an unbulleted `None.` first line under a bare heading, and a combined `Defects` group whose first bullet says none (its notes are skipped; since round 3 a located P1 there counts). Review round 3 added: located P1 findings under none notes after an unrecognised `### Standards (…)` heading, after a bulleted `- Standards: none`, and after a first line opening with "None of …".
 - Commits: `400ca414` (parser, tests, ticket), `028d25da` (review round 1), `966f0631` (review round 2), plus this branch's review round 3 correction commit.
 - Validation: `kit unit tests/review-findings.test.ts tests/kit-pr.test.ts tests/kit-slice.test.ts tests/kit-fix.test.ts` → `RESULT: ok unit 266/266 (4 files)`; `kit unit --affected` → `RESULT: ok unit 176/176 (2 files)`; `npm run check` and `npm run lint` pass.
+
+### Follow-ups
+
+- Spec (P2): 09102b29:scripts/agents/review-findings.mjs:63 — P2: `none` is `/^none\b/i`, so any group whose first line starts with "None of …" or "None in …" becomes a note
+- Spec (P2): 0ca82277:scripts/agents/review-findings.mjs:82 — P2: The decided behaviour says "A defects heading after the notes section opens its group … (fail closed: a rea
+- Spec (P3): 8592c767:docs/wayfinder/software-factory/build/tickets/15-review-parser-notes-and-sub-bullets.md:48 — P3: The "Commits" line names `400ca414`, `028d25da` and `9
+- Validation gaps (gap): No test shows that a group whose first line starts with "None of …" still reports an unlocated severity finding after it. Add `openFindings(review("Spec:\n- Non
+- Validation gaps (gap): No test covers a plain late defects label with severity-less text under a `Validation gaps: none.` group. Add `openFindings(review("Defects: none\nValidation ga
+
