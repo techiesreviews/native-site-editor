@@ -9,9 +9,9 @@ function searchFixture(context: TestContext) {
   const controller = new AbortController();
   context.after(() => controller.abort());
   const search = Object.assign(new EventTarget(), { value: "" }) as HTMLInputElement;
+  const grid = new EventTarget() as HTMLDivElement, dialog = new EventTarget() as HTMLElement;
   const shell = {
-    search, grid: new EventTarget() as HTMLDivElement,
-    uploadInput: new EventTarget() as HTMLInputElement, dialog: new EventTarget() as HTMLElement,
+    search, grid, uploadInput: new EventTarget() as HTMLInputElement, dialog,
   } satisfies Pick<LibraryShell, "search" | "grid" | "uploadInput" | "dialog">;
   const draws: string[] = [];
   const host = {
@@ -19,7 +19,7 @@ function searchFixture(context: TestContext) {
   } satisfies LibraryInputHost;
   wireMediaLibraryInput(shell as LibraryShell, host, controller.signal);
   const type = (value: string) => { search.value = value; search.dispatchEvent(new Event("input")); };
-  return { search, controller, draws, type };
+  return { search, grid, dialog, controller, draws, type };
 }
 
 test("three quick search keystrokes redraw once, 150 ms after the last input", context => {
@@ -62,6 +62,52 @@ test("leaving search flushes a pending redraw only once", context => {
   context.mock.timers.tick(1000);
   search.dispatchEvent(new Event("blur"));
   assert.deepEqual(draws, ["cat"]);
+});
+
+test("Tab redraws a pending search before focus moves, leaving the move to the browser", context => {
+  const { type, search, draws } = searchFixture(context);
+  type("cat"); context.mock.timers.tick(50);
+  const tab = Object.assign(new Event("keydown", { cancelable: true }), { key: "Tab" });
+  search.dispatchEvent(tab);
+  assert.equal(tab.defaultPrevented, false);
+  assert.deepEqual(draws, ["cat"]);
+  search.dispatchEvent(new Event("blur")); context.mock.timers.tick(1000);
+  assert.deepEqual(draws, ["cat"]);
+});
+
+test("a tile pressed during a pending search keeps the grid until its click has run", context => {
+  const { type, search, grid, dialog, draws } = searchFixture(context);
+  type("cat"); context.mock.timers.tick(50);
+  grid.dispatchEvent(new Event("pointerdown"));
+  search.dispatchEvent(new Event("blur"));
+  context.mock.timers.tick(1000);
+  assert.deepEqual(draws, []);
+  dialog.dispatchEvent(new Event("pointerup"));
+  grid.dispatchEvent(new Event("click"));
+  assert.deepEqual(draws, ["cat"]);
+  context.mock.timers.tick(1000);
+  assert.deepEqual(draws, ["cat"]);
+});
+
+test("a press released without a click still redraws the pending search", context => {
+  const { type, grid, dialog, draws } = searchFixture(context);
+  type("cat");
+  grid.dispatchEvent(new Event("pointerdown"));
+  dialog.dispatchEvent(new Event("pointercancel")); context.mock.timers.tick(149);
+  assert.deepEqual(draws, []);
+  context.mock.timers.tick(1);
+  assert.deepEqual(draws, ["cat"]);
+  grid.dispatchEvent(new Event("click"));
+  assert.deepEqual(draws, ["cat"]);
+});
+
+test("a press with no pending search leaves the grid alone", context => {
+  const { grid, dialog, draws } = searchFixture(context);
+  grid.dispatchEvent(new Event("pointerdown"));
+  dialog.dispatchEvent(new Event("pointerup"));
+  grid.dispatchEvent(new Event("click"));
+  context.mock.timers.tick(1000);
+  assert.deepEqual(draws, []);
 });
 
 test("closing Media clears the pending search timer and removes input listeners", context => {
