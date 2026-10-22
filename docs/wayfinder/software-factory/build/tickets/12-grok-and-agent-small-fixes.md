@@ -2,7 +2,7 @@
 title: Grok and agent.sh small fixes
 type: task (AFK)
 status: open
-assignee:
+assignee: lead-sf12 (free worker build)
 builder: opencode/deepseek-v4.1-flash-free
 blocked_by: []
 ---

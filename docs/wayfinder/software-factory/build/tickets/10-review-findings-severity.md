@@ -2,7 +2,7 @@
 title: "Review findings: severity read after any location, and \"Spec defects:\" headings"
 type: task (AFK)
 status: open
-assignee:
+assignee: lead-sf10 (free worker build)
 builder: opencode/deepseek-v4.1-flash-free
 blocked_by: []
 ---
