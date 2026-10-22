@@ -1,4 +1,86 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+import { openEditor, openFiles, openMedia, openPages } from "../support/scenarios";
+import { storedDraft } from "./drafts";
+
+// Default fixture group. Every case starts in a fresh browser context.
+const chunks = {
+  Pages: "/src/components/pages-tree.ts",
+  Files: "/src/controllers/files-tree-controller.ts",
+  Media: "/src/page-builder/media-picker.ts",
+};
+const panelModules = /\/src\/(?:controllers\/(?:pages-controller|files-tree-controller|file-operation-checks)|components\/(?:create-dialog|file-row-actions|confirm-dialog|page-picker|pages-tree)|page-builder\/media-picker)\.ts(?:\?|$)/;
+
+async function select(page: Page, name: keyof typeof chunks) {
+  if (!await page.locator("#explorer").isVisible()) await page.locator("#explorer-toggle").click();
+  await page.getByRole("tab", { name, exact: true }).click();
+}
+
+async function act(page: Page, name: keyof typeof chunks) {
+  if (name === "Pages") {
+    const explorer = await openPages(page);
+    await explorer.getByRole("button", { name: "+ New page", exact: true }).click();
+    const title = explorer.getByRole("textbox", { name: "New page title", exact: true });
+    await title.fill("Lazy panel page");
+    await title.press("Enter");
+    await expect(page.locator("#current-page")).toHaveAttribute("data-path", "lazy-panel-page/index.html");
+    await expect.poll(() => storedDraft(page, "lazy-panel-page/index.html")).toMatchObject({ baseSha: null });
+  } else if (name === "Files") {
+    const explorer = await openFiles(page);
+    await explorer.locator('.file-row[data-path="robots.txt"]').focus();
+    await page.keyboard.press("F2");
+    const field = explorer.getByRole("textbox", { name: "New name for robots.txt", exact: true });
+    await field.fill("robots-renamed.txt");
+    await field.press("Enter");
+    await expect(explorer.locator('.file-row[data-path="robots-renamed.txt"]')).toBeVisible();
+    await expect.poll(() => storedDraft(page, "robots-renamed.txt")).toMatchObject({ movedFrom: "robots.txt" });
+  } else {
+    const media = await openMedia(page);
+    await media.getByRole("button", { name: "Details for images/studio-desk.svg", exact: true }).click();
+    await expect(media.getByLabel("File name", { exact: true })).toHaveValue("studio-desk.svg");
+    await expect(media.getByLabel("Description", { exact: true })).toBeVisible();
+  }
+}
+
+for (const name of Object.keys(chunks) as (keyof typeof chunks)[]) {
+  test(`${name} loads on first open and its action works`, async ({ page, baseURL }) => {
+    const requested: string[] = [];
+    const errors: string[] = [];
+    page.on("request", request => { if (panelModules.test(request.url())) requested.push(request.url()); });
+    page.on("pageerror", error => errors.push(error.message));
+    let release!: () => void;
+    const held = new Promise<void>(resolve => { release = resolve; });
+    await page.route(`**${chunks[name]}*`, async route => { await held; await route.continue(); });
+    try {
+      await openEditor(page, baseURL);
+      expect(requested, "panel code stays out of cold boot").toEqual([]);
+      await select(page, name);
+      await expect(page.locator(`#explorer-${name.toLowerCase()}`)).toContainText(`Loading ${name.toLowerCase()}…`);
+      release();
+      await act(page, name);
+      expect(requested.some(url => new URL(url).pathname === chunks[name])).toBe(true);
+      expect(errors).toEqual([]);
+    } finally { release(); }
+  });
+
+  test(`${name} works again after a failed chunk load and recovery`, async ({ page, baseURL }) => {
+    let failed = 0;
+    await page.route(`**${chunks[name]}*`, async route => {
+      if (!failed++) await route.abort("failed");
+      else await route.continue();
+    });
+    await openEditor(page, baseURL);
+    expect(failed, "the chunk is not requested at boot").toBe(0);
+    // A tab that has already attempted automatic recovery offers manual reload.
+    await page.evaluate(() => sessionStorage.setItem("native-site-editor:chunk-reload", "1"));
+    await select(page, name);
+    await expect(page.locator("#notice")).toContainText("reload the page manually");
+    expect(failed).toBe(1);
+    await page.reload();
+    await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
+    await act(page, name);
+    expect(failed).toBeGreaterThan(1);
+  });
+}
 
 // Real request boundaries: the keyboard layer remains available before the UI loads.
 test("editor boot leaves optional panels unloaded and the first palette key opens it", async ({ page, baseURL }) => {

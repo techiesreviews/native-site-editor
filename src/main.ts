@@ -10,12 +10,13 @@ import { nativeChoiceMarkup, placeholderImageCreates } from "./page-builder/nati
 import { nativeDestinations, nativeMarkupInsertEdit } from "./page-builder/native-operations";
 import { INLINE_FORMATTING, TEXT_LINE_TAGS, TEXT_TAGS } from "./page-builder/rules/text-level";
 import type { VariantFiles, VariantSite } from "../shared/variant-lookup";
-import { createFilesTreeController } from "./controllers/files-tree-controller";
+import type { createFilesTreeController } from "./controllers/files-tree-controller";
 import { createPageStructureController } from "./controllers/page-structure-controller";
 import { createMediaController } from "./controllers/media-controller";
 import type { BlockInsertPorts } from "./controllers/block-insert-controller";
 import { createCardsController } from "./controllers/cards-controller";
-import { createPagesController, explorerTabNames, NATIVE_HOME_UNREAD, type ExplorerTab, pageOnBranchHere } from "./controllers/pages-controller";
+import { createPagesState, explorerTabNames, NATIVE_HOME_UNREAD, type ExplorerTab, pageOnBranchHere } from "./controllers/pages-state";
+import type { createPagesController } from "./controllers/pages-controller";
 import { readApiReceipt, type ApiReceipt } from "./boot-api-response";
 import { createPreviewSelectionController } from "./controllers/preview-selection-controller";
 import { createBootController, planRepositoryOpen } from "./controllers/boot-controller";
@@ -56,13 +57,13 @@ import { createPageStructure, type PageMetaField } from "./components/page-struc
 import { readNavigation } from "./page-builder/site-navigation";
 import { withPageField } from "./page-builder/site-head";
 import { newFilePath, newFolderPath, renamedPath, type Checked } from "./native-create";
-import { createCreateDialog, type CreateKind, type CreateRequest } from "./components/create-dialog";
+import type { createCreateDialog, CreateKind, CreateRequest } from "./components/create-dialog";
 import type { createPagesTree } from "./components/pages-tree";
 import "./components/pages-tree.css";
 import "./components/phone-sheet.css";
-import { createFileRowActions, type FileRowTarget } from "./components/file-row-actions";
+import type { createFileRowActions, FileRowTarget } from "./components/file-row-actions";
 import "./components/files-tree.css";
-import { createConfirmDialog } from "./components/confirm-dialog";
+import type { createConfirmDialog } from "./components/confirm-dialog";
 import type { FilesResult, OwnerInstallation } from "../shared/types";
 import { forgetBootMemory, memoryMatches, provenFiles, readBootMemory, writeBootMemory, type BootMemory } from "./boot-memory";
 import { clearWizard, connectionFromOnboarding, readWizard, writeWizard, type Connection, type WizardRepo } from "./setup-wizard";
@@ -71,7 +72,7 @@ import { forgetSignedIn } from "./auto-signin";
 import { createSetupChecklistController } from "./controllers/setup-checklist-controller";
 import type { SetupState } from "./setup-checklist";
 import { siteNameFromRepository, type StartingPoint } from "../shared/starting-point";
-import { createPagePicker } from "./components/page-picker";
+import type { createPagePicker } from "./components/page-picker";
 import type { MenuItem } from "./components/row-menu";
 import { duplicateFile, listChanges, restoreFile as restoreDraftFile, type FileChange } from "./file-changes";
 import { formatBytes, pickFiles, sweepUploads, uploadBytes, uploadDataUrl, uploadKey } from "./uploads";
@@ -111,7 +112,7 @@ import { iconMarkup, setIcon } from "./icons";
 import { createCommandPaletteController } from "./controllers/command-palette-controller";
 import { createCodePanesController } from "./controllers/code-panes-controller";
 import { createSavePublishController } from "./controllers/save-publish-controller";
-import { createLazyFileOperationsController } from "./controllers/file-operation-checks";
+import type { createLazyFileOperationsController } from "./controllers/file-operation-checks";
 import { createComponentTools, type ComponentTools, type PreparedComponentLoader } from "./page-builder/components";
 import { addSectionStep } from "./page-builder/component-plans";
 import { createAgentSiteHost } from "./agent-site-host";
@@ -161,7 +162,7 @@ installChunkRecovery({
   reload: () => window.location.reload(),
   notice: (message) => {
     const notice = document.getElementById("notice");
-    if (notice) { notice.textContent = message; notice.hidden = false; }
+    if (notice) { placeNotice(notice); notice.textContent = message; notice.hidden = false; }
   },
 });
 // Failed imports can be retried; chunk recovery owns the reload policy.
@@ -173,6 +174,20 @@ function lazyModule<T>(load: () => Promise<T>) {
     throw error;
   });
 }
+let pageActions: ReturnType<typeof createPagesController> | undefined;
+const loadPagesActions = lazyModule(async () => {
+  const [module] = await Promise.all([import("./controllers/pages-controller"), loadFileOps()]);
+  pageActions = module.createPagesController(pagePorts(), pagesController);
+  return module;
+});
+const loadConfirmDialog = lazyModule(() => import("./components/confirm-dialog"));
+const loadExplorerModules = lazyModule(async () => {
+  const [create, actions, confirm, picker, tree] = await Promise.all([
+    import("./components/create-dialog"), import("./components/file-row-actions"), loadConfirmDialog(),
+    import("./components/page-picker"), import("./controllers/files-tree-controller"), loadPagesActions(), loadFileOps(),
+  ]);
+  return { ...create, ...actions, ...confirm, ...picker, ...tree };
+});
 const loadHistory = lazyModule(() => import("./components/commit-history"));
 // The media picker and the media workspace behind it (its batches are staged by applyMediaBatch).
 const loadMediaWorkspace = lazyModule(() => Promise.all([import("./page-builder/media-workspace"), import("./page-builder/media-draft-transaction"), import("../shared/media-records")]));
@@ -219,13 +234,13 @@ const loadAgentMenu = lazyModule(async () => {
 });
 // The Site, Page and Navigation settings dialogs, loaded when one first opens.
 const loadSiteSettings = lazyModule(async () => {
-  const { createNativeSettings } = await import("./native-settings");
+  const [{ createNativeSettings }] = await Promise.all([import("./native-settings"), loadPagesActions()]);
   return createNativeSettings({
     get nativeSite() { return nativeSite; }, get generation() { return generation; },
     appStore, guardedEdits, nativeAssets, setupScope,
     nativePageLabelOf: (file) => pagesController.pageLabel(file),
-    nativeUrlPlan: (file, value) => pagesController.urlPlan(file, value),
-    changeNativeUrl: (file, value, keep, since, baseline) => pagesController.changeUrl(file, value, keep, since, baseline),
+    nativeUrlPlan: (file, value) => pageActions!.urlPlan(file, value),
+    changeNativeUrl: (file, value, keep, since, baseline) => pageActions!.changeUrl(file, value, keep, since, baseline),
     restoreFile, nativeSiteReadForCreate,
     choosePath: (place, accept) => mediaController.choosePath(place, undefined, accept), nativeEffectiveSource, loadNativeAssets,
     shareImage: request => mediaController.shareImage(request),
@@ -338,8 +353,8 @@ function mountWorkspace() {
         </div>
         <button type="button" id="site-settings-toggle" class="icon-button explorer-settings" aria-label="Site settings" title="Site settings">${iconMarkup("gear")}</button>
       </div>
-      <div id="explorer-pages" class="explorer-panel" aria-labelledby="explorer-tab-pages" hidden></div>
-      <div id="explorer-media" class="explorer-panel" aria-labelledby="explorer-tab-media" hidden></div>
+      <div id="explorer-pages" class="explorer-panel" aria-labelledby="explorer-tab-pages" hidden><p class="muted sidebar-hint">Loading pages…</p></div>
+      <div id="explorer-media" class="explorer-panel" aria-labelledby="explorer-tab-media" hidden><p class="muted sidebar-hint">Loading media…</p></div>
       <div id="explorer-files" class="explorer-panel" aria-labelledby="explorer-tab-files">
         <div class="files-heading explorer-heading"><span class="explorer-heading__start"><h2 class="explorer-heading__title">Files</h2><span id="files-count" class="explorer-heading__count"></span></span><span id="revision" hidden>—</span><button type="button" id="new-at-root" class="explorer-new" aria-label="New file or folder" title="New file or folder at the top of the repository" aria-haspopup="dialog">+ New</button></div>
         <nav id="files" aria-label="Repository files"></nav>
@@ -464,43 +479,20 @@ function mountWorkspace() {
     below: app.querySelector<HTMLElement>(".topbar")!,
     anchor: "--explorer",
   });
-  createDialog = createCreateDialog({
-    plan: (request) => {
-      const planned = planCreation(request);
-      return planned.ok ? { ok: true, summary: planned.value.summary } : planned;
-    },
-    create: createFromRequest,
-  });
-  element("explorer").append(createDialog.root);
-  confirmDialog = createConfirmDialog();
-  element("explorer").append(confirmDialog.root);
-  // Discard changes in the top bar asks outside the explorer, which may be closed.
-  discardDialog = createConfirmDialog("discard-dialog");
-  app.append(discardDialog.root);
-  pagePicker = createPagePicker();
-  element("explorer").append(pagePicker.root);
+  createDialog = confirmDialog = discardDialog = pagePicker = fileActions = undefined;
+  filesTree = undefined;
+  explorerMount = undefined;
   const newAtRoot = element<HTMLButtonElement>("new-at-root");
   newAtRoot.addEventListener("click", () => openCreate("", newAtRoot));
-  fileActions = createFileRowActions({
-    host: element("explorer-files"),
-    items: fileRowItems,
-    checkRename: (target, name) => renameProblem(target, name),
-    rename: renameFileTarget,
-    remove: (target) => void deleteFileTarget(target),
-    dropProblem: (source, folder) => dropProblem(source, folder),
-    drop: (source, folder) => void dropFileTarget(source, folder),
-    dropFiles: (files, folder) => void uploadFilesTo(folder, files),
-    announce,
-  });
-  fileActions.attachRoot(files);
-  fileActions.attachRoot(element("explorer-files").querySelector<HTMLElement>(".files-heading")!);
   pagesTree = undefined;
   pagesTreeMount = undefined;
   mountExplorerTabs();
   element("explorer").addEventListener("toggle", () => {
     if (explorerDropdown?.isOpen()) {
-      if (!element("explorer-files").hidden) filesTreeController.shown();
-      void ensurePagesTree().then(() => pagesController.renderTree()).catch(errorMessage);
+      void ensureExplorer().then(() => {
+        pagesController.renderTree();
+        if (filesTreeController.visible()) filesTreeController.shown();
+      }).catch(errorMessage);
     } else {
       pagesTree?.reset();
       fileActions?.close();
@@ -613,8 +605,17 @@ function mountWorkspace() {
       if (!route) return undefined;
       return route === "/" ? { route, fixed: "The home page's URL is always /." } : { route };
     },
-    planUrl: (file, value) => pagesController.urlPlan(file, value),
-    applyUrl: (file, value, keep) => pagesController.changeUrl(file, value, keep),
+    planUrl: (file, value) => {
+      if (pageActions) return pageActions.urlPlan(file, value);
+      if (value === nativeRouteForPath(file)) return { ok: false, error: "", unchanged: true };
+      void loadPagesActions().then(() => pageStructure?.refreshMeta()).catch(errorMessage);
+      return { ok: false, error: "Loading page actions…" };
+    },
+    applyUrl: async (file, value, keep) => {
+      const since = guardedEdits.stamp();
+      await loadPagesActions();
+      return since.holds() ? pageActions!.changeUrl(file, value, keep) : "The repository changed meanwhile. Try again.";
+    },
     onPageMetaClose: (path) => editorModule?.closeActiveEditGroup(path),
     // A row's Alt+arrows, by the Block move module. In Edit component mode a row of the template
     // edited (`template`: the bytes it was painted from) moves in it while that mode lasts. A page
@@ -659,7 +660,7 @@ const paletteController = createCommandPaletteController({
   beginNewPage: () => { openExplorer(); pagesController.selectTab("pages"); },
   startNewPage: () => {
     const since = guardedEdits.stamp("repository");
-    void ensurePagesTree().then(() => { if (since.holds() && explorerDropdown?.isOpen()) pagesTree?.startNew("/"); }).catch(errorMessage);
+    void ensureExplorer().then(() => { if (since.holds() && explorerDropdown?.isOpen()) pagesTree?.startNew("/"); }).catch(errorMessage);
   },
   actions: {
     open: (path) => {
@@ -875,7 +876,7 @@ const editorWorkspace = createEditorWorkspace({
   exists: path => nativePathExists(path) || (!nativeSite && (pathNow(path, treeState()) === "file" || pathNow(path, treeState()) === "folder")),
   base: path => nativeBaseSources.get(path),
   branchText,
-  entry: async path => (await fileOperationsController.targetFiles({ path, name: path.slice(path.lastIndexOf("/") + 1), folder: false }, true))[0],
+  entry: async path => { await loadFileOps(); return (await fileOps!.targetFiles({ path, name: path.slice(path.lastIndexOf("/") + 1), folder: false }, true))[0]; },
   createProblem: async path => (await findEntry(path)) ? `${path} already exists.` : branchPathProblem(path),
   openFile: () => appStore.openFile.value,
   restore: (path, epoch, beforeMount) => restoreFile(path, epoch, { linkDefaultStyle: false, beforeMount }),
@@ -1133,6 +1134,9 @@ async function restoreVersion(view: VersionView) {
     refuse("Publish or discard this file’s draft before restoring. Other files’ drafts are kept.");
     return;
   }
+  const since = guardedEdits.stamp();
+  const { createConfirmDialog } = await loadConfirmDialog();
+  if (!since.holds() || versionView !== view) return;
   if (!versionDialog) {
     versionDialog = createConfirmDialog("version-dialog");
     document.body.append(versionDialog.root);
@@ -2505,7 +2509,11 @@ const mediaPorts: import("./controllers/media-controller").MediaControllerPorts 
   viewingVersion: () => Boolean(versionView),
   restoreFile: (path, epoch) => restoreFile(path, epoch, { linkDefaultStyle: false }),
   change: (...args) => pageStructureController.editOpenPage(...args),
-  galleryHost: () => element("explorer-media"),
+  galleryHost: () => {
+    const host = element("explorer-media");
+    host.querySelector(":scope > .sidebar-hint")?.remove();
+    return host;
+  },
   galleryVisible: () => !element("explorer-media").hidden && element("explorer").matches(":popover-open"),
   mediaSelected: () => pagesController.explorerTab() === "media",
   gallerySignature: imagesSignature,
@@ -3091,6 +3099,7 @@ function placeNotice(notice: HTMLElement) {
     app.insertBefore(notice, document.querySelector(".workspace"));
 }
 function errorMessage(error: unknown) {
+  if (handleChunkLoadFailure(error)) return;
   if (error instanceof ApiError && error.status === 401) {
     renderLogin("expired");
   }
@@ -3457,29 +3466,78 @@ function treeState(scope = draftScope()): TreeState {
     drafted: drafts.filter((draft) => draft.baseSha === null && !draft.deleted).map((draft) => draft.path),
   };
 }
-const filesTreeController = createFilesTreeController({
-  ui: { node, button, setIcon },
-  snapshot: () => appStore.snapshot.value, repo: () => appStore.repository.value,
-  openFile: () => appStore.openFile.value, epoch: () => generation, root: () => files,
-  state: treeState, scope: draftScope, draft: (scope, path) => draftStore().get(scope, path),
-  load: input => api<Directory>("tree", input), images: () => mediaController.requestGalleryRefresh(),
-  clearError, error: errorMessage, status, announce, refuse, intent: (path) => previewSelection.recordIntent(path),
-  openDraft: openNewDraft, openEntry, restore: target => restoreFileTarget(target),
-  create: openCreate, actions: () => fileActions,
+let filesTree: ReturnType<typeof createFilesTreeController> | undefined;
+// Folder listings by tree SHA (content-addressed, so never stale) for path checks before the tree loads.
+const spareListings = new Map<string, Directory["entries"]>();
+const filesTreeController = {
+  refresh: () => filesTree ? filesTree.refresh() : mediaController.requestGalleryRefresh(), render: () => filesTree?.render(), reset: () => filesTree?.reset(),
+  shown: () => filesTree?.shown(), row: (path: string) => filesTree?.row(path),
+  openFolder: (path: string) => filesTree?.openFolder(path), listings: () => filesTree?.listings() ?? spareListings,
   visible: () => !!explorerDropdown?.isOpen() && pagesController.explorerTab() === "files",
-  count: (total) => {
-    // The commit the tree shows, in full (set on the hidden #revision before each draw).
-    const count = element("files-count"), commit = element("revision").title;
-    // A number beside the heading, as Pages shows its page count; the tooltip says it in words.
-    count.textContent = total === undefined ? "" : String(total);
-    count.title = [total === undefined ? "" : `${total} ${total === 1 ? "file" : "files"}`, /^[0-9a-f]{40}$/.test(commit) ? `Version ${commit}` : ""].filter(Boolean).join("\n");
-  },
-});
+};
+let explorerMount: Promise<void> | undefined;
+function ensureExplorer() {
+  if (filesTree) return ensurePagesTree();
+  if (explorerMount) return explorerMount;
+  const host = element("explorer");
+  const pending = loadExplorerModules().then(async ({ createCreateDialog, createFileRowActions, createConfirmDialog, createPagePicker, createFilesTreeController }) => {
+    if (!host.isConnected || host !== document.getElementById("explorer")) return;
+    createDialog = createCreateDialog({
+      plan: (request) => {
+        const planned = planCreation(request);
+        return planned.ok ? { ok: true, summary: planned.value.summary } : planned;
+      },
+      create: createFromRequest,
+    });
+    element("explorer").append(createDialog.root);
+    confirmDialog ??= createConfirmDialog();
+    element("explorer").append(confirmDialog.root);
+    pagePicker = createPagePicker();
+    element("explorer").append(pagePicker.root);
+    fileActions = createFileRowActions({
+      host: element("explorer-files"),
+      items: fileRowItems,
+      checkRename: (target, name) => renameProblem(target, name),
+      rename: renameFileTarget,
+      remove: (target) => void fileOps!.deleteFileTarget(target),
+      dropProblem: (source, folder) => dropProblem(source, folder),
+      drop: (source, folder) => void dropFileTarget(source, folder),
+      dropFiles: (files, folder) => void uploadFilesTo(folder, files),
+      announce,
+    });
+    fileActions.attachRoot(files);
+    fileActions.attachRoot(element("explorer-files").querySelector<HTMLElement>(".files-heading")!);
+    filesTree = createFilesTreeController({
+      ui: { node, button, setIcon },
+      snapshot: () => appStore.snapshot.value, repo: () => appStore.repository.value,
+      openFile: () => appStore.openFile.value, epoch: () => generation, root: () => files,
+      state: treeState, scope: draftScope, draft: (scope, path) => draftStore().get(scope, path),
+      load: input => api<Directory>("tree", input), images: () => mediaController.requestGalleryRefresh(),
+      clearError, error: errorMessage, status, announce, refuse, intent: (path) => previewSelection.recordIntent(path),
+      openDraft: openNewDraft, openEntry, restore: target => fileOps!.restoreFileTarget(target),
+      create: openCreate, actions: () => fileActions,
+      visible: () => !!explorerDropdown?.isOpen() && pagesController.explorerTab() === "files",
+      count: (total) => {
+        // The commit the tree shows, in full (set on the hidden #revision before each draw).
+        const count = element("files-count"), commit = element("revision").title;
+        // A number beside the heading, as Pages shows its page count; the tooltip says it in words.
+        count.textContent = total === undefined ? "" : String(total);
+        count.title = [total === undefined ? "" : `${total} ${total === 1 ? "file" : "files"}`, /^[0-9a-f]{40}$/.test(commit) ? `Version ${commit}` : ""].filter(Boolean).join("\n");
+      },
+    });
+    filesTreeController.render();
+    if (filesTreeController.visible()) filesTreeController.shown();
+    await ensurePagesTree();
+  }).finally(() => { if (explorerMount === pending) explorerMount = undefined; });
+  explorerMount = pending;
+  return pending;
+}
+
 
 // The explorer's Pages | Media | Files tabs: tab state and tree rendering
 // live in the Pages controller; the host mounts the DOM and paints the tabs.
 let pagesTree: ReturnType<typeof createPagesTree> | undefined;
-const loadPagesTree = lazyModule(() => import("./components/pages-tree"));
+const loadPagesTree = lazyModule(async () => (await Promise.all([import("./components/pages-tree"), loadPagesActions()]))[0]);
 let pagesTreeMount: Promise<void> | undefined;
 function ensurePagesTree() {
   if (pagesTree) return Promise.resolve();
@@ -3494,29 +3552,29 @@ function ensurePagesTree() {
         else void restoreFile(file, generation);
       },
       plan: (request) => {
-        const planned = pagesController.planNew(request);
+        const planned = pageActions!.planNew(request);
         return planned.ok ? { ok: true, value: { route: planned.value.route, file: planned.value.file, note: planned.value.note } } : planned;
       },
-      create: (request) => pagesController.createNew(request),
+      create: (request) => pageActions!.createNew(request),
       announce,
       onInteractionEnd: flushPendingNativePageTitles,
-      retitle: (file, title) => pagesController.retitle(file, title),
+      retitle: (file, title) => pageActions!.retitle(file, title),
       changed: (file) => Boolean(treeState().changes.get(file)),
       discard: (file) => void savePublish.discardFile(file),
-      duplicate: (file) => void pagesController.duplicate(file),
-      remove: (target) => void pagesController.remove(target),
-      createPage: (route) => void pagesController.createFolderPage(route),
+      duplicate: (file) => void pageActions!.duplicate(file),
+      remove: (target) => void pageActions!.remove(target),
+      createPage: (route) => void pageActions!.createFolderPage(route),
       pageSettings: (path) => { element("explorer-toggle").focus(); void openNativePageSettings(path); },
       navigation: (path) => { element("explorer-toggle").focus(); void openNativeNavigation(path); },
       canAddToNavigation: () => Boolean(nativeNavigationTarget(nativeSite?.routes["/"])),
-      planUrl: (target, value) => (target.file ? pagesController.urlPlan(target.file, value) : { ok: false, error: "This row has no page." }),
-      changeUrl: (target, value, keep) => (target.file ? pagesController.changeUrl(target.file, value, keep) : Promise.resolve("This row has no page.")),
-      moveTo: (target) => void pagesController.moveTo(target),
-      dropProblem: (source, parent) => pagesController.dropProblem(source, parent),
-      drop: (source, parent) => void pagesController.confirmMove(source, parent),
+      planUrl: (target, value) => (target.file ? pageActions!.urlPlan(target.file, value) : { ok: false, error: "This row has no page." }),
+      changeUrl: (target, value, keep) => (target.file ? pageActions!.changeUrl(target.file, value, keep) : Promise.resolve("This row has no page.")),
+      moveTo: (target) => void pageActions!.moveTo(target),
+      dropProblem: (source, parent) => pageActions!.dropProblem(source, parent),
+      drop: (source, parent) => void pageActions!.confirmMove(source, parent),
       cardOffer: cardsController.cardOffer,
     });
-    element("explorer-pages").append(pagesTree.root);
+    element("explorer-pages").replaceChildren(pagesTree.root);
 
     if (explorerDropdown?.isOpen()) pagesController.renderTree();
   }).finally(() => { if (pagesTreeMount === pending) pagesTreeMount = undefined; });
@@ -3535,7 +3593,7 @@ function mountExplorerTabs() {
   explorer.addEventListener("toggle", () => {
     // Closing a popover queues its toggle; session expiry may detach it before dispatch.
     if (!explorer.isConnected) return;
-    if (mediaController.galleryVisible() && pagesController.explorerTab() === "media") void mediaController.ensureGallery().catch(errorMessage);
+    if (mediaController.galleryVisible() && pagesController.explorerTab() === "media") void ensureExplorer().then(() => mediaController.ensureGallery()).catch(errorMessage);
   });
   const tabs = { pages: element<HTMLButtonElement>("explorer-tab-pages"), media: element<HTMLButtonElement>("explorer-tab-media"), files: element<HTMLButtonElement>("explorer-tab-files") };
   for (const [name, tab] of Object.entries(tabs) as [ExplorerTab, HTMLButtonElement][]) {
@@ -3627,7 +3685,7 @@ const pagePorts = (): Parameters<typeof createPagesController>[0] => ({
   ensureIndex: ensureNativeTextIndex,
   readRedirects: readNativeRedirects,
   withMovedPageUrls,
-  pageLinks: (...args) => fileOperationsController.pageLinks(...args),
+  pageLinks: (...args) => fileOps!.pageLinks(...args),
   cardsLinkingTo: cardsController.cardsLinkingTo,
   confirmation: () => confirmDialog,
   picker: () => pagePicker,
@@ -3640,7 +3698,7 @@ const pagePorts = (): Parameters<typeof createPagesController>[0] => ({
   tabsMounted: () => Boolean(document.getElementById("explorer-tabs")),
   paintTabs: paintExplorerTabs,
   resetExplorer: () => { pagesTree?.reset(); mediaController.disposeGallery(); },
-  showMedia: () => void mediaController.ensureGallery().catch(errorMessage),
+  showMedia: () => { if (explorerDropdown?.isOpen()) void ensureExplorer().then(() => mediaController.ensureGallery()).catch(errorMessage); },
   siteReadForCreate: nativeSiteReadForCreate,
   createWithCard: cardsController.createWithCard,
   navigationTarget: nativeNavigationTarget,
@@ -3649,7 +3707,7 @@ const pagePorts = (): Parameters<typeof createPagesController>[0] => ({
   refuse,
   error: errorMessage,
 });
-const pagesController = createPagesController(pagePorts());
+const pagesController = createPagesState(pagePorts());
 
 // Shared file operations use the same pure source/draft policy as Pages.
 function onBranchHere(path: string) {
@@ -3693,7 +3751,7 @@ let createDialog: ReturnType<typeof createCreateDialog> | undefined;
 
 // What a creation in the Files tab writes: new files (drafts with no base
 // blob), and what to show after. Planned as the name is typed, so the dialog says the result
-// live. Pages are made in the Pages tab (`pagesController.createNew`), where the URL is
+// live. Pages are made in the Pages tab (`pageActions!.createNew`), where the URL is
 // the site's; a file or folder here is only ever what was typed.
 interface Creation {
   files: { path: string; content: string }[];
@@ -3826,7 +3884,8 @@ async function createFromRequest(request: CreateRequest): Promise<string | undef
 // The "+" on a folder: a new file or folder in it.
 function openCreate(folder: string, opener: HTMLElement) {
   if (!appStore.snapshot.value) return;
-  createDialog?.open({ in: folder, kinds: ["file", "folder"], first: "file", opener });
+  const since = guardedEdits.stamp();
+  void ensureExplorer().then(() => { if (since.holds()) createDialog?.open({ in: folder, kinds: ["file", "folder"], first: "file", opener }); }).catch(errorMessage);
 }
 
 // ---- Deleting, renaming, moving and duplicating files. ----
@@ -3869,7 +3928,7 @@ const parentOf = (path: string) => (path.includes("/") ? path.slice(0, path.last
 
 // The actions of a Files row.
 function fileRowItems(target: FileRowTarget): MenuItem[] {
-  if (target.gone) return [{ label: "Restore", run: () => void restoreFileTarget(target) }];
+  if (target.gone) return [{ label: "Restore", run: () => void fileOps!.restoreFileTarget(target) }];
   const items: MenuItem[] = [];
   if (target.folder)
     items.push(
@@ -3878,12 +3937,12 @@ function fileRowItems(target: FileRowTarget): MenuItem[] {
       { label: "Upload files…", run: () => void pickFiles().then((picked) => uploadFilesTo(target.path, picked)) },
     );
   items.push({ label: "Rename", shortcut: "F2", run: () => fileActions?.rename(files, target.path) });
-  if (!target.folder) items.push({ label: "Duplicate", run: () => void duplicateFileTarget(target) });
+  if (!target.folder) items.push({ label: "Duplicate", run: () => void fileOps!.duplicateFileTarget(target) });
   const change = treeState().changes.get(target.path);
   if (change?.kind === "R" && change.from) items.push({ label: `Move back to ${change.from}`, run: () => undoFileChanges({ moveBack: [target.path] }) });
   if (change && !target.folder) items.push({ label: "Discard changes", run: () => void savePublish.discardFile(target.path) });
   items.push(
-    { label: "Delete", shortcut: "Delete", run: () => void deleteFileTarget(target) },
+    { label: "Delete", shortcut: "Delete", run: () => void fileOps!.deleteFileTarget(target) },
     { label: "Copy path", run: () => void copyFilePath(target.path) },
   );
   return items;
@@ -3938,8 +3997,13 @@ const filePorts = (): Parameters<typeof createLazyFileOperationsController>[0] =
   openFolder: path => filesTreeController.openFolder(path), fileRow: path => filesTreeController.row(path), renderFileTree: () => filesTreeController.render(),
   filesTabOpen: () => filesTreeController.visible(),
 });
-const fileOperationsController = createLazyFileOperationsController(filePorts(), lazyModule(() => import("./controllers/file-operations-controller")));
-const { moveProblem, fileMoveProblem, moveFileTarget, deleteFileTarget, duplicateFileTarget, restoreFileTarget } = fileOperationsController;
+// Files checks and actions load with the explorer, Pages actions or an agent's file command.
+let fileOps: ReturnType<typeof createLazyFileOperationsController> | undefined;
+const loadFileOps = lazyModule(async () => {
+  const module = await import("./controllers/file-operation-checks");
+  fileOps ??= module.createLazyFileOperationsController(filePorts(), lazyModule(() => import("./controllers/file-operations-controller")));
+  return module;
+});
 
 // A media file's new name is tidied by the media rules (any language, its own format); a folder typed before it is checked as usual.
 function renameTarget(target: FileRowTarget, name: string): Checked<string> {
@@ -3951,14 +4015,14 @@ function renameTarget(target: FileRowTarget, name: string): Checked<string> {
 
 function renameProblem(target: FileRowTarget, name: string) {
   const to = renameTarget(target, name);
-  return to.ok ? fileMoveProblem(target, to.value, "rename") : to.error;
+  return to.ok ? fileOps!.fileMoveProblem(target, to.value, "rename") : to.error;
 }
 
 function dropProblem(source: FileRowTarget, folder: string) {
   if (source.gone) return "A deleted file cannot move.";
   if (parentOf(source.path) === folder) return "It is already there.";
   if (source.folder && (folder === source.path || folder.startsWith(`${source.path}/`))) return "A folder cannot go inside itself.";
-  return moveProblem(source, folder ? `${folder}/${source.name}` : source.name, "move");
+  return fileOps!.moveProblem(source, folder ? `${folder}/${source.name}` : source.name, "move");
 }
 
 // Every file on the branch under `folder`, with full paths.
@@ -4151,19 +4215,26 @@ const savePublish = createSavePublishController({
       else void openDefaultLinkedStyle(page);
     }
   },
-  confirm: (question, all) => (all ? discardDialog : confirmDialog)?.ask(question),
+  confirm: async (question, all) => {
+    const since = guardedEdits.stamp();
+    const { createConfirmDialog } = await loadConfirmDialog();
+    if (!since.holds()) return false;
+    if (all && !discardDialog) { discardDialog = createConfirmDialog("discard-dialog"); app.append(discardDialog.root); }
+    if (!all && !confirmDialog) { confirmDialog = createConfirmDialog(); element("explorer").append(confirmDialog.root); }
+    return (all ? discardDialog : confirmDialog)!.ask(question);
+  },
 });
 
 async function renameFileTarget(target: FileRowTarget, name: string): Promise<string | undefined> {
   const to = renameTarget(target, name);
   if (!to.ok) return to.error;
-  return moveFileTarget(target, to.value, "rename");
+  return fileOps!.moveFileTarget(target, to.value, "rename");
 }
 
 async function dropFileTarget(source: FileRowTarget, folder: string) {
   const problem = dropProblem(source, folder);
   if (problem) { refuse(problem); return; }
-  const error = await moveFileTarget(source, folder ? `${folder}/${source.name}` : source.name, "move");
+  const error = await fileOps!.moveFileTarget(source, folder ? `${folder}/${source.name}` : source.name, "move");
   if (error) errorMessage(new Error(error));
 }
 
@@ -4455,7 +4526,11 @@ function buildAgentSiteContext(): Promise<SharedContext | undefined> {
   return agentSiteHost.context();
 }
 // A Files-tab action run for an agent: its confirmation is answered as asked.
-function withAgentAnswers<T>(answers: { option?: boolean }, run: () => Promise<T>) {
+async function withAgentAnswers<T>(answers: { option?: boolean }, run: () => Promise<T>) {
+  const since = guardedEdits.stamp();
+  const { createConfirmDialog } = await loadConfirmDialog();
+  if (!since.holds()) throw new Error("The editor changed branch or revision.");
+  if (!confirmDialog) { confirmDialog = createConfirmDialog(); element("explorer").append(confirmDialog.root); }
   return agentSiteHost.withAnswers(answers, run);
 }
 function agentFileTarget(path: string): FileRowTarget | undefined {
@@ -4554,9 +4629,12 @@ function makeAgentSiteActions(edits: GuardedEdits = guardedEdits, atomic = false
     return appStore.openFile.value === path;
   },
   async createPage(request) {
-    const plan = pagesController.planNew(request);
+    const since = edits.stamp();
+    await loadPagesActions();
+    if (!since.holds()) return "The repository changed meanwhile. Try again.";
+    const plan = pageActions!.planNew(request);
     if (!plan.ok) return plan.error;
-    return (await pagesController.createNew(request)) ?? { file: plan.value.file, route: plan.value.route };
+    return (await pageActions!.createNew(request)) ?? { file: plan.value.file, route: plan.value.route };
   },
   async setPageDetail(path, field, value) {
     const error = await writeNativePageMeta(path, field, value, false);
@@ -4573,12 +4651,12 @@ function makeAgentSiteActions(edits: GuardedEdits = guardedEdits, atomic = false
     withAgentAnswers({ option: keepOldUrl }, async () => {
       const target = agentFileTarget(path);
       if (!target) return `${path} does not exist.`;
-      return moveFileTarget(target, to, parentOf(path) === parentOf(to) ? "rename" : "move", { keepOldAddress: keepOldUrl });
+      return fileOps!.moveFileTarget(target, to, parentOf(path) === parentOf(to) ? "rename" : "move", { keepOldAddress: keepOldUrl });
     }),
   deleteFile: (path) =>
     withAgentAnswers({}, async () => {
       const target = agentFileTarget(path);
-      return target ? deleteFileTarget(target, undefined, true) : `${path} does not exist.`;
+      return target ? fileOps!.deleteFileTarget(target, undefined, true) : `${path} does not exist.`;
     }),
   inspect(request) {
     if (!nativePreview?.isActive()) throw new Error("The preview is not showing a page.");
@@ -4606,7 +4684,7 @@ function makeAgentSiteActions(edits: GuardedEdits = guardedEdits, atomic = false
 async function applyAgentSiteCommand(command: AgentCommand) {
   const scope = draftScope(), epoch = generation, key = setupScope(), revision = appStore.snapshot.value?.commit;
   const current = () => epoch === generation && key === setupScope() && revision === appStore.snapshot.value?.commit && !versionView;
-  const { applySiteCommand, prepareAgentText, atomicAgentCommand, agentStructuralActions } = await loadAgentSite();
+  const [{ applySiteCommand, prepareAgentText, atomicAgentCommand, agentStructuralActions }, { createPagesController }, { createLazyFileOperationsController }] = await Promise.all([loadAgentSite(), loadPagesActions(), loadFileOps()]);
   if (!current() || !appStore.snapshot.value || command.branch !== appStore.snapshot.value.branch ||
     command.repoId !== undefined && command.repoId !== scope?.repoId) throw new Error("The editor changed repository or branch.");
   if (!atomicAgentCommand(command)) {

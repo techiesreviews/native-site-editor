@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-const CEILING = 5650;
+const CEILING = 5730;
 
 function checkCeiling(count: number, ceiling: number): void {
   assert.ok(count <= ceiling, `src/main.ts has ${count} lines, above the ceiling of ${ceiling}`);

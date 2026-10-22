@@ -16,7 +16,7 @@ Each file is followed by its declared entry symbols. Styles, fixtures, scripts a
 | Workspace mounting and lazy panels | `src/main.ts` — `mountWorkspace`, `lazyModule`; `src/app-store.ts` — `createAppStore` |
 | Source editor, drafts and Undo/Redo | `src/components/source-editor.ts` — `mountSourceEditor`; `src/draft-store.ts` — `createDraftStore`; `src/drafts.ts` — `draftStore` |
 | Monaco loading and code panes | `src/controllers/code-panes-controller.ts` — `createCodePanesController`; `src/components/code-editor.ts` — `mountCodeEditor` |
-| Pages explorer and page operations | `src/controllers/pages-controller.ts` — `createPagesController`; `src/components/pages-tree.ts` — `createPagesTree`; `src/native-page-moves.ts` — `planPageMove` |
+| Pages explorer and page operations | `src/controllers/pages-state.ts` — `createPagesState`, `pageLinkSources`, `pageOnBranchHere`; `src/controllers/pages-controller.ts` — `createPagesController`; `src/components/pages-tree.ts` — `createPagesTree`; `src/native-page-moves.ts` — `planPageMove` |
 | Files explorer and file operations | `src/controllers/files-tree-controller.ts` — `createFilesTreeController`; `src/controllers/file-operations-controller.ts` — `createFileOperationsController`; `src/controllers/file-operation-checks.ts` — `createLazyFileOperationsController`; `src/file-changes.ts` — `listChanges` |
 | Save to GitHub and change status UI | `src/controllers/save-publish-controller.ts` — `createSavePublishController`; `src/deploy-status.ts` — `setDeployStatus` |
 | History and restoring saved versions | `src/controllers/history-controller.ts` — `createHistoryController`; `src/components/commit-history.ts` — `createCommitHistory` |

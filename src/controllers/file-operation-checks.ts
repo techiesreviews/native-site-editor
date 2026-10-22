@@ -1,6 +1,6 @@
 import { mediaFamilyOf, renamedFamily, familyMembers } from "../page-builder/media-families";
 import { isRenamableMedia, mediaFileName, suggestMediaName } from "../page-builder/media-names";
-import { pageLinkSources } from "./pages-controller";
+import { pageLinkSources } from "./pages-state";
 import { filesLinkingTo, linkNote, protectedPathProblem, type FileOperation } from "../native-files";
 import { nativePageRoute } from "../../shared/native-routes";
 import { NATIVE_HOME_PAGE } from "../../shared/native-project";
