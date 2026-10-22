@@ -84,9 +84,23 @@ test("a tile pressed during a pending search keeps the grid until its click has 
   assert.deepEqual(draws, []);
   dialog.dispatchEvent(new Event("pointerup"));
   grid.dispatchEvent(new Event("click"));
+  // A label's second click lands in the same turn; the redraw follows both.
+  grid.dispatchEvent(new Event("click"));
+  assert.deepEqual(draws, []);
+  context.mock.timers.tick(0);
   assert.deepEqual(draws, ["cat"]);
   context.mock.timers.tick(1000);
   assert.deepEqual(draws, ["cat"]);
+});
+
+test("closing Media between a pressed tile's click and its redraw draws nothing", context => {
+  const { type, grid, controller, draws } = searchFixture(context);
+  type("cat");
+  grid.dispatchEvent(new Event("pointerdown"));
+  grid.dispatchEvent(new Event("click"));
+  controller.abort();
+  context.mock.timers.tick(1000);
+  assert.deepEqual(draws, []);
 });
 
 test("a press released without a click still redraws the pending search", context => {
@@ -97,7 +111,7 @@ test("a press released without a click still redraws the pending search", contex
   assert.deepEqual(draws, []);
   context.mock.timers.tick(1);
   assert.deepEqual(draws, ["cat"]);
-  grid.dispatchEvent(new Event("click"));
+  grid.dispatchEvent(new Event("click")); context.mock.timers.tick(1000);
   assert.deepEqual(draws, ["cat"]);
 });
 

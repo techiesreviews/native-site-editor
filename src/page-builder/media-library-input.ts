@@ -39,7 +39,11 @@ export function wireMediaLibraryInput(
     if (searchTimer === undefined) return;
     cancelSearch(); pressing = true;
   }, { signal });
-  grid.addEventListener("click", () => { if (pressing) redrawSearch(); }, { signal });
+  // After the whole click: a checkbox's change, and a label's second click, run before the redraw.
+  grid.addEventListener("click", () => {
+    if (!pressing) return;
+    cancelSearch(); pressing = false; searchTimer = setTimeout(redrawSearch, 0);
+  }, { signal });
   // A press that ends without a click on the grid (released elsewhere, or a blocked click) still redraws.
   const released = () => { if (pressing && searchTimer === undefined) searchTimer = setTimeout(redrawSearch, 150); };
   const page: EventTarget = grid.ownerDocument ?? dialog; // the whole page: a release outside Media counts too

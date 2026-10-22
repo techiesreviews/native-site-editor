@@ -57,6 +57,28 @@ test("a thumbnail clicked while the search waits opens on the first click", asyn
   await expect(thumbnails(page)).toHaveCount(9);
 
   await library(page).getByRole("button", { name: "Details for images/dog-1.svg", exact: true }).click();
+  await page.clock.runFor(1);
   await expect(library(page).getByLabel("File name", { exact: true })).toHaveValue("dog-1.svg");
   await expect(count(page)).toHaveText("3 of 9 files");
+});
+
+test("selection clicked while the search waits stays selected, on the box and on its round", async ({ page, baseURL }) => {
+  await mountLibrary(page, baseURL);
+  const selected = library(page).locator(".media-library__bulk-count");
+  await search(page).click();
+  await page.keyboard.type("dog");
+  await library(page).locator('.media-library__card[data-path="images/dog-1.svg"] .media-library__select').click();
+  await page.clock.runFor(1);
+  await expect(library(page).getByLabel("Select images/dog-1.svg", { exact: true })).toBeChecked();
+  await expect(count(page)).toHaveText("3 of 9 files");
+  await expect(selected).toHaveText("1 selected");
+
+  await search(page).fill("");
+  await search(page).click();
+  await page.keyboard.type("dog-");
+  await library(page).getByLabel("Select images/dog-2.svg", { exact: true }).click({ force: true });
+  await page.clock.runFor(1);
+  await expect(library(page).getByLabel("Select images/dog-2.svg", { exact: true })).toBeChecked();
+  await expect(library(page).getByLabel("Select images/dog-1.svg", { exact: true })).toBeChecked();
+  await expect(selected).toHaveText("2 selected");
 });
