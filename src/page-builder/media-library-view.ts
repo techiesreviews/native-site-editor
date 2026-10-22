@@ -189,6 +189,8 @@ export function createMediaLibraryView(
     added: paths => {
       const fits = paths.find(path => library.items.some(item => item.path === path) && filterMediaLibrary(
         { ...library, items: [{ path }] }, { query: "", collection: "", kind: "all", accept: options.accept }).length);
+      // The last batch's ring ends here, as it did when tiles were rebuilt; a kept tile would replay it on a move.
+      for (const card of grid.querySelectorAll<HTMLElement>(".media-library__card.is-new")) card.classList.remove("is-new");
       fresh = { paths };
       if (modal && fits) { chosen = fits; draw(); } else showFresh();
     },

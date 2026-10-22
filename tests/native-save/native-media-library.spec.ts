@@ -482,3 +482,22 @@ test("adding a file keeps the tiles and pictures already shown; its ring goes on
   await search.fill("kept-tile");
   await expect(added).not.toHaveClass(/\bis-new\b/);
 });
+
+test("a second addition ends the first one's ring for good (ticket 92)", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const panel = library(page), upload = panel.locator('input[name="media-upload"]');
+  const svg = (name: string) => ({ name, mimeType: "image/svg+xml", buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12"/>') });
+  const first = panel.locator('.media-library__card[data-path$="ring-first.svg"]'), second = panel.locator('.media-library__card[data-path$="ring-second.svg"]');
+  await upload.setInputFiles(svg("ring-first.svg"));
+  await expect(first).toHaveClass(/\bis-new\b/, { timeout: 30_000 });
+  // While the first ring still plays.
+  await upload.setInputFiles(svg("ring-second.svg"));
+  await expect(second).toHaveClass(/\bis-new\b/, { timeout: 30_000 });
+  // fixed-wait: past the second ring's 2.4 s, then a redraw.
+  await page.waitForTimeout(2_600);
+  await panel.getByLabel("Search media", { exact: true }).fill("ring-");
+  await expect(panel.locator(".media-library__card")).toHaveCount(2);
+  await expect(second).not.toHaveClass(/\bis-new\b/);
+  await expect(first).not.toHaveClass(/\bis-new\b/);
+  expect(await first.evaluate(card => card.getAnimations({ subtree: true }).some(each => each instanceof CSSAnimation && each.animationName === "media-new"))).toBe(false);
+});
