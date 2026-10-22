@@ -16,6 +16,7 @@ import type { DraftScope, SavedDraft } from "../../src/drafts";
 import type { DraftAccess } from "../../src/file-changes";
 import type { EditorWorkspace, HistoryHooks, NodeRef } from "../../src/guarded-edit";
 import type { NativeSite } from "../../shared/native-project";
+import type { WorkspaceSession } from "../../src/workspace-session";
 
 export interface Deferred<T = void> { promise: Promise<T>; resolve(value: T): void }
 export function deferred<T = void>(): Deferred<T> {
@@ -35,6 +36,8 @@ export function createMemoryWorkspace(init: {
   editModeEntry?: () => object | undefined;
   /** Runs as `open` mounts a file, before it resolves (main.ts's synchronous refresh). */
   onOpen?: (path: string) => void;
+  /** A workspace session (src/workspace-session.ts): its load and setup key stand for the generation and scope. */
+  session?: WorkspaceSession;
 } = {}) {
   const scope: DraftScope = { account: "lex", repoId: 1, repo: "lex/site", branch: "main" };
   let scopeKey = "lex/site@main", generation = 0, versionView = false, route: string | undefined = "/";
@@ -55,6 +58,7 @@ export function createMemoryWorkspace(init: {
   const done: Step[] = [], undone: Step[] = [];
   const refusals: string[] = [], announced: string[] = [], selected: ((NodeRef & { source?: string }) | undefined)[] = [], flashed: string[] = [], opened: string[] = [];
   let refreshFails = false;
+  const bump = () => { if (init.session) init.session.next(init.session.current().scope); else generation++; };
   let branchHold: (Hold & { wait: Promise<void>; arrive(): void }) | undefined;
   let openHold: (Hold & { wait: Promise<void>; arrive(): void }) | undefined;
 
@@ -171,9 +175,9 @@ export function createMemoryWorkspace(init: {
   // test's direct `source` below counts as an escaped read. `change` is the
   // editor's own range step with no hooks, as another action makes it.
   const workspace: EditorWorkspace & { change(path: string, edits: { start: number; end: number; text: string; expected: string }[], group: boolean | string): void } = {
-    scope: () => scopeKey,
+    scope: () => init.session ? init.session.keys()?.setup ?? "" : scopeKey,
     draftScope: () => scope,
-    generation: () => generation,
+    generation: () => init.session ? init.session.current().load : generation,
     versionView: () => versionView,
     route: () => route,
     editModeEntry: () => init.editModeEntry ? init.editModeEntry() : editEntry,
@@ -233,7 +237,7 @@ export function createMemoryWorkspace(init: {
     afterFileChanges() {},
     openAfter(path) {
       // The editor changed while the page opened: the step stays written.
-      if (refreshFails) { generation++; return; }
+      if (refreshFails) { bump(); return; }
       if (path === undefined || path === openFile) return;
       opened.push(path);
       if (!openFile) mountOpen(path);
@@ -281,7 +285,7 @@ export function createMemoryWorkspace(init: {
     mount, unmount: (path: string) => { models.delete(path); },
     remount: (path: string) => { mount(path); },
     close() { if (openFile) models.delete(openFile); openFile = undefined; },
-    bumpGeneration() { generation++; },
+    bumpGeneration: bump,
     setScope(next: string) { scopeKey = next; },
     setVersionView(on: boolean) { versionView = on; },
     setRoute(next: string | undefined) { route = next; },
