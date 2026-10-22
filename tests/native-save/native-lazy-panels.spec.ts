@@ -66,22 +66,13 @@ for (const name of Object.keys(chunks) as (keyof typeof chunks)[]) {
   });
 
   test(`${name} works again after a failed chunk load and recovery`, async ({ page, baseURL }) => {
-    let failed = 0;
-    await page.route(`**${chunks[name]}*`, async route => {
-      if (!failed++) await route.abort("failed");
-      else await route.continue();
-    });
-    await openEditor(page, baseURL);
-    expect(failed, "the chunk is not requested at boot").toBe(0);
-    // A tab that has already attempted automatic recovery offers manual reload.
-    await page.evaluate(() => sessionStorage.setItem("native-site-editor:chunk-reload", "1"));
+    const failed = await failOnce(page, baseURL, chunks[name]);
     await select(page, name);
     await expect(page.locator("#notice")).toContainText("reload the page manually");
-    expect(failed).toBe(1);
-    await page.reload();
-    await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
+    expect(failed()).toBe(1);
+    await reloadEditor(page);
     await act(page, name);
-    expect(failed).toBeGreaterThan(1);
+    expect(failed()).toBeGreaterThan(1);
   });
 }
 
@@ -98,9 +89,11 @@ async function failOnce(page: Page, baseURL: string | undefined, path: string) {
   return () => failed;
 }
 
+// Waits for the preview too: a rename's stamp holds the route the preview settles on.
 async function reloadEditor(page: Page) {
   await page.reload();
   await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
+  await expect(page.frameLocator(".native-preview-frame").locator("body")).toBeVisible();
 }
 
 // The Save panel's Discard asks through the confirm dialog, which loads with its first question.
@@ -161,6 +154,64 @@ test("Discard asked while its dialog loads is dropped when the branch changes me
     await expect(page.locator("dialog[open]")).toHaveCount(0);
     expect((await storedDrafts(page)).map(draft => draft.path), "main's draft is kept, none is written").toEqual(["index.html"]);
   } finally { release(); }
+});
+
+// A repository with no site (a README alone) has only Files, which still waits for the explorer's chunks.
+// Its explorer opens with the editor, so a reload key (`manualReload`) is preset before that boot.
+async function openPlainRepository(page: Page, baseURL: string | undefined, name: string, manualReload = false) {
+  await openEditor(page, baseURL);
+  if (manualReload) await page.evaluate(() => sessionStorage.setItem("native-site-editor:chunk-reload", "1"));
+  await page.request.post(`${baseURL}/__demo/onboarding`, { data: { add: [{ name, kind: "no-site" }] } });
+  const repos = (await (await page.request.get(`${baseURL}/api/repositories?refresh=1`)).json()) as { id: number; name: string }[];
+  await page.goto(`${baseURL}/#repo=${repos.find(repo => repo.name === name)!.id}&branch=main&file=README.md`);
+  await page.reload();
+  await expect(page.locator("#primary-title")).toHaveText("README.md", { timeout: 30_000 });
+}
+
+// Files alone, with no tabs.
+async function showPlainFiles(page: Page) {
+  if (!await page.locator("#explorer").isVisible()) await page.locator("#explorer-toggle").click();
+  await expect(page.getByRole("tab", { name: "Files", exact: true })).toBeHidden();
+}
+
+async function renameReadme(page: Page, to: string) {
+  await showPlainFiles(page);
+  const explorer = page.locator("#explorer");
+  await explorer.locator('.file-row[data-path="README.md"]').focus();
+  await page.keyboard.press("F2");
+  const field = explorer.getByRole("textbox", { name: "New name for README.md", exact: true });
+  await field.fill(to);
+  await field.press("Enter");
+  await expect(explorer.locator(`.file-row[data-path="${to}"]`)).toBeVisible();
+  await expect.poll(() => storedDraft(page, to)).toMatchObject({ movedFrom: "README.md" });
+}
+
+test("a repository without a site opens Files on first open, and again after page actions fail to load", async ({ page, baseURL }) => {
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  await page.route(`**${chunks.Files}*`, async route => { await held; await route.continue(); });
+  try {
+    await openPlainRepository(page, baseURL, "lazy-notes");
+    await showPlainFiles(page);
+    await expect(page.locator("#explorer-files")).toContainText("Loading files…");
+    release();
+    await renameReadme(page, "NOTES.md");
+  } finally { release(); }
+
+  await page.unroute(`**${chunks.Files}*`);
+  let failed = 0;
+  await page.route("**/src/controllers/pages-controller.ts*", async route => {
+    if (!failed++) await route.abort("failed");
+    else await route.continue();
+  });
+  await openPlainRepository(page, baseURL, "lazy-notes-again", true);
+  await showPlainFiles(page);
+  await expect(page.locator("#notice")).toContainText("reload the page manually");
+  expect(failed).toBe(1);
+  await page.reload();
+  await expect(page.locator("#primary-title")).toHaveText("README.md", { timeout: 30_000 });
+  await renameReadme(page, "NOTES-AGAIN.md");
+  expect(failed).toBeGreaterThan(1);
 });
 
 // Real request boundaries: the keyboard layer remains available before the UI loads.
