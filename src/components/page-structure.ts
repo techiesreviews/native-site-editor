@@ -235,6 +235,10 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   let pendingSelection: { path: string; node: number[] } | undefined;
   // A selection reported for a paint of this page not drawn here yet: its row, and those bytes.
   let selectedAhead: { id: string; painted: string } | undefined;
+  // While typing holds paints back: the tree last drawn (row state still names its rows), and a
+  // selection made ahead for a held paint (its row as that paint names it).
+  let heldFrom: NativeStructure | undefined;
+  let heldAhead: { id: string; at: NativeStructure } | undefined;
   // Rows folded or unfolded by hand; any other row inside <main> is folded.
   const foldState = new Map<string, boolean>();
   const inMain = new Set<string>();
@@ -1033,6 +1037,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   });
 
   function render() {
+    if (structure && heldFrom) follow(structure, heldFrom);
     menu.close(false);
     rows.clear();
     items.clear();
@@ -1247,6 +1252,27 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     return view;
   }
 
+  // The same page drawn again with rows added, removed or moved above others (Undo, Redo, an edit in
+  // code, Edit component mode ending as its instance moved, paints held while typing): folds, the mark
+  // and a selection made ahead for a held paint follow their elements from the trees that named them.
+  function follow(next: NativeStructure, from: NativeStructure) {
+    const ahead = heldAhead;
+    heldFrom = undefined; heldAhead = undefined;
+    const mover = (before: NativeStructure) => {
+      const rowOf = before.items === next.items ? undefined : followRows(before.items, next.items);
+      return (id: string) => !rowOf || id.startsWith("@") ? id : rowOf(id);
+    };
+    if (from.items !== next.items) {
+      const moved = mover(from);
+      const folds = [...foldState];
+      foldState.clear();
+      for (const [id, closed] of folds) { const to = moved(id); if (to !== undefined) foldState.set(to, closed); }
+      if (selected !== undefined) selected = moved(selected);
+      if (editingInstance !== undefined) editingInstance = moved(editingInstance);
+    }
+    if (ahead) selected = mover(ahead.at)(ahead.id);
+  }
+
   function focusRowOnly(el: HTMLElement) {
     for (const other of rows.values()) other.tabIndex = -1;
     el.tabIndex = 0;
@@ -1280,24 +1306,16 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
         if (pending.path === path) selected = key(pending.node);
         else if (path === previousStructure?.path) pendingSelection = pending;
       }
-      // While a row's text is being typed, the paint of exactly the source that
-      // typing made (text alone changed) is kept but not drawn: the tree stays
-      // as it is, field, caret and all; it is drawn when editing ends. Any other
-      // change (Undo, another edit, a new page) is drawn as ever.
+      // While a row's field has focus, any paint of this page is kept but not
+      // drawn: the tree stays as it is, field, caret and all; the latest is drawn
+      // once focus leaves. Stale edits ended above; a new page is drawn as ever.
       if (next && previousStructure && (openSlot || openText !== undefined) && path === previousStructure.path && editingModule?.holdsPaint(next, previousStructure)) {
-        structure = next;
+        heldFrom ??= previousStructure;
+        if (selectedAhead && next.paintedSource === selectedAhead.painted) { heldAhead = { id: selectedAhead.id, at: next }; selectedAhead = undefined; }
         return;
       }
-      // The same page drawn again with rows added, removed or moved above others (Undo, Redo, an
-      // edit in code, Edit component mode ending as its instance moved): folds and the mark follow their elements.
-      if (next && previousStructure && path === previousStructure.path && previousStructure.items !== next.items) {
-        const follow = followRows(previousStructure.items, next.items), moved = (id: string) => id.startsWith("@") ? id : follow(id);
-        const folds = [...foldState];
-        foldState.clear();
-        for (const [id, closed] of folds) { const to = moved(id); if (to !== undefined) foldState.set(to, closed); }
-        if (selected !== undefined) selected = moved(selected);
-        if (editingInstance !== undefined) editingInstance = moved(editingInstance);
-      }
+      if (next && previousStructure && path === previousStructure.path) follow(next, heldFrom ?? previousStructure);
+      heldFrom = undefined; heldAhead = undefined;
       const ahead = selectedAhead && path === previousStructure?.path && next?.paintedSource === selectedAhead.painted ? selectedAhead : undefined;
       if (ahead) selected = ahead.id;
       if (ahead || path !== previousStructure?.path) selectedAhead = undefined;

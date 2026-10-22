@@ -50,15 +50,22 @@ test("typing holds unrelated and structural paints until blur; focus requests se
       field.blur();
       const blurred = editing.holdsPaint(changed, previous);
       const focused = editing.focus({ prefix: "same:", row: "second", caret: 2 });
-      const correct = document.activeElement === field && document.activeElement !== first;
+      const correct = document.activeElement === field;
       const caret = [field.selectionStart, field.selectionEnd];
+      // With no row named, the first field with that prefix not hidden takes focus.
+      const rowless = editing.focus({ prefix: "same:", row: undefined });
+      const firstTaken = document.activeElement === first;
+      first.parentElement!.hidden = true;
+      editing.focus({ prefix: "same:", row: undefined });
+      const visibleTaken = document.activeElement === field;
+      first.parentElement!.hidden = false;
       const template = add("template", "components/test-card.html"); template.focus();
       template.value = "Template"; template.dispatchEvent(new Event("input"));
       const templateHeld = editing.holdsPaint(changed, previous);
       const navigation = editing.holdsPaint({ ...changed, path: "about/index.html" }, previous);
       editing.destroy(); tree.remove();
-      return { untyped, beforeWrite, pendingSource, own, other, held, released, blurred, focused, correct, caret, templateHeld, navigation };
+      return { untyped, beforeWrite, pendingSource, own, other, held, released, blurred, focused, correct, caret, rowless, firstTaken, visibleTaken, templateHeld, navigation };
     });
-    assert.deepEqual(result, { untyped: false, beforeWrite: true, pendingSource: "before", own: true, other: true, held: true, released: false, blurred: false, focused: true, correct: true, caret: [2, 2], templateHeld: true, navigation: false });
+    assert.deepEqual(result, { untyped: false, beforeWrite: true, pendingSource: "before", own: true, other: true, held: true, released: false, blurred: false, focused: true, correct: true, caret: [2, 2], rowless: true, firstTaken: true, visibleTaken: true, templateHeld: true, navigation: false });
   } finally { await browser.close(); }
 });
