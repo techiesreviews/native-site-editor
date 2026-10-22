@@ -3,6 +3,7 @@ title: "Ceiling check for main.ts"
 type: task (AFK)
 status: closed
 assignee: runner-10
+landed: "PR #113 (c6e79b0)"
 builder: sol
 blocked_by: []
 ---
@@ -42,4 +43,4 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 
 - Added a 5,650-line ceiling for `src/main.ts`. Growth fails naming the count and ceiling; a reduction of 50 or more lines fails with "lower the ceiling to N", rounding N up to a multiple of 10. Documented the automated check in `docs/agents/guardrails.md`.
 - Five unit tests cover the current file, growth diagnostics, accepted boundary counts, the exact 50-line threshold and rounding after larger reductions. Focused and affected unit runs both passed: `RESULT: ok unit 5/5 (1 files)`. `npm run check` and `npm run lint` passed; `RESULT: ok specs none affected`. Setup passed: `RESULT: ok doctor 7/7 checks passed`.
-- No commits were created; changes are unstaged for the runner.
+- Commits: build c99a2575, merged into dev as c6e79b0 (PR #113). Sol review (medium, read-only): no defects, no validation gaps; one stale-sentence nit fixed here.
