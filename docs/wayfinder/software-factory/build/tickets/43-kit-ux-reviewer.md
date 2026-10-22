@@ -1,0 +1,41 @@
+---
+title: "kit ux, reviewer half; visible slices run it"
+type: task (AFK)
+status: open
+assignee:
+builder: claude
+blocked_by: [42-kit-ux-scripted, 21-kit-records-every-piece]
+---
+
+## Goal
+
+The second half of `kit ux`: **Claude Opus 5.5 compares the bundle's screenshots with the rulebook and the approved mock-up** and reports per feature fine / looks off / broken ([checking-skill resolution](../../tickets/03-grill-checking-skill.md#resolution-2026-10-22) items 3–4, [ladder resolution](../../tickets/02-grill-ux-confidence-ladder.md#resolution-2026-10-22) item 3: UX review of every visible change before it reaches preview). Then visible slices run it as part of `kit slice`, so it is a gate and not "on request" (research 01: the one agent UX audit found 8 real problems, but ran once, after 82 slices).
+
+## Decided behaviour
+
+- `kit ux` (without `--no-review`) sends the bundle to one read-only reviewer: `ASE_UX_MODEL`, default `claude-opus-5-5`, effort `medium`, through `agent.sh review` with the bundle folder readable and nothing else needed (no repo-wide reading instructions: the brief says to judge only what is in the bundle).
+- Reviewer output, per touched feature: `F-…: fine | looks off | broken — <one line> — <image file>`, and a short list of rulebook rules broken (by id). Rules for the reviewer brief: judge against the rulebook and the mock-up, not taste of its own; "looks off" needs a rule id or a mock-up difference; no suggestions of new text, hints or badges.
+- Saved as `ux.md` and `ux.json` in the bundle folder; counts go into the piece's scoreboard record (slice 21) as `ux: { fine, off, broken, rules }`.
+- **Gate in `kit slice`:** when `kit ux` finds touched features (a visible change), `kit slice` runs it after the code review gate and before `kit pr`. `broken` → one `kit fix --note` round with the UX report, then `kit ux` again; still broken → the slice stops with `decide: ux broken <feature>`. `looks off` → one fix round, then it proceeds and the remaining items become follow-ups in the ticket's Done (the lead weighs them, like a P2). No touched features → skipped with one line.
+- **Whole list before Lex's end check:** `kit ux --all` is the step the kitchen's station 11 runs first; the lead sends Lex its summary with the what-to-test list.
+- Kitchen stations 7, 8 and 11 lose their planned marks for the check and the UX review.
+
+## Files
+
+- `scripts/agents/kit.d/ux` (review step), `scripts/agents/kit.d/slice` (the gate)
+- `scripts/agents/ux-brief.mjs` (new: reviewer brief and result parser)
+- `tests/kit-ux.test.ts`, `tests/kit-slice.test.ts`
+- `docs/agents/agent-scripts.md` (`kit ux`, `kit slice` lines), `docs/agents/runner.md` (Screenshots: `kit ux` for visible changes), `docs/agents/kitchen.md` (stations 7, 8, 11)
+
+## Done when
+
+- Tests with a fake reviewer prove: result parsing of fine / looks off / broken lines (and an unreadable answer fails with a clear line); the slice gate's three paths (broken twice stops; looks off proceeds with follow-ups; nothing touched skips); counts reach the scoreboard record.
+- One real run: `scripts/agents/kit ux --features <two features from slice 42>` on `dev` gives a report; paste the per-feature lines and the reviewer's model from `run.log`. Note its token use from the Claude JSON.
+- `scripts/agents/kit unit --affected` green.
+
+## Kit commands and evidence
+
+Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runner.md)). Kit and docs only; alone in `kit.d/slice`. Sol gives one second opinion on the final version (lead).
+
+- `scripts/agents/kit doctor`; `ASE_REVIEW_MODEL=claude-opus-5-5 scripts/agents/kit bg slice-sf43 -- scripts/agents/kit slice --ticket docs/wayfinder/software-factory/build/tickets/43-kit-ux-reviewer.md --builder claude-opus-5-5`; `scripts/agents/kit wait job slice-sf43 --timeout 2h`.
+- Report: unit `RESULT:` lines, the real `kit ux` report lines and token use, review decisions, PR and merge SHA.
