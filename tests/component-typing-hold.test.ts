@@ -84,6 +84,15 @@ test("sessions on the mode's template hold it through its instance moving while 
       await microtask(); await microtask();
       out.frameLetGo = frames.at(-1) === undefined;
 
+      // Cancel (Escape) ends it the same way: off at once, the frame let go on the sync after.
+      await enter();
+      const cancelled = tools.textRow(template, [0, 0])!.open()!;
+      m.writeDraft(path, moved);
+      out.heldBeforeCancel = on();
+      cancelled.cancel();
+      await microtask(); await microtask();
+      out.cancelEnds = !on() && frames.at(-1) === undefined;
+
       // A session that went stale (its template changed meanwhile) holds nothing, though not closed.
       await enter();
       const stale = tools.textRow(template, [0, 0])!.open()!;
@@ -111,6 +120,6 @@ test("sessions on the mode's template hold it through its instance moving while 
       tools.destroy();
       return out;
     });
-    assert.deepEqual(result, { heldByTwo: true, heldByOne: true, offOnLast: true, frameLetGo: true, heldBeforeStale: true, staleHolds: false, otherHolds: false, unfocusedHolds: false });
+    assert.deepEqual(result, { heldByTwo: true, heldByOne: true, offOnLast: true, frameLetGo: true, heldBeforeCancel: true, cancelEnds: true, heldBeforeStale: true, staleHolds: false, otherHolds: false, unfocusedHolds: false });
   } finally { await browser.close(); }
 });
