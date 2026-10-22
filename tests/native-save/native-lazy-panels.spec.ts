@@ -1,6 +1,8 @@
+import { readFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
-import { openEditor, openFiles, openMedia, openPages } from "../support/scenarios";
-import { storedDraft } from "./drafts";
+import { openEditor, openFiles, openMedia, openPages, switchSiteMidUpload } from "../support/scenarios";
+import { storedDraft, storedDrafts } from "./drafts";
+import { discardAllChanges } from "./publish";
 
 // Default fixture group. Every case starts in a fresh browser context.
 const chunks = {
@@ -8,6 +10,7 @@ const chunks = {
   Files: "/src/controllers/files-tree-controller.ts",
   Media: "/src/page-builder/media-picker.ts",
 };
+const indexSource = readFileSync("fixtures/native-starter/index.html", "utf8");
 const panelModules = /\/src\/(?:controllers\/(?:pages-controller|files-tree-controller|file-operation-checks)|components\/(?:create-dialog|file-row-actions|confirm-dialog|page-picker|pages-tree)|page-builder\/media-picker)\.ts(?:\?|$)/;
 
 async function select(page: Page, name: keyof typeof chunks) {
@@ -81,6 +84,84 @@ for (const name of Object.keys(chunks) as (keyof typeof chunks)[]) {
     expect(failed).toBeGreaterThan(1);
   });
 }
+
+// Fails `path`'s first request, after the reload key is preset so recovery offers a manual reload.
+async function failOnce(page: Page, baseURL: string | undefined, path: string) {
+  let failed = 0;
+  await page.route(`**${path}*`, async route => {
+    if (!failed++) await route.abort("failed");
+    else await route.continue();
+  });
+  await openEditor(page, baseURL);
+  expect(failed, "the chunk is not requested at boot").toBe(0);
+  await page.evaluate(() => sessionStorage.setItem("native-site-editor:chunk-reload", "1"));
+  return () => failed;
+}
+
+async function reloadEditor(page: Page) {
+  await page.reload();
+  await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
+}
+
+// The Save panel's Discard asks through the confirm dialog, which loads with its first question.
+async function draftIndex(page: Page) {
+  await expect(page.locator('#content [role="textbox"]').first()).toBeAttached({ timeout: 20_000 });
+  await page.evaluate(async text => navigator.clipboard.writeText(text), indexSource.replace("A native browser preview", "Lazy discard"));
+  await page.locator('#content [role="textbox"]').first().evaluate(element => (element as HTMLElement).focus());
+  await page.keyboard.press("ControlOrMeta+A");
+  await page.keyboard.press("ControlOrMeta+V");
+  await expect.poll(async () => (await storedDrafts(page)).map(draft => draft.path)).toEqual(["index.html"]);
+}
+const discardDialog = (page: Page) => page.getByRole("dialog", { name: "Discard 1 unsaved change?" });
+
+test("Pages works again after its page actions fail to load and recovery", async ({ page, baseURL }) => {
+  const failed = await failOnce(page, baseURL, "/src/controllers/pages-controller.ts");
+  await select(page, "Pages");
+  await expect(page.locator("#notice")).toContainText("reload the page manually");
+  await expect(page.locator("#explorer-pages")).toContainText("Loading pages…");
+  expect(failed()).toBe(1);
+  await reloadEditor(page);
+  await act(page, "Pages");
+  expect(failed()).toBeGreaterThan(1);
+});
+
+test("Discard works again after the confirm dialog fails to load and recovery", async ({ page, baseURL }) => {
+  const failed = await failOnce(page, baseURL, "/src/components/confirm-dialog.ts");
+  await draftIndex(page);
+  await discardAllChanges(page);
+  await expect(page.locator("#notice")).toContainText("reload the page manually");
+  await expect(discardDialog(page)).toHaveCount(0);
+  expect(failed()).toBe(1);
+  expect(await storedDraft(page, "index.html")).toBeTruthy();
+  await reloadEditor(page);
+  await discardAllChanges(page);
+  await discardDialog(page).getByRole("button", { name: "Discard all", exact: true }).click();
+  await expect.poll(() => storedDrafts(page)).toEqual([]);
+  expect(failed()).toBeGreaterThan(1);
+});
+
+// An async writer that waits for its chunk holds a repository stamp: a branch switched meanwhile cancels it.
+test("Discard asked while its dialog loads is dropped when the branch changes meanwhile", async ({ page, baseURL }) => {
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const dialogModule = "/src/components/confirm-dialog.ts";
+  await page.route(`**${dialogModule}*`, async route => { await held; await route.continue(); });
+  try {
+    await openEditor(page, baseURL);
+    await draftIndex(page);
+    const requested = page.waitForRequest(request => new URL(request.url()).pathname === dialogModule);
+    await discardAllChanges(page);
+    await requested;
+    await switchSiteMidUpload(page, baseURL);
+    const loaded = page.waitForResponse(response => new URL(response.url()).pathname === dialogModule);
+    release();
+    await loaded;
+    // The module has run once the page can import it; the discard's wait then settled.
+    await page.evaluate(async path => { await import(path); await new Promise(requestAnimationFrame); }, dialogModule);
+    await expect(page.locator("dialog[open]")).toHaveCount(0);
+    expect((await storedDrafts(page)).map(draft => draft.path), "main's draft is kept, none is written").toEqual(["index.html"]);
+  } finally { release(); }
+});
 
 // Real request boundaries: the keyboard layer remains available before the UI loads.
 test("editor boot leaves optional panels unloaded and the first palette key opens it", async ({ page, baseURL }) => {

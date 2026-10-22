@@ -14,7 +14,14 @@ export type UrlPlan =
       /** Offered when the page is on the live site: keep its old URL working, checked or not by default. */
       redirect?: { checked: boolean; label: string; hint?: string };
     }
-  | { ok: false; error: string; /** The value is the page's URL now: nothing to say. */ unchanged?: boolean };
+  | {
+      ok: false;
+      error: string;
+      /** The value is the page's URL now: nothing to say. */
+      unchanged?: boolean;
+      /** Not known yet (its code is loading): `error` is a neutral note, and the field waits. */
+      pending?: boolean;
+    };
 
 let serial = 0;
 
@@ -83,9 +90,10 @@ export function createUrlChange(options: {
   function check() {
     const planned = options.plan(input.value);
     const unchanged = !planned.ok && planned.unchanged;
+    const invalid = !planned.ok && !unchanged && !planned.pending;
     details.hidden = Boolean(unchanged) && !options.buttons;
-    message.classList.toggle("is-error", !planned.ok && !unchanged);
-    input.setAttribute("aria-invalid", String(!planned.ok && !unchanged));
+    message.classList.toggle("is-error", invalid);
+    input.setAttribute("aria-invalid", String(invalid));
     if (planned.ok) {
       message.textContent = [planned.message, ...(planned.warnings ?? [])].join(" ");
       keepLabel.hidden = !planned.redirect;

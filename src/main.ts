@@ -609,7 +609,7 @@ function mountWorkspace() {
       if (pageActions) return pageActions.urlPlan(file, value);
       if (value === nativeRouteForPath(file)) return { ok: false, error: "", unchanged: true };
       void loadPagesActions().then(() => pageStructure?.refreshMeta()).catch(errorMessage);
-      return { ok: false, error: "Loading page actions…" };
+      return { ok: false, error: "Loading page actions…", pending: true };
     },
     applyUrl: async (file, value, keep) => {
       const since = guardedEdits.stamp("repository");
