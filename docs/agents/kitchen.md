@@ -25,8 +25,9 @@ lands, do what the station says for today; never claim a planned item ran.
 
 ## Who cooks (pins from 2026-10-22)
 
-The kit's built-in defaults still say Sol ([agent-scripts.md](agent-scripts.md#kit)); pass these
-pins explicitly. The shared `lex-coding` skill holds the same table for all of Lex's projects.
+The kit's built-in defaults follow these pins ([agent-scripts.md](agent-scripts.md#kit)); pass another
+model explicitly only for the second opinions below. The shared `lex-coding` skill holds the same
+table for all of Lex's projects.
 
 | Role | Model | How |
 | --- | --- | --- |
