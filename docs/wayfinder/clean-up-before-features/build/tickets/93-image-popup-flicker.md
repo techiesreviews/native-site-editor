@@ -52,3 +52,5 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 **Files.** `src/components/native-preview-runtime.js` (the `image-look` handler and its render caller), `src/page-builder/image-popup-view.ts` (`showPicture`). No `main.ts` change.
 
 **Build note.** The Claude builder CLI in `kit slice` could not run any Bash command (kit, npm, node all refused for approval), so it wrote the change unverified; runner-93 (Claude Opus 5.5) verified and finished it directly, per runner.md's `builder: claude` fallback.
+
+**Review.** Round 1 (`kit review`, GPT-6.1 Sol, evidence `.scratch/reviews/runner-93/20261022T083216Z` in the main checkout): no defects; two validation gaps, both fixed in `test: each zoom step reaches the page; late decodes never win` (each zoom step now waits for its own trim; the held-decode test covers reverse order and Close). Round 2 could not run: Codex reported its usage limit is reached until 2026-10-27 (`.scratch/reviews/runner-93/20261022T084611Z/run.log`). `kit pr --dry-run` on the rebased branch: check, unit, lint and the full spec set ok.
