@@ -1,8 +1,8 @@
 ---
 title: "Kit: a paused slice can switch builder model; kit status is where landings are read"
 type: task (AFK)
-status: open
-assignee: lead-96 (this session; free worker build)
+status: closed
+assignee: lead-96
 builder: opencode/deepseek-v4.1-flash-free
 blocked_by: []
 ---
@@ -18,7 +18,7 @@ Found on 2026-10-22 when GPT-6.1 Sol hit its usage limit mid-slice (slices 11 an
 ## Decided behaviour
 
 - **Slice resume with another builder:** when only the builder model (or effort) differs from the saved state, `kit slice` keeps the finished phases, records the switch in the state (`previousModels` list), prints one line `builder switched: <old> -> <new>`, and continues with the new model. A different ticket or branch still refuses as today.
-- **Fix with an explicit builder:** `kit fix --builder M` resumes only a saved builder session whose model is `M`; otherwise it starts a fresh builder with `M` (as it already does when no resumable run exists). Without `--builder`, behaviour is unchanged.
+- **Fix with an explicit builder:** `kit fix --builder M` resumes only a saved builder session whose model is `M`; otherwise it starts a fresh builder with `M` (as it already does when no resumable run exists). Without `--builder`, discovery is unchanged; a fresh builder takes the latest slice state's effort, else `high` (amended in review).
 - **Landings:** `docs/agents/runner.md` no longer asks for a `landed:` field; it says `kit status [map]` shows each ticket's landing (PR and merge). `tickets.mjs` keeps accepting an existing `landed:` line.
 
 ## Files
