@@ -221,7 +221,7 @@ test("Undo pressed while typing ends the edit and the page shows the undone text
   await expect(field).toHaveCount(0);
 });
 
-// An agent connected as Lex connects one; `edit` replaces `from` with `to` in the file at `path`.
+// Connects an agent as Lex does; `edit` replaces `from` with `to` in the file at `path`.
 async function connectAgent(page: Page, baseURL: string | undefined) {
   await page.locator(".repository-menu__trigger").click();
   const connected = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST");
@@ -277,11 +277,12 @@ test("another file's paint keeps the typing field connected, with its text and c
     // The typing written, the field still focused: another paint of the other file keeps it as well.
     await page.clock.resume();
     await expect.poll(async () => (await agent.read("index.html")).content).toContain('<span slot="title">Typing stays</span>');
-    await agent.edit(path, "<h2>Agent footer</h2>", "<h2>Agent footer</h2><p>Agent line</p>");
-    await expect(frame(page).locator("site-footer h2 + p")).toHaveText("Agent line");
+    await agent.edit(path, "<h2>Agent footer</h2>", "<h2>Agent footer again</h2>");
+    await expect(frame(page).locator("site-footer h2")).toHaveText("Agent footer again");
     await typed();
+    // Blur draws the latest paint: the footer's row reads the second edit's heading.
     await field.evaluate((field: HTMLTextAreaElement) => field.blur());
-    await expect(tree(page).getByRole("treeitem", { name: "Site footer Agent footer", exact: true })).toBeVisible();
+    await expect(tree(page).getByRole("treeitem", { name: "Site footer Agent footer again", exact: true })).toBeVisible();
     await expect(titleRow(page).locator(".page-structure__text")).toHaveText("Typing stays");
   } finally { await agent.client.close(); }
 });
