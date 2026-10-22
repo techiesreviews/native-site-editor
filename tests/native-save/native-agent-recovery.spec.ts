@@ -142,7 +142,7 @@ test("disabled storage: agent edits are refused with a plain error and the tab's
   try {
     const refused = await call("write_file", { path: "notes/plan.txt", content: "Kept only in this tab.\n" });
     expect(refused.error, refused.text).toBe(true);
-    expect(refused.text).toContain("not sharing");
+    expect(refused.text).toContain("The editor isn't open");
     // The user's own edit is kept by the tab (in memory and localStorage) and is what downloads.
     const source = await page.evaluate(async (path) => (await import("/src/components/code-editor.ts")).getMountedSource(path), indexPath);
     expect(source).toContain("A native browser preview");

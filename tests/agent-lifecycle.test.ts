@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { AgentLifecycle, AlarmDeadlines, DEADLINES_KEY, DISCONNECT_GRACE, LIFECYCLE_KEY, TOMBSTONE_AFTER_DELETION, RECORD_FENCE_BYTES, CLEANUP_GROWTH_BYTES, type LifecycleRecord } from "../worker/agent-lifecycle";
+import { AGENT_PERMISSION_LIFETIME, AgentLifecycle, AlarmDeadlines, DEADLINES_KEY, DISCONNECT_GRACE, LIFECYCLE_KEY, RECORD_FENCE_BYTES, type LifecycleRecord } from "../worker/agent-lifecycle";
 import { AgentRelay, relayObjectName, type RelayScope, type RelaySocket } from "../worker/agent-relay";
-import { createGrant, getGrant, getHub, rebindGrant, revokeGrant } from "../worker/agent-context";
+import { createGrant, getGrant, getHub, rebindGrant, revokeGrant, TEMPORARY_ROUTE } from "../worker/agent-context";
 import { METADATA_KEY, METADATA_ROUTE, type Ledger } from "../worker/agent-metadata";
 import type { Env } from "../worker/app";
 import { CountedStorage, UsageCounters, startCountedWorker } from "./fakes/counted-agent";
@@ -50,7 +50,30 @@ async function fixture(tabs = 1) {
     return h.namespace.get(name).fetch(new Request("https://session.internal/relay/dispatch", { method: "POST", body,
       headers: { "Content-Length": String(Buffer.byteLength(body)), [AgentRelay.identityHeader]: JSON.stringify({ workspace, grantId: id, requestId: 1 }) } }));
   };
+  const hubStorage = h.storage(`agent-hub:${sessionId}`);
+  /** Temporary agent data as older hubs kept it: drafts mirror, context, requests and inline receipts. */
+  const seedTemporary = async () => {
+    const hub = await hubStorage.get<object>("session");
+    await hubStorage.put({ session: { ...hub, context: { secret: "context" }, commands: [{ id: "receipt", state: "applied" }], tabId: "old" },
+      context: { secret: "context" }, drafts: { ["d".repeat(64)]: 1 }, ["draft:" + "d".repeat(64)]: "draft text", requests: [{ id: "request" }] });
+  };
+  /** Temporary data still stored: separate keys, and fields kept inline in the hub record. */
+  const leftovers = async () => {
+    const present = [];
+    for (const key of ["context", "drafts", "requests", "draft:" + "d".repeat(64)]) if (await hubStorage.get(key) !== undefined) present.push(key);
+    const hub = await hubStorage.get<Record<string, unknown>>("session");
+    return { present, inline: Object.keys(hub ?? {}).filter(key => !["kind", "login", "expiresAt", "grants"].includes(key)) };
+  };
+  /** One MCP tool call through the real Worker, as an agent makes it. */
+  const tool = async (name: string, args: Record<string, unknown> = {}, token = grant.token) => {
+    const response = await h.worker.dispatchFetch(origin + "/mcp", { method: "POST", headers: {
+      Authorization: `Bearer ${token}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream",
+    }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }) });
+    const text = (await response.text()).trim();
+    return { status: response.status, body: text ? JSON.parse(text.startsWith("event:") ? text.split("data: ")[1].split("\n")[0] : text) : undefined };
+  };
   return { ...h, env, name, relayStorage: storage, editors, grant, input, sessionId, cookie: signed.cookie, reconnect, dispatch,
+    hubStorage, seedTemporary, leftovers, tool,
     now: () => now, advance: (ms: number) => { now += ms; },
     record: () => storage.get<LifecycleRecord>(LIFECYCLE_KEY), ledger: () => storage.get<Ledger>(METADATA_KEY),
     async dispose() { Date.now = realNow; await h.worker.dispose(); } };
@@ -80,9 +103,10 @@ test("first of two tabs closes: no deadline; open background tab keeps grants wi
   } finally { await h.dispose(); }
 });
 
-test("last close records close + five minutes; alarm deletes record, hub entry and ledger only at eligibility", async () => {
+test("last close records close + five minutes; the alarm then removes only temporary agent data and the permission stays", async () => {
   const h = await fixture();
   try {
+    await h.seedTemporary();
     const detectedAt = h.now();
     await h.close(h.name, h.editors[0]);
     const record = (await h.record())!;
@@ -90,35 +114,64 @@ test("last close records close + five minutes; alarm deletes record, hub entry a
     assert.equal(await h.relayStorage.getAlarm(), record.disconnectDeadline);
     h.advance(DISCONNECT_GRACE - 1);
     await h.alarm(h.name);
-    assert.ok(await getGrant(h.env, h.grant.id));
+    assert.equal((await h.leftovers()).present.length, 4, "nothing is removed before the grace ends");
     h.advance(1);
-    const deletedAt = h.now();
     const get = h.namespace.get;
-    let physicalCalls = 0;
+    let hubCalls = 0;
     h.namespace.get = name => ({ fetch: request => {
       assert.equal(h.inCriticalSection(h.name), false, "external cleanup starts after blockConcurrencyWhile returns");
-      physicalCalls++;
+      if (new URL(request.url).pathname === TEMPORARY_ROUTE) hubCalls++;
       return get(name).fetch(request);
     } });
     await h.alarm(h.name);
     h.namespace.get = get;
-    assert.ok(physicalCalls >= 2, "physical cleanup call count");
-    assert.equal(deletedAt, detectedAt + DISCONNECT_GRACE, "deletion time is the alarm run, separate from detection");
-    await assert.rejects(getGrant(h.env, h.grant.id), { status: 401 });
-    assert.deepEqual((await getHub(h.env, h.sessionId))!.grants, []);
-    assert.deepEqual((await h.ledger())!.entries, []);
+    assert.equal(hubCalls, 1, "one temporary-data call per session hub");
+    assert.deepEqual(await h.leftovers(), { present: [], inline: [] }, "drafts mirror, context, requests and receipts are gone");
+    assert.ok(await getGrant(h.env, h.grant.id), "the permission outlives the grace");
+    assert.deepEqual((await getHub(h.env, h.sessionId))!.grants.map(grant => grant.id), [h.grant.id]);
+    assert.deepEqual((await h.ledger())!.entries.map(entry => [entry.id, entry.state]), [[h.grant.id, "final"]]);
     assert.equal(await h.relayStorage.getAlarm(), null);
+  } finally { await h.dispose(); }
+});
+
+test("a permission survives 10 minutes with no tab: tools wait instead of failing auth, and work when a tab opens", async () => {
+  const h = await fixture();
+  try {
+    await h.close(h.name, h.editors[0]);
+    h.advance(DISCONNECT_GRACE); await h.alarm(h.name);
+    h.advance(10 * 60_000 - DISCONNECT_GRACE);
+    const closed = await h.tool("read_file", { path: "index.html" });
+    assert.equal(closed.status, 200, "no auth error");
+    assert.equal(closed.body.result.isError, true);
+    const waiting = JSON.parse(closed.body.result.content[0].text);
+    assert.equal(waiting.state, "waiting");
+    assert.match(waiting.message, /^The editor isn't open for .+ on branch main\. Open it and the agent can continue/);
+    const site = await h.tool("get_site");
+    assert.equal(JSON.parse(site.body.result.content[0].text).state, "waiting");
+    // A tab opens with agents on: the same token reaches it, without reconnecting the agent.
     const socket = await h.reconnect();
-    assert.ok(socket.sent.some(message => JSON.parse(message).type === "ready"));
-    assert.deepEqual(await (await h.dispatch()).json(), { ok: false, code: "connect-agent-again", outcome: "not-sent" });
-    const fresh = await createGrant(h.env, h.input);
-    assert.ok(await getGrant(h.env, fresh.id));
-    const pending = h.dispatch(fresh.id);
-    // Observe a real relay command, then close to settle it without a timer wait.
-    for (let n = 0; n < 100 && !socket.sent.some(message => JSON.parse(message).type === "command"); n++) await Promise.resolve();
-    assert.ok(socket.sent.some(message => JSON.parse(message).type === "command"));
-    await h.close(h.name, socket);
-    assert.equal((await (await pending).json()).code, "unknown-outcome");
+    const pending = h.tool("read_file", { path: "index.html" });
+    for (let n = 0; n < 200 && !socket.sent.some(message => JSON.parse(message).type === "command"); n++) await new Promise(resolve => setImmediate(resolve));
+    const command = socket.sent.map(message => JSON.parse(message) as { type: string; id: string }).find(value => value.type === "command")!;
+    assert.ok(command, "the tool call reaches the new tab");
+    h.message(h.name, socket, JSON.stringify({ type: "result", ...socket.scope, id: command.id, result: { ok: true, value: { path: "index.html", content: "works" } } }));
+    const read = await pending;
+    assert.deepEqual(JSON.parse(read.body.result.content[0].text), { path: "index.html", content: "works" });
+  } finally { await h.dispose(); }
+});
+
+test("a permission ends 8 hours after the agent connected, even while the editor sign-in lasts", async () => {
+  const h = await fixture();
+  try {
+    const long = await createGrant(h.env, { ...h.input, expiresAt: h.now() + 2 * AGENT_PERMISSION_LIFETIME });
+    assert.equal(long.expiresAt, h.now() + AGENT_PERMISSION_LIFETIME);
+    assert.equal((await getGrant(h.env, long.id)).expiresAt, h.now() + AGENT_PERMISSION_LIFETIME);
+    const shorter = await createGrant(h.env, h.input);
+    assert.equal(shorter.expiresAt, h.input.expiresAt, "a sign-in that ends sooner ends the permission sooner");
+    h.advance(AGENT_PERMISSION_LIFETIME - 1);
+    assert.ok(await getGrant(h.env, long.id));
+    h.advance(1);
+    await assert.rejects(getGrant(h.env, long.id), { status: 401 });
   } finally { await h.dispose(); }
 });
 
@@ -138,7 +191,7 @@ test("reconnect immediately before eligibility cancels generation; old and repea
     assert.ok(await getGrant(h.env, h.grant.id));
     assert.equal(h.counters.byCategory.lifecycle.keysDeleted, 0, "late alarm deleted key count");
     const lifecycle = new AgentLifecycle(h.relayStorage, new AlarmDeadlines(h.relayStorage));
-    assert.equal(await lifecycle.fence(old.generation, 0, (await h.ledger())!.entries), false, "even stale deletion work cannot fence the new generation");
+    assert.equal(await lifecycle.begin(old.generation, 0), false, "even stale cleanup work cannot claim the new generation");
   } finally { await h.dispose(); }
 });
 
@@ -158,13 +211,15 @@ test("remote-only grant arms grace; dispatch never extends it, and a never-hands
     unproven.serializeAttachment({ ...unproven.scope, role: "editor", handshaken: false });
     const closing = editor("closing"); closing.readyState = 2;
     h.restoreEditors(h.name, [unproven, closing]);
+    await h.seedTemporary();
     h.advance(DISCONNECT_GRACE);
     await h.alarm(h.name);
-    await assert.rejects(getGrant(h.env, h.grant.id), { status: 401 });
+    assert.deepEqual(await h.leftovers(), { present: [], inline: [] });
+    assert.ok(await getGrant(h.env, h.grant.id));
   } finally { await h.dispose(); }
 });
 
-test("unknown edit outcome on last close still cleans on schedule", async () => {
+test("unknown edit outcome on last close still cleans temporary data on schedule", async () => {
   const h = await fixture();
   try {
     const pending = h.dispatch();
@@ -173,49 +228,58 @@ test("unknown edit outcome on last close still cleans on schedule", async () => 
     await h.close(h.name, h.editors[0]);
     assert.deepEqual(await (await pending).json(), { ok: false, code: "unknown-outcome", outcome: "unknown" });
     assert.equal((await h.record())!.disconnectDeadline, h.now() + DISCONNECT_GRACE);
+    await h.seedTemporary();
     h.advance(DISCONNECT_GRACE); await h.alarm(h.name);
-    await assert.rejects(getGrant(h.env, h.grant.id), { status: 401 });
+    assert.deepEqual(await h.leftovers(), { present: [], inline: [] });
+    assert.equal((await h.record())!.cleanupPending, undefined);
+    assert.ok(await getGrant(h.env, h.grant.id));
   } finally { await h.dispose(); }
 });
 
-test("failed deletion stays fenced across reconnect and retries; tombstones refuse reserve, finalize and rebind", async () => {
+test("a failed temporary-data clear keeps the permission and retries in 30 s, even after a reconnect", async () => {
   const h = await fixture();
   const get = h.namespace.get;
   try {
-    const second = await createGrant(h.env, h.input);
-    const oldGrant = await getGrant(h.env, h.grant.id);
+    await h.seedTemporary();
     await h.close(h.name, h.editors[0]); h.advance(DISCONNECT_GRACE);
     let failing = true;
-    h.namespace.get = name => ({ fetch: request => failing && String(name) === `agent:${h.grant.id}` && request.method === "DELETE"
+    h.namespace.get = name => ({ fetch: request => failing && new URL(request.url).pathname === TEMPORARY_ROUTE
       ? Promise.resolve(new Response(null, { status: 503 })) : get(name).fetch(request) });
     await assert.rejects(h.alarm(h.name), /incomplete/);
-    assert.deepEqual((await h.ledger())!.entries.map(entry => [entry.id, entry.state]), [[h.grant.id, "cleaned"]]);
-    assert.equal(await h.storage(`agent:${second.id}`).get("session"), undefined);
-    assert.ok(await h.relayStorage.getAlarm());
+    assert.equal((await h.record())!.cleanupPending, true);
+    assert.equal(await h.relayStorage.getAlarm(), h.now() + 30_000);
     await h.reconnect();
-    assert.equal((await (await h.dispatch()).json()).code, "connect-agent-again");
-    for (const action of [
-      { action: "reserve", sessionId: h.sessionId, bytes: 100, expiresAt: h.input.expiresAt, generation: 99 },
-      { action: "finalize", generation: 1 },
-    ]) {
-      const response = await h.namespace.get(h.name).fetch(new Request(`https://session.internal${METADATA_ROUTE}`, {
-        method: "POST", body: JSON.stringify({ ...action, workspace: workspaceKey(workspace), id: h.grant.id }),
-      }));
-      assert.equal((await response.json()).reason, "cleaned");
-    }
-    await assert.rejects(rebindGrant(h.env, h.grant.id, oldGrant, { repoId: repo.id, repo: repo.full_name, branch: "other" }), { status: 401 });
-    failing = false; h.advance(30_000); await h.alarm(h.name); await h.alarm(h.name);
-    assert.deepEqual((await h.ledger())!.entries, []);
+    assert.equal((await h.record())!.disconnectDeadline, undefined);
+    failing = false; h.advance(30_000); await h.alarm(h.name);
+    assert.deepEqual(await h.leftovers(), { present: [], inline: [] }, "the claimed cleanup still finishes");
+    assert.equal((await h.record())!.cleanupPending, undefined);
     assert.equal(await h.relayStorage.getAlarm(), null);
-    await h.reconnect();
-    assert.equal((await (await h.dispatch()).json()).code, "connect-agent-again");
-    const tombstone = await h.namespace.get(h.name).fetch(new Request(`https://session.internal${METADATA_ROUTE}`, {
-      method: "POST", body: JSON.stringify({ action: "reserve", workspace: workspaceKey(workspace), id: h.grant.id,
-        generation: 99, sessionId: h.sessionId, bytes: 100, expiresAt: h.input.expiresAt }),
-    }));
-    assert.equal((await tombstone.json()).reason, "cleaned", "physical release cannot resurrect a tombstoned id");
-    assert.ok(await createGrant(h.env, h.input));
+    assert.ok(await getGrant(h.env, h.grant.id));
   } finally { h.namespace.get = get; await h.dispose(); }
+});
+
+test("tombstones written before 8-hour permissions still refuse their id until they expire, then admission prunes them", async () => {
+  const h = await fixture();
+  try {
+    const legacy = "c".repeat(64);
+    await h.relayStorage.put(LIFECYCLE_KEY, { generation: 3, cleaned: { [legacy]: h.now() + 60_000 } });
+    h.restoreEditors(h.name, h.editors); // A later wake reads the stored record.
+    const lifecycle = new AgentLifecycle(h.relayStorage as never, new AlarmDeadlines(h.relayStorage as never), h.now);
+    const max = Number.MAX_SAFE_INTEGER;
+    const widest = { generation: max, cleaned: { [legacy]: h.now() + 60_000 }, disconnectDeadline: max, cleanupPending: true };
+    assert.equal(await lifecycle.admissionBytes(), size(widest) + size({ [DEADLINES_KEY]: { "agent-cleanup": max } }) + RECORD_FENCE_BYTES);
+    const reserve = async () => {
+      const response = await h.namespace.get(h.name).fetch(new Request(`https://session.internal${METADATA_ROUTE}`, {
+        method: "POST", body: JSON.stringify({ action: "reserve", workspace: workspaceKey(workspace), id: legacy,
+          generation: 1, sessionId: h.sessionId, bytes: 100, expiresAt: h.input.expiresAt }),
+      }));
+      return (await response.json()) as { allowed: boolean; reason?: string };
+    };
+    assert.equal((await reserve()).reason, "cleaned");
+    h.advance(60_001);
+    assert.equal((await reserve()).allowed, true);
+    assert.deepEqual((await h.record())!.cleaned, {});
+  } finally { await h.dispose(); }
 });
 
 test("agent cleanup preserves live sign-in, config, repository cache and unrelated session purpose", async () => {
@@ -319,7 +383,7 @@ test("combined real alarm fires session, agent and registration purposes in orde
     assert.ok(await getGrant(h.env, h.grant.id));
     assert.equal(await h.relayStorage.getAlarm(), h.now() + 180_000);
     h.advance(180_000); await h.alarm(h.name);
-    await assert.rejects(getGrant(h.env, h.grant.id), { status: 401 });
+    assert.ok(await getGrant(h.env, h.grant.id), "the grace leaves the permission");
     assert.equal(await h.relayStorage.getAlarm(), h.now() + 300_000);
     await local.fetch(new Request("https://session.internal/", { method: "DELETE" }));
     assert.equal(await h.relayStorage.getAlarm(), h.now() + 300_000, "session DELETE cannot clear registration's deadline");
@@ -352,114 +416,6 @@ test("legacy alarms preserve live sign-ins and config, then expire session/cache
     assert.equal(await budget.get("oauth-registration-budget"), undefined);
     assert.equal(await budget.getAlarm(), null);
   } finally { await h.dispose(); }
-});
-
-test("new remote-only grant receives its own grace while older fenced deletion retries", async () => {
-  const h = await fixture();
-  const get = h.namespace.get;
-  try {
-    await h.close(h.name, h.editors[0]); h.advance(DISCONNECT_GRACE);
-    h.namespace.get = name => ({ fetch: request => String(name) === `agent:${h.grant.id}` && request.method === "DELETE"
-      ? Promise.resolve(new Response(null, { status: 503 })) : get(name).fetch(request) });
-    await assert.rejects(h.alarm(h.name), /incomplete/);
-    const fresh = await createGrant(h.env, h.input);
-    const deadline = h.now() + DISCONNECT_GRACE;
-    assert.equal((await h.record())!.disconnectDeadline, deadline);
-    assert.equal(await h.relayStorage.getAlarm(), h.now() + 30_000, "new grace cannot postpone an older deletion retry");
-    h.namespace.get = get;
-    h.advance(30_000); await h.alarm(h.name);
-    assert.ok(await getGrant(h.env, fresh.id));
-    assert.equal(await h.relayStorage.getAlarm(), deadline);
-    h.advance(DISCONNECT_GRACE - 30_000); await h.alarm(h.name);
-    await assert.rejects(getGrant(h.env, fresh.id), { status: 401 });
-  } finally { h.namespace.get = get; await h.dispose(); }
-});
-
-test("local fence transaction failure rolls back both ledger and tombstones; retry still deletes safely", async () => {
-  const h = await fixture();
-  try {
-    await h.close(h.name, h.editors[0]); h.advance(DISCONNECT_GRACE);
-    h.relayStorage.failNextWrite();
-    await assert.rejects(h.alarm(h.name), /Injected/);
-    assert.equal((await h.ledger())!.entries[0].state, "final");
-    assert.deepEqual((await h.record())!.cleaned, {});
-    assert.equal(await h.relayStorage.getAlarm(), h.now());
-    await h.alarm(h.name);
-    await assert.rejects(getGrant(h.env, h.grant.id), { status: 401 });
-    assert.deepEqual((await h.ledger())!.entries, []);
-  } finally { await h.dispose(); }
-});
-
-test("cleanup fences a first grant PUT delayed past cleanup, even within its original allocation deadline", async () => {
-  const h = await fixture(0);
-  const get = h.namespace.get;
-  let release!: () => void, entered!: () => void;
-  const held = new Promise<void>(resolve => { release = resolve; });
-  const started = new Promise<void>(resolve => { entered = resolve; });
-  let creating: Promise<unknown> | undefined;
-  let delayedId = "", delayedStatus = 0;
-  try {
-    h.advance(DISCONNECT_GRACE - 1000);
-    h.namespace.get = name => ({ async fetch(request) {
-      if (String(name).startsWith("agent:") && request.method === "PUT") {
-        delayedId = String(name).slice(6); entered(); await held;
-        const response = await get(name).fetch(request); delayedStatus = response.status; return response;
-      }
-      return get(name).fetch(request);
-    } });
-    creating = createGrant(h.env, h.input);
-    const rejected = assert.rejects(creating, { status: 503 });
-    await started;
-    h.advance(1000); await h.alarm(h.name);
-    assert.deepEqual((await h.ledger())!.entries, []);
-    release(); await rejected;
-    assert.equal(delayedStatus, 409, "grant object refuses first PUT after physical cleanup, before allocation deadline");
-    assert.equal(await h.storage(`agent:${delayedId}`).get("session"), undefined);
-    assert.deepEqual((await getHub(h.env, h.sessionId))!.grants, []);
-    h.advance(h.input.expiresAt - h.now());
-    await h.alarm(`agent:${delayedId}`);
-    assert.equal(await h.storage(`agent:${delayedId}`).get("agent-cleaned-until"), undefined, "record tombstone expires with its grant");
-  } finally { release(); await creating?.catch(() => undefined); h.namespace.get = get; await h.dispose(); }
-});
-
-test("an older failed deletion retry cannot postpone a newer grant's disconnect deadline", async () => {
-  const h = await fixture(0);
-  const get = h.namespace.get;
-  try {
-    h.advance(DISCONNECT_GRACE);
-    h.namespace.get = name => ({ fetch: request => String(name) === `agent:${h.grant.id}` && request.method === "DELETE"
-      ? Promise.resolve(new Response(null, { status: 503 })) : get(name).fetch(request) });
-    await assert.rejects(h.alarm(h.name), /incomplete/);
-    const fresh = await createGrant(h.env, h.input);
-    const deadline = (await h.record())!.disconnectDeadline!;
-    h.advance(DISCONNECT_GRACE - 1000);
-    await assert.rejects(h.alarm(h.name), /incomplete/);
-    assert.equal(await h.relayStorage.getAlarm(), deadline);
-    assert.ok(await getGrant(h.env, fresh.id));
-    h.namespace.get = get;
-    h.advance(1000); await h.alarm(h.name);
-    await assert.rejects(getGrant(h.env, fresh.id), { status: 401 });
-  } finally { h.namespace.get = get; await h.dispose(); }
-});
-
-test("reconnecting during a new grant's grace preserves older fenced deletion retries", async () => {
-  const h = await fixture(0);
-  const get = h.namespace.get;
-  try {
-    h.advance(DISCONNECT_GRACE);
-    h.namespace.get = name => ({ fetch: request => String(name) === `agent:${h.grant.id}` && request.method === "DELETE"
-      ? Promise.resolve(new Response(null, { status: 503 })) : get(name).fetch(request) });
-    await assert.rejects(h.alarm(h.name), /incomplete/);
-    const fresh = await createGrant(h.env, h.input);
-    await h.reconnect();
-    assert.equal((await h.record())!.disconnectDeadline, undefined);
-    assert.equal(await h.relayStorage.getAlarm(), h.now() + 30_000);
-    h.namespace.get = get;
-    h.advance(30_000); await h.alarm(h.name);
-    await assert.rejects(getGrant(h.env, h.grant.id), { status: 401 });
-    assert.ok(await getGrant(h.env, fresh.id));
-    assert.equal(await h.relayStorage.getAlarm(), null);
-  } finally { h.namespace.get = get; await h.dispose(); }
 });
 
 test("sign-out denies authentication before a delayed grant inventory read", async () => {
@@ -498,74 +454,7 @@ test("storage latency does not move detection time or the five-minute eligibilit
   assert.equal(await storage.getAlarm(), 100 + DISCONNECT_GRACE);
 });
 
-test("rebind racing source cleanup: a failed compensating delete still leaves the destination generation unusable", async () => {
-  const h = await fixture();
-  const get = h.namespace.get;
-  const destination = await relayObjectName({ ...workspace, branch: "other" });
-  let release!: () => void, entered!: () => void;
-  const held = new Promise<void>(resolve => { release = resolve; });
-  const started = new Promise<void>(resolve => { entered = resolve; });
-  try {
-    const previous = await getGrant(h.env, h.grant.id);
-    h.namespace.get = name => ({ async fetch(request) {
-      if (String(name) === destination && new URL(request.url).pathname === METADATA_ROUTE) {
-        const body = await request.clone().json() as { action?: string };
-        if (body.action === "finalize") { entered(); await held; }
-      }
-      if (String(name) === `agent:${h.grant.id}` && request.method === "DELETE") return new Response(null, { status: 503 });
-      return get(name).fetch(request);
-    } });
-    const rebinding = rebindGrant(h.env, h.grant.id, previous, { repoId: repo.id, repo: repo.full_name, branch: "other" });
-    const rejected = assert.rejects(rebinding, { status: 401 });
-    await started;
-    // The source workspace loses its last editor and is cleaned while the destination finalize is held.
-    await h.close(h.name, h.editors[0]); h.advance(DISCONNECT_GRACE); await h.alarm(h.name);
-    assert.deepEqual((await h.ledger())!.entries, [], "a grant already rebound away releases the source entry, no endless retries");
-    assert.equal(await h.relayStorage.getAlarm(), null);
-    release(); await rejected;
-    const rpc = await h.worker.dispatchFetch(origin + "/mcp", { method: "POST", headers: {
-      Authorization: `Bearer ${h.grant.token}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream",
-    }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }) });
-    assert.equal(rpc.status, 401, "hub removal denies before the failed record deletion");
-    assert.equal((await getHub(h.env, h.sessionId))!.grants.some(grant => grant.id === h.grant.id), false);
-    const counted = (await h.storage(destination).get<Ledger>(METADATA_KEY))!.entries.some(entry => entry.id === h.grant.id);
-    assert.equal(counted, true, "an uncertain record deletion stays counted in the destination");
-  } finally { release(); h.namespace.get = get; await h.dispose(); }
-});
-
-test("cleanup tombstones count toward the 64 KiB workspace budget, shrink after deletion and expire without another disconnect", async () => {
-  const h = await fixture();
-  try {
-    await h.close(h.name, h.editors[0]); h.advance(DISCONNECT_GRACE); await h.alarm(h.name);
-    const after = (await h.record())!;
-    assert.ok(after.cleaned[h.grant.id] <= h.now() + TOMBSTONE_AFTER_DELETION, "deleted grant keeps only a short tombstone");
-    const fence = await h.storage(`agent:${h.grant.id}`).get<number>("agent-cleaned-until");
-    assert.ok(fence !== undefined && fence <= h.now() + TOMBSTONE_AFTER_DELETION, "the record object's PUT fence is as short-lived");
-    // Admission charges each live tombstone for its record object's fence too.
-    const lifecycle = new AgentLifecycle(h.relayStorage as never, new AlarmDeadlines(h.relayStorage as never), h.now);
-    const max = Number.MAX_SAFE_INTEGER;
-    const widest = { ...after, generation: max, disconnectDeadline: max, cleanedGeneration: max, cleanupPending: true };
-    assert.equal(await lifecycle.admissionBytes(), size(widest) + size({ [DEADLINES_KEY]: { "agent-cleanup": max } }) + RECORD_FENCE_BYTES);
-    // Fill the lifecycle record with live tombstones: admission must count them before allocating.
-    const many = Object.fromEntries(Array.from({ length: 900 }, (_, n) => [n.toString(16).padStart(64, "0"), h.now() + 60_000]));
-    await h.relayStorage.put(LIFECYCLE_KEY, { ...after, cleaned: { ...after.cleaned, ...many } });
-    await h.reconnect();
-    const refuse = async () => {
-      const response = await h.namespace.get(h.name).fetch(new Request(`https://session.internal${METADATA_ROUTE}`, {
-        method: "POST", body: JSON.stringify({ action: "reserve", workspace: workspaceKey(workspace), id: "f".repeat(64),
-          generation: 1, sessionId: h.sessionId, bytes: 100, expiresAt: h.input.expiresAt }),
-      }));
-      return (await response.json()) as { allowed: boolean; reason?: string };
-    };
-    assert.deepEqual(await refuse(), { allowed: false, reason: "bytes", entries: [] } as never);
-    // Without any new disconnect, expired tombstones are pruned on the next admission.
-    h.advance(TOMBSTONE_AFTER_DELETION + 1);
-    assert.equal((await refuse()).allowed, true);
-    assert.deepEqual(Object.keys((await h.record())!.cleaned), []);
-  } finally { await h.dispose(); }
-});
-
-test("a workspace filled to exactly 64 KiB stays within it after the disconnect fence writes lifecycle, deadline and tombstones", async () => {
+test("a workspace filled to exactly 64 KiB stays within it after the grace writes its lifecycle record and deadline", async () => {
   const h = await fixture();
   const get = h.namespace.get;
   let release!: () => void, entered!: () => void;
@@ -590,27 +479,26 @@ test("a workspace filled to exactly 64 KiB stays within it after the disconnect 
     assert.equal(await reserve(probe, low + 1), false, "one byte more is refused for its size");
     assert.ok(await reserve("d".repeat(64), low), "the last reservation lands exactly on the boundary");
     h.namespace.get = name => ({ async fetch(request) {
-      if (String(name).startsWith("agent:") && request.method === "GET") { entered(); await held; }
+      if (new URL(request.url).pathname === TEMPORARY_ROUTE) { entered(); await held; }
       return get(name).fetch(request);
     } });
     await h.close(h.name, h.editors[0]); h.advance(DISCONNECT_GRACE);
     const alarm = h.alarm(h.name).catch(() => undefined);
     await started;
     const ledger = (await h.ledger())!;
-    assert.ok(ledger.entries.every(entry => entry.state === "cleaned"));
+    assert.ok(ledger.entries.every(entry => entry.state !== "cleaned"), "the grace never fences a permission");
     const record = (await h.record())!;
-    const tombstones = Object.keys(record.cleaned).length;
-    // External record bytes as requested (the fixture grant's request is its entry less the growth charge).
+    assert.equal(record.cleanupPending, true);
     const grantEntry = ledger.entries.find(entry => entry.id === h.grant.id)!;
-    const external = 3 * 15_000 + low + grantEntry.bytes - CLEANUP_GROWTH_BYTES;
+    const external = 3 * 15_000 + low + grantEntry.bytes;
     const deadlines = size({ [DEADLINES_KEY]: await h.relayStorage.get(DEADLINES_KEY) });
-    const physical = size(ledger) + external + size(record) + deadlines + tombstones * RECORD_FENCE_BYTES;
+    const physical = size(ledger) + external + size(record) + deadlines;
     assert.ok(physical <= 64 * 1024, `retained agent metadata ${physical} bytes stays within 64 KiB`);
     release(); await alarm;
   } finally { release(); h.namespace.get = get; await h.dispose(); }
 });
 
-test("rebind whose final source check fails after source cleanup compensates instead of leaving the token authorized", async () => {
+test("rebind whose final source check goes unanswered compensates instead of leaving the token authorized", async () => {
   const h = await fixture();
   const get = h.namespace.get;
   const destination = await relayObjectName({ ...workspace, branch: "other" });
@@ -628,7 +516,6 @@ test("rebind whose final source check fails after source cleanup compensates ins
     const rebinding = rebindGrant(h.env, h.grant.id, previous, { repoId: repo.id, repo: repo.full_name, branch: "other" });
     const rejected = assert.rejects(rebinding);
     await started;
-    await h.close(h.name, h.editors[0]); h.advance(DISCONNECT_GRACE); await h.alarm(h.name);
     sourceDown = true;
     release(); await rejected;
     const rpc = await h.worker.dispatchFetch(origin + "/mcp", { method: "POST", headers: {

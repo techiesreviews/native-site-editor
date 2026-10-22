@@ -282,7 +282,7 @@ test("no receiver refuses every read immediately, even with matching legacy cont
         h.counters.reset();
         const result = await h.rpc("tools/call", { name, arguments: args });
         assert.equal(Boolean(result.isError), name !== "get_site");
-        assert.match(String(name === "get_site" ? payload(result).note : payload(result)), /not sharing/);
+        assert.match(JSON.stringify(name === "get_site" ? payload(result).note : payload(result)), /The editor isn't open/);
         assert.equal(h.counters.byCategory.auth.calls, 3);
         assert.equal(h.counters.byCategory.control.calls, 1);
         assert.equal(h.counters.byCategory.data.calls, 0);

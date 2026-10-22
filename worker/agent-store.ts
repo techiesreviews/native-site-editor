@@ -15,11 +15,27 @@ const BATCH = 100;
 const draftKey = (hash: string) => `draft:${hash}`;
 const grantOperations = new Set(["add-grant", "use-grant", "rebind-grant", "remove-grant"]);
 
+async function deleteKeys(storage: HubStorage, keys: string[]) {
+  for (let at = 0; at < keys.length; at += BATCH) await storage.delete(keys.slice(at, at + BATCH));
+}
+/** Temporary agent data: the drafts mirror, context and requests stored beside a hub. */
+async function temporaryKeys(storage: HubStorage) {
+  const index = (await storage.get<Index>("drafts")) ?? {};
+  return ["context", "drafts", "requests", ...Object.keys(index).map(draftKey)];
+}
+
 /** Removes the hub and all it stored (the session ended, or the hub expired). */
 export async function clearHub(storage: HubStorage) {
-  const index = (await storage.get<Index>("drafts")) ?? {};
-  const keys = ["session", "context", "drafts", "requests", ...Object.keys(index).map(draftKey)];
-  for (let at = 0; at < keys.length; at += BATCH) await storage.delete(keys.slice(at, at + BATCH));
+  await deleteKeys(storage, ["session", ...await temporaryKeys(storage)]);
+}
+
+/** Removes a hub's temporary agent data (drafts mirror, context, requests and receipts kept
+ * inline) after the disconnect grace, keeping its grant metadata: permissions stay. */
+export async function clearTemporary(storage: HubStorage) {
+  await deleteKeys(storage, await temporaryKeys(storage));
+  const hub = await storage.get<AgentHub>("session");
+  if (hub?.kind === "agent-hub" && Object.keys(hub).some(key => !(key in hubView(hub))))
+    await storage.put({ session: hubView(hub) });
 }
 
 /** Grant operations only; refuse obsolete actions before any storage read or write. */

@@ -5,8 +5,8 @@ import type { Env, StoredSession } from "./app";
 import type { requestSummary } from "../shared/agent-requests";
 import { workspaceKey, type AgentWorkspace } from "../shared/agent-command";
 import { relayObjectName } from "./agent-relay";
-import { TOMBSTONE_AFTER_DELETION } from "./agent-lifecycle";
-import { METADATA_ROUTE, type MetadataOperation, type MetadataResult, type Entry } from "./agent-metadata";
+import { AGENT_PERMISSION_LIFETIME } from "./agent-lifecycle";
+import { METADATA_ROUTE, type MetadataOperation, type MetadataResult } from "./agent-metadata";
 
 
 /**
@@ -110,7 +110,7 @@ export async function getGrant(env: Env, id: string): Promise<AgentGrant> {
 
 /**
  * Issues a connection token for `repo` in the signed-in session `sessionId`,
- * lasting as long as that session, and lists it in the session's hub.
+ * lasting 8 hours or until that session ends if sooner, and lists it in the session's hub.
  */
 export async function createGrant(
   env: Env,
@@ -129,7 +129,8 @@ export async function createGrant(
   const token = `ase_${randomHex()}`;
   const id = await tokenId(token);
   const createdAt = Date.now();
-  const record: AgentGrant = { kind: "agent", ...input, generation: 1, createdAt };
+  const expiresAt = Math.min(input.expiresAt, createdAt + AGENT_PERMISSION_LIFETIME);
+  const record: AgentGrant = { kind: "agent", ...input, expiresAt, generation: 1, createdAt };
   const listed: HubGrant = {
     id,
     repoId: input.repoId,
@@ -159,7 +160,7 @@ export async function createGrant(
     await discardGrant(env, id, record);
     throw new HttpError(503, "The agent connection could not be saved. Try again.");
   }
-  return { id, token };
+  return { id, token, expiresAt };
 }
 
 const grantWorkspace = (grant: Pick<AgentGrant, "login" | "repoId" | "branch">): AgentWorkspace =>
@@ -486,34 +487,17 @@ export async function authenticateAgent(
   return { grant, github, repo, id, hub, workspace };
 }
 
-/** Physical cleanup of fenced ledger entries. Unknown outcomes remain counted.
- * Conditional deletes leave a successfully rebound grant in another workspace alone. */
-export async function deleteCleanedGrants(env: Env, workspace: string, entries: Entry[]) {
-  const removed: Entry[] = [];
-  for (const entry of entries) {
+/** Internal hub route that removes its temporary agent data (worker/index.ts). */
+export const TEMPORARY_ROUTE = "/agent-temporary";
+/** After the disconnect grace: each listed session's hub drops its temporary agent data.
+ * Grants stay. Returns whether every hub answered; unanswered ones are retried. */
+export async function clearTemporaryData(env: Env, sessionIds: string[]) {
+  let cleared = true;
+  for (const sessionId of new Set(sessionIds)) {
     try {
-      const response = await agentRecord(env, entry.id);
-      if (!response.ok && response.status !== 404) continue;
-      // The record object's own fence against a delayed first PUT lives as briefly as the
-      // workspace tombstone that pays for it (that PUT is refused past its 60 s deadline anyway).
-      const headers: Record<string, string> = { "X-Agent-Cleaned-Until": String(Math.min(entry.expiresAt, Date.now() + TOMBSTONE_AFTER_DELETION)) };
-      let matches = response.status === 404;
-      if (response.ok) {
-        const grant = await response.json() as AgentGrant;
-        matches = workspaceKey(grantWorkspace(grant)) === workspace && grant.generation <= entry.generation;
-        if (matches) headers["X-Agent-Delete"] = await tokenId(JSON.stringify(grant));
-      }
-      if (!matches) {
-        // Rebound away (another workspace or a newer generation): this workspace's
-        // entry is stale, as reconcile treats it. The hub entry belongs to the new
-        // binding and stays; without this, retries would run until the grant expires.
-        removed.push(entry);
-        continue;
-      }
-      const deleted = await durable(env, `agent:${entry.id}`).fetch(new Request("https://session.internal/", { method: "DELETE", headers }));
-      if (!deleted.ok && deleted.status !== 404) continue;
-      if (await removeHubGrant(env, entry.sessionId, entry.id, entry.generation)) removed.push(entry);
-    } catch { /* Retain the ledger and deny access until retry establishes absence. */ }
+      const response = await durable(env, `agent-hub:${sessionId}`).fetch(new Request(`https://session.internal${TEMPORARY_ROUTE}`, { method: "POST" }));
+      if (!response.ok) cleared = false;
+    } catch { cleared = false; }
   }
-  return removed;
+  return cleared;
 }

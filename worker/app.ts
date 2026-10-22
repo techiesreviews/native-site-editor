@@ -671,7 +671,7 @@ async function route(
         const grant = await rebindGrant(env, data.id, previous, { repoId: repo.id, repo: repo.full_name, branch: data.branch });
         return json({ ok: true, generation: grant.generation });
       }
-      const { id, token } = await createGrant(env, {
+      const { id, token, expiresAt } = await createGrant(env, {
         sessionId,
         login: user.login,
         repoId: repo.id,
@@ -684,7 +684,7 @@ async function route(
         id,
         token,
         endpoint: `${url.origin}/mcp`,
-        expiresAt: user.expiresAt,
+        expiresAt,
       });
     }
     // Explicit connection checks only; old bundles' polling uses the obsolete /hub route.

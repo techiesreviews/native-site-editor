@@ -7,7 +7,7 @@ import { Miniflare, convertV4MiniflareOptions } from "miniflare";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { EMPTY_COMMIT } from "../shared/types.ts";
 import type { EditorContext } from "../shared/types.ts";
-import { notSharingMessage } from "../worker/mcp.ts";
+import { editorClosedMessage } from "../worker/mcp.ts";
 import { editorTab, origin, payload, repo, signIn, startWorker, workerFetch } from "./mcp-harness.ts";
 import { tarball } from "./tar-helper.ts";
 
@@ -164,7 +164,7 @@ test("MCP before there is a site: guidance to sign in, open a repository, or sta
       new StreamableHTTPClientTransport(new URL(origin + "/mcp"), { requestInit: { headers: { Authorization: `Bearer ${token}` } }, fetch: workerFetch(worker) }),
     );
     const call = (name: string, args: Record<string, unknown> = {}) => client!.callTool({ name, arguments: args });
-    const guidance = notSharingMessage(origin, { repo: repo.full_name, branch: "main" });
+    const guidance = editorClosedMessage(origin, { repo: repo.full_name, branch: "main" });
 
     // No tab shares anything yet.
     const none = payload(await call("get_site"));

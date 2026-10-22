@@ -34,11 +34,26 @@ function browserHistory(workspace: AgentWorkspace) {
   catch { return Promise.resolve(false); }
 }
 /**
+ * Set while remote agents are on for a site (account, repository and branch) in this browser,
+ * until the user turns them off: a reload or a new tab on that site comes back with them on.
+ */
+const agentsOnKey = (workspace: AgentWorkspace) => `native-site-editor:agents-on:${workspaceKey(workspace)}`;
+export function agentsRemembered(workspace: AgentWorkspace) {
+  try { return localStorage.getItem(agentsOnKey(workspace)) !== null; }
+  catch { return false; }
+}
+export function rememberAgents(workspace: AgentWorkspace, on: boolean) {
+  try {
+    if (on) localStorage.setItem(agentsOnKey(workspace), "1");
+    else localStorage.removeItem(agentsOnKey(workspace));
+  } catch { /* Storage full or blocked: this tab keeps them on; a reload starts with them off. */ }
+}
+/**
  * Owns lazy mounting of the agent menu for the current signed-in host. Remote agents are opt-in
- * per tab: startup and mounting make no agent requests; only Connect in the menu or a connection
- * approved in this browser (checked against this tab's workspace by the menu) starts the transport.
- * Ask agent requests this browser keeps for the open workspace mount the menu (no requests either),
- * so their pins show after a reload with remote agents off.
+ * per site and remembered in this browser: Connect in the menu, a connection approved in this
+ * browser (checked against this tab's workspace by the menu), or remote agents remembered on for
+ * the open site start the transport. Ask agent requests this browser keeps for the open workspace
+ * mount the menu (no requests), so their pins show after a reload with remote agents off.
  */
 export function createAgentController<Root extends { remove(): void } = HTMLElement>(options: {
   account(): string | undefined;
@@ -50,6 +65,8 @@ export function createAgentController<Root extends { remove(): void } = HTMLElem
   environment?: AgentEnvironment;
   /** Whether the browser keeps requests for a workspace; tests inject it. */
   history?: (workspace: AgentWorkspace) => Promise<boolean>;
+  /** Whether remote agents are remembered on for a workspace; tests inject it. */
+  remembered?: (workspace: AgentWorkspace) => boolean;
 }) {
   const environment = options.environment ?? { window };
   let menu: AgentMenuPort<Root> | undefined;
@@ -100,7 +117,8 @@ export function createAgentController<Root extends { remove(): void } = HTMLElem
       if (isCurrent(account, host, revision)) currentMenu()?.consentGranted(approval);
     }).catch((error: unknown) => options.onError(error));
   };
-  // The open workspace, once its files are read: its kept requests, if any, mount the menu.
+  // The open workspace, once its files are read: remote agents remembered on, or its kept
+  // requests, mount the menu (which turns remembered agents back on).
   let watching: (() => void) | undefined;
   let checked = "";
   function watchHistory() {
@@ -114,7 +132,8 @@ export function createAgentController<Root extends { remove(): void } = HTMLElem
       checked = key;
       currentMenu()?.changed();
       if (currentMenu()) return;
-      void (options.history ?? browserHistory)(workspace).then((kept) => {
+      const remembered = (options.remembered ?? agentsRemembered)(workspace);
+      void (remembered ? Promise.resolve(true) : (options.history ?? browserHistory)(workspace)).then((kept) => {
         if (kept && isCurrent(account, host, revision)) return ensure();
       }).catch(() => { if (checked === key) checked = ""; });
     });

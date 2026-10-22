@@ -1,7 +1,7 @@
 import { agentControls } from "./agent-controls";
 import { cleanupObject, inventoryObject } from "./agent-maintenance";
-import { tokenId, deleteCleanedGrants, type AgentHub } from "./agent-context";
-import { clearHub, hubOperation, hubView } from "./agent-store";
+import { tokenId, clearTemporaryData, TEMPORARY_ROUTE, type AgentHub } from "./agent-context";
+import { clearHub, clearTemporary, hubOperation, hubView } from "./agent-store";
 import { DurableObject } from "cloudflare:workers";
 import { handle, type Env, type StoredValue } from "./app";
 import { admitRegistration, finalizeRegistration, isBudgetKey, pruneRegistration, releaseRegistration, REGISTRATION_ROUTE } from "./oauth-registration";
@@ -11,7 +11,7 @@ import type { GitHubAppConfig } from "./owner-setup";
 import { AgentRelay, readRelayBody } from "./agent-relay";
 import { accountMetadata, METADATA_KEY, METADATA_ROUTE, type Ledger, type MetadataAction } from "./agent-metadata";
 import { workspaceKey } from "../shared/agent-command";
-import { AgentLifecycle, AlarmDeadlines, CLEANUP_GROWTH_BYTES, LIFECYCLE_KEY } from "./agent-lifecycle";
+import { AgentLifecycle, AlarmDeadlines } from "./agent-lifecycle";
 
 interface RepositoryCacheChunks { chunks: number }
 const repositoryChunkPrefix = "repositoryCache:";
@@ -163,8 +163,6 @@ export class SessionStore extends DurableObject {
           return Response.json({ allowed: false, reason: "cleaned", entries: [] });
         // Cleanup tombstones are workspace agent metadata too (decision 05: 64 KiB in total).
         const lifecycleBytes = action?.action === "reserve" ? await this.lifecycle.admissionBytes() : 0;
-        // Each reservation also pays for the tombstone and record fence a cleanup would leave.
-        if (action?.action === "reserve" && Number.isSafeInteger(action.bytes) && action.bytes > 0) action.bytes += CLEANUP_GROWTH_BYTES;
         const result = await storage.transaction(transaction => accountMetadata(transaction, action, reservedAt,
           { connections: 5, bytes: 64 * 1024 - lifecycleBytes }));
         if (result.allowed && action.action === "reserve") await this.lifecycle.presence(this.eligible(action.workspace), false, reservedAt);
@@ -178,6 +176,11 @@ export class SessionStore extends DurableObject {
         const result = await accountPending(transaction, action, Date.now());
         return Response.json(result, { status: result.reason === "invalid" ? 400 : 200 });
       }));
+    }
+    // Internal only: the disconnect grace removes a hub's temporary agent data, never its grants.
+    if (url.pathname === TEMPORARY_ROUTE) {
+      if (request.method !== "POST") return new Response(null, { status: 405, headers: { Allow: "POST" } });
+      return this.ctx.blockConcurrencyWhile(async () => { await clearTemporary(storage); return new Response(null, { status: 204 }); });
     }
     // Grant metadata operations only; obsolete content routes have no handler.
     if (url.pathname === "/agent-operation") {
@@ -284,10 +287,6 @@ export class SessionStore extends DurableObject {
           const current = await storage.get<StoredValue>("session");
           if (current && await tokenId(JSON.stringify(current)) !== expected) return new Response(null, { status: 409 });
         }
-        // Physical agent cleanup also fences a delayed first PUT on this id.
-        const cleanedUntil = Number(request.headers.get("X-Agent-Cleaned-Until"));
-        if (Number.isSafeInteger(cleanedUntil) && cleanedUntil > Date.now())
-          await storage.put("agent-cleaned-until", Math.max(cleanedUntil, await storage.get<number>("agent-cleaned-until") ?? 0));
         await clearRepositoryCache(storage);
         await storage.delete("repositoryCacheGeneration");
         await clearHub(storage);
@@ -349,32 +348,22 @@ export class SessionStore extends DurableObject {
       }
       const record = await this.lifecycle.load();
       const ledger = await storage.get<Ledger>(METADATA_KEY);
-      if (!ledger) { await this.lifecycle.complete(record.generation); return undefined; }
-      if (await this.lifecycle.fence(record.generation, this.eligible(), ledger.entries, next => storage.transaction(async transaction => {
-        for (const entry of ledger.entries) entry.state = "cleaned";
-        await transaction.put(METADATA_KEY, ledger);
-        await transaction.put(LIFECYCLE_KEY, next);
-      }))) this.relay().refuse(ledger.entries.map(entry => entry.id));
-      const entries = ledger.entries.filter(entry => entry.state === "cleaned");
-      if (!entries.length) {
+      // Permissions outlive the grace (8 hours, ticket 98): only temporary agent data goes.
+      await this.lifecycle.begin(record.generation, this.eligible());
+      const sessions = ledger?.entries.filter(entry => entry.expiresAt > now).map(entry => entry.sessionId) ?? [];
+      if (!(await this.lifecycle.load()).cleanupPending || !sessions.length) {
         await this.lifecycle.complete(record.generation);
         return undefined;
       }
       // Explicit retry survives exhaustion of the platform's automatic retries.
       await this.deadlines.set("agent-cleanup", Math.min(now + 30_000, (await this.lifecycle.load()).disconnectDeadline ?? Infinity));
-      return { workspace: ledger.workspace, entries, generation: record.generation };
+      return { sessions, generation: record.generation };
     });
     if (!work) return;
     // No browser or namespace fetch may run while the concurrency gate is held.
-    const removed = await deleteCleanedGrants(this.env as Env, work.workspace, work.entries);
-    await this.ctx.blockConcurrencyWhile(async () => {
-      for (const entry of removed)
-        await accountMetadata(this.ctx.storage, { workspace: work.workspace, action: "release", id: entry.id,
-          generation: entry.generation, expected: entry }, Date.now());
-      const remaining = await this.ctx.storage.get<Ledger>(METADATA_KEY);
-      if (!remaining?.entries.some(entry => entry.state === "cleaned")) await this.lifecycle.complete(work.generation, removed.map(entry => entry.id));
-    });
-    if (removed.length !== work.entries.length) throw new Error("Agent cleanup incomplete; retry scheduled");
+    const cleared = await clearTemporaryData(this.env as Env, work.sessions);
+    if (!cleared) throw new Error("Temporary agent data cleanup incomplete; retry scheduled");
+    await this.ctx.blockConcurrencyWhile(() => this.lifecycle.complete(work.generation));
   }
 }
 

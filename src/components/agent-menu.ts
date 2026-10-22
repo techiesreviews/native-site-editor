@@ -10,11 +10,12 @@ import type { createLiveTransport } from "../agent-transport";
 import type { AgentReadPorts } from "../agent-tools-read";
 import type { SharedContext } from "../agent-site";
 import type { PinRequest } from "./agent-pins";
-import { agentHistoryKey } from "../controllers/agent-controller";
+import { agentHistoryKey, agentsRemembered, rememberAgents } from "../controllers/agent-controller";
 import { mountFlyout } from "./flyout";
 import "./agent-menu.css";
 
-// Remote agents are opt-in per tab. Commands and requests travel over one live
+// Remote agents are opt-in per site, remembered in this browser until turned off (a reload or
+// a new tab on the same site comes back with them on). Commands and requests travel over one live
 // relay socket; drafts and conversations stay in this browser. The Worker stores
 // grant metadata only. Returning to a copied token's tab checks connections once;
 // there is no timer polling, context heartbeat, or content upload.
@@ -312,7 +313,7 @@ export function createAgentMenu(options: {
   }
   function failed(error: AgentFailureError) {
     if (error.failure.kind === "auth") {
-      turnOff();
+      turnOff(true);
       say("Your sign-in to the editor ended. Sign in again, then choose Connect with MCP.");
     } else if (transportMode === "socket") transport?.report(error.failure);
     else if (pinned) {
@@ -645,12 +646,14 @@ export function createAgentMenu(options: {
     if (state() === "idle") await start(task);
   }
   const live = (at: number) => !disposed && remote && !workspaceChanged && activation === at && options.repository()?.id === pinned?.id && options.repository()?.branch === pinned?.branch;
+  const site = (repo: { id: number; branch: string }): AgentWorkspace => ({ account: options.account, repoId: repo.id, branch: repo.branch });
   function startRemote() {
     if (remote || disposed) return;
     remote = true;
     ownerPaused = false;
     activation++;
     pinned = options.repository();
+    if (pinned) rememberAgents(site(pinned), true);
     workspaceChanged = false;
     transportMode = "pending";
     transportState = undefined;
@@ -658,9 +661,11 @@ export function createAgentMenu(options: {
     window.addEventListener("focus", wake);
     paint();
   }
-  /** Stops this tab's live connection and pending consent checks. */
-  function turnOff() {
+  /** Stops this tab's live connection and pending consent checks; `forget` also turns remote
+   * agents off for the site in this browser's other and later tabs. */
+  function turnOff(forget = false) {
     if (!remote) return;
+    if (forget && pinned) rememberAgents(site(pinned), false);
     remote = false;
     ownerPaused = false;
     activation++;
@@ -689,7 +694,7 @@ export function createAgentMenu(options: {
         await api("rebind", { id: grant.id, repo: target.fullName, repoId: target.id, branch: target.branch });
         if (!current()) return;
       }
-      turnOff();
+      turnOff(true);
       changing = false;
       await turnOn();
     } catch (error) { showError(error); }
@@ -726,7 +731,7 @@ export function createAgentMenu(options: {
     } catch (error) {
       changing = false;
       // A failed first prompt leaves remote agents off; a connected agent keeps them on.
-      if (!usedGrants().length && !["paused", "quota", "reconnecting"].includes(transportState?.mode ?? "")) turnOff();
+      if (!usedGrants().length && !["paused", "quota", "reconnecting"].includes(transportState?.mode ?? "")) turnOff(true);
       showError(error);
     } finally {
       changing = false;
@@ -742,7 +747,7 @@ export function createAgentMenu(options: {
       else for (const grant of liveGrants()) await api("revoke", { id: grant.id });
       token = tokenId = undefined;
       changing = false;
-      turnOff();
+      turnOff(true);
     } catch (error) {
       showError(error);
     } finally {
@@ -775,6 +780,19 @@ export function createAgentMenu(options: {
       paint();
     } catch (error) { if (live(at)) showError(error); }
     finally { reading = false; }
+  }
+  /** Remote agents remembered on for the open site come back on (a reload, a new tab), using the
+   * connections the agents already have: no new prompt or token. */
+  async function resume() {
+    const repo = options.repository();
+    if (remote || disposed || changing || !repo || !agentsRemembered(site(repo))) return;
+    startRemote();
+    const at = activation, read = lastRead;
+    await readConnections();
+    if (!live(at) || ownerPaused) return;
+    // Disconnected, signed out or past 8 hours: nothing to come back to. An unanswered read keeps them on.
+    if (lastRead !== read && !liveGrants().length) { turnOff(true); return; }
+    await activateSocket();
   }
   function wake() {
     if (!workspaceChanged && document.visibilityState === "visible" && state() === "waiting" && Date.now() - lastRead >= 2000)
@@ -841,6 +859,7 @@ export function createAgentMenu(options: {
   };
   window.addEventListener("storage", onStorage);
   paint();
+  void resume();
   return {
     root,
     consentGranted,
@@ -922,6 +941,7 @@ export function createAgentMenu(options: {
       recoverWorkspace();
       paint();
       transport?.changed();
+      void resume();
     },
     destroy() {
       disposed = true;

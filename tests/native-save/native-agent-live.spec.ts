@@ -99,7 +99,8 @@ test("live commands correlate results; visible and hidden idle sends no HTTP; an
   expect(requests.slice(after)).toEqual([]);
   expect(handshakes).toHaveLength(1);
 
-  await connect(second);
+  // Remote agents are remembered on for this site: the second tab is on without Connect.
+  await second.locator(".repository-menu__trigger").click();
   await expect(second.locator(".agent-menu__hint")).toContainText("Another tab");
   await expect(second.getByRole("button", { name: "Take over", exact: true })).toBeVisible();
   expect(handshakes).toHaveLength(1);

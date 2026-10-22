@@ -1,28 +1,21 @@
 /** Local-only lifecycle rules. Call mutations under the object's concurrency gate. */
 export const DEADLINES_KEY = "alarm-deadlines";
 export const LIFECYCLE_KEY = "agent-lifecycle";
+/** After the last editor tab's live connection ends, temporary agent data waits this long. */
 export const DISCONNECT_GRACE = 5 * 60_000;
-/** After physical deletion a tombstone only has to outlast delayed work on that id
- * (a reservation's 60 s deadline, a slow record PUT); the deleted record and hub
- * entry already refuse authentication. Keeps the lifecycle record small. */
-export const TOMBSTONE_AFTER_DELETION = 10 * 60_000;
+/** An agent permission lasts this long from when the agent connected, tab or no tab
+ * (or less, when the editor sign-in it belongs to ends sooner). */
+export const AGENT_PERMISSION_LIFETIME = 8 * 60 * 60_000;
 const utf8Bytes = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).byteLength;
-/** What a cleaned grant's own object keeps meanwhile (its PUT fence and deadline table),
- * measured at its widest; charged per live tombstone (decision 05 counts separate objects). */
-/** A cleanup turns each ledger entry into a tombstone (64-hex id and expiry) and a record
- * fence; every reservation pays that growth in advance. */
-export const TOMBSTONE_GROWTH_BYTES = utf8Bytes({ ["f".repeat(64)]: Number.MAX_SAFE_INTEGER }) +
-  // The ledger entry's own state grows from "final" to "cleaned".
-  utf8Bytes("cleaned") - utf8Bytes("final");
+/** A grant object's record fence, measured at its widest; charged per live tombstone. */
 export const RECORD_FENCE_BYTES = utf8Bytes({ "agent-cleaned-until": Number.MAX_SAFE_INTEGER, "alarm-deadlines": { session: Number.MAX_SAFE_INTEGER } });
-export const CLEANUP_GROWTH_BYTES = TOMBSTONE_GROWTH_BYTES + RECORD_FENCE_BYTES;
 export type Deadlines = Partial<Record<"session" | "registration" | "agent-cleanup", number>>;
 export interface LifecycleRecord {
   generation: number;
   disconnectDeadline?: number;
-  cleanedGeneration?: number;
   cleanupPending?: boolean;
-  /** Tombstones survive physical ledger release, until the grant's absolute expiry. */
+  /** Tombstones of grants the grace removed before permissions lasted 8 hours (ticket 98). None
+   * are written now; they still refuse their id until the grant's absolute expiry. */
   cleaned: Record<string, number>;
 }
 interface Storage {
@@ -79,15 +72,12 @@ export class AgentLifecycle {
       await this.deadlines.set("agent-cleanup", Math.min(retry, next.disconnectDeadline));
     }
   }
-  /** Fence locally before any external deletion; an interrupted deletion stays denied. */
-  async fence(generation: number, eligible: number, entries: { id: string; expiresAt: number }[], commit?: (record: LifecycleRecord) => Promise<void>) {
+  /** The grace ended with no editor present: claim this generation's temporary-data cleanup.
+   * Permissions are not touched; a reconnect or a newer grace makes the claim fail. */
+  async begin(generation: number, eligible: number) {
     const current = await this.load();
     if (eligible || current.generation !== generation || current.disconnectDeadline === undefined || this.now() < current.disconnectDeadline) return false;
-    const cleaned = Object.fromEntries(Object.entries(current.cleaned).filter(([, expiry]) => expiry > this.now()));
-    for (const entry of entries) cleaned[entry.id] = Math.max(cleaned[entry.id] ?? 0, entry.expiresAt);
-    const next = { ...current, disconnectDeadline: undefined, cleanedGeneration: generation, cleanupPending: true, cleaned };
-    if (commit) { await commit(next); this.loaded = Promise.resolve(next); }
-    else await this.save(next);
+    await this.save({ ...current, disconnectDeadline: undefined, cleanupPending: true });
     return true;
   }
   /** Persistent lifecycle bytes, charged against the workspace's 64 KiB metadata budget.
@@ -96,17 +86,16 @@ export class AgentLifecycle {
     const current = await this.load();
     const live = Object.fromEntries(Object.entries(current.cleaned).filter(([, expiry]) => expiry > this.now()));
     if (Object.keys(live).length !== Object.keys(current.cleaned).length) await this.save({ ...current, cleaned: live });
-    // Reserve the record at its widest (a pending deadline, a cleaned generation) and the
+    // Reserve the record at its widest (a pending deadline, a cleanup claim) and the
     // agent-cleanup deadline table, whether or not they exist yet: presence() may write
     // them after this admission.
     const max = Number.MAX_SAFE_INTEGER;
-    const widest = { ...current, cleaned: live, generation: max, disconnectDeadline: max, cleanedGeneration: max, cleanupPending: true };
+    const widest = { ...current, cleaned: live, generation: max, disconnectDeadline: max, cleanupPending: true };
     return utf8Bytes(widest) + utf8Bytes({ [DEADLINES_KEY]: { "agent-cleanup": max } }) + Object.keys(live).length * RECORD_FENCE_BYTES;
   }
-  async complete(generation: number, deleted: string[] = []) {
+  async complete(generation: number) {
     const loaded = await this.load();
     const cleaned = Object.fromEntries(Object.entries(loaded.cleaned).filter(([, expiry]) => expiry > this.now()));
-    for (const id of deleted) if (cleaned[id]) cleaned[id] = Math.min(cleaned[id], this.now() + TOMBSTONE_AFTER_DELETION);
     const current = { ...loaded, cleaned };
     if (current.disconnectDeadline !== undefined && (current.generation !== generation || current.disconnectDeadline > this.now())) {
       await this.save({ ...current, cleanupPending: undefined });

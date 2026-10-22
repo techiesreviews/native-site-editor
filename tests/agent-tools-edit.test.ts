@@ -277,19 +277,19 @@ test("no legacy edit fallback, even with matching context; timeout/lost never re
   const h = await connected(), get = h.namespace.get;
   try {
     h.counters.reset();
-    assert.match(String(payload(await h.rpc("write_file", { path: "new.txt", content: "x" }))), /not sharing/i);
+    assert.match(JSON.stringify(payload(await h.rpc("write_file", { path: "new.txt", content: "x" }))), /The editor isn't open/);
     assert.equal(h.counters.log.length, 4); assert.equal(h.counters.waitedMs, 0);
     const context = await siteContext();
     context.branch = "other";
     await h.storage(h.counters.log.find(row => row.name.startsWith("agent-hub:"))!.name).put("context", context);
     h.counters.reset();
-    assert.match(String(payload(await h.rpc("write_file", { path: "new.txt", content: "x" }))), /not sharing/i);
+    assert.match(JSON.stringify(payload(await h.rpc("write_file", { path: "new.txt", content: "x" }))), /The editor isn't open/);
     assert.equal(h.counters.log.length, 4); assert.equal(h.counters.waitedMs, 0);
     context.branch = "main";
     await h.storage(h.counters.log.find(row => row.name.startsWith("agent-hub:"))!.name).put("context", context);
     const legacy = payload(await h.rpc("write_file", { path: "new.txt", content: "x", waitSeconds: 0 }));
-    assert.match(String(legacy), /not sharing/);
-    assert.match(String(payload(await h.rpc("get_command_status", { requestId: "legacy" }))), /not sharing/);
+    assert.match(JSON.stringify(legacy), /The editor isn't open/);
+    assert.match(JSON.stringify(payload(await h.rpc("get_command_status", { requestId: "legacy" }))), /The editor isn't open/);
     let dispatches = 0;
     for (const code of ["timeout", "unknown-outcome", "busy", "too-large", "cancelled", "lost"]) {
       h.namespace.get = name => String(name).startsWith("agent-relay:") ? { fetch: async () => {
