@@ -1,8 +1,8 @@
 ---
 title: Kit defaults follow the kitchen pins
 type: task (AFK)
-status: open
-assignee: lead-sf13 (free worker build)
+status: closed
+assignee: lead-sf13
 builder: opencode/deepseek-v4.1-flash-free
 blocked_by: [11-commit-credit-model-name, 12-grok-and-agent-small-fixes]
 ---
@@ -39,3 +39,27 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Free worker through T3 `delegate_task` (OpenCode `deepseek-v4.1-flash-free`) in `build/sf-13-kit-defaults` (`ASE_OWNER=sf-13`); brief names this ticket, its Files, `scripts/agents/kit doctor` and `scripts/agents/kit unit --affected`. One attempt plus one correction; then Claude.
 - Review: `ASE_REVIEW_MODEL=claude-opus-5-5 scripts/agents/kit review --ticket docs/wayfinder/software-factory/build/tickets/13-kit-defaults-follow-pins.md`; land: `ASE_OWNER=sf-13 scripts/agents/kit pr --ticket <same>`.
 - Report: unit `RESULT:` lines, the grep output, review decisions, PR and merge SHA.
+
+## Done (2026-10-22)
+
+- Defaults follow the kitchen pins: without `ASE_REVIEW_MODEL` or `ASE_BUILD_MODEL`, kit reviews and builds use `claude-opus-5-5`; a fresh `kit fix` without flags uses `claude-opus-5-5` at effort `high`. An explicit `ASE_REVIEW_MODEL=gpt-6.1-sol` or `--builder sol` still selects Sol.
+- The `kit slice` builder brief includes "Do not mention staging, committing or unstaged changes in the ticket."
+- Usage texts, `docs/agents/agent-scripts.md` and `docs/agents/kitchen.md` match the new defaults.
+
+Tests:
+
+- Focused: `RESULT: ok unit 145/145 (4 files) log .scratch/unit/20261022T145230-2137633.log`
+- Affected: `RESULT: ok unit 145/145 (4 files) log .scratch/unit/20261022T145350-2157012.log`
+- `npm run check`: passed.
+- `npm run lint`: passed (494 tickets checked; 15 unused exports, 0 failures).
+
+Grep (`grep -n "gpt-6.1-sol" scripts/agents/kit.d/* scripts/agents/agent-run.mjs`):
+
+```
+scripts/agents/kit.d/fix:15:const modelName = value => value === "sol" ? "gpt-6.1-sol" : value;
+scripts/agents/kit.d/slice:30:  flags.model = flags.builder === "sol" ? "gpt-6.1-sol" : flags.builder;
+```
+
+Only the two `sol` alias expansions remain; no default or budget-family line names the full model.
+
+Code commit: `2f82047a Default kit builds and reviews to Claude Opus 5.5`.
