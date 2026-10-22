@@ -46,3 +46,11 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Added browser spec `tests/native-save/native-media-search-pause.spec.ts` (paused page clock): the 150 ms pause with focus and caret kept; Enter, clearing and Tab applying at once with the count; first click or tap on a thumbnail; selection by box and by round; a press released outside Media. `kit specs native-media-search-pause.spec.ts native-media-library.spec.ts native-media-library-keys.spec.ts`: 21/21 passed. `kit unit tests/media-library-input.test.ts`: 15/15.
 - Commits (subjects; SHAs change when the PR rebases): "Media search waits for a pause in typing" (Sol), "Review fixes round 1" and "Media search redraws after a pressed tile's whole click" (Claude), "Review fixes round 2" (Sol), "Review fixes round 3" (Claude).
 - Review decisions: round 1 (Sol) P1 lost click, fixed inside `media-library-input.ts` by holding the redraw until the click finishes rather than keeping tiles in place (that is ticket 92's scope); round 1 re-review P1 lost selection, fixed by deferring the redraw past the click; round 2 P1 touch tap, fixed; round 3 (Claude, Sol at its usage limit) two P3s and the validation gaps, fixed.
+
+### Follow-ups
+
+- Standards (P3): 87b2f80f:tests/media-library-input.test.ts:106 — P3: The fake `search` and `page` objects, plus the `uploadInput` and `dialog` fakes at `:111`, are typed by a p
+- Validation gaps (gap): Leaving the field by mouse is not tested in a browser. Only Tab is covered (`native-media-search-pause.spec.ts:392-396`); the mouse path is checked only by a un
+- Validation gaps (gap): The Tab test does not check where focus goes. `:396` only asserts that some button in Media has focus. Test to add: also assert that focus is on the button that
+- Validation gaps (gap): No unit test for typing during a press. Covering this pins the `pressing = false` reset at `media-library-input.ts:26`. Test to add: `type("cat")`, `grid.dispat
+
