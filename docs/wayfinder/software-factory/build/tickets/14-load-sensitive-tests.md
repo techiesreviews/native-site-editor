@@ -2,7 +2,7 @@
 title: Three load-sensitive tests pass on a busy machine
 type: task (AFK)
 status: open
-assignee:
+assignee: lead-sf14 (this session)
 builder: claude
 blocked_by: []
 ---
@@ -15,6 +15,11 @@ Clean-up follow-ups: three tests failed once each during `kit pr` with five runn
 - `tests/agent-local-recovery.test.ts` (about line 132, "a command issued more than 23 hours ago is refused…": missing rejection; the test mixes `Date.now()` with the setup's clock).
 - `tests/native-save/native-editor-toast.spec.ts` (timed out once under heavy load during slice 91's `kit pr`).
 
+Added by the lead on 2026-10-22 after more failures under load:
+
+- `tests/native-save/native-lazy-panels.spec.ts` ("a failed connection check keeps browser requests and never adopts hub content or starts polling", lines ~30 and ~249): failed twice during slice 93's `kit pr`, 6/6 alone. It now blocks landings repeatedly: highest priority.
+- `tests/native-save/native-media-library.spec.ts:450` ("adding a file keeps the tiles and pictures already shown; its ring goes once played", ticket 92): failed once under load, 17/17 alone.
+
 ## Decided behaviour
 
 - Find the cause for each before changing it (`mattpocock-skills:diagnosing-bugs`): a test that reads wall time or counts calls during real waits gets the fake clock its harness already offers, or counts only its own calls. Fix the test, not the product, unless the cause is a real product race; then stop and say so in `decide`.
@@ -25,6 +30,9 @@ Clean-up follow-ups: three tests failed once each during `kit pr` with five runn
 - `tests/agent-usage.test.ts`
 - `tests/agent-local-recovery.test.ts`
 - `tests/native-save/native-editor-toast.spec.ts`
+- `tests/native-save/native-lazy-panels.spec.ts`
+- `tests/native-save/native-media-library.spec.ts`
+- the source files under test only if the diagnosis shows a real race in the product (then say so in Done)
 
 ## Done when
 
