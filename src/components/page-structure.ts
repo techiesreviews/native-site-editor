@@ -1252,25 +1252,26 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     return view;
   }
 
+  // How a row of one tree of the page is numbered in another (a template's rows keep their ids).
+  function mover(before: NativeStructure, after: NativeStructure) {
+    const rowOf = before.items === after.items ? undefined : followRows(before.items, after.items);
+    return (id: string) => !rowOf || id.startsWith("@") ? id : rowOf(id);
+  }
   // The same page drawn again with rows added, removed or moved above others (Undo, Redo, an edit in
   // code, Edit component mode ending as its instance moved, paints held while typing): folds, the mark
   // and a selection made ahead for a held paint follow their elements from the trees that named them.
   function follow(next: NativeStructure, from: NativeStructure) {
     const ahead = heldAhead;
     heldFrom = undefined; heldAhead = undefined;
-    const mover = (before: NativeStructure) => {
-      const rowOf = before.items === next.items ? undefined : followRows(before.items, next.items);
-      return (id: string) => !rowOf || id.startsWith("@") ? id : rowOf(id);
-    };
     if (from.items !== next.items) {
-      const moved = mover(from);
+      const moved = mover(from, next);
       const folds = [...foldState];
       foldState.clear();
       for (const [id, closed] of folds) { const to = moved(id); if (to !== undefined) foldState.set(to, closed); }
       if (selected !== undefined) selected = moved(selected);
       if (editingInstance !== undefined) editingInstance = moved(editingInstance);
     }
-    if (ahead) selected = mover(ahead.at)(ahead.id);
+    if (ahead) selected = mover(ahead.at, next)(ahead.id);
   }
 
   function focusRowOnly(el: HTMLElement) {
@@ -1315,6 +1316,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
         return;
       }
       if (next && previousStructure && path === previousStructure.path) follow(next, heldFrom ?? previousStructure);
+      // Another page: nothing held follows.
       heldFrom = undefined; heldAhead = undefined;
       const ahead = selectedAhead && path === previousStructure?.path && next?.paintedSource === selectedAhead.painted ? selectedAhead : undefined;
       if (ahead) selected = ahead.id;
@@ -1337,18 +1339,25 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       if (template) pendingSelection = undefined;
       // An element of a template without rows of its own here (no Edit component mode): its instance's row is marked.
       const host = !template && target?.host?.node && target.host.path === structure?.path ? target.host : undefined;
-      const id = target && template ? templateKey(target.path, target.node) : target && structure && target.path === structure.path ? key(target.node) : host && key(host.node!);
+      const named = target && template ? templateKey(target.path, target.node) : target && structure && target.path === structure.path ? key(target.node) : host && key(host.node!);
       // Chosen in a paint of the page newer than the rows drawn (the frame reports a selection before
       // its structure): its row is marked once that paint is drawn.
-      const painted = host ? host.paintedSource : id !== undefined && !template ? target?.paintedSource : undefined;
-      selectedAhead = painted !== undefined && structure?.paintedSource !== undefined && painted !== structure.paintedSource ? { id: id!, painted } : undefined;
+      const painted = host ? host.paintedSource : named !== undefined && !template ? target?.paintedSource : undefined;
+      selectedAhead = painted !== undefined && structure?.paintedSource !== undefined && painted !== structure.paintedSource ? { id: named!, painted } : undefined;
+      // Chosen in a held paint: the rows drawn number the page as it was, so its row is named as drawn;
+      // an element the drawn rows lack is marked once that paint is drawn.
+      const id = heldFrom && structure && named !== undefined && !selectedAhead ? mover(structure, heldFrom)(named) : named;
+      const waits = id === undefined && named !== undefined;
+      heldAhead = waits ? { id: named, at: structure! } : selectedAhead ? heldAhead : undefined;
+      const heldNow = heldFrom;
       if (id === selected && !selectedAhead) return;
       // Another element chosen (on the page or here): a row edit is kept and ends. The
       // edited element, its instance (its own writes select that) or what is in it do not count.
       const owner = editingModule?.editing();
       if (owner !== undefined && !(id !== undefined && (id === owner || owner.startsWith(`${id}.`) || id.startsWith(`${owner}.`) || owner.startsWith(`~${id}:`)))) editingModule!.finish("commit", false);
-      if (selectedAhead) return;
-      const current = setSelected(id);
+      if (selectedAhead || waits) return;
+      // Ending the row edit drew the held paint: the choice is named as that paint names it.
+      const current = setSelected(heldNow && !heldFrom ? named : id);
       if (current) reveal(current);
       current?.scrollIntoView({ block: "nearest" });
     },
