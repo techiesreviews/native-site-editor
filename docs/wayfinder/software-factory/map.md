@@ -23,6 +23,7 @@ One written recipe (the kitchen rulebook) that every session and every model fol
 ## Decisions so far
 
 <!-- one line per closed ticket: [title](tickets/file.md): gist -->
+- [Map today's production line and where it went wrong](tickets/01-research-line-today.md): building, code review and landing are scripted; the rest is by hand. Lex found 35+ problems on the preview that had passed tests and Sol review. 7 were bugs; in 28 the ticket itself was wrong for a user (too much text 9, looks 8, behaviour 11). To catch them earlier: a user-like check, a taste rule with an Opus UX review, mockups at handoff, prototypes before building.
 
 ## Not yet specified
 
