@@ -3470,11 +3470,12 @@ function treeState(scope = draftScope()): TreeState {
 let filesTree: ReturnType<typeof createFilesTreeController> | undefined;
 // Folder listings by tree SHA (content-addressed, so never stale) for path checks before the tree loads.
 const spareListings = new Map<string, Directory["entries"]>();
+// Files is on show: its tab, or the only panel of a repository with no site (its tab state stays "pages").
+const filesShown = () => !!explorerDropdown?.isOpen() && (pagesController.explorerTab() === "files" || !element("explorer-files").hidden);
 const filesTreeController = {
   refresh: () => filesTree ? filesTree.refresh() : mediaController.requestGalleryRefresh(), render: () => filesTree?.render(), reset: () => { spareListings.clear(); filesTree?.reset(); },
   shown: () => filesTree?.shown(), row: (path: string) => filesTree?.row(path),
-  openFolder: (path: string) => filesTree?.openFolder(path), listings: () => filesTree?.listings() ?? spareListings,
-  visible: () => !!explorerDropdown?.isOpen() && pagesController.explorerTab() === "files",
+  openFolder: (path: string) => filesTree?.openFolder(path), listings: () => filesTree?.listings() ?? spareListings, visible: filesShown,
 };
 let explorerMount: Promise<void> | undefined;
 function ensureExplorer() {
@@ -3517,7 +3518,7 @@ function ensureExplorer() {
       clearError, error: errorMessage, status, announce, refuse, intent: (path) => previewSelection.recordIntent(path),
       openDraft: openNewDraft, openEntry, restore: target => fileOps!.restoreFileTarget(target),
       create: openCreate, actions: () => fileActions,
-      visible: () => !!explorerDropdown?.isOpen() && pagesController.explorerTab() === "files",
+      visible: filesShown,
       count: (total) => {
         // The commit the tree shows, in full (set on the hidden #revision before each draw).
         const count = element("files-count"), commit = element("revision").title;

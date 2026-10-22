@@ -190,11 +190,16 @@ test("a repository without a site opens Files on first open, and again after pag
   let release!: () => void;
   const held = new Promise<void>(resolve => { release = resolve; });
   await page.route(`**${chunks.Files}*`, async route => { await held; await route.continue(); });
+  const icons = "/src/components/file-type-icons.ts";
   try {
     await openPlainRepository(page, baseURL, "lazy-notes");
     await showPlainFiles(page);
     await expect(page.locator("#explorer-files")).toContainText("Loading files…");
+    const iconsRequested = page.waitForRequest(request => new URL(request.url()).pathname === icons, { timeout: 15_000 });
     release();
+    // The tree, mounted, counts as shown: the open file's row is marked and the type icons load.
+    await expect(page.locator('#explorer .file-row[data-path="README.md"]')).toHaveClass(/\bselected\b/);
+    await iconsRequested;
     await renameReadme(page, "NOTES.md");
   } finally { release(); }
 
