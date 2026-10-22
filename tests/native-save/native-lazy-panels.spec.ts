@@ -255,6 +255,8 @@ test("a failed connection check keeps browser requests and never adopts hub cont
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
   expect(calls, "remote agents are off until the user turns them on").toBe(0);
+  // Installed after load, as the toast spec does: every timer Connect starts is then on this clock.
+  await page.clock.install();
   await page.evaluate(async () => {
     const { indexedDbAgentRecords } = await import("/src/agent-records.ts");
     const request = { id: "req-restored-question", repoId: 501, branch: "main", text: "Change the heading", state: "question", createdAt: Date.now(),
@@ -267,8 +269,14 @@ test("a failed connection check keeps browser requests and never adopts hub cont
   await page.getByRole("button", { name: "Connect with MCP", exact: true }).click();
   await expect(page.locator(".agent-pin__question")).toHaveText("Which heading?", { timeout: 15_000 });
   // Connect checks once, makes its token and reads once more; the pin may show before or after
-  // that second read, so wait for it rather than count at the pin. Nothing polls after.
+  // that second read, so wait for it rather than count at the pin.
   await expect.poll(() => calls).toBe(2);
+  // Nothing polls after: a minute of timers runs, then a request the page sends last comes back
+  // only after any read those timers started has reached the route above.
+  await page.clock.runFor(60_000);
+  await page.route("**/__after-timers", route => route.fulfill({ status: 204 }));
+  await page.evaluate(() => fetch("/__after-timers"));
+  expect(calls).toBe(2);
 });
 
 test("first OAuth storage event keeps the short retries while its grant arrives", async ({ page, baseURL }) => {

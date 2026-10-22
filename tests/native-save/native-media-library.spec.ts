@@ -485,13 +485,16 @@ test("adding a file keeps the tiles and pictures already shown; its ring goes on
   // That moment is on the performance clock, which shares the timeline's origin; the timeline lags
   // it by at most a frame, so elapsed read on the timeline can only come out short.
   const ring = await added.evaluate(card => {
-    const animation = card.getAnimations({ subtree: true }).find(each => each instanceof CSSAnimation && each.animationName === "media-new")!;
-    const played = Number(animation.effect!.getComputedTiming().localTime) - Number(animation.effect!.getTiming().delay);
     const shownAt = (window as typeof window & { ringShownAt: number }).ringShownAt;
-    return { played, elapsed: Number(document.timeline.currentTime) - shownAt };
+    const elapsed = Number(document.timeline.currentTime) - shownAt;
+    const animation = card.getAnimations({ subtree: true }).find(each => each instanceof CSSAnimation && each.animationName === "media-new");
+    if (!animation) return { played: undefined, elapsed };
+    return { played: Number(animation.effect!.getComputedTiming().localTime) - Number(animation.effect!.getTiming().delay), elapsed };
   });
-  expect(ring.played).toBeGreaterThanOrEqual(ring.elapsed - 50);
-  expect(ring.played).toBeLessThan(ring.elapsed + 400);
+  // The ring lasts 2.4 s; a redraw after that rightly drops it. Say so rather than fail on a missing ring.
+  expect(ring.played, `no ring ${Math.round(ring.elapsed)} ms after it showed: this machine was too slow for its 2.4 s`).toBeDefined();
+  expect(ring.played!).toBeGreaterThanOrEqual(ring.elapsed - 50);
+  expect(ring.played!).toBeLessThan(ring.elapsed + 400);
   // fixed-wait: the ring plays for 2.4 s in all; a redraw after that takes it off.
   await page.waitForTimeout(2_000);
   await search.fill("kept-tile");

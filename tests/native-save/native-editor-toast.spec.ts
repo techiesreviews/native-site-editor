@@ -168,4 +168,5 @@ test("a question that opens while a toast shows is not put inside the toast, and
   expect(await page.evaluate(() => (window as any).answered)).toBe(false);
   await expect(page.locator("body > .editor-toast")).toBeVisible();
   expect(errors).toEqual([]);
+  await page.clock.resume();
 });

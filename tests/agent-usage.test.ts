@@ -72,7 +72,9 @@ test("an empty wait without a receiver answers quietly at once without a legacy 
   // After `initialized` the SDK opens its standby GET without awaiting it; on a busy machine its
   // three auth calls landed after the reset below. Count only once that request has settled.
   const send = workerFetch(h.worker);
-  let standbySettled!: () => void, gets = 0, noStandby: ReturnType<typeof setTimeout> | undefined;
+  let standbySettled!: () => void;
+  let gets = 0;
+  let noStandby: ReturnType<typeof setTimeout> | undefined;
   const standby = new Promise<void>(resolve => { standbySettled = resolve; });
   const tracked = (input: string | URL | Request, init?: RequestInit) => {
     const response = send(input, init);
