@@ -606,6 +606,7 @@ function mountWorkspace() {
       return route === "/" ? { route, fixed: "The home page's URL is always /." } : { route };
     },
     planUrl: (file, value) => {
+      // The sidebar's URL field is hidden while Page settings holds the URL; this keeps it calm if it shows again.
       if (pageActions) return pageActions.urlPlan(file, value);
       if (value === nativeRouteForPath(file)) return { ok: false, error: "", unchanged: true };
       void loadPagesActions().then(() => pageStructure?.refreshMeta()).catch(errorMessage);
