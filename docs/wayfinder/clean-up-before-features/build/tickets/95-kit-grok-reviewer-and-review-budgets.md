@@ -1,8 +1,8 @@
 ---
 title: "Kit: Grok as a read-only reviewer, and weekly budgets for outside reviewers"
 type: task (AFK)
-status: open
-assignee: claude runner (lead: this session)
+status: closed
+assignee: runner-95
 builder: claude
 blocked_by: []
 ---
@@ -37,3 +37,11 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 
 - `kit doctor`; `ASE_REVIEW_MODEL=claude-opus-5-5 kit bg slice-95 -- scripts/agents/kit slice --ticket docs/wayfinder/clean-up-before-features/build/tickets/95-kit-grok-reviewer-and-review-budgets.md --builder claude-opus-5-5`; `kit wait job slice-95 --timeout 2h`.
 - Report: unit `RESULT:` lines, the Grok smoke review's RESULT line, review folder and decisions, PR and merge SHA.
+
+## Done (2026-10-22)
+
+- `ASE_REVIEW_MODEL=grok-*` (or `--cli grok`) runs reviews through `grok --prompt-file /dev/stdin -m <model> --reasoning-effort <effort> --output-format json --sandbox read-only --tools read_file,grep,list_dir --no-subagents --disable-web-search --cwd <worktree>`, with a session id assigned up front (`-s`) and `--resume <id>` for the completeness retry and `agent.sh --resume`. Grok builds are refused. The report is the JSON `text`; every `modelUsage` key must be the requested model or it plus a `-suffix` (`grok-4.7-build` passes for `grok-4.7`; `grok-4.6`, `grok-4.70` and other families fail).
+- `kit review` reserves one review per outside family (`gpt` for Codex, `grok`) per UTC ISO week in the main root `.scratch/review-budget.json` (`ASE_REVIEW_BUDGET_GPT=12`, `ASE_REVIEW_BUDGET_GROK=8`), prints `budget: <family> <used>/<limit> in <week>`, refuses at the limit naming the override variable, and returns the reservation when the model was never reached (empty diff). Claude is never counted. The ledger is updated under a lock with an atomic rename.
+- A failed run whose output says "You've hit your usage limit … try again at <time>" ends with `problem: <family> usage limit until <time>` instead of the generic CLI failure.
+- `kit doctor` (not `--quiet`) adds one informational `✓/✗ grok` line (installed and logged in, via `grok models`); it never fails the doctor.
+- Tests: `tests/agent-scripts.test.ts` (Grok args, inference and build refusal; sample Grok JSON; model check; ledger per family/week, limit, override, Claude, release; usage-limit text; fake-CLI Grok review and Codex usage limit through `agent.sh`), `tests/kit-review.test.ts` (budget refusal, Claude uncounted, empty-diff refund), `tests/kit-doctor.test.ts` (grok line present/absent/logged out). Docs: `docs/agents/agent-scripts.md`.
