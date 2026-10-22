@@ -505,7 +505,7 @@ export async function removeCleanedGrants(env: Env, workspace: string, entries: 
         if (!deleted.ok && deleted.status !== 404) continue;
       }
       if (await removeHubGrant(env, entry.sessionId, entry.id, entry.generation)) removed.push(entry);
-    } catch { /* Retain the ledger entry; the tombstone keeps refusing it until retry. */ }
+    } catch { /* Retain the ledger entry; its legacy tombstone keeps refusing it until retry. */ }
   }
   return removed;
 }

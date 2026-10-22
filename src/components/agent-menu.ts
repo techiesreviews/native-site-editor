@@ -21,6 +21,8 @@ import "./agent-menu.css";
 // grant metadata only. Returning to a copied token's tab checks connections once;
 // there is no timer polling, context heartbeat, or content upload.
 
+/** How long one agent API call (headers and body) may take before it counts as a network failure. */
+const API_DEADLINE = 15_000;
 /** Set while remote agents are on for a site (account, repository and branch) in this browser, until
  * the user turns them off: a reload or a new tab on that site comes back with them on. */
 const agentsOnKey = (workspace: AgentWorkspace) => `native-site-editor:agents-on:${workspaceKey(workspace)}`;
@@ -288,13 +290,17 @@ export function createAgentMenu(options: {
       return error;
     };
     let response: Response | undefined, text: string;
-    // A connection lost while the answer's body arrives is a network failure too.
+    // A connection lost while the answer's body arrives is a network failure too. Settle matrix:
+    // answered → its result; refused → its failure; lost, or no answer (headers and body) within
+    // API_DEADLINE → a network failure, so the menu never stays connecting with no way forward (a
+    // resume read that times out counts as unanswered: agents stay on, as for a 503).
     try {
       response = await fetch(`/api/agent/${action}`, {
         method: body === undefined ? "GET" : "POST",
         credentials: "same-origin",
         headers: body === undefined ? undefined : { "Content-Type": "application/json" },
         body: sent,
+        signal: AbortSignal.timeout(API_DEADLINE),
       });
       text = await response.text();
     } catch {
@@ -881,6 +887,9 @@ export function createAgentMenu(options: {
     if (event.key === AGENT_CONNECTED_KEY) {
       try { consentGranted(JSON.parse(event.newValue ?? "null")); } catch { /* Old or invalid announcements grant nothing. */ }
     }
+    // Turned off for this site in another tab (Disconnect, sign-in ended, connections gone): off here
+    // too, so this tab never takes over agents that were turned off.
+    if (remote && pinned && event.newValue === null && event.key === agentsOnKey(site(pinned))) { turnOff(); paint(); }
   };
   window.addEventListener("storage", onStorage);
   paint();

@@ -65,7 +65,8 @@ const failure = (message: string) => ({
   isError: true,
   content: [{ type: "text" as const, text: message }],
 });
-/** Nothing was sent: the agent waits for the editor instead of reconnecting. */
+/** Nothing was sent: the agent waits for the editor instead of reconnecting. `isError` is deliberate:
+ * the tool did nothing, so a client must not treat it as done; the text says the connection stays. */
 const waiting = (message: string) => ({ isError: true, ...text({ state: "waiting", message }) });
 const readOnly = {
   readOnlyHint: true,

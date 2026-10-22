@@ -25,6 +25,11 @@ interface Registry {
   clear: (owner: { tabId: string; generation: number }) => void;
   held: (generation: number) => Promise<boolean>;
   hold: (generation: number) => Promise<(() => void) | undefined>;
+  /** The tab of this workspace focused most recently: it goes first when the receiving tab closes. */
+  focus: (tabId: string) => void;
+  focused: () => string | undefined;
+  /** Runs `work` while no other tab of this browser runs its own for this workspace. */
+  elect: (work: () => Promise<void>) => Promise<void>;
 }
 interface Options {
   workspace: AgentWorkspace;
@@ -72,6 +77,9 @@ function browserRegistry(workspace: AgentWorkspace): Registry {
     held: async generation => navigator.locks
       ? (await navigator.locks.query()).held?.some(lock => lock.name === name(generation)) ?? false
       : read()?.generation === generation,
+    focus: tabId => { try { localStorage.setItem(`${key}:focus`, tabId); } catch { /* A hint only: unordered succession still elects one tab. */ } },
+    focused: () => { try { return localStorage.getItem(`${key}:focus`) ?? undefined; } catch { return undefined; } },
+    elect: work => navigator.locks ? navigator.locks.request(`${key}:elect`, () => work()) : work(),
     hold: generation => {
       if (!navigator.locks) return Promise.resolve(() => {});
       return new Promise((resolve, reject) => {
@@ -83,6 +91,9 @@ function browserRegistry(workspace: AgentWorkspace): Registry {
     },
   };
 }
+
+/** How long a tab focused less recently waits before asking to succeed a closed receiving tab. */
+const SUCCESSION_DELAY = 1_000;
 
 /** One opt-in activation, one pinned workspace, no mailbox and no mutation retries. Loaded only by the lazy menu. */
 export function createLiveTransport(options: Options) {
@@ -450,6 +461,8 @@ export function createLiveTransport(options: Options) {
   }
   async function start() {
     const at = epoch;
+    // A tab opened (or turned on) in front counts as focused most recently.
+    if (typeof document !== "undefined" && document.hasFocus?.()) registry.focus(options.tabId);
     try { await begin(); } catch {
       if (!current() || epoch !== at) return;
       // Browser storage refused before any socket: no tab can own here; stay paused.
@@ -474,11 +487,35 @@ export function createLiveTransport(options: Options) {
     if (stored.paused) { show({ mode: "takeover-failed" }); return; }
     await takeover();
   }
+  /** Whether a live tab holds this workspace (a closed or crashed one released its lock). */
+  async function ownerPresent() {
+    const hint = registry.read();
+    return Boolean(hint) && await registry.held(hint!.generation);
+  }
+  // Lex, 2026-10-22: when the receiving tab closes, a remaining tab with agents on takes over by
+  // itself. One election at a time across tabs, each rechecking the owner inside it, so exactly
+  // one tab receives; the most recently focused tab asks first, the others a moment later.
+  let electing = false;
+  function succeed() {
+    if (electing || stopped || generation !== undefined || state.mode !== "other-owner") return;
+    electing = true;
+    const at = epoch;
+    clock.setTimeout(() => {
+      void registry.elect(async () => {
+        if (stopped || !current() || epoch !== at || state.mode !== "other-owner") return;
+        if (await ownerPresent()) { if (epoch === at) show({ mode: "other-owner" }); return; }
+        if (stopped || !current() || epoch !== at) return;
+        await takeover();
+      }).catch(() => undefined).finally(() => { electing = false; });
+    }, registry.focused() === options.tabId ? 0 : SUCCESSION_DELAY);
+  }
   const check = () => {
     const at = epoch;
     if (!current()) { if (!stopped && moved()) halt("workspace-changed"); return; }
     if (generation === undefined) {
-      if (state.mode === "other-owner" && !registry.read()) show({ mode: "other-owner", closed: true });
+      if (state.mode !== "other-owner") return;
+      if (!registry.read()) { show({ mode: "other-owner", closed: true }); succeed(); return; }
+      void ownerPresent().then(present => { if (!present && epoch === at) succeed(); }).catch(() => undefined);
       return;
     }
     void prove(at).then(ok => {
@@ -499,13 +536,16 @@ export function createLiveTransport(options: Options) {
     if (stopped) return;
     halt("off"); stopped = true;
     events.window.removeEventListener("storage", storage);
+    events.window.removeEventListener("focus", focused);
     events.window.removeEventListener("pageshow", check);
     events.window.removeEventListener("pagehide", hide);
     events.document.removeEventListener("resume", check);
     events.document.removeEventListener("freeze", freeze);
     events.document.removeEventListener("visibilitychange", check);
   };
+  const focused = () => { if (!stopped) registry.focus(options.tabId); };
   events.window.addEventListener("storage", storage);
+  events.window.addEventListener("focus", focused);
   events.window.addEventListener("pageshow", check);
   events.window.addEventListener("pagehide", hide);
   events.document.addEventListener("resume", check);

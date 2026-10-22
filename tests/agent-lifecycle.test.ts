@@ -134,6 +134,22 @@ test("last close records close + five minutes; the alarm then removes only tempo
   } finally { await h.dispose(); }
 });
 
+test("a grace on a hub with no temporary data rewrites nothing: no put of the hub record, only deletes of absent keys", async () => {
+  const h = await fixture();
+  const put = h.hubStorage.put.bind(h.hubStorage);
+  try {
+    const before = await h.hubStorage.get("session");
+    await h.close(h.name, h.editors[0]);
+    h.advance(DISCONNECT_GRACE);
+    const puts: unknown[] = [];
+    h.hubStorage.put = ((...args: Parameters<typeof put>) => { puts.push(args[0]); return put(...args); }) as typeof put;
+    await h.alarm(h.name);
+    assert.deepEqual(puts, [], "the Durable Object cost the grace saves: no rewrite of a clean hub");
+    assert.deepEqual(await h.hubStorage.get("session"), before);
+    assert.equal((await h.record())!.cleanupPending, undefined);
+  } finally { h.hubStorage.put = put; await h.dispose(); }
+});
+
 test("a permission survives 10 minutes with no tab: tools wait instead of failing auth, and work when a tab opens", async () => {
   const h = await fixture();
   try {

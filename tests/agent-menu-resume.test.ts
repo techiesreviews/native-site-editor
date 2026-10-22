@@ -91,3 +91,20 @@ test("connections reads: a skipped read answers false; two waiters behind a read
   assert.equal(queue.busy, false, "nothing left in flight");
   assert.equal(reads, 3);
 });
+
+test("connections reads: a read ahead that rejects keeps its rejection and only ends the wait; one that never settles holds its waiter", async () => {
+  let reads = 0, settle: ((ok: boolean) => void) | undefined;
+  const failing = serialReads(() => ++reads === 1 ? Promise.reject(new Error("read failed")) : Promise.resolve(true));
+  const ahead = failing.run(), waiter = failing.run(true);
+  await assert.rejects(ahead, /read failed/, "the rejection stays with the read's own caller");
+  assert.equal(await waiter, true, "the waiter makes its own read");
+  assert.equal(reads, 2);
+  assert.equal(failing.busy, false);
+  const stuck = serialReads(() => reads++ === 2 ? new Promise<boolean>(() => {}) : new Promise<boolean>(resolve => { settle = resolve; }));
+  void stuck.run();
+  let waited = false;
+  void stuck.run(true).then(() => { waited = true; });
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(waited, false, "a read that never settles holds its waiter: read must settle (the menu's API deadline)");
+  assert.equal(settle, undefined, "the waiter has not read yet");
+});
