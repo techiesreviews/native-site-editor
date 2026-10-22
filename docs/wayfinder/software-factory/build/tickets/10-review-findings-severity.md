@@ -14,6 +14,7 @@ Clean-up follow-up (slice 95, PR #119): `openFindings` in `scripts/agents/review
 ## Decided behaviour
 
 - Severity is the first `P0`–`P3` token after the finding's location: strip a leading location (`<sha>:<path>:<line>` or `<path>:<line>`, line may be a range, optional backticks) and the separator after it (`—`, `–`, `-`, `:`), then read `\bP[0-3]\b` in the next 40 characters. `(P2)` and `**P2**` count. With no location, today's rule applies to the first 80 characters.
+- **Lead decision (2026-10-22), after review:** when nothing sits within 40 characters after the location, the old first-80-characters rule still applies, so a finding that names two locations before its severity keeps it (a missing severity always blocks `kit pr`, which is the false block this ticket removes). A P-token in the evidence within 80 characters therefore counts; reviews put the severity first, so this is accepted.
 - Headings `Spec defects`, `Standards defects` (with or without colon, bold or `#`) open the Spec / Standards defect groups, like `Defects — Spec` today.
 - Nothing else changes: blocking rules, Validation gaps without severity, Optional nits ignored. Kitchen ticket 04 ("record review findings in a clear, structured way", [resolution](../../tickets/04-grill-scoreboard.md#resolution-2026-10-22)) builds on this parser (slice 20).
 
@@ -39,7 +40,7 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 
 - Severity is now read after a finding's leading location (`<sha>:<path>:<line>` or `<path>:<line>`, line ranges and backticks included) and its separator, within the next 40 characters; `(P1)` and `**P3**` count, and a P-token only in far-off evidence does not. Findings without a location keep the first-80-characters rule. A 150-character ticket path before `— P2:` now reads P2.
 - `Spec defects` and `Standards defects` headings (bare, `:`, bold or `#`) open the Spec and Standards defect groups alongside `Defects — Spec` and `Defects — Standards`.
-- Tests: `ASE_OWNER=lead-sf10 scripts/agents/kit unit tests/review-findings.test.ts tests/kit-pr.test.ts` — `RESULT: ok unit 147/147 (2 files)`; `ASE_OWNER=lead-sf10 scripts/agents/kit unit --affected` — `RESULT: ok unit 147/147 (2 files)`; `npm run check` — exit 0.
+- Tests: `ASE_OWNER=lead-sf10 scripts/agents/kit unit tests/review-findings.test.ts tests/kit-pr.test.ts` — `RESULT: ok unit 157/157 (2 files)`; `ASE_OWNER=lead-sf10 scripts/agents/kit unit --affected` — `RESULT: ok unit 157/157 (2 files)`; `npm run check` — exit 0.
 - Commit: `69e232f0` (code and tests).
 - Code commits: `69e232f0` (location-aware severity), `75e32d69` (Spec/Standards defects headings; free worker correction round).
 - Lead finish (2026-10-22): the separator after a location is optional, so `<sha>:<long path>:12 (P1)` and `` `path:12` **P2** `` read their severity; tests pin the 40-character window, the no-separator form, and line:column and Markdown-link locations.
