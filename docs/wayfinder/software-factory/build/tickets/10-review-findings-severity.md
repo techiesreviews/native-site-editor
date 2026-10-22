@@ -34,3 +34,10 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Free worker through T3 `delegate_task` (provider OpenCode, model `deepseek-v4.1-flash-free`) in worktree `build/sf-10-review-findings-severity` (`ASE_OWNER=sf-10`); its brief names this ticket, the Files list and `scripts/agents/kit doctor`, `scripts/agents/kit unit …` as above. One attempt plus one correction; then Claude (`--builder claude-opus-5-5`).
 - Review: `ASE_REVIEW_MODEL=claude-opus-5-5 scripts/agents/kit review --ticket docs/wayfinder/software-factory/build/tickets/10-review-findings-severity.md`; land: `ASE_OWNER=sf-10 scripts/agents/kit pr --ticket <same>`.
 - Report: unit `RESULT:` lines, review folder and decisions, PR and merge SHA.
+
+## Done (2026-10-22)
+
+- Severity is now read after a finding's leading location (`<sha>:<path>:<line>` or `<path>:<line>`, line ranges and backticks included) and its separator, within the next 40 characters; `(P1)` and `**P3**` count, and a P-token only in far-off evidence does not. Findings without a location keep the first-80-characters rule. A 150-character ticket path before `— P2:` now reads P2.
+- `Spec defects` and `Standards defects` headings (bare, `:`, bold or `#`) open the Spec and Standards defect groups alongside `Defects — Spec` and `Defects — Standards`.
+- Tests: `ASE_OWNER=lead-sf10 scripts/agents/kit unit tests/review-findings.test.ts tests/kit-pr.test.ts` — `RESULT: ok unit 147/147 (2 files)`; `ASE_OWNER=lead-sf10 scripts/agents/kit unit --affected` — `RESULT: ok unit 147/147 (2 files)`; `npm run check` — exit 0.
+- Commit: `69e232f0` (code and tests).
