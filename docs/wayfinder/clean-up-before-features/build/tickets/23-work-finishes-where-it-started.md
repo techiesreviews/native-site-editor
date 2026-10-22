@@ -55,3 +55,4 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 ## Comments
 
 - 2026-10-22, Lex (check of the lead decision above): **he wants to be able to navigate away in every case; nothing should stop.** This replaces the "still refuses" lead decision. Proposed method, put to Lex in the next round: first make each such action work on the files directly instead of on the page as shown; for the few that truly need the page drawn (a drop place, a measurement), finish them in an invisible copy of that page kept in the background until done. List each such case and the method used in the Done section.
+- 2026-10-22, Lex agreed to the method: **Lex never needs to be on the page.** Work first finishes on the files directly; actions that truly need the page drawn run in an invisible background copy of that page, which closes when done. Nothing stops when he navigates away. The builder lists each case and its method in the Done section.
