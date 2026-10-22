@@ -1,4 +1,5 @@
 import { agentControls, agentsPaused, type AgentControlEnv } from "./agent-controls";
+import { AGENT_PERMISSION_LIFETIME } from "./agent-lifecycle";
 import { cleanupRoute, inventoryRoute } from "./agent-maintenance";
 import { requestJson } from "./http";
 import { ASSET_TYPES } from "../shared/asset-types";
@@ -690,7 +691,9 @@ async function route(
     // Explicit connection checks only; old bundles' polling uses the obsolete /hub route.
     if (path === "/api/agent/connections" && request.method === "GET") {
       const hub = await getHub(env, sessionId);
-      return json({ grants: hub?.grants ?? [], controls: { watch: agentControls(env).watch } });
+      // A permission past its 8 hours is gone even while the sign-in lasts: the tab forgets its site.
+      const grants = (hub?.grants ?? []).filter(grant => grant.createdAt + AGENT_PERMISSION_LIFETIME > Date.now());
+      return json({ grants, controls: { watch: agentControls(env).watch } });
     }
     if (path === "/api/agent/revoke" && request.method === "POST") {
       const data = await requestJson(request, 4096);

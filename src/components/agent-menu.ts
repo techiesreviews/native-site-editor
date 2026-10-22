@@ -789,21 +789,28 @@ export function createAgentMenu(options: {
   }
 
   /** Explicit metadata refresh; never loads or uploads site content. */
-  /** True when this read answered and set the connections for the current activation. */
-  async function readConnections() {
+  /** True when this read answered and set the connections for the current activation. A read
+   * already in flight skips this one, unless `wait`: then this one waits for it and reads for itself. */
+  let inFlight: Promise<boolean> | undefined;
+  async function readConnections(wait = false): Promise<boolean> {
+    if (wait) while (inFlight) await inFlight;
     if (disposed || !remote || reading || workspaceChanged) return false;
     reading = true;
     const at = activation;
-    try {
-      const next: HubState = await api("connections", undefined, at);
-      if (!live(at)) return false;
-      hub = next;
-      watchAllowed = next.controls?.watch !== false;
-      lastRead = Date.now();
-      paint();
-      return true;
-    } catch (error) { if (live(at)) showError(error); return false; }
-    finally { reading = false; }
+    const read = (async () => {
+      try {
+        const next: HubState = await api("connections", undefined, at);
+        if (!live(at)) return false;
+        hub = next;
+        watchAllowed = next.controls?.watch !== false;
+        lastRead = Date.now();
+        paint();
+        return true;
+      } catch (error) { if (live(at)) showError(error); return false; }
+      finally { reading = false; inFlight = undefined; }
+    })();
+    inFlight = read;
+    return read;
   }
   /** Remote agents remembered on for the open site come back on (src/agent-resume.ts). */
   async function resume() {
@@ -812,7 +819,8 @@ export function createAgentMenu(options: {
     await resumeAgents({
       start: () => { startRemote(); return activation; },
       live: at => live(at) && !ownerPaused,
-      read: readConnections,
+      // A check already in flight belongs to another activation: wait for it, then read for this one.
+      read: () => readConnections(true),
       granted: () => liveGrants().length > 0,
       forget: () => turnOff(true),
       open: activateSocket,

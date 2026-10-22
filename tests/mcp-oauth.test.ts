@@ -224,6 +224,17 @@ test("a connection reports at most 8 hours, by token and by OAuth, even when the
       body: new URLSearchParams({ grant_type: "authorization_code", code, client_id: client.client_id, redirect_uri: callback, code_verifier: verifier }).toString() })).json();
     // Whole seconds, rounded down: within a second or two of 8 hours, never the sign-in's 16.
     assert.ok(token.expires_in <= AGENT_PERMISSION_LIFETIME / 1000 && token.expires_in >= AGENT_PERMISSION_LIFETIME / 1000 - 2, `OAuth expires_in ${token.expires_in}`);
+
+    // Once 8 hours pass (the sign-in still lasts), the connections list leaves both out: the tab forgets the site.
+    const listed = async () => ((await (await h.worker.dispatchFetch(`${origin}/api/agent/connections`, { headers: { Cookie: cookie } })).json()).grants as { id: string }[]).map(grant => grant.id);
+    assert.equal((await listed()).length, 2);
+    const realNow = Date.now, start = realNow();
+    try {
+      Date.now = () => start + AGENT_PERMISSION_LIFETIME - 60_000;
+      assert.ok((await listed()).includes(connected.id), "still listed just before 8 hours");
+      Date.now = () => start + AGENT_PERMISSION_LIFETIME;
+      assert.deepEqual(await listed(), []);
+    } finally { Date.now = realNow; }
   } finally { await h.worker.dispose(); }
 });
 

@@ -146,6 +146,18 @@ test("agents stay on: a reload and a new tab on the same site come back with the
 const agentsOnKey = (branch: string) => `native-site-editor:agents-on:["native-demo-user",501,"${branch}"]`;
 const remembered = (page: Page, ...branches: string[]) =>
   page.evaluate(keys => keys.map(key => localStorage.getItem(key)), branches.map(agentsOnKey));
+/** Holds every connections check until released; `reached` settles once the first one arrives. */
+async function holdChecks(page: Page) {
+  let release!: () => void, held!: () => void;
+  const released = new Promise<void>(resolve => { release = resolve; });
+  const reached = new Promise<void>(resolve => { held = resolve; });
+  await page.route("**/api/agent/connections", async route => { held(); await released; await route.continue().catch(() => undefined); });
+  return { reached, release: async () => { release(); await page.unroute("**/api/agent/connections"); } };
+}
+async function featureBranch(page: Page, baseURL: string | undefined) {
+  const index = await (await page.request.get(`${baseURL}/__demo/file?path=index.html`)).text();
+  await page.request.post(`${baseURL}/__demo/branch`, { data: { name: "feature", path: "index.html", content: index } });
+}
 
 test("a remembered site stays on when its connections check goes unanswered, and comes back off and forgotten once its connection was removed elsewhere", async ({ page, baseURL }) => {
   const h = await connect(page, baseURL);
@@ -203,8 +215,7 @@ test("a failed first Connect leaves the site forgotten: after a reload agents ar
 test("switching in one tab to another site remembered on brings its agents back on; the site left stays remembered", async ({ page, baseURL }) => {
   const h = await connect(page, baseURL);
   try {
-    const index = await (await page.request.get(`${baseURL}/__demo/file?path=index.html`)).text();
-    await page.request.post(`${baseURL}/__demo/branch`, { data: { name: "feature", path: "index.html", content: index } });
+    await featureBranch(page, baseURL);
     // Opted in on feature before (an earlier visit): its connection and mark exist.
     const made = await page.request.post(`${baseURL}/api/agent/connect`, { headers: { Origin: baseURL! },
       data: { repo: "native-demo-user/native-demo", repoId: 501, branch: "feature" } });
@@ -222,17 +233,9 @@ test("switching in one tab to another site remembered on brings its agents back 
 test("a held connections check on resume: a site switch meanwhile opens no socket and leaves both sites' marks alone", async ({ page, baseURL }) => {
   const h = await connect(page, baseURL);
   try {
-    const index = await (await page.request.get(`${baseURL}/__demo/file?path=index.html`)).text();
-    await page.request.post(`${baseURL}/__demo/branch`, { data: { name: "feature", path: "index.html", content: index } });
-    const hold = async () => {
-      let release!: () => void, held!: () => void;
-      const released = new Promise<void>(resolve => { release = resolve; });
-      const reached = new Promise<void>(resolve => { held = resolve; });
-      await page.route("**/api/agent/connections", async route => { held(); await released; await route.continue().catch(() => undefined); });
-      return { reached, release: async () => { release(); await page.unroute("**/api/agent/connections"); } };
-    };
+    await featureBranch(page, baseURL);
     // The menu offers no Disconnect before the check answers; a site switch is what can happen.
-    const gate = await hold();
+    const gate = await holdChecks(page);
     await page.reload();
     await gate.reached;
     await page.evaluate(() => { location.hash = "#repo=501&branch=feature&file=index.html"; });
@@ -246,6 +249,49 @@ test("a held connections check on resume: a site switch meanwhile opens no socke
   } finally { await h.client.close(); }
 });
 
+test("switching onto a remembered site while the first check is held: its own check runs after, finds its connection removed, forgets it, opens no socket", async ({ page, baseURL }) => {
+  const h = await connect(page, baseURL);
+  try {
+    await featureBranch(page, baseURL);
+    await page.evaluate(key => localStorage.setItem(key, "1"), agentsOnKey("feature")); // Its connection is gone since.
+    const gate = await holdChecks(page);
+    await page.reload();
+    await gate.reached;
+    await page.evaluate(() => { location.hash = "#repo=501&branch=feature&file=index.html"; });
+    await expect(page.locator("#status")).toContainText("Up to date with feature", { timeout: 30_000 });
+    await gate.release();
+    await expect.poll(() => remembered(page, "main", "feature")).toEqual(["1", null]);
+    await page.locator(".repository-menu__trigger").click();
+    await expect(page.locator(".agent-menu")).toHaveAttribute("data-state", "off");
+    expect(h.traffic.ready(), "no socket for the removed site").toHaveLength(1);
+  } finally { await h.client.close(); }
+});
+
+test("switching onto a remembered site while the first check is held, with agents paused: no socket, the site stays remembered", async ({ page, baseURL }) => {
+  const h = await connect(page, baseURL);
+  try {
+    await featureBranch(page, baseURL);
+    const made = await page.request.post(`${baseURL}/api/agent/connect`, { headers: { Origin: baseURL! },
+      data: { repo: "native-demo-user/native-demo", repoId: 501, branch: "feature" } });
+    expect(made.ok()).toBe(true);
+    await page.evaluate(key => localStorage.setItem(key, "1"), agentsOnKey("feature"));
+    const gate = await holdChecks(page);
+    await page.reload();
+    await gate.reached;
+    expect((await page.request.post(`${baseURL}/__demo/agent-controls`, { data: { relay: false } })).status()).toBe(204);
+    await page.evaluate(() => { location.hash = "#repo=501&branch=feature&file=index.html"; });
+    await expect(page.locator("#status")).toContainText("Up to date with feature", { timeout: 30_000 });
+    await gate.release();
+    await page.locator(".repository-menu__trigger").click();
+    await expect(page.locator(".agent-menu__hint")).toHaveText("Remote agents are paused by the site owner.");
+    expect(await remembered(page, "main", "feature")).toEqual(["1", "1"]);
+    expect(h.traffic.ready(), "no socket while paused").toHaveLength(1);
+  } finally {
+    await page.request.post(`${baseURL}/__demo/agent-controls`, { data: { relay: true } });
+    await h.client.close();
+  }
+});
+
 test("Move agents here: the new branch comes back on after a reload and the old one comes back off", async ({ page, context, baseURL }) => {
   const h = await connect(page, baseURL);
   try {
@@ -255,8 +301,7 @@ test("Move agents here: the new branch comes back on after a reload and the old 
       await page.evaluate(() => window.dispatchEvent(new Event("focus")));
       return page.locator(".agent-menu").getAttribute("data-state");
     }, { timeout: 15_000 }).toBe("connected");
-    const index = await (await page.request.get(`${baseURL}/__demo/file?path=index.html`)).text();
-    await page.request.post(`${baseURL}/__demo/branch`, { data: { name: "feature", path: "index.html", content: index } });
+    await featureBranch(page, baseURL);
     await page.evaluate(() => { location.hash = "#repo=501&branch=feature&file=index.html"; });
     await expect(page.locator("#status")).toContainText("Up to date with feature", { timeout: 30_000 });
     await page.locator(".repository-menu__trigger").click();
