@@ -115,3 +115,7 @@ The frontier decides; this is one order that keeps to the rules (at most 5 at on
 - **Kit defaults follow the pins:** with no `ASE_REVIEW_MODEL`, `kit review` uses `claude-opus-5-5`; fresh `kit fix` builders default to `claude-opus-5-5`. Sol is used only when named.
 - **The context card in every project** ships as one standalone script in the kit; this repo's hooks use it at once. Adding it to Lex's user-level hooks (`~/.claude/settings.json`, `~/.codex/`) so every project gets it is his settings: the lead asks him first. *Check with Lex.*
 - **Heartbeat:** a job counts as stuck when its log has not grown for 45 minutes; the heartbeat says so in its two lines and the lead decides.
+
+## Lex decisions (2026-10-22)
+
+Lex accepted all six lead decisions above ("yes to all"): scoreboard details stay local with a committed snapshot per build and a committed feedback log; correction kinds reuse the chat project's names; user-like checks follow scripted steps and the model only judges; chat learning on even ISO weeks; the context card's settings change waits for his yes when built; kit defaults switch to Claude. **Slices 10–13 start now**, beside the clean-up build, on the free OpenCode worker.
