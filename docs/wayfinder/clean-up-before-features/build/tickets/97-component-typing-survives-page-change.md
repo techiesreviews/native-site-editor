@@ -47,3 +47,10 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 
 **Evidence.** Round 3: `kit unit --affected` 623/623 (`.scratch/unit/20261022T152942-2917904.log`); `kit specs native-structure-inplace.spec.ts` passed; `npm run check` and `npm run lint` clean. Round 2: `scripts/agents/kit unit --affected` 623/623 (`.scratch/unit/20261022T144940-2113191.log`); `kit specs --affected` 92/92 passed (`.scratch/kit-specs/run-7sEYSA/`); `npm run check` and `npm run lint` clean. Budget (`kit size --base 9cdbc8b7`, before the slice): `index.js` 229.76 → 230.18 KB gzip (+0.42 KB, the `typing` port, `typingTemplate`, the frame following and the main.ts conditions); boot reads 355 KB both ways, but crosses the 355 KB budget (base: within; now: over, report-only) — raised to the lead. Logs `.scratch/size/run-2AfG51/base.log`, `.scratch/size/run-RYer4H/now.log` (measured before round 2's doc-only and test-only changes). Round 1: unit 623/623 (`.scratch/unit/20261022T143333-1947132.log`); the touched spec groups run alone (run together, the default and actual groups share `.scratch/native-save/results` and lose trace files).
 
+### Follow-ups
+
+- Spec (P2): 29440b4a:tests/native-save/native-structure-inplace.spec.ts:446 — P2: The "known gap" spec says an agent creating a file while a template part is typed ends the
+- Validation gaps (gap): The `atomic` branch at src/main.ts:4623 (`(!atomic || !editorModule.isMounted(path)) && !typingTemplate()`) has no coverage while typing. Add a spec to native-s
+- Validation gaps (gap): `component-mode.ts` `nth` is keyed by `[tag, node]` only, not the page. No unit test shows a leftover `nth` from an earlier mode on another page with the same t
+- Validation gaps (gap): No test that `refresh()` draws while a paint is held but focus has left the tree for an element outside it. Add to page-structure-hold.test.ts: hold a paint, mo
+
