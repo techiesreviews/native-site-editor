@@ -26,6 +26,7 @@ One written recipe (the kitchen rulebook) that every session and every model fol
 - [Map today's production line and where it went wrong](tickets/01-research-line-today.md): building, code review and landing are scripted; the rest is by hand. Lex found 35+ problems on the preview that had passed tests and Sol review. 7 were bugs; in 28 the ticket itself was wrong for a user (too much text 9, looks 8, behaviour 11). To catch them earlier: a user-like check, a taste rule with an Opus UX review, mockups at handoff, prototypes before building.
 - [Decide the UX confidence ladder](tickets/02-grill-ux-confidence-ladder.md#resolution-2026-10-22): UX rulebook; approved mock-up before every visible build, atomic design; Opus UX review of every visible change as a kit command; four rungs, up after 5 builds without a UX correction, down after one found post-release
 - [Decide the scoreboard and how review findings are recorded](tickets/04-grill-scoreboard.md#resolution-2026-10-22): kit records builder, time, rounds, findings and Lex's UX corrections by kind per piece; one visual page per build shown in chat; one feedback log; builder choice from numbers, brought to Lex
+- [Decide automatic hand-out of ready tickets](tickets/05-grill-hand-out.md#resolution-2026-10-22): 30-minute T3 check-in while a build runs; `kit next` picks ticket and builder by fixed rules; max 5 helpers; grilling, release, money, unrecoverable deletes and settings always wait for Lex
 
 ## Not yet specified
 
