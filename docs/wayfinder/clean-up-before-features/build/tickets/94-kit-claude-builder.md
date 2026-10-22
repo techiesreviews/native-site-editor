@@ -4,6 +4,7 @@ type: task (AFK)
 status: closed
 assignee: runner-94
 builder: sol
+landed: "PR #116 (c64622f)"
 blocked_by: []
 ---
 
@@ -43,4 +44,4 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Model verification requires the requested model and permits additional `claude-haiku-*` helpers. Other extra models and results without the requested model still fail.
 - Unit coverage checks build/review and resume arguments, Opus with Haiku helpers, aliases, context suffixes, dated snapshots, Sonnet fallbacks and missing requested models.
 - Validation: `kit doctor` passed 7/7; `kit unit --affected` passed 38/38 across two files (`.scratch/unit/20261022T081417-31.log`); `npm run check` and `npm run lint` passed; `kit specs --affected` reported no affected specs.
-- Commits: none; changes remain unstaged for the runner.
+- Commits: landed in PR #116 (merge c64622f), with the test update 2a650c18.

@@ -176,3 +176,4 @@ Two things wait on one Cloudflare token: preview deploys from CI on every push t
 ## Follow-ups seen during the build
 
 - 2026-10-22: `tests/agent-usage.test.ts:69` ("an empty wait without a receiver answers quietly at once…") failed once (6 !== 3) during slice 20's `kit pr` with five runners loading the machine; 3/3 passes alone. Timing-sensitive under load.
+- 2026-10-22: `kit slice`/`kit pr` leave the ticket's `landed:` empty and keep the builder's "changes remain unstaged" Done line (tickets 10, 20, 94); the lead fills them in by hand. Fix in the kit.
