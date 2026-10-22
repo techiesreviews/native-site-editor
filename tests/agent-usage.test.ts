@@ -72,11 +72,12 @@ test("an empty wait without a receiver answers quietly at once without a legacy 
   // After `initialized` the SDK opens its standby GET without awaiting it; on a busy machine its
   // three auth calls landed after the reset below. Count only once that request has settled.
   const send = workerFetch(h.worker);
-  let standbySettled!: () => void;
+  let standbySettled!: () => void, gets = 0, noStandby: ReturnType<typeof setTimeout> | undefined;
   const standby = new Promise<void>(resolve => { standbySettled = resolve; });
   const tracked = (input: string | URL | Request, init?: RequestInit) => {
     const response = send(input, init);
-    if (init?.method === "GET") response.finally(standbySettled).catch(() => {});
+    // Its outcome does not matter here, only that it is over: a failed GET settles it too.
+    if (init?.method === "GET") { gets++; response.finally(standbySettled).catch(() => {}); }
     return response;
   };
   try {
@@ -84,7 +85,11 @@ test("an empty wait without a receiver answers quietly at once without a legacy 
       requestInit: { headers: { Authorization: `Bearer ${h.token}` } }, fetch: tracked,
     }));
     await client.listTools();
-    await standby;
+    await Promise.race([standby, new Promise((_, reject) => {
+      noStandby = setTimeout(() => reject(new Error("The SDK opened no standby GET within 10 s; this test counts on it")), 10_000);
+    })]);
+    // One standby request only: a second would race the reset again.
+    assert.equal(gets, 1);
     h.counters.reset();
     const result = await client.callTool({ name: "wait_for_requests", arguments: {} });
     assert.equal(result.isError, undefined);
@@ -95,7 +100,7 @@ test("an empty wait without a receiver answers quietly at once without a legacy 
     assert.equal(h.counters.byCategory.control.calls, 1);
     assert.equal(h.counters.byCategory.data.calls, 0);
     assert.equal(h.counters.waitedMs, 0);
-  } finally { try { await client.close(); } finally { await h.worker.dispose(); } }
+  } finally { clearTimeout(noStandby); try { await client.close(); } finally { await h.worker.dispose(); } }
 });
 
 test("storage counts every key, clones values, lists prefixes and retains the global peak", async () => {

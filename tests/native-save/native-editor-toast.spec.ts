@@ -26,10 +26,10 @@ test("Site settings' Update links shows a visible toast naming the count, whose 
   await expect(dialog(page)).toBeHidden();
 
   const said = "Site settings applied as drafts. Updated 9 links in 4 files to the new address. Added the .nojekyll file GitHub Pages needs. Publish to keep them.";
-  // Held under the pointer from the start: on a busy machine the checks below outlast its 6 s.
+  await expect(toast(page)).toBeInViewport({ ratio: 1 });
+  // Then held under the pointer: on a busy machine the checks below outlast its 6 s.
   // The drafts' own save timer must run, so the clock is not paused here.
   await toast(page).hover();
-  await expect(toast(page)).toBeInViewport({ ratio: 1 });
   await expect(toast(page).locator(".editor-toast__text")).toHaveText(said);
   // The live region still says it, for screen readers.
   await expect(page.locator("#status")).toHaveText(said);
