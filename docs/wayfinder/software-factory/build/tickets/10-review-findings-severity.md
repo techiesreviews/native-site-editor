@@ -43,3 +43,4 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Commit: `69e232f0` (code and tests).
 - Code commits: `69e232f0` (location-aware severity), `75e32d69` (Spec/Standards defects headings; free worker correction round).
 - Lead finish (2026-10-22): the separator after a location is optional, so `<sha>:<long path>:12 (P1)` and `` `path:12` **P2** `` read their severity; tests pin the 40-character window, the no-separator form, and line:column and Markdown-link locations.
+- Lead finish, round 2 (2026-10-22): severity falls back to the first-80-characters rule when nothing sits within 40 characters after a location (a finding naming two locations keeps its severity); `Spec defects` / `Standards defects` written as a bullet in Optional nits or Validation gaps stay plain text.
