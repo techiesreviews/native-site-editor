@@ -65,14 +65,15 @@ test("unsaved image metadata survives hidden-page source edits and visible refre
   await expect(pane(page).getByLabel("New collection", { exact: true })).toHaveValue("unfinished, tags");
   await expect(pane(page).getByRole("checkbox", { name: "Always keep", exact: true })).toBeChecked();
   await alt.focus();
-  await page.evaluate(() => { (window as any).mediaCardBeforeRefresh = document.querySelector(".media-library__card"); });
+  // Tiles stay through a refresh (ticket 92); each draw writes the file count anew.
+  await page.evaluate(() => { (window as any).mediaCountBeforeRefresh = document.querySelector(".media-library__browse > [role=status]")!.firstChild; });
   await page.evaluate(async () => {
     const editor = await import("/src/components/code-editor.ts");
     const text = editor.getMountedSource("index.html");
     if (text === undefined) throw new Error("Missing source model");
     editor.replaceActiveRange({path:"index.html", start:text.length, end:text.length, expected:"", text:"\n<!-- visible unrelated edit -->"});
   });
-  await expect.poll(() => page.evaluate(() => !(window as any).mediaCardBeforeRefresh.isConnected)).toBe(true);
+  await expect.poll(() => page.evaluate(() => !(window as any).mediaCountBeforeRefresh.isConnected)).toBe(true);
   await expect(pane(page)).not.toHaveAttribute("aria-busy", "true");
   await expect(alt).toBeFocused();
   await expect(alt).toHaveValue("Unfinished alt");
@@ -183,7 +184,8 @@ test("busy image action explains blocked controls and keeps focus on the screen 
 });
 test("closed Media explorer defers repository refresh until reopened", async ({page,baseURL}) => {
   await open(page,baseURL);
-  await page.evaluate(() => {(window as any).closedImageCard=document.querySelector(".media-library__card");});
+  // Tiles stay through a refresh (ticket 92); each draw writes the file count anew.
+  await page.evaluate(() => {(window as any).closedImageCount=document.querySelector(".media-library__browse > [role=status]")!.firstChild;});
   await page.keyboard.press("Escape");await expect(page.locator("#explorer")).not.toBeVisible();
   await page.evaluate(async () => {
     const editor=await import("/src/components/code-editor.ts"), source=editor.getMountedSource("index.html");
@@ -191,9 +193,9 @@ test("closed Media explorer defers repository refresh until reopened", async ({p
     editor.replaceActiveRange({path:"index.html",start:source.length,end:source.length,expected:"",text:"\n<!-- closed pane edit -->"});
   });
   await expect.poll(async () => (await storedDraft(page,"index.html"))?.content).toContain("closed pane edit");
-  expect(await page.evaluate(() => (window as any).closedImageCard.isConnected)).toBe(true);
+  expect(await page.evaluate(() => (window as any).closedImageCount.isConnected)).toBe(true);
   await page.locator("#explorer-toggle").click();
-  await expect.poll(() => page.evaluate(() => !(window as any).closedImageCard.isConnected)).toBe(true);
+  await expect.poll(() => page.evaluate(() => !(window as any).closedImageCount.isConnected)).toBe(true);
   await expect(pane(page)).not.toHaveAttribute("aria-busy","true");
 });
 

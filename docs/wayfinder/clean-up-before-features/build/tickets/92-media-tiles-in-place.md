@@ -1,8 +1,8 @@
 ---
 title: "Media refresh redraws only changed tiles"
 type: task (AFK)
-status: open
-assignee: lead-92 (this session)
+status: closed
+assignee: lead-92
 builder: sol
 blocked_by: [91-media-search-pause]
 ---
@@ -35,3 +35,14 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `kit shots media-gallery media-select --compare dev` (nothing should look different).
 - Review: `kit review --ticket <this ticket>` (GPT-6.1 Sol, medium, read-only). Land: `kit pr --ticket <this ticket>`.
 - Report: the timing before and after, shots contact sheet, unit and specs `RESULT:` lines, review folder and decisions, PR and merge SHA.
+
+## Done (2026-10-22)
+
+- A Media redraw (refresh, filter, search, selection) keeps each tile by path (online videos by key) while its look is the same: name, type, still, length, Always keep, By agent, layout, picker or pane, and its picture's version and cache stamp. Kept tiles keep their element and loaded picture; changed ones are rebuilt, gone ones removed, new ones added, and tiles move only when out of the list's order (behind any tiles of files being added).
+- Selection rounds, the picker's choice, usage badges and the list's size repaint in place on kept tiles, so a checkbox keeps focus when ticked; a size learned from a loaded picture survives a refresh. Only new or rebuilt tiles get a picture observer; a dropped tile's observer is disconnected.
+- The view stamps each file when the byte cache drops it or is cleared (Replace, Optimise, rename), so those tiles load their picture again. The new-file ring is removed once it has played, so a kept tile that moves later does not replay it. A focused tile that moves gets its focus back.
+- Measured with a throwaway browser probe through `kit specs` (deleted after; old and new grid alternating in one run, 3 × 5 redraws each, two animation frames included): 1,000 tiles, refresh with one changed file: before median 114 ms (100–218 ms), after median 25 ms (19–47 ms).
+- Tests: new `tests/native-save/native-media-tiles-in-place.spec.ts` (one changed file rebuilds one card and adds one observer; reorder keeps every card and adds no observer; tiles of files being added stay first; selection and the picker's choice repaint in place; a dropped cache entry rebuilds; list layout redraws; the empty message shows once and goes). `native-media-library.spec.ts`: a refresh keeps the same cards, the focused tile and the scroll position.
+- `native-media-tab.spec.ts` (two tests): their sign that a refresh ran was the first tile leaving the page, which no longer happens; they now wait for the file count's text to be written anew, which every draw does.
+- Validation: `kit doctor` 7/7; `npm run check` and `npm run lint` pass; `kit unit --affected` 1275/1275 and `kit unit` 4953/4953; `kit specs --affected` 40/41 before the `native-media-tab.spec.ts` change (only those two tests failed), then `kit specs native-media-tab.spec.ts native-media-library.spec.ts native-media-library-keys.spec.ts native-media-tiles-in-place.spec.ts` 4/4 (44 tests); `kit shots media-gallery media-select --compare dev`: no layout findings.
+- No `main.ts` change.

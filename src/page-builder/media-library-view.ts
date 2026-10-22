@@ -3,7 +3,7 @@ import { WARN_IMAGE_BYTES, uploadImageType } from "../uploads";
 import { createBusyLock } from "./media-busy-lock";
 import { createMediaByteCache, decodeImage } from "./media-byte-cache";
 import { createMediaLibraryShell } from "./media-library-shell";
-import { drawLibraryGrid } from "./media-library-grid";
+import { drawLibraryGrid, type LibraryTile } from "./media-library-grid";
 import { repaintUsageBadges, showUsageDialog } from "./media-library-usage";
 import { showMediaDetail } from "./media-library-details";
 import { confirmMediaDelete } from "./media-library-delete";
@@ -113,11 +113,17 @@ export function createMediaLibraryView(
   const cleanUp = modal ? undefined : options.cleanUp?.(), cleanUpMemory: { undo?: string[] } = {};
   // Improve images (slice 74) sits beside it; its Undo list outlives leaving the screen.
   let improveMemory: import("./media-library-improve").ImproveMemory | undefined;
-  const listeners = new AbortController(), selected = new Set<string>(), observers = new Set<IntersectionObserver>();
+  const listeners = new AbortController(), selected = new Set<string>(), observers = new Set<IntersectionObserver>(), tiles = new Map<string, LibraryTile>();
   const busyLock = createBusyLock({ root: dialog, signal: listeners.signal, tell,
     alive: () => alive, loading: () => loadingLibrary });
-  const cache = createMediaByteCache({ load: path => adapter.blob(path),
+  const bytes = createMediaByteCache({ load: path => adapter.blob(path),
     version: path => library.items.find(item => item.path === path)?.version, alive: () => alive });
+  // A kept tile keeps its picture until the cache lets go of the file's bytes (ticket 92).
+  let cleared = 0;
+  const dropped = new Map<string, number>(), stamp = (path: string) => `${cleared}.${dropped.get(path) ?? 0}`;
+  const cache: typeof bytes = { ...bytes,
+    drop: path => { dropped.set(path, (dropped.get(path) ?? 0) + 1); bytes.drop(path); },
+    clear: () => { cleared++; bytes.clear(); } };
   const context: LibrarySheetContext = {
     alive: () => alive, library: () => library, loading: () => loadingLibrary,
     tell, done, task, refresh, adapter, cache, sync: () => busyLock.sync(),
@@ -155,7 +161,8 @@ export function createMediaLibraryView(
     if (!cards.length) return;
     if (fresh.at === undefined) { fresh.at = performance.now(); cards[0].scrollIntoView({ block: "nearest" }); }
     const age = performance.now() - fresh.at;
-    if (age > FRESH_RING_MS) { fresh = undefined; return; }
+    // Kept tiles outlive the ring; one moved later would play it again.
+    if (age > FRESH_RING_MS) { fresh = undefined; cards.forEach(card => card.classList.remove("is-new")); return; }
     for (const card of cards) { card.classList.add("is-new"); card.style.setProperty("--new-delay", `-${Math.round(age)}ms`); }
   }
   const adding = createMediaAdding(grid, shell.adding, {
@@ -216,7 +223,7 @@ export function createMediaLibraryView(
       paths => options.report?.announce(`Added ${paths.join(", ")}.${notAdded}`), error => options.report?.error(error));
     else if (notAdded) options.report?.announce(notAdded.trim());
     alive = false; sheet.version++; sheet.work?.abort(); listeners.abort(); stopUsage?.(); stopCleanUp?.(); usageDialog?.close(); adding.dispose();
-    observers.forEach((observer) => observer.disconnect()); observers.clear(); cache.dispose();
+    observers.forEach((observer) => observer.disconnect()); observers.clear(); tiles.clear(); cache.dispose();
     more.close(false); more.element.remove();
     modal?.removeEventListener("close", closed); dialog.replaceChildren(); dialog.remove();
   }
@@ -273,8 +280,8 @@ export function createMediaLibraryView(
     paintFilter();
     // A chosen file that is gone (removed, renamed, a held file cancelled) is no longer chosen.
     if (chosen && !heldFile(chosen) && !onlineVideo(chosen) && !library.items.some(item => item.path === chosen)) chosen = undefined;
-    drawLibraryGrid(shell, library, { kind, collection: viewing, selected, observers, accept: options.accept, modal: Boolean(modal), layout, chosen, online: !modal || Boolean(options.onlineVideo) }, {
-      alive: () => alive, bytes: path => cache.get(path), objectUrl: blob => cache.objectUrl(blob), sync: () => busyLock.sync(),
+    drawLibraryGrid(shell, library, { kind, collection: viewing, selected, observers, tiles, accept: options.accept, modal: Boolean(modal), layout, chosen, online: !modal || Boolean(options.onlineVideo) }, {
+      alive: () => alive, bytes: path => cache.get(path), stamp, objectUrl: blob => cache.objectUrl(blob), sync: () => busyLock.sync(),
       details: path => void details(path), records: () => adapter.usage?.records(), usage,
       recover, restoreFocus: !sheet.focus,
       choose: path => { chosen = path; paintChoice(); },

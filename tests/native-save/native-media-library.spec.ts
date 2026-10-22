@@ -413,3 +413,36 @@ test("real worker trims, flips, turns and straightens a copy's pixels in the mai
   for (const output of result.outputs) expect(output).toMatchObject({ width: output.variant ?? 600, left: "yellow", right: "green" });
   expect(result.straightened).toEqual({ width: 600, height: 300 });
 });
+
+test("a library refresh keeps the tiles, the focused tile and the scroll position (ticket 92)", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  await closeLibrary(page);
+  // A pane short enough that the repository's tiles scroll.
+  await page.evaluate(async () => {
+    const { mountMediaLibrary } = await import("/src/page-builder/media-picker.ts");
+    const host = document.createElement("div"); host.id = "media-refresh-harness";
+    host.style.cssText = "position:fixed;right:0;top:60px;width:440px;height:200px;z-index:100;background:var(--surface)";
+    document.body.append(host);
+    const view = mountMediaLibrary(host); await view.ready;
+    Object.assign(window, { mediaRefreshHarness: view });
+  });
+  const panel = page.locator("#media-refresh-harness");
+  await expect.poll(() => panel.locator(".media-library__card img[src]").count()).toBeGreaterThan(0);
+  const last = panel.locator(".media-library__card .media-library__thumbnail").last();
+  await last.focus();
+  const before = await page.evaluate(() => {
+    const host = document.querySelector<HTMLElement>("#media-refresh-harness")!;
+    const scroller = [...host.querySelectorAll<HTMLElement>("*")].find(element => element.scrollTop > 0);
+    const cards = [...host.querySelectorAll<HTMLElement>(".media-library__card")];
+    Object.assign(window, { refreshBefore: { cards, scroller, focused: document.activeElement } });
+    return { scrollTop: scroller?.scrollTop ?? 0 };
+  });
+  expect(before.scrollTop).toBeGreaterThan(0);
+  await page.evaluate(async () => { await (window as typeof window & { mediaRefreshHarness: { refresh(): Promise<void> } }).mediaRefreshHarness.refresh(); });
+  const after = await page.evaluate(() => {
+    const { cards, scroller, focused } = (window as typeof window & { refreshBefore: { cards: HTMLElement[]; scroller: HTMLElement; focused: Element } }).refreshBefore;
+    const now = [...document.querySelectorAll<HTMLElement>("#media-refresh-harness .media-library__card")];
+    return { same: now.length === cards.length && now.every((card, index) => card === cards[index]), focusKept: document.activeElement === focused, scrollTop: scroller.scrollTop };
+  });
+  expect(after).toEqual({ same: true, focusKept: true, scrollTop: before.scrollTop });
+});
