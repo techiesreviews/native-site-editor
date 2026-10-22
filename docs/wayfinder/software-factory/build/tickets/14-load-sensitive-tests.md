@@ -74,3 +74,5 @@ The five reported failures were caused by the tests; no source file changed. The
 **Commits.** e9661903 (build); d3bd5c47 (review fixes round 1); 9e518aee (review fixes round 2); plus the round 3 review-fix commit.
 
 **Checks.** `kit unit --affected` ok 26/26; `kit specs --affected` ok 3/3 (37 tests); `npm run lint` and `npm run check` clean.
+
+- Lead split (2026-10-22): after three Claude fix rounds the `native-editor-toast` spec still went 4/5 under load (review P1) and the media-library ring check can still miss on a very slow machine (review P2, `FRESH_RING_MS` 2.4 s). Both move to [Two specs still sensitive under heavy load](16-toast-and-ring-specs-under-load.md); this slice lands the agent-usage, agent-local-recovery, lazy-panels and media-library tile fixes.
