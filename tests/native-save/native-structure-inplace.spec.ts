@@ -221,7 +221,8 @@ test("Undo pressed while typing ends the edit and the page shows the undone text
   await expect(field).toHaveCount(0);
 });
 
-test("another file's paint keeps the typing field connected, with its text and caret; blur draws the latest tree", async ({ page, baseURL }) => {
+// An agent connected as Lex connects one; `edit` replaces `from` with `to` in the file at `path`.
+async function connectAgent(page: Page, baseURL: string | undefined) {
   await page.locator(".repository-menu__trigger").click();
   const connected = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST");
   await page.getByRole("button", { name: "Connect with MCP", exact: true }).click();
@@ -230,12 +231,21 @@ test("another file's paint keeps the typing field connected, with its text and c
   await client.connect(new StreamableHTTPClientTransport(new URL(`${baseURL}/mcp`), {
     requestInit: { headers: { Authorization: `Bearer ${token}` } },
   }));
+  await page.keyboard.press("Escape");
+  const read = async (path: string) => JSON.parse((await client.callTool({ name: "read_file", arguments: { path } }) as { content: { text: string }[] }).content[0].text) as { hash: string; content: string };
+  let edits = 0;
+  const edit = async (path: string, from: string, to: string) => {
+    const written = await client.callTool({ name: "edit_file", arguments: { path, expectedHash: (await read(path)).hash,
+      edits: [{ oldText: from, newText: to }], requestId: `structure-other-file-${++edits}` } });
+    expect(written.isError, JSON.stringify(written)).toBeFalsy();
+  };
+  return { client, read, edit };
+}
+
+test("another file's paint keeps the typing field connected, with its text and caret, before and after its write; blur draws the latest tree", async ({ page, baseURL }) => {
+  const agent = await connectAgent(page, baseURL);
   try {
-    await page.keyboard.press("Escape");
-    // The file's hash now; the agent writes once the field has typed and positioned its caret.
     const path = "components/site-footer/site-footer.html";
-    const read = await client.callTool({ name: "read_file", arguments: { path } });
-    const original = JSON.parse((read.content as { text: string }[])[0].text) as { hash: string };
     await titleRow(page).locator(".page-structure__text").dblclick();
     const field = titleField(page);
     await expect(field).toBeFocused();
@@ -253,20 +263,65 @@ test("another file's paint keeps the typing field connected, with its text and c
       window.addEventListener("pagehide", () => observer.disconnect(), { once: true });
     });
     const caret = await field.evaluate((field: HTMLTextAreaElement) => [field.selectionStart, field.selectionEnd]);
-    const written = await client.callTool({ name: "edit_file", arguments: { path, expectedHash: original.hash,
-      edits: [{ oldText: "<p data-key=\"footer-note\">", newText: '<h2>Agent footer</h2><p data-key="footer-note">' }], requestId: "structure-other-file" } });
-    expect(written.isError, JSON.stringify(written)).toBeFalsy();
+    const typed = async () => {
+      await expect(field).toBeFocused();
+      await expect(field).toHaveValue("Typing stays");
+      expect(await field.evaluate((field: HTMLTextAreaElement) => [field.selectionStart, field.selectionEnd])).toEqual(caret);
+      await expect(field).not.toHaveAttribute("data-detached", "true");
+    };
+    await agent.edit(path, '<p data-key="footer-note">', '<h2>Agent footer</h2><p data-key="footer-note">');
+    // Under the typing pause (WRITE_PAUSE, 150 ms): this paint comes before the typing is written.
     await page.clock.runFor(100);
     await expect(frame(page).locator("site-footer h2")).toHaveText("Agent footer");
-    await expect(field).toBeFocused();
-    await expect(field).toHaveValue("Typing stays");
-    expect(await field.evaluate((field: HTMLTextAreaElement) => [field.selectionStart, field.selectionEnd])).toEqual(caret);
-    await expect(field).not.toHaveAttribute("data-detached", "true");
+    await typed();
+    // The typing written, the field still focused: another paint of the other file keeps it as well.
     await page.clock.resume();
+    await expect.poll(async () => (await agent.read("index.html")).content).toContain('<span slot="title">Typing stays</span>');
+    await agent.edit(path, "<h2>Agent footer</h2>", "<h2>Agent footer</h2><p>Agent line</p>");
+    await expect(frame(page).locator("site-footer h2 + p")).toHaveText("Agent line");
+    await typed();
     await field.evaluate((field: HTMLTextAreaElement) => field.blur());
     await expect(tree(page).getByRole("treeitem", { name: "Site footer Agent footer", exact: true })).toBeVisible();
     await expect(titleRow(page).locator(".page-structure__text")).toHaveText("Typing stays");
-  } finally { await client.close(); }
+  } finally { await agent.client.close(); }
+});
+
+test("an agent's page edit while a template part is typed ends the edit and the mode; folds and the mark follow their elements", async ({ page, baseURL }) => {
+  const agent = await connectAgent(page, baseURL);
+  try {
+    const filler = tree(page).getByRole("treeitem", { name: "Section Scroll to verify", exact: true });
+    const hero = tree(page).getByRole("treeitem", { name: "Section A native browser preview", exact: true });
+    await filler.locator(".page-structure__toggle").click();
+    await expect(filler).toHaveAttribute("aria-expanded", "true");
+    const footer = tree(page).getByRole("treeitem", { name: /^Site footer/ });
+    await footer.hover();
+    await footer.getByRole("button", { name: "Edit component", exact: true }).click();
+    // The footer template's paragraph, by its row id (its name changes as it is typed).
+    const note = tree(page).locator('[role=treeitem][data-node="@components/site-footer/site-footer.html:0.0"]');
+    const footerAt = await footer.getAttribute("data-node");
+    await note.locator(".page-structure__text").dblclick();
+    const field = tree(page).getByRole("textbox", { name: "Paragraph: Text", exact: true });
+    await expect(field).toBeFocused();
+    await page.keyboard.type("Footer typed");
+    // Written (its paints held while the field has focus), then the agent adds a row above the main and the footer.
+    await expect.poll(async () => (await agent.read("components/site-footer/site-footer.html")).content).toContain("Footer typed");
+    await expect(field).toBeFocused();
+    await agent.edit("index.html", '<main class="page" data-key="main">', '<aside data-key="agent-note"><p>Agent note</p></aside>\n<main class="page" data-key="main">');
+    await expect(frame(page).locator("aside p")).toHaveText("Agent note");
+    // The template part's session reads the page's change as its own moving on.
+    await expect(page.getByRole("status").filter({ hasText: "Editing Paragraph ended: the page changed meanwhile." })).toHaveCount(1);
+    await expect(field).toHaveCount(0);
+    await expect(note).toHaveCount(0);
+    await expect(tree(page).getByRole("treeitem", { name: /^Aside/ })).toBeVisible();
+    // What was typed is kept; the page moved under Edit component mode, so the mode ends
+    // and the footer, one row lower, is marked. The hand-set fold and the default one stay with their elements.
+    expect((await agent.read("components/site-footer/site-footer.html")).content).toContain("Footer typed");
+    await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
+    await expect(footer).not.toHaveAttribute("data-node", footerAt!);
+    await expect(footer).toHaveAttribute("aria-selected", "true");
+    await expect(filler).toHaveAttribute("aria-expanded", "true");
+    await expect(hero).toHaveAttribute("aria-expanded", "false");
+  } finally { await agent.client.close(); }
 });
 
 test("an outside change while typing ends the edit, and the page shows what its source holds", async ({ page }) => {
