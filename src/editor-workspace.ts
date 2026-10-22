@@ -9,7 +9,7 @@ import type { DraftAccess, MovableFile } from "./file-changes";
 import type { NativeSite } from "../shared/native-project";
 import type { EditorWorkspace, NodeRef } from "./guarded-edit";
 import type { HistoryCompanion, HistorySourceEdit, HistorySourceReceipt } from "./components/source-editor";
-import { draftScopeOf, workspaceKeys, type SessionStamp, type WorkspaceScope, type WorkspaceSession } from "./workspace-session";
+import { draftScopeOf, setupKeyOf, type SessionStamp, type WorkspaceScope, type WorkspaceSession } from "./workspace-session";
 
 /** An admitted agent command. The durable transaction runs before the synchronous history receipt. */
 export interface AgentTextCommit {
@@ -94,7 +94,7 @@ export function createEditorWorkspace(host: WorkspaceHost): EditorWorkspace {
     return scope && editor.isMounted(path) ? editor.captureFileModelState(scope, path, true) : undefined;
   };
   return {
-    scope: () => workspaceKeys(session.shown())?.setup ?? "",
+    scope: () => setupKeyOf(session.shown()),
     draftScope,
     generation: () => session.current().load,
     versionView: () => host.versionView(),

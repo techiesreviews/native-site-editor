@@ -62,7 +62,7 @@ export function workspaceKeys(scope: WorkspaceScope | undefined): WorkspaceKeys 
   return id === undefined ? undefined : { drafts: `drafts:${id}`, setup: `setup:${id}`, media: `media:${id}` };
 }
 
-/** A draft scope (src/drafts.ts) or a remembered workspace as a GitHub scope; `same` reads the id, not the name. */
+/** A draft scope (src/drafts.ts) or a remembered workspace as a GitHub scope; `same` reads the id, not the name (left out, it stays empty). */
 export function githubScope(scope: { account: string; repoId: number; repo?: string; branch: string }): WorkspaceScope {
   return { kind: "github", account: scope.account, repoId: scope.repoId, repo: scope.repo ?? "", branch: scope.branch };
 }
@@ -71,6 +71,12 @@ export function githubScope(scope: { account: string; repoId: number; repo?: str
 export function draftScopeOf(scope: WorkspaceScope | undefined) {
   return scope?.kind === "github" ? { account: scope.account, repoId: scope.repoId, repo: scope.repo, branch: scope.branch } : undefined;
 }
+
+/** The setup checklist's key of `scope`: empty for none or an empty branch. */
+export const setupKeyOf = (scope: WorkspaceScope | undefined) => workspaceKeys(scope)?.setup ?? "";
+
+/** Whether `draft` (a draft scope, src/drafts.ts) is the workspace of `scope`, under the one account rule. */
+export const holdsDraftScope = (scope: WorkspaceScope | undefined, draft: { account: string; repoId: number; branch: string }) => same(scope, githubScope(draft));
 
 // A frozen copy, so a caller changing its own object later cannot move a stamp's scope.
 const held = (scope: WorkspaceScope | undefined) => scope && Object.freeze({ ...scope });
