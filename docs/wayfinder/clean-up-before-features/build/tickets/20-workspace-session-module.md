@@ -2,7 +2,7 @@
 title: "Workspace session module, memory adapter and suite (no callers)"
 type: task (AFK)
 status: open
-assignee:
+assignee: claude runner (lead: this session)
 builder: claude
 blocked_by: []
 ---

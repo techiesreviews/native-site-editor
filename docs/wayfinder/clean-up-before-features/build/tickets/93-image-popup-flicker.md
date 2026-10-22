@@ -2,7 +2,7 @@
 title: "Image popup: find and fix the flicker while zooming or moving"
 type: task (AFK)
 status: open
-assignee:
+assignee: claude runner (lead: this session)
 builder: claude
 blocked_by: []
 ---

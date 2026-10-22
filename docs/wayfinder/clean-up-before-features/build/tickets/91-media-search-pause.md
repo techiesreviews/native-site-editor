@@ -2,7 +2,7 @@
 title: "Media search waits for a pause in typing"
 type: task (AFK)
 status: open
-assignee:
+assignee: claude runner (lead: this session)
 builder: sol
 blocked_by: []
 ---

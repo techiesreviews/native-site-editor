@@ -2,7 +2,7 @@
 title: "Page Structure: typing no longer flickers"
 type: task (AFK)
 status: open
-assignee:
+assignee: claude runner (lead: this session)
 builder: sol
 blocked_by: []
 ---
