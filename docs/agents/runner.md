@@ -1,8 +1,8 @@
 # Build slice runner
 
-Run one slice end to end. The lead supplies the ticket and build map. This file gives the order of
-steps; command options live in [agent-scripts.md](agent-scripts.md#kit) and each `--help`. A build's
-own `runner-extras.md` (next to its map) wins where it differs.
+The steps one slice runs through, end to end. The lead starts each slice with `kit slice` ([kitchen.md](kitchen.md),
+station 5); a helper continues a stuck slice from here. Command options live in [agent-scripts.md](agent-scripts.md#kit)
+and each `--help`. A build's own `runner-extras.md` (next to its map) wins where it differs.
 
 ## Rules
 
@@ -41,9 +41,9 @@ own `runner-extras.md` (next to its map) wins where it differs.
 
 ## Build and tests
 
-- **Default:** from a clean worktree, `scripts/agents/kit bg slice-<NN> -- scripts/agents/kit slice --ticket <ticket> --builder sol`,
-  then `kit wait job slice-<NN> --timeout 2h` (brief, build, commit, review, ≤3 `kit fix` rounds, `kit pr`; a rerun resumes). Every open finding blocks before three completed rounds; afterwards P2/P3 defects and validation gaps proceed as follow-ups, while P0/P1 defects, defects without readable severity and unreadable reviews leave the PR unmerged. A covering review survives ticket-only commits on resume.
-- Manual fallback: `builder: claude`: implement directly. `builder: sol` (or another model): write `.scratch/agent-brief.md`
+- **Default:** from a clean worktree, `scripts/agents/kit bg slice-<NN> -- scripts/agents/kit slice --ticket <ticket> --builder claude-opus-5-5`
+  with `ASE_REVIEW_MODEL=claude-opus-5-5` (pins: [kitchen.md](kitchen.md#who-cooks-pins-from-2026-10-22)), then `kit wait job slice-<NN> --timeout 2h` (brief, build, commit, review, ≤3 `kit fix` rounds, `kit pr`; a rerun resumes). Every open finding blocks before three completed rounds; afterwards P2/P3 defects and validation gaps proceed as follow-ups, while P0/P1 defects, defects without readable severity and unreadable reviews leave the PR unmerged. A covering review survives ticket-only commits on resume.
+- Manual fallback: `builder: claude`: implement directly. Another model: write `.scratch/agent-brief.md`
   with ticket path, Files list and acceptance, and run `scripts/agents/agent.sh build "$PWD" .scratch/agent-brief.md --model
   <model> --effort <effort>` in the background. Inspect the report and diff; stay inside the ticket's Files; then commit.
 - Add unit coverage for pure rules. While building, run `scripts/agents/kit unit --affected` (or `scripts/agents/unit.sh
@@ -61,7 +61,7 @@ Open a single PNG only for a specific finding, never the same PNG twice. At most
 
 ## Review and close
 
-`kit slice` reviews, runs `kit fix` rounds and has the builder close the ticket. Manual fallback: one Sol review,
+`kit slice` reviews, runs `kit fix` rounds and has the builder close the ticket. Manual fallback: one Claude review,
 `scripts/agents/kit review --ticket <ticket>` in the background (evidence: main root `.scratch/reviews/<owner>/`). Verify
 findings, fix and commit real defects; re-review after substantial fixes; record rejected findings with reasons. Defects carry severity after the location: P0 = data loss, security hole, broken build/tests or wholly broken change; P1 = wrong user/runner behaviour or a broken "Done when" item; P2 = minor real defect; P3 = cosmetic/style (validation gaps have no severity). All findings block until three completed fix rounds, then only P0/P1 defects, defects without readable severity and unreadable reviews block. Then
 append `## Done (YYYY-MM-DD)` to the ticket (behaviour, commits, tests, review decisions, evidence), set `status: closed`, `assignee: <owner>`.

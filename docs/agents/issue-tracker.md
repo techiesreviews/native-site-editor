@@ -35,7 +35,7 @@ Used by `/wayfinder`. A map is a directory: `docs/wayfinder/<effort>/`.
 
 ## Build files
 
-A build (the lead running a map's tickets through runners) keeps two files next to its map:
+A build (the lead running a map's tickets as `kit slice` jobs) keeps two files next to its map:
 
 - `docs/wayfinder/<build>/lead-log.md`: the lead's dated notes (start-up check, waves, landings, decisions, restarts). Commit it with the map; never keep it in `/tmp`, which a restart or clean-up loses.
 - `docs/wayfinder/<build>/runner-extras.md`: this build's few extra runner rules, which win over [runner.md](runner.md) for this build only. Start from [runner-extras-template.md](runner-extras-template.md) and keep it short. Rules that should outlive the build move into runner.md when the build ends.
