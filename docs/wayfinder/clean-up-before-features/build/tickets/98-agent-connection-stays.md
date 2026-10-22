@@ -79,3 +79,7 @@ Reproduced against the local Worker (Miniflare Durable Objects, real relay socke
 
 Boot code is unchanged (`src/controllers/agent-controller.ts` differs from the branch start only in comments). The lazily loaded agent menu grows by about 0.2 KB gzip (`src/agent-resume.ts` is imported only there). After the rebase onto dev, `kit size` reports boot 342 KB against the 355 KB budget: within, no decision needed.
 
+
+## Comments
+
+- 2026-10-22, Lex: **when the receiving tab closes, another open tab on the same site takes over automatically** (no Take over click, the agent never stalls). Lex will do one real-life check on the preview editor at his end check: idle 10+ minutes, refresh, new tab.
