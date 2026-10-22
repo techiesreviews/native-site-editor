@@ -533,12 +533,35 @@ test("while a template part is typed, the instance leaving its place keeps the m
   assert.equal(s.mode.now(), now);
   assert.equal(s.counts.changed, changed);
   assert.deepEqual(s.live(), [`${CARD_PATH}>index.html`]);
+  // The frame shows the instance where it went (the first of the page's two cards), once.
+  assert.deepEqual(s.frames.at(-1), { path: "index.html", node: [0, 1], tag: "site-card", nested: [] });
+  const told = s.frames.length;
+  s.mode.sync();
+  assert.equal(s.frames.length, told);
   s.type(false);
   assert.equal(s.mode.now(), undefined);
   s.mode.sync();
   assert.deepEqual(s.live(), []);
   assert.equal(s.frames.at(-1), undefined);
   assert.equal(s.counts.changed, changed + 1);
+});
+
+test("while typing holds the mode, a page with another count of its tag shows no instance in the frame; back in place, it shows again", async () => {
+  const s = setup();
+  await card(s, [0, 1]);
+  s.type(true);
+  // Two paragraphs and a third card above: which card was edited is not known, so the frame shows none.
+  s.m.writeDraft("index.html", PAGE.replace("<main>", "<main><p>A</p><p>B</p><site-card>New</site-card>"));
+  s.mode.sync();
+  assert.ok(s.mode.now());
+  assert.equal(s.frames.at(-1), undefined);
+  // The card goes again: the instance is back at its node.
+  s.m.writeDraft("index.html", PAGE);
+  s.mode.sync();
+  assert.deepEqual(s.frames.at(-1), { path: "index.html", node: [0, 1], tag: "site-card", nested: [] });
+  s.type(false);
+  s.mode.sync();
+  assert.ok(s.mode.now());
 });
 
 test("typing keeps the mode only through its instance moving: another file opening still ends it", async () => {
