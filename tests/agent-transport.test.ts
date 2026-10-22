@@ -52,7 +52,7 @@ function fixture() {
   const values = new Map<string, string>();
   const storage = { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value); } };
   const locks = new Set<number>(), events: EventTarget[] = [], channels = new Map<string, () => void>();
-  let hint: { tabId: string; generation: number } | undefined;
+  let hint: { tabId: string; generation: number } | undefined, focusedTab: string | undefined, election = Promise.resolve();
   const broadcast = () => { for (const event of events) event.dispatchEvent(new Event("storage")); };
   function tab(id: string, overrides: Partial<Options> = {}) {
     const window = new EventTarget(), document = new EventTarget();
@@ -69,6 +69,10 @@ function fixture() {
         if (locks.has(generation)) return Promise.resolve(undefined);
         locks.add(generation); return Promise.resolve(() => { locks.delete(generation); });
       },
+      focus: (tabId: string) => { focusedTab = tabId; },
+      focused: () => focusedTab,
+      // One election at a time across tabs, as the browser's Web Lock serializes them.
+      elect: (work: () => Promise<void>) => { const run = election.then(work); election = run.catch(() => undefined); return run; },
     } satisfies NonNullable<Options["registry"]>;
     const transport = createLiveTransport({
       workspace, repo: "Lex/site", tabId: id, records, clock, registry,
@@ -166,12 +170,36 @@ test("second tab is other-owner; focus keeps background owner; explicit takeover
   a.transport.stop(); b.transport.stop();
 });
 
-test("owner closing offers Take over and never promotes the second tab", async () => {
+test("owner closing: the remaining tab with agents on takes over by itself, with no Take over click", async () => {
   const f = fixture(), a = f.tab("a"), b = f.tab("b");
-  await a.transport.start(); await b.transport.start(); a.transport.stop(); await drain();
-  assert.deepEqual(b.transport.state(), { mode: "other-owner", closed: true });
-  await f.tick(180_000); assert.equal(b.sockets.length, 0);
-  await b.transport.takeover(); assert.equal(b.transport.state().mode, "live"); b.transport.stop();
+  await a.transport.start(); await b.transport.start();
+  assert.equal(b.transport.state().mode, "other-owner");
+  const before = (await f.records.workspace(workspace)).generation;
+  a.transport.stop(); await drain();
+  assert.deepEqual(b.transport.state(), { mode: "other-owner", closed: true }, "it says so while it waits its turn");
+  await f.tick(1_000);
+  await until(() => b.transport.state().mode === "live");
+  assert.equal(b.sockets.length, 1);
+  assert.ok((await f.records.workspace(workspace)).generation > before, "a fresh generation fences the closed tab");
+  b.deliver();
+  await until(() => b.sockets[0].messages("result").length === 1);
+  b.transport.stop();
+});
+
+test("owner closing with two tabs left: the most recently focused one takes over at once; exactly one receives", async () => {
+  const f = fixture(), a = f.tab("a"), b = f.tab("b"), c = f.tab("c");
+  await a.transport.start(); await b.transport.start(); await c.transport.start();
+  b.window.dispatchEvent(new Event("focus")); c.window.dispatchEvent(new Event("focus"));
+  a.transport.stop(); await f.tick(0);
+  await until(() => c.transport.state().mode === "live");
+  assert.equal(b.transport.state().mode, "other-owner", "the other tab waits its turn");
+  await f.tick(1_000); await drain();
+  assert.deepEqual(b.transport.state(), { mode: "other-owner" }, "it finds the new receiving tab and stays as it is");
+  assert.deepEqual([b.sockets.length, c.sockets.length], [0, 1]);
+  // Explicit Take over still works from the remaining tab.
+  await b.transport.takeover(); await drain();
+  assert.deepEqual([b.transport.state().mode, c.transport.state().mode], ["live", "taken-over"]);
+  b.transport.stop(); c.transport.stop();
 });
 
 test("reset handshakes on the same socket without replay; pre-reset results are dropped", async () => {
