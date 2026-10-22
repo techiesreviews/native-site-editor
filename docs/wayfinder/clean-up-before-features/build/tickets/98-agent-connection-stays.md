@@ -64,6 +64,10 @@ Reproduced against the local Worker (Miniflare Durable Objects, real relay socke
 - `tests/agent-menu-resume.test.ts`: undisturbed, a site with connections opens one socket, one without is forgotten, an unanswered read keeps agents on; `forEachAwait` drives a site switch, `destroy()` or Disconnect at each await: no socket opens and no other site's mark is written or removed.
 - `tests/native-save/native-agent-lifecycle.spec.ts` also: an ended sign-in and a refused first Connect forget the site (off after a reload, no socket); switching a tab to another remembered site brings its agents on and keeps both marks; a connections check held through a site switch opens no socket and leaves both marks alone.
 - `tests/native-save/native-agent-lifecycle.spec.ts` also: switching onto a remembered site while the first site's check is held waits for its own check: a removed connection is forgotten with no socket; with agents paused, no socket and the site stays remembered.
+- `tests/agent-menu-resume.test.ts` also: `serialReads`: a read asked meanwhile without waiting is skipped; two waiters behind a read in flight each make their own read, one after another, and nothing is left in flight.
+- `tests/agent-lifecycle.test.ts` also: grants from two sessions in one workspace: the grace clears both hubs; one that fails keeps its data, the claim stays and the 30 s retry clears it.
+- `tests/agent-workspace-binding.test.ts`: with a stale shared context for another site, a tool call through `/mcp` waits for the connection's own repository and branch.
+- `tests/native-save/native-agent-lifecycle.spec.ts` also: a permission past its 8 hours (left out of the list) is forgotten on reload with no socket.
 - `tests/mcp-oauth.test.ts` also: 8 hours after connecting (sign-in still on), the connections list leaves both connections out.
 - `tests/agent-lifecycle.test.ts` also: an earlier version's fenced entry for a grant since rebound away is only released (record, hub entry and destination count stay; the token authenticates).
 - `tests/mcp-oauth.test.ts`: with a sign-in stretched to 16 hours, the connect route's `expiresAt` and the OAuth token's `expires_in` report 8 hours.
@@ -73,5 +77,5 @@ Reproduced against the local Worker (Miniflare Durable Objects, real relay socke
 
 ### Byte budget
 
-Boot code is unchanged (`src/controllers/agent-controller.ts` differs from the branch start only in comments; both boot bundles are 672,978 bytes before compression, +7 B gzip from chunk-name hashes). The lazily loaded agent menu grows by 183 B gzip. `kit size` reports boot 355 KB against the 355 KB budget: the start point (`d000f1cf`) measures within and this branch over, so the start point sits within a few bytes of the line; Lex decides whether to raise the budget or trim elsewhere.
+Boot code is unchanged (`src/controllers/agent-controller.ts` differs from the branch start only in comments). The lazily loaded agent menu grows by about 0.2 KB gzip (`src/agent-resume.ts` is imported only there). After the rebase onto dev, `kit size` reports boot 342 KB against the 355 KB budget: within, no decision needed.
 

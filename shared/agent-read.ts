@@ -84,26 +84,12 @@ function openRequests(hub: AgentHub | undefined, repoId: number, branch: string)
   return (hub?.requests ?? []).filter((item) => item.repoId === repoId && item.branch === branch && (item.state === "open" || item.state === "seen")).length;
 }
 
-/**
- * What the user has to do in the editor before agents can work: no tab
- * shares a site (signed out, no repository chosen yet, or the tab closed).
- */
-export function notSharingMessage(origin: string, workspace?: { repo: string; branch: string }, shown?: EditorContext) {
-  if (workspace && shown) return `This connection is for ${workspace.repo} on branch ${workspace.branch}; the editor shows ${shown.repository.fullName} on branch ${shown.branch}. Open that site and branch in the editor, or connect the agent again from the tab you want.`;
-  return `The editor tab is not sharing a site right now, so there is nothing to work on yet. Ask the user to: 1) open ${origin} and sign in with GitHub (Continue with GitHub; a free GitHub account works, but a new account must confirm its email address first, or GitHub answers the sign-in with a 404 page); 2) open a repository there: choose one in the project menu, or, with none yet, create one on the Get started screen (or, if you have the GitHub CLI, run \`gh repo create <name> --public\` yourself and ask them to give the editor access to it there); 3) keep that editor tab open. Open the repository and branch chosen for this connection; call get_site again.${workspace ? ` This connection is for ${workspace.repo} on branch ${workspace.branch}.` : ""}`;
-}
-
 /** Why a page tool cannot run before the repository has a home page. */
 export const noHomePage =
   "This repository has no site yet: there is no index.html, so there is no page to work on or copy. Start the site first: write index.html (a full HTML document linking /styles/site.css) and styles/site.css with write_file, as the native-site://conventions resource's \"Starting a site from nothing\" describes, or ask the user to choose Starter site in the editor's Start your site panel. Then call get_site again.";
 
-export function siteSummary(hub: AgentHub | undefined, context: EditorContext | undefined, grantRepo: string, origin = "https://editor.techies.tools", variants?: SiteVariantSummary, workspace?: { repo: string; branch: string }) {
-  if (!context)
-    return {
-      repository: grantRepo,
-      available: false,
-      note: notSharingMessage(origin, workspace, hub?.context),
-    };
+/** The receiving tab's answer to get_site (with no tab, worker/mcp.ts answers that it waits). */
+function siteSummary(hub: AgentHub | undefined, context: EditorContext, variants?: SiteVariantSummary) {
   const age = contextAge(hub);
   const site = context.site;
   const file = context.file;
@@ -158,7 +144,7 @@ export async function executeAgentRead(read: AgentRead, context: EditorContext, 
         try { variants = { components: await componentVariantsOf(files, context) }; }
         catch { variants = { note: "Variants could not be read. Try get_site again in a moment." }; }
       }
-      return text(siteSummary(hub ?? { updatedAt: Date.now() }, context, context.repository.fullName, undefined, variants));
+      return text(siteSummary(hub ?? { updatedAt: Date.now() }, context, variants));
     }
     case "list_files": {
       const prefix = folder ? `${folder.replace(/\/+$/, "")}/` : "";

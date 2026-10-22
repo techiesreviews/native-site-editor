@@ -25,3 +25,22 @@ export async function resumeAgents(ports: {
   if (answered && !ports.granted()) { ports.forget(); return; }
   await ports.open();
 }
+
+/**
+ * One connections read at a time. A read asked while another is in flight is skipped (false),
+ * unless `wait`: then it waits for every read ahead of it and makes its own, so its answer is
+ * this caller's (each waiter reads in turn).
+ */
+export function serialReads(read: () => Promise<boolean>) {
+  let inFlight: Promise<boolean> | undefined;
+  return {
+    get busy() { return inFlight !== undefined; },
+    async run(wait = false): Promise<boolean> {
+      if (wait) while (inFlight) await inFlight;
+      if (inFlight) return false;
+      const current: Promise<boolean> = read().finally(() => { if (inFlight === current) inFlight = undefined; });
+      inFlight = current;
+      return current;
+    },
+  };
+}
