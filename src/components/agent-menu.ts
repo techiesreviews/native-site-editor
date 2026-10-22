@@ -789,18 +789,20 @@ export function createAgentMenu(options: {
   }
 
   /** Explicit metadata refresh; never loads or uploads site content. */
+  /** True when this read answered and set the connections for the current activation. */
   async function readConnections() {
-    if (disposed || !remote || reading || workspaceChanged) return;
+    if (disposed || !remote || reading || workspaceChanged) return false;
     reading = true;
     const at = activation;
     try {
       const next: HubState = await api("connections", undefined, at);
-      if (!live(at)) return;
+      if (!live(at)) return false;
       hub = next;
       watchAllowed = next.controls?.watch !== false;
       lastRead = Date.now();
       paint();
-    } catch (error) { if (live(at)) showError(error); }
+      return true;
+    } catch (error) { if (live(at)) showError(error); return false; }
     finally { reading = false; }
   }
   /** Remote agents remembered on for the open site come back on (src/agent-resume.ts). */
@@ -810,7 +812,7 @@ export function createAgentMenu(options: {
     await resumeAgents({
       start: () => { startRemote(); return activation; },
       live: at => live(at) && !ownerPaused,
-      read: async () => { const read = lastRead; await readConnections(); return lastRead !== read; },
+      read: readConnections,
       granted: () => liveGrants().length > 0,
       forget: () => turnOff(true),
       open: activateSocket,
@@ -961,6 +963,10 @@ export function createAgentMenu(options: {
     /** The local workspace changed; keep the socket pinned to its original scope. */
     changed() {
       recoverWorkspace();
+      // Switched in this tab to another site remembered on: its agents come back on here, and the
+      // site left stays remembered (no Move agents here needed).
+      const repo = options.repository();
+      if (workspaceChanged && !changing && repo && agentsOn(site(repo))) turnOff();
       paint();
       transport?.changed();
       void resume();
