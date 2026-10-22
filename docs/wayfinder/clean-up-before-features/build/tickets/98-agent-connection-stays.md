@@ -2,7 +2,7 @@
 title: "Agent connection stays: 8-hour permission, remembered opt-in, waiting instead of disconnected"
 type: task (AFK)
 status: open
-assignee:
+assignee: lead-98 (this session)
 builder: claude
 blocked_by: []
 ---
