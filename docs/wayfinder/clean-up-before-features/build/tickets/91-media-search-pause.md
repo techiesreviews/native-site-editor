@@ -22,6 +22,7 @@ Research 02 (media follow-up): every search keystroke redraws every Media tile (
 
 ## Done when
 
+- Typing in the Media search redraws the grid once, about 150 ms after the last keystroke; Enter, clearing the search and leaving the field redraw at once; the "N of M files" count follows the redraw; focus and the caret stay in the search field; the pending timer is cleared when Media closes.
 - `native-media-library.spec.ts` and `native-media-library-keys.spec.ts` green unchanged (they wait on observable state).
 - No `main.ts` change. `npm run check`, `npm test` green.
 
