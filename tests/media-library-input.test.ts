@@ -9,9 +9,11 @@ function searchFixture(context: TestContext) {
   const controller = new AbortController();
   context.after(() => controller.abort());
   const search = Object.assign(new EventTarget(), { value: "" }) as HTMLInputElement;
-  const grid = new EventTarget() as HTMLDivElement, dialog = new EventTarget() as HTMLElement;
+  // The wiring listens on the grid's document for pointer releases; only its events run here.
+  const page = new EventTarget() as Document;
+  const grid = (Object.assign(new EventTarget(), { ownerDocument: page }) satisfies Pick<HTMLDivElement, "ownerDocument">) as HTMLDivElement;
   const shell = {
-    search, grid, uploadInput: new EventTarget() as HTMLInputElement, dialog,
+    search, grid, uploadInput: new EventTarget() as HTMLInputElement, dialog: new EventTarget() as HTMLElement,
   } satisfies Pick<LibraryShell, "search" | "grid" | "uploadInput" | "dialog">;
   const draws: string[] = [];
   const host = {
@@ -19,7 +21,7 @@ function searchFixture(context: TestContext) {
   } satisfies LibraryInputHost;
   wireMediaLibraryInput(shell as LibraryShell, host, controller.signal);
   const type = (value: string) => { search.value = value; search.dispatchEvent(new Event("input")); };
-  return { search, grid, dialog, controller, draws, type };
+  return { search, grid, page, controller, draws, type };
 }
 
 test("three quick search keystrokes redraw once, 150 ms after the last input", context => {
@@ -43,6 +45,20 @@ test("Enter redraws search immediately and cancels the delayed redraw", context 
   assert.deepEqual(draws, ["cat"]);
   context.mock.timers.tick(1000);
   assert.deepEqual(draws, ["cat"]);
+});
+
+test("Enter with no search waiting leaves the grid alone; an IME's Enter is left to the IME", context => {
+  const { type, search, draws } = searchFixture(context);
+  type("cat"); context.mock.timers.tick(150);
+  search.dispatchEvent(Object.assign(new Event("keydown", { cancelable: true }), { key: "Enter" }));
+  assert.deepEqual(draws, ["cat"]);
+  type("cats");
+  const composing = Object.assign(new Event("keydown", { cancelable: true }), { key: "Enter", isComposing: true });
+  search.dispatchEvent(composing);
+  assert.equal(composing.defaultPrevented, false);
+  assert.deepEqual(draws, ["cat"]);
+  context.mock.timers.tick(150);
+  assert.deepEqual(draws, ["cat", "cats"]);
 });
 
 test("clearing search redraws immediately and cancels the delayed redraw", context => {
@@ -76,13 +92,13 @@ test("Tab redraws a pending search before focus moves, leaving the move to the b
 });
 
 test("a tile pressed during a pending search keeps the grid until its click has run", context => {
-  const { type, search, grid, dialog, draws } = searchFixture(context);
+  const { type, search, grid, page, draws } = searchFixture(context);
   type("cat"); context.mock.timers.tick(50);
   grid.dispatchEvent(new Event("pointerdown"));
   search.dispatchEvent(new Event("blur"));
   context.mock.timers.tick(1000);
   assert.deepEqual(draws, []);
-  dialog.dispatchEvent(new Event("pointerup"));
+  page.dispatchEvent(new Event("pointerup"));
   grid.dispatchEvent(new Event("click"));
   // A label's second click lands in the same turn; the redraw follows both.
   grid.dispatchEvent(new Event("click"));
@@ -104,10 +120,10 @@ test("closing Media between a pressed tile's click and its redraw draws nothing"
 });
 
 test("touch release before blur keeps the tile until its synthesized click runs", context => {
-  const { type, search, grid, dialog, draws } = searchFixture(context);
+  const { type, search, grid, page, draws } = searchFixture(context);
   type("cat"); context.mock.timers.tick(50);
   grid.dispatchEvent(new Event("pointerdown"));
-  dialog.dispatchEvent(new Event("pointerup"));
+  page.dispatchEvent(new Event("pointerup"));
   // Touch focus can move during the synthesized mousedown, after pointerup.
   search.dispatchEvent(new Event("blur"));
   assert.deepEqual(draws, []);
@@ -120,10 +136,10 @@ test("touch release before blur keeps the tile until its synthesized click runs"
 });
 
 test("a press released without a click still redraws the pending search", context => {
-  const { type, search, grid, dialog, draws } = searchFixture(context);
+  const { type, search, grid, page, draws } = searchFixture(context);
   type("cat");
   grid.dispatchEvent(new Event("pointerdown"));
-  dialog.dispatchEvent(new Event("pointercancel"));
+  page.dispatchEvent(new Event("pointercancel"));
   search.dispatchEvent(new Event("blur")); context.mock.timers.tick(149);
   assert.deepEqual(draws, []);
   context.mock.timers.tick(1);
@@ -133,9 +149,9 @@ test("a press released without a click still redraws the pending search", contex
 });
 
 test("a press with no pending search leaves the grid alone", context => {
-  const { grid, dialog, draws } = searchFixture(context);
+  const { grid, page, draws } = searchFixture(context);
   grid.dispatchEvent(new Event("pointerdown"));
-  dialog.dispatchEvent(new Event("pointerup"));
+  page.dispatchEvent(new Event("pointerup"));
   grid.dispatchEvent(new Event("click"));
   context.mock.timers.tick(1000);
   assert.deepEqual(draws, []);
