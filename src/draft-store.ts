@@ -78,6 +78,7 @@
 // The store itself needs no reactive library.
 
 import { draftKey, type DraftScope, type SavedDraft } from "./drafts";
+import { githubScope, same } from "./workspace-session";
 import type { DraftAccess } from "./file-changes";
 
 /** The persisted-draft layer: src/drafts.ts `DraftStore` (or a test double). */
@@ -971,9 +972,9 @@ export function createDraftStore(options: DraftStoreOptions = {}) {
   function drafts(scope: DraftScope, list: () => readonly SavedDraft[]) {
     retry();
     const out = new Map(list().map(record => [record.path, record]));
-    const same = (other: DraftScope) => other.account.toLowerCase() === scope.account.toLowerCase() && other.repoId === scope.repoId && other.branch === scope.branch;
+    const wanted = githubScope(scope);
     for (const entry of files.values())
-      if (!entry.persisted && entry.baseSha !== undefined && isChanged(entry) && same(entry.scope)) out.set(entry.path, recordOf(entry));
+      if (!entry.persisted && entry.baseSha !== undefined && isChanged(entry) && same(githubScope(entry.scope), wanted)) out.set(entry.path, recordOf(entry));
     return [...out.values()].sort((a, b) => a.path.localeCompare(b.path));
   }
   /** Any Undo or Redo step is held in memory (lost on reload). */

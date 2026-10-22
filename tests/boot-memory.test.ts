@@ -68,6 +68,7 @@ test("at most five records; the oldest goes; forget clears one or all", async ()
 test("adoption needs the same account (any case), repository id and name, and branch", () => {
   const m = memory();
   assert.ok(memoryMatches(m, "lex", { id: 7, full_name: "lex/site" }, "main"));
+  assert.ok(memoryMatches(m, "LEX", { id: 7, full_name: "lex/site" }, "main"));
   assert.ok(!memoryMatches(m, "other", { id: 7, full_name: "lex/site" }, "main"));
   assert.ok(!memoryMatches(m, undefined, { id: 7, full_name: "lex/site" }, "main"));
   assert.ok(!memoryMatches(m, "lex", { id: 7, full_name: "lex/renamed" }, "main"));

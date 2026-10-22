@@ -9,6 +9,7 @@ import type { DraftAccess, MovableFile } from "./file-changes";
 import type { NativeSite } from "../shared/native-project";
 import type { EditorWorkspace, NodeRef } from "./guarded-edit";
 import type { HistoryCompanion, HistorySourceEdit, HistorySourceReceipt } from "./components/source-editor";
+import { draftScopeOf, workspaceKeys, type SessionStamp, type WorkspaceScope, type WorkspaceSession } from "./workspace-session";
 
 /** An admitted agent command. The durable transaction runs before the synchronous history receipt. */
 export interface AgentTextCommit {
@@ -42,10 +43,8 @@ export interface WorkspaceEditor {
   holdHistoryRefresh(path: string): () => void;
 }
 export interface WorkspaceHost {
-  generation(): number;
-  /** The setup key (account, repository, branch). */
-  setupScope(): string;
-  draftScope(): DraftScope | undefined;
+  /** The workspace session (src/workspace-session.ts); `shown()`: its scope on show, none on the overview or while a load runs. */
+  session: Pick<WorkspaceSession, "current" | "begin"> & { shown(): WorkspaceScope | undefined };
   versionView(): boolean;
   route(): string | undefined;
   editModeEntry(): object | undefined;
@@ -65,7 +64,7 @@ export interface WorkspaceHost {
   createProblem(path: string): Promise<string | undefined>;
   openFile(): string | undefined;
   /** restoreFile for the page whose history takes a step (`beforeMount`: its editor mounts only while that holds). */
-  restore(path: string, epoch: number, beforeMount?: () => boolean): Promise<void>;
+  restore(path: string, at: SessionStamp, beforeMount?: () => boolean): Promise<void>;
   readonly editor: WorkspaceEditor;
   shareHistory(paths: string[], anchor: string): () => void;
   onMount(listener: (path: string, pane: boolean) => void): void;
@@ -87,16 +86,17 @@ export function createEditorWorkspace(host: WorkspaceHost): EditorWorkspace {
   // Manual and agent guarded edits share mounts, but carry separate commit contexts.
   const mounts = new Set<(path: string, pane: boolean) => void>();
   host.onMount((path, pane) => { for (const listener of mounts) listener(path, pane); });
-  const { editor } = host;
-  const scoped = <T>(use: (scope: DraftScope) => T, otherwise: T) => { const scope = host.draftScope(); return scope ? use(scope) : otherwise; };
+  const { editor, session } = host;
+  const draftScope = () => draftScopeOf(session.shown());
+  const scoped = <T>(use: (scope: DraftScope) => T, otherwise: T) => { const scope = draftScope(); return scope ? use(scope) : otherwise; };
   const model = (path: string) => {
-    const scope = host.draftScope();
+    const scope = draftScope();
     return scope && editor.isMounted(path) ? editor.captureFileModelState(scope, path, true) : undefined;
   };
   return {
-    scope: () => host.setupScope(),
-    draftScope: () => host.draftScope(),
-    generation: () => host.generation(),
+    scope: () => workspaceKeys(session.shown())?.setup ?? "",
+    draftScope,
+    generation: () => session.current().load,
     versionView: () => host.versionView(),
     route: () => host.route(),
     editModeEntry: () => host.editModeEntry(),
@@ -115,12 +115,12 @@ export function createEditorWorkspace(host: WorkspaceHost): EditorWorkspace {
     mounted: path => editor.isMounted(path),
     mountedSource: path => editor.getMountedSource(path),
     openFile: () => host.openFile(),
-    open: (path, beforeMount) => host.restore(path, host.generation(), beforeMount),
+    open: (path, beforeMount) => host.restore(path, session.begin(), beforeMount),
     // The open page in this very pane and history session (a pane mounted again over the same
     // kept document is another one: its history did not see the open), at this revision.
     anchor(path) {
-      const epoch = host.generation(), state = host.openFile() === path ? model(path) : undefined, pane = state && editor.captureHistoryHost(path);
-      return pane && { isCurrent: () => epoch === host.generation() && host.openFile() === path && pane.isCurrent() && state.isCurrent() };
+      const at = session.begin(), state = host.openFile() === path ? model(path) : undefined, pane = state && editor.captureHistoryHost(path);
+      return pane && { isCurrent: () => at.holds() && host.openFile() === path && pane.isCurrent() && state.isCurrent() };
     },
     retainModel: path => scoped(scope => editor.retainFileModel(scope, path), () => {}),
     evictModel: (path, proof) => scoped(scope => editor.evictDraftModel(scope, path, proof), undefined),

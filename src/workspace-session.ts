@@ -62,6 +62,16 @@ export function workspaceKeys(scope: WorkspaceScope | undefined): WorkspaceKeys 
   return id === undefined ? undefined : { drafts: `drafts:${id}`, setup: `setup:${id}`, media: `media:${id}` };
 }
 
+/** A draft scope (src/drafts.ts) or a remembered workspace as a GitHub scope; `same` reads the id, not the name. */
+export function githubScope(scope: { account: string; repoId: number; repo?: string; branch: string }): WorkspaceScope {
+  return { kind: "github", account: scope.account, repoId: scope.repoId, repo: scope.repo ?? "", branch: scope.branch };
+}
+
+/** The draft store's scope (src/drafts.ts) of a GitHub scope; none for a folder or no scope. */
+export function draftScopeOf(scope: WorkspaceScope | undefined) {
+  return scope?.kind === "github" ? { account: scope.account, repoId: scope.repoId, repo: scope.repo, branch: scope.branch } : undefined;
+}
+
 // A frozen copy, so a caller changing its own object later cannot move a stamp's scope.
 const held = (scope: WorkspaceScope | undefined) => scope && Object.freeze({ ...scope });
 

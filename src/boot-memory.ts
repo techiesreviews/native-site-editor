@@ -3,6 +3,8 @@
 // A warm boot guesses from it before the session is known; the guess is used
 // only once the session, listing and fresh snapshot prove it (src/main.ts).
 
+import { githubScope, same } from "./workspace-session";
+
 type Store = Pick<Storage, "getItem" | "setItem" | "removeItem"> & Partial<Pick<Storage, "key" | "length">>;
 
 export interface BootMemory {
@@ -89,5 +91,6 @@ export function provenFiles(memory: BootMemory, entries: readonly { path: string
 
 /** Whether the adopted session and verified listing match the remembered account, repository and branch. */
 export function memoryMatches(memory: BootMemory, login: string | undefined, repo: { id: number; full_name: string } | undefined, branch: string | undefined) {
-  return Boolean(login && repo && login.toLowerCase() === memory.login.toLowerCase() && repo.id === memory.repoId && repo.full_name === memory.fullName && branch === memory.branch);
+  return Boolean(login && repo && branch !== undefined && repo.full_name === memory.fullName &&
+    same(githubScope({ account: login, repoId: repo.id, branch }), githubScope({ account: memory.login, repoId: memory.repoId, branch: memory.branch })));
 }
