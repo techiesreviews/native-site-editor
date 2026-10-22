@@ -73,8 +73,6 @@ function fitHeight(area: HTMLTextAreaElement) {
   area.style.height = "auto";
   area.style.height = `${area.scrollHeight + area.offsetHeight - area.clientHeight}px`;
 }
-// The structure without its text: equal shapes differ only in what is typed.
-const shape = (value: NativeStructure) => JSON.stringify(value.items, (name, item) => name === "text" || name === "heading" ? undefined : item);
 
 export function createStructureEditing(host: StructureEditingHost) {
   const refuse = (reason: string) => { host.announce(reason); showRefusal(reason); };
@@ -110,8 +108,6 @@ export function createStructureEditing(host: StructureEditingHost) {
     session?: ComponentSlotEditSession;
     fields: Map<ComponentSlotPart, FieldControl>;
     pending: Map<ComponentSlotPart, ReturnType<typeof setTimeout>>;
-    // The source the session's own writes made: its paint is held back while typing goes on.
-    ownSource?: string;
     parts: HTMLElement[];
   }
   let mode: Mode | undefined;
@@ -143,7 +139,6 @@ export function createStructureEditing(host: StructureEditingHost) {
     const edit = session(current);
     const ok = edit?.write(part, field.value) ?? false;
     if (ok) field.removeAttribute("aria-invalid"); else field.setAttribute("aria-invalid", "true");
-    if (ok) current.ownSource = host.pageSource(current.path);
   }
   function flush(current: Mode) {
     for (const part of [...current.pending.keys()]) writeNow(current, part);
@@ -424,23 +419,24 @@ export function createStructureEditing(host: StructureEditingHost) {
     /** The source moved on without the row edit (Undo, another edit): it must end. */
     stale: () => Boolean(mode?.session?.stale()),
     /**
-     * While a row's text is typed, the paint of exactly the source that typing
-     * made (text alone changed) is held back: the tree stays as it is, field,
-     * caret and all. Anything else is drawn as ever.
+     * Once typing opens a session, keep its focused field attached through every paint of this page,
+     * including another file's changes and paints before the typing is written.
+     * The host ends stale edits before asking, and draws the latest paint on blur.
      */
     holdsPaint(next: NativeStructure, previous: NativeStructure) {
       const active = document.activeElement;
-      const typing = mode && (active instanceof HTMLTextAreaElement || active instanceof HTMLInputElement) && inside(mode, active);
-      typingHeld = Boolean(typing && mode!.ownSource !== undefined && next.paintedSource === mode!.ownSource && shape(next) === shape(previous));
+      const typing = mode?.session && (active instanceof HTMLTextAreaElement || active instanceof HTMLInputElement) && inside(mode, active);
+      typingHeld = Boolean(typing && next.path === previous.path);
       return typingHeld;
     },
     /** A held paint waits to be drawn: when focus has left the field. */
     held: () => typingHeld,
     /** The held paint is being drawn. */
     release() { typingHeld = false; },
-    /** Focuses the requested field (the first whose id starts with `prefix`): the caret at `caret`, else all selected. */
+    /** Focuses the requested row's field whose id starts with `prefix`: the caret at `caret`, else all selected. */
     focus(wanted: FocusRequest) {
-      const fields = [...fieldInputs.values()].filter(field => field.dataset.fieldId?.startsWith(wanted.prefix) && tree.contains(field));
+      const fields = [...fieldInputs.values()].filter(field => field.dataset.fieldId?.startsWith(wanted.prefix) && tree.contains(field)
+        && (wanted.row === undefined || field.closest<HTMLElement>("[data-edit-node]")?.dataset.editNode === wanted.row));
       const field = fields.find(field => !field.closest("[hidden]")) ?? fields[0];
       if (!field) return false;
       field.focus();

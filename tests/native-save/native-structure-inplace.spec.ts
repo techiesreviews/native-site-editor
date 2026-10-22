@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { editorMounted } from "./drafts";
 
 // Editing a Structure row's text in place: a first click selects; a second
@@ -218,6 +219,54 @@ test("Undo pressed while typing ends the edit and the page shows the undone text
   await expect(shownTitle(page)).toHaveText("Reusable cards");
   await expect(titleRow(page)).not.toHaveClass(/is-editing/);
   await expect(field).toHaveCount(0);
+});
+
+test("another file's paint keeps the typing field connected, with its text and caret; blur draws the latest tree", async ({ page, baseURL }) => {
+  await page.locator(".repository-menu__trigger").click();
+  const connected = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST");
+  await page.getByRole("button", { name: "Connect with MCP", exact: true }).click();
+  const { token } = await (await connected).json() as { token: string };
+  const client = new Client({ name: "structure-typing-spec", version: "1" });
+  await client.connect(new StreamableHTTPClientTransport(new URL(`${baseURL}/mcp`), {
+    requestInit: { headers: { Authorization: `Bearer ${token}` } },
+  }));
+  try {
+    await page.keyboard.press("Escape");
+    // Hold the agent's write until the field has typed and positioned its caret.
+    const path = "components/site-footer/site-footer.html";
+    const read = await client.callTool({ name: "read_file", arguments: { path } });
+    const original = JSON.parse((read.content as { text: string }[])[0].text) as { hash: string };
+    await titleRow(page).locator(".page-structure__text").dblclick();
+    const field = titleField(page);
+    await expect(field).toBeFocused();
+    // Keep the typing pause pending while the other file's paint arrives.
+    await page.clock.install();
+    await page.clock.pauseAt(new Date());
+    await field.evaluate((field: HTMLTextAreaElement) => {
+      field.value = "Typing stays";
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+      field.setSelectionRange(10, 10);
+      const observer = new MutationObserver(records => {
+        if (records.some(record => [...record.removedNodes].some(node => node === field || node.contains(field)))) field.dataset.detached = "true";
+      });
+      observer.observe(field.closest("[role=tree]")!, { childList: true, subtree: true });
+      window.addEventListener("pagehide", () => observer.disconnect(), { once: true });
+    });
+    const caret = await field.evaluate((field: HTMLTextAreaElement) => [field.selectionStart, field.selectionEnd]);
+    const written = await client.callTool({ name: "edit_file", arguments: { path, expectedHash: original.hash,
+      edits: [{ oldText: "<p data-key=\"footer-note\">", newText: '<h2>Agent footer</h2><p data-key="footer-note">' }], requestId: "structure-other-file" } });
+    expect(written.isError, JSON.stringify(written)).toBeFalsy();
+    await page.clock.runFor(100);
+    await expect(frame(page).locator("site-footer h2")).toHaveText("Agent footer");
+    await expect(field).toBeFocused();
+    await expect(field).toHaveValue("Typing stays");
+    expect(await field.evaluate((field: HTMLTextAreaElement) => [field.selectionStart, field.selectionEnd])).toEqual(caret);
+    await expect(field).not.toHaveAttribute("data-detached", "true");
+    await page.clock.resume();
+    await field.evaluate((field: HTMLTextAreaElement) => field.blur());
+    await expect(tree(page).getByRole("treeitem", { name: "Site footer Agent footer", exact: true })).toBeVisible();
+    await expect(titleRow(page).locator(".page-structure__text")).toHaveText("Typing stays");
+  } finally { await client.close(); }
 });
 
 test("an outside change while typing ends the edit, and the page shows what its source holds", async ({ page }) => {
