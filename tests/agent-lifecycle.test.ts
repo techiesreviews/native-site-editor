@@ -146,6 +146,9 @@ test("a permission survives 10 minutes with no tab: tools wait instead of failin
     const waiting = JSON.parse(closed.body.result.content[0].text);
     assert.equal(waiting.state, "waiting");
     assert.match(waiting.message, /^The editor isn't open for .+ on branch main\. Open it and the agent can continue/);
+    assert.ok(waiting.message.includes(`open ${repo.full_name} on branch main there`), "the steps reopen this connection's site");
+    assert.match(waiting.message, /remote agents are on \(the project menu shows Disconnect MCP/);
+    assert.doesNotMatch(waiting.message, /Get started|gh repo create/, "no steps that create another repository");
     const site = await h.tool("get_site");
     assert.equal(JSON.parse(site.body.result.content[0].text).state, "waiting");
     // A tab opens with agents on: the same token reaches it, without reconnecting the agent.
@@ -280,6 +283,32 @@ test("tombstones written before 8-hour permissions still refuse their id until t
     assert.equal((await reserve()).allowed, true);
     assert.deepEqual((await h.record())!.cleaned, {});
   } finally { await h.dispose(); }
+});
+
+test("a removal an earlier version fenced but did not finish is finished once: record, hub entry and ledger entry go", async () => {
+  const h = await fixture();
+  const get = h.namespace.get;
+  try {
+    // State the old grace left after a failed deletion: ledger entry "cleaned", tombstone, claim and a 30 s retry.
+    const ledger = (await h.ledger())!;
+    ledger.entries[0].state = "cleaned";
+    await h.relayStorage.put(METADATA_KEY, ledger);
+    await h.relayStorage.put(LIFECYCLE_KEY, { generation: 2, cleaned: { [h.grant.id]: h.input.expiresAt }, cleanupPending: true });
+    await h.relayStorage.put(DEADLINES_KEY, { "agent-cleanup": h.now() });
+    h.restoreEditors(h.name, []); // The new version wakes on the old retry with no tab.
+    let failing = true;
+    h.namespace.get = name => ({ fetch: request => failing && name === `agent:${h.grant.id}`
+      ? Promise.resolve(new Response(null, { status: 503 })) : get(name).fetch(request) });
+    await assert.rejects(h.alarm(h.name), /incomplete/);
+    assert.deepEqual((await h.ledger())!.entries.map(entry => entry.state), ["cleaned"], "an unknown outcome stays counted");
+    assert.equal(await h.relayStorage.getAlarm(), h.now() + 30_000);
+    failing = false; h.advance(30_000); await h.alarm(h.name);
+    await assert.rejects(getGrant(h.env, h.grant.id), { status: 401 });
+    assert.deepEqual((await getHub(h.env, h.sessionId))?.grants ?? [], []);
+    assert.deepEqual((await h.ledger())?.entries ?? [], [], "the slot is free for a new connection");
+    assert.equal((await h.record())!.cleanupPending, undefined);
+    assert.equal(await h.relayStorage.getAlarm(), null);
+  } finally { h.namespace.get = get; await h.dispose(); }
 });
 
 test("agent cleanup preserves live sign-in, config, repository cache and unrelated session purpose", async () => {

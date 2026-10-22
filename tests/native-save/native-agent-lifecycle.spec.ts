@@ -143,6 +143,67 @@ test("agents stay on: a reload and a new tab on the same site come back with the
   } finally { await h.client.close(); }
 });
 
+const agentsOnKey = (branch: string) => `native-site-editor:agents-on:["native-demo-user",501,"${branch}"]`;
+const remembered = (page: Page, ...branches: string[]) =>
+  page.evaluate(keys => keys.map(key => localStorage.getItem(key)), branches.map(agentsOnKey));
+
+test("a remembered site stays on when its connections check goes unanswered, and comes back off and forgotten once its connection was removed elsewhere", async ({ page, baseURL }) => {
+  const h = await connect(page, baseURL);
+  try {
+    expect(await remembered(page, "main")).toEqual(["1"]);
+    await page.route("**/api/agent/connections", route => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "Unavailable" }) }));
+    await page.reload();
+    await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
+    await expect.poll(() => h.traffic.ready().length, "one socket after an unanswered check").toBe(2);
+    await expect(page.locator(".agent-menu")).not.toHaveAttribute("data-state", "off");
+    expect(await remembered(page, "main")).toEqual(["1"]);
+    await page.unroute("**/api/agent/connections");
+    // Disconnected from another browser while no editor tab is open.
+    await page.goto("about:blank");
+    const revoked = await page.request.post(`${baseURL}/api/agent/revoke`, { headers: { Origin: baseURL! }, data: { all: true } });
+    expect(revoked.ok()).toBe(true);
+    await open(page, baseURL);
+    await page.locator(".repository-menu__trigger").click();
+    await expect(page.locator(".agent-menu")).toHaveAttribute("data-state", "off");
+    expect(await remembered(page, "main")).toEqual([null]);
+    expect(h.traffic.ready(), "no socket for a removed connection").toHaveLength(2);
+  } finally { await h.client.close(); }
+});
+
+test("Move agents here: the new branch comes back on after a reload and the old one comes back off", async ({ page, context, baseURL }) => {
+  const h = await connect(page, baseURL);
+  try {
+    expect((await h.call("read_file", { path: "index.html" })).content).toContain("A native browser preview");
+    // The menu learns the agent used its token when the tab is next focused; only used connections move.
+    await expect.poll(async () => {
+      await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+      return page.locator(".agent-menu").getAttribute("data-state");
+    }, { timeout: 15_000 }).toBe("connected");
+    const index = await (await page.request.get(`${baseURL}/__demo/file?path=index.html`)).text();
+    await page.request.post(`${baseURL}/__demo/branch`, { data: { name: "feature", path: "index.html", content: index } });
+    await page.evaluate(() => { location.hash = "#repo=501&branch=feature&file=index.html"; });
+    await expect(page.locator("#status")).toContainText("Up to date with feature", { timeout: 30_000 });
+    await page.locator(".repository-menu__trigger").click();
+    await page.getByRole("button", { name: "Move agents here", exact: true }).click();
+    await expect.poll(() => h.traffic.ready().length).toBe(2);
+    expect(await remembered(page, "main", "feature")).toEqual([null, "1"]);
+    await page.reload();
+    await expect(page.locator("#status")).toContainText("Up to date with feature", { timeout: 30_000 });
+    await expect.poll(() => h.traffic.ready().length).toBe(3);
+    await expect(page.locator(".agent-menu")).toHaveAttribute("data-state", "connected");
+    expect((await h.call("read_file", { path: "index.html" })).content).toBeTruthy();
+    const old = await context.newPage();
+    try {
+      let sockets = 0;
+      old.on("websocket", socket => { if (socket.url().includes("/api/agent/relay?")) sockets++; });
+      await open(old, baseURL);
+      await old.locator(".repository-menu__trigger").click();
+      await expect(old.locator(".agent-menu")).toHaveAttribute("data-state", "off");
+      expect(sockets, "the old branch opens no socket").toBe(0);
+    } finally { await old.close(); }
+  } finally { await h.client.close(); }
+});
+
 test("freeze/resume via persisted pagehide/pageshow: ownership rechecked, no command replay", async ({ page, baseURL }) => {
   const h = await connect(page, baseURL);
   try {

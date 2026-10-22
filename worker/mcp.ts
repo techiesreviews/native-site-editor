@@ -33,7 +33,6 @@ import { writablePathProblem } from "./site-files";
 import { siteConventions, siteInstructions } from "./site-conventions";
 import { editorOrigin } from "./owner-setup";
 import { isNativeComponentTag } from "../shared/native-project";
-import { openEditorSteps } from "../shared/agent-read";
 import { checkContent, type AgentEdit, type AgentEditArgsMap, type AgentEditTool } from "../shared/agent-edit";
 import { AgentRelay, relayObjectName } from "./agent-relay";
 import type { AgentRead, AgentReadResult } from "../shared/agent-read";
@@ -53,9 +52,10 @@ type Exchange = { started?: () => void; cancelled?: boolean; requestId?: string 
 
 type Connection = Awaited<ReturnType<typeof authenticateAgent>>;
 
-/** No editor tab receives for this connection's site. The permission stays (ticket 98): the agent waits. */
-export function editorClosedMessage(origin: string, workspace: { repo: string; branch: string }) {
-  return `The editor isn't open for ${workspace.repo} on branch ${workspace.branch}. Open it and the agent can continue: this connection stays valid, so try again once it is open. ${openEditorSteps(origin)}`;
+/** No editor tab receives for this connection's site. The permission stays (ticket 98): the agent
+ * waits. The steps reopen this connection's own site; creating a repository would not help. */
+export function editorClosedMessage(origin: string, workspace: { repo: string; branch: string }, next = "Try again once it is open.") {
+  return `The editor isn't open for ${workspace.repo} on branch ${workspace.branch}. Open it and the agent can continue: this connection stays valid. ${next} Ask the user to: 1) open ${origin} and sign in with GitHub (Continue with GitHub); 2) open ${workspace.repo} on branch ${workspace.branch} there; 3) make sure remote agents are on (the project menu shows Disconnect MCP; if it shows Connect with MCP, choose it); 4) keep that tab open.`;
 }
 
 const text = (value: unknown) => ({
@@ -758,7 +758,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
         return waited(Array.isArray(value?.requests) ? value.requests : [], agentControls(env).watch ? value?.watch ?? { state: "off" } : { state: "off" }, agentControls(env).watch ? undefined : WATCH_PAUSED);
       }
       if (outcome.code === "editor-unavailable")
-        return waited([], { state: "off" }, `${closed} Stop here: tell the user, then wait until they ask you to continue.`);
+        return waited([], { state: "off" }, editorClosedMessage(origin, connection.workspace, "Stop here and tell the user; continue when they ask you to."));
       if (outcome.code === "waiting")
         return waited([], { state: "off" }, "Another wait for this site's requests is already open (one at a time). Do not call wait_for_requests again now: tell the user you are ready.");
       return waited([], { state: "off" }, `The editor did not answer this wait (${outcome.code ?? "connection lost"}). Do not repeat it on your own: tell the user you are ready. Requests it took come back with all: true.`);

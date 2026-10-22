@@ -171,8 +171,8 @@ test("MCP before there is a site: guidance to sign in, open a repository, or sta
     assert.equal(none.available, false);
     assert.equal(none.note, guidance);
     assert.match(none.note, /Continue with GitHub/);
-    assert.match(none.note, /Get started/);
-    assert.match(none.note, /gh repo create/);
+    assert.ok(none.note.includes(`open ${repo.full_name} on branch main`), "the connection's own site, not a new repository");
+    assert.doesNotMatch(none.note, /Get started|gh repo create/);
     assert.ok(none.note.includes(origin));
     for (const [name, args] of [["read_file", { path: "index.html" }], ["list_files", {}], ["write_file", { path: "a.txt", content: "x" }]] as const) {
       const result = (await call(name, args)) as { isError?: boolean };
