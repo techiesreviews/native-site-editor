@@ -3,6 +3,7 @@ title: "Rarely used code loads when Media or the Pages & files manager opens"
 type: task (AFK)
 status: closed
 assignee: runner-11
+landed: "PR #123 (02a0d30)"
 builder: sol
 blocked_by: [10-main-ts-ceiling]
 ---
