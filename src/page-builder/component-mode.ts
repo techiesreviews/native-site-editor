@@ -72,7 +72,8 @@ export interface ComponentMode {
    * page shown, the opening's repository, branch and version view hold, and a `tag` element is at
    * `node` on the page (memoised per page source), or a template part is being typed: a page change
    * that moved the instance ends the mode once the typing ends. Pure: no state, frame or listener changes;
-   * frozen objects, the same one until a transition.
+   * frozen objects, the same one until a transition. It reads the host's `typing` port too: once the
+   * typing ends it may read undefined before the host's `sync` ends the mode and calls `changed`.
    */
   now(): Mode | undefined;
   /**

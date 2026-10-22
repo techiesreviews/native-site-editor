@@ -9,6 +9,8 @@ import type { createComponentTools } from "../src/page-builder/components.ts";
 import type { createGuardedEdits } from "../src/guarded-edit.ts";
 import type { createMemoryWorkspace } from "./fakes/memory-workspace.ts";
 
+type SourceEditor = typeof import("../src/components/source-editor.ts");
+
 declare global {
   var typingHoldTools: typeof createComponentTools;
   var typingHoldEdits: typeof createGuardedEdits;
@@ -42,12 +44,13 @@ test("sessions on the mode's template hold it through its instance moving while 
       const edits = typingHoldEdits(m.workspace);
       // Only the editor ports a session opens and closes through.
       const editor = { isMounted: () => true, getMountedSource: (file: string) => m.source(file), captureHistoryHost: () => ({ isCurrent: () => true }),
-        prepareHistorySources: () => ({ isCurrent: () => true, dispose() {} }), closeActiveEditGroup() {}, editGroupCloser: () => () => {} };
+        prepareHistorySources: () => ({ isCurrent: () => true, dispose() {} }), closeActiveEditGroup() {}, editGroupCloser: () => () => {} } satisfies Partial<SourceEditor>;
       const frames: unknown[] = [];
       const panelHost = document.createElement("div"), codeTitle = document.createElement("div"), field = document.createElement("textarea");
       document.body.append(panelHost, codeTitle, field);
       tools = typingHoldTools({ site: () => site, edits,
-        sources: () => Object.fromEntries(m.files().map(file => [file, m.source(file)!])), editor: () => editor as never,
+        sources: () => Object.fromEntries(m.files().map(file => [file, m.source(file)!])), // The one cast: the session reaches only the ports above.
+        editor: () => editor as SourceEditor,
         currentPath: () => m.openFile(), selection: () => undefined, previewPage: () => path,
         preview: () => ({ selectAfterUpdate() {}, selectNode() {}, editComponent(mode) { frames.push(mode); } }),
         openFile: async (file) => { await m.workspace.open(file); return m.openFile() === file; },
