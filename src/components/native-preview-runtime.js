@@ -3828,19 +3828,29 @@ import { domView } from "../page-builder/rules/tree.ts";
   // A zoom or move sends a look per frame: the next one changes only what
   // differs, so the image's own picture never shows between two steps, and a
   // new picture (with its style) takes the place once decoded (ticket 93).
-  // `lookSrc`: the picture the look last showed, already decoded, so it goes
-  // back at once (in the same task) after a render put the image's own back.
-  var imageLook = null, looksAsked = 0, lookShown = 0, lookSrc = null;
+  // The look's record keeps `saved` (the image's own attributes, put back at
+  // Close) and `shown` (what the look last wrote, already decoded): after a
+  // render put the image's own back, `shown` goes back in the same task, even
+  // while the next picture is still decoding.
+  var imageLook = null, looksAsked = 0, lookShown = 0;
   function setLookAttribute(el, name, value) {
     if (value === null) { if (el.hasAttribute(name)) el.removeAttribute(name); }
     else if (el.getAttribute(name) !== value) el.setAttribute(name, value);
+  }
+  // Writes `attributes` on the look's image; any not saved yet are saved first, so Close puts them back.
+  function writeLook(record, attributes) {
+    Object.keys(attributes).forEach(function (name) {
+      if (!(name in record.saved)) record.saved[name] = record.el.getAttribute(name);
+      setLookAttribute(record.el, name, attributes[name]);
+    });
   }
   // `redrawn`: the page was drawn again, so all of the image's own attributes
   // are put back and read again. Without it (a new look, or assets that
   // arrived) the attributes the look still sets keep what was saved first.
   function setImageLook(request, look, redrawn) {
     var old = imageLook, asked = ++looksAsked;
-    var found = request && look ? resolveNodePath(request) : null, el = found && found.localName === "img" ? found : null;
+    var found = request && look ? resolveNodePath(request) : null;
+    var el = found && found.localName === "img" ? found : null;
     var wanted = {};
     if (el && typeof look.style === "string") wanted.style = look.style;
     if (el && typeof look.src === "string") { wanted.src = assetFor(look.src) || look.src; wanted.srcset = null; wanted.sizes = null; }
@@ -3851,18 +3861,27 @@ import { domView } from "../page-builder/rules/tree.ts";
       back.forEach(function (name) { setLookAttribute(old.el, name, old.saved[name]); });
       if (back.length && old.el.parentNode) resolveAssets(old.el.parentNode);
     }
+    var record = null;
     if (el) {
       var saved = {};
       Object.keys(wanted).forEach(function (name) { saved[name] = same && name in old.saved ? old.saved[name] : el.getAttribute(name); });
-      imageLook = { el: el, request: request, look: look, saved: saved };
+      // What this image shows from the look until this one is drawn (the same image, or it drawn again).
+      var shown = old && old.shown && (old.el === el || redrawn) ? old.shown : null;
+      record = imageLook = { el: el, request: request, look: look, saved: saved, shown: shown };
     }
     var show = function () {
       lookShown = asked;
-      lookSrc = wanted.src === undefined ? null : wanted.src;
-      Object.keys(wanted).forEach(function (name) { setLookAttribute(el, name, wanted[name]); });
+      if (!record) { scheduleBoxes(); return; }
+      // Only the newest look's record is written (an older decode may show first, never on a dropped
+      // one): the image then has its own attributes and exactly these.
+      Object.keys(imageLook.saved).forEach(function (name) { if (!(name in wanted)) setLookAttribute(imageLook.el, name, imageLook.saved[name]); });
+      writeLook(imageLook, wanted);
+      imageLook.shown = wanted;
       scheduleBoxes();
     };
-    if (!el || wanted.src === undefined || wanted.src === lookSrc || el.getAttribute("src") === wanted.src) { show(); return; }
+    if (!el || wanted.src === undefined || el.getAttribute("src") === wanted.src || (record.shown && record.shown.src === wanted.src)) { show(); return; }
+    // Until then the picture already shown stays (put back at once after a render).
+    if (record.shown) writeLook(record, record.shown);
     // The picture shown keeps its place until the new one can be drawn (the
     // page's <img> then decodes it again, from memory). Each decode settles as:
     // resolved, it shows unless a later look showed first or the look was
