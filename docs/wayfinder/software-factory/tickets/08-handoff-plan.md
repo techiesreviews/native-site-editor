@@ -2,7 +2,7 @@
 title: Hand off the factory build plan
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (planning helper)
 blocked_by: [07-recipe-v1]
 ---
 
