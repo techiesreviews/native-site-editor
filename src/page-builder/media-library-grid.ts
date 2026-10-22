@@ -218,8 +218,8 @@ function fileTile(item: MediaLibraryItem, look: ReturnType<typeof mediaTileLook>
   return { card, observer, update };
 }
 
-// YouTube and Vimeo videos (slice 68): their copied still, name and a small service mark; the
-// number counts the pages that show them. The pane opens their details, the picker chooses them.
+/** YouTube and Vimeo videos (slice 68): their copied still, name and a small service mark; the
+ * number counts the pages that show them. The pane opens their details, the picker chooses them. */
 function onlineTile(video: MediaOnlineVideo, badge: ReturnType<typeof mediaUsageBadge>, first: TileDraw): Omit<LibraryTile, "look"> {
   let now = first;
   const { state, list } = first, key = video.key;

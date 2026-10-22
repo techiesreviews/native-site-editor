@@ -463,9 +463,22 @@ test("adding a file keeps the tiles and pictures already shown; its ring goes on
   // The same elements, each still showing the picture it had.
   expect(await page.evaluate(() => (window as typeof window & { addingBefore: { card: HTMLElement; src: string | null | undefined }[] }).addingBefore
     .filter(({ card, src }) => !card.isConnected || card.querySelector("img")?.getAttribute("src") !== src).length)).toBe(0);
-  // fixed-wait: the new-file ring plays for 2.4 s; a redraw after that takes it off.
-  await page.waitForTimeout(2_600);
-  await panel.getByLabel("Search media", { exact: true }).fill("kept-tiles");
+  const shownAt = await page.evaluate(() => performance.now());
+  // fixed-wait: lets the new-file ring play a while before a redraw that keeps its tile in place.
+  await page.waitForTimeout(600);
+  const search = panel.getByLabel("Search media", { exact: true });
+  await search.fill("kept-tiles");
   await expect(panel.locator(".media-library__card")).toHaveCount(1);
+  // The ring carries on where it was, not as far again ahead.
+  const ring = await added.evaluate((card, shownAt) => {
+    const animation = card.getAnimations({ subtree: true }).find(each => each instanceof CSSAnimation && each.animationName === "media-new")!;
+    const played = Number(animation.effect!.getComputedTiming().localTime) - Number(animation.effect!.getTiming().delay);
+    return { played, elapsed: performance.now() - shownAt };
+  }, shownAt);
+  expect(ring.played).toBeGreaterThanOrEqual(ring.elapsed - 50);
+  expect(ring.played).toBeLessThan(ring.elapsed + 400);
+  // fixed-wait: the ring plays for 2.4 s in all; a redraw after that takes it off.
+  await page.waitForTimeout(2_000);
+  await search.fill("kept-tile");
   await expect(added).not.toHaveClass(/\bis-new\b/);
 });
