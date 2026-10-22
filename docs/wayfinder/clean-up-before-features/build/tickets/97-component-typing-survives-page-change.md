@@ -2,7 +2,7 @@
 title: "Page Structure: typing in a component's template survives a change to the page file"
 type: task (AFK)
 status: open
-assignee:
+assignee: lead-97 (this session)
 builder: claude
 blocked_by: [90-page-structure-typing-flicker]
 ---
