@@ -49,8 +49,8 @@ test("sessions on the mode's template hold it through its instance moving while 
       const panelHost = document.createElement("div"), codeTitle = document.createElement("div"), field = document.createElement("textarea");
       document.body.append(panelHost, codeTitle, field);
       tools = typingHoldTools({ site: () => site, edits,
-        sources: () => Object.fromEntries(m.files().map(file => [file, m.source(file)!])), // The one cast: the session reaches only the ports above.
-        editor: () => editor as SourceEditor,
+        sources: () => Object.fromEntries(m.files().map(file => [file, m.source(file)!])),
+        editor: () => editor as SourceEditor, // The one cast: the session reaches only the ports above.
         currentPath: () => m.openFile(), selection: () => undefined, previewPage: () => path,
         preview: () => ({ selectAfterUpdate() {}, selectNode() {}, editComponent(mode) { frames.push(mode); } }),
         openFile: async (file) => { await m.workspace.open(file); return m.openFile() === file; },
