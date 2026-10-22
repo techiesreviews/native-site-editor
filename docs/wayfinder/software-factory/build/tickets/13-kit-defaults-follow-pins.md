@@ -2,7 +2,7 @@
 title: Kit defaults follow the kitchen pins
 type: task (AFK)
 status: open
-assignee:
+assignee: lead-sf13 (free worker build)
 builder: opencode/deepseek-v4.1-flash-free
 blocked_by: [11-commit-credit-model-name, 12-grok-and-agent-small-fixes]
 ---
