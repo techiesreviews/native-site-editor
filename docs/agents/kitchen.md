@@ -7,8 +7,8 @@ pass, builders and reviewers are line cooks, Agent Kit and the skills are the kn
 Linked docs stay the detailed source for their station; this page decides the order.
 
 Why each station exists: [the software-factory map](../wayfinder/software-factory/map.md) and its
-closed tickets. Items marked **planned** are decided but not built; their build tickets come from
-[factory ticket 08](../wayfinder/software-factory/tickets/08-handoff-plan.md). Until a planned item
+closed tickets. Items marked **planned** are decided but not built; their slices are in
+[the factory build](../wayfinder/software-factory/build/README.md). Until a planned item
 lands, do what the station says for today; never claim a planned item ran.
 
 ## House rules
