@@ -1,8 +1,8 @@
 ---
 title: "Workspace session module, memory adapter and suite (no callers)"
 type: task (AFK)
-status: open
-assignee: claude runner (lead: this session)
+status: closed
+assignee: runner-20
 builder: claude
 blocked_by: []
 ---
@@ -39,3 +39,20 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `kit unit tests/workspace-session.test.ts`, then `kit unit --affected`.
 - Review: `kit review --ticket <this ticket>` (GPT-6.1 Sol, medium, read-only), plus the lead's read of the interface. Land: `kit pr --ticket <this ticket>`.
 - Report: unit `RESULT:` lines, the interface as landed (one line per member), review folder and decisions, PR and merge SHA.
+
+## Done (2026-10-22)
+
+`src/workspace-session.ts`, no callers yet (not imported by `src/main.ts`):
+
+- `WorkspaceScope`: `{ kind: "github"; account; repoId; repo; branch; view? }` or `{ kind: "folder"; folderId; view? }`.
+- `same(a, b)`: account ignoring capitals, repository by id (renamed: same; re-created: not), branch, version view; a folder never equals a GitHub scope; an empty branch (or folder id) equals nothing, itself included.
+- `workspaceKeys(scope)`: `drafts`, `setup`, `media` strings, equal whenever `same` holds and across version views of one branch; none for an empty branch.
+- `createWorkspaceSession(scope?)`: `current()` (load and scope), `begin()` (a stamp: the `load` and `scope` it began on, so work can finish there after a switch (slices 22/23); `holds()` until the next load; `changed()` says `scope`, `version-view` or `generation`), `next(scope)` (a new load), `keys(scope?)`.
+- `SessionStamp` is assignable to the guarded edit's `Stamp`, so slice 21 can hand it over as is.
+- `tests/fakes/memory-workspace.ts`: optional `session`; when given, its load and setup key stand for the generation and scope, and `bumpGeneration` is a reload.
+
+Tests: `tests/workspace-session.test.ts` covers every case in Done when, plus a stamp keeping its load and scope, and a guarded edit stamp on the memory workspace going stale after the session's next load. `kit unit tests/workspace-session.test.ts`: `RESULT: ok unit 9/9`; `kit unit --affected`: `RESULT: ok unit 783/783 (27 files)`; `npm run check` green.
+
+Build route: `kit slice --builder claude-opus-5-5` drafted the files but failed its build step: the Claude builder runs with `--permission-mode acceptEdits`, so every Bash command (doctor, unit, check) was denied, and the model check rejects the run because Claude Code also reports a small `claude-haiku-5-5` call in `modelUsage` (`scripts/agents/agent-run.mjs:132`). Per runner.md's manual fallback for `builder: claude`, the runner (Claude Opus 5.5) checked the draft, added the stamp's `load` and `scope`, ran the checks and committed; review and landing go through `kit review` and `kit pr`.
+
+Design calls for the lead: the version view is part of `same` (switching to an older version is a new scope) but not of the keys; the media key leaves out the load number that `mediaIdentity()` has today (slice 21 adds it where needed); an empty branch is no workspace (equals nothing, no keys); the repository id is always required (the by-name fallback is slice 22's).

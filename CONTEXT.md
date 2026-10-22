@@ -108,6 +108,9 @@ The view of the current page and its unsaved changes inside the editor. It rende
 A site open in the editor, from one source: a GitHub repository on a branch, or a local folder. Each project has its own drafts, even when a folder and a repository hold the same site.
 _Avoid_: workspace (in user-facing text)
 
+**Workspace session**:
+In code, the one owner of "is the editor still on the same project, and the same load of it, as when this work began?": a load counter and the scope of what is open (for GitHub: account, repository, branch and version view; or a local folder). One account whatever its capitals; one repository by its id, so a renamed repository is the same and a re-created one is not; a local folder is never the same as a GitHub repository. User-facing text says project.
+
 **Project overview**:
 The screen the editor opens on: every project, newest first, as a list (the default, remembered if the user switches: the project edited last shown large with Continue editing, the others as rows) or as a grid of picture cards. Each project shows a picture of its home page from the last visit, its name, where it lives, when it was last edited and its unsaved changes; one click opens it, and a problem (access refused, folder missing) shows quietly on the project itself. With no projects yet it is an empty state offering On this computer or On GitHub. It replaces the sign-in screen and Get started; a direct link to a project skips it, and All projects in the project selector returns to it. (Planned in ADR 0002.)
 _Avoid_: dashboard, home, recent folders
