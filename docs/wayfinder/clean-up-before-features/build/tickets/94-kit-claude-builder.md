@@ -22,7 +22,7 @@ Found by slice 20's runner (2026-10-22): `kit slice --builder claude-opus-5-5` c
 ## Files
 
 - `scripts/agents/agent-run.mjs`
-- `tests/agent-run.test.ts` (new, or the existing test file that covers `claudeAdapter`/`claudeResult` if one exists)
+- `tests/agent-scripts.test.ts` (it already covers `claudeAdapter`/`claudeResult`)
 - `docs/agents/agent-scripts.md` (one line, only if it states the permission mode)
 
 ## Done when
