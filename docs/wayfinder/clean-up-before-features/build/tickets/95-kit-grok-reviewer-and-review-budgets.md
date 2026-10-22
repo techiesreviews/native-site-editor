@@ -5,6 +5,7 @@ status: closed
 assignee: runner-95
 builder: claude
 blocked_by: []
+landed: "PR #119 (9217696)"
 ---
 
 ## Goal
