@@ -28,6 +28,7 @@ One written recipe (the kitchen rulebook) that every session and every model fol
 - [Decide the scoreboard and how review findings are recorded](tickets/04-grill-scoreboard.md#resolution-2026-10-22): kit records builder, time, rounds, findings and Lex's UX corrections by kind per piece; one visual page per build shown in chat; one feedback log; builder choice from numbers, brought to Lex
 - [Decide automatic hand-out of ready tickets](tickets/05-grill-hand-out.md#resolution-2026-10-22): 30-minute T3 check-in while a build runs; `kit next` picks ticket and builder by fixed rules; max 5 helpers; grilling, release, money, unrecoverable deletes and settings always wait for Lex
 - [Decide the weekly sweep, learning from past chats and grouping problems](tickets/06-grill-sweeps-and-learning.md#resolution-2026-10-22): sweep lists only, top 3 to Lex Mondays 09:00; chat learning every other Monday into checks or rulebook lines, tied to the central chat memory; triage groups problems before hand-out
+- [Decide how projects share Lex's central memory](tickets/10-grill-central-memory.md#resolution-2026-10-22): chat-project sync is the one collector with a corrections pass, runs every 4 hours; every project session starts with a short context card read from it; sync side built in the chat project, card in the shared kit
 
 ## Not yet specified
 
