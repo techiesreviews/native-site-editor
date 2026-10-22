@@ -173,6 +173,10 @@ Two things wait on one Cloudflare token: preview deploys from CI on every push t
 
 *Check with Lex:* one token for both jobs (simplest) rather than two separate ones.
 
+## Builders and reviewers from 2026-10-22 (Lex)
+
+GPT-6.1 Sol hit its usage limit on 2026-10-22 (blocked until 2026-10-27 20:26; Lex's OpenAI plan is the $20/month tier). Lex: **reviews use a different model than Sol.** Until decided otherwise, every slice builds with `--builder claude-opus-5-5` and reviews with `ASE_REVIEW_MODEL=claude-opus-5-5` (a fresh read-only session, separate from the builder). How Sol is used sparingly once it is back is being decided with Lex; the `builder: sol` lines in the tickets are superseded meanwhile.
+
 ## Follow-ups seen during the build
 
 - 2026-10-22: `tests/agent-usage.test.ts:69` ("an empty wait without a receiver answers quietly at once…") failed once (6 !== 3) during slice 20's `kit pr` with five runners loading the machine; 3/3 passes alone. Timing-sensitive under load.
