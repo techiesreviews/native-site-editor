@@ -269,6 +269,13 @@ test("a failed connection check keeps browser requests and never adopts hub cont
   // Connect checks once, makes its token and reads once more; the pin may show before or after
   // that second read, so wait for it rather than count at the pin. Nothing polls after.
   await expect.poll(() => calls).toBe(2);
+  // Coming back to the tab is what would read again (agent-menu's wake); it does not.
+  await page.evaluate(() => new Promise(resolve => {
+    window.dispatchEvent(new Event("focus"));
+    document.dispatchEvent(new Event("visibilitychange"));
+    requestAnimationFrame(resolve);
+  }));
+  expect(calls).toBe(2);
 });
 
 test("first OAuth storage event keeps the short retries while its grant arrives", async ({ page, baseURL }) => {
