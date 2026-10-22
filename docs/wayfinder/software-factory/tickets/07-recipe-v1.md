@@ -15,3 +15,7 @@ One document every session and every model follows: the stations from idea to re
 Written as [`docs/agents/kitchen.md`](../../../agents/kitchen.md) (PR #122, `89093358`), the front door `AGENTS.md` now points to first. Twelve stations (idea, map and questions, mock-up, tickets, hand-out, build, checks, review, land, preview with note and scoreboard, Lex's end check, release), each with its skill, kit command or T3 tool, who decides, evidence and a done criterion; the 2026-10-22 builder and reviewer pins; UX ladder rung 1 with the move rule; the weekly routines; what always waits for Lex. Everything decided but not built is marked **planned** with its factory ticket. `runner.md`, the runner-extras template and `issue-tracker.md` lost the Sol builder and reviewer defaults and the runner layer; the detailed docs stay the source for their station.
 
 Helper decisions, open for Lex to change: until the UX rulebook exists, visible tickets stay minimal (no explainer lines, hints, counts or badges unless Lex asked); every change Lex asks for gets a ticket opening "Lex (date): …", lead fixes included; ladder moves are brought to Lex rather than applied automatically.
+
+## Comments
+
+- 2026-10-22, Lex accepted the three lead decisions in the rulebook (minimal visible changes until the UX rulebook exists; every request of his gets a "Lex (date): …" ticket; ladder moves are brought to him, not applied automatically): "If that works best, that is fine."
