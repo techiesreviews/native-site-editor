@@ -735,6 +735,8 @@ test("wiring: Save's drafts are the store's, including a change whose write keep
   const drafts = store.drafts(scope, () => [...persistence.map.values()]);
   assert.deepEqual(drafts.map(draft => [draft.path, draft.content]), [["a.html", "a1"], ["b.html", "b1"]]);
   assert.equal(store.drafts({ ...scope, branch: "other" }, () => []).length, 0);
+  // One account whatever its capitals (src/workspace-session.ts): "Lex" still sees lex's unsaved change.
+  assert.deepEqual(store.drafts({ ...scope, account: "Lex" }, () => []).map(draft => draft.path), ["b.html"]);
   persistence.fail = false;
   assert.equal(store.drafts(scope, () => [...persistence.map.values()]).length, 2);
   assert.equal(persistence.map.get("b.html")?.content, "b1");

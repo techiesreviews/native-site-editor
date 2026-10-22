@@ -118,6 +118,7 @@ import { addSectionStep } from "./page-builder/component-plans";
 import { createAgentSiteHost } from "./agent-site-host";
 import { createGuardedEdits, type GuardedEdits, type Reads, type PlanResult, type Stamp } from "./guarded-edit";
 import { createEditorWorkspace } from "./editor-workspace";
+import { createWorkspaceSession, draftScopeOf, githubScope, same, workspaceKeys, type SessionStamp, type WorkspaceScope } from "./workspace-session";
 import type { AnnounceAs } from "./components/toast-rules";
 import type {
   EditorContext,
@@ -153,6 +154,15 @@ let blockRail: ReturnType<typeof mountBlockRail> | undefined;
 const editorModule = sourceEditor;
 const mediaHistoryHome = createMediaHistoryHome();
 const appStore = createAppStore(editorModule.sourceStore());
+// What is open and which load of it (src/workspace-session.ts): signing out and each load below start the next.
+const workspaceSession = createWorkspaceSession();
+function currentLoad() { return workspaceSession.current().load; }
+function nextLoad(scope?: WorkspaceScope) { workspaceSession.next(scope); return workspaceSession.begin(); }
+// A controller's load number as a stamp (controllers hold numbers until slice 22): none holds once the load moved on.
+function stampOf(epoch: number): SessionStamp {
+  const stamp = workspaceSession.begin();
+  return stamp.load === epoch ? stamp : { load: epoch, scope: undefined, holds: () => false, changed: () => "generation" };
+}
 installChunkRecovery({
   storage: () => window.sessionStorage,
   // Undo/Redo steps or unsaved text that live only in this tab's memory.
@@ -202,7 +212,7 @@ const loadMedia = lazyModule(async () => {
 const loadSetupActions = lazyModule(async () => {
   const { createSetupActions } = await import("./setup-actions");
   return createSetupActions({
-    get info() { return info; }, get generation() { return generation; },
+    get info() { return info; }, get generation() { return currentLoad(); },
     get repositories() { return repositories; }, set repositories(value) { repositories = value; },
     get wizardCreated() { return wizardCreated; }, set wizardCreated(value) { wizardCreated = value; },
     get waitingForRepositories() { return waitingForRepositories; }, set waitingForRepositories(value) { waitingForRepositories = value; },
@@ -236,12 +246,12 @@ const loadAgentMenu = lazyModule(async () => {
 const loadSiteSettings = lazyModule(async () => {
   const [{ createNativeSettings }] = await Promise.all([import("./native-settings"), loadPagesActions()]);
   return createNativeSettings({
-    get nativeSite() { return nativeSite; }, get generation() { return generation; },
+    get nativeSite() { return nativeSite; }, get generation() { return currentLoad(); },
     appStore, guardedEdits, nativeAssets, setupScope,
     nativePageLabelOf: (file) => pagesController.pageLabel(file),
     nativeUrlPlan: (file, value) => pageActions!.urlPlan(file, value),
     changeNativeUrl: (file, value, keep, since, baseline) => pageActions!.changeUrl(file, value, keep, since, baseline),
-    restoreFile, nativeSiteReadForCreate,
+    restoreFile: (path, epoch) => restoreFile(path, stampOf(epoch)), nativeSiteReadForCreate,
     choosePath: (place, accept) => mediaController.choosePath(place, undefined, accept), nativeEffectiveSource, loadNativeAssets,
     shareImage: request => mediaController.shareImage(request),
     nativeFiles: () => nativeFiles(), readMediaText,
@@ -273,14 +283,14 @@ let activeFileContext: EditorContext["file"] = null;
 let editorRequest = 0;
 
 // A guarded edit's step binds only its own new and moved-in paths to the anchor page's journal.
-const nativeHistoryAliases = new Map<string, { epoch: number; scope: string; session: string }>();
+const nativeHistoryAliases = new Map<string, { stamp: SessionStamp; session: string }>();
 // The guarded edit module, told of each file a pane mounts (`pane`: the stylesheet pane, which follows the page opened).
 let nativeMountListener: ((path: string, pane: boolean) => void) | undefined;
 // Edit component's shares (components' shareHistory): a template records its steps in a page's journal, the latest share first.
-const nativeHistoryShares = new Map<string, { epoch: number; scope: string; session: string }[]>();
+const nativeHistoryShares = new Map<string, { stamp: SessionStamp; session: string }[]>();
 function nativeHistorySession(scope: NonNullable<ReturnType<typeof draftScope>>, path: string) {
   const key = draftKey(scope, path), share = nativeHistoryShares.get(key)?.at(-1), alias = nativeHistoryAliases.get(key);
-  const live = (bound: typeof alias): bound is NonNullable<typeof alias> => !!bound && bound.epoch === generation && bound.scope === setupScope();
+  const live = (bound: typeof alias): bound is NonNullable<typeof alias> => !!bound && bound.stamp.holds();
   return live(share) ? share.session : live(alias) ? alias.session : key;
 }
 
@@ -667,7 +677,7 @@ const paletteController = createCommandPaletteController({
     open: (path) => {
       if (path === appStore.openFile.value && editorModule?.isMounted(path)) return;
       previewSelection.recordIntent(path);
-      void restoreFile(path, generation);
+      void restoreFile(path, workspaceSession.begin());
     },
     isSectionTag: tag => pageStructureController.isNativeSectionTag(tag),
     insert: (point, component) => insertNativeComponent({ ...point, top: 0, left: 0, width: 0, before: "" }, component),
@@ -713,12 +723,12 @@ function componentPorts(): Parameters<typeof createComponentTools>[0] {
     currentPath: () => appStore.openFile.value,
     selection: () => appStore.selection.value,
     openFile: async (path) => {
-      const epoch = generation, scope = draftScope();
+      const at = workspaceSession.begin(), scope = draftScope();
       previewSelection.recordIntent(path);
       // A pane open on its own history when a share (shareHistory below) asks for another opens again on that.
       const shared = scope && nativeHistoryShares.has(draftKey(scope, path)) ? nativeHistorySession(scope, path) : undefined;
-      if (appStore.openFile.value !== path || !editorModule?.isMounted(path) || (shared && editorModule.paneOf(path)?.session !== shared)) await restoreFile(path, epoch);
-      return epoch === generation && appStore.openFile.value === path && Boolean(editorModule?.isMounted(path));
+      if (appStore.openFile.value !== path || !editorModule?.isMounted(path) || (shared && editorModule.paneOf(path)?.session !== shared)) await restoreFile(path, at);
+      return at.holds() && appStore.openFile.value === path && Boolean(editorModule?.isMounted(path));
     },
     announce,
     error: errorMessage,
@@ -740,7 +750,7 @@ function componentPorts(): Parameters<typeof createComponentTools>[0] {
     shareHistory: (path, owner) => {
       const scope = draftScope();
       if (!scope) return () => {};
-      const key = draftKey(scope, path), share = { epoch: generation, scope: setupScope(), session: nativeHistorySession(scope, owner) };
+      const key = draftKey(scope, path), share = { stamp: workspaceSession.begin(), session: nativeHistorySession(scope, owner) };
       nativeHistoryShares.set(key, [...nativeHistoryShares.get(key) ?? [], share]);
       return () => {
         const rest = nativeHistoryShares.get(key)?.filter((each) => each !== share) ?? [];
@@ -768,7 +778,7 @@ function nativeSectionChoices(): InsertChoice[] {
 // Puts a new instance of a section component into the page at `point`, as
 // one undo step, and selects it. The page file opens first when another
 // file is in the editor, since edits go through the mounted editor.
-const nativeAddPoints = new WeakMap<InsertPoint, { source: string; epoch: number; scope: string; description: string }>();
+const nativeAddPoints = new WeakMap<InsertPoint, { source: string; stamp: SessionStamp; description: string }>();
 function nativeElementAddPoint(choice: InsertChoice, fallback: InsertPoint | undefined, mode: "click" | "drop" | "gap" = "click"): InsertPoint | undefined {
   const markup = nativeChoiceMarkup(choice.tag, undefined, nativePrefix());
   if (!markup) return fallback;
@@ -783,7 +793,7 @@ function nativeElementAddPoint(choice: InsertChoice, fallback: InsertPoint | und
   const found = candidates.find(item => nativeMarkupInsertEdit(source, item.point.parent, item.point.index, markup));
   if (!found) return;
   const point = { ...found.point, parent: [...found.point.parent] };
-  nativeAddPoints.set(point, { source, epoch: generation, scope: setupScope(), description: found.description });
+  nativeAddPoints.set(point, { source, stamp: workspaceSession.begin(), description: found.description });
   return point;
 }
 /**
@@ -824,7 +834,7 @@ async function insertNativeComponent(point: InsertPoint, choice: InsertChoice) {
   const native = nativeChoiceMarkup(choice.tag, undefined, nativePrefix());
   // A destination planned against the page's bytes then (the Add panel's) holds only while they do.
   const captured = nativeAddPoints.get(point), moved = "The insertion source changed. Choose the destination again.";
-  if (captured && (captured.epoch !== generation || captured.scope !== setupScope() || versionView)) { errorMessage(new Error(moved)); return; }
+  if (captured && (!captured.stamp.holds() || versionView)) { errorMessage(new Error(moved)); return; }
   if (!nativePreview || !nativeSite || !Object.values(nativeSite.routes).includes(path)) return;
   const selected = appStore.selection.value;
   const before = selected?.node ? { path: selected.path, node: [...selected.node] } : undefined;
@@ -863,9 +873,7 @@ async function finishRailTyping(current: () => boolean) {
 // prove nothing changed since a plan read the files, then write one undo
 // step (the editor's range step, or its commit through the draft receipt).
 const editorWorkspace = createEditorWorkspace({
-  generation: () => generation,
-  setupScope,
-  draftScope,
+  session: { ...workspaceSession, shown: shownScope },
   versionView: () => Boolean(versionView),
   route: () => nativePreview?.route(),
   editModeEntry: () => componentTools?.mode.entry(),
@@ -880,12 +888,12 @@ const editorWorkspace = createEditorWorkspace({
   entry: async path => { await loadFileOps(); return (await fileOps!.targetFiles({ path, name: path.slice(path.lastIndexOf("/") + 1), folder: false }, true))[0]; },
   createProblem: async path => (await findEntry(path)) ? `${path} already exists.` : branchPathProblem(path),
   openFile: () => appStore.openFile.value,
-  restore: (path, epoch, beforeMount) => restoreFile(path, epoch, { linkDefaultStyle: false, beforeMount }),
+  restore: (path, at, beforeMount) => restoreFile(path, at, { linkDefaultStyle: false, beforeMount }),
   editor: editorModule,
   shareHistory(paths, anchor) {
     const scope = draftScope();
     if (!scope) return () => {};
-    const alias = { epoch: generation, scope: setupScope(), session: nativeHistorySession(scope, anchor) };
+    const alias = { stamp: workspaceSession.begin(), session: nativeHistorySession(scope, anchor) };
     for (const path of paths) nativeHistoryAliases.set(draftKey(scope, path), alias);
     return () => { for (const [key, value] of nativeHistoryAliases) if (value === alias) nativeHistoryAliases.delete(key); };
   },
@@ -1015,14 +1023,13 @@ const loadBlockInsert = lazyModule(async () => (await import("./controllers/bloc
 
 const historyController = createHistoryController({
   capture: () => {
-    const account = info.user?.login, repo = appStore.repository.value, snapshot = appStore.snapshot.value;
-    if (!account || !repo || !snapshot) return undefined;
-    const epoch = generation, path = appStore.openFile.value;
-    const scope = { account, repoId: repo.id, repo: repo.full_name, branch: snapshot.branch };
+    const scope = draftScope(), snapshot = appStore.snapshot.value;
+    if (!scope || !snapshot) return undefined;
+    const at = workspaceSession.begin(), path = appStore.openFile.value;
     return {
-      key: JSON.stringify([epoch, account, repo.id, snapshot.commit, snapshot.branch, path]),
-      repo: repo.full_name, branch: snapshot.branch, path, empty: Boolean(snapshot.empty),
-      isCurrent: site => generation === epoch && info.user?.login === account && appStore.repository.value?.id === scope.repoId && appStore.snapshot.value?.branch === scope.branch && (site || appStore.openFile.value === path),
+      key: JSON.stringify([at.load, scope.account, scope.repoId, snapshot.commit, scope.branch, path]),
+      repo: scope.repo, branch: scope.branch, path, empty: Boolean(snapshot.empty),
+      isCurrent: site => at.holds() && (site || appStore.openFile.value === path),
       hasDraft: () => Boolean(path && draftStore().get(scope, path)),
       viewing: () => { const view = versionView; return view && view.path === path && view.key === versionKey() ? view.commit.sha : undefined; },
     };
@@ -1046,9 +1053,9 @@ const historyController = createHistoryController({
 // A file from the site's history: it opens, showing its version from that
 // commit unless that is the branch's latest.
 async function openFileVersion(path: string, commit: HistoryCommit, head: string) {
-  const epoch = generation;
-  if (appStore.openFile.value !== path) await restoreFile(path, epoch, { keepExplorer: false });
-  if (epoch !== generation || appStore.openFile.value !== path) return;
+  const at = workspaceSession.begin();
+  if (appStore.openFile.value !== path) await restoreFile(path, at, { keepExplorer: false });
+  if (!at.holds() || appStore.openFile.value !== path) return;
   if (commit.sha === head) endVersionView();
   else await viewVersion(commit, head);
 }
@@ -1068,7 +1075,7 @@ type VersionView = { key: string; path: string; commit: HistoryCommit; head: str
 let versionView: VersionView | undefined;
 let versionRequest = 0;
 let versionDialog: ReturnType<typeof createConfirmDialog> | undefined;
-const versionKey = () => `${generation}:${appStore.repository.value?.id}:${appStore.snapshot.value?.branch}`;
+const versionKey = () => `${currentLoad()}:${setupScope()}`;
 const versionLabel = (commit: HistoryCommit) => {
   const date = new Date(commit.date);
   return Number.isNaN(date.getTime())
@@ -1263,11 +1270,11 @@ async function openDefaultLinkedStyle(page = appStore.openFile.value) {
   const found = defaultLinkedStyle();
   if (!page || !found) return false;
   const request = ++linkedStyleRequest;
-  const epoch = generation;
+  const at = workspaceSession.begin();
   nativeLinkedStyles = nativeBodyStyles;
   linkedStyle = { page, css: found.css, rules: found.rules.length ? found.rules : linkedStyleIdle, isDefault: true };
   if (!(await openSecondary(found.css))) return false;
-  if (request !== linkedStyleRequest || epoch !== generation || linkedStyle?.page !== page) return false;
+  if (request !== linkedStyleRequest || !at.holds() || linkedStyle?.page !== page) return false;
   renderLinkedStyle();
   return true;
 }
@@ -1479,7 +1486,7 @@ function refreshLinkedStyleRules() {
 
 async function linkNativeStyles(selection: NativePreviewSelection, reveal: boolean) {
   const request = reveal ? ++linkedStyleRequest : linkedStyleRequest;
-  const epoch = generation;
+  const at = workspaceSession.begin();
   const page = selection.path;
   // An element no rule matches shows what it inherits from: the <body> rules.
   const styles = selection.selectors.length
@@ -1488,7 +1495,7 @@ async function linkNativeStyles(selection: NativePreviewSelection, reveal: boole
   if (!reveal && (!styles?.rules.length || !secondaryPath)) return;
   nativeLinkedStyles = styles;
   const rules = styles ? linkedRules(styles) : [];
-  if (request !== linkedStyleRequest || epoch !== generation || page !== appStore.openFile.value) return;
+  if (request !== linkedStyleRequest || !at.holds() || page !== appStore.openFile.value) return;
   // Explicit template entry keeps its authored stylesheet when the selected
   // template element has no direct rules, rather than using page-body rules.
   const componentCss = page && nativeComponentTagForPath(page) && !selection.selectors.length
@@ -1508,7 +1515,7 @@ async function linkNativeStyles(selection: NativePreviewSelection, reveal: boole
   linkedStyle = { page, css, rules };
   const current = () => {
     const draft = fallbackCss && scope ? draftStore().get(scope, fallbackCss) : undefined;
-    return request === linkedStyleRequest && epoch === generation && page === appStore.openFile.value &&
+    return request === linkedStyleRequest && at.holds() && page === appStore.openFile.value &&
       (!fallbackCss || (!draft?.deleted && !draft?.upload && !draft?.opaque && nativeEffectiveSource(fallbackCss) !== undefined));
   };
   if (css && !(await openSecondary(css, current))) return;
@@ -1522,7 +1529,7 @@ async function linkNativeStyles(selection: NativePreviewSelection, reveal: boole
 }
 
 const previewSelection = createPreviewSelectionController({
-  generation: () => generation,
+  generation: currentLoad,
   scope: () => setupScope(),
   store: appStore,
   site: () => nativeSite,
@@ -1535,7 +1542,7 @@ const previewSelection = createPreviewSelectionController({
   instanceContent: (source, node, tag) => nativeInstanceContent(source, node, tag),
   locateTag: (source, node) => locateNativeElement(source, node),
   tagName: (source, node) => locateNativeElementRange(source, [...node])?.tag.name,
-  openFile: (path, epoch) => restoreFile(path, epoch, { linkDefaultStyle: false }),
+  openFile: (path, epoch) => restoreFile(path, stampOf(epoch), { linkDefaultStyle: false }),
   renderEditBar: (selection) => pageStructureController.renderEditBar(selection),
   linkStyles: (selection, reveal) => void linkNativeStyles(selection, reveal),
   clearMoveAction: () => { pageStructureController.nativeElementMoveAction = undefined; },
@@ -1588,13 +1595,13 @@ function readVariantFiles() {
   const wanted = variantWanted, scope = draftScope(), repo = appStore.repository.value;
   variantWanted = undefined;
   if (!wanted || !nativeSite || !scope || !repo || versionView) return;
-  const epoch = generation, scopeKey = setupScope();
-  const key = (path: string) => JSON.stringify([epoch, scopeKey, path]);
+  const at = workspaceSession.begin(), scopeKey = setupScope();
+  const key = (path: string) => JSON.stringify([at.load, scopeKey, path]);
   const files = new Set(nativeFiles(scope));
   const missing = [...wanted].filter(path => files.has(path) && nativeEffectiveSource(path, scope) === undefined && !variantReads.has(key(path)));
   if (!missing.length) return;
   missing.forEach(path => variantReads.add(key(path)));
-  const live = () => epoch === generation && scopeKey === setupScope();
+  const live = () => at.holds();
   void readNativePredicted(repo.full_name, missing, live).then((read) => {
     missing.forEach(path => variantReads.delete(key(path)));
     if (!live() || !read) return;
@@ -1608,8 +1615,8 @@ function readVariantFiles() {
 function nativeCssWorkspace(): CssWorkspace | undefined {
   const scope = draftScope(), requester = appStore.openFile.value;
   if (!nativeSite || !scope || !requester || versionView || !editorModule?.isMounted(requester)) return;
-  const epoch = generation, scopeKey = setupScope(), sources = nativeSources();
-  const revision = JSON.stringify([epoch, scopeKey, requester, nativeSite.routes, nativeSite.components, appStore.selection.value?.path, appStore.selection.value?.node, sources]);
+  const at = workspaceSession.begin(), scopeKey = setupScope(), sources = nativeSources();
+  const revision = JSON.stringify([at.load, scopeKey, requester, nativeSite.routes, nativeSite.components, appStore.selection.value?.path, appStore.selection.value?.node, sources]);
   const orderedPaths = [...new Set([...nativePageStyles(), ...Object.keys(sources).sort()])];
   return {
     revision, sources, orderedPaths,
@@ -1617,7 +1624,7 @@ function nativeCssWorkspace(): CssWorkspace | undefined {
       if (expectedRevision !== revision || !/\.css$/i.test(path) || sources[path] === undefined || start < 0 || end < start || end > sources[path].length) return false;
       const requesterProof = editorModule!.captureFileModelState(scope, requester);
       const targetProof = editorModule!.captureFileModelState(scope, path);
-      const current = () => generation === epoch && setupScope() === scopeKey && appStore.openFile.value === requester && !versionView &&
+      const current = () => at.holds() && appStore.openFile.value === requester && !versionView &&
         requesterProof.isCurrent() && nativeCssWorkspace()?.revision === revision;
       if (!current() || !targetProof.isCurrent()) return false;
       if (path !== requester && !(await openSecondary(path, () => current() && targetProof.isCurrent()))) return false;
@@ -1676,7 +1683,7 @@ const pageStructureController = createPageStructureController({
   get nativeEditableSource() { return nativeEditableSource; },
   get nativeSite() { return nativeSite; },
   get element() { return element; },
-  get generation() { return generation; },
+  get generation() { return currentLoad(); },
   get setupScope() { return setupScope; },
   get draftScope() { return draftScope; },
   get openNativeNavigation() { return openNativeNavigation; },
@@ -1705,7 +1712,7 @@ const pageStructureController = createPageStructureController({
   get agentController() { return agentController; },
   get announce() { return announce; },
   refuse,
-  get restoreFile() { return restoreFile; },
+  restoreFile: (path, epoch, options) => restoreFile(path, stampOf(epoch), options),
   get updateNativePreviewSources() { return updateNativePreviewSources; },
   nativeEditableTemplatePath: () => previewSelection.editableTemplatePath(),
   nativePageLabelOf: file => pagesController.pageLabel(file),
@@ -1740,7 +1747,7 @@ function nativeComponentFieldsRevision() {
   const sources = nativeSources();
   // Without a scope or the editor module there are no model proofs, so nothing would ever mark this
   // snapshot stale: whether proofs exist belongs to the key, or Structure keeps its pre-editor fields.
-  const key = JSON.stringify([generation, setupScope(), appStore.openFile.value, nativeSite?.components, sources, Boolean(scope && editorModule)]);
+  const key = JSON.stringify([currentLoad(), setupScope(), appStore.openFile.value, nativeSite?.components, sources, Boolean(scope && editorModule)]);
   if (nativeComponentFieldSnapshot?.key === key && nativeComponentFieldSnapshot.proofs.every(proof => proof.isCurrent())) return String(nativeComponentFieldToken);
   nativeComponentFieldSnapshot = { key, proofs: scope && editorModule ? Object.keys(sources).map(path => editorModule!.captureFileModelState(scope, path)) : [] };
   return String(++nativeComponentFieldToken);
@@ -1817,11 +1824,9 @@ function nativeRouteForPath(path: string | undefined) {
   return Object.entries(nativeSite.routes).find(([, file]) => file === path)?.[0];
 }
 
-function draftScope() {
-  return appStore.repository.value && appStore.snapshot.value && info.user
-    ? { account: info.user.login, repoId: appStore.repository.value.id, repo: appStore.repository.value.full_name, branch: appStore.snapshot.value.branch }
-    : undefined;
-}
+// The session's scope once its load's snapshot is on show: none on the overview or while a load runs.
+function shownScope() { return appStore.snapshot.value ? workspaceSession.current().scope : undefined; }
+function draftScope() { return draftScopeOf(shownScope()); }
 
 // The title and description of the page file `path` for the Page block,
 // from its head (`<title>`, `<meta name="description">`); nothing when the
@@ -1898,9 +1903,9 @@ function nativeNavigationTarget(pagePath: string | undefined, r: Reads = guarded
 }
 
 async function openNativePageSettings(path: string) {
-  const epoch = generation, scope = setupScope();
+  const at = workspaceSession.begin();
   const [problem, settings] = await Promise.all([ensureNativeTextIndex(), loadSiteSettings()]);
-  if (epoch !== generation || scope !== setupScope()) return;
+  if (!at.holds()) return;
   if (problem) { errorMessage(new Error(problem)); return; }
   const source = nativeEffectiveSource(path), route = nativeRouteForPath(path);
   if (source === undefined || !route) return;
@@ -1909,10 +1914,10 @@ async function openNativePageSettings(path: string) {
 }
 
 async function openNativeSiteSettings() {
-  const epoch = generation, scope = setupScope();
+  const at = workspaceSession.begin();
   if (!nativeSite) { refuse("Open a native site first."); return; }
   const [problem, settings] = await Promise.all([ensureNativeTextIndex(), loadSiteSettings()]);
-  if (epoch !== generation || scope !== setupScope()) return;
+  if (!at.holds()) return;
   if (problem || !nativeSite) { if (problem) errorMessage(new Error(problem)); return; }
   try {
     settings.nativeSettingsController(settings, [NATIVE_CONFIG_PATH, nativeSite.routes["/"]]).site({ values: settings.readSiteIdentity(nativeEffectiveSource(NATIVE_CONFIG_PATH), nativeEffectiveSource(nativeSite.routes["/"]) ?? ""), pages: settings.nativeSitePageChoices(), images: nativeImagePaths(), has404: Boolean(nativeSite.routes["/404.html"]) });
@@ -1920,9 +1925,9 @@ async function openNativeSiteSettings() {
 }
 
 async function openNativeNavigation(pagePath: string) {
-  const epoch = generation, scope = setupScope();
+  const at = workspaceSession.begin();
   const [problem, settings] = await Promise.all([ensureNativeTextIndex(), loadSiteSettings()]);
-  if (epoch !== generation || scope !== setupScope()) return;
+  if (!at.holds()) return;
   if (problem) { errorMessage(new Error(problem)); return; }
   const target = nativeNavigationTarget(pagePath);
   if (!target) { refuse("No editable navigation found in this page's header. Navigation supports simple links, or a list of single-link items."); return; }
@@ -2195,8 +2200,8 @@ async function loadNativeShownFiles(route = nativePreview?.route()) {
   if (!nativeSite || !appStore.repository.value || !appStore.snapshot.value || nativeTextIndexed) return;
   const site = nativeSite;
   const request = nativeSourcesRequest;
-  const epoch = generation;
-  const live = () => epoch === generation && request === nativeSourcesRequest && nativeSite === site;
+  const at = workspaceSession.begin();
+  const live = () => at.holds() && request === nativeSourcesRequest && nativeSite === site;
   const page = (route !== undefined && site.routes[route]) || site.routes[nativeDefaultRoute(site)];
   let loaded = false;
   try {
@@ -2211,8 +2216,8 @@ async function loadNativeStyleFiles() {
   if (!nativeSite || !appStore.repository.value || !appStore.snapshot.value) return;
   const site = nativeSite;
   const request = nativeSourcesRequest;
-  const epoch = generation;
-  const live = () => epoch === generation && request === nativeSourcesRequest && nativeSite === site;
+  const at = workspaceSession.begin();
+  const live = () => at.holds() && request === nativeSourcesRequest && nativeSite === site;
   let loaded = false;
   try {
     loaded = await readNativeStyleFiles(appStore.repository.value.full_name, site, live);
@@ -2273,7 +2278,7 @@ async function loadNativeAssets(sources = nativeAssetSources(), onProgress = upd
   if (!appStore.repository.value || !appStore.snapshot.value || !Object.keys(sources).length) return;
   const repo = appStore.repository.value.full_name;
   const request = nativeSourcesRequest;
-  const epoch = generation;
+  const at = workspaceSession.begin();
   const references = new Set<string>(), sounds = new Set<string>();
   if (fontsOnly) {
     // Font preloading precedes paint. The page-media scanner stays out of that boot path.
@@ -2284,7 +2289,7 @@ async function loadNativeAssets(sources = nativeAssetSources(), onProgress = upd
     });
   } else {
     const { scanMediaReferences } = await import("./page-builder/media-references");
-    if (epoch !== generation || request !== nativeSourcesRequest) return;
+    if (!at.holds() || request !== nativeSourcesRequest) return;
     for (const [file, source] of Object.entries(sources)) for (const ref of scanMediaReferences(file.endsWith(".css") || nativePageRoute(file) ? file : "index.html", source, undefined, nativePrefix())) {
       references.add(ref.path);
       // An audio player's file, so the canvas shows its length (a link to a recording is not read).
@@ -2298,7 +2303,7 @@ async function loadNativeAssets(sources = nativeAssetSources(), onProgress = upd
   const assetRequest = ++nativeAssetRequestId;
   wanted.forEach((path) => nativeAssetRequests.set(path, assetRequest));
   const scope = draftScope();
-  const live = () => epoch === generation && request === nativeSourcesRequest;
+  const live = () => at.holds() && request === nativeSourcesRequest;
   const load = async ({ path, type }: { path: string; type: string }): Promise<string | undefined> => {
     // A drafted image: an upload's bytes from this browser, a moved or
     // copied one's blob; a deleted one is missing.
@@ -2365,10 +2370,10 @@ function nativeImagePaths() {
 // Files from the computer as new-file drafts in `folder` (src/uploads.ts), never over something
 // that is there, with the shared adding progress at the foot of Files; resolves to the paths added.
 async function uploadFilesTo(folder: string, files: File[]): Promise<string[]> {
-  const epoch = generation, key = setupScope();
+  const at = workspaceSession.begin();
   if (!draftScope() || !files.length) return [];
   // The repository and branch of the drop; a switch while loading or preparing adds nothing.
-  const current = () => epoch === generation && key === setupScope();
+  const current = () => at.holds();
   try {
     const { addFilesTo } = await import("./page-builder/media-files-adding");
     if (!current()) return [];
@@ -2464,7 +2469,7 @@ const mediaPorts: import("./controllers/media-controller").MediaControllerPorts 
   },
   identity: mediaIdentity,
   stamp: () => guardedEdits.stamp("repository"),
-  generation: () => generation,
+  generation: currentLoad,
   selected: (path, node) => appStore.selection.value?.path === path && appStore.selection.value.node?.join(".") === node.join("."),
   source: (path, scope) => mediaTextSource(path, scope),
   listPaths: async () => {
@@ -2508,7 +2513,7 @@ const mediaPorts: import("./controllers/media-controller").MediaControllerPorts 
   load: loadMedia,
   openFile: () => appStore.openFile.value,
   viewingVersion: () => Boolean(versionView),
-  restoreFile: (path, epoch) => restoreFile(path, epoch, { linkDefaultStyle: false }),
+  restoreFile: (path, epoch) => restoreFile(path, stampOf(epoch), { linkDefaultStyle: false }),
   change: (...args) => pageStructureController.editOpenPage(...args),
   galleryHost: () => {
     const host = element("explorer-media");
@@ -2531,7 +2536,7 @@ effect(() => {
   clearTimeout(mediaUsageTimer);
   mediaUsageTimer = setTimeout(() => mediaController.refreshUsage(), 400);
 });
-function mediaIdentity() { return `${generation}:${setupScope()}`; }
+function mediaIdentity() { return `${currentLoad()}:${setupScope()}`; }
 
 
 // Undo stays bound to the page open before either lazy chunk loads.
@@ -2560,14 +2565,7 @@ function adoptNativeBaseSources(
   result: PublishResult,
   submitted: SavedDraft[],
 ) {
-  if (
-    !nativeEngaged ||
-    !appStore.repository.value ||
-    appStore.repository.value.id !== scope.repoId ||
-    appStore.snapshot.value?.branch !== scope.branch ||
-    info.user?.login !== scope.account
-  )
-    return;
+  if (!nativeEngaged || !same(shownScope(), githubScope(scope))) return;
   const removed = new Set(result.deleted ?? []);
   for (const draft of submitted) {
     if (draft.deleted) {
@@ -2616,7 +2614,7 @@ async function loadNativeComponentStyles(tags: string[]) {
   const site = nativeSite;
   const repo = appStore.repository.value.full_name;
   const request = nativeSourcesRequest;
-  const epoch = generation;
+  const at = workspaceSession.begin();
   const wanted = tags.filter((tag) =>
     Object.hasOwn(site.components, tag) &&
     !nativeComponentStyles.has(tag) &&
@@ -2643,14 +2641,14 @@ async function loadNativeComponentStyles(tags: string[]) {
     }
     // Looked up together, read in one request.
     const entries = await Promise.all(lookups.map((lookup) => findEntry(lookup.path)));
-    if (epoch !== generation || request !== nativeSourcesRequest || nativeSite !== site) return;
+    if (!at.holds() || request !== nativeSourcesRequest || nativeSite !== site) return;
     lookups.forEach((lookup, index) => {
       const entry = entries[index];
       if (entry) found.push({ ...lookup, sha: entry.sha });
       else if (lookup.tag) nativeMissingComponentStyles.add(lookup.tag);
     });
     const { texts, unreadable } = await readNativeTexts(repo, found);
-    if (epoch !== generation || request !== nativeSourcesRequest || nativeSite !== site) return;
+    if (!at.holds() || request !== nativeSourcesRequest || nativeSite !== site) return;
     noteNativeUnreadable(unreadable);
     for (const file of found) {
       const text = texts.get(file.path);
@@ -2660,7 +2658,7 @@ async function loadNativeComponentStyles(tags: string[]) {
   } finally {
     wanted.forEach((tag) => nativeComponentStyleRequests.delete(tag));
   }
-  if (epoch === generation && request === nativeSourcesRequest && nativeSite === site) updateNativePreviewSources();
+  if (at.holds() && request === nativeSourcesRequest && nativeSite === site) updateNativePreviewSources();
 }
 
 // Every file on the branch, from the snapshot's recursive tree when it has
@@ -2709,12 +2707,12 @@ function nativeFiles(scope = draftScope()): string[] {
 // are listed, what the page on show (`openPath`, else the home page) needs
 // is read from the current snapshot, and the native preview activates; the
 // rest of the site follows after the first paint (the text index). All async
-// steps are guarded against a superseding navigation (`epoch`).
-async function activateNativeSite(repo: Repository, result: Snapshot, epoch: number, openPath?: string) {
+// steps are guarded against a superseding navigation (`at`).
+async function activateNativeSite(repo: Repository, result: Snapshot, at: SessionStamp, openPath?: string) {
   const request = ++nativeSourcesRequest;
   // A new read: until its text index lands, nothing counts as indexed.
   nativeTextIndexed = false;
-  const live = () => epoch === generation && request === nativeSourcesRequest;
+  const live = () => at.holds() && request === nativeSourcesRequest;
   const placeholder: NativeSite = { routes: { "/": NATIVE_HOME_PAGE }, components: {} };
   const scope = info.user ? { account: info.user.login, repoId: repo.id, repo: repo.full_name, branch: result.branch } : undefined;
   // The home page first. Without it the project opens as plain files; once
@@ -2824,7 +2822,7 @@ async function activateNativeSite(repo: Repository, result: Snapshot, epoch: num
     editableTemplatePath: previewSelection.editableTemplatePath(),
   });
   updateAgentContext();
-  startNativeTextIndex(repo, site, scope, epoch, request, true);
+  startNativeTextIndex(repo, site, scope, at, request, true);
   return true;
 }
 
@@ -2839,11 +2837,11 @@ function nativeTextIndexScopeKey() {
 // (ensureNativeTextIndex, wantNativeTextIndex) and it is read at once.
 let releaseNativeTextIndex: (() => void) | undefined;
 let nativeTextIndexed = false;
-function startNativeTextIndex(repo: Repository, site: NativeSite, scope: ReturnType<typeof draftScope>, epoch: number, request: number, deferred = false) {
+function startNativeTextIndex(repo: Repository, site: NativeSite, scope: ReturnType<typeof draftScope>, at: SessionStamp, request: number, deferred = false) {
   nativeTextIndexScope = nativeTextIndexScopeKey();
   nativeTextIndexed = false;
   const commit = appStore.snapshot.value?.commit;
-  const live = () => epoch === generation && request === nativeSourcesRequest && appStore.repository.value?.full_name === repo.full_name && appStore.snapshot.value?.commit === commit && nativeSite === site;
+  const live = () => at.holds() && request === nativeSourcesRequest && appStore.snapshot.value?.commit === commit && nativeSite === site;
   let release!: () => void;
   const due = new Promise<void>((resolve) => { release = resolve; });
   releaseNativeTextIndex = release;
@@ -2867,7 +2865,7 @@ function wantNativeTextIndex() {
 // asked for sooner, and only a complete read for the open repository,
 // branch and commit counts.
 const nativeTextIndexGate: SiteIndexGate = {
-  key: () => `${generation}\n${nativeTextIndexScopeKey()}`,
+  key: () => `${currentLoad()}\n${nativeTextIndexScopeKey()}`,
   indexed: () => !nativeSite || nativeTextIndexed,
   settled: () => (nativeTextIndexing ? nativeTextIndexing.catch(() => false) : Promise.resolve(nativeTextIndexed)),
   ensure: () => ensureNativeTextIndex(),
@@ -3008,14 +3006,14 @@ async function ensureNativeTextIndex() {
   const before = nativeTextIndexScopeKey();
   if (nativeTextIndexing && nativeTextIndexScope !== before) {
     if (!appStore.repository.value || !appStore.snapshot.value || !nativeSite) return "The repository changed meanwhile. Try again.";
-    startNativeTextIndex(appStore.repository.value, nativeSite, draftScope(), generation, nativeSourcesRequest);
+    startNativeTextIndex(appStore.repository.value, nativeSite, draftScope(), workspaceSession.begin(), nativeSourcesRequest);
   }
   let ready = nativeTextIndexing ? await nativeTextIndexing : true;
   if (before !== nativeTextIndexScopeKey()) return "The repository changed meanwhile. Try again.";
   if (!ready && appStore.repository.value && nativeSite) {
-    const repo = appStore.repository.value, site = nativeSite, scope = draftScope(), epoch = generation, request = nativeSourcesRequest;
+    const repo = appStore.repository.value, site = nativeSite, scope = draftScope(), at = workspaceSession.begin(), request = nativeSourcesRequest;
     nativeTextIndexing = undefined;
-    startNativeTextIndex(repo, site, scope, epoch, request);
+    startNativeTextIndex(repo, site, scope, at, request);
     ready = await nativeTextIndexing!;
     if (before !== nativeTextIndexScopeKey()) return "The repository changed meanwhile. Try again.";
   }
@@ -3075,7 +3073,6 @@ function openExplorer() {
 let repositories: Repository[] = [];
 // Unset until start() has read the session.
 let info: SessionInfo;
-let generation = 0;
 let fileGeneration = 0;
 
 let lastStatus = "";
@@ -3240,7 +3237,7 @@ function renderLogin(
   linkedStyleSourceByPath.clear();
   editorModule?.clearDrafts();
   mediaHistoryHome.clear();
-  generation++;
+  nextLoad();
   fileGeneration++;
   repositoryMenu?.destroy();
   repositoryMenu = undefined;
@@ -3345,10 +3342,7 @@ async function startSitePanel() {
 // are ticked from the state the editor holds, each time it may have changed.
 
 /** Account, repository and branch the checklist is of. */
-function setupScope() {
-  const scope = draftScope();
-  return scope ? JSON.stringify([scope.account, scope.repoId, scope.branch]) : "";
-}
+function setupScope() { return workspaceKeys(shownScope())?.setup ?? ""; }
 
 const setupController = createSetupChecklistController({
   account: () => info.user?.login,
@@ -3402,9 +3396,9 @@ function showDirectory(directory: Directory, path = "") {
   fileGeneration++;
   setCurrentPage();
   if (!path && !nativeEngaged && appStore.repository.value && appStore.snapshot.value) {
-    const host = content, epoch = generation, fileEpoch = fileGeneration;
+    const host = content, at = workspaceSession.begin(), fileEpoch = fileGeneration;
     void startSitePanel().then((panel) => {
-      if (host === content && generation === epoch && fileGeneration === fileEpoch) host.replaceChildren(panel);
+      if (host === content && at.holds() && fileGeneration === fileEpoch) host.replaceChildren(panel);
     }).catch(errorMessage);
     return;
   }
@@ -3512,11 +3506,11 @@ function ensureExplorer() {
     filesTree = createFilesTreeController({
       ui: { node, button, setIcon },
       snapshot: () => appStore.snapshot.value, repo: () => appStore.repository.value,
-      openFile: () => appStore.openFile.value, epoch: () => generation, root: () => files,
+      openFile: () => appStore.openFile.value, epoch: currentLoad, root: () => files,
       state: treeState, scope: draftScope, draft: (scope, path) => draftStore().get(scope, path),
       load: input => api<Directory>("tree", input), images: () => mediaController.requestGalleryRefresh(),
       clearError, error: errorMessage, status, announce, refuse, intent: (path) => previewSelection.recordIntent(path),
-      openDraft: openNewDraft, openEntry, restore: target => fileOps!.restoreFileTarget(target),
+      openDraft: openNewDraft, openEntry: (entry, path, epoch) => openEntry(entry, path, stampOf(epoch)), restore: target => fileOps!.restoreFileTarget(target),
       create: openCreate, actions: () => fileActions,
       visible: filesShown,
       count: (total) => {
@@ -3551,7 +3545,7 @@ function ensurePagesTree() {
       open: (file) => {
         // The open page chosen again shows in the preview, which a link may have taken elsewhere.
         if (file === appStore.openFile.value && editorModule?.isMounted(file)) { explorerDropdown?.close(); updatePreview(); }
-        else void restoreFile(file, generation);
+        else void restoreFile(file, workspaceSession.begin());
       },
       plan: (request) => {
         const planned = pageActions!.planNew(request);
@@ -3587,7 +3581,7 @@ function ensurePagesTree() {
 
 function imagesSignature() {
   const scope = draftScope();
-  return JSON.stringify([generation, setupScope(), appStore.snapshot.value?.commit, scope ? draftStore().list(scope) : []]);
+  return JSON.stringify([currentLoad(), setupScope(), appStore.snapshot.value?.commit, scope ? draftStore().list(scope) : []]);
 }
 
 function mountExplorerTabs() {
@@ -3635,10 +3629,10 @@ function nativePathExists(path: string) {
 
 // The whole site read for the repository open now: an error message, or nothing.
 async function nativeSiteReadForCreate() {
-  const epoch = generation, scope = setupScope();
+  const at = workspaceSession.begin();
   const problem = await ensureNativeTextIndex();
   if (problem) return problem;
-  if (epoch !== generation || scope !== setupScope() || !nativeSite) return "The repository changed meanwhile. Try again.";
+  if (!at.holds() || !nativeSite) return "The repository changed meanwhile. Try again.";
   return pagesController.homeTemplate() === undefined ? NATIVE_HOME_UNREAD : undefined;
 }
 
@@ -3664,7 +3658,7 @@ const cardsController = createCardsController({
   siteRead: () => nativeSiteReadForCreate(),
   editable: path => Boolean(draftScope()) && appStore.openFile.value === path && Boolean(editorModule?.isMounted(path) && editorModule.captureHistoryHost(path)),
   preview: () => nativePreview,
-  openPage: file => void restoreFile(file, generation),
+  openPage: file => void restoreFile(file, workspaceSession.begin()),
   pageLabel: (file) => pagesController.pageLabel(file),
   variantFiles: nativeVariantFiles,
   announce,
@@ -3718,15 +3712,15 @@ function onBranchHere(path: string) {
 }
 // `_redirects` as it is now: its draft, or the branch's file.
 async function readNativeRedirects(): Promise<string | undefined> {
-  const repo = appStore.repository.value, epoch = generation, scopeKey = setupScope();
+  const repo = appStore.repository.value, at = workspaceSession.begin();
   const scope = draftScope();
   const draft = scope ? draftStore().get(scope, NATIVE_REDIRECTS_PATH) : undefined;
   if (draft) return draft.deleted ? undefined : draft.content;
   if (!nativeBaseFiles.includes(NATIVE_REDIRECTS_PATH) || !appStore.repository.value) return undefined;
   const entry = await findEntry(NATIVE_REDIRECTS_PATH);
-  if (epoch !== generation || scopeKey !== setupScope() || !repo) throw new Error("The repository changed while reading redirects.");
+  if (!at.holds() || !repo) throw new Error("The repository changed while reading redirects.");
   const text = entry ? await readFile(repo.full_name, entry.sha) : undefined;
-  if (epoch !== generation || scopeKey !== setupScope()) throw new Error("The repository changed while reading redirects.");
+  if (!at.holds()) throw new Error("The repository changed while reading redirects.");
   if (text !== undefined) nativeBaseSources.set(NATIVE_REDIRECTS_PATH, text);
   return text;
 }
@@ -3849,11 +3843,11 @@ async function createFromRequest(request: CreateRequest): Promise<string | undef
   if (!planned.ok) return planned.error;
   const creation = planned.value;
   const scope = draftScope()!;
-  const epoch = generation;
+  const at = workspaceSession.begin();
   try {
     for (const file of creation.files) {
       const problem = await branchPathProblem(file.path);
-      if (epoch !== generation) return "The repository changed meanwhile. Try again.";
+      if (!at.holds()) return "The repository changed meanwhile. Try again.";
       if (problem) return problem;
     }
   } catch (error) {
@@ -4110,13 +4104,13 @@ function afterFileChanges() {
 // when it is gone. `keepExplorer`: the explorer stays open (true) or closes
 // (false); by default a new file keeps it open and a branch file closes it.
 async function openAfter(path: string | undefined, keepExplorer?: boolean, quietStatus = false) {
-  const epoch = generation;
+  const at = workspaceSession.begin();
   const scope = draftScope();
   const draft = path && scope ? draftStore().get(scope, path) : undefined;
   const keep = { keepExplorer: keepExplorer ?? false, quietStatus };
   if (draft && draft.baseSha === null && !draft.deleted) await openNewDraft(draft, { keepExplorer: keepExplorer ?? true });
-  else if (path && !draft?.deleted) await restoreFile(path, epoch, keep);
-  else if (nativeSite?.routes["/"]) await restoreFile(nativeSite.routes["/"], epoch, keep);
+  else if (path && !draft?.deleted) await restoreFile(path, at, keep);
+  else if (nativeSite?.routes["/"]) await restoreFile(nativeSite.routes["/"], at, keep);
   else if (appStore.snapshot.value) showDirectory(appStore.snapshot.value);
 }
 
@@ -4166,7 +4160,7 @@ async function discardFileChange(change: FileChange) {
 
 const savePublish = createSavePublishController({
   stamp: () => guardedEdits.stamp("repository"),
-  generation: () => generation,
+  generation: currentLoad,
   snapshot: () => appStore.snapshot.value,
   scope: draftScope, drafts: draftStore, api, findEntry, changed: afterFileChanges, release: releaseFiles, openAfter, announce, status,
   fail: errorMessage, fallback: nativeFallbackPage, resync: resyncNativeSite,
@@ -4189,7 +4183,7 @@ const savePublish = createSavePublishController({
     void sweepUploads(uploadBytes(), scope, draftStore().list(scope)).catch(() => undefined);
     if (nativeEngaged && !result.unchanged)
       siteActions?.track({ repo: scope.repo, commit: result.commit, url: result.url },
-        () => appStore.repository.value?.id === scope.repoId && (appStore.snapshot.value?.branch ?? appStore.branch.value) === scope.branch && info.user?.login === scope.account);
+        () => same(workspaceSession.current().scope, githubScope(scope)));
   },
   adopt: (result) => {
     appStore.snapshot.value = result;
@@ -4200,7 +4194,7 @@ const savePublish = createSavePublishController({
     element("revision").textContent = commit.slice(0, 7);
     element("revision").title = commit;
     filesTreeController.render();
-    if (nativeEngaged && nativeSite) startNativeTextIndex(appStore.repository.value!, nativeSite, draftScope(), generation, nativeSourcesRequest);
+    if (nativeEngaged && nativeSite) startNativeTextIndex(appStore.repository.value!, nativeSite, draftScope(), workspaceSession.begin(), nativeSourcesRequest);
   },
   change: (path) => treeState().changes.get(path),
   openFile: () => appStore.openFile.value,
@@ -4243,13 +4237,14 @@ async function dropFileTarget(source: FileRowTarget, folder: string) {
 async function openEntry(
   entry: TreeEntry,
   path: string,
-  epoch: number,
+  at: SessionStamp,
   options: { linkDefaultStyle?: boolean; keepExplorer?: boolean; quietStatus?: boolean; beforeMount?: () => boolean } = {},
 ) {
-  if (epoch !== generation || !appStore.repository.value || !appStore.snapshot.value || !info.user) return;
+  const scope = draftScope();
+  if (!at.holds() || !appStore.repository.value || !scope) return;
   // A file deleted in the drafts opens as a note with Restore; one renamed
   // or moved opens where it is now.
-  const marker = draftStore().get({ account: info.user.login, repoId: appStore.repository.value.id, repo: appStore.repository.value.full_name, branch: appStore.snapshot.value.branch }, path);
+  const marker = draftStore().get(scope, path);
   if (marker?.deleted) {
     if (marker.movedTo) { await openAfter(marker.movedTo, options.keepExplorer, options.quietStatus); return; }
     ++fileGeneration;
@@ -4287,7 +4282,7 @@ async function openEntry(
   if (!options.quietStatus) status(`Reading ${path}…`);
   try {
     const content = await readFile(appStore.repository.value.full_name, entry.sha);
-    if (epoch !== generation || selection !== fileGeneration) return;
+    if (!at.holds() || selection !== fileGeneration) return;
     // A page the text index has not read yet: its text is the branch's, so
     // the preview draws it now, with what it shows (src/native-boot.ts).
     if (nativeSite && isNativeTextFile(path) && !nativeBaseSources.has(path) && entryAt(path)?.sha === entry.sha) {
@@ -4299,14 +4294,14 @@ async function openEntry(
       content,
       entry.sha,
       entry.mode === "120000",
-      epoch,
+      at,
       selection,
       options,
     );
     // A file opened while this one's editor loaded has the last word.
     if (!options.quietStatus && selection === fileGeneration) settleStatus(`Viewing ${path} at ${appStore.snapshot.value?.commit.slice(0, 7)}.`);
   } catch (error) {
-    if (epoch === generation && selection === fileGeneration) {
+    if (at.holds() && selection === fileGeneration) {
       content.replaceChildren(
         node(
           "p",
@@ -4326,24 +4321,12 @@ async function mountSource(
   source: string,
   baseSha: string | null,
   readOnly: boolean,
-  epoch: number,
+  at: SessionStamp,
   selection: number,
   options: { linkDefaultStyle?: boolean; beforeMount?: () => boolean } = {},
 ) {
-  if (
-    !appStore.repository.value ||
-    !appStore.snapshot.value ||
-    !info.user ||
-    epoch !== generation ||
-    selection !== fileGeneration
-  )
-    return;
-  const scope = {
-    account: info.user!.login,
-    repoId: appStore.repository.value.id,
-    repo: appStore.repository.value.full_name,
-    branch: appStore.snapshot.value!.branch,
-  };
+  const scope = draftScope();
+  if (!scope || !at.holds() || selection !== fileGeneration) return;
   const saveProof = savePublish.proof();
   await openCodeEditor({
     key: draftKey(scope, path),
@@ -4363,9 +4346,9 @@ async function mountSource(
         if (fallback)
           queueMicrotask(reported(async () => {
             const said = element("status").textContent;
-            const epoch = generation;
-            await restoreFile(fallback, epoch);
-            if (epoch === generation && said) element("status").textContent = said;
+            const at = workspaceSession.begin();
+            await restoreFile(fallback, at);
+            if (at.holds() && said) element("status").textContent = said;
           }));
       }
       if (appStore.snapshot.value && info.user) {
@@ -4422,7 +4405,7 @@ async function mountSource(
   // Checked before the file-generation guard: handling that click is what
   // superseded this open.
   previewSelection.replayPending(path);
-  if (epoch !== generation || selection !== fileGeneration || !info.user)
+  if (!at.holds() || selection !== fileGeneration || !info.user)
     return;
   rememberWorkspace(info.user.login, {
     repoId: scope.repoId,
@@ -4456,7 +4439,7 @@ function nativeComponentTagForPath(path: string) {
 async function openComponentLinkedStyle(page: string) {
   const css = nativeComponentCssPath(page);
   const request = ++linkedStyleRequest;
-  const epoch = generation;
+  const at = workspaceSession.begin();
   const scope = draftScope();
   if (!scope) return false;
   const draft = draftStore().get(scope, css);
@@ -4464,7 +4447,7 @@ async function openComponentLinkedStyle(page: string) {
   // already supports. A branch-tree miss must not hide that authored file.
   const created = draft && draft.baseSha === null && !draft.deleted && !draft.upload && !draft.opaque;
   const entry = created ? undefined : await findEntry(css);
-  if (request !== linkedStyleRequest || epoch !== generation || appStore.openFile.value !== page) return false;
+  if (request !== linkedStyleRequest || !at.holds() || appStore.openFile.value !== page) return false;
   const latestDraft = draftStore().get(scope, css);
   if (latestDraft?.deleted || latestDraft?.upload || latestDraft?.opaque ||
       (!entry && !(latestDraft && latestDraft.baseSha === null))) return openDefaultLinkedStyle(page);
@@ -4472,12 +4455,12 @@ async function openComponentLinkedStyle(page: string) {
   linkedStyle = { page, css, rules: linkedStyleIdle };
   const current = () => {
     const draft = draftStore().get(scope, css);
-    return request === linkedStyleRequest && epoch === generation && appStore.openFile.value === page &&
+    return request === linkedStyleRequest && at.holds() && appStore.openFile.value === page &&
       linkedStyle?.page === page && linkedStyle.css === css && !draft?.deleted && !draft?.upload && !draft?.opaque &&
       Boolean(entry || (draft && draft.baseSha === null));
   };
   if (!(await openSecondary(css, current))) return false;
-  if (request !== linkedStyleRequest || epoch !== generation || linkedStyle?.page !== page) return false;
+  if (request !== linkedStyleRequest || !at.holds() || linkedStyle?.page !== page) return false;
   renderLinkedStyle();
   return true;
 }
@@ -4544,9 +4527,9 @@ function agentFileTarget(path: string): FileRowTarget | undefined {
 // was checked against the one it started on.
 async function awaitNativeResync() {
   if (!nativeResyncDone) return;
-  const before = { account: info.user?.login, repoId: appStore.repository.value?.id, branch: appStore.snapshot.value?.branch };
+  const at = workspaceSession.begin();
   await nativeResyncDone;
-  if (before.account !== info.user?.login || before.repoId !== appStore.repository.value?.id || (before.branch && before.branch !== appStore.snapshot.value?.branch))
+  if (at.changed() === "scope")
     throw new Error("The editor tab switched to another site meanwhile. Call get_site and try again.");
 }
 const agentSiteActions = makeAgentSiteActions();
@@ -4571,7 +4554,7 @@ function makeAgentSiteActions(edits: GuardedEdits = guardedEdits, atomic = false
     if (!atomic && !nativeSite && !nativeEngaged && create) {
       const scope = draftScope(), repo = appStore.repository.value, snap = appStore.snapshot.value;
       if (!scope || !repo || !snap) return "Open a repository first.";
-      const epoch = generation, key = setupScope(), store = draftStore(), editor = editorModule;
+      const at = workspaceSession.begin(), store = draftStore(), editor = editorModule;
       // Snapshot/draft presence stays authoritative before native activation starts.
       const hasHome = () => {
         const home = store.get(scope, NATIVE_HOME_PAGE);
@@ -4583,7 +4566,7 @@ function makeAgentSiteActions(edits: GuardedEdits = guardedEdits, atomic = false
       const before = new Map(store.list(scope).map(draft => [draft.path, draft]));
       const isCurrent = () => {
         const drafts = store.list(scope);
-        return epoch === generation && key === setupScope() && appStore.repository.value === repo && appStore.snapshot.value === snap &&
+        return at.holds() && appStore.repository.value === repo && appStore.snapshot.value === snap &&
           !nativeSite && !nativeEngaged && !hasHome() && !versionView && JSON.stringify(snap.tree ?? snap.entries) === graph &&
           drafts.length === before.size && drafts.every(draft => before.get(draft.path) === draft);
       };
@@ -4627,7 +4610,7 @@ function makeAgentSiteActions(edits: GuardedEdits = guardedEdits, atomic = false
     return outcome.message;
   },
   async open(path) {
-    if (appStore.openFile.value !== path || !editorModule?.isMounted(path)) await restoreFile(path, generation, { linkDefaultStyle: false });
+    if (appStore.openFile.value !== path || !editorModule?.isMounted(path)) await restoreFile(path, workspaceSession.begin(), { linkDefaultStyle: false });
     return appStore.openFile.value === path;
   },
   async createPage(request) {
@@ -4684,8 +4667,8 @@ function makeAgentSiteActions(edits: GuardedEdits = guardedEdits, atomic = false
   legacy: applyAgentCommand,
 }; }
 async function applyAgentSiteCommand(command: AgentCommand) {
-  const scope = draftScope(), epoch = generation, key = setupScope(), revision = appStore.snapshot.value?.commit;
-  const current = () => epoch === generation && key === setupScope() && revision === appStore.snapshot.value?.commit && !versionView;
+  const scope = draftScope(), at = workspaceSession.begin(), revision = appStore.snapshot.value?.commit;
+  const current = () => at.holds() && revision === appStore.snapshot.value?.commit && !versionView;
   const [{ applySiteCommand, prepareAgentText, atomicAgentCommand, agentStructuralActions }, { createPagesController }, { createLazyFileOperationsController }] = await Promise.all([loadAgentSite(), loadPagesActions(), loadFileOps()]);
   if (!current() || !appStore.snapshot.value || command.branch !== appStore.snapshot.value.branch ||
     command.repoId !== undefined && command.repoId !== scope?.repoId) throw new Error("The editor changed repository or branch.");
@@ -4695,7 +4678,7 @@ async function applyAgentSiteCommand(command: AgentCommand) {
   }
   if (!scope) throw new Error("Open a repository first.");
   const prepared = await prepareAgentText(command, scope, draftStore(), current, (scope, paths) => editorModule.flushAgentTyping(scope, paths),
-    () => { if (draftScope()?.account === scope.account && draftScope()?.repoId === scope.repoId && draftScope()?.branch === scope.branch) afterFileChanges(); });
+    () => { if (same(shownScope(), githubScope(scope))) afterFileChanges(); });
   if (prepared.duplicate) return prepared.duplicate;
   if (!current() || command.commit !== appStore.snapshot.value?.commit) throw new Error("The editor changed branch or revision.");
   const scoped = agentStructuralActions(editorWorkspace, prepared.context!, current, {
@@ -4748,7 +4731,7 @@ async function openNewDraft(draft: SavedDraft, options: { keepExplorer?: boolean
     draft.branch !== appStore.snapshot.value.branch
   )
     return;
-  const epoch = generation,
+  const at = workspaceSession.begin(),
     selection = ++fileGeneration;
   if (!options.keepExplorer) explorerDropdown?.close();
   setCurrentPage(draft.path);
@@ -4762,7 +4745,7 @@ async function openNewDraft(draft: SavedDraft, options: { keepExplorer?: boolean
     status(`Selected ${draft.path}.`);
     return;
   }
-  await mountSource(draft.path, "", null, false, epoch, selection, options);
+  await mountSource(draft.path, "", null, false, at, selection, options);
 }
 
 // An uploaded file, opened: the image itself when it is one, and Discard.
@@ -4848,7 +4831,7 @@ async function applyAgentCommand(command: AgentCommand) {
 
 async function restoreFile(
   path: string,
-  epoch: number,
+  at: SessionStamp,
   options: { linkDefaultStyle?: boolean; keepExplorer?: boolean; quietStatus?: boolean; beforeMount?: () => boolean } = {},
 ) {
   const selection = ++fileGeneration;
@@ -4857,18 +4840,7 @@ async function restoreFile(
     new Error("The previously open file is no longer available. Choose another file.");
   const nowFolder = () =>
     new Error("The previously open file is now a folder. Choose another file.");
-  const savedDraft = () =>
-    info.user && appStore.snapshot.value
-      ? draftStore().get(
-          {
-            account: info.user.login,
-            repoId: repo.id,
-            repo: repo.full_name,
-            branch: appStore.snapshot.value.branch,
-          },
-          path,
-        )
-      : undefined;
+  const savedDraft = () => { const scope = draftScope(); return scope && draftStore().get(scope, path); };
   try {
     let entry: TreeEntry | undefined;
     if (appStore.snapshot.value?.tree) {
@@ -4877,7 +4849,7 @@ async function restoreFile(
       let entries = appStore.snapshot.value!.entries;
       const parts = path.split("/");
       for (let index = 0; index < parts.length; index++) {
-        if (epoch !== generation || selection !== fileGeneration) return;
+        if (!at.holds() || selection !== fileGeneration) return;
         entry = entries.find((entry) => entry.path === parts[index]);
         if (!entry) break;
         if (index === parts.length - 1) break;
@@ -4887,7 +4859,7 @@ async function restoreFile(
         ).entries;
       }
     }
-    if (epoch !== generation || selection !== fileGeneration) return;
+    if (!at.holds() || selection !== fileGeneration) return;
     if (!entry) {
       const saved = savedDraft();
       if (saved?.baseSha === null) {
@@ -4895,20 +4867,20 @@ async function restoreFile(
         return;
       }
       // An edit of a file GitHub deleted: opened to be settled.
-      if (saved && !saved.deleted) await savePublish.checkDeleted(epoch);
-      if (epoch !== generation || selection !== fileGeneration) return;
+      if (saved && !saved.deleted) await savePublish.checkDeleted(at.load);
+      if (!at.holds() || selection !== fileGeneration) return;
       if (saved && !saved.deleted && savePublish.isDeleted(path)) {
         if (!options.keepExplorer) explorerDropdown?.close();
         setCurrentPage(path);
-        await mountSource(path, saved.original, saved.baseSha, false, epoch, selection, options);
+        await mountSource(path, saved.original, saved.baseSha, false, at, selection, options);
         return;
       }
       throw unavailable();
     }
     if (entry.type === "tree") throw nowFolder();
-    await openEntry(entry, path, epoch, options);
+    await openEntry(entry, path, at, options);
   } catch (error) {
-    if (epoch === generation && selection === fileGeneration)
+    if (at.holds() && selection === fileGeneration)
       errorMessage(error);
   }
 }
@@ -4925,7 +4897,7 @@ async function loadSnapshot(
   // The head this tab saw on the branch: a lagging read never steps back from it.
   const known = appStore.snapshot.value && appStore.snapshot.value.branch === appStore.branch.value ? savePublish.trustedHead() : undefined;
   mediaHistoryHome.clear();
-  const epoch = ++generation;
+  const at = nextLoad(info.user ? githubScope({ account: info.user.login, repoId: appStore.repository.value.id, repo: appStore.repository.value.full_name, branch: appStore.branch.value }) : undefined);
   fileGeneration++;
   clearError();
   batch(() => {
@@ -4958,7 +4930,7 @@ async function loadSnapshot(
         }),
       boot.draftsReady(),
     ]);
-    if (epoch !== generation) return;
+    if (!at.holds()) return;
     appStore.snapshot.value = result;
     repositoryIndex.seed(repo, result);
     savePublish.seeHead(result.commit);
@@ -4968,12 +4940,12 @@ async function loadSnapshot(
     const reopenEntry = reopen ? entryAt(reopen) : undefined;
     if (reopenEntry?.type === "blob" && (reopenEntry.size ?? 0) <= 1024 * 1024)
       void readFile(repo.full_name, reopenEntry.sha).catch(() => {});
-    const isNative = await activateNativeSite(repo, result, epoch, reopen);
-    if (epoch !== generation) return;
+    const isNative = await activateNativeSite(repo, result, at, reopen);
+    if (!at.holds()) return;
     // Drafts of files GitHub deleted or now holds are looked for once the
     // page is on screen (a file opened before then that needs it waits).
     if (isNative && nativeSite) {
-      afterNativePaint(nativeSourcesRequest, () => void savePublish.checkDeleted(epoch));
+      afterNativePaint(nativeSourcesRequest, () => void savePublish.checkDeleted(at.load));
       const painted = nativeSourcesRequest;
       let remembered = false;
       afterNativePaint(painted, () => {
@@ -4981,13 +4953,13 @@ async function loadSnapshot(
         // Only after a real paint (not the 10 s fallback), once.
         if (remembered || nativePaintedRequest !== painted) return;
         remembered = true;
-        if (epoch !== generation || appStore.snapshot.value !== result || appStore.repository.value !== repo || appStore.branch.value !== branch || !login) return;
+        if (!at.holds() || appStore.snapshot.value !== result || appStore.repository.value !== repo || appStore.branch.value !== branch || !login) return;
         writeBootMemory(storage("local"), { login, repoId: repo.id, fullName: repo.full_name, branch, commit: result.commit,
           files: nativePaintedPaths.flatMap((path) => { const sha = repositoryIndex.entry(repo, result, path)?.sha; return sha ? [{ path, sha }] : []; }) });
       });
     } else {
       forgetBootMemory(storage("local"), repo.id);
-      void savePublish.checkDeleted(epoch);
+      void savePublish.checkDeleted(at.load);
     }
     // A native project opens on its home page when nothing else is selected;
     // its source is already in memory from the site's prefetch.
@@ -5015,13 +4987,13 @@ async function loadSnapshot(
       });
     if (open) {
       previewSelection.recordIntent(open);
-      const opening = restoreFile(open, epoch), selection = fileGeneration;
+      const opening = restoreFile(open, at), selection = fileGeneration;
       await opening;
       // Its code pane waits for Monaco: a file opened meanwhile (a new page,
       // a rename) has said what happened, and that stands.
       if (selection !== fileGeneration) return;
     }
-    if (epoch !== generation) return;
+    if (!at.holds()) return;
     if (result.empty) {
       settleStatus(`${repo.name} is empty. Choose how to start your site.`);
       return;
@@ -5030,7 +5002,7 @@ async function loadSnapshot(
       `Up to date with ${branch} · ${result.commit.slice(0, 7)}. Refresh to check for new commits.`,
     );
   } catch (error) {
-    if (epoch === generation) {
+    if (at.holds()) {
       files.replaceChildren(
         node(
           "p",
@@ -5044,7 +5016,7 @@ async function loadSnapshot(
       errorMessage(error);
     }
   } finally {
-    if (epoch === generation) refreshButton.disabled = false;
+    if (at.holds()) refreshButton.disabled = false;
   }
 }
 
@@ -5106,7 +5078,7 @@ function takeBootGuess(repo: Repository, branch: string): { snapshot: Promise<Sn
 
 async function chooseRepository(resume?: WorkspaceLocation) {
   mediaHistoryHome.clear();
-  const epoch = ++generation;
+  const at = nextLoad();
   fileGeneration++;
   appStore.reset(repositories.find(
     (repo) => String(repo.id) === repositorySelect.value,
@@ -5162,7 +5134,7 @@ async function chooseRepository(resume?: WorkspaceLocation) {
     ]))]);
     decided = true;
     clearTimeout(timer);
-    if (epoch !== generation) return;
+    if (!at.holds()) return;
     if (guessedSnapshot) {
       const branch = requestedBranch;
       options(branchSelect, [{ value: branch, label: `⑂ ${branch}` }]);
@@ -5178,7 +5150,7 @@ async function chooseRepository(resume?: WorkspaceLocation) {
       return;
     }
     const branches = await listing;
-    if (epoch !== generation) return;
+    if (!at.holds()) return;
     if (!branches.length) {
       // An empty repository opens on its default branch with no files, so
       // drafts work; its first save makes the branch.
@@ -5219,7 +5191,7 @@ async function chooseRepository(resume?: WorkspaceLocation) {
       appStore.branch.value === requestedBranch ? prefetched : undefined,
     );
   } catch (error) {
-    if (epoch === generation) {
+    if (at.holds()) {
       options(branchSelect, [{ value: "", label: "Branches unavailable" }]);
       content.replaceChildren(
         node(
@@ -5306,14 +5278,13 @@ function offerFinishStarter(repo: Repository, partial: { point: StartingPoint; c
   // Its own banner: an error notice replaces the shared one (a missing stylesheet is one here).
   removeFinishStarter();
   // The banner belongs to this repository, branch and load: it goes when any of them changes, and refuses if it was left behind.
-  const branch = appStore.snapshot.value?.branch;
-  const epoch = generation;
+  const at = workspaceSession.begin();
   const banner = node("div", "notice");
   banner.id = "finish-starter";
   banner.setAttribute("role", "status");
   const what = partial.point === "starter" ? "Starter site" : "blank page";
   const finish = button(`Finish adding the ${what}`, async () => {
-    if (generation !== epoch || appStore.repository.value?.id !== repo.id || appStore.snapshot.value?.branch !== branch) {
+    if (!at.holds() || appStore.repository.value?.id !== repo.id) {
       banner.remove();
       return;
     }
@@ -5413,8 +5384,8 @@ async function loadRepositories(prefetched?: Repository[], hooks?: { onStarted(e
   removeFinishStarter();
   waitingForRepositories = false;
   mediaHistoryHome.clear();
-  const epoch = ++generation;
-  hooks?.onStarted(epoch);
+  const at = nextLoad();
+  hooks?.onStarted(at.load);
   fileGeneration++;
   appStore.reset();
   siteActions?.revalidate();
@@ -5435,7 +5406,7 @@ async function loadRepositories(prefetched?: Repository[], hooks?: { onStarted(e
   status("Loading selected repositories…");
   try {
     const result = prefetched ?? (await boot.fetchList(boot.refreshPending()));
-    if (epoch !== generation) return;
+    if (!at.holds()) return;
     repositories = result;
     boot.ready();
     repositoryMenu?.setRepositories(repositories);
@@ -5501,7 +5472,7 @@ async function loadRepositories(prefetched?: Repository[], hooks?: { onStarted(e
     content.replaceChildren(panel);
     status("Connected to GitHub. Choose a project to start.");
   } catch (error) {
-    if (epoch === generation) {
+    if (at.holds()) {
       boot.failed();
       options(repositorySelect, [
         { value: "", label: "Repositories unavailable" },
@@ -5616,8 +5587,7 @@ async function disconnect() {
 
 // A draft written with GitHub's text of its file, as this tab holds it, is no change (src/drafts.ts).
 draftStore().baseline = (scope, path) => {
-  const current = draftScope();
-  return nativeEngaged && current && current.repoId === scope.repoId && current.branch === scope.branch && current.account === scope.account
+  return nativeEngaged && same(shownScope(), githubScope(scope))
     ? nativeBaseSources.get(path)
     : undefined;
 };
@@ -5633,11 +5603,11 @@ const agentController = createAgentController<HTMLElement>({
     tools: agentSiteHost.tools(agentContext),
     onCommand: applyAgentSiteCommand,
     reload: async snapshot => {
-      const scope = draftScope(), open = appStore.openFile.value, epoch = generation;
+      const scope = draftScope(), open = appStore.openFile.value, at = workspaceSession.begin();
       if (scope) await (await import("./agent-transport")).reloadTakeover(snapshot, { open, key: path => draftKey(scope, path),
         keys: () => draftStore().list(scope).map(draft => draftKey(scope, draft.path)), settle: keys => draftStore().settleAgent(keys),
-        draft: path => draftStore().get(scope, path), mounted: path => epoch === generation && path === appStore.openFile.value ? editorModule?.getMountedSource(path) : undefined,
-        restore: path => restoreFile(path, epoch) });
+        draft: path => draftStore().get(scope, path), mounted: path => at.holds() && path === appStore.openFile.value ? editorModule?.getMountedSource(path) : undefined,
+        restore: path => restoreFile(path, at) });
     },
     // Ask agent shows in the edit bar while an agent is connected.
     onConnection: (connected) => { setupController.noteAgent(connected); if (appStore.selection.value) pageStructureController.renderEditBar(appStore.selection.value); },
@@ -5652,7 +5622,7 @@ const agentController = createAgentController<HTMLElement>({
 });
 
 const boot = createBootController({
-  generation: () => generation,
+  generation: currentLoad,
   source: () => `${location.origin}${location.pathname}`,
   url: () => location.href,
   replaceUrl: (url) => history.replaceState(null, "", url),
@@ -5716,15 +5686,15 @@ async function createSite(...args: Parameters<Awaited<ReturnType<typeof loadSetu
 }
 
 async function writeSiteSettings(...args: Parameters<Awaited<ReturnType<typeof loadSetupActions>>["writeSiteSettings"]>) {
-  const epoch = generation, snapshot = appStore.snapshot.value;
+  const at = workspaceSession.begin(), snapshot = appStore.snapshot.value;
   const actions = await loadSetupActions();
-  if (epoch !== generation || snapshot !== appStore.snapshot.value) return "The repository changed meanwhile. Try again.";
+  if (!at.holds() || snapshot !== appStore.snapshot.value) return "The repository changed meanwhile. Try again.";
   return actions.writeSiteSettings(...args);
 }
 
 async function writeStartingPoint(...args: Parameters<Awaited<ReturnType<typeof loadSetupActions>>["writeStartingPoint"]>) {
-  const epoch = generation, snapshot = appStore.snapshot.value;
+  const at = workspaceSession.begin(), snapshot = appStore.snapshot.value;
   const actions = await loadSetupActions();
-  if (epoch !== generation || snapshot !== appStore.snapshot.value) return "The repository changed meanwhile. Try again.";
+  if (!at.holds() || snapshot !== appStore.snapshot.value) return "The repository changed meanwhile. Try again.";
   return actions.writeStartingPoint(...args);
 }

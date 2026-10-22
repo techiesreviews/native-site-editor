@@ -68,10 +68,5 @@
     "file": "worker/starter.ts",
     "name": "NATIVE_STARTER_VERSION",
     "reason": "Browser starter fixtures and component-loader specs load the matching versioned starter assets."
-  },
-  {
-    "file": "src/workspace-session.ts",
-    "name": "(file unreachable)",
-    "reason": "Workspace session lands before its callers (slices 21/22); slice 21 removes this entry."
   }
 ]

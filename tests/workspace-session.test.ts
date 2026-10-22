@@ -4,7 +4,7 @@
 // module on the memory workspace with a session in place of its generation.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createWorkspaceSession, same, workspaceKeys, type WorkspaceScope } from "../src/workspace-session";
+import { createWorkspaceSession, draftScopeOf, githubScope, same, workspaceKeys, type WorkspaceScope } from "../src/workspace-session";
 import { createGuardedEdits } from "../src/guarded-edit";
 import { createMemoryWorkspace } from "./fakes/memory-workspace";
 
@@ -124,4 +124,13 @@ test("on the memory workspace, a guarded edit's stamp stops holding after the se
   const moved = edits.stamp("repository");
   session.next({ ...lex, repoId: 2 });
   assert.equal(moved.changed(), "scope");
+});
+
+test("a draft scope is a GitHub scope under the same rule, and back", () => {
+  const draft = { account: "Lex", repoId: 1, repo: "lex/site", branch: "main" };
+  assert.ok(same(githubScope(draft), lex));
+  assert.ok(same(githubScope({ account: "lex", repoId: 1, branch: "main" }), lex));
+  assert.deepEqual(draftScopeOf(githubScope(draft)), draft);
+  assert.equal(draftScopeOf(folder), undefined);
+  assert.equal(draftScopeOf(undefined), undefined);
 });
