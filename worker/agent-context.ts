@@ -6,7 +6,7 @@ import type { requestSummary } from "../shared/agent-requests";
 import { workspaceKey, type AgentWorkspace } from "../shared/agent-command";
 import { relayObjectName } from "./agent-relay";
 import { AGENT_PERMISSION_LIFETIME } from "./agent-lifecycle";
-import { METADATA_ROUTE, type MetadataOperation, type MetadataResult } from "./agent-metadata";
+import { METADATA_ROUTE, type MetadataOperation, type MetadataResult, type Entry } from "./agent-metadata";
 
 
 /**
@@ -485,6 +485,29 @@ export async function authenticateAgent(
     throw new HttpError(403, "Repository access changed. Reconnect the agent.");
   const workspace = { account: grant.login, repoId: grant.repoId, repo: grant.repo, branch: grant.branch };
   return { grant, github, repo, id, hub, workspace };
+}
+
+/** Grants an earlier version's grace had fenced (ledger state "cleaned") but not yet deleted:
+ * their removal finishes once. Returns the entries whose removal is established; unknown
+ * outcomes stay counted. A grant rebound to another workspace or generation is left alone. */
+export async function removeCleanedGrants(env: Env, workspace: string, entries: Entry[]) {
+  const removed: Entry[] = [];
+  for (const entry of entries) {
+    try {
+      const response = await agentRecord(env, entry.id);
+      if (!response.ok && response.status !== 404) continue;
+      if (response.ok) {
+        const grant = await response.json() as AgentGrant;
+        if (workspaceKey(grantWorkspace(grant)) !== workspace || grant.generation > entry.generation) { removed.push(entry); continue; }
+        const deleted = await durable(env, `agent:${entry.id}`).fetch(new Request("https://session.internal/", {
+          method: "DELETE", headers: { "X-Agent-Delete": await tokenId(JSON.stringify(grant)) },
+        }));
+        if (!deleted.ok && deleted.status !== 404) continue;
+      }
+      if (await removeHubGrant(env, entry.sessionId, entry.id, entry.generation)) removed.push(entry);
+    } catch { /* Retain the ledger entry; the tombstone keeps refusing it until retry. */ }
+  }
+  return removed;
 }
 
 /** Internal hub route that removes its temporary agent data (worker/index.ts). */

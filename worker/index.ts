@@ -1,6 +1,6 @@
 import { agentControls } from "./agent-controls";
 import { cleanupObject, inventoryObject } from "./agent-maintenance";
-import { tokenId, clearTemporaryData, TEMPORARY_ROUTE, type AgentHub } from "./agent-context";
+import { tokenId, clearTemporaryData, removeCleanedGrants, TEMPORARY_ROUTE, type AgentHub } from "./agent-context";
 import { clearHub, clearTemporary, hubOperation, hubView } from "./agent-store";
 import { DurableObject } from "cloudflare:workers";
 import { handle, type Env, type StoredValue } from "./app";
@@ -350,20 +350,29 @@ export class SessionStore extends DurableObject {
       const ledger = await storage.get<Ledger>(METADATA_KEY);
       // Permissions outlive the grace (8 hours, ticket 98): only temporary agent data goes.
       await this.lifecycle.begin(record.generation, this.eligible());
-      const sessions = ledger?.entries.filter(entry => entry.expiresAt > now).map(entry => entry.sessionId) ?? [];
-      if (!(await this.lifecycle.load()).cleanupPending || !sessions.length) {
+      // Entries an earlier version fenced for deletion finish their removal here (ticket 98).
+      const legacy = ledger?.entries.filter(entry => entry.state === "cleaned") ?? [];
+      const pending = (await this.lifecycle.load()).cleanupPending;
+      const sessions = pending ? ledger?.entries.filter(entry => entry.state !== "cleaned" && entry.expiresAt > now).map(entry => entry.sessionId) ?? [] : [];
+      if (!sessions.length && !legacy.length) {
         await this.lifecycle.complete(record.generation);
         return undefined;
       }
       // Explicit retry survives exhaustion of the platform's automatic retries.
       await this.deadlines.set("agent-cleanup", Math.min(now + 30_000, (await this.lifecycle.load()).disconnectDeadline ?? Infinity));
-      return { sessions, generation: record.generation };
+      return { sessions, legacy, workspace: ledger!.workspace, generation: record.generation };
     });
     if (!work) return;
     // No browser or namespace fetch may run while the concurrency gate is held.
+    const removed = work.legacy.length ? await removeCleanedGrants(this.env as Env, work.workspace, work.legacy) : [];
     const cleared = await clearTemporaryData(this.env as Env, work.sessions);
-    if (!cleared) throw new Error("Temporary agent data cleanup incomplete; retry scheduled");
-    await this.ctx.blockConcurrencyWhile(() => this.lifecycle.complete(work.generation));
+    await this.ctx.blockConcurrencyWhile(async () => {
+      for (const entry of removed)
+        await accountMetadata(this.ctx.storage, { workspace: work.workspace, action: "release", id: entry.id,
+          generation: entry.generation, expected: entry }, Date.now());
+      if (cleared && removed.length === work.legacy.length) await this.lifecycle.complete(work.generation);
+    });
+    if (!cleared || removed.length !== work.legacy.length) throw new Error("Agent cleanup incomplete; retry scheduled");
   }
 }
 

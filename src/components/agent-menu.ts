@@ -10,7 +10,7 @@ import type { createLiveTransport } from "../agent-transport";
 import type { AgentReadPorts } from "../agent-tools-read";
 import type { SharedContext } from "../agent-site";
 import type { PinRequest } from "./agent-pins";
-import { agentHistoryKey, agentsRemembered, rememberAgents } from "../controllers/agent-controller";
+import { agentHistoryKey } from "../controllers/agent-controller";
 import { mountFlyout } from "./flyout";
 import "./agent-menu.css";
 
@@ -19,6 +19,20 @@ import "./agent-menu.css";
 // relay socket; drafts and conversations stay in this browser. The Worker stores
 // grant metadata only. Returning to a copied token's tab checks connections once;
 // there is no timer polling, context heartbeat, or content upload.
+
+/** Set while remote agents are on for a site (account, repository and branch) in this browser, until
+ * the user turns them off: a reload or a new tab on that site comes back with them on. */
+const agentsOnKey = (workspace: AgentWorkspace) => `native-site-editor:agents-on:${workspaceKey(workspace)}`;
+const agentsOn = (workspace: AgentWorkspace) => {
+  try { return localStorage.getItem(agentsOnKey(workspace)) !== null; } catch { return false; }
+};
+/** Startup mounts the menu while a workspace keeps requests or has agents on (src/controllers/agent-controller.ts). */
+function markStartup(workspace: AgentWorkspace, needed: boolean) {
+  try {
+    if (needed) localStorage.setItem(agentHistoryKey(workspace), "1");
+    else localStorage.removeItem(agentHistoryKey(workspace));
+  } catch { /* Storage full or blocked: the menu shows them once opened. */ }
+}
 
 export interface AgentCommandOutcome {
   message?: string;
@@ -409,13 +423,9 @@ export function createAgentMenu(options: {
     const key = JSON.stringify(next);
     if (key === lastRequests) return;
     lastRequests = key;
-    // Startup mounts this menu for a workspace with requests to show (src/controllers/agent-controller.ts).
     const workspace = scope();
     if (workspace && historyKey === workspaceKey(workspace)) {
-      try {
-        if (next.length) localStorage.setItem(agentHistoryKey(workspace), "1");
-        else localStorage.removeItem(agentHistoryKey(workspace));
-      } catch { /* Storage full or blocked: the menu shows them once opened. */ }
+      markStartup(workspace, next.length > 0 || agentsOn(workspace));
     }
     requests = [...next].sort((a, b) => a.createdAt - b.createdAt);
     options.onRequests?.(requests);
@@ -647,13 +657,24 @@ export function createAgentMenu(options: {
   }
   const live = (at: number) => !disposed && remote && !workspaceChanged && activation === at && options.repository()?.id === pinned?.id && options.repository()?.branch === pinned?.branch;
   const site = (repo: { id: number; branch: string }): AgentWorkspace => ({ account: options.account, repoId: repo.id, branch: repo.branch });
+  /** Remembers remote agents on, or forgets them, for the pinned site in this browser. Requests
+   * this menu has not read for that site keep the startup mark; reading them settles it. */
+  function remember(on: boolean) {
+    if (!pinned) return;
+    const workspace = site(pinned);
+    try {
+      if (on) localStorage.setItem(agentsOnKey(workspace), "1");
+      else localStorage.removeItem(agentsOnKey(workspace));
+    } catch { /* Storage full or blocked: this tab keeps them on; a reload starts with them off. */ }
+    if (on || historyKey === workspaceKey(workspace)) markStartup(workspace, on || requests.length > 0);
+  }
   function startRemote() {
     if (remote || disposed) return;
     remote = true;
     ownerPaused = false;
     activation++;
     pinned = options.repository();
-    if (pinned) rememberAgents(site(pinned), true);
+    remember(true);
     workspaceChanged = false;
     transportMode = "pending";
     transportState = undefined;
@@ -665,7 +686,7 @@ export function createAgentMenu(options: {
    * agents off for the site in this browser's other and later tabs. */
   function turnOff(forget = false) {
     if (!remote) return;
-    if (forget && pinned) rememberAgents(site(pinned), false);
+    if (forget) remember(false);
     remote = false;
     ownerPaused = false;
     activation++;
@@ -785,7 +806,7 @@ export function createAgentMenu(options: {
    * connections the agents already have: no new prompt or token. */
   async function resume() {
     const repo = options.repository();
-    if (remote || disposed || changing || !repo || !agentsRemembered(site(repo))) return;
+    if (remote || disposed || changing || !repo || !agentsOn(site(repo))) return;
     startRemote();
     const at = activation, read = lastRead;
     await readConnections();

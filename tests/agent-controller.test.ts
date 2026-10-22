@@ -220,34 +220,3 @@ test("a mounted menu hears both leaving a workspace and returning to the same wo
   assert.equal(f.menus[0].calls.filter(call => call === "changed").length, 2);
   f.cleanup();
 });
-
-test("remote agents remembered on for the open site mount the menu at startup without reading history; another branch's do not", async () => {
-  const appStore = createAppStore(createDraftStore());
-  const remembered = new Set([JSON.stringify(["lex", 1, "main"])]);
-  const histories: string[] = [];
-  let loads = 0;
-  const host = { append() {} };
-  const controller = createAgentController<Root>({
-    account: () => "Lex", host: () => host, appStore,
-    createOptions: () => ({ context: async () => undefined, onCommand: async () => {} }),
-    async load() {
-      loads++;
-      return { createAgentMenu: () => ({ root: { remove() {} }, connected: () => false, changed() {}, consentGranted() {}, destroy() {},
-        async ask() {}, async answer() {}, async dismiss() {} }) };
-    },
-    onError: error => { throw error; },
-    environment: { window: new EventTarget() },
-    history: async workspace => { histories.push(workspace.branch); return false; },
-    remembered: workspace => remembered.has(JSON.stringify([workspace.account.toLowerCase(), workspace.repoId, workspace.branch])),
-  });
-  controller.start();
-  appStore.repository.value = { id: 1, name: "site", full_name: "lex/site", default_branch: "main", private: false, owner: { login: "lex", type: "User" } };
-  appStore.snapshot.value = { branch: "feature", commit: "head", entries: [] };
-  await settle();
-  assert.deepEqual([loads, histories], [0, ["feature"]], "another branch of the site stays off");
-  appStore.snapshot.value = { branch: "main", commit: "head", entries: [] };
-  await settle(); await settle();
-  assert.deepEqual([loads, histories], [1, ["feature"]], "the remembered site mounts the menu, which turns its agents back on");
-  controller.destroy();
-  appStore.dispose();
-});
