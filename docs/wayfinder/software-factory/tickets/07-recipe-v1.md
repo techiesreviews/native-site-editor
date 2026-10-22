@@ -2,7 +2,7 @@
 title: Write the kitchen rulebook, version 1
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (planning helper)
 blocked_by: [01-research-line-today, 02-grill-ux-confidence-ladder, 03-grill-checking-skill, 09-grill-atomic-catalogue, 10-grill-central-memory, 04-grill-scoreboard, 05-grill-hand-out, 06-grill-sweeps-and-learning]
 ---
 
