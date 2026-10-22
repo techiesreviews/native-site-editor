@@ -48,3 +48,8 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Checks: `ASE_OWNER=lead-sf12 scripts/agents/kit doctor` gave `RESULT: ok doctor 7/7 checks passed`; `ASE_OWNER=lead-sf12 scripts/agents/kit unit tests/agent-scripts.test.ts tests/kit-review.test.ts` and `ASE_OWNER=lead-sf12 scripts/agents/kit unit --affected` gave `RESULT: ok unit 50/50 (2 files)`; `npm run check` exited 0.
 
 - Lead note (2026-10-22): three Claude fix rounds followed the free worker's correction (commits fadab8fc, 63be444c, b8ec6359): Grok refusals are judged on the whole log slice, a resumed run never refunds, `-m` is sent lowercased, and the warning match is narrowed to `/^warning: `/`. `docs/agents/agent-scripts.md` now states the refund rule. See `git log` on PR #127 for the full commit list.
+
+### Follow-ups
+
+- Validation gaps (gap): No test feeds a non-JSON stdout to Grok while it exits 0. The refund decision only runs when the CLI's exit status is nonzero (`scripts/agents/agent-run.mjs:522
+
