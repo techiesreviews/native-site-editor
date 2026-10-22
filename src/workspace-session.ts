@@ -62,8 +62,11 @@ export function workspaceKeys(scope: WorkspaceScope | undefined): WorkspaceKeys 
   return id === undefined ? undefined : { drafts: `drafts:${id}`, setup: `setup:${id}`, media: `media:${id}` };
 }
 
+// A frozen copy, so a caller changing its own object later cannot move a stamp's scope.
+const held = (scope: WorkspaceScope | undefined) => scope && Object.freeze({ ...scope });
+
 export function createWorkspaceSession(scope?: WorkspaceScope): WorkspaceSession {
-  let load = 0, open = scope;
+  let load = 0, open = held(scope);
   return {
     current: () => ({ load, scope: open }),
     begin() {
@@ -76,7 +79,7 @@ export function createWorkspaceSession(scope?: WorkspaceScope): WorkspaceSession
       };
       return { load: began, scope: at, holds: () => load === began, changed };
     },
-    next(scope) { load++; open = scope; },
+    next(scope) { load++; open = held(scope); },
     keys: (scope = open) => workspaceKeys(scope),
   };
 }
