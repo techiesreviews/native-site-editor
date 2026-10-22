@@ -4,6 +4,7 @@ type: task (AFK)
 status: closed
 assignee: runner-20
 builder: claude
+landed: "PR #115 (2d6f33b)"
 blocked_by: []
 ---
 
