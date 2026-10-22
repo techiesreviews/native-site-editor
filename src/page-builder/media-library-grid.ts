@@ -54,13 +54,15 @@ export interface LibraryTile {
   card: HTMLElement; look: string; observer?: IntersectionObserver;
   update: (draw: TileDraw, item?: MediaLibraryItem) => void;
 }
+/** The parts of Media's frame the grid draws into. */
+export type LibraryGridShell = Pick<LibraryShell, "search" | "summary" | "grid" | "browse" | "dialog" | "bulk" | "bulkCount" | "takeOut" | "removeFiles">;
 /** One draw's choices, read by kept tiles' controls when tapped. */
-interface TileDraw { shell: LibraryShell; state: LibraryGridState; h: LibraryGridHost; list: boolean; root: HTMLElement }
+interface TileDraw { shell: LibraryGridShell; state: LibraryGridState; h: LibraryGridHost; list: boolean; root: HTMLElement }
 
 /** Draw the screen-reader count and one square tile (or list row) per Image family, or a way back when
  * nothing matches. A redraw keeps each tile whose look is unchanged (its element and loaded picture),
  * adds new ones, removes gone ones and orders them as the list. */
-export function drawLibraryGrid(shell: LibraryShell, library: MediaLibrary, state: LibraryGridState, h: LibraryGridHost) {
+export function drawLibraryGrid(shell: LibraryGridShell, library: MediaLibrary, state: LibraryGridState, h: LibraryGridHost) {
   const { search, summary, grid, browse, dialog } = shell;
   const { selected, collection, tiles } = state;
   const active = document.activeElement;
@@ -129,7 +131,10 @@ export function drawLibraryGrid(shell: LibraryShell, library: MediaLibrary, stat
     grid.append(empty);
   }
   h.sync();
-  if (browseFocus && h.restoreFocus && document.activeElement === document.body && (!active?.isConnected || activeMoved)) {
+  if (!h.restoreFocus || document.activeElement !== document.body) return;
+  // A moved tile's control (thumbnail, round or usage) takes focus back; a rebuilt tile's matching button does.
+  if (activeMoved && active instanceof HTMLElement && active.isConnected) active.focus({ preventScroll: true });
+  else if (browseFocus && !active?.isConnected) {
     const replacement = [...grid.querySelectorAll<HTMLButtonElement>(".media-library__card button")]
       .find(control => control.closest<HTMLElement>(".media-library__card")?.dataset.path === browseFocus.path &&
         (browseFocus.usage ? control.classList.contains("media-library__usage") : control.getAttribute("aria-label") === browseFocus.label));

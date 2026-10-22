@@ -446,3 +446,26 @@ test("a library refresh keeps the tiles, the focused tile and the scroll positio
   });
   expect(after).toEqual({ same: true, focusKept: true, scrollTop: before.scrollTop });
 });
+
+test("adding a file keeps the tiles and pictures already shown; its ring goes once played (ticket 92)", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const panel = library(page);
+  await expect.poll(() => panel.locator(".media-library__card img[src]").count()).toBeGreaterThan(0);
+  const before = await panel.locator(".media-library__card").evaluateAll(cards => {
+    const earlier = cards.map(card => ({ card, src: card.querySelector("img")?.getAttribute("src") }));
+    Object.assign(window, { addingBefore: earlier });
+    return cards.length;
+  });
+  await panel.locator('input[name="media-upload"]').setInputFiles({ name: "kept-tiles.svg", mimeType: "image/svg+xml", buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12"/>') });
+  await expect(panel.locator(".media-library__card")).toHaveCount(before + 1, { timeout: 30_000 });
+  const added = panel.locator('.media-library__card[data-path$="kept-tiles.svg"]');
+  await expect(added).toHaveCount(1);
+  // The same elements, each still showing the picture it had.
+  expect(await page.evaluate(() => (window as typeof window & { addingBefore: { card: HTMLElement; src: string | null | undefined }[] }).addingBefore
+    .filter(({ card, src }) => !card.isConnected || card.querySelector("img")?.getAttribute("src") !== src).length)).toBe(0);
+  // fixed-wait: the new-file ring plays for 2.4 s; a redraw after that takes it off.
+  await page.waitForTimeout(2_600);
+  await panel.getByLabel("Search media", { exact: true }).fill("kept-tiles");
+  await expect(panel.locator(".media-library__card")).toHaveCount(1);
+  await expect(added).not.toHaveClass(/\bis-new\b/);
+});
