@@ -612,7 +612,7 @@ function mountWorkspace() {
       return { ok: false, error: "Loading page actions…" };
     },
     applyUrl: async (file, value, keep) => {
-      const since = guardedEdits.stamp();
+      const since = guardedEdits.stamp("repository");
       await loadPagesActions();
       return since.holds() ? pageActions!.changeUrl(file, value, keep) : "The repository changed meanwhile. Try again.";
     },
@@ -1134,7 +1134,7 @@ async function restoreVersion(view: VersionView) {
     refuse("Publish or discard this file’s draft before restoring. Other files’ drafts are kept.");
     return;
   }
-  const since = guardedEdits.stamp();
+  const since = guardedEdits.stamp("repository");
   const { createConfirmDialog } = await loadConfirmDialog();
   if (!since.holds() || versionView !== view) return;
   if (!versionDialog) {
@@ -3470,7 +3470,7 @@ let filesTree: ReturnType<typeof createFilesTreeController> | undefined;
 // Folder listings by tree SHA (content-addressed, so never stale) for path checks before the tree loads.
 const spareListings = new Map<string, Directory["entries"]>();
 const filesTreeController = {
-  refresh: () => filesTree ? filesTree.refresh() : mediaController.requestGalleryRefresh(), render: () => filesTree?.render(), reset: () => filesTree?.reset(),
+  refresh: () => filesTree ? filesTree.refresh() : mediaController.requestGalleryRefresh(), render: () => filesTree?.render(), reset: () => { spareListings.clear(); filesTree?.reset(); },
   shown: () => filesTree?.shown(), row: (path: string) => filesTree?.row(path),
   openFolder: (path: string) => filesTree?.openFolder(path), listings: () => filesTree?.listings() ?? spareListings,
   visible: () => !!explorerDropdown?.isOpen() && pagesController.explorerTab() === "files",
@@ -3884,7 +3884,7 @@ async function createFromRequest(request: CreateRequest): Promise<string | undef
 // The "+" on a folder: a new file or folder in it.
 function openCreate(folder: string, opener: HTMLElement) {
   if (!appStore.snapshot.value) return;
-  const since = guardedEdits.stamp();
+  const since = guardedEdits.stamp("repository");
   void ensureExplorer().then(() => { if (since.holds()) createDialog?.open({ in: folder, kinds: ["file", "folder"], first: "file", opener }); }).catch(errorMessage);
 }
 
@@ -4216,7 +4216,7 @@ const savePublish = createSavePublishController({
     }
   },
   confirm: async (question, all) => {
-    const since = guardedEdits.stamp();
+    const since = guardedEdits.stamp("repository");
     const { createConfirmDialog } = await loadConfirmDialog();
     if (!since.holds()) return false;
     if (all && !discardDialog) { discardDialog = createConfirmDialog("discard-dialog"); app.append(discardDialog.root); }
@@ -4527,7 +4527,7 @@ function buildAgentSiteContext(): Promise<SharedContext | undefined> {
 }
 // A Files-tab action run for an agent: its confirmation is answered as asked.
 async function withAgentAnswers<T>(answers: { option?: boolean }, run: () => Promise<T>) {
-  const since = guardedEdits.stamp();
+  const since = guardedEdits.stamp("repository");
   const { createConfirmDialog } = await loadConfirmDialog();
   if (!since.holds()) throw new Error("The editor changed branch or revision.");
   if (!confirmDialog) { confirmDialog = createConfirmDialog(); element("explorer").append(confirmDialog.root); }
@@ -4629,7 +4629,7 @@ function makeAgentSiteActions(edits: GuardedEdits = guardedEdits, atomic = false
     return appStore.openFile.value === path;
   },
   async createPage(request) {
-    const since = edits.stamp();
+    const since = edits.stamp("repository");
     await loadPagesActions();
     if (!since.holds()) return "The repository changed meanwhile. Try again.";
     const plan = pageActions!.planNew(request);

@@ -371,6 +371,8 @@ async function filesTab(page: Page) {
   const explorer = page.locator("#explorer");
   if (!(await explorer.isVisible())) await page.locator("#explorer-toggle").click();
   await explorer.getByRole("tab", { name: "Files" }).click();
+  // The Files tree and its drop targets load with the explorer's first opening.
+  await expect(explorer.locator("#files .file-row").first()).toBeVisible();
   return explorer;
 }
 async function dropOnFiles(page: Page, files: { name: string; type: string; base64?: string; size?: number }[]) {
