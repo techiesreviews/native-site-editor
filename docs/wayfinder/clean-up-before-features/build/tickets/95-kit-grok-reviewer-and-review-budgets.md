@@ -57,3 +57,8 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Untested: live lock contention between reservers, release after a week rollover, the `■` usage-limit prefix and the last-5-lines edge; a stale `review-budget.json.lock` needs manual removal.
 - The default review model is still `gpt-6.1-sol`, so unconfigured `kit pr`/`kit slice` reviews count against the weekly `gpt` budget.
 - Untested or open from the PR review: `kit review`-level usage-limit test; `GROK-4.7` (other case) passes `inferCli` but fails the case-sensitive model check after spending a budgeted review; the Grok completeness retry uses only the JSON `sessionId`, not the id assigned with `-s`; a usage-limit refusal still uses a budget slot.
+- Spec (P3): e32e5525:scripts/agents/agent-run.mjs:137 — P3: `inferCli` matches `/^grok-/i`, so `ASE_REVIEW_MODEL=GROK-4.7` selects Grok. `kit review` then reserves a weekly
+- Validation gaps (gap): No `kit review`-level usage-limit test. Add a test to `tests/kit-review.test.ts` with a fake `codex` that prints `ERROR: You've hit your usage limit. … try agai
+- Validation gaps (gap): Two processes reserving at the same time are not tested, so the lock and rename are unproven. Add a test that starts two `node -e` children calling `reserveRevi
+- Validation gaps (gap): Releasing after a week rollover is not tested. Reserve in W43 with a fixed Sunday date, reserve again in W44 (this drops W43), then call `releaseReviewBudget` w
+- Validation gaps (gap): The `■` prefix and the last-five-lines limit in `usageLimitProblem` are not tested. Add two asserts to the usage-limit test: `■ You've hit your usage limit … tr
