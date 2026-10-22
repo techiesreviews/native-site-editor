@@ -62,4 +62,12 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Validation gaps (gap): No test pins that a bare `Standards:` line after a `Spec defects:` heading switches the group, which is the code's actual behaviour. Add: `openFindings(review("
 - Validation gaps (gap): No test mixes an explicit `Defects:` heading with a later `Spec defects:` heading. Add: `"Defects: none\nSpec defects:\n- a.ts:1 — P1: x\nValidation gaps: none.
 - Validation gaps (gap): No test covers a location whose path contains a P-token when the finding has no severity. Today `docs/p3-plan.md:3 — Missing test coverage.` reads P3 through th
+- Spec (P2): b1024a4a:scripts/agents/review-findings.mjs:68 — P2: The comment says that once a "Spec defects" / "Standards defects" heading opens, later bare `Spec:` / `Stan
+- Spec (P2): b1024a4a:docs/wayfinder/software-factory/build/tickets/10-review-findings-severity.md:42 — P2: The Done statement repeats the same wrong claim ("Once one has op
+- Spec (P2): b1024a4a:docs/wayfinder/software-factory/build/tickets/10-review-findings-severity.md:44 — P2: The "Code commits" line lists `69e232f0`, `75e32d69`, `93348a5d`,
+- Spec (P2): b1024a4a:docs/wayfinder/software-factory/build/tickets/10-review-findings-severity.md:47 — P2: The test evidence says "working tree on `d8da9353`", which is not
+- Spec (P3): b1024a4a:docs/wayfinder/software-factory/build/tickets/10-review-findings-severity.md:45 — P3: "None declined; optional nits on … `LOCATION` matching `Round:3` 
+- Validation gaps (gap): No test pins that a bare `Standards:` line inside a `Spec defects` block switches the group, which is what the code does. Add: `openFindings(review("Spec defect
+- Validation gaps (gap): No test pins a finding with no severity whose path holds a P-token. With `docs/p3-plan.md:3 — Missing test coverage.`, the 80-character fallback reads `P3` from
+- Validation gaps (gap): No test covers a non-location prefix that `LOCATION` still strips, e.g. `Round:3 — ` followed by more than 80 characters of evidence and then `P1`. Add one that
 
