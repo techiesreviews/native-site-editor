@@ -36,7 +36,7 @@ Work holds a session stamp (slices 20–22). When the stamp no longer `holds()` 
 - `src/main.ts` (save, media and agent wiring only)
 - Tests: affected unit files, `tests/guarded-edit.test.ts` (stamp moved on, result lands in its own scope), one spec `tests/native-save/native-switch-mid-work.spec.ts` (save, upload and agent edit each held with `page.route`, switch branch, release: the result is on the first branch, nothing on the second)
 
-## Acceptance checks
+## Done when
 
 - Each of the four cases above has a test that holds the work across a switch and checks where it landed.
 - No "site changed meanwhile" refusal left for save, upload, media batch or agent work; a `grep` of the remaining refusals matches the Done list.

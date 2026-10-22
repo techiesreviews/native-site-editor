@@ -23,7 +23,7 @@ No visible change. Where slice 11 made this code load when Pages & files opens, 
 
 May split into 84a (trees, Pages, Create) and 84b (file actions and operations, save wiring) if one session cannot finish; say so in `decide`.
 
-## Acceptance checks
+## Done when
 
 - A moved function keeps its body; ports are live; one transaction per user action still holds (CODING_STANDARDS).
 - `kit size` at or under 355 KB and not above slice 11's result by more than 1 KB (report the delta); `npm run check`, `npm test`, `kit specs --affected` green.

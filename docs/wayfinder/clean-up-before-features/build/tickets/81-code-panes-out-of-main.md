@@ -23,7 +23,7 @@ No visible change. Monaco and the code editor stay lazily loaded (CODING_STANDAR
 
 May split into 81a (linked styles, secondary pane) and 81b (`openEntry`, `mountSource`) if one session cannot finish; say so in `decide`.
 
-## Acceptance checks
+## Done when
 
 - A moved function keeps its body; ports are live.
 - `kit size` at or under 355 KB (report the delta); `npm run check`, `npm test`, `kit specs --affected` green.

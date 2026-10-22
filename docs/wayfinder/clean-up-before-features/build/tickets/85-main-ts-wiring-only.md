@@ -23,7 +23,7 @@ Before starting, the lead re-reads `main.ts` and the earlier slices' Done notes;
 - `src/controllers/command-palette-controller.ts`, `src/controllers/preview-selection-controller.ts`, `src/controllers/page-structure-controller.ts` (ports only)
 - Tests: unit tests for each new module; `tests/main-ts-ceiling.test.ts` set to the final count; `docs/agents/code-map.md`; `docs/work/tech-debt/issues/01-main-ts-size.md` closed with the final count
 
-## Acceptance checks
+## Done when
 
 - `src/main.ts` at about 500 lines (at most 600; if more is left, the Done section lists each remaining block and why it stays).
 - A moved function keeps its body; ports are live; "Module order holds" (CODING_STANDARDS).

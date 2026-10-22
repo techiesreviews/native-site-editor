@@ -25,7 +25,7 @@ Candidate #1, slice c (research 01 §1). The rest of the 66 guards and 58 predic
 - `tests/workspace-session-guard.test.ts` (new; TypeScript API like `tests/guarded-edit-reads.test.ts`): fails on a load-counter or scope compare, or a hand-written same-workspace compare, outside `src/workspace-session.ts`; allowlist entries carry file, function, reason and count
 - Affected unit tests; `tests/guarded-edit-reads.test.ts` (its allowlist shrinks)
 
-## Acceptance checks
+## Done when
 
 - The guard test is green, with a broken fixture showing each rule fires.
 - `guarded-edit-reads` allowlist entries for load epochs the session now covers are gone.

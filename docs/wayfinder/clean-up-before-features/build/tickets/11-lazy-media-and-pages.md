@@ -24,7 +24,7 @@ Lead decision: free at least 8 KB gzip (TD 02's estimate for file and page actio
 - `tests/perf/byte-budget.ts` stays unchanged.
 - `tests/main-ts-ceiling.test.ts` (new ceiling); `docs/agents/code-map.md` if an entry moves; one new spec, `tests/native-save/native-lazy-panels.spec.ts`.
 
-## Acceptance checks
+## Done when
 
 - `kit size` at least 8 KB under its `dev` base, and at or under 355 KB.
 - The new spec opens Pages, Files and Media from a cold boot and acts once in each (create a page, rename a file, open a tile), and once more after a failed chunk load.

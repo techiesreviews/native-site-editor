@@ -21,7 +21,7 @@ No visible change. Sign-out still clears the boot memory (slice 25's spec guards
 - Tests: affected unit tests; boot, repository menu and sign-out specs through `kit specs --affected`
 - `tests/main-ts-ceiling.test.ts`, `docs/agents/code-map.md`
 
-## Acceptance checks
+## Done when
 
 - A moved function keeps its body; ports are live; the session (slices 20–22) is the only workspace check.
 - `kit size` at or under 355 KB (report the delta); `npm run check`, `npm test`, `kit specs --affected` green.

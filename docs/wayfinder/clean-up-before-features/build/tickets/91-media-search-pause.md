@@ -20,7 +20,7 @@ Research 02 (media follow-up): every search keystroke redraws every Media tile (
 - `src/page-builder/media-library-input.ts`, `tests/media-library-input.test.ts` (fake timers: three quick keystrokes, one redraw; Enter redraws at once; the timer is cleared when Media closes)
 - `src/page-builder/media-library-view.ts` only if the timer must be cleared on close there
 
-## Acceptance checks
+## Done when
 
 - `native-media-library.spec.ts` and `native-media-library-keys.spec.ts` green unchanged (they wait on observable state).
 - No `main.ts` change. `npm run check`, `npm test` green.

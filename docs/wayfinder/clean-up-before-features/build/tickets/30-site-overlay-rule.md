@@ -23,7 +23,7 @@ Candidate #2, slice a (Strong; research 01 §2). "Which text does a file have no
 - `src/main.ts`: the copies at 1323, 2356, 2694, 3441, 3457 and 4392 (`89ac5e0e`) call the rule; nothing else moves
 - `tests/main-ts-ceiling.test.ts`, `docs/agents/code-map.md`
 
-## Acceptance checks
+## Done when
 
 - Each replaced copy's current answer is a test case of the rule (nine cases, named by caller).
 - No `baseSha === null` left outside the rule except reads of a single draft's own field (allowlist in the commit message).

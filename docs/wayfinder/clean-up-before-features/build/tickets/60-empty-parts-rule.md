@@ -23,7 +23,7 @@ Rides along ([TD 10](../../../../work/tech-debt/issues/10-preload-and-structure-
 - `src/components/native-preview-runtime.js`, `src/page-builder/component-model.ts`
 - `tests/component-model.test.ts` (`<br>` cases)
 
-## Acceptance checks
+## Done when
 
 - Parity test green on every fixture component; a deliberately changed copy fails it.
 - No `main.ts` change; the runtime bundle size reported (`kit size`).

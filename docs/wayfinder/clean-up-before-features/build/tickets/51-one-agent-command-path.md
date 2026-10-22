@@ -24,7 +24,7 @@ Each table row (slice 50) names its checks once; they run in the tab against the
 - `shared/agent-edit.ts`, `shared/site-files.ts`, `src/agent-tools-edit.ts`, `src/agent-site.ts`, `worker/mcp.ts`, `shared/agent-tool-table.ts`
 - Tests: `tests/agent-tools-edit.test.ts`, `tests/agent-site.test.ts`, `tests/mcp-runtime.test.ts`; specs `native-agent-edits.spec.ts`, `native-mcp.spec.ts`, `native-mcp-media.spec.ts`
 
-## Acceptance checks
+## Done when
 
 - Every refusal an agent edit can get is decided once (a test lists them per tool and finds each in exactly one place).
 - Duplicate commands still apply once; unknown outcomes are still never replayed (the existing tests stay green unchanged, except refusal wording).

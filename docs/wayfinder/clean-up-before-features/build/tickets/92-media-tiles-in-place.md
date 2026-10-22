@@ -20,7 +20,7 @@ Research 02 (media follow-up): `drawLibraryGrid` (`src/page-builder/media-librar
 - `src/page-builder/media-library-grid.ts` (keyed update), `src/page-builder/media-library-view.ts` (calls), the tile builder module it uses
 - Tests: unit tests on a DOM fake or a browser probe (a refresh with one changed file rebuilds one card; order follows the new list; observers are reconnected only for new tiles); `tests/native-save/native-media-library.spec.ts` (focus and scroll kept across a refresh)
 
-## Acceptance checks
+## Done when
 
 - A measurement in the Done section: 1,000 tiles, refresh with one change, before and after (the research's probe method, through `kit specs`, deleted after).
 - Selection, filter, list or grid layout and the picker's choose mode still draw correctly.

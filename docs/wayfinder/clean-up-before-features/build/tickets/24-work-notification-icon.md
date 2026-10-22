@@ -29,7 +29,7 @@ Lead decisions (check with Lex):
 - `src/main.ts` (wiring only), `src/controllers/save-publish-controller.ts` (open Change status)
 - Tests: unit for the notes list; `tests/native-save/native-switch-mid-work.spec.ts` (extend: icon appears, click opens the changes, icon goes)
 
-## Acceptance checks
+## Done when
 
 - The spec shows the icon after a held save finishes on the other branch, and the click lands on that branch with its changes listed.
 - Keyboard: the icon is part of the row's accessible name; no new tab stop.

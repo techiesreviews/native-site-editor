@@ -21,7 +21,7 @@ No visible change. The history panel stays lazily loaded.
 - Tests: new unit tests for the moved module (ports typed with `satisfies`), `tests/history-controller*.test.ts` as affected
 - `tests/main-ts-ceiling.test.ts`, `docs/agents/code-map.md`
 
-## Acceptance checks
+## Done when
 
 - A moved function keeps its body (CODING_STANDARDS "Controllers"); the module holds no copy of host state (live ports).
 - Version view, restore and history specs green (`kit specs --affected`).

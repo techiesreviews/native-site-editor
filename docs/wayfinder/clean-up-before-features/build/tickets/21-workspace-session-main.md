@@ -22,7 +22,7 @@ Candidate #1, slice b (research 01 §1). `main.ts`'s `let generation`, its four 
 - `src/editor-workspace.ts`, `src/guarded-edit.ts`, `src/draft-store.ts` (the `:974` rule), `src/boot-memory.ts` (the `:92` rule)
 - Affected unit tests (`tests/editor-workspace.test.ts`, `tests/guarded-edit.test.ts`, `tests/boot-memory.test.ts`, draft-store tests); `tests/main-ts-ceiling.test.ts`; `docs/agents/code-map.md`
 
-## Acceptance checks
+## Done when
 
 - No `generation` variable or `epoch !== generation` compare left in `main.ts`; the lazy setup adapters (about 5622–5650) ask the session.
 - A test proves a login differing only in capitals keeps its drafts and its setup checklist.

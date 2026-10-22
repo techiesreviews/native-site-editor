@@ -21,7 +21,7 @@ Research 01 §3 (listed so the wording change is no surprise; ticket 05 kept it)
 - Call sites: `src/main.ts` (3725, 3774, 4524 at `89ac5e0e`), `src/controllers/file-operation-checks.ts:56`, `src/native-page-moves.ts:131`, `shared/agent-edit.ts:120`, `src/setup-actions.ts:344`, `src/page-builder/media-workspace.ts` (421, 462, 545, 712), `src/page-builder/replace-everywhere.ts:154`
 - Tests: `tests/site-rules.test.ts`, affected unit tests; `tests/main-ts-ceiling.test.ts`
 
-## Acceptance checks
+## Done when
 
 - A `grep` for the old wordings finds nothing outside `shared/site-rules.ts`.
 - Unit tests cover a file in the way at each depth (direct parent, grandparent).

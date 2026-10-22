@@ -26,7 +26,7 @@ Candidate #8 (research 01 §8) and the `discardFile()` follow-up (research 02).
 - `src/controllers/save-publish-controller.ts`, `tests/save-publish-controller.test.ts` (a case: no scope plus a change asks nothing)
 - `tests/main-ts-ceiling.test.ts`, `docs/agents/code-map.md`
 
-## Acceptance checks
+## Done when
 
 - The deletion test holds: no complexity reappears in `main.ts` beyond the direct call.
 - `kit size` at or under 355 KB; `npm run check`, `npm test`, `kit specs --affected` green.

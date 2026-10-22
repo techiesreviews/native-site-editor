@@ -23,7 +23,7 @@ Candidate #3, slice a (Strong; research 01 §3). Three page-address rules exist 
 - Tests: new `tests/site-rules.test.ts`, `tests/native-pages.test.ts`, `tests/native-page-moves.test.ts`, `tests/mcp-runtime.test.ts`; the Pages tab and Change URL specs that type an address
 - `tests/main-ts-ceiling.test.ts` if `main.ts` changes
 
-## Acceptance checks
+## Done when
 
 - Pages tab, Change URL and the agent refuse `About_Us.v2` with the same words; an existing page named that way still opens, saves and can be renamed to a strict address.
 - make_component refuses the same cases with the same words from the agent and from the tab.

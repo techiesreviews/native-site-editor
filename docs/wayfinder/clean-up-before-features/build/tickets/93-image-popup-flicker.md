@@ -24,7 +24,7 @@ The popup shows each change at once through an `image-look` message to the previ
 - Diagnosis touches nothing. The fix is expected in: `src/page-builder/image-popup.ts`, `src/page-builder/image-popup-view.ts`, `src/page-builder/image-large-editor.ts`, `src/page-builder/place-frame.ts`, `src/components/native-preview-runtime.js` (the `image-look` handler). Another file: stop and say so in `decide`.
 - Tests: a browser spec in `tests/native-save/native-image-popup.spec.ts` that zooms and moves through several steps and asserts the picture element and its `src` stay the same (or no load event fires) between steps; unit tests for any rule moved into `image-popup-rules.ts` or `image-popup-trim.ts`
 
-## Acceptance checks
+## Done when
 
 - The Done section names the cause with evidence (a recorded trace, an event count or a spec that failed on `dev`).
 - The new spec fails on `dev` and passes after the fix.

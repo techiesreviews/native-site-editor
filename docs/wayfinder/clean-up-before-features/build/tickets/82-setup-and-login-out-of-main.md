@@ -21,7 +21,7 @@ No visible change. Remembering the last site until sign-out stays ([ticket 04](.
 - Tests: affected unit tests; setup, wizard and Get started specs through `kit specs --affected`
 - `tests/main-ts-ceiling.test.ts`, `docs/agents/code-map.md`
 
-## Acceptance checks
+## Done when
 
 - A moved function keeps its body; ports are live; lazy modules stay type-only imports.
 - `kit size` at or under 355 KB (report the delta); `npm run check`, `npm test`, `kit specs --affected` green.

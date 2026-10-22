@@ -24,7 +24,7 @@ No user-visible change. The rule ([build README](../README.md#rules-for-the-whol
 - `tests/main-ts-ceiling.test.ts` (new: the one constant, both checks, and a pure helper tested on fixed counts)
 - `docs/agents/guardrails.md` (one line under the automated checks)
 
-## Acceptance checks
+## Done when
 
 - Green on `dev`; a fixed count above the ceiling fails naming the count, one 50 under fails naming the suggested ceiling.
 - `npm run check` green.

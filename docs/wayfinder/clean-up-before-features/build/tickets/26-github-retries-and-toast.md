@@ -30,7 +30,7 @@ Lead decisions (check with Lex: the Try again button):
 - Spec: `tests/native-save/native-boot-memory.spec.ts` or a new `native-github-silent.spec.ts` (hold the snapshot with `page.route` past the timeout three times: the toast shows; Try again with the route released opens the site)
 - `tests/main-ts-ceiling.test.ts`
 
-## Acceptance checks
+## Done when
 
 - Settle matrix for a held read (answers, fails, never answers) in the commit message; timers are cleared on every path (CODING_STANDARDS "Racing and speculative reads").
 - Unit tests with a fake clock: timeout counts as a failure; three retries; non-GET untouched.

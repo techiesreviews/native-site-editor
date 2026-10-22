@@ -25,7 +25,7 @@ Candidate #1, slice a (Strong; research 01 §1). Build the one owner of "is the 
 - `src/workspace-session.ts` (new), `tests/workspace-session.test.ts` (new), `tests/fakes/memory-workspace.ts` (optional session field)
 - `CONTEXT.md` (one entry), `docs/agents/code-map.md` (one entry)
 
-## Acceptance checks
+## Done when
 
 - The suite covers: one account with different capitals; same repository name with a different id (a re-created repository) and the reverse (a renamed one); empty branch; version view; GitHub and local-folder kinds never equal; a stamp's `holds()` is false after `next()`; derived keys equal for `same` scopes.
 - Not imported by `src/main.ts` yet (no boot bytes).

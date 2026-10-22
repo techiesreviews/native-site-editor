@@ -29,7 +29,7 @@ Candidate #2, slice b (research 01 §2), the biggest `main.ts` cut (about −900
 
 May split into 31a (state and `reset()`) and 31b (styles, assets, shown files, text index) if one session cannot finish it; say so in `decide` before starting 31b.
 
-## Acceptance checks
+## Done when
 
 - `deactivateNative()` is one `runtime.reset()`; no `native*` module variable left in `main.ts` except the preview adapter's.
 - A moved function keeps its body (CODING_STANDARDS); runtime unit tests cover source layering, reset and `adoptSaved`.

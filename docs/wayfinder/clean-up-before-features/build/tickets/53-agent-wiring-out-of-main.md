@@ -20,7 +20,7 @@ No visible change ([ticket 05, item 1](../../tickets/05-grill-architecture-choic
 - `src/main.ts` (the agent region), `src/agent-site-host.ts`, `tests/agent-site-host.test.ts`
 - `tests/main-ts-ceiling.test.ts`, `docs/agents/code-map.md`
 
-## Acceptance checks
+## Done when
 
 - A moved function keeps its body (CODING_STANDARDS "Controllers"); ports are live and typed with `satisfies` in tests.
 - Agent specs unchanged and green.

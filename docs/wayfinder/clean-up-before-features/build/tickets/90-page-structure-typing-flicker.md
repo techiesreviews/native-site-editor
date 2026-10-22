@@ -22,7 +22,7 @@ Rides along (TD 10, lead decision): two edit-bar suggestions with the same title
 - `src/components/structure-editing.ts`, `src/components/page-structure.ts` (only if the paint must keep one row), `src/controllers/page-structure-controller.ts` (only if it decides the hold)
 - Tests: unit tests for the hold decision; `tests/native-save/native-structure-inplace.spec.ts` (type in a field while another file changes through a held agent or code-pane write: the field's text and caret do not change; after blur the tree shows the other change)
 
-## Acceptance checks
+## Done when
 
 - The spec above fails on `dev` and passes after the fix.
 - No `main.ts` change. `npm run check`, `npm test`, `kit specs --affected` green.

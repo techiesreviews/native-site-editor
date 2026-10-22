@@ -24,7 +24,7 @@ Shrink `main.ts` (about −400) and close two boot-memory limits ([TD 06](../../
 - `src/controllers/boot-controller.ts`, `src/boot-memory.ts`
 - Tests: `tests/boot-controller.test.ts` (`sessionTag`), `tests/boot-memory.test.ts`, new unit tests for the boot module; `tests/native-save/native-boot-memory.spec.ts` (guess abandoned when `loadRepositories` clears the selection; sign-out posts `/auth/logout` and the memory is gone); `tests/main-ts-ceiling.test.ts`
 
-## Acceptance checks
+## Done when
 
 - CODING_STANDARDS "Racing and speculative reads": the moved code keeps its settle matrix; each row still has its spec.
 - A moved function keeps its body (CODING_STANDARDS); any change is named in the commit message.

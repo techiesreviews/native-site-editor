@@ -30,7 +30,7 @@ Lead decisions:
 - Tests: unit tests for the overlap rule and the waiting receipt; new `tests/native-save/native-agent-waits.spec.ts` (Lex types in a heading, an agent edits that heading: waiting; Lex clicks away: applied; an agent edit elsewhere: applied at once)
 - `tests/main-ts-ceiling.test.ts` if `main.ts` changes
 
-## Acceptance checks
+## Done when
 
 - The spec above, plus a switch-site case: the waiting change lands on its own site as an unsaved change.
 - Receipts: a duplicate of a waiting command joins it, never applies twice.

@@ -25,7 +25,7 @@ One table in `shared/agent-tool-table.ts` (new): per tool its name, argument sch
 - `shared/agent.ts`, `shared/agent-edit.ts`, `shared/agent-media-args.ts`, `shared/agent-requests.ts`, `worker/mcp.ts`, `worker/agent-operations.ts`, `worker/agent-store.ts`, `src/agent-transport.ts`, `src/agent-site.ts`, `src/agent-tools-edit.ts`, `src/agent-tools-media.ts`
 - `docs/agents/code-map.md`
 
-## Acceptance checks
+## Done when
 
 - Adding a tool means one table row plus its executor; a test fails if an executor exists without a row or a row without an executor.
 - MCP `tools/list` output is unchanged (snapshot test against `dev`).

@@ -22,7 +22,7 @@ Candidate #2, slice c (research 01 §2). The effective source is read three ways
 - Tests: `tests/native-site-runtime.test.ts`, the agent read unit tests, `tests/native-save/native-agent-reads.spec.ts` (an agent `read_file` and `get_page` while typing is unsaved returns the typed text, the same the preview shows)
 - `tests/main-ts-ceiling.test.ts`, `docs/agents/code-map.md`
 
-## Acceptance checks
+## Done when
 
 - One function answers "text of this path now" for the preview, media text and agent reads (grep shows no second layering).
 - The spec above passes; `kit specs --affected` (agent and MCP specs) green.
