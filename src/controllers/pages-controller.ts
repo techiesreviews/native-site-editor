@@ -12,8 +12,6 @@ import type { UrlPlan } from "../components/url-change";
 
 import { createPagesState, pageLinkSources, pageOnBranchHere, NATIVE_HOME_UNREAD, type PagesPorts as StatePorts, type NativeUrlChange, type NativeNewPlan } from "./pages-state";
 
-// Callers that load page actions keep importing these names from here.
-export { pageLinkSources, NATIVE_HOME_UNREAD } from "./pages-state";
 export type PagesPorts = StatePorts;
 
 export function createPagesController(ports: PagesPorts, state = createPagesState(ports)) {

@@ -5,7 +5,7 @@ import { escapeText, readHeadSettings, upsertHeadTag, withPageField, type HeadFi
 import { readSiteAddress, readSiteIdentity, siteAddressInput, withSiteIdentityConfig, withSiteIdentityPage } from "./page-builder/site-identity";
 import { editNavigation, readNavigation } from "./page-builder/site-navigation";
 import { nativePageTemplate } from "./native-create";
-import { NATIVE_HOME_UNREAD } from "./controllers/pages-controller";
+import { NATIVE_HOME_UNREAD } from "./controllers/pages-state";
 import { isImagePath } from "./native-structure";
 import { NATIVE_CONFIG_PATH, nativeSiteSettings, type NativeSite, nativeSitePrefix } from "../shared/native-project";
 import type { Reads, Outcome, PlanResult, Stamp, GuardedEdits } from "./guarded-edit";

@@ -4,7 +4,7 @@ import { createFileOperationChecks } from "./file-operation-checks";
 import { renamedFamily, familyMembers } from "../page-builder/media-families";
 import { isRenamableMedia, mediaFileName, suggestMediaName } from "../page-builder/media-names";
 import type { GuardedEdits, Reads, PlanResult } from "../guarded-edit";
-import { pageLinkSources } from "./pages-controller";
+import { pageLinkSources } from "./pages-state";
 import type { FileRowTarget } from "../components/file-row-actions";
 import type { createConfirmDialog } from "../components/confirm-dialog";
 import type { DraftScope, SavedDraft, draftStore } from "../drafts";
