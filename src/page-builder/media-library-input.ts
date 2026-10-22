@@ -33,7 +33,8 @@ export function wireMediaLibraryInput(
     else if (event.key === "Tab" && searchTimer !== undefined) redrawSearch();
   }, { signal });
   search.addEventListener("blur", () => {
-    if (searchTimer !== undefined) redrawSearch();
+    // Touch may blur during synthesized mousedown, after pointerup restarted the timer.
+    if (!pressing && searchTimer !== undefined) redrawSearch();
   }, { signal });
   grid.addEventListener("pointerdown", () => {
     if (searchTimer === undefined) return;

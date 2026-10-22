@@ -62,6 +62,23 @@ test("a thumbnail clicked while the search waits opens on the first click", asyn
   await expect(count(page)).toHaveText("3 of 9 files");
 });
 
+test.describe("touch search", () => {
+  test.use({ hasTouch: true, isMobile: true });
+
+  test("a thumbnail tapped while the search waits opens on the first tap", async ({ page, baseURL }) => {
+    await mountLibrary(page, baseURL);
+    await search(page).tap();
+    await page.keyboard.type("dog");
+    await expect(search(page)).toBeFocused();
+    await expect(thumbnails(page)).toHaveCount(9);
+
+    await library(page).getByRole("button", { name: "Details for images/dog-1.svg", exact: true }).tap();
+    await page.clock.runFor(1);
+    await expect(library(page).getByLabel("File name", { exact: true })).toHaveValue("dog-1.svg");
+    await expect(count(page)).toHaveText("3 of 9 files");
+  });
+});
+
 test("selection clicked while the search waits stays selected, on the box and on its round", async ({ page, baseURL }) => {
   await mountLibrary(page, baseURL);
   const selected = library(page).locator(".media-library__bulk-count");

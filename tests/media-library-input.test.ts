@@ -103,11 +103,28 @@ test("closing Media between a pressed tile's click and its redraw draws nothing"
   assert.deepEqual(draws, []);
 });
 
+test("touch release before blur keeps the tile until its synthesized click runs", context => {
+  const { type, search, grid, dialog, draws } = searchFixture(context);
+  type("cat"); context.mock.timers.tick(50);
+  grid.dispatchEvent(new Event("pointerdown"));
+  dialog.dispatchEvent(new Event("pointerup"));
+  // Touch focus can move during the synthesized mousedown, after pointerup.
+  search.dispatchEvent(new Event("blur"));
+  assert.deepEqual(draws, []);
+  grid.dispatchEvent(new Event("click"));
+  assert.deepEqual(draws, []);
+  context.mock.timers.tick(0);
+  assert.deepEqual(draws, ["cat"]);
+  context.mock.timers.tick(1000);
+  assert.deepEqual(draws, ["cat"]);
+});
+
 test("a press released without a click still redraws the pending search", context => {
-  const { type, grid, dialog, draws } = searchFixture(context);
+  const { type, search, grid, dialog, draws } = searchFixture(context);
   type("cat");
   grid.dispatchEvent(new Event("pointerdown"));
-  dialog.dispatchEvent(new Event("pointercancel")); context.mock.timers.tick(149);
+  dialog.dispatchEvent(new Event("pointercancel"));
+  search.dispatchEvent(new Event("blur")); context.mock.timers.tick(149);
   assert.deepEqual(draws, []);
   context.mock.timers.tick(1);
   assert.deepEqual(draws, ["cat"]);
