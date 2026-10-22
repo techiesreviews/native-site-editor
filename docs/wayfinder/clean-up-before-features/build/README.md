@@ -175,7 +175,7 @@ Two things wait on one Cloudflare token: preview deploys from CI on every push t
 
 ## Builders and reviewers from 2026-10-22 (Lex)
 
-GPT-6.1 Sol hit its usage limit on 2026-10-22 (blocked until 2026-10-27 20:26; Lex's OpenAI plan is the $20/month tier). Lex: **reviews use a different model than Sol.** Until decided otherwise, every slice builds with `--builder claude-opus-5-5` and reviews with `ASE_REVIEW_MODEL=claude-opus-5-5` (a fresh read-only session, separate from the builder). How Sol is used sparingly once it is back is being decided with Lex; the `builder: sol` lines in the tickets are superseded meanwhile.
+GPT-6.1 Sol hit its usage limit on 2026-10-22 (blocked until 2026-10-27 20:26; Lex's OpenAI plan is the $20/month tier). Lex: **reviews use a different model than Sol.** Until decided otherwise, every slice builds with `--builder claude-opus-5-5` and reviews with `ASE_REVIEW_MODEL=claude-opus-5-5` (a fresh read-only session, separate from the builder). Lex decided how Sol is used once it is back: **Sol never builds**; a Claude review covers every slice; **Sol gives a second opinion on the final version of the big, delicate slices only** (21, 22, 23, 31, 51, 85), plus a weekly sample of 2–3 Claude-approved slices; the kit stops using Sol well before its weekly limit. The `builder: sol` lines in the tickets are superseded: all slices build with Claude.
 
 ## Follow-ups seen during the build
 
