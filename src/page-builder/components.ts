@@ -633,6 +633,12 @@ export function createComponentTools(deps: ComponentDeps) {
    * framed instance and its chain, the history shares, renames followed and kept slot names.
    * Everything here asks it whether the mode is on (`now()`); the bar's view draws it.
    */
+  // Edit sessions open on the mode's template: while one reads on and a field has focus, a part is being typed.
+  const templateSessions = new Set<{ stale(): boolean }>();
+  const typingTemplate = () => {
+    const active = document.activeElement;
+    return (active instanceof HTMLTextAreaElement || active instanceof HTMLInputElement) && [...templateSessions].some(session => !session.stale());
+  };
   const mode = createComponentMode({
     edits: deps.edits,
     shown: () => ({ open: deps.currentPath(), page: deps.previewPage() }),
@@ -643,6 +649,7 @@ export function createComponentTools(deps: ComponentDeps) {
     // The bar's view draws what the mode says when it changes; through a transition (a level
     // opening, a rename moving the template) it keeps the mode it last drew.
     changed: () => { editMode?.draw(mode.now()); barKey = ""; renderBar(); deps.refreshBar(); deps.refreshStructure?.(); },
+    typing: typingTemplate,
   });
 
   /**
@@ -1677,9 +1684,17 @@ export function createComponentTools(deps: ComponentDeps) {
     // Closes this session's undo group in its own scope, even after a branch switch mounted another.
     const closeOwnGroup = typeof editor.editGroupCloser === "function" ? editor.editGroupCloser(path) : undefined;
     let proof = initialProof;
+    // On the mode's template, the session keeps the mode on through a page change that moved its
+    // instance; once it ends, the mode reads the page again.
+    const own = mode.now()?.template === path ? { stale: () => session.stale() } : undefined;
+    const ended = () => {
+      if (!own || !templateSessions.delete(own)) return;
+      queueMicrotask(() => mode.sync());
+    };
     const close = () => {
       if (closed) return;
       closed = true;
+      ended();
       const ownsGroup = wrote && hostProof.isCurrent() && proof.isCurrent() && deps.sources()[path] === expected && stamp.holds() && deps.editor() === editor;
       proof.dispose?.();
       if (ownsGroup) editor.closeActiveEditGroup(path);
@@ -1690,6 +1705,7 @@ export function createComponentTools(deps: ComponentDeps) {
       if (closed) return false;
       const owns = wrote && hostProof.isCurrent() && proof.isCurrent() && deps.sources()[path] === expected && stamp.holds() && deps.editor() === editor;
       closed = true;
+      ended();
       proof.dispose?.();
       if (!wrote) return true;
       if (!owns) { closeOwnGroup?.(); return false; }
@@ -1698,7 +1714,7 @@ export function createComponentTools(deps: ComponentDeps) {
       if (!discarded) editor.closeActiveEditGroup(path);
       return discarded;
     };
-    return {
+    const session = {
       cancel,
       /** The source this session last wrote (else the one it opened on), and whether it has ended. */
       state: () => ({ expected, closed, wrote }),
@@ -1731,6 +1747,8 @@ export function createComponentTools(deps: ComponentDeps) {
       },
       close,
     };
+    if (own) templateSessions.add(own);
+    return session;
   }
 
   /**
@@ -2001,6 +2019,8 @@ export function createComponentTools(deps: ComponentDeps) {
   return {
     /** Edit component mode (component-mode.ts): what it is, on what, and for how long. */
     mode,
+    /** A part of the mode's template is being typed: a change to its page leaves the template open meanwhile. */
+    typingTemplate,
     makeFromAgent,
     menuItems,
     slotMenu,

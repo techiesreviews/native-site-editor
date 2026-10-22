@@ -22,7 +22,7 @@ const flush = () => new Promise<void>((done) => setImmediate(done));
 
 function setup() {
   let mode!: ComponentMode;
-  let inEntry = false, reads = 0, refuse = false;
+  let inEntry = false, reads = 0, refuse = false, typing = false;
   const hooks: { onOpen?: (path: string) => void } = {};
   const m = createMemoryWorkspace({
     branch: { "index.html": PAGE, "about.html": ABOUT, [CARD_PATH]: CARD, [BADGE_PATH]: BADGE, [PILL_PATH]: PILL },
@@ -55,6 +55,7 @@ function setup() {
     frame: (mode: EditComponentFrameMode | undefined) => { frames.push(mode); },
     changed: () => { counts.changed++; },
     read: (source: string) => { reads++; return readSource(source, { page: true }); },
+    typing: () => typing,
   } satisfies ComponentModePorts;
   mode = createComponentMode(ports);
   return {
@@ -63,6 +64,8 @@ function setup() {
     live: () => shares.filter((share) => share.live).map((share) => `${share.path}>${share.page}`),
     reads: () => reads,
     refuseOpens: () => { refuse = true; },
+    /** A template part is typed (Structure) or no longer. */
+    type: (on: boolean) => { typing = on; },
   };
 }
 type Setup = ReturnType<typeof setup>;
@@ -518,6 +521,35 @@ for (const [what, change] of leaving) {
     assert.equal(s.counts.changed, changed + 1, "sync is idempotent");
   });
 }
+
+test("while a template part is typed, the instance leaving its place keeps the mode on; sync after the typing leaves", async () => {
+  const s = setup();
+  await card(s);
+  const now = s.mode.now()!, changed = s.counts.changed;
+  s.type(true);
+  s.m.writeDraft("index.html", PAGE.replace("<main>", "<main><p>New</p>"));
+  assert.equal(s.mode.now(), now);
+  s.mode.sync();
+  assert.equal(s.mode.now(), now);
+  assert.equal(s.counts.changed, changed);
+  assert.deepEqual(s.live(), [`${CARD_PATH}>index.html`]);
+  s.type(false);
+  assert.equal(s.mode.now(), undefined);
+  s.mode.sync();
+  assert.deepEqual(s.live(), []);
+  assert.equal(s.frames.at(-1), undefined);
+  assert.equal(s.counts.changed, changed + 1);
+});
+
+test("typing keeps the mode only through its instance moving: another file opening still ends it", async () => {
+  const s = setup();
+  await card(s);
+  s.type(true);
+  await s.m.workspace.open("about.html");
+  assert.equal(s.mode.now(), undefined);
+  s.mode.sync();
+  assert.deepEqual(s.live(), []);
+});
 
 test("leave (Done): every share released, the frame told, the instance it was on", async () => {
   const s = setup();
