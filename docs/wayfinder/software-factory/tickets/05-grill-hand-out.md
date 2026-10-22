@@ -18,3 +18,7 @@ Decided with Lex:
 2. **Always waits for Lex:** questions that are his (grilling), going live, anything that costs money, deleting what cannot be recovered, changes to his settings or keys. Everything else runs.
 3. **At most 5 helpers at once**, at most 2 in `src/main.ts`, plus each build's own parallel rules.
 4. **`kit next` picks the job by fixed rules** (ticket size and kind, later the scoreboard's numbers) and names the builder; the AI only starts and watches it. Cheaper and the same every time.
+
+## Comments
+
+- 2026-10-22, Lex: no runner layer. The coordinator starts `kit slice` jobs directly and waits on them; a helper agent only for a stuck slice. Runners cost 50k–220k tokens per slice mostly waiting.

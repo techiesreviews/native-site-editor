@@ -177,6 +177,8 @@ Two things wait on one Cloudflare token: preview deploys from CI on every push t
 
 GPT-6.1 Sol hit its usage limit on 2026-10-22 (blocked until 2026-10-27 20:26; Lex's OpenAI plan is the $20/month tier). Lex: **reviews use a different model than Sol.** Until decided otherwise, every slice builds with `--builder claude-opus-5-5` and reviews with `ASE_REVIEW_MODEL=claude-opus-5-5` (a fresh read-only session, separate from the builder). Lex decided how Sol is used once it is back: **Sol never builds**; a Claude review covers every slice; **Sol gives a second opinion on the final version of the big, delicate slices only** (21, 22, 23, 31, 51, 85), plus a weekly sample of 2–3 Claude-approved slices; the kit stops using Sol well before its weekly limit. **GPT-6 Luna at low effort** takes the routine GPT second opinions and the weekly sample (first week: Luna and Sol both review the same 2 slices to compare); **Grok** (Lex's X Premium) is a second outside reviewer with its own weekly budget (slice 95). The OpenAI limit covers every GPT model on the account; Lex can reset it when needed. The `builder: sol` lines in the tickets are superseded: all slices build with Claude.
 
+**No runner subagents (Lex, 2026-10-22):** the lead starts each slice directly with `kit bg slice-<NN> -- kit slice …` in its own worktree and waits in a background shell; a helper agent is brought in only for a slice that gets stuck and needs judgment.
+
 ## Follow-ups seen during the build
 
 - 2026-10-22: `tests/agent-usage.test.ts:69` ("an empty wait without a receiver answers quietly at once…") failed once (6 !== 3) during slice 20's `kit pr` with five runners loading the machine; 3/3 passes alone. Timing-sensitive under load.
