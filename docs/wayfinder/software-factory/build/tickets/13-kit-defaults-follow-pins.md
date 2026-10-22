@@ -63,3 +63,10 @@ scripts/agents/kit.d/slice:30:  flags.model = flags.builder === "sol" ? "gpt-6.1
 Only the two `sol` alias expansions remain; no default or budget-family line names the full model.
 
 Code commit: `2a43dbe9 Default kit builds and reviews to Claude Opus 5.5`.
+
+### Follow-ups
+
+- Validation gaps (gap): `tests/kit-fix.test.ts:301-305` (from 945e8a3b/2a43dbe9): when the Claude default retries a pending builder-phase round saved without an effort, the test checks
+- Validation gaps (gap): `tests/kit-fix.test.ts:340`: the assertion became `includes("resume") || includes("--resume")`. Any argument list that happens to contain the word passes, so a 
+- Validation gaps (gap): `tests/kit-review.test.ts:362,432`: `result.md` is now compared with `.trimEnd()`, and the posted PR body expects an extra trailing `\n` after `${complete}`. Th
+
