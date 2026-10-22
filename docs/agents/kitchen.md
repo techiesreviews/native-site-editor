@@ -101,9 +101,8 @@ on a usage-limit `problem:` line, tell Lex the reset time and carry on with Clau
 
 ### 6. Build
 
-- **Use:** `kit slice --ticket <t> --builder claude-opus-5-5` under `kit bg` with the review pin in
-  its environment; wait once with `kit wait job slice-<NN> --timeout 2h` in the background. Order of
-  steps, manual fallback and ticket Done: [runner.md](runner.md).
+- **Use:** `kit slice --ticket <t> --builder claude-opus-5-5` under `kit bg` (the kit's default reviewer is Claude; set `ASE_REVIEW_MODEL` only for a second opinion);
+  wait once with `kit wait job slice-<NN> --timeout 2h` in the background. Order of steps, manual fallback and ticket Done: [runner.md](runner.md).
 - **Decides:** the builder, inside the ticket's Files; anything outside them stops the slice.
 - **Done when:** the builder's commits and the ticket's `## Done` are on the slice branch.
 
