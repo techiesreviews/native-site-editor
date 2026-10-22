@@ -3825,22 +3825,45 @@ import { domView } from "../page-builder/rules/tree.ts";
   // image-look: the image popup's shape, focus and replacement shown on the
   // page before Done (src/page-builder/image-popup.ts). Kept across renders
   // until the host drops it; the image's own attributes come back then.
-  var imageLook = null;
-  function setImageLook(request, look) {
-    var old = imageLook;
+  // A zoom or move sends a look per frame: the next one changes only what
+  // differs, so the image's own picture never shows between two steps, and a
+  // new picture (with its style) takes the place once decoded (ticket 93).
+  var imageLook = null, looksAsked = 0, lookShown = 0;
+  function setLookAttribute(el, name, value) {
+    if (value === null) { if (el.hasAttribute(name)) el.removeAttribute(name); }
+    else if (el.getAttribute(name) !== value) el.setAttribute(name, value);
+  }
+  // `redrawn`: the page was drawn again, so all of the image's own attributes are put back and read again.
+  function setImageLook(request, look, redrawn) {
+    var old = imageLook, asked = ++looksAsked;
+    var found = request && look ? resolveNodePath(request) : null, el = found && found.localName === "img" ? found : null;
+    var wanted = {};
+    if (el && typeof look.style === "string") wanted.style = look.style;
+    if (el && typeof look.src === "string") { wanted.src = assetFor(look.src) || look.src; wanted.srcset = null; wanted.sizes = null; }
+    var same = Boolean(old && old.el === el && !redrawn);
     imageLook = null;
-    if (old && old.el.isConnected) Object.keys(old.saved).forEach(function (name) {
-      if (old.saved[name] === null) old.el.removeAttribute(name); else old.el.setAttribute(name, old.saved[name]);
-    });
-    if (old && old.el.parentNode) resolveAssets(old.el.parentNode);
-    var el = request && look ? resolveNodePath(request) : null;
-    if (el && el.localName === "img") {
-      imageLook = { el: el, request: request, look: look, saved: {} };
-      ["style", "src", "srcset", "sizes"].forEach(function (name) { imageLook.saved[name] = el.getAttribute(name); });
-      if (typeof look.style === "string") el.setAttribute("style", look.style);
-      if (typeof look.src === "string") { el.setAttribute("src", assetFor(look.src) || look.src); el.removeAttribute("srcset"); el.removeAttribute("sizes"); }
+    if (old && old.el.isConnected) {
+      var back = Object.keys(old.saved).filter(function (name) { return !same || !(name in wanted); });
+      back.forEach(function (name) { setLookAttribute(old.el, name, old.saved[name]); });
+      if (back.length && old.el.parentNode) resolveAssets(old.el.parentNode);
     }
-    scheduleBoxes();
+    if (el) {
+      var saved = {};
+      Object.keys(wanted).forEach(function (name) { saved[name] = same && name in old.saved ? old.saved[name] : el.getAttribute(name); });
+      imageLook = { el: el, request: request, look: look, saved: saved };
+    }
+    var show = function () {
+      lookShown = asked;
+      Object.keys(wanted).forEach(function (name) { setLookAttribute(el, name, wanted[name]); });
+      scheduleBoxes();
+    };
+    if (!el || wanted.src === undefined || el.getAttribute("src") === wanted.src) { show(); return; }
+    // The picture shown keeps its place until the new one can be drawn; a later look shown first wins.
+    var next = new Image();
+    next.src = wanted.src;
+    (next.decode ? next.decode() : Promise.resolve()).catch(function () {}).then(function () {
+      if (asked > lookShown && imageLook && imageLook.el === el && el.isConnected) show();
+    });
   }
   // media-play: the edit bar's Play (src/page-builder/media-play.ts). The
   // host posts the file's bytes, which play in the video or audio itself from
@@ -4095,7 +4118,7 @@ import { domView } from "../page-builder/rules/tree.ts";
     if (msg.type !== "update") return;
     apply(msg.payload || {});
     if (livePatch) patchText(livePatch.request, livePatch.text);
-    if (imageLook) setImageLook(imageLook.request, imageLook.look);
+    if (imageLook) setImageLook(imageLook.request, imageLook.look, true);
     if (mediaPlay && !mediaPlay.el.isConnected) stopMedia(true);
     requestAnimationFrame(function () { emit("ack", { id: msg.id }); });
   });

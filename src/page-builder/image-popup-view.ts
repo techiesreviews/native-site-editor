@@ -26,7 +26,7 @@ import { componentShapeNotice, type ComponentPicture } from "./component-shapes"
 import { DOT_HINT, focusAt, nudgeFocus, pictureHint, popupMessage, seenHints, shapeRatio, sheetScroll, type PopupShape } from "./image-popup-rules";
 import { MAX_ZOOM, cutArea, dotApplies, makesNewPicture, moveFree, placeShape, nudgeFree, resizeFree, shownTrim, turnText, turnedSize, zoomPercent, type PictureSize, type PopupCut, type TrimRect } from "./image-popup-trim";
 import { trimGeometry } from "./trim-geometry";
-import { markTransparency } from "./media-transparency";
+import { markTransparency, mediaMayBeTransparent } from "./media-transparency";
 import { actionButton, mountMediaPopupFrame, phonePopup, popupRow } from "./media-popup-frame";
 import { mountShapeMenu } from "./shape-menu";
 
@@ -319,9 +319,10 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
   };
 }
 
-/** A new picture in `image`: its see-through mark is for this picture, sampled once it has loaded (slice 106's checkerboard). */
+/** A new picture in `image`: its see-through mark is for this picture, sampled once it has loaded (slice 106's checkerboard).
+ *  A file that may be see-through keeps the last mark until then, so a trim drawn per step does not flash its checkerboard. */
 function showPicture(image: HTMLImageElement, url: string, path: string) {
-  image.removeAttribute("data-transparent");
+  if (!mediaMayBeTransparent(path)) image.removeAttribute("data-transparent");
   image.src = url;
   markTransparency(image, path);
 }
