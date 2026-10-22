@@ -226,6 +226,23 @@ test("live idle sends only ping/pong over simulated minutes, no HTTP or recovery
   assert.equal(f.timers.size, 1); a.transport.stop();
 });
 
+test("an idle visible tab keeps the agent connected for hours: answered heartbeats, visibility checks and a relay wake reset never drop it", async () => {
+  const f = fixture(), a = f.tab("a"); await a.transport.start();
+  for (let minute = 1; minute <= 120; minute++) {
+    await f.tick(60_000);
+    if (minute % 10 === 0) a.document.dispatchEvent(new Event("visibilitychange"));
+    // The relay object woke from hibernation: it asks the same socket for a fresh handshake.
+    if (minute === 60) a.sockets[0].receive({ type: "reset", code: "unknown-outcome", handshakeRequired: true });
+  }
+  assert.equal(a.sockets.length, 1, "never reconnected");
+  assert.equal(a.sockets[0].readyState, 1);
+  assert.equal(a.transport.state().mode, "live");
+  assert.equal(a.sockets[0].messages("handshake").length, 2);
+  assert.ok(a.sockets[0].sent.filter(value => value === "ping").length >= 150, "a ping every 45 s");
+  assert.equal(f.counts().http, 0);
+  a.transport.stop();
+});
+
 test("missing pong closes socket and reconnects; freeze/resume restores heartbeat", async () => {
   const f = fixture(), a = f.tab("a"); await a.transport.start();
   a.document.dispatchEvent(new Event("freeze")); assert.equal(f.timers.size, 0);

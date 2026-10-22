@@ -549,7 +549,7 @@ async function token(request: Request, env: Env) {
     {
       access_token: issued.token,
       token_type: "Bearer",
-      expires_in: Math.max(1, Math.floor((session.expiresAt - Date.now()) / 1000)),
+      expires_in: Math.max(1, Math.floor((issued.expiresAt - Date.now()) / 1000)),
       scope: OAUTH_SCOPE,
     },
     200,

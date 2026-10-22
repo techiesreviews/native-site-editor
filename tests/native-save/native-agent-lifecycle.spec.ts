@@ -81,7 +81,7 @@ test("two tabs: explicit takeover raises generation; old owner is taken over and
     const read = await h.call("read_file", { path: "index.html" });
     expect((await h.call("edit_file", { path: "index.html", expectedHash: read.hash, edits: [{ oldText: "A native browser preview", newText: "Kept on takeover" }], requestId: "lifecycle-kept" })).state).toBe("applied");
     const before = await durable(page);
-    await open(second, baseURL); await enable(second);
+    await open(second, baseURL); await second.locator(".repository-menu__trigger").click();
     await expect(second.locator(".agent-menu__hint")).toContainText("Another tab");
     await expect(second.getByRole("button", { name: "Take over", exact: true })).toBeVisible();
     expect(traffic.ready()).toHaveLength(0);
@@ -99,7 +99,8 @@ test("two tabs: explicit takeover raises generation; old owner is taken over and
 test("owner close: second tab never promotes itself; only Take over opens a receiving socket", async ({ page, context, baseURL }) => {
   const h = await connect(page, baseURL), second = await context.newPage(), traffic = frames(second);
   try {
-    await open(second, baseURL); await enable(second);
+    // Remote agents are remembered on for this site: the new tab comes back with them on.
+    await open(second, baseURL); await second.locator(".repository-menu__trigger").click();
     await expect(second.locator(".agent-menu__hint")).toContainText("Another tab");
     await page.close();
     await expect(second.locator(".agent-menu__hint")).toContainText("receiving tab closed");
@@ -111,6 +112,35 @@ test("owner close: second tab never promotes itself; only Take over opens a rece
     expect(traffic.ready()[0].generation!).toBeGreaterThan(h.traffic.ready()[0].generation!);
     expect((await h.call("read_file", { path: "index.html" })).content).toContain("A native browser preview");
   } finally { await h.client.close(); await second.close(); }
+});
+
+test("agents stay on: a reload and a new tab on the same site come back with them on, with no new prompt; Disconnect turns them off", async ({ page, context, baseURL }) => {
+  const connects: string[] = [];
+  context.on("request", request => { if (new URL(request.url()).pathname === "/api/agent/connect") connects.push(request.method()); });
+  const h = await connect(page, baseURL);
+  try {
+    expect((await h.call("read_file", { path: "index.html" })).content).toContain("A native browser preview");
+    await page.reload();
+    await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
+    await expect.poll(() => h.traffic.ready().length).toBe(2);
+    await expect(page.locator(".agent-menu")).toHaveAttribute("data-state", "connected");
+    expect((await h.call("read_file", { path: "index.html" })).content).toContain("A native browser preview");
+    const second = await context.newPage();
+    try {
+      await open(second, baseURL);
+      await expect(second.locator(".agent-menu")).toHaveAttribute("data-state", "other-owner");
+      expect((await h.call("read_file", { path: "index.html" })).content).toContain("A native browser preview");
+    } finally { await second.close(); }
+    expect(connects, "no new token or prompt").toEqual(["POST"]);
+    await page.locator(".repository-menu__trigger").click();
+    await page.getByRole("button", { name: "Disconnect MCP", exact: true }).click();
+    await expect(page.locator(".agent-menu")).toHaveAttribute("data-state", "off");
+    await page.reload();
+    await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
+    await page.locator(".repository-menu__trigger").click();
+    await expect(page.locator(".agent-menu")).toHaveAttribute("data-state", "off");
+    expect(h.traffic.ready()).toHaveLength(2);
+  } finally { await h.client.close(); }
 });
 
 test("freeze/resume via persisted pagehide/pageshow: ownership rechecked, no command replay", async ({ page, baseURL }) => {
@@ -150,7 +180,8 @@ test("takeover while the owner is frozen: on resume the old owner says taken ove
   const h = await connect(page, baseURL), second = await context.newPage(), traffic = frames(second);
   try {
     await page.keyboard.press("Escape");
-    await open(second, baseURL); await enable(second);
+    // Remembered on for this site: the new tab comes back with agents on.
+    await open(second, baseURL); await second.locator(".repository-menu__trigger").click();
     await expect(second.getByRole("button", { name: "Take over", exact: true })).toBeVisible();
     await lifecycle(page, "freeze");
     await second.getByRole("button", { name: "Take over", exact: true }).click();
@@ -172,7 +203,7 @@ test("discarded owner page: a fresh page recovers drafts and receipts from Index
     expect((await h.call("write_file", { path: "discarded.txt", content: "Kept in the browser", requestId: "before-discard" })).state).toBe("applied");
     const before = await durable(page);
     await page.close(); // The renderer and its memory are gone; only IndexedDB remains.
-    await open(fresh, baseURL); await enable(fresh);
+    await open(fresh, baseURL); // Remembered on for this site: no Connect needed.
     await expect.poll(() => traffic.ready().length).toBe(1);
     expect(traffic.ready()[0].generation!).toBeGreaterThan(h.traffic.ready()[0].generation!);
     expect(traffic.commands()).toHaveLength(0);

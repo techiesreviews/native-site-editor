@@ -277,7 +277,7 @@ for (const overflow of [false, true]) test(`relay body ${overflow ? "exceeds Con
   } finally { await h.worker.dispose(); }
 });
 
-test("disconnect detection 0 ms; eligibility 300000 ms; deletion at alarm; sign-in and App config survive", async t => {
+test("disconnect detection 0 ms; eligibility 300000 ms; temporary data removed at alarm; permission, sign-in and App config survive", async t => {
   const h = await fixture(), realNow = Date.now;
   try {
     let now = Date.now(); Date.now = () => now;
@@ -289,12 +289,15 @@ test("disconnect detection 0 ms; eligibility 300000 ms; deletion at alarm; sign-
     assert.equal(deadline - detected, DISCONNECT_GRACE); assert.equal(DISCONNECT_GRACE, 300_000);
     now = deadline - 1; await h.alarm(h.name);
     assert.ok(await h.storage(`agent:${h.grant.id}`).get("session"));
+    await h.storage(`agent-hub:${sessionId}`).put({ context: { legacy: true }, requests: [] });
     now = deadline; h.counters.reset(); await h.alarm(h.name);
-    assert.equal(await h.storage(`agent:${h.grant.id}`).get("session"), undefined);
+    assert.ok(await h.storage(`agent:${h.grant.id}`).get("session"), "the permission outlives the grace");
+    assert.equal(await h.storage(`agent-hub:${sessionId}`).get("context"), undefined);
+    assert.equal(await h.storage(`agent-hub:${sessionId}`).get("requests"), undefined);
     assert.deepEqual(await h.storage(sessionId).get("session"), signedIn);
     assert.deepEqual(await h.storage("native-site-editor/config").get("config"), { appId: "preserved" });
     assert.equal((await h.storage(`agent-hub:${sessionId}`).list({ prefix: "draft" })).size, 0);
-    t.diagnostic(`detection=0 ms (explicit close); eligibility=${deadline - detected} ms; deletion=${now - detected} ms (manual alarm); browser drafts: native-agent-lifecycle spec`);
+    t.diagnostic(`detection=0 ms (explicit close); eligibility=${deadline - detected} ms; temporary-data cleanup=${now - detected} ms (manual alarm); browser drafts: native-agent-lifecycle spec`);
     report(t, h);
   } finally { Date.now = realNow; await h.worker.dispose(); }
 });

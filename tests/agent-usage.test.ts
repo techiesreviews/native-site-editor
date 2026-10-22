@@ -57,7 +57,7 @@ test("an edit without a receiving tab refuses immediately: 3 auth + 1 dispatch, 
     h.counters.reset();
     const result = await h.rpc("tools/call", { name: "write_file", arguments: { path: "usage.txt", content: "new file" } });
     assert.equal(result.isError, true);
-    assert.match(String(payload(result)), /not sharing/);
+    assert.match(JSON.stringify(payload(result)), /The editor isn't open/);
     assert.equal(h.counters.byCategory.auth.calls, 3);
     assert.equal(h.counters.byCategory.control.calls, 1);
     assert.equal(h.counters.byCategory.data.calls, 0);
@@ -96,7 +96,7 @@ test("an empty wait without a receiver answers quietly at once without a legacy 
     const result = await client.callTool({ name: "wait_for_requests", arguments: {} });
     assert.equal(result.isError, undefined);
     assert.deepEqual(payload(result).requests, []);
-    assert.match(payload(result).hint, /No editor tab receives requests/);
+    assert.match(payload(result).hint, /The editor isn't open/);
     assert.equal(h.counters.log.some(row => row.action === "take-requests"), false);
     assert.equal(h.counters.byCategory.auth.calls, 3);
     assert.equal(h.counters.byCategory.control.calls, 1);

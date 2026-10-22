@@ -304,7 +304,7 @@ test("an MCP client connects by OAuth: discovery, registration, sign-in and cons
     for (const [name, args] of [["get_site", {}], ["open_page", { page: "/about/", waitSeconds: 0 }]] as const) {
       const result = await client.callTool({ name, arguments: args });
       assert.equal(Boolean(result.isError), name !== "get_site");
-      assert.match(String(name === "get_site" ? payload(result).note : payload(result)), /not sharing/);
+      assert.match(JSON.stringify(name === "get_site" ? payload(result).note : payload(result)), /The editor isn't open/);
     }
 
     // Revoking in the editor ends it.

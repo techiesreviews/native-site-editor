@@ -328,7 +328,7 @@ test("ordinary MCP reads add zero ledger calls, reads or writes", async () => {
     h.counters.reset();
     const files = await rpc("tools/call", { name: "list_files", arguments: {} });
     assert.equal(files.status, 200);
-    assert.match(await files.text(), /not sharing/);
+    assert.match(await files.text(), /The editor isn't open/);
     assert.equal(h.counters.byCategory.auth.calls, 3);
     assert.equal(h.counters.byCategory.control.calls, 1, "one relay dispatch finds no owner");
     assert.equal(h.counters.byCategory.data.calls, 0, "no legacy fallback reads");

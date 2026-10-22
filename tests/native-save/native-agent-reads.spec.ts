@@ -84,18 +84,11 @@ test("all migrated MCP reads and the site resource answer from browser drafts; a
     expect(agentHttp.filter(path => /\/(context|drafts|claim|ack)$/.test(path))).toEqual([]);
 
     await page.reload();
-    // The reloaded tab has remote agents off: the hub sees no editor once the old socket goes.
-    await expect.poll(async () => JSON.parse(((await client.callTool({ name: "get_site", arguments: {} })).content as { text: string }[])[0].text).available).toBe(false);
-    // Retain the grant: a reload stops this tab's remote agents, unlike Disconnect MCP which revokes it.
-    const count = commands.length, started = Date.now();
-    const unavailable = await client.callTool({ name: "read_file", arguments: { path: "index.html" } });
-    expect(unavailable.isError).toBe(true);
-    expect(JSON.stringify(unavailable)).toMatch(/editor.*(?:unavailable|not sharing)/i);
-    expect(Date.now() - started).toBeLessThan(3000); // No ten-second dispatch wait or legacy mailbox polling.
-    const off = await client.callTool({ name: "get_site", arguments: {} });
-    expect(off.isError).toBeFalsy();
-    expect(JSON.parse((off.content as { text: string }[])[0].text)).toMatchObject({ available: false });
-    expect(commands).toHaveLength(count);
+    // Remote agents are remembered on for this site: the reloaded tab receives again, on the same grant.
+    await expect.poll(async () => JSON.parse(((await client.callTool({ name: "get_site", arguments: {} })).content as { text: string }[])[0].text).available, { timeout: 30_000 }).not.toBe(false);
+    const again = await client.callTool({ name: "read_file", arguments: { path: "index.html" } });
+    expect(again.isError, JSON.stringify(again)).toBeFalsy();
+    expect(JSON.parse((again.content as { text: string }[])[0].text).content).toContain("Unsaved socket read draft");
   } finally { await client.close(); }
   expect(errors).toEqual([]);
 });

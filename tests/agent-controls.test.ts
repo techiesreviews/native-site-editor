@@ -174,7 +174,7 @@ async function alarmClass() {
   return runtime.SessionStore;
 }
 
-test("all 32 combinations: lifecycle OFF postpones six hours without deletions or refiring; ON resumes cleanup", async () => {
+test("all 32 combinations: lifecycle OFF postpones six hours without deletions or refiring; ON resumes cleanup and keeps the permission", async () => {
   const Store = await alarmClass();
   const h = await startCountedWorker();
   const { cookie } = await signIn(h.worker), sessionId = cookie.split("=")[1];
@@ -210,7 +210,9 @@ test("all 32 combinations: lifecycle OFF postpones six hours without deletions o
         now += 6 * 3600_000;
         await instance.alarm();
       }
-      await assert.rejects(() => getGrant(env, grant.id), /expired|revoked/);
+      // The cleanup removes temporary agent data only: the permission stays (ticket 98).
+      assert.ok(await getGrant(env, grant.id));
+      assert.equal((await storage.get<{ cleanupPending?: boolean }>(LIFECYCLE_KEY))?.cleanupPending, undefined);
       assert.equal(await storage.getAlarm(), null);
     }
   } finally { Date.now = realNow; await h.worker.dispose(); }

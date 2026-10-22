@@ -26,7 +26,7 @@ const setVisibility = (page: Page, state: "visible" | "hidden") =>
     if (state === "visible") window.dispatchEvent(new Event("focus"));
   }, state);
 
-test("remote agents off: startup, the agent menu and idle visible or hidden tabs make no agent-hub calls, even with a connected agent", async ({ page, baseURL }) => {
+test("remote agents off: startup, the agent menu and idle visible or hidden tabs make no agent-hub calls, even with a connected agent; once on, a reload keeps them on", async ({ page, baseURL }) => {
   // A connection an agent already used, made in an earlier visit of this session.
   await open(page, baseURL);
   const { token } = await page.evaluate(async () => {
@@ -73,17 +73,44 @@ test("remote agents off: startup, the agent menu and idle visible or hidden tabs
     await page.clock.runFor(65_000);
     expect(requests.slice(idle), "live idle has no polling or uploads").toEqual([]);
     expect(requests.some(request => /\/(context|drafts|claim|ack|pause)$/.test(request.path))).toBe(false);
-    // A reload turns them off again: remote agents stay off until Connect with MCP.
+    // A reload keeps them on (remembered for this site): one connections read and the socket, no new token.
+    // Sockets are counted from their own events: Playwright may report a socket's opening request late.
+    const http = (from: number) => requests.slice(from).filter(request => request.path !== "/api/agent/relay");
+    const reloaded = requests.length;
+    let sockets = 0, ready = 0, pings = 0, pongs = 0;
+    page.on("websocket", socket => {
+      if (!socket.url().includes("/api/agent/relay?")) return;
+      sockets++;
+      socket.on("framesent", ({ payload }) => { if (String(payload) === "ping") pings++; });
+      socket.on("framereceived", ({ payload }) => {
+        if (String(payload) === "pong") pongs++;
+        else if (String(payload).includes('"type":"ready"')) ready++;
+      });
+    });
+    // Idle in one-second steps, holding the clock at each heartbeat ping until the relay's real
+    // answer arrives (one jump past the ping and its 10 s no-answer limit would close a healthy socket).
+    const idleFor = async (ms: number) => {
+      for (let left = ms; left > 0; left -= 1000) {
+        await page.clock.runFor(1000);
+        if (pongs < pings) await expect.poll(() => pongs, { timeout: 15_000 }).toBe(pings);
+      }
+    };
     await page.reload();
     await open(page, baseURL);
     await page.locator(".repository-menu__trigger").click();
-    await expect(action).toHaveText("Connect with MCP");
+    await expect(action).toHaveText("Disconnect MCP", { timeout: 15_000 });
     await page.keyboard.press("Escape");
+    // The socket opens after the connections read. Its handshake needs no timers: holding the
+    // fake clock still meanwhile keeps a slow machine from tripping the 10 s handshake limit.
+    await expect.poll(async () => { if (!sockets) await page.clock.runFor(100); return sockets; }).toBe(1);
+    await expect.poll(() => ready, { timeout: 15_000 }).toBe(1);
+    expect(http(reloaded), "after a reload").toEqual([{ method: "GET", path: "/api/agent/connections" }]);
     const after = requests.length;
-    await page.clock.runFor(65_000);
+    await idleFor(65_000);
     await setVisibility(page, "hidden");
-    await page.clock.runFor(65_000);
-    expect(requests.slice(after), "after a reload").toEqual([]);
+    await idleFor(65_000);
+    expect(http(after), "idle after a reload").toEqual([]);
+    expect({ sockets, ready }, "one socket, never reconnected").toEqual({ sockets: 1, ready: 1 });
     expect((await client.listTools()).tools.length).toBeGreaterThan(0);
   } finally {
     await client.close();
@@ -285,7 +312,7 @@ test("live: another tab of this browser shows the agent's progress on a request 
     await page.keyboard.type("Seen from the other tab");
     await page.keyboard.press("Enter");
     await expect(page.locator(".agent-pin")).toHaveCount(1);
-    // A second tab of the same site shows the request from this browser's records (remote agents stay off there).
+    // A second tab of the same site shows the request from this browser's records (its agents are on, another tab receives).
     await open(other, baseURL);
     const pin = other.locator(".agent-pin").first();
     await expect(pin).toHaveAttribute("data-state", "open", { timeout: 15_000 });
@@ -345,10 +372,12 @@ test("relay paused by owner: one explicit attempt, one manual Retry, no reconnec
   await page.reload();
   await expect(heading).toHaveText("Manual edit during pause", { timeout: 30_000 });
   expect((await storedDrafts(page)).find(draft => draft.path === "index.html")?.content).toContain("Manual edit during pause");
-  expect(requests).toHaveLength(2);
+  // Remembered on for this site: the reload checks once, finds agents still paused and opens no socket.
+  await expect.poll(() => requests.length).toBe(3);
+  expect(requests[2]).toEqual({ method: "GET", path: "/api/agent/connections" });
+  expect(sockets).toBe(0);
   // Removing access remains possible even though the paused check cannot list grants.
   await page.locator(".repository-menu__trigger").click();
-  await page.getByRole("button", { name: "Connect with MCP", exact: true }).click();
   await expect(hint).toHaveText("Remote agents are paused by the site owner.");
   await page.getByRole("button", { name: "Disconnect MCP", exact: true }).click();
   await expect(page.locator(".agent-menu")).toHaveAttribute("data-state", "off");

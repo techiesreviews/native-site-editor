@@ -6,7 +6,7 @@ import { handle, type Env } from "../worker/app.ts";
 import { hubView, type HubStorage } from "../worker/agent-store.ts";
 import { handleOAuth, type OAuthDeps } from "../worker/oauth.ts";
 import { PENDING_ROUTE } from "../worker/oauth-pending.ts";
-import { notSharingMessage } from "../worker/mcp.ts";
+import { notSharingMessage } from "../shared/agent-read.ts";
 import type { AgentCommand } from "../shared/agent.ts";
 import { fakeHubRoute } from "./native-save/fake-hub.ts";
 import { fakeGitHub, githubState, origin, repo, siteContext } from "./mcp-harness.ts";

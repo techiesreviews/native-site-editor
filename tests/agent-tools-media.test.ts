@@ -333,12 +333,12 @@ test("a committed edit whose reply arrives after the deadline stays unknown on t
 test("media relay failures never retry or queue, even with matching legacy context", async () => {
   const h = await connected(), get = h.namespace.get;
   try {
-    h.counters.reset(); assert.match(String(payload(await h.rpc("adding_settings", {}))), /not sharing/i);
+    h.counters.reset(); assert.match(JSON.stringify(payload(await h.rpc("adding_settings", {}))), /The editor isn't open/);
     assert.equal(h.counters.log.length, 4); assert.equal(h.counters.waitedMs, 0);
     const context = await siteContext(); context.branch = "other"; await h.storage(h.counters.log.find(row => row.name.startsWith("agent-hub:"))!.name).put("context", context);
-    assert.match(String(payload(await h.rpc("adding_settings", {}))), /not sharing/i);
+    assert.match(JSON.stringify(payload(await h.rpc("adding_settings", {}))), /The editor isn't open/);
     context.branch = "main"; await h.storage(h.counters.log.find(row => row.name.startsWith("agent-hub:"))!.name).put("context", context);
-    assert.match(String(payload(await h.rpc("adding_settings", { image: "smaller", waitSeconds: 0 }))), /not sharing/);
+    assert.match(JSON.stringify(payload(await h.rpc("adding_settings", { image: "smaller", waitSeconds: 0 }))), /The editor isn't open/);
     for (const code of ["timeout", "unknown-outcome", "too-large", "too-large-after-delivery", "lost", "busy"]) {
       let dispatches = 0;
       h.namespace.get = name => String(name).startsWith("agent-relay:") ? { fetch: async () => {
@@ -350,7 +350,7 @@ test("media relay failures never retry or queue, even with matching legacy conte
       else { assert.equal(result.state, code === "busy" ? "failed" : "unknown"); if (code !== "busy") assert.match(result.message, /get_command_status.*do not replay/); }
       assert.equal(dispatches, 1);
       const read = await h.rpc("adding_settings", {});
-      assert.match(String(payload(read)), /read failed|too large/); assert.equal(dispatches, 2);
+      assert.match(JSON.stringify(payload(read)), /read failed|too large/); assert.equal(dispatches, 2);
     }
   } finally { h.namespace.get = get; await h.worker.dispose(); }
 });

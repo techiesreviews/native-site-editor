@@ -33,7 +33,7 @@ import { writablePathProblem } from "./site-files";
 import { siteConventions, siteInstructions } from "./site-conventions";
 import { editorOrigin } from "./owner-setup";
 import { isNativeComponentTag } from "../shared/native-project";
-import { siteSummary, notSharingMessage as sharingMessage } from "../shared/agent-read";
+import { openEditorSteps } from "../shared/agent-read";
 import { checkContent, type AgentEdit, type AgentEditArgsMap, type AgentEditTool } from "../shared/agent-edit";
 import { AgentRelay, relayObjectName } from "./agent-relay";
 import type { AgentRead, AgentReadResult } from "../shared/agent-read";
@@ -53,8 +53,9 @@ type Exchange = { started?: () => void; cancelled?: boolean; requestId?: string 
 
 type Connection = Awaited<ReturnType<typeof authenticateAgent>>;
 
-export function notSharingMessage(...args: Parameters<typeof sharingMessage>) {
-  return sharingMessage(...args);
+/** No editor tab receives for this connection's site. The permission stays (ticket 98): the agent waits. */
+export function editorClosedMessage(origin: string, workspace: { repo: string; branch: string }) {
+  return `The editor isn't open for ${workspace.repo} on branch ${workspace.branch}. Open it and the agent can continue: this connection stays valid, so try again once it is open. ${openEditorSteps(origin)}`;
 }
 
 const text = (value: unknown) => ({
@@ -64,6 +65,8 @@ const failure = (message: string) => ({
   isError: true,
   content: [{ type: "text" as const, text: message }],
 });
+/** Nothing was sent: the agent waits for the editor instead of reconnecting. */
+const waiting = (message: string) => ({ isError: true, ...text({ state: "waiting", message }) });
 const readOnly = {
   readOnlyHint: true,
   destructiveHint: false,
@@ -104,6 +107,7 @@ const sectionId = z
 
 export function createSiteServer(connection: Connection, env: Env, origin = "https://editor.techies.tools", exchange: Exchange = {}) {
   const { grant } = connection;
+  const closed = editorClosedMessage(origin, connection.workspace);
   const server = new McpServer(
     { name: "native-site-editor", version: "1.0.0" },
     { instructions: siteInstructions },
@@ -131,7 +135,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
       grantId: connection.id, generation: grant.generation, createdAt: Date.now() } as AgentEdit;
     const outcome = await dispatch(request);
     if (outcome.ok && outcome.result) return toolResult(outcome.result);
-    if (outcome.code === "editor-unavailable") return failure(notSharingMessage(origin, connection.workspace));
+    if (outcome.code === "editor-unavailable") return waiting(closed);
     return unknown(request.id, outcome.code, outcome.outcome);
   }
   async function media(tool: AgentMedia["tool"], input: { path: string; args?: AgentCommandArgs; requestId?: string; waitSeconds?: number }) {
@@ -150,7 +154,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
         message: typeof value.message === "string" ? value.message : undefined, result: value.result as AgentCommand["result"] };
       return tool === "list_media" ? text(resultOf(command)) : status(command);
     }
-    if (outcome.code === "editor-unavailable") return failure(notSharingMessage(origin, connection.workspace));
+    if (outcome.code === "editor-unavailable") return waiting(closed);
     const changing = mediaChanges(tool, request.args);
     // A result too large to return after delivery leaves a change's outcome unknown, never "nothing changed".
     if (outcome.code === "too-large" && (!changing || outcome.outcome !== "unknown"))
@@ -174,18 +178,18 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     return { isError: true, ...text({ requestId: id, state: "unknown",
       message: `The change's outcome is unknown (${code ?? "connection lost"}). Check get_command_status; do not replay the change.` }) };
   }
-  async function readResult(read: AgentRead): Promise<AgentReadResult> {
+  async function readResult(read: AgentRead): Promise<AgentReadResult | { ok: false; waiting: true; message: string }> {
     const outcome = await dispatch(read);
     if (outcome.ok && outcome.result) return outcome.result;
     if (outcome.code === "editor-unavailable" && read.tool === "get_site")
-      return { ok: true, value: JSON.parse(JSON.stringify(siteSummary(undefined, undefined, connection.repo.full_name, origin, undefined, connection.workspace))) };
-    return { ok: false, message: outcome.code === "editor-unavailable" ? notSharingMessage(origin, connection.workspace)
-      : outcome.code === "too-large" ? "The result is too large. Export a folder with export_site instead."
+      return { ok: true, value: { repository: connection.repo.full_name, branch: connection.workspace.branch, available: false, state: "waiting", note: closed } };
+    if (outcome.code === "editor-unavailable") return { ok: false, waiting: true, message: closed };
+    return { ok: false, message: outcome.code === "too-large" ? "The result is too large. Export a folder with export_site instead."
       : `The editor read failed (${outcome.code ?? "invalid relay response"}). Read the site again when the editor is ready.` };
   }
   async function read(read: AgentRead) {
     const result = await readResult(read);
-    return result.ok ? text(result.value) : failure(result.message);
+    return result.ok ? text(result.value) : "waiting" in result ? waiting(result.message) : failure(result.message);
   }
   async function readSite() {
     const result = await readResult({ operation: "read", tool: "get_site", args: {} });
@@ -302,7 +306,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
       if (outcome.ok && outcome.result) return toolResult(outcome.result);
       // A status lookup that was not delivered says nothing about the change itself: unknown.
       if (outcome.code !== "editor-unavailable") return unknown(requestId, outcome.code);
-      return failure(notSharingMessage(origin, connection.workspace));
+      return waiting(closed);
     },
   );
 
@@ -754,7 +758,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
         return waited(Array.isArray(value?.requests) ? value.requests : [], agentControls(env).watch ? value?.watch ?? { state: "off" } : { state: "off" }, agentControls(env).watch ? undefined : WATCH_PAUSED);
       }
       if (outcome.code === "editor-unavailable")
-        return waited([], { state: "off" }, "No editor tab receives requests for this site now. Stop here: tell the user to open the site in the editor and turn on remote agents, then to ask you to continue.");
+        return waited([], { state: "off" }, `${closed} Stop here: tell the user, then wait until they ask you to continue.`);
       if (outcome.code === "waiting")
         return waited([], { state: "off" }, "Another wait for this site's requests is already open (one at a time). Do not call wait_for_requests again now: tell the user you are ready.");
       return waited([], { state: "off" }, `The editor did not answer this wait (${outcome.code ?? "connection lost"}). Do not repeat it on your own: tell the user you are ready. Requests it took come back with all: true.`);
@@ -776,7 +780,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
         if (!outcome.result.ok) return failure(outcome.result.message);
         return text({ ...(outcome.result.value as object), note: requestNote });
       }
-      if (outcome.code === "editor-unavailable") return failure(notSharingMessage(origin, connection.workspace));
+      if (outcome.code === "editor-unavailable") return waiting(closed);
       return failure(`The editor did not answer (${outcome.code ?? "connection lost"}). Read the request again when the editor is ready.`);
     },
   );
@@ -806,7 +810,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
       if (outcome.ok && outcome.result) {
         if (!outcome.result.ok) return failure(outcome.result.message);
         replied = outcome.result.value as unknown as AgentRequest;
-      } else if (outcome.code === "editor-unavailable") return failure(notSharingMessage(origin, connection.workspace));
+      } else if (outcome.code === "editor-unavailable") return waiting(closed);
       else return failure(outcome.outcome === "not-sent"
         ? `The editor did not receive this reply (${outcome.code}). Nothing changed; reply again in a moment.`
         : `This reply's outcome is unknown (${outcome.code ?? "connection lost"}). Read the request with get_selection before replying again.`);

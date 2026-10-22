@@ -84,13 +84,18 @@ function openRequests(hub: AgentHub | undefined, repoId: number, branch: string)
   return (hub?.requests ?? []).filter((item) => item.repoId === repoId && item.branch === branch && (item.state === "open" || item.state === "seen")).length;
 }
 
+/** How the user gets an editor tab onto a site: sign in, open the repository, keep the tab open. */
+export function openEditorSteps(origin: string) {
+  return `Ask the user to: 1) open ${origin} and sign in with GitHub (Continue with GitHub; a free GitHub account works, but a new account must confirm its email address first, or GitHub answers the sign-in with a 404 page); 2) open a repository there: choose one in the project menu, or, with none yet, create one on the Get started screen (or, if you have the GitHub CLI, run \`gh repo create <name> --public\` yourself and ask them to give the editor access to it there); 3) keep that editor tab open.`;
+}
+
 /**
  * What the user has to do in the editor before agents can work: no tab
  * shares a site (signed out, no repository chosen yet, or the tab closed).
  */
 export function notSharingMessage(origin: string, workspace?: { repo: string; branch: string }, shown?: EditorContext) {
   if (workspace && shown) return `This connection is for ${workspace.repo} on branch ${workspace.branch}; the editor shows ${shown.repository.fullName} on branch ${shown.branch}. Open that site and branch in the editor, or connect the agent again from the tab you want.`;
-  return `The editor tab is not sharing a site right now, so there is nothing to work on yet. Ask the user to: 1) open ${origin} and sign in with GitHub (Continue with GitHub; a free GitHub account works, but a new account must confirm its email address first, or GitHub answers the sign-in with a 404 page); 2) open a repository there: choose one in the project menu, or, with none yet, create one on the Get started screen (or, if you have the GitHub CLI, run \`gh repo create <name> --public\` yourself and ask them to give the editor access to it there); 3) keep that editor tab open. Open the repository and branch chosen for this connection; call get_site again.${workspace ? ` This connection is for ${workspace.repo} on branch ${workspace.branch}.` : ""}`;
+  return `The editor tab is not sharing a site right now, so there is nothing to work on yet. ${openEditorSteps(origin)} Open the repository and branch chosen for this connection; call get_site again.${workspace ? ` This connection is for ${workspace.repo} on branch ${workspace.branch}.` : ""}`;
 }
 
 /** Why a page tool cannot run before the repository has a home page. */

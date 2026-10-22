@@ -1051,8 +1051,9 @@ test("Ask agent history stays in this browser: after a reload its pins show, cle
     await expect(page.locator('.agent-pin[data-state="done"]')).toHaveCount(1);
     await expect(page.locator('.agent-pin[data-state="question"]')).toHaveCount(1);
 
-    // The pins stay after a reload, which turns remote agents off, from this browser alone.
+    // The pins stay after a reload with remote agents off (not remembered on for this site), from this browser alone.
     await expect(pins).toHaveCount(2);
+    await page.evaluate(() => localStorage.removeItem('native-site-editor:agents-on:["native-demo-user",501,"main"]'));
     const calls = agentCalls(page);
     await page.reload();
     await open(page, baseURL);
