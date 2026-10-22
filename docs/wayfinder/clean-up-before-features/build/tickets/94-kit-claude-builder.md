@@ -1,8 +1,8 @@
 ---
 title: "Kit: the Claude builder can run shell commands and accepts its helper-model calls"
 type: task (AFK)
-status: open
-assignee: claude runner (lead: this session)
+status: closed
+assignee: runner-94
 builder: sol
 blocked_by: []
 ---
@@ -36,3 +36,11 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 
 - `kit doctor`; `kit bg slice-94 -- scripts/agents/kit slice --ticket docs/wayfinder/clean-up-before-features/build/tickets/94-kit-claude-builder.md --builder sol`; `kit wait job slice-94 --timeout 2h`.
 - Report: unit `RESULT:` lines, review folder and decisions, PR and merge SHA.
+
+## Done (2026-10-22)
+
+- Claude builds retain `acceptEdits` and shared Git-directory access, allow Bash, and deny Task/Agent tools, including on resume. Review arguments remain unchanged.
+- Model verification requires the requested model and permits additional `claude-haiku-*` helpers. Other extra models and results without the requested model still fail.
+- Unit coverage checks build/review and resume arguments, Opus with Haiku helpers, aliases, context suffixes, dated snapshots, Sonnet fallbacks and missing requested models.
+- Validation: `kit doctor` passed 7/7; `kit unit --affected` passed 38/38 across two files (`.scratch/unit/20261022T081417-31.log`); `npm run check` and `npm run lint` passed; `kit specs --affected` reported no affected specs.
+- Commits: none; changes remain unstaged for the runner.

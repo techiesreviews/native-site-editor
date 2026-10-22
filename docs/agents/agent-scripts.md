@@ -89,7 +89,7 @@ The runner prints the report and `git status --short`.
 Codex build uses `workspace-write`, network access and `--add-dir` for the shared
 Git directory; review uses `read-only`. Both automatically trust the vetted repo
 hooks; interactive Codex asks once to approve new or changed hooks.
-Claude build uses `acceptEdits` and adds the shared Git directory. Review uses
+Claude build uses `acceptEdits`, allows Bash, denies Task/Agent, and adds the shared Git directory. Review uses
 `plan` permissions, exposes only Read/Grep/Glob, excludes inherited settings with
 `--setting-sources ""`, and disables MCP servers with `--strict-mcp-config`
 and `--mcp-config '{"mcpServers":{}}'`. Claude returns JSON; the runner extracts
