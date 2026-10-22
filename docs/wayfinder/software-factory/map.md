@@ -30,6 +30,7 @@ One written recipe (the kitchen rulebook) that every session and every model fol
 - [Decide the weekly sweep, learning from past chats and grouping problems](tickets/06-grill-sweeps-and-learning.md#resolution-2026-10-22): sweep lists only, top 3 to Lex Mondays 09:00; chat learning every other Monday into checks or rulebook lines, tied to the central chat memory; triage groups problems before hand-out
 - [Decide how projects share Lex's central memory](tickets/10-grill-central-memory.md#resolution-2026-10-22): chat-project sync is the one collector with a corrections pass, runs every 4 hours; every project session starts with a short context card read from it; sync side built in the chat project, card in the shared kit
 - [Decide the acts-like-a-user checking skill](tickets/03-grill-checking-skill.md#resolution-2026-10-22): plain feature list kept current by every visible slice; touched features per slice, whole list before the end check; fine / looks off / broken with screenshots; same kit tool as the UX review
+- [Decide the atomic design catalogue](tickets/09-grill-atomic-catalogue.md#resolution-2026-10-22): editor UI parts on a Figma-like interactive canvas; shared values from the techies.tools Generative UI Framework; extendable parts with options and slots; a count of one-offs that only goes down; its own build after the clean-up, before multiplayer
 
 ## Not yet specified
 
