@@ -312,6 +312,28 @@ test("a removal an earlier version fenced but did not finish is finished once: r
   } finally { h.namespace.get = get; await h.dispose(); }
 });
 
+test("an earlier version's fenced entry for a grant since rebound away is only released: record, hub entry and destination count stay", async () => {
+  const h = await fixture();
+  try {
+    const source = (await h.ledger())!.entries.find(entry => entry.id === h.grant.id)!;
+    await rebindGrant(h.env, h.grant.id, await getGrant(h.env, h.grant.id), { repoId: repo.id, repo: repo.full_name, branch: "other" });
+    // The old grace fenced the source entry just as the rebind landed, then the deploy came.
+    const ledger = (await h.ledger()) ?? { workspace: workspaceKey(workspace), entries: [] };
+    await h.relayStorage.put(METADATA_KEY, { ...ledger, entries: [...ledger.entries.filter(entry => entry.id !== source.id), { ...source, state: "cleaned" }] });
+    await h.relayStorage.put(LIFECYCLE_KEY, { generation: 2, cleaned: { [source.id]: source.expiresAt }, cleanupPending: true });
+    await h.relayStorage.put(DEADLINES_KEY, { "agent-cleanup": h.now() });
+    h.restoreEditors(h.name, []);
+    await h.alarm(h.name);
+    assert.deepEqual((await h.ledger())!.entries, [], "the source entry is released");
+    assert.deepEqual((await getHub(h.env, h.sessionId))!.grants.map(grant => [grant.id, grant.branch]), [[h.grant.id, "other"]]);
+    const destination = await h.storage(await relayObjectName({ ...workspace, branch: "other" })).get<Ledger>(METADATA_KEY);
+    assert.ok(destination!.entries.some(entry => entry.id === h.grant.id), "the destination still counts it");
+    assert.equal((await getGrant(h.env, h.grant.id)).branch, "other");
+    assert.equal((await h.tool("read_file", { path: "index.html" })).status, 200, "the token still authenticates");
+    assert.equal((await h.record())!.cleanupPending, undefined);
+  } finally { await h.dispose(); }
+});
+
 test("one grace both finishes an earlier version's removal and clears a live connection's temporary data; the claim ends only when both succeed", async () => {
   const h = await fixture();
   const get = h.namespace.get;
