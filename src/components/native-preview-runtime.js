@@ -3860,6 +3860,7 @@ import { domView } from "../page-builder/rules/tree.ts";
       var back = Object.keys(old.saved).filter(function (name) { return !same || !(name in wanted); });
       back.forEach(function (name) { setLookAttribute(old.el, name, old.saved[name]); });
       if (back.length && old.el.parentNode) resolveAssets(old.el.parentNode);
+      if (back.length) scheduleBoxes();
     }
     var record = null;
     if (el) {
