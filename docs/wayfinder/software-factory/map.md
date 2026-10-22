@@ -27,6 +27,7 @@ One written recipe (the kitchen rulebook) that every session and every model fol
 - [Decide the UX confidence ladder](tickets/02-grill-ux-confidence-ladder.md#resolution-2026-10-22): UX rulebook; approved mock-up before every visible build, atomic design; Opus UX review of every visible change as a kit command; four rungs, up after 5 builds without a UX correction, down after one found post-release
 - [Decide the scoreboard and how review findings are recorded](tickets/04-grill-scoreboard.md#resolution-2026-10-22): kit records builder, time, rounds, findings and Lex's UX corrections by kind per piece; one visual page per build shown in chat; one feedback log; builder choice from numbers, brought to Lex
 - [Decide automatic hand-out of ready tickets](tickets/05-grill-hand-out.md#resolution-2026-10-22): 30-minute T3 check-in while a build runs; `kit next` picks ticket and builder by fixed rules; max 5 helpers; grilling, release, money, unrecoverable deletes and settings always wait for Lex
+- [Decide the weekly sweep, learning from past chats and grouping problems](tickets/06-grill-sweeps-and-learning.md#resolution-2026-10-22): sweep lists only, top 3 to Lex Mondays 09:00; chat learning every other Monday into checks or rulebook lines, tied to the central chat memory; triage groups problems before hand-out
 
 ## Not yet specified
 
