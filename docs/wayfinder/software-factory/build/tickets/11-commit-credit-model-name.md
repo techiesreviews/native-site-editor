@@ -35,3 +35,9 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Free worker through T3 `delegate_task` (OpenCode `deepseek-v4.1-flash-free`) in `build/sf-11-commit-credit` (`ASE_OWNER=sf-11`); brief names this ticket, its Files, `scripts/agents/kit doctor` and `scripts/agents/kit unit --affected`. One attempt plus one correction; then Claude.
 - Review: `ASE_REVIEW_MODEL=claude-opus-5-5 scripts/agents/kit review --ticket docs/wayfinder/software-factory/build/tickets/11-commit-credit-model-name.md`; land: `ASE_OWNER=sf-11 scripts/agents/kit pr --ticket <same>`.
 - Report: unit `RESULT:` lines, one sample `git log --format='%an <%ae>'` line from the test repo, review decisions, PR and merge SHA.
+
+## Done (2026-10-22)
+
+- `builderAuthor` now names the model instead of echoing its id: `claude-opus-5-5` → `Claude Opus 5.5`, Claude families with an optional date or `[1m]` suffix → `Claude <Family> <major>.<minor>`, bare `opus`/`sonnet`/`haiku`/`fable` → `Claude <Alias>`, and `gpt-*` → upper-case `GPT-…`; every other id keeps its current name and vendor.
+- A slice now saves the model that ran its build phase and credits the build commit with that model, so a switch before the commit no longer credits the incoming builder; fix rounds keep crediting their own round's model.
+- `tests/kit-commit.test.ts` covers each mapping and that a build under `gpt-6.1-sol` resumed with `gpt-6-luna` keeps the Sol build credit while the next fix round is credited to Luna; the suite passed via `kit unit` (66/66 focused, 125/125 affected) and `npm run check`.
