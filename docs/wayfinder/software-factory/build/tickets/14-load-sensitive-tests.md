@@ -49,13 +49,13 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 
 ## Done (2026-10-22)
 
-Every cause was in the tests; no product race was found and no source file changed.
+The five reported failures were caused by the tests; no source file changed. The repeat runs then found one product race in the toast layers test (below).
 
 **Causes, one line each.**
 - `agent-usage.test.ts` ("an empty wait…"): after `initialized` the MCP SDK opens its standby GET without awaiting it; on a busy machine that request's three auth calls landed after `counters.reset()` (6 !== 3). The test now waits for that GET to settle before resetting. Reproduced by delaying the GET: exactly 6 !== 3 without the wait, passing with it.
 - `agent-local-recovery.test.ts` ("a command issued more than 23 hours ago…"): the issue time came from a second `Date.now()` while the records' clock was the setup's start; more than 1 ms between them made the command 23 hours old minus that gap, so it applied. It now reads the setup's `now()`.
 - `native-lazy-panels.spec.ts` ("a failed connection check…"): Connect checks once, makes its token, then reads once more (seen in slice 93's failing trace: connections 503, connect 200, connections 503). The question pin can show before or after that second read, so counting at the pin gave 1 or 2. The test now waits for the count to reach 2.
-- `native-media-library.spec.ts:450`, ring: the test started its stopwatch after its own waits for the new tile, up to 570 ms after the ring began, so the ring looked ahead. The page now records when the tile first wears the ring, and both times are read on the document timeline.
+- `native-media-library.spec.ts:450`, ring: the test started its stopwatch after its own waits for the new tile, up to 570 ms after the ring began, so the ring looked ahead. The page now records when the tile first wears the ring (performance clock), and the redraw sets the ring to its age since then, so a late first frame cancels out; elapsed is read on the document timeline, which shares that clock's origin and lags it by at most a frame, so it can only come out short.
 - `native-media-library.spec.ts:450`, kept tiles: a tile whose picture was still loading at the snapshot got it later and counted as changed; only pictures already shown are compared now (every tile must still be the same element).
 - `native-editor-toast.spec.ts`: the toast leaves after its 6 s, and on a slow machine the steps outlasted it. Reproduced with 6× CPU throttling: the last test's toast was already gone. The question test now pauses the clock as the layers test does. The Update links test holds the toast under the pointer from the start, because the drafts' save timer must keep running there. Passes 4/4 at 6× and 10× throttling.
 
@@ -63,8 +63,12 @@ Every cause was in the tests; no product race was found and no source file chang
 - Unit: `agent-usage` and `agent-local-recovery` 20/20 each with `kit unit <files>`, beside full `kit unit` runs (5032/5032 twice).
 - Specs, 5 rounds each beside a full `kit unit`: `native-editor-toast` 5/5, `native-lazy-panels` 5/5. `native-media-library` failed round 5 on the kept-tiles check (the second cause above), then went 5/5 in 5 new rounds after that fix. All 10 beside-runs of `kit unit` passed except one: `kit-tests-clean.test.ts` failed once ("kit fix refuses a HEAD change while its builder is held", at load 36). It is outside this ticket and passed in the other runs.
 
-**Review round.** `agent-usage` now fails with a clear message if the SDK opens no standby GET within 10 s, and checks there is exactly one. `native-lazy-panels` checks that a focus or visibility change after Connect makes no third read. The Update links toast is checked fully in view before the pointer holds it.
+**Review rounds.** `agent-usage` now fails with a clear message if the SDK opens no standby GET within 10 s, and checks there is exactly one GET, before the reset and again after the counts. The Update links toast is checked fully in view before the pointer holds it.
 
-**Commits.** e9661903 (build).
+**Repeat counts after the review fixes** (load as above): `agent-usage` 20/20 with `kit unit tests/agent-usage.test.ts`, beside a full `kit unit` (5032/5032). Specs, 5 rounds each beside a full `kit unit` (all ten 5032/5032): `native-lazy-panels` 5/5, `native-media-library` 5/5, `native-editor-toast` 4/5.
+
+**Product race found, not fixed (needs a decision).** Round 5 failed the toast layers test (`native-editor-toast.spec.ts:82`, Undo click timed out: the explorer's page list covered the toast). Cause, in the product: the pointer moving onto the explorer button opens the explorer (hover) and the toast moves into it; the press on that button, not a native invoker, light-dismisses the explorer and the click reopens it above the toast. The two toggles reach the toast as one `open>open` event, so `toast.ts` sees the same layer and does not lift the toast again. A scratch probe (hover, then click) reproduced it on its one run: the Undo button lay under `.pages-tree`. In the spec it only shows when Playwright's click lands after the hover's toggle event, hence the load. A user who hovers, then clicks the explorer button while a toast shows gets the same covered toast. Per this ticket the product is left as is; the fix belongs to `src/components/toast.ts` (re-place on any toggle of its layer) or `src/components/dropdown.ts` (the main trigger as a popover invoker).
+
+**Commits.** e9661903 (build); d3bd5c47 (review fixes round 1); plus the round 2 review-fix commit.
 
 **Checks.** `kit unit --affected` ok 26/26; `kit specs --affected` ok 3/3 (37 tests); `npm run lint` and `npm run check` clean.

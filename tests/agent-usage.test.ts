@@ -100,6 +100,7 @@ test("an empty wait without a receiver answers quietly at once without a legacy 
     assert.equal(h.counters.byCategory.control.calls, 1);
     assert.equal(h.counters.byCategory.data.calls, 0);
     assert.equal(h.counters.waitedMs, 0);
+    assert.equal(gets, 1, "no other GET was counted above");
   } finally { clearTimeout(noStandby); try { await client.close(); } finally { await h.worker.dispose(); } }
 });
 
