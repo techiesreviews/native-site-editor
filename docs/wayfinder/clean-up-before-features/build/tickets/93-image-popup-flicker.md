@@ -1,8 +1,8 @@
 ---
 title: "Image popup: find and fix the flicker while zooming or moving"
 type: task (AFK)
-status: open
-assignee: claude runner (lead: this session)
+status: closed
+assignee: runner-93
 builder: claude
 blocked_by: []
 ---
@@ -40,3 +40,15 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `kit shots image-popup --compare dev`.
 - Review: `kit review --ticket <this ticket>` (GPT-6.1 Sol, medium, read-only); an Opus 5.5 UX look at the result on request. Land: `kit pr --ticket <this ticket>`.
 - Report: the cause and its evidence, shots contact sheet, unit and specs `RESULT:` lines, review folder and decisions, PR and merge SHA.
+
+## Done (2026-10-22)
+
+**Cause.** Every zoom, turn or move step sends one `image-look` per frame. The canvas handler (`setImageLook` in `src/components/native-preview-runtime.js`) first put all of the image's own attributes back (its own `src` and `style`), then set the new trimmed picture. So between two steps the image was given its uncropped picture and then a new data address it still had to decode; the browser kept drawing the image's own picture, in the trim's style, until the new one was ready: the flick back and jump Lex saw. Evidence: on `dev` each step calls `setAttribute("src", <own picture>)` before `setAttribute("src", <next trim>)`. The new spec records every `src` set on the page's image; run against the `dev` runtime and popup view it fails (`kit specs native-image-popup.spec.ts`: `RESULT: fail specs 1 of 1 failed`, at the assertion that the own picture, a `data:image/webp` address, never returns after the first trim). With the fix it passes (`RESULT: ok specs 1/1 passed`, 21 tests in the file).
+
+**Behaviour.** A new look on the same image changes only what differs: attributes it keeps setting are not put back in between, and only ones it no longer sets come back. A new picture is decoded first (`Image.decode`) and then shown together with its style, so the trimmed picture already showing stays until the next one can be drawn. If a later look shows first, the older one is dropped. A page render still puts the image's own attributes back and reads them again, as before. Closing the popup still gives the image its own attributes back. In the popup's small previews, a picture that may be see-through keeps its checkerboard mark until the new trim has loaded, so it no longer flashes on each step.
+
+**Tests.** `tests/native-save/native-image-popup.spec.ts`: "zooming and moving step by step never shows the page's own picture between steps": six Zoom steps and a dot drag in three moves on a raster picture, each move waiting for its own trim. It asserts the same element, that the page's own `src` never comes back after the first trim, and that more than one trimmed picture was shown. No rule moved, so there are no new unit tests. Ran: `npm run check` ok, `npm run lint` ok, `kit unit --affected` `RESULT: ok unit 1263/1263`, the spec above. `kit shots image-popup --compare dev`: no difference at rest in the popup or on the page; the Computer preview thumbnail's scale varies between runs on `dev` itself (light before vs dark before).
+
+**Files.** `src/components/native-preview-runtime.js` (the `image-look` handler and its render caller), `src/page-builder/image-popup-view.ts` (`showPicture`). No `main.ts` change.
+
+**Build note.** The Claude builder CLI in `kit slice` could not run any Bash command (kit, npm, node all refused for approval), so it wrote the change unverified; runner-93 (Claude Opus 5.5) verified and finished it directly, per runner.md's `builder: claude` fallback.

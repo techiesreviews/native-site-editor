@@ -631,6 +631,65 @@ test("Zoom and Turn save a trimmed copy; back at 100 % and unturned only the spo
   await expect.poll(() => source(page)).toBe(before);
 });
 
+// Ticket 93: each zoom or move step used to put the image's own picture back before the next trim,
+// so the page flicked to the uncropped picture between steps. The same element now goes from one
+// trimmed picture to the next.
+type Ticket93Probe = { el: Element; seen: (string | null)[] };
+test("zooming and moving step by step never shows the page's own picture between steps", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await open(page, baseURL);
+  await openPopup(page);
+  await popup(page).getByRole("button", { name: "Replace", exact: true }).click();
+  await picker(page).locator('input[name="media-upload"]').setInputFiles({ name: "Steps.jpg", mimeType: "image/jpeg", buffer: Buffer.from(await quarters(page), "base64") });
+  await expect(picker(page).getByRole("button", { name: "Choose Steps.jpg", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await picker(page).getByRole("button", { name: "Use image", exact: true }).click();
+  await expect(popup(page)).toHaveCount(0);
+  await expect.poll(() => heroTag(page)).toMatch(/src="\/media\/images\/steps\.webp"/);
+  await openPopup(page);
+  const hero = frame(page).locator(".hero img");
+  // Every src the page's image is given, in order, on the element first shown: each set is seen,
+  // even two in one task, which no paint separates but which still start a picture's load.
+  const own = await hero.evaluate(el => {
+    const seen = [el.getAttribute("src")];
+    Object.assign(window, { ticket93: { el, seen } satisfies Ticket93Probe });
+    const set = el.setAttribute.bind(el);
+    el.setAttribute = (name: string, value: string) => { set(name, value); if (name === "src") seen.push(value); };
+    return el.getAttribute("src");
+  });
+  const zoom = popup(page).getByRole("slider", { name: "Zoom" });
+  await zoom.focus();
+  for (let step = 0; step < 6; step++) {
+    await page.keyboard.press("ArrowRight");
+    await expect(popup(page).locator(".image-popup__zoom output")).toHaveText(`${105 + step * 5} %`);
+    await expect(hero).not.toHaveAttribute("src", own!);
+  }
+  // Zoomed in, the dot moves the picture to the side in several steps.
+  const box = (await popup(page).locator(".image-popup__picbox").boundingBox())!;
+  await dot(page).hover();
+  await page.mouse.down();
+  for (const x of [0.4, 0.3, 0.2]) {
+    const shown = await hero.getAttribute("src");
+    await page.mouse.move(box.x + box.width * x, box.y + box.height * 0.5, { steps: 3 });
+    // Each move shows its own trim before the next one starts.
+    await expect(hero).not.toHaveAttribute("src", shown!);
+  }
+  await page.mouse.up();
+  await expect(dot(page)).not.toHaveAttribute("aria-valuetext", /^50% across/);
+  const after = await hero.evaluate(el => {
+    const probe = (window as Window & { ticket93: Ticket93Probe }).ticket93;
+    return { same: probe.el === el, seen: probe.seen };
+  });
+  expect(after.same).toBe(true);
+  // After the first trim the page's own picture never comes back while the popup is open.
+  const first = after.seen.findIndex(src => src !== own);
+  expect(first).toBeGreaterThan(0);
+  expect(after.seen.slice(first).filter(src => src === own)).toEqual([]);
+  // The steps still showed: the page took more than one trimmed picture.
+  expect(new Set(after.seen.slice(first)).size).toBeGreaterThan(1);
+  await popup(page).getByRole("button", { name: "Close", exact: true }).click();
+  await expect(page.locator("#status")).toContainText("Picture trimmed", { timeout: 30_000 });
+});
+
 const large = (page: Page) => page.getByRole("dialog", { name: "Edit image", exact: true });
 // The large editor's own Undo (the editor toast, slice 105, can stand in the dialog with its Undo).
 // The large editor's Shape: the popup's shape menu on a button naming the current shape (slice 110).
