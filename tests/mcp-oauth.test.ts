@@ -10,6 +10,8 @@ import {
 import { editorTab, origin, payload, repo, signIn, siteContext, startWorker, workerFetch } from "./mcp-harness.ts";
 import { handleOAuth, redirectUriProblem } from "../worker/oauth.ts";
 import { REGISTRATION_ROUTE } from "../worker/oauth-registration.ts";
+import { AGENT_PERMISSION_LIFETIME } from "../worker/agent-lifecycle.ts";
+import { startCountedWorker } from "./fakes/counted-agent.ts";
 
 const callback = "https://client.example/oauth/callback";
 
@@ -194,6 +196,35 @@ test("the consent endpoint bounds a gzipped over-limit form with an error page, 
   } finally {
     await worker.dispose();
   }
+});
+
+test("a connection reports at most 8 hours, by token and by OAuth, even when the editor sign-in lasts longer", async () => {
+  const h = await startCountedWorker();
+  try {
+    const { cookie } = await signIn(h.worker);
+    // Sign-ins end within 8 hours today; stretch this one so only the permission's own cap applies.
+    const sessions = h.storage(cookie.split("=")[1]);
+    const session = await sessions.get<{ expiresAt: number }>("session");
+    await sessions.put("session", { ...session, expiresAt: Date.now() + 2 * AGENT_PERMISSION_LIFETIME });
+
+    const before = Date.now();
+    const connected = await (await editorTab(h.worker, cookie).post("/api/agent/connect", { repo: repo.full_name, repoId: repo.id, branch: "main" })).json();
+    const left = connected.expiresAt - Date.now();
+    assert.ok(connected.expiresAt >= before + AGENT_PERMISSION_LIFETIME && left <= AGENT_PERMISSION_LIFETIME, `connect reports ${left} ms left`);
+
+    const client = await (await h.worker.dispatchFetch(`${origin}/auth/mcp/register`, { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ client_name: "Test Claude", redirect_uris: [callback], grant_types: ["authorization_code"], response_types: ["code"], token_endpoint_auth_method: "none" }) })).json();
+    const verifier = randomBytes(32).toString("base64url");
+    const authorize = new URL(`${origin}/auth/mcp/authorize`);
+    for (const [key, value] of Object.entries({ response_type: "code", client_id: client.client_id, redirect_uri: callback, state: "s",
+      code_challenge: createHash("sha256").update(verifier).digest("base64url"), code_challenge_method: "S256" })) authorize.searchParams.set(key, value);
+    const allowed = await consent(h.worker, cookie, { request: await consentForm(h.worker, authorize, cookie), repo: repo.full_name, branch: "main", decision: "allow" });
+    const code = new URL(allowed.headers.get("location")!).searchParams.get("code")!;
+    const token = await (await h.worker.dispatchFetch(`${origin}/auth/mcp/token`, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ grant_type: "authorization_code", code, client_id: client.client_id, redirect_uri: callback, code_verifier: verifier }).toString() })).json();
+    // Whole seconds, rounded down: within a second or two of 8 hours, never the sign-in's 16.
+    assert.ok(token.expires_in <= AGENT_PERMISSION_LIFETIME / 1000 && token.expires_in >= AGENT_PERMISSION_LIFETIME / 1000 - 2, `OAuth expires_in ${token.expires_in}`);
+  } finally { await h.worker.dispose(); }
 });
 
 test("an MCP client connects by OAuth: discovery, registration, sign-in and consent, PKCE token exchange, then the site tools", async () => {

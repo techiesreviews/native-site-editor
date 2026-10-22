@@ -154,7 +154,8 @@ test("a permission survives 10 minutes with no tab: tools wait instead of failin
     // A tab opens with agents on: the same token reaches it, without reconnecting the agent.
     const socket = await h.reconnect();
     const pending = h.tool("read_file", { path: "index.html" });
-    for (let n = 0; n < 200 && !socket.sent.some(message => JSON.parse(message).type === "command"); n++) await new Promise(resolve => setImmediate(resolve));
+    // Up to ~5 s of real time (Date.now is faked here): a loaded machine needs more than a few turns.
+    for (let n = 0; n < 1000 && !socket.sent.some(message => JSON.parse(message).type === "command"); n++) await new Promise(resolve => setTimeout(resolve, 5));
     const command = socket.sent.map(message => JSON.parse(message) as { type: string; id: string }).find(value => value.type === "command")!;
     assert.ok(command, "the tool call reaches the new tab");
     h.message(h.name, socket, JSON.stringify({ type: "result", ...socket.scope, id: command.id, result: { ok: true, value: { path: "index.html", content: "works" } } }));
@@ -306,6 +307,39 @@ test("a removal an earlier version fenced but did not finish is finished once: r
     await assert.rejects(getGrant(h.env, h.grant.id), { status: 401 });
     assert.deepEqual((await getHub(h.env, h.sessionId))?.grants ?? [], []);
     assert.deepEqual((await h.ledger())?.entries ?? [], [], "the slot is free for a new connection");
+    assert.equal((await h.record())!.cleanupPending, undefined);
+    assert.equal(await h.relayStorage.getAlarm(), null);
+  } finally { h.namespace.get = get; await h.dispose(); }
+});
+
+test("one grace both finishes an earlier version's removal and clears a live connection's temporary data; the claim ends only when both succeed", async () => {
+  const h = await fixture();
+  const get = h.namespace.get;
+  try {
+    const legacy = await createGrant(h.env, h.input);
+    const ledger = (await h.ledger())!;
+    ledger.entries.find(entry => entry.id === legacy.id)!.state = "cleaned";
+    await h.relayStorage.put(METADATA_KEY, ledger);
+    const record = (await h.record()) ?? { generation: 0, cleaned: {} };
+    await h.relayStorage.put(LIFECYCLE_KEY, { ...record, cleaned: { [legacy.id]: h.input.expiresAt } });
+    h.restoreEditors(h.name, h.editors); // A later wake reads the stored state.
+    await h.seedTemporary();
+    await h.close(h.name, h.editors[0]);
+    h.advance(DISCONNECT_GRACE);
+    let failing = true;
+    h.namespace.get = name => ({ fetch: request => failing && name === `agent:${legacy.id}`
+      ? Promise.resolve(new Response(null, { status: 503 })) : get(name).fetch(request) });
+    await assert.rejects(h.alarm(h.name), /incomplete/);
+    assert.deepEqual(await h.leftovers(), { present: [], inline: [] }, "the live connection's temporary data is cleared");
+    const states = async () => Object.fromEntries((await h.ledger())!.entries.map(entry => [entry.id, entry.state]));
+    assert.deepEqual(await states(), { [h.grant.id]: "final", [legacy.id]: "cleaned" });
+    assert.equal((await h.record())!.cleanupPending, true, "the claim stays while the earlier removal is unfinished");
+    assert.equal((await h.tool("read_file", { path: "index.html" })).status, 200, "the live permission still authenticates");
+    failing = false; h.advance(30_000); await h.alarm(h.name);
+    assert.deepEqual(await states(), { [h.grant.id]: "final" }, "the earlier entry is released");
+    await assert.rejects(getGrant(h.env, legacy.id), { status: 401 });
+    assert.deepEqual((await getHub(h.env, h.sessionId))!.grants.map(grant => grant.id), [h.grant.id]);
+    assert.ok(await getGrant(h.env, h.grant.id));
     assert.equal((await h.record())!.cleanupPending, undefined);
     assert.equal(await h.relayStorage.getAlarm(), null);
   } finally { h.namespace.get = get; await h.dispose(); }
