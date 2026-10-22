@@ -1088,7 +1088,11 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       selected = templateKey(pendingSelection.path, pendingSelection.node);
       pendingSelection = undefined;
     }
-    if (!tree.querySelector(".page-structure__component-outline")) { editingInstance = undefined; unfoldedOpen.clear(); }
+    if (!tree.querySelector(".page-structure__component-outline")) {
+      // Edit component mode ended: a part of its template marked marks its instance (where it went).
+      if (editingInstance !== undefined && selected?.startsWith("@") && !rows.has(selected)) selected = editingInstance;
+      editingInstance = undefined; unfoldedOpen.clear();
+    }
     // An editor whose anchor went (Hide, Undo, Redo) or a Show that found
     // nothing to anchor to is forgotten, so no later render reopens it.
     // A paint proven stale proves nothing, and a pending Show waits for a fresh one.
@@ -1350,7 +1354,8 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       const waits = id === undefined && named !== undefined;
       heldAhead = waits ? { id: named, at: structure! } : selectedAhead ? heldAhead : undefined;
       const heldNow = heldFrom;
-      if (id === selected && !selectedAhead) return;
+      // (An element only the held paint has is another choice, even with nothing selected.)
+      if (id === selected && !selectedAhead && !waits) return;
       // Another element chosen (on the page or here): a row edit is kept and ends. The
       // edited element, its instance (its own writes select that) or what is in it do not count.
       const owner = editingModule?.editing();
@@ -1363,8 +1368,13 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     },
     /** What a block's drag draws in the tree and measures there (tree-drop.ts). */
     dropView: (template?: string) => dropViewFor(template),
-    /** Source or mode changed without a new runtime structure report. */
-    refresh() { rendered = ""; render(); },
+    /** Source or mode changed without a new runtime structure report (drawn once a held paint is). */
+    refresh() {
+      rendered = "";
+      // A paint held while typing (a template part's own writes refresh) is drawn once focus leaves.
+      const active = document.activeElement;
+      if (!editingModule?.held() || !((active instanceof HTMLTextAreaElement || active instanceof HTMLInputElement) && tree.contains(active))) render();
+    },
     /** The page changed under the fields: show its title and description again. */
     refreshMeta() {
       if (structure?.path) renderMeta(structure.path);

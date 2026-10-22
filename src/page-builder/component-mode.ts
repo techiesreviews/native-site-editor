@@ -40,6 +40,8 @@ export interface ComponentModePorts {
   changed(): void;
   /** A page's source as the preview counts its elements (default: the browser's parser, `readPage`). */
   read?(source: string): SourceTree<unknown>;
+  /** A part of the template edited is being typed (an edit session on it is open): the host calls `sync` once it ends. */
+  typing?(): boolean;
 }
 
 /** A level of the chain: `node` addresses its instance in the level before (level 0: on the page). */
@@ -68,7 +70,8 @@ export interface ComponentMode {
   /**
    * The mode, or undefined. On while: the template edited is the file open, the framed page is the
    * page shown, the opening's repository, branch and version view hold, and a `tag` element is at
-   * `node` on the page (memoised per page source). Pure: no state, frame or listener changes;
+   * `node` on the page (memoised per page source), or a template part is being typed: a page change
+   * that moved the instance ends the mode once the typing ends. Pure: no state, frame or listener changes;
    * frozen objects, the same one until a transition.
    */
   now(): Mode | undefined;
@@ -214,7 +217,8 @@ export function createComponentMode(ports: ComponentModePorts): ComponentMode {
     if (!mode || !opening || mode.entry !== opening) return undefined;
     const shown = ports.shown();
     if (shown.open !== mode.template || shown.page !== mode.page || !scopeHolds(opening.stamp)) return undefined;
-    return framed(mode.page, mode.node, mode.chain[0].tag) ? mode : undefined;
+    // Typing in a template part carries on through a page change that moved the instance.
+    return framed(mode.page, mode.node, mode.chain[0].tag) || ports.typing?.() ? mode : undefined;
   }
 
   function entry(): object | undefined {

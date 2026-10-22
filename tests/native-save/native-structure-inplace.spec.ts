@@ -287,9 +287,10 @@ test("another file's paint keeps the typing field connected, with its text and c
   } finally { await agent.client.close(); }
 });
 
-test("an agent's page edit while a template part is typed ends the edit and the mode; folds and the mark follow their elements", async ({ page, baseURL }) => {
+test("an agent's page edit while a template part is typed keeps the field, its text and caret; leaving it ends the mode, folds and the mark follow their elements", async ({ page, baseURL }) => {
   const agent = await connectAgent(page, baseURL);
   try {
+    const path = "components/site-footer/site-footer.html";
     const filler = tree(page).getByRole("treeitem", { name: "Section Scroll to verify", exact: true });
     const hero = tree(page).getByRole("treeitem", { name: "Section A native browser preview", exact: true });
     await filler.locator(".page-structure__toggle").click();
@@ -304,20 +305,40 @@ test("an agent's page edit while a template part is typed ends the edit and the 
     const field = tree(page).getByRole("textbox", { name: "Paragraph: Text", exact: true });
     await expect(field).toBeFocused();
     await page.keyboard.type("Footer typed");
-    // Written (its paints held while the field has focus), then the agent adds a row above the main and the footer.
-    await expect.poll(async () => (await agent.read("components/site-footer/site-footer.html")).content).toContain("Footer typed");
-    await expect(field).toBeFocused();
+    // Written (its paints held while the field has focus); the caret set inside the text, the field watched for leaving the tree.
+    await expect.poll(async () => (await agent.read(path)).content).toContain("Footer typed");
+    const typed = await field.inputValue();
+    await field.evaluate((field: HTMLTextAreaElement) => {
+      field.setSelectionRange(3, 3);
+      const observer = new MutationObserver(records => {
+        if (records.some(record => [...record.removedNodes].some(node => node === field || node.contains(field)))) field.dataset.detached = "true";
+      });
+      observer.observe(field.closest("[role=tree]")!, { childList: true, subtree: true });
+      window.addEventListener("pagehide", () => observer.disconnect(), { once: true });
+    });
+    // The agent adds a row above the main and the footer: the footer's instance moves on the page.
     await agent.edit("index.html", '<main class="page" data-key="main">', '<aside data-key="agent-note"><p>Agent note</p></aside>\n<main class="page" data-key="main">');
     await expect(frame(page).locator("aside p")).toHaveText("Agent note");
-    // The template part's session reads the page's change as its own moving on.
-    await expect(page.getByRole("status").filter({ hasText: "Editing Paragraph ended: the page changed meanwhile." })).toHaveCount(1);
-    await expect(field).toHaveCount(0);
-    await expect(note).toHaveCount(0);
+    // The edit goes on: the field keeps its text and caret, nothing ends, the tree waits.
+    await expect(field).toBeFocused();
+    await expect(field).toHaveValue(typed);
+    expect(await field.evaluate((field: HTMLTextAreaElement) => [field.selectionStart, field.selectionEnd])).toEqual([3, 3]);
+    await expect(field).not.toHaveAttribute("data-detached", "true");
+    await expect(page.getByRole("status").filter({ hasText: "ended: the page changed meanwhile." })).toHaveCount(0);
+    await expect(tree(page).getByRole("treeitem", { name: /^Aside/ })).toHaveCount(0);
+    // Typing carries on into the template.
+    await page.keyboard.press("End");
+    await page.keyboard.type(" more");
+    await expect.poll(async () => (await agent.read(path)).content).toContain("Footer typed more");
+    await expect(field).not.toHaveAttribute("data-detached", "true");
+    // Leaving the field: the tree catches up. The page moved under Edit component mode, so the mode
+    // ends and the footer, one row lower, is marked. The hand-set fold and the default one stay with their elements.
+    await field.evaluate((field: HTMLTextAreaElement) => field.blur());
     await expect(tree(page).getByRole("treeitem", { name: /^Aside/ })).toBeVisible();
-    // What was typed is kept; the page moved under Edit component mode, so the mode ends
-    // and the footer, one row lower, is marked. The hand-set fold and the default one stay with their elements.
-    expect((await agent.read("components/site-footer/site-footer.html")).content).toContain("Footer typed");
-    await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
+    await expect(note).toHaveCount(0);
+    expect((await agent.read(path)).content).toContain("Footer typed more");
+    // The agent's page edit left the template's code open (it was being typed).
+    await expect(page.locator("#current-page")).toHaveAttribute("data-path", path);
     await expect(footer).not.toHaveAttribute("data-node", footerAt!);
     await expect(footer).toHaveAttribute("aria-selected", "true");
     await expect(filler).toHaveAttribute("aria-expanded", "true");
