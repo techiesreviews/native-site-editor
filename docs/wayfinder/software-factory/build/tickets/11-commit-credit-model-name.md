@@ -2,7 +2,7 @@
 title: Commit credit names the model, also after a builder switch
 type: task (AFK)
 status: closed
-assignee: lead-sf11 (free worker build)
+assignee: lead-sf11
 builder: opencode/deepseek-v4.1-flash-free
 blocked_by: []
 ---
