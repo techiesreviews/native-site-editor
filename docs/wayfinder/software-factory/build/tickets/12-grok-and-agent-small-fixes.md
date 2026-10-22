@@ -38,3 +38,11 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Free worker through T3 `delegate_task` (OpenCode `deepseek-v4.1-flash-free`) in `build/sf-12-grok-small-fixes` (`ASE_OWNER=sf-12`); brief names this ticket, its Files, `scripts/agents/kit doctor` and `scripts/agents/kit unit --affected`. One attempt plus one correction; then Claude.
 - Review: `ASE_REVIEW_MODEL=claude-opus-5-5 scripts/agents/kit review --ticket docs/wayfinder/software-factory/build/tickets/12-grok-and-agent-small-fixes.md`; land: `ASE_OWNER=sf-12 scripts/agents/kit pr --ticket <same>`.
 - Report: unit `RESULT:` lines, review decisions, PR and merge SHA.
+
+## Done (2026-10-22)
+
+- Grok's model check compares case-insensitively, so `ASE_REVIEW_MODEL=GROK-4.7` accepts `grok-4.7-build` and still rejects `grok-4.70`; `scripts/agents/agent.sh` line 2 now reads `[--cli codex|claude|grok]`.
+- A Grok result with no `sessionId` falls back to the id the runner passed with `-s` for the completeness retry, and `status.json` keeps that id for `agent.sh --resume`. Claude's missing session still opens no fresh retry.
+- `kit review` returns the weekly budget slot when the review fails with `problem: <family> usage limit until …`; a started review that times out still counts.
+- Tests: `tests/agent-scripts.test.ts` (uppercase model against a build variant, `grok-4.70` rejection, retry and `--resume` using the `-s` id when JSON names none), `tests/kit-review.test.ts` (fake Codex usage limit leaves the ledger at its prior count). No real Grok call was made.
+- Checks: `ASE_OWNER=lead-sf12 scripts/agents/kit doctor` gave `RESULT: ok doctor 7/7 checks passed`; `ASE_OWNER=lead-sf12 scripts/agents/kit unit tests/agent-scripts.test.ts tests/kit-review.test.ts` and `ASE_OWNER=lead-sf12 scripts/agents/kit unit --affected` gave `RESULT: ok unit 47/47 (2 files)`; `npm run check` exited 0.
