@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DraftStore, draftKey, indexedDbDrafts, memoryDrafts, type DraftDatabase, type SavedDraft } from "../src/drafts.ts";
+import { githubScope, holdsDraftScope } from "../src/workspace-session.ts";
 function storage() {
   const data = new Map<string, string>();
   return { getItem: (key: string) => data.get(key) ?? null, setItem: (key: string, value: string) => { data.set(key, value); }, removeItem: (key: string) => { data.delete(key); }, key: (index: number) => [...data.keys()][index] ?? null, get length() { return data.size; } };
@@ -42,6 +43,17 @@ test("a draft written with GitHub's current text is dropped, whatever blob it be
   assert.equal(store.get(draft, draft.path)?.deleted, true);
   store.save({ ...draft, baseSha: null, opaque: true, content: "on GitHub now" });
   assert.equal(store.get(draft, draft.path)?.opaque, true);
+});
+test("signed in as \"Lex\", a draft saved as lex is still measured against GitHub's text (main.ts's baseline rule)", () => {
+  const store = new DraftStore(storage()), shown = githubScope({ ...draft, account: "Lex" });
+  store.baseline = (scope, path) => (holdsDraftScope(shown, scope) && path === draft.path ? "on GitHub now" : undefined);
+  store.save(draft);
+  assert.equal(store.list({ ...draft, account: "Lex" }).length, 1);
+  store.save({ ...draft, content: "on GitHub now" });
+  assert.equal(store.get(draft, draft.path), undefined);
+  // Another account's draft is never measured against this tab's text.
+  store.save({ ...draft, account: "someone-else", content: "on GitHub now" });
+  assert.equal(store.list({ ...draft, account: "someone-else" }).length, 1);
 });
 test("load moves localStorage drafts into the database, then removes them; the newer copy wins", async () => {
   const disk = storage(), db = memoryDrafts();

@@ -118,7 +118,7 @@ import { addSectionStep } from "./page-builder/component-plans";
 import { createAgentSiteHost } from "./agent-site-host";
 import { createGuardedEdits, type GuardedEdits, type Reads, type PlanResult, type Stamp } from "./guarded-edit";
 import { createEditorWorkspace } from "./editor-workspace";
-import { createWorkspaceSession, draftScopeOf, githubScope, same, workspaceKeys, type SessionStamp, type WorkspaceScope } from "./workspace-session";
+import { createWorkspaceSession, draftScopeOf, githubScope, holdsDraftScope, setupKeyOf, type SessionStamp, type WorkspaceScope } from "./workspace-session";
 import type { AnnounceAs } from "./components/toast-rules";
 import type {
   EditorContext,
@@ -158,10 +158,10 @@ const appStore = createAppStore(editorModule.sourceStore());
 const workspaceSession = createWorkspaceSession();
 function currentLoad() { return workspaceSession.current().load; }
 function nextLoad(scope?: WorkspaceScope) { workspaceSession.next(scope); return workspaceSession.begin(); }
-// A controller's load number as a stamp (controllers hold numbers until slice 22): none holds once the load moved on.
+// A controller's load number as a stamp (until slice 22); once that load moved on, a deny-all stand-in that says the scope changed.
 function stampOf(epoch: number): SessionStamp {
   const stamp = workspaceSession.begin();
-  return stamp.load === epoch ? stamp : { load: epoch, scope: undefined, holds: () => false, changed: () => "generation" };
+  return stamp.load === epoch ? stamp : { load: epoch, scope: undefined, holds: () => false, changed: () => "scope" };
 }
 installChunkRecovery({
   storage: () => window.sessionStorage,
@@ -2565,7 +2565,7 @@ function adoptNativeBaseSources(
   result: PublishResult,
   submitted: SavedDraft[],
 ) {
-  if (!nativeEngaged || !same(shownScope(), githubScope(scope))) return;
+  if (!nativeEngaged || !holdsDraftScope(shownScope(), scope)) return;
   const removed = new Set(result.deleted ?? []);
   for (const draft of submitted) {
     if (draft.deleted) {
@@ -2714,7 +2714,7 @@ async function activateNativeSite(repo: Repository, result: Snapshot, at: Sessio
   nativeTextIndexed = false;
   const live = () => at.holds() && request === nativeSourcesRequest;
   const placeholder: NativeSite = { routes: { "/": NATIVE_HOME_PAGE }, components: {} };
-  const scope = info.user ? { account: info.user.login, repoId: repo.id, repo: repo.full_name, branch: result.branch } : undefined;
+  const scope = draftScope();
   // The home page first. Without it the project opens as plain files; once
   // it is there, the project is native and every later failure surfaces as
   // a native error rather than silently hiding the preview.
@@ -3342,7 +3342,7 @@ async function startSitePanel() {
 // are ticked from the state the editor holds, each time it may have changed.
 
 /** Account, repository and branch the checklist is of. */
-function setupScope() { return workspaceKeys(shownScope())?.setup ?? ""; }
+function setupScope() { return setupKeyOf(shownScope()); }
 
 const setupController = createSetupChecklistController({
   account: () => info.user?.login,
@@ -4183,7 +4183,7 @@ const savePublish = createSavePublishController({
     void sweepUploads(uploadBytes(), scope, draftStore().list(scope)).catch(() => undefined);
     if (nativeEngaged && !result.unchanged)
       siteActions?.track({ repo: scope.repo, commit: result.commit, url: result.url },
-        () => same(workspaceSession.current().scope, githubScope(scope)));
+        () => holdsDraftScope(workspaceSession.current().scope, scope));
   },
   adopt: (result) => {
     appStore.snapshot.value = result;
@@ -4678,7 +4678,7 @@ async function applyAgentSiteCommand(command: AgentCommand) {
   }
   if (!scope) throw new Error("Open a repository first.");
   const prepared = await prepareAgentText(command, scope, draftStore(), current, (scope, paths) => editorModule.flushAgentTyping(scope, paths),
-    () => { if (same(shownScope(), githubScope(scope))) afterFileChanges(); });
+    () => { if (holdsDraftScope(shownScope(), scope)) afterFileChanges(); });
   if (prepared.duplicate) return prepared.duplicate;
   if (!current() || command.commit !== appStore.snapshot.value?.commit) throw new Error("The editor changed branch or revision.");
   const scoped = agentStructuralActions(editorWorkspace, prepared.context!, current, {
@@ -5587,7 +5587,7 @@ async function disconnect() {
 
 // A draft written with GitHub's text of its file, as this tab holds it, is no change (src/drafts.ts).
 draftStore().baseline = (scope, path) => {
-  return nativeEngaged && same(shownScope(), githubScope(scope))
+  return nativeEngaged && holdsDraftScope(shownScope(), scope)
     ? nativeBaseSources.get(path)
     : undefined;
 };

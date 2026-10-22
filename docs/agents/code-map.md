@@ -51,7 +51,7 @@ Each file is followed by its declared entry symbols. Styles, fixtures, scripts a
 | Protected GitHub paths | `shared/protected-paths.ts` — `touchesGithubConfig`, `splitProtectedEdits` |
 | Agent command and request contracts | `shared/agent.ts` — `AgentCommand`, `AgentRequest`; `shared/types.ts` — `EditorContext`, `Snapshot` |
 | Guarded read proofs and edit plans | `src/guarded-edit.ts` — `createGuardedEdits`, `Reads`, `Planned`; `src/main.ts` — `guardedEdits` |
-| Same workspace and load (`main.ts` guards, its `draftScope`/`setupScope`, the editor workspace's `session` port; controllers in slice 22) | `src/workspace-session.ts` — `createWorkspaceSession`, `same`, `workspaceKeys`, `githubScope`, `draftScopeOf`; `src/main.ts` — `workspaceSession`, `nextLoad`, `shownScope` |
+| Same workspace and load (the editor's guards and its draft and setup scopes; controllers in slice 22) | `src/workspace-session.ts` — `createWorkspaceSession`, `same`, `workspaceKeys`, `githubScope`, `draftScopeOf`, `setupKeyOf`, `holdsDraftScope`; `src/main.ts` — `workspaceSession`, `nextLoad`, `shownScope` |
 | Atomic draft commit and Undo/Redo receipts | `src/guarded-edit/commit.ts` — `createCommit`; `src/editor-workspace.ts` — `createEditorWorkspace` |
 
 ### Page builder and media manager

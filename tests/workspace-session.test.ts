@@ -4,7 +4,7 @@
 // module on the memory workspace with a session in place of its generation.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createWorkspaceSession, draftScopeOf, githubScope, same, workspaceKeys, type WorkspaceScope } from "../src/workspace-session";
+import { createWorkspaceSession, draftScopeOf, githubScope, holdsDraftScope, same, setupKeyOf, workspaceKeys, type WorkspaceScope } from "../src/workspace-session";
 import { createGuardedEdits } from "../src/guarded-edit";
 import { createMemoryWorkspace } from "./fakes/memory-workspace";
 
@@ -133,4 +133,32 @@ test("a draft scope is a GitHub scope under the same rule, and back", () => {
   assert.deepEqual(draftScopeOf(githubScope(draft)), draft);
   assert.equal(draftScopeOf(folder), undefined);
   assert.equal(draftScopeOf(undefined), undefined);
+});
+
+test("within one load the scope never moves: a stamp begun before its snapshot shows holds after, until the next load", () => {
+  // main.ts names the scope as the load starts; `draftScope()` and `setupScope()` show it once its snapshot arrives,
+  // which is no new load, so the setup-key re-checks beside the load checks were redundant.
+  const session = createWorkspaceSession();
+  session.next(lex);
+  const loading = session.begin();
+  assert.ok(loading.holds());
+  assert.equal(setupKeyOf(loading.scope), setupKeyOf(session.current().scope));
+  session.next(lex);
+  assert.ok(!loading.holds());
+  assert.equal(loading.changed(), "generation");
+});
+
+test("work begun with nothing open sees any later load as another scope", () => {
+  // awaitNativeResync refuses then: the agent's command was checked against no site, and a site opened meanwhile.
+  const session = createWorkspaceSession();
+  const idle = session.begin();
+  session.next(lex);
+  assert.equal(idle.changed(), "scope");
+  assert.equal(setupKeyOf(undefined), "");
+});
+
+test("a draft scope belongs to a workspace under the one account rule", () => {
+  assert.ok(holdsDraftScope(lex, { account: "LEX", repoId: 1, branch: "main" }));
+  assert.ok(!holdsDraftScope(lex, { account: "lex", repoId: 1, branch: "dev" }));
+  assert.ok(!holdsDraftScope(undefined, { account: "lex", repoId: 1, branch: "main" }));
 });
