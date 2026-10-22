@@ -2,7 +2,7 @@
 title: Decide the tech-debt and small-fix behaviour questions
 type: grilling (HITL)
 status: open
-assignee:
+assignee: Lex + claude (grilling)
 blocked_by: [02-research-debt-and-follow-ups]
 ---
 

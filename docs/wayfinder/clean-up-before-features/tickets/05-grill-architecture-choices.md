@@ -2,7 +2,7 @@
 title: Decide the architecture review's behaviour questions
 type: grilling (HITL)
 status: open
-assignee:
+assignee: Lex + claude (grilling)
 blocked_by: [01-research-architecture-review]
 ---
 
