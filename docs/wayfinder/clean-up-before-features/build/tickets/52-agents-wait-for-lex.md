@@ -45,3 +45,7 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `kit shots` only if a visible cue is added (none is planned).
 - Review: `kit review --ticket <this ticket>` (GPT-6.1 Sol, medium, read-only); an Opus 5.5 UX review of the agent wording on request. Land: `kit pr --ticket <this ticket>`.
 - Report: the field and waiting wording as landed, unit and specs `RESULT:` lines, `kit size` KB, review folder and decisions, PR and merge SHA, `main.ts` lines and ceiling.
+
+## Comments
+
+- 2026-10-22, Lex: yes to the immediate "waiting" answer without a time limit, **as the stand-in until multiplayer** (both editing at once, like Google Docs) is built as its own feature after the clean-up. Keep the waiting code easy to replace.

@@ -45,3 +45,7 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `kit shots --steps .scratch/cbf-24-icon.json` (open the repository menu with a note present) and `--compare dev`.
 - Review: `kit review --ticket <this ticket>` (GPT-6.1 Sol, medium, read-only); an Opus 5.5 UX review on request. Land: `kit pr --ticket <this ticket>`.
 - Report: shots contact sheet, unit and specs `RESULT:` lines, `kit size` KB, review folder and decisions, PR and merge SHA, `main.ts` lines and ceiling.
+
+## Comments
+
+- 2026-10-22, Lex: reuse the indication already built for agents (MCP): the count on the corner of the site tile in the repository menu (`src/components/repository-menu.ts:40`, style `src/components/repository-menu.css:69`). Same look and placement, its own meaning ("finished work waiting on this site"); no new indicator style.

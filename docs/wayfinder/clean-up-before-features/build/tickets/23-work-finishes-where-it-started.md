@@ -51,3 +51,7 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `kit unit --affected`, `kit specs --affected` plus `kit specs native-switch-mid-work.spec.ts`, `kit size`.
 - Review: `kit review --ticket <this ticket>` (GPT-6.1 Sol, medium, read-only). Land: `kit pr --ticket <this ticket> --full`.
 - Report: the refusals left (list), unit and specs `RESULT:` lines, `kit size` KB, review folder and decisions, PR and merge SHA, `main.ts` lines and ceiling.
+
+## Comments
+
+- 2026-10-22, Lex (check of the lead decision above): **he wants to be able to navigate away in every case; nothing should stop.** This replaces the "still refuses" lead decision. Proposed method, put to Lex in the next round: first make each such action work on the files directly instead of on the page as shown; for the few that truly need the page drawn (a drop place, a measurement), finish them in an invisible copy of that page kept in the background until done. List each such case and the method used in the Done section.
