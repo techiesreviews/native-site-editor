@@ -3828,12 +3828,16 @@ import { domView } from "../page-builder/rules/tree.ts";
   // A zoom or move sends a look per frame: the next one changes only what
   // differs, so the image's own picture never shows between two steps, and a
   // new picture (with its style) takes the place once decoded (ticket 93).
-  var imageLook = null, looksAsked = 0, lookShown = 0;
+  // `lookSrc`: the picture the look last showed, already decoded, so it goes
+  // back at once (in the same task) after a render put the image's own back.
+  var imageLook = null, looksAsked = 0, lookShown = 0, lookSrc = null;
   function setLookAttribute(el, name, value) {
     if (value === null) { if (el.hasAttribute(name)) el.removeAttribute(name); }
     else if (el.getAttribute(name) !== value) el.setAttribute(name, value);
   }
-  // `redrawn`: the page was drawn again, so all of the image's own attributes are put back and read again.
+  // `redrawn`: the page was drawn again, so all of the image's own attributes
+  // are put back and read again. Without it (a new look, or assets that
+  // arrived) the attributes the look still sets keep what was saved first.
   function setImageLook(request, look, redrawn) {
     var old = imageLook, asked = ++looksAsked;
     var found = request && look ? resolveNodePath(request) : null, el = found && found.localName === "img" ? found : null;
@@ -3854,11 +3858,17 @@ import { domView } from "../page-builder/rules/tree.ts";
     }
     var show = function () {
       lookShown = asked;
+      lookSrc = wanted.src === undefined ? null : wanted.src;
       Object.keys(wanted).forEach(function (name) { setLookAttribute(el, name, wanted[name]); });
       scheduleBoxes();
     };
-    if (!el || wanted.src === undefined || el.getAttribute("src") === wanted.src) { show(); return; }
-    // The picture shown keeps its place until the new one can be drawn; a later look shown first wins.
+    if (!el || wanted.src === undefined || wanted.src === lookSrc || el.getAttribute("src") === wanted.src) { show(); return; }
+    // The picture shown keeps its place until the new one can be drawn (the
+    // page's <img> then decodes it again, from memory). Each decode settles as:
+    // resolved, it shows unless a later look showed first or the look was
+    // dropped (Close); rejected, the same, showing what the browser makes of
+    // that picture as the page would; never settling, a later look or Close
+    // takes the place, so nothing waits on it.
     var next = new Image();
     next.src = wanted.src;
     (next.decode ? next.decode() : Promise.resolve()).catch(function () {}).then(function () {
