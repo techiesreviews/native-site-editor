@@ -25,3 +25,7 @@ reviews:
 - A stale guess costs one wasted snapshot and one batch read.
 - The memory (repo names, branch, paths, SHAs; no contents) is readable by
   scripts on the editor origin and cleared only by sign-out.
+
+## Comments
+
+- 2026-10-22: all seven limits still hold (cbf research 02). Limits 2 and 3 are fixed in [slice 25](../../../wayfinder/clean-up-before-features/build/tickets/25-boot-and-snapshot.md); limit 1 (no read timeout) in [slice 26](../../../wayfinder/clean-up-before-features/build/tickets/26-github-retries-and-toast.md) (three automatic retries, then the toast; cbf ticket 04). Limits 4–7 are kept as designed; Lex keeps remembering the last site until sign-out (cbf ticket 04).

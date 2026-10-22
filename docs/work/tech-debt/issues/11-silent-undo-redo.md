@@ -1,6 +1,6 @@
 ---
 title: Undo and Redo give no feedback when the history cannot move
-status: needs-triage
+status: wontfix
 assignee:
 blocked_by: []
 ---
@@ -40,3 +40,4 @@ and in which cases.
   reverts the whole Add). Only Redo is silent, and only after new typing
   replaced the redo step: the usual linear-history behaviour. Suggest
   `wontfix` unless Lex wants a "nothing to redo" notice.
+- 2026-10-22: wontfix (Lex, cbf ticket 04): only the keyboard shortcut is silent; the Undo and Redo buttons grey out, which is enough.

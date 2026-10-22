@@ -17,3 +17,7 @@ the token later (2026-10-08).
 Related: its budget step still runs with `--report-only` and a stale TODO
 ("about 1358 KB today"); dev now measures 351 KB against 355, so the step can
 enforce the budget.
+
+## Comments
+
+- 2026-10-22: still Lex's step. Plain checklist (one token for CI preview deploys and the skipped Durable Object baseline report): [clean-up build README](../../../wayfinder/clean-up-before-features/build/README.md#lexs-checklist-the-cloudflare-token). The budget part is done: the workflow's budget step now enforces 355 KB (`npm run test:budget`).

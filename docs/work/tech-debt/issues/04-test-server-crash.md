@@ -1,6 +1,6 @@
 ---
 title: A test server on 5216 died mid-suite, cause unknown
-status: needs-info
+status: closed
 assignee:
 blocked_by: []
 ---
@@ -21,3 +21,7 @@ temporary worktree at that moment (it reports no kill by pattern).
 
 A repeat with the server's own output captured (Playwright `webServer`
 stdout/stderr to a file) to see whether the process exits or is killed.
+
+## Comments
+
+- 2026-10-22: closed as not reproducible (cbf research 02): server output is captured since c9944e64, ports are locked since 2026-10-11, no recurrence in about 30 spec runs and 6 full unit suites under load. The server log will name the cause if it recurs.

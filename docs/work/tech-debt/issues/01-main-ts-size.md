@@ -54,3 +54,4 @@ accept the size after the quick wins.
   −211, +562 B). main.ts 6,220 → 5,994; budget 352 of 355 KB. Both reviewed by
   Sol (no defects); full native-save 740 / 85 / 0 on the stack. Next decision
   is Lex's.
+- 2026-10-22: in the clean-up build ([README](../../../wayfinder/clean-up-before-features/build/README.md#8-maints-to-about-500-lines)): Lex wants about 500 lines (cbf ticket 05). A ceiling test (slice 10) drops after each slice; the cuts are slices 11, 21, 25, 26, 31, 32, 53, 70 and 80–84; slice 85 brings it to about 500 and closes this note.

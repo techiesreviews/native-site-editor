@@ -26,3 +26,4 @@ measures 351 KB. Further controller slices will run out of room.
 ## Comments
 
 - 2026-10-08: after slices 17 and 18, dev measures 352 KB of 355.
+- 2026-10-22: `dev` measures 355 of 355 KB (cbf research 02). Lex keeps the budget (cbf ticket 04); [slice 11](../../../wayfinder/clean-up-before-features/build/tickets/11-lazy-media-and-pages.md) loads rarely used code when Media or Pages & files opens (target: 8 KB freed), and every clean-up slice stays at or under 355 KB ([build README](../../../wayfinder/clean-up-before-features/build/README.md#rules-for-the-whole-build)).

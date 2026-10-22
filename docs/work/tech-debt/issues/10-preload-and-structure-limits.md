@@ -21,3 +21,7 @@ Accepted when merged; recorded in
   with the same title can refocus the first; the `<br>` allowance does not list
   SVG/MathML or obsolete raw-text elements; the live-patching browser specs use
   a stub, not the real preview runtime.
+
+## Comments
+
+- 2026-10-22: all limits still hold (cbf research 02). The typing flicker and the same-title focus are fixed in [slice 90](../../../wayfinder/clean-up-before-features/build/tickets/90-page-structure-typing-flicker.md) (cbf ticket 04); the `<br>` allowance in [slice 60](../../../wayfinder/clean-up-before-features/build/tickets/60-empty-parts-rule.md); the preload test that passes without its fix in [slice 31](../../../wayfinder/clean-up-before-features/build/tickets/31-native-site-runtime.md). Kept as they are (lead decision): a deploy may reload a tab whose preview is parked (drafts saved first), and the live-patching specs keep their stub.
