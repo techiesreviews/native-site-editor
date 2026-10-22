@@ -2,7 +2,7 @@
 title: Hand off the clean-up build plan
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (planning subagent)
 blocked_by: [01-research-architecture-review, 02-research-debt-and-follow-ups, 03-grill-testing-rhythm, 04-grill-debt-and-fix-choices, 05-grill-architecture-choices]
 ---
 
