@@ -14,7 +14,23 @@ export function wireMediaLibraryInput(
   { search, grid, uploadInput, dialog }: LibraryShell, h: LibraryInputHost, signal: AbortSignal,
 ) {
   const { draw, tell } = h;
-  search.addEventListener("input", draw, { signal });
+  let searchTimer: ReturnType<typeof setTimeout> | undefined;
+  const cancelSearch = () => {
+    clearTimeout(searchTimer); searchTimer = undefined;
+  };
+  const redrawSearch = () => { cancelSearch(); draw(); };
+  signal.addEventListener("abort", cancelSearch, { once: true });
+  search.addEventListener("input", () => {
+    cancelSearch();
+    if (!search.value) draw();
+    else searchTimer = setTimeout(redrawSearch, 150);
+  }, { signal });
+  search.addEventListener("keydown", event => {
+    if (event.key === "Enter") { event.preventDefault(); redrawSearch(); }
+  }, { signal });
+  search.addEventListener("blur", () => {
+    if (searchTimer !== undefined) redrawSearch();
+  }, { signal });
   grid.addEventListener("keydown", (event) => {
     const buttons = [...grid.querySelectorAll<HTMLButtonElement>(".media-library__thumbnail")];
     const at = buttons.indexOf(document.activeElement as HTMLButtonElement);

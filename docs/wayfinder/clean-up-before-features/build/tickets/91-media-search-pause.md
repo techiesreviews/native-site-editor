@@ -1,8 +1,8 @@
 ---
 title: "Media search waits for a pause in typing"
 type: task (AFK)
-status: open
-assignee: claude runner (lead: this session)
+status: closed
+assignee: runner-91
 builder: sol
 blocked_by: []
 ---
@@ -34,3 +34,10 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `kit unit --affected`, `kit specs --affected` plus `kit specs native-media-library.spec.ts native-media-library-keys.spec.ts`.
 - Review: `kit review --ticket <this ticket>` (GPT-6.1 Sol, medium, read-only). Land: `kit pr --ticket <this ticket>`.
 - Report: unit and specs `RESULT:` lines, review folder and decisions, PR and merge SHA.
+
+## Done (2026-10-22)
+
+- Media search redraws the grid and file count 150 ms after the last keystroke. Enter, clearing the search and leaving the field apply the search immediately. Redrawing preserves the search field, focus and caret.
+- Closing Media clears the pending search timer through the view's existing abort signal.
+- Added fake-timer tests for three quick keystrokes producing one redraw, Enter, clearing, blur and closing Media. `kit unit --affected` passed 1,268/1,268 tests; the full unit suite through `kit unit` passed 4,930/4,930 tests. `npm run check` and `npm run lint` passed. The unchanged `native-media-library.spec.ts` and `native-media-library-keys.spec.ts` passed all 15 browser tests through `kit specs`.
+- Commits: none; changes are unstaged for the runner.

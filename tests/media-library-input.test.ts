@@ -1,6 +1,82 @@
-import { test } from "node:test";
+import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
-import { mediaLibraryArrowStep } from "../src/page-builder/media-library-input";
+import { mediaLibraryArrowStep, wireMediaLibraryInput, type LibraryInputHost } from "../src/page-builder/media-library-input";
+import type { LibraryShell } from "../src/page-builder/media-library-shell";
+
+/** Only input events are exercised, so the shell needs no rendered DOM. */
+function searchFixture(context: TestContext) {
+  context.mock.timers.enable({ apis: ["setTimeout"] });
+  const controller = new AbortController();
+  context.after(() => controller.abort());
+  const search = Object.assign(new EventTarget(), { value: "" }) as HTMLInputElement;
+  const shell = {
+    search, grid: new EventTarget() as HTMLDivElement,
+    uploadInput: new EventTarget() as HTMLInputElement, dialog: new EventTarget() as HTMLElement,
+  } satisfies Pick<LibraryShell, "search" | "grid" | "uploadInput" | "dialog">;
+  const draws: string[] = [];
+  const host = {
+    draw: () => { draws.push(search.value); }, loaded: () => true, add: () => {}, tell: () => {},
+  } satisfies LibraryInputHost;
+  wireMediaLibraryInput(shell as LibraryShell, host, controller.signal);
+  const type = (value: string) => { search.value = value; search.dispatchEvent(new Event("input")); };
+  return { search, controller, draws, type };
+}
+
+test("three quick search keystrokes redraw once, 150 ms after the last input", context => {
+  const { type, draws } = searchFixture(context);
+  type("c"); context.mock.timers.tick(50);
+  type("ca"); context.mock.timers.tick(50);
+  type("cat"); context.mock.timers.tick(149);
+  assert.deepEqual(draws, []);
+  context.mock.timers.tick(1);
+  assert.deepEqual(draws, ["cat"]);
+  context.mock.timers.tick(1000);
+  assert.deepEqual(draws, ["cat"]);
+});
+
+test("Enter redraws search immediately and cancels the delayed redraw", context => {
+  const { type, search, draws } = searchFixture(context);
+  type("cat"); context.mock.timers.tick(50);
+  const enter = Object.assign(new Event("keydown", { cancelable: true }), { key: "Enter" });
+  search.dispatchEvent(enter);
+  assert.equal(enter.defaultPrevented, true);
+  assert.deepEqual(draws, ["cat"]);
+  context.mock.timers.tick(1000);
+  assert.deepEqual(draws, ["cat"]);
+});
+
+test("clearing search redraws immediately and cancels the delayed redraw", context => {
+  const { type, draws } = searchFixture(context);
+  type("cat"); context.mock.timers.tick(50);
+  type("");
+  assert.deepEqual(draws, [""]);
+  context.mock.timers.tick(1000);
+  assert.deepEqual(draws, [""]);
+});
+
+test("leaving search flushes a pending redraw only once", context => {
+  const { type, search, draws } = searchFixture(context);
+  type("cat"); context.mock.timers.tick(50);
+  search.dispatchEvent(new Event("blur"));
+  assert.deepEqual(draws, ["cat"]);
+  context.mock.timers.tick(1000);
+  search.dispatchEvent(new Event("blur"));
+  assert.deepEqual(draws, ["cat"]);
+});
+
+test("closing Media clears the pending search timer and removes input listeners", context => {
+  const { type, controller, search, draws } = searchFixture(context);
+  type("cat"); context.mock.timers.tick(50);
+  const clear = context.mock.method(globalThis, "clearTimeout");
+  controller.abort();
+  assert.equal(clear.mock.callCount(), 1);
+  context.mock.timers.tick(1000);
+  type("dog");
+  search.dispatchEvent(Object.assign(new Event("keydown"), { key: "Enter" }));
+  search.dispatchEvent(new Event("blur"));
+  context.mock.timers.tick(1000);
+  assert.deepEqual(draws, []);
+});
 
 test("arrow keys step by one thumbnail or one row", () => {
   assert.equal(mediaLibraryArrowStep("ArrowRight", 4, 12, 3), 5);
