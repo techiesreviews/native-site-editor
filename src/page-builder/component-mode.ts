@@ -198,7 +198,12 @@ export function createComponentMode(ports: ComponentModePorts): ComponentMode {
   const keptKey = (source: string, node: readonly number[]) => JSON.stringify([state?.template, source, node]);
   // The instance check of the last page source read (M3).
   let placed: { source: string; key: string; at: boolean } | undefined;
-
+  // Which of the page's `tag` elements the instance was, of how many, where it was last found.
+  let nth: { key: string; index: number; count: number } | undefined;
+  // Where it went on the last page source read for that (memoised like `placed`).
+  let went: { source: string; nth: object; node: readonly number[] | undefined } | undefined;
+  // Where the frame was last told the instance is (JSON of its node; "" for no mode).
+  let told = "";
 
   /** A `tag` element is still at `node` of the page's bytes. */
   function framed(page: string, node: readonly number[], tag: string) {
@@ -208,8 +213,32 @@ export function createComponentMode(ports: ComponentModePorts): ComponentMode {
     if (placed?.source !== source || placed.key !== key) {
       const tree = read(source), at = tree.at(node);
       placed = { source, key, at: at !== undefined && tree.view.name(at) === tag };
+      if (placed.at) {
+        const all = tree.elements().filter((element) => tree.view.name(element) === tag);
+        nth = { key, index: all.indexOf(at!), count: all.length };
+      }
     }
     return placed.at;
+  }
+
+  /** Where the instance went on a page that moved it: the same of its tag's elements while the page has as many. */
+  function moved(mode: Mode): readonly number[] | undefined {
+    const source = peek.source(mode.page);
+    if (source === undefined || nth?.key !== JSON.stringify([mode.chain[0].tag, mode.node])) return undefined;
+    if (went?.source !== source || went.nth !== nth) {
+      const tree = read(source), all = tree.elements().filter((element) => tree.view.name(element) === mode.chain[0].tag);
+      went = { source, nth, node: all.length === nth.count ? tree.path(all[nth.index]) : undefined };
+    }
+    return went.node;
+  }
+
+  /** Tells the frame the mode, its instance at `node` (where the mode has it unless given; undefined: none). */
+  function toFrame(mode: Mode | undefined, ...at: [node?: readonly number[]]) {
+    const node = at.length ? at[0] : mode?.node;
+    // The instance as framed now: which of its tag's elements it is (`moved` finds it by that).
+    if (mode && !at.length) framed(mode.page, mode.node, mode.chain[0].tag);
+    told = mode && node ? JSON.stringify(node) : "";
+    ports.frame(mode && node ? { ...message(mode), node: [...node] } : undefined);
   }
 
   function now(): Mode | undefined {
@@ -235,7 +264,7 @@ export function createComponentMode(ports: ComponentModePorts): ComponentMode {
     const mode = state!;
     opening = Object.freeze({ template: to.template, stamp });
     state = make(mode.page, mode.node, mode.chain.map((level) => level.template === from ? { ...level, ...to } : level), notes, opening);
-    ports.frame(message(state));
+    toFrame(state);
     ports.changed();
   }
 
@@ -250,7 +279,7 @@ export function createComponentMode(ports: ComponentModePorts): ComponentMode {
     ownShare = undefined;
     for (const each of renames.splice(0)) each.release();
     fixedNames.clear();
-    ports.frame(undefined);
+    toFrame(undefined);
     if (tell) ports.changed();
     return { page: was.page, node: [...was.node], tag: was.chain[0].tag, template: was.chain[0].template };
   }
@@ -303,7 +332,7 @@ export function createComponentMode(ports: ComponentModePorts): ComponentMode {
       ownShare = me.share;
       me.share = undefined;
       state = make(instance.path, instance.node, [{ tag, template, node: instance.node }], request.notes ?? [], mine);
-      ports.frame(message(state));
+      toFrame(state);
       ports.changed();
       return { status: "mode" };
     } finally {
@@ -337,7 +366,7 @@ export function createComponentMode(ports: ComponentModePorts): ComponentMode {
       else for (const release of nestedShares.splice(next.length - 1)) release();
       opening = Object.freeze({ template: target.template, stamp });
       state = make(mode.page, mode.node, next, state.notes, opening);
-      ports.frame(message(state));
+      toFrame(state);
       ports.changed();
       return true;
     } finally {
@@ -387,7 +416,11 @@ export function createComponentMode(ports: ComponentModePorts): ComponentMode {
     if (busy || destroyed) return;
     follow();
     if (opening && (ports.shown().open !== opening.template || !scopeHolds(opening.stamp))) opening = undefined;
-    if (state && !now()) end(true);
+    const mode = state;
+    if (mode && !now()) { end(true); return; }
+    // Typing holds the mode through its instance moving: the frame shows the instance where it went (else none).
+    const node = !mode ? undefined : framed(mode.page, mode.node, mode.chain[0].tag) ? mode.node : moved(mode);
+    if (mode && (node ? JSON.stringify(node) : "") !== told) toFrame(mode, node);
   }
 
   return {

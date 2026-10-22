@@ -4617,7 +4617,7 @@ function makeAgentSiteActions(edits: GuardedEdits = guardedEdits, atomic = false
       if (base) nativeBaseSources.set(path, base.text);
     }
     const done = `An agent ${create ? "created" : "changed"} ${path}.`, undone = `Undid the agent's change to ${path}.`;
-    const outcome = await edits.run(r => create ? { creates: [{ path, content }], ...nativePageRoute(path) || atomic && appStore.openFile.value === undefined ? { open: path } : {}, done, undone }
+    const outcome = await edits.run(r => create ? { creates: [{ path, content }], ...nativePageRoute(path) && !componentTools?.typingTemplate() || atomic && appStore.openFile.value === undefined ? { open: path } : {}, done, undone }
       : expected !== undefined && r.source(path) !== expected ? { refuse: `${path} changed in the editor since it was read. Read it again.` }
       : r.source(path) === undefined ? { refuse: `${path} does not exist.` }
       : { edits: new Map([[path, content]]), ...nativePageRoute(path) && (!atomic || !editorModule.isMounted(path)) && !componentTools?.typingTemplate() ? { open: path } : {},

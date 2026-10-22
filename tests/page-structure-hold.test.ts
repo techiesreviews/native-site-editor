@@ -10,6 +10,7 @@ declare global {
   var pageStructureFactory: typeof createPageStructure;
   var sidebar: ReturnType<typeof createPageStructure>;
   var paint: (added: number) => NativeStructure;
+  var rename: (label: string) => void;
 }
 
 // Page Structure alone in a browser page (pageStructureFactory), passed to `run`.
@@ -140,4 +141,30 @@ test("with nothing selected, an element only the held paint has, chosen: the edi
   await page.locator('[role=treeitem][data-node="2"]').waitFor();
   assert.equal(await selected.count(), 1);
   assert.equal(await page.locator('[role=treeitem][data-node="2"]').getAttribute("aria-selected"), "true");
+}));
+
+// A refresh with no paint held (the source or mode changed) draws at once, the typing field kept.
+test("with a field focused and no paint held, refresh draws at once; the field keeps its text and caret", () => inBrowser(async page => {
+  await page.evaluate(() => {
+    const item = (tag: string, node: number[], text: string): NativeStructureItem => ({ tag, node, text, heading: "", slot: "", children: [] });
+    const host = document.createElement("div"); document.body.append(host);
+    let named = "Last";
+    const tree = pageStructureFactory(host, {
+      pageSource: () => "", announce: () => {}, onSelect: () => {},
+      label: (entry: NativeStructureItem) => ({ kind: entry.tag, text: entry.tag === "p" ? named : entry.text }),
+      textRow: (_path: string, _node: readonly number[], tag: string) => tag === "h1" ? { lines: "Title", breaks: false,
+        open: () => ({ write: () => true, close: () => {}, cancel: () => true, stale: () => false, patchable: false, patch: () => false }) } : undefined,
+    } satisfies PageStructureHandlers);
+    globalThis.sidebar = tree; globalThis.rename = label => { named = label; };
+    tree.update({ path: "index.html", paintedSource: "v0", items: [item("h1", [0], "Title"), item("p", [1], "Last")] });
+  });
+  const row = (node: string) => page.locator(`[role=treeitem][data-node="${node}"]`);
+  await row("0").locator(".page-structure__text").first().dblclick();
+  const field = row("0").locator("textarea");
+  await field.waitFor({ state: "attached" });
+  await field.evaluate((field: HTMLTextAreaElement) => { field.focus(); field.value = "Typed"; field.dispatchEvent(new Event("input", { bubbles: true })); field.setSelectionRange(2, 2); });
+  // The paragraph's label changes; refresh draws it at once.
+  await page.evaluate(() => { rename("Renamed"); sidebar.refresh(); });
+  assert.match(await row("1").innerText(), /Renamed/);
+  assert.deepEqual(await field.evaluate((field: HTMLTextAreaElement) => [field === document.activeElement && field.isConnected, field.value, field.selectionStart, field.selectionEnd]), [true, "Typed", 2, 2]);
 }));

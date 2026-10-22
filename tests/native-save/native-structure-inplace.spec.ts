@@ -13,6 +13,7 @@ const undo = (page: Page) => page.evaluate(async () => (await import("/src/compo
 const shownTitle = (page: Page) => frame(page).locator("project-card").first().locator("span[slot='title']");
 const titleRow = (page: Page) => tree(page).locator("[role=treeitem][data-slot=title]").first();
 const titleField = (page: Page) => tree(page).getByRole("textbox", { name: "Title: Text", exact: true });
+const FOOTER = "components/site-footer/site-footer.html";
 
 test.beforeEach(async ({ page, baseURL }) => {
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
@@ -287,10 +288,33 @@ test("another file's paint keeps the typing field connected, with its text and c
   } finally { await agent.client.close(); }
 });
 
+/** Edit component mode's frame in the preview is drawn around the footer instance. */
+async function framesFooter(page: Page) {
+  const drawn = frame(page).locator("[data-native-selection-box='edit-frame']");
+  if (!await drawn.isVisible()) return false;
+  const [box, footer] = [await drawn.boundingBox(), await frame(page).locator("site-footer footer").boundingBox()];
+  return Boolean(box && footer && box.y <= footer.y + 2 && box.y + box.height >= footer.y + footer.height - 2);
+}
+
+/** Edit component on the page's footer, then its template's paragraph edited in place and typed in. */
+async function typeInFooterTemplate(page: Page, agent: Awaited<ReturnType<typeof connectAgent>>) {
+  const footer = tree(page).getByRole("treeitem", { name: /^Site footer/ });
+  await footer.hover();
+  await footer.getByRole("button", { name: "Edit component", exact: true }).click();
+  // The paragraph, by its row id (its name changes as it is typed).
+  const note = tree(page).locator(`[role=treeitem][data-node="@${FOOTER}:0.0"]`);
+  await note.locator(".page-structure__text").dblclick();
+  const field = tree(page).getByRole("textbox", { name: "Paragraph: Text", exact: true });
+  await expect(field).toBeFocused();
+  await page.keyboard.type("Footer typed");
+  await expect.poll(async () => (await agent.read(FOOTER)).content).toContain("Footer typed");
+  return { note, field, typed: await field.inputValue() };
+}
+
 test("an agent's page edit while a template part is typed keeps the field, its text and caret; leaving it ends the mode, folds and the mark follow their elements", async ({ page, baseURL }) => {
   const agent = await connectAgent(page, baseURL);
   try {
-    const path = "components/site-footer/site-footer.html";
+    const path = FOOTER;
     const filler = tree(page).getByRole("treeitem", { name: "Section Scroll to verify", exact: true });
     const hero = tree(page).getByRole("treeitem", { name: "Section A native browser preview", exact: true });
     await filler.locator(".page-structure__toggle").click();
@@ -326,6 +350,8 @@ test("an agent's page edit while a template part is typed keeps the field, its t
     await expect(field).not.toHaveAttribute("data-detached", "true");
     await expect(page.getByRole("status").filter({ hasText: "ended: the page changed meanwhile." })).toHaveCount(0);
     await expect(tree(page).getByRole("treeitem", { name: /^Aside/ })).toHaveCount(0);
+    // The frame shows the footer, where it went, as the instance edited.
+    await expect.poll(() => framesFooter(page)).toBe(true);
     // Typing carries on into the template.
     await page.keyboard.press("End");
     await page.keyboard.type(" more");
@@ -343,6 +369,41 @@ test("an agent's page edit while a template part is typed keeps the field, its t
     await expect(footer).toHaveAttribute("aria-selected", "true");
     await expect(filler).toHaveAttribute("aria-expanded", "true");
     await expect(hero).toHaveAttribute("aria-expanded", "false");
+  } finally { await agent.client.close(); }
+});
+
+test("an agent's change to the template typed in ends the edit; the template stays open and the mode on", async ({ page, baseURL }) => {
+  const agent = await connectAgent(page, baseURL);
+  try {
+    const { note, field } = await typeInFooterTemplate(page, agent);
+    await agent.edit(FOOTER, '<footer class="site-footer" data-key="site-footer">', '<footer class="site-footer" data-key="site-footer" data-agent="yes">');
+    await expect(page.getByRole("status").filter({ hasText: "Editing Paragraph ended: the page changed meanwhile." })).toHaveCount(1);
+    await expect(field).toHaveCount(0);
+    const written = (await agent.read(FOOTER)).content;
+    expect(written).toContain('data-agent="yes"');
+    expect(written).toContain("Footer typed");
+    await expect(page.locator("#current-page")).toHaveAttribute("data-path", FOOTER);
+    await expect(note).toBeVisible();
+    await expect.poll(() => framesFooter(page)).toBe(true);
+  } finally { await agent.client.close(); }
+});
+
+test("an agent's new page while a template part is typed ends the edit (its step reopens the file open), but the template stays open and the mode on", async ({ page, baseURL }) => {
+  const agent = await connectAgent(page, baseURL);
+  try {
+    const { note, field } = await typeInFooterTemplate(page, agent);
+    const created = await agent.client.callTool({ name: "write_file", arguments: { path: "agent-page.html", requestId: "structure-agent-page",
+      content: "<!doctype html><html><head><title>Agent page</title></head><body><main><h1>Agent page</h1></main></body></html>\n" } });
+    expect(created.isError, JSON.stringify(created)).toBeFalsy();
+    await expect.poll(async () => (await agent.read("agent-page.html")).content).toContain("Agent page");
+    // A step that creates a file reopens the file open (the template), so the edit ends; what was typed stays.
+    await expect(page.getByRole("status").filter({ hasText: "Editing Paragraph ended: the page changed meanwhile." })).toHaveCount(1);
+    await expect(field).toHaveCount(0);
+    expect((await agent.read(FOOTER)).content).toContain("Footer typed");
+    // The new page is not opened over the template being typed: the mode goes on, on the same instance.
+    await expect(page.locator("#current-page")).toHaveAttribute("data-path", FOOTER);
+    await expect(note).toBeVisible();
+    await expect.poll(() => framesFooter(page)).toBe(true);
   } finally { await agent.client.close(); }
 });
 
