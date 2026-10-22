@@ -1,8 +1,8 @@
 ---
 title: Grok and agent.sh small fixes
 type: task (AFK)
-status: open
-assignee: lead-sf12 (free worker build)
+status: closed
+assignee: lead-sf12
 builder: opencode/deepseek-v4.1-flash-free
 blocked_by: []
 ---
@@ -41,8 +41,8 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 
 ## Done (2026-10-22)
 
-- Grok's model check compares case-insensitively, so `ASE_REVIEW_MODEL=GROK-4.7` accepts `grok-4.7-build` and still rejects `grok-4.70`; `scripts/agents/agent.sh` line 2 now reads `[--cli codex|claude|grok]`.
-- A Grok result with no `sessionId` falls back to the id the runner passed with `-s` for the completeness retry, and `status.json` keeps that id for `agent.sh --resume`. Claude's missing session still opens no fresh retry.
-- `kit review` returns the weekly budget slot when the review fails with `problem: <family> usage limit until …`; a started review that times out still counts.
-- Tests: `tests/agent-scripts.test.ts` (uppercase model against a build variant, `grok-4.70` rejection, retry and `--resume` using the `-s` id when JSON names none), `tests/kit-review.test.ts` (fake Codex usage limit leaves the ledger at its prior count). No real Grok call was made.
-- Checks: `ASE_OWNER=lead-sf12 scripts/agents/kit doctor` gave `RESULT: ok doctor 7/7 checks passed`; `ASE_OWNER=lead-sf12 scripts/agents/kit unit tests/agent-scripts.test.ts tests/kit-review.test.ts` and `ASE_OWNER=lead-sf12 scripts/agents/kit unit --affected` gave `RESULT: ok unit 47/47 (2 files)`; `npm run check` exited 0.
+- Behaviour: Grok's model check compares case-insensitively, so `ASE_REVIEW_MODEL=GROK-4.7` accepts `grok-4.7-build` and still rejects `grok-4.70`; `scripts/agents/agent.sh` line 2 reads `[--cli codex|claude|grok]`. A Grok result with no `sessionId` falls back to the id the runner passed with `-s` for the completeness retry, and `status.json` keeps that id for `agent.sh --resume`; Claude's missing session still opens no fresh retry. `kit review` returns the weekly budget slot only when the provider refuses the first call with `problem: <family> usage limit until …`; a started review that times out, or a completed first call whose completeness retry is refused, still counts.
+- Tests: `tests/agent-scripts.test.ts` (uppercase model against a build variant, `grok-4.70` rejection, retry and `--resume` using the `-s` id when JSON names none), `tests/kit-review.test.ts` (fake Codex usage limit leaves the ledger at its prior count, first call ends and retry is refused keeps the count, Grok refusal on stdout returns the slot, uppercase `GROK-4.7` selects Grok end to end). No real Grok call was made.
+- Commits: `9f63b8f0` (case-insensitive model check, assigned-session retry, usage-limit refund) and `5c84d8a9` (Done section); review correction round fixes the refund's first-call rule and adds the retry-refused, Grok-stdout and uppercase end-to-end tests in this branch's correction commit.
+- Review decisions: accepted the finding that a completed first call whose retry is refused is still a spent review; the runner now records `refused: true` (first call only) in `status.json` and `kit review` reads it instead of scanning the last `problem:` line. Accepted the three validation gaps above and both optional nits (session-id fallback order, no second stderr scan). No findings rejected.
+- Checks: `ASE_OWNER=lead-sf12 scripts/agents/kit doctor` gave `RESULT: ok doctor 7/7 checks passed`; `ASE_OWNER=lead-sf12 scripts/agents/kit unit tests/agent-scripts.test.ts tests/kit-review.test.ts` and `ASE_OWNER=lead-sf12 scripts/agents/kit unit --affected` gave `RESULT: ok unit 50/50 (2 files)`; `npm run check` exited 0.
