@@ -1,8 +1,8 @@
 ---
 title: "Review findings: explanation notes and sub-bullets never count as findings"
 type: task (AFK)
-status: open
-assignee: lead-sf15 (this session)
+status: closed
+assignee: lead-sf15
 builder: claude
 blocked_by: [10-review-findings-severity]
 ---
@@ -38,3 +38,11 @@ Follow-ups from slice 10's last review also belong here: a `Spec defects` / `Sta
 ## Kit commands and evidence
 
 Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runner.md)). `kit bg slice-sf15 -- scripts/agents/kit slice --ticket <this ticket> --builder claude-opus-5-5`; `kit wait job slice-sf15 --timeout 2h`.
+
+## Done (2026-10-22)
+
+- `openFindings` (`scripts/agents/review-findings.mjs`): a group whose first line says `none` (any case, inline or as its first line or bullet, with or without a following sentence) now holds notes until the next heading, so explanation bullets and plain lines under `Spec: none` / `Standards: None. I checked …` never count. Indented sub-bullets stay part of the finding above them.
+- A `Spec defects` / `Standards defects` heading after Validation gaps or Optional nits opens its group when it is unbulleted and either has no inline text or carries `#` / bold markup (fail closed). A bulleted label, or a plain unbulleted label with inline text, stays gap or nit text as decided in slice 10 round 2. A review whose only defects heading comes after the notes is now readable and its P1 blocks, where it used to be unreadable.
+- Inside a section opened by a defects label, a bulleted bare `- Spec:` / `- Standards:` stays in that section's group; an unbulleted bare one still switches group.
+- Tests (`tests/review-findings.test.ts`): trimmed copies of the four 2026-10-22 reviews (lead-sf11, lead-sf12, lead-92, lead-sf10) parse to the findings a person counts, none blocking; none groups with notes and sub-bullets; a real P1 in a later group after none notes still blocks; both slice-10 follow-ups (late defects heading in four forms; bulleted bare group in a defects-label section). Six of the new and changed tests fail against the old parser.
+- Validation: `kit unit tests/review-findings.test.ts tests/kit-pr.test.ts tests/kit-slice.test.ts tests/kit-fix.test.ts` → `RESULT: ok unit 259/259 (4 files)`; `kit unit --affected` → `RESULT: ok unit 169/169 (2 files)`; `npm run check` and `npm run lint` pass.
