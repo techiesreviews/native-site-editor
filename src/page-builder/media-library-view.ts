@@ -174,7 +174,8 @@ export function createMediaLibraryView(
     },
     alive: () => alive, library: () => library, filter: () => ({ query: shell.search.value, collection: viewing, kind }),
     import: requests => adapter.import(requests), task: work => task(work), idle: () => busyLock.idle(),
-    refresh: async () => { cache.clear(); await refresh(); }, show: recover, tell,
+    // New files take free names, so the tiles already shown keep their pictures (ticket 92).
+    refresh, show: recover, tell,
     // The picker's reviewed files are held like the others.
     review: (files, collection, reasons) => showMediaOptimise(sheet, modal ? { ...context, adapter: { ...adapter,
       import: async requests => { adding.reviewed(requests); return []; } } } : context, "", files, false, new Map(), collection, reasons),
@@ -251,6 +252,11 @@ export function createMediaLibraryView(
     finally { if (request === refreshVersion) loadingLibrary = false; }
     if (!alive || request !== refreshVersion) return;
     cache.sync(next.items);
+    // A path that comes back (a removed file's name taken again) may hold the old bytes.
+    if (previous) {
+      const known = new Set(previous.items.map(item => item.path));
+      for (const item of next.items) if (!known.has(item.path)) cache.drop(item.path);
+    }
     // One tile per Image family, so its main counts the pages of all its members.
     library = { ...next, usage: mediaFamilyUsage(next) };
     refreshedKey = inputKey;
