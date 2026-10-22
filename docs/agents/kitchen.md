@@ -25,16 +25,16 @@ lands, do what the station says for today; never claim a planned item ran.
 
 ## Who cooks (pins from 2026-10-22)
 
-The kit's built-in defaults follow these pins ([agent-scripts.md](agent-scripts.md#kit)); pass another
-model explicitly only for the second opinions below. The shared `lex-coding` skill holds the same
-table for all of Lex's projects.
+`kit review` and `kit fix` default to these pins ([agent-scripts.md](agent-scripts.md#kit)), so a
+review needs `ASE_REVIEW_MODEL` only for the second opinions below; `kit slice` still needs
+`--builder`. The shared `lex-coding` skill holds the same table for all of Lex's projects.
 
 | Role | Model | How |
 | --- | --- | --- |
 | Lead | the selected model | runs the stations; never builds and reviews the same change |
 | Builder, every slice | `claude-opus-5-5`, high | `kit slice --builder claude-opus-5-5`; `builder: sol` lines in tickets are superseded |
 | Builder, tiny fully specified fix | free OpenCode model | T3 `delegate_task`, only once T3 lists a verified zero-cost model |
-| Review, every change | `claude-opus-5-5`, medium | `ASE_REVIEW_MODEL=claude-opus-5-5`, fresh read-only session |
+| Review, every change | `claude-opus-5-5`, medium | default (`kit review`), fresh read-only session |
 | Second opinion: final version of a big, delicate slice, once | `gpt-6.1-sol`, medium | `ASE_REVIEW_MODEL=gpt-6.1-sol kit review --ticket <t>` |
 | Second opinion: routine, and the weekly sample of 2–3 Claude-approved slices | `gpt-6-luna`, low | same, `ASE_REVIEW_MODEL=gpt-6-luna` |
 | Second opinion: other family | `grok-4.7` | same, `ASE_REVIEW_MODEL=grok-4.7` |
