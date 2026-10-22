@@ -48,10 +48,11 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `same(a, b)`: account ignoring capitals, repository by id (renamed: same; re-created: not), branch, version view; a folder never equals a GitHub scope; an empty branch (or folder id) equals nothing, itself included.
 - `workspaceKeys(scope)`: `drafts`, `setup`, `media` strings, equal whenever `same` holds and across version views of one branch; none for an empty branch.
 - `createWorkspaceSession(scope?)`: `current()` (load and scope), `begin()` (a stamp: the `load` and `scope` it began on, so work can finish there after a switch (slices 22/23); `holds()` until the next load; `changed()` says `scope`, `version-view` or `generation`), `next(scope)` (a new load), `keys(scope?)`.
+- The session keeps frozen copies of scopes, so a caller changing its own scope object later cannot move a stamp's scope (review round 1, P2).
 - `SessionStamp` is assignable to the guarded edit's `Stamp`, so slice 21 can hand it over as is.
 - `tests/fakes/memory-workspace.ts`: optional `session`; when given, its load and setup key stand for the generation and scope, and `bumpGeneration` is a reload.
 
-Tests: `tests/workspace-session.test.ts` covers every case in Done when, plus a stamp keeping its load and scope, and a guarded edit stamp on the memory workspace going stale after the session's next load. `kit unit tests/workspace-session.test.ts`: `RESULT: ok unit 9/9`; `kit unit --affected`: `RESULT: ok unit 783/783 (27 files)`; `npm run check` green.
+Tests: `tests/workspace-session.test.ts` covers every case in Done when, plus a stamp keeping its load and scope, and a guarded edit stamp on the memory workspace going stale after the session's next load. `kit unit tests/workspace-session.test.ts`: `RESULT: ok unit 10/10` (after review round 1); `kit unit --affected`: `RESULT: ok unit 783/783 (27 files)`; `npm run check` green.
 
 Build route: `kit slice --builder claude-opus-5-5` drafted the files but failed its build step: the Claude builder runs with `--permission-mode acceptEdits`, so every Bash command (doctor, unit, check) was denied, and the model check rejects the run because Claude Code also reports a small `claude-haiku-5-5` call in `modelUsage` (`scripts/agents/agent-run.mjs:132`). Per runner.md's manual fallback for `builder: claude`, the runner (Claude Opus 5.5) checked the draft, added the stamp's `load` and `scope`, ran the checks and committed; review and landing go through `kit review` and `kit pr`.
 

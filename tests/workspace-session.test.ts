@@ -88,6 +88,18 @@ test("a stamp holds until the next load, and says what moved", () => {
   assert.equal(session.keys(), undefined);
 });
 
+test("a stamp keeps where it began even when the caller changes its own scope object", () => {
+  const mine: GitHubScope = { ...lex };
+  const session = createWorkspaceSession(mine);
+  const stamp = session.begin();
+  mine.branch = "dev";
+  session.next(mine);
+  assert.equal((stamp.scope as GitHubScope).branch, "main");
+  assert.equal(stamp.changed(), "scope");
+  assert.throws(() => { (session.current().scope as GitHubScope).branch = "other"; }, TypeError);
+  assert.equal((session.current().scope as GitHubScope).branch, "dev");
+});
+
 test("the load counter grows with each load; keys follow the scope open", () => {
   const session = createWorkspaceSession();
   assert.deepEqual(session.current(), { load: 0, scope: undefined });
