@@ -70,7 +70,7 @@ append `## Done (YYYY-MM-DD)` to the ticket (behaviour, commits, tests, review d
 
 - Editor slices (`kit slice` does this, never with `--waive`): `scripts/agents/kit pr --ticket <ticket>` in the background.
   It rebases, runs the checks for the change's tier (docs, css, tests or full; `--full` forces all), opens the PR into
-  `dev`, posts the review, waits for CI and merges. After three completed fix rounds, non-blocking findings go in a PR comment/body and the ticket's Done `### Follow-ups` in a new commit before CI; that ticket-only commit retains review coverage. Lead-only `--waive "<reason>"` still overrides blockers and is recorded separately; slices never pass it. The merged PR is the finish line; put its number in `landed:`. Fix CI failures you caused.
+  `dev`, posts the review, waits for CI and merges. After three completed fix rounds, non-blocking findings go in a PR comment/body and the ticket's Done `### Follow-ups` in a new commit before CI; that ticket-only commit retains review coverage. Lead-only `--waive "<reason>"` still overrides blockers and is recorded separately; slices never pass it. The merged PR is the finish line; `scripts/agents/kit status [map]` shows each ticket's landing (PR and merge). Fix CI failures you caused.
 - Starter slices: rebase on `origin/dev` and push `HEAD:dev` under
   `flock /tmp/cb-starter-merge.lock`; rerun touched tests after overlapping upstream changes.
 - Prototypes finish with their branch and evidence; skip landing.
@@ -82,11 +82,10 @@ append `## Done (YYYY-MM-DD)` to the ticket (behaviour, commits, tests, review d
 
 ## Report
 
-At most 8 lines / 120 words: these seven lines, `none` where absent. Blocked: say why in `decide`, `landed: none`.
+At most 8 lines / 120 words: these six lines, `none` where absent. Blocked: say why in `decide`.
 
 ```text
 slice: <ticket / slice>
-landed: <PR #n and merge sha, or none>
 preview: <version id or none>
 tests: <added; ran; result>
 review: fixed <n>; rejected <n> (<one-line reasons>)
