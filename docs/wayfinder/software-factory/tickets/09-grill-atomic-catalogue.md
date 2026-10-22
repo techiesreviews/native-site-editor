@@ -2,7 +2,7 @@
 title: Decide the atomic design catalogue
 type: grilling (HITL)
 status: open
-assignee:
+assignee: Lex + claude (grilling)
 blocked_by: [02-grill-ux-confidence-ladder]
 ---
 
