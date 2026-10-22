@@ -635,11 +635,16 @@ test("Zoom and Turn save a trimmed copy; back at 100 % and unturned only the spo
 // so the page flicked to the uncropped picture between steps. The same element now goes from one
 // trimmed picture to the next, each shown once it has decoded.
 type Ticket93Probe = { el: Element; seen: (string | null)[] };
-type Ticket93Held = { ticket93Held: { src: string; release: () => void }[] };
-/** A raster picture on the hero (a JPEG, saved as WebP), its popup open; returns the page's image. */
+type Ticket93Held = { ticket93Held: { src: string; release: () => void; reject: () => void }[] };
+type Ticket93Update = { ticket93Update?: unknown };
+/** A raster picture on the hero (a JPEG, saved as WebP), its popup open; returns the page's image.
+ *  The preview keeps the last render it was sent, to draw the page again with `redraw`. */
 async function openStepsPicture(page: Page, baseURL: string | undefined) {
   await page.setViewportSize({ width: 1280, height: 800 });
   await open(page, baseURL);
+  await frame(page).locator("body").evaluate(() => window.addEventListener("message", event => {
+    if (event.source === parent && (event.data as { type?: string } | null)?.type === "update") Object.assign(window, { ticket93Update: event.data } satisfies Ticket93Update);
+  }));
   await openPopup(page);
   await popup(page).getByRole("button", { name: "Replace", exact: true }).click();
   await picker(page).locator('input[name="media-upload"]').setInputFiles({ name: "Steps.jpg", mimeType: "image/jpeg", buffer: Buffer.from(await quarters(page), "base64") });
@@ -651,18 +656,51 @@ async function openStepsPicture(page: Page, baseURL: string | undefined) {
   return frame(page).locator(".hero img");
 }
 const zoomOutput = (page: Page) => popup(page).locator(".image-popup__zoom output");
+type Hero = Awaited<ReturnType<typeof openStepsPicture>>;
+/** Every src the page's image is given, in order, on the element first shown: each set is seen,
+ *  even two in one task, which no paint separates but which still start a picture's load. Returns its own src. */
+const probeSources = (hero: Hero) => hero.evaluate(el => {
+  const seen = [el.getAttribute("src")];
+  Object.assign(window, { ticket93: { el, seen } satisfies Ticket93Probe });
+  const set = el.setAttribute.bind(el);
+  el.setAttribute = (name: string, value: string) => { set(name, value); if (name === "src") seen.push(value); };
+  return el.getAttribute("src");
+});
+const probed = (hero: Hero) => hero.evaluate(el => {
+  const probe = (window as Window & { ticket93: Ticket93Probe }).ticket93;
+  return { same: probe.el === el, seen: probe.seen };
+});
+/** After the first trim the page's own picture never comes back, and more than one trim showed. */
+async function expectOwnNeverBack(hero: Hero, own: string | null) {
+  const after = await probed(hero);
+  expect(after.same).toBe(true);
+  const first = after.seen.findIndex(src => src !== own);
+  expect(first).toBeGreaterThan(0);
+  expect(after.seen.slice(first).filter(src => src === own)).toEqual([]);
+  expect(new Set(after.seen.slice(first)).size).toBeGreaterThan(1);
+}
+/** Holds every picture decode the preview starts, to settle them in any order. */
+async function holdDecodes(hero: Hero) {
+  await hero.evaluate(() => {
+    const held: Ticket93Held["ticket93Held"] = [];
+    Object.assign(window, { ticket93Held: held } satisfies Ticket93Held);
+    HTMLImageElement.prototype.decode = function (this: HTMLImageElement) {
+      return new Promise<void>((release, reject) => { held.push({ src: this.src, release, reject: () => reject(new DOMException("held", "EncodingError")) }); });
+    };
+  });
+  return {
+    srcs: () => hero.evaluate(() => (window as Window & Ticket93Held).ticket93Held.map(entry => entry.src)),
+    release: (index: number) => hero.evaluate((_, at) => (window as Window & Ticket93Held).ticket93Held[at].release(), index),
+    reject: (index: number) => hero.evaluate((_, at) => (window as Window & Ticket93Held).ticket93Held[at].reject(), index),
+  };
+}
+/** The src after the page has had two frames to show whatever was settled. */
+const settledSrc = (hero: Hero) => hero.evaluate(el => new Promise<string | null>(done =>
+  requestAnimationFrame(() => requestAnimationFrame(() => done(el.getAttribute("src"))))));
 
 test("zooming and moving step by step never shows the page's own picture between steps", async ({ page, baseURL }) => {
   const hero = await openStepsPicture(page, baseURL);
-  // Every src the page's image is given, in order, on the element first shown: each set is seen,
-  // even two in one task, which no paint separates but which still start a picture's load.
-  const own = await hero.evaluate(el => {
-    const seen = [el.getAttribute("src")];
-    Object.assign(window, { ticket93: { el, seen } satisfies Ticket93Probe });
-    const set = el.setAttribute.bind(el);
-    el.setAttribute = (name: string, value: string) => { set(name, value); if (name === "src") seen.push(value); };
-    return el.getAttribute("src");
-  });
+  const own = await probeSources(hero);
   const zoom = popup(page).getByRole("slider", { name: "Zoom" });
   await zoom.focus();
   for (let step = 0; step < 6; step++) {
@@ -684,37 +722,128 @@ test("zooming and moving step by step never shows the page's own picture between
   }
   await page.mouse.up();
   await expect(dot(page)).not.toHaveAttribute("aria-valuetext", /^50% across/);
-  const after = await hero.evaluate(el => {
-    const probe = (window as Window & { ticket93: Ticket93Probe }).ticket93;
-    return { same: probe.el === el, seen: probe.seen };
-  });
-  expect(after.same).toBe(true);
   // After the first trim the page's own picture never comes back while the popup is open.
-  const first = after.seen.findIndex(src => src !== own);
-  expect(first).toBeGreaterThan(0);
-  expect(after.seen.slice(first).filter(src => src === own)).toEqual([]);
-  // The steps still showed: the page took more than one trimmed picture.
-  expect(new Set(after.seen.slice(first)).size).toBeGreaterThan(1);
+  await expectOwnNeverBack(hero, own);
   await popup(page).getByRole("button", { name: "Close", exact: true }).click();
   await expect(page.locator("#status")).toContainText("Picture trimmed", { timeout: 30_000 });
+});
+
+test("turning step by step never shows the page's own picture between steps", async ({ page, baseURL }) => {
+  const hero = await openStepsPicture(page, baseURL);
+  const own = await probeSources(hero);
+  // Each turn is a trim (a turn sets Zoom back to 100 %, so a full turn would be the picture itself again).
+  for (const angle of ["90°", "180°", "270°"]) {
+    const shown = await hero.getAttribute("src");
+    await popup(page).getByRole("button", { name: "Turn right", exact: true }).click();
+    await expect(popup(page).locator(".image-popup__turn")).toHaveAttribute("aria-label", `Turn, now ${angle}`);
+    await expect(hero).not.toHaveAttribute("src", shown!);
+  }
+  await expectOwnNeverBack(hero, own);
+  await popup(page).getByRole("button", { name: "Close", exact: true }).click();
+  await expect(page.locator("#status")).toContainText("Picture trimmed", { timeout: 30_000 });
+});
+
+test("a page drawn again while a trim shows keeps the trim in every frame", async ({ page, baseURL }) => {
+  const hero = await openStepsPicture(page, baseURL);
+  const own = await hero.getAttribute("src");
+  const decodes = await holdDecodes(hero);
+  await popup(page).getByRole("slider", { name: "Zoom" }).focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(zoomOutput(page)).toHaveText("105 %");
+  await expect.poll(async () => (await decodes.srcs()).length).toBeGreaterThan(0);
+  const trims = await decodes.srcs();
+  await decodes.release(trims.length - 1);
+  const trim = trims[trims.length - 1];
+  await expect(hero).toHaveAttribute("src", trim);
+  // The last render arrives again (as any edit's would) while every later decode is held: each
+  // frame after it still has the trim, never the page's own picture.
+  const frames = await hero.evaluate(el => new Promise<(string | null)[]>(done => {
+    const seen: (string | null)[] = [];
+    const sample = () => { seen.push(el.getAttribute("src")); if (seen.length < 6) requestAnimationFrame(sample); else done(seen); };
+    const update = (window as Window & Ticket93Update).ticket93Update;
+    if (!update) throw new Error("No render was kept to draw again.");
+    window.dispatchEvent(new MessageEvent("message", { data: update, source: parent }));
+    requestAnimationFrame(sample);
+  }));
+  expect(frames).toEqual(Array(6).fill(trim));
+  expect(frames).not.toContain(own);
+  await expect(hero).toHaveAttribute("src", trim);
+});
+
+test("a trim whose decode fails still shows, as the page would show that picture", async ({ page, baseURL }) => {
+  const hero = await openStepsPicture(page, baseURL);
+  const own = await hero.getAttribute("src");
+  const decodes = await holdDecodes(hero);
+  await popup(page).getByRole("slider", { name: "Zoom" }).focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(zoomOutput(page)).toHaveText("105 %");
+  await expect.poll(async () => (await decodes.srcs()).length).toBeGreaterThan(0);
+  expect(await settledSrc(hero)).toBe(own);
+  const trims = await decodes.srcs();
+  await decodes.reject(trims.length - 1);
+  await expect(hero).toHaveAttribute("src", trims[trims.length - 1]);
+});
+
+test("a see-through picture's previews keep the checkerboard on every zoom step, in the popup and the large editor", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await open(page, baseURL);
+  await openPopup(page);
+  // Half see-through everywhere, so every trim of it is too.
+  const clear = await page.evaluate(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 800; canvas.height = 400;
+    const context = canvas.getContext("2d")!;
+    context.fillStyle = "rgba(34, 34, 221, 0.5)"; context.fillRect(0, 0, 800, 400);
+    context.fillStyle = "rgba(221, 34, 34, 0.5)"; context.fillRect(0, 0, 400, 200);
+    return canvas.toDataURL("image/png").split(",")[1];
+  });
+  await popup(page).getByRole("button", { name: "Replace", exact: true }).click();
+  await picker(page).locator('input[name="media-upload"]').setInputFiles({ name: "Clear.png", mimeType: "image/png", buffer: Buffer.from(clear, "base64") });
+  await expect(picker(page).getByRole("button", { name: "Choose Clear.png", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await picker(page).getByRole("button", { name: "Use image", exact: true }).click();
+  await expect(popup(page)).toHaveCount(0);
+  await openPopup(page);
+  const spots = page.locator(".image-popup__spot img");
+  await expect(spots.first()).toHaveAttribute("data-transparent", "");
+  // Every removal of the mark from any preview, even one put back in the same task.
+  const watch = () => page.evaluate(() => {
+    const removed: string[] = [];
+    Object.assign(window, { ticket93Removed: removed });
+    new MutationObserver(records => {
+      for (const record of records) if (record.oldValue !== null) removed.push((record.target as HTMLImageElement).src.slice(0, 40));
+    }).observe(document.body, { subtree: true, attributes: true, attributeOldValue: true, attributeFilter: ["data-transparent"] });
+  });
+  const removed = () => page.evaluate(() => (window as Window & { ticket93Removed: string[] }).ticket93Removed);
+  await watch();
+  const zoom = popup(page).getByRole("slider", { name: "Zoom" });
+  await zoom.focus();
+  for (let step = 0; step < 4; step++) {
+    const shown = await spots.first().getAttribute("src");
+    await page.keyboard.press("ArrowRight");
+    await expect(spots.first()).not.toHaveAttribute("src", shown!);
+    await expect(spots.first()).toHaveAttribute("data-transparent", "");
+  }
+  expect(await removed()).toEqual([]);
+  // The large editor draws its own previews and the popup's as each step changes.
+  await popup(page).getByRole("button", { name: "Open large editor", exact: true }).click();
+  await expect(large(page)).toBeVisible();
+  const largeSpot = large(page).locator(".image-popup__spot img").first();
+  await expect(largeSpot).toHaveAttribute("data-transparent", "");
+  const zoomIn = large(page).locator(".image-large__tools:not(.image-large__iconrow)").getByRole("button", { name: "Zoom in", exact: true });
+  for (let step = 0; step < 3; step++) {
+    const shown = await largeSpot.getAttribute("src");
+    await zoomIn.click();
+    await expect(largeSpot).not.toHaveAttribute("src", shown!);
+    await expect(largeSpot).toHaveAttribute("data-transparent", "");
+  }
+  expect(await removed()).toEqual([]);
 });
 
 test("a trim that decodes late never replaces a newer one, nor the picture once the popup has closed", async ({ page, baseURL }) => {
   const hero = await openStepsPicture(page, baseURL);
   const own = await hero.getAttribute("src");
-  // Hold every picture decode the page starts, to release them in any order.
-  await hero.evaluate(() => {
-    const held: Ticket93Held["ticket93Held"] = [];
-    Object.assign(window, { ticket93Held: held } satisfies Ticket93Held);
-    HTMLImageElement.prototype.decode = function (this: HTMLImageElement) {
-      return new Promise<void>(release => { held.push({ src: this.src, release }); });
-    };
-  });
-  const held = () => hero.evaluate(() => (window as Window & Ticket93Held).ticket93Held.map(entry => entry.src));
-  const release = (index: number) => hero.evaluate((_, at) => (window as Window & Ticket93Held).ticket93Held[at].release(), index);
-  // The src after the page has had two frames to show whatever was released.
-  const settled = () => hero.evaluate(el => new Promise<string | null>(done =>
-    requestAnimationFrame(() => requestAnimationFrame(() => done(el.getAttribute("src"))))));
+  const { srcs: held, release } = await holdDecodes(hero);
+  const settled = () => settledSrc(hero);
   const zoom = popup(page).getByRole("slider", { name: "Zoom" });
   await zoom.focus();
   await page.keyboard.press("ArrowRight");
