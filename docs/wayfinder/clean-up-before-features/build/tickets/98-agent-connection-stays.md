@@ -92,6 +92,12 @@ Run on the local Worker (Miniflare Durable Objects, real relay sockets) and with
 ### Follow-ups
 
 - Lex, at his end check on the preview editor: idle 10+ minutes with the tab open, refresh, new tab, and close the receiving tab with a second one open.
+- Spec (P2): cadeb802:docs/wayfinder/clean-up-before-features/build/tickets/98-agent-connection-stays.md:72 — P2: The Done section's `### Commits` list has the wrong SHAs. I
+- Standards (P3): cadeb802:src/agent-transport.ts:503 — P3: `succeed()` starts a `clock.setTimeout` (0 ms or `SUCCESSION_DELAY`) and never keeps the handle. `stop()` (line ~535) 
+- Standards (P3): cadeb802:src/agent-transport.ts:510 — P3: Inside the election, after `await ownerPresent()`, the "owner present" branch checks only `epoch === at` before `show(
+- Validation gaps (gap): In `tests/agent-transport.test.ts`, nothing covers the path where the owner crashes and leaves its hint (the hint is still in the registry, but its lock is rele
+- Validation gaps (gap): Nothing covers the new 15 s `API_DEADLINE` on a mutating call. Only the never-answering GET `connections` is tested. Test to add, in `native-agent-lifecycle.spe
+- Validation gaps (gap): There's no test for `succeed()` when `navigator.locks` is missing. In that case `elect` runs `work()` directly and `held()` falls back to comparing the hint. Te
 
 ## Comments
 
