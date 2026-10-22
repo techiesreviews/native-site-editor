@@ -2,7 +2,7 @@
 title: "main.ts guards and the editorWorkspace adapter ask the session"
 type: task (AFK)
 status: open
-assignee:
+assignee: lead-21 (this session)
 builder: claude
 blocked_by: [20-workspace-session-module, 11-lazy-media-and-pages]
 ---
