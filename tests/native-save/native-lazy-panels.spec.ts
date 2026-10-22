@@ -266,7 +266,9 @@ test("a failed connection check keeps browser requests and never adopts hub cont
   await page.locator(".repository-menu__trigger").click();
   await page.getByRole("button", { name: "Connect with MCP", exact: true }).click();
   await expect(page.locator(".agent-pin__question")).toHaveText("Which heading?", { timeout: 15_000 });
-  expect(calls).toBe(1);
+  // Connect checks once, makes its token and reads once more; the pin may show before or after
+  // that second read, so wait for it rather than count at the pin. Nothing polls after.
+  await expect.poll(() => calls).toBe(2);
 });
 
 test("first OAuth storage event keeps the short retries while its grant arrives", async ({ page, baseURL }) => {

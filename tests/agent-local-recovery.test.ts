@@ -130,8 +130,9 @@ test("fences age out after a day; deliveries they refused stay refused by age an
 });
 
 test("a command issued more than 23 hours ago is refused before mutation", async () => {
-  const { fake, records } = setup();
-  await assert.rejects(records.commit(command("old", "old.html", Date.now() - COMMAND_MAX_AGE_MS - 1)), code("conflict"));
+  // Age is measured on the records' clock; a second Date.now() drifted past it on a busy machine.
+  const { fake, records, now } = setup();
+  await assert.rejects(records.commit(command("old", "old.html", now() - COMMAND_MAX_AGE_MS - 1)), code("conflict"));
   assert.equal(fake.stores.get("drafts")!.size, 0);
 });
 

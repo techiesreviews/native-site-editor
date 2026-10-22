@@ -456,25 +456,37 @@ test("adding a file keeps the tiles and pictures already shown; its ring goes on
     Object.assign(window, { addingBefore: earlier });
     return cards.length;
   });
+  // The ring's age counts from when the page first shows the new tile wearing it, recorded in the
+  // page: a test's own reading after its waits came over 400 ms late on a busy machine.
+  await page.evaluate(() => {
+    const observer = new MutationObserver(() => {
+      if (!document.querySelector('.media-library__card.is-new[data-path$="kept-tiles.svg"]')) return;
+      Object.assign(window, { ringShownAt: performance.now() });
+      observer.disconnect();
+    });
+    observer.observe(document, { subtree: true, childList: true, attributes: true, attributeFilter: ["class"] });
+  });
   await panel.locator('input[name="media-upload"]').setInputFiles({ name: "kept-tiles.svg", mimeType: "image/svg+xml", buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12"/>') });
   await expect(panel.locator(".media-library__card")).toHaveCount(before + 1, { timeout: 30_000 });
   const added = panel.locator('.media-library__card[data-path$="kept-tiles.svg"]');
-  await expect(added).toHaveCount(1);
-  // The same elements, each still showing the picture it had.
+  await expect(added).toHaveClass(/\bis-new\b/);
+  // The same elements, each picture already shown still showing. Tiles load their pictures one by
+  // one as they come into view: one still loading at the snapshot may show its picture since.
   expect(await page.evaluate(() => (window as typeof window & { addingBefore: { card: HTMLElement; src: string | null | undefined }[] }).addingBefore
-    .filter(({ card, src }) => !card.isConnected || card.querySelector("img")?.getAttribute("src") !== src).length)).toBe(0);
-  const shownAt = await page.evaluate(() => performance.now());
+    .filter(({ card, src }) => !card.isConnected || (src && card.querySelector("img")?.getAttribute("src") !== src)).length)).toBe(0);
   // fixed-wait: lets the new-file ring play a while before a redraw that keeps its tile in place.
   await page.waitForTimeout(600);
   const search = panel.getByLabel("Search media", { exact: true });
   await search.fill("kept-tiles");
   await expect(panel.locator(".media-library__card")).toHaveCount(1);
-  // The ring carries on where it was, not as far again ahead.
-  const ring = await added.evaluate((card, shownAt) => {
+  // The ring carries on where it was, not as far again ahead. Its time and the elapsed time are
+  // both read on the document timeline, so a late animation frame shifts neither.
+  const ring = await added.evaluate(card => {
     const animation = card.getAnimations({ subtree: true }).find(each => each instanceof CSSAnimation && each.animationName === "media-new")!;
     const played = Number(animation.effect!.getComputedTiming().localTime) - Number(animation.effect!.getTiming().delay);
-    return { played, elapsed: performance.now() - shownAt };
-  }, shownAt);
+    const shownAt = (window as typeof window & { ringShownAt: number }).ringShownAt;
+    return { played, elapsed: Number(document.timeline.currentTime) - shownAt };
+  });
   expect(ring.played).toBeGreaterThanOrEqual(ring.elapsed - 50);
   expect(ring.played).toBeLessThan(ring.elapsed + 400);
   // fixed-wait: the ring plays for 2.4 s in all; a redraw after that takes it off.

@@ -69,11 +69,22 @@ test("an edit without a receiving tab refuses immediately: 3 auth + 1 dispatch, 
 test("an empty wait without a receiver answers quietly at once without a legacy take", async () => {
   const h = await connected();
   const client = new Client({ name: "usage-client", version: "1" });
+  // After `initialized` the SDK opens its standby GET without awaiting it; on a busy machine its
+  // three auth calls landed after the reset below. Count only once that request has settled.
+  const send = workerFetch(h.worker);
+  let standbySettled!: () => void;
+  const standby = new Promise<void>(resolve => { standbySettled = resolve; });
+  const tracked = (input: string | URL | Request, init?: RequestInit) => {
+    const response = send(input, init);
+    if (init?.method === "GET") response.finally(standbySettled).catch(() => {});
+    return response;
+  };
   try {
     await client.connect(new StreamableHTTPClientTransport(new URL(origin + "/mcp"), {
-      requestInit: { headers: { Authorization: `Bearer ${h.token}` } }, fetch: workerFetch(h.worker),
+      requestInit: { headers: { Authorization: `Bearer ${h.token}` } }, fetch: tracked,
     }));
     await client.listTools();
+    await standby;
     h.counters.reset();
     const result = await client.callTool({ name: "wait_for_requests", arguments: {} });
     assert.equal(result.isError, undefined);
