@@ -679,7 +679,8 @@ async function expectOwnNeverBack(hero: Hero, own: string | null) {
   expect(after.seen.slice(first).filter(src => src === own)).toEqual([]);
   expect(new Set(after.seen.slice(first)).size).toBeGreaterThan(1);
 }
-/** Holds every picture decode the preview starts, to settle them in any order. */
+/** Holds every picture decode the preview starts, to settle them in any order. The trims are data:
+ *  addresses, which `page.route` cannot hold, so `decode` itself is held. */
 async function holdDecodes(hero: Hero) {
   await hero.evaluate(() => {
     const held: Ticket93Held["ticket93Held"] = [];
@@ -768,6 +769,52 @@ test("a page drawn again while a trim shows keeps the trim in every frame", asyn
   expect(frames).toEqual(Array(6).fill(trim));
   expect(frames).not.toContain(own);
   await expect(hero).toHaveAttribute("src", trim);
+});
+
+test("a page drawn again while the next trim decodes keeps the trim shown until that one is ready", async ({ page, baseURL }) => {
+  const hero = await openStepsPicture(page, baseURL);
+  const own = await hero.getAttribute("src");
+  const decodes = await holdDecodes(hero);
+  await popup(page).getByRole("slider", { name: "Zoom" }).focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(zoomOutput(page)).toHaveText("105 %");
+  await expect.poll(async () => (await decodes.srcs()).length).toBeGreaterThan(0);
+  const first = await decodes.srcs();
+  await decodes.release(first.length - 1);
+  const shown = first[first.length - 1];
+  await expect(hero).toHaveAttribute("src", shown);
+  // The next step is still decoding when the page is drawn again (Close's write right after a step).
+  await page.keyboard.press("ArrowRight");
+  await expect(zoomOutput(page)).toHaveText("110 %");
+  await expect.poll(async () => (await decodes.srcs()).length).toBeGreaterThan(first.length);
+  const pending = (await decodes.srcs()).at(-1)!;
+  expect(pending).not.toBe(shown);
+  const frames = await hero.evaluate(el => new Promise<(string | null)[]>(done => {
+    const seen: (string | null)[] = [];
+    const sample = () => { seen.push(el.getAttribute("src")); if (seen.length < 6) requestAnimationFrame(sample); else done(seen); };
+    window.dispatchEvent(new MessageEvent("message", { data: (window as Window & Ticket93Update).ticket93Update, source: parent }));
+    requestAnimationFrame(sample);
+  }));
+  expect(frames).not.toContain(own);
+  expect(frames).toEqual(Array(6).fill(shown));
+  // Released, the next trim takes its place.
+  const all = await decodes.srcs();
+  for (let index = first.length; index < all.length; index++) await decodes.release(index);
+  await expect(hero).toHaveAttribute("src", pending);
+});
+
+test("zooming in the large editor never shows the page's own picture between steps", async ({ page, baseURL }) => {
+  const hero = await openStepsPicture(page, baseURL);
+  const own = await probeSources(hero);
+  await popup(page).getByRole("button", { name: "Open large editor", exact: true }).click();
+  await expect(large(page)).toBeVisible();
+  const zoomIn = large(page).locator(".image-large__tools:not(.image-large__iconrow)").getByRole("button", { name: "Zoom in", exact: true });
+  for (let step = 0; step < 3; step++) {
+    const shown = await hero.getAttribute("src");
+    await zoomIn.click();
+    await expect(hero).not.toHaveAttribute("src", shown!);
+  }
+  await expectOwnNeverBack(hero, own);
 });
 
 test("a trim whose decode fails still shows, as the page would show that picture", async ({ page, baseURL }) => {

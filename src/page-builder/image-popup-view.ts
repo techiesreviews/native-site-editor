@@ -320,8 +320,14 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
 }
 
 /** A new picture in `image`: its see-through mark is for this picture, sampled once it has loaded (slice 106's checkerboard).
- *  A file that may be see-through keeps the last mark until then, so a trim drawn per step does not flash its checkerboard. */
+ *  A file that may be see-through keeps the last mark until then, so a trim drawn per step does not flash its checkerboard;
+ *  a picture that fails to load drops it, as it describes another picture. */
+const dropsMarkOnError = new WeakSet<HTMLImageElement>();
 function showPicture(image: HTMLImageElement, url: string, path: string) {
+  if (!dropsMarkOnError.has(image)) {
+    dropsMarkOnError.add(image);
+    image.addEventListener("error", () => image.removeAttribute("data-transparent"));
+  }
   if (!mediaMayBeTransparent(path)) image.removeAttribute("data-transparent");
   image.src = url;
   markTransparency(image, path);
