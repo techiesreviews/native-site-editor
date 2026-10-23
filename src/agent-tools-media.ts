@@ -10,7 +10,6 @@ import type { Held } from "./agent-tools-edit";
 
 /** Internal liveness port; never serialized into a command or receipt. */
 export const mediaCommandProofs = new WeakMap<AgentCommand, () => void>();
-
 const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as JsonValue;
 const tooLarge = "The media result is too large; narrow the folder or page with offset/limit.";
 

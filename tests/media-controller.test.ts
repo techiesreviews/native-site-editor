@@ -10,6 +10,8 @@ import type { MediaHeldFiles } from "../src/page-builder/media-picker";
 import { readSource, type SourceNode } from "../src/page-builder/source-tree";
 import { startTags } from "../shared/html-source.ts";
 import { forEachAwait } from "./support/await-race";
+import { pinnedPorts } from "../src/background-page";
+import { framePlace } from "../src/page-builder/place-frame";
 import type { MediaPin } from "../src/controllers/media-controller.ts";
 
 function fixture(overrides: Partial<MediaControllerPorts> = {}, loadActions = () => import("../src/controllers/media-actions")) {
@@ -923,6 +925,40 @@ test("a pinned placement switched away at any wait lands once, on its own page, 
     assert.equal(run.saved[0].branch, "main");
     assert.match(run.saved[0].content, /src="\/images\/new.png"/);
     assert.deepEqual(run.told, ["On main: Image replaced"]);
+  });
+  assert.ok(count >= 2, `${count} waits swept`);
+});
+
+// Ticket 27, Async writers: the image popup's Done writes its shape through the held ports (framePlace
+// over pinnedPorts). Switched away at any wait, it lands once on its own page, nothing on the page shown.
+test("a pinned popup shape change switched away at any wait lands once, on its own page", async () => {
+  const main = '<section><img src="/images/old.png" alt="Old alt"></section>';
+  const count = await forEachAwait(race => {
+    let here = true, open = "about/index.html";
+    const saved: SavedDraft[] = [], told: string[] = [];
+    const scope = { account: "lex", repoId: 1, repo: "lex/site", branch: "main" };
+    const drafts = { list: () => saved, get: (_scope: unknown, path: string) => saved.find(draft => draft.path === path), save: (draft: SavedDraft) => { saved.push(draft); return true; }, remove: () => true };
+    const pin = { repo: scope.repo, scope, identity: "workspace:1", drafts, here: () => here, site: { routes: { "/": "index.html" }, components: {} },
+      entry: (path: string) => path === "index.html" ? { path, sha: "sha", mode: "100644", type: "blob" as const } : undefined, find: async () => undefined,
+      source: (path: string) => path === "index.html" ? saved.at(-1)?.content ?? main : undefined,
+      files: () => ["index.html"], list: async () => ["index.html"], remember: () => {} } satisfies MediaPin;
+    const f = fixture({
+      source: path => path === "index.html" ? here ? main : "<p>feature</p>" : undefined,
+      // Another page open on main: the write opens its own page first (on show only).
+      openFile: () => here ? open : "index.html",
+      restoreFile: race.port("restore", async (path: string) => { if (here) open = path; }),
+      measureImage: race.port("measure", async () => undefined), measureAway: race.port("measure away", async () => undefined),
+      shownScope: () => here ? scope : { ...scope, branch: "feature" }, announce: text => { told.push(text); },
+    });
+    const ports = pinnedPorts(f.ports, pin, "index.html");
+    const expected = '<img src="/images/old.png" alt="Old alt">';
+    const done = framePlace(ports, { path: "index.html", node: [0, 0] }, { shape: "square" }, { stamp: ports.stamp(), epoch: 1, source: main, expected });
+    return { f, saved, told, done, leave: () => { here = false; } };
+  }, run => { run.leave(); }, run => {
+    assert.deepEqual(run.f.changes, [], "nothing on the page shown");
+    assert.equal(run.saved.length, 1, "landed once, as its own page's draft");
+    assert.match(run.saved[0].content, /aspect-ratio: ?1 \/ 1/);
+    assert.deepEqual(run.told, ["On main: Image shape changed"]);
   });
   assert.ok(count >= 2, `${count} waits swept`);
 });

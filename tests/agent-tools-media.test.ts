@@ -547,3 +547,38 @@ test("a pinned Media change reads its page from its own workspace while another 
   assert.equal(pinnedMediaActions(live, { ...command }), live, "a command with no pin uses the editor's actions");
 });
 
+// Ticket 27: Lex's own Media work comes first while its workspace is shown. A pinned improve_images
+// asks the shown controller whether the Media pane is busy (its background controller has no pane).
+test("a pinned agent Improve images refuses while the Media pane shown is busy, and writes nothing", async () => {
+  const f = await fixture();
+  const scope = { ...workspace, repo: repo.full_name };
+  const pin = { repo: repo.full_name, scope, identity: "site", drafts: f.storage.store, here: () => true, site: { routes: { "/": "index.html" }, components: {} },
+    get nativePaths() { return [...f.paths]; }, entry: () => undefined, find: async () => undefined, source: (path: string) => f.text.get(path),
+    files: () => [...f.paths], list: async () => [...f.paths], remember: () => {} } satisfies MediaPin;
+  // eslint-disable-next-line no-restricted-syntax -- the shown controller is asked only whether its pane is busy.
+  const shown = { prepareImprove: () => { throw new Error("Media is busy. Wait for the user's Improve images run or other Media work to finish."); } } as unknown as ReturnType<typeof createMediaController>;
+  const command = { id: "busy-improve", operation: "improve_images", path: "", content: "", branch: "main", commit, args: { row: "heavy" } } as AgentCommand;
+  mediaCommandPins.set(command, { pin, page: undefined });
+  await assert.rejects(runAgentMedia(shown, f.ports, command), /Media is busy/);
+  assert.equal(f.storage.store.list(scope).length, 0, "nothing written");
+});
+
+test("a pinned Media change whose workspace is shown again at another commit is refused, and never runs", async () => {
+  const f = await fixture();
+  let runs = 0;
+  const pin = { repo: repo.full_name, scope: { ...workspace, repo: repo.full_name }, identity: "site", drafts: f.storage.store, here: () => true,
+    entry: () => undefined, find: async () => undefined, source: () => "<p>page</p>", files: () => ["index.html"], list: async () => ["index.html"], remember: () => {} } satisfies MediaPin;
+  const arrived: Snapshot = { branch: "main", commit, entries: [] }, now: Snapshot = { branch: "main", commit: "saved-meanwhile", entries: [] };
+  const files = (snapshot: Snapshot) => ({ repo, snapshot, api: async <T>() => ({ entries: [] }) as T, read: async () => "", batch: async () => ({}), has: () => false });
+  const stamp = { holds: () => false, changed: () => "generation" as const };
+  const ports = { stamp: () => stamp, source: () => "<p>page</p>", context: async () => undefined, files: () => files(now) } satisfies AgentReadPorts;
+  const tools = createAgentMediaTools({ workspace, ports, records: f.records, run: async () => { runs++; } });
+  const held = { source: files(arrived), stamp, pin: { away: () => false, context: async () => undefined, media: pin }, pinned: true };
+  const result = await tools.run(request("adding_settings", { image: "smaller" }, "shown-again"), 0, () => true, Date.now() + 10_000, { page: undefined }, undefined, held);
+  assert.ok(result.ok);
+  assert.equal((result.value as { state?: string }).state, "conflict");
+  assert.match(String((result.value as { message?: string }).message), /relay disconnected or the site was saved meanwhile/);
+  assert.equal(runs, 0);
+  assert.equal(f.storage.store.list({ ...workspace, repo: repo.full_name }).length, 0);
+});
+

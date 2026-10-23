@@ -44,8 +44,15 @@ async function watchBackground(page: Page) {
       for (const record of records) for (const added of record.addedNodes)
         if (added instanceof HTMLElement && added.classList.contains("background-page")) document.body.dataset.backgroundPages = String(Number(document.body.dataset.backgroundPages) + 1);
     }).observe(document.body, { childList: true });
+    // A background frame's answer to a measurement (preview-link.ts "measure-image" → "image-measured").
+    document.body.dataset.backgroundMeasured = "0";
+    window.addEventListener("message", event => {
+      const from = [...document.querySelectorAll<HTMLIFrameElement>(".background-page iframe")].some(frame => frame.contentWindow === event.source);
+      if (from && (event.data as { type?: unknown } | null)?.type === "image-measured") document.body.dataset.backgroundMeasured = String(Number(document.body.dataset.backgroundMeasured) + 1);
+    });
   });
-  return { opened: () => page.evaluate(() => Number(document.body.dataset.backgroundPages)), open: () => page.locator(".background-page").count() };
+  return { opened: () => page.evaluate(() => Number(document.body.dataset.backgroundPages)), open: () => page.locator(".background-page").count(),
+    measured: () => page.evaluate(() => Number(document.body.dataset.backgroundMeasured)) };
 }
 const preview = (page: Page) => page.frameLocator(".native-preview-frame");
 /** index.html as the editor shows it now. */
@@ -125,7 +132,18 @@ for (const to of ["branch", "site"] as const) {
     expect(await draftsOn(page, "main", 540)).toEqual([]);
     expect(await shownSource(page)).not.toContain("studio-desk");
     expect(await background.opened()).toBeGreaterThan(0);
+    expect(await background.measured(), "the hidden frame measured the picture").toBeGreaterThan(0);
     await expect.poll(background.open).toBe(0);
+    if (to === "branch") {
+      // Measured, not guessed: the same Use done on show (feature's page is main's) writes the same picture.
+      const placedTag = (text: string | undefined) => text?.match(/<img\b[^>]*studio-desk[^>]*>/)?.[0];
+      const away = placedTag((await draftsOn(page, "main")).find(draft => draft.path === "index.html")?.content);
+      await openImagePicker(page, ".hero img");
+      await picker.getByRole("button", { name: "Choose images/studio-desk.svg", exact: true }).click();
+      await picker.getByRole("button", { name: "Use image", exact: true }).click();
+      await expect.poll(async () => placedTag(await shownSource(page)), { timeout: 20_000 }).toBeTruthy();
+      expect(away).toBe(placedTag(await shownSource(page)));
+    }
     // Opened again, main's page has the picture placed.
     await openMain(page);
     await expect(page.locator("#status")).toContainText("main", { timeout: 30_000 });

@@ -1914,7 +1914,7 @@ const mediaPorts: import("./controllers/media-controller").MediaControllerPorts 
   imagePopup: {
     image: () => nativePreview?.selectionBox(),
     bar: () => document.querySelector<HTMLElement>(".edit-bar"),
-    frame: () => document.querySelector(".native-preview-frame")?.getBoundingClientRect(),
+    frame: () => element("main").querySelector(".native-preview-frame")?.getBoundingClientRect(),
     look: (target, look) => nativePreview?.imageLook(target, look),
     scroll: dy => nativePreview?.scrollBy(dy),
     // Read as the canvas reads its images, so the page can show a replacement too.
@@ -1926,7 +1926,7 @@ const mediaPorts: import("./controllers/media-controller").MediaControllerPorts 
   mediaPlay: {
     send: (id, request, blob) => nativePreview?.playMedia(id, request, blob),
     box: () => nativePreview?.selectionBox() ?? undefined,
-    frame: () => document.querySelector(".native-preview-frame")?.getBoundingClientRect(),
+    frame: () => element("main").querySelector(".native-preview-frame")?.getBoundingClientRect(),
     watch: (listener) => appStore.selection.subscribe(listener),
   },
   openPage: openAfter,
