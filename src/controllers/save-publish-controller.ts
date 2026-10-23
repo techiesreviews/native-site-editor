@@ -29,8 +29,11 @@ export interface SavePublishPorts {
   release(paths: Set<string>): string | undefined;
   openAfter(path?: string): Promise<unknown>;
   announce(text: string): void;
-  /** A save went through: its native sources become the base, its uploads' bytes go, its site action is followed. */
-  saved(scope: DraftScope, result: PublishResult, submitted: SavedDraft[]): void;
+  /**
+   * A save went through: its uploads' bytes go, its site action is followed, and (`shown`, its
+   * workspace on show at the snapshot it was saved from) its native sources become the base.
+   */
+  saved(scope: DraftScope, result: PublishResult, submitted: SavedDraft[], shown: boolean): void;
   /** Sets the snapshot a save left and seeds the repository index with it. */
   adopt(snapshot: Snapshot): void;
   /** The agent, revision, tree and text index after the saved snapshot. */
@@ -267,15 +270,18 @@ export function createSavePublishController(ports: SavePublishPorts) {
 
   /**
    * A save of `scope`, from an editor opened on `was`, went through. It lands on `scope` whatever
-   * is shown now (ticket 23): its drafts there are saved; the head and the snapshot after it
-   * follow only while the editor is still on what it began on.
+   * is shown now (ticket 23): its drafts there are saved. The head, the snapshot after it and the
+   * saved text as the base follow while `scope` is shown at the commit the save began on: the same
+   * load, or a new load of it (left and shown again, or reloaded) still at that commit. A newer
+   * commit loaded meanwhile keeps its own head, snapshot and base.
    */
   function published(was: SaveProof, scope: DraftScope, result: PublishResult, submitted: SavedDraft[]) {
-    if (live(was, false)) {
+    const shown = live(was, false) || isOpen(scope) && !!was.snapshot && ports.snapshot()?.commit === was.snapshot.commit;
+    if (shown) {
       seeHead(result.commit);
       void refreshAfterPublish(scope, result.commit);
     }
-    ports.saved(scope, result, submitted);
+    ports.saved(scope, result, submitted, shown);
   }
   // After a save: the branch as the save left it. `commit` is the save's own
   // commit, so a GitHub read lagging behind it still gives it (worker/github.ts).

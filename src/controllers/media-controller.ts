@@ -12,6 +12,7 @@ import { mediaAttribute, mediaExistingAlt } from "../page-builder/media-attribut
 import { startTags } from "../../shared/html-source";
 import type { EditBarControl } from "../components/edit-bar";
 import { locateNativeElementRange } from "../native-source-location";
+import type { TreeEntry } from "../../shared/types";
 
 export interface MediaWorkspaceSnapshot {
   repo: string;
@@ -30,8 +31,8 @@ export interface MediaWorkspaceSnapshot {
  */
 export interface MediaPin extends MediaWorkspaceSnapshot {
   here(): boolean;
-  entry(path: string): import("../../shared/types").TreeEntry | undefined;
-  find(path: string): Promise<import("../../shared/types").TreeEntry | undefined>;
+  entry(path: string): TreeEntry | undefined;
+  find(path: string): Promise<TreeEntry | undefined>;
   source(path: string): string | undefined;
   /** The site's files as drafted in the pin's workspace. */
   files(): string[];

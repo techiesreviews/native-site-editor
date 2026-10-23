@@ -19,6 +19,7 @@ import { showCollectionName, showManageCollections, type CollectionScreensHost }
 import { filesLabel } from "./media-collection-choices";
 import { showToCheck, toCheckLabel } from "./media-library-to-check";
 import type { LibrarySheet, LibrarySheetContext } from "./media-library-sheet";
+import { closeSheetWork } from "./media-sheet-work";
 import {
   detailIdentity, metadataIdentity, captureDetailForm, restoreDetailForm,
   dismissRefreshingDelete, pruneLibrarySelection,
@@ -231,8 +232,7 @@ export function createMediaLibraryView(
     if (rest.length) void adapter.import(rest.map(entry => entry.request)).then(
       paths => options.report?.announce(`Added ${paths.join(", ")}.${notAdded}`), error => options.report?.error(error));
     else if (notAdded) options.report?.announce(notAdded.trim());
-    // A switch closes the pane, not an Improve images row under way: it finishes (ticket 23).
-    alive = false; sheet.version++; if (modal || sheet.work !== sheet.finishes) sheet.work?.abort(); listeners.abort(); stopUsage?.(); stopCleanUp?.(); usageDialog?.close(); adding.dispose();
+    alive = false; sheet.version++; closeSheetWork(sheet, Boolean(modal)); listeners.abort(); stopUsage?.(); stopCleanUp?.(); usageDialog?.close(); adding.dispose();
     observers.forEach((observer) => observer.disconnect()); observers.clear(); tiles.clear(); cache.dispose();
     more.close(false); more.element.remove();
     modal?.removeEventListener("close", closed); dialog.replaceChildren(); dialog.remove();

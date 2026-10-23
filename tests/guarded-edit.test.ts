@@ -3,8 +3,9 @@
 // Each case checks the Outcome, what was written and how many undo steps.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createGuardedEdits, STALE_MESSAGE, type PlanResult, type Reads, type RunOptions } from "../src/guarded-edit";
+import { createGuardedEdits, STALE_MESSAGE, type Planned, type PlanResult, type Reads, type RunOptions } from "../src/guarded-edit";
 import { createMemoryWorkspace, deferred, type MemoryWorkspace } from "./fakes/memory-workspace";
+import { forEachAwait } from "./support/await-race";
 import { memoryUploadBytes, sweepUploads, uploadKey, uploadKeyHeld } from "../src/uploads";
 
 const PAGE = "<main><h1>Home</h1><p>Hello</p></main>";
@@ -597,7 +598,7 @@ test("finish: another page shown meanwhile, the step lands on its own page as a 
   assert.equal(m.openFile(), "about.html", "the page shown stays");
   assert.deepEqual(m.steps(), [], "no Undo step: its page is not shown");
   assert.deepEqual(m.selected, []);
-  assert.deepEqual(m.announced, ["Heading added."]);
+  assert.deepEqual(m.announced, ["On index.html: Heading added."], "it says where it landed");
 });
 
 test("finish: a page switch during the commit's branch read lands the step on its page; a created file opens nothing", async () => {
@@ -641,4 +642,31 @@ test("finish: bytes that moved on its page, another workspace or a reload still 
 test("without finish, another page shown meanwhile is stale as before", async () => {
   const { m, edits } = setup();
   assert.deepEqual(await racing(m, edits, insertH2, () => m.setRoute("/about/")), staleOn("route"));
+});
+
+// Async writers: another page shown at any wait of a finishing step (opening its page, its plan, its
+// commit's branch read) lands it on its own page as a draft, with no Undo step and nothing written on
+// the page shown.
+test("finish: another page shown at any wait lands the step on its page, never on the page shown", async () => {
+  const count = await forEachAwait(race => {
+    const { m, edits } = setup({ open: "about.html" });
+    const read = m.workspace.branchText.bind(m.workspace), open = m.workspace.open.bind(m.workspace);
+    m.workspace.branchText = race.port("branchText", read);
+    m.workspace.open = race.port("open", open);
+    // Two files, so the step takes the commit and its branch reads.
+    const done = edits.run(async r => {
+      const planned = insertH2(r) as Planned;
+      planned.edits!.set("styles/site.css", `${r.source("styles/site.css")}/* also */`);
+      await race.port("plan", async () => {})();
+      return planned;
+    }, { finish: true, anchor: "index.html" });
+    return { m, done, outcome: undefined as unknown };
+  }, async run => { run.m.setRoute("/about/"); await run.m.workspace.open("about.html"); }, async run => {
+    assert.deepEqual(await run.done, { ok: true, status: "applied" });
+    assert.equal(run.m.draft("index.html")?.content, PAGE.replace("</main>", "<h2>New</h2></main>"));
+    assert.equal(run.m.draft("styles/site.css")?.content, `${CSS}/* also */`);
+    assert.equal(run.m.draft("about.html"), undefined, "nothing on the page shown");
+    assert.deepEqual(run.m.steps(), []);
+  });
+  assert.equal(count, 4); // open, plan, two branch reads
 });

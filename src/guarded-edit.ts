@@ -421,7 +421,8 @@ export function createGuardedEdits(workspace: EditorWorkspace): GuardedEdits {
     }
     // The anchor's editor and model, proved from here to the record.
     const opened = anchor === undefined || left ? undefined : ws.anchor(anchor);
-    if (anchor !== undefined && !opened && !left) return stale("anchor");
+    // Another page shown while its page opened: a finishing step lands there as drafts (`away`).
+    if (anchor !== undefined && !opened && !left && !(options.finish && ws.openFile() !== anchor)) return stale("anchor");
     // The step's page is not the one shown (any more): it lands there as drafts.
     const away = () => left || moved(held.changed()) || options.finish === true && ws.openFile() !== anchor;
     const reads = track();

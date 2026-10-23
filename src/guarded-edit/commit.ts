@@ -300,7 +300,7 @@ export function createCommit(ws: EditorWorkspace & { agentText?(): AgentTextComm
     if (away) {
       // Its page is not shown: the drafts are its change there, with no Undo step to hold them.
       unrecorded(); unrecorded = undefined;
-      op.recorded(); ws.afterFileChanges(); ws.announce(done);
+      op.recorded(); ws.afterFileChanges(); ws.announce(anchor === undefined ? done : `On ${anchor}: ${done}`);
       return undefined;
     }
     // Files created or moved in keep the anchor's history while the step lives.

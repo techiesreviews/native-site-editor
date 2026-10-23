@@ -654,6 +654,22 @@ async function guarded(pending: Promise<Outcome>) {
 }
 
 /**
+ * Last line of defence, for every write an agent queued (here and finishAgentTextElsewhere): nothing
+ * may touch the workflows, as a path, a move's destination, or a folder that holds them; nor the
+ * media records, nor media files as text.
+ */
+function refuseProtected(command: AgentCommand) {
+  const args = command.args ?? {}, path = command.path;
+  for (const candidate of [path, ...(command.operation === "change_collection" ? [] : [args.to]), args.parent, args.file, args.with, args.page, ...args.files ?? []])
+    if (typeof candidate === "string" && touchesGithubConfig(candidate)) throw new Error(GITHUB_CONFIG_REFUSED);
+  // edit_file queues write_file after applying its replacements.
+  if (["write_file", "move_file", "delete_file"].includes(command.operation))
+    for (const candidate of [path, args.to, args.parent])
+      if (typeof candidate === "string" && touchesMediaRecords(candidate)) throw new Error(MEDIA_RECORDS_REFUSED);
+  if (command.operation === "write_file" && isMediaUploadWrite(path)) throw new Error(OUTSIDE_MEDIA_REFUSED);
+}
+
+/**
  * Applies one queued change. Resolves to what the agent is told; throws with
  * the reason when the change no longer fits (the file changed, the section
  * moved), and nothing is changed then.
@@ -663,17 +679,9 @@ export async function applySiteCommand(actions: AgentSiteActions, command: Agent
     if (command.operation === "update_active_draft" && !actions.isMounted(command.path)) throw new Error("Open the file in the editor first.");
     command = { ...command, operation: "write_file", expectedHash: command.operation === "create_file_draft" ? null : command.expectedHash };
   }
+  refuseProtected(command);
   const args = command.args ?? {};
   const path = command.path;
-  // Last line of defence: nothing an agent queued may touch the workflows, as a
-  // path, a move's destination, or a folder that holds them.
-  for (const candidate of [path, ...(command.operation === "change_collection" ? [] : [args.to]), args.parent, args.file, args.with, args.page, ...args.files ?? []])
-    if (typeof candidate === "string" && touchesGithubConfig(candidate)) throw new Error(GITHUB_CONFIG_REFUSED);
-  // edit_file queues write_file after applying its replacements.
-  if (["write_file", "move_file", "delete_file"].includes(command.operation))
-    for (const candidate of [path, args.to, args.parent])
-      if (typeof candidate === "string" && touchesMediaRecords(candidate)) throw new Error(MEDIA_RECORDS_REFUSED);
-  if (command.operation === "write_file" && isMediaUploadWrite(path)) throw new Error(OUTSIDE_MEDIA_REFUSED);
   const mediaProblem = agentMediaArgsProblem(command.operation, args, path);
   if (mediaProblem) throw new Conflict(mediaProblem);
   for (const candidate of [args.file, args.with, ...args.files ?? []])
@@ -1044,6 +1052,7 @@ export async function finishAgentTextElsewhere(command: AgentCommand, shown: () 
   if (!files || !account || !away()) return undefined;
   if (command.operation !== "write_file")
     throw new Error(`The editor shows another site or branch now; open ${files.snapshot.branch} again and repeat this change. Nothing was changed; your drafts are as they were.`);
+  refuseProtected(command);
   const scope: DraftScope = { account, repoId: files.repo.id, repo: files.repo.full_name, branch: files.snapshot.branch }, path = command.path;
   const prepared = await prepareAgentText(command, scope, store, () => true, () => {});
   if (prepared.duplicate) return prepared.duplicate;
