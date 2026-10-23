@@ -110,10 +110,11 @@ test("reads answer with the tab's text now, as the preview shows it: the shared 
   assert.deepEqual([typed.content, typed.source, typed.hash], [now["about/index.html"], "draft", await textHash(now["about/index.html"])]);
   const page = await run("get_page", { page: "/about" });
   assert.deepEqual([page.html, page.hash, page.source], [typed.content, typed.hash, "draft"]);
-  // A saved file is the tab's text when it holds one: typing not drafted yet is no longer GitHub's.
+  // A saved file is the tab's text when it holds one, without asking GitHub; it stays unmarked, as list_files lists it.
   const saved = await run("read_file", { path: "styles/site.css" });
-  assert.deepEqual([saved.content, saved.source, saved.hash], [now["styles/site.css"], "draft", await textHash(now["styles/site.css"])]);
-  assert.equal((await run("read_file", { path: "styles/tokens.css" })).source, "github");
+  assert.deepEqual([saved.content, saved.source, saved.hash], [now["styles/site.css"], "github", await textHash(now["styles/site.css"])]);
+  assert.deepEqual(f.counts(), { reads: 0, trees: 0 });
+  assert.ok((await run("list_files")).files.includes("styles/site.css"));
   // A deletion and a binary draft stay what the drafts say; text past the agents' limit is refused, not swapped for GitHub's.
   const deleted = await tools.run("read_file", { path: "index.html" });
   assert.equal(deleted.ok, false);
@@ -126,6 +127,12 @@ test("reads answer with the tab's text now, as the preview shows it: the shared 
   assert.equal(byPath("about/index.html").content, now["about/index.html"]);
   assert.equal(byPath("styles/site.css").content, now["styles/site.css"]);
   assert.ok(exported.unreadable.some((item: { path: string }) => item.path === "404.html"));
+  // Typing since the context was shared: the read is the tab's newer text, never the shared hash.
+  const shared = f.context.drafts.find(draft => draft.path === "about/index.html")!.hash;
+  now["about/index.html"] = "<h1>Typed on</h1>";
+  const newer = await run("read_file", { path: "about/index.html" });
+  assert.deepEqual([newer.content, newer.hash], [now["about/index.html"], await textHash(now["about/index.html"])]);
+  assert.ok(shared && newer.hash !== shared);
   // A draft the tab gives no text for is refused, never answered from the texts it shared earlier.
   delete now["about/index.html"];
   const unshared = await tools.run("read_file", { path: "about/index.html" });
@@ -147,6 +154,11 @@ test("texts take a saved file the tab holds from the tab, and ask GitHub only fo
   const read = new SiteFiles(reader, repo, context, undefined, path => now[path]);
   const texts = await read.texts(["styles/site.css", "styles/tokens.css"]);
   assert.deepEqual(Object.fromEntries(texts), { "styles/site.css": now["styles/site.css"], "styles/tokens.css": files["styles/tokens.css"] });
+  assert.deepEqual(prefetched, [[tree[1].sha]]);
+  // A held text past the agents' limit is left out, and not asked of GitHub either.
+  prefetched.length = 0;
+  const large = new SiteFiles(reader, repo, context, undefined, path => path === "styles/site.css" ? "x".repeat(1024 * 1024 + 1) : undefined);
+  assert.deepEqual([...(await large.texts(["styles/site.css", "styles/tokens.css"])).keys()], ["styles/tokens.css"]);
   assert.deepEqual(prefetched, [[tree[1].sha]]);
 });
 
