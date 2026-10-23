@@ -124,7 +124,7 @@ test("Page settings URL changes a page's URL: links in pages and the header nav 
 
   // Checked as typed.
   await url.fill("/notes/Bad URL/");
-  await expect(message).toHaveText("Use letters, digits, -, _ and . in the URL, with / between parts.");
+  await expect(message).toHaveText("Use lowercase letters, digits and dashes in the URL, at most 80, starting with a letter or digit.");
   await expect(url).toHaveAttribute("aria-invalid", "true");
   // A new address is strict, with the Pages tab's and the agent's words.
   await url.fill("/notes/About_Us.v2/");
@@ -369,6 +369,32 @@ test("Create page on a folder with no page makes its index.html from the home pa
   const made = (await draft(page, "notes/index.html")).content;
   expect(made).toContain("<title>Notes</title>");
   expect(made).toContain('<site-header data-key="header"></site-header>');
+});
+
+test("a page at an address the new-page rule refuses still opens, saves and can take a strict address", async ({ page, baseURL }) => {
+  const file = "About_Us.v2/index.html";
+  // The session (its cookie) comes with the first load; the page lands on GitHub, the next load reads it.
+  await open(page, baseURL, 530);
+  const seeded = await page.request.post(`${baseURL}/__demo/external-edit`, { data: { repo: "native-routing", path: file, content: '<!doctype html>\n<html lang="en">\n<head>\n  <meta charset="utf-8">\n  <title>About us</title>\n</head>\n<body>\n  <main>\n    <h1>About us</h1>\n  </main>\n</body>\n</html>\n' } });
+  expect(seeded.ok()).toBe(true);
+  await open(page, baseURL, 530, file);
+  await expect(frame(page).locator("h1")).toHaveText("About us");
+
+  await openSettings(page);
+  await settingsDialog(page).getByLabel("Title", { exact: true }).fill("About the studio");
+  await settingsDialog(page).getByRole("button", { name: "Apply page settings" }).click();
+  await expect(settingsDialog(page)).toBeHidden();
+  await saveAll(page);
+  expect(await branchFile(page, routingRepo, file)).toContain("<title>About the studio</title>");
+
+  // Renaming it to a strict address is offered, not refused.
+  await openSettings(page);
+  const url = settingsDialog(page).getByRole("textbox", { name: "URL", exact: true });
+  await expect(url).toHaveValue("/About_Us.v2/");
+  await url.fill("/about-us/");
+  await expect(settingsDialog(page).locator(".url-change__message")).toContainText("Moves About_Us.v2/index.html to about-us/index.html");
+  await expect(url).not.toHaveAttribute("aria-invalid", "true");
+  await url.press("Escape");
 });
 
 const settingsDialog = (page: Page) => page.getByRole("dialog", { name: "Page settings", exact: true });

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { cardPageFolders, mixedParent, planCardPage, cardPrefixRequest } from "../src/page-builder/cards.ts";
+import { PAGE_ADDRESS_RULE } from "../shared/site-rules.ts";
 
 // The new page a card grid's "Add card" makes: its existing folder or a
 // new folder there (src/page-builder/cards.ts).
@@ -49,6 +50,9 @@ test("invalid, hidden, reserved, unknown or taken paths are refused", () => {
   assert.match(refused({ title: "Oak", parent: "/work/", newFolder: "studio" }), /taken/);
   assert.match(refused({ title: "Oak", parent: "/work/", newFolder: "../x" }), /folder's name/);
   assert.match(refused({ title: "Oak", parent: "/work/", newFolder: ".git" }), /folder's name/);
+  // The new-address rule's words, said of the folder's name (cards.ts rewrites " in the URL,").
+  assert.equal(refused({ title: "Oak", parent: "/work/", newFolder: "New_Folder" }), PAGE_ADDRESS_RULE.replace(" in the URL,", " in the folder's name,"));
+  assert.notEqual(PAGE_ADDRESS_RULE.replace(" in the URL,", " in the folder's name,"), PAGE_ADDRESS_RULE);
   assert.match(refused({ title: "Oak", parent: "/", newFolder: "components" }), /not for pages/);
   assert.match(refused({ title: "  ", parent: "/work/" }), /title/);
   assert.match(refused({ title: "!!", parent: "/work/" }), /no URL/);

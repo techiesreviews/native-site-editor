@@ -412,7 +412,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
         parent: z.string().max(1024).optional().describe('The URL of the page it goes under, a folder page such as "/work/" (default "/", the top of the site).'),
         slug: z
           .string()
-          .max(200)
+          .max(80)
           .optional()
           .describe("The last part of its URL: lowercase letters, digits and dashes, at most 80, starting with a letter or digit (default: made from the title)."),
         requestId,
