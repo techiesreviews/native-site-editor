@@ -198,6 +198,8 @@ test('a predicted stylesheet read from before a branch switch does not outlive i
   await page.request.post(`${baseURL}/__demo/branch`, { data: { name: 'feature', path: 'styles/site.css', content: `${css}\n.hero h1 { color: rgb(7, 8, 9); }\n` } });
   const fresh = (await blobShas(page, 'feature'))['styles/site.css'];
   expect(fresh).not.toBe(old);
+  // This guards what shows; tests/native-site-runtime.test.ts holds the stale
+  // write itself, and fails without the predicted read's `live` checks.
   // main's predicted read is held; once the editor has moved to feature, its
   // read of feature's sheet waits until main's read has landed, so that lands
   // inside feature's load (after its sources were cleared).

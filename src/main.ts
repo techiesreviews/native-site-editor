@@ -84,7 +84,7 @@ import type { CssWorkspace } from "./page-builder/css-intelligence";
 import { expandStyleImports, resolveImportPath, rewriteCssUrls } from "../shared/css-imports";
 import { readStyleFiles } from "./native-style-files";
 import { nativePageRoute } from "../shared/native-routes";
-import { effectiveText, isNewDraft, newDraftPaths } from "../shared/site-overlay";
+import { isNewDraft, newDraftPaths } from "../shared/site-overlay";
 
 
 
@@ -98,6 +98,7 @@ import { fetchWithReadRetry } from "./read-retry";
 import { ApiError, createGitHubReads, unanswered } from "./github-reads";
 import { RepositoryIndex, readFileText, readFileTexts } from "./repository-loading";
 import { CleanSourceCache } from "./clean-source-cache";
+import { createNativeSiteRuntime } from "./native-site-runtime";
 import { iconMarkup, setIcon } from "./icons";
 import { createCommandPaletteController } from "./controllers/command-palette-controller";
 import { createCodePanesController } from "./controllers/code-panes-controller";
@@ -117,7 +118,6 @@ import type { ToastAction } from "./components/toast";
 import type {
   EditorContext,
   Directory,
-  PublishResult,
   Repository,
   SessionInfo,
   Snapshot,
@@ -155,8 +155,25 @@ const appStore = createAppStore(editorModule.sourceStore());
 const workspaceSession = createWorkspaceSession();
 function currentLoad() { return workspaceSession.current().load; }
 function nextLoad(scope?: WorkspaceScope) { workspaceSession.next(scope); finishedWork.loading(scope); return workspaceSession.begin(); }
+const cleanSources = new CleanSourceCache(() => info?.user?.login);
+// The open native site's state (src/native-site-runtime.ts); its preview adapter stays here.
+const runtime = createNativeSiteRuntime({
+  scope: () => draftScope(), shown: () => shownScope(), drafts: () => draftStore(),
+  mounted: path => editorModule?.getMountedSource(path), clean: cleanSources, textKey: () => nativeTextIndexScopeKey(),
+  route: () => nativePreview?.route(), openFile: () => appStore.openFile.value, pageStyles: () => nativePageStyles(),
+  find: path => findEntry(path), readTexts: (repo, files) => readNativeTexts(repo, files), unreadable: files => noteNativeUnreadable(files),
+  changed: () => updateNativePreviewSources(),
+  closed: () => {
+    pendingNativePageTitles = undefined;
+    mediaController.disposeGallery();
+    mediaController.closePicker();
+    pagesController.updateTabs();
+    linkedStyles.clearBodyStyles();
+    nativePreview?.deactivate();
+  },
+});
 // Work finished on another project or branch, counted in the repository menu until it is opened (src/finished-elsewhere.ts).
-const finishedWork = createFinishedElsewhere({ draw: (notes) => repositoryMenu?.setNotes(notes), open: (scope) => openLink(scope), showing: (scope) => holdsDraftScope(workspaceSession.current().scope, scope), follow: (commit, scope) => { if (nativeEngaged) siteActions?.track(commit, () => holdsDraftScope(workspaceSession.current().scope, scope)); } });
+const finishedWork = createFinishedElsewhere({ draw: (notes) => repositoryMenu?.setNotes(notes), open: (scope) => openLink(scope), showing: (scope) => holdsDraftScope(workspaceSession.current().scope, scope), follow: (commit, scope) => { if (runtime.engaged) siteActions?.track(commit, () => holdsDraftScope(workspaceSession.current().scope, scope)); } });
 // A controller's load number as a stamp (until the follow-ups in ticket 22's Done section); once that load moved on, a deny-all stand-in that says the scope changed.
 function stampOf(epoch: number): SessionStamp {
   const stamp = workspaceSession.begin();
@@ -217,7 +234,7 @@ const loadSetupActions = lazyModule(async () => {
     get wizardCreated() { return setup.wizardCreated; }, set wizardCreated(value) { setup.wizardCreated = value; },
     get waitingForRepositories() { return setup.waitingForRepositories; }, set waitingForRepositories(value) { setup.waitingForRepositories = value; },
     get repositorySelect() { return repositorySelect; }, get repositoryMenu() { return repositoryMenu; },
-    boot, appStore, guardedEdits, nativeBaseSources, repositoryIndex, setupController,
+    boot, appStore, guardedEdits, nativeBaseSources: runtime.base.sources, repositoryIndex, setupController,
     api, readFiles, readFile, readBlob, branchText, draftScope, draftStore, pathNow,
     rememberStartingPoint, rememberPartialStart, rememberRepositories, repositoryOptions,
     chooseRepository, forgetPartialStart, removeFinishStarter, loadSnapshot, announce, errorMessage,
@@ -246,15 +263,15 @@ const loadAgentMenu = lazyModule(async () => {
 const loadSiteSettings = lazyModule(async () => {
   const [{ createNativeSettings }] = await Promise.all([import("./native-settings"), loadPagesActions()]);
   return createNativeSettings({
-    get nativeSite() { return nativeSite; }, get generation() { return currentLoad(); },
-    appStore, guardedEdits, nativeAssets, setupScope,
+    get nativeSite() { return runtime.site; }, get generation() { return currentLoad(); },
+    appStore, guardedEdits, nativeAssets: runtime.state.assets, setupScope,
     nativePageLabelOf: (file) => pagesController.pageLabel(file),
     nativeUrlPlan: (file, value) => pageActions!.urlPlan(file, value),
     changeNativeUrl: (file, value, keep, since, baseline) => pageActions!.changeUrl(file, value, keep, since, baseline),
     restoreFile: (path, epoch) => restoreFile(path, stampOf(epoch)), nativeSiteReadForCreate,
-    choosePath: (place, accept) => mediaController.choosePath(place, undefined, accept), nativeEffectiveSource, loadNativeAssets,
+    choosePath: (place, accept) => mediaController.choosePath(place, undefined, accept), nativeEffectiveSource: runtime.source, loadNativeAssets,
     shareImage: request => mediaController.shareImage(request),
-    nativeFiles: () => nativeFiles(), readMediaText,
+    nativeFiles: () => runtime.files(), readMediaText,
   });
 });
 // What agents are shown and how their commands run (src/agent-site.ts), loaded when one asks.
@@ -532,7 +549,7 @@ function mountWorkspace() {
     // A page the text index has not read yet is read when it shows.
     onRouteShown: (route) => {
       componentTools?.mode.sync();
-      if (!nativeSite) return;
+      if (!runtime.site) return;
       if (nativePreviewBehind) updateNativePreviewSources();
       void loadNativeAssets(nativeRouteShownSources(route));
       void loadNativeShownFiles(route);
@@ -584,7 +601,7 @@ function mountWorkspace() {
   pageStructure = createPageStructure(element("structure"), {
     menuItems: (path, item, opening, template) => {
       const painted = template ? template.source : nativeStructurePaintedSources.get(item);
-      const fresh = () => painted !== undefined && nativeEffectiveSource(path) === painted && !versions.view;
+      const fresh = () => painted !== undefined && runtime.source(path) === painted && !versions.view;
       if (!fresh()) {
         if (opening) announce("The source changed. Wait for the preview before using this action.");
         return [];
@@ -594,9 +611,9 @@ function mountWorkspace() {
         entry.run();
       } }));
     },
-    pageSource: (path) => nativeEffectiveSource(path),
+    pageSource: (path) => runtime.source(path),
     label: (item) => {
-      const component = Boolean(nativeSite && Object.hasOwn(nativeSite.components, item.tag));
+      const component = Boolean(runtime.site && Object.hasOwn(runtime.site.components, item.tag));
       return { ...structureLabel(item, component), component };
     },
     onSelect: (path, node, edit) => nativePreview?.selectNode({ path, node }, edit),
@@ -658,12 +675,12 @@ function mountWorkspace() {
 const paletteController = createCommandPaletteController({
   appStore,
   host: () => app,
-  site: () => nativeSite,
+  site: () => runtime.site,
   routeTitle: route => nativeRouteInfo(route).title,
-  files: nativeFiles,
-  sources: nativeSources,
-  effectiveSource: nativeEffectiveSource,
-  indexed: () => nativeTextIndexed,
+  files: runtime.files,
+  sources: runtime.sources,
+  effectiveSource: runtime.source,
+  indexed: () => runtime.state.textIndexed,
   index: ensureNativeTextIndex,
   stamp: () => guardedEdits.stamp("repository"),
   isMounted: path => Boolean(editorModule?.isMounted(path)),
@@ -690,7 +707,7 @@ const paletteController = createCommandPaletteController({
     structureHidden: () => Boolean(app.querySelector(".workspace--sidebar-collapsed")),
     newFile: () => {
       openExplorer();
-      if (nativeSite) pagesController.selectTab("files");
+      if (runtime.site) pagesController.selectTab("files");
       openCreate("", element("new-at-root"));
     },
     showPagesAndFiles: () => {
@@ -709,11 +726,11 @@ function mountComponentTools() {
 }
 function componentPorts(): Parameters<typeof createComponentTools>[0] {
   return {
-    site: () => nativeSite,
-    sources: () => nativeSources(),
+    site: () => runtime.site,
+    sources: () => runtime.sources(),
     variantFiles: nativeVariantFiles,
     structureFields: true,
-    files: () => nativeFiles(),
+    files: () => runtime.files(),
     index: ensureNativeTextIndex,
     loaderPlan: nativeComponentLoaderPlan,
     edits: guardedEdits,
@@ -732,16 +749,16 @@ function componentPorts(): Parameters<typeof createComponentTools>[0] {
     announce,
     error: errorMessage,
     images: nativeImagePaths,
-    prefix: () => nativePrefix(),
+    prefix: () => runtime.prefix(),
     chooseImage: (place, placement) => mediaController.choosePath(place, placement),
-    links: () => (nativeSite ? nativeLinkSuggestions(Object.keys(nativeSite.routes), (route) => nativeRouteInfo(route).title, nativePrefix()) : []),
+    links: () => (runtime.site ? nativeLinkSuggestions(Object.keys(runtime.site.routes), (route) => nativeRouteInfo(route).title, runtime.prefix()) : []),
     pageLabel: (file) => pagesController.pageLabel(file),
     panelHost: app.querySelector<HTMLElement>(".sidebar")!,
     canvasComponent: (parts) => nativePreview?.setCanvasComponent(parts),
     codeTitle: element("primary-title").parentElement!,
     previewPage: () => {
       const route = nativePreview?.route();
-      return route && nativeSite ? nativeSite.routes[route] : undefined;
+      return route && runtime.site ? runtime.site.routes[route] : undefined;
     },
     refreshBar: () => { if (appStore.selection.value) pageStructureController.renderEditBar(appStore.selection.value); },
     refreshStructure: () => pageStructure?.refresh(),
@@ -760,15 +777,15 @@ function componentPorts(): Parameters<typeof createComponentTools>[0] {
 }
 
 function nativeEditableSource(path: string): string | undefined {
-  return nativeSources()[path];
+  return runtime.sources()[path];
 }
 
 function nativeSectionChoices(): InsertChoice[] {
-  if (!nativeSite) return [];
+  if (!runtime.site) return [];
   // The Add panel lists every section component: their templates are the text index.
-  if (!nativeTextIndexed) wantNativeTextIndex();
-  const sources = nativeSources();
-  return Object.entries(nativeSite.components)
+  if (!runtime.state.textIndexed) wantNativeTextIndex();
+  const sources = runtime.sources();
+  return Object.entries(runtime.site.components)
     .filter(([, path]) => isSectionTemplate(sources[path] ?? ""))
     .map(([tag]) => ({ tag, label: componentLabel(tag) }))
     .sort((a, b) => a.label.localeCompare(b.label));
@@ -779,12 +796,12 @@ function nativeSectionChoices(): InsertChoice[] {
 // file is in the editor, since edits go through the mounted editor.
 const nativeAddPoints = new WeakMap<InsertPoint, { source: string; stamp: SessionStamp; description: string }>();
 function nativeElementAddPoint(choice: InsertChoice, fallback: InsertPoint | undefined, mode: "click" | "drop" | "gap" = "click"): InsertPoint | undefined {
-  const markup = nativeChoiceMarkup(choice.tag, undefined, nativePrefix());
+  const markup = nativeChoiceMarkup(choice.tag, undefined, runtime.prefix());
   if (!markup) return fallback;
-  if (versions.view || !nativeSite) return;
+  if (versions.view || !runtime.site) return;
   const selected = appStore.selection.value;
-  const path = selected?.path && Object.values(nativeSite.routes).includes(selected.path) ? selected.path : fallback?.path;
-  const source = path && nativeEffectiveSource(path);
+  const path = selected?.path && Object.values(runtime.site.routes).includes(selected.path) ? selected.path : fallback?.path;
+  const source = path && runtime.source(path);
   if (!path || source === undefined) return;
   const destinations = selected?.path === path && selected.node ? nativeDestinations(source, path, selected.node) : [];
   const candidates = mode !== "click" ? [] : [...destinations.filter(item => item.placement === "inside"), ...destinations.filter(item => item.placement === "after")];
@@ -805,7 +822,7 @@ async function nativeComponentLoaderPlan(path: string, nextPageText: string, r: 
   if (error) return error;
   const site = r.site();
   if (!site) return "The repository or source changed meanwhile. Review the latest files and try again.";
-  const sources = nativeSiteSources(site, file => r.source(file));
+  const sources = runtime.sources(site, file => r.source(file));
   try {
     const { componentLoaderPlan } = await import("./page-builder/component-loader");
     if (check) await check();
@@ -830,11 +847,11 @@ async function nativeComponentLoaderPlan(path: string, nextPageText: string, r: 
 // first when another file is in the editor.
 async function insertNativeComponent(point: InsertPoint, choice: InsertChoice) {
   const path = point.path;
-  const native = nativeChoiceMarkup(choice.tag, undefined, nativePrefix());
+  const native = nativeChoiceMarkup(choice.tag, undefined, runtime.prefix());
   // A destination planned against the page's bytes then (the Add panel's) holds only while they do.
   const captured = nativeAddPoints.get(point), moved = "The insertion source changed. Choose the destination again.";
   if (captured && (!captured.stamp.holds() || versions.view)) { errorMessage(new Error(moved)); return; }
-  if (!nativePreview || !nativeSite || !Object.values(nativeSite.routes).includes(path)) return;
+  if (!nativePreview || !runtime.site || !Object.values(runtime.site.routes).includes(path)) return;
   const selected = appStore.selection.value;
   const before = selected?.node ? { path: selected.path, node: [...selected.node] } : undefined;
   // The page opens first when another file is in the editor (Edit component mode on a template it
@@ -877,12 +894,12 @@ const editorWorkspace = createEditorWorkspace({
   route: () => nativePreview?.route(),
   editModeEntry: () => componentTools?.mode.entry(),
   agentActing: () => agentActingDepth > 0,
-  site: () => nativeSite,
-  files: () => nativeFiles(),
+  site: () => runtime.site,
+  files: () => runtime.files(),
   store: draftStore,
-  source: path => mediaTextSource(path),
-  exists: path => nativePathExists(path) || (!nativeSite && (pathNow(path, treeState()) === "file" || pathNow(path, treeState()) === "folder")),
-  base: path => nativeBaseSources.get(path),
+  source: path => runtime.textSource(path),
+  exists: path => nativePathExists(path) || (!runtime.site && (pathNow(path, treeState()) === "file" || pathNow(path, treeState()) === "folder")),
+  base: path => runtime.base.sources.get(path),
   branchText,
   entry: async path => { await loadFileOps(); return (await fileOps!.targetFiles({ path, name: path.slice(path.lastIndexOf("/") + 1), folder: false }, true))[0]; },
   createProblem: async path => (await findEntry(path)) ? `${path} already exists.` : branchPathProblem(path),
@@ -923,7 +940,7 @@ const blockMoves = createBlockMoves({
     const stop = editorModule!.sourceStore().subscribe(event => {
       if (event.type === "text" || event.type === "history") { changed = true; close(); }
     });
-    const current = () => !changed && stamp.holds() && nativeEffectiveSource(path) === source && Boolean(editorModule?.hasOpenEditGroup(path, tag));
+    const current = () => !changed && stamp.holds() && runtime.source(path) === source && Boolean(editorModule?.hasOpenEditGroup(path, tag));
     void import("./page-builder/media-move-recheck").then(module => module.recheckMove({
       edits: guardedEdits, current, painted: () => nativePreview?.paintedSource(path),
       measure: node => nativePreview!.measureImage({ path, node }, source),
@@ -935,7 +952,7 @@ const blockMoves = createBlockMoves({
     // A kept model of the page, forgotten when the open is refused: it holds bytes older than the draft's.
     const kept = draft ? editorModule?.captureFileModelState(draft, path, true) : undefined;
     return painted => {
-      if (draft && nativeEffectiveSource(path) !== painted && kept?.isCurrent() && !editorModule?.isMounted(path)) editorModule?.forgetDraftModel(draft, path);
+      if (draft && runtime.source(path) !== painted && kept?.isCurrent() && !editorModule?.isMounted(path)) editorModule?.forgetDraftModel(draft, path);
       updateNativePreviewSources();
     };
   },
@@ -945,7 +962,7 @@ const blockMoves = createBlockMoves({
 const blockInsertPorts: BlockInsertPorts = {
   target: () => {
     const route = nativePreview?.route();
-    const path = route !== undefined && nativeSite && !versions.view ? nativeSite.routes[route] : undefined;
+    const path = route !== undefined && runtime.site && !versions.view ? runtime.site.routes[route] : undefined;
     if (!path) return undefined;
     // Edit component mode builds in the template edited, a part of it selected.
     const template = componentTools?.mode.now();
@@ -997,7 +1014,7 @@ function dragPageBlock(press: DragPress, pressed?: PressedBlock) {
   };
   // The chip says the name; a press in the page names it once the drag code is in.
   let name = press.source?.textContent?.trim() || from.tag;
-  const component = Boolean(nativeSite && Object.hasOwn(nativeSite.components, from.tag));
+  const component = Boolean(runtime.site && Object.hasOwn(runtime.site.components, from.tag));
   return trackDrag(press, () => ({ name, tag: from.tag, component }), () => loadBlockDrag().then(drag => {
     if (!since.holds()) return undefined;
     if (pressed) name = drag.dropBlockName(from.tag, from.cls);
@@ -1023,7 +1040,7 @@ const loadBlockInsert = lazyModule(async () => (await import("./controllers/bloc
 const versions = createVersionView({
   appStore, workspaceSession, guardedEdits, editorModule,
   get nativePreview() { return nativePreview; },
-  currentLoad, setupScope, draftScope, draftStore, nativeEffectiveSource, updateNativePreviewSources, loadHistory, loadConfirmDialog,
+  currentLoad, setupScope, draftScope, draftStore, nativeEffectiveSource: runtime.source, updateNativePreviewSources, loadHistory, loadConfirmDialog,
   api, postApi, status, errorMessage, refuse,
   restoreFile: (path, at, options) => restoreFile(path, at, options),
   loadSnapshot: path => loadSnapshot(path),
@@ -1032,9 +1049,9 @@ const versions = createVersionView({
 // Linked styles, the secondary pane and its rule chips (src/controllers/linked-styles-controller.ts).
 const linkedStyles = createLinkedStylesController({
   appStore, workspaceSession, editorModule,
-  get info() { return info; }, get nativeSite() { return nativeSite; },
+  get info() { return info; }, get nativeSite() { return runtime.site; },
   get primaryHistoryScope() { return primaryHistoryScope; }, get nativeVariantFiles() { return nativeVariantFiles; },
-  element, nativeModeActive, nativeSources, nativePageStyles, nativeEffectiveSource, nativeComponentTagForPath, nativeCssWorkspace,
+  element, nativeModeActive, nativeSources: runtime.sources, nativePageStyles, nativeEffectiveSource: runtime.source, nativeComponentTagForPath, nativeCssWorkspace,
   nativeHistorySession, draftScope, draftStore, findEntry, readFile, errorMessage, updateNativePreviewSources,
   applyWidth: () => codePanes.applyWidth(),
   refreshFiles: () => filesTreeController.refresh(),
@@ -1055,8 +1072,8 @@ const previewSelection = createPreviewSelectionController({
   generation: currentLoad,
   scope: () => setupScope(),
   store: appStore,
-  site: () => nativeSite,
-  sources: () => nativeSources(),
+  site: () => runtime.site,
+  sources: () => runtime.sources(),
   editableSource: (path) => nativeEditableSource(path),
   preview: () => nativePreview,
   editor: () => editorModule,
@@ -1092,15 +1109,15 @@ let variantWanted: Set<string> | undefined;
 const variantReads = new Set<string>();
 const nativeVariantFiles: VariantFiles = {
   site: () => {
-    const site = nativeSite;
+    const site = runtime.site;
     if (!site || !draftScope() || versions.view) return undefined;
     if (variantSite?.from !== site) variantSite = { from: site, site: { pages: Object.values(site.routes), components: site.components } };
     return variantSite.site;
   },
   read: (path) => {
     const scope = draftScope();
-    if (!nativeSite || !scope || versions.view) return undefined;
-    const source = nativeEffectiveSource(path, scope);
+    if (!runtime.site || !scope || versions.view) return undefined;
+    const source = runtime.source(path, scope);
     if (source === undefined) {
       if (!variantWanted) queueMicrotask(readVariantFiles);
       (variantWanted ??= new Set()).add(path);
@@ -1112,15 +1129,15 @@ const nativeVariantFiles: VariantFiles = {
 function readVariantFiles() {
   const wanted = variantWanted, scope = draftScope(), repo = appStore.repository.value;
   variantWanted = undefined;
-  if (!wanted || !nativeSite || !scope || !repo || versions.view) return;
+  if (!wanted || !runtime.site || !scope || !repo || versions.view) return;
   const at = workspaceSession.begin(), scopeKey = setupScope();
   const key = (path: string) => JSON.stringify([at.load, scopeKey, path]);
-  const files = new Set(nativeFiles(scope));
-  const missing = [...wanted].filter(path => files.has(path) && nativeEffectiveSource(path, scope) === undefined && !variantReads.has(key(path)));
+  const files = new Set(runtime.files(scope));
+  const missing = [...wanted].filter(path => files.has(path) && runtime.source(path, scope) === undefined && !variantReads.has(key(path)));
   if (!missing.length) return;
   missing.forEach(path => variantReads.add(key(path)));
   const live = () => at.holds();
-  void readNativePredicted(repo.full_name, missing, live).then((read) => {
+  void runtime.readPredicted(repo.full_name, missing, live).then((read) => {
     missing.forEach(path => variantReads.delete(key(path)));
     if (!live() || !read) return;
     editorModule?.refreshVariants();
@@ -1132,9 +1149,9 @@ function readVariantFiles() {
 /** A fresh source appStore.snapshot.value for CSS code intelligence. */
 function nativeCssWorkspace(): CssWorkspace | undefined {
   const scope = draftScope(), requester = appStore.openFile.value;
-  if (!nativeSite || !scope || !requester || versions.view || !editorModule?.isMounted(requester)) return;
-  const at = workspaceSession.begin(), scopeKey = setupScope(), sources = nativeSources();
-  const revision = JSON.stringify([at.load, scopeKey, requester, nativeSite.routes, nativeSite.components, appStore.selection.value?.path, appStore.selection.value?.node, sources]);
+  if (!runtime.site || !scope || !requester || versions.view || !editorModule?.isMounted(requester)) return;
+  const at = workspaceSession.begin(), scopeKey = setupScope(), sources = runtime.sources();
+  const revision = JSON.stringify([at.load, scopeKey, requester, runtime.site.routes, runtime.site.components, appStore.selection.value?.path, appStore.selection.value?.node, sources]);
   const orderedPaths = [...new Set([...nativePageStyles(), ...Object.keys(sources).sort()])];
   return {
     revision, sources, orderedPaths,
@@ -1199,13 +1216,13 @@ const pageStructureController = createPageStructureController({
   get appStore() { return appStore; },
   get componentTools() { return componentTools; },
   get nativeEditableSource() { return nativeEditableSource; },
-  get nativeSite() { return nativeSite; },
+  get nativeSite() { return runtime.site; },
   get element() { return element; },
   get generation() { return currentLoad(); },
   get setupScope() { return setupScope; },
   get draftScope() { return draftScope; },
   get openNativeNavigation() { return openNativeNavigation; },
-  get nativeSources() { return nativeSources; },
+  get nativeSources() { return runtime.sources; },
   get nativePageStyles() { return nativePageStyles; },
   get nativeTextTags() { return TEXT_LINE_TAGS; },
   get previewSelection() { return previewSelection; },
@@ -1215,7 +1232,7 @@ const pageStructureController = createPageStructureController({
   get nearestLink() { return nearestLink; },
   get nativeRouteInfo() { return nativeRouteInfo; },
   get versionView() { return versions.view; },
-  get nativeEffectiveSource() { return nativeEffectiveSource; },
+  get nativeEffectiveSource() { return runtime.source; },
   get nativeNamedDescendant() { return nativeNamedDescendant; },
   chooseMediaForImage: (target, files) => mediaController.chooseImage(target, files),
   mediaPlaceState: (page, src, alt) => mediaController.placeState(page, src, alt),
@@ -1250,7 +1267,7 @@ function nativeInstanceContent(source: string, node: readonly number[], tag: str
   if (!range || range.tag.name !== tag) return false;
   if (["img", "picture", "video", "a", "button"].includes(tag)) return true;
   const route = nativePreview?.route();
-  if (route && gridOfItem(source, [...node], { route, prefix: nativePrefix(), routes: nativeSite?.routes ?? {}, isSection: (...args) => pageStructureController.isNativeSectionTag(...args) })) return true;
+  if (route && gridOfItem(source, [...node], { route, prefix: runtime.prefix(), routes: runtime.site?.routes ?? {}, isSection: (...args) => pageStructureController.isNativeSectionTag(...args) })) return true;
   if (!range.close || !TEXT_TAGS.has(tag)) return false;
   const template = document.createElement("template");
   template.innerHTML = source.slice(range.tag.end, range.close.start);
@@ -1262,10 +1279,10 @@ let nativeComponentFieldToken = 0;
 let nativeComponentFieldSnapshot: { key: string; proofs: { isCurrent(): boolean }[] } | undefined;
 function nativeComponentFieldsRevision() {
   const scope = draftScope();
-  const sources = nativeSources();
+  const sources = runtime.sources();
   // Without a scope or the editor module there are no model proofs, so nothing would ever mark this
   // snapshot stale: whether proofs exist belongs to the key, or Structure keeps its pre-editor fields.
-  const key = JSON.stringify([currentLoad(), setupScope(), appStore.openFile.value, nativeSite?.components, sources, Boolean(scope && editorModule)]);
+  const key = JSON.stringify([currentLoad(), setupScope(), appStore.openFile.value, runtime.site?.components, sources, Boolean(scope && editorModule)]);
   if (nativeComponentFieldSnapshot?.key === key && nativeComponentFieldSnapshot.proofs.every(proof => proof.isCurrent())) return String(nativeComponentFieldToken);
   nativeComponentFieldSnapshot = { key, proofs: scope && editorModule ? Object.keys(sources).map(path => editorModule!.captureFileModelState(scope, path)) : [] };
   return String(++nativeComponentFieldToken);
@@ -1298,48 +1315,15 @@ function elementMenuItems(target: ElementMenuTarget) {
 
 let nativePreview: ReturnType<typeof createNativePreview> | undefined;
 let pageStructure: ReturnType<typeof createPageStructure> | undefined;
-// The loaded native site: its pages by route and its components by tag,
-// read from the repository's files (shared/native-project.ts).
-let nativeSite: NativeSite | undefined;
-// True whenever the project is native (it has `index.html` at its root),
-// even when its sources fail to load: the preview then shows the error
-// instead of the plain file browser.
-let nativeEngaged = false;
-const cleanSources = new CleanSourceCache(() => info?.user?.login);
-const nativeBaseSources = cleanSources.base;
-const mediaOpaqueText = new Map<string, { sha: string; text: string }>();
-const nativeComponentStyles = new Map<string, string>();
-const nativeMissingComponentStyles = new Set<string>();
-const nativeComponentStyleRequests = new Set<string>();
-// The stylesheets the pages link and every file those `@import`: loaded,
-// or missing from the branch, or being read. Each is a style dependency:
-// its effective source reaches the preview and edits to it re-render.
-const nativeStyleFiles = new Set<string>();
-const nativeMissingStyleFiles = new Set<string>();
-const nativeStyleFileRequests = new Set<string>();
-// Files GitHub cannot give as text (not UTF-8, binary, over 1 MB), with why.
-// Every read of the site skips them: a stylesheet among them is left out of
-// the preview with a warning, never shown as a preview error.
-const nativeUnreadableFiles = new Map<string, string>();
-// The project's own warnings (shared/native-project.ts), shown with the unreadable stylesheets'.
-let nativeProjectWarnings: string[] = [];
-let nativeSourcesRequest = 0;
-let nativeTextIndexing: Promise<boolean> | undefined;
-let nativeTextIndexScope = "";
-// Every file on the branch; pages are routed by where they are
-// (shared/native-routes.ts) and components found by convention
-// (shared/native-project.ts), so this list, with new files drafted in the
-// browser (`nativeFiles`), decides the site's pages and components.
-let nativeBaseFiles: string[] = [];
 
 function nativeModeActive() {
-  return Boolean(nativeSite);
+  return Boolean(runtime.site);
 }
 
 // The route whose page file is `path`; undefined when the file is not a page.
 function nativeRouteForPath(path: string | undefined) {
-  if (!nativeSite || !path) return undefined;
-  return Object.entries(nativeSite.routes).find(([, file]) => file === path)?.[0];
+  if (!runtime.site || !path) return undefined;
+  return Object.entries(runtime.site.routes).find(([, file]) => file === path)?.[0];
 }
 
 // The session's scope once its load's snapshot is on show: none on the overview or while a load runs.
@@ -1352,7 +1336,7 @@ function draftScope() { return draftScopeOf(shownScope()); }
 // page's first heading.
 function nativePageMeta(path: string) {
   if (!nativeRouteForPath(path)) return undefined;
-  const source = nativeEffectiveSource(path) ?? "";
+  const source = runtime.source(path) ?? "";
   const head = nativePageHead(source);
   return {
     title: head.title ?? "",
@@ -1362,9 +1346,9 @@ function nativePageMeta(path: string) {
 }
 
 // The title and description the page at `route` has, from its head.
-function nativeRouteInfo(route: string, site = nativeSite) {
+function nativeRouteInfo(route: string, site = runtime.site) {
   if (!site || !Object.hasOwn(site.routes, route)) return {};
-  const source = nativeEffectiveSource(site.routes[route]);
+  const source = runtime.source(site.routes[route]);
   return source === undefined ? {} : nativePageHead(source);
 }
 
@@ -1425,7 +1409,7 @@ async function openNativePageSettings(path: string) {
   const [problem, settings] = await Promise.all([ensureNativeTextIndex(), loadSiteSettings()]);
   if (!at.holds()) return;
   if (problem) { errorMessage(new Error(problem)); return; }
-  const source = nativeEffectiveSource(path), route = nativeRouteForPath(path);
+  const source = runtime.source(path), route = nativeRouteForPath(path);
   if (source === undefined || !route) return;
   try { settings.nativeSettingsController(settings, [path]).page({ path, source, route, images: nativeImagePaths() }); }
   catch (error) { errorMessage(error); }
@@ -1433,12 +1417,12 @@ async function openNativePageSettings(path: string) {
 
 async function openNativeSiteSettings() {
   const at = workspaceSession.begin();
-  if (!nativeSite) { refuse("Open a native site first."); return; }
+  if (!runtime.site) { refuse("Open a native site first."); return; }
   const [problem, settings] = await Promise.all([ensureNativeTextIndex(), loadSiteSettings()]);
   if (!at.holds()) return;
-  if (problem || !nativeSite) { if (problem) errorMessage(new Error(problem)); return; }
+  if (problem || !runtime.site) { if (problem) errorMessage(new Error(problem)); return; }
   try {
-    settings.nativeSettingsController(settings, [NATIVE_CONFIG_PATH, nativeSite.routes["/"]]).site({ values: settings.readSiteIdentity(nativeEffectiveSource(NATIVE_CONFIG_PATH), nativeEffectiveSource(nativeSite.routes["/"]) ?? ""), pages: settings.nativeSitePageChoices(), images: nativeImagePaths(), has404: Boolean(nativeSite.routes["/404.html"]) });
+    settings.nativeSettingsController(settings, [NATIVE_CONFIG_PATH, runtime.site.routes["/"]]).site({ values: settings.readSiteIdentity(runtime.source(NATIVE_CONFIG_PATH), runtime.source(runtime.site.routes["/"]) ?? ""), pages: settings.nativeSitePageChoices(), images: nativeImagePaths(), has404: Boolean(runtime.site.routes["/404.html"]) });
   } catch (error) { errorMessage(error); }
 }
 
@@ -1456,10 +1440,10 @@ async function openNativeNavigation(pagePath: string) {
 // file created, moved or discarded here finds them again with the files
 // now, so a new page routes (and a new component renders) at once.
 function refreshNativeRoutes() {
-  if (!nativeSite) return;
-  const parsed = resolveNativeProject(nativeFiles());
+  if (!runtime.site) return;
+  const parsed = resolveNativeProject(runtime.files());
   if (!parsed.ok) { errorMessage(new Error(parsed.error)); return; }
-  nativeSite = parsed.site;
+  runtime.site = parsed.site;
   showNativeWarnings(parsed.warnings);
   nativePreview?.activate(parsed.site);
   updateNativePreviewSources();
@@ -1469,50 +1453,17 @@ function refreshNativeRoutes() {
   updateCurrentPageLabel();
 }
 
-// Every page, component and style file to its effective source: a mounted
-// editor model wins, then a saved/new browser draft, then the clean snapshot
-// baseline.
-function nativeSources(site = nativeSite): Record<string, string> {
-  const scope = draftScope();
-  return site ? nativeSiteSources(site, path => nativeEffectiveSource(path, scope)) : {};
-}
-/** The site's pages, templates and stylesheets as `effective` reads them (a plan passes its `r`). */
-function nativeSiteSources(site: NativeSite, effective: (path: string) => string | undefined): Record<string, string> {
-  const out: Record<string, string> = {};
-  const paths = new Set([...nativeSitePaths(site), ...nativeComponentStyles.values()]);
-  for (const path of paths) out[path] = effective(path) ?? "";
-  // A style file that is neither in the branch nor a draft stays out, so
-  // the preview reports the link or import as missing.
-  for (const path of [...nativeStyleFiles, ...nativeMissingStyleFiles]) {
-    if (Object.hasOwn(out, path)) continue;
-    const content = effective(path);
-    if (content !== undefined) out[path] = content;
-  }
-  return out;
-}
 
 /** Alt+arrow moves open an instance's seal at its items slots, as drags do. */
 function nativeMoveItems() {
   return itemsSlotRule(tag => guardedEdits.peek.template(tag)?.source);
 }
 
-function nativeEffectiveSource(path: string, scope = draftScope()) {
-  return effectiveText(path, {
-    mounted: (file) => editorModule?.getMountedSource(file),
-    draft: (file) => scope ? draftStore().get(scope, file) : undefined,
-    base: (file) => nativeBaseSources.get(file),
-  });
-}
-
-// The site's sub-folder from its Site address (`/my-site`); none at a domain root.
-function nativePrefix() {
-  return nativeSitePrefix(nativeEffectiveSource(NATIVE_CONFIG_PATH) ?? "");
-}
 
 // The stylesheets any page links, in page order: what the style loader reads.
 function nativeLinkedSheets(site: NativeSite, sources: Record<string, string>) {
   const out = new Set<string>();
-  const prefix = nativePrefix();
+  const prefix = runtime.prefix();
   for (const file of Object.values(site.routes))
     for (const path of nativePageStylesheets(sources[file] ?? "", file, prefix)) out.add(path);
   return [...out];
@@ -1521,11 +1472,11 @@ function nativeLinkedSheets(site: NativeSite, sources: Record<string, string>) {
 // The shared stylesheets of the page the preview shows (the home page's
 // when it shows no page), with every file they import.
 function nativePageStyles() {
-  if (!nativeSite) return [];
-  const sources = nativeSources();
-  const route = nativeRouteForPath(appStore.openFile.value) ?? nativeDefaultRoute(nativeSite);
-  const linked = routeStylesheets(nativeSite, sources, route, nativePrefix());
-  return [...new Set([...linked, ...expandStyleImports(linked, (path) => sources[path], undefined, nativePrefix()).imported])];
+  if (!runtime.site) return [];
+  const sources = runtime.sources();
+  const route = nativeRouteForPath(appStore.openFile.value) ?? nativeDefaultRoute(runtime.site);
+  const linked = routeStylesheets(runtime.site, sources, route, runtime.prefix());
+  return [...new Set([...linked, ...expandStyleImports(linked, (path) => sources[path], undefined, runtime.prefix()).imported])];
 }
 
 // A page selection: the preview follows the newly opened page's route. Opening
@@ -1535,23 +1486,23 @@ function nativePageStyles() {
 // The preview's sources also carry the site's settings: its Site address
 // places the site in a sub-folder (shared/site-path-prefix.ts).
 function withSiteConfig(sources: Record<string, string>) {
-  const config = nativeEffectiveSource(NATIVE_CONFIG_PATH);
+  const config = runtime.source(NATIVE_CONFIG_PATH);
   if (config !== undefined) sources[NATIVE_CONFIG_PATH] = config;
   return sources;
 }
 function nativePreviewSources() {
   versions.check();
-  const sources = withSiteConfig(nativeSources());
+  const sources = withSiteConfig(runtime.sources());
   if (versions.view) sources[versions.view.path] = versions.view.content;
   return sources;
 }
 
 function updateNativePreview() {
-  if (!nativeSite || !nativePreview) return;
+  if (!runtime.site || !nativePreview) return;
   nativePreviewBehind = false;
   nativePreview.update({
     sources: nativePreviewSources(),
-    componentStyles: Object.fromEntries(nativeComponentStyles),
+    componentStyles: Object.fromEntries(runtime.state.componentStyles),
     unreadable: nativePreviewUnreadable(),
     route: nativeRouteForPath(appStore.openFile.value),
     component: appStore.openFile.value ? nativeComponentTagForPath(appStore.openFile.value) : undefined,
@@ -1564,19 +1515,10 @@ function updateNativePreview() {
 // The preview holds sources older than the editor's (the text index read
 // pages it does not show): the next update or route shown brings them.
 let nativePreviewBehind = false;
-// Every file the page on show draws from: its page, templates and stylesheets.
-function nativeShownPaths() {
-  if (!nativeSite) return new Set<string>();
-  const site = nativeSite, scope = draftScope(), files = new Set(nativeFiles(scope));
-  const route = nativePreview?.route();
-  const page = (route !== undefined && site.routes[route]) || site.routes[nativeDefaultRoute(site)];
-  const pages = [page, ...(appStore.openFile.value ? [appStore.openFile.value] : [])];
-  return new Set([...nativeShownFiles(site, pages, (path) => nativeEffectiveSource(path, scope), (path) => files.has(path), nativePrefix()).files, ...nativePageStyles()]);
-}
 function updateNativePreviewSources() {
-  if (!nativeSite || !nativePreview) return;
+  if (!runtime.site || !nativePreview) return;
   nativePreviewBehind = false;
-  nativePreview.update({ sources: nativePreviewSources(), componentStyles: Object.fromEntries(nativeComponentStyles), assets: Object.fromEntries(nativeAssets), unreadable: nativePreviewUnreadable(), editableTemplatePath: previewSelection.editableTemplatePath() });
+  nativePreview.update({ sources: nativePreviewSources(), componentStyles: Object.fromEntries(runtime.state.componentStyles), assets: Object.fromEntries(runtime.state.assets), unreadable: nativePreviewUnreadable(), editableTemplatePath: previewSelection.editableTemplatePath() });
   void loadNativeAssets();
   void loadNativeStyleFiles();
   void loadNativeShownFiles();
@@ -1585,8 +1527,8 @@ function updateNativePreviewSources() {
 // Images and fonts that arrived after the page was drawn: the preview shows
 // them in place, without drawing the page again.
 function updateNativePreviewAssets() {
-  if (!nativeSite || !nativePreview) return;
-  nativePreview.setAssets(Object.fromEntries(nativeAssets));
+  if (!runtime.site || !nativePreview) return;
+  nativePreview.setAssets(Object.fromEntries(runtime.state.assets));
 }
 
 // Reads the stylesheets the pages link and the files those `@import` that
@@ -1596,20 +1538,20 @@ function readNativeStyleFiles(repo: string, site: NativeSite, live: () => boolea
   const scope = draftScope();
   return readStyleFiles({
     wanted: () => {
-      const sources = nativeSources(site), linked = nativeLinkedSheets(site, sources);
-      return [...linked, ...expandStyleImports(linked.filter((path) => Object.hasOwn(sources, path)), (path) => sources[path], undefined, nativePrefix()).imported]
+      const sources = runtime.sources(site), linked = nativeLinkedSheets(site, sources);
+      return [...linked, ...expandStyleImports(linked.filter((path) => Object.hasOwn(sources, path)), (path) => sources[path], undefined, runtime.prefix()).imported]
         .filter((path) => !Object.hasOwn(sources, path));
     },
-    skipped: (path) => nativeMissingStyleFiles.has(path) || nativeUnreadableFiles.has(path) || nativeStyleFileRequests.has(path),
+    skipped: (path) => runtime.state.missingStyleFiles.has(path) || runtime.state.unreadable.has(path) || runtime.state.styleFileRequests.has(path),
     // A stylesheet drafted here (new, or moved) is its draft; one read with the site is there.
     draft: (path) => (scope ? draftStore().get(scope, path) : undefined),
-    read: (path) => nativeBaseSources.has(path),
+    read: (path) => runtime.base.sources.has(path),
     find: (path) => findEntry(path),
     readTexts: (found) => readNativeTexts(repo, found),
     live,
-    reading: (paths, on) => paths.forEach((path) => (on ? nativeStyleFileRequests.add(path) : nativeStyleFileRequests.delete(path))),
-    shown: (path, text) => { if (text !== undefined) nativeBaseSources.set(path, text); nativeStyleFiles.add(path); },
-    missing: (path) => nativeMissingStyleFiles.add(path),
+    reading: (paths, on) => paths.forEach((path) => (on ? runtime.state.styleFileRequests.add(path) : runtime.state.styleFileRequests.delete(path))),
+    shown: (path, text) => { if (text !== undefined) runtime.base.sources.set(path, text); runtime.state.styleFiles.add(path); },
+    missing: (path) => runtime.state.missingStyleFiles.add(path),
     unreadable: noteNativeUnreadable,
   });
 }
@@ -1619,54 +1561,51 @@ function readNativeStyleFiles(repo: string, site: NativeSite, live: () => boolea
 // the stylesheets they link with their imports, a level at a time, each
 // level in one request; `extra` comes with the first. Stylesheets read here
 // are taken up by readNativeStyleFiles and component stylesheets by
-// `nativeComponentStyles`. True when anything was read.
-// Paths being read, with the read that owns them: a read left over from a
-// previous load (cleared with the rest of its state) never clears a newer one's.
-const nativeShownRequests = new Map<string, object>();
+// `runtime.state.componentStyles`. True when anything was read.
 async function readNativeShownFiles(repo: string, site: NativeSite, pages: string[], live: () => boolean, extra: string[] = [], predicted: string[] = []) {
   const scope = draftScope();
-  const held = (path: string) => nativeBaseSources.has(path) || Boolean(scope && draftStore().get(scope, path));
-  const fileSet = new Set(nativeFiles(scope));
+  const held = (path: string) => runtime.base.sources.has(path) || Boolean(scope && draftStore().get(scope, path));
+  const fileSet = new Set(runtime.files(scope));
   const isFile = (path: string) => fileSet.has(path);
   let loaded = false, first = true;
   for (let round = 0; round < 20; round++) {
     // A file that cannot be read as text is not asked for again: a
     // stylesheet is left out of the page, and a page or template the page
     // needs is the preview's error (nativeUnreadableShown).
-    const shown = nativeShownFiles(site, pages, (path) => nativeEffectiveSource(path, scope), isFile, nativePrefix());
+    const shown = nativeShownFiles(site, pages, (path) => runtime.source(path, scope), isFile, runtime.prefix());
     for (const [tag, css] of shown.componentCss)
-      if (held(css) && !nativeComponentStyles.has(tag)) { nativeComponentStyles.set(tag, css); loaded = true; }
-    for (const tag of shown.missingComponentCss) nativeMissingComponentStyles.add(tag);
+      if (held(css) && !runtime.state.componentStyles.has(tag)) { runtime.state.componentStyles.set(tag, css); loaded = true; }
+    for (const tag of shown.missingComponentCss) runtime.state.missingComponentStyles.add(tag);
     const wanted = [...new Set([...shown.files, ...(first ? extra : [])])].filter((path) =>
-      !held(path) && !nativeMissingStyleFiles.has(path) && !nativeUnreadableFiles.has(path) && !nativeShownRequests.has(path));
+      !held(path) && !runtime.state.missingStyleFiles.has(path) && !runtime.state.unreadable.has(path) && !runtime.state.shownRequests.has(path));
     // Predicted files (the site's own stylesheets) come in the same wave but
     // apart: one that cannot be read (not UTF-8) fails only its own batch,
     // and a sheet a page links is then read in a later round as usual.
-    const guessed = round === 0 ? predicted.filter((path) => !wanted.includes(path) && !held(path) && !nativeShownRequests.has(path)) : [];
+    const guessed = round === 0 ? predicted.filter((path) => !wanted.includes(path) && !held(path) && !runtime.state.shownRequests.has(path)) : [];
     first = false;
     if (!wanted.length && !guessed.length) break;
-    const guessing = guessed.length ? readNativePredicted(repo, guessed, live) : Promise.resolve(false);
+    const guessing = guessed.length ? runtime.readPredicted(repo, guessed, live) : Promise.resolve(false);
     if (!wanted.length) {
       if (await guessing) loaded = true;
       if (!live()) return false;
       continue;
     }
     const owner = {};
-    wanted.forEach((path) => nativeShownRequests.set(path, owner));
+    wanted.forEach((path) => runtime.state.shownRequests.set(path, owner));
     try {
       const entries = await Promise.all(wanted.map((path) => findEntry(path)));
       if (!live()) return false;
       const found = wanted.flatMap((path, index) => (entries[index] ? [{ path, sha: entries[index]!.sha }] : []));
       // A linked stylesheet that is not in the branch is reported by the preview.
-      wanted.forEach((path, index) => { if (!entries[index] && /\.css$/i.test(path)) nativeMissingStyleFiles.add(path); });
+      wanted.forEach((path, index) => { if (!entries[index] && /\.css$/i.test(path)) runtime.state.missingStyleFiles.add(path); });
       const { texts, unreadable } = await readNativeTexts(repo, found);
       if (!live()) return false;
       // Checked at the next round's start, with what this read brought.
       if (unreadable.length) { noteNativeUnreadable(unreadable); loaded = true; }
       for (const file of found) {
         const text = texts.get(file.path);
-        if (nativeBaseSources.has(file.path) || text === undefined) continue;
-        nativeBaseSources.set(file.path, text);
+        if (runtime.base.sources.has(file.path) || text === undefined) continue;
+        runtime.base.sources.set(file.path, text);
         loaded = true;
       }
       if (await guessing) loaded = true;
@@ -1674,49 +1613,21 @@ async function readNativeShownFiles(repo: string, site: NativeSite, pages: strin
       // Files that are not in the branch are not asked for again.
       if (!found.length) break;
     } finally {
-      wanted.forEach((path) => { if (nativeShownRequests.get(path) === owner) nativeShownRequests.delete(path); });
+      wanted.forEach((path) => { if (runtime.state.shownRequests.get(path) === owner) runtime.state.shownRequests.delete(path); });
     }
   }
   return loaded;
-}
-
-// Best effort: whether any predicted file was read. A failure leaves them
-// unread; so does a newer load (`live` false), whose sources it must not touch.
-async function readNativePredicted(repo: string, paths: string[], live: () => boolean) {
-  const owner = {};
-  paths.forEach((path) => nativeShownRequests.set(path, owner));
-  try {
-    const entries = await Promise.all(paths.map((path) => findEntry(path)));
-    if (!live()) return false;
-    const found = paths.flatMap((path, index) => (entries[index] ? [{ path, sha: entries[index]!.sha }] : []));
-    if (!found.length) return false;
-    const { texts, unreadable } = await readNativeTexts(repo, found);
-    if (!live()) return false;
-    noteNativeUnreadable(unreadable);
-    let read = false;
-    for (const file of found) {
-      const text = texts.get(file.path);
-      if (nativeBaseSources.has(file.path) || text === undefined) continue;
-      nativeBaseSources.set(file.path, text);
-      read = true;
-    }
-    return read;
-  } catch {
-    return false;
-  } finally {
-    paths.forEach((path) => { if (nativeShownRequests.get(path) === owner) nativeShownRequests.delete(path); });
-  }
 }
 
 // The page on show, before the text index has read the whole site: what it
 // shows that is not read yet (a page followed by a link, a component an
 // edit added) is read, and the preview drawn again.
 async function loadNativeShownFiles(route = nativePreview?.route()) {
-  if (!nativeSite || !appStore.repository.value || !appStore.snapshot.value || nativeTextIndexed) return;
-  const site = nativeSite;
-  const request = nativeSourcesRequest;
+  if (!runtime.site || !appStore.repository.value || !appStore.snapshot.value || runtime.state.textIndexed) return;
+  const site = runtime.site;
+  const request = runtime.state.request;
   const at = workspaceSession.begin();
-  const live = () => at.holds() && request === nativeSourcesRequest && nativeSite === site;
+  const live = () => at.holds() && request === runtime.state.request && runtime.site === site;
   const page = (route !== undefined && site.routes[route]) || site.routes[nativeDefaultRoute(site)];
   let loaded = false;
   try {
@@ -1728,11 +1639,11 @@ async function loadNativeShownFiles(route = nativePreview?.route()) {
 }
 
 async function loadNativeStyleFiles() {
-  if (!nativeSite || !appStore.repository.value || !appStore.snapshot.value) return;
-  const site = nativeSite;
-  const request = nativeSourcesRequest;
+  if (!runtime.site || !appStore.repository.value || !appStore.snapshot.value) return;
+  const site = runtime.site;
+  const request = runtime.state.request;
   const at = workspaceSession.begin();
-  const live = () => at.holds() && request === nativeSourcesRequest && nativeSite === site;
+  const live = () => at.holds() && request === runtime.state.request && runtime.site === site;
   let loaded = false;
   try {
     loaded = await readNativeStyleFiles(appStore.repository.value.full_name, site, live);
@@ -1750,24 +1661,20 @@ async function loadNativeStyleFiles() {
 // the page is drawn and shown in place as they arrive (fonts get a short
 // head start, NATIVE_FONT_WAIT_MS); a path that is not in the branch (or not
 // an image or font) is remembered as missing and left as written.
-const nativeAssets = new Map<string, string>();
-const nativeMissingAssets = new Set<string>();
-const nativeAssetRequests = new Map<string, number>();
-let nativeAssetRequestId = 0;
 const NATIVE_FONT_WAIT_MS = 300;
 // The sources of what the page `file` shows: the page, every component and
 // component stylesheet, and the stylesheets it links with their imports.
 function nativePageShownSources(site: NativeSite, file: string) {
-  const sources = nativeSources(site);
-  const linked = nativePageStylesheets(sources[file] ?? "", file, nativePrefix());
-  const shown = new Set([file, ...Object.values(site.components), ...nativeComponentStyles.values(), ...linked, ...expandStyleImports(linked, (path) => sources[path], undefined, nativePrefix()).imported]);
+  const sources = runtime.sources(site);
+  const linked = nativePageStylesheets(sources[file] ?? "", file, runtime.prefix());
+  const shown = new Set([file, ...Object.values(site.components), ...runtime.state.componentStyles.values(), ...linked, ...expandStyleImports(linked, (path) => sources[path], undefined, runtime.prefix()).imported]);
   return Object.fromEntries(Object.entries(sources).filter(([path]) => shown.has(path)));
 }
 // The sources of the page at `route` (the home page's for a component shown
 // alone), so its images are found.
 function nativeRouteShownSources(route: string | undefined) {
-  if (!nativeSite) return {};
-  const site = nativeSite;
+  if (!runtime.site) return {};
+  const site = runtime.site;
   const file = (route && site.routes[route]) || site.routes[nativeDefaultRoute(site)];
   const sources = nativePageShownSources(site, file);
   return sources;
@@ -1792,20 +1699,20 @@ async function readBlob(repo: string, sha: string, path?: string): Promise<Blob>
 async function loadNativeAssets(sources = nativeAssetSources(), onProgress = updateNativePreviewAssets, only: (path: string) => boolean = () => true, fontsOnly = false) {
   if (!appStore.repository.value || !appStore.snapshot.value || !Object.keys(sources).length) return;
   const repo = appStore.repository.value.full_name;
-  const request = nativeSourcesRequest;
+  const request = runtime.state.request;
   const at = workspaceSession.begin();
   const references = new Set<string>(), sounds = new Set<string>();
   if (fontsOnly) {
     // Font preloading precedes paint. The page-media scanner stays out of that boot path.
     for (const [file, source] of Object.entries(sources)) if (file.endsWith(".css")) rewriteCssUrls(source, url => {
-      const path = resolveImportPath(file, url, nativePrefix());
+      const path = resolveImportPath(file, url, runtime.prefix());
       if (path) references.add(path);
       return undefined;
     });
   } else {
     const { scanMediaReferences } = await import("./page-builder/media-references");
-    if (!at.holds() || request !== nativeSourcesRequest) return;
-    for (const [file, source] of Object.entries(sources)) for (const ref of scanMediaReferences(file.endsWith(".css") || nativePageRoute(file) ? file : "index.html", source, undefined, nativePrefix())) {
+    if (!at.holds() || request !== runtime.state.request) return;
+    for (const [file, source] of Object.entries(sources)) for (const ref of scanMediaReferences(file.endsWith(".css") || nativePageRoute(file) ? file : "index.html", source, undefined, runtime.prefix())) {
       references.add(ref.path);
       // An audio player's file, so the canvas shows its length (a link to a recording is not read).
       if (ref.tag === "audio" || ref.tag === "source") sounds.add(ref.path);
@@ -1813,17 +1720,17 @@ async function loadNativeAssets(sources = nativeAssetSources(), onProgress = upd
   }
   const typeOf = (path: string) => assetType(path) ?? (sounds.has(path) ? audioType(path) : undefined);
   const wanted = [...references].filter((path) =>
-    typeOf(path) && only(path) && !nativeAssets.has(path) && !nativeMissingAssets.has(path) && !nativeAssetRequests.has(path));
+    typeOf(path) && only(path) && !runtime.state.assets.has(path) && !runtime.state.missingAssets.has(path) && !runtime.state.assetRequests.has(path));
   if (!wanted.length) return;
-  const assetRequest = ++nativeAssetRequestId;
-  wanted.forEach((path) => nativeAssetRequests.set(path, assetRequest));
+  const assetRequest = ++runtime.state.assetRequestId;
+  wanted.forEach((path) => runtime.state.assetRequests.set(path, assetRequest));
   const scope = draftScope();
-  const live = () => at.holds() && request === nativeSourcesRequest;
+  const live = () => at.holds() && request === runtime.state.request;
   const load = async ({ path, type }: { path: string; type: string }): Promise<string | undefined> => {
     // A drafted image: an upload's bytes from this browser, a moved or
     // copied one's blob; a deleted one is missing.
     const draft = scope ? draftStore().get(scope, path) : undefined;
-    if (draft) nativeDraftAssets.add(path);
+    if (draft) runtime.state.draftAssets.add(path);
     if (draft?.upload && sounds.has(path) && draft.upload.size > CANVAS_AUDIO_MAX_BYTES) return undefined;
     if (draft?.upload && scope) return uploadDataUrl(uploadBytes(), scope, draft).catch(() => undefined);
     // An SVG written as text here (the block placeholder, an edited one) shows its draft.
@@ -1845,28 +1752,25 @@ async function loadNativeAssets(sources = nativeAssetSources(), onProgress = upd
       concurrency: 8,
       live,
       load,
-      onLoaded: (path, dataUrl) => nativeAssets.set(path, dataUrl),
-      onMissing: (path) => nativeMissingAssets.add(path),
+      onLoaded: (path, dataUrl) => runtime.state.assets.set(path, dataUrl),
+      onMissing: (path) => runtime.state.missingAssets.add(path),
       onProgress,
     });
   } finally {
     wanted.forEach((path) => {
-      if (nativeAssetRequests.get(path) === assetRequest) nativeAssetRequests.delete(path);
+      if (runtime.state.assetRequests.get(path) === assetRequest) runtime.state.assetRequests.delete(path);
     });
   }
 }
-// Paths whose image came from a draft (or that a draft now covers) are read
-// again after files change, so an upload, move or discard shows at once.
-const nativeDraftAssets = new Set<string>();
 function forgetDraftedAssets() {
   const scope = draftScope();
   let forgot = false;
-  for (const path of [...nativeAssets.keys(), ...nativeMissingAssets])
-    if (nativeDraftAssets.has(path) || (scope && draftStore().get(scope, path))) {
-      forgot = nativeAssets.delete(path) || forgot;
-      nativeMissingAssets.delete(path);
+  for (const path of [...runtime.state.assets.keys(), ...runtime.state.missingAssets])
+    if (runtime.state.draftAssets.has(path) || (scope && draftStore().get(scope, path))) {
+      forgot = runtime.state.assets.delete(path) || forgot;
+      runtime.state.missingAssets.delete(path);
     }
-  nativeDraftAssets.clear();
+  runtime.state.draftAssets.clear();
   if (forgot && nativeModeActive()) updateNativePreviewSources();
   if (scope) void sweepUploads(uploadBytes(), scope, draftStore().list(scope)).catch(() => undefined);
 }
@@ -1917,22 +1821,9 @@ async function discardUpload(path: string) {
   } catch (error) { errorMessage(error); }
 }
 
-// Text read for usage (scripts, data, notes…) is kept out of the preview source map and out of
-// nativeEffectiveSource, whose readers (the draft store's commit check) know only HTML and CSS.
-// Media batches and guarded file operations read it through mediaTextSource.
-function mediaTextSource(path: string, scope = draftScope()) {
-  const held = nativeEffectiveSource(path, scope);
-  const draft = scope ? draftStore().get(scope, path) : undefined;
-  if (draft?.opaque && !draft.deleted && scope) {
-    const cached = mediaOpaqueText.get(draftKey(scope, path));
-    return cached?.sha === draft.sourceSha ? cached?.text : undefined;
-  }
-  if (held !== undefined || draft) return held;
-  return cleanSources.peek("", nativeTextIndexScopeKey(), path);
-}
 async function readMediaText(path: string) {
   const key = nativeTextIndexScopeKey(), repo = appStore.repository.value;
-  const held = mediaTextSource(path);
+  const held = runtime.textSource(path);
   if (held !== undefined) return held;
   if (!repo || !key) return undefined;
   const scope = draftScope(), draft = scope ? draftStore().get(scope, path) : undefined;
@@ -1941,7 +1832,7 @@ async function readMediaText(path: string) {
   if (scope && draft?.opaque && draft.sourceSha) {
     const text = draft.upload ? await (await uploadBytes().get(uploadKey(scope, draft.sourceSha)))?.text() : await readFile(repo.full_name, draft.sourceSha);
     if (key !== nativeTextIndexScopeKey() || draftStore().get(scope, path) !== draft) return undefined;
-    if (text !== undefined) mediaOpaqueText.set(draftKey(scope, path), { sha: draft.sourceSha, text });
+    if (text !== undefined) runtime.state.opaqueText.set(draftKey(scope, path), { sha: draft.sourceSha, text });
     return text;
   }
   const entry = await findEntry(path);
@@ -1952,52 +1843,52 @@ async function readMediaText(path: string) {
   return source;
 }
 function mediaOrigins() {
-  return mediaOwnOrigins(nativeSiteSettings(mediaTextSource(NATIVE_CONFIG_PATH)).url, mediaTextSource("CNAME"));
+  return mediaOwnOrigins(nativeSiteSettings(runtime.textSource(NATIVE_CONFIG_PATH)).url, runtime.textSource("CNAME"));
 }
 
 // Media context and UI lifecycle use live getters; binary/Undo writes stay here.
 const mediaPorts: import("./controllers/media-controller").MediaControllerPorts = {
-  measureImage: (path, node, image, slot, style) => nativePreview && nativeSite?.routes[nativePreview.shownRoute() ?? ""] === path
+  measureImage: (path, node, image, slot, style) => nativePreview && runtime.site?.routes[nativePreview.shownRoute() ?? ""] === path
     ? nativePreview.measureImage({ path, node, slot, style, ...(image.width && image.height ? { image: { width: image.width, height: image.height } } : {}) }) : Promise.resolve(undefined),
   origins: mediaOrigins,
   usage: {
-    key: () => nativeTextIndexScope === nativeTextIndexScopeKey() ? nativeTextIndexScopeKey() : "", files: nativeFiles,
-    pages: () => Object.values(nativeSite?.routes ?? {}), components: () => nativeSite?.components ?? {},
-    source: path => mediaTextSource(path), read: readMediaText,
-    url: () => nativeSiteSettings(mediaTextSource(NATIVE_CONFIG_PATH)).url,
-    settled: () => nativeTextIndexing ?? Promise.resolve(), changed: () => {},
+    key: () => runtime.state.textIndexScope === nativeTextIndexScopeKey() ? nativeTextIndexScopeKey() : "", files: runtime.files,
+    pages: () => Object.values(runtime.site?.routes ?? {}), components: () => runtime.site?.components ?? {},
+    source: path => runtime.textSource(path), read: readMediaText,
+    url: () => nativeSiteSettings(runtime.textSource(NATIVE_CONFIG_PATH)).url,
+    settled: () => runtime.state.textIndexing ?? Promise.resolve(), changed: () => {},
   },
   cleanUp: { place: setupScope },
   // Improve images opens each page so its pictures are measured; the canvas draws it a moment later (at most 5 s).
   showPage: async path => {
     if (appStore.openFile.value !== path) await openAfter(path, true, true);
-    for (let wait = 0; wait < 50 && nativeSite?.routes[nativePreview?.shownRoute() ?? ""] !== path; wait++) await new Promise(done => setTimeout(done, 100));
+    for (let wait = 0; wait < 50 && runtime.site?.routes[nativePreview?.shownRoute() ?? ""] !== path; wait++) await new Promise(done => setTimeout(done, 100));
   },
   workspace: () => {
     const repo = appStore.repository.value, scope = draftScope();
     if (!repo || !scope || !appStore.snapshot.value) return undefined;
-    return { repo: repo.full_name, repoSize: repo.size, scope, identity: mediaIdentity(), site: nativeSite,
-      nativePaths: nativeSite ? nativeFiles(scope) : undefined, drafts: draftStore() };
+    return { repo: repo.full_name, repoSize: repo.size, scope, identity: mediaIdentity(), site: runtime.site,
+      nativePaths: runtime.site ? runtime.files(scope) : undefined, drafts: draftStore() };
   },
   // The workspace shown, for work to finish in (ticket 23): the editor's reads while it is on show,
   // then its snapshot's, the branch texts read so far and its drafts.
-  pin: () => pinMedia({ shown: () => { const repo = appStore.repository.value, scope = draftScope(), snapshot = appStore.snapshot.value; return repo && scope && snapshot && { repo, scope, snapshot, site: nativeSite }; },
-    begin: () => workspaceSession.begin(), base: () => ({ files: nativeBaseFiles, texts: nativeBaseSources, key: nativeTextIndexScopeKey() }), identity: mediaIdentity, drafts: draftStore,
-    live: { entry: entryAt, find: findEntry, source: mediaTextSource, files: nativeFiles, remember: (path, text) => mediaPorts.rememberSource(path, text) },
+  pin: () => pinMedia({ shown: () => { const repo = appStore.repository.value, scope = draftScope(), snapshot = appStore.snapshot.value; return repo && scope && snapshot && { repo, scope, snapshot, site: runtime.site }; },
+    begin: () => workspaceSession.begin(), base: () => ({ files: runtime.base.files, texts: runtime.base.sources, key: nativeTextIndexScopeKey() }), identity: mediaIdentity, drafts: draftStore,
+    live: { entry: entryAt, find: findEntry, source: runtime.textSource, files: runtime.files, remember: (path, text) => mediaPorts.rememberSource(path, text) },
     entry: (repo, snapshot, path) => repositoryIndex.entry(repo, snapshot, path), find: (repo, snapshot, path) => repositoryIndex.find(api, repo, snapshot, path),
-    files: nativeFiles, list: listRepositoryFiles, peek: (repo, revision, path) => cleanSources.peek(repo, revision, path) }),
+    files: runtime.files, list: listRepositoryFiles, peek: (repo, revision, path) => cleanSources.peek(repo, revision, path) }),
   identity: mediaIdentity,
   stamp: () => guardedEdits.stamp("repository"),
   generation: currentLoad,
   selected: (path, node) => appStore.selection.value?.path === path && appStore.selection.value.node?.join(".") === node.join("."),
-  source: (path, scope) => mediaTextSource(path, scope),
+  source: (path, scope) => runtime.textSource(path, scope),
   listPaths: async () => { const repo = appStore.repository.value, snapshot = appStore.snapshot.value; if (!repo || !snapshot) throw new Error("Choose a repository before opening Media."); return listRepositoryFiles(repo, snapshot); },
   findEntry,
   entry: entryAt,
   readText: readFile,
   rememberSource: (path, source) => {
     // Native preview sources stay separate from the wider text index.
-    if (/\.(?:html|css)$/i.test(path) || path === MEDIA_RECORDS_PATH) nativeBaseSources.set(path, source);
+    if (/\.(?:html|css)$/i.test(path) || path === MEDIA_RECORDS_PATH) runtime.base.sources.set(path, source);
     else cleanSources.put("", nativeTextIndexScopeKey(), path, source);
   },
   uploadedBlob: (scope, sha) => uploadBytes().get(uploadKey(scope, sha)),
@@ -2014,8 +1905,8 @@ const mediaPorts: import("./controllers/media-controller").MediaControllerPorts 
     scroll: dy => nativePreview?.scrollBy(dy),
     // Read as the canvas reads its images, so the page can show a replacement too.
     picture: async path => {
-      if (!nativeAssets.has(path)) await loadNativeAssets({ [appStore.openFile.value ?? "index.html"]: `<img src="${siteAddress(path, nativePrefix()).replace(/&/g, "&amp;")}">` });
-      return nativeAssets.get(path);
+      if (!runtime.state.assets.has(path)) await loadNativeAssets({ [appStore.openFile.value ?? "index.html"]: `<img src="${siteAddress(path, runtime.prefix()).replace(/&/g, "&amp;")}">` });
+      return runtime.state.assets.get(path);
     },
   },
   mediaPlay: {
@@ -2054,81 +1945,31 @@ const loadMediaBatch = lazyModule(() => import("./media-batch"));
 async function applyMediaBatch(scope: DraftScope, stamp: Stamp, batch: MediaWorkspaceBatch, pin?: MediaPin) {
   const opened = appStore.openFile.value, module = await loadMediaBatch();
   return module.applyMediaBatch({
-    appStore, editor: editorModule, mediaHistoryHome, site: () => nativeSite, load: loadMediaWorkspace, stamp: () => guardedEdits.stamp("repository"),
-    listRepositoryFiles, nativeFiles, draftStore, bytes: uploadBytes, mediaTextSource, entryAt, findEntry, announce,
+    appStore, editor: editorModule, mediaHistoryHome, site: () => runtime.site, load: loadMediaWorkspace, stamp: () => guardedEdits.stamp("repository"),
+    listRepositoryFiles, nativeFiles: runtime.files, draftStore, bytes: uploadBytes, mediaTextSource: runtime.textSource, entryAt, findEntry, announce,
     refresh: () => { afterFileChanges(); updateNativePreviewSources(); if (appStore.selection.value) pageStructureController.renderEditBar(appStore.selection.value); },
   }, scope, stamp, batch, pin, opened);
 }
 
-// After a successful save, the committed content becomes the new clean baseline.
-// Without this, `reconcilePublished` drops each committed browser draft (a draft
-// whose content equals its baseline is pruned), so a saved file that is not the
-// open editor model would otherwise fall back to the stale pre-save
-// `nativeBaseSources` and the preview would revert to the old content. Guarded so
-// a repo/branch switch that superseded the in-flight save never leaks results.
-function adoptNativeBaseSources(
-  scope: { account: string; repoId: number; branch: string },
-  result: PublishResult,
-  submitted: SavedDraft[],
-) {
-  if (!nativeEngaged || !holdsDraftScope(shownScope(), scope)) return;
-  const removed = new Set(result.deleted ?? []);
-  for (const draft of submitted) {
-    if (draft.deleted) {
-      if (!removed.has(draft.path)) continue;
-      nativeBaseSources.delete(draft.path);
-      nativeBaseFiles = nativeBaseFiles.filter((path) => path !== draft.path);
-      continue;
-    }
-    if (!draft.opaque) nativeBaseSources.set(draft.path, draft.content);
-    if (!nativeBaseFiles.includes(draft.path)) nativeBaseFiles = [...nativeBaseFiles, draft.path];
-  }
-  if (nativeModeActive()) updateNativePreviewSources();
-}
 
 function deactivateNative() {
-  pendingNativePageTitles = undefined;
-  mediaController.disposeGallery();
-  mediaController.closePicker();
-  nativeSite = undefined;
-  pagesController.updateTabs();
-  nativeBaseFiles = [];
-  nativeEngaged = false;
-  nativeBaseSources.clear();
-  mediaOpaqueText.clear();
-  nativeComponentStyles.clear();
-  nativeMissingComponentStyles.clear();
-  nativeComponentStyleRequests.clear();
-  nativeStyleFiles.clear();
-  nativeMissingStyleFiles.clear();
-  nativeStyleFileRequests.clear();
-  nativeUnreadableFiles.clear();
-  nativeShownRequests.clear();
-  nativeTextIndexing = undefined;
-  nativeTextIndexed = false;
-  releaseNativeTextIndex = undefined;
-  nativeAssets.clear();
-  nativeMissingAssets.clear();
-  nativeAssetRequests.clear();
-  linkedStyles.clearBodyStyles();
-  nativeSourcesRequest++;
-  nativePreview?.deactivate();
+  runtime.reset();
 }
 
 async function loadNativeComponentStyles(tags: string[]) {
-  if (!nativeSite || !appStore.repository.value || !appStore.snapshot.value) return;
-  const site = nativeSite;
+  if (!runtime.site || !appStore.repository.value || !appStore.snapshot.value) return;
+  const site = runtime.site;
   const repo = appStore.repository.value.full_name;
-  const request = nativeSourcesRequest;
+  const request = runtime.state.request;
   const at = workspaceSession.begin();
   const wanted = tags.filter((tag) =>
     Object.hasOwn(site.components, tag) &&
-    !nativeComponentStyles.has(tag) &&
-    !nativeMissingComponentStyles.has(tag) &&
-    !nativeComponentStyleRequests.has(tag),
+    !runtime.state.componentStyles.has(tag) &&
+    !runtime.state.missingComponentStyles.has(tag) &&
+    !runtime.state.componentStyleRequests.has(tag),
   );
   if (!wanted.length) return;
-  wanted.forEach((tag) => nativeComponentStyleRequests.add(tag));
+  wanted.forEach((tag) => runtime.state.componentStyleRequests.add(tag));
   try {
     const found: { tag?: string; path: string; sha: string }[] = [];
     const scope = draftScope();
@@ -2138,33 +1979,33 @@ async function loadNativeComponentStyles(tags: string[]) {
       // A stylesheet drafted here (new, or moved with its component) is its draft; a deleted one is missing.
       const draft = scope ? draftStore().get(scope, path) : undefined;
       // One that cannot be read as text is the component's all the same: it styles nothing.
-      if ((draft && !draft.deleted) || (!draft && (nativeBaseSources.has(path) || nativeUnreadableFiles.has(path)))) nativeComponentStyles.set(tag, path);
-      else if (draft?.deleted) nativeMissingComponentStyles.add(tag);
+      if ((draft && !draft.deleted) || (!draft && (runtime.base.sources.has(path) || runtime.state.unreadable.has(path)))) runtime.state.componentStyles.set(tag, path);
+      else if (draft?.deleted) runtime.state.missingComponentStyles.add(tag);
       else lookups.push({ tag, path });
       // A component the page made on the fly, before the text index read its template.
       const template = site.components[tag];
-      if (!nativeBaseSources.has(template) && !nativeUnreadableFiles.has(template) && !(scope && draftStore().get(scope, template))) lookups.push({ path: template });
+      if (!runtime.base.sources.has(template) && !runtime.state.unreadable.has(template) && !(scope && draftStore().get(scope, template))) lookups.push({ path: template });
     }
     // Looked up together, read in one request.
     const entries = await Promise.all(lookups.map((lookup) => findEntry(lookup.path)));
-    if (!at.holds() || request !== nativeSourcesRequest || nativeSite !== site) return;
+    if (!at.holds() || request !== runtime.state.request || runtime.site !== site) return;
     lookups.forEach((lookup, index) => {
       const entry = entries[index];
       if (entry) found.push({ ...lookup, sha: entry.sha });
-      else if (lookup.tag) nativeMissingComponentStyles.add(lookup.tag);
+      else if (lookup.tag) runtime.state.missingComponentStyles.add(lookup.tag);
     });
     const { texts, unreadable } = await readNativeTexts(repo, found);
-    if (!at.holds() || request !== nativeSourcesRequest || nativeSite !== site) return;
+    if (!at.holds() || request !== runtime.state.request || runtime.site !== site) return;
     noteNativeUnreadable(unreadable);
     for (const file of found) {
       const text = texts.get(file.path);
-      if (!nativeBaseSources.has(file.path) && text !== undefined) nativeBaseSources.set(file.path, text);
-      if (file.tag) nativeComponentStyles.set(file.tag, file.path);
+      if (!runtime.base.sources.has(file.path) && text !== undefined) runtime.base.sources.set(file.path, text);
+      if (file.tag) runtime.state.componentStyles.set(file.tag, file.path);
     }
   } finally {
-    wanted.forEach((tag) => nativeComponentStyleRequests.delete(tag));
+    wanted.forEach((tag) => runtime.state.componentStyleRequests.delete(tag));
   }
-  if (at.holds() && request === nativeSourcesRequest && nativeSite === site) updateNativePreviewSources();
+  if (at.holds() && request === runtime.state.request && runtime.site === site) updateNativePreviewSources();
 }
 
 // Every file on the branch, from the snapshot's recursive tree when it has
@@ -2182,8 +2023,8 @@ async function nativeSiteFiles(): Promise<SiteFiles | undefined> {
   const draftAt = (path: string) => draftStore().get(scope, path);
   return {
     repository: repo.full_name,
-    paths: nativeFiles(scope),
-    held: (path) => nativeEffectiveSource(path, scope),
+    paths: runtime.files(scope),
+    held: (path) => runtime.source(path, scope),
     blob: async (path) => {
       const draft = draftAt(path);
       if (draft?.deleted) return undefined;
@@ -2199,15 +2040,6 @@ async function nativeSiteFiles(): Promise<SiteFiles | undefined> {
 // to a page are found in all of them; at most 2000.
 const isNativeTextFile = (path: string) => /\.(?:html|css)$/i.test(path) && !path.startsWith("node_modules/");
 
-// Every file of the site as drafted: the branch's not deleted, renamed or
-// moved away, and new files drafted in the browser in `scope`. Pages and
-// components are found from these.
-function nativeFiles(scope = draftScope(), base = nativeBaseFiles): string[] {
-  const drafts = scope ? draftStore().list(scope) : [];
-  const drafted = newDraftPaths(drafts);
-  const gone = new Set(drafts.filter((draft) => draft.deleted).map((draft) => draft.path));
-  return [...new Set([...base.filter((path) => !gone.has(path)), ...drafted])];
-}
 
 // A repository with `index.html` at its root is a native site: its files
 // are listed, what the page on show (`openPath`, else the home page) needs
@@ -2215,10 +2047,10 @@ function nativeFiles(scope = draftScope(), base = nativeBaseFiles): string[] {
 // rest of the site follows after the first paint (the text index). All async
 // steps are guarded against a superseding navigation (`at`).
 async function activateNativeSite(repo: Repository, result: Snapshot, at: SessionStamp, openPath?: string) {
-  const request = ++nativeSourcesRequest;
+  const request = ++runtime.state.request;
   // A new read: until its text index lands, nothing counts as indexed.
-  nativeTextIndexed = false;
-  const live = () => at.holds() && request === nativeSourcesRequest;
+  runtime.state.textIndexed = false;
+  const live = () => at.holds() && request === runtime.state.request;
   const placeholder: NativeSite = { routes: { "/": NATIVE_HOME_PAGE }, components: {} };
   const scope = draftScope();
   // The home page first. Without it the project opens as plain files; once
@@ -2227,12 +2059,12 @@ async function activateNativeSite(repo: Repository, result: Snapshot, at: Sessio
   // A home page written as a draft (Start your site) counts: the site is native before its first save.
   const draftedHome = scope ? draftStore().get(scope, NATIVE_HOME_PAGE) : undefined;
   if (!result.entries.some((entry) => entry.path === NATIVE_HOME_PAGE && entry.type === "blob") && !isNewDraft(draftedHome)) return false;
-  nativeEngaged = true;
+  runtime.engaged = true;
   // Load the preview runtime, parked, alongside the file listing and page reads.
   nativePreview?.preload();
-  nativeSite = undefined;
+  runtime.site = undefined;
   try {
-    nativeBaseFiles = await listRepositoryFiles(repo, result);
+    runtime.base.files = await listRepositoryFiles(repo, result);
   } catch (error) {
     if (!live()) return true;
     // GitHub not answering fails the open itself (the snapshot load's failed state and Try again).
@@ -2242,7 +2074,7 @@ async function activateNativeSite(repo: Repository, result: Snapshot, at: Sessio
     return true;
   }
   if (!live()) return true;
-  const parsed = resolveNativeProject(nativeFiles(scope));
+  const parsed = resolveNativeProject(runtime.files(scope));
   if (!parsed.ok) {
     nativePreview?.activate(placeholder);
     nativePreview?.setWarnings([]);
@@ -2250,25 +2082,25 @@ async function activateNativeSite(repo: Repository, result: Snapshot, at: Sessio
     return true;
   }
   const site = parsed.site;
-  nativeBaseSources.clear();
-  nativeComponentStyles.clear();
-  nativeMissingComponentStyles.clear();
-  nativeComponentStyleRequests.clear();
-  nativeStyleFiles.clear();
-  nativeMissingStyleFiles.clear();
-  nativeStyleFileRequests.clear();
+  runtime.base.sources.clear();
+  runtime.state.componentStyles.clear();
+  runtime.state.missingComponentStyles.clear();
+  runtime.state.componentStyleRequests.clear();
+  runtime.state.styleFiles.clear();
+  runtime.state.missingStyleFiles.clear();
+  runtime.state.styleFileRequests.clear();
   noteNativeUnreadable(undefined);
-  nativeShownRequests.clear();
-  nativeAssets.clear();
-  nativeMissingAssets.clear();
-  nativeAssetRequests.clear();
+  runtime.state.shownRequests.clear();
+  runtime.state.assets.clear();
+  runtime.state.missingAssets.clear();
+  runtime.state.assetRequests.clear();
   try {
     // Only what the page on show needs renders first (src/native-boot.ts):
     // the page, its stylesheets with their imports and the components it
     // uses with theirs, a level at a time, each level's files in one read.
     // The site settings come too, for new pages' addresses. Every other
     // page and template is the text index, read after the first paint.
-    const files = nativeFiles(scope);
+    const files = runtime.files(scope);
     const opening = openPath && nativeSitePaths(site).includes(openPath) ? openPath : undefined;
     const currentFile = opening ?? (appStore.openFile.value && nativeSitePaths(site).includes(appStore.openFile.value) ? appStore.openFile.value : site.routes[nativeDefaultRoute(site)]);
     // A component shown alone is drawn in the home page.
@@ -2301,9 +2133,9 @@ async function activateNativeSite(repo: Repository, result: Snapshot, at: Sessio
     if (!live()) return true;
     // The page's fonts get a short head start so its text does not show in a
     // fallback font first; images never hold the page back: they are read
-    // after it is drawn and shown in place (see nativeAssets).
+    // after it is drawn and shown in place (see runtime.state.assets).
     await Promise.race([
-      loadNativeAssets(nativePageShownSources(site, nativePageRoute(currentFile) ? currentFile : site.routes[nativeDefaultRoute(site)]), () => { if (nativeSite === site) updateNativePreviewAssets(); }, (path) => isFontType(assetType(path)), true).catch(() => undefined),
+      loadNativeAssets(nativePageShownSources(site, nativePageRoute(currentFile) ? currentFile : site.routes[nativeDefaultRoute(site)]), () => { if (runtime.site === site) updateNativePreviewAssets(); }, (path) => isFontType(assetType(path)), true).catch(() => undefined),
       new Promise((resolve) => setTimeout(resolve, NATIVE_FONT_WAIT_MS)),
     ]);
     if (!live()) return true;
@@ -2315,16 +2147,16 @@ async function activateNativeSite(repo: Repository, result: Snapshot, at: Sessio
     return true;
   }
   if (!live()) return true;
-  nativeSite = site;
+  runtime.site = site;
   pageStructure?.refreshMeta();
   updateCurrentPageLabel();
   nativePreview?.setError(undefined);
   showNativeWarnings(parsed.warnings);
   nativePreview?.activate(site);
   nativePreview?.update({
-    sources: withSiteConfig(nativeSources()),
-    componentStyles: Object.fromEntries(nativeComponentStyles),
-    assets: Object.fromEntries(nativeAssets),
+    sources: withSiteConfig(runtime.sources()),
+    componentStyles: Object.fromEntries(runtime.state.componentStyles),
+    assets: Object.fromEntries(runtime.state.assets),
     unreadable: nativePreviewUnreadable(),
     // The page about to open shows at once (its file opens next).
     route: nativeRouteForPath(appStore.openFile.value ?? openPath) ?? nativeDefaultRoute(site),
@@ -2336,7 +2168,7 @@ async function activateNativeSite(repo: Repository, result: Snapshot, at: Sessio
 }
 
 function nativeTextIndexScopeKey() {
-  return appStore.repository.value && appStore.snapshot.value && nativeSite ? `${appStore.repository.value.full_name}\n${appStore.snapshot.value.branch}\n${appStore.snapshot.value.commit}\n${nativeSourcesRequest}` : "";
+  return appStore.repository.value && appStore.snapshot.value && runtime.site ? `${appStore.repository.value.full_name}\n${appStore.snapshot.value.branch}\n${appStore.snapshot.value.commit}\n${runtime.state.request}` : "";
 }
 
 // The site's text index: every page, template and stylesheet (with the
@@ -2344,65 +2176,59 @@ function nativeTextIndexScopeKey() {
 // whole site. At boot (`deferred`) it is read once the preview has painted
 // and the browser is idle; anything that needs it sooner asks for it
 // (ensureNativeTextIndex, wantNativeTextIndex) and it is read at once.
-let releaseNativeTextIndex: (() => void) | undefined;
-let nativeTextIndexed = false;
 function startNativeTextIndex(repo: Repository, site: NativeSite, scope: ReturnType<typeof draftScope>, at: SessionStamp, request: number, deferred = false) {
-  nativeTextIndexScope = nativeTextIndexScopeKey();
-  nativeTextIndexed = false;
+  runtime.state.textIndexScope = nativeTextIndexScopeKey();
+  runtime.state.textIndexed = false;
   const commit = appStore.snapshot.value?.commit;
-  const live = () => at.holds() && request === nativeSourcesRequest && appStore.snapshot.value?.commit === commit && nativeSite === site;
+  const live = () => at.holds() && request === runtime.state.request && appStore.snapshot.value?.commit === commit && runtime.site === site;
   let release!: () => void;
   const due = new Promise<void>((resolve) => { release = resolve; });
-  releaseNativeTextIndex = release;
+  runtime.state.releaseTextIndex = release;
   if (deferred) afterNativePaint(request, release);
   else release();
   const indexing: Promise<boolean> = due.then(() => (live() ? indexNativeTextFiles(repo, site, scope, live) : false)).then((done) => {
-    if (done && live() && nativeTextIndexing === indexing) nativeTextIndexed = true;
+    if (done && live() && runtime.state.textIndexing === indexing) runtime.state.textIndexed = true;
     if (live()) mediaController.refreshUsage();
     return done;
   }, (error) => {
-    if (live() && nativeSite === site) nativePreview?.setError(error instanceof Error ? error.message : "Native sources could not be loaded.");
+    if (live() && runtime.site === site) nativePreview?.setError(error instanceof Error ? error.message : "Native sources could not be loaded.");
     return false;
   });
-  nativeTextIndexing = indexing;
+  runtime.state.textIndexing = indexing;
 }
 /** Starts the text index now, if it is waiting for the first paint. */
 function wantNativeTextIndex() {
-  releaseNativeTextIndex?.();
+  runtime.state.releaseTextIndex?.();
 }
 // The text index as a gate (src/native-boot.ts): waited for without being
 // asked for sooner, and only a complete read for the open repository,
 // branch and commit counts.
 const nativeTextIndexGate: SiteIndexGate = {
   key: () => `${currentLoad()}\n${nativeTextIndexScopeKey()}`,
-  indexed: () => !nativeSite || nativeTextIndexed,
-  settled: () => (nativeTextIndexing ? nativeTextIndexing.catch(() => false) : Promise.resolve(nativeTextIndexed)),
+  indexed: () => !runtime.site || runtime.state.textIndexed,
+  settled: () => (runtime.state.textIndexing ? runtime.state.textIndexing.catch(() => false) : Promise.resolve(runtime.state.textIndexed)),
   ensure: () => ensureNativeTextIndex(),
 };
 
 // Work that waits for a native site's first paint (the runtime reporting the
 // page's structure), then for the browser to be idle. A preview that does
 // not paint (an error) holds nothing back for long.
-let nativePaintedRequest = -1;
-// The files read for the last first paint, for the boot memory.
-let nativePaintedPaths: string[] = [];
-let nativePaintWaiters: { request: number; run: () => void }[] = [];
 const whenIdle = (run: () => void) => {
   if (typeof requestIdleCallback === "function") requestIdleCallback(() => run(), { timeout: 300 });
   else setTimeout(run, 50);
 };
 function afterNativePaint(request: number, run: () => void) {
-  if (nativePaintedRequest === request) { whenIdle(run); return; }
-  nativePaintWaiters = nativePaintWaiters.filter((waiter) => waiter.request === nativeSourcesRequest);
-  nativePaintWaiters.push({ request, run });
+  if (runtime.state.paintedRequest === request) { whenIdle(run); return; }
+  runtime.state.paintWaiters = runtime.state.paintWaiters.filter((waiter) => waiter.request === runtime.state.request);
+  runtime.state.paintWaiters.push({ request, run });
   setTimeout(run, 10_000);
 }
 function noteNativePainted() {
-  if (nativePaintedRequest === nativeSourcesRequest) return;
-  nativePaintedRequest = nativeSourcesRequest;
-  nativePaintedPaths = [...nativeBaseSources.keys()];
-  const due = nativePaintWaiters.filter((waiter) => waiter.request === nativePaintedRequest);
-  nativePaintWaiters = [];
+  if (runtime.state.paintedRequest === runtime.state.request) return;
+  runtime.state.paintedRequest = runtime.state.request;
+  runtime.state.paintedPaths = [...runtime.base.sources.keys()];
+  const due = runtime.state.paintWaiters.filter((waiter) => waiter.request === runtime.state.paintedRequest);
+  runtime.state.paintWaiters = [];
   // The runtime reports the structure just before the frame presents it:
   // two frames and a beat later the page is on screen.
   if (due.length) requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(() => due.forEach((waiter) => whenIdle(waiter.run)), 100)));
@@ -2466,24 +2292,24 @@ function flushPendingNativePageTitles() {
 }
 
 async function indexNativeTextFiles(repo: Repository, site: NativeSite, scope: ReturnType<typeof draftScope>, live: () => boolean) {
-  const files = nativeFiles(scope).filter((path) => isNativeTextFile(path)).slice(0, 2000);
+  const files = runtime.files(scope).filter((path) => isNativeTextFile(path)).slice(0, 2000);
   const wanted = files.filter((path) => {
     const draft = scope ? draftStore().get(scope, path) : undefined;
-    return !nativeBaseSources.has(path) && !nativeUnreadableFiles.has(path) && draft?.baseSha !== null && !draft?.deleted;
+    return !runtime.base.sources.has(path) && !runtime.state.unreadable.has(path) && draft?.baseSha !== null && !draft?.deleted;
   });
   const entries = await Promise.all(wanted.map((path) => findEntry(path)));
-  if (!live() || nativeSite !== site) return false;
+  if (!live() || runtime.site !== site) return false;
   const sources = wanted.flatMap((path, index) => (entries[index] ? [{ path, sha: entries[index]!.sha }] : []));
   // A file GitHub cannot give as text is skipped: the index is complete
   // without it, and whatever needs its text says so where it is used.
   const { texts, unreadable } = await readNativeTexts(repo.full_name, sources);
-  if (!live() || nativeSite !== site) return false;
+  if (!live() || runtime.site !== site) return false;
   if (unreadable.length) { noteNativeUnreadable(unreadable); nativePreviewBehind = true; }
   const loaded: string[] = [];
   for (const source of sources) {
     const text = texts.get(source.path);
-    if (nativeBaseSources.has(source.path) || !nativeBaseFiles.includes(source.path) || text === undefined) continue;
-    nativeBaseSources.set(source.path, text);
+    if (runtime.base.sources.has(source.path) || !runtime.base.files.includes(source.path) || text === undefined) continue;
+    runtime.base.sources.set(source.path, text);
     loaded.push(source.path);
   }
   if (loaded.length) {
@@ -2492,7 +2318,7 @@ async function indexNativeTextFiles(repo: Repository, site: NativeSite, scope: R
     // next update, or when a link shows one (onRouteShown), so a text edit
     // under way is not interrupted by a redraw.
     const templates = new Set(Object.values(site.components));
-    const shown = nativeShownPaths();
+    const shown = runtime.shownPaths();
     if (loaded.some((path) => templates.has(path) || shown.has(path))) updateNativePreviewSources();
     else { nativePreviewBehind = true; nativePreview?.choicesChanged(); }
     // Titles, headings and templates of every page are known now.
@@ -2513,17 +2339,17 @@ async function indexNativeTextFiles(repo: Repository, site: NativeSite, scope: R
 async function ensureNativeTextIndex() {
   wantNativeTextIndex();
   const before = nativeTextIndexScopeKey();
-  if (nativeTextIndexing && nativeTextIndexScope !== before) {
-    if (!appStore.repository.value || !appStore.snapshot.value || !nativeSite) return "The repository changed meanwhile. Try again.";
-    startNativeTextIndex(appStore.repository.value, nativeSite, draftScope(), workspaceSession.begin(), nativeSourcesRequest);
+  if (runtime.state.textIndexing && runtime.state.textIndexScope !== before) {
+    if (!appStore.repository.value || !appStore.snapshot.value || !runtime.site) return "The repository changed meanwhile. Try again.";
+    startNativeTextIndex(appStore.repository.value, runtime.site, draftScope(), workspaceSession.begin(), runtime.state.request);
   }
-  let ready = nativeTextIndexing ? await nativeTextIndexing : true;
+  let ready = runtime.state.textIndexing ? await runtime.state.textIndexing : true;
   if (before !== nativeTextIndexScopeKey()) return "The repository changed meanwhile. Try again.";
-  if (!ready && appStore.repository.value && nativeSite) {
-    const repo = appStore.repository.value, site = nativeSite, scope = draftScope(), at = workspaceSession.begin(), request = nativeSourcesRequest;
-    nativeTextIndexing = undefined;
+  if (!ready && appStore.repository.value && runtime.site) {
+    const repo = appStore.repository.value, site = runtime.site, scope = draftScope(), at = workspaceSession.begin(), request = runtime.state.request;
+    runtime.state.textIndexing = undefined;
     startNativeTextIndex(repo, site, scope, at, request);
-    ready = await nativeTextIndexing!;
+    ready = await runtime.state.textIndexing!;
     if (before !== nativeTextIndexScopeKey()) return "The repository changed meanwhile. Try again.";
   }
   return ready ? undefined : "The site's links could not be fully read. Refresh the repository and try again.";
@@ -2560,11 +2386,11 @@ function updateCurrentPageLabel() {
   const path = appStore.openFile.value;
   const span = element("current-page");
   const route = nativeRouteForPath(path);
-  const label = path && route && nativeSite
+  const label = path && route && runtime.site
     ? nativePageLabel(path, {
-      routes: nativeSite.routes,
+      routes: runtime.site.routes,
       titles: { [route]: nativeRouteInfo(route).title },
-      heading: (file) => firstHeadingText(nativeEffectiveSource(file)),
+      heading: (file) => firstHeadingText(runtime.source(file)),
     })
     : undefined;
   const text = label ?? path ?? "Select a page";
@@ -2598,29 +2424,29 @@ function readNativeTexts(repo: string, files: { path: string; sha: string }[]) {
 // Remembers files that cannot be read as text (none: forgets them all): the
 // preview leaves them out quietly, and a stylesheet among them is a warning.
 function noteNativeUnreadable(files: UnreadableFile[] | undefined) {
-  if (!files) nativeUnreadableFiles.clear();
+  if (!files) runtime.state.unreadable.clear();
   else if (!files.length) return;
-  for (const file of files ?? []) nativeUnreadableFiles.set(file.path, file.message);
+  for (const file of files ?? []) runtime.state.unreadable.set(file.path, file.message);
   nativePreview?.setUnreadable(nativePreviewUnreadable());
   showNativeWarnings();
 }
 // The first page or template the pages `pages` show that cannot be read as
 // text and has no draft in its place, as "path: why".
 function nativeUnreadableShown(site: NativeSite, pages: string[]) {
-  const scope = draftScope(), files = new Set(nativeFiles(scope));
-  const source = (path: string) => nativeEffectiveSource(path, scope);
-  return unreadableNeededFile(nativeShownFiles(site, pages, source, (path) => files.has(path), nativePrefix()).files, (path) => source(path) !== undefined, nativeUnreadableFiles);
+  const scope = draftScope(), files = new Set(runtime.files(scope));
+  const source = (path: string) => runtime.source(path, scope);
+  return unreadableNeededFile(nativeShownFiles(site, pages, source, (path) => files.has(path), runtime.prefix()).files, (path) => source(path) !== undefined, runtime.state.unreadable);
 }
 // The unreadable files with no draft (or History's earlier version) in their
 // place: the preview draws a page or template from that, and lets one without
 // say why it cannot.
 function nativePreviewUnreadable() {
   const scope = draftScope();
-  return new Map([...nativeUnreadableFiles].filter(([path]) => path !== versions.view?.path && nativeEffectiveSource(path, scope) === undefined));
+  return new Map([...runtime.state.unreadable].filter(([path]) => path !== versions.view?.path && runtime.source(path, scope) === undefined));
 }
-function showNativeWarnings(projectWarnings = nativeProjectWarnings) {
-  nativeProjectWarnings = projectWarnings;
-  const sheets = [...nativeUnreadableFiles].filter(([path]) => /\.css$/i.test(path))
+function showNativeWarnings(projectWarnings = runtime.state.projectWarnings) {
+  runtime.state.projectWarnings = projectWarnings;
+  const sheets = [...runtime.state.unreadable].filter(([path]) => /\.css$/i.test(path))
     .map(([path, message]) => `${path}: ${message} The preview shows the site without it.`);
   nativePreview?.setWarnings([...projectWarnings, ...sheets]);
 }
@@ -2675,9 +2501,9 @@ function closeWorkspace() {
 
 // Login, Start your site, the Setup checklist and wizard, and Get started (src/setup-host.ts).
 const setup = createSetupHost({
-  app, element, appStore, workspaceSession, closeWorkspace, setupScope, draftScope, draftStore, nativeEffectiveSource, api,
+  app, element, appStore, workspaceSession, closeWorkspace, setupScope, draftScope, draftStore, nativeEffectiveSource: runtime.source, api,
   get info() { return info; }, get repositories() { return repositories; }, get content() { return content; },
-  get repositoryMenu() { return repositoryMenu; }, get nativeEngaged() { return nativeEngaged; },
+  get repositoryMenu() { return repositoryMenu; }, get nativeEngaged() { return runtime.engaged; },
   get agentPrompts() { return agentPrompts; }, get onboardingCopy() { return onboardingCopy; },
   get boot() { return boot; }, get agentController() { return agentController; },
   loadRepositories: (prefetched) => loadRepositories(prefetched),
@@ -2697,7 +2523,7 @@ function showDirectory(directory: Directory, path = "") {
   fileGeneration++;
   setCurrentPage();
   finishedWork.shown(draftScope(), element("editor-toolbar-host"));
-  if (!path && !nativeEngaged && appStore.repository.value && appStore.snapshot.value) {
+  if (!path && !runtime.engaged && appStore.repository.value && appStore.snapshot.value) {
     const host = content, at = workspaceSession.begin(), fileEpoch = fileGeneration;
     void startSitePanel().then((panel) => {
       if (host === content && at.holds() && fileGeneration === fileEpoch) host.replaceChildren(panel);
@@ -2706,7 +2532,7 @@ function showDirectory(directory: Directory, path = "") {
   }
   const panel = node("section", "directory-summary");
   panel.append(
-    node("span", "badge", nativeEngaged ? "✦ Native site" : "Explore this folder"),
+    node("span", "badge", runtime.engaged ? "✦ Native site" : "Explore this folder"),
     node(
       "h1",
       "",
@@ -2715,7 +2541,7 @@ function showDirectory(directory: Directory, path = "") {
     node(
       "p",
       "intro",
-      nativeEngaged
+      runtime.engaged
         ? `${directory.entries.length} entries. Pages, components and styles render live in the preview.`
         : `${directory.entries.length} entries. Add index.html at the top of the repository to preview this project in the browser.`,
     ),
@@ -2742,10 +2568,6 @@ function showDirectory(directory: Directory, path = "") {
   content.replaceChildren(panel);
 }
 
-// Paths of the new files (drafts with no base blob) in the current scope.
-function scopeNewDraftPaths(scope = draftScope()) {
-  return scope ? newDraftPaths(draftStore().list(scope)) : [];
-}
 
 // The drafts as the tree shows them: each path's change (A, M, R, D), the
 // deletions by path, and the new paths (new and renamed files).
@@ -2864,7 +2686,7 @@ function ensurePagesTree() {
       createPage: (route) => void pageActions!.createFolderPage(route),
       pageSettings: (path) => { element("explorer-toggle").focus(); void openNativePageSettings(path); },
       navigation: (path) => { element("explorer-toggle").focus(); void openNativeNavigation(path); },
-      canAddToNavigation: () => Boolean(nativeNavigationTarget(nativeSite?.routes["/"])),
+      canAddToNavigation: () => Boolean(nativeNavigationTarget(runtime.site?.routes["/"])),
       planUrl: (target, value) => (target.file ? pageActions!.urlPlan(target.file, value) : { ok: false, error: "This row has no page." }),
       changeUrl: (target, value, keep) => (target.file ? pageActions!.changeUrl(target.file, value, keep) : Promise.resolve("This row has no page.")),
       moveTo: (target) => void pageActions!.moveTo(target),
@@ -2926,7 +2748,7 @@ function paintExplorerTabs(tab: ExplorerTab, native: boolean) {
 // Whether the repository path (a file, or a folder something is in) is
 // there, on the branch or drafted.
 function nativePathExists(path: string) {
-  return nativeFiles().some((file) => file === path || file.startsWith(`${path}/`));
+  return runtime.files().some((file) => file === path || file.startsWith(`${path}/`));
 }
 
 // The whole site read for the repository open now: an error message, or nothing.
@@ -2934,7 +2756,7 @@ async function nativeSiteReadForCreate() {
   const at = workspaceSession.begin();
   const problem = await ensureNativeTextIndex();
   if (problem) return problem;
-  if (!at.holds() || !nativeSite) return "The repository changed meanwhile. Try again.";
+  if (!at.holds() || !runtime.site) return "The repository changed meanwhile. Try again.";
   return pagesController.homeTemplate() === undefined ? NATIVE_HOME_UNREAD : undefined;
 }
 
@@ -2969,16 +2791,16 @@ const cardsController = createCardsController({
 // Pages policy belongs to the controller; guarded writes remain host transactions.
 const pagePorts = (): Parameters<typeof createPagesController>[0] => ({
   edits: guardedEdits,
-  site: () => nativeSite,
+  site: () => runtime.site,
   routeForPath: nativeRouteForPath,
-  source: nativeEffectiveSource,
-  files: nativeFiles,
-  baseFiles: () => nativeBaseFiles,
+  source: runtime.source,
+  files: runtime.files,
+  baseFiles: () => runtime.base.files,
   drafts: () => { const scope = draftScope(); return scope ? draftStore().list(scope) : []; },
   hasDraftScope: () => Boolean(draftScope()),
   routeInfo: nativeRouteInfo,
   titles: nativeTitles,
-  siteUrl: () => nativeSiteSettings(nativeEffectiveSource(NATIVE_CONFIG_PATH)).url,
+  siteUrl: () => nativeSiteSettings(runtime.source(NATIVE_CONFIG_PATH)).url,
   writeMeta: (file, field, value, flush) => writeNativePageMeta(file, field, value, flush),
   ensureIndex: ensureNativeTextIndex,
   readRedirects: readNativeRedirects,
@@ -3010,7 +2832,7 @@ const pagesController = createPagesState(pagePorts());
 // Shared file operations use the same pure source/draft policy as Pages.
 function onBranchHere(path: string) {
   const scope = draftScope();
-  return pageOnBranchHere(path, nativeBaseFiles, scope ? draftStore().list(scope) : []);
+  return pageOnBranchHere(path, runtime.base.files, scope ? draftStore().list(scope) : []);
 }
 // `_redirects` as it is now: its draft, or the branch's file.
 async function readNativeRedirects(): Promise<string | undefined> {
@@ -3018,12 +2840,12 @@ async function readNativeRedirects(): Promise<string | undefined> {
   const scope = draftScope();
   const draft = scope ? draftStore().get(scope, NATIVE_REDIRECTS_PATH) : undefined;
   if (draft) return draft.deleted ? undefined : draft.content;
-  if (!nativeBaseFiles.includes(NATIVE_REDIRECTS_PATH) || !appStore.repository.value) return undefined;
+  if (!runtime.base.files.includes(NATIVE_REDIRECTS_PATH) || !appStore.repository.value) return undefined;
   const entry = await findEntry(NATIVE_REDIRECTS_PATH);
   if (!at.holds() || !repo) throw new Error("The repository changed while reading redirects.");
   const text = entry ? await readFile(repo.full_name, entry.sha) : undefined;
   if (!at.holds()) throw new Error("The repository changed while reading redirects.");
-  if (text !== undefined) nativeBaseSources.set(NATIVE_REDIRECTS_PATH, text);
+  if (text !== undefined) runtime.base.sources.set(NATIVE_REDIRECTS_PATH, text);
   return text;
 }
 
@@ -3032,14 +2854,14 @@ async function branchText(path: string): Promise<{ sha: string; text: string } |
   if (!appStore.repository.value) return undefined;
   const entry = await findEntry(path);
   if (!entry) return undefined;
-  const text = nativeBaseSources.get(path) ?? await readFile(appStore.repository.value.full_name, entry.sha);
+  const text = runtime.base.sources.get(path) ?? await readFile(appStore.repository.value.full_name, entry.sha);
   return { sha: entry.sha, text };
 }
 
 // New page files discarded (Discard changes, an undo): routes are found
 // again and the trees drawn.
 function discardedNewPages(_paths: string[]) {
-  if (!nativeSite) return;
+  if (!runtime.site) return;
   refreshNativeRoutes();
   filesTreeController.render();
   updateAgentContext();
@@ -3063,18 +2885,18 @@ interface Creation {
 function planCreation({ kind, folder, name }: CreateRequest): Checked<Creation> {
   const scope = draftScope();
   if (!scope || !appStore.snapshot.value) return { ok: false, error: "Open a repository first." };
-  const drafted = scopeNewDraftPaths(scope);
+  const drafted = runtime.newDraftPaths({}, scope);
   const inFolder = (path: string, folder: string) => path.startsWith(`${folder}/`);
   // A folder is there when the branch has it or a file is (drafted) in it.
   const folderExists = (folder: string) =>
-    entryAt(folder)?.type === "tree" || nativeBaseFiles.some((path) => inFolder(path, folder)) || drafted.some((path) => inFolder(path, folder));
+    entryAt(folder)?.type === "tree" || runtime.base.files.some((path) => inFolder(path, folder)) || drafted.some((path) => inFolder(path, folder));
   // What stands in the way of a new file at `path`, as far as is known here;
   // without the whole-commit tree, GitHub is asked on confirm.
   const problem = (path: string) => {
     if (draftStore().get(scope, path)?.deleted) return `${path} is deleted in your changes. Restore it instead.`;
     if (draftStore().get(scope, path)) return `${path} already has a draft in this browser.`;
     if (folderExists(path)) return `There is a folder ${path} already.`;
-    if (entryAt(path) || nativeBaseFiles.includes(path)) return `${path} already exists.`;
+    if (entryAt(path) || runtime.base.files.includes(path)) return `${path} already exists.`;
     const parts = path.split("/");
     for (let index = 1; index < parts.length; index++) {
       const parent = parts.slice(0, index).join("/");
@@ -3082,7 +2904,7 @@ function planCreation({ kind, folder, name }: CreateRequest): Checked<Creation> 
     }
     return undefined;
   };
-  const routes = nativeSite?.routes ?? {};
+  const routes = runtime.site?.routes ?? {};
   const routeTaken = (route: string) => (Object.hasOwn(routes, route) ? `The URL ${route} already has a page, ${routes[route]}.` : undefined);
   const fail = (error: string): Checked<Creation> => ({ ok: false, error });
 
@@ -3091,7 +2913,7 @@ function planCreation({ kind, folder, name }: CreateRequest): Checked<Creation> 
     if (!path.ok) return path;
     const blocked = problem(path.value);
     if (blocked) return fail(blocked);
-    const route = nativeSite ? nativePageRoute(path.value) : undefined;
+    const route = runtime.site ? nativePageRoute(path.value) : undefined;
     if (route && routeTaken(route)) return fail(routeTaken(route)!);
     const page = route ? `, the page at ${route}` : "";
     return { ok: true, value: {
@@ -3107,7 +2929,7 @@ function planCreation({ kind, folder, name }: CreateRequest): Checked<Creation> 
   const keep = `${path.value}/.gitkeep`;
   const blocked = problem(keep);
   if (blocked) return fail(blocked);
-  const pagesHint = nativeSite && !path.value.startsWith("components/") ? " To add pages and subpages, use the Pages tab." : "";
+  const pagesHint = runtime.site && !path.value.startsWith("components/") ? " To add pages and subpages, use the Pages tab." : "";
   return { ok: true, value: {
     files: [{ path: keep, content: "" }], folder: path.value,
     summary: `Creates ${keep}: git stores no empty folders, so the folder holds this empty file until it has others.${pagesHint}`,
@@ -3161,7 +2983,7 @@ async function createFromRequest(request: CreateRequest): Promise<string | undef
   if (failure) return failure;
   editorModule?.refreshDrafts();
   versions.history.refresh();
-  if (nativeSite) refreshNativeRoutes();
+  if (runtime.site) refreshNativeRoutes();
   updateAgentContext();
   if (resyncNativeSite()) return undefined;
   if (creation.folder) {
@@ -3272,12 +3094,12 @@ function pathNow(path: string, state = treeState()): "file" | "folder" | "delete
   if (state.deleted.has(path)) return "deleted";
   if (state.drafted.includes(path)) return "file";
   const entry = entryAt(path);
-  if (entry?.type === "blob" || entry?.type === "commit" || nativeBaseFiles.includes(path)) return "file";
+  if (entry?.type === "blob" || entry?.type === "commit" || runtime.base.files.includes(path)) return "file";
   const prefix = `${path}/`;
   if (state.drafted.some((file) => file.startsWith(prefix))) return "folder";
   const inside = appStore.snapshot.value?.tree
     ? appStore.snapshot.value.tree.filter((item) => item.type !== "tree" && item.path.startsWith(prefix)).map((item) => item.path)
-    : nativeBaseFiles.filter((file) => file.startsWith(prefix));
+    : runtime.base.files.filter((file) => file.startsWith(prefix));
   if (inside.some((file) => !state.deleted.has(file))) return "folder";
   if (inside.length) return "deleted";
   return entry?.type === "tree" ? "folder" : undefined;
@@ -3285,10 +3107,10 @@ function pathNow(path: string, state = treeState()): "file" | "folder" | "delete
 
 const filePorts = (): Parameters<typeof createLazyFileOperationsController>[0] => ({
   edits: guardedEdits, draftScope,
-  engaged: () => nativeEngaged, repository: () => appStore.repository.value,
+  engaged: () => runtime.engaged, repository: () => appStore.repository.value,
   parentOf, treeState, pathNow, branchFilesUnder, findEntry, draftStore,
-  baseSource: path => nativeBaseSources.get(path), readFiles, readFile,
-  nativeFiles,
+  baseSource: path => runtime.base.sources.get(path), readFiles, readFile,
+  nativeFiles: runtime.files,
   ensureNativeTextIndex, branchPathProblem,
   readMediaText, origins: mediaOrigins,
   onBranchHere, withMovedPageUrls, readNativeRedirects, confirmDialog: () => confirmDialog,
@@ -3374,7 +3196,7 @@ function resyncNativeSite(): boolean {
   const drafted = isNewDraft(home);
   const committed = appStore.snapshot.value.entries.some((entry) => entry.path === NATIVE_HOME_PAGE && entry.type === "blob");
   const wanted = committed || drafted;
-  if (wanted === nativeEngaged) return false;
+  if (wanted === runtime.engaged) return false;
   nativeResyncing = true;
   nativeResyncDone = new Promise<void>((resolve) => {
     queueMicrotask(() => {
@@ -3389,12 +3211,12 @@ function afterFileChanges() {
   forgetDraftedAssets();
   editorModule?.refreshDrafts();
   versions.history.refresh();
-  if (nativeSite) {
+  if (runtime.site) {
     // Component stylesheets are found again where their components now are.
-    nativeComponentStyles.clear();
-    nativeMissingComponentStyles.clear();
+    runtime.state.componentStyles.clear();
+    runtime.state.missingComponentStyles.clear();
     refreshNativeRoutes();
-    void loadNativeComponentStyles(Object.keys(nativeSite.components));
+    void loadNativeComponentStyles(Object.keys(runtime.site.components));
   }
   filesTreeController.render();
   updateAgentContext();
@@ -3413,7 +3235,7 @@ async function openAfter(path: string | undefined, keepExplorer?: boolean, quiet
   const keep = { keepExplorer: keepExplorer ?? false, quietStatus };
   if (draft && isNewDraft(draft)) await openNewDraft(draft, { keepExplorer: keepExplorer ?? true });
   else if (path && !draft?.deleted) await restoreFile(path, at, keep);
-  else if (nativeSite?.routes["/"]) await restoreFile(nativeSite.routes["/"], at, keep);
+  else if (runtime.site?.routes["/"]) await restoreFile(runtime.site.routes["/"], at, keep);
   else if (appStore.snapshot.value) showDirectory(appStore.snapshot.value);
 }
 
@@ -3473,14 +3295,14 @@ const savePublish = createSavePublishController({
   redraw: () => {
     editorModule?.refreshDrafts();
     filesTreeController.render();
-    if (nativeSite) updateNativePreviewSources();
+    if (runtime.site) updateNativePreviewSources();
   },
   saved: (scope, result, submitted, shown) => {
-    if (shown) adoptNativeBaseSources(scope, result, submitted);
+    if (shown) runtime.adoptSaved(scope, result, submitted);
     else if (!result.unchanged) finishedWork.add(scope, "saved", { commit: { repo: scope.repo, commit: result.commit, url: result.url } });
     // Saved uploads are GitHub's now; this browser lets their bytes go.
     void sweepUploads(uploadBytes(), scope, draftStore().list(scope)).catch(() => undefined);
-    if (nativeEngaged && !result.unchanged)
+    if (runtime.engaged && !result.unchanged)
       siteActions?.track({ repo: scope.repo, commit: result.commit, url: result.url },
         () => holdsDraftScope(workspaceSession.current().scope, scope));
   },
@@ -3493,7 +3315,7 @@ const savePublish = createSavePublishController({
     element("revision").textContent = commit.slice(0, 7);
     element("revision").title = commit;
     filesTreeController.render();
-    if (nativeEngaged && nativeSite) startNativeTextIndex(appStore.repository.value!, nativeSite, draftScope(), workspaceSession.begin(), nativeSourcesRequest);
+    if (runtime.engaged && runtime.site) startNativeTextIndex(appStore.repository.value!, runtime.site, draftScope(), workspaceSession.begin(), runtime.state.request);
   },
   change: (path) => treeState().changes.get(path),
   openFile: () => appStore.openFile.value,
@@ -3535,9 +3357,9 @@ async function dropFileTarget(source: FileRowTarget, folder: string) {
 
 // Opening a file in the source pane (src/controllers/source-pane-controller.ts).
 const sourcePane = createSourcePaneController({
-  appStore, workspaceSession, editorModule, linkedStyles, savePublish, versions, previewSelection, nativeBaseSources, nativeVariantFiles,
+  appStore, workspaceSession, editorModule, linkedStyles, savePublish, versions, previewSelection, nativeBaseSources: runtime.base.sources, nativeVariantFiles,
   get info() { return info; }, get content() { return content; }, get explorerDropdown() { return explorerDropdown; },
-  get nativeSite() { return nativeSite; }, get nativePreview() { return nativePreview; },
+  get nativeSite() { return runtime.site; }, get nativePreview() { return nativePreview; },
   get componentTools() { return componentTools; }, get pageStructure() { return pageStructure; },
   fileGeneration: () => fileGeneration, nextFileGeneration: () => ++fileGeneration,
   setActiveFileContext: (value) => { activeFileContext = value; },
@@ -3551,8 +3373,8 @@ const { openEntry, mountSource } = sourcePane;
 
 // The component whose template is `path`.
 function nativeComponentTagForPath(path: string) {
-  if (!nativeSite) return undefined;
-  return Object.entries(nativeSite.components).find(([, file]) => file === path)?.[0];
+  if (!runtime.site) return undefined;
+  return Object.entries(runtime.site.components).find(([, file]) => file === path)?.[0];
 }
 
 function updateAgentContext() {
@@ -3576,7 +3398,7 @@ const agentSiteHost = createAgentSiteHost({
   input: () => {
     const scope = draftScope();
     if (!appStore.repository.value || !appStore.snapshot.value || !scope) return undefined;
-    const site = nativeSite;
+    const site = runtime.site;
     return {
       repository: { id: appStore.repository.value.id, fullName: appStore.repository.value.full_name },
       branch: appStore.snapshot.value.branch,
@@ -3587,7 +3409,7 @@ const agentSiteHost = createAgentSiteHost({
       native: site && {
         site,
         routeInfo: (route) => nativeRouteInfo(route, site),
-        source: (path) => nativeEffectiveSource(path, scope),
+        source: (path) => runtime.source(path, scope),
         exists: (path) => pathNow(path) === "file",
         openFile: appStore.openFile.value,
         selection: appStore.selection.value && { ...appStore.selection.value, route: nativePreview?.route() },
@@ -3634,14 +3456,14 @@ function makeAgentSiteActions(edits: GuardedEdits = guardedEdits, atomic = false
     if (draft?.deleted) return undefined;
     if (draft?.opaque) throw new Error(`${path} is not a text file.`);
     if (draft) return draft.content;
-    return nativeBaseSources.get(path) ?? (await branchText(path))?.text;
+    return runtime.base.sources.get(path) ?? (await branchText(path))?.text;
   },
   isMounted: (path) => Boolean(editorModule?.isMounted(path)),
   edits,
   atomicText: () => atomic,
   loaderPlan: nativeComponentLoaderPlan,
   writeDraft: async (path, content, create, expected) => {
-    if (!atomic && !nativeSite && !nativeEngaged && create) {
+    if (!atomic && !runtime.site && !runtime.engaged && create) {
       const scope = draftScope(), repo = appStore.repository.value, snap = appStore.snapshot.value;
       if (!scope || !repo || !snap) return "Open a repository first.";
       const at = workspaceSession.begin(), store = draftStore(), editor = editorModule;
@@ -3657,7 +3479,7 @@ function makeAgentSiteActions(edits: GuardedEdits = guardedEdits, atomic = false
       const isCurrent = () => {
         const drafts = store.list(scope);
         return at.holds() && appStore.repository.value === repo && appStore.snapshot.value === snap &&
-          !nativeSite && !nativeEngaged && !hasHome() && !versions.view && JSON.stringify(snap.tree ?? snap.entries) === graph &&
+          !runtime.site && !runtime.engaged && !hasHome() && !versions.view && JSON.stringify(snap.tree ?? snap.entries) === graph &&
           drafts.length === before.size && drafts.every(draft => before.get(draft.path) === draft);
       };
       // Before a home page exists there is no mounted editor to anchor operation
@@ -3687,7 +3509,7 @@ function makeAgentSiteActions(edits: GuardedEdits = guardedEdits, atomic = false
     if (!create && edits.peek.source(path) === undefined) {
       const base = await branchText(path);
       if (!since.holds()) return "The repository changed meanwhile. Try again.";
-      if (base) nativeBaseSources.set(path, base.text);
+      if (base) runtime.base.sources.set(path, base.text);
     }
     const done = `An agent ${create ? "created" : "changed"} ${path}.`, undone = `Undid the agent's change to ${path}.`;
     const outcome = await edits.run(r => create ? { creates: [{ path, content }], ...nativePageRoute(path) && !componentTools?.typingTemplate() || atomic && appStore.openFile.value === undefined ? { open: path } : {}, done, undone }
@@ -3812,13 +3634,13 @@ async function agentActing<T>(run: () => Promise<T>): Promise<T> {
 // The page shown after the page `path` is gone: the nearest page above it
 // (by folder) that has one, else the home page.
 function nativeFallbackPage(path: string) {
-  if (!nativeSite) return undefined;
+  if (!runtime.site) return undefined;
   const parts = path.split("/").slice(0, -1);
   for (let length = parts.length; length > 0; length--) {
-    const file = nativeSite.routes[rootRoute(`${parts.slice(0, length).join("/")}/`)];
+    const file = runtime.site.routes[rootRoute(`${parts.slice(0, length).join("/")}/`)];
     if (file && file !== path) return file;
   }
-  return nativeSite.routes["/"];
+  return runtime.site.routes["/"];
 }
 
 async function openNewDraft(draft: SavedDraft, options: { keepExplorer?: boolean; linkDefaultStyle?: boolean; beforeMount?: () => boolean } = {}) {
@@ -3936,8 +3758,8 @@ const workspaceBoot = createWorkspaceBoot({
   get content() { return content; }, get files() { return files; }, get refreshButton() { return refreshButton; },
   get branchSelect() { return branchSelect; }, get repositorySelect() { return repositorySelect; },
   get repositoryMenu() { return repositoryMenu; }, get explorerDropdown() { return explorerDropdown; }, get siteActions() { return siteActions; },
-  get nativeSite() { return nativeSite; }, get nativeSourcesRequest() { return nativeSourcesRequest; },
-  get nativePaintedRequest() { return nativePaintedRequest; }, get nativePaintedPaths() { return nativePaintedPaths; },
+  get nativeSite() { return runtime.site; }, get nativeSourcesRequest() { return runtime.state.request; },
+  get nativePaintedRequest() { return runtime.state.paintedRequest; }, get nativePaintedPaths() { return runtime.state.paintedPaths; },
   source: () => location.origin + location.pathname,
   sessionTag: () => boot.sessionTag(),
   draftsReady: () => boot.draftsReady(),
@@ -3976,8 +3798,8 @@ function storage(kind: "local" | "session"): Pick<Storage, "getItem" | "setItem"
 
 // A draft written with GitHub's text of its file, as this tab holds it, is no change (src/drafts.ts).
 draftStore().baseline = (scope, path) => {
-  return nativeEngaged && holdsDraftScope(shownScope(), scope)
-    ? nativeBaseSources.get(path)
+  return runtime.engaged && holdsDraftScope(shownScope(), scope)
+    ? runtime.base.sources.get(path)
     : undefined;
 };
 

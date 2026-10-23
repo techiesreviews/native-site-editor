@@ -17,11 +17,11 @@ test("main's popup preview requests a prefixed image and reuses repository-keyed
     ts.forEachChild(node, walk);
   };
   walk(tree); assert.ok(callback);
-  const { code } = await transform(`export default (siteAddress, nativePrefix, nativeAssets, loadNativeAssets, appStore) => (${callback});`, { loader: "ts", format: "esm" });
+  const { code } = await transform(`export default (siteAddress, runtime, loadNativeAssets, appStore) => (${callback});`, { loader: "ts", format: "esm" });
   const { default: bind } = await import(`data:text/javascript;base64,${Buffer.from(code).toString("base64")}`);
   for (const prefix of ["", "/my-site"]) {
     const assets = new Map<string, string>(), requests: Record<string, string>[] = [];
-    const picture = bind(siteAddress, () => prefix, assets, async (sources: Record<string, string>) => { requests.push(sources); assets.set("media/a b.webp", "blob:picture"); }, { openFile: { value: "index.html" } });
+    const picture = bind(siteAddress, { prefix: () => prefix, state: { assets } }, async (sources: Record<string, string>) => { requests.push(sources); assets.set("media/a b.webp", "blob:picture"); }, { openFile: { value: "index.html" } });
     assert.equal(await picture("media/a b.webp"), "blob:picture");
     assert.equal(await picture("media/a b.webp"), "blob:picture");
     assert.deepEqual(requests, [{ "index.html": `<img src="${prefix}/media/a%20b.webp">` }]);
