@@ -61,7 +61,7 @@ export interface NativeSiteState {
   unreadable: Map<string, string>;
   /** The project's own warnings (shared/native-project.ts), shown with the unreadable stylesheets'. */
   projectWarnings: string[];
-  /** The load the reads belong to; only a reset or a new load (`begin`) moves it on. */
+  /** The load the reads belong to; read-only outside: `begin` and `reset` are its only writers. */
   readonly request: number;
   textIndexing: Promise<boolean> | undefined;
   textIndexScope: string;
@@ -180,8 +180,8 @@ export function createNativeSiteRuntime(ports: NativeSiteRuntimePorts) {
     return [...new Set([...base.filter((path) => !gone.has(path)), ...drafted])];
   }
 
-  // Paths of the new files (drafts with no base blob) in the scope.
-  function scopeNewDraftPaths(options: NewDraftOptions = {}, scope = ports.scope()) {
+  // Paths of the new files (drafts with no base blob) in `scope`; none without one.
+  function scopeNewDraftPaths(options: NewDraftOptions, scope: DraftScope | undefined) {
     return scope ? newDraftPaths(ports.drafts().list(scope), options) : [];
   }
 

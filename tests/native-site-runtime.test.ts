@@ -71,8 +71,10 @@ test("the site's files are the branch's, less deletions, with new drafts", () =>
   runtime.base.files = ["index.html", "old.html"];
   assert.deepEqual(runtime.files(), ["index.html", "new.html"]);
   assert.deepEqual(runtime.files(SCOPE, ["old.html", "about.html"]), ["about.html", "new.html"]);
-  assert.deepEqual(runtime.newDraftPaths(), ["new.html"]);
-  assert.deepEqual(runtime.newDraftPaths({ kind: (path) => path.endsWith(".css") }), []);
+  assert.deepEqual(runtime.newDraftPaths({}, SCOPE), ["new.html"]);
+  assert.deepEqual(runtime.newDraftPaths({ kind: (path) => path.endsWith(".css") }, SCOPE), []);
+  // No scope given: none, whatever the session shows.
+  assert.deepEqual(runtime.newDraftPaths({}, undefined), []);
 });
 
 test("reset lets the whole site go and moves the load on", () => {
@@ -261,15 +263,18 @@ test("a save while the project is native but its site is not loaded becomes GitH
 
 test("reset lets the state go before the views that show the site close", () => {
   const seen: unknown[] = [];
-  const { runtime } = setup([], {}, { closed: () => { seen.push({ site: runtime.site, engaged: runtime.engaged, files: runtime.base.files.length, sources: runtime.base.sources.size, request: runtime.state.request, assets: runtime.state.assets.size }); } });
+  const { runtime } = setup([], {}, { closed: () => { seen.push({ site: runtime.site, engaged: runtime.engaged, files: runtime.base.files.length, sources: runtime.base.sources.size, request: runtime.state.request, assets: runtime.state.assets.size, unreadable: runtime.state.unreadable.size, opaqueText: runtime.state.opaqueText.size, textIndexing: runtime.state.textIndexing }); } });
   runtime.site = SITE;
   runtime.engaged = true;
   runtime.base.files = ["index.html"];
   runtime.base.sources.set("index.html", "home");
   runtime.state.assets.set("logo.png", "data:");
+  runtime.state.unreadable.set("big.css", "too big");
+  runtime.state.opaqueText.set("k", { sha: SHA, text: "t" });
+  runtime.state.textIndexing = Promise.resolve(true);
   const request = runtime.state.request;
   runtime.reset();
-  assert.deepEqual(seen, [{ site: undefined, engaged: false, files: 0, sources: 0, request: request + 1, assets: 0 }]);
+  assert.deepEqual(seen, [{ site: undefined, engaged: false, files: 0, sources: 0, request: request + 1, assets: 0, unreadable: 0, opaqueText: 0, textIndexing: undefined }]);
 });
 
 test("a predicted read let go at any of its awaits asks GitHub for nothing more, writes nothing and leaves no path marked", async () => {
@@ -311,4 +316,28 @@ test("a text draft of a file hides the wider index: a deletion has none, an edit
   clean.put("", "key", "data.json", "{}");
   assert.equal(runtime.textSource("notes.txt"), undefined);
   assert.equal(runtime.textSource("data.json"), "{\"drafted\":true}");
+});
+
+test("a predicted read hands the files GitHub cannot give as text to the preview and writes none of them", async () => {
+  const handed: unknown[] = [];
+  const unreadable = [{ path: "styles/site.css", message: "binary" }];
+  const { runtime } = setup([], {}, {
+    readTexts: async () => ({ texts: new Map<string, string>(), unreadable }),
+    unreadable: (files) => { handed.push(files); },
+  });
+  assert.equal(await runtime.readPredicted("o/site", ["styles/site.css"], () => true), false);
+  assert.deepEqual(handed, [unreadable]);
+  assert.equal(runtime.base.sources.has("styles/site.css"), false);
+});
+
+test("a save of an edited opaque file keeps its old text and lists it once", () => {
+  const { runtime } = setup();
+  runtime.site = SITE;
+  runtime.engaged = true;
+  runtime.base.files = ["index.html", "logo.svg"];
+  runtime.base.sources.set("logo.svg", "<svg/>");
+  const result = { commit: "c", branch: "main", url: "", files: [], unchanged: false } satisfies PublishResult;
+  runtime.adoptSaved(SCOPE, result, [draft("logo.svg", "", { opaque: true })]);
+  assert.equal(runtime.base.sources.get("logo.svg"), "<svg/>");
+  assert.deepEqual(runtime.base.files, ["index.html", "logo.svg"]);
 });
