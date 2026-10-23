@@ -775,6 +775,29 @@ test("a workspace move lets an edit under way finish, unanswered; turning agents
   }
 });
 
+// After a move the transport is halted, so only a later stop (agents turned off, the tab closing) can
+// end it; a kept edit is cancelled then, as any call is.
+test("an edit kept after a workspace move is cancelled when agents are then turned off", async () => {
+  const f = fixture();
+  let release!: () => void, admitted = false, aborted = false, validAfter: boolean | undefined;
+  const a = f.tab("a", { edit: async (request, _generation, valid, signal) => {
+    admitted = true;
+    signal?.addEventListener("abort", () => { aborted = true; });
+    await new Promise<void>(resolve => { release = resolve; });
+    validAfter = valid();
+    return { ok: true, value: { requestId: request.id, state: "applied" } };
+  } });
+  await a.transport.start();
+  a.deliver({ operation: "edit", tool: "write_file", args: { path: "new.txt", content: "new" }, id: "kept-off", grantId: "grant", createdAt: 100_000 });
+  await until(() => admitted);
+  a.change({ ...workspace, branch: "other" });
+  assert.equal(aborted, false, "kept by the move");
+  a.transport.stop();
+  release(); await drain();
+  assert.equal(aborted, true);
+  assert.equal(validAfter, false);
+});
+
 test("an owner-paused relay stops automatic reconnects; each manual Retry tries once and never replays", async () => {
   const f = fixture();
   let probes = 0;

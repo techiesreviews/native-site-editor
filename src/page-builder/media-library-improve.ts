@@ -67,7 +67,7 @@ export function showImproveImages(sheet: LibrarySheet, h: ImproveHost) {
   function draw(focus: boolean | string = true) {
     const { element } = sheet;
     const keep = element.dataset.mode === "improve" ? element.scrollTop : 0;
-    // The run is the sheet's work, so closing Media cancels it; this screen's own redraws do not.
+    // The run is the sheet's work, so another sheet cancels it; this screen's own redraws do not.
     if (running && sheet.work === running.abort) sheet.work = undefined;
     takeSheet(sheet);
     if (running) sheet.work = running.abort;
@@ -217,7 +217,7 @@ export function showImproveImages(sheet: LibrarySheet, h: ImproveHost) {
   async function run(files: string[]) {
     if (running || !session) return;
     const abort = new AbortController(), measure = (path: string, node: number[], size: { width?: number; height?: number }) => h.improve.measure(path, node, size);
-    running = { abort, line: "" }; sheet.work = abort;
+    running = { abort, line: "" }; sheet.work = sheet.finishes = abort;
     let changed = 0, failed = 0;
     await h.task(async () => {
       try {
@@ -245,6 +245,7 @@ export function showImproveImages(sheet: LibrarySheet, h: ImproveHost) {
         const stopped = abort.signal.aborted;
         running = undefined;
         if (sheet.work === abort) sheet.work = undefined;
+        if (sheet.finishes === abort) sheet.finishes = undefined;
         h.done(improveRunMessage(changed, stopped, failed));
         if (h.alive()) { await load(); if (shown()) draw(m.outcomes.length ? "undo-all" : "fix-all"); }
       }

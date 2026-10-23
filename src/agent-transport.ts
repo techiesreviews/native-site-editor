@@ -156,6 +156,8 @@ export function createLiveTransport(options: Options) {
   function halt(mode: Mode) {
     epoch++;
     recovery?.dispose(); recovery = undefined;
+    // Any stop but a workspace move also cancels the edits kept from an earlier move.
+    if (mode !== "workspace-changed") for (const call of active.values()) if (finishing.has(call.stop.signal)) { call.stop.abort(); call.dispose(); }
     close(mode === "workspace-changed"); unhold();
     show({ mode });
   }

@@ -20,8 +20,8 @@ test.afterEach(() => {
   expect(pageErrors).toEqual([]);
 });
 
-/** Holds the first request whose path is `path` (or passes `path`) until `release()`. */
-async function hold(page: Page, path: string | ((path: string) => boolean)) {
+/** Holds the first request whose path is `path` (or passes `path`) until `release()`; `fail` answers it with that status instead. */
+async function hold(page: Page, path: string | ((path: string) => boolean), fail?: number) {
   let held!: (route: Route) => void;
   const reached = new Promise<Route>(resolve => { held = resolve; });
   let release!: () => void;
@@ -32,7 +32,7 @@ async function hold(page: Page, path: string | ((path: string) => boolean)) {
     first = false;
     held(route);
     await released;
-    await route.continue();
+    await (fail ? route.fulfill({ status: fail, contentType: "application/json", body: JSON.stringify({ error: "GitHub is unavailable." }) }) : route.continue());
   });
   return { reached, release };
 }
@@ -77,6 +77,24 @@ test("a save held across a branch switch commits on its own branch, and its draf
   await page.evaluate(() => { location.hash = "repo=501&branch=main&file=index.html"; });
   await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
   await expect(publishButton(page)).toBeDisabled();
+});
+
+// The rejects cell: a save refused after the switch leaves main's drafts as they were, nothing on feature.
+test("a save held across a branch switch that then fails keeps main's drafts unsaved", async ({ page, baseURL }) => {
+  await openEditor(page, baseURL);
+  await appendToOpenFile(page, "index.html", "\n<!-- kept on main -->\n");
+  await expect.poll(async () => (await draftsOn(page, "main")).map(draft => draft.path)).toEqual(["index.html"]);
+  const publish = await hold(page, "/api/publish", 500);
+  await showPublish(page);
+  await publishButton(page).click();
+  await publish.reached;
+  await switchSiteMidUpload(page, baseURL);
+  const answered = page.waitForResponse(response => new URL(response.url()).pathname === "/api/publish");
+  publish.release();
+  expect((await answered).status()).toBe(500);
+  expect(await committed(page, baseURL, "index.html")).not.toContain("<!-- kept on main -->");
+  expect((await draftsOn(page, "main")).map(draft => [draft.path, draft.content.includes("<!-- kept on main -->")])).toEqual([["index.html", true]]);
+  expect(await draftsOn(page, "feature")).toEqual([]);
 });
 
 // A real 1×1 PNG.
@@ -157,4 +175,30 @@ test("an agent's edit held across a branch switch waits on its own branch as an 
     expect(await draftsOn(page, "feature")).toEqual([]);
     expect(await committed(page, baseURL, "robots.txt")).toBe(robots);
   } finally { await client.close(); }
+});
+
+
+// The never-settles cell: an addition held across the switch stays on its way with its Cancel; cancelled, nothing is added anywhere.
+test("files held across a branch switch can still be cancelled there, and nothing is added", async ({ page, baseURL }) => {
+  await openEditor(page, baseURL);
+  const explorer = page.locator("#explorer");
+  if (!(await explorer.isVisible())) await page.locator("#explorer-toggle").click();
+  await explorer.getByRole("tab", { name: "Files" }).click();
+  await expect(explorer.locator(".file-row[data-path='images']")).toBeVisible();
+  const media = await hold(page, "/src/controllers/media-actions.ts");
+  await dropFiles(page, "#explorer .file-row[data-path='images']", [{ name: "Logo.png", type: "image/png", base64: png.toString("base64") }]);
+  await media.reached;
+  await switchSiteMidUpload(page, baseURL);
+  if (!(await explorer.isVisible())) await page.locator("#explorer-toggle").click();
+  await explorer.getByRole("tab", { name: "Files" }).click();
+  const adding = explorer.getByRole("region", { name: "Files being added" });
+  await adding.getByRole("button", { name: "Cancel adding Logo.png" }).click();
+  await expect(adding.getByRole("button", { name: "Cancel adding Logo.png" })).toBeHidden();
+  const loaded = page.waitForResponse(response => new URL(response.url()).pathname === "/src/controllers/media-actions.ts");
+  media.release();
+  await loaded;
+  // The addition's context is made once the chunk runs; with its only file cancelled it saves nothing.
+  await page.evaluate(async () => { await import("/src/controllers/media-actions.ts"); await new Promise(requestAnimationFrame); });
+  expect(await draftsOn(page, "main")).toEqual([]);
+  expect(await draftsOn(page, "feature")).toEqual([]);
 });

@@ -514,13 +514,14 @@ test("abort at every real text preparation and commit await cancels without draf
 });
 
 // Ticket 23: an agent's text write read from a site or branch no longer shown finishes there, on its files.
-async function elsewhere(t: TestContext) {
+async function elsewhere(t: TestContext, race?: AwaitRace) {
   const f = await setup(t);
-  const files = { repo: { id: 1, full_name: "lex/site" }, snapshot: { branch: "main", commit: "commit", entries: [] }, read: async () => "before" } as unknown as AgentReadFiles; // eslint-disable-line no-restricted-syntax -- only the repository, snapshot and blob reader are used.
+  const read = async () => "before", find = async (_files: AgentReadFiles, path: string) => path === "index.html" ? { sha: "a".repeat(40) } : undefined;
+  const files = { repo: { id: 1, full_name: "lex/site" }, snapshot: { branch: "main", commit: "commit", entries: [] }, read: race ? race.port("read", read) : read } as unknown as AgentReadFiles; // eslint-disable-line no-restricted-syntax -- only the repository, snapshot and blob reader are used.
   const shown: DraftScope = { ...f.scope, branch: "dev" };
-  const finish = (command: AgentCommand, on: DraftScope | undefined = shown) => {
+  const finish = (command: AgentCommand, on: () => DraftScope | undefined = () => shown) => {
     agentCommandFiles.set(command, files);
-    return finishAgentTextElsewhere(command, on, f.scope.account, f.store, async (_files, path) => path === "index.html" ? { sha: "a".repeat(40) } : undefined);
+    return finishAgentTextElsewhere(command, on, f.scope.account, f.store, race ? race.port("find", find) : find);
   };
   return { ...f, shown, finish };
 }
@@ -548,8 +549,26 @@ test("a text write elsewhere refuses when the file there changed since the agent
 
 test("a command read from the branch shown is left to the editor; other commands elsewhere refuse", async t => {
   const f = await elsewhere(t);
-  assert.equal(await f.finish(f.command, f.scope), undefined);
+  assert.equal(await f.finish(f.command, () => f.scope), undefined);
   assert.equal(f.store.get(f.scope, "index.html"), undefined);
   await assert.rejects(f.finish({ ...f.command, operation: "move_file", args: { to: "moved.html" } }), /open main again/);
   assert.equal(await f.records.receipt(f.scope, "operation", "grant"), undefined);
+});
+
+// Async writers: its branch shown again at any wait before it is kept, the write is left to the editor
+// (it goes through the open file's model there), so nothing is written around it.
+test("a text write elsewhere whose branch is shown again at any wait writes nothing itself", async t => {
+  const count = await forEachAwait(race => {
+    const run = { back: false, outcome: undefined as unknown, f: undefined as Awaited<ReturnType<typeof elsewhere>> | undefined, done: Promise.resolve() };
+    run.done = (async () => {
+      const f = run.f = await elsewhere(t, race);
+      run.outcome = await f.finish(f.command, () => run.back ? f.scope : f.shown);
+    })();
+    return run;
+  }, run => { run.back = true; }, async run => {
+    assert.equal(run.outcome, undefined);
+    assert.equal(run.f!.store.get(run.f!.scope, "index.html"), undefined);
+    assert.equal(await run.f!.records.receipt(run.f!.scope, "operation", "grant"), undefined);
+  });
+  assert.equal(count, 2); // find, read
 });
