@@ -98,8 +98,9 @@ export function createAgentMenu(options: {
   let hub: HubState = { grants: [] };
   /** The token this tab made and copied; the hub's grants tell whether an agent used it. */
   let token: string | undefined, tokenId: string | undefined;
-  /** The last press failed with nothing to show for it: the dot shows it until the next press. */
-  let pressFailed = false;
+  /** The site whose last press failed with nothing to show for it: the dot shows it until the
+   * next press, a turn on or off, another site shown, or an agent using a connection. */
+  let failedOn: ReturnType<typeof options.repository>;
   let disposed = false,
     changing = false,
     remote = false,
@@ -349,7 +350,7 @@ export function createAgentMenu(options: {
   /** The tab's connection state, on the dot (`data-state`). */
   function state() {
     if (!options.repository()) return "closed";
-    if (pressFailed) return "failed";
+    if (failedOn && sameRepository(failedOn, options.repository()) && !usedGrants().length) return "failed";
     if (!remote) return "off";
     if (workspaceChanged) return "workspace-changed";
     if (transportMode === "pending") return "connecting";
@@ -536,8 +537,10 @@ export function createAgentMenu(options: {
     waitingOn.replaceChildren(...parts);
   }
   async function act() {
-    pressFailed = false;
-    const current = state(), offered = offer(current);
+    // The press does what its label said when it was pressed.
+    const offered = (root.dataset.offer as ReturnType<typeof offer> | undefined) || offer();
+    failedOn = undefined;
+    const current = state();
     if (offered === "disconnect") await revoke();
     // Wait for MCP copies this tab's prompt again while its token still waits; a tab without
     // it (another tab copied it, a reload, or it was revoked) copies a prompt of its own.
@@ -577,6 +580,7 @@ export function createAgentMenu(options: {
     if (remote || disposed) return;
     remote = true;
     ownerPaused = false;
+    failedOn = undefined;
     activation++;
     pinned = options.repository();
     remember(true);
@@ -591,6 +595,7 @@ export function createAgentMenu(options: {
    * agents off for the site in this browser's other and later tabs. */
   function turnOff(forget = false) {
     if (!remote) return;
+    failedOn = undefined;
     if (forget) remember(false);
     remote = false;
     ownerPaused = false;
@@ -649,11 +654,11 @@ export function createAgentMenu(options: {
       await copyPrompt();
     } catch {
       changing = false;
-      // The press made no prompt: the dot shows it (`pressFailed`) until the next press. With no
-      // connection of the site at all, remote agents go off; another tab's waiting token, or
-      // a connected agent, keeps them on.
-      pressFailed = !usedGrants().length;
+      // With no connection of the site at all, remote agents go off; another tab's waiting
+      // token, or a connected agent, keeps them on. The press made no prompt: the dot shows it
+      // (`failedOn`) until the next press.
       if (!liveGrants().length && !["paused", "quota", "reconnecting"].includes(transportState?.mode ?? "")) turnOff(true);
+      failedOn = repo;
     } finally {
       changing = false;
       paint();
@@ -666,11 +671,12 @@ export function createAgentMenu(options: {
     try {
       // Every agent on this site's connections, the shared token's and ones this tab has not
       // read yet included (the server lists them).
-      const shown = pinned ?? options.repository();
+      const at = activation, shown = pinned ?? options.repository();
       if (shown) await api("revoke", { all: true, repoId: shown.id, branch: shown.branch });
       token = tokenId = undefined;
       changing = false;
-      turnOff(true);
+      // Turned off or another site shown meanwhile: that site's own state stays as it is.
+      if (live(at)) turnOff(true);
     } catch { /* Still connected: the button stays Disconnect MCP. */ } finally {
       changing = false;
       paint();
@@ -679,8 +685,11 @@ export function createAgentMenu(options: {
   /** Wait for MCP: this tab's prompt again while its token still waits (read fresh: another tab
    * may have revoked it as unused), otherwise a prompt of its own. */
   async function copyAgain(task = goal) {
-    await readConnections(true);
-    const ours = token && liveGrants().some((grant) => grant.id === tokenId && unused(grant));
+    const at = activation, repo = options.repository();
+    // Unread (failed or fenced out), the old list cannot prove the token still waits: a new prompt.
+    const read = await readConnections(true);
+    if (!live(at) || !sameRepository(options.repository(), repo)) return;
+    const ours = read && token && liveGrants().some((grant) => grant.id === tokenId && unused(grant));
     if (ours) { goal = task; await copyPrompt(); } else await start(task);
   }
   async function copyPrompt() {
@@ -724,7 +733,9 @@ export function createAgentMenu(options: {
     });
   }
   function wake() {
-    if (!workspaceChanged && document.visibilityState === "visible" && state() === "waiting" && Date.now() - lastRead >= 2000)
+    // Waiting for an agent, or after a failed press with remote agents still on (another tab's
+    // token waits): returning to the tab looks once whether an agent connected meanwhile.
+    if (!workspaceChanged && document.visibilityState === "visible" && ["waiting", "failed"].includes(state()) && Date.now() - lastRead >= 2000)
       void readConnections();
   }
   // A connection approved in this browser turns remote agents on only for
