@@ -2,7 +2,7 @@
 title: "Controllers, agent menu and media ask the session; guard test"
 type: task (AFK)
 status: open
-assignee:
+assignee: lead-22 (this session)
 builder: claude
 blocked_by: [21-workspace-session-main]
 ---
