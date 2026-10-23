@@ -2,7 +2,7 @@
 title: "Strict new page addresses and one make_component refusal list"
 type: task (AFK)
 status: open
-assignee:
+assignee: lead-40 (this session)
 builder: sol
 blocked_by: [32-one-overlay-for-agents-and-media]
 ---
