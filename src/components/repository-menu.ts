@@ -3,7 +3,7 @@ import { mountDropdown } from "./dropdown";
 import { mountFlyout } from "./flyout";
 import { button, link, node } from "../ui/dom";
 import { setIcon } from "../icons";
-import { noteCount, noteWords, type FinishedNote } from "../finished-elsewhere";
+import { noteCount, noteWords, tileWords, type FinishedNote } from "../finished-elsewhere";
 import { sameBranch, sameRepository } from "../workspace-session";
 import type { Repository, SessionInfo } from "../../shared/types";
 
@@ -391,16 +391,11 @@ export function createRepositoryMenu(options: {
   }
   // The tile's name and title, with the questions and the finished work it counts.
   function label() {
-    const count = Number(questions.textContent) || 0;
-    const asking = questions.hidden ? "" : ` — ${count === 1 ? "an agent asks you a question" : `agents ask you ${count} questions`}`;
-    // The branch, with the repository when it is another (as the Files drop's message says it).
-    const named = (note: FinishedNote) => repositories.find((repo) => sameRepository(note.scope, { repoId: repo.id, repo: repo.full_name }))?.full_name ?? note.scope.repo;
-    const where = (note: FinishedNote) => (sameRepository(note.scope, { repoId: currentId, repo: currentFullName }) ? note.scope.branch : `${named(note)} (${note.scope.branch})`);
-    const done = notes.length ? ` — ${notes.map((note) => `${noteWords(note)} on ${where(note)}`).join("; ")}` : "";
-    finished.hidden = !notes.length || !questions.hidden;
+    const said = tileWords(questions.hidden ? 0 : Number(questions.textContent) || 0, notes, { repoId: currentId, repo: currentFullName }, repositories);
+    finished.hidden = !said.counted;
     finished.textContent = String(noteCount(notes));
-    trigger.setAttribute("aria-label", `${name.textContent} — repository actions${asking}${done}`);
-    trigger.title = `${currentFullName ?? "Repository actions"}${asking}${done}`;
+    trigger.setAttribute("aria-label", `${name.textContent} — repository actions${said.words}`);
+    trigger.title = `${currentFullName ?? "Repository actions"}${said.words}`;
   }
   /** Work that finished on other projects and branches, the latest first. */
   function setNotes(next: readonly FinishedNote[]) {

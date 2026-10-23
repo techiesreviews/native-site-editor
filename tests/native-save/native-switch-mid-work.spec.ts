@@ -121,8 +121,9 @@ test("a save that finished on main while feature was shown is counted in the men
   await expect(trigger).toHaveAccessibleName(/repository actions$/);
 });
 
-// Files dropped on main and added while feature is shown: the count names them, and the click lists them.
-test("files added to main while feature was shown are counted, and the click lists them in main's changes", async ({ page, baseURL }) => {
+// Files dropped on native-demo's main and added while another repository is shown: that repository's
+// row counts them, the tile names where, and the row's click opens native-demo on main with them listed.
+test("files added to another repository while it is not shown are counted on its row, and its click lists them there", async ({ page, baseURL }) => {
   await openEditor(page, baseURL);
   const explorer = page.locator("#explorer");
   if (!(await explorer.isVisible())) await page.locator("#explorer-toggle").click();
@@ -131,16 +132,22 @@ test("files added to main while feature was shown are counted, and the click lis
   const media = await hold(page, "/src/controllers/media-actions.ts");
   await dropFiles(page, "#explorer .file-row[data-path='images']", [{ name: "Logo.png", type: "image/png", base64: png.toString("base64") }]);
   await media.reached;
-  await switchSiteMidUpload(page, baseURL);
+  await page.evaluate(() => { location.hash = "repo=530&branch=main"; });
+  await expect(page.locator(".repository-menu__trigger")).toHaveAccessibleName(/^native-routing — repository actions/, { timeout: 30_000 });
+  await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
   media.release();
-  await expect(page.locator("#status")).toHaveText("On main: Added images/logo.png.", { timeout: 20_000 });
+  await expect(page.locator("#status")).toHaveText("On native-demo-user/native-demo (main): Added images/logo.png.", { timeout: 20_000 });
 
   const trigger = page.locator(".repository-menu__trigger");
   await expect(trigger.locator(".repository-menu__finished")).toHaveText("1");
-  await expect(trigger).toHaveAccessibleName(/ — 1 file added on main$/);
+  await expect(trigger).toHaveAccessibleName(/ — 1 file added on native-demo-user\/native-demo \(main\)$/);
   await trigger.click();
-  await page.locator('.repository-menu__repo[aria-current="true"]').click();
-  await page.getByRole("menu", { name: "Branches" }).getByRole("menuitemradio", { name: "main — 1 file added", exact: true }).click();
+  const row = page.locator("#repository-actions").getByRole("button", { name: /^native-demo native-demo-user/ });
+  await expect(row).not.toHaveAttribute("aria-current", "true");
+  await expect(row.locator(".repository-menu__finished")).toHaveText("1");
+  await expect(row).toHaveAccessibleName("native-demo native-demo-user · private — 1 file added on main");
+  await row.click();
+  await expect(trigger).toHaveAccessibleName(/^native-demo — repository actions$/, { timeout: 30_000 });
   await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
   const panel = page.locator("#publish-files");
   await expect(panel.locator(".publish-menu__files")).toBeVisible();
@@ -270,10 +277,18 @@ test("an agent's edit held across a branch switch waits on its own branch as an 
     await expect.poll(async () => (await draftsOn(page, "main")).map(draft => [draft.path, draft.content.startsWith("# agent on main")]), { timeout: 20_000 }).toEqual([["robots.txt", true]]);
     expect(await draftsOn(page, "feature")).toEqual([]);
     expect(await committed(page, baseURL, "robots.txt")).toBe(robots);
+    // Ticket 24: the menu counts it; its branch row opens main with the change listed.
+    const trigger = page.locator(".repository-menu__trigger");
+    await expect(trigger.locator(".repository-menu__finished")).toHaveText("1");
+    await expect(trigger).toHaveAccessibleName(/ — Agent changes waiting on main$/);
     // Back on main, with agents on there again, the agent learns its change was kept.
     const ready = messages.filter(message => message.includes('"type":"ready"')).length;
-    await page.evaluate(() => { location.hash = "repo=501&branch=main&file=index.html"; });
+    await trigger.click();
+    await page.locator('.repository-menu__repo[aria-current="true"]').click();
+    await page.getByRole("menu", { name: "Branches" }).getByRole("menuitemradio", { name: "main — Agent changes waiting", exact: true }).click();
     await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
+    await expect(page.locator("#publish-files .publish-menu__path")).toContainText(["robots.txt"]);
+    await expect(trigger.locator(".repository-menu__finished")).toBeHidden();
     await expect.poll(() => messages.filter(message => message.includes('"type":"ready"')).length, { timeout: 30_000 }).toBeGreaterThan(ready);
     const status = await client.callTool({ name: "get_command_status", arguments: { requestId: "switch-mid-edit" } });
     expect(JSON.parse((status.content as { text: string }[])[0].text)).toMatchObject({ requestId: "switch-mid-edit", state: "applied" });

@@ -1902,7 +1902,7 @@ async function uploadFilesTo(folder: string, files: File[]): Promise<string[]> {
         if (!pin.here()) { announce(`Open ${where()} to review these pictures.`); return; }
         openExplorer(); pagesController.selectTab("media");
         void mediaController.reviewInGallery(images, into, reasons).catch(errorMessage);
-      } }).then((paths) => { if (!pin.here()) finishedWork.add(pin.scope, "added", paths.length); return paths; });
+      } }).then((paths) => { if (!pin.here()) finishedWork.add(pin.scope, "added", { count: paths.length }); return paths; });
   } catch (error) { errorMessage(error); return []; }
 }
 
@@ -3479,7 +3479,7 @@ const savePublish = createSavePublishController({
   },
   saved: (scope, result, submitted, shown) => {
     if (shown) adoptNativeBaseSources(scope, result, submitted);
-    else if (!result.unchanged) finishedWork.add(scope, "saved", 1, { repo: scope.repo, commit: result.commit, url: result.url });
+    else if (!result.unchanged) finishedWork.add(scope, "saved", { commit: { repo: scope.repo, commit: result.commit, url: result.url } });
     // Saved uploads are GitHub's now; this browser lets their bytes go.
     void sweepUploads(uploadBytes(), scope, draftStore().list(scope)).catch(() => undefined);
     if (nativeEngaged && !result.unchanged)
@@ -3759,12 +3759,12 @@ function makeAgentSiteActions(edits: GuardedEdits = guardedEdits, atomic = false
   legacy: applyAgentCommand,
 }; }
 async function applyAgentSiteCommand(command: AgentCommand) {
-  const [{ applySiteCommand, prepareAgentText, atomicAgentCommand, agentStructuralActions, finishAgentTextElsewhere, editorOrElsewhere }, { createPagesController }, { createLazyFileOperationsController }] = await Promise.all([loadAgentSite(), loadPagesActions(), loadFileOps()]);
+  const [{ applySiteCommand, prepareAgentText, atomicAgentCommand, agentStructuralActions, finishAgentTextElsewhere, editorOrElsewhere }, { createPagesController }, { createLazyFileOperationsController }, { agentCommandFiles }] = await Promise.all([loadAgentSite(), loadPagesActions(), loadFileOps(), import("./agent-tools")]);
   // Ticket 23: an edit read from a site or branch no longer shown finishes there, on its files. On show the editor writes it, holding the workspace
   // from the moment that is known (its stamp below), proved by the commit the command was read on and the bytes its write reads (expectedHash;
-  // the guarded edit's own reads); switched away before it was kept, it finishes where it was read after all (editorOrElsewhere).
-  const elsewhere = () => finishAgentTextElsewhere(command, draftScope, info.user?.login, draftStore(), (files, path) => repositoryIndex.find(api, files.repo, files.snapshot, path))
-    .then((done) => { if (done && info.user && command.repoId) finishedWork.add({ account: info.user.login, repoId: command.repoId, repo: "", branch: command.branch }, "agent"); return done; });
+  // the guarded edit's own reads); switched away before it was kept, it finishes where it was read after all (editorOrElsewhere), noted there (ticket 24).
+  const read = agentCommandFiles.get(command), login = info.user?.login, elsewhere = () => finishAgentTextElsewhere(command, draftScope, login, draftStore(), (files, path) => repositoryIndex.find(api, files.repo, files.snapshot, path))
+    .then((done) => { if (done && read && login) finishedWork.add({ account: login, repoId: read.repo.id, repo: read.repo.full_name, branch: read.snapshot.branch }, "agent", { id: command.id }); return done; });
   const finished = await elsewhere(); if (finished) return finished;
   const scope = draftScope(), at = workspaceSession.begin(), revision = appStore.snapshot.value?.commit, current = () => at.holds() && revision === appStore.snapshot.value?.commit && !versions.view;
   if (!current() || !appStore.snapshot.value || command.branch !== appStore.snapshot.value.branch ||
