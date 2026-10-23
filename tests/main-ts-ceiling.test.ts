@@ -42,6 +42,12 @@ test("larger reductions suggest the count rounded up to a multiple of 10", () =>
 
 // The setup host's members are consts destructured part way down main.ts, not hoisted
 // functions: above that line they may only be used inside a function, which runs later.
+function calledOnTheSpot(fn: TS.Node): boolean {
+  let callee: TS.Node = fn;
+  while (ts.isParenthesizedExpression(callee.parent)) callee = callee.parent;
+  return ts.isCallExpression(callee.parent) && callee.parent.expression === callee;
+}
+
 function setupMembersUsedEarly(source: string): string[] {
   const tree = parse(source, "src/main.ts");
   const declaration = tree.statements.find((statement): statement is TS.VariableStatement => ts.isVariableStatement(statement) &&
@@ -55,7 +61,8 @@ function setupMembersUsedEarly(source: string): string[] {
     // A name being declared, or a property of that name, is not a use.
     const parent = node.parent;
     if ((ts.isVariableDeclaration(parent) || ts.isPropertyAccessExpression(parent) || ts.isPropertyAssignment(parent) || ts.isMethodDeclaration(parent)) && parent.name === node) return;
-    for (let at: TS.Node = node.parent; !ts.isSourceFile(at); at = at.parent) if (ts.isFunctionLike(at)) return;
+    // A function runs later, unless it is called on the spot: `(() => …)()`.
+    for (let at: TS.Node = node.parent; !ts.isSourceFile(at); at = at.parent) if (ts.isFunctionLike(at) && !calledOnTheSpot(at)) return;
     early.push(`${node.text} (line ${tree.getLineAndCharacterOfPosition(node.getStart(tree)).line + 1})`);
   });
   return early;
@@ -66,11 +73,13 @@ test("setup host members are used before their destructuring only inside functio
   assert.deepEqual(setupMembersUsedEarly(source), []);
 });
 
-test("a setup host member passed by value above its destructuring is named", () => {
+test("a setup host member passed by value or called on the spot above its destructuring is named", () => {
   const source = [
     "const early = { show: showGetStarted, later: () => renderLogin() };",
+    "(() => startSitePanel())();",
+    "(function () { takeStartingPoint(); })();",
     "const setup = createSetupHost({});",
-    "const { renderLogin, showGetStarted } = setup;",
+    "const { renderLogin, showGetStarted, startSitePanel, takeStartingPoint } = setup;",
   ].join("\n");
-  assert.deepEqual(setupMembersUsedEarly(source), ["showGetStarted (line 1)"]);
+  assert.deepEqual(setupMembersUsedEarly(source), ["showGetStarted (line 1)", "startSitePanel (line 2)", "takeStartingPoint (line 3)"]);
 });

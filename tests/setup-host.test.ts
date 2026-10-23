@@ -48,11 +48,12 @@ const storage = new FakeStorage();
 const saved = ["document", "localStorage", "location", "history", "navigator"].map((name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)] as const);
 const fakeGlobals = globalThis as Record<string, unknown>;
 const replaced: string[] = [];
-fakeGlobals.document = {
+const fakeDocument = {
   createElement: () => new FakeElement(), body, visibilityState: "visible",
   getElementById: (id: string) => body.all().find((element) => element.id === id) ?? null,
   querySelector: () => null,
 };
+fakeGlobals.document = fakeDocument;
 fakeGlobals.localStorage = storage;
 fakeGlobals.location = { origin: "https://editor.test" };
 fakeGlobals.history = { replaceState: (_state: unknown, _title: string, url: string) => { replaced.push(url); } };
@@ -83,11 +84,13 @@ function deferred<T>() {
 const repository = (id: number, name = `site-${id}`): Repository => ({
   id, name, full_name: `lex/${name}`, private: false, default_branch: "main", owner: { login: "lex" },
 } as Repository);
+// Through Partial: the fake has only the fields setup reads (no tree, no site files).
 const snapshot = (empty = false): Snapshot => ({ commit: "c1", branch: "main", entries: [], empty } as Partial<Snapshot> as Snapshot);
 const MOVED = "The repository changed meanwhile. Try again.";
 
 /** `race` wraps the host's own awaits (the lazy loads) for `forEachAwait`. */
 function fixture(race?: AwaitRace) {
+  replaced.length = 0;
   const app = new FakeElement(), action = new FakeElement(), checklistHost = new FakeElement();
   let content = new FakeElement();
   let info: SessionInfo = { configured: true, user: { login: "Lex" }, installUrl: "https://github.test/install" } as SessionInfo;
@@ -103,6 +106,8 @@ function fixture(race?: AwaitRace) {
   let actions = deferred<void>();
   let writeAnswer: string | undefined;
   let listed: Repository[] = [];
+  let fetches = 0;
+  let fetchList = async () => listed;
   let created: { root: FakeElement; options: GetStartedOptions } | undefined;
   const scope = { account: "lex", repoId: 1, repo: "lex/site-1", branch: "main" };
   const setupActions = {
@@ -127,7 +132,7 @@ function fixture(race?: AwaitRace) {
       cancelAutoSignIn: () => { calls.push("cancel"); },
       start: async () => { calls.push("start"); },
       onboarding: () => "create" as const,
-      fetchList: async () => listed,
+      fetchList: async () => { fetches++; return fetchList(); },
     },
     agentController: { connected: () => false, ensure: async () => undefined },
     appStore,
@@ -166,6 +171,8 @@ function fixture(race?: AwaitRace) {
     info: (value: Partial<SessionInfo>) => { info = { ...info, ...value }; },
     repositories: (value: Repository[]) => { repositories = value; },
     listed: (value: Repository[]) => { listed = value; },
+    fetchWith: (fetch: () => Promise<Repository[]>) => { fetchList = fetch; },
+    fetches: () => fetches,
     readyActions: () => { actions.resolve(); },
     writeAnswer: (value: string | undefined) => { writeAnswer = value; },
     open: (repo = repository(1)) => { appStore.repository.value = repo; appStore.snapshot.value = snapshot(); session.next({ kind: "github", account: "lex", repoId: repo.id, repo: repo.full_name, branch: "main" }); },
@@ -281,6 +288,58 @@ test("coming back without waiting for repositories lists nothing", async () => {
   f.listed([repository(3)]);
   await f.setup.checkNewRepositories();
   assert.deepEqual(f.loads, []);
+});
+
+test("coming back lists nothing once Get started stopped waiting or left the page during the fetch", async () => {
+  for (const change of ["stopped", "page"] as const) {
+    const f = fixture();
+    await f.setup.showGetStarted();
+    const fetched = deferred<Repository[]>();
+    f.fetchWith(() => fetched.promise);
+    const checking = f.setup.checkNewRepositories();
+    if (change === "stopped") f.setup.waitingForRepositories = false;
+    else f.newContent();
+    fetched.resolve([repository(3)]);
+    await checking;
+    assert.deepEqual(f.loads, [], change);
+  }
+});
+
+test("coming back to a hidden tab does not list the repositories", async () => {
+  const f = fixture();
+  await f.setup.showGetStarted();
+  fakeDocument.visibilityState = "hidden";
+  try {
+    await f.setup.checkNewRepositories();
+  } finally {
+    fakeDocument.visibilityState = "visible";
+  }
+  assert.equal(f.fetches(), 0);
+  assert.deepEqual(f.loads, []);
+});
+
+test("leaving the wizard shows Get started only for a signed-in account with no repository", async () => {
+  for (const listed of [[], [repository(1)]]) {
+    const f = fixture();
+    await f.setup.setupEntry.open();
+    f.repositories(listed);
+    f.wizards[0].exit();
+    await flush();
+    if (listed.length) assert.equal(f.content().children.length, 0);
+    else assert.equal(f.content().children[0], f.created().root);
+  }
+});
+
+test("the wizard's last step opens the repository it made when GitHub's list cannot be read", async () => {
+  const f = fixture();
+  await f.setup.setupEntry.open();
+  const made = repository(5, "new-site");
+  f.setup.wizardCreated = made;
+  f.repositories([repository(1)]);
+  f.fetchWith(async () => { throw new Error("offline"); });
+  f.wizards[0].finish({ id: 5, name: "new-site", defaultBranch: "main" } as Parameters<SetupWizardOptions["finish"]>[0]);
+  await flush();
+  assert.deepEqual(f.loads, [[repository(1), made]]);
 });
 
 test("the wizard's last step opens the repository it made, even before GitHub lists it", async () => {
@@ -430,7 +489,9 @@ test("the checklist reads the drafted home page, the commit and the site name, a
   assert.deepEqual(f.writes, [["settings", { name: "New name" }]]);
   // Start your site is not on show: a home page is there already.
   checklist.start();
-  assert.deepEqual(f.calls, ["refuse:This repository has a home page already."]);
+  // Nothing to save: the publish menu is not there.
+  checklist.save();
+  assert.deepEqual(f.calls, ["refuse:This repository has a home page already.", "refuse:There is nothing to save yet."]);
   f.setup.setupController.dispose();
 });
 
