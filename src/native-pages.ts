@@ -9,6 +9,7 @@
 // folder and URL it gives. It has no DOM and no I/O.
 import { rootRoute, routeAddress } from "../shared/site-path-prefix";
 import { NATIVE_NOT_FOUND_ROUTE, isFolderRoute, nativeRouteFile } from "../shared/native-routes";
+import { pageAddressProblem } from "../shared/site-rules";
 import { routeHeading, type Checked } from "./native-create";
 import { parentRoute } from "./native-page-moves";
 
@@ -187,8 +188,6 @@ export interface NativeTaken {
   exists(path: string): boolean;
 }
 
-const SLUG = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/i;
-
 /**
  * Where a new page named `slug` under the page at `parent` ("/" is the top
  * of the site) goes: `<parent>/<slug>/index.html` at `<parent><slug>/`. A
@@ -197,8 +196,8 @@ const SLUG = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/i;
 export function nativeNewTarget(parent: string, slug: string, taken?: NativeTaken): Checked<NativeNewTarget> {
   const name = slug.trim();
   if (!name) return { ok: false, error: "Enter the page's title." };
-  if (name.length > 80) return { ok: false, error: "That URL is too long; keep it under 80 characters." };
-  if (!SLUG.test(name)) return { ok: false, error: "Use letters, digits and - in the URL, starting and ending with a letter or digit." };
+  const problem = pageAddressProblem(name);
+  if (problem) return { ok: false, error: problem };
   if (!isFolderRoute(parent)) return { ok: false, error: `The page at ${parent} is a single file, so it has no subpages.` };
   if (parent === "/" && (name === "components" || name === "node_modules")) return { ok: false, error: `${rootRoute(name + "/")} is not for pages; choose another URL.` };
   const route = `${parent}${name}/`;

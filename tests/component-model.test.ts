@@ -358,9 +358,9 @@ test("make component refuses <main>, <body>, components and anything inside an i
   };
   assert.match(refused("main") ?? "", /<main> cannot be a component/);
   assert.match(refused("body") ?? "", /<body> cannot be a component/);
-  assert.equal(refused("site-header"), "This is a component already.");
-  assert.equal(refused("site-footer"), "This is a component already.");
-  assert.equal(refused("section-hero"), "This is a component already.");
+  assert.equal(refused("site-header"), "<site-header> is the site's header component already.");
+  assert.equal(refused("site-footer"), "<site-footer> is the site's footer component already.");
+  assert.equal(refused("section-hero"), "<section-hero> is a component already.");
   assert.match(refused("h1") ?? "", /inside the component instance <section-hero>/);
   assert.match(refused("p") ?? "", /inside the component instance <section-hero>/);
   assert.equal(refused("section"), undefined);

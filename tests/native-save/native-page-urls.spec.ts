@@ -126,6 +126,9 @@ test("Page settings URL changes a page's URL: links in pages and the header nav 
   await url.fill("/notes/Bad URL/");
   await expect(message).toHaveText("Use letters, digits, -, _ and . in the URL, with / between parts.");
   await expect(url).toHaveAttribute("aria-invalid", "true");
+  // A new address is strict, with the Pages tab's and the agent's words.
+  await url.fill("/notes/About_Us.v2/");
+  await expect(message).toHaveText("Use lowercase letters, digits and dashes in the URL, at most 80, starting with a letter or digit.");
   await url.fill("/");
   await expect(message).toHaveText("/ is the home page's URL.");
   await url.fill("/404.html");

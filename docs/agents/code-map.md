@@ -46,6 +46,7 @@ Each file is followed by its declared entry symbols. Styles, fixtures, scripts a
 | Concern | Files and entry symbols |
 | --- | --- |
 | Native site conventions and page addresses | `shared/native-project.ts` — `resolveNativeProject`; `shared/native-routes.ts` — `deriveNativeRoutes` |
+| New page addresses and Make component refusals (Pages tab, Change URL, page builder, agent) | `shared/site-rules.ts` — `pageAddressProblem`, `makeComponentProblem` |
 | A file's text now and the new-draft list | `shared/site-overlay.ts` — `effectiveText` (editor, then draft, then GitHub), `newDraftPaths`, `newDrafts`, `isNewDraft` (options in `NewDraftOptions`) |
 | Source spelling and element locations | `shared/html-source.ts` — `startTags`; `src/native-source-location.ts` — `locateNativeElementRange` |
 | Shared source/DOM tree rules | `src/page-builder/rules/tree.ts` — `RuleView`, `domView`; `src/page-builder/rules/movable.ts` — `movableBlock`, `sealed` |

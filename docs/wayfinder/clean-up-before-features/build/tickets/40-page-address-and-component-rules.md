@@ -1,8 +1,8 @@
 ---
 title: "Strict new page addresses and one make_component refusal list"
 type: task (AFK)
-status: open
-assignee: lead-40 (this session)
+status: closed
+assignee: lead-40
 builder: sol
 blocked_by: [32-one-overlay-for-agents-and-media]
 ---
@@ -38,3 +38,10 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `kit shots pages` (the refusal wording in Create page).
 - Review: `kit review --ticket <this ticket>` (GPT-6.1 Sol, medium, read-only). Land: `kit pr --ticket <this ticket>`.
 - Report: shots contact sheet, unit and specs `RESULT:` lines, review folder and decisions, PR and merge SHA, `main.ts` lines and ceiling if changed.
+
+## Done (2026-10-24)
+
+- `shared/site-rules.ts`: `pageAddressProblem(slug)` (lowercase letters, digits and dashes, at most 80, starting with a letter or digit; one wording: "Use lowercase letters, digits and dashes in the URL, at most 80, starting with a letter or digit.") and `makeComponentProblem(source, tag, taken)` (the name first: `componentTagProblem`; then the element: `componentSourceProblem`). One row in `docs/agents/code-map.md`.
+- Pages tab and card page offers (`nativeNewTarget`), Change URL (`planPageMove`) and the agent's `create_page` (`worker/mcp.ts`, `shared/agent-edit.ts`) refuse `About_Us.v2` with those words. Change URL checks only new parts: the page's own last part when it changes, and folders not yet in the site; a page at an old address still opens, saves, moves under another page with its name and can be renamed to a strict address. `main.ts` is unchanged.
+- make_component: the agent's checks (`worker/mcp.ts`, `shared/agent-edit.ts`) and the tab's (`tagNameProblem`, `makeComponentPlan`) use the same rule, so a bad name, a taken name, `<main>`/`<body>`, the site header or footer and other components get the same words everywhere ("<x> is a component already." replaces "This is a component already."; the agent's "not a valid custom-element name" becomes the tab's detailed name words).
+- Tests: new `tests/site-rules.test.ts`; `native-pages`, `native-page-moves` (strict new parts, old address kept on move, rename to strict), `mcp-runtime` (create_page slug, make_component words), `component-model`, `card-page-offer`; specs `native-create` (New page URL field) and `native-page-urls` (Change URL field) type `About_Us.v2`.

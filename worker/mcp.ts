@@ -32,7 +32,7 @@ import { HttpError } from "./github";
 import { writablePathProblem } from "./site-files";
 import { siteConventions, siteInstructions } from "./site-conventions";
 import { editorOrigin } from "./owner-setup";
-import { isNativeComponentTag } from "../shared/native-project";
+import { makeComponentProblem, pageAddressProblem } from "../shared/site-rules";
 import { checkContent, type AgentEdit, type AgentEditArgsMap, type AgentEditTool } from "../shared/agent-edit";
 import { AgentRelay, relayObjectName } from "./agent-relay";
 import type { AgentRead, AgentReadResult } from "../shared/agent-read";
@@ -412,15 +412,17 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
         parent: z.string().max(1024).optional().describe('The URL of the page it goes under, a folder page such as "/work/" (default "/", the top of the site).'),
         slug: z
           .string()
-          .regex(/^[a-z0-9][a-z0-9-]{0,79}$/)
+          .max(200)
           .optional()
-          .describe("The last part of its URL (default: made from the title)."),
+          .describe("The last part of its URL: lowercase letters, digits and dashes, at most 80, starting with a letter or digit (default: made from the title)."),
         requestId,
         waitSeconds,
       }),
       annotations: editing,
     },
     async ({ title, parent, slug, requestId, waitSeconds }) => {
+      const problem = slug === undefined ? undefined : pageAddressProblem(slug);
+      if (problem) return failure(problem);
       return edit("create_page", { title, parent, slug }, requestId, waitSeconds);
     },
   );
@@ -659,7 +661,8 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     },
     async ({ page: ref, element, tag, fixed, expectedHash, requestId, waitSeconds }) => {
       if (!parseOutlineId(element)) return failure(`${element} is not an element id; get_page lists them.`);
-      if (!isNativeComponentTag(tag)) return failure(`<${tag}> is not a valid custom-element name.`);
+      const problem = makeComponentProblem(undefined, tag, []);
+      if (problem) return failure(problem);
       return edit("make_component", { page: ref, element, tag, fixed, expectedHash }, requestId, waitSeconds);
     },
   );
