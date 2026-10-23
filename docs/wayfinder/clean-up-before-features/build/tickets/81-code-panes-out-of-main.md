@@ -2,7 +2,7 @@
 title: "Code panes leave main.ts: linked styles, secondary pane, openEntry, mountSource"
 type: task (AFK)
 status: open
-assignee:
+assignee: lead-81 (this session)
 builder: sol
 blocked_by: [80-version-and-history-out-of-main]
 ---
