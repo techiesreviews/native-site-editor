@@ -1,8 +1,8 @@
 ---
 title: "Login, setup checklist, wizard and Get started leave main.ts"
 type: task (AFK)
-status: open
-assignee: lead-82 (this session)
+status: closed
+assignee: lead-82
 builder: sol
 blocked_by: [25-boot-and-snapshot]
 ---
@@ -34,3 +34,14 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `kit unit --affected`, `kit specs --affected`, `kit size`.
 - Review: `kit review --ticket <this ticket>` (GPT-6.1 Sol, medium, read-only). Land: `kit pr --ticket <this ticket>`.
 - Report: unit and specs `RESULT:` lines, `kit size` delta, review folder and decisions, PR and merge SHA, `main.ts` lines before and after and the new ceiling.
+
+## Done (2026-10-23)
+
+- Login and setup moved from `src/main.ts` into `src/setup-host.ts` (`createSetupHost`): the login card (`renderLogin`, `EDITOR_HOME`, `EDITOR_LOGIN`), Start your site (`startSitePanel`), the Setup checklist (`setupController`, `setupState`), the Setup wizard (`wizardConnection`, `setupEntry`, `finishWizard`, `wizardCreated`), the partial start (`rememberPartialStart`, `readPartialStart`, `forgetPartialStart`, `offerFinishStarter`, `removeFinishStarter`), Get started (`showGetStarted`, `checkNewRepositories`, `waitingForRepositories`, `rememberRepositories`, `knownRepositories`), the Get started starting point (`rememberStartingPoint`, `takeStartingPoint`) and the setup-action wrappers (`createSiteInWizard`, `findWizardRepository`, `wizardPreview`, `createSite`, `writeSiteSettings`, `writeStartingPoint`). `main.ts` keeps one construction call (`setup`), destructures what its other code calls, and keeps `setupScope`, the focus and visibility listeners, and `newDraftPaths` (its only caller is file creation).
+- Bodies are the old ones with `ports.` prefixes. Other changes: `renderLogin`'s workspace teardown stays in `main.ts` as `closeWorkspace` (same lines, same order), which `renderLogin` calls first; `renderLogin` reads `info` once into a local; `errorMessage` is wrapped in arrows (lint's unbound-method); the checklist's `scope`, `loadChecklist` and `loadSpotlight` are arrows; `loadSetupActions` and `loadRepositories` read `setup.wizardCreated` and `setup.waitingForRepositories`; two orphaned comments (Create a site, the site's name) now sit above `createSite` and `writeSiteSettings`.
+- Ports are live: session info, repositories, content, the repository menu, `nativeEngaged`, the loaded agent prompts and onboarding copy, `boot` and `agentController` are getters. The lazy loaders stay in `main.ts`; `setup-host.ts` imports the wizard, Get started, Start your site, checklist, setup actions, agent prompts and onboarding copy as types only.
+- No visible change.
+- Tests: `tests/setup-host.test.ts` (18 tests): the login page closes the workspace first; loading, automatic, error, configured, owner-setup (wizard only when ready) and unconfigured cards; partial start kept by account and repository, damaged records ignored; a Get started starting point taken once, in any case; known repositories by account; Get started shows and waits, and is dropped when the page, account or repositories moved on; coming back lists new repositories only while waiting; the wizard's last step opens a repository GitHub does not list yet; starting-point writes refused when the session or snapshot moved while the actions loaded; Finish adding writes, says why it failed, and removes itself once left behind; the checklist's state (home draft, commit, site name) and its name save and Start refusal; Start your site copies the agent prompt; the lazy modules stay type-only imports. `tests/workspace-session-guard.test.ts`: the `offerFinishStarter` allowlist entry now names `src/setup-host.ts`.
+- `main.ts` 5134 → 4803 lines (−331), ceiling 5140 → 4810; `docs/agents/code-map.md` ranges re-measured and the Login row names `src/setup-host.ts`.
+
+- Evidence: `RESULT: ok unit 23/23 (2 files)` (`kit unit --affected`), `RESULT: ok specs 87/87 passed` (`kit specs --affected`, setup checklist, setup wizard, startup and static starter specs among them), `RESULT: ok size boot 344 KB (±0 KB) vs dev@e881491, budget 355 KB`; `npm run check` and `npm run lint` green; `npm test` 5125/5125.
