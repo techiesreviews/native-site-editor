@@ -47,9 +47,11 @@ const placeholder = "00000000-0000-0000-0000-000000000000";
 const failure = (code: FailureCode, outcome: "unknown" | "not-sent" = "not-sent"): Outcome => ({ ok: false, code, outcome });
 /** A call lost before it reached the browser was never sent; after, its outcome is unknown. */
 const lost = (call: { unsent?: unknown }) => call.unsent === undefined ? failure("unknown-outcome", "unknown") : failure("editor-unavailable");
-/** Ticket 18: a wait_for_requests the tab may hold while the user's Watch is on. It gets its own total
- * deadline of 10–25 s (the agent's waitMs; the tab answers at once without Watch) and one per workspace. */
+/** A wait_for_requests the tab holds until a request arrives. It gets its own total deadline of
+ * 10–25 s (the agent's waitMs). Several agents may share one connection, each with its watchdog
+ * waiting: at most WAITS_PER_SITE waits per workspace, leaving pending slots for their edits. */
 export const WAIT_LIMIT_MS = 25_000;
+export const WAITS_PER_SITE = 3;
 function waitBudget(command: JsonValue): number | undefined {
   if (!command || typeof command !== "object" || Array.isArray(command) || command.operation !== "requests" || command.tool !== "wait_for_requests") return undefined;
   const wanted = typeof command.waitMs === "number" && Number.isFinite(command.waitMs) ? command.waitMs : WAIT_LIMIT_MS;
@@ -122,8 +124,8 @@ export class AgentRelay {
   private workspace: string | undefined;
   private calls = new Map<string, Pending>();
   private buffered = 0;
-  /** The workspace's one outstanding wait (ticket 18), in memory only. */
-  private waitId: string | undefined;
+  /** The workspace's outstanding waits, in memory only. */
+  private waitIds = new Set<string>();
   private reserved = { count: 0, bytes: 0 };
   private intakes = new Map<{ cancelled: boolean; stop: AbortController }, RelayCancelKey>();
   /** Brief cancellation memory only; lazy expiry leaves idle hibernation possible. */
@@ -188,7 +190,8 @@ export class AgentRelay {
   private cleaned = new Set<string>();
   refuse(ids: string[]) { for (const id of ids) this.cleaned.add(id); }
   get pendingCount() { return this.calls.size; }
-  get waiting() { return this.waitId !== undefined; }
+  get waiting() { return this.waitIds.size > 0; }
+  get waits() { return this.waitIds.size; }
   get reservedCount() { return this.reserved.count; }
 
   /** Holds a pending slot and `length` bytes while a dispatch body is still
@@ -266,7 +269,7 @@ export class AgentRelay {
     const [receiver, receiverMetadata] = entry;
     if (this.calls.size + this.reserved.count >= 5) return Promise.resolve(failure("busy"));
     const wait = waitBudget(command);
-    if (wait !== undefined && this.waitId !== undefined) return Promise.resolve(failure("waiting"));
+    if (wait !== undefined && this.waitIds.size >= WAITS_PER_SITE) return Promise.resolve(failure("waiting"));
     // Measure the complete wire envelope before allocating a correlation id,
     // promise, pending entry or timer. UUIDs have the placeholder's fixed width.
     // remainingMs is filled in at each send (at most 5 digits, measured at its widest): the tab fences
@@ -283,7 +286,7 @@ export class AgentRelay {
       const cancel = () => call.finish(failure("cancelled", call.unsent === undefined ? "unknown" : "not-sent"));
       const call: Pending = { cancelKey, socket: receiver, scope, bytes: length, deadline, timer: undefined, finish: outcome => {
         if (!this.calls.delete(id)) return;
-        if (this.waitId === id) this.waitId = undefined;
+        this.waitIds.delete(id);
         this.buffered -= length;
         const sent = call.unsent === undefined;
         call.unsent = undefined;
@@ -296,7 +299,7 @@ export class AgentRelay {
         }
       } };
       this.calls.set(id, call);
-      if (wait !== undefined) this.waitId = id;
+      if (wait !== undefined) this.waitIds.add(id);
       this.buffered += length;
       const now = this.clock.now();
       call.timer = this.clock.setTimeout(() => call.finish(failure("timeout", call.unsent === undefined ? "unknown" : "not-sent")), deadline - now);

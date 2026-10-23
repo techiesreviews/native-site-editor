@@ -23,7 +23,7 @@ export function agentControls(env: AgentControlEnv) {
 }
 
 export const AGENTS_PAUSED = "Remote agents are paused by the site owner.";
-export const WATCH_PAUSED = "Watch is paused by the site owner. Agents still get requests when they ask.";
+export const WATCH_PAUSED = "Waiting for requests is paused by the site owner. Agents still get requests when they ask.";
 
 export function agentsPaused(headers: Record<string, string> = {}) {
   return Response.json({ error: AGENTS_PAUSED, code: "agents-paused" }, {

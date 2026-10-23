@@ -141,7 +141,7 @@ export function requestOperation(list: AgentRequest[], action: any): { list: Age
 }
 
 /** The request tools as one relay command to the receiving tab. `waitMs` (wait only) is
- * how long the agent will wait; the tab holds it only while the user's Watch is on. */
+ * how long the agent will wait (0 answers at once); the tab holds it until a request arrives. */
 export type AgentRequestTool = "wait_for_requests" | "reply_to_request" | "get_request";
 export interface AgentRequests {
   operation: "requests";
@@ -152,5 +152,3 @@ export interface AgentRequests {
   waitMs?: number;
 }
 export const requestTools: readonly AgentRequestTool[] = ["wait_for_requests", "reply_to_request", "get_request"];
-/** What the tab says about Watch with each wait: off, on (until, waits left), or paused (ended or used up). */
-export type WatchReport = { state: "off" } | { state: "on"; until: number; waitsLeft: number } | { state: "paused"; reason: "ended" | "used"; at: number };

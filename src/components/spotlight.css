@@ -129,7 +129,7 @@
   }
 }
 
-/* The Connect with MCP entry the spotlight's "Show me" lights up in the project menu. */
+/* The Connect to MCP entry the spotlight's "Show me" lights up in the project menu. */
 .agent-menu__action.is-spotlit {
   outline: 2px solid var(--color-warning);
   outline-offset: -2px;

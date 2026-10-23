@@ -58,7 +58,7 @@ async function refresh(page: Page) {
 async function connectAgent(page: Page, baseURL: string | undefined) {
   await page.locator(".repository-menu__trigger").click();
   const { url, token } = await copyConnectionPrompt(page);
-  await expect(page.getByRole("button", { name: "Waiting for connection…", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Wait for MCP", exact: true })).toBeVisible();
   expect(url).toBe(`${baseURL}/mcp`);
   const client = new Client({ name: "playwright-agent", version: "1.0.0" });
   await client.connect(new StreamableHTTPClientTransport(new URL(url), { requestInit: { headers: { Authorization: `Bearer ${token}` } } }));

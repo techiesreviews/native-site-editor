@@ -450,7 +450,7 @@ export async function authenticateAgent(
   if (!token)
     throw new HttpError(
       401,
-      "Connect with OAuth, or supply the MCP token from the editor's Connect with MCP prompt.",
+      "Connect with OAuth, or supply the MCP token from the editor's Connect to MCP prompt.",
     );
   const id = await tokenId(token);
   const grant = await getGrant(env, id);

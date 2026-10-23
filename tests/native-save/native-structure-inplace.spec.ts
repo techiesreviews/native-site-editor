@@ -226,7 +226,7 @@ test("Undo pressed while typing ends the edit and the page shows the undone text
 async function connectAgent(page: Page, baseURL: string | undefined) {
   await page.locator(".repository-menu__trigger").click();
   const connected = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST");
-  await page.getByRole("button", { name: "Connect with MCP", exact: true }).click();
+  await page.getByRole("button", { name: "Connect to MCP", exact: true }).click();
   const { token } = await (await connected).json() as { token: string };
   const client = new Client({ name: "structure-typing-spec", version: "1" });
   await client.connect(new StreamableHTTPClientTransport(new URL(`${baseURL}/mcp`), {

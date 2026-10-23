@@ -1,7 +1,7 @@
 import { expect, type Page } from "@playwright/test";
 
 /**
- * Chooses Connect with MCP (the project menu is open) and returns the prompt it copies, with
+ * Chooses Connect to MCP (the project menu is open) and returns the prompt it copies, with
  * the server address and token in it. The browser contexts of one Playwright worker share the
  * clipboard, so the prompt an earlier test copied can still be there while this tab makes its
  * token: wait for the prompt holding the token this click made (the `/api/agent/connect`
@@ -10,7 +10,7 @@ import { expect, type Page } from "@playwright/test";
 export async function copyConnectionPrompt(page: Page) {
   const made = page.waitForResponse((response) =>
     new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST");
-  await page.getByRole("button", { name: "Connect with MCP", exact: true }).click();
+  await page.getByRole("button", { name: "Connect to MCP", exact: true }).click();
   const answer = await made;
   expect(answer.ok()).toBe(true);
   const { token } = (await answer.json()) as { token: string };

@@ -31,7 +31,7 @@ import { MEDIA_RECORDS_REFUSED } from "../shared/protected-paths.ts";
 import { editorTab, files, origin, payload, repo, signIn, siteContext, startWorker, workerFetch } from "./mcp-harness.ts";
 import { memoryUploadBytes, uploadKey } from "../src/uploads";
 
-import { agentWatch, createRequestTools } from "../src/agent-watch";
+import { createRequestTools } from "../src/agent-watch";
 import type { AgentRequest } from "../shared/agent";
 import { GitHub } from "../worker/github";
 import type { EditorContext, Snapshot } from "../shared/types";
@@ -81,8 +81,7 @@ async function receivingTab(worker: Awaited<ReturnType<typeof startWorker>>["wor
   const reads = createAgentReadTools(ports), edits = createAgentEditTools({ workspace, ports, records, run });
   const media = createAgentMediaTools({ workspace, ports, records, run });
   const conversations = new Map<string, AgentRequest>();
-  const watch = agentWatch(workspace, { getItem: () => null, setItem: () => {} });
-  const requests = createRequestTools({ workspace, watch, list: async () => structuredClone([...conversations.values()]),
+  const requests = createRequestTools({ workspace, list: async () => structuredClone([...conversations.values()]),
     save: async (request, accept) => { if (!accept(conversations.get(request.id))) return false; conversations.set(request.id, request); return true; } });
   let socket: Awaited<ReturnType<typeof worker.dispatchFetch>>["webSocket"];
   return {
@@ -759,26 +758,28 @@ test("browser requests reach MCP over the runtime socket, keep threads, and neve
       requestInit: { headers: { Authorization: `Bearer ${token}` } }, fetch: workerFetch(worker),
     }));
     const call = (name: string, args: Record<string, unknown> = {}) => client!.callTool({ name, arguments: args });
-    const empty = payload(await call("wait_for_requests"));
+    // waitSeconds 0: answered at once (a watchdog's default 25 s hold is pinned in agent-watch.test.ts).
+    const quick = { waitSeconds: 0 };
+    const empty = payload(await call("wait_for_requests", quick));
     assert.deepEqual(empty.requests, []);
-    assert.match(empty.hint, /Do not call wait_for_requests again on your own/);
+    assert.match(empty.hint, /Call wait_for_requests again now/);
     const element = { file: "index.html", id: "1.0.0", tag: "h1", text: "Welcome", html: "<h1>Welcome</h1>" };
     const asked: AgentRequest = { id: "req-runtime", text: "Make this friendlier", createdAt: Date.now(), repoId: repo.id,
       repository: repo.full_name, branch: "main", state: "open", element, thread: [{ from: "user", text: "Make this friendlier", at: Date.now() }] };
     tab.conversations.set(asked.id, asked);
-    const taken = payload(await call("wait_for_requests"));
+    const taken = payload(await call("wait_for_requests", quick));
     assert.equal(taken.requests[0].id, asked.id);
     assert.deepEqual(taken.requests[0].element, element);
     assert.equal(tab.conversations.get(asked.id)!.state, "seen");
-    assert.deepEqual(payload(await call("wait_for_requests")).requests, []);
-    assert.equal(payload(await call("wait_for_requests", { all: true })).requests.length, 1);
+    assert.deepEqual(payload(await call("wait_for_requests", quick)).requests, []);
+    assert.equal(payload(await call("wait_for_requests", { all: true, ...quick })).requests.length, 1);
     assert.equal(payload(await call("get_selection", { request: asked.id })).text, asked.text);
     assert.equal(payload(await call("reply_to_request", { request: asked.id, status: "question", message: "Which tone?" })).state, "question");
     const answered = requestOperation([...tab.conversations.values()], { type: "answer", id: asked.id, text: "Warm" });
     tab.conversations.set(asked.id, answered.list[0]);
-    assert.equal(payload(await call("wait_for_requests")).requests[0].thread.at(-1).text, "Warm");
+    assert.equal(payload(await call("wait_for_requests", quick)).requests[0].thread.at(-1).text, "Warm");
     assert.equal(payload(await call("reply_to_request", { request: asked.id, status: "done", message: "Updated." })).state, "done");
-    assert.deepEqual(payload(await call("wait_for_requests", { all: true })).requests, []);
+    assert.deepEqual(payload(await call("wait_for_requests", { all: true, ...quick })).requests, []);
     assert.equal((await tab.post("/api/agent/ask", { text: "obsolete" })).status, 410);
     assert.equal(github.writes, 0);
   } finally { await client?.close(); await worker.dispose(); }

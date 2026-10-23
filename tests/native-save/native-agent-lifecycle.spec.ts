@@ -22,7 +22,7 @@ async function open(page: Page, baseURL: string | undefined) {
 }
 async function enable(page: Page) {
   await page.locator(".repository-menu__trigger").click();
-  await page.getByRole("button", { name: "Connect with MCP", exact: true }).click();
+  await page.getByRole("button", { name: "Connect to MCP", exact: true }).click();
 }
 async function connect(page: Page, baseURL: string | undefined) {
   const traffic = frames(page);
@@ -74,7 +74,7 @@ async function holdCommit(page: Page) {
 }
 const releaseCommit = (page: Page) => page.evaluate(() => (window as Window & { releaseAgentCommit?: () => void }).releaseAgentCommit?.());
 
-test("two tabs: explicit takeover raises generation; old owner is taken over and drafts survive", async ({ page, context, baseURL }) => {
+test("two tabs: the other tab offers Disconnect MCP with no tab text; when the owner closes it takes over with a higher generation and the drafts survive", async ({ page, context, baseURL }) => {
   const h = await connect(page, baseURL), second = await context.newPage(), traffic = frames(second);
   try {
     await page.keyboard.press("Escape");
@@ -82,15 +82,14 @@ test("two tabs: explicit takeover raises generation; old owner is taken over and
     expect((await h.call("edit_file", { path: "index.html", expectedHash: read.hash, edits: [{ oldText: "A native browser preview", newText: "Kept on takeover" }], requestId: "lifecycle-kept" })).state).toBe("applied");
     const before = await durable(page);
     await open(second, baseURL); await second.locator(".repository-menu__trigger").click();
-    await expect(second.locator(".agent-menu__hint")).toContainText("Another tab");
-    await expect(second.getByRole("button", { name: "Take over", exact: true })).toBeVisible();
+    await expect(second.locator(".agent-menu")).toHaveAttribute("data-state", "other-owner");
+    await expect(second.locator(".agent-menu__action")).toHaveText("Disconnect MCP");
     expect(traffic.ready()).toHaveLength(0);
-    await second.getByRole("button", { name: "Take over", exact: true }).click();
+    await page.close();
     await expect.poll(() => traffic.ready().length).toBe(1);
     expect(traffic.ready()[0].generation!).toBeGreaterThan(h.traffic.ready()[0].generation!);
     await expect(heading(second)).toHaveText("Kept on takeover");
-    await page.locator(".repository-menu__trigger").click();
-    await expect(page.locator(".agent-menu__hint")).toContainText("Another tab took over");
+    await expect(second.locator(".agent-menu")).toHaveAttribute("data-state", "connected");
     expect(await durable(second)).toEqual(before);
     expect((await second.request.get(`${baseURL}/api/session`)).ok()).toBe(true);
   } finally { await h.client.close(); await second.close(); }
@@ -101,11 +100,11 @@ test("owner close: the other tab with agents on takes over by itself, with no Ta
   try {
     // Remote agents are remembered on for this site: the new tab comes back with them on.
     await open(second, baseURL); await second.locator(".repository-menu__trigger").click();
-    await expect(second.locator(".agent-menu__hint")).toContainText("Another tab");
+    await expect(second.locator(".agent-menu")).toHaveAttribute("data-state", "other-owner");
     expect(traffic.ready()).toHaveLength(0);
     await page.close();
     await expect.poll(() => traffic.ready().length, "the remaining tab receives without a click").toBe(1);
-    await expect(second.locator(".agent-menu__hint")).not.toContainText(/Another tab|receiving tab closed/);
+    await expect(second.locator(".agent-menu")).toHaveAttribute("data-state", "connected");
     expect(traffic.ready()[0].generation!).toBeGreaterThan(h.traffic.ready()[0].generation!);
     expect((await h.call("read_file", { path: "index.html" })).content).toContain("A native browser preview");
   } finally { await h.client.close(); await second.close(); }
@@ -254,8 +253,9 @@ test("a held connections check on resume: a site switch meanwhile opens no socke
     await expect(page.locator("#status")).toContainText("Up to date with feature", { timeout: 30_000 });
     await gate.release();
     await page.locator(".repository-menu__trigger").click();
-    // Agents stay pinned to main, offered here by Move agents here; the stale check changed nothing.
+    // Agents stay pinned to main (the button offers Connect to MCP for this site); the stale check changed nothing.
     await expect(page.locator(".agent-menu")).toHaveAttribute("data-state", "workspace-changed");
+    await expect(page.locator(".agent-menu__action")).toHaveText("Connect to MCP");
     expect(await remembered(page, "main", "feature")).toEqual(["1", null]);
     expect(h.traffic.ready(), "no socket for the stale check").toHaveLength(1);
   } finally { await h.client.close(); }
@@ -295,7 +295,9 @@ test("switching onto a remembered site while the first check is held, with agent
     await expect(page.locator("#status")).toContainText("Up to date with feature", { timeout: 30_000 });
     await gate.release();
     await page.locator(".repository-menu__trigger").click();
-    await expect(page.locator(".agent-menu__hint")).toHaveText("Remote agents are paused by the site owner.");
+    // Paused: the dot shows it and the button offers Connect to MCP, with no text.
+    await expect(page.locator(".agent-menu")).toHaveAttribute("data-state", "paused");
+    await expect(page.locator(".agent-menu__action")).toHaveText("Connect to MCP");
     expect(await remembered(page, "main", "feature")).toEqual(["1", "1"]);
     expect(h.traffic.ready(), "no socket while paused").toHaveLength(1);
   } finally {
@@ -328,7 +330,7 @@ test("Disconnect in another tab: this tab turns off at once, never takes over, a
   const h = await connect(page, baseURL), second = await context.newPage(), traffic = frames(second);
   try {
     await open(second, baseURL); await second.locator(".repository-menu__trigger").click();
-    await expect(second.locator(".agent-menu__hint")).toContainText("Another tab");
+    await expect(second.locator(".agent-menu")).toHaveAttribute("data-state", "other-owner");
     await second.keyboard.press("Escape");
     // The agent has used its connection, so the first tab offers Disconnect.
     expect((await h.call("read_file", { path: "index.html" })).content).toContain("A native browser preview");
@@ -354,36 +356,22 @@ test("Disconnect in another tab: this tab turns off at once, never takes over, a
   } finally { await h.client.close(); await second.close(); }
 });
 
-test("Move agents here: the new branch comes back on after a reload and the old one comes back off", async ({ page, context, baseURL }) => {
+test("another site shown in the tab: Connect to MCP makes this site's own connection; the first site stays remembered", async ({ page, baseURL }) => {
   const h = await connect(page, baseURL);
   try {
     expect((await h.call("read_file", { path: "index.html" })).content).toContain("A native browser preview");
-    // The menu learns the agent used its token when the tab is next focused; only used connections move.
-    await expect.poll(async () => {
-      await page.evaluate(() => window.dispatchEvent(new Event("focus")));
-      return page.locator(".agent-menu").getAttribute("data-state");
-    }, { timeout: 15_000 }).toBe("connected");
     await featureBranch(page, baseURL);
     await page.evaluate(() => { location.hash = "#repo=501&branch=feature&file=index.html"; });
     await expect(page.locator("#status")).toContainText("Up to date with feature", { timeout: 30_000 });
     await page.locator(".repository-menu__trigger").click();
-    await page.getByRole("button", { name: "Move agents here", exact: true }).click();
-    await expect.poll(() => h.traffic.ready().length).toBe(2);
-    expect(await remembered(page, "main", "feature")).toEqual([null, "1"]);
-    await page.reload();
-    await expect(page.locator("#status")).toContainText("Up to date with feature", { timeout: 30_000 });
-    await expect.poll(() => h.traffic.ready().length).toBe(3);
-    await expect(page.locator(".agent-menu")).toHaveAttribute("data-state", "connected");
-    expect((await h.call("read_file", { path: "index.html" })).content).toBeTruthy();
-    const old = await context.newPage();
-    try {
-      let sockets = 0;
-      old.on("websocket", socket => { if (socket.url().includes("/api/agent/relay?")) sockets++; });
-      await open(old, baseURL);
-      await old.locator(".repository-menu__trigger").click();
-      await expect(old.locator(".agent-menu")).toHaveAttribute("data-state", "off");
-      expect(sockets, "the old branch opens no socket").toBe(0);
-    } finally { await old.close(); }
+    await expect(page.locator(".agent-menu")).toHaveAttribute("data-state", "workspace-changed");
+    await expect(page.locator(".agent-menu__action")).toHaveText("Connect to MCP");
+    const made = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect");
+    await page.getByRole("button", { name: "Connect to MCP", exact: true }).click();
+    const body = await (await made).json() as { token: string };
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain(`Bearer ${body.token}`);
+    await expect(page.locator(".agent-menu")).toHaveAttribute("data-state", "waiting");
+    expect(await remembered(page, "main", "feature")).toEqual(["1", "1"]);
   } finally { await h.client.close(); }
 });
 
@@ -418,26 +406,6 @@ test("freeze/resume (document lifecycle events): a frozen owner keeps its socket
     expect(h.traffic.ready()).toHaveLength(1);
     expect(await durable(page)).toEqual(before);
   } finally { await h.client.close(); }
-});
-
-test("takeover while the owner is frozen: on resume the old owner says taken over and never commits", async ({ page, context, baseURL }) => {
-  const h = await connect(page, baseURL), second = await context.newPage(), traffic = frames(second);
-  try {
-    await page.keyboard.press("Escape");
-    // Remembered on for this site: the new tab comes back with agents on.
-    await open(second, baseURL); await second.locator(".repository-menu__trigger").click();
-    await expect(second.getByRole("button", { name: "Take over", exact: true })).toBeVisible();
-    await lifecycle(page, "freeze");
-    await second.getByRole("button", { name: "Take over", exact: true }).click();
-    await expect.poll(() => traffic.ready().length).toBe(1);
-    expect(traffic.ready()[0].generation!).toBeGreaterThan(h.traffic.ready()[0].generation!);
-    expect((await h.call("write_file", { path: "frozen.txt", content: "New owner", requestId: "frozen-takeover" })).state).toBe("applied");
-    await lifecycle(page, "resume");
-    await page.locator(".repository-menu__trigger").click();
-    await expect(page.locator(".agent-menu__hint")).toContainText("Another tab took over");
-    expect(h.traffic.commands()).toHaveLength(0);
-    expect(traffic.commands().filter(frame => frame.command?.id === "frozen-takeover")).toHaveLength(1);
-  } finally { await h.client.close(); await second.close(); }
 });
 
 test("discarded owner page: a fresh page recovers drafts and receipts from IndexedDB; nothing is replayed", async ({ page, context, baseURL }) => {

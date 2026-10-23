@@ -49,16 +49,13 @@ Your changes appear in my editor as unsaved drafts; I review them and save them 
 
 /**
  * What to paste into an agent so it talks to the editor over a temporary,
- * direct connection (curl, no MCP configuration), then takes the waiting requests
- * once (quiet: no loop; only the user's Watch keeps it waiting) or does `task`.
- * The server is stateless and answers in JSON, so each
- * JSON-RPC message is one POST.
+ * direct connection (curl, no MCP configuration). A "watchdog" subagent keeps
+ * waiting for the user's requests and hands each to the main thread, until
+ * Disconnect MCP ends the connection; `task` is done first. The server is
+ * stateless and answers in JSON, so each JSON-RPC message is one POST.
  */
 export function connectionPrompt(url: string, token: string, repo: string, task?: string) {
   const code = (text: string) => `\`${text}\``;
-  const work = task
-    ? `Then: ${task}`
-    : `Then call ${code("wait_for_requests")} once. Make each requested change as an unsaved editor draft and answer it through ${code("reply_to_request")}: done when you made the change, answered when you replied without changing the site, question (at most 60 characters) when you need my input. When it returns no requests, tell me you are ready and stop: do not call it again on your own and do not run it in a loop. I ask you to continue when I send a request from the editor. Only when its answer says my Watch is on (I turn it on in the editor's agent menu, for at most 10 minutes) call it again right away, as its hint says. Follow whichever site I open.`;
   return `Connect to Native Site Editor for this conversation using a temporary, direct MCP connection over streamable HTTP, so you can help me edit my site ${repo}.
 
 Server: ${code(url)}
@@ -67,9 +64,11 @@ Authorization: ${code(`Bearer ${token}`)}
 
 **Use curl to send MCP JSON-RPC requests. Do not modify MCP configuration, install anything, create helper files, or restart yourself.** Keep the token in memory; never save it or repeat it in responses. Curl works; Python's default HTTP client receives Cloudflare Error 1010.
 
-Send each JSON-RPC message as its own POST with the headers ${code("Authorization")}, ${code("Content-Type: application/json")} and ${code("Accept: application/json, text/event-stream")}; the response body is the JSON-RPC result. The server is stateless, so there is no session id to keep. Start with ${code("initialize")} (protocolVersion "2025-11-25"), then use ${code("tools/call")}, ${code("prompts/get")} and ${code("resources/read")}. Give curl a timeout of at least 40 seconds: while my Watch is on, wait_for_requests holds the request open for up to waitSeconds (at most 25).
+Send each JSON-RPC message as its own POST with the headers ${code("Authorization")}, ${code("Content-Type: application/json")} and ${code("Accept: application/json, text/event-stream")}; the response body is the JSON-RPC result. Start with ${code("initialize")} (protocolVersion "2025-11-25"), then use ${code("tools/call")}. Give curl a timeout of at least 40 seconds.
 
-Initialize the MCP connection, call ${code("get_site")}, and read the ${code("watch_editor")} prompt. ${work}
+1. Initialize the MCP connection and call ${code("get_site")}.
+2. Start a "watchdog" subagent that keeps calling ${code("wait_for_requests")} (each call waits up to 25 seconds) and reports each request it returns back to you, the main thread. Give it the server and token in its instructions only.${task ? `\n3. ${task}` : ""}
+${task ? 4 : 3}. For each request the watchdog reports, make the change as an unsaved editor draft and answer it with ${code("reply_to_request")}: done when you made the change, answered when you replied without changing the site, question (at most 60 characters) when you need my input.
 
-When stopped, terminate pending requests (answer each request you took but did not finish with reply_to_request, status answered, saying you stopped) and discard the temporary connection credentials. The token also stops working when I choose Disconnect MCP or sign out of the editor (at most eight hours).`;
+Everything stops when I choose Disconnect MCP: calls then fail with 401, so stop the watchdog and discard the token. If you stop before that, first answer each request you took but did not finish with reply_to_request (status answered, saying you stopped). The token also stops working when I sign out of the editor (at most eight hours).`;
 }

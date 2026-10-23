@@ -10,7 +10,7 @@ import { agentControls, agentsPaused } from "./agent-controls";
 //
 // The authorize step is the editor's own GitHub sign-in: a signed-in session
 // (or a sign-in that returns here) picks a starting repository on a consent page,
-// and the token issued is the same kind of connection "Connect with MCP"
+// and the token issued is the same kind of connection "Connect to MCP"
 // copies: one editor session, pinned to the chosen repository and branch, stored only as a hash,
 // revoked with the session or from the editor. There are no refresh tokens:
 // a connection lasts as long as the editor session (up to eight hours), then

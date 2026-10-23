@@ -34,7 +34,7 @@ async function connectAgent(page: Page, storageOff = false) {
     const response = await page.request.post("/api/agent/connect", { headers: { Origin: new URL(page.url()).origin }, data: { repo: "native-demo-user/native-demo", repoId: 501, branch: "main" } });
     expect(response.ok()).toBe(true);
     const { token } = await response.json() as { token: string };
-    await page.getByRole("button", { name: "Connect with MCP", exact: true }).click();
+    await page.getByRole("button", { name: "Connect to MCP", exact: true }).click();
     return { url: new URL("/mcp", page.url()).href, token };
   })() : await copyConnectionPrompt(page);
   const client = new Client({ name: "playwright-agent", version: "1.0.0" });
@@ -62,9 +62,10 @@ async function fillStorage(page: Page, full: boolean) {
     } : put;
   }, full);
 }
-const alert = (page: Page) => page.locator(".agent-menu__storage");
+// The menu's one exception to having no text: Download unsaved changes, while this browser cannot keep agent edits.
+const downloadButton = (page: Page) => page.getByRole("button", { name: "Download unsaved changes", exact: true });
 
-test("full storage: the agent edit is refused, agent edits stop with a plain error, and the unsaved changes download", async ({ page, baseURL }) => {
+test("full storage: the agent edit is refused, agent edits stop with a plain error, and the unsaved changes download; the download lets agents try again", async ({ page, baseURL }) => {
   await open(page, baseURL);
   const { client, call } = await connectAgent(page);
   try {
@@ -102,11 +103,10 @@ test("full storage: the agent edit is refused, agent edits stop with a plain err
     await expect(frame(page).locator(".hero h1")).toHaveText("A native browser preview");
 
     await page.locator(".repository-menu__trigger").click();
-    await expect(alert(page)).toBeVisible();
-    await expect(alert(page)).toContainText("Agent edits are stopped: this browser's storage is full");
-    await expect(alert(page)).toContainText("Download them to keep a copy");
+    await expect(downloadButton(page)).toBeVisible();
+    await expect(page.locator(".agent-menu__action")).toHaveText(/^(Disconnect MCP|Connect to MCP)$/);
     const downloading = page.waitForEvent("download");
-    await alert(page).getByRole("button", { name: "Download unsaved changes" }).click();
+    await downloadButton(page).click();
     const download = await downloading;
     expect(download.suggestedFilename()).toBe("native-demo-unsaved-changes.zip");
     const files = unzipStored(new Uint8Array(readFileSync(await download.path())));
@@ -115,15 +115,23 @@ test("full storage: the agent edit is refused, agent edits stop with a plain err
     expect(text("files/notes/plan.txt")).toBe("Opening hours change in May.\n");
     expect([...files["files/media/images/kept.png"]]).toEqual([1, 2, 3]);
     expect(text("README.txt")).toContain("media/images/lost.png: this browser no longer has the uploaded file; upload it again");
-    await expect(page.locator(".agent-menu__hint")).toContainText("Downloaded native-demo-unsaved-changes.zip: 2 files. 1 uploaded file is no longer in this browser");
+    // The download lets agents try again; a browser still full stops them again before any write.
+    await expect(downloadButton(page)).toBeHidden();
+    const still = await call("edit_file", { path: indexPath, expectedHash: home.hash, edits: [{ oldText: "A native browser preview", newText: "Agent heading" }] });
+    expect(still.error, still.text).toBe(true);
+    expect(still.text).toContain("storage is full");
+    expect(await storedDrafts(page)).toEqual(before);
+    await expect(downloadButton(page)).toBeVisible();
 
-    // Space again, but agent edits stay stopped until Try again.
+    // Space again, but agent edits stay stopped until the next download.
     await fillStorage(page, false);
     const stopped = await call("edit_file", { path: indexPath, expectedHash: home.hash, edits: [{ oldText: "A native browser preview", newText: "Agent heading" }] });
     expect(stopped.error, stopped.text).toBe(true);
     expect(stopped.text).toContain("agent edits are stopped");
-    await alert(page).getByRole("button", { name: "Try again" }).click();
-    await expect(alert(page)).toBeHidden();
+    const again = page.waitForEvent("download");
+    await downloadButton(page).click();
+    await again;
+    await expect(downloadButton(page)).toBeHidden();
     const applied = await call("edit_file", { path: indexPath, expectedHash: home.hash, edits: [{ oldText: "A native browser preview", newText: "Agent heading" }] });
     expect(applied.error, applied.text).toBe(false);
     await expect(frame(page).locator(".hero h1")).toHaveText("Agent heading");
@@ -153,9 +161,9 @@ test("disabled storage: agent edits are refused with a plain error and the tab's
     await page.keyboard.press("ControlOrMeta+V");
     await expect(frame(page).locator(".hero h1")).toHaveText("Manual heading kept in this tab");
     await page.locator(".repository-menu__trigger").click();
-    await expect(alert(page)).toContainText("Agent edits are off: this browser does not let the editor keep data here");
+    await expect(downloadButton(page)).toBeVisible();
     const downloading = page.waitForEvent("download");
-    await alert(page).getByRole("button", { name: "Download unsaved changes" }).click();
+    await downloadButton(page).click();
     const files = unzipStored(new Uint8Array(readFileSync(await (await downloading).path())));
     expect(Object.keys(files).sort()).toEqual(["README.txt", "changes.json", `files/${indexPath}`]);
     expect(new TextDecoder().decode(files[`files/${indexPath}`])).toBe(edited);

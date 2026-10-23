@@ -2,7 +2,8 @@
   display: block;
   justify-self: stretch;
 }
-.agent-menu__action {
+.agent-menu__action,
+.agent-menu__download {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -19,10 +20,13 @@
   cursor: pointer;
 }
 .agent-menu__action:hover:not(:disabled),
-.agent-menu__action:focus-visible {
+.agent-menu__action:focus-visible,
+.agent-menu__download:hover:not(:disabled),
+.agent-menu__download:focus-visible {
   background: var(--hover);
 }
-.agent-menu__action:focus-visible {
+.agent-menu__action:focus-visible,
+.agent-menu__download:focus-visible {
   outline: var(--focus-ring);
   outline-offset: -2px;
 }
@@ -35,13 +39,22 @@
   background: var(--muted);
   opacity: 0.5;
 }
-.agent-menu[data-state="waiting"] .agent-menu__action::before {
+/* The dot is the only status: waiting for an agent pulses, connected is green, an in-between
+   state pulses grey and a problem is red (the button then offers Connect to MCP). */
+.agent-menu[data-offer="wait"] .agent-menu__action::before {
   background: var(--color-warning);
   opacity: 1;
   animation: agent-menu-pulse 1.4s ease-in-out infinite;
 }
-.agent-menu[data-state="connected"] .agent-menu__action::before {
+.agent-menu[data-offer="disconnect"] .agent-menu__action::before {
   background: var(--color-success);
+  opacity: 1;
+}
+.agent-menu:is([data-state="connecting"], [data-state="reconnecting"], [data-state="taking-over"]) .agent-menu__action::before {
+  animation: agent-menu-pulse 1.4s ease-in-out infinite;
+}
+.agent-menu:is([data-state="paused"], [data-state="quota"], [data-state="unavailable"], [data-state="takeover-failed"]) .agent-menu__action::before {
+  background: var(--danger);
   opacity: 1;
 }
 @keyframes agent-menu-pulse {
@@ -50,33 +63,9 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .agent-menu[data-state="waiting"] .agent-menu__action::before {
+  .agent-menu .agent-menu__action::before {
     animation: none;
   }
-}
-.agent-menu__hint {
-  margin: -2px 8px 4px 26px;
-  font-size: var(--type-small);
-  line-height: 1.5;
-  color: var(--muted);
-}
-.agent-menu__links {
-  display: flex;
-  gap: 12px;
-  margin: 0 8px 6px 26px;
-}
-.agent-menu__link {
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--muted);
-  font-size: var(--type-small);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  cursor: pointer;
-}
-.agent-menu__link:hover {
-  color: var(--text);
 }
 .agent-menu [hidden] {
   display: none;
@@ -133,44 +122,11 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.agent-menu__storage {
-  margin: 2px 8px 6px;
-  padding: 8px 10px;
-  border-radius: var(--radius);
-  background: var(--warning-bg);
+/* Download unsaved changes: this browser cannot keep agent edits. */
+.agent-menu__download {
   color: var(--warning-fg);
 }
-.agent-menu__storage-text {
-  margin: 0 0 6px;
-  font-size: var(--type-small);
-  line-height: 1.5;
-}
-.agent-menu__storage .agent-menu__links {
-  margin: 0;
-}
-.agent-menu__storage .agent-menu__link {
-  color: inherit;
-}
-/* Watch (ticket 18): its deadline and countdown, under the connection's hint. */
-.agent-menu__watch {
-  margin-block: 0 6px;
-  margin-inline: 26px 8px;
-  padding-inline-start: 8px;
-  border-inline-start: 2px solid var(--line);
-}
-.agent-menu__watch[hidden] {
-  display: none;
-}
-.agent-menu[data-watch="on"] .agent-menu__watch {
-  border-inline-start-color: var(--color-success);
-}
-.agent-menu__watch-text {
-  margin-block: 0 4px;
-  font-size: var(--type-small);
-  line-height: 1.5;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-.agent-menu__watch .agent-menu__links {
-  margin: 0;
+/* A request still with an agent: its number is grey; an agent's question keeps the orange. */
+.agent-menu__question:not(.is-asking) .agent-menu__question-number {
+  background: var(--muted);
 }

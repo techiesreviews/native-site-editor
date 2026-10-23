@@ -71,8 +71,8 @@ test("drafts totalling well over 5 MB are kept and survive a reload", async ({ p
   await open(page, baseURL);
   await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
   await page.locator(".repository-menu__trigger").click();
-  await page.getByRole("button", { name: "Connect with MCP", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Waiting for connection…", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Connect to MCP", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Wait for MCP", exact: true })).toBeVisible();
   // The browser's clipboard is shared by every test's context: wait for this prompt in it.
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain("Server: `");
   const prompt = await page.evaluate(() => navigator.clipboard.readText());

@@ -12,7 +12,7 @@ async function open(page: Page, baseURL: string | undefined) {
 }
 async function connect(page: Page) {
   await page.locator(".repository-menu__trigger").click();
-  await page.getByRole("button", { name: "Connect with MCP", exact: true }).click();
+  await page.getByRole("button", { name: "Connect to MCP", exact: true }).click();
 }
 async function countPongs(page: Page) {
   await page.addInitScript(() => {
@@ -32,7 +32,7 @@ const visible = (page: Page, state: string) => page.evaluate(state => {
   document.dispatchEvent(new Event("visibilitychange"));
 }, state);
 
-test("live commands correlate results; visible and hidden idle sends no HTTP; another tab requires explicit takeover", async ({ page, context, baseURL }) => {
+test("live commands correlate results; visible and hidden idle sends no HTTP; another tab takes over by itself when the owner closes", async ({ page, context, baseURL }) => {
   const requests: string[] = [], results: any[] = [], handshakes: any[] = [];
   let socket: WebSocketRoute | undefined;
   await context.route("**/api/agent/connections", route => route.fulfill({ json: {
@@ -100,14 +100,14 @@ test("live commands correlate results; visible and hidden idle sends no HTTP; an
   expect(handshakes).toHaveLength(1);
 
   // Remote agents are remembered on for this site: the second tab is on without Connect.
+  // It offers Disconnect MCP with no tab text: another tab receives.
   await second.locator(".repository-menu__trigger").click();
-  await expect(second.locator(".agent-menu__hint")).toContainText("Another tab");
-  await expect(second.getByRole("button", { name: "Take over", exact: true })).toBeVisible();
+  await expect(second.locator(".agent-menu")).toHaveAttribute("data-state", "other-owner");
+  await expect(second.locator(".agent-menu__action")).toHaveText("Disconnect MCP");
   expect(handshakes).toHaveLength(1);
-  await second.getByRole("button", { name: "Take over", exact: true }).click();
-  await expect.poll(() => handshakes.length).toBe(2);
-  await visible(page, "visible");
-  await expect(page.locator(".agent-menu__hint")).toContainText("Another tab took over");
+  await page.close();
+  await expect.poll(() => handshakes.length, { timeout: 15_000 }).toBe(2);
+  await expect(second.locator(".agent-menu")).toHaveAttribute("data-state", "connected");
   expect(handshakes[1].generation).toBeGreaterThan(handshakes[0].generation);
   // Takeover loaded the owner's committed draft into the open editor and preview.
   await expect(second.frameLocator(".native-preview-frame").locator(".hero h1")).toHaveText("Live transport edit");

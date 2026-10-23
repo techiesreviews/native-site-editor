@@ -22,7 +22,7 @@ test("socket edits apply once; duplicate requestId and status return the receipt
   await expect(heading).toHaveText("A native browser preview");
   await page.locator(".repository-menu__trigger").click();
   const made = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST");
-  await page.getByRole("button", { name: "Connect with MCP", exact: true }).click();
+  await page.getByRole("button", { name: "Connect to MCP", exact: true }).click();
   const { token } = await (await made).json() as { token: string };
   await expect.poll(() => messages.some(message => message.includes('"type":"ready"'))).toBe(true);
   const client = new Client({ name: "socket-edit-spec", version: "1" });

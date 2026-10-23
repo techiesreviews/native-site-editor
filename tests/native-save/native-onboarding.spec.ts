@@ -385,7 +385,7 @@ test("a home page an agent writes switches the site on, and discarding all bring
   await openRepository(page, baseURL, "agent-repo");
   await expect(page.getByText("Empty repository")).toBeVisible({ timeout: 30_000 });
   await page.locator(".repository-menu__trigger").click();
-  await page.getByRole("button", { name: "Connect with MCP", exact: true }).click();
+  await page.getByRole("button", { name: "Connect to MCP", exact: true }).click();
   await expect(page.locator(".agent-menu")).toHaveAttribute("data-state", "waiting");
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain("Server: `");
   const prompt = await page.evaluate(() => navigator.clipboard.readText());
