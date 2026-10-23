@@ -19,7 +19,7 @@ import { createCardsController } from "./controllers/cards-controller";
 import { createPagesState, explorerTabNames, NATIVE_HOME_UNREAD, type ExplorerTab, pageOnBranchHere } from "./controllers/pages-state";
 import type { createPagesController } from "./controllers/pages-controller";
 import { createPreviewSelectionController } from "./controllers/preview-selection-controller";
-import { createBootController, planRepositoryOpen } from "./controllers/boot-controller";
+import { createBootController } from "./controllers/boot-controller";
 import { batch, effect } from "@preact/signals-core";
 import { createAppStore } from "./app-store";
 import { handleChunkLoadFailure, hasEditableRecoveryState, installChunkRecovery } from "./chunk-recovery";
@@ -29,12 +29,11 @@ import "./theme.css";
 import { node, button } from "./ui/dom";
 import { reported, setErrorReporter } from "./ui/report-failure";
 import {
-  readWorkspace,
-  readWorkspaceUrl,
   retainWorkspaceLink,
   resumeWorkspaceLink,
 } from "./workspace-state";
 import { createSetupHost, EDITOR_LOGIN } from "./setup-host";
+import { createRepositoryList } from "./repository-list";
 import { createAgentController } from "./controllers/agent-controller";
 import { createVersionView } from "./version-view";
 import type { AgentSiteActions, SharedContext } from "./agent-site";
@@ -62,10 +61,7 @@ import "./components/phone-sheet.css";
 import type { createFileRowActions, FileRowTarget } from "./components/file-row-actions";
 import "./components/files-tree.css";
 import type { createConfirmDialog } from "./components/confirm-dialog";
-import { forgetBootMemory } from "./boot-memory";
 import { createWorkspaceBoot } from "./workspace-boot";
-import { clearWizard, readWizard } from "./setup-wizard";
-import { forgetSignedIn } from "./auto-signin";
 
 import type { createPagePicker } from "./components/page-picker";
 import type { MenuItem } from "./components/row-menu";
@@ -3953,189 +3949,18 @@ const { restoreFile, loadSnapshot, chooseRepository } = workspaceBoot;
 window.addEventListener("focus", () => void checkNewRepositories());
 document.addEventListener("visibilitychange", () => void checkNewRepositories());
 
-async function loadRepositories(prefetched?: Repository[], hooks?: { onStarted(at: SessionStamp): void }) {
-  boot.loading();
-  removeFinishStarter();
-  setup.waitingForRepositories = false;
-  mediaHistoryHome.clear();
-  workspaceBoot.abandonGuess();
-  const at = nextLoad();
-  hooks?.onStarted(at);
-  fileGeneration++;
-  appStore.reset();
-  siteActions?.revalidate();
-  repositoryMenu?.setRepository();
-  setCurrentPage();
-  repositoryIndex.clear();
-  repositorySelect.disabled = true;
-  branchSelect.disabled = true;
-  refreshButton.disabled = true;
-  options(repositorySelect, [{ value: "", label: "Loading repositories…" }]);
-  repositoryMenu?.setRepositories([], "Loading repositories…");
-  options(branchSelect, [{ value: "", label: "—" }]);
-  files.replaceChildren();
-  content.replaceChildren(
-    node("p", "empty-message", "Finding your selected repositories…"),
-  );
-  clearError();
-  status("Loading selected repositories…");
-  try {
-    const result = prefetched ?? (await boot.fetchList(boot.refreshPending()));
-    if (!at.holds()) return;
-    repositories = result;
-    boot.ready();
-    repositoryMenu?.setRepositories(repositories);
-    // Back from GitHub: the repositories this browser knew before leaving, not the session's (already after the install).
-    const knownBefore = boot.takeRefresh() ? knownRepositories() ?? [] : undefined;
-    rememberRepositories(result);
-    const plan = planRepositoryOpen({
-      list: repositories,
-      linked: readWorkspaceUrl(),
-      hashPresent: Boolean(location.hash),
-      knownBefore,
-      remembered: info.user ? readWorkspace(info.user.login) : undefined,
-    });
-    if (plan.kind === "empty") {
-      options(repositorySelect, [
-        { value: "", label: "No selected repositories" },
-      ]);
-      if (setupEntry.dismissed()) void showGetStarted().catch(errorMessage);
-      else {
-        // A new user: the Setup wizard, full screen, in place of Get started.
-        content.replaceChildren(node("p", "empty-message", "Create your first site to get started."));
-        void setupEntry.open().catch(errorMessage);
-      }
-      return;
-    }
-    // A wizard that made a site and was interrupted: the checklist still follows it.
-    const unfinished = readWizard(localStorage)?.repo;
-    if (unfinished && repositories.some((repo) => repo.id === unfinished.id)) setupController.start(unfinished.id);
-    if (!setupEntry.active()) clearWizard(localStorage);
-    repositoryOptions();
-    repositorySelect.disabled = false;
-    if (plan.kind === "invalid-link") {
-      errorMessage(
-        new Error(
-          "This workspace link is invalid. Choose a repository to continue.",
-        ),
-      );
-      return;
-    }
-    if (plan.kind === "unavailable-link") {
-      errorMessage(
-        new Error(
-          "The linked repository is not available to this GitHub account. Check repository access or choose another project.",
-        ),
-      );
-      return;
-    }
-    if (plan.kind === "open") {
-      repositorySelect.value = String(plan.id);
-      await chooseRepository(plan.resume);
-      return;
-    }
-    const panel = node("section", "welcome");
-    panel.append(
-      node("h1", "", "Open a project"),
-      node(
-        "p",
-        "intro",
-        "You’re connected to GitHub. Choose a repository to explore its pages and files.",
-      ),
-      button("Choose a project", openExplorer, "button primary"),
-    );
-    content.replaceChildren(panel);
-    status("Connected to GitHub. Choose a project to start.");
-  } catch (error) {
-    if (at.holds()) {
-      boot.failed();
-      options(repositorySelect, [
-        { value: "", label: "Repositories unavailable" },
-      ]);
-      repositoryMenu?.setRepositories(
-        [],
-        "Repositories could not be loaded. Use Reload to try again.",
-      );
-      content.replaceChildren(
-        node(
-          "p",
-          "empty-message",
-          "Repositories could not be loaded. Use Reload to try again.",
-        ),
-      );
-      errorMessage(error);
-    }
-  }
-}
-
-function repositoryOptions() {
-  options(repositorySelect, [
-    { value: "", label: "Select a repository…" },
-    ...repositories.map((repo) => ({
-      value: String(repo.id),
-      label: `${repo.name}${repo.private ? " · private" : ""}`,
-    })),
-  ]);
-}
-
-// After a visit to GitHub's repository access page: list the repositories
-// again, keeping the open one open unless it is no longer available.
-async function refreshRepositoryList() {
-  let next: Repository[];
-  try {
-    next = await boot.fetchList(true);
-  } catch (error) {
-    errorMessage(error);
-    return;
-  }
-  if (await boot.recover(next)) return;
-  boot.listed();
-  if (
-    next.length === repositories.length &&
-    next.every((repo, index) => repo.id === repositories[index].id)
-  )
-    return;
-  rememberRepositories(next);
-  if (!appStore.repository.value || !next.some((repo) => repo.id === appStore.repository.value!.id)) {
-    if (appStore.repository.value) history.replaceState(null, "", location.pathname);
-    await loadRepositories(next);
-    return;
-  }
-  const added = next.filter(
-    (repo) => !repositories.some((known) => known.id === repo.id),
-  ).length;
-  const removed = repositories.length + added - next.length;
-  repositories = next;
-  repositoryOptions();
-  repositorySelect.value = String(appStore.repository.value.id);
-  repositoryMenu?.setRepositories(repositories);
-  announce(
-    [
-      added ? `${added} ${added === 1 ? "repository" : "repositories"} added` : "",
-      removed ? `${removed} removed` : "",
-    ]
-      .filter(Boolean)
-      .join(", ") + ".",
-  );
-}
-
-async function switchAccount(login: string) {
-  try {
-    const response = await fetch("/api/accounts/switch", {
-      method: "POST",
-      credentials: "same-origin",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ login }),
-    });
-    if (!response.ok) {
-      const data = await response.json().catch(() => ({}));
-      throw new Error(data.error || "Could not switch accounts. Try again.");
-    }
-    location.assign("/");
-  } catch (error) {
-    errorMessage(error);
-  }
-}
+// The repository list, account switching and sign-out (src/repository-list.ts).
+const { loadRepositories, repositoryOptions, refreshRepositoryList, switchAccount, disconnect } = createRepositoryList({
+  appStore, repositoryIndex, mediaHistoryHome, cleanSources, workspaceBoot, setup, setupEntry, setupController,
+  get boot() { return boot; }, get user() { return info?.user; },
+  get repositories() { return repositories; }, set repositories(value) { repositories = value; },
+  get fileGeneration() { return fileGeneration; }, set fileGeneration(value) { fileGeneration = value; },
+  get content() { return content; }, get files() { return files; }, get refreshButton() { return refreshButton; },
+  get branchSelect() { return branchSelect; }, get repositorySelect() { return repositorySelect; },
+  get repositoryMenu() { return repositoryMenu; }, get siteActions() { return siteActions; },
+  nextLoad, storage, options, status, clearError, errorMessage, announce, setCurrentPage, openExplorer,
+  removeFinishStarter, showGetStarted, knownRepositories, rememberRepositories,
+});
 
 /** localStorage or sessionStorage, or a store that keeps nothing where the browser refuses it. */
 function storage(kind: "local" | "session"): Pick<Storage, "getItem" | "setItem" | "removeItem"> {
@@ -4143,20 +3968,6 @@ function storage(kind: "local" | "session"): Pick<Storage, "getItem" | "setItem"
     return kind === "local" ? localStorage : sessionStorage;
   } catch {
     return { getItem: () => null, setItem: () => undefined, removeItem: () => undefined };
-  }
-}
-
-async function disconnect() {
-  cleanSources.clear();
-  try {
-    const response = await fetch("/auth/logout", { method: "POST" });
-    if (!response.ok) throw new Error("Could not disconnect. Try again.");
-    // 204: that was the last account on this browser, so nothing continues by itself next time.
-    if (response.status === 204) forgetSignedIn(storage("local"));
-    forgetBootMemory(storage("local"));
-    location.assign("/");
-  } catch (error) {
-    errorMessage(error);
   }
 }
 
