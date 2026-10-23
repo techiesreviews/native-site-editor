@@ -70,7 +70,8 @@
 .repository-menu__trigger {
   position: relative;
 }
-.repository-menu__questions {
+.repository-menu__questions,
+.repository-menu__finished {
   position: absolute;
   top: 3px;
   left: 30px;
@@ -87,8 +88,26 @@
   line-height: 14px;
   text-align: center;
 }
-.repository-menu__questions[hidden] {
+.repository-menu__questions[hidden],
+.repository-menu__finished[hidden] {
   display: none;
+}
+
+/* Work finished on another project or branch (src/finished-elsewhere.ts): the same count, in
+   the action colour, on the menu's tile while no question waits, on a project's tile and on
+   its branch's row. */
+.repository-menu__finished {
+  background: var(--primary);
+}
+.repository-menu__item .repository-menu__finished {
+  z-index: 2;
+  inset-block-start: 4px;
+  inset-inline-start: 26px;
+}
+.repository-menu__branch-item .repository-menu__finished {
+  position: static;
+  flex: none;
+  border-color: transparent;
 }
 
 .repository-menu__trigger .repository-menu__initial {

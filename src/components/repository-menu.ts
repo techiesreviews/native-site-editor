@@ -3,6 +3,8 @@ import { mountDropdown } from "./dropdown";
 import { mountFlyout } from "./flyout";
 import { button, link, node } from "../ui/dom";
 import { setIcon } from "../icons";
+import { noteCount, noteWords, type FinishedNote } from "../finished-elsewhere";
+import { sameBranch, sameRepository } from "../workspace-session";
 import type { Repository, SessionInfo } from "../../shared/types";
 
 type Account = NonNullable<SessionInfo["accounts"]>[number];
@@ -16,6 +18,11 @@ type Account = NonNullable<SessionInfo["accounts"]>[number];
 // flyout out of the row lists the branches, with Refresh from GitHub. The
 // hidden #branch select keeps the branch the workspace reads, as #repository
 // does the repository; the workspace fills it and the menu draws it.
+//
+// Work that finished on another project or branch (src/finished-elsewhere.ts) is counted on
+// that project's tile and its branch's row, as agents' questions are on the menu's own tile,
+// which counts it too while no question waits. Its words are part of the row's name; a click
+// on the row opens it.
 export function createRepositoryMenu(options: {
   installUrl: string | null;
   accounts: Account[];
@@ -27,6 +34,8 @@ export function createRepositoryMenu(options: {
   onSwitchAccount: (login: string) => void;
   onSignOut: () => void;
   onSiteSettings?: () => void;
+  /** A row with finished work clicked: its project and branch open with its changes. */
+  onNote?: (note: FinishedNote) => void;
 }) {
   const root = node("div", "repository-menu");
   const trigger = node("button", "repository-menu__trigger");
@@ -41,10 +50,11 @@ export function createRepositoryMenu(options: {
   const questions = node("span", "repository-menu__questions");
   questions.setAttribute("aria-hidden", "true");
   questions.hidden = true;
+  const finished = tally();
   const identity = node("span", "repository-menu__identity");
   const repository = node("span", "repository-menu__repository");
   identity.append(repository, name);
-  trigger.append(badge, questions, identity, caret);
+  trigger.append(badge, questions, finished, identity, caret);
   trigger.setAttribute("aria-controls", "repository-actions");
   trigger.setAttribute("aria-expanded", "false");
   const panel = node("div", "repository-menu__popover");
@@ -173,6 +183,7 @@ export function createRepositoryMenu(options: {
   let currentFullName: string | undefined;
   let confirming: number | undefined;
   let awaitingAccess = false;
+  let notes: readonly FinishedNote[] = [];
   const controller = new AbortController();
   window.addEventListener(
     "focus",
@@ -245,7 +256,9 @@ export function createRepositoryMenu(options: {
       item.dataset.key = name;
       item.disabled = branch.disabled;
       item.append(node("span", "repository-menu__branch-name", name));
-      item.addEventListener("click", () => chooseBranch(name));
+      const note = notes.find((note) => sameBranch(note.scope, { repoId: currentId, repo: currentFullName, branch: name }));
+      if (note) item.append(...told([note], noteWords(note)));
+      item.addEventListener("click", () => (note && options.onNote ? options.onNote(note) : chooseBranch(name)));
       return item;
     }));
     // "Loading branches…", "No branches yet", "Branches unavailable".
@@ -313,6 +326,9 @@ export function createRepositoryMenu(options: {
     // The row carries the tile's hue too, for the remove × drawn over it.
     item.style.setProperty("--initial-hue", tile.style.getPropertyValue("--initial-hue"));
     open.append(tile, text);
+    // Finished work here, the latest first; on the open repository it is on its branch's row too.
+    const here = notes.filter((note) => sameRepository(note.scope, { repoId: repo.id, repo: repo.full_name }));
+    if (here.length) open.append(...told(here, here.map((note) => `${noteWords(note)} on ${note.scope.branch}`).join("; ")));
     if (selected) {
       const more = node("span", "repository-menu__more");
       setIcon(more, "caret-right", 12);
@@ -321,7 +337,7 @@ export function createRepositoryMenu(options: {
       open.title = on ? `On ${on}: choose another branch, or refresh` : "Branches";
     }
     // The open repository's row opens its branches instead.
-    open.addEventListener("click", () => (selected ? branchFlyout.open(true) : choose(repo)));
+    open.addEventListener("click", () => (selected ? branchFlyout.open(true) : here[0] && options.onNote ? options.onNote(here[0]) : choose(repo)));
     const remove = node("button", "repository-menu__remove");
     setIcon(remove, "x");
     remove.type = "button";
@@ -373,12 +389,25 @@ export function createRepositoryMenu(options: {
     label();
     render();
   }
-  // The tile's name and title, with the questions it counts.
+  // The tile's name and title, with the questions and the finished work it counts.
   function label() {
     const count = Number(questions.textContent) || 0;
     const asking = questions.hidden ? "" : ` — ${count === 1 ? "an agent asks you a question" : `agents ask you ${count} questions`}`;
-    trigger.setAttribute("aria-label", `${name.textContent} — repository actions${asking}`);
-    trigger.title = `${currentFullName ?? "Repository actions"}${asking}`;
+    // The branch, with the repository when it is another (as the Files drop's message says it).
+    const named = (note: FinishedNote) => repositories.find((repo) => sameRepository(note.scope, { repoId: repo.id, repo: repo.full_name }))?.full_name ?? note.scope.repo;
+    const where = (note: FinishedNote) => (sameRepository(note.scope, { repoId: currentId, repo: currentFullName }) ? note.scope.branch : `${named(note)} (${note.scope.branch})`);
+    const done = notes.length ? ` — ${notes.map((note) => `${noteWords(note)} on ${where(note)}`).join("; ")}` : "";
+    finished.hidden = !notes.length || !questions.hidden;
+    finished.textContent = String(noteCount(notes));
+    trigger.setAttribute("aria-label", `${name.textContent} — repository actions${asking}${done}`);
+    trigger.title = `${currentFullName ?? "Repository actions"}${asking}${done}`;
+  }
+  /** Work that finished on other projects and branches, the latest first. */
+  function setNotes(next: readonly FinishedNote[]) {
+    notes = next;
+    label();
+    render();
+    branchFlyout.refresh();
   }
   /** How many agents' questions wait for the user's answer on their pins. */
   function setQuestions(count: number) {
@@ -402,6 +431,7 @@ export function createRepositoryMenu(options: {
     setRepository,
     setRepositories,
     setQuestions,
+    setNotes,
     close: dropdown.close,
     /** Opens the menu (the Connect an agent spotlight's "Show me"). */
     open: dropdown.open,
@@ -413,6 +443,20 @@ export function createRepositoryMenu(options: {
       dropdown.destroy();
     },
   };
+}
+
+// The count of finished work on a tile's corner, its words for screen readers.
+function tally() {
+  const result = node("span", "repository-menu__finished");
+  result.setAttribute("aria-hidden", "true");
+  result.hidden = true;
+  return result;
+}
+function told(notes: readonly FinishedNote[], words: string) {
+  const shown = tally();
+  shown.hidden = false;
+  shown.textContent = String(noteCount(notes));
+  return [shown, node("span", "sr-only", ` — ${words}`)];
 }
 
 export function initial(text: string) {
