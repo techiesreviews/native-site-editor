@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
+import { selectText } from "./click-text";
 import { editorMounted } from "./drafts";
 
 // Click to type (clean-up slice 28): one click on text (a link's and a
@@ -8,6 +9,7 @@ import { editorMounted } from "./drafts";
 // and drag from text moves its block; a double-click selects a word and
 // Shift+click extends; Escape selects the whole block; an image is selected
 // by a click and its popup opens on a double-click.
+// Default fixture group: native-starter (#repo=501).
 const fixture = "fixtures/native-starter";
 const indexPath = "index.html";
 const indexSource = readFileSync(resolve(fixture, indexPath), "utf8");
@@ -18,6 +20,8 @@ const withLinks = indexSource.replace(
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const bar = (page: Page) => page.getByRole("toolbar", { name: "Edit bar", exact: true });
 const ghost = (page: Page) => page.locator(".pb-drag-ghost");
+const crumbs = (page: Page) => page.getByRole("navigation", { name: "Selected element and its ancestors" }).getByRole("button");
+const undo = (page: Page) => page.evaluate(async () => (await import("/src/components/code-editor.ts")).runVisualHistory("undo", "index.html"));
 const source = async (page: Page) => (await editorMounted(page), page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html")));
 
 // Tall enough that the whole hero shows: points measured before a press stay put.
@@ -75,8 +79,12 @@ test("one click on a heading, a paragraph, a link's text or a button's text type
     await expect(el).toContainText(after);
     await page.keyboard.press("Escape");
     await expect(el).not.toHaveAttribute("contenteditable", /.+/);
-    // Escape climbs to the page, so the edit bar covers none of the next text.
-    for (let up = 0; up < 6 && await bar(page).isVisible(); up++) await page.keyboard.press("Escape");
+    await expect(bar(page).locator(".edit-bar__kind")).toHaveText(kind);
+    // Escape climbs a level at a time to the page, so the edit bar covers none of the next text.
+    for (let shown = await crumbs(page).count(); shown > 1; shown--) {
+      await page.keyboard.press("Escape");
+      await expect(crumbs(page)).toHaveCount(shown - 1);
+    }
     await expect(bar(page)).toBeHidden();
   }
   // The link's address stays; the clicks followed no link.
@@ -86,6 +94,61 @@ test("one click on a heading, a paragraph, a link's text or a button's text type
   expect(written).toContain("Edit plain old HTML");
   expect(written).toContain(`<a href="/about.html" data-key="hero-link">the about-us page</a>`);
   expect(written).toContain(`<a class="btn" href="/about.html" data-key="hero-cta">Get me started</a>`);
+});
+
+test("a click from one text straight onto another types there, and both texts are written", async ({ page }) => {
+  const heading = frame(page).locator(".hero h1");
+  const lead = frame(page).locator(".hero p.lead");
+  let at = await afterWord(page, ".hero h1", "native");
+  await page.mouse.click(at.x, at.y);
+  await expect(heading).toBeFocused();
+  await page.keyboard.type("!");
+  // A word right of the edit bar, which shows below the heading over the lead's first line.
+  at = await afterWord(page, ".hero p.lead", "place");
+  await page.mouse.click(at.x, at.y);
+  await expect(lead).toHaveAttribute("contenteditable", /plaintext-only|true/);
+  await expect(lead).toBeFocused();
+  await page.keyboard.type("X");
+  await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Paragraph");
+  await expect(heading).not.toHaveAttribute("contenteditable", /.+/);
+  await page.keyboard.press("Escape");
+  await expect.poll(() => source(page)).toContain("A native! browser");
+  expect(await source(page)).toContain("in placeX");
+  await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Paragraph");
+});
+
+test("a click between two lines of a paragraph types; a click on its outline selects it without typing", async ({ page }) => {
+  const lead = frame(page).locator(".hero p.lead");
+  const box = (await page.locator(".native-preview-frame").boundingBox())!;
+  const lines = await lead.evaluate((el) => {
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const rects = Array.from(range.getClientRects());
+    const second = rects.find((r) => r.top > rects[0].bottom - 1)!;
+    const own = el.getBoundingClientRect();
+    return { gap: second.top - rects[0].bottom, x: rects[0].left + 40, y: (rects[0].bottom + second.top) / 2, left: own.left, first: rects[0].top + rects[0].height / 2 };
+  });
+  // The glyphs' rectangles leave a gap between wrapped lines; it is still the paragraph's text.
+  expect(lines.gap).toBeGreaterThan(2);
+  await page.mouse.click(box.x + lines.x, box.y + lines.y);
+  await expect(lead).toHaveAttribute("contenteditable", /plaintext-only|true/);
+  await expect(lead).toBeFocused();
+  // Selected as a block, a click 1 px inside its left edge, level with the first line, selects without typing.
+  await page.keyboard.press("Escape");
+  await selectText(lead);
+  await page.mouse.click(box.x + lines.left + 1, box.y + lines.first);
+  await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Paragraph");
+  await expect(lead).not.toHaveAttribute("contenteditable", /.+/);
+});
+
+test("a triple-click in the text being typed in selects the whole paragraph", async ({ page }) => {
+  const lead = frame(page).locator(".hero p.lead");
+  const at = await afterWord(page, ".hero p.lead", "templates");
+  await page.mouse.click(at.x, at.y);
+  await expect(lead).toBeFocused();
+  await page.mouse.click(at.x, at.y, { clickCount: 3 });
+  const text = (await lead.textContent())!;
+  await expect.poll(async () => (await selectedText(page)).trim()).toBe(text.trim());
 });
 
 test("a click inside the text being typed in moves the caret; a click beside a line selects without typing", async ({ page }) => {
@@ -159,15 +222,23 @@ test("a press and drag that starts on text moves its block, also while typing in
   await drag(await afterWord(page, filler(1), "section"), await below(filler(2)));
   await expect.poll(async () => (await source(page))!.indexOf(`data-key="filler-1"`) > (await source(page))!.indexOf(`data-key="filler-2"`)).toBe(true);
   await expect(frame(page).locator("[contenteditable]")).toHaveCount(0);
-  // Typing in filler-2, a press on its text drags it below filler-3.
+  const firstMove = (await source(page))!;
+  expect(firstMove).not.toBe(original);
+  // Typing in filler-2, a press on its text drags it below filler-3, the typed text kept.
   let at = await afterWord(page, filler(2), "Paragraph");
   await page.mouse.click(at.x, at.y);
   await expect(frame(page).locator(filler(2))).toHaveAttribute("contenteditable", /.+/);
+  await page.keyboard.type(" typed");
   at = await afterWord(page, filler(2), "filler");
   await drag(at, await below(filler(3)));
-  await expect.poll(async () => (await source(page))!.indexOf(`data-key="filler-2"`) > (await source(page))!.indexOf(`data-key="filler-3"`)).toBe(true);
+  const typed = `<p data-key="filler-2">Paragraph typed two of filler`;
+  await expect.poll(async () => { const now = (await source(page))!; return now.indexOf(typed) > now.indexOf(`data-key="filler-3"`); }).toBe(true);
   await expect(frame(page).locator("[contenteditable]")).toHaveCount(0);
-  expect(await source(page)).not.toBe(original);
+  // Two undo steps: the move, then the typing.
+  expect(await undo(page)).toBe(true);
+  await expect.poll(async () => { const now = (await source(page))!; return now.indexOf(typed) >= 0 && now.indexOf(typed) < now.indexOf(`data-key="filler-3"`); }).toBe(true);
+  expect(await undo(page)).toBe(true);
+  await expect.poll(() => source(page)).toBe(firstMove);
 });
 
 test("one click on an image selects it; a double-click opens the Image popup", async ({ page }) => {

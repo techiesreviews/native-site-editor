@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
+import { clickOnText } from "./click-text";
 import { storedDraft } from "./drafts";
 
 // Linking a word in a paragraph from the edit bar: Link wraps the selected
@@ -29,15 +30,14 @@ async function editorText(page: Page) {
 const bar = (page: Page) => page.getByRole("toolbar", { name: "Edit bar" });
 const linked = (href: string) => indexSource.replace("Edit plain HTML", `Edit <a href="${href}">plain</a> HTML`);
 
-// Selects the paragraph and types in it (a click, then Enter), then selects
-// the text offsets `start`..`end` of its text content.
+// Types in the paragraph (a click on its text), then selects the text
+// offsets `start`..`end` of its text content.
 async function selectInLead(page: Page, start: number, end: number) {
   const lead = page.frameLocator(".native-preview-frame").locator(".hero p.lead");
   await expect(lead).toBeVisible({ timeout: 30_000 });
   if ((await bar(page).locator(".edit-bar__kind").allTextContents())[0] !== "Paragraph" || await lead.getAttribute("contenteditable") === null) {
-    await lead.click();
+    await clickOnText(lead);
     await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Paragraph");
-    await page.keyboard.press("Enter");
     await expect(lead).toHaveAttribute("contenteditable", /plaintext-only|true/);
   }
   const child = await (await page.locator(".native-preview-frame").elementHandle())!.contentFrame();

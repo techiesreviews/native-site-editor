@@ -593,11 +593,12 @@ import { domView } from "../page-builder/rules/tree.ts";
     if (editing && !editing.isConnected) editing = null;
     if (typeof payload.hash === "string" && payload.hash) scrollTarget = { id: payload.hash, until: Date.now() + 1500 };
     scrollToTarget();
+    // The host selects written text again (commitEditing), unless a click chose another element since.
+    // The render after an edit answers it, whether or not it selects (a refused edit only refreshes).
+    var chosen = leftText && selected && selected.isConnected && JSON.stringify([ownerPath(selected), elementIndexPath(selected)]) !== leftText;
+    var stale = chosen && payload.selectNode && JSON.stringify([payload.selectNode.path, payload.selectNode.node]) === leftText;
+    leftText = "";
     if (payload.selectNode) {
-      // The host selects written text again (commitEditing), unless a click chose another element since.
-      var chosen = leftText && selected && selected.isConnected && JSON.stringify([ownerPath(selected), elementIndexPath(selected)]) !== leftText;
-      var stale = chosen && JSON.stringify([payload.selectNode.path, payload.selectNode.node]) === leftText;
-      leftText = "";
       var requested = !stale && resolveNodePath(payload.selectNode);
       if (requested) {
         selected = requested;
@@ -623,6 +624,7 @@ import { domView } from "../page-builder/rules/tree.ts";
     if (selected && payload.selectText && typeof payload.selectText.start === "number") setTextSelection(selected, payload.selectText.start, payload.selectText.end);
     reportTextSelection(true);
     reportStructure();
+    startPendingPress();
     requestAnimationFrame(requestComponentStyles);
   }
 
@@ -2892,9 +2894,9 @@ import { domView } from "../page-builder/rules/tree.ts";
 
   // Typing into a text element: a text element whose content is only text
   // and inline formatting becomes editable on a click on its text (the caret
-  // where it was clicked), a double-click beside its text, or Enter. The editor gets the element's text
-  // before and after on Enter, on blur and before a format shortcut, and
-  // writes the difference into the source.
+  // where it was clicked), a double-click beside its text, or Enter. The
+  // editor gets the element's text before and after on Enter, on blur and
+  // before a format shortcut, and writes the difference into the source.
   // Formatting inside a line of text, and a slot showing text in it.
   function inlineTag(name) {
     return name === "slot" || INLINE_FORMATTING.has(name);
@@ -2991,12 +2993,20 @@ import { domView } from "../page-builder/rules/tree.ts";
     var range = typeof document.caretRangeFromPoint === "function" ? document.caretRangeFromPoint(x, y) : null;
     return range && { node: range.startContainer, offset: range.startOffset };
   }
-  // The point is on the element's text itself (one of its lines), not the space beside it.
+  // The point is on the element's text itself: one of its lines, each as
+  // tall as its line box (a glyph's rectangle is shorter, leaving gaps
+  // between wrapped lines), not the space beside a line nor the element's
+  // outline, its outer 3 px, where a click selects the block.
+  var OUTLINE_PX = 3;
   function onText(el, x, y) {
+    var box = el.getBoundingClientRect();
+    if (x < box.left + OUTLINE_PX || x > box.right - OUTLINE_PX || y < box.top + OUTLINE_PX || y > box.bottom - OUTLINE_PX) return false;
+    var lineHeight = parseFloat(getComputedStyle(el).lineHeight);
     var range = document.createRange();
     range.selectNodeContents(el);
     return Array.prototype.some.call(range.getClientRects(), function (r) {
-      return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+      var pad = lineHeight > r.height ? (lineHeight - r.height) / 2 : 0;
+      return x >= r.left && x <= r.right && y >= r.top - pad && y <= r.bottom + pad;
     });
   }
   // Enter or Escape: what was typed is written, and the text stays selected, no longer typed in.
@@ -3207,6 +3217,7 @@ import { domView } from "../page-builder/rules/tree.ts";
       if (!node) { press = null; return; }
       press.dragging = true;
       try { document.documentElement.setPointerCapture(e.pointerId); } catch (_) { /* gone */ }
+      var wrote = !!editing && editing.textContent !== editingText;
       stopEditing(true);
       press.userSelect = document.documentElement.style.userSelect;
       document.documentElement.style.userSelect = "none";
@@ -3214,13 +3225,25 @@ import { domView } from "../page-builder/rules/tree.ts";
       hovered = null;
       updateBoxes();
       reportHover();
-      emit("press-drag", { phase: "start", node: node, tag: block.localName, cls: block.getAttribute("class") || "",
-        band: !part && sectionLike(block), template: part, x: e.clientX, y: e.clientY, alt: e.altKey });
-    } else emit("press-drag", { phase: "move", x: e.clientX, y: e.clientY, alt: e.altKey });
+      var start = { phase: "start", node: node, tag: block.localName, cls: block.getAttribute("class") || "",
+        band: !part && sectionLike(block), template: part, x: e.clientX, y: e.clientY, alt: e.altKey };
+      // Text typed in the dragged block was just written: the host hears a start only from the render
+      // it asked for since, so the start waits for that render (startPendingPress).
+      if (wrote) press.start = start;
+      else emit("press-drag", start);
+    } else if (press.start) { press.start.x = e.clientX; press.start.y = e.clientY; press.start.alt = e.altKey; }
+    else emit("press-drag", { phase: "move", x: e.clientX, y: e.clientY, alt: e.altKey });
     e.preventDefault();
     var text = document.getSelection();
     if (text) text.removeAllRanges();
   }, true);
+  // A render painted: a drag that waited for it (its block's typed text written) starts now.
+  function startPendingPress() {
+    if (!press || !press.start) return;
+    var start = press.start;
+    press.start = null;
+    emit("press-drag", start);
+  }
   function endPress(e, phase) {
     if (!press || e.pointerId !== press.id) return;
     var was = press;
