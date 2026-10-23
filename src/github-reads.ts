@@ -1,7 +1,7 @@
 // The #status live region, the notice bar and the editor's GitHub reads
 // (`/api/…` through fetchWithReadRetry) and writes. A read GitHub never
-// answers, after its retries (src/read-retry.ts), is also said as the toast
-// with Try again, which repeats the open.
+// answers, after its retries (src/read-retry.ts), while a site opens is also
+// said as the toast with Try again, which repeats that open.
 
 import { readApiReceipt, type ApiReceipt } from "./boot-api-response";
 import type { ToastAction } from "./components/toast";
@@ -25,10 +25,8 @@ export interface GitHubReadsPorts {
   handleChunkLoadFailure(error: unknown): unknown;
   /** The GitHub session expired: the sign-in page says so. */
   expired(): void;
-  /** Says `text` in #status and shows it as the toast with `action`. */
+  /** Says `text` in #status (as the user's own announcement) and shows it as the toast with `action`. */
   say(text: string, action: ToastAction): void;
-  /** Repeats the open that GitHub did not answer. */
-  retry: () => void;
 }
 
 export function createGitHubReads(ports: GitHubReadsPorts) {
@@ -54,9 +52,12 @@ export function createGitHubReads(ports: GitHubReadsPorts) {
     else if (!app.classList.contains("login-page"))
       app.insertBefore(notice, document.querySelector(".workspace"));
   }
-  function errorMessage(error: unknown) {
+  // `retry` repeats the open that failed: a read GitHub never answered in it is offered again with Try again.
+  function errorMessage(error: unknown, retry?: () => void) {
     if (ports.handleChunkLoadFailure(error)) return;
-    if (error instanceof ApiError && error.status === 401) ports.expired();
+    if (error instanceof ApiError && error.status === 401) {
+      ports.expired();
+    }
     const notice = element("notice");
     placeNotice(notice);
     notice.replaceChildren(
@@ -71,7 +72,7 @@ export function createGitHubReads(ports: GitHubReadsPorts) {
     if (error instanceof ApiError && error.status === 401)
       notice.append(link("Reconnect GitHub", "/auth/login", "text-link"));
     notice.hidden = false;
-    if (error instanceof ReadUnansweredError) ports.say(error.message, { label: "Try again", run: ports.retry });
+    if (error instanceof ReadUnansweredError && retry) ports.say(error.message, { label: "Try again", run: retry });
     else status("The last request did not complete.");
   }
   async function apiResponse<T>(path: string, params?: Record<string, string>): Promise<ApiReceipt<T>> {

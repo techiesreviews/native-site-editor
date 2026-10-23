@@ -92,6 +92,25 @@ test("a caller's own abort ends the read without a retry", async () => {
   assert.equal(read.times.length, 1);
 });
 
+test("a caller's abort during the wait between tries ends the read at once", async () => {
+  const caller = new AbortController();
+  let calls = 0, outcome: unknown;
+  const fetcher = (async () => { calls++; return reply(502); }) as typeof fetch;
+  void fetchWithReadRetry("/api/files", { signal: caller.signal }, { fetcher }).then(() => { outcome = "answered"; }, (error) => { outcome = error; });
+  const flush = () => new Promise((resolve) => setImmediate(resolve));
+  await flush();
+  // Half a second into the 1 s wait after the 502.
+  mock.timers.tick(500);
+  caller.abort();
+  await flush();
+  assert.equal((outcome as Error | undefined)?.name, "AbortError");
+  assert.equal(calls, 1);
+  // Its wait's timer is gone: nothing tries again later.
+  mock.timers.tick(60_000);
+  await flush();
+  assert.equal(calls, 1);
+});
+
 test("a POST is never retried or timed out", async () => {
   const { result, times, signals } = run([reply(502), reply(200)], { method: "POST" });
   assert.equal((await result).status, 502);

@@ -248,10 +248,10 @@ Ranges are approximate navigation hints, measured in this worktree; search the s
 | Opening files and mounting source | 4202–4448 | openEntry, mountSource, openComponentLinkedStyle, updateAgentContext |
 | Agent context and commands | 4449–4627 | agentContext, agentSiteActions, applyAgentSiteCommand, agentActing |
 | New, uploaded and deleted drafts | 4628–4762 | openNewDraft, showUpload, applyAgentCommand |
-| Workspace boot ports (src/workspace-boot.ts) | 4763–4782 | workspaceBoot, restoreFile, loadSnapshot, chooseRepository |
-| Setup wizard and partial starting points | 4783–4888 | wizardConnection, setupEntry, finishWizard |
-| Get started, repository lists and account switching | 4889–5164 | showGetStarted, loadRepositories, switchAccount, disconnect |
-| Draft baseline, agent/boot ports and startup | 5165–5277 | agentController, boot, workspaceBoot.startGuess, createSite |
+| Workspace boot ports (src/workspace-boot.ts) | 4763–4798 | workspaceBoot, restoreFile, loadSnapshot, chooseRepository, asOpen |
+| Setup wizard and partial starting points | 4799–4904 | wizardConnection, setupEntry, finishWizard |
+| Get started, repository lists and account switching | 4905–5180 | showGetStarted, loadRepositories, switchAccount, disconnect |
+| Draft baseline, agent/boot ports and startup | 5181–5293 | agentController, boot, workspaceBoot.startGuess, createSite |
 
 ## Main entry points
 
