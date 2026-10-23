@@ -1,8 +1,8 @@
 ---
 title: "One overlay rule and new-draft list (the nine copies go)"
 type: task (AFK)
-status: open
-assignee: lead-30 (this session)
+status: closed
+assignee: lead-30
 builder: claude
 blocked_by: [22-workspace-session-callers, 23-work-finishes-where-it-started, 24-work-notification-icon]
 ---
@@ -37,3 +37,11 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `kit unit --affected`, `kit specs --affected`, `kit size`.
 - Review: `kit review --ticket <this ticket>` (GPT-6.1 Sol, medium, read-only). Land: `kit pr --ticket <this ticket>`.
 - Report: copies replaced (list), unit and specs `RESULT:` lines, `kit size` KB, review folder and decisions, PR and merge SHA, `main.ts` lines and ceiling.
+
+## Done (2026-10-23)
+
+- `shared/site-overlay.ts` (no DOM; in `shared/` because `site-files.ts` uses it) holds the rule: `isNewDraft`, `newDrafts` and `newDraftPaths` (a draft with no base blob, not deleted; options `moved: false` leaves out renamed and moved files, `uploads: false` leaves out uploads and opaque files, `kind` keeps only paths it accepts) and `effectiveText(path, layers)` (the open editor's text, else the draft's, else GitHub's; none for a deleted or opaque draft).
+- The ten copies call it, each keeping its answer: `main.ts` `nativeImagePaths` (`kind: isImagePath`), `nativeFiles`, `newDraftPaths`, `treeState`; `linked-styles-controller.ts` `openSecondary` and `openComponentLinkedStyle` (`uploads: false`; the two `main.ts` copies at `89ac5e0e`, moved there in `694ea07a`); `pages-state.ts` `renderPagesTree` (was `pages-controller.ts`, moved in `b159080c`) and `agent-site.ts` `buildAgentContext` and `structuralOutcome` (`moved: false`); `shared/site-files.ts` `paths` (A for new, R for moved). `main.ts` `nativeEffectiveSource` reads through `effectiveText`. No visible change.
+- The `baseSha === null` lines left read one draft's (or publish file's) own field.
+- `tests/site-overlay.test.ts`: one case per caller, named by it, plus the text layering (editor over draft over GitHub, empty text kept, deleted and opaque drafts give none). `main.ts` 4,059 lines; ceiling 4060.
+

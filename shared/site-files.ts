@@ -5,6 +5,7 @@ import { touchesGithubConfig, GITHUB_CONFIG_REFUSED, touchesMediaRecords, MEDIA_
 import { AGENT_TEXT_LIMIT, TEXT_PATH, textHash } from "./agent";
 import { EMPTY_COMMIT, type EditorContext, type Repository, type TreeEntry } from "./types";
 import { HttpError } from "./http-error";
+import { newDrafts } from "./site-overlay";
 
 export interface SiteFileReader {
   commitTree(repo: Repository, commit: string): Promise<TreeEntry[]>;
@@ -62,9 +63,7 @@ export class SiteFiles {
       if (draft?.deleted) continue;
       out.set(entry.path, draft && draft.baseSha !== null ? "M" : undefined);
     }
-    for (const draft of this.context.drafts)
-      if (!draft.deleted && draft.baseSha === null)
-        out.set(draft.path, draft.movedFrom ? "R" : "A");
+    for (const draft of newDrafts(this.context.drafts)) out.set(draft.path, draft.movedFrom ? "R" : "A");
     return [...out]
       .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
       .map(([path, draft]) => (draft ? { path, draft } : { path }));
