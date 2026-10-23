@@ -104,7 +104,7 @@ test("full storage: the agent edit is refused, agent edits stop with a plain err
 
     await page.locator(".repository-menu__trigger").click();
     await expect(downloadButton(page)).toBeVisible();
-    await expect(page.locator(".agent-menu__action")).toHaveText(/^(Disconnect MCP|Connect to MCP)$/);
+    await expect(page.locator(".agent-menu__action")).toHaveText("Disconnect MCP");
     const downloading = page.waitForEvent("download");
     await downloadButton(page).click();
     const download = await downloading;

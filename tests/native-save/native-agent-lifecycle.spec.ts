@@ -213,7 +213,8 @@ test("a failed first Connect leaves the site forgotten: after a reload agents ar
   // A refusal, not a passing outage (a 503 keeps agents on and retries).
   await page.route("**/api/agent/connect", route => route.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ error: "This repository cannot be connected." }) }));
   await enable(page);
-  await expect(page.locator(".agent-menu")).toHaveAttribute("data-state", "off");
+  // The failed press shows the problem dot until the next press; agents are off and the site forgotten.
+  await expect(page.locator(".agent-menu")).toHaveAttribute("data-state", "failed");
   expect(await remembered(page, "main")).toEqual([null]);
   await page.unroute("**/api/agent/connect");
   await page.reload();

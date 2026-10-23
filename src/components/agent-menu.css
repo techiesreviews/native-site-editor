@@ -40,7 +40,7 @@
   opacity: 0.5;
 }
 /* The dot is the only status: waiting for an agent pulses, connected is green, an in-between
-   state pulses grey and a problem is red (the button then offers Connect to MCP). */
+   state pulses grey and a problem (a failed press included) is red (the button then offers Connect to MCP). */
 .agent-menu[data-offer="wait"] .agent-menu__action::before {
   background: var(--color-warning);
   opacity: 1;
@@ -53,7 +53,7 @@
 .agent-menu:is([data-state="connecting"], [data-state="reconnecting"], [data-state="taking-over"]) .agent-menu__action::before {
   animation: agent-menu-pulse 1.4s ease-in-out infinite;
 }
-.agent-menu:is([data-state="paused"], [data-state="quota"], [data-state="unavailable"], [data-state="takeover-failed"]) .agent-menu__action::before {
+.agent-menu:is([data-state="paused"], [data-state="quota"], [data-state="unavailable"], [data-state="takeover-failed"], [data-state="failed"]) .agent-menu__action::before {
   background: var(--danger);
   opacity: 1;
 }

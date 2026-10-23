@@ -11,7 +11,7 @@ import type { AgentReadPorts } from "../agent-tools-read";
 import type { SharedContext } from "../agent-site";
 import type { PinRequest } from "./agent-pins";
 import { agentHistoryKey } from "../controllers/agent-controller";
-import { resumeAgents, revokeUnused, serialReads } from "../agent-resume";
+import { resumeAgents, revokeUnused, serialReads, siteFull } from "../agent-resume";
 import { mountFlyout } from "./flyout";
 import { githubScope, same, sameBranch } from "../workspace-session";
 import "./agent-menu.css";
@@ -64,6 +64,10 @@ export interface AgentApproval {
   approval: string;
 }
 
+/** An agent API refusal, with its HTTP status (a full site is told apart from other refusals). */
+class RefusedError extends AgentFailureError {
+  constructor(failure: ConstructorParameters<typeof AgentFailureError>[0], message: string | undefined, readonly status: number) { super(failure, message); }
+}
 export const AGENT_CONNECTED_KEY = "native-site-editor:agent-connected";
 /** An unused token younger than this may be another tab's fresh prompt: kept. */
 const FRESH_TOKEN_MS = 2 * 60_000;
@@ -93,7 +97,9 @@ export function createAgentMenu(options: {
   const tabId = `tab-${crypto.randomUUID()}`;
   let hub: HubState = { grants: [] };
   /** The token this tab made and copied; the hub's grants tell whether an agent used it. */
-  let token: string | undefined;
+  let token: string | undefined, tokenId: string | undefined;
+  /** The last press failed with nothing to show for it: the dot shows it until the next press. */
+  let pressFailed = false;
   let disposed = false,
     changing = false,
     remote = false,
@@ -303,7 +309,7 @@ export function createAgentMenu(options: {
         }
         throw new AgentFailureError({ kind: "other" }, result.error);
       }
-      throw report(new AgentFailureError(classifyAgentFailure({ status: response.status, body: result, text, retryAfter: response.headers.get("Retry-After"), now: Date.now() }), result?.error));
+      throw report(new RefusedError(classifyAgentFailure({ status: response.status, body: result, text, retryAfter: response.headers.get("Retry-After"), now: Date.now() }), result?.error, response.status));
     }
     return result ?? {};
   }
@@ -342,7 +348,9 @@ export function createAgentMenu(options: {
   const waiting = () => liveGrants().some(unused);
   /** The tab's connection state, on the dot (`data-state`). */
   function state() {
-    if (!remote) return options.repository() ? "off" : "closed";
+    if (!options.repository()) return "closed";
+    if (pressFailed) return "failed";
+    if (!remote) return "off";
     if (workspaceChanged) return "workspace-changed";
     if (transportMode === "pending") return "connecting";
     if (transportMode === "socket" && transportState && transportState.mode !== "live") return transportState.mode;
@@ -528,11 +536,12 @@ export function createAgentMenu(options: {
     waitingOn.replaceChildren(...parts);
   }
   async function act() {
+    pressFailed = false;
     const current = state(), offered = offer(current);
     if (offered === "disconnect") await revoke();
-    // Wait for MCP copies this tab's prompt again; a tab without it (another tab copied it, or
-    // a reload) copies a prompt of its own, leaving the other token alone.
-    else if (offered === "wait") await (token ? copyPrompt() : start());
+    // Wait for MCP copies this tab's prompt again while its token still waits; a tab without
+    // it (another tab copied it, a reload, or it was revoked) copies a prompt of its own.
+    else if (offered === "wait") await copyAgain();
     // Idle, or another tab receives with nothing connected: a new prompt from here.
     else if (current === "idle" || elsewhere(current)) await start();
     else {
@@ -618,8 +627,9 @@ export function createAgentMenu(options: {
       let result;
       try { result = await made(); } catch (error) {
         if (!current()) return;
-        // Refused (the five are full): every unused token of the site goes, then one more try.
-        if (!own().some(unused)) throw error;
+        // Refused because the site's connections are full: every unused token of the site goes,
+        // then one more try. Any other failure revokes nothing (a fresh token may be another tab's).
+        if (!(error instanceof RefusedError && siteFull(error.status, error.message)) || !own().some(unused)) throw error;
         await drop(Infinity);
         if (!current()) return;
         result = await made();
@@ -632,14 +642,18 @@ export function createAgentMenu(options: {
         return;
       }
       token = result.token;
+      tokenId = result.id;
       changing = false;
       await readConnections();
       if (!live(at)) return;
       await copyPrompt();
     } catch {
       changing = false;
-      // A failed first prompt leaves remote agents off; a connected agent keeps them on.
-      if (!usedGrants().length && !["paused", "quota", "reconnecting"].includes(transportState?.mode ?? "")) turnOff(true);
+      // The press made no prompt: the dot shows it (`pressFailed`) until the next press. With no
+      // connection of the site at all, remote agents go off; another tab's waiting token, or
+      // a connected agent, keeps them on.
+      pressFailed = !usedGrants().length;
+      if (!liveGrants().length && !["paused", "quota", "reconnecting"].includes(transportState?.mode ?? "")) turnOff(true);
     } finally {
       changing = false;
       paint();
@@ -654,13 +668,20 @@ export function createAgentMenu(options: {
       // read yet included (the server lists them).
       const shown = pinned ?? options.repository();
       if (shown) await api("revoke", { all: true, repoId: shown.id, branch: shown.branch });
-      token = undefined;
+      token = tokenId = undefined;
       changing = false;
       turnOff(true);
     } catch { /* Still connected: the button stays Disconnect MCP. */ } finally {
       changing = false;
       paint();
     }
+  }
+  /** Wait for MCP: this tab's prompt again while its token still waits (read fresh: another tab
+   * may have revoked it as unused), otherwise a prompt of its own. */
+  async function copyAgain(task = goal) {
+    await readConnections(true);
+    const ours = token && liveGrants().some((grant) => grant.id === tokenId && unused(grant));
+    if (ours) { goal = task; await copyPrompt(); } else await start(task);
   }
   async function copyPrompt() {
     const repo = options.repository();
@@ -760,6 +781,7 @@ export function createAgentMenu(options: {
     if (remote && pinned && event.newValue === null && event.key === agentsOnKey(site(pinned))) { turnOff(); paint(); }
   };
   window.addEventListener("storage", onStorage);
+  forgetWatch();
   paint();
   void resume();
   return {
@@ -771,10 +793,8 @@ export function createAgentMenu(options: {
      * Resolves to whether the prompt was copied.
      */
     async connect(task: string) {
-      if (state() === "waiting" && token) {
-        goal = task;
-        await copyPrompt();
-      } else if (!remote) {
+      if (state() === "waiting" && token) await copyAgain(task);
+      else if (!remote) {
         await turnOn(task);
         // Another tab's token waits: this tab makes a prompt of its own.
         if (!token && offer() === "wait") await start(task);
@@ -858,9 +878,17 @@ export function createAgentMenu(options: {
       document.removeEventListener("visibilitychange", reread);
       channel?.close();
       unsubscribeStorage();
-      token = undefined;
+      token = tokenId = undefined;
     },
   };
+}
+
+/** Watch records of the removed Watch control (`native-site-editor:agent-watch:…`): nothing reads them now. */
+function forgetWatch() {
+  try {
+    const keys = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index));
+    for (const key of keys) if (key?.startsWith("native-site-editor:agent-watch:")) localStorage.removeItem(key);
+  } catch { /* Storage blocked: nothing to forget. */ }
 }
 
 // A line of at most `limit` characters, with … when cut.

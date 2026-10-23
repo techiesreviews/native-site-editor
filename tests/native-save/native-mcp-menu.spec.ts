@@ -29,6 +29,15 @@ async function agent(baseURL: string | undefined, token: string, name: string) {
   };
   return { client, call };
 }
+/** The theme's problem colour, as a dot's background computes it. */
+const danger = (page: Page) => page.evaluate(() => {
+  const probe = document.createElement("div");
+  probe.style.background = "var(--danger)";
+  document.querySelector(".agent-menu")!.append(probe);
+  const colour = getComputedStyle(probe).backgroundColor;
+  probe.remove();
+  return colour;
+});
 const refresh = (page: Page) => page.evaluate(() => window.dispatchEvent(new Event("focus")));
 
 test("Connect to MCP → Wait for MCP → Disconnect MCP: the label confirms each copy, two agents share one connection, Disconnect ends both, the dot follows", async ({ page, context, baseURL }) => {
@@ -51,8 +60,7 @@ test("Connect to MCP → Wait for MCP → Disconnect MCP: the label confirms eac
   const { token } = await (await made).json() as { token: string };
   await expect(action).toHaveText("Copied");
   await expect(page.locator(".editor-toast")).toHaveCount(0);
-  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain(`Authorization: \`Bearer ${token}\``);
-  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain('Start a "watchdog" subagent');
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toMatch(new RegExp(`Authorization: \`Bearer ${token}\`[\\s\\S]*Start a "watchdog" subagent`));
   await expect(action).toHaveText("Wait for MCP");
   await expect(menu).toHaveAttribute("data-state", "waiting");
   await onlyLabel(page, "Wait for MCP");
@@ -299,6 +307,10 @@ test("while the site owner pauses agents the menu offers Connect to MCP; once un
     await page.locator(".repository-menu__trigger").click();
     await expect(menu).toHaveAttribute("data-state", "paused", { timeout: 15_000 });
     await onlyLabel(page, "Connect to MCP");
+    // The dot is the problem colour, not the plain off grey.
+    const paused = await dot(page);
+    expect(paused.color).toBe(await danger(page));
+    expect(paused.color).not.toBe("rgba(0, 0, 0, 0)");
     // The permission itself still holds (CONTEXT.md "Agent connection"): unpaused, the agent works again.
     expect((await page.request.post(`${baseURL}/__demo/agent-controls`, { data: { relay: true } })).status()).toBe(204);
     await action.click();
@@ -338,4 +350,90 @@ test("another tab receives and nothing is connected: Connect to MCP in this tab 
     await expect(action).toHaveText("Copied");
     await expect.poll(() => second.evaluate(() => navigator.clipboard.readText())).toContain(`Bearer ${token}`);
   } finally { await second.close(); }
+});
+
+test("a prompt another tab revoked as unused is never copied again: Wait for MCP makes a working one", async ({ page, context, baseURL }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  const list = (token: string) => page.request.post(`${baseURL}/mcp`, {
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
+    data: { jsonrpc: "2.0", id: 1, method: "tools/list" },
+  });
+  const connect = (tab: Page) => tab.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST");
+  await open(page, baseURL);
+  await page.locator(".repository-menu__trigger").click();
+  let made = connect(page);
+  await page.locator(".agent-menu__action").click();
+  const first = (await (await made).json() as { token: string }).token;
+  await expect(page.locator(".agent-menu__action")).toHaveText("Wait for MCP");
+  const second = await context.newPage();
+  try {
+    await open(second, baseURL);
+    await second.locator(".repository-menu__trigger").click();
+    await expect(second.locator(".agent-menu__action")).toHaveText("Wait for MCP", { timeout: 15_000 });
+    // Three minutes on: the first tab's token is old enough to be reclaimed.
+    await second.clock.setSystemTime(Date.now() + 3 * 60_000);
+    made = connect(second);
+    await second.locator(".agent-menu__action").click();
+    const own = (await (await made).json() as { token: string }).token;
+    await expect.poll(async () => (await list(first)).status(), { message: "the first tab's unused token was reclaimed" }).toBe(401);
+    // Back to the real time (the clock is the browser context's, both tabs'): the second tab's token is fresh.
+    await second.clock.setSystemTime(Date.now());
+    // The first tab still offers Wait for MCP (the second tab's token waits); its press copies a token that works.
+    await page.bringToFront();
+    await expect(page.locator(".agent-menu__action")).toHaveText("Wait for MCP");
+    made = connect(page);
+    await page.locator(".agent-menu__action").click();
+    const again = (await (await made).json() as { token: string }).token;
+    expect(again).not.toBe(first);
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain(`Bearer ${again}`);
+    expect((await list(again)).status()).toBe(200);
+    expect((await list(own)).status(), "the second tab's fresh token stays").toBe(200);
+  } finally { await second.close(); }
+});
+
+test("a failed connect revokes nothing: another tab's fresh prompt keeps working, and the dot shows the failed press", async ({ page, context, baseURL }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await open(page, baseURL);
+  await page.locator(".repository-menu__trigger").click();
+  const made = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST");
+  await page.locator(".agent-menu__action").click();
+  const first = (await (await made).json() as { token: string }).token;
+  const second = await context.newPage();
+  try {
+    await open(second, baseURL);
+    await second.locator(".repository-menu__trigger").click();
+    const action = second.locator(".agent-menu__action");
+    await expect(action).toHaveText("Wait for MCP", { timeout: 15_000 });
+    let refused = 0;
+    await second.route("**/api/agent/connect", route => { refused++; return route.fulfill({ status: 500, json: { error: "Internal error" } }); });
+    await action.click();
+    await expect(second.locator(".agent-menu")).toHaveAttribute("data-state", "failed");
+    expect(refused).toBe(1);
+    await onlyLabel(second, "Connect to MCP");
+    expect((await dot(second)).color).toBe(await danger(second));
+    const response = await page.request.post(`${baseURL}/mcp`, {
+      headers: { Authorization: `Bearer ${first}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
+      data: { jsonrpc: "2.0", id: 1, method: "tools/list" },
+    });
+    expect(response.status(), "the first tab's token was not revoked").toBe(200);
+  } finally { await second.close(); }
+});
+
+test("a failed first prompt: Connect to MCP shows the problem dot, not the plain off one, with no toast; the next press tries again", async ({ page, context, baseURL }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await open(page, baseURL);
+  await page.locator(".repository-menu__trigger").click();
+  const action = page.locator(".agent-menu__action"), menu = page.locator(".agent-menu");
+  const off = await dot(page);
+  let refuse = true;
+  await page.route("**/api/agent/connect", route => refuse ? route.fulfill({ status: 500, json: { error: "Internal error" } }) : route.continue());
+  await action.click();
+  await expect(menu).toHaveAttribute("data-state", "failed");
+  await onlyLabel(page, "Connect to MCP");
+  const failed = await dot(page);
+  expect(failed.color).not.toBe(off.color);
+  expect(failed.color).toBe(await danger(page));
+  refuse = false;
+  await action.click();
+  await expect(action).toHaveText("Wait for MCP", { timeout: 15_000 });
 });
