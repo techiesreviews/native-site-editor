@@ -3382,7 +3382,7 @@ const agentSiteHost = createAgentSiteHost({
   files: () => appStore.repository.value && appStore.snapshot.value ? { repo: appStore.repository.value, snapshot: appStore.snapshot.value,
     api, read: readFile, batch: readFiles, has: (repo, sha) => Boolean(cleanSources.get(repo, sha)) } : undefined,
   stamp: () => guardedEdits.stamp("repository"),
-  source: path => mediaPorts.source(path),
+  source: path => runtime.textSource(path),
   load: loadAgentSite,
   input: () => {
     const scope = draftScope();
@@ -3394,7 +3394,8 @@ const agentSiteHost = createAgentSiteHost({
       commit: appStore.snapshot.value.commit,
       file: activeFileContext,
       drafts: draftStore().list(scope),
-      mountedSource: (path) => editorModule?.getMountedSource(path),
+      // The runtime's text now: the mounted editor's, else the draft's, as the preview shows it.
+      mountedSource: (path) => runtime.source(path, scope),
       native: site && {
         site,
         routeInfo: (route) => nativeRouteInfo(route, site),

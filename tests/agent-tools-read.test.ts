@@ -92,6 +92,39 @@ test("list/read apply modified, added, moved and deleted drafts and keep hash/so
   }
 });
 
+test("reads answer with the tab's text now, as the preview shows it, before the shared drafts and GitHub", async () => {
+  const f = await fixture();
+  const old = f.tree.find(entry => entry.path === "index.html")!;
+  f.context.drafts.push({ path: "index.html", baseSha: old.sha, deleted: true, updatedAt: 1 },
+    { path: "upload.png", baseSha: null, binary: true, size: 8, updatedAt: 1 });
+  const now: Record<string, string> = { "about/index.html": "<h1>Typed, unsaved</h1>", "styles/site.css": "body { color: red }",
+    "index.html": "still held", "upload.png": "not text", "styles/tokens.css": "x".repeat(1024 * 1024 + 1) };
+  const tools = createAgentReadTools({ ...f.ports, source: path => now[path] });
+  const run = async (name: AgentRead["tool"], args: AgentRead["args"] = {}) => {
+    const result = await tools.run(name, args);
+    assert.equal(result.ok, true, JSON.stringify(result));
+    return payload({ content: [{ type: "text", text: JSON.stringify(result.ok ? result.value : null) }] });
+  };
+  const typed = await run("read_file", { path: "about/index.html" });
+  assert.deepEqual([typed.content, typed.source, typed.hash], [now["about/index.html"], "draft", await textHash(now["about/index.html"])]);
+  const page = await run("get_page", { page: "/about" });
+  assert.deepEqual([page.html, page.hash, page.source], [typed.content, typed.hash, "draft"]);
+  // A saved file the tab holds is its text, without asking GitHub; one it does not hold is GitHub's.
+  const saved = await run("read_file", { path: "styles/site.css" });
+  assert.deepEqual([saved.content, saved.source], [now["styles/site.css"], "github"]);
+  assert.deepEqual(f.counts(), { reads: 0, trees: 0 });
+  // A deletion and a binary draft stay what the drafts say; text past the agents' limit is not taken.
+  const deleted = await tools.run("read_file", { path: "index.html" });
+  assert.equal(deleted.ok, false);
+  const binary = await tools.run("read_file", { path: "upload.png" });
+  assert.ok(!binary.ok && /binary file/.test(binary.message));
+  const exported = await run("export_site");
+  const byPath = (path: string) => exported.files.find((item: { path: string }) => item.path === path);
+  assert.equal(byPath("about/index.html").content, now["about/index.html"]);
+  assert.equal(byPath("styles/site.css").content, now["styles/site.css"]);
+  assert.equal(byPath("styles/tokens.css").content, files["styles/tokens.css"]);
+});
+
 test("get_page keeps aliases, matching outlines and source=false; stale outline never returned", async () => {
   const f = await fixture();
   const page = await f.run("get_page", { page: "/about", source: false });

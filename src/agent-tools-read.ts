@@ -23,7 +23,7 @@ export interface AgentReadPorts {
   /** The workspace now, held by an edit (ticket 23): `away` once another is shown; its context there either way. */
   pin?(): { away(): boolean; context(): Promise<SharedContext | undefined> } | undefined;
   files(): AgentReadFiles | undefined;
-  /** The live source a page edit starts from (media place/frame/loop proofs). */
+  /** The text of `path` now (the site runtime's): agent reads, and the live source a page edit starts from (media place/frame/loop proofs). */
   source?(path: string): string | undefined;
 }
 
@@ -86,7 +86,8 @@ export function createAgentReadTools(ports: AgentReadPorts) {
       const shared = await ports.context();
       stale();
       if (!shared) throw new Error("The editor is unavailable. Open the connected site and branch, then read the site again.");
-      const files = new SiteFiles(agentFileReader(source, shared.context, signal), source.repo, shared.context, async hash => shared.texts.get(hash));
+      const files = new SiteFiles(agentFileReader(source, shared.context, signal), source.repo, shared.context, async hash => shared.texts.get(hash),
+        path => ports.source?.(path));
       const result = await executeAgentRead({ operation: "read", tool, args }, shared.context, files);
       stale();
       // Leave space for the relay's correlation/scope envelope, including JSON escaping and UTF-8.
