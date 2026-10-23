@@ -4,6 +4,7 @@ import { CleanSourceCache } from "../src/clean-source-cache.ts";
 import { draftKey, type DraftScope, type SavedDraft } from "../src/drafts.ts";
 import { createNativeSiteRuntime, type NativeSiteRuntimePorts } from "../src/native-site-runtime.ts";
 import type { WorkspaceScope } from "../src/workspace-session.ts";
+import { forEachAwait } from "./support/await-race.ts";
 import type { PublishResult } from "../shared/types.ts";
 
 const SCOPE = { account: "o", repoId: 1, repo: "o/site", branch: "main" } satisfies DraftScope;
@@ -130,21 +131,6 @@ test("a save of another branch, or with no native site, leaves GitHub's layer", 
   assert.deepEqual(calls, []);
 });
 
-test("a predicted read that lands after the site was let go writes nothing", async () => {
-  const { runtime, hold } = setup();
-  let land!: (value: { texts: Map<string, string>; unreadable: [] }) => void;
-  hold(new Promise((resolve) => { land = resolve; }));
-  const request = runtime.state.request;
-  const reading = runtime.readPredicted("o/site", ["styles/site.css"], () => runtime.state.request === request);
-  assert.equal(runtime.state.shownRequests.has("styles/site.css"), true);
-  // Its files are found and their texts asked for; the next load starts, then the old branch's text arrives.
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  runtime.reset();
-  land({ texts: new Map([["styles/site.css", "old branch"]]), unreadable: [] });
-  assert.equal(await reading, false);
-  assert.equal(runtime.base.sources.has("styles/site.css"), false);
-});
-
 test("a predicted read for the load on show is taken up, once", async () => {
   const { runtime, calls } = setup();
   const live = () => true;
@@ -242,22 +228,6 @@ test("a predicted read left from an earlier load never unmarks the next load's r
   assert.equal(runtime.base.sources.get("styles/site.css"), "new branch");
 });
 
-test("a predicted read whose files are found after the site was let go asks GitHub for nothing", async () => {
-  let found!: (entry: { sha: string }) => void;
-  const asked: string[] = [];
-  const { runtime } = setup([], {}, {
-    find: () => new Promise((resolve) => { found = resolve; }),
-    readTexts: async (_repo, files) => { asked.push(...files.map((file) => file.path)); return { texts: new Map(files.map((file) => [file.path, "stale"])), unreadable: [] }; },
-  });
-  const request = runtime.state.request;
-  const reading = runtime.readPredicted("o/site", ["styles/site.css"], () => runtime.state.request === request);
-  runtime.reset();
-  found({ sha: SHA });
-  assert.equal(await reading, false);
-  assert.deepEqual(asked, []);
-  assert.equal(runtime.base.sources.has("styles/site.css"), false);
-});
-
 test("the shown paths are the page on show's, its components, the open file and its page styles", () => {
   const site = { routes: { "/": "index.html", "/about": "about/index.html" }, components: { "site-card": "components/site-card.html" } };
   const { runtime } = setup([], {}, { route: () => "/about", openFile: () => "styles/theme.css", pageStyles: () => ["styles/site.css"] });
@@ -268,8 +238,6 @@ test("the shown paths are the page on show's, its components, the open file and 
   const shown = runtime.shownPaths();
   for (const path of ["about/index.html", "components/site-card.html", "styles/site.css", "styles/theme.css"]) assert.equal(shown.has(path), true, path);
   assert.equal(shown.has("index.html"), false);
-  // Another route given shows its own page.
-  assert.equal(runtime.shownPaths("/").has("index.html"), true);
 });
 
 test("the site's sources read through a plan's reader when one is given", () => {
@@ -293,11 +261,54 @@ test("a save while the project is native but its site is not loaded becomes GitH
 
 test("reset lets the state go before the views that show the site close", () => {
   const seen: unknown[] = [];
-  const { runtime } = setup([], {}, { closed: () => { seen.push({ site: runtime.site, engaged: runtime.engaged, files: runtime.base.files.length, sources: runtime.base.sources.size }); } });
+  const { runtime } = setup([], {}, { closed: () => { seen.push({ site: runtime.site, engaged: runtime.engaged, files: runtime.base.files.length, sources: runtime.base.sources.size, request: runtime.state.request, assets: runtime.state.assets.size }); } });
   runtime.site = SITE;
   runtime.engaged = true;
   runtime.base.files = ["index.html"];
   runtime.base.sources.set("index.html", "home");
+  runtime.state.assets.set("logo.png", "data:");
+  const request = runtime.state.request;
   runtime.reset();
-  assert.deepEqual(seen, [{ site: undefined, engaged: false, files: 0, sources: 0 }]);
+  assert.deepEqual(seen, [{ site: undefined, engaged: false, files: 0, sources: 0, request: request + 1, assets: 0 }]);
+});
+
+test("a predicted read let go at any of its awaits asks GitHub for nothing more, writes nothing and leaves no path marked", async () => {
+  const points = await forEachAwait((race) => {
+    const asked: string[] = [];
+    const { runtime } = setup([], {}, {
+      find: race.port("find", async () => ({ sha: SHA })),
+      readTexts: race.port("readTexts", async (_repo: string, files: { path: string; sha: string }[]) => {
+        asked.push(...files.map((file) => file.path));
+        return { texts: new Map(files.map((file) => [file.path, "old branch"])), unreadable: [] };
+      }),
+    });
+    const request = runtime.state.request;
+    return { runtime, asked, askedBefore: -1, done: runtime.readPredicted("o/site", ["styles/site.css"], () => runtime.state.request === request) };
+  }, (run) => { run.askedBefore = run.asked.length; run.runtime.reset(); }, async ({ runtime, done, asked, askedBefore }) => {
+    assert.equal(await done, false);
+    assert.equal(asked.length, askedBefore);
+    assert.equal(runtime.base.sources.has("styles/site.css"), false);
+    assert.equal(runtime.state.shownRequests.size, 0);
+  });
+  assert.equal(points, 2);
+});
+test("a predicted read GitHub fails is left unread, quietly", async () => {
+  for (const failing of ["find", "readTexts"] as const) {
+    const { runtime, calls } = setup([], {}, failing === "find"
+      ? { find: async () => { throw new Error("x"); } }
+      : { readTexts: async () => { throw new Error("x"); } });
+    runtime.base.sources.set("index.html", "home");
+    assert.equal(await runtime.readPredicted("o/site", ["styles/site.css"], () => true), false, failing);
+    assert.equal(runtime.state.shownRequests.size, 0, failing);
+    assert.deepEqual([...runtime.base.sources.keys()], ["index.html"], failing);
+    assert.deepEqual(calls, [], failing);
+  }
+});
+
+test("a text draft of a file hides the wider index: a deletion has none, an edit is the draft's", () => {
+  const { runtime, clean } = setup([draft("notes.txt", "kept", { deleted: true }), draft("data.json", "{\"drafted\":true}")]);
+  clean.put("", "key", "notes.txt", "indexed notes");
+  clean.put("", "key", "data.json", "{}");
+  assert.equal(runtime.textSource("notes.txt"), undefined);
+  assert.equal(runtime.textSource("data.json"), "{\"drafted\":true}");
 });

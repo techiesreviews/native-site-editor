@@ -1782,7 +1782,7 @@ function nativeImagePaths() {
   const gone = new Set(drafts.filter((draft) => draft.deleted).map((draft) => draft.path));
   return [...new Set([
     ...(appStore.snapshot.value?.tree ?? []).filter((entry) => entry.type === "blob" && isImagePath(entry.path)).map((entry) => entry.path),
-    ...newDraftPaths(drafts, { kind: isImagePath }),
+    ...runtime.newDraftPaths({ kind: isImagePath }, scope),
   ])].filter((path) => !gone.has(path)).sort();
 }
 
