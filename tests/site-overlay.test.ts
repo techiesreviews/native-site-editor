@@ -47,11 +47,7 @@ test("linked-styles openComponentLinkedStyle: the same answer as openSecondary (
   assert.equal(isNewDraft({ path: "components/card.css", baseSha: null, upload: { size: 1, type: "text/css" } }, { uploads: false }), false);
 });
 
-test("pages-state renderPagesTree: new pages marked, a moved page is the same page", () => {
-  assert.deepEqual(newDraftPaths(drafts, { moved: false }), notMoved);
-});
-
-test("agent-site buildAgentContext: new files without moved ones", () => {
+test("pages-state renderPagesTree and agent-site buildAgentContext: new files without moved ones (the callers: tests/pages-controller.test.ts, tests/agent-site.test.ts)", () => {
   assert.deepEqual(newDraftPaths(drafts, { moved: false }), notMoved);
 });
 

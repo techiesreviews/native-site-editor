@@ -142,6 +142,14 @@ test("a missing stylesheet is reported and leaves the pane closed", async () => 
   assert.equal(h.element("secondary-pane").hidden, true);
 });
 
+test("an uploaded stylesheet not on GitHub is looked up, not opened from its empty draft", async () => {
+  const upload = { path: "uploaded.css", baseSha: null, content: "", upload: { size: 20, type: "text/css" }, opaque: true } as SavedDraft;
+  const h = harness({ entries: {}, drafts: { "uploaded.css": upload } });
+  assert.equal(await h.linked.openSecondary("uploaded.css"), false);
+  assert.deepEqual(h.calls, ["find uploaded.css", "error Could not open uploaded.css."]);
+  assert.deepEqual(h.mounts, []);
+});
+
 test("closeSecondary disposes the pane's editor and hides it", async () => {
   const h = harness();
   const opening = h.linked.openSecondary("styles.css");
