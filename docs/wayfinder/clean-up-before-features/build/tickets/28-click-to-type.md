@@ -59,4 +59,11 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Validation gaps (gap): There is no spec for two outcomes of the waiting drag start: the 1 s START_WAIT_MS timeout (the host asks for no render), and a pointercancel while waiting. Rac
 - Validation gaps (gap): No spec covers a render that arrives between the text edit and the edit's own render. Test to add: type in the h1 and hold renders. Click the lead's text, then 
 - Validation gaps (gap): No spec clicks near the top or bottom edge of an inline link's text. Test to add: in `withLinks`, click `[data-key='hero-link']` 2 px below its bounding box top
+- Spec (P2): fa9a3884:docs/wayfinder/clean-up-before-features/build/tickets/28-click-to-type.md:53 — P2: Every `### Follow-ups` entry (lines 53–61) is cut off mid-sentence: 
+- Spec (P2): fa9a3884:docs/wayfinder/clean-up-before-features/build/tickets/28-click-to-type.md:49 — P2: The Done section's commit list is still wrong. It names 24b18ad8, c4
+- Spec (P2): fa9a3884:src/components/native-preview-runtime.js:599 — P2: The guard against the host re-selecting written text counts a change of selection only when another 
+- Standards (P3): fa9a3884:src/components/native-preview-runtime.js:3063 — P3 (standards don't cover it; this is a mismatch with the slice's own rule at :3074): the double-click 
+- Validation gaps (gap): Deselect after typing: no spec covers it. Test to add in `native-click-to-type.spec.ts`: click the h1's text and type "!". Call `holdRenders`, then press Escape
+- Validation gaps (gap): Ignoring the stale re-selection in Edit component mode: the template path through `placeKey` is untested. Test to add: open Edit component mode on `project-card
+- Validation gaps (gap): Escape then a keyboard climb before the render: no spec covers this path, which takes the `stale` branch without any click. Test to add: type in the h1 and hold
 
