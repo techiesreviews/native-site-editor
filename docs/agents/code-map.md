@@ -242,19 +242,19 @@ Ranges are approximate navigation hints, measured in this worktree; search the s
 | Routes and preview updates | 1442–1564 | refreshNativeRoutes, nativePageStyles, updateNativePreviewSources |
 | Shown source files and stylesheet loading | 1565–1655 | readNativeShownFiles, readNativeStyleFiles, loadNativeShownFiles |
 | Media reads, uploads and media manager ports | 1656–1954 | loadNativeAssets, uploadFilesTo, applyMediaBatch, mediaController |
-| Site activation and component styles | 1955–2169 | deactivateNative, loadNativeComponentStyles, activateNativeSite |
-| Deferred text index and first-paint/title gates | 2170–2357 | startNativeTextIndex, noteNativePainted, indexNativeTextFiles, ensureNativeTextIndex |
-| Current page, GitHub reads wiring and closing the workspace before sign-in | 2358–2502 | setCurrentPage, readFile, closeWorkspace (status, errorMessage, api: src/github-reads.ts) |
-| Login, Start your site, Setup checklist, wizard and Get started ports (src/setup-host.ts), directory summary | 2503–2584 | setup, setupScope, showDirectory, treeState |
-| Files/Pages/media explorer, page and card ports | 2585–2890 | mountExplorerTabs, cardsController, pagesController |
-| File and folder creation | 2891–3215 | planCreation, branchPathProblem, createFromRequest |
-| File operations, site resync and save ports | 3216–3366 | fileOperationsController, afterFileChanges, undoFileChanges, savePublish |
-| Source pane ports (src/controllers/source-pane-controller.ts) | 3367–3395 | sourcePane, openEntry, mountSource, nativeComponentTagForPath, updateAgentContext |
-| Agent context and commands | 3396–3646 | agentContext, agentSiteActions, applyAgentSiteCommand, agentActing |
-| New, uploaded and deleted drafts | 3647–3752 | openNewDraft, showUpload, applyAgentCommand |
-| Workspace boot ports (src/workspace-boot.ts) | 3753–3773 | workspaceBoot, restoreFile, loadSnapshot, chooseRepository |
-| Repository list, account switching and sign-out ports (src/repository-list.ts), storage | 3774–3799 | checkNewRepositories listeners, loadRepositories, refreshRepositoryList, disconnect, storage |
-| Draft baseline, agent/boot ports and startup | 3800–3881 | agentController, boot, renderLogin("loading"), workspaceBoot.startGuess |
+| Site activation and component styles | 1955–2158 | deactivateNative, loadNativeComponentStyles, activateNativeSite |
+| Deferred text index and first-paint/title gates | 2159–2346 | startNativeTextIndex, noteNativePainted, indexNativeTextFiles, ensureNativeTextIndex |
+| Current page, GitHub reads wiring and closing the workspace before sign-in | 2347–2491 | setCurrentPage, readFile, closeWorkspace (status, errorMessage, api: src/github-reads.ts) |
+| Login, Start your site, Setup checklist, wizard and Get started ports (src/setup-host.ts), directory summary | 2492–2573 | setup, setupScope, showDirectory, treeState |
+| Files/Pages/media explorer, page and card ports | 2574–2873 | mountExplorerTabs, cardsController, pagesController |
+| File and folder creation | 2874–3165 | planCreation, branchPathProblem, createFromRequest |
+| File operations, site resync and save ports | 3166–3347 | fileOperationsController, afterFileChanges, undoFileChanges, savePublish |
+| Source pane ports (src/controllers/source-pane-controller.ts) | 3348–3380 | sourcePane, openEntry, mountSource, nativeComponentTagForPath, updateAgentContext |
+| Agent context and commands | 3381–3634 | agentContext, agentSiteActions, applyAgentSiteCommand, agentActing |
+| New, uploaded and deleted drafts | 3635–3741 | openNewDraft, showUpload, applyAgentCommand |
+| Workspace boot ports (src/workspace-boot.ts) | 3742–3766 | workspaceBoot, restoreFile, loadSnapshot, chooseRepository |
+| Repository list, account switching and sign-out ports (src/repository-list.ts), storage | 3767–3788 | checkNewRepositories listeners, loadRepositories, refreshRepositoryList, disconnect, storage |
+| Draft baseline, agent/boot ports and startup | 3789–3870 | agentController, boot, renderLogin("loading"), workspaceBoot.startGuess |
 
 ## Main entry points
 
