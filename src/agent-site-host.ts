@@ -43,7 +43,9 @@ export function createAgentSiteHost(ports: AgentSiteHostPorts) {
     const stamp = ports.stamp(), input = ports.input(), away = () => stamp.changed() === "scope";
     return input && { away, async context() {
       const shown = away() ? undefined : await build();
-      return shown ?? (away() ? (await ports.load()).buildAgentContext({ ...input, file: null, mountedSource: () => undefined, native: undefined }) : undefined);
+      if (shown) return shown;
+      // Away now: its own. Left and shown again while it was made: the one shown, read again.
+      return away() ? (await ports.load()).buildAgentContext({ ...input, file: null, mountedSource: () => undefined, native: undefined }) : build();
     } };
   }
   function tools(build = context) {

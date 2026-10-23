@@ -3763,14 +3763,14 @@ function makeAgentSiteActions(edits: GuardedEdits = guardedEdits, atomic = false
   legacy: applyAgentCommand,
 }; }
 async function applyAgentSiteCommand(command: AgentCommand) {
+  const began = workspaceSession.begin(), revision = appStore.snapshot.value?.commit;
   const [{ applySiteCommand, prepareAgentText, atomicAgentCommand, agentStructuralActions, finishAgentTextElsewhere }, { createPagesController }, { createLazyFileOperationsController }] = await Promise.all([loadAgentSite(), loadPagesActions(), loadFileOps()]);
   // An edit read from a site or branch no longer shown finishes there, on its files (ticket 23);
-  // on show it goes through the editor, which holds the workspace from here (its branch is checked below).
+  // on show the editor writes it, on the revision it arrived on (a new load of its branch since takes a new stamp).
   const elsewhere = () => finishAgentTextElsewhere(command, draftScope, info.user?.login, draftStore(), (files, path) => repositoryIndex.find(api, files.repo, files.snapshot, path));
   const finished = await elsewhere();
   if (finished) return finished;
-  const scope = draftScope(), at = workspaceSession.begin(), revision = appStore.snapshot.value?.commit;
-  const current = () => at.holds() && revision === appStore.snapshot.value?.commit && !versions.view;
+  const scope = draftScope(), at = began.changed() ? workspaceSession.begin() : began, current = () => at.holds() && revision === appStore.snapshot.value?.commit && !versions.view;
   if (!current() || !appStore.snapshot.value || command.branch !== appStore.snapshot.value.branch ||
     command.repoId !== undefined && command.repoId !== scope?.repoId) throw new Error("The editor changed repository or branch.");
   if (!atomicAgentCommand(command)) {

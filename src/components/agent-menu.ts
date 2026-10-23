@@ -171,7 +171,8 @@ export function createAgentMenu(options: {
           workspace: { account: options.account, repoId: repo.id, branch: repo.branch }, ports, records,
           run,
         }));
-        return (await editTools).run(request, fence, () => current() && (stamp.changed() === "scope" || stamp.holds() && ports.files()?.snapshot.commit === commit), signal, held);
+        // Its branch shown again (a new load of it) is no move either; on show its revision must hold.
+        return (await editTools).run(request, fence, () => current() && (stamp.changed() === "scope" || ports.files()?.snapshot.commit === commit), signal, held);
       },
       read: async (read, signal) => {
         const ports = options.tools, stamp = ports?.stamp();

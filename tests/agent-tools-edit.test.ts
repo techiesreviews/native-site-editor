@@ -442,6 +442,30 @@ test("a branch switch while a pinned agent edit prepares finishes it on the bran
   assert.equal(agentCommandFiles.get(ran[0])?.snapshot, f.snapshot, "with the files it was read from");
 });
 
+test("a pinned agent edit whose branch is shown again (away and back) before it runs still applies", async () => {
+  const f = await fixture(), memory = createMemoryWorkspace({ branch: { "index.html": "before" } }), edits = createGuardedEdits(memory.workspace);
+  const opened = deferred<void>(), gate = deferred<void>();
+  const ports: AgentReadPorts = { ...f.ports, stamp: () => edits.stamp("repository"),
+    context: async () => { const at = edits.stamp("repository"); opened.resolve(); await gate.promise; return at.holds() ? { context: f.context, texts: f.texts } : undefined; },
+    // As the host's (src/agent-site-host.ts): the one shown, read again when it was left and shown again.
+    pin: () => {
+      const at = edits.stamp("repository"), away = () => at.changed() === "scope";
+      return { away, context: async () => (away() ? undefined : await ports.context()) ?? (away() ? { context: f.context, texts: f.texts } : ports.context()) };
+    } };
+  const ran: AgentCommand[] = [];
+  const tools = createAgentEditTools({ workspace, ports, records: f.records, run: async command => { ran.push(command); return { message: "Applied here." }; } });
+  const input = request("edit_file", { path: "index.html", expectedHash: f.context.site!.outlines[0].hash, edits: [{ oldText: "Welcome", newText: "Hello" }] });
+  // The current() src/components/agent-menu.ts hands over: a new load of its branch is no move; its revision holds.
+  const arrived = edits.stamp("repository"), commit = f.ports.files().snapshot.commit;
+  const reply = tools.run(input, 0, () => arrived.changed() === "scope" || f.ports.files().snapshot.commit === commit);
+  await opened.promise;
+  memory.setScope("lex/site@dev"); memory.setScope("lex/site@main"); memory.bumpGeneration();
+  gate.resolve();
+  assert.equal(body(await reply).state, "applied");
+  assert.equal(ran.length, 1);
+  assert.equal(ran[0].branch, "main");
+});
+
 test("a revision change after the executor committed still reports applied, never conflict", async () => {
   const f = await fixture();
   let live = true;

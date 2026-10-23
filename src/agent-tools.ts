@@ -1,10 +1,11 @@
 import type { AgentCommand } from "../shared/agent";
 import type { AgentRead, AgentReadResult } from "../shared/agent-read";
+import type { AgentReadFiles } from "./agent-tools-read";
 
 /** Cancellation stays local; never serialized with command identity or receipts. */
 export const agentCommandSignals = new WeakMap<AgentCommand, AbortSignal>();
 /** The files a command was read from (ticket 23): the editor writes it there if that site is no longer shown. */
-export const agentCommandFiles = new WeakMap<AgentCommand, import("./agent-tools-read").AgentReadFiles>();
+export const agentCommandFiles = new WeakMap<AgentCommand, AgentReadFiles>();
 
 export type AgentToolExecutor = (args: AgentRead["args"], signal?: AbortSignal) => Promise<AgentReadResult>;
 
