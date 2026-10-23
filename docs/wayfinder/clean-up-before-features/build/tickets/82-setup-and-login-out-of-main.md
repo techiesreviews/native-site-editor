@@ -2,7 +2,7 @@
 title: "Login, setup checklist, wizard and Get started leave main.ts"
 type: task (AFK)
 status: open
-assignee:
+assignee: lead-82 (this session)
 builder: sol
 blocked_by: [25-boot-and-snapshot]
 ---
