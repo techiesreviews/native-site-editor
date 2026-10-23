@@ -155,3 +155,65 @@ test('a file GitHub never answers, opened outside an open, shows the plain notic
   await expect(toast(page)).toHaveCount(0);
   expect(reads.seen).toBe(4);
 });
+
+test('a branch list GitHub never answers shows the toast after four tries; Try again chooses the repository again and opens the site', async ({ page, baseURL }) => {
+  await page.clock.install();
+  const reads = { seen: 0, failing: true };
+  await page.route(/\/api\/branches\?/, (route) => { reads.seen++; if (!reads.failing) return route.continue(); });
+  await page.goto(`${baseURL}/${HASH}`);
+  await failFourTries(page, reads);
+  await expect(toast(page).locator('.editor-toast__text')).toHaveText(SAID);
+  await expect(page.locator('#content')).toContainText('Branches could not be loaded.');
+
+  reads.failing = false;
+  await toast(page).getByRole('button', { name: 'Try again', exact: true }).click();
+  await expectOpened(page);
+  expect(reads.seen).toBe(5);
+});
+
+// A file's blob, read from the snapshot as it passes; its reads (alone or in a batch) are never answered while `failing`.
+async function holdFileReads(page: Page, path: string) {
+  const reads = { seen: 0, failing: true, sha: '' };
+  await page.route(/\/api\/snapshot\?/, async (route) => {
+    const response = await route.fetch();
+    const body = await response.json() as { tree?: { path: string; sha: string }[] };
+    reads.sha ||= body.tree?.find((entry) => entry.path === path)?.sha ?? '';
+    await route.fulfill({ response, json: body });
+  });
+  await page.route((url) => /^\/api\/files?$/.test(url.pathname) && Boolean(reads.sha) && url.search.includes(reads.sha), (route) => {
+    reads.seen++;
+    if (!reads.failing) return route.continue();
+  });
+  return reads;
+}
+
+test('the home page GitHub never answers while the site opens fails the open after four tries; Try again opens it', async ({ page, baseURL }) => {
+  await page.clock.install();
+  const reads = await holdFileReads(page, 'index.html');
+  await page.goto(`${baseURL}/${HASH}`);
+  await failFourTries(page, reads);
+  await expectFailedOpen(page);
+  // Not read again by the file's own open: four tries in all.
+  await toast(page).hover();
+  await page.clock.fastForward(10_000);
+  expect(reads.seen).toBe(4);
+
+  reads.failing = false;
+  await toast(page).getByRole('button', { name: 'Try again', exact: true }).click();
+  await expectOpened(page);
+});
+
+test('the file a reopen shows, never answered, offers Try again, which reopens it', async ({ page, baseURL }) => {
+  await page.clock.install();
+  const reads = await holdFileReads(page, 'robots.txt');
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=robots.txt`);
+  await failFourTries(page, reads);
+  await expect(toast(page).locator('.editor-toast__text')).toHaveText(SAID);
+  await expect(page.locator('#content')).toContainText(SAID);
+
+  reads.failing = false;
+  await toast(page).getByRole('button', { name: 'Try again', exact: true }).click();
+  await expect(page.locator('#current-page')).toHaveAttribute('data-path', 'robots.txt', { timeout: 30_000 });
+  await expect(page.locator('#status')).toContainText('Up to date with main', { timeout: 30_000 });
+  await expect(page.locator('#content')).not.toContainText(SAID);
+});

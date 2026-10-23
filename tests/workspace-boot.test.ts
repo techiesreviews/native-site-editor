@@ -8,6 +8,7 @@ import { RepositoryIndex } from "../src/repository-loading.ts";
 import { createWorkspaceSession } from "../src/workspace-session.ts";
 import type { ApiReceipt } from "../src/boot-api-response.ts";
 import type { FilesResult, Repository, Snapshot } from "../shared/types.ts";
+import { ReadUnansweredError } from "../src/read-retry.ts";
 
 // readWorkspaceUrl and rememberWorkspace (src/workspace-state.ts) use the page's location, history and localStorage.
 const saved = ["location", "history", "localStorage"].map((name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)] as const);
@@ -293,4 +294,64 @@ test("a failed branch list and a guess that never lands show the failure at the 
   await flush();
   assert.deepEqual(f.seeded, []);
   assert.equal(f.ports.appStore.snapshot.value, undefined);
+});
+
+// Try again (ticket 26): each open hands its own retry to errorMessage with its errors.
+function retries(f: ReturnType<typeof fixture>) {
+  const offered: (() => void)[] = [];
+  f.ports.errorMessage = (error: unknown, retry?: () => void) => {
+    f.shown.status = `error: ${error instanceof Error ? error.message : error}`;
+    if (retry) offered.push(retry);
+  };
+  return offered;
+}
+const silent = () => new ReadUnansweredError(new Error("held"));
+function failedSnapshotLoad(f: ReturnType<typeof fixture>) {
+  f.ports.appStore.reset(REPO);
+  f.ports.appStore.branch.value = "main";
+  const loading = f.boot.loadSnapshot();
+  f.pending("snapshot")[0].answer.reject(silent());
+  return loading;
+}
+
+test("Try again repeats the failed open with fresh reads: a snapshot load, a repository choice", async () => {
+  const f = fixture(), offered = retries(f);
+  await failedSnapshotLoad(f);
+  assert.equal(offered.length, 1);
+  assert.equal(f.shown.content, "Your repository could not be opened.");
+  offered[0]();
+  assert.equal(f.pending("snapshot").length, 2, "a fresh snapshot read");
+  f.pending("snapshot")[1].answer.resolve(SNAPSHOT);
+  await flush();
+  assert.equal(f.ports.appStore.snapshot.value, SNAPSHOT);
+
+  const g = fixture(), offeredChoice = retries(g);
+  const choosing = g.boot.chooseRepository({ repoId: 501, branch: "main" });
+  g.pending("branches")[0].answer.reject(silent());
+  await choosing;
+  assert.equal(g.shown.content, "Branches could not be loaded. Reload repositories to retry.");
+  assert.equal(offeredChoice.length, 1);
+  offeredChoice[0]();
+  assert.equal(g.pending("branches").length, 2, "the branch list is read again");
+});
+
+test("a superseded Try again reads nothing: another load started since its open failed", async () => {
+  const f = fixture(), offered = retries(f);
+  await failedSnapshotLoad(f);
+  // Refresh (or another branch) starts the next load.
+  const refreshing = f.boot.loadSnapshot();
+  assert.equal(f.pending("snapshot").length, 2);
+  offered[0]();
+  assert.equal(f.pending("snapshot").length, 2, "no snapshot read for the old open");
+  f.pending("snapshot")[1].answer.resolve(SNAPSHOT);
+  await refreshing;
+
+  const g = fixture(), offeredChoice = retries(g);
+  const choosing = g.boot.chooseRepository({ repoId: 501, branch: "main" });
+  g.pending("branches")[0].answer.reject(silent());
+  await choosing;
+  g.newListing();
+  offeredChoice[0]();
+  assert.equal(g.pending("branches").length, 1, "no branch read for the old choice");
+  assert.equal(g.pending("snapshot").length, 1);
 });
