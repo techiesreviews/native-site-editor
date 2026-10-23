@@ -50,3 +50,10 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - A file batch from a guess abandoned after its snapshot won is not cached: the file is read afresh. Unit rows: that ordering, and `dropGuess` (sign-out) while a taken guess is held. Browser row (`native-boot-memory.spec.ts`): the guessed batch and the first branch list held, the guess wins, a new listing clears the selection, the batch is released; reopened, the page is read afresh with no guessed content (fails without the fix). `dropGuess` has no browser row: sign-out leaves the page (`location.assign`), and so does signing in again after the only other in-page `renderLogin` (401, expired), so the page's cache cannot outlive either.
 - Pinned as it was before this slice (unit row): another branch picked while a taken guess is held does not abandon it, so its proven files still seed the cache (correct content, keyed by SHA); the superseded load installs nothing.
 - Not done: a stamp check in place of the abandon flag. `chooseRepository`'s stamp stops holding when its own `loadSnapshot` starts, so a guess still landing behind a branch list that came first would no longer seed.
+
+### Follow-ups
+
+- Spec (P3): 121a742c:docs/wayfinder/clean-up-before-features/build/tickets/25-boot-and-snapshot.md:43 — P3: `docs/agents/runner.md` ("Review and close") says the `## Done` 
+- Validation gaps (gap): tests/native-save/native-boot-memory.spec.ts:304 — The assertion "the page is read afresh" (an `/api/file` read of index.html's SHA in `state.late`) does not pr
+- Validation gaps (gap): tests/workspace-boot.test.ts — No unit row covers `forgetGuess()` (the boot's listing finished without taking the guess, so a later Reload must not take it). Th
+
