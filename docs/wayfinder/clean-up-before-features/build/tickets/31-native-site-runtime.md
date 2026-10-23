@@ -2,7 +2,7 @@
 title: "The native site runtime owns the open site's state"
 type: task (AFK)
 status: open
-assignee:
+assignee: lead-31 (this session)
 builder: claude
 blocked_by: [30-site-overlay-rule]
 ---
