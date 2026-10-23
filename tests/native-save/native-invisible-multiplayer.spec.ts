@@ -241,3 +241,37 @@ test("a picture placed with the picker's Use, held while another page of main op
   await expect(finishedCount(page)).toBeHidden();
 });
 
+// An agent's Media change that arrived on index.html, held while Lex opens main's about page: it
+// lands on index.html as an unsaved change and Lex stays on the about page.
+test("an agent's Media change held while another page of main opens lands on its own page, and Lex stays", async ({ page, baseURL }) => {
+  await openEditor(page, baseURL);
+  const messages: string[] = [];
+  page.on("websocket", socket => socket.on("framereceived", frame => { if (typeof frame.payload === "string") messages.push(frame.payload); }));
+  await page.locator(".repository-menu__trigger").click();
+  const made = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST");
+  await page.getByRole("button", { name: "Connect with MCP", exact: true }).click();
+  const { token } = await (await made).json() as { token: string };
+  await expect.poll(() => messages.some(message => message.includes('"type":"ready"'))).toBe(true);
+  await page.keyboard.press("Escape");
+  const client = new Client({ name: "invisible-multiplayer-page-spec", version: "1" });
+  await client.connect(new StreamableHTTPClientTransport(new URL(`${baseURL}/mcp`), { requestInit: { headers: { Authorization: `Bearer ${token}` } } }));
+  try {
+    const inspection = await client.callTool({ name: "inspect_preview", arguments: { page: "index.html", selector: ".hero img", limit: 1, waitSeconds: 25 } });
+    const element = JSON.parse((inspection.content as { text: string }[])[0].text).result.elements[0].element as string;
+    const media = await hold(page, "/src/agent-tools-media.ts");
+    const placing = client.callTool({ name: "place_media", arguments: { path: "index.html", element, file: "images/studio-desk.svg", requestId: "page-left-place", waitSeconds: 25 } })
+      .catch(error => ({ isError: true, content: [{ text: String(error) }] }));
+    await media.reached;
+    await page.evaluate(() => { location.hash = "repo=501&branch=main&file=about/index.html"; });
+    await expect(page.locator("#current-page")).toHaveAttribute("data-path", "about/index.html", { timeout: 30_000 });
+    media.release();
+    await placing;
+    await expect.poll(async () => (await draftsOn(page, "main")).filter(draft => draft.path === "index.html").map(draft => draft.content.includes("/images/studio-desk.svg")), { timeout: 20_000 }).toEqual([true]);
+    // Lex was not taken back to index.html; a page of the site shown needs no note.
+    await expect(page.locator("#current-page")).toHaveAttribute("data-path", "about/index.html");
+    await expect(finishedCount(page)).toBeHidden();
+    const status = await client.callTool({ name: "get_command_status", arguments: { requestId: "page-left-place" } });
+    expect(JSON.parse((status.content as { text: string }[])[0].text)).toMatchObject({ requestId: "page-left-place", state: "applied" });
+  } finally { await client.close(); }
+});
+

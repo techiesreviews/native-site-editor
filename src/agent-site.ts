@@ -1048,17 +1048,19 @@ export function pinnedMediaAway(command: AgentCommand) {
 }
 
 /**
- * The site actions a pinned Media change runs with (ticket 27): while another workspace is shown its
- * page is read from its own workspace (its draft there, else its branch text) and nothing is opened;
- * on show they are the editor's.
+ * The site actions a pinned Media change runs with (ticket 27): while another workspace is shown, or
+ * another page of its own when its page was the one open as it arrived (`openFile`: the page open
+ * now), its page is read from its own workspace (its draft there, else its branch text) and nothing
+ * is opened, so Lex is never taken back to it; on its page they are the editor's.
  */
-export function pinnedMediaActions(actions: AgentSiteActions, command: AgentCommand): AgentSiteActions {
-  const pin = mediaCommandPins.get(command)?.pin;
-  if (!pin) return actions;
+export function pinnedMediaActions(actions: AgentSiteActions, command: AgentCommand, openFile: () => string | undefined): AgentSiteActions {
+  const held = mediaCommandPins.get(command);
+  if (!held) return actions;
+  const { pin } = held, left = () => !pin.here() || held.opened === command.path && openFile() !== command.path;
   return { ...actions,
-    text: async path => pin.here() ? actions.text(path) : pin.source(path),
-    open: async path => pin.here() ? actions.open(path) : true,
-    isMounted: path => pin.here() ? actions.isMounted(path) : true,
+    text: async path => left() ? pin.source(path) : actions.text(path),
+    open: async path => left() ? true : actions.open(path),
+    isMounted: path => left() || actions.isMounted(path),
   };
 }
 

@@ -3594,7 +3594,7 @@ async function applyAgentSiteCommand(command: AgentCommand) {
   // Ticket 27: a Media change runs in its own workspace's background page, whatever is shown.
   // Finished while another workspace is shown, its note waits on that one (ticket 24), as an agent's text write's does.
   if (pinnedMedia(command)) {
-    const done = await agentActing(() => applySiteCommand(pinnedMediaActions(agentSiteActions, command), command)), away = pinnedMediaAway(command);
+    const done = await agentActing(() => applySiteCommand(pinnedMediaActions(agentSiteActions, command, () => appStore.openFile.value), command)), away = pinnedMediaAway(command);
     if (away) finishedWork.add(away, "agent", { id: command.id });
     return done;
   }

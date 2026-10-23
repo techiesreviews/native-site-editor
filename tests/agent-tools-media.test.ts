@@ -582,3 +582,39 @@ test("a pinned Media change whose workspace is shown again at another commit is 
   assert.equal(f.storage.store.list({ ...workspace, repo: repo.full_name }).length, 0);
 });
 
+// Ticket 27: Lex opens another page of the site after an agent's Media change arrived on his page
+// (the page switch may come while its code loads): its page is read from the pin and never opened.
+test("a pinned Media change whose page was open as it arrived reads it from the pin, and opens nothing, once another page is open", async () => {
+  let open = "index.html";
+  const opened: string[] = [];
+  // eslint-disable-next-line no-restricted-syntax -- the media cases read only these three actions.
+  const live = { text: async () => "<p>the page shown</p>", open: async (path: string) => { opened.push(path); return true; }, isMounted: () => false } as unknown as AgentSiteActions;
+  const pin = { repo: repo.full_name, scope: { ...workspace, repo: repo.full_name }, identity: "site", drafts: { get: () => undefined, save: () => true, remove: () => true, list: () => [] },
+    here: () => true, entry: () => undefined, find: async () => undefined, source: (path: string) => path === "index.html" ? "<p>its own</p>" : undefined,
+    files: () => ["index.html"], list: async () => ["index.html"], remember: () => {} } satisfies MediaPin;
+  const command = { id: "page-left", operation: "place_media", path: "index.html", content: "", branch: "main", commit } as AgentCommand;
+  mediaCommandPins.set(command, { pin, page: "<p>its own</p>", opened: "index.html" });
+  const actions = pinnedMediaActions(live, command, () => open);
+  assert.equal(await actions.text("index.html"), "<p>the page shown</p>", "its page open: the editor's");
+  open = "about/index.html";
+  assert.equal(await actions.text("index.html"), "<p>its own</p>");
+  assert.equal(await actions.open("index.html"), true);
+  assert.equal(actions.isMounted("index.html"), true);
+  assert.deepEqual(opened, [], "Lex is not taken back to it");
+});
+
+test("a Media change keeps the page open as it arrived with its pin", async () => {
+  const f = await fixture();
+  let seen: { opened?: string } | undefined;
+  const pin = { repo: repo.full_name, scope: { ...workspace, repo: repo.full_name }, identity: "site", drafts: f.storage.store, here: () => true,
+    entry: () => undefined, find: async () => undefined, source: () => "<p>page</p>", files: () => ["index.html"], list: async () => ["index.html"], remember: () => {} } satisfies MediaPin;
+  const snapshot: Snapshot = { branch: "main", commit, entries: [] };
+  const files = () => ({ repo, snapshot, api: async <T>() => ({ entries: [] }) as T, read: async () => "", batch: async () => ({}), has: () => false });
+  const stamp = { holds: () => true, changed: () => undefined };
+  const ports = { stamp: () => stamp, source: () => "<p>page</p>", context: async () => undefined, files } satisfies AgentReadPorts;
+  const tools = createAgentMediaTools({ workspace, ports, records: f.records, run: async command => { seen = mediaCommandPins.get(command); } });
+  const held = { source: files(), stamp, pin: { away: () => false, context: async () => undefined, media: pin, opened: "index.html" }, pinned: true };
+  await tools.run(request("adding_settings", { image: "smaller" }, "kept-opened"), 0, () => true, Date.now() + 10_000, { page: undefined }, undefined, held);
+  assert.equal(seen?.opened, "index.html");
+});
+

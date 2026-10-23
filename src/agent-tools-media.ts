@@ -77,7 +77,7 @@ export function createAgentMediaTools(options: {
           requestIdentity: identity, state: "pending", createdAt: request.createdAt };
         beforeCommit();
         mediaCommandProofs.set(command, beforeCommit);
-        if (media) mediaCommandPins.set(command, { pin: media, page });
+        if (media) mediaCommandPins.set(command, { pin: media, page, opened: pin && "opened" in pin ? pin.opened : undefined });
         // Cancellation races the same records transaction as commit; a committed receipt wins.
         const timer = changing && !signal ? setTimeout(() => { void records.cancel(workspace, request.id, request.grantId, { live: true }).catch(() => {}); }, Math.max(0, deadline - Date.now())) : undefined;
         try {

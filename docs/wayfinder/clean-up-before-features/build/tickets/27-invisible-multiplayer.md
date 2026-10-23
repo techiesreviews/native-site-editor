@@ -98,6 +98,12 @@ Review round 4 (behaviour and tests):
 - A background page shared by work holding another pin of it is drawn from the measuring work's own texts (`measure`'s `from`). Test: `tests/background-page.test.ts`.
 - Checks: `kit unit --affected` `RESULT: ok unit 1518/1518 (91 files)`; `npm run check` and `npm run lint` green; `kit size` `RESULT: ok size boot 348 KB (±0 KB) vs dev@d1b2ff1, budget 355 KB`; touched specs (native-invisible-multiplayer, native-mcp-media, native-image-popup, native-media-video, native-media-picker, native-improve-images, native-switch-mid-work, native-image-markup, native-media-button, native-placed-media) `RESULT: ok specs 10/10 passed`. `main.ts` 4090 lines, ceiling 4090.
 
+Review round 5 (behaviour and tests):
+
+- An agent's Media change that arrived on the page open then, with another page of the site opened meanwhile (also while its code loads), reads its page from its pin and opens nothing: Lex stays where he went (`pinnedMediaActions` and `runAgentMedia` take the page open as it arrived, kept with its pin; `pinnedPorts`' `opened`). Tests: `tests/agent-tools-media.test.ts`, `tests/background-page.test.ts`; spec: `place_media` held while main's about page opens lands on index.html, the about page stays shown, applied.
+- Measurements of one shared background page take turns: each draws its own texts and is measured on them as one turn, and that read is bounded by the open deadline (`measure`, `src/background-page.ts`). Test: `tests/background-page.test.ts` (two overlapping measurements with different texts).
+- Checks: `kit unit --affected` `RESULT: ok unit 1523/1523 (91 files)`; `npm run check` and `npm run lint` green; `kit size` `RESULT: ok size boot 348 KB (±0 KB) vs dev@0092f2b, budget 355 KB`; touched specs (native-invisible-multiplayer, native-mcp-media, native-mcp, native-switch-mid-work, native-media-picker, native-image-popup, native-placed-media) `RESULT: ok specs 7/7 passed`. `main.ts` 4088 lines, ceiling 4090.
+
 ## Question for Lex (open)
 
 Put to Lex (until he answers, `status: open`):
@@ -106,3 +112,4 @@ Put to Lex (until he answers, `status: open`):
 2. **Undo on its own page** ("opening that page offers it") is not built: work written away has no Undo step anywhere. Build it here, or with the later real multiplayer feature?
 3. **Browser specs not possible with `page.route`**, unit cells instead: a switch *during* a batch attempt (case 4: no request happens inside an attempt on a native site); a Media pane edit on a stale screen (its write has no request to hold; `tests/media-workspace.test.ts`); the background page's open-versus-deadline rows (the frame is made from texts already read; `tests/background-page.test.ts`). Accept these exceptions?
 4. **Fonts and pictures in the background frame**: measured without them (component stylesheets included). Acceptable, or load them too?
+5. **Toasts saying where work landed** ("On main: Image replaced", "On index.html: …"): ticket 27's decided behaviour asks for them, but Lex's rule of 2026-10-23 is no toasts, feedback in place. Keep them until the editor-wide toast removal (atomic design catalogue), or drop them here and leave the menu's count as the only sign?

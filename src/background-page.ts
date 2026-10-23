@@ -19,8 +19,10 @@
 // | never settles    | at `openMs` it rejects ("did not open"), the slot is free; a page  |
 // |                  | that opens later is closed at once                                 |
 //
-// Work's own waits are bounded by it: a measurement asks again for about 5 s while the frame has
-// not drawn the page, then each ask waits at most 8 s (`measureImage`), so about 13 s in all.
+// Work's own waits are bounded by it: a measurement first reads its page's texts again (at most
+// `openMs`, 20 s), then asks again for about 5 s while the frame has not drawn the page, and each ask
+// waits at most 8 s (`measureImage`): about 33 s in all, after any measurement already running on
+// the same page (they take turns).
 // A page that fails while it opens (its frame made, drawn) leaves nothing behind in the document.
 // These rows have unit cells only (tests/background-page.test.ts): the frame is made from the
 // page's texts and no request of its own can be held with `page.route` (named in the ticket).
@@ -44,6 +46,14 @@ export interface BackgroundPage { close(): void }
 /** The site, branch and page a background page belongs to, as one key (GitHub logins ignore capitals). */
 export const backgroundKey = (scope: Pick<DraftScope, "account" | "repoId" | "branch">, page = "") =>
   JSON.stringify([scope.account.toLowerCase(), scope.repoId, scope.branch, page]);
+
+// `work`, refused with `message` once `ms` passed (what it settles to later is let go).
+function within<T>(work: Promise<T>, ms: number, message: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), ms);
+    work.then(value => { clearTimeout(timer); resolve(value); }, error => { clearTimeout(timer); reject(error); });
+  });
+}
 
 // `open`, bounded by `ms`: a page that opens after it is closed at once.
 function bounded<P extends BackgroundPage>(open: () => P | Promise<P>, ms: number): Promise<P> {
@@ -163,20 +173,27 @@ export async function openBackgroundFrame(site: BackgroundSite, create: (host: H
     throw error;
   }
   const frame = preview;
+  let turns: Promise<unknown> = Promise.resolve();
   return {
-    async measure(request, from = site) {
-      // Work sharing this page may have changed it since it was drawn, or hold another pin of it:
-      // drawn again from the measuring work's own texts now.
-      const now = await read(from);
-      if (JSON.stringify(now) !== JSON.stringify(drawn)) { drawn = now; frame.update(now); }
-      // The frame's runtime loads beside the editor's: until it has drawn the page, ask again (about 5 s).
-      for (let attempt = 0; ; attempt++) {
-        try { return await frame.measureImage(request); }
-        catch (error) {
-          if (attempt >= 50 || !(error instanceof Error) || !/not showing a page yet/.test(error.message)) throw error;
-          await new Promise(resolve => setTimeout(resolve, 100));
+    measure(request, from = site) {
+      // One measurement at a time per frame: its texts drawn, then measured, as one turn, so work
+      // sharing the page never measures another's drawing (CODING_STANDARDS "Exactly one path wins").
+      const turn = turns.then(async () => {
+        // Work sharing this page may have changed it since it was drawn, or hold another pin of it:
+        // drawn again from the measuring work's own texts now (read within the open deadline).
+        const now = await within(read(from), BACKGROUND_PAGE_OPEN_MS, "The background page could not read its page in time.");
+        if (JSON.stringify(now) !== JSON.stringify(drawn)) { drawn = now; frame.update(now); }
+        // The frame's runtime loads beside the editor's: until it has drawn the page, ask again (about 5 s).
+        for (let attempt = 0; ; attempt++) {
+          try { return await frame.measureImage(request); }
+          catch (error) {
+            if (attempt >= 50 || !(error instanceof Error) || !/not showing a page yet/.test(error.message)) throw error;
+            await new Promise(resolve => setTimeout(resolve, 100));
+          }
         }
-      }
+      });
+      turns = turn.catch(() => undefined);
+      return turn;
     },
     close() { frame.destroy(); host.remove(); },
   };
@@ -194,11 +211,12 @@ export async function openBackgroundFrame(site: BackgroundSite, create: (host: H
  * no reason to stop: its stamp always holds. Without a pin (nothing open as it began) they are the
  * editor's.
  */
-export function pinnedPorts(ports: MediaControllerPorts, pin: MediaPin | undefined, page: string): MediaControllerPorts {
+export function pinnedPorts(ports: MediaControllerPorts, pin: MediaPin | undefined, page: string, opened = ports.openFile()): MediaControllerPorts {
   if (!pin) return ports;
   const live = () => true, holds = { holds: live, changed: () => undefined };
-  // Its page open as it began: leaving that page (another page of the same site shown) is away for its writes too.
-  const began = Boolean(page) && ports.openFile() === page;
+  // Its page open as it began (`opened`: the page open then, by default now): leaving that page (another
+  // page of the same site shown) is away for its writes too.
+  const began = Boolean(page) && opened === page;
   const here = () => pin.here(), onPage = () => here() && (!began || ports.openFile() === page);
   // Where it landed: its page while its site is shown; else its branch, and its repository too when another
   // one is shown (as a Files drop says, ticket 23). Another workspace gets a note; a page of the one shown needs none.
