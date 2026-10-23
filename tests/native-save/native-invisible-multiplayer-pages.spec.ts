@@ -167,17 +167,18 @@ test("create_page held across a branch switch makes main's page, whose Undo ther
   } finally { await client.close(); }
 });
 
-for (const operation of ["add_section", "make_component"] as const) {
+for (const operation of ["add_section", "remove_section", "make_component"] as const) {
   test(`${operation} held across a branch switch lands on main's page, whose Undo takes it back`, async ({ page, baseURL }) => {
     const { client, call } = await connect(page, baseURL);
     try {
       const home = await call("get_page", { page: "/", source: false });
       const filler = (home.sections as { id: string; key?: string }[]).find(section => section.key === "filler")!;
       const args = operation === "add_section" ? { page: "/", component: "feature-block", expectedHash: home.hash, after: filler.id }
+        : operation === "remove_section" ? { page: "/", section: filler.id, expectedHash: home.hash }
         : { page: "/", element: filler.id, tag: "held-filler", expectedHash: home.hash };
       await heldAcross(page, baseURL, "branch", () => call(operation, { ...args, requestId: `held-${operation}`, waitSeconds: 0 }));
-      const marker = operation === "add_section" ? "<feature-block" : "<held-filler";
-      await expect.poll(async () => (await draftsOn(page, "main")).filter(draft => draft.path === "index.html").map(draft => draft.content.includes(marker)), { timeout: 20_000 }).toEqual([true]);
+      const landed = (content: string) => operation === "add_section" ? content.includes("<feature-block") : operation === "remove_section" ? !content.includes('data-key="filler"') : content.includes("<held-filler");
+      await expect.poll(async () => (await draftsOn(page, "main")).filter(draft => draft.path === "index.html").map(draft => landed(draft.content)), { timeout: 20_000 }).toEqual([true]);
       await nothingShown(page);
       await openMain(page);
       await undo(page).click();

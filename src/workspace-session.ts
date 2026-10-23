@@ -43,6 +43,8 @@ export interface WorkspaceSession {
   next(scope: WorkspaceScope | undefined): void;
   /** The keys of `scope`, by default the one open now; none for no scope, an empty branch or a repository known only by name. */
   keys(scope?: WorkspaceScope): WorkspaceKeys | undefined;
+  /** How many loads of `scope`'s workspace began so far (a reload counts): work held there sees it shown, even briefly. */
+  visits(scope: WorkspaceScope | undefined): number;
 }
 
 // A GitHub repository id is a positive whole number; 0 (or none) means it is not known.
@@ -122,6 +124,7 @@ const held = (scope: WorkspaceScope | undefined) => scope && Object.freeze({ ...
 
 export function createWorkspaceSession(scope?: WorkspaceScope): WorkspaceSession {
   let load = 0, open = held(scope);
+  const visits = new Map<string, number>();
   return {
     current: () => ({ load, scope: open }),
     begin() {
@@ -133,7 +136,12 @@ export function createWorkspaceSession(scope?: WorkspaceScope): WorkspaceSession
       };
       return { load: began, scope: at, holds: () => load === began, changed };
     },
-    next(scope) { load++; open = held(scope); },
+    next(scope) {
+      load++; open = held(scope);
+      const key = identity(open);
+      if (key) visits.set(key, (visits.get(key) ?? 0) + 1);
+    },
     keys: (scope = open) => workspaceKeys(scope),
+    visits: scope => visits.get(identity(scope) ?? "") ?? 0,
   };
 }

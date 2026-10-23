@@ -33,7 +33,7 @@ export function createAgentSiteHost(ports: AgentSiteHostPorts) {
     const stamp = ports.stamp(), input = ports.input(), away = () => stamp.changed() === "scope", media = ports.mediaPin?.();
     const site = media?.site, held = site && media && { site, source: (path: string) => media.source(path),
       routeInfo: (route: string) => { const text = Object.hasOwn(site.routes, route) ? media.source(site.routes[route]) : undefined; return text === undefined ? {} : nativePageHead(text); },
-      exists: (path: string) => media.files().some(file => file === path || file.startsWith(`${path}/`)) };
+      exists: (path: string) => media.files().includes(path) };
     // `opened`: the page open as it arrived, so its work knows when Lex has left that page (ticket 27).
     return input && { away, media, opened: input.native?.openFile, async context() {
       const shown = away() ? undefined : await build();

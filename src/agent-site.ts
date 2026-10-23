@@ -1107,8 +1107,10 @@ export async function finishAgentTextElsewhere(command: AgentCommand, shown: () 
   const scope: DraftScope = { account, repoId: files.repo.id, repo: files.repo.full_name, branch: files.snapshot.branch }, path = command.path;
   const held = siteCommandPins.get(command);
   if (command.operation !== "write_file") {
-    if (!away || !held || !atomicAgentCommand(command))
+    if (!atomicAgentCommand(command))
       throw new Error("The editor shows another site or branch now, and this needs its page on screen. Nothing was changed; your drafts are as they were.");
+    if (!away || !held)
+      throw new Error("The editor shows another site or branch now, and this change was not tied to the one it was read on. Nothing was changed; your drafts are as they were.");
     return finishStructuralElsewhere(command, scope, store, held, away, left);
   }
   refuseProtected(command);
@@ -1140,19 +1142,29 @@ export async function finishAgentTextElsewhere(command: AgentCommand, shown: () 
 /**
  * A page or file command in the workspace it arrived in, not shown (ticket 34): its background site's
  * controllers run it there. A page command's steps belong to its page; a page moved, to where it goes;
- * anything else to the page open as it arrived (else the home page), as on show. Shown again before
- * its step is written, it stops: the editor's scope it held moved.
+ * anything else to the page open as it arrived (else the home page), as on show. Its workspace shown
+ * again before its step is kept, even briefly (its loads moved), stops the attempt with nothing kept:
+ * shown now, the editor runs it (undefined); left again, it runs here again, as often as it is switched
+ * under (each switch needs Lex to move, so it ends once he stays). A receipt is kept only with its step,
+ * so an attempt stopped before leaves none to count as a duplicate.
  */
 async function finishStructuralElsewhere(command: AgentCommand, scope: DraftScope, store: DraftStore, held: { pin: MediaPin; opened?: string }, away: AgentAwayPorts, left: () => boolean) {
-  const prepared = await prepareAgentText(command, scope, store, () => true, () => {});
-  if (prepared.duplicate) return prepared.duplicate;
-  if (!left()) return undefined;
   const { backgroundSite } = await import("./background-site");
-  const pages = Object.values(held.pin.site?.routes ?? {}), own = command.operation === "set_page_details" || command.operation === "move_file" && pages.includes(command.path);
-  const site = backgroundSite(held.pin, away.site, own ? command.path : held.opened);
-  const scoped = agentStructuralActions(site.workspace, prepared.context!, () => !held.pin.here(), {
-    actions: site.actions, pages: site.pages, files: site.files, components: () => site.components(command.path), loader: site.loader,
-    factories: away.site.factories, home: site.home,
-  });
-  return applyStructural(command, prepared, scoped, undefined, () => away.landed(scope));
+  for (;;) {
+    const visits = away.site.visits(scope), stays = () => !held.pin.here() && left() && away.site.visits(scope) === visits;
+    const prepared = await prepareAgentText(command, scope, store, () => true, () => {});
+    if (prepared.duplicate) return prepared.duplicate;
+    if (!stays()) { if (!left()) return undefined; continue; }
+    const pages = Object.values(held.pin.site?.routes ?? {}), own = command.operation === "set_page_details" || command.operation === "move_file" && pages.includes(command.path);
+    const site = backgroundSite(held.pin, away.site, own ? command.path : held.opened);
+    const scoped = agentStructuralActions(site.workspace, prepared.context!, stays, {
+      actions: site.actions, pages: site.pages, files: site.files, components: () => site.components(command.path), loader: site.loader,
+      factories: away.site.factories, home: site.home,
+    });
+    try { return await applyStructural(command, prepared, scoped, undefined, () => away.landed(scope)); }
+    catch (error) {
+      if (prepared.applied || stays()) throw error;
+      if (!left()) return undefined;
+    }
+  }
 }

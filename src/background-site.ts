@@ -10,7 +10,8 @@
 // controllers' ports with their reads pinned and their screen work (trees, dialogs, toasts) none.
 // Every step finishes away (src/guarded-edit/commit.ts `elsewhere`): its drafts land in that
 // workspace, its Undo step is parked for its own page (src/guarded-edit/parked.ts). Its workspace
-// shown again before the step is written stops it (the scope moves), and the editor runs it on show.
+// shown again before the step is written, even briefly, stops it (the scope or its loads move): the
+// editor runs it on show, or it runs here again once left (src/agent-site.ts finishStructuralElsewhere).
 import type { DraftScope, SavedDraft, draftStore } from "./drafts";
 import { listChanges, type DraftAccess } from "./file-changes";
 import { isSectionTemplate } from "../shared/html-source";
@@ -41,6 +42,8 @@ export interface BackgroundSitePorts {
   /** The editor's source steps (none are mounted here: an empty receipt). */
   prepareSources: EditorWorkspace["prepareSources"];
   park(step: ParkedStep): void;
+  /** How many times `scope`'s workspace was loaded (src/workspace-session.ts `visits`): shown and left again moves it. */
+  visits(scope: DraftScope): number;
   factories: AgentStructuralFactories;
 }
 
@@ -121,10 +124,11 @@ export function backgroundSite(pin: MediaPin, ports: BackgroundSitePorts, opened
   const entries = ports.factories.createLazyFileOperationsController({ ...files, edits: { stamp: () => holds, run: () => Promise.reject(new Error("Reads only.")), peek: { source: read, exists, template: () => undefined, site: () => site } } },
     () => import("./controllers/file-operations-controller"));
   const workspace: EditorWorkspace = {
-    // Its workspace shown again: the scope moves, so a step not written yet stops and the editor runs it.
+    // Its workspace shown again: the scope moves, so a step not written yet stops and the editor runs it;
+    // shown and left again between two waits, its loads moved (`generation`), which stops it too.
     scope: () => pin.here() ? "" : key,
     draftScope: () => scope,
-    generation: () => 0,
+    generation: () => ports.visits(scope),
     versionView: () => false, route: () => undefined, editModeEntry: () => undefined, agentActing: () => true,
     site: () => site,
     files: () => pin.files(),
