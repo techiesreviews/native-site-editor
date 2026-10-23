@@ -1,8 +1,8 @@
 ---
 title: "Click on text in the preview and type straight away"
 type: task (AFK)
-status: open
-assignee: lead-28 (this session)
+status: closed
+assignee: lead-28
 builder: claude
 blocked_by: []
 ---
@@ -38,3 +38,11 @@ Lex (2026-10-23): "In the page preview, I want to be able to click, and directly
 ## Kit commands and evidence
 
 Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runner.md)). Does not edit `src/main.ts`; may run beside any slice. `kit bg slice-28 -- scripts/agents/kit slice --ticket <this ticket> --builder claude-opus-5-5`.
+
+## Done (2026-10-23)
+
+- One click on editable text (a heading, a paragraph, a link's or a button's text) selects it and starts typing with the caret at the click point; a click beside a line of text (the space right of a short heading) or on an image or section only selects. Rule in `src/page-builder/rules/canvas-gesture.ts` (`click` + `onText` gives `edit`); the runtime checks the point against the text's line boxes (`onText`).
+- A press and drag from text moves its block, also on the text being typed in (the press-drag no longer skips the text being typed in). Inside typed text a double-click selects a word, a triple-click the paragraph, Shift+click and Shift+arrows extend; Escape ends typing with the block selected; Enter on selected text still types; an image's double-click still opens its chooser.
+- Fix found on the way: after typed text was written, the editor selected that text again and undid a click that had already chosen other text. The runtime now ignores that re-selection once another element was clicked since (`leftText`).
+- Tests: `tests/canvas-gesture.test.ts`; new `tests/native-save/native-click-to-type.spec.ts` (5 tests, the Done-when list); helpers `clickOnText` and `selectText` in `tests/native-save/click-text.ts`; about 25 specs moved from double-click to one click on the text, and 8 that clicked text and then pressed block keys (Escape to climb, Alt+arrows, Enter) now select with a click then Escape. `docs/page-builder/ux-research.md` selection note updated; `CONTEXT.md` did not describe double-click to edit.
+

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { selectText } from "./click-text";
 
 // In Edit component mode any part of the template moves anywhere in it as
 // HTML allows (slice 82): on the canvas a part pressed and moved, a named slot
@@ -92,7 +93,7 @@ test("on the page a component's parts stay closed; in Edit component mode its pa
   await expect.poll(() => mounted(page, TEMPLATE)).toBe(original);
 
   // Alt+arrows on the canvas and on Structure rows move the template's parts by the same rules.
-  await frame(page).locator("section-hero").first().locator("p.eyebrow").filter({ visible: true }).first().click();
+  await selectText(frame(page).locator("section-hero").first().locator("p.eyebrow").filter({ visible: true }).first());
   await expect(toolbar(page).locator(".edit-bar__kind")).toHaveText("Paragraph");
   await page.keyboard.press("Alt+ArrowDown");
   await expect.poll(async () => flat(await mounted(page, TEMPLATE))).toContain('</h1></slot><slot name="eyebrow"><p class="eyebrow">Larkspur Studio</p></slot><slot name="lead">');
@@ -109,7 +110,7 @@ test("on the page a component's parts stay closed; in Edit component mode its pa
   await undo(page);
   await expect.poll(() => mounted(page, TEMPLATE)).toBe(original);
   // Alt+← takes a button's slot out of the actions Div, after it; Alt+→ puts it back at the Div's end.
-  await frame(page).locator("section-hero").first().getByText("Get in touch").filter({ visible: true }).first().click();
+  await selectText(frame(page).locator("section-hero").first().getByText("Get in touch").filter({ visible: true }).first());
   await expect(toolbar(page).locator(".edit-bar__kind")).toHaveText(/Link|Button/);
   await page.keyboard.press("Alt+ArrowLeft");
   await expect.poll(async () => flat(await mounted(page, TEMPLATE))).toContain('</slot></div><slot name="primary"><a href="/about/#contact">Get in touch</a></slot></section>');

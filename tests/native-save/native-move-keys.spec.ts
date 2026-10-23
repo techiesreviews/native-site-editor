@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { editorMounted } from "./drafts";
 import { expect, test, type Page } from "@playwright/test";
+import { clickOnText } from "./click-text";
 
 // Alt+Up and Alt+Down move the selected section one sibling position from
 // the preview, the edit bar and the page structure sidebar: one undo step,
@@ -70,7 +71,7 @@ test("Alt+Up/Down in the preview moves the selected section as one undo step and
   await expect.poll(() => editorText(page, "#content")).toBe(indexSource);
 
   // While typing, Alt+arrows retain their text meaning.
-  await frame(page).locator(".hero h1").dblclick();
+  await clickOnText(frame(page).locator(".hero h1"));
   await expect(frame(page).locator(".hero h1")).toHaveAttribute("contenteditable", /.+/);
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Heading");
   await status(page).evaluate((el) => { el.textContent = ""; });

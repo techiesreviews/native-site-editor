@@ -4,6 +4,7 @@
 // Default fixture: index.html's hero image is images/placeholder.svg.
 import { readFileSync } from "node:fs";
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import { clickOnText } from "./click-text";
 
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const handle = (page: Page) => page.getByRole("button", { name: "Page structure and code" });
@@ -232,9 +233,9 @@ test.describe("phone", () => {
 
   test("text, blocks, components and the Add panel work around the sheet", async ({ page, baseURL }) => {
     await open(page, baseURL);
-    // Text: double-click puts a caret in the heading; the bar keeps clear of it.
+    // Text: a click puts a caret in the heading; the bar keeps clear of it.
     const heading = frame(page).locator("h1").first();
-    await heading.dblclick();
+    await clickOnText(heading);
     await expect(bar(page)).toBeVisible();
     await expect.poll(() => clearOfBar(page, heading)).toBe(0);
     await page.keyboard.press("Escape");

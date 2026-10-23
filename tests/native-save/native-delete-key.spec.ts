@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { clickOnText } from "./click-text";
 import { editorMounted } from "./drafts";
 
 // Default native-starter fixture; nightly selection keys on canvas and Structure.
@@ -35,7 +36,7 @@ test("Delete removes a selected paragraph, selects the next sibling, and one key
 test("Backspace and Delete while typing remove one character each and keep the paragraph", async ({ page }) => {
   const paragraph = frame(page).locator(".hero .lead");
   const text = (await paragraph.textContent())!;
-  await paragraph.dblclick();
+  await clickOnText(paragraph);
   await expect(paragraph).toHaveAttribute("contenteditable", /.+/);
   await paragraph.evaluate(element => {
     const range = document.createRange(); range.selectNodeContents(element); range.collapse(false);

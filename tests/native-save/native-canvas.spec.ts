@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { selectText } from "./click-text";
 import { editorMounted } from "./drafts";
 
 // The canvas (page builder, canvas slice; docs/page-builder/canvas.md):
@@ -115,7 +116,7 @@ test("hovering labels an element, selecting shows its ancestors, and crumbs, Esc
   await expect(page.locator("#content .code-editor__element")).toBeVisible();
 
   // Esc in the canvas selects the parent; Ctrl/⌘+↑ too; above the top, nothing.
-  await frame.locator(".hero h1").click();
+  await selectText(frame.locator(".hero h1"));
   await expect(current(page)).toHaveText("h1");
   await page.keyboard.press("Escape");
   await expect(current(page)).toHaveText("section.hero");
@@ -167,7 +168,7 @@ test("a Code refresh while a breadcrumb is hovered still clears its hint on poin
   await page.mouse.move(10, 500);
   await expect(hint).toBeHidden();
   // The original canvas gestures still climb and clear after the refresh.
-  await frame.locator(".hero h1").click();
+  await selectText(frame.locator(".hero h1"));
   await page.keyboard.press("Escape");
   await expect(current(page)).toHaveText("section.hero");
   await page.keyboard.press("ControlOrMeta+ArrowUp");

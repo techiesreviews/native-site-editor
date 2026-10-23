@@ -594,7 +594,11 @@ import { domView } from "../page-builder/rules/tree.ts";
     if (typeof payload.hash === "string" && payload.hash) scrollTarget = { id: payload.hash, until: Date.now() + 1500 };
     scrollToTarget();
     if (payload.selectNode) {
-      var requested = resolveNodePath(payload.selectNode);
+      // The host selects written text again (commitEditing), unless a click chose another element since.
+      var chosen = leftText && selected && selected.isConnected && JSON.stringify([ownerPath(selected), elementIndexPath(selected)]) !== leftText;
+      var stale = chosen && JSON.stringify([payload.selectNode.path, payload.selectNode.node]) === leftText;
+      leftText = "";
+      var requested = !stale && resolveNodePath(payload.selectNode);
       if (requested) {
         selected = requested;
         // In Edit component mode the part edited stays in view below the site's sticky header.
@@ -2887,8 +2891,8 @@ import { domView } from "../page-builder/rules/tree.ts";
   // The click and edit rules (canvasGesture) are src/page-builder/rules/canvas-gesture.ts.
 
   // Typing into a text element: a text element whose content is only text
-  // and inline formatting becomes editable on a double-click (the caret where
-  // it was double-clicked) or Enter. The editor gets the element's text
+  // and inline formatting becomes editable on a click on its text (the caret
+  // where it was clicked), a double-click beside its text, or Enter. The editor gets the element's text
   // before and after on Enter, on blur and before a format shortcut, and
   // writes the difference into the source.
   // Formatting inside a line of text, and a slot showing text in it.
@@ -2943,6 +2947,8 @@ import { domView } from "../page-builder/rules/tree.ts";
     el.removeAttribute("spellcheck");
     editing = null;
   }
+  // The text last written: the host selects it again after its edit, unless another element was chosen meanwhile.
+  var leftText = "";
   function commitEditing() {
     if (!editing || !editing.isConnected) return;
     var after = editing.textContent;
@@ -2953,12 +2959,13 @@ import { domView } from "../page-builder/rules/tree.ts";
     var path = ownerPath(editing);
     if (!editingOwner || editingOwner.path !== path) return;
     var edit = { path: path, node: elementIndexPath(editing), before: before, after: after };
+    leftText = JSON.stringify([path, edit.node]);
     emit("text-edit", edit);
   }
   function onEditingInput() {
     updateBoxes();
   }
-  // Typing starts with the caret at a point (a double-click's), else at the end.
+  // Typing starts with the caret at a point (a click's), else at the end.
   function beginEditing(el, point) {
     startEditing(el);
     if (editing !== el) return;
@@ -2984,6 +2991,14 @@ import { domView } from "../page-builder/rules/tree.ts";
     var range = typeof document.caretRangeFromPoint === "function" ? document.caretRangeFromPoint(x, y) : null;
     return range && { node: range.startContainer, offset: range.startOffset };
   }
+  // The point is on the element's text itself (one of its lines), not the space beside it.
+  function onText(el, x, y) {
+    var range = document.createRange();
+    range.selectNodeContents(el);
+    return Array.prototype.some.call(range.getClientRects(), function (r) {
+      return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+    });
+  }
   // Enter or Escape: what was typed is written, and the text stays selected, no longer typed in.
   function leaveEditing() {
     var el = editing;
@@ -2999,7 +3014,7 @@ import { domView } from "../page-builder/rules/tree.ts";
     var target = deepestElement(e);
     var inside = !!(editing && editing.contains(target));
     if (canvasGesture("press", { inside: inside, editing: !!editing }) === "stop") stopEditing(true);
-    // The second press of a double-click would select a word: the double-click puts the caret there instead.
+    // The second press of a double-click would select a word outside the text being typed in: the double-click edits instead.
     if (!inside && e.detail > 1 && target && !target.closest("input, textarea, select")) e.preventDefault();
   }, true);
   // The canvas stays still: a press on an audio bar selects it; the browser's own bar never plays
@@ -3051,8 +3066,10 @@ import { domView } from "../page-builder/rules/tree.ts";
       }
     }
     var target = deepestElement(e);
+    var text = editableText(target);
+    var action = canvasGesture("click", { inside: !!(editing && editing.contains(target)), text: text, onText: text && onText(target, e.clientX, e.clientY) });
     // Clicks while typing move the caret; the text element stays selected.
-    if (canvasGesture("click", { inside: !!(editing && editing.contains(target)) }) === "caret") {
+    if (action === "caret") {
       e.preventDefault();
       e.stopPropagation();
       if (selected !== editing) { selected = editing; updateBoxes(); emitSelection(editing, "click"); }
@@ -3064,6 +3081,8 @@ import { domView } from "../page-builder/rules/tree.ts";
       selected = target;
       updateBoxes();
       emitSelection(target, "click");
+      // A click on text types there at once (slice 28).
+      if (action === "edit") beginEditing(target, { x: e.clientX, y: e.clientY });
     }
   });
   // A right-click selects the element and asks the editor for its menu; the
@@ -3110,8 +3129,9 @@ import { domView } from "../page-builder/rules/tree.ts";
   // blocks inside <main> drag; the header and footer don't. The pointer
   // stays with this document (captured), so each step is relayed to the
   // editor as `press-drag` (start, move, end, cancel); the editor runs the
-  // drag and writes the move. Text being typed in keeps press-and-drag for
-  // selecting text, and a plain click still selects.
+  // drag and writes the move. A press on text drags its block too, also on
+  // the text being typed in (slice 28): words are selected there by a double
+  // or triple click and Shift, and a plain click still types.
   var press = null;
   var swallowClick = false;
   function pressDragging() {
@@ -3175,7 +3195,6 @@ import { domView } from "../page-builder/rules/tree.ts";
     if (!state || (editMode && !editHost()) || e.button !== 0 || !e.isPrimary || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
     var target = deepestElement(e);
     if (!target || target.closest("input, textarea, select")) return;
-    if (editing && editing.contains(target)) return;
     press = { id: e.pointerId, x: e.clientX, y: e.clientY, target: target, dragging: false, userSelect: "" };
   }, true);
   window.addEventListener("pointermove", function (e) {

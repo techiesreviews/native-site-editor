@@ -3,17 +3,19 @@ import { test } from "node:test";
 import { canvasGesture } from "../src/page-builder/rules/canvas-gesture.ts";
 
 // The canvas's click and edit rules; the preview runtime bundles the same module.
-test("a click selects text, images and buttons alike, and never starts typing", () => {
+test("a click on text starts typing; a click beside it, on an image or a section only selects", () => {
+  assert.equal(canvasGesture("click", { text: true, onText: true }), "edit");
   assert.equal(canvasGesture("click", { text: true }), "select");
   assert.equal(canvasGesture("click", { image: true }), "select");
+  assert.equal(canvasGesture("click", { onText: true }), "select");
   assert.equal(canvasGesture("click", {}), "select");
-  // A click on other text while typing selects it (the press stopped the typing).
+  // A click on other text while typing types there (the press stopped the typing).
   assert.equal(canvasGesture("press", { editing: true, text: true }), "stop");
-  assert.equal(canvasGesture("click", { editing: true, text: true }), "select");
+  assert.equal(canvasGesture("click", { editing: true, text: true, onText: true }), "edit");
   assert.equal(canvasGesture("press", { text: true }), "none");
 });
 
-test("a double-click types into text at the point and chooses an image", () => {
+test("a double-click chooses an image and types into text clicked beside", () => {
   assert.equal(canvasGesture("double", { text: true }), "edit");
   assert.equal(canvasGesture("double", { text: true, editing: true }), "edit");
   assert.equal(canvasGesture("double", { image: true }), "image");
@@ -22,7 +24,7 @@ test("a double-click types into text at the point and chooses an image", () => {
 });
 
 test("while typing, presses, clicks and double-clicks in that text are the browser's", () => {
-  for (const gesture of ["press", "click", "double"] as const) assert.equal(canvasGesture(gesture, { inside: true, editing: true, text: true }), "caret");
+  for (const gesture of ["press", "click", "double"] as const) assert.equal(canvasGesture(gesture, { inside: true, editing: true, text: true, onText: true }), "caret");
 });
 
 test("Enter starts typing in selected text; Enter or Escape leaves typing; then Escape climbs", () => {

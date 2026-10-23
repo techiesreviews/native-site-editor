@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import { clickOnText } from "./click-text";
 import { editorMounted, storedDraft } from "./drafts";
 
 // Default fixture group: native-cards (#repo=540), a Section › Div (grid) › two cards.
@@ -71,7 +72,7 @@ test("a rail drop while typing keeps the text, ends typing, and takes two undo s
   const originalText = await lead.textContent();
   // Measure the drop before typing so no focus change commits the text first.
   const to = await betweenCards(page);
-  await lead.dblclick();
+  await clickOnText(lead);
   await expect(lead).toHaveAttribute("contenteditable", /.+/);
   await page.keyboard.press("ControlOrMeta+End");
   await page.keyboard.type(" typed");
