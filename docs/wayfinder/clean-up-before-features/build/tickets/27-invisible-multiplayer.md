@@ -104,7 +104,15 @@ Review round 5 (behaviour and tests):
 - Measurements of one shared background page take turns: each draws its own texts and is measured on them as one turn, and that read is bounded by the open deadline (`measure`, `src/background-page.ts`). Test: `tests/background-page.test.ts` (two overlapping measurements with different texts).
 - Checks: `kit unit --affected` `RESULT: ok unit 1523/1523 (91 files)`; `npm run check` and `npm run lint` green; `kit size` `RESULT: ok size boot 348 KB (±0 KB) vs dev@0092f2b, budget 355 KB`; touched specs (native-invisible-multiplayer, native-mcp-media, native-mcp, native-switch-mid-work, native-media-picker, native-image-popup, native-placed-media) `RESULT: ok specs 7/7 passed`. `main.ts` 4088 lines, ceiling 4090.
 
-## Question for Lex (open)
+## Lex's answers (2026-10-23, all as recommended)
+
+1. Case 1 (agent page and file commands) moves to [slice 34](34-invisible-multiplayer-pages-and-undo.md), after slice 31; this slice lands with cases 2 to 4.
+2. Undo on its own page moves to slice 34.
+3. The three unit-test exceptions (a switch during a batch attempt, a Media pane edit on a stale screen, the background page's open-versus-deadline rows) are accepted.
+4. Background pages measure without fonts and pictures; load them only if a placement ever comes out wrong.
+5. No toasts: the "On main: …" / "On index.html: …" toasts are removed here; the site-menu count shows where work landed.
+
+## Question for Lex (answered above)
 
 Put to Lex (until he answers, `status: open`):
 
