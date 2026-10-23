@@ -2,7 +2,7 @@
 title: "Notification icon on the project and branch where work finished"
 type: task (AFK)
 status: open
-assignee:
+assignee: lead-24 (this session)
 builder: sol
 blocked_by: [23-work-finishes-where-it-started]
 ---
