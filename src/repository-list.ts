@@ -27,7 +27,7 @@ export interface RepositoryListPorts {
   setup: { waitingForRepositories: boolean };
   setupEntry: Pick<Setup["setupEntry"], "dismissed" | "open" | "active">;
   setupController: Pick<Setup["setupController"], "start">;
-  /** Host state, read (the repositories and the file selection counter written) at call time. */
+  // Host state from here to siteActions: read (the repositories and the file selection counter written) at call time.
   readonly boot: Pick<ReturnType<typeof createBootController>, "loading" | "ready" | "failed" | "listed" | "fetchList" | "refreshPending" | "takeRefresh" | "recover">;
   readonly user: { login: string } | null | undefined;
   repositories: Repository[];
