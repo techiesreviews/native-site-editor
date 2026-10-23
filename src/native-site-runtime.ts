@@ -61,8 +61,8 @@ export interface NativeSiteState {
   unreadable: Map<string, string>;
   /** The project's own warnings (shared/native-project.ts), shown with the unreadable stylesheets'. */
   projectWarnings: string[];
-  /** The load the reads belong to; a reset or a new load moves it on. */
-  request: number;
+  /** The load the reads belong to; only a reset or a new load (`begin`) moves it on. */
+  readonly request: number;
   textIndexing: Promise<boolean> | undefined;
   textIndexScope: string;
   textIndexed: boolean;
@@ -101,10 +101,11 @@ export function createNativeSiteRuntime(ports: NativeSiteRuntimePorts) {
   // (shared/native-project.ts), so this list, with new files drafted in the
   // browser (`nativeFiles`), decides the site's pages and components.
   let nativeBaseFiles: string[] = [];
+  let request = 0;
   const state: NativeSiteState = {
     opaqueText: new Map(), componentStyles: new Map(), missingComponentStyles: new Set(), componentStyleRequests: new Set(),
     styleFiles: new Set(), missingStyleFiles: new Set(), styleFileRequests: new Set(), unreadable: new Map(), projectWarnings: [],
-    request: 0, textIndexing: undefined, textIndexScope: "", textIndexed: false, releaseTextIndex: undefined, shownRequests: new Map(),
+    get request() { return request; }, textIndexing: undefined, textIndexScope: "", textIndexed: false, releaseTextIndex: undefined, shownRequests: new Map(),
     assets: new Map(), missingAssets: new Set(), assetRequests: new Map(), assetRequestId: 0, draftAssets: new Set(),
     paintedRequest: -1, paintedPaths: [], paintWaiters: [],
   };
@@ -145,9 +146,10 @@ export function createNativeSiteRuntime(ports: NativeSiteRuntimePorts) {
   }
 
   // Every file the page on show draws from: its page, templates and stylesheets.
-  function nativeShownPaths(route = ports.route()) {
+  function nativeShownPaths() {
     if (!nativeSite) return new Set<string>();
     const site = nativeSite, scope = ports.scope(), files = new Set(nativeFiles(scope));
+    const route = ports.route();
     const page = (route !== undefined && site.routes[route]) || site.routes[nativeDefaultRoute(site)];
     const open = ports.openFile();
     const pages = [page, ...(open ? [open] : [])];
@@ -240,7 +242,7 @@ export function createNativeSiteRuntime(ports: NativeSiteRuntimePorts) {
   // A new load: its reads own the load, and until its text index lands nothing counts as indexed.
   function beginLoad() {
     state.textIndexed = false;
-    return ++state.request;
+    return ++request;
   }
 
   // The texts and files a load read for its preview: a new load reads them again.
@@ -268,7 +270,7 @@ export function createNativeSiteRuntime(ports: NativeSiteRuntimePorts) {
     state.textIndexing = undefined;
     state.textIndexed = false;
     state.releaseTextIndex = undefined;
-    state.request++;
+    request++;
     ports.closed();
   }
 
