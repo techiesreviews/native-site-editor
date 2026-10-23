@@ -5,7 +5,9 @@ import { payloadIdentity, type JsonValue } from "../shared/agent-command";
 import { mediaChanges, mediaTools, type AgentMedia, type MediaTool } from "../shared/agent-media";
 import type { AgentReadResult } from "../shared/agent-read";
 import type { Snapshot } from "../shared/types";
-import { createAgentMediaTools } from "../src/agent-tools-media";
+import { createAgentMediaTools, mediaCommandProofs } from "../src/agent-tools-media";
+import { mediaCommandPins } from "../src/agent-tools";
+import type { MediaPin } from "../src/controllers/media-controller";
 import type { AgentRecords } from "../src/agent-records";
 import { createAgentEditTools } from "../src/agent-tools-edit";
 import { applySiteCommand, type AgentSiteActions } from "../src/agent-site";
@@ -436,3 +438,51 @@ test("the page seen on arrival is the proof: an edit before admission refuses, n
   assert.equal(f.counts().runs, 0); assert.equal(f.history.length, 0);
   assert.equal(await f.records.receipt(workspace, input.id, input.grantId), undefined);
 });
+
+// Ticket 27: a Media change holds the workspace it arrived in. Left before it commits, its proof is
+// its page there (the pin's), not the page shown, and it runs on; with no pin, a switch refuses it.
+async function heldTools(pinned: boolean) {
+  const f = await fixture();
+  const snapshot: Snapshot = { branch: "main", commit, entries: [] };
+  let here = true, shownPage = "<p>arrival</p>";
+  const seen: { pin?: MediaPin; page?: string; proved?: boolean; command: AgentCommand }[] = [];
+  const pin = { repo: repo.full_name, scope: { ...workspace, repo: repo.full_name }, identity: "site", drafts: f.storage.store, here: () => here,
+    entry: () => undefined, find: async () => undefined, source: (path: string) => path === "index.html" ? "<p>arrival</p>" : undefined,
+    files: () => ["index.html"], list: async () => ["index.html"], remember: () => {} } satisfies MediaPin;
+  const stamp = { holds: () => here, changed: () => here ? undefined : "scope" as const };
+  const ports = { stamp: () => stamp, source: () => shownPage, context: async () => undefined,
+    files: () => ({ repo, snapshot, api: async <T>() => ({ entries: [] }) as T, read: async () => "", batch: async () => ({}), has: () => false }) } satisfies AgentReadPorts;
+  const tools = createAgentMediaTools({ workspace, ports, records: f.records, run: async command => {
+    const held = mediaCommandPins.get(command);
+    // Another branch shown, its page another: the arrival's proof still holds.
+    here = false; shownPage = "<p>feature</p>";
+    let proved = true;
+    try { mediaCommandProofs.get(command)?.(); } catch { proved = false; }
+    seen.push({ pin: held?.pin, page: held?.page, proved, command });
+  } });
+  const held = { source: ports.files(), stamp, pin: { away: () => !here, context: async () => undefined, ...pinned ? { media: pin } : {} }, pinned };
+  const input = request("frame_image", { element: "0", shape: "square" }, `held-${pinned}`, "index.html");
+  return { run: () => tools.run(input, 0, () => true, Date.now() + 10_000, { page: "<p>arrival</p>" }, undefined, held), seen, pin, leave: () => { here = false; } };
+}
+
+test("a pinned Media change left before it commits is proved by its own page, runs on, and lets its pin go", async () => {
+  const h = await heldTools(true);
+  const result = await h.run();
+  assert.equal(h.seen.length, 1, JSON.stringify(result));
+  assert.equal(h.seen[0].pin, h.pin);
+  assert.equal(h.seen[0].page, "<p>arrival</p>", "the page as it read on arrival");
+  assert.equal(h.seen[0].proved, true, "its page there, not the one shown, is the proof");
+  assert.notEqual((result.ok && (result.value as { state?: string }).state), "conflict");
+  assert.equal(mediaCommandPins.has(h.seen[0].command), false, "its pin is let go once it ran");
+});
+
+test("a Media change with no pin is refused once another site or branch is shown, saying so", async () => {
+  const h = await heldTools(false);
+  h.leave();
+  const result = await h.run();
+  assert.equal(h.seen.length, 0, "it never runs");
+  assert.ok(result.ok);
+  assert.equal((result.value as { state?: string }).state, "conflict");
+  assert.match(String((result.value as { message?: string }).message), /moved to another site or branch/);
+});
+

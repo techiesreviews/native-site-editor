@@ -59,7 +59,7 @@ export interface ImagePopupOptions {
 export async function openImagePopup(options: ImagePopupOptions) {
   const { host, target } = options;
   // What it writes goes to the page it opened on, wherever Lex is by then (ticket 27, `pinnedPorts`).
-  const pin = options.ports.pin?.(), ports = pinnedPorts(options.ports, pin, target.path), workspaceContext = () => options.workspaceContext(undefined, pin);
+  const pin = options.ports.pin?.(), ports = pinnedPorts(options.ports, pin, target.path), workspaceContext = (include?: (path: string) => boolean) => options.workspaceContext(include, pin);
   const stamp = options.ports.stamp(), epoch = ports.generation(), source = ports.source(target.path);
   const range = source === undefined ? undefined : (ports.locateElement ?? locateNativeElementRange)(source, target.node);
   if (source === undefined || !range || range.tag.name !== "img" || ports.viewingVersion()) return undefined;

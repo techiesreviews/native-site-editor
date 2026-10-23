@@ -37,7 +37,8 @@ export function createAgentMediaTools(options: {
       signal?.throwIfAborted();
       // The stamp holds while the same repository and branch stay open (src/workspace-session.ts); a save moves the commit within it.
       // Another site or branch shown meanwhile stops nothing (ticket 27): with a pin it finishes in its own workspace.
-      if (!current() || !(media && media.here() === false) && (ports.files()?.snapshot.commit !== commit || !media && !stamp.holds()))
+      if (!media && !stamp.holds()) throw new Error("The editor moved to another site or branch meanwhile. Nothing was changed.");
+      if (!current() || !(media && !media.here()) && ports.files()?.snapshot.commit !== commit)
         throw new Error("The relay disconnected or the site was saved meanwhile. Nothing was changed.");
     };
     const beforeCommit = () => {
@@ -77,7 +78,7 @@ export function createAgentMediaTools(options: {
           requestIdentity: identity, state: "pending", createdAt: request.createdAt };
         beforeCommit();
         mediaCommandProofs.set(command, beforeCommit);
-        if (media) mediaCommandPins.set(command, media);
+        if (media) mediaCommandPins.set(command, { pin: media, page });
         // Cancellation races the same records transaction as commit; a committed receipt wins.
         const timer = changing && !signal ? setTimeout(() => { void records.cancel(workspace, request.id, request.grantId, { live: true }).catch(() => {}); }, Math.max(0, deadline - Date.now())) : undefined;
         try {

@@ -166,7 +166,7 @@ const runtime = createNativeSiteRuntime({
   closed: () => {
     pendingNativePageTitles = undefined;
     mediaController.disposeGallery();
-    mediaController.closePicker();
+    mediaController.closePicker(deactivatingAway);
     pagesController.updateTabs();
     linkedStyles.clearBodyStyles();
     nativePreview?.deactivate();
@@ -1852,6 +1852,7 @@ let backgroundPages: ReturnType<typeof import("./background-page").createBackgro
 const mediaPorts: import("./controllers/media-controller").MediaControllerPorts = {
   measureImage: (path, node, image, slot, style) => nativePreview && runtime.site?.routes[nativePreview.shownRoute() ?? ""] === path
     ? nativePreview.measureImage({ path, node, slot, style, ...(image.width && image.height ? { image: { width: image.width, height: image.height } } : {}) }) : Promise.resolve(undefined),
+  shownScope: () => draftScope(),
   // Work whose workspace is not shown measures in a background page of its site and page (ticket 27).
   measureAway: async (pin, path, node, image, slot, style) => {
     const site = pin.site, module = await import("./background-page");
@@ -1964,8 +1965,12 @@ async function applyMediaBatch(scope: DraftScope, stamp: Stamp, batch: MediaWork
 }
 
 
-function deactivateNative() {
-  runtime.reset();
+// `away`: another workspace is opening, so a picker's Use under way still lands in its own (ticket 27); closing the workspace cancels it.
+let deactivatingAway = false;
+function deactivateNative(away = false) {
+  deactivatingAway = away;
+  try { runtime.reset(); } finally { deactivatingAway = false; }
+}
 }
 
 async function loadNativeComponentStyles(tags: string[]) {
@@ -3559,8 +3564,10 @@ function makeAgentSiteActions(edits: GuardedEdits = guardedEdits, atomic = false
   },
   async listMedia(request) {
     // The workspace shown as it was asked: listed from there whatever is shown by the time it is read (ticket 27).
-    const pin = mediaPorts.pin?.();
+    // With nothing to pin, the stamp taken before the chunk loads must hold.
+    const pin = mediaPorts.pin?.(), since = guardedEdits.stamp("repository");
     const media = await import("./agent-media");
+    if (!pin && !since.holds()) throw new Error("The editor moved to another site or branch meanwhile. Read the site again.");
     const ctx = await mediaController.workspaceContext(media.isAgentMediaPath, pin);
     return media.listWorkspaceMedia(ctx, request);
   },
@@ -3569,10 +3576,11 @@ function makeAgentSiteActions(edits: GuardedEdits = guardedEdits, atomic = false
     return media.previewWorkspaceMedia(ctx, path, path => editorModule?.getMountedSource(path));
   },
   async media(command) {
-    // Pinned as it arrived (agent-tools-media.ts), the change runs in its workspace's background page (ticket 27).
-    const page = mediaPorts.source(command.path);
+    // Pinned as it arrived (agent-tools-media.ts), the change runs in its workspace's background page (ticket 27);
+    // without a pin, the page and stamp taken here, before the chunk loads, are its proofs.
+    const page = mediaPorts.source(command.path), since = guardedEdits.stamp("repository");
     const { runAgentMedia } = await import("./agent-media-actions");
-    return runAgentMedia(mediaController, mediaPorts, command, page);
+    return runAgentMedia(mediaController, mediaPorts, command, page, since);
   },
   legacy: applyAgentCommand,
 }; }

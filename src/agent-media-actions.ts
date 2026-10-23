@@ -476,17 +476,19 @@ export async function applyAgentMedia(...parameters: Parameters<typeof executeAg
 }
 
 /** Main's adapter lives in this lazy chunk, including all media preparation. */
+/**
+ * `page` and `taken`: the page and the stamp the caller took before loading this chunk. A change that
+ * arrived in a workspace pinned as it came (ticket 27) runs in that workspace's background page: a
+ * controller of its own over the pinned ports, so every read, write and measurement is that
+ * workspace's whatever is shown; its proof is its page as it read on arrival (src/agent-tools-media.ts).
+ */
 export async function runAgentMedia(shown: ReturnType<typeof createMediaController>, live: MediaControllerPorts, command: AgentCommand,
-  page = live.source(command.path)) {
-  // A change that arrived in a workspace pinned as it came (ticket 27) runs in that workspace's
-  // background page: a controller of its own over the pinned ports, so every read, write and
-  // measurement is that workspace's whatever is shown.
-  const pin = mediaCommandPins.get(command), ports = pinnedPorts(live, pin, command.path);
-  // Its page as its own workspace has it (the arrival's proof is the tools' own, src/agent-tools-media.ts).
-  if (pin) page = ports.source(command.path);
+  page = live.source(command.path), taken = live.stamp()) {
+  const held = mediaCommandPins.get(command), pin = held?.pin, ports = pinnedPorts(live, pin, command.path);
+  if (held) page = held.page;
   const controller = pin ? createMediaController(ports, () => import("./controllers/media-actions")) : shown;
-  const since = ports.stamp(), proof = mediaCommandProofs.get(command), signal = agentCommandSignals.get(command);
-  const check = () => { signal?.throwIfAborted(); proof?.(); if (!since.holds()) throw new Error("The repository changed meanwhile. Nothing was changed."); };
+  const since = pin ? ports.stamp() : taken, proof = mediaCommandProofs.get(command), signal = agentCommandSignals.get(command);
+  const check = () => { signal?.throwIfAborted(); proof?.(); if (!since.holds()) throw new Error("The editor moved to another site or branch meanwhile. Nothing was changed."); };
   check();
   const improve = command.operation === "improve_images" ? controller.prepareImprove() : undefined;
   const target = () => ({ path: command.path, node: parseOutlineId(command.args!.element!)! });
