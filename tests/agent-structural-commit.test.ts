@@ -61,7 +61,8 @@ async function fixture(t: TestContext, race?: AwaitRace, initialHome = "home") {
   let context: AgentTextCommit | undefined, lastOutcome: Outcome | undefined;
   const agentWorkspace = { ...workspace, agentText: () => context, agentActing: () => true };
   const edits = createGuardedEdits(agentWorkspace);
-  const run = async (kind: Kind, input = command(kind), afterCommit?: () => void) => {
+  // `meanwhile` runs inside the plan, after its reads (another page shown, ticket 23); `finish` is the scoped run's.
+  const run = async (kind: Kind, input = command(kind), afterCommit?: () => void, meanwhile?: () => Promise<void>) => {
     const epoch = workspace.generation();
     const current = () => epoch === workspace.generation();
     const prepared = await prepareAgentText(input, scope, store, current, () => {}, () => { workspace.afterFileChanges(); });
@@ -77,6 +78,7 @@ async function fixture(t: TestContext, race?: AwaitRace, initialHome = "home") {
       const outcome = lastOutcome = await edits.run(async r => {
         r.source(input.path);
         if (race) await race.port("plan", async () => {})();
+        await meanwhile?.();
         const plan = { done: "Changed files", undone: "Undid files", select: { historyOnly: true } };
         if (kind === "create") return { ...plan, creates: [{ path: input.path, content: input.content }] };
         if (kind === "move") return { ...plan, moves: [{ from: "old.txt", to: "new.txt" }] };
@@ -85,7 +87,7 @@ async function fixture(t: TestContext, race?: AwaitRace, initialHome = "home") {
         r.source("style.css");
         return { ...plan, edits: new Map([["index.html", "<site-part></site-part>"], ["style.css", "new css"]]),
           creates: [{ path: "components/site-part.html", content: "<slot></slot>" }, { path: "loader.js", content: "load()" }] } satisfies PlanResult;
-      });
+      }, meanwhile ? { finish: true } : undefined);
       if (!outcome.ok || outcome.message) throw new Error(outcome.message);
       await prepared.finish!(() => current());
       return prepared.outcome;
@@ -363,4 +365,18 @@ test("a newer opaque draft beneath a mounted text model cannot be overwritten th
   assert.equal(f.fake.stores.get("receipts")!.size, 0);
   assert.equal(f.workspace.source("index.html"), "home");
   assert.deepEqual(f.memory.steps(), []);
+});
+
+// Ticket 23: another page shown while an agent's step on index.html prepares stops nothing: its drafts
+// and receipt commit together on index.html, with no Undo step, and nothing opens.
+for (const kind of ["text", "component"] as const) test(`${kind}: an agent step whose page is no longer shown lands on its page through the records`, async t => {
+  const f = await fixture(t);
+  const outcome = await f.run(kind, undefined, undefined, async () => { f.memory.setRoute("/about/"); await f.memory.workspace.open("old.txt"); });
+  assert.equal(f.lastOutcome()?.ok, true, JSON.stringify(f.lastOutcome()));
+  assert.equal(f.fake.stores.get("receipts")!.size, 1);
+  assert.deepEqual((await f.records.receipt(f.scope, "operation", "grant"))?.outcome, outcome);
+  assert.equal(f.store.get(f.scope, "index.html")?.content, kind === "text" ? "agent text" : "<site-part></site-part>");
+  if (kind === "component") assert.equal(f.store.get(f.scope, "components/site-part.html")?.content, "<slot></slot>");
+  assert.deepEqual(f.memory.steps(), [], "no Undo step on the page shown");
+  assert.equal(f.memory.openFile(), "old.txt");
 });

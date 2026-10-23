@@ -86,7 +86,8 @@ import { testCsp } from "./test-csp";
 //                                  starterFetches: n, heads: { [repo]: commit sha | null },
 //                                  installs: n, authorizations: n }
 //   GET  /__demo/head?repo=NAME and /__demo/file?repo=NAME&path=P  read any repository's head
-//                                  and committed bytes (repo defaults to the demo repository).
+//                                  and committed bytes (repo defaults to the demo repository;
+//                                  `&branch=B` reads another branch's bytes).
 //
 // Signing in (the real worker's /auth/login, /auth/install and /auth/callback run):
 // the fake GitHub answers the OAuth code exchange and GET /user with the demo user,
@@ -398,8 +399,8 @@ function writeTree(git: Git, baseTreeSha: string, changes: Change[]): string {
 }
 
 // The bytes at `path` in the head commit's tree, if it is a file there.
-function fileAt(git: Git, path: string): Buffer | undefined {
-  const head = git.commits.get(git.head);
+function fileAt(git: Git, path: string, branch?: string | null): Buffer | undefined {
+  const head = git.commits.get(branch && branch !== "main" ? git.branches?.get(branch) ?? "" : git.head);
   if (!head) return undefined;
   let entries = git.trees.get(head.tree) ?? [];
   const parts = path.split("/");
@@ -1340,8 +1341,8 @@ function workerMiddleware(): Connect.NextHandleFunction {
         return res.end();
       }
       if (path === "/__demo/file") {
-        // The bytes of a file on the demo branch, as committed.
-        const bytes = fileAt(gitOf(key, id, url.searchParams.get("repo")), url.searchParams.get("path") ?? "");
+        // The bytes of a file on the demo branch (or `branch`), as committed.
+        const bytes = fileAt(gitOf(key, id, url.searchParams.get("repo")), url.searchParams.get("path") ?? "", url.searchParams.get("branch"));
         res.statusCode = bytes ? 200 : 404;
         res.setHeader("Content-Type", "application/octet-stream");
         return res.end(bytes ?? Buffer.alloc(0));

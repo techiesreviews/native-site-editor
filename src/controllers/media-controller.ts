@@ -23,6 +23,22 @@ export interface MediaWorkspaceSnapshot {
   nativePaths?: string[];
   drafts: DraftAccess & { list(scope: DraftScope): SavedDraft[] };
 }
+/**
+ * What work holds of the workspace it began on (ticket 23): its own reads, so an upload or a media
+ * change started there finishes there after a switch. On show (a reload of it too) the reads are the
+ * editor's; once another workspace is shown they are the pin's snapshot and that workspace's drafts.
+ */
+export interface MediaPin extends MediaWorkspaceSnapshot {
+  here(): boolean;
+  entry(path: string): import("../../shared/types").TreeEntry | undefined;
+  find(path: string): Promise<import("../../shared/types").TreeEntry | undefined>;
+  source(path: string): string | undefined;
+  /** The site's files as drafted in the pin's workspace. */
+  files(): string[];
+  list(): Promise<string[]>;
+  /** A file read for usage, kept for the editor only while the pin's workspace is on show. */
+  remember(path: string, source: string): void;
+}
 export interface MediaModule {
   openMediaPicker: (options: MediaPickerOptions & { adapter?: import("../page-builder/media-picker").MediaPickerHost }) => Promise<void>;
   closeMediaPicker: () => void;
@@ -38,6 +54,7 @@ export interface MediaControllerPorts {
   showPage?(path: string): Promise<void>;
   origins?(): string[];
   workspace(): MediaWorkspaceSnapshot | undefined;
+  pin?(): MediaPin | undefined;
   identity(): string;
   stamp(): Stamp;
   generation(): number;
@@ -50,7 +67,7 @@ export interface MediaControllerPorts {
   rememberSource(path: string, source: string): void;
   uploadedBlob(scope: DraftScope, sha: string): Promise<Blob | undefined>;
   readBlob(repo: string, sha: string, path: string): Promise<Blob>;
-  applyBatch(scope: DraftScope, stamp: Stamp, batch: MediaWorkspaceBatch): Promise<void>;
+  applyBatch(scope: DraftScope, stamp: Stamp, batch: MediaWorkspaceBatch, pin?: MediaPin): Promise<void>;
   openPage(path: string): Promise<void>;
   load(): Promise<MediaModule>;
   openFile(): string | undefined;
@@ -137,10 +154,11 @@ export function createMediaController(ports: MediaControllerPorts, loadActions: 
     const module = await loadActions();
     return actions ??= module.createMediaActions(ports, load, mountCleanUp);
   };
+  // A pinned context (`args[1]`) is its workspace's whatever is shown when the chunk arrives.
   async function workspaceContext(...args: Parameters<NonNullable<typeof actions>["workspaceContext"]>) {
     const stamp = ports.stamp();
     const module = await getActions();
-    if (!stamp.holds()) throw new Error("The repository changed. Close Media and open it again.");
+    if (!args[1] && !stamp.holds()) throw new Error("The repository changed. Close Media and open it again.");
     return module.workspaceContext(...args);
   }
   /** The Media picker for an image on a page (Edit bar, Structure, canvas double-click or drop). Use

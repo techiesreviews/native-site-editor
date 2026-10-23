@@ -231,7 +231,8 @@ export function createMediaLibraryView(
     if (rest.length) void adapter.import(rest.map(entry => entry.request)).then(
       paths => options.report?.announce(`Added ${paths.join(", ")}.${notAdded}`), error => options.report?.error(error));
     else if (notAdded) options.report?.announce(notAdded.trim());
-    alive = false; sheet.version++; sheet.work?.abort(); listeners.abort(); stopUsage?.(); stopCleanUp?.(); usageDialog?.close(); adding.dispose();
+    // A switch closes the pane, not its work: a step under way (an Improve images row) finishes (ticket 23).
+    alive = false; sheet.version++; if (modal) sheet.work?.abort(); listeners.abort(); stopUsage?.(); stopCleanUp?.(); usageDialog?.close(); adding.dispose();
     observers.forEach((observer) => observer.disconnect()); observers.clear(); tiles.clear(); cache.dispose();
     more.close(false); more.element.remove();
     modal?.removeEventListener("close", closed); dialog.replaceChildren(); dialog.remove();

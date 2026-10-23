@@ -5,12 +5,14 @@ import type { MediaImportRequest } from "../src/page-builder/media-picker";
 import type { MediaWorkspaceContext } from "../src/page-builder/media-workspace";
 
 const ctx = { key: "repo", assertLive() {} } as MediaWorkspaceContext;
+// A drop holds the context of the repository it was made in (src/main.ts uploadFilesTo pins it).
+const otherCtx = { key: "other", assertLive() {} } as MediaWorkspaceContext;
 const settle = () => new Promise(resolve => setTimeout(resolve, 0));
 
 /** Preparation each test releases by hand, so files can be cancelled on the way. */
 function fixture(options: { fail?: (name: string) => string | undefined; note?: (name: string) => string | undefined; save?: (requests: MediaImportRequest[]) => Promise<string[]> } = {}) {
-  const pending = new Map<string, () => void>(), saves: string[][] = [], told: string[] = [], errors: string[] = [];
-  let live = true, paints = 0;
+  const pending = new Map<string, () => void>(), saves: string[][] = [], savedInto: string[] = [], told: string[] = [], errors: string[] = [];
+  let shown = ctx, paints = 0;
   const runs = createFilesAdding({
     prepare: (file, _key, folder, signal) => new Promise((resolve, reject) => {
       signal.addEventListener("abort", () => reject(new DOMException("Cancelled.", "AbortError")), { once: true });
@@ -20,18 +22,20 @@ function fixture(options: { fail?: (name: string) => string | undefined; note?: 
         else resolve({ request: { file, folder }, warning: options.note?.(file.name) });
       });
     }),
-    save: async (_ctx, _context, requests) => {
+    save: async (into, _context, requests) => {
       saves.push(requests.map(request => `${request.folder}/${request.file.name}`));
+      savedInto.push(into.key);
       return options.save ? options.save(requests) : requests.map(request => `${request.folder}/${request.file.name}`);
     },
     paint: () => { paints++; },
   });
-  const host: FilesAddingHost = {
-    context: async () => { if (!live) throw new Error("The repository or branch changed while adding files. Nothing was added."); return ctx; },
-    live: () => live, announce: text => told.push(text), error: error => errors.push((error as Error).message),
-  };
+  // The host as uploadFilesTo makes it for a drop: its context is the one shown at the drop.
+  const hostFor = (pinned: MediaWorkspaceContext): FilesAddingHost => ({
+    context: async () => pinned, announce: text => told.push(text), error: error => errors.push((error as Error).message),
+  });
+  const host = hostFor(ctx);
   async function release(name: string) { await settle(); pending.get(name)!(); await settle(); }
-  return { runs, host, saves, told, errors, release, switchRepository: () => { live = false; }, paints: () => paints,
+  return { runs, host, saves, savedInto, told, errors, release, hostFor, shown: () => shown, switchRepository: () => { shown = otherCtx; }, paints: () => paints,
     states: () => runs.entries().map(entry => `${entry.file.name}:${entry.state}`) };
 }
 const files = (...names: string[]) => names.map(name => new File(["x"], name));
@@ -107,16 +111,27 @@ test("a second drop waits its turn as its own addition; Cancel stops every file 
   assert.deepEqual(f.states(), []);
 });
 
-test("a repository switch drops the addition and says nothing was added", async () => {
+// Ticket 23: work finishes where it started. The drop's context is its own repository's, whatever is shown later.
+test("a repository switch while adding stops nothing: the drop is saved into the repository it was made in", async () => {
   const f = fixture();
   const done = f.runs.start("", files("a.pdf", "b.pdf"), f.host);
   await f.release("a.pdf");
   f.switchRepository();
   await f.release("b.pdf");
+  assert.deepEqual(await done, ["/a.pdf", "/b.pdf"]);
+  assert.deepEqual(f.saves, [["/a.pdf", "/b.pdf"]]);
+  assert.deepEqual(f.savedInto, ["repo"], "the drop's repository, not the one shown now");
+  assert.equal(f.shown().key, "other");
+  assert.deepEqual(f.states(), ["a.pdf:added", "b.pdf:added"]);
+  assert.deepEqual(f.errors, []);
+});
+
+test("a drop whose repository cannot take it any more goes with the reason", async () => {
+  const f = fixture();
+  const done = f.runs.start("", files("a.pdf"), { ...f.host, context: async () => { throw new Error("Choose a repository before opening Media."); } });
   assert.deepEqual(await done, []);
-  assert.deepEqual(f.saves, []);
   assert.deepEqual(f.states(), []);
-  assert.deepEqual(f.errors, ["The repository or branch changed while adding files. Nothing was added."]);
+  assert.deepEqual(f.errors, ["Choose a repository before opening Media."]);
 });
 
 test("Review… hands the pictures not added yet to the Optimise sheet with their folder", async () => {
@@ -138,35 +153,20 @@ test("Review… hands the pictures not added yet to the Optimise sheet with thei
   assert.equal(g.runs.reviewable(), undefined);
 });
 
-test("a drop after a repository switch stops the old addition's preparation and starts at once", async () => {
-  const old = fixture();
-  let oldAborted = false;
-  const prepared: string[] = [];
-  let live = true;
-  const runs = createFilesAdding({
-    prepare: (file, _key, folder, signal) => new Promise((resolve, reject) => {
-      prepared.push(file.name);
-      // The old repository's picture never finishes unless it is stopped.
-      if (file.name === "old.png") signal.addEventListener("abort", () => { oldAborted = true; reject(new DOMException("Cancelled.", "AbortError")); }, { once: true });
-      else resolve({ request: { file, folder } });
-    }),
-    save: async (_ctx, _context, requests) => requests.map(request => `${request.folder}/${request.file.name}`),
-    paint: () => {},
-  });
-  const errors: string[] = [];
-  const stale = { ...old.host, live: () => live, error: (error: unknown) => errors.push((error as Error).message) };
-  const first = runs.start("a", files("old.png"), stale);
+test("a drop in another repository waits its turn; the earlier one still lands in its own", async () => {
+  const f = fixture();
+  const first = f.runs.start("a", files("old.pdf"), f.host);
   await settle();
-  live = false;
-  const second = runs.start("b", files("new.pdf"), old.host);
-  assert.equal(oldAborted, true);
-  assert.deepEqual(await first, []);
+  f.switchRepository();
+  const second = f.runs.start("b", files("new.pdf"), f.hostFor(f.shown()));
+  assert.deepEqual(f.states(), ["old.pdf:preparing", "new.pdf:waiting"]);
+  await f.release("old.pdf");
+  assert.deepEqual(await first, ["a/old.pdf"]);
+  await f.release("new.pdf");
   assert.deepEqual(await second, ["b/new.pdf"]);
-  assert.deepEqual(prepared, ["old.png", "new.pdf"]);
-  assert.deepEqual(runs.entries().map(entry => `${entry.file.name}:${entry.state}`), ["new.pdf:added"]);
-  assert.deepEqual(errors, ["The repository or branch changed while adding files. Nothing was added."]);
+  assert.deepEqual(f.savedInto, ["repo", "other"]);
+  assert.deepEqual(f.errors, []);
 });
-
 
 test("Files additions pass the site's remembered video choice next to image quality", async () => {
   let choice: unknown;
@@ -175,6 +175,6 @@ test("Files additions pass the site's remembered video choice next to image qual
     prepare: async (file, _key, folder, _signal, image, original, video) => { choice = [image, original, video]; return { request: { file, folder } }; },
     save: async () => ["clips/video.mp4"], paint() {},
   });
-  await runs.start("clips", [new File(["video"], "video.mp4")], { context: async () => ctx, live: () => true, announce() {}, error(error) { throw error; } });
+  await runs.start("clips", [new File(["video"], "video.mp4")], { context: async () => ctx, announce() {}, error(error) { throw error; } });
   assert.deepEqual(choice, ["smaller", true, "higher"]);
 });

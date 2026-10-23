@@ -77,18 +77,23 @@ function fixture() {
   };
 }
 
-// A save's proof drops its result once any part of the scope moved on.
-test("a save goes through only for the generation, account, repository and branch it began on", () => {
+// A save lands on the scope it began on (ticket 23): once any part of the scope moved on, its
+// drafts there are still saved, but the head and the snapshot after it are not taken for the open one.
+test("a save finished after a switch lands on its own scope; the open one keeps its head and snapshot", async () => {
   const moves: Record<string, (s: ReturnType<typeof fixture>["state"]) => void> = {
     generation: (s) => { s.generation++; }, account: (s) => { s.account = "other"; },
     repository: (s) => { s.repoId = 2; }, branch: (s) => { s.snapshot = snap(undefined, "dev"); },
   };
   for (const [name, move] of Object.entries(moves)) {
-    const f = fixture(), was = f.controller.proof();
+    const f = fixture(), was = f.controller.proof(), landed: DraftScope[] = [];
+    f.ports.saved = (scope) => { landed.push(scope); f.log.push("saved"); };
     move(f.state);
-    f.controller.published(was, scope1, result("f".repeat(40)), []);
-    assert.deepEqual(f.log, [], name);
-    assert.equal(f.calls.length, 0, name);
+    f.controller.published(was, scope1, result("f".repeat(40)), [draft("index.html")]);
+    await flush();
+    assert.deepEqual(f.log, ["saved"], name);
+    assert.deepEqual(landed, [scope1], `${name}: the save's own scope`);
+    assert.equal(f.calls.length, 0, `${name}: no snapshot is read for the open scope`);
+    assert.equal(f.controller.trustedHead(), undefined, `${name}: the save's commit is not the open scope's head`);
   }
   const refreshed = fixture(), was = refreshed.controller.proof();
   refreshed.state.snapshot = snap("e".repeat(40));

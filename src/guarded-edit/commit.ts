@@ -14,7 +14,9 @@
 //
 // Two shapes: edits only (no file created, moved, deleted or opened) stay on
 // the open page with no refresh; anything else plans its drafts with
-// planNativeStructuralDrafts and reopens the page after.
+// planNativeStructuralDrafts and reopens the page after. A step whose page is no
+// longer shown (`elsewhere`, ticket 23) plans its drafts the second way and
+// stops once they are written: no Undo step, nothing opened.
 
 import { GITHUB_CONFIG_REFUSED, splitProtectedEdits, touchesGithubConfig } from "../../shared/protected-paths";
 import { prepareNativeTextHistory } from "../page-builder/native-operation-history";
@@ -48,6 +50,8 @@ export interface CommitRequest {
   recorded: () => void;
   /** Undo selects `before`, Redo `after`, each against the exact bytes the step restores. */
   selection: { before?: NodeRef; after?: NodeRef };
+  /** The step's page is no longer shown, asked once the branch reads are done: its drafts only. */
+  elsewhere?: () => boolean;
 }
 
 /** What a commit whose reads moved under it says (the module turns it into a stale Outcome). */
@@ -166,9 +170,10 @@ export function createCommit(ws: EditorWorkspace & { agentText?(): AgentTextComm
       (draft.deleted || draft.opaque ? expected.get(path) !== undefined : draft.content !== expected.get(path)))) return COMMIT_CHANGED;
     const agentBefore = () => new Map([...dependencies, ...before]);
     const live = () => epoch === ws.generation() && scopeKey === ws.scope() && !ws.versionView();
+    const away = op.elsewhere?.() === true;
 
     // ---- Edits only: the open page's history, no refresh. ----
-    if (!moves.length && !deletes.length && !creates.length && op.open === undefined) {
+    if (!away && !moves.length && !deletes.length && !creates.length && op.open === undefined) {
       if (anchor === undefined || !ws.mounted(anchor)) return "Open a page before changing these files.";
       const after = new Map(before);
       const beforeSources = new Map(expected);
@@ -235,8 +240,8 @@ export function createCommit(ws: EditorWorkspace & { agentText?(): AgentTextComm
       return undefined;
     }
 
-    // ---- Files created, moved, deleted or opened: planned drafts, the page reopened. ----
-    if (anchor !== undefined && !ws.mounted(anchor) || agent && anchor === undefined && op.open === undefined && !moves.length) return "Open an editable page before changing these files.";
+    // ---- Files created, moved, deleted or opened: planned drafts, the page reopened (elsewhere: not). ----
+    if (!away && (anchor !== undefined && !ws.mounted(anchor) || agent && anchor === undefined && op.open === undefined && !moves.length)) return "Open an editable page before changing these files.";
     if (anchor !== undefined && !before.has(anchor)) before.set(anchor, store.get(scope, anchor));
     const after = planNativeStructuralDrafts({ scope, before, movable, bases, moves, deletes, creates, edits, now: Date.now() });
     const beforeSources = new Map(expected);
@@ -265,7 +270,7 @@ export function createCommit(ws: EditorWorkspace & { agentText?(): AgentTextComm
     const untouched = () => ws.files().filter(path => !after.has(path)).sort().join("\n");
     const untouchedFiles = untouched();
     const structuralLive = () => live() && untouched() === untouchedFiles;
-    const retainedPaths = [...anchor === undefined ? [] : [anchor], ...[...touched].filter(path => ws.mounted(path) && afterSources.get(path) === undefined)];
+    const retainedPaths = [...anchor === undefined || away ? [] : [anchor], ...[...touched].filter(path => ws.mounted(path) && afterSources.get(path) === undefined)];
     const changingTextPaths = [...touched].filter(path => beforeSources.get(path) !== afterSources.get(path) || retainedPaths.includes(path));
     // Opening a page may close and remount the stylesheet pane (its history scope follows the page).
     // The pane's file is not a changing path unless this step edits it: an unchanged pane keeps
@@ -277,7 +282,7 @@ export function createCommit(ws: EditorWorkspace & { agentText?(): AgentTextComm
       retainModel: path => ws.retainModel(path), modelState: path => ws.model(path),
       evictModel: (path, proof) => ws.evictModel(path, proof), prepareSources: changes => ws.prepareSources(changes),
     }, { before, after, beforeSources, afterSources, retainPaths: retainedPaths });
-    let releaseRefresh: (() => void) | undefined = anchor === undefined ? undefined : ws.holdRefresh(anchor);
+    let releaseRefresh: (() => void) | undefined = anchor === undefined || away ? undefined : ws.holdRefresh(anchor);
     const release = () => { releaseRefresh?.(); releaseRefresh = undefined; };
     // Undo writes `before` back: its uploads' bytes stay while the step lives (after-side uploads are the same bytes, moved).
     const releaseUploads = holdUploadDrafts(scope, before.values());
@@ -292,6 +297,12 @@ export function createCommit(ws: EditorWorkspace & { agentText?(): AgentTextComm
       if (stale() || !receipt.isCurrent()) { receipt.dispose(); releaseUploads(); release(); return recover(); }
     }
     if (!(agent ? agent.publish(after, () => receipt.apply()) : receipt.apply())) { const error = receipt?.error() ?? store.error ?? COMMIT_CHANGED; receipt?.dispose(); releaseUploads(); release(); return durable ? recover() : error; }
+    if (away) {
+      // Its page is not shown: the drafts are its change there, with no Undo step to hold them.
+      unrecorded(); unrecorded = undefined;
+      op.recorded(); ws.afterFileChanges(); ws.announce(done);
+      return undefined;
+    }
     // Files created or moved in keep the anchor's history while the step lives.
     let unshare = anchor === undefined ? () => {} : ws.shareHistory([...creates.map(file => file.path), ...moves.map(move => move.to)], anchor);
     const moved = new Map(moves.map(move => [move.from, move.to]));

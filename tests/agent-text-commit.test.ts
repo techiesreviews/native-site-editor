@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { test, type TestContext } from "node:test";
 import { textHash, type AgentCommand } from "../shared/agent.ts";
-import { applySiteCommand, prepareAgentText, type AgentSiteActions } from "../src/agent-site.ts";
-import { agentCommandSignals } from "../src/agent-tools.ts";
+import { applySiteCommand, finishAgentTextElsewhere, prepareAgentText, type AgentSiteActions } from "../src/agent-site.ts";
+import { agentCommandFiles, agentCommandSignals } from "../src/agent-tools.ts";
+import type { AgentReadFiles } from "../src/agent-tools-read.ts";
 import { indexedDbAgentRecords } from "../src/agent-records.ts";
 import { DraftStore, draftDatabaseName, draftKey, indexedDbDrafts, type DraftScope } from "../src/drafts.ts";
 import { createDraftStore } from "../src/draft-store.ts";
@@ -510,4 +511,45 @@ test("abort at every real text preparation and commit await cancels without draf
   assert.ok(count >= 11, `covered ${count} text awaits`);
   t.diagnostic(`Raced ${count} real text awaits: ${cancelled} cancelled, ${applied} applied.`);
   assert.ok(cancelled > 0); assert.ok(applied > 0, "commit can win first; cancellation never undoes it");
+});
+
+// Ticket 23: an agent's text write read from a site or branch no longer shown finishes there, on its files.
+async function elsewhere(t: TestContext) {
+  const f = await setup(t);
+  const files = { repo: { id: 1, full_name: "lex/site" }, snapshot: { branch: "main", commit: "commit", entries: [] }, read: async () => "before" } as unknown as AgentReadFiles; // eslint-disable-line no-restricted-syntax -- only the repository, snapshot and blob reader are used.
+  const shown: DraftScope = { ...f.scope, branch: "dev" };
+  const finish = (command: AgentCommand, on: DraftScope | undefined = shown) => {
+    agentCommandFiles.set(command, files);
+    return finishAgentTextElsewhere(command, on, f.scope.account, f.store, async (_files, path) => path === "index.html" ? { sha: "a".repeat(40) } : undefined);
+  };
+  return { ...f, shown, finish };
+}
+
+test("a text write for a branch no longer shown lands there as a draft over the branch's text, with its receipt", async t => {
+  const f = await elsewhere(t);
+  const outcome = await f.finish(f.command);
+  assert.equal(outcome?.result?.hash, await textHash("agent"));
+  const draft = f.store.get(f.scope, "index.html");
+  assert.deepEqual([draft?.content, draft?.original, draft?.baseSha, draft?.branch], ["agent", "before", "a".repeat(40), "main"]);
+  assert.equal(f.store.get(f.shown, "index.html"), undefined, "nothing on the branch shown");
+  assert.deepEqual((await f.records.receipt(f.scope, "operation", "grant"))?.outcome, outcome);
+  // A second delivery gets the same outcome and writes nothing more.
+  assert.deepEqual(await f.finish({ ...f.command }), outcome);
+  assert.equal(f.store.get(f.scope, "index.html"), draft);
+});
+
+test("a text write elsewhere refuses when the file there changed since the agent read it; nothing is kept", async t => {
+  const f = await elsewhere(t);
+  f.store.save({ ...f.scope, version: 1, path: "index.html", baseSha: "a".repeat(40), original: "before", content: "typed", updatedAt: 1 });
+  await assert.rejects(f.finish(f.command), /index\.html changed in the editor meanwhile.*Nothing was changed/);
+  assert.equal(f.store.get(f.scope, "index.html")?.content, "typed");
+  assert.equal(await f.records.receipt(f.scope, "operation", "grant"), undefined);
+});
+
+test("a command read from the branch shown is left to the editor; other commands elsewhere refuse", async t => {
+  const f = await elsewhere(t);
+  assert.equal(await f.finish(f.command, f.scope), undefined);
+  assert.equal(f.store.get(f.scope, "index.html"), undefined);
+  await assert.rejects(f.finish({ ...f.command, operation: "move_file", args: { to: "moved.html" } }), /open main again/);
+  assert.equal(await f.records.receipt(f.scope, "operation", "grant"), undefined);
 });

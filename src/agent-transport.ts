@@ -111,9 +111,15 @@ export function createLiveTransport(options: Options) {
   let heartbeat: number | undefined, pong: number | undefined;
   let ownerPaused = false;
   let recovery: Recovery | undefined, first = true, takeoverFlight: Promise<void> | undefined;
-  const active = new Map<string, { source: Socket; stop: AbortController; dispose: () => void }>();
-  const cancelSocket = (source: Socket | undefined) => {
-    for (const call of active.values()) if (call.source === source) { call.stop.abort(); call.dispose(); }
+  const active = new Map<string, { source: Socket; stop: AbortController; edit: boolean; dispose: () => void }>();
+  // Edits under way when another workspace opens finish in theirs (ticket 23): they are not
+  // cancelled and stay valid; their replies go nowhere (the socket is closed), their receipts stay.
+  const finishing = new Set<AbortSignal>();
+  const cancelSocket = (source: Socket | undefined, keepEdits = false) => {
+    for (const call of active.values()) if (call.source === source) {
+      if (keepEdits && call.edit) finishing.add(call.stop.signal);
+      else { call.stop.abort(); call.dispose(); }
+    }
   };
   const flights = new Map<string, { identity: string; promise: Promise<Result> }>();
   const scope = (): Scope => ({ workspace, tabId: options.tabId, generation: fence! });
@@ -131,9 +137,9 @@ export function createLiveTransport(options: Options) {
     if (pong !== undefined) clock.clearTimeout(pong);
     heartbeat = pong = undefined;
   }
-  function close() {
+  function close(keepEdits = false) {
     const old = socket;
-    cancelSocket(old);
+    cancelSocket(old, keepEdits);
     socket = undefined;
     opening = undefined;
     handshaken = false;
@@ -150,7 +156,7 @@ export function createLiveTransport(options: Options) {
   function halt(mode: Mode) {
     epoch++;
     recovery?.dispose(); recovery = undefined;
-    close(); unhold();
+    close(mode === "workspace-changed"); unhold();
     show({ mode });
   }
   async function prove(at: number) {
@@ -178,7 +184,7 @@ export function createLiveTransport(options: Options) {
   }
   async function readCommand(source: Socket, value: Partial<Scope> & { id?: unknown; command?: unknown }, deadline: number, seen: { page: string | undefined }, signal: AbortSignal) {
     const at = epoch, connection = session;
-    const valid = () => !signal.aborted && present() && socket === source && session === connection && handshaken && state.mode === "live" && source.readyState === 1;
+    const valid = () => !signal.aborted && (finishing.has(signal) || present() && socket === source && session === connection && handshaken && state.mode === "live" && source.readyState === 1);
     let result: AgentReadResult;
     try {
       const read = value.command as AgentRead | AgentEdit | AgentStatus | AgentMedia | AgentRequests;
@@ -337,7 +343,7 @@ export function createLiveTransport(options: Options) {
           };
           stop.signal.addEventListener("abort", abort, { once: true });
           const timer = clock.setTimeout(() => stop.abort(), Math.max(0, deadline - Date.now()));
-          const call = { source, stop, dispose: () => { clock.clearTimeout(timer); if (active.get(value.id) === call) active.delete(value.id); } };
+          const call = { source, stop, edit: incoming?.operation === "edit", dispose: () => { clock.clearTimeout(timer); finishing.delete(stop.signal); if (active.get(value.id) === call) active.delete(value.id); } };
           active.set(value.id, call);
           stop.signal.addEventListener("abort", call.dispose, { once: true });
           void readiness.then(() => {

@@ -12,7 +12,7 @@ import { INLINE_FORMATTING, TEXT_LINE_TAGS, TEXT_TAGS } from "./page-builder/rul
 import type { VariantFiles, VariantSite } from "../shared/variant-lookup";
 import type { createFilesTreeController } from "./controllers/files-tree-controller";
 import { createPageStructureController } from "./controllers/page-structure-controller";
-import { createMediaController } from "./controllers/media-controller";
+import { createMediaController, type MediaPin } from "./controllers/media-controller";
 import type { BlockInsertPorts } from "./controllers/block-insert-controller";
 import { createCardsController } from "./controllers/cards-controller";
 import { createPagesState, explorerTabNames, NATIVE_HOME_UNREAD, type ExplorerTab, pageOnBranchHere } from "./controllers/pages-state";
@@ -1886,22 +1886,18 @@ function nativeImagePaths() {
 
 // Files from the computer as new-file drafts in `folder` (src/uploads.ts), never over something
 // that is there, with the shared adding progress at the foot of Files; resolves to the paths added.
+// They land in the drop's repository and branch even once another is shown (ticket 23).
 async function uploadFilesTo(folder: string, files: File[]): Promise<string[]> {
-  const at = workspaceSession.begin();
-  if (!draftScope() || !files.length) return [];
-  // The repository and branch of the drop; a switch while loading or preparing adds nothing.
-  const current = () => at.holds();
+  const pin = mediaPorts.pin?.();
+  if (!pin || !files.length) return [];
   try {
     const { addFilesTo } = await import("./page-builder/media-files-adding");
-    if (!current()) return [];
-    return await addFilesTo(element("explorer-files"), folder, files, { live: current, announce, error: errorMessage,
-      context: async () => {
-        if (!current()) throw new Error("The repository or branch changed while adding files. Nothing was added.");
-        return mediaController.workspaceContext();
-      },
+    return await addFilesTo(element("explorer-files"), folder, files, { error: errorMessage,
+      announce: text => announce(pin.here() ? text : `On ${pin.scope.branch}: ${text}`),
+      context: () => mediaController.workspaceContext(undefined, pin),
       // Pictures not added yet go to Media's Optimise sheet, still bound for this folder.
       review: element("explorer-tabs").hidden ? undefined : (images, into, reasons) => {
-        if (!current()) return;
+        if (!pin.here()) return;
         openExplorer(); pagesController.selectTab("media");
         void mediaController.reviewInGallery(images, into, reasons).catch(errorMessage);
       } });
@@ -1984,16 +1980,25 @@ const mediaPorts: import("./controllers/media-controller").MediaControllerPorts 
     return { repo: repo.full_name, repoSize: repo.size, scope, identity: mediaIdentity(), site: nativeSite,
       nativePaths: nativeSite ? nativeFiles(scope) : undefined, drafts: draftStore() };
   },
+  // The workspace shown, for work to finish in (ticket 23): the editor's reads while it is on show,
+  // then its snapshot's, the branch texts read so far and its drafts.
+  pin: () => {
+    const repo = appStore.repository.value, scope = draftScope(), snapshot = appStore.snapshot.value, at = workspaceSession.begin(), here = () => at.changed() !== "scope";
+    if (!repo || !scope || !snapshot) return undefined;
+    const site = nativeSite, base = nativeBaseFiles, texts = new Map(nativeBaseSources), key = nativeTextIndexScopeKey(), files = () => nativeFiles(scope, here() ? nativeBaseFiles : base);
+    const entry = (path: string) => here() ? entryAt(path) : repositoryIndex.entry(repo, snapshot, path);
+    const text = (path: string, draft = draftStore().get(scope, path), sha = entry(path)?.sha) => draft ? draft.deleted || draft.opaque ? undefined : draft.content
+      : texts.get(path) ?? cleanSources.peek("", key, path) ?? (sha && cleanSources.peek(repo.full_name, sha));
+    return { repo: repo.full_name, repoSize: repo.size, scope, identity: mediaIdentity(), site, drafts: draftStore(), here, entry, files, get nativePaths() { return site && files(); },
+      list: () => listRepositoryFiles(repo, snapshot), find: path => here() ? findEntry(path) : repositoryIndex.find(api, repo, snapshot, path),
+      source: path => here() ? mediaTextSource(path, scope) : text(path), remember: (path, source) => { if (here()) mediaPorts.rememberSource(path, source); } };
+  },
   identity: mediaIdentity,
   stamp: () => guardedEdits.stamp("repository"),
   generation: currentLoad,
   selected: (path, node) => appStore.selection.value?.path === path && appStore.selection.value.node?.join(".") === node.join("."),
   source: (path, scope) => mediaTextSource(path, scope),
-  listPaths: async () => {
-    const repo = appStore.repository.value, snapshot = appStore.snapshot.value;
-    if (!repo || !snapshot) throw new Error("Choose a repository before opening Media.");
-    return listRepositoryFiles(repo, snapshot);
-  },
+  listPaths: async () => { const repo = appStore.repository.value, snapshot = appStore.snapshot.value; if (!repo || !snapshot) throw new Error("Choose a repository before opening Media."); return listRepositoryFiles(repo, snapshot); },
   findEntry,
   entry: entryAt,
   readText: readFile,
@@ -2032,11 +2037,7 @@ const mediaPorts: import("./controllers/media-controller").MediaControllerPorts 
   viewingVersion: () => Boolean(versions.view),
   restoreFile: (path, epoch) => restoreFile(path, stampOf(epoch), { linkDefaultStyle: false }),
   change: (...args) => pageStructureController.editOpenPage(...args),
-  galleryHost: () => {
-    const host = element("explorer-media");
-    host.querySelector(":scope > .sidebar-hint")?.remove();
-    return host;
-  },
+  galleryHost: () => { const host = element("explorer-media"); host.querySelector(":scope > .sidebar-hint")?.remove(); return host; },
   galleryVisible: () => !element("explorer-media").hidden && element("explorer").matches(":popover-open"),
   mediaSelected: () => pagesController.explorerTab() === "media",
   gallerySignature: imagesSignature,
@@ -2055,20 +2056,15 @@ effect(() => {
 });
 function mediaIdentity() { return `${currentLoad()}:${setupScope()}`; }
 
-
-// Undo stays bound to the page open before either lazy chunk loads.
+// Undo goes to the page open as the step commits; a pinned batch finishes where it started (src/media-batch.ts).
 const loadMediaBatch = lazyModule(() => import("./media-batch"));
-async function applyMediaBatch(scope: DraftScope, stamp: Stamp, batch: MediaWorkspaceBatch) {
-  const openAtStart = appStore.openFile.value;
+async function applyMediaBatch(scope: DraftScope, stamp: Stamp, batch: MediaWorkspaceBatch, pin?: MediaPin) {
   const module = await loadMediaBatch();
-  if (!stamp.holds()) throw new Error("The repository changed. Close Media and open it again.");
-  if (appStore.openFile.value !== openAtStart) throw new Error("The open page changed. No image changes were applied.");
   await module.applyMediaBatch({
-    appStore, editor: editorModule, mediaHistoryHome, site: () => nativeSite, load: loadMediaWorkspace,
-    listRepositoryFiles, nativeFiles, draftStore, bytes: uploadBytes, mediaTextSource, entryAt, findEntry,
+    appStore, editor: editorModule, mediaHistoryHome, site: () => nativeSite, load: loadMediaWorkspace, stamp: () => guardedEdits.stamp("repository"),
+    listRepositoryFiles, nativeFiles, draftStore, bytes: uploadBytes, mediaTextSource, entryAt, findEntry, announce,
     refresh: () => { afterFileChanges(); updateNativePreviewSources(); if (appStore.selection.value) pageStructureController.renderEditBar(appStore.selection.value); },
-    announce,
-  }, scope, stamp, batch, openAtStart);
+  }, scope, stamp, batch, pin);
 }
 
 // After a successful save, the committed content becomes the new clean baseline.
@@ -2213,11 +2209,11 @@ const isNativeTextFile = (path: string) => /\.(?:html|css)$/i.test(path) && !pat
 // Every file of the site as drafted: the branch's not deleted, renamed or
 // moved away, and new files drafted in the browser in `scope`. Pages and
 // components are found from these.
-function nativeFiles(scope = draftScope()): string[] {
+function nativeFiles(scope = draftScope(), base = nativeBaseFiles): string[] {
   const drafts = scope ? draftStore().list(scope) : [];
   const drafted = drafts.filter((draft) => draft.baseSha === null && !draft.deleted).map((draft) => draft.path);
   const gone = new Set(drafts.filter((draft) => draft.deleted).map((draft) => draft.path));
-  return [...new Set([...nativeBaseFiles.filter((path) => !gone.has(path)), ...drafted])];
+  return [...new Set([...base.filter((path) => !gone.has(path)), ...drafted])];
 }
 
 // A repository with `index.html` at its root is a native site: its files
@@ -3476,11 +3472,7 @@ const savePublish = createSavePublishController({
   snapshot: () => appStore.snapshot.value,
   scope: draftScope, drafts: draftStore, api, findEntry, changed: afterFileChanges, release: releaseFiles, openAfter, announce, status,
   fail: errorMessage, fallback: nativeFallbackPage, resync: resyncNativeSite,
-  onWake: (check) => {
-    document.addEventListener("visibilitychange", check);
-    addEventListener("focus", check);
-    return () => { document.removeEventListener("visibilitychange", check); removeEventListener("focus", check); };
-  },
+  onWake: (check) => { document.addEventListener("visibilitychange", check); addEventListener("focus", check); return () => { document.removeEventListener("visibilitychange", check); removeEventListener("focus", check); }; },
   visible: () => document.visibilityState === "visible",
   reload: () => loadSnapshot(),
   forget: (scope, path) => editorModule?.forgetDraftModel(scope, path),
@@ -3772,7 +3764,11 @@ function makeAgentSiteActions(edits: GuardedEdits = guardedEdits, atomic = false
 async function applyAgentSiteCommand(command: AgentCommand) {
   const scope = draftScope(), at = workspaceSession.begin(), revision = appStore.snapshot.value?.commit;
   const current = () => at.holds() && revision === appStore.snapshot.value?.commit && !versions.view;
-  const [{ applySiteCommand, prepareAgentText, atomicAgentCommand, agentStructuralActions }, { createPagesController }, { createLazyFileOperationsController }] = await Promise.all([loadAgentSite(), loadPagesActions(), loadFileOps()]);
+  const [{ applySiteCommand, prepareAgentText, atomicAgentCommand, agentStructuralActions, finishAgentTextElsewhere }, { createPagesController }, { createLazyFileOperationsController }] = await Promise.all([loadAgentSite(), loadPagesActions(), loadFileOps()]);
+  // An edit read from a site or branch no longer shown finishes there, on its files (ticket 23).
+  const elsewhere = () => finishAgentTextElsewhere(command, draftScope(), info.user?.login, draftStore(), (files, path) => repositoryIndex.find(api, files.repo, files.snapshot, path));
+  const finished = await elsewhere();
+  if (finished) return finished;
   if (!current() || !appStore.snapshot.value || command.branch !== appStore.snapshot.value.branch ||
     command.repoId !== undefined && command.repoId !== scope?.repoId) throw new Error("The editor changed repository or branch.");
   if (!atomicAgentCommand(command)) {
@@ -3799,6 +3795,9 @@ async function applyAgentSiteCommand(command: AgentCommand) {
     return { ...prepared.outcome, result: { ...detail.result, ...prepared.outcome.result } };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error), unchanged = "Nothing was changed; your drafts are as they were.";
+    // Switched away before it was kept: it finishes where it was read.
+    const late = !prepared.applied && at.changed() === "scope" ? await elsewhere() : undefined;
+    if (late) return late;
     if (!prepared.applied) throw new Error(message.includes(unchanged) ? message : `${message} ${unchanged}`);
     await prepared.recover!();
     return prepared.outcome;

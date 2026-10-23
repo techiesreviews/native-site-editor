@@ -4,88 +4,76 @@ import { createFilesAdding, type FilesAddingDeps, type FilesAddingHost } from ".
 import type { MediaWorkspaceContext } from "../src/page-builder/media-workspace";
 import { forEachAwait, type AwaitRace } from "./support/await-race";
 
+// Ticket 23: a drop holds the context of the repository it was made in (src/main.ts uploadFilesTo
+// pins it); a switch at any wait stops nothing, and every save goes there, never to the one shown.
+const contextOf = (repo: string) => ({
+  key: `${repo}/main`, scope: { account: "a", repoId: repo === "old" ? 1 : 2, repo: `a/${repo}`, branch: "main" },
+  drafts: { get: () => undefined, save: () => true, remove: () => true },
+  paths: [], items: [], pages: [], components: {}, history: false, assertLive: () => {},
+  read: async () => undefined, blob: async () => new Blob(), assetVersion: () => undefined,
+  applyBatch: async () => {}, openPage: async () => {},
+}) satisfies MediaWorkspaceContext;
+
 function scenario(race: AwaitRace) {
-  const state = { live: true, saves: [] as string[][], staleWrites: [] as string[], errors: [] as string[] };
-  const changed = "The repository or branch changed while adding files. Nothing was added.";
-  const assertLive = () => { if (!state.live) throw new Error(changed); };
-  const ctx = {
-    key: "old/main", scope: { account: "a", repoId: 1, repo: "a/old", branch: "main" },
-    drafts: { get: () => undefined, save: () => true, remove: () => true },
-    paths: [], items: [], pages: [], components: {}, history: false, assertLive,
-    read: async () => undefined, blob: async () => new Blob(), assetVersion: () => undefined,
-    applyBatch: async () => {}, openPage: async () => {},
-  } satisfies MediaWorkspaceContext;
+  const state = { shown: "old", saves: [] as string[][], savedInto: [] as string[], announced: [] as string[], errors: [] as string[] };
+  const pinned = contextOf("old");
   const deps = {
     settings: race.port("settings", async () => ({ image: "balanced" as const, keepOriginal: false })),
     prepare: race.port("prepare", async (file, _key, folder) => ({ request: { file, folder } })),
     // This port commits synchronously, then returns its receipt asynchronously, like an atomic save.
     save: race.port("save", async (context, _context, requests) => {
-      if (!state.live) state.staleWrites.push("save");
-      context.assertLive();
       const paths = requests.map(request => `${request.folder}/${request.file.name}`);
       state.saves.push(paths);
+      state.savedInto.push(context.key);
       return paths;
     }),
     paint() {},
   } satisfies FilesAddingDeps;
   const host = {
-    context: race.port("context", async () => { assertLive(); return ctx; }),
-    live: () => state.live,
-    announce: () => { if (!state.live) state.staleWrites.push("announce added files"); },
+    context: race.port("context", async () => pinned),
+    announce: text => { state.announced.push(text); },
     error: (error: unknown) => { state.errors.push((error as Error).message); },
   } satisfies FilesAddingHost;
   const runs = createFilesAdding(deps);
   const done = runs.start("docs", [new File(["a"], "a.pdf"), new File(["b"], "b.pdf")], host).then(paths => {
-    if (state.live) {
-      assert.deepEqual(paths, ["docs/a.pdf", "docs/b.pdf"]);
-      assert.deepEqual(state.saves, [["docs/a.pdf", "docs/b.pdf"]]);
-      assert.deepEqual(state.errors, []);
-    }
+    assert.deepEqual(paths, ["docs/a.pdf", "docs/b.pdf"]);
   });
   return { state, runs, done };
 }
 
-test("Files adding never saves to the old repository when switched at any async port", async () => {
-  const count = await forEachAwait(scenario, run => { run.state.live = false; }, run => {
-    assert.ok(!run.state.staleWrites.includes("save"));
-    // A save already committed before suspension may survive; no later save may start.
-    if (run.state.errors.length) assert.deepEqual(run.state.saves, []);
+test("Files adding switched at any async port saves into the repository it was dropped in", async () => {
+  const count = await forEachAwait(scenario, run => { run.state.shown = "new"; }, run => {
+    assert.deepEqual(run.state.saves, [["docs/a.pdf", "docs/b.pdf"]]);
+    assert.deepEqual(run.state.savedInto, ["old/main"]);
+    assert.deepEqual(run.state.errors, []);
   });
   assert.equal(count, 5); // context, settings, two prepares, save.
 });
 
-test("Files adding does not publish an old repository's completed summary", async () => {
-  await forEachAwait(scenario, run => { run.state.live = false; }, run => {
-    assert.deepEqual(run.state.staleWrites, []);
-    assert.ok(run.runs.entries().every(entry => entry.state !== "added"));
+test("Files adding switched at any async port finishes its summary: every file added, said once", async () => {
+  await forEachAwait(scenario, run => { run.state.shown = "new"; }, run => {
+    assert.deepEqual(run.state.announced, ["Added docs/a.pdf, docs/b.pdf."]);
+    assert.ok(run.runs.entries().every(entry => entry.state === "added"));
   });
 });
 
-test("a save that fails after a switch reports its reason once and marks nothing added", async () => {
-  let live = true, release!: (error: Error) => void, saving!: () => void;
+test("a save that fails after a switch keeps its files for Retry with the reason", async () => {
+  let release!: (error: Error) => void, saving!: () => void;
   const saveStarted = new Promise<void>(resolve => { saving = resolve; });
   const announced: string[] = [], errors: string[] = [];
-  const ctx = {
-    key: "old/main", scope: { account: "a", repoId: 1, repo: "a/old", branch: "main" },
-    drafts: { get: () => undefined, save: () => true, remove: () => true },
-    paths: [], items: [], pages: [], components: {}, history: false, assertLive: () => {},
-    read: async () => undefined, blob: async () => new Blob(), assetVersion: () => undefined,
-    applyBatch: async () => {}, openPage: async () => {},
-  } satisfies MediaWorkspaceContext;
   const runs = createFilesAdding({
     prepare: async (file, _key, folder) => ({ request: { file, folder } }),
     save: () => new Promise((_resolve, reject) => { release = reject; saving(); }),
     paint() {},
   });
   const done = runs.start("docs", [new File(["a"], "a.pdf")], {
-    context: async () => ctx, live: () => live,
+    context: async () => contextOf("old"),
     announce: text => { announced.push(text); }, error: error => { errors.push((error as Error).message); },
   });
   await saveStarted;
-  live = false;
-  release(new Error("The repository changed while adding files. Nothing was added."));
+  release(new Error("images/a.pdf already exists."));
   assert.deepEqual(await done, []);
   assert.deepEqual(announced, []);
-  assert.deepEqual(errors, ["The repository changed while adding files. Nothing was added."]);
-  assert.deepEqual(runs.additions(), []);
+  assert.deepEqual(errors, []);
+  assert.deepEqual(runs.entries().map(entry => `${entry.state}:${entry.error}`), ["failed:images/a.pdf already exists."]);
 });

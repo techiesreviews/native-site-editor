@@ -164,11 +164,14 @@ export function createAgentMenu(options: {
         const ports = options.tools, stamp = ports?.stamp();
         const source = ports?.files(), commit = source?.snapshot.commit;
         if (!ports || !stamp) return { ok: false, message: "Browser edit tools are unavailable. Refresh the editor." };
+        // The workspace the edit arrived in, held before its tools load: another site or branch shown
+        // meanwhile stops nothing, and the edit finishes in its own (ticket 23).
+        const held = { source, pin: ports.pin?.() ?? { away: () => false, context: () => ports.context() } };
         editTools ??= import("../agent-tools-edit").then(({ createAgentEditTools }) => createAgentEditTools({
           workspace: { account: options.account, repoId: repo.id, branch: repo.branch }, ports, records,
           run,
         }));
-        return (await editTools).run(request, fence, () => current() && stamp.holds() && ports.files()?.snapshot.commit === commit, signal);
+        return (await editTools).run(request, fence, () => current() && (stamp.changed() === "scope" || stamp.holds() && ports.files()?.snapshot.commit === commit), signal, held);
       },
       read: async (read, signal) => {
         const ports = options.tools, stamp = ports?.stamp();

@@ -37,8 +37,17 @@ export function createAgentSiteHost(ports: AgentSiteHostPorts) {
       ports.setDialog(real);
     }
   }
+  // An edit's hold on the workspace (ticket 23): the live context while it is shown, else its own as
+  // it arrived (its drafts then, nothing mounted or on show). A draft changed since refuses its write.
+  function pin(build: () => Promise<SharedContext | undefined>) {
+    const stamp = ports.stamp(), input = ports.input(), away = () => stamp.changed() === "scope";
+    return input && { away, async context() {
+      const shown = away() ? undefined : await build();
+      return shown ?? (away() ? (await ports.load()).buildAgentContext({ ...input, file: null, mountedSource: () => undefined, native: undefined }) : undefined);
+    } };
+  }
   function tools(build = context) {
-    return { stamp: () => ports.stamp(), context: build, files: () => ports.files?.(), source: (path: string) => ports.source?.(path) };
+    return { stamp: () => ports.stamp(), context: build, pin: () => pin(build), files: () => ports.files?.(), source: (path: string) => ports.source?.(path) };
   }
   return { context, withAnswers, tools };
 }

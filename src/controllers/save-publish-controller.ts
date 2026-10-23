@@ -265,11 +265,16 @@ export function createSavePublishController(ports: SavePublishPorts) {
     if (discarded) ports.announce(`Discarded ${discarded} unsaved ${discarded === 1 ? "change" : "changes"}.`);
   }
 
-  /** A save of `scope`, from an editor opened on `was`, went through. */
+  /**
+   * A save of `scope`, from an editor opened on `was`, went through. It lands on `scope` whatever
+   * is shown now (ticket 23): its drafts there are saved; the head and the snapshot after it
+   * follow only while the editor is still on what it began on.
+   */
   function published(was: SaveProof, scope: DraftScope, result: PublishResult, submitted: SavedDraft[]) {
-    if (!live(was, false)) return;
-    seeHead(result.commit);
-    void refreshAfterPublish(scope, result.commit);
+    if (live(was, false)) {
+      seeHead(result.commit);
+      void refreshAfterPublish(scope, result.commit);
+    }
     ports.saved(scope, result, submitted);
   }
   // After a save: the branch as the save left it. `commit` is the save's own

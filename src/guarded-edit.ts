@@ -55,6 +55,13 @@ export interface RunOptions {
   group?: string;
   /** `run` only: the anchor mounts only while the stamp and guard still hold (a page whose action went stale meanwhile stays unopened). */
   openOnlyIfCurrent?: boolean;
+  /**
+   * `run` only: the work finishes where it started (ticket 23). Another page shown meanwhile (or Edit
+   * component mode entered or left) stops nothing: the step lands on its page, `anchor` (by default the
+   * page open as it runs), as drafts with no Undo step, nothing opened or selected. Its reads are proved
+   * by their bytes. Another workspace or a reload still stops it.
+   */
+  finish?: boolean;
 }
 
 export interface Planned {
@@ -238,7 +245,7 @@ export function createGuardedEdits(workspace: EditorWorkspace): GuardedEdits {
   /** A tracking reader: every read is recorded with its own re-proof; sealed once the plan returns. */
   function track() {
     const sources = new Map<string, string | undefined>();
-    const checks = new Map<string, () => StaleKey | undefined>();
+    const checks = new Map<string, (bytes?: boolean) => StaleKey | undefined>();
     const existing = new Map<string, boolean>();
     const seen = new Set<string>();
     let sealed = false;
@@ -249,7 +256,8 @@ export function createGuardedEdits(workspace: EditorWorkspace): GuardedEdits {
       if (!checks.has(key)) {
         const text = ws.source(path), model = ws.modelState(path);
         sources.set(path, text);
-        checks.set(key, () => ws.source(path) !== text || model && !model.isCurrent() ? { file: path } : undefined);
+        // `bytes`: a step landing away from its page proves its reads by their bytes (no model of them takes it).
+        checks.set(key, (bytes?: boolean) => ws.source(path) !== text || !bytes && model && !model.isCurrent() ? { file: path } : undefined);
       }
       seen.add(path);
       return sources.get(path);
@@ -281,7 +289,7 @@ export function createGuardedEdits(workspace: EditorWorkspace): GuardedEdits {
         return site;
       },
     };
-    const changed = () => { for (const check of checks.values()) { const key = check(); if (key) return key; } return undefined; };
+    const changed = (bytes?: boolean) => { for (const check of checks.values()) { const key = check(bytes); if (key) return key; } return undefined; };
     return { r, sources, seen, changed, seal: () => { sealed = true; } };
   }
 
@@ -396,27 +404,33 @@ export function createGuardedEdits(workspace: EditorWorkspace): GuardedEdits {
     closeGroup();
     const held = options.since ?? stamp();
     const guard = options.guard ?? (() => true);
+    // Work that finishes where it started: its page moving is no reason to stop (`away` below).
+    const moved = (key: StaleKey | undefined) => options.finish === true && (key === "route" || key === "edit-mode");
     // The stamp and the guard: what the action began with.
-    const proved = (): StaleKey | undefined => held.changed() ?? (guard() ? undefined : "guard");
+    const proved = (): StaleKey | undefined => { const key = held.changed(); return (moved(key) ? undefined : key) ?? (guard() ? undefined : "guard"); };
     let changed = proved();
     if (changed) return stale(changed);
+    // Its page already left before it ran: which page it was must be said.
+    if (moved(held.changed()) && options.anchor === undefined) return stale(held.changed()!);
     // No page open and none asked for: the step's files go without an anchor (the commit opens the page after).
-    const anchor = options.anchor ?? ws.openFile();
-    if (anchor !== undefined && (ws.openFile() !== anchor || !ws.anchor(anchor))) {
+    const anchor = options.anchor ?? ws.openFile(), left = moved(held.changed());
+    if (!left && anchor !== undefined && (ws.openFile() !== anchor || !ws.anchor(anchor))) {
       await ws.open(anchor, options.openOnlyIfCurrent ? () => !proved() : undefined);
       changed = proved();
       if (changed) return stale(changed);
     }
     // The anchor's editor and model, proved from here to the record.
-    const opened = anchor === undefined ? undefined : ws.anchor(anchor);
-    if (anchor !== undefined && !opened) return stale("anchor");
+    const opened = anchor === undefined || left ? undefined : ws.anchor(anchor);
+    if (anchor !== undefined && !opened && !left) return stale("anchor");
+    // The step's page is not the one shown (any more): it lands there as drafts.
+    const away = () => left || moved(held.changed()) || options.finish === true && ws.openFile() !== anchor;
     const reads = track();
     let result: PlanResult;
     try { result = await plan(reads.r); }
     finally { reads.seal(); }
     const writes = "done" in result ? prepare(result, reads) : undefined;
-    // With no page open, none may open meanwhile: the step would land over it.
-    const current = (): StaleKey | undefined => proved() ?? ((opened ? opened.isCurrent() : ws.openFile() === undefined) ? undefined : "anchor") ?? reads.changed();
+    // With no page open, none may open meanwhile: the step would land over it (unless it finishes away).
+    const current = (): StaleKey | undefined => proved() ?? (away() || (opened ? opened.isCurrent() : ws.openFile() === undefined) ? undefined : "anchor") ?? reads.changed(away());
     changed = current();
     if (changed) return stale(changed);
     if ("refuse" in result) return refused(result.refuse);
@@ -424,14 +438,15 @@ export function createGuardedEdits(workspace: EditorWorkspace): GuardedEdits {
     if (writes!.unchanged) return { ok: true, status: "unchanged" };
     const places = existence(writes!), missing = places.refusal();
     if (missing) return refused(missing);
-    if (anchor !== undefined && !result.select?.historyOnly && rangePath(writes!, anchor, result)) return writeRanges(anchor, writes!, reads, result, options.group);
-    const after = result.select?.after, selects = after && !result.select?.historyOnly;
+    if (anchor !== undefined && !away() && !result.select?.historyOnly && rangePath(writes!, anchor, result)) return writeRanges(anchor, writes!, reads, result, options.group);
+    const after = result.select?.after, selects = after && !result.select?.historyOnly && !away();
     if (selects) ws.select({ ...after, ...writes!.edits.has(after.path) ? { source: writes!.edits.get(after.path) } : {} }, result.select?.flash);
     let recorded = false;
     const error = await commit({
       reads: reads.sources, edits: writes!.edits, creates: writes!.creates, deletes: writes!.deletes, moves: writes!.moves, anchor,
       open: result.open, focus: result.focus, done: result.done, undone: result.undone,
       current: () => !(current() ?? places.changed()), recorded: () => { recorded = true; }, selection: { before: result.select?.before, after },
+      ...options.finish ? { elsewhere: away } : {},
     });
     if (error === undefined) return { ok: true, status: "applied" };
     if (recorded) return { ok: true, status: "applied", message: error };

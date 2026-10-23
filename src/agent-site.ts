@@ -3,7 +3,9 @@
 // drafts), and how it applies the changes agents queue, each through the
 // same code the editor's own controls run, so it lands as an ordinary draft
 // with Undo. main.ts supplies the editor's state and actions.
-import { agentCommandSignals } from "./agent-tools";
+import { agentCommandFiles, agentCommandSignals } from "./agent-tools";
+import type { AgentReadFiles } from "./agent-tools-read";
+import { sameBranch } from "./workspace-session";
 import { decodeHtmlEntities } from "./page-builder/html-entities";
 import type { MoveAt, MoveOutcome } from "./page-builder/block-move";
 import { expandStyleImports } from "../shared/css-imports";
@@ -123,8 +125,9 @@ export function agentStructuralActions(workspace: EditorWorkspace, context: Agen
       verify();
       if (claimed) throw new Error("An agent command must use one guarded edit.");
       claimed = true;
-      const held = options?.since ?? edits.stamp();
-      finishProofs.set("stamp", () => held.holds() && (options?.guard?.() ?? true));
+      // Another page shown meanwhile stops nothing: the step lands on its page (ticket 23, `finish`).
+      const held = options?.since ?? edits.stamp(), kept = () => [undefined, "route", "edit-mode"].includes(held.changed() as string | undefined);
+      finishProofs.set("stamp", () => kept() && (options?.guard?.() ?? true));
       await context.check?.();
       verify();
       let selection: { after: NodeRef; flash?: string } | undefined;
@@ -162,8 +165,9 @@ export function agentStructuralActions(workspace: EditorWorkspace, context: Agen
         // historyOnly keeps the step on the staged commit; the plan's own selection follows once it applied.
         if ("done" in result && !result.select?.historyOnly && result.select?.after) selection = { after: result.select.after, flash: result.select.flash };
         return "done" in result ? { ...result, select: { ...result.select, historyOnly: true } } : result;
-      }, { ...options, since: held, guard: () => valid() && (options?.guard?.() ?? true) });
-      if (selection && outcome.ok && outcome.status === "applied" && !outcome.message && valid())
+      }, { ...options, since: held, guard: () => valid() && (options?.guard?.() ?? true), finish: true });
+      // A step that landed on a page not shown selects nothing there.
+      if (selection && outcome.ok && outcome.status === "applied" && !outcome.message && valid() && workspace.openFile() === selection.after.path)
         workspace.select({ ...selection.after, source: workspace.source(selection.after.path) }, selection.flash);
       return outcome;
     },
@@ -1023,4 +1027,39 @@ export async function prepareAgentText(command: AgentCommand, scope: DraftScope,
       } finally { release(); }
     } };
   } catch (error) { return refuse(error); }
+}
+
+/**
+ * An agent's text write (edit_file, write_file) read from a site or branch no longer shown finishes
+ * there, on its files (ticket 23); undefined when it was read from the one shown, which writes it as
+ * before. The file's text there now (its draft, else the branch's) must still be what the agent read;
+ * the draft goes through the agent records with its receipt, then into the draft store, as another
+ * tab's would. Other commands need the editor's own actions on that site, so they refuse.
+ */
+export async function finishAgentTextElsewhere(command: AgentCommand, shown: DraftScope | undefined, account: string | undefined, store: DraftStore,
+  find: (files: AgentReadFiles, path: string) => Promise<{ sha: string } | undefined>): Promise<AgentCommandOutcome | undefined> {
+  const files = agentCommandFiles.get(command);
+  if (!files || !account || shown && sameBranch(shown, { repoId: files.repo.id, branch: files.snapshot.branch })) return undefined;
+  if (command.operation !== "write_file")
+    throw new Error(`The editor shows another site or branch now; open ${files.snapshot.branch} again and repeat this change. Nothing was changed; your drafts are as they were.`);
+  const scope: DraftScope = { account, repoId: files.repo.id, repo: files.repo.full_name, branch: files.snapshot.branch }, path = command.path;
+  const prepared = await prepareAgentText(command, scope, store, () => true, () => {});
+  if (prepared.duplicate) return prepared.duplicate;
+  const context = prepared.context!, release = await context.fence(scope, [path]);
+  try {
+    const draft = store.get(scope, path), entry = draft ? undefined : await find(files, path), now = Date.now(), text = command.content;
+    const branch = entry && { sha: entry.sha, text: await files.read(files.repo.full_name, entry.sha) };
+    const shownText = draft ? (draft.deleted || draft.opaque ? undefined : draft.content) : branch?.text;
+    if ((shownText === undefined ? null : await textHash(shownText)) !== (command.expectedHash ?? null))
+      throw new Error(`${path} changed in the editor meanwhile. Read it again. Nothing was changed; your drafts are as they were.`);
+    // The draft the editor's own write leaves (src/guarded-edit/commit.ts, edits only).
+    const after: SavedDraft | undefined = draft && !draft.deleted ? (draft.baseSha !== null && !draft.movedFrom && text === draft.original ? undefined : { ...draft, content: text, updatedAt: now })
+      : draft ? { ...scope, version: 1, path, baseSha: draft.baseSha, original: draft.original, content: text, updatedAt: now }
+      : branch && text === branch.text ? undefined
+      : { ...scope, version: 1, path, baseSha: branch?.sha ?? null, original: branch?.text ?? "", content: text, updatedAt: now };
+    const changes = new Map([[path, after]]);
+    await context.commit(new Map([[path, draft]]), changes, () => store.get(scope, path) === draft);
+    await context.settle(changes);
+    return prepared.outcome;
+  } finally { release(); }
 }

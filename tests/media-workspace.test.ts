@@ -40,7 +40,8 @@ function fixture() {
     async applyBatch(batch) {
       batches.push(batch);
       await applyMediaWorkspaceBatch(batch, {
-        assertLive: () => context.assertLive(), paths: () => [...paths], source: (path) => text.get(path), assetVersion: (path) => versions.get(path),
+        // The context the batch was applied through (a pinned copy's own liveness, ticket 23).
+        assertLive: () => this.assertLive(), paths: () => [...paths], source: (path) => text.get(path), assetVersion: (path) => versions.get(path),
         async snapshot() { return { text: new Map(text), paths: new Set(paths), bytes: new Map(bytes), versions: new Map(versions), committed: false, owned: [] as string[] }; },
         async stage(batch, state) {
           for (const upload of batch.uploads) { if (!bytes.has(upload.path)) state.owned.push(upload.path); bytes.set(upload.path, upload.blob); if (failStage) throw new Error("Byte storage failed"); }
@@ -1386,4 +1387,43 @@ test("Media lists a file by the date it was added; a lighter version (Optimise) 
   assert.equal(parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["media/images/a.webp"].added, "2026-01-02T03:04:05.000Z");
   const after = await f.host.load();
   assert.equal(after.items.find(item => item.path === "media/images/a.webp")?.date, Date.parse("2026-01-02T03:04:05.000Z"));
+});
+
+// Ticket 23: files added to the library finish in the workspace they were added in. The context the
+// host gives offers `again`, a context of that workspace that does not go stale; a switch meanwhile
+// stops nothing. Without it (a host that cannot pin) the switch still refuses.
+test("files added while the workspace switches land in the workspace they were added in", async () => {
+  for (const pinned of [true, false]) {
+    const f = fixture();
+    let finishing = 0;
+    if (pinned) f.context.again = async () => { finishing++; return { ...f.context, assertLive() {} }; };
+    await f.host.load();
+    f.afterRead(() => f.setLive(false));
+    const request = { file: new File(["bytes"], "late.png"), result: { outputs: [{ blob: new Blob(["late"], { type: "image/webp" }), extension: "webp" }], before: 5, after: 4 }, folder: "images" };
+    if (pinned) {
+      assert.deepEqual(await f.host.import([request]), ["images/late.webp"]);
+      assert.equal(finishing, 1);
+      assert.equal(await f.bytes.get("images/late.webp")?.text(), "late");
+    } else {
+      await assert.rejects(f.host.import([request]), /scope changed/);
+      assert.equal(f.bytes.has("images/late.webp"), false);
+    }
+  }
+});
+
+test("Replace everywhere begun on the library shown finishes in its workspace when it switches meanwhile", async () => {
+  for (const pinned of [true, false]) {
+    const f = fixture();
+    if (pinned) f.context.again = async () => ({ ...f.context, assertLive() {} });
+    await f.host.load();
+    f.afterRead(() => f.setLive(false));
+    const replace = f.host.replace({ path: "images/a.png", result: { before: 10, after: 8, outputs: [{ blob: new Blob(["new main"], { type: "image/png" }), extension: "png", width: 800, height: 400 }] } });
+    if (pinned) {
+      assert.equal(await replace, "images/a.png");
+      assert.equal(await f.bytes.get("images/a.png")!.text(), "new main");
+    } else {
+      await assert.rejects(replace, /scope changed/);
+      assert.equal(await f.bytes.get("images/a.png")!.text(), "original");
+    }
+  }
 });
