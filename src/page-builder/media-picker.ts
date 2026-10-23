@@ -189,17 +189,18 @@ export interface MediaPickerOptions {
   within?: HTMLElement;
 }
 let host: MediaPickerHost | undefined;
-let closeActive: (() => void) | undefined;
+let closeActive: ((switched?: boolean) => void) | undefined;
 const panes = new Set<MediaLibraryView>();
 
 /** Changing repositories invalidates controls bound to the previous adapter. */
 export function configureMediaPicker(value: MediaPickerHost) {
-  closeActive?.();
+  closeActive?.(true);
   for (const pane of panes) pane.dispose();
   panes.clear();
   host = value;
 }
-export function closeMediaPicker() { closeActive?.(); }
+/** The editor left the picker's workspace: it closes, and a Use already under way still lands there (ticket 27). */
+export function closeMediaPicker() { closeActive?.(true); }
 
 /** Mount a persistent manager directly into the explorer's host. Hiding is safe. */
 export function mountMediaLibrary(container: HTMLElement, options: MediaPickerOptions & { adapter?: MediaPickerHost; refreshKey?: () => string; cleanUp?: MediaCleanUpMount } = {}): MediaLibraryView {
@@ -223,11 +224,12 @@ export async function openMediaPicker(options: MediaPickerOptions & { adapter?: 
   const dialog = node("dialog", "media-library media-library--picker");
   // Escape closes only the picker, not a popover it was placed in.
   if (options.within) dialog.addEventListener("keydown", event => { if (event.key === "Escape") event.stopPropagation(); });
-  let used = false, closed = false;
+  // `switched`: closed because another workspace was opened, which cancels no Use under way.
+  let used = false, closed = false, switched = false;
   const view = createMediaLibraryView(options.within ?? document.body, adapter, { ...options, onPick: options.onPick && (async (image, _cancelled, held) => {
-    await options.onPick!(image, () => closed, held); used = !closed;
+    await options.onPick!(image, () => closed && !switched, held); used = !closed || switched;
   }) }, dialog);
-  const close = () => { dialog.close(); view.dispose(); };
+  const close = (away = false) => { switched = away; dialog.close(); view.dispose(); };
   closeActive = close;
   dialog.addEventListener("close", () => {
     closed = true;

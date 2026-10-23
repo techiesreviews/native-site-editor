@@ -2,6 +2,7 @@ import type { AgentReadFiles } from "./agent-tools-read";
 import type { AgentSiteInput, SharedContext } from "./agent-site";
 import type { createConfirmDialog } from "./components/confirm-dialog";
 import type { Stamp } from "./guarded-edit";
+import type { MediaPin } from "./controllers/media-controller";
 
 type Dialog = ReturnType<typeof createConfirmDialog>;
 export interface AgentSiteHostPorts {
@@ -12,6 +13,8 @@ export interface AgentSiteHostPorts {
   input(): AgentSiteInput | undefined;
   dialog(): Dialog | undefined;
   setDialog(dialog: Dialog | undefined): void;
+  /** The workspace shown, pinned for Media work (src/controllers/media-pin.ts). */
+  mediaPin?(): MediaPin | undefined;
 }
 
 /** Agent waits belong to the repository they began on; the host supplies live inputs after loading. */
@@ -40,8 +43,8 @@ export function createAgentSiteHost(ports: AgentSiteHostPorts) {
   // An edit's hold on the workspace (ticket 23): the live context while it is shown, else its own as
   // it arrived (its drafts then, nothing mounted or on show). A draft changed since refuses its write.
   function pin(build: () => Promise<SharedContext | undefined>) {
-    const stamp = ports.stamp(), input = ports.input(), away = () => stamp.changed() === "scope";
-    return input && { away, async context() {
+    const stamp = ports.stamp(), input = ports.input(), away = () => stamp.changed() === "scope", media = ports.mediaPin?.();
+    return input && { away, media, async context() {
       const shown = away() ? undefined : await build();
       if (shown) return shown;
       // Away now: its own. Left and shown again while it was made: the one shown, read again.

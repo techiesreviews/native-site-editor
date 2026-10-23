@@ -1395,7 +1395,8 @@ test("Media lists a file by the date it was added; a lighter version (Optimise) 
 // nothing. Without a pin the switch still refuses.
 function pinnedHost(f: ReturnType<typeof fixture>, pinned: boolean, made?: Promise<void>) {
   let pins = 0;
-  const host = createMediaWorkspace(async () => f.context, pinned ? () => { pins++; return async () => { await made; return { ...f.context, assertLive() {} }; }; } : undefined);
+  // The screen's own pin (its load) is made at once; the work's (`made`) when the test says.
+  const host = createMediaWorkspace(async () => f.context, pinned ? () => { const slow = pins++ > 0; return async () => { if (slow) await made; return { ...f.context, assertLive() {} }; }; } : undefined);
   return { host, pins: () => pins };
 }
 const lateFile = () => ({ file: new File(["bytes"], "late.png"), result: { outputs: [{ blob: new Blob(["late"], { type: "image/webp" }), extension: "webp" }], before: 5, after: 4 }, folder: "images" });
@@ -1407,7 +1408,7 @@ test("files added while the workspace switches land in the workspace they were a
     f.afterRead(() => f.setLive(false));
     if (pinned) {
       assert.deepEqual(await p.host.import([lateFile()]), ["images/late.webp"]);
-      assert.equal(p.pins(), 1);
+      assert.equal(p.pins(), 2, "the screen's and the addition's");
       assert.equal(await f.bytes.get("images/late.webp")?.text(), "late");
     } else {
       await assert.rejects(p.host.import([lateFile()]), /scope changed/);

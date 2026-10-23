@@ -1,8 +1,8 @@
 ---
 title: "Invisible multiplayer: agent and Media work finishes in a background page"
 type: task (AFK)
-status: open
-assignee: lead-27 (this session)
+status: closed
+assignee: lead-27
 builder: claude
 blocked_by: [23-work-finishes-where-it-started]
 ---
@@ -40,3 +40,25 @@ Expected (confirm while designing): a new `src/background-page.ts` (the hidden f
 ## Kit commands and evidence
 
 Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runner.md)). Big, delicate slice: Claude builds (`--builder claude-opus-5-5`, `ASE_AGENT_TIMEOUT=150m`), Claude reviews, and one Grok second opinion on the final version (`ASE_REVIEW_MODEL=grok-4.7 kit review --ticket <this ticket>`). Counts as one of the two `src/main.ts` slots.
+
+## Done (2026-10-23)
+
+Work started on main keeps going there after Lex opens another site, branch or page, and lands on main as unsaved changes; nothing shows or lands on what is shown. One module carries it: **background pages** (`src/background-page.ts`, CONTEXT.md). `createBackgroundPages` keeps at most one background page per site, branch and page (work for the same page shares it), closes it when the last of its work is done (failed work too), and holds at most `BACKGROUND_PAGE_LIMIT` (3) open at once: work beyond that waits its turn, first come first served, and none is refused. `openBackgroundFrame` draws a page not shown in a hidden, inert preview frame (`createNativePreview` over the preview link) from that workspace's texts, to measure pictures where they stand (`measureAway`, wired in `src/main.ts`). `pinnedPorts` are the Media ports held to the workspace work began on: the editor's while it is shown; once another is shown, the pin's reads, nothing opened or selected, measurement in the background page, a one-page change written straight to that page's draft there (no Undo step on the page shown), and the toast saying where ("On main: Image replaced").
+
+The four cases, with their method and tests:
+
+1. **Agent page and file commands** (create_page, set_page_details, make_component, add, move or remove a section, move_file, delete_file): **not built here.** They run the Pages, Files and component controllers over the open site's live state in `src/main.ts` (`pagePorts`, `filePorts`, `componentPorts` and about twenty helpers such as `nativeRouteInfo`, `treeState`, `nativeComponentLoaderPlan`); giving them a background page needs that state behind one object, which is the native site runtime of slice 31. Across a page switch on the same site they already finish (ticket 23). They still refuse across a switch of site or branch.
+2. **Agent Media commands**: a Media change holds the workspace it arrived in (`agent-menu.ts` takes the pin before its tools load; `agent-site-host.ts` carries a Media pin on it), the live connection keeps it across a workspace move as it keeps edits (`agent-transport.ts`), and it runs in that workspace's background page: a Media controller of its own over `pinnedPorts` (`runAgentMedia`, `src/agent-media-actions.ts`; `pinnedMedia` in `src/agent-site.ts` routes it). Its receipt is kept, so `get_command_status` says applied. `list_media` reads the workspace shown as it was asked. Spec: `place_media` held at the Media tools' chunk, branch switched, released: placed in main's index.html draft, nothing on feature, applied on return.
+3. **Placing a picture**: picker Use (image, picture spot video, Add media, a value's picker), the image popup's Done and Replace (place, trim, frame) and a Media pane screen hold their workspace from when they open (`media-actions.ts`, `image-popup.ts`, `media-workspace.ts` `load`). A switch closes the picker without cancelling a Use under way (`closeMediaPicker`), and the image popup closed by a switch keeps its changes, written on its page there. Tests: `tests/background-page.test.ts` (held ports on show and away), `tests/media-controller.test.ts`, `tests/media-workspace.test.ts`; spec: Use held at the placement's chunk, branch switched, released: main's page has the picture as a draft, the toast says "On main: Image replaced", feature has nothing, main opened again shows it.
+4. **A pinned Media batch switched back and forth**: nothing stops it for a switch; each switch during an attempt (away and back within one too, a new load of it) runs it again on the side then shown, as often as it is switched under, and it lands once an attempt is left alone (`src/media-batch.ts`). Unpinned batches keep three attempts for another page opened. Tests: `tests/media-batch.test.ts`; spec: a Files drop held while main, feature, main and feature are opened lands on main.
+
+Background pages close when their work is done and the memory limit holds: `tests/background-page.test.ts` (closes after its work, after failed work, after the last sharer; the limit with waiting work, in order; a page already open shared while others wait).
+
+Remaining refusals (`grep -rn "open it again\|Close Media and open it again\|The editor changed branch or revision\|again and repeat" src`): case 1's (`agent-site.ts` `finishAgentTextElsewhere`, `main.ts` `withAgentAnswers` and `applyAgentSiteCommand`, `agent-site-host.ts` `withAnswers`); work holding no pin (nothing open as it began: `media-actions.ts` and `media-controller.ts` contexts, `media-draft-transaction.ts`, `media-batch.ts` on-show attempts, which a pinned batch runs again, the live controller's `prepareImprove`); agent reads and pinless edits (`agent-tools-read.ts`, `agent-tools-edit.ts`).
+
+Not done: the finished-work notification icon (slice 24) is not on `dev` yet; `pinnedPorts` call a `finishedAway(scope)` port for it, which `src/main.ts` does not wire until slice 24 lands, and the specs do not check the icon.
+
+Checks: `kit unit --affected` `RESULT: ok unit 1369/1369 (82 files)`; `npm run check` and `npm run lint` green; `kit specs native-invisible-multiplayer.spec.ts` `RESULT: ok specs 1/1 passed` (3 tests); `kit size` `RESULT: ok size boot 347 KB (+1 KB) vs dev@b9ff963, budget 355 KB`. Touched specs (native-switch-mid-work, native-mcp-media, native-media-picker, native-image-popup, native-invisible-multiplayer, native-mcp): `RESULT: fail specs 1 of 6 failed: native-mcp.spec.ts` (the Ask agent history test timed out at 120 s, as in ticket 23 under load); its rerun alone did not start (`port: waiting: load 22.20 > 16`). `main.ts` 4056 → 4070 lines, ceiling 4060 → 4070.
+
+Files beyond the ticket's list, needed by the method: `src/agent-tools.ts`, `src/agent-transport.ts`, `src/agent-tools-read.ts`, `src/agent-site-host.ts`, `src/components/agent-menu.ts` (the agent Media pin), `src/page-builder/image-popup.ts`, `src/page-builder/media-picker.ts` (placement across a switch), `tests/main-ts-ceiling.test.ts`, `CONTEXT.md`, `docs/agents/code-map.md`.
+

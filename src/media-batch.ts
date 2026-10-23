@@ -38,9 +38,13 @@ export interface MediaBatchLanded { undoOn?: string }
  * through the pin's reads, touching no editor and taking no Undo step (nothing of it is on show).
  * A page other than `opened` (the one open as the step was asked for) shown by then takes no Undo
  * step: the step lands as drafts, and an Undo there would change the page it began on.
- * Each attempt runs whole on one side; a switch either way during one, or another page opened on
- * show, rolls it back and runs it again (three attempts in all), proved by the batch's own reads (paths,
- * sources and assets). Without a pin, the caller's stamp holds the step: a switch of workspace refuses.
+ * Each attempt runs whole on one side; a switch either way during one (away and back too: a new load
+ * of it), or another page opened on show, rolls it back and runs it again, proved by the batch's own
+ * reads (paths, sources and assets). Nothing stops a pinned batch for a switch (ticket 27): it runs
+ * again as often as it is switched under, each time on the side then shown, and every run again
+ * needs a switch or a page opened during the attempt before it, so it ends once Lex stays. Without a
+ * pin, the caller's stamp holds the step: a switch of workspace refuses, and another page opened
+ * gets three attempts in all.
  *
  * A pinned attempt on show takes a new stamp as it starts, a deliberate exception to "Proofs survive
  * awaits": its workspace may have been left and shown again (a new load of it) since the context was
@@ -54,13 +58,13 @@ export interface MediaBatchLanded { undoOn?: string }
 export async function applyMediaBatch(ports: MediaBatchPorts, scope: DraftScope, stamp: Stamp, batch: MediaWorkspaceBatch, pin?: MediaPin, opened = ports.appStore.openFile.value): Promise<MediaBatchLanded> {
   const modules = await ports.load();
   for (let attempt = 0; ; attempt++) {
-    const here = !pin || pin.here(), page = ports.appStore.openFile.value;
+    const here = !pin || pin.here(), page = ports.appStore.openFile.value, on = pin && here ? ports.stamp() : stamp;
     try {
       if (!here) { await elsewhere(ports, modules, scope, batch, pin!); return {}; }
-      return await onShow(ports, modules, scope, pin ? ports.stamp() : stamp, batch, pin, opened === undefined || page === opened);
+      return await onShow(ports, modules, scope, on, batch, pin, opened === undefined || page === opened);
     } catch (error) {
-      const away = !!pin && pin.here() !== here, moved = here && ports.appStore.openFile.value !== page;
-      if (attempt === 2 || !away && !moved) throw error;
+      const away = !!pin && (pin.here() !== here || here && !on.holds()), moved = here && ports.appStore.openFile.value !== page;
+      if (!away && !moved || !pin && attempt === 2) throw error;
     }
   }
 }

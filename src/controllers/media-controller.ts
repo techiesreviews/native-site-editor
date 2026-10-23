@@ -46,6 +46,10 @@ export interface MediaModule {
   mountMediaLibrary: (container: HTMLElement, options: MediaPickerOptions & { refreshKey?: () => string; cleanUp?: import("../page-builder/media-picker").MediaCleanUpMount }) => MediaLibraryView;
 }
 export interface MediaControllerPorts {
+  /** As `measureImage`, for work whose workspace is not shown (ticket 27): measured in a background page of `pin`'s site and page. */
+  measureAway?(pin: MediaPin, path: string, node: number[], image: { width?: number; height?: number }, slot?: string, style?: string): Promise<import("../page-builder/media-markup").MediaMeasured | undefined>;
+  /** Work finished in `scope`, a workspace not shown: its notification (ticket 24). */
+  finishedAway?(scope: DraftScope): void;
   /** `slot`: `node` is a component instance; measure its fallback image in that slot (a first fill). */
   measureImage?(path: string, node: number[], image: { width?: number; height?: number }, slot?: string, style?: string): Promise<import("../page-builder/media-markup").MediaMeasured | undefined>;
   usage?: MediaUsageCheckPorts;

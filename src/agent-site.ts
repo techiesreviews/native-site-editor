@@ -3,7 +3,7 @@
 // drafts), and how it applies the changes agents queue, each through the
 // same code the editor's own controls run, so it lands as an ordinary draft
 // with Undo. main.ts supplies the editor's state and actions.
-import { agentCommandFiles, agentCommandSignals } from "./agent-tools";
+import { agentCommandFiles, agentCommandSignals, mediaCommandPins } from "./agent-tools";
 import type { AgentReadFiles } from "./agent-tools-read";
 import { sameBranch } from "./workspace-session";
 import { decodeHtmlEntities } from "./page-builder/html-entities";
@@ -1038,6 +1038,9 @@ export async function prepareAgentText(command: AgentCommand, scope: DraftScope,
   } catch (error) { return refuse(error); }
 }
 
+/** A Media change that holds the workspace it arrived in (ticket 27): it runs there, in its background page, whatever is shown. */
+export const pinnedMedia = (command: AgentCommand) => mediaCommandPins.has(command);
+
 /**
  * The editor path of an agent command (ticket 23): when it fails before its write was kept and another
  * workspace is shown by then, the write finishes where it was read (`elsewhere`, finishAgentTextElsewhere)
@@ -1062,6 +1065,8 @@ export async function editorOrElsewhere<T>(editor: () => Promise<T>, applied: ()
  */
 export async function finishAgentTextElsewhere(command: AgentCommand, shown: () => DraftScope | undefined, account: string | undefined, store: DraftStore,
   find: (files: AgentReadFiles, path: string) => Promise<{ sha: string } | undefined>): Promise<AgentCommandOutcome | undefined> {
+  // A Media change holds its own pinned workspace (ticket 27): its background page runs it (runAgentMedia).
+  if (pinnedMedia(command)) return undefined;
   const files = agentCommandFiles.get(command);
   const away = () => { const now = shown(); return !now || !sameBranch(now, { repoId: files!.repo.id, branch: files!.snapshot.branch }); };
   if (!files || !account || !away()) return undefined;

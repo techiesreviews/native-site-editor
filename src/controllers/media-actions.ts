@@ -5,6 +5,7 @@ import { locateNativeElementRange } from "../native-source-location";
 import { mediaAttribute, mediaExistingAlt } from "../page-builder/media-attributes";
 import { startTags } from "../../shared/html-source";
 import type { MediaControllerPorts, MediaModule, MediaPin } from "./media-controller";
+import { pinnedPorts } from "../background-page";
 import type { MediaWorkspaceContext } from "../page-builder/media-workspace";
 import type { MediaPathPlacement, MediaCleanUpMount } from "../page-builder/media-picker";
 import type { MediaImage } from "../page-builder/media-markup";
@@ -99,6 +100,8 @@ export function createMediaActions(ports: MediaControllerPorts, load: () => Prom
 
   async function chooseImage(target: { path: string; node: number[]; width?: number; paintedSource?: string }, files?: File[]) {
     const stamp = ports.stamp(), epoch = ports.generation();
+    // Held as the picker opens: Use finishes on this page wherever Lex is by then (ticket 27).
+    const pin = ports.pin?.(), heldPorts = pinnedPorts(ports, pin, target.path), context = (include?: (path: string) => boolean) => workspaceContext(include, pin);
     const source = ports.source(target.path);
     const locate = ports.locateElement ?? locateNativeElementRange;
     const initial = source === undefined ? undefined : locate(source, target.node);
@@ -118,43 +121,44 @@ export function createMediaActions(ports: MediaControllerPorts, load: () => Prom
     const spot = spotted(expected) || parent?.tag.name === "picture" && spotted(source!.slice(parent.tag.start, parent.tag.end));
     await openMediaPicker({ files, accept: spot ? SPOT_ACCEPT : "image/*", place, report: ports,
       chosenNote: spot ? spotNote : undefined,
-      onPick: async (image: MediaImage, cancelled, held) => {
-        if (spot && pickedVideo(image, held)) {
-          await placeSpotVideo(ports, workspaceContext, { path: target.path, node: target.node }, image, { stamp, epoch, source: source! }, cancelled, held);
+      onPick: async (image: MediaImage, cancelled, files) => {
+        if (spot && pickedVideo(image, files)) {
+          await placeSpotVideo(heldPorts, context, { path: target.path, node: target.node }, image, { stamp: pin ? heldPorts.stamp() : stamp, epoch, source: source! }, cancelled, files);
           return;
         }
         const { placeMediaImage } = await import("../page-builder/media-place");
-        await placeMediaImage(ports, workspaceContext, target, image,
-          { stamp, epoch, source: source!, expected, initialAlt }, cancelled, held);
+        await placeMediaImage(heldPorts, context, target, image,
+          { stamp: pin ? heldPorts.stamp() : stamp, epoch, source: source!, expected, initialAlt }, cancelled, files);
       } }).catch((error: unknown) => ports.error(error));
   }
 
   async function insertMedia(place: import("../page-builder/media-insert").MediaInsertPlace) {
     const stamp = ports.stamp(), epoch = ports.generation(), source = ports.source(place.path);
+    const pin = ports.pin?.(), held = pinnedPorts(ports, pin, place.path), context = (include?: (path: string) => boolean) => workspaceContext(include, pin);
     if (source === undefined || ports.viewingVersion()) return;
     const { openMediaPicker } = await load();
     if (!stamp.holds() || ports.source(place.path) !== source) return;
     // Component templates (their items slots) by path, so the step can prove the ones it read.
-    const templates = (tag: string) => { const path = ports.workspace()?.site?.components[tag]; return path === undefined ? undefined : { path, source: ports.source(path) }; };
-    await openMediaPicker({ place: `${ports.placeLabel?.(place.path) ?? place.path} · Add media`, report: ports, onPick: async (file, cancelled, held) => {
+    const templates = (tag: string) => { const path = held.workspace()?.site?.components[tag]; return path === undefined ? undefined : { path, source: held.source(path) }; };
+    await openMediaPicker({ place: `${ports.placeLabel?.(place.path) ?? place.path} · Add media`, report: ports, onPick: async (file, cancelled, files) => {
       const { placeChosenMedia } = await import("../page-builder/media-insert");
-      await placeChosenMedia(ports, workspaceContext, { kind: "insert", place, templates }, file, { stamp, epoch, source }, cancelled, held);
+      await placeChosenMedia(held, context, { kind: "insert", place, templates }, file, { stamp: pin ? held.stamp() : stamp, epoch, source }, cancelled, files);
     }, onlineVideo: async (video, cancelled, host) => {
       // A pasted YouTube or Vimeo address, or one already in Media (slice 68).
       const { placeOnlineVideo } = await import("../page-builder/online-video-place");
-      await placeOnlineVideo(ports, workspaceContext, { place, templates }, video, host, { stamp, epoch, source }, cancelled);
+      await placeOnlineVideo(held, context, { place, templates }, video, host, { stamp: pin ? held.stamp() : stamp, epoch, source }, cancelled);
     } }).catch((error: unknown) => ports.error(error));
   }
 
   async function choosePath(place: string, placement?: MediaPathPlacement, accept = "image/*"): Promise<string | undefined> {
-    const stamp = ports.stamp();
+    const stamp = ports.stamp(), pin = ports.pin?.(), held = pinnedPorts(ports, pin, placement?.path ?? "");
     const { openMediaPicker } = await load();
     // A repository switched while the picker loaded: no picker opens for the old request.
     if (!stamp.holds()) return undefined;
     return new Promise(resolve => {
-      openMediaPicker({ accept, place, report: ports, onClose: () => resolve(undefined), onPick: async (image, cancelled, held) => {
+      openMediaPicker({ accept, place, report: ports, onClose: () => resolve(undefined), onPick: async (image, cancelled, files) => {
         const { placeMediaPath } = await import("../page-builder/media-page-markup");
-        await placeMediaPath(ports, stamp, placement, image, cancelled, held, resolve, workspaceContext, nativeSitePrefix(ports.source(NATIVE_CONFIG_PATH)));
+        await placeMediaPath(held, pin ? held.stamp() : stamp, placement, image, cancelled, files, resolve, () => workspaceContext(undefined, pin), nativeSitePrefix(held.source(NATIVE_CONFIG_PATH)));
       } })
         .catch((error: unknown) => { ports.error(error); resolve(undefined); });
     });
