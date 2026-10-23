@@ -269,3 +269,28 @@ test("the starter's footer link: the component's unlayered `a` beats the shared 
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
   await expectWinner(page, pageLink, "color", { selector: "p a", path: "styles/elements.css", origin: "elements", value: "rgb(47, 109, 58)" });
 });
+
+test("the stylesheet pane follows the open file: a template brings its own, deleting it closes the pane", async ({ page, baseURL }) => {
+  const template = "components/site-footer/site-footer.html", css = "components/site-footer/site-footer.css";
+  await openFixture(page, baseURL, "starter");
+  await expect(page.locator("#secondary-title")).toHaveText("styles/elements.css", { timeout: 30_000 });
+  await page.locator("#explorer-toggle").click();
+  const explorer = page.locator("#explorer");
+  await explorer.getByRole("tab", { name: "Files", exact: true }).click();
+  for (const folder of ["components", "site-footer"]) {
+    const row = explorer.getByRole("button", { name: folder, exact: true });
+    if (await row.getAttribute("aria-expanded") === "false") await row.click();
+  }
+  // Another file opening drops the page's stylesheet; the template's own opens beside it.
+  await explorer.getByRole("button", { name: "site-footer.html", exact: true }).click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", template);
+  await expect(page.locator("#secondary-title")).toHaveText(css);
+  // The file shown in the pane deleted: the pane closes and stays closed.
+  if (!(await explorer.isVisible())) await page.locator("#explorer-toggle").click();
+  await explorer.getByRole("button", { name: "site-footer.css", exact: true }).focus();
+  await page.keyboard.press("Delete");
+  await page.getByRole("dialog", { name: `Delete ${css}?` }).getByRole("button", { name: "Delete" }).click();
+  await expect(page.locator("#status")).toHaveText(`Deleted ${css}.`);
+  await expect(page.locator("#secondary-pane")).toBeHidden();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", template);
+});
