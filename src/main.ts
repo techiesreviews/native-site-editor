@@ -158,7 +158,7 @@ const appStore = createAppStore(editorModule.sourceStore());
 const workspaceSession = createWorkspaceSession();
 function currentLoad() { return workspaceSession.current().load; }
 function nextLoad(scope?: WorkspaceScope) { workspaceSession.next(scope); return workspaceSession.begin(); }
-// A controller's load number as a stamp (until slice 22); once that load moved on, a deny-all stand-in that says the scope changed.
+// A controller's load number as a stamp (until the follow-ups in ticket 22's Done section); once that load moved on, a deny-all stand-in that says the scope changed.
 function stampOf(epoch: number): SessionStamp {
   const stamp = workspaceSession.begin();
   return stamp.load === epoch ? stamp : { load: epoch, scope: undefined, holds: () => false, changed: () => "scope" };

@@ -54,3 +54,28 @@ for (const choice of ["replace", "keep"]) test(`Blank ${choice} generates links 
     appStore.dispose();
   }
 });
+
+test("a new load while the Starter site is fetched writes nothing and says the repository changed", async () => {
+  const appStore = createAppStore(createDraftStore()), session = createWorkspaceSession(), drafts = new Map<string, string>();
+  appStore.repository.value = { id: 1, name: "my-site", full_name: "user/my-site", private: false, default_branch: "main", owner: { login: "user", type: "User" } };
+  appStore.snapshot.value = { branch: "main", commit: "commit", entries: [] };
+  let fetched!: (value: unknown) => void, asked!: () => void;
+  const starting = new Promise<void>(resolve => { asked = resolve; });
+  const ports = {
+    begin: () => session.begin(), appStore, draftScope: () => ({ account: "user", repoId: 1, repo: "user/my-site", branch: "main" }),
+    guardedEdits: createGuardedEdits(createMemoryWorkspace({ branch: {} }).workspace),
+    pathNow: () => undefined, repositoryIndex: { find: async () => undefined },
+    api: () => { asked(); return new Promise(resolve => { fetched = resolve; }); }, readFile: async () => "",
+    draftStore: () => ({ get: () => undefined, save: (draft: { path: string; content: string }) => { drafts.set(draft.path, draft.content); }, error: null }),
+    setupController: { start() {} }, loadSnapshot: async () => {}, announce() {}, errorMessage(error: unknown) { throw error; },
+  };
+  try {
+    const module = await bundled;
+    const written = module.createSetupActions(ports).writeStartingPoint("starter");
+    await starting;
+    session.next({ kind: "github", account: "user", repoId: 2, repo: "user/other", branch: "main" });
+    fetched({ files: [{ path: "index.html", content: "<h1>Hi</h1>" }] });
+    assert.equal(await written, "The repository changed meanwhile. Try again.");
+    assert.equal(drafts.size, 0);
+  } finally { appStore.dispose(); }
+});
