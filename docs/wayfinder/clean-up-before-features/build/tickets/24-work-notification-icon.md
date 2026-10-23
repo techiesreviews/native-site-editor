@@ -69,3 +69,14 @@ Tests: `tests/finished-elsewhere.test.ts`: notes add up per workspace, words and
 Checks: `kit doctor` `RESULT: ok doctor 7/7 checks passed`; `kit unit tests/finished-elsewhere.test.ts` `RESULT: ok unit 16/16 (1 files)`; `kit unit --affected` `RESULT: ok unit 81/81 (5 files)`; `kit unit tests/main-ts-ceiling.test.ts tests/workspace-session-guard.test.ts` `RESULT: ok unit 13/13 (2 files)`; `npm test` 5228/5228; `npm run check` and `npm run lint` green; `kit specs native-switch-mid-work.spec.ts` `RESULT: ok specs 1/1 passed` (10 tests); `kit size` `RESULT: ok size boot 347 KB (+1 KB) vs dev@b9ff963, budget 355 KB`; `kit shots --spec .scratch/cbf-24-icon.spec.ts` (390, 768, 1280 × light, dark: the count fits the tile, the row and the branch row). `kit shots --compare dev` was not run: it takes screens or steps only, and the count needs work held across a switch (a raw spec); dev has no count to compare. `kit specs --affected` `RESULT: ok specs 50/50 passed`. `main.ts`: 4250 lines (ceiling 4250).
 
 Commits: 6e3917cd (notes, menu count, wiring, tests), 9c0c28b8 (agent notes from the files read, counted once; tile words), 1fe213bf (a note stays until shown; the workspace link opened again; agent notes only for a changed draft; unchanged saves), and the round 3 review fixes (folder views, menu hand-over, notes skipped for the workspace shown).
+
+### Follow-ups
+
+- Spec (P2): fbcd7e8f:docs/wayfinder/clean-up-before-features/build/tickets/24-work-notification-icon.md:69 — P2: The Done "Checks" line says "`main.ts`: 4250 lines (ceiling
+- Spec (P2): fbcd7e8f:docs/wayfinder/clean-up-before-features/build/tickets/24-work-notification-icon.md:71 — P2: The "Commits:" line lists 6e3917cd, 9c0c28b8 and 1fe213bf. 
+- Spec (P3): fbcd7e8f:docs/wayfinder/clean-up-before-features/build/tickets/24-work-notification-icon.md:61 — P3: runner.md "Review and close" says the Done section records 
+- Standards (P2): f1bdcaef:src/finished-elsewhere.ts:136 — P2: `shown()` reaches into another component's DOM by class name. It queries `.publish-menumore`, `.publish-menupanel:p
+- Validation gaps (gap): The project row's count is drawn over the remove × with `pointer-events: none` (`src/components/repository-menu.css:102-107`), and nothing tests that a tap stil
+- Validation gaps (gap): A repository that isn't open but has notes on two branches opens only `here[0]` when its row is clicked (`src/components/repository-menu.ts:340`). Nothing tests
+- Validation gaps (gap): The DOM rule "the tile's count hides while a question waits" (`finished.hidden = !said.counted`) is only covered through `tileWords`. Test to add: in the spec, 
+
