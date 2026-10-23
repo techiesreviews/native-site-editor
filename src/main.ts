@@ -3482,8 +3482,8 @@ const savePublish = createSavePublishController({
     filesTreeController.render();
     if (nativeSite) updateNativePreviewSources();
   },
-  saved: (scope, result, submitted) => {
-    adoptNativeBaseSources(scope, result, submitted);
+  saved: (scope, result, submitted, shown) => {
+    if (shown) adoptNativeBaseSources(scope, result, submitted);
     // Saved uploads are GitHub's now; this browser lets their bytes go.
     void sweepUploads(uploadBytes(), scope, draftStore().list(scope)).catch(() => undefined);
     if (nativeEngaged && !result.unchanged)
@@ -3765,12 +3765,12 @@ function makeAgentSiteActions(edits: GuardedEdits = guardedEdits, atomic = false
 async function applyAgentSiteCommand(command: AgentCommand) {
   const began = workspaceSession.begin(), revision = appStore.snapshot.value?.commit;
   const [{ applySiteCommand, prepareAgentText, atomicAgentCommand, agentStructuralActions, finishAgentTextElsewhere }, { createPagesController }, { createLazyFileOperationsController }] = await Promise.all([loadAgentSite(), loadPagesActions(), loadFileOps()]);
-  // An edit read from a site or branch no longer shown finishes there, on its files (ticket 23);
-  // on show the editor writes it, on the revision it arrived on (a new load of its branch since takes a new stamp).
+  // Ticket 23: an edit read from a site or branch no longer shown finishes there, on its files; on show the editor writes it. A named exception
+  // to "Proofs survive awaits": only a new load of its branch since it arrived (left and shown again; not a version view) takes a new stamp, and
+  // the revision it arrived on must still hold, as must the bytes its write reads (expectedHash in applySiteCommand; the guarded edit's own reads).
   const elsewhere = () => finishAgentTextElsewhere(command, draftScope, info.user?.login, draftStore(), (files, path) => repositoryIndex.find(api, files.repo, files.snapshot, path));
-  const finished = await elsewhere();
-  if (finished) return finished;
-  const scope = draftScope(), at = began.changed() ? workspaceSession.begin() : began, current = () => at.holds() && revision === appStore.snapshot.value?.commit && !versions.view;
+  const finished = await elsewhere(); if (finished) return finished;
+  const scope = draftScope(), at = began.changed() === "generation" ? workspaceSession.begin() : began, current = () => at.holds() && revision === appStore.snapshot.value?.commit && !versions.view;
   if (!current() || !appStore.snapshot.value || command.branch !== appStore.snapshot.value.branch ||
     command.repoId !== undefined && command.repoId !== scope?.repoId) throw new Error("The editor changed repository or branch.");
   if (!atomicAgentCommand(command)) {

@@ -798,6 +798,27 @@ test("an edit kept after a workspace move is cancelled when agents are then turn
   assert.equal(validAfter, false);
 });
 
+// The never-settles cell: an edit kept after a workspace move is still bounded by the relay's deadline.
+test("an edit kept after a workspace move that never settles is cancelled at its deadline", async () => {
+  const f = fixture();
+  let admitted = false, aborted = false, valid: (() => boolean) | undefined;
+  const a = f.tab("a", { edit: async (_request, _generation, isValid, signal) => {
+    admitted = true; valid = isValid;
+    signal?.addEventListener("abort", () => { aborted = true; });
+    return new Promise<never>(() => {});
+  } });
+  await a.transport.start();
+  a.deliver({ operation: "edit", tool: "write_file", args: { path: "new.txt", content: "new" }, id: "kept-forever", grantId: "grant", createdAt: 100_000 });
+  await until(() => admitted);
+  a.change({ ...workspace, branch: "other" });
+  assert.equal(aborted, false, "kept by the move");
+  assert.equal(valid!(), true);
+  await f.tick(10_000);
+  assert.equal(aborted, true, "the deadline cancels it");
+  assert.equal(valid!(), false);
+  a.transport.stop();
+});
+
 test("an owner-paused relay stops automatic reconnects; each manual Retry tries once and never replays", async () => {
   const f = fixture();
   let probes = 0;

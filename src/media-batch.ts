@@ -44,7 +44,8 @@ type Modules = Awaited<ReturnType<MediaBatchPorts["load"]>>;
  * awaits": its workspace may have been left and shown again (a new load of it) since the context was
  * made, and that must not stop it. What the step depends on is proved by the batch's own reads, taken
  * as it was prepared and proved again after every wait of the attempt and before its commit
- * (`applyMediaWorkspaceBatch`'s guard: the paths, the sources and the assets' versions), so a reload
+ * (`guard` in `applyMediaWorkspaceBatch`, src/page-builder/media-workspace.ts: the paths, the sources
+ * and the assets' versions; keep this exception in step with it), so a reload
  * that changed them (a save, another commit) still refuses; the new stamp only binds the attempt to the
  * editor it runs through.
  */

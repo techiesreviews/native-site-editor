@@ -572,3 +572,12 @@ test("a text write elsewhere whose branch is shown again at any wait writes noth
   });
   assert.equal(count, 2); // find, read
 });
+
+test("a text write elsewhere to a protected path is refused with nothing kept", async t => {
+  const f = await elsewhere(t);
+  for (const [path, refusal] of [[".github/workflows/x.yml", /\.github/], [".editor/media.json", /media/i], ["images/a.png", /media|Media/]] as const) {
+    await assert.rejects(f.finish({ ...f.command, id: `protected-${path}`, path, expectedHash: null }), refusal, path);
+    assert.equal(f.store.get(f.scope, path), undefined, path);
+    assert.equal(await f.records.receipt(f.scope, `protected-${path}`, "grant"), undefined, path);
+  }
+});

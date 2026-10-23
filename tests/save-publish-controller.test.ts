@@ -77,24 +77,43 @@ function fixture() {
   };
 }
 
-// A save lands on the scope it began on (ticket 23): once any part of the scope moved on, its
-// drafts there are still saved, but the head and the snapshot after it are not taken for the open one.
-test("a save finished after a switch lands on its own scope; the open one keeps its head and snapshot", async () => {
+// A save lands on the scope it began on (ticket 23): once another scope is shown, its drafts
+// there are still saved, but the head, the snapshot after it and its base are not the open one's.
+test("a save finished after a switch lands on its own scope; the open one keeps its head, snapshot and base", async () => {
   const moves: Record<string, (s: ReturnType<typeof fixture>["state"]) => void> = {
-    generation: (s) => { s.generation++; }, account: (s) => { s.account = "other"; },
-    repository: (s) => { s.repoId = 2; }, branch: (s) => { s.snapshot = snap(undefined, "dev"); },
+    account: (s) => { s.account = "other"; }, repository: (s) => { s.repoId = 2; }, branch: (s) => { s.snapshot = snap(undefined, "dev"); },
+    // Its branch shown again at a newer commit (pushed meanwhile): that load keeps its own.
+    "newer commit": (s) => { s.generation++; s.snapshot = snap("c".repeat(40)); },
   };
   for (const [name, move] of Object.entries(moves)) {
-    const f = fixture(), was = f.controller.proof(), landed: DraftScope[] = [];
-    f.ports.saved = (scope) => { landed.push(scope); f.log.push("saved"); };
+    const f = fixture(), was = f.controller.proof(), landed: [DraftScope, boolean][] = [];
+    f.ports.saved = (scope, _result, _submitted, shown) => { landed.push([scope, shown]); f.log.push("saved"); };
     move(f.state);
     f.controller.published(was, scope1, result("f".repeat(40)), [draft("index.html")]);
     await flush();
     assert.deepEqual(f.log, ["saved"], name);
-    assert.deepEqual(landed, [scope1], `${name}: the save's own scope`);
+    assert.deepEqual(landed, [[scope1, false]], `${name}: the save's own scope, its base not adopted`);
     assert.equal(f.calls.length, 0, `${name}: no snapshot is read for the open scope`);
     assert.equal(f.controller.trustedHead(), undefined, `${name}: the save's commit is not the open scope's head`);
   }
+});
+
+// Left and shown again (or reloaded) at the commit it was saved from: the save follows as on the same load.
+test("a save finished after its branch was shown again at the same commit takes its head, snapshot and base", async () => {
+  const f = fixture(), was = f.controller.proof(), landed: boolean[] = [];
+  f.ports.saved = (_scope, _result, _submitted, shown) => { landed.push(shown); f.log.push("saved"); };
+  f.state.generation++;
+  f.state.snapshot = snap();
+  f.controller.published(was, scope1, result("f".repeat(40)), [draft("index.html")]);
+  assert.deepEqual(landed, [true]);
+  assert.equal(f.controller.trustedHead(), "f".repeat(40));
+  assert.deepEqual(f.calls[0], ["snapshot", { repo: "lex/site1", branch: "main", commit: "f".repeat(40) }]);
+  f.answers[0].resolve(snap("f".repeat(40)));
+  await flush();
+  assert.deepEqual(f.log.slice(0, 2), ["saved", "snapshot f"], "the saved snapshot is adopted for the branch shown");
+});
+
+test("a save's refreshed snapshot of the same branch still takes the save", async () => {
   const refreshed = fixture(), was = refreshed.controller.proof();
   refreshed.state.snapshot = snap("e".repeat(40));
   refreshed.controller.published(was, scope1, result("f".repeat(40)), []);

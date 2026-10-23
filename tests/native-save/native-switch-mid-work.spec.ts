@@ -79,6 +79,33 @@ test("a save held across a branch switch commits on its own branch, and its draf
   await expect(publishButton(page)).toBeDisabled();
 });
 
+// Left and shown again (a new load of main at the commit it was saved from) while the save is held:
+// the save follows as on the same load, so the next save of the page goes on top of it, with no conflict.
+test("a save held while feature and then main are opened commits on main, and the next save goes on top of it", async ({ page, baseURL }) => {
+  await openEditor(page, baseURL);
+  await appendToOpenFile(page, "index.html", "\n<!-- first save -->\n");
+  await expect.poll(async () => (await draftsOn(page, "main")).map(draft => draft.path)).toEqual(["index.html"]);
+  const publish = await hold(page, "/api/publish");
+  await showPublish(page);
+  await publishButton(page).click();
+  await publish.reached;
+  await switchSiteMidUpload(page, baseURL);
+  await page.evaluate(() => { location.hash = "repo=501&branch=main&file=index.html"; });
+  await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
+  const answered = page.waitForResponse(response => new URL(response.url()).pathname === "/api/publish");
+  publish.release();
+  expect((await answered).ok()).toBe(true);
+  const head = (await (await page.request.get(`${baseURL}/__demo/head`)).json()) as { commit: string };
+  await expect(page.locator("#revision")).toHaveText(head.commit.slice(0, 7), { timeout: 20_000 });
+  await appendToOpenFile(page, "index.html", "<!-- second save -->\n");
+  await showPublish(page);
+  await publishButton(page).click();
+  await expect(page.locator(".publish-menu__message")).toContainText("Saved to GitHub", { timeout: 30_000 });
+  const text = await committed(page, baseURL, "index.html");
+  expect(text).toContain("<!-- first save -->");
+  expect(text).toContain("<!-- second save -->");
+});
+
 // The rejects cell: a save refused after the switch leaves main's drafts as they were, nothing on feature.
 test("a save held across a branch switch that then fails keeps main's drafts unsaved", async ({ page, baseURL }) => {
   await openEditor(page, baseURL);

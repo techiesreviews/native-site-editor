@@ -378,5 +378,6 @@ for (const kind of ["text", "component"] as const) test(`${kind}: an agent step 
   assert.equal(f.store.get(f.scope, "index.html")?.content, kind === "text" ? "agent text" : "<site-part></site-part>");
   if (kind === "component") assert.equal(f.store.get(f.scope, "components/site-part.html")?.content, "<slot></slot>");
   assert.deepEqual(f.memory.steps(), [], "no Undo step on the page shown");
+  assert.deepEqual(f.memory.selected, [], "nothing selected on the page shown");
   assert.equal(f.memory.openFile(), "old.txt");
 });
