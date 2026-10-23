@@ -62,8 +62,9 @@
     opacity: 0.35;
   }
 }
+/* As specific as the pulse rules above, and later, so it wins over both. */
 @media (prefers-reduced-motion: reduce) {
-  .agent-menu .agent-menu__action::before {
+  .agent-menu:is([data-offer], [data-state]) .agent-menu__action::before {
     animation: none;
   }
 }

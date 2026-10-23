@@ -750,7 +750,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
       if (outcome.ok && outcome.result) {
         if (!outcome.result.ok) return failure(outcome.result.message);
         const value = outcome.result.value as unknown as { requests?: unknown[] };
-        return waited(Array.isArray(value?.requests) ? value.requests : [], agentControls(env).watch ? undefined : `${WATCH_PAUSED} Do not call wait_for_requests again on your own: tell the user you are ready.`);
+        return waited(Array.isArray(value?.requests) ? value.requests : [], agentControls(env).watch ? undefined : `${WATCH_PAUSED} Stop the watchdog: do not call wait_for_requests again on your own; tell the user you are ready.`);
       }
       if (outcome.code === "editor-unavailable")
         return waited([], editorClosedMessage(origin, connection.workspace, "Wait about a minute, then call wait_for_requests again."));

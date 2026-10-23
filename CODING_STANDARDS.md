@@ -68,6 +68,6 @@ files), settles every outcome by design.
 ## Browser specs
 
 - Wait on observable state; document deliberate fixed waits (enforced by `scripts/check-specs.mjs`).
-- Poll the clipboard for expected content before reading it (enforced by `scripts/check-specs.mjs`). The tests of one worker share the clipboard, so poll for content only this copy has (the Connect with MCP prompt: its token, `tests/native-save/mcp-prompt.ts`).
+- Poll the clipboard for expected content before reading it (enforced by `scripts/check-specs.mjs`). The tests of one worker share the clipboard, so poll for content only this copy has (the Connect to MCP prompt: its token, `tests/native-save/mcp-prompt.ts`).
 - A spec states which fixture group it needs (`@actual`, `@native-static`,
   or default) and runs in that group.

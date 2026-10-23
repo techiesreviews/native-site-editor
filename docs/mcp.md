@@ -26,7 +26,7 @@ Authenticate through the client's MCP controls, then keep the site open in the
 editor. Clients with custom-connector settings use the same server URL and OAuth.
 Connections last at most the eight-hour editor session, with no refresh tokens.
 
-For clients accepting headers, choose Connect with MCP in the editor's project
+For clients accepting headers, choose Connect to MCP in the editor's project
 selector. It copies a connection prompt with the server URL and Authorization
 Bearer header. Waiting for connection changes to Disconnect MCP when an agent
 uses it. The unused connection can be cancelled. The token is a password for the
@@ -116,7 +116,7 @@ not rewrite links.
 | `open_page` | Shows a page in preview/source, or opens any file in the source editor. |
 | `inspect_preview` | Shows a page and measures elements by id, selector or selection: box, computed styles, matching rules and text contrast. |
 | `get_command_status` | Looks up this connection’s browser receipt; an unproven outcome stays unknown. |
-| `wait_for_requests` | Returns unseen Ask agent requests, or all waiting when requested, from the receiving tab. With none it returns at once and tells the agent not to call again on its own. Only while the person has turned on Watch in the agent menu (10 minutes per activation, at most 25 held waits, one at a time per site) does it wait up to 25 seconds for a request. An answered question returns again with its thread. |
+| `wait_for_requests` | Returns unseen Ask agent requests, or all waiting when requested, from the receiving tab. With none it waits up to 25 seconds for a request (at most 3 waits at a time per site, so several agents can share one connection), then asks the agent to call again: a watchdog subagent keeps waiting until the person chooses Disconnect MCP. An answered question returns again with its thread. |
 | `get_selection` | Current preview selection or a request's element, with source, selector, component/slot context and conversation. |
 | `reply_to_request` | Replies done, answered or question, with optional edit request ids. Messages are at most 200 characters; questions at most 60. A question waits for the person's answer and returns in the request thread. |
 
@@ -126,7 +126,7 @@ The native-site conventions resource describes pages, components, slots, styles,
 media, records and the implemented [ADR 0001](adr/0001-the-repository-is-the-site.md)
 root-link amendment. The site resource returns the site as `get_site` does.
 The edit_site prompt combines conventions and current state with an optional goal;
-watch_editor describes taking Ask agent requests, carrying them out and replying, then stopping until asked to continue (or while Watch is on, waiting again).
+watch_editor describes a watchdog subagent taking Ask agent requests, the agent carrying them out and replying, until the person chooses Disconnect MCP.
 Their definitions live beside the tools in `worker/mcp.ts`; conventions live in
 `worker/site-conventions.ts`.
 

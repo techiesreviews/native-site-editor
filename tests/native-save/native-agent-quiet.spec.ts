@@ -351,12 +351,15 @@ test("relay paused by owner: one explicit attempt, one manual try again with Con
   await expect(menu).toHaveAttribute("data-state", "paused");
   await expect(menu).toHaveText("Connect to MCP", { useInnerText: true });
   await page.request.post(`${baseURL}/__demo/agent-controls`, { data: { relay: true } });
-  // Unpaused, Connect to MCP makes a new prompt and drops the token no agent used.
+  // Unpaused, Connect to MCP finds the connection again: its token waits for an agent, kept (another
+  // tab may hold its prompt), so the button offers Wait for MCP.
   await page.getByRole("button", { name: "Connect to MCP", exact: true }).click();
   await expect(menu).toHaveAttribute("data-state", "waiting");
-  expect(requests).toContainEqual({ method: "POST", path: "/api/agent/revoke" });
+  await expect(menu).toHaveText("Wait for MCP", { useInnerText: true });
+  expect(requests.filter(request => request.path === "/api/agent/revoke")).toEqual([]);
   const remaining = await (await page.request.get(`${baseURL}/api/agent/connections`)).json() as { grants: { id: string }[] };
-  expect(remaining.grants.some(entry => entry.id === grant.id)).toBe(false);
+  expect(remaining.grants.some(entry => entry.id === grant.id)).toBe(true);
+  await page.request.post(`${baseURL}/api/agent/revoke`, { headers: { Origin: baseURL! }, data: { id: grant.id } });
 });
 
 test("waiting paused by owner: waits answer at once and ask the agent to stop; the menu shows only Disconnect MCP; edits remain available", async ({ page, context, baseURL }) => {
@@ -379,7 +382,7 @@ test("waiting paused by owner: waits answer at once and ask the agent to stop; t
     expect(result.isError).toBeFalsy();
     const value = JSON.parse((result.content as { text: string }[])[0].text);
     expect(value.requests).toEqual([]);
-    expect(value.hint).toBe("Waiting for requests is paused by the site owner. Agents still get requests when they ask. Do not call wait_for_requests again on your own: tell the user you are ready.");
+    expect(value.hint).toBe("Waiting for requests is paused by the site owner. Agents still get requests when they ask. Stop the watchdog: do not call wait_for_requests again on your own; tell the user you are ready.");
     expect((await client.callTool({ name: "write_file", arguments: { path: "watch-paused.txt", content: "still available" } })).isError).toBeFalsy();
     expect(requests).toEqual([]);
   } finally {
