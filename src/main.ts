@@ -3394,7 +3394,6 @@ const agentSiteHost = createAgentSiteHost({
       commit: appStore.snapshot.value.commit,
       file: activeFileContext,
       drafts: draftStore().list(scope),
-      // The runtime's text now: the mounted editor's, else the draft's, as the preview shows it.
       mountedSource: (path) => runtime.source(path, scope),
       native: site && {
         site,
