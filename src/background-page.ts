@@ -19,7 +19,13 @@
 // | never settles    | at `openMs` it rejects ("did not open"), the slot is free; a page  |
 // |                  | that opens later is closed at once                                 |
 //
-// Work's own waits are bounded by it (a measurement asks the frame for at most about 13 s).
+// Work's own waits are bounded by it: a measurement asks again for about 5 s while the frame has
+// not drawn the page, then each ask waits at most 8 s (`measureImage`), so about 13 s in all.
+// A page that fails while it opens (its frame made, drawn) leaves nothing behind in the document.
+// These rows have unit cells only (tests/background-page.test.ts): the frame is made from the
+// page's texts and no request of its own can be held with `page.route` (named in the ticket).
+// Room is handed out in the order work asked for it: work arriving while others wait queues
+// behind them, and a freed room is reserved for the first waiter before it wakes.
 import type { DraftScope } from "./drafts";
 import type { NativeSite } from "../shared/native-project";
 import type { NativePreview } from "./components/native-preview";
@@ -52,14 +58,25 @@ function bounded<P extends BackgroundPage>(open: () => P | Promise<P>, ms: numbe
 
 export function createBackgroundPages<P extends BackgroundPage>(limit = BACKGROUND_PAGE_LIMIT, openMs = BACKGROUND_PAGE_OPEN_MS) {
   const pages = new Map<string, { page: Promise<P>; users: number }>();
-  // Work for a page not open while `limit` are, in the order it came.
-  const waiting: (() => void)[] = [];
+  // Work for a page not open, in the order it came; `reserved`: rooms handed to waiters not yet resumed.
+  const waiting: { key: string; admit(): void }[] = [], reserved = new Set<string>();
+  const taken = () => pages.size + reserved.size;
+  // Lets in the waiters there is room for, first come first served: one for a page open (or reserved) shares it.
+  function admit() {
+    while (waiting.length) {
+      const next = waiting[0];
+      if (!pages.has(next.key) && !reserved.has(next.key)) {
+        if (taken() >= limit) return;
+        reserved.add(next.key);
+      }
+      waiting.shift()!.admit();
+    }
+  }
   function release(key: string, entry: { page: Promise<P>; users: number }) {
     if (--entry.users > 0) return;
     pages.delete(key);
     void entry.page.then(page => page.close(), () => undefined);
-    // Each waiter looks again, in the order it came: the first for a page not open takes the room.
-    for (const wake of waiting.splice(0)) wake();
+    admit();
   }
   return {
     /**
@@ -67,7 +84,9 @@ export function createBackgroundPages<P extends BackgroundPage>(limit = BACKGROU
      * there is room. It closes once no work uses it (a page that failed to open is let go too).
      */
     async use<T>(key: string, open: () => P | Promise<P>, work: (page: P) => Promise<T> | T): Promise<T> {
-      while (!pages.has(key) && pages.size >= limit) await new Promise<void>(resolve => waiting.push(resolve));
+      if (!pages.has(key) && !reserved.has(key) && (taken() >= limit || waiting.length))
+        await new Promise<void>(resolve => waiting.push({ key, admit: resolve }));
+      reserved.delete(key);
       let entry = pages.get(key);
       if (!entry) {
         entry = { page: bounded(open, openMs), users: 0 };
@@ -90,8 +109,11 @@ export interface BackgroundSite {
   text(path: string): Promise<string | undefined>;
   /** The files those texts list, so a template without a stylesheet is not asked for. */
   files(): ReadonlySet<string>;
-  /** Which files the page shows, as far as the texts read so far tell (src/native-boot.ts nativeShownFiles). */
-  shown(source: (path: string) => string | undefined, isFile: (path: string) => boolean): string[];
+  /**
+   * Which files the page shows, as far as the texts read so far tell, and each component's own
+   * stylesheet by tag (src/native-boot.ts nativeShownFiles).
+   */
+  shown(source: (path: string) => string | undefined, isFile: (path: string) => boolean): { files: Iterable<string>; componentCss: ReadonlyMap<string, string> };
 }
 
 /** A hidden preview frame of one page, for measuring its pictures where they stand. */
@@ -105,8 +127,11 @@ export interface BackgroundFrame extends BackgroundPage {
  */
 export async function openBackgroundFrame(site: BackgroundSite, create: (host: HTMLElement) => NativePreview, parent: HTMLElement = document.body): Promise<BackgroundFrame> {
   const texts = new Map<string, string>(), files = site.files();
+  let componentCss: ReadonlyMap<string, string> = new Map();
   for (let round = 0; round < 10; round++) {
-    const wanted = site.shown(path => texts.get(path), path => files.has(path)).filter(path => !texts.has(path));
+    const shown = site.shown(path => texts.get(path), path => files.has(path));
+    componentCss = shown.componentCss;
+    const wanted = [...shown.files].filter(path => !texts.has(path));
     if (!wanted.length) break;
     const read = await Promise.all(wanted.map(async path => [path, await site.text(path) ?? ""] as const));
     for (const [path, text] of read) texts.set(path, text);
@@ -118,22 +143,31 @@ export async function openBackgroundFrame(site: BackgroundSite, create: (host: H
   host.inert = true;
   host.setAttribute("aria-hidden", "true");
   parent.append(host);
-  const preview = create(host);
-  const route = Object.keys(site.site.routes).find(route => site.site.routes[route] === site.page);
-  preview.activate(site.site);
-  preview.update({ sources: Object.fromEntries(texts), ...route ? { route } : {} });
+  let preview: NativePreview | undefined;
+  try {
+    preview = create(host);
+    const route = Object.keys(site.site.routes).find(route => site.site.routes[route] === site.page);
+    preview.activate(site.site);
+    // As the editor draws it: each component's own stylesheet comes by its tag (composeStyles).
+    preview.update({ sources: Object.fromEntries(texts), componentStyles: Object.fromEntries(componentCss), ...route ? { route } : {} });
+  } catch (error) {
+    // Failed while it opened: nothing of it stays in the document.
+    try { preview?.destroy(); } finally { host.remove(); }
+    throw error;
+  }
+  const drawn = preview;
   return {
     async measure(request) {
       // The frame's runtime loads beside the editor's: until it has drawn the page, ask again (about 5 s).
       for (let attempt = 0; ; attempt++) {
-        try { return await preview.measureImage(request); }
+        try { return await drawn.measureImage(request); }
         catch (error) {
           if (attempt >= 50 || !(error instanceof Error) || !/not showing a page yet/.test(error.message)) throw error;
           await new Promise(resolve => setTimeout(resolve, 100));
         }
       }
     },
-    close() { preview.destroy(); host.remove(); },
+    close() { drawn.destroy(); host.remove(); },
   };
 }
 

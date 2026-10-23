@@ -10,10 +10,10 @@ import { mediaCommandPins } from "../src/agent-tools";
 import type { MediaPin } from "../src/controllers/media-controller";
 import type { AgentRecords } from "../src/agent-records";
 import { createAgentEditTools } from "../src/agent-tools-edit";
-import { applySiteCommand, type AgentSiteActions } from "../src/agent-site";
+import { applySiteCommand, pinnedMediaActions, type AgentSiteActions } from "../src/agent-site";
 import type { AgentReadPorts } from "../src/agent-tools-read";
 import { createMediaController, type MediaControllerPorts } from "../src/controllers/media-controller";
-import { applyAgentMedia } from "../src/agent-media-actions";
+import { applyAgentMedia, runAgentMedia } from "../src/agent-media-actions";
 import { listWorkspaceMedia, isAgentMediaPath } from "../src/agent-media";
 import { readSource } from "../src/page-builder/source-tree";
 import { uploadKey } from "../src/uploads";
@@ -484,5 +484,66 @@ test("a Media change with no pin is refused once another site or branch is shown
   assert.ok(result.ok);
   assert.equal((result.value as { state?: string }).state, "conflict");
   assert.match(String((result.value as { message?: string }).message), /moved to another site or branch/);
+});
+
+// Ticket 27, Async writers: a pinned agent Media change run through its background page
+// (`runAgentMedia` over the pinned ports) and switched away at each wait lands once, as its own
+// workspace's draft, with its receipt applied.
+test("a pinned agent Media change switched away at any wait lands once in its own workspace, applied", async () => {
+  const input = () => request("adding_settings", { image: "smaller" }, "pinned-race");
+  const points = await forEachAwait(race => {
+    const state = { leave: () => {}, check: async () => {}, done: Promise.resolve() };
+    state.done = (async () => {
+      const f = await fixture(race);
+      let here = true;
+      const scope = { ...workspace, repo: repo.full_name };
+      const pin = { repo: repo.full_name, scope, identity: "site", drafts: f.storage.store, here: () => here,
+        site: { routes: { "/": "index.html" }, components: {} }, get nativePaths() { return [...f.paths]; },
+        entry: (path: string) => f.paths.includes(path) ? { path, sha: path, mode: "100644", type: "blob" as const } : undefined,
+        find: race.port("find", async (path: string) => f.paths.includes(path) ? { path, sha: path, mode: "100644", type: "blob" as const } : undefined),
+        source: (path: string) => f.text.get(path), files: () => [...f.paths], list: async () => [...f.paths], remember: () => {} } satisfies MediaPin;
+      const stamp = { holds: () => here, changed: () => here ? undefined : "scope" as const };
+      const files = () => ({ repo, snapshot: f.snapshot, api: async <T>() => ({ entries: [] }) as T, read: async () => "", batch: async () => ({}), has: () => false });
+      const ports = { stamp: () => stamp, source: (path: string) => here ? f.text.get(path) : undefined, context: async () => undefined, files } satisfies AgentReadPorts;
+      const tools = createAgentMediaTools({ workspace, ports, records: f.records, run: command => runAgentMedia(f.controller, f.ports, command, undefined, undefined, background => {
+        // The background page's controller, over the pinned ports, with this fixture's records and storage.
+        const own = createMediaController(background, () => import("../src/controllers/media-actions")), made = own.workspaceContext.bind(own);
+        own.workspaceContext = async (...args) => { const ctx = await f.storage.context(await made(...args)); ctx.agentRecords = f.records; return ctx; };
+        return own;
+      }) });
+      const held = { source: files(), stamp, pin: { away: () => !here, context: async () => undefined, media: pin }, pinned: true };
+      state.leave = () => { here = false; };
+      const result = body(await tools.run(input(), 0, () => true, Date.now() + 10_000, { page: undefined }, undefined, held));
+      state.check = async () => {
+        assert.equal(result.state, "applied", String(result.message));
+        assert.ok(await f.records.receipt(workspace, "pinned-race", "grant"), "its receipt is kept");
+        const records = f.storage.store.list(scope).filter(draft => draft.path === MEDIA_RECORDS_PATH);
+        assert.equal(records.length, 1, "written once, as its own workspace's draft");
+        assert.match(records[0].content, /smaller/);
+      };
+    })();
+    return state;
+  }, state => state.leave(), state => state.check());
+  assert.ok(points >= 3, `${points} waits swept`);
+});
+
+test("a pinned Media change reads its page from its own workspace while another is shown, and opens nothing there", async () => {
+  let here = true;
+  const opened: string[] = [];
+  // eslint-disable-next-line no-restricted-syntax -- the media cases read only these three actions.
+  const live = { text: async () => "<p>shown</p>", open: async (path: string) => { opened.push(path); return true; }, isMounted: () => false } as unknown as AgentSiteActions;
+  const pin = { repo: repo.full_name, scope: { ...workspace, repo: repo.full_name }, identity: "site", drafts: { get: () => undefined, save: () => true, remove: () => true, list: () => [] },
+    here: () => here, entry: () => undefined, find: async () => undefined, source: (path: string) => path === "index.html" ? "<p>its own</p>" : undefined,
+    files: () => ["index.html"], list: async () => ["index.html"], remember: () => {} } satisfies MediaPin;
+  const command = { id: "pinned-actions", operation: "place_media", path: "index.html", content: "", branch: "main", commit } as AgentCommand;
+  mediaCommandPins.set(command, { pin, page: "<p>its own</p>" });
+  const actions = pinnedMediaActions(live, command);
+  assert.equal(await actions.text("index.html"), "<p>shown</p>", "on show: the editor's");
+  here = false;
+  assert.equal(await actions.text("index.html"), "<p>its own</p>", "away: its own workspace's");
+  assert.equal(await actions.open("index.html"), true);
+  assert.equal(actions.isMounted("index.html"), true);
+  assert.deepEqual(opened, [], "nothing opened on the workspace shown");
+  assert.equal(pinnedMediaActions(live, { ...command }), live, "a command with no pin uses the editor's actions");
 });
 

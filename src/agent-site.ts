@@ -1042,6 +1042,21 @@ export async function prepareAgentText(command: AgentCommand, scope: DraftScope,
 export const pinnedMedia = (command: AgentCommand) => mediaCommandPins.has(command);
 
 /**
+ * The site actions a pinned Media change runs with (ticket 27): while another workspace is shown its
+ * page is read from its own workspace (its draft there, else its branch text) and nothing is opened;
+ * on show they are the editor's.
+ */
+export function pinnedMediaActions(actions: AgentSiteActions, command: AgentCommand): AgentSiteActions {
+  const pin = mediaCommandPins.get(command)?.pin;
+  if (!pin) return actions;
+  return { ...actions,
+    text: async path => pin.here() ? actions.text(path) : pin.source(path),
+    open: async path => pin.here() ? actions.open(path) : true,
+    isMounted: path => pin.here() ? actions.isMounted(path) : true,
+  };
+}
+
+/**
  * The editor path of an agent command (ticket 23): when it fails before its write was kept and another
  * workspace is shown by then, the write finishes where it was read (`elsewhere`, finishAgentTextElsewhere)
  * instead of refusing; otherwise its own reason stands.

@@ -20,7 +20,7 @@ import { decodeHtmlEntities } from "./html-entities";
 import { mediaResolvePath } from "./media-references";
 import { startTags, startTagAttribute } from "../../shared/html-source";
 import { MEDIA_RECORDS_PATH, parseMediaRecords, type MediaRecords } from "../../shared/media-records";
-import { frameChange, shapeRatio, type PopupRect, type PopupShape } from "./image-popup-rules";
+import { frameChange, keepsPopupChanges, shapeRatio, type PopupRect, type PopupShape } from "./image-popup-rules";
 import { placeShape, popupTrim, restoreCut, sameTrim, trimmable, turnBy, uncut, zoomTo, type TrimRect } from "./image-popup-trim";
 import { chooseShape, editKey, type PopupEdit } from "./image-large-rules";
 import { trimGeometry } from "./trim-geometry";
@@ -176,9 +176,9 @@ export async function openImagePopup(options: ImagePopupOptions) {
   // writing, it finishes (the window shows it busy).
   const cancel = () => {
     if (state.busy) return;
-    // Another workspace shown keeps it too: it is written there, on its page (ticket 27).
-    const away = Boolean(pin) && !pin!.here();
-    if ((away || stamp.holds() && options.live()) && ports.source(target.path) === source && !ports.viewingVersion()) void done();
+    // Another workspace shown, or left and shown again, keeps it too: it is written on its page (ticket 27).
+    if (keepsPopupChanges({ pinned: Boolean(pin), here: pin?.here() ?? true, sameLoad: stamp.holds(), owned: options.live(),
+      sameBytes: ports.source(target.path) === source, viewingVersion: ports.viewingVersion() })) void done();
     else close();
   };
   async function done() {

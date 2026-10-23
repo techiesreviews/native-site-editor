@@ -1859,7 +1859,7 @@ const mediaPorts: import("./controllers/media-controller").MediaControllerPorts 
     backgroundPages ??= module.createBackgroundPages();
     return site && backgroundPages.use(module.backgroundKey(pin.scope, path), () => module.openBackgroundFrame({ site, page: path, files: () => new Set(pin.files()),
       text: async (file) => pin.source(file) ?? await pin.find(file).then((entry) => entry && readFile(pin.repo, entry.sha)),
-      shown: (source, isFile) => [...nativeShownFiles(site, [path], source, isFile, nativeSitePrefix(pin.source(NATIVE_CONFIG_PATH))).files] }, (host) => createNativePreview(host)),
+      shown: (source, isFile) => nativeShownFiles(site, [path], source, isFile, nativeSitePrefix(pin.source(NATIVE_CONFIG_PATH))) }, (host) => createNativePreview(host)),
     (frame) => frame.measure({ path, node, slot, style, ...(image.width && image.height ? { image: { width: image.width, height: image.height } } : {}) }));
   },
   origins: mediaOrigins,
@@ -1887,7 +1887,8 @@ const mediaPorts: import("./controllers/media-controller").MediaControllerPorts 
   pin: () => pinMedia({ shown: () => { const repo = appStore.repository.value, scope = draftScope(), snapshot = appStore.snapshot.value; return repo && scope && snapshot && { repo, scope, snapshot, site: runtime.site }; },
     begin: () => workspaceSession.begin(), base: () => ({ files: runtime.base.files, texts: runtime.base.sources, key: nativeTextIndexScopeKey() }), identity: mediaIdentity, drafts: draftStore,
     live: { entry: entryAt, find: findEntry, source: (path, scope) => runtime.textSource(path, scope), files: scope => runtime.files(scope), remember: (path, text) => mediaPorts.rememberSource(path, text) },
-    entry: (repo, snapshot, path) => repositoryIndex.entry(repo, snapshot, path), find: (repo, snapshot, path) => repositoryIndex.find(api, repo, snapshot, path),
+    // Seeded first: a switch clears the index, and the pinned snapshot's files must read the same before and after (ticket 27).
+    entry: (repo, snapshot, path) => { repositoryIndex.seed(repo, snapshot); return repositoryIndex.entry(repo, snapshot, path); }, find: (repo, snapshot, path) => repositoryIndex.find(api, repo, snapshot, path),
     files: (scope, base) => runtime.files(scope, base), list: listRepositoryFiles, peek: (repo, revision, path) => cleanSources.peek(repo, revision, path) }),
   identity: mediaIdentity,
   stamp: () => guardedEdits.stamp("repository"),
@@ -3585,9 +3586,9 @@ function makeAgentSiteActions(edits: GuardedEdits = guardedEdits, atomic = false
   legacy: applyAgentCommand,
 }; }
 async function applyAgentSiteCommand(command: AgentCommand) {
-  const [{ applySiteCommand, prepareAgentText, atomicAgentCommand, agentStructuralActions, finishAgentTextElsewhere, editorOrElsewhere, pinnedMedia }, { createPagesController }, { createLazyFileOperationsController }, { agentCommandFiles }] = await Promise.all([loadAgentSite(), loadPagesActions(), loadFileOps(), import("./agent-tools")]);
+  const [{ applySiteCommand, prepareAgentText, atomicAgentCommand, agentStructuralActions, finishAgentTextElsewhere, editorOrElsewhere, pinnedMedia, pinnedMediaActions }, { createPagesController }, { createLazyFileOperationsController }, { agentCommandFiles }] = await Promise.all([loadAgentSite(), loadPagesActions(), loadFileOps(), import("./agent-tools")]);
   // Ticket 27: a Media change runs in its own workspace's background page, whatever is shown.
-  if (pinnedMedia(command)) return agentActing(() => applySiteCommand(agentSiteActions, command));
+  if (pinnedMedia(command)) return agentActing(() => applySiteCommand(pinnedMediaActions(agentSiteActions, command), command));
   // Ticket 23: an edit read from a site or branch no longer shown finishes there, on its files. On show the editor writes it, holding the workspace
   // from the moment that is known (its stamp below), proved by the commit the command was read on and the bytes its write reads (expectedHash;
   // the guarded edit's own reads); switched away before it was kept, it finishes where it was read after all (editorOrElsewhere), noted there (ticket 24).

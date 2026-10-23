@@ -118,3 +118,15 @@ export function sheetScroll(image: PopupRect, sheetTop: number, frameTop: number
   // A picture taller than the room shows its top.
   return Math.round(height + 8 <= room - frameTop ? image.bottom - room : image.top - frameTop - 8);
 }
+
+/**
+ * Whether ✕, Escape or a press elsewhere keeps the popup's changes (writes them) or only closes it.
+ * Its page's bytes must be as it opened, and no earlier version shown. Without a pin, the editor must
+ * still be on the load it opened on, and its press still own the popup. With one (ticket 27), a
+ * switch is no reason to drop them: away, or left and shown again (a new load), the bytes prove them;
+ * on the same load, a later press owning the bar still only closes it.
+ */
+export function keepsPopupChanges(at: { pinned: boolean; here: boolean; sameLoad: boolean; owned: boolean; sameBytes: boolean; viewingVersion: boolean }) {
+  if (!at.sameBytes || at.viewingVersion) return false;
+  return at.pinned ? !at.here || !at.sameLoad || at.owned : at.sameLoad && at.owned;
+}
