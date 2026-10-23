@@ -7,6 +7,7 @@ import type { VersionCompare } from "../src/components/source-editor.ts";
 import type { SavedDraft } from "../src/drafts.ts";
 import type { VersionViewPorts } from "../src/version-view.ts";
 import { createWorkspaceSession } from "../src/workspace-session.ts";
+import { forEachAwait, type AwaitRace } from "./support/await-race.ts";
 import type { HistoryCommit, Repository, RestoreResult, Snapshot } from "../shared/types.ts";
 
 // Just enough DOM for the version bar, its buttons and the History panel.
@@ -31,7 +32,8 @@ class FakeElement {
 const byId = new Map(["changes", "history-button"].map((id) => [id, new FakeElement()]));
 const saved = ["document", "window", "innerWidth", "innerHeight"].map((name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)] as const);
 const fakeGlobals = globalThis as Record<string, unknown>;
-fakeGlobals.document = { getElementById: (id: string) => byId.get(id) ?? null, createElement: () => new FakeElement(), body: new FakeElement() };
+const body = new FakeElement();
+fakeGlobals.document = { getElementById: (id: string) => byId.get(id) ?? null, createElement: () => new FakeElement(), body };
 fakeGlobals.window = { addEventListener: () => {}, removeEventListener: () => {} };
 fakeGlobals.innerWidth = 800; fakeGlobals.innerHeight = 600;
 after(() => {
@@ -46,6 +48,7 @@ registerHooks({
   load: (url, context, next) => /\.css$|\?raw$/.test(url) ? { format: "module", source: "export default '';", shortCircuit: true } : next(url, context),
 });
 const { createVersionView } = await import("../src/version-view.ts");
+const { ApiError } = await import("../src/github-reads.ts");
 
 const flush = async () => { for (let i = 0; i < 10; i++) await new Promise<void>((resolve) => setImmediate(resolve)); };
 function deferred<T>() {
@@ -60,8 +63,10 @@ const SCOPE = { account: "lex", repoId: 501, repo: "lex/site", branch: "main" };
 const RESULT: RestoreResult = { commit: "new", branch: "main", url: "", unchanged: false };
 type HistoryOptions = Parameters<typeof createCommitHistory>[0];
 
-function fixture() {
+/** `race` answers the version read at once and wraps the awaits named in `awaits` (src/version-view.ts). */
+function fixture(race?: AwaitRace, awaits = ["api", "loadConfirmDialog", "ask", "postApi"]) {
   byId.get("changes")!.open = false;
+  const wrap = <Args extends unknown[], Value>(name: string, work: (...args: Args) => Promise<Value>) => race && awaits.includes(name) ? race.port(name, work) : work;
   const appStore = { openFile: signal<string | undefined>("index.html"), repository: signal<Repository | undefined>(REPO), snapshot: signal<Snapshot | undefined>(SNAPSHOT) };
   const session = createWorkspaceSession();
   const said: string[] = [], refused: string[] = [], compared: [string, VersionCompare | undefined][] = [], viewing: (HTMLElement | undefined)[] = [];
@@ -69,7 +74,13 @@ function fixture() {
   const posts: { path: string; body: unknown }[] = [], opened: string[] = [], snapshots: string[] = [];
   const histories: HistoryOptions[] = [];
   const drafts = new Map<string, SavedDraft>();
-  let source = "<p>Now</p>", refreshes = 0, confirm = true, repositoryHolds = true;
+  const errors: unknown[] = [];
+  let source = "<p>Now</p>", refreshes = 0, confirm = true, repositoryHolds = true, dialogs = 0;
+  let restore: () => Promise<RestoreResult> = async () => RESULT;
+  const read = (path: string, params?: Record<string, string>) => { const answer = deferred<unknown>(); reads.push({ path, params, answer }); return answer.promise; };
+  const readNow = wrap("api", async (path: string, params?: Record<string, string>) => { reads.push({ path, params, answer: deferred() }); return { content: "<p>Then</p>" }; });
+  const ask = wrap("ask", async () => confirm);
+  const post = wrap("postApi", async (path: string, body: unknown) => { posts.push({ path, body }); return restore(); });
   const ports = {
     appStore, workspaceSession: session,
     guardedEdits: { stamp: () => ({ holds: () => repositoryHolds, changed: () => undefined }) },
@@ -85,25 +96,35 @@ function fixture() {
       histories.push(options);
       return { root: {} as HTMLElement, destroy: () => {}, mark: () => {}, refresh: () => {} };
     } }),
-    loadConfirmDialog: async () => ({ createConfirmDialog: () => ({ root: {} as HTMLElement, ask: async () => confirm }) }),
-    api: <T,>(path: string, params?: Record<string, string>) => { const answer = deferred<unknown>(); reads.push({ path, params, answer }); return answer.promise as Promise<T>; },
-    postApi: async <T,>(path: string, _params: Record<string, string>, body: unknown) => { posts.push({ path, body }); return RESULT as T; },
+    loadConfirmDialog: wrap("loadConfirmDialog", async () => ({ createConfirmDialog: () => { dialogs++; return { root: {} as HTMLElement, ask }; } })),
+    api: <T,>(path: string, params?: Record<string, string>) => (race ? readNow(path, params) : read(path, params)) as Promise<T>,
+    postApi: async <T,>(path: string, _params: Record<string, string>, body: unknown) => await post(path, body) as T,
     restoreFile: async (path) => { opened.push(path); appStore.openFile.value = path; },
     loadSnapshot: async (path) => { snapshots.push(path); },
     status: (message) => { said.push(message); },
-    errorMessage: (error) => { throw error; },
+    errorMessage: (error) => { errors.push(error); },
     refuse: (message) => { refused.push(message); },
   } satisfies VersionViewPorts;
   const versions = createVersionView(ports);
   return {
-    versions, appStore, session, said, refused, compared, viewing, reads, posts, opened, snapshots, histories, drafts,
+    versions, appStore, session, said, refused, compared, viewing, reads, posts, opened, snapshots, histories, drafts, errors,
     refreshes: () => refreshes,
+    dialogs: () => dialogs,
+    restoreWith: (next: () => Promise<RestoreResult>) => { restore = next; },
     edit: (next: string) => { source = next; },
     decline: () => { confirm = false; },
     moveRepository: () => { repositoryHolds = false; },
     /** Opens History and returns the options the panel was mounted with. */
     async history() { await versions.history.open(); return histories.at(-1)!; },
   };
+}
+/** Opens History and shows OLD on index.html; returns the panel's options. */
+async function show(f: ReturnType<typeof fixture>) {
+  const history = await f.history();
+  history.onView(OLD, "head", false);
+  f.reads[0].answer.resolve({ content: "<p>Then</p>" });
+  await flush();
+  return history;
 }
 // The bar's buttons: Back to latest, then Restore this version.
 const click = (bar: HTMLElement | undefined, index: number) => (bar?.children[index] as HTMLElement).click();
@@ -121,7 +142,7 @@ test("an earlier version chosen in History shows in the preview and beside the c
   assert.equal(history.viewing(), OLD.sha);
 });
 
-test("Back to latest and the latest commit end the version on show", async () => {
+test("Back to latest ends the version on show, and with none on show the latest commit ends nothing", async () => {
   const f = fixture(), history = await f.history();
   history.onView(OLD, "head", false);
   f.reads[0].answer.resolve({ content: "<p>Then</p>" });
@@ -164,6 +185,102 @@ test("a file chosen from the site's history opens and shows its version from tha
   await flush();
   assert.deepEqual(f.opened, ["about.html"]);
   assert.equal(f.reads[0].params?.path, "about.html");
+  f.reads[0].answer.resolve({ content: "<p>About then</p>" });
+  await flush();
+  assert.equal(f.versions.view?.path, "about.html");
+  assert.equal(f.versions.view?.content, "<p>About then</p>");
+});
+
+test("a file chosen at the branch's latest commit opens without a read and ends the version on show", async () => {
+  const f = fixture(), history = await show(f);
+  history.onOpenFile("about.html", { ...OLD, sha: "head" }, "head");
+  await flush();
+  assert.deepEqual(f.opened, ["about.html"]);
+  assert.equal(f.reads.length, 1);
+  assert.equal(f.versions.view, undefined);
+  assert.deepEqual(f.compared.at(-1), ["index.html", undefined]);
+});
+
+test("choosing the latest commit in History ends the version on show", async () => {
+  const f = fixture(), history = await show(f);
+  history.onView({ ...OLD, sha: "head" }, "head", true);
+  assert.equal(f.versions.view, undefined);
+  assert.deepEqual(f.compared.at(-1), ["index.html", undefined]);
+  assert.equal(f.refreshes(), 2);
+});
+
+test("a newer choice supersedes an older one answered later", async () => {
+  const f = fixture(), history = await f.history();
+  const other = { ...OLD, sha: "b".repeat(40), message: "Second words" };
+  history.onView(OLD, "head", false);
+  history.onView(other, "head", false);
+  f.reads[1].answer.resolve({ content: "<p>Second</p>" });
+  await flush();
+  f.reads[0].answer.resolve({ content: "<p>First</p>" });
+  await flush();
+  assert.equal(f.versions.view?.commit.sha, other.sha);
+  assert.equal(f.versions.view?.content, "<p>Second</p>");
+  assert.equal(f.compared.length, 1);
+});
+
+test("a version answered after a new workspace load is dropped", async () => {
+  const f = fixture(), history = await f.history();
+  history.onView(OLD, "head", false);
+  f.session.next(undefined);
+  f.reads[0].answer.resolve({ content: "<p>Then</p>" });
+  await flush();
+  assert.equal(f.versions.view, undefined);
+  assert.deepEqual(f.compared, []);
+});
+
+test("a version read writes nothing once the file, the load or a newer choice moved on while it was read", async () => {
+  const moves = [
+    (f: ReturnType<typeof fixture>) => { f.appStore.openFile.value = "about.html"; },
+    (f: ReturnType<typeof fixture>) => { f.session.next(undefined); },
+    (f: ReturnType<typeof fixture>) => { f.versions.end(); },
+  ];
+  for (const move of moves) {
+    const points = await forEachAwait(
+      (race) => {
+        const f = fixture(race, ["api"]);
+        return { f, done: f.history().then(async (history) => { history.onView(OLD, "head", false); await flush(); }) };
+      },
+      ({ f }) => move(f),
+      ({ f }) => {
+        assert.equal(f.versions.view, undefined);
+        assert.deepEqual(f.compared, []);
+        assert.deepEqual(f.said, []);
+        assert.equal(f.refreshes(), 0);
+      },
+    );
+    assert.equal(points, 1);
+  }
+});
+
+test("a restore writes nothing once the version on show ended during its awaits", async () => {
+  const points = await forEachAwait(
+    (race) => {
+      const f = fixture(race, ["loadConfirmDialog", "ask", "postApi"]), at = { said: 0, posts: 0, compared: 0 };
+      const done = f.history().then(async (history) => {
+        history.onView(OLD, "head", false);
+        await flush();
+        click(f.viewing.at(-1), 2);
+        await flush();
+      });
+      return { f, at, done };
+    },
+    ({ f, at }) => {
+      f.versions.end();
+      Object.assign(at, { said: f.said.length, posts: f.posts.length, compared: f.compared.length });
+    },
+    ({ f, at }) => {
+      assert.equal(f.said.length, at.said);
+      assert.equal(f.posts.length, at.posts);
+      assert.equal(f.compared.length, at.compared);
+      assert.deepEqual(f.snapshots, []);
+    },
+  );
+  assert.equal(points, 3);
 });
 
 test("Restore this version asks, commits against the head it showed, then reloads the snapshot", async () => {
@@ -204,4 +321,54 @@ test("a restore from the History panel ends the version on show and reloads", as
   await history.onRestored(RESULT);
   assert.equal(f.versions.view, undefined);
   assert.deepEqual(f.snapshots, ["index.html"]);
+});
+
+test("a failed restore says why and keeps the version on show", async () => {
+  const f = fixture();
+  await show(f);
+  f.restoreWith(async () => { throw new Error("Head moved on."); });
+  click(f.viewing.at(-1), 2);
+  await flush();
+  assert.equal(f.said.at(-1), "Head moved on.");
+  assert.ok(f.versions.view);
+  assert.deepEqual(f.snapshots, []);
+});
+
+test("restoring a version the file already matches does not reload the snapshot", async () => {
+  const f = fixture();
+  await show(f);
+  f.restoreWith(async () => ({ ...RESULT, unchanged: true }));
+  click(f.viewing.at(-1), 2);
+  await flush();
+  assert.deepEqual(f.snapshots, []);
+  assert.equal(f.said.at(-1), "This file already matches that version.");
+  assert.equal(f.versions.view, undefined);
+});
+
+test("a second Restore reuses the one confirm dialog", async () => {
+  const f = fixture(), appended = body.children.length;
+  await show(f);
+  f.decline();
+  click(f.viewing.at(-1), 2);
+  await flush();
+  click(f.viewing.at(-1), 2);
+  await flush();
+  assert.equal(f.dialogs(), 1);
+  assert.equal(body.children.length, appended + 1);
+  assert.deepEqual(f.posts, []);
+});
+
+test("a restore History made beside a draft says the draft was kept", async () => {
+  const f = fixture(), history = await f.history();
+  f.drafts.set("index.html", { ...SCOPE, version: 1, path: "index.html", baseSha: "b", original: "", content: "", updatedAt: 0 });
+  history.onRestoreSkipped({ ...RESULT, unchanged: false });
+  assert.equal(f.said.at(-1), "Restored index.html in a new commit; reload before saving. Your draft was kept.");
+});
+
+test("an expired GitHub session in History asks to connect again", async () => {
+  const f = fixture(), history = await f.history();
+  history.onExpired();
+  const [error] = f.errors;
+  assert.ok(error instanceof ApiError);
+  assert.equal(error.status, 401);
 });
