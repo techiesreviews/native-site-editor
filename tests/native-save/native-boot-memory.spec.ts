@@ -253,6 +253,57 @@ test('a guess taken before a new listing clears the selection writes nothing whe
   expect(state.late.some((read) => read.startsWith('/api/file') && read.includes(sha(memory, 'index.html'))), 'the page is read afresh').toBe(true);
 });
 
+test('a guess that won, abandoned by a new listing before its file batch lands: the batch is not cached, the page is read afresh', async ({ page, baseURL }) => {
+  const memory = await firstBoot(page, baseURL);
+  const { state } = await watchGuesses(page);
+  let releaseFiles!: () => void, releaseBranches!: () => void;
+  const filesGate = new Promise<void>((resolve) => { releaseFiles = resolve; });
+  const branchesGate = new Promise<void>((resolve) => { releaseBranches = resolve; });
+  // The guessed file batch (marked, as watchGuesses does) is held until the selection is cleared.
+  await page.route(/\/api\/files\?/, async (route) => {
+    if (state.sessionDone) return route.fallback();
+    const real = await route.fetch();
+    const body = await real.json() as { files: Record<string, string> };
+    for (const key of Object.keys(body.files)) body.files[key] = body.files[key].replace('<h1', '<h1 data-guess="1"');
+    await filesGate;
+    await route.fulfill({ response: real, json: body });
+  });
+  // The first branch list is held, so the guessed snapshot wins.
+  let holdBranches = true;
+  await page.route(/\/api\/branches\?/, async (route) => {
+    if (!holdBranches) return route.fallback();
+    holdBranches = false;
+    await branchesGate;
+    await route.fallback();
+  });
+  const listed = { without: false };
+  await page.route(/\/api\/repositories\?refresh=1/, async (route) => {
+    if (!listed.without) return route.fallback();
+    const response = await route.fetch();
+    const [base] = await response.json() as { id: number; name: string; full_name: string }[];
+    await route.fulfill({ response, json: [9001, 9002].map((id) => ({ ...base, id, name: `other-${id}`, full_name: `native-demo-user/other-${id}` })) });
+  });
+  await page.reload();
+  // The guess won (its branch is picked before the branch list); the page waits on the held batch.
+  await expect(page.locator('#branch')).toHaveValue('main');
+  await expect(page.locator('#branch')).toBeEnabled();
+  await expect(page.locator('#content')).toContainText('Opening your repository…');
+
+  listed.without = true;
+  await reloadRepositories(page);
+  await expect(page.locator('#content')).toContainText('Open a project');
+  const landed = page.waitForResponse((response) => response.url().includes('/api/files'));
+  releaseFiles();
+  releaseBranches();
+  await (await landed).finished();
+
+  listed.without = false;
+  await reloadRepositories(page);
+  await expect(preview(page).locator('.hero h1')).toBeVisible();
+  await expect(preview(page).locator('[data-guess]')).toHaveCount(0);
+  expect(state.late.some((read) => read.startsWith('/api/file') && read.includes(sha(memory, 'index.html'))), 'the page is read afresh').toBe(true);
+});
+
 test('sign-out posts /auth/logout and forgets the remembered boot', async ({ page, baseURL }) => {
   await firstBoot(page, baseURL);
   await page.locator('.repository-menu__trigger').click();
