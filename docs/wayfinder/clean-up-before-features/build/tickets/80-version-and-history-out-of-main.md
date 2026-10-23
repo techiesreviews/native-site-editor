@@ -1,8 +1,8 @@
 ---
 title: "Version view, restore and history wiring leave main.ts"
 type: task (AFK)
-status: open
-assignee: lead-80 (this session)
+status: closed
+assignee: lead-80
 builder: sol
 blocked_by: [22-workspace-session-callers]
 ---
@@ -35,3 +35,13 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `kit unit --affected`, `kit specs --affected`, `kit size`.
 - Review: `kit review --ticket <this ticket>` (GPT-6.1 Sol, medium, read-only). Land: `kit pr --ticket <this ticket>`.
 - Report: unit and specs `RESULT:` lines, `kit size` delta, review folder and decisions, PR and merge SHA, `main.ts` lines before and after and the new ceiling.
+
+## Done (2026-10-23)
+
+- The History panel's wiring, the earlier version on show (`viewVersion`, `endVersionView`, `checkVersionView`, the version bar) and its restore (`restoreVersion`, `afterRestore`, `openFileVersion`) moved from `src/main.ts` into `src/version-view.ts` (`createVersionView`), which builds the history controller and owns the version on show, its request counter and its dialog. `main.ts` keeps one construction call (`versions`) and reads `versions.view`, `versions.end`, `versions.check` and `versions.history`.
+- Bodies are the old ones with `ports.` prefixes. Other changes: `onError` and `loadHistory` are wrapped in arrows; the confirm dialog port is typed as its `root` and `ask` (`ConfirmDialog`); `restoreFile` and `loadSnapshot` reach the later `workspaceBoot` consts through arrows.
+- Host state stays live: the preview is a getter, the store, session, guarded edits and drafts are read at call time.
+- No visible change; History still loads lazily.
+- Tests: `tests/version-view.test.ts` (8 tests, ports typed with `satisfies`): an earlier version shows in the preview and the code pane and History marks it; Back to latest and the latest commit end it; a late answer after another file opened is dropped; a source change ends it without a second refresh; a file from the site's history opens and shows; Restore commits against the shown head and reloads; a draft, a decline or a moved repository stop the restore; a restore from the panel ends the view.
+- `main.ts` 5279 → 5134 lines, ceiling 5280 → 5140. Boot size 344 KB (±0 KB, budget 355 KB).
+

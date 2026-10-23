@@ -19,7 +19,6 @@ import { createPagesState, explorerTabNames, NATIVE_HOME_UNREAD, type ExplorerTa
 import type { createPagesController } from "./controllers/pages-controller";
 import { createPreviewSelectionController } from "./controllers/preview-selection-controller";
 import { createBootController, planRepositoryOpen } from "./controllers/boot-controller";
-import { createHistoryController } from "./controllers/history-controller";
 import { batch, effect } from "@preact/signals-core";
 import { createAppStore } from "./app-store";
 import { handleChunkLoadFailure, hasEditableRecoveryState, installChunkRecovery } from "./chunk-recovery";
@@ -37,6 +36,7 @@ import {
 } from "./workspace-state";
 import { createSetupEntryController } from "./controllers/setup-entry-controller";
 import { createAgentController } from "./controllers/agent-controller";
+import { createVersionView } from "./version-view";
 import type { AgentSiteActions, SharedContext } from "./agent-site";
 import type { AgentCommand } from "../shared/agent";
 import { draftStore, type DraftScope, type SavedDraft } from "./drafts";
@@ -124,10 +124,7 @@ import type { ToastAction } from "./components/toast";
 import type {
   EditorContext,
   Directory,
-  FileRevision,
-  HistoryCommit,
   PublishResult,
-  RestoreResult,
   Repository,
   SessionInfo,
   Snapshot,
@@ -592,7 +589,7 @@ function mountWorkspace() {
   pageStructure = createPageStructure(element("structure"), {
     menuItems: (path, item, opening, template) => {
       const painted = template ? template.source : nativeStructurePaintedSources.get(item);
-      const fresh = () => painted !== undefined && nativeEffectiveSource(path) === painted && !versionView;
+      const fresh = () => painted !== undefined && nativeEffectiveSource(path) === painted && !versions.view;
       if (!fresh()) {
         if (opening) announce("The source changed. Wait for the preview before using this action.");
         return [];
@@ -789,7 +786,7 @@ const nativeAddPoints = new WeakMap<InsertPoint, { source: string; stamp: Sessio
 function nativeElementAddPoint(choice: InsertChoice, fallback: InsertPoint | undefined, mode: "click" | "drop" | "gap" = "click"): InsertPoint | undefined {
   const markup = nativeChoiceMarkup(choice.tag, undefined, nativePrefix());
   if (!markup) return fallback;
-  if (versionView || !nativeSite) return;
+  if (versions.view || !nativeSite) return;
   const selected = appStore.selection.value;
   const path = selected?.path && Object.values(nativeSite.routes).includes(selected.path) ? selected.path : fallback?.path;
   const source = path && nativeEffectiveSource(path);
@@ -841,7 +838,7 @@ async function insertNativeComponent(point: InsertPoint, choice: InsertChoice) {
   const native = nativeChoiceMarkup(choice.tag, undefined, nativePrefix());
   // A destination planned against the page's bytes then (the Add panel's) holds only while they do.
   const captured = nativeAddPoints.get(point), moved = "The insertion source changed. Choose the destination again.";
-  if (captured && (!captured.stamp.holds() || versionView)) { errorMessage(new Error(moved)); return; }
+  if (captured && (!captured.stamp.holds() || versions.view)) { errorMessage(new Error(moved)); return; }
   if (!nativePreview || !nativeSite || !Object.values(nativeSite.routes).includes(path)) return;
   const selected = appStore.selection.value;
   const before = selected?.node ? { path: selected.path, node: [...selected.node] } : undefined;
@@ -862,7 +859,7 @@ async function insertNativeComponent(point: InsertPoint, choice: InsertChoice) {
       plan.creates = placeholderImageCreates(r, nativeChoiceMarkup(choice.tag, undefined, prefix)!, prefix);
     }
     return plan;
-  }, { since, anchor: path, guard: () => !versionView });
+  }, { since, anchor: path, guard: () => !versions.view });
   if (!outcome.ok || outcome.message) errorMessage(new Error(!outcome.ok && outcome.reason === "stale" ? moved : outcome.message));
 }
 
@@ -881,7 +878,7 @@ async function finishRailTyping(current: () => boolean) {
 // step (the editor's range step, or its commit through the draft receipt).
 const editorWorkspace = createEditorWorkspace({
   session: { ...workspaceSession, shown: shownScope },
-  versionView: () => Boolean(versionView),
+  versionView: () => Boolean(versions.view),
   route: () => nativePreview?.route(),
   editModeEntry: () => componentTools?.mode.entry(),
   agentActing: () => agentActingDepth > 0,
@@ -953,7 +950,7 @@ const blockMoves = createBlockMoves({
 const blockInsertPorts: BlockInsertPorts = {
   target: () => {
     const route = nativePreview?.route();
-    const path = route !== undefined && nativeSite && !versionView ? nativeSite.routes[route] : undefined;
+    const path = route !== undefined && nativeSite && !versions.view ? nativeSite.routes[route] : undefined;
     if (!path) return undefined;
     // Edit component mode builds in the template edited, a part of it selected.
     const template = componentTools?.mode.now();
@@ -1028,156 +1025,14 @@ function dragPageBlock(press: DragPress, pressed?: PressedBlock) {
 }
 const loadBlockInsert = lazyModule(async () => (await import("./controllers/block-insert-controller")).createBlockInsertController(blockInsertPorts));
 
-const historyController = createHistoryController({
-  capture: () => {
-    const scope = draftScope(), snapshot = appStore.snapshot.value;
-    if (!scope || !snapshot) return undefined;
-    const at = workspaceSession.begin(), path = appStore.openFile.value;
-    return {
-      key: JSON.stringify([at.load, scope.account, scope.repoId, snapshot.commit, scope.branch, path]),
-      repo: scope.repo, branch: scope.branch, path, empty: Boolean(snapshot.empty),
-      isCurrent: site => at.holds() && (site || appStore.openFile.value === path),
-      hasDraft: () => Boolean(path && draftStore().get(scope, path)),
-      viewing: () => { const view = versionView; return view && view.path === path && view.key === versionKey() ? view.commit.sha : undefined; },
-    };
-  },
-  panel: () => document.getElementById("changes") ?? undefined,
-  anchor: () => document.getElementById("history-button") ?? undefined,
-  loadHistory,
-  emptyMessage: () => node("p", "muted commit-history__message", "No commits yet. Publishing makes the first one."),
-  viewport: () => ({ width: innerWidth, height: innerHeight }),
-  onResize: callback => { window.addEventListener("resize", callback); return () => window.removeEventListener("resize", callback); },
-  openFile: (file, commit, head) => void openFileVersion(file, commit, head),
-  view: (commit, head, latest) => latest ? endVersionView() : void viewVersion(commit, head),
-  restored: async (path, result) => { endVersionView(false); await afterRestore(path, result); },
-  restoreSkipped: (path, result, hasDraft) => status(`${result.unchanged
-    ? "This file already matches that version; reload before saving."
-    : `Restored ${path} in a new commit; reload before saving.`}${hasDraft ? " Your draft was kept." : ""}`),
-  expired: () => errorMessage(new ApiError(401, "Your GitHub session expired. Connect again.")),
-  onError: errorMessage,
+const versions = createVersionView({
+  appStore, workspaceSession, guardedEdits, editorModule,
+  get nativePreview() { return nativePreview; },
+  currentLoad, setupScope, draftScope, draftStore, nativeEffectiveSource, updateNativePreviewSources, loadHistory, loadConfirmDialog,
+  api, postApi, status, errorMessage, refuse,
+  restoreFile: (path, at, options) => restoreFile(path, at, options),
+  loadSnapshot: path => loadSnapshot(path),
 });
-
-// A file from the site's history: it opens, showing its version from that
-// commit unless that is the branch's latest.
-async function openFileVersion(path: string, commit: HistoryCommit, head: string) {
-  const at = workspaceSession.begin();
-  if (appStore.openFile.value !== path) await restoreFile(path, at, { keepExplorer: false });
-  if (!at.holds() || appStore.openFile.value !== path) return;
-  if (commit.sha === head) endVersionView();
-  else await viewVersion(commit, head);
-}
-
-async function afterRestore(path: string, result: RestoreResult) {
-  historyController.destroy();
-  if (!result.unchanged) await loadSnapshot(path);
-  status(result.unchanged ? "This file already matches that version." : `Restored ${path} in a new commit. Other files are unchanged.`);
-}
-
-// An earlier version of the open file on show, chosen in History: the
-// preview renders it (nothing on it can be selected), the code pane shows
-// it beside the current one, and a bar over the preview offers Back to
-// latest and Restore. It ends there, on a restore, on another file or
-// repository, or once the file's current source changes.
-type VersionView = { key: string; path: string; commit: HistoryCommit; head: string; content: string; latest: string | undefined };
-let versionView: VersionView | undefined;
-let versionRequest = 0;
-let versionDialog: ReturnType<typeof createConfirmDialog> | undefined;
-const versionKey = () => `${currentLoad()}:${setupScope()}`;
-const versionLabel = (commit: HistoryCommit) => {
-  const date = new Date(commit.date);
-  return Number.isNaN(date.getTime())
-    ? commit.sha.slice(0, 7)
-    : date.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-};
-
-async function viewVersion(commit: HistoryCommit, head: string) {
-  const path = appStore.openFile.value;
-  if (!path || !appStore.repository.value) return;
-  const request = ++versionRequest;
-  const key = versionKey();
-  try {
-    const revision = await api<FileRevision>("file-at", { repo: appStore.repository.value.full_name, commit: commit.sha, path });
-    if (request !== versionRequest || key !== versionKey() || appStore.openFile.value !== path) return;
-    nativePreview?.setViewing(undefined);
-    versionView = { key, path, commit, head, content: revision.content, latest: nativeEffectiveSource(path) };
-    nativePreview?.setViewing(versionBar(versionView));
-    editorModule?.compareVersion(path, { content: revision.content, label: versionLabel(commit) });
-    updateNativePreviewSources();
-    historyController.mark();
-  } catch (error) {
-    if (request === versionRequest) status(error instanceof Error ? error.message : "That version could not be loaded. Try again.");
-  }
-}
-
-function endVersionView(refresh = true) {
-  versionRequest++;
-  const view = versionView;
-  if (!view) return;
-  versionView = undefined;
-  nativePreview?.setViewing(undefined);
-  editorModule?.compareVersion(view.path, undefined);
-  historyController.mark();
-  if (refresh) updateNativePreviewSources();
-}
-
-// The version on show ends once it no longer belongs to what is open.
-function checkVersionView() {
-  const view = versionView;
-  if (view && (view.key !== versionKey() || appStore.openFile.value !== view.path || nativeEffectiveSource(view.path) !== view.latest))
-    endVersionView(false);
-}
-
-function versionBar(view: VersionView) {
-  const bar = node("div", "version-bar");
-  bar.setAttribute("role", "region");
-  bar.setAttribute("aria-label", "Earlier version");
-  const text = node("p", "version-bar__text");
-  text.append(node("strong", "", `Viewing ${versionLabel(view.commit)}`), node("span", "version-bar__message", view.commit.message));
-  text.title = `${view.commit.message} (${view.commit.sha.slice(0, 7)})`;
-  bar.append(
-    text,
-    button("Back to latest", () => endVersionView(), "button secondary"),
-    button("Restore this version", () => void restoreVersion(view), "button primary"),
-  );
-  return bar;
-}
-
-async function restoreVersion(view: VersionView) {
-  const scope = draftScope();
-  if (!appStore.repository.value || !appStore.snapshot.value || versionView !== view) return;
-  if (scope && draftStore().get(scope, view.path)) {
-    refuse("Publish or discard this file’s draft before restoring. Other files’ drafts are kept.");
-    return;
-  }
-  const since = guardedEdits.stamp("repository");
-  const { createConfirmDialog } = await loadConfirmDialog();
-  if (!since.holds() || versionView !== view) return;
-  if (!versionDialog) {
-    versionDialog = createConfirmDialog("version-dialog");
-    document.body.append(versionDialog.root);
-  }
-  const confirmed = await versionDialog.ask({
-    title: "Restore this version?",
-    notes: [
-      `${view.path} on ${appStore.snapshot.value.branch} goes back to how it was on ${versionLabel(view.commit)} (${view.commit.message}).`,
-      "This creates a new commit. Other files stay unchanged.",
-    ],
-    action: "Restore version",
-  });
-  if (!confirmed || versionView !== view || !appStore.repository.value || !appStore.snapshot.value) return;
-  status("Restoring file…");
-  try {
-    const result = await postApi<RestoreResult>("restore", { repo: appStore.repository.value.full_name }, {
-      branch: appStore.snapshot.value.branch, path: view.path, target: view.commit.sha, expectedHead: view.head,
-    });
-    if (versionView !== view) return;
-    endVersionView(false);
-    await afterRestore(view.path, result);
-  } catch (error) {
-    if (versionView === view) status(error instanceof Error ? error.message : "Restore failed. Your files are unchanged.");
-  }
-}
-
 
 // Side by side with the page: its stylesheet, and after a click in the
 // preview, every rule that styles the selected element in the order the
@@ -1582,13 +1437,13 @@ const variantReads = new Set<string>();
 const nativeVariantFiles: VariantFiles = {
   site: () => {
     const site = nativeSite;
-    if (!site || !draftScope() || versionView) return undefined;
+    if (!site || !draftScope() || versions.view) return undefined;
     if (variantSite?.from !== site) variantSite = { from: site, site: { pages: Object.values(site.routes), components: site.components } };
     return variantSite.site;
   },
   read: (path) => {
     const scope = draftScope();
-    if (!nativeSite || !scope || versionView) return undefined;
+    if (!nativeSite || !scope || versions.view) return undefined;
     const source = nativeEffectiveSource(path, scope);
     if (source === undefined) {
       if (!variantWanted) queueMicrotask(readVariantFiles);
@@ -1601,7 +1456,7 @@ const nativeVariantFiles: VariantFiles = {
 function readVariantFiles() {
   const wanted = variantWanted, scope = draftScope(), repo = appStore.repository.value;
   variantWanted = undefined;
-  if (!wanted || !nativeSite || !scope || !repo || versionView) return;
+  if (!wanted || !nativeSite || !scope || !repo || versions.view) return;
   const at = workspaceSession.begin(), scopeKey = setupScope();
   const key = (path: string) => JSON.stringify([at.load, scopeKey, path]);
   const files = new Set(nativeFiles(scope));
@@ -1621,7 +1476,7 @@ function readVariantFiles() {
 /** A fresh source appStore.snapshot.value for CSS code intelligence. */
 function nativeCssWorkspace(): CssWorkspace | undefined {
   const scope = draftScope(), requester = appStore.openFile.value;
-  if (!nativeSite || !scope || !requester || versionView || !editorModule?.isMounted(requester)) return;
+  if (!nativeSite || !scope || !requester || versions.view || !editorModule?.isMounted(requester)) return;
   const at = workspaceSession.begin(), scopeKey = setupScope(), sources = nativeSources();
   const revision = JSON.stringify([at.load, scopeKey, requester, nativeSite.routes, nativeSite.components, appStore.selection.value?.path, appStore.selection.value?.node, sources]);
   const orderedPaths = [...new Set([...nativePageStyles(), ...Object.keys(sources).sort()])];
@@ -1631,7 +1486,7 @@ function nativeCssWorkspace(): CssWorkspace | undefined {
       if (expectedRevision !== revision || !/\.css$/i.test(path) || sources[path] === undefined || start < 0 || end < start || end > sources[path].length) return false;
       const requesterProof = editorModule!.captureFileModelState(scope, requester);
       const targetProof = editorModule!.captureFileModelState(scope, path);
-      const current = () => at.holds() && appStore.openFile.value === requester && !versionView &&
+      const current = () => at.holds() && appStore.openFile.value === requester && !versions.view &&
         requesterProof.isCurrent() && nativeCssWorkspace()?.revision === revision;
       if (!current() || !targetProof.isCurrent()) return false;
       if (path !== requester && !(await openSecondary(path, () => current() && targetProof.isCurrent()))) return false;
@@ -1703,7 +1558,7 @@ const pageStructureController = createPageStructureController({
   get errorMessage() { return errorMessage; },
   get nearestLink() { return nearestLink; },
   get nativeRouteInfo() { return nativeRouteInfo; },
-  get versionView() { return versionView; },
+  get versionView() { return versions.view; },
   get nativeEffectiveSource() { return nativeEffectiveSource; },
   get nativeNamedDescendant() { return nativeNamedDescendant; },
   chooseMediaForImage: (target, files) => mediaController.chooseImage(target, files),
@@ -2032,9 +1887,9 @@ function withSiteConfig(sources: Record<string, string>) {
   return sources;
 }
 function nativePreviewSources() {
-  checkVersionView();
+  versions.check();
   const sources = withSiteConfig(nativeSources());
-  if (versionView) sources[versionView.path] = versionView.content;
+  if (versions.view) sources[versions.view.path] = versions.view.content;
   return sources;
 }
 
@@ -2519,7 +2374,7 @@ const mediaPorts: import("./controllers/media-controller").MediaControllerPorts 
   openPage: openAfter,
   load: loadMedia,
   openFile: () => appStore.openFile.value,
-  viewingVersion: () => Boolean(versionView),
+  viewingVersion: () => Boolean(versions.view),
   restoreFile: (path, epoch) => restoreFile(path, stampOf(epoch), { linkDefaultStyle: false }),
   change: (...args) => pageStructureController.editOpenPage(...args),
   galleryHost: () => {
@@ -3035,7 +2890,7 @@ function updatePreview() {
 }
 
 function setCurrentPage(path?: string) {
-  if (versionView && versionView.path !== path) endVersionView(false);
+  if (versions.view && versions.view.path !== path) versions.end(false);
   batch(() => {
     appStore.openFile.value = path;
     closeEditor();
@@ -3119,7 +2974,7 @@ function nativeUnreadableShown(site: NativeSite, pages: string[]) {
 // say why it cannot.
 function nativePreviewUnreadable() {
   const scope = draftScope();
-  return new Map([...nativeUnreadableFiles].filter(([path]) => path !== versionView?.path && nativeEffectiveSource(path, scope) === undefined));
+  return new Map([...nativeUnreadableFiles].filter(([path]) => path !== versions.view?.path && nativeEffectiveSource(path, scope) === undefined));
 }
 function showNativeWarnings(projectWarnings = nativeProjectWarnings) {
   nativeProjectWarnings = projectWarnings;
@@ -3153,7 +3008,7 @@ function renderLogin(
   agentController.destroy();
   setupController.dispose();
   setupEntry.remove();
-  historyController.destroy();
+  versions.history.destroy();
   activeFileContext = null;
   explorerDropdown?.destroy();
   explorerDropdown = undefined;
@@ -3789,7 +3644,7 @@ async function createFromRequest(request: CreateRequest): Promise<string | undef
   const failure = draftStore().error;
   if (failure) return failure;
   editorModule?.refreshDrafts();
-  historyController.refresh();
+  versions.history.refresh();
   if (nativeSite) refreshNativeRoutes();
   updateAgentContext();
   if (resyncNativeSite()) return undefined;
@@ -4019,7 +3874,7 @@ function resyncNativeSite(): boolean {
 function afterFileChanges() {
   forgetDraftedAssets();
   editorModule?.refreshDrafts();
-  historyController.refresh();
+  versions.history.refresh();
   if (nativeSite) {
     // Component stylesheets are found again where their components now are.
     nativeComponentStyles.clear();
@@ -4299,7 +4154,7 @@ async function mountSource(
       if (value && appStore.openFile.value === value.path) syncLinkedStyles(value.path, value.content);
       updateAgentContext();
       filesTreeController.refresh();
-      historyController.refresh();
+      versions.history.refresh();
       if (nativeModeActive()) updateNativePreviewSources();
       // An open template's banner counts its instances again.
       componentTools?.refresh();
@@ -4308,7 +4163,7 @@ async function mountSource(
       // A heading or title typed in the open file renames it in the top bar.
       updateCurrentPageLabel();
     },
-    onHistory: () => void historyController.open().catch(errorMessage),
+    onHistory: () => void versions.history.open().catch(errorMessage),
     onDiscardAll: () => void savePublish.discardAll(),
     publishHead: () => savePublish.headFor(scope),
     onRefused: () => void savePublish.checkHead(true),
@@ -4500,7 +4355,7 @@ function makeAgentSiteActions(edits: GuardedEdits = guardedEdits, atomic = false
       const isCurrent = () => {
         const drafts = store.list(scope);
         return at.holds() && appStore.repository.value === repo && appStore.snapshot.value === snap &&
-          !nativeSite && !nativeEngaged && !hasHome() && !versionView && JSON.stringify(snap.tree ?? snap.entries) === graph &&
+          !nativeSite && !nativeEngaged && !hasHome() && !versions.view && JSON.stringify(snap.tree ?? snap.entries) === graph &&
           drafts.length === before.size && drafts.every(draft => before.get(draft.path) === draft);
       };
       // Before a home page exists there is no mounted editor to anchor operation
@@ -4601,7 +4456,7 @@ function makeAgentSiteActions(edits: GuardedEdits = guardedEdits, atomic = false
 }; }
 async function applyAgentSiteCommand(command: AgentCommand) {
   const scope = draftScope(), at = workspaceSession.begin(), revision = appStore.snapshot.value?.commit;
-  const current = () => at.holds() && revision === appStore.snapshot.value?.commit && !versionView;
+  const current = () => at.holds() && revision === appStore.snapshot.value?.commit && !versions.view;
   const [{ applySiteCommand, prepareAgentText, atomicAgentCommand, agentStructuralActions }, { createPagesController }, { createLazyFileOperationsController }] = await Promise.all([loadAgentSite(), loadPagesActions(), loadFileOps()]);
   if (!current() || !appStore.snapshot.value || command.branch !== appStore.snapshot.value.branch ||
     command.repoId !== undefined && command.repoId !== scope?.repoId) throw new Error("The editor changed repository or branch.");
