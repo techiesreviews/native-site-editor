@@ -2,7 +2,7 @@
 title: "Work finishes where it started"
 type: task (AFK)
 status: open
-assignee:
+assignee: lead-23 (this session)
 builder: claude
 blocked_by: [22-workspace-session-callers]
 ---

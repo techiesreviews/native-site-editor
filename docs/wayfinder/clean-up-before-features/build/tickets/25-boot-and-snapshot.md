@@ -2,7 +2,7 @@
 title: "Boot and snapshot leave main.ts; boot-memory limits 2 and 3"
 type: task (AFK)
 status: open
-assignee:
+assignee: lead-25 (this session)
 builder: claude
 blocked_by: [22-workspace-session-callers]
 ---
