@@ -2,7 +2,7 @@
 title: "Version view, restore and history wiring leave main.ts"
 type: task (AFK)
 status: open
-assignee:
+assignee: lead-80 (this session)
 builder: sol
 blocked_by: [22-workspace-session-callers]
 ---
