@@ -54,7 +54,7 @@ test("work on one workspace adds up in one note, the latest workspace first", ()
   assert.equal(list.notes().length, 2);
   const [first, second] = list.notes();
   assert.deepEqual(first.scope, main);
-  assert.deepEqual(first.done, { saved: 1, added: 3, agent: 0 });
+  assert.deepEqual(first.done, { saved: 1, added: 3, agent: 0, media: 0 });
   assert.equal(first.commit, commit);
   assert.equal(noteWords(first), "Saved, 3 files added");
   assert.equal(noteWords(second), "Agent changes waiting");
@@ -69,6 +69,17 @@ test("words for one and many", () => {
   list.add(feature, "saved");
   assert.deepEqual(list.notes().map(noteWords), ["Saved 2 times", "1 file added"]);
   list.add(main, "added", { count: 0 });
+  assert.equal(noteCount(list.notes()), 3);
+});
+
+// Ticket 27: a picture placed, framed or trimmed on a workspace not shown is counted as a Media change.
+test("Media changes finished elsewhere are counted and named", () => {
+  const { list } = notes();
+  list.add(main, "media");
+  assert.deepEqual(list.notes().map(noteWords), ["A Media change waiting"]);
+  list.add(main, "media");
+  list.add(main, "agent", { id: "place-1" });
+  assert.deepEqual(list.notes().map(noteWords), ["Agent changes waiting, 2 Media changes waiting"]);
   assert.equal(noteCount(list.notes()), 3);
 });
 
@@ -202,7 +213,7 @@ test("an agent's write is noted only when it changed the draft there", async () 
   // Finished on show (nothing elsewhere), or with no scope read.
   await list.agent(main, { id: "d", path: "index.html" }, draft, async () => { drafts.set("index.html", { updatedAt: 3 }); return undefined; })();
   await list.agent(undefined, { id: "e", path: "index.html" }, draft, async () => { drafts.set("index.html", { updatedAt: 4 }); return outcome; })();
-  assert.deepEqual(list.notes().map((note) => note.done), [{ saved: 0, added: 0, agent: 1 }]);
+  assert.deepEqual(list.notes().map((note) => note.done), [{ saved: 0, added: 0, agent: 1, media: 0 }]);
 });
 
 test("work that finished on the workspace open now leaves no note", () => {

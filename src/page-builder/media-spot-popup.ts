@@ -196,7 +196,7 @@ export async function openMediaSpotPopup(options: MediaSpotPopupOptions) {
   title.addEventListener("change", () => run(async () => {
     const at = now(), edit = mediaSpotTitleEdit(at.source, at.range, kind, title.value);
     if (!edit) return;
-    if (!ports.change(target.path, at.source, [edit], target.node, "Title changed")) throw new Error("The title could not be changed. Select it again.");
+    if (!(await ports.change(target.path, at.source, [edit], target.node, "Title changed"))) throw new Error("The title could not be changed. Select it again.");
     return "Title changed.";
   }));
   title.addEventListener("keydown", event => { if (event.key === "Enter") { event.preventDefault(); title.blur(); } });

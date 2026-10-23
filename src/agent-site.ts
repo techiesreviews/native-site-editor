@@ -14,6 +14,7 @@ import { nativePageRoute } from "../shared/native-routes";
 import { isNewDraft, newDraftPaths } from "../shared/site-overlay";
 import { NATIVE_CONFIG_PATH, minimalTextEdit, nativeComponentCssPath, nativePageStylesheets, nativeSiteSettings, type NativeSite } from "../shared/native-project";
 import { agentMediaArgsProblem } from "../shared/agent-media-args";
+import { mediaChanges, type MediaTool } from "../shared/agent-media";
 import { isMediaUploadWrite, OUTSIDE_MEDIA_REFUSED, AGENT_TEXT_LIMIT, INSPECTION_LIMIT, isPreviewablePicture, picturePreviewRefusal, REQUEST_HTML_LIMIT, outlineId, parseOutlineId, textBytes, textHash, type AgentCommand, type AgentElement } from "../shared/agent";
 import type { AgentOutlineSection, AgentPageOutline, AgentSiteContext, EditorContext } from "../shared/types";
 import { draftKey, type DraftScope, type DraftStore, type SavedDraft } from "./drafts";
@@ -1040,6 +1041,11 @@ export async function prepareAgentText(command: AgentCommand, scope: DraftScope,
 
 /** A Media change that holds the workspace it arrived in (ticket 27): it runs there, in its background page, whatever is shown. */
 export const pinnedMedia = (command: AgentCommand) => mediaCommandPins.has(command);
+/** The workspace a pinned Media change wrote in, while another is shown (its finished-work note, ticket 24); none for a read. */
+export function pinnedMediaAway(command: AgentCommand) {
+  const pin = mediaCommandPins.get(command)?.pin;
+  return pin && !pin.here() && mediaChanges(command.operation as MediaTool, command.args ?? {}) ? pin.scope : undefined;
+}
 
 /**
  * The site actions a pinned Media change runs with (ticket 27): while another workspace is shown its

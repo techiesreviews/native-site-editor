@@ -75,14 +75,15 @@ export interface MediaControllerPorts {
   uploadedBlob(scope: DraftScope, sha: string): Promise<Blob | undefined>;
   readBlob(repo: string, sha: string, path: string): Promise<Blob>;
   /** Resolves to where the step landed: `undoOn`, the page whose history took its Undo step. */
-  applyBatch(scope: DraftScope, stamp: Stamp, batch: MediaWorkspaceBatch, pin?: MediaPin): Promise<{ undoOn?: string } | void>;
+  /** `opened`: the page the work began on, whose history may take its Undo step (default: the page open now). */
+  applyBatch(scope: DraftScope, stamp: Stamp, batch: MediaWorkspaceBatch, pin?: MediaPin, opened?: string): Promise<{ undoOn?: string } | void>;
   openPage(path: string): Promise<void>;
   load(): Promise<MediaModule>;
   openFile(): string | undefined;
   viewingVersion(): boolean;
   restoreFile(path: string, generation: number): Promise<unknown>;
   /** One page edit; `node` is selected after it, or undefined keeps the selection the user moved to meanwhile. */
-  change(path: string, source: string, edits: NativeTextEdit[], node: number[] | undefined, message: string): boolean;
+  change(path: string, source: string, edits: NativeTextEdit[], node: number[] | undefined, message: string): boolean | Promise<boolean>;
   /** DOM parser seam for source-only controller tests. Production uses the existing locator. */
   locateElement?: (source: string, node: number[]) => { tag: { name: string; start: number; end: number } } | undefined;
   galleryHost(): HTMLElement;

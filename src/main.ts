@@ -1853,14 +1853,18 @@ const mediaPorts: import("./controllers/media-controller").MediaControllerPorts 
   measureImage: (path, node, image, slot, style) => nativePreview && runtime.site?.routes[nativePreview.shownRoute() ?? ""] === path
     ? nativePreview.measureImage({ path, node, slot, style, ...(image.width && image.height ? { image: { width: image.width, height: image.height } } : {}) }) : Promise.resolve(undefined),
   shownScope: () => draftScope(),
+  finishedAway: (scope) => finishedWork.add(scope, "media"),
   // Work whose workspace is not shown measures in a background page of its site and page (ticket 27).
   measureAway: async (pin, path, node, image, slot, style) => {
     const site = pin.site, module = await import("./background-page");
+    if (!site) return undefined;
     backgroundPages ??= module.createBackgroundPages();
-    return site && backgroundPages.use(module.backgroundKey(pin.scope, path), () => module.openBackgroundFrame({ site, page: path, files: () => new Set(pin.files()),
-      text: async (file) => pin.source(file) ?? await pin.find(file).then((entry) => entry && readFile(pin.repo, entry.sha)),
-      shown: (source, isFile) => nativeShownFiles(site, [path], source, isFile, nativeSitePrefix(pin.source(NATIVE_CONFIG_PATH))) }, (host) => createNativePreview(host)),
-    (frame) => frame.measure({ path, node, slot, style, ...(image.width && image.height ? { image: { width: image.width, height: image.height } } : {}) }));
+    // This work's own texts: a page shared with other work is drawn from them as it measures.
+    const own = { site, page: path, files: () => new Set(pin.files()),
+      text: async (file: string) => pin.source(file) ?? await pin.find(file).then((entry) => entry && readFile(pin.repo, entry.sha)),
+      shown: (source: (file: string) => string | undefined, isFile: (file: string) => boolean) => nativeShownFiles(site, [path], source, isFile, nativeSitePrefix(pin.source(NATIVE_CONFIG_PATH))) };
+    return backgroundPages.use(module.backgroundKey(pin.scope, path), () => module.openBackgroundFrame(own, (host) => createNativePreview(host)),
+      (frame) => frame.measure({ path, node, slot, style, ...(image.width && image.height ? { image: { width: image.width, height: image.height } } : {}) }, own));
   },
   origins: mediaOrigins,
   usage: {
@@ -1956,8 +1960,8 @@ function mediaIdentity() { return `${currentLoad()}:${setupScope()}`; }
 
 // Undo goes to the page open as the step commits; a pinned batch finishes where it started (src/media-batch.ts).
 const loadMediaBatch = lazyModule(() => import("./media-batch"));
-async function applyMediaBatch(scope: DraftScope, stamp: Stamp, batch: MediaWorkspaceBatch, pin?: MediaPin) {
-  const opened = appStore.openFile.value, module = await loadMediaBatch();
+async function applyMediaBatch(scope: DraftScope, stamp: Stamp, batch: MediaWorkspaceBatch, pin?: MediaPin, asked?: string) {
+  const opened = asked ?? appStore.openFile.value, module = await loadMediaBatch();
   return module.applyMediaBatch({
     appStore, editor: editorModule, mediaHistoryHome, site: () => runtime.site, load: loadMediaWorkspace, stamp: () => guardedEdits.stamp("repository"),
     listRepositoryFiles, nativeFiles: scope => runtime.files(scope), draftStore, bytes: uploadBytes, mediaTextSource: (path, scope) => runtime.textSource(path, scope), entryAt, findEntry, announce,
@@ -3586,9 +3590,14 @@ function makeAgentSiteActions(edits: GuardedEdits = guardedEdits, atomic = false
   legacy: applyAgentCommand,
 }; }
 async function applyAgentSiteCommand(command: AgentCommand) {
-  const [{ applySiteCommand, prepareAgentText, atomicAgentCommand, agentStructuralActions, finishAgentTextElsewhere, editorOrElsewhere, pinnedMedia, pinnedMediaActions }, { createPagesController }, { createLazyFileOperationsController }, { agentCommandFiles }] = await Promise.all([loadAgentSite(), loadPagesActions(), loadFileOps(), import("./agent-tools")]);
+  const [{ applySiteCommand, prepareAgentText, atomicAgentCommand, agentStructuralActions, finishAgentTextElsewhere, editorOrElsewhere, pinnedMedia, pinnedMediaActions, pinnedMediaAway }, { createPagesController }, { createLazyFileOperationsController }, { agentCommandFiles }] = await Promise.all([loadAgentSite(), loadPagesActions(), loadFileOps(), import("./agent-tools")]);
   // Ticket 27: a Media change runs in its own workspace's background page, whatever is shown.
-  if (pinnedMedia(command)) return agentActing(() => applySiteCommand(pinnedMediaActions(agentSiteActions, command), command));
+  // Finished while another workspace is shown, its note waits on that one (ticket 24), as an agent's text write's does.
+  if (pinnedMedia(command)) {
+    const done = await agentActing(() => applySiteCommand(pinnedMediaActions(agentSiteActions, command), command)), away = pinnedMediaAway(command);
+    if (away) finishedWork.add(away, "agent", { id: command.id });
+    return done;
+  }
   // Ticket 23: an edit read from a site or branch no longer shown finishes there, on its files. On show the editor writes it, holding the workspace
   // from the moment that is known (its stamp below), proved by the commit the command was read on and the bytes its write reads (expectedHash;
   // the guarded edit's own reads); switched away before it was kept, it finishes where it was read after all (editorOrElsewhere), noted there (ticket 24).

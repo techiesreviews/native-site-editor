@@ -4,9 +4,13 @@ import { openEditor, openImagePicker, pickPicture, switchSiteMidUpload } from ".
 import { storedDrafts } from "./drafts";
 
 // Invisible multiplayer (ticket 27): work started on main keeps going there after Lex opens
-// feature, as a second, invisible user would, and lands on main as unsaved changes; nothing shows
-// or lands on feature. Each case holds the work at a request with `page.route`, switches, and
-// lets it go.
+// feature (or another site, or another page of main), as a second, invisible user would, and lands
+// on its own page as an unsaved change; nothing shows or lands on what is shown, and the repository
+// menu counts it (ticket 24). Each cell holds the work at a request with `page.route`, switches,
+// and lets it go: an agent's Media change, the picker's Use, the image popup's trim. A pinned
+// batch's attempt and a Media pane edit make no request that can be held: their cells are unit
+// tests (tests/media-batch.test.ts, tests/media-workspace.test.ts).
+// Default fixture group: native-starter (#repo=501), native-cards (#repo=540) as the other site.
 const pageErrors: string[] = [];
 
 test.beforeEach(async ({ page, baseURL }) => {
@@ -55,6 +59,8 @@ async function watchBackground(page: Page) {
     measured: () => page.evaluate(() => Number(document.body.dataset.backgroundMeasured)) };
 }
 const preview = (page: Page) => page.frameLocator(".native-preview-frame");
+/** The repository menu's count of work finished on a workspace not shown (src/finished-elsewhere.ts). */
+const finishedCount = (page: Page) => page.locator(".repository-menu__trigger .repository-menu__finished");
 /** index.html as the editor shows it now. */
 const shownSource = async (page: Page) => {
   await expect.poll(() => page.evaluate(async () => (await import("/src/components/code-editor.ts")).isMounted("index.html")), { timeout: 20_000 }).toBe(true);
@@ -97,6 +103,7 @@ for (const to of ["branch", "site"] as const) {
     expect(await draftsOn(page, "feature")).toEqual([]);
     expect(await draftsOn(page, "main", 540)).toEqual([]);
     expect(await shownSource(page)).not.toContain("studio-desk");
+    await expect(finishedCount(page)).toHaveText("1");
     // The picture was measured in a background page of main's index.html, which closed once done.
     expect(await background.opened()).toBeGreaterThan(0);
     await expect.poll(background.open).toBe(0);
@@ -131,6 +138,7 @@ for (const to of ["branch", "site"] as const) {
     expect(await draftsOn(page, "feature")).toEqual([]);
     expect(await draftsOn(page, "main", 540)).toEqual([]);
     expect(await shownSource(page)).not.toContain("studio-desk");
+    await expect(finishedCount(page)).toHaveText("1");
     expect(await background.opened()).toBeGreaterThan(0);
     expect(await background.measured(), "the hidden frame measured the picture").toBeGreaterThan(0);
     await expect.poll(background.open).toBe(0);
@@ -205,7 +213,31 @@ test("the image popup's trim, held across a branch switch as it closes, lands on
   await expect.poll(async () => (await draftsOn(page, "main")).map(draft => draft.path).sort(), { timeout: 30_000 }).toContain("media/images/quarters-crop.webp");
   expect((await draftsOn(page, "main")).find(draft => draft.path === "index.html")?.content).toMatch(/src="\/media\/images\/quarters-crop\.webp"/);
   await expect(page.locator("#status")).toContainText("On main: Picture trimmed");
+  await expect(finishedCount(page)).toHaveText("1");
   expect(await draftsOn(page, "feature")).toEqual([]);
   expect(await shownSource(page)).not.toContain("quarters");
+});
+
+// Another page of main opened while the Use runs: the picture lands on the page it was chosen for,
+// as an unsaved change there, and Lex stays on the page he opened.
+test("a picture placed with the picker's Use, held while another page of main opens, lands on its own page", async ({ page, baseURL }) => {
+  await openEditor(page, baseURL);
+  await expect(preview(page).locator(".hero img")).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator("#content [role='textbox']").first()).toBeAttached({ timeout: 30_000 });
+  await openImagePicker(page, ".hero img");
+  const picker = page.getByRole("dialog", { name: "Choose image", exact: true });
+  await picker.getByRole("button", { name: "Choose images/studio-desk.svg", exact: true }).click();
+  const placing = await hold(page, "/src/page-builder/media-place.ts");
+  await picker.getByRole("button", { name: "Use image", exact: true }).click();
+  await placing.reached;
+  await page.evaluate(() => { location.hash = "repo=501&branch=main&file=about/index.html"; });
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "about/index.html", { timeout: 30_000 });
+  placing.release();
+  await expect.poll(async () => (await draftsOn(page, "main")).filter(draft => draft.path === "index.html").map(draft => draft.content.includes('src="/images/studio-desk.svg"')), { timeout: 20_000 }).toEqual([true]);
+  await expect(page.locator("#status")).toHaveText(/^On index.html: Image replaced/);
+  // Lex stays where he went; that page has nothing of it, and no note is needed for a page of the site shown.
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "about/index.html");
+  expect((await draftsOn(page, "main")).map(draft => draft.path)).toEqual(["index.html"]);
+  await expect(finishedCount(page)).toBeHidden();
 });
 

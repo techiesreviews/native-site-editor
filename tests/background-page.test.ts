@@ -4,7 +4,8 @@ import { BACKGROUND_PAGE_LIMIT, backgroundKey, createBackgroundPages, openBackgr
 import type { NativePreview } from "../src/components/native-preview";
 import type { NativeSite } from "../shared/native-project";
 import type { MediaControllerPorts, MediaPin } from "../src/controllers/media-controller";
-import type { DraftScope, SavedDraft } from "../src/drafts";
+import type { DraftScope } from "../src/drafts";
+import type { MediaWorkspaceBatch } from "../src/page-builder/media-workspace";
 import { deferred } from "./fakes/memory-workspace";
 
 // Ticket 27: background pages of a site, branch and page not shown. One per page, shared by its work,
@@ -88,65 +89,84 @@ test("a background page belongs to one account (any capitals), repository, branc
   assert.notEqual(backgroundKey(scope, "index.html"), backgroundKey(scope, "about/index.html"));
 });
 
-// The ports a placement uses, held to the workspace it began on: the editor's while it is shown, its
-// background page's once another is shown.
-function pinned() {
-  let here = true, shown: DraftScope | undefined;
+// The ports a placement uses, held to the workspace and page it began on: the editor's while that page
+// is shown, its background page's once another workspace (or another page of its own) is shown.
+function pinned(options: { beganOnPage?: boolean } = {}) {
+  let here = true, shown: DraftScope | undefined, open = options.beganOnPage ? "index.html" : "about/index.html";
   const scope: DraftScope = { account: "lex", repoId: 1, repo: "lex/site", branch: "main" };
   shown = scope;
-  const drafts = new Map<string, SavedDraft>();
-  const store = { get: (_scope: DraftScope, path: string) => drafts.get(path), save: (draft: SavedDraft) => { drafts.set(draft.path, draft); return true; }, remove: () => true, list: () => [...drafts.values()] };
+  const store = { get: () => undefined, save: () => true, remove: () => true, list: () => [] };
   const pin = { repo: "lex/site", scope, identity: "1", drafts: store, here: () => here,
     entry: () => ({ path: "index.html", sha: "s1", mode: "100644", type: "blob" as const }), find: async () => undefined,
-    source: (path: string) => drafts.get(path)?.content ?? (path === "index.html" ? "<img src=a.png>" : undefined),
+    source: (path: string) => path === "index.html" ? "<img src=a.png>" : undefined,
     files: () => ["index.html"], list: async () => ["index.html"], remember: () => {} } satisfies MediaPin;
-  const said: string[] = [], changes: string[] = [], away: string[] = [], measured: string[] = [];
+  const said: string[] = [], changes: string[] = [], away: string[] = [], measured: string[] = [], restored: string[] = [];
+  const batches: { edits: Map<string, string>; sources: Map<string, string | undefined>; label: string; pinned: boolean; opened?: string }[] = [];
   // eslint-disable-next-line no-restricted-syntax -- the placement reads only these members.
   const live = {
-    source: () => "<p>shown</p>", openFile: () => "about/index.html", viewingVersion: () => false, stamp: () => ({ holds: () => false, changed: () => "scope" as const }),
+    source: () => "<p>shown</p>", openFile: () => open, viewingVersion: () => false, stamp: () => ({ holds: () => false, changed: () => "scope" as const }),
     change: (path: string) => { changes.push(path); return true; }, announce: (message: string) => { said.push(message); },
+    restoreFile: async (path: string) => { restored.push(path); },
+    applyBatch: async (_scope: DraftScope, _stamp: unknown, batch: MediaWorkspaceBatch, held?: MediaPin, opened?: string) => {
+      batches.push({ edits: batch.edits, sources: batch.expectedSources, label: batch.label, pinned: held === pin, opened });
+    },
     measureImage: async () => { measured.push("shown"); return undefined; },
     measureAway: async () => { measured.push("away"); return undefined; }, finishedAway: (to: DraftScope) => { away.push(to.branch); },
     shownScope: () => shown,
   } as unknown as MediaControllerPorts;
-  return { ports: pinnedPorts(live, pin, "index.html"), drafts, said, changes, away, measured,
+  return { ports: pinnedPorts(live, pin, "index.html"), said, changes, away, measured, restored, batches,
     leave: () => { here = false; shown = { ...scope, branch: "feature" }; },
-    leaveSite: () => { here = false; shown = { account: "lex", repoId: 2, repo: "lex/other", branch: "main" }; } };
+    leaveSite: () => { here = false; shown = { account: "lex", repoId: 2, repo: "lex/other", branch: "main" }; },
+    openOther: () => { open = "about/index.html"; } };
 }
 
 test("held ports read and write through the editor while their workspace is shown", async () => {
   const p = pinned();
   assert.equal(p.ports.source("index.html"), "<img src=a.png>", "the pin's reads, the editor's on show");
-  assert.equal(p.ports.change("index.html", "<img src=a.png>", [{ start: 9, end: 14, text: "b.png" }], [0], "Image replaced"), true);
+  assert.equal(await p.ports.change("index.html", "<img src=a.png>", [{ start: 9, end: 14, text: "b.png" }], [0], "Image replaced"), true);
   assert.deepEqual(p.changes, ["index.html"]);
   await p.ports.measureImage!("index.html", [0], {});
   assert.deepEqual(p.measured, ["shown"]);
   assert.deepEqual(p.said, []);
 });
 
-test("held ports write a change to their own workspace's drafts once another is shown, and say where", async () => {
+test("held ports write a change as one pinned batch for their own page once another workspace is shown, and say where", async () => {
   const p = pinned();
   p.leave();
   assert.equal(p.ports.stamp().holds(), true, "a switch is no reason to stop");
   assert.equal(p.ports.openFile(), "index.html", "its own page, not the one shown");
   assert.equal(p.ports.viewingVersion(), false);
-  assert.equal(p.ports.change("index.html", "<img src=a.png>", [{ start: 9, end: 14, text: "b.png" }], [0], "Image replaced"), true);
+  assert.equal(await p.ports.change("index.html", "<img src=a.png>", [{ start: 9, end: 14, text: "b.png" }], [0], "Image replaced"), true);
   assert.deepEqual(p.changes, [], "nothing on the page shown");
-  assert.deepEqual(p.drafts.get("index.html"), { ...p.drafts.get("index.html")!, path: "index.html", branch: "main", baseSha: "s1", original: "<img src=a.png>", content: "<img src=b.png>" });
+  assert.deepEqual(p.batches.map(batch => [batch.label, batch.pinned, [...batch.edits], [...batch.sources]]),
+    [["Image replaced", true, [["index.html", "<img src=b.png>"]], [["index.html", "<img src=a.png>"]]]], "one transaction, proved by the page as it was read");
   assert.deepEqual(p.said, ["On main: Image replaced"]);
-  assert.deepEqual(p.away, ["main"]);
+  assert.deepEqual(p.away, ["main"], "a note on the workspace it landed in");
   await p.ports.measureImage!("index.html", [0], {});
   assert.deepEqual(p.measured, ["away"], "measured in its background page");
-  // Its page changed there since it was read: refused, nothing written.
-  assert.equal(p.ports.change("index.html", "<img src=a.png>", [{ start: 0, end: 0, text: "x" }], [0], "Image replaced"), false);
-  assert.equal(p.drafts.get("index.html")!.content, "<img src=b.png>");
 });
 
-test("work that landed on another site says which repository and branch", () => {
+test("work that landed on another site says which repository and branch", async () => {
   const p = pinned();
   p.leaveSite();
-  assert.equal(p.ports.change("index.html", "<img src=a.png>", [{ start: 9, end: 14, text: "b.png" }], [0], "Image replaced"), true);
+  assert.equal(await p.ports.change("index.html", "<img src=a.png>", [{ start: 9, end: 14, text: "b.png" }], [0], "Image replaced"), true);
   assert.deepEqual(p.said, ["On lex/site (main): Image replaced"], "another site's main is shown: its own is named");
+});
+
+// Another page of the same site opened while work begun on its page runs: Lex is not pulled back.
+test("work begun on its page, with another page of the site opened, writes that page without opening it", async () => {
+  const p = pinned({ beganOnPage: true });
+  p.openOther();
+  assert.equal(p.ports.openFile(), "index.html", "its own page");
+  await p.ports.restoreFile("index.html", 1);
+  assert.deepEqual(p.restored, [], "the page shown stays");
+  await p.ports.measureImage!("index.html", [0], {});
+  assert.deepEqual(p.measured, ["away"], "the page shown is another: measured in a background page");
+  assert.equal(await p.ports.change("index.html", "<img src=a.png>", [{ start: 9, end: 14, text: "b.png" }], [0], "Image replaced"), true);
+  assert.deepEqual(p.changes, []);
+  assert.deepEqual(p.batches.map(batch => [batch.pinned, batch.opened]), [[true, "index.html"]], "its Undo step belongs to its own page");
+  assert.deepEqual(p.said, ["On index.html: Image replaced"]);
+  assert.deepEqual(p.away, [], "a page of the site shown needs no note");
 });
 
 test("a background page that never opens refuses its work at the deadline, frees its room, and is closed if it opens later", async () => {
@@ -240,5 +260,15 @@ test("work asking for room right as a page closes waits behind the work already 
   const late = r.use("late", () => { order.push("late"); });
   await Promise.all([waiter, late]);
   assert.deepEqual(order, ["waiter", "late"]);
+});
+
+test("a background page shared by work holding another pin of it is drawn from the measuring work's own texts", async () => {
+  const f = frameFixture([() => ({ width: 1 })]);
+  const frame = await f.open();
+  const other = { site: { routes: { "/about/": "about/index.html" }, components: {} } satisfies NativeSite, page: "about/index.html", files: () => new Set(["about/index.html"]),
+    text: async () => "<p>the other pin's page</p>", shown: () => ({ files: ["about/index.html"], componentCss: new Map<string, string>() }) };
+  await frame.measure({ path: "about/index.html", node: [0] }, other);
+  assert.equal(f.calls.at(-1), "update undefined about/index.html", "drawn again from the second work's texts");
+  assert.deepEqual(f.styles.at(-1), {});
 });
 
