@@ -86,6 +86,7 @@ export function planPageMove(input: PageMoveInput): Checked<PageMovePlan> {
   if (nativePageRoute(target) !== to) return { ok: false, error: `No page file can give the URL ${to}.` };
   const parent = parentRoute(to);
   if (parent !== "/" && !isFolderRoute(parent)) return { ok: false, error: `${parent} is a single-file page, so nothing can go under it.` };
+
   const moves = new Map<string, string>();
   const folder = isFolderRoute(from) ? routeFolder(from) : undefined;
   const inside = folder === undefined ? [] : files.filter((path) => path.startsWith(folder) && path !== file);

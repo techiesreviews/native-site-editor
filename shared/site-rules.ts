@@ -6,11 +6,12 @@ import { RESERVED_CUSTOM_ELEMENT_NAMES } from "./custom-element-names";
 // only an address someone makes or changes meets the rule. No DOM, no I/O.
 
 const PAGE_ADDRESS = /^[a-z0-9][a-z0-9-]{0,79}$/;
+/** The one refusal of a new page address, also for a typed URL part no page can have. */
+export const PAGE_ADDRESS_RULE = "Use lowercase letters, digits and dashes in the URL, at most 80, starting with a letter or digit.";
 
 /** Why `slug` cannot be a new page's address (the last part of its URL), or nothing. */
 export function pageAddressProblem(slug: string): string | undefined {
-  if (PAGE_ADDRESS.test(slug)) return undefined;
-  return "Use lowercase letters, digits and dashes in the URL, at most 80, starting with a letter or digit.";
+  return PAGE_ADDRESS.test(slug) ? undefined : PAGE_ADDRESS_RULE;
 }
 
 /** The element Make component would turn into a component, as far as the caller knows it. */

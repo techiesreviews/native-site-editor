@@ -2,6 +2,7 @@ import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { test } from "node:test";
+import { PAGE_ADDRESS_RULE } from "../shared/site-rules.ts";
 import {
   nativeNewPageTitle,
   nativePageTemplate,
@@ -52,8 +53,8 @@ test("a typed URL becomes a route: a folder's, unless it names an .html file", (
   assert.ok(error(normalizeRoute("/a//b/")));
   assert.ok(error(normalizeRoute("/my page/")));
   assert.ok(error(normalizeRoute("#/videos/")));
-  assert.match(error(normalizeRoute("/_drafts/x/")), /start with _/);
-  assert.match(error(normalizeRoute("/.well-known/x/")), /start with _ or \./);
+  // No page has such a part, so it is refused in the new-address rule's words.
+  for (const typed of ["/my page/", "/_drafts/x/", "/.well-known/x/", "/../x/"]) assert.equal(error(normalizeRoute(typed)), PAGE_ADDRESS_RULE, typed);
   assert.match(error(normalizeRoute("/components/x/")), /not for pages/);
   assert.ok(error(normalizeRoute("/../x/")));
 });

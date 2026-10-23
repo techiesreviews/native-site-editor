@@ -1089,8 +1089,8 @@ export function detachMarkup(source: string, template: string, instance: Instanc
 
 // ---- Make component: an element of the page becomes a component. ----
 
-/** Why `name` cannot be a new component's tag, or nothing: the agent's make_component words (shared/site-rules.ts). */
-export const tagNameProblem: (name: string, taken: Iterable<string>) => string | undefined = componentTagProblem;
+/** Why `name` cannot be a new component's tag, or nothing: the shared rule (shared/site-rules.ts). */
+export const tagNameProblem = componentTagProblem;
 
 /** The containers Make component accepts, also named in agent refusals. */
 export const makeComponentContainers = "section, div, article, aside, figure, nav, header or footer";

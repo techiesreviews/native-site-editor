@@ -8,6 +8,7 @@ import { creationBinaryFiles } from "../shared/media-kinds";
 // page's document made from the home page's. It has no DOM and no I/O;
 // whether a path is already taken is the caller's to say.
 import { rootRoute } from "../shared/site-path-prefix";
+import { PAGE_ADDRESS_RULE } from "../shared/site-rules";
 import { asciiLower, startTagAttribute, startTags } from "../shared/html-source";
 import { nativePageHead, nativePageWithDetails, nativePageWithUrl } from "../shared/native-project";
 
@@ -72,10 +73,9 @@ export function normalizeRoute(input: string): Checked<string> {
   if (!text) return { ok: true, value: "/" };
   const parts = text.split("/");
   if (parts.some((part) => !part)) return { ok: false, error: "Leave no empty part between slashes." };
-  if (parts.some((part) => !SEGMENT.test(part) || part === "." || part === ".."))
-    return { ok: false, error: "Use letters, digits, -, _ and . in the URL, with / between parts." };
-  if (parts.some((part) => part.startsWith("_") || part.startsWith(".")))
-    return { ok: false, error: "A URL part cannot start with _ or . (such files are not pages)." };
+  // No page has such a part, so it is a new one, refused in the new-address rule's words.
+  if (parts.some((part) => !SEGMENT.test(part) || part.startsWith("_") || part.startsWith(".")))
+    return { ok: false, error: PAGE_ADDRESS_RULE };
   if (parts[0] === "components" || parts[0] === "node_modules")
     return { ok: false, error: `${rootRoute(parts[0] + "/")} is not for pages.` };
   return { ok: true, value: rootRoute(parts.join("/") + (file ? "" : "/")) };
