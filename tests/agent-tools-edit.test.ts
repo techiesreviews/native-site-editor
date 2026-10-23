@@ -56,7 +56,7 @@ async function fixture() {
     const outcome = { message: "Applied once.", result: { path: command.path, hash: await textHash(command.content) } };
     const draft = { ...scope, version: 1 as const, path: command.path, baseSha: null, content: command.content, original: "", updatedAt: Date.now() };
     const key = draftKey(scope, command.path);
-    const result = await records.commit({ workspace, generation: command.ownerGeneration!, expectedRevision: state.revision,
+    const result = await records.commit({ workspace, fence: command.ownerGeneration!, expectedRevision: state.revision,
       expectedDrafts: [[key, null]], drafts: [[key, draft]], receipt: { operationId: command.id, authorizationId: command.grantId!,
         payloadIdentity: command.requestIdentity!, outcome, createdAt: Date.now(), issuedAt: command.createdAt } });
     if (!result.duplicate) {
@@ -232,7 +232,7 @@ async function connected() {
 
 test("already-authorized edit and duplicate: 3 auth + 1 real relay dispatch, 0 result polls, 0 server draft fetches", async t => {
   const h = await connected(), browser = await fixture();
-  await browser.records.setGeneration(workspace, 0, 1);
+  await browser.records.setFence(workspace, 0, 1);
   const scope = { workspace, tabId: "owner-tab", generation: 1 }, name = await relayObjectName(workspace);
   const traffic = countedSocket();
   let attachment: unknown = { ...scope, role: "editor", owner: { tabId: scope.tabId, generation: 1 } };

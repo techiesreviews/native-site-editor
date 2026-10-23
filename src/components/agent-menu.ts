@@ -13,6 +13,7 @@ import type { PinRequest } from "./agent-pins";
 import { agentHistoryKey } from "../controllers/agent-controller";
 import { resumeAgents, serialReads } from "../agent-resume";
 import { mountFlyout } from "./flyout";
+import { githubScope, same, sameBranch } from "../workspace-session";
 import "./agent-menu.css";
 
 // Remote agents are opt-in per site, remembered in this browser until turned off (a reload or
@@ -104,6 +105,10 @@ export function createAgentMenu(options: {
   let transport: ReturnType<typeof createLiveTransport> | undefined;
   let transportMode: "pending" | "socket" = "pending";
   let pinned: ReturnType<typeof options.repository>;
+  // A repository and branch of this menu's account against another (the open one, the pinned one, a
+  // grant's or an approval's): the workspace session's one rule (src/workspace-session.ts).
+  const branchOf = (repo: ReturnType<typeof options.repository>) => repo && { repoId: repo.id, repo: repo.fullName, branch: repo.branch };
+  const sameRepository = (a: ReturnType<typeof options.repository>, b: ReturnType<typeof options.repository>) => sameBranch(branchOf(a), branchOf(b));
   let workspaceChanged = false;
   let transportState: ReturnType<ReturnType<typeof createLiveTransport>["state"]> | undefined;
   let requestTools: ReturnType<typeof createRequestTools> | undefined;
@@ -147,15 +152,15 @@ export function createAgentMenu(options: {
       workspace: { account: options.account, repoId: repo.id, branch: repo.branch }, repo: repo.fullName, tabId,
       current: scope, records, reload: snapshot => options.reload?.(snapshot) ?? Promise.resolve(),
       source: path => options.tools?.source?.(path),
-      media: async (request, generation, current, deadline, seen, signal) => {
+      media: async (request, fence, current, deadline, seen, signal) => {
         const ports = options.tools, stamp = ports?.stamp(), commit = ports?.files()?.snapshot.commit;
         if (!ports || !stamp) return { ok: false, message: "Browser media tools are unavailable. Refresh the editor." };
         mediaTools ??= import("../agent-tools-media").then(({ createAgentMediaTools }) => createAgentMediaTools({
           workspace: { account: options.account, repoId: repo.id, branch: repo.branch }, ports, records, run,
         }));
-        return (await mediaTools).run(request, generation, () => current() && stamp.holds() && ports.files()?.snapshot.commit === commit, deadline, seen, signal);
+        return (await mediaTools).run(request, fence, () => current() && stamp.holds() && ports.files()?.snapshot.commit === commit, deadline, seen, signal);
       },
-      edit: async (request, generation, current, signal) => {
+      edit: async (request, fence, current, signal) => {
         const ports = options.tools, stamp = ports?.stamp();
         const source = ports?.files(), commit = source?.snapshot.commit;
         if (!ports || !stamp) return { ok: false, message: "Browser edit tools are unavailable. Refresh the editor." };
@@ -163,7 +168,7 @@ export function createAgentMenu(options: {
           workspace: { account: options.account, repoId: repo.id, branch: repo.branch }, ports, records,
           run,
         }));
-        return (await editTools).run(request, generation, () => current() && stamp.holds() && ports.files()?.snapshot.commit === commit, signal);
+        return (await editTools).run(request, fence, () => current() && stamp.holds() && ports.files()?.snapshot.commit === commit, signal);
       },
       read: async (read, signal) => {
         const ports = options.tools, stamp = ports?.stamp();
@@ -177,13 +182,13 @@ export function createAgentMenu(options: {
         }
         return result;
       },
-      requests: async (request, generation, current, deadline, signal) => {
+      requests: async (request, fence, current, deadline, signal) => {
         const tools = requestTools;
         if (!tools) return { ok: false, message: "Browser request tools are unavailable. Refresh the editor." };
         // An agent asking for requests is connected, as one sending a change is.
         const grant = hub.grants.find(each => each.id === request.grantId);
         if (grant && !grant.usedAt) { grant.usedAt = Date.now(); paint(); }
-        try { return await tools.run(request, current, deadline, generation, signal); }
+        try { return await tools.run(request, current, deadline, fence, signal); }
         finally {
           if (request.tool !== "get_request") broadcast(workspaceKey(workspace));
           if (live(at)) { refreshWatch(); paint(); }
@@ -348,7 +353,7 @@ export function createAgentMenu(options: {
     const repo = options.repository();
     if (!remote) return;
     // Only another open repository or branch is a move: none while a refresh reloads it.
-    if (!workspaceChanged && pinned && repo && (repo.id !== pinned.id || repo.branch !== pinned.branch)) {
+    if (!workspaceChanged && pinned && repo && !sameRepository(repo, pinned)) {
       workspaceChanged = true;
       activation++;
       stopAutomatic();
@@ -359,7 +364,7 @@ export function createAgentMenu(options: {
   // Only connections pinned to this tab's repository and branch count.
   const liveGrants = () => {
     const repo = options.repository();
-    return repo ? hub.grants.filter((grant) => grant.repoId === repo.id && grant.branch === repo.branch) : [];
+    return repo ? hub.grants.filter((grant) => sameBranch(grant, branchOf(repo))) : [];
   };
   const usedGrants = () => liveGrants().filter((grant) => grant.via === "oauth" || grant.usedAt);
   /** The token this tab made, while no agent has used it yet. */
@@ -380,24 +385,27 @@ export function createAgentMenu(options: {
   // This browser's requests of the open workspace (`historyKey`), dismissed ones included.
   const records = options.records ?? indexedDbAgentRecords();
   let history = new Map<string, StoredRequest>();
-  let historyKey = "", loadingKey: string | undefined, historyLoads = 0;
+  let historyKey = "", historyScope: AgentWorkspace | undefined, loadingKey: string | undefined, historyReads = 0;
   const scope = (): AgentWorkspace | undefined => {
     const repo = options.repository();
     return repo ? { account: options.account, repoId: repo.id, branch: repo.branch } : undefined;
   };
   const scopeKey = () => { const current = scope(); return current ? workspaceKey(current) : ""; };
+  // Whether `was` is still the open workspace (none then and none now count as the same), under the
+  // workspace session's one rule (src/workspace-session.ts).
+  const stillOpen = (was: AgentWorkspace | undefined) => { const now = scope(); return was ? !!now && same(githubScope(was), githubScope(now)) : !now; };
   /** Reads the workspace's requests: on opening it, and when the tab is seen again. */
   async function loadHistory() {
-    const current = scope(), key = current ? workspaceKey(current) : "", load = ++historyLoads;
+    const current = scope(), key = current ? workspaceKey(current) : "", read = ++historyReads;
     loadingKey = key;
     let list: StoredRequest[] = [];
     try {
       if (current) list = (await records.conversations(current)).map((item) => item.content as unknown as StoredRequest);
     } catch { /* Browser storage unavailable: no history; Ask agent says so. */ }
-    if (disposed || load !== historyLoads || scopeKey() !== key) return;
+    if (disposed || read !== historyReads || !stillOpen(current)) return;
     loadingKey = undefined;
     history = new Map(list.map((item) => [item.id, item]));
-    historyKey = key;
+    historyKey = key; historyScope = current;
     tellRequests();
   }
   function followHistory() {
@@ -411,7 +419,7 @@ export function createAgentMenu(options: {
     if (disposed) return kept;
     // Shown at once; then read again, as the write may have evicted others and a read begun
     // before it may miss it.
-    historyLoads++;
+    historyReads++;
     loadingKey = undefined;
     if (kept && workspaceKey(workspace) === historyKey) {
       history.set(content.id, content);
@@ -425,7 +433,7 @@ export function createAgentMenu(options: {
   document.addEventListener("visibilitychange", reread);
   // The open workspace's requests, told only when they changed.
   function tellRequests() {
-    const next = historyKey && historyKey === scopeKey() ? [...history.values()].filter((item) => item.state !== "dismissed") : [];
+    const next = historyKey && stillOpen(historyScope) ? [...history.values()].filter((item) => item.state !== "dismissed") : [];
     const key = JSON.stringify(next);
     if (key === lastRequests) return;
     lastRequests = key;
@@ -485,7 +493,7 @@ export function createAgentMenu(options: {
     takeover.textContent = current === "takeover-failed" ? "Try again" : "Take over";
     move.hidden = another.hidden = current !== "workspace-changed";
     move.disabled = changing;
-    const returned = workspaceChanged && pinned && options.repository()?.id === pinned.id && options.repository()?.branch === pinned.branch;
+    const returned = workspaceChanged && pinned && sameRepository(options.repository(), pinned);
     move.textContent = returned ? "Turn on again" : "Move agents here";
     retry.hidden = !["paused", "quota"].includes(current);
     retry.disabled = retrying || (recovering?.retryAt ?? 0) > Date.now();
@@ -578,10 +586,10 @@ export function createAgentMenu(options: {
   const unsubscribeStorage = storage.subscribe(() => paint());
   /** Downloads the open workspace's unsaved drafts and says what the file holds. */
   async function exportWork() {
-    const repo = options.repository(), key = scopeKey();
+    const repo = options.repository(), workspace = scope();
     if (!repo || exporting) return;
     // The workspace whose drafts are read; another one opened, or the menu gone, downloads nothing.
-    const current = () => !disposed && scopeKey() === key;
+    const current = () => !disposed && stillOpen(workspace);
     exporting = true;
     paint();
     try {
@@ -661,7 +669,7 @@ export function createAgentMenu(options: {
     await activateSocket();
     if (state() === "idle") await start(task);
   }
-  const live = (at: number) => !disposed && remote && !workspaceChanged && activation === at && options.repository()?.id === pinned?.id && options.repository()?.branch === pinned?.branch;
+  const live = (at: number) => !disposed && remote && !workspaceChanged && activation === at && sameRepository(options.repository(), pinned);
   const site = (repo: { id: number; branch: string }): AgentWorkspace => ({ account: options.account, repoId: repo.id, branch: repo.branch });
   /** Remembers remote agents on, or forgets them, for the pinned site in this browser. Requests
    * this menu has not read for that site keep the startup mark; reading them settles it. */
@@ -711,12 +719,12 @@ export function createAgentMenu(options: {
   async function moveHere() {
     const target = options.repository(), old = pinned, at = activation;
     if (!target || !old || changing) return;
-    const grants = hub.grants.filter(grant => grant.repoId === old.id && grant.branch === old.branch && (grant.via === "oauth" || grant.usedAt));
+    const grants = hub.grants.filter(grant => sameBranch(grant, branchOf(old)) && (grant.via === "oauth" || grant.usedAt));
     changing = true; paint();
-    const current = () => !disposed && remote && activation === at && options.repository()?.id === target.id && options.repository()?.branch === target.branch;
+    const current = () => !disposed && remote && activation === at && sameRepository(options.repository(), target);
     try {
       for (const grant of grants) {
-        if (target.id === old.id && target.branch === old.branch) break;
+        if (sameRepository(target, old)) break;
         if (!current()) return;
         await api("rebind", { id: grant.id, repo: target.fullName, repoId: target.id, branch: target.branch });
         if (!current()) return;
@@ -746,7 +754,7 @@ export function createAgentMenu(options: {
       if (disposed) return;
       // The tab moved to another repository or branch meanwhile: that token is pinned to the old one.
       const now = options.repository();
-      if (!live(at) || now?.id !== repo.id || now.branch !== repo.branch) {
+      if (!live(at) || !sameRepository(now, repo)) {
         await api("revoke", { id: result.id }).catch(() => undefined);
         return;
       }
@@ -835,7 +843,7 @@ export function createAgentMenu(options: {
   function matches(approval: AgentApproval) {
     const repo = options.repository();
     return approval && typeof approval.approval === "string" && approval.approval.length > 0 &&
-      repo?.fullName === approval.repo && repo.branch === approval.branch;
+      sameBranch(approval, branchOf(repo));
   }
   function consentGranted(approval: AgentApproval) {
     if (!matches(approval)) return;
@@ -865,9 +873,9 @@ export function createAgentMenu(options: {
       return undefined;
     });
     // Turned on, or on and off again, meanwhile: this answer decides nothing.
-    if (disposed || remote || activation !== since || options.repository()?.id !== repo.id || !matches(approval)) return;
+    if (disposed || remote || activation !== since || !sameRepository(options.repository(), repo) || !matches(approval)) return;
     // Match the exact approval, even when token exchange is delayed.
-    if (!found?.grants?.some((grant) => grant.via === "oauth" && grant.repoId === repo.id && grant.repo === approval.repo && grant.branch === approval.branch && grant.approval === approval.approval && !declined.has(grant.id))) return;
+    if (!found?.grants?.some((grant) => grant.via === "oauth" && sameBranch(grant, branchOf(repo)) && sameBranch(grant, approval) && grant.approval === approval.approval && !declined.has(grant.id))) return;
     for (const check of consentChecks) clearTimeout(check);
     consentChecks = [];
     startRemote();
@@ -923,11 +931,11 @@ export function createAgentMenu(options: {
       const planned = stored({ id: "req-planned", text, createdAt: Date.now(), repoId: repo.id, branch: repo.branch, repository: repo.fullName, state: "open", element, thread: [{ from: "user", text, at: Date.now() }] });
       await records.checkConversation(workspace, { id: planned.id, content: planned as unknown as JsonValue, unfinished: true, updatedAt: Date.now() }).catch((error) => refusal(error, " Nothing was sent."));
       // Turned off, or another site or branch opened, while storage answered: nothing is sent.
-      if (!live(at) || scopeKey() !== key) throw new Error("Remote agents or the open site changed meanwhile. Nothing was sent; ask again.");
+      if (!live(at) || !stillOpen(workspace)) throw new Error("Remote agents or the open site changed meanwhile. Nothing was sent; ask again.");
       // The request stays in this browser and reaches agents over the socket.
       const request = localRequest(repo, text, element);
       // Turned off, or another site or branch opened, before the write commits: nothing is kept or announced.
-      const still = () => live(at) && scopeKey() === key;
+      const still = () => live(at) && stillOpen(workspace);
       const kept = await keep(workspace, request, () => still()).catch((error) => refusal(error, " Nothing was sent."));
       if (!kept) throw new Error("Remote agents or the open site changed meanwhile. Nothing was sent; ask again.");
       requestsChanged(key);
@@ -942,13 +950,13 @@ export function createAgentMenu(options: {
       // Refused before it is sent when this browser cannot keep the conversation with the answer.
       const answered = { ...local, state: "open" as const, thread: [...(local.thread ?? []), { from: "user" as const, text, at: Date.now() }] };
       await records.checkConversation(workspace, { id, content: stored(answered) as unknown as JsonValue, unfinished: true, updatedAt: Date.now() }).catch((error) => refusal(error, " Nothing was sent."));
-      if (!live(at) || scopeKey() !== key) throw new Error("Remote agents or the open site changed meanwhile. Nothing was sent; answer again.");
+      if (!live(at) || !stillOpen(workspace)) throw new Error("Remote agents or the open site changed meanwhile. Nothing was sent; answer again.");
       const trimmed = text.trim();
       if (!trimmed || trimmed.length > REQUEST_TEXT_LIMIT) throw new Error(`An answer needs text (up to ${REQUEST_TEXT_LIMIT} characters).`);
       // The browser request waits for every agent again after the user's answer.
       const list = (await records.conversations(workspace)).map((item) => item.content as unknown as AgentRequest);
       // Turned off, or another site or branch opened, during the read: nothing is kept (checked again at the write).
-      const still = () => live(at) && scopeKey() === key;
+      const still = () => live(at) && stillOpen(workspace);
       if (!still()) throw new Error("Remote agents or the open site changed meanwhile. Nothing was sent; answer again.");
       const { request: result, accept } = answerRequest(list, id, trimmed);
       if (!await keep(workspace, result as StoredRequest, current => still() && accept(current?.content as unknown as AgentRequest | undefined)).catch(refusal))

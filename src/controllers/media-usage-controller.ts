@@ -17,7 +17,8 @@ export interface MediaUsageCheckPorts {
 
 /** Deferred, cancellable checks keep their text outside the preview source map. */
 export function createMediaUsageController(ports: MediaUsageCheckPorts) {
-  let generation = 0, scheduled = false, disposed = false;
+  // Each refresh or invalidation starts the next check; an older one publishes nothing.
+  let checks = 0, scheduled = false, disposed = false;
   let records: MediaUsageRecords | undefined;
   let lastKey = "";
   const listeners = new Set<(records: MediaUsageRecords | undefined) => void>();
@@ -25,9 +26,9 @@ export function createMediaUsageController(ports: MediaUsageCheckPorts) {
     records = value; ports.changed(value);
     for (const listener of listeners) listener(value);
   };
-  async function check(epoch: number) {
+  async function check(run: number) {
     const key = ports.key();
-    const live = () => !disposed && epoch === generation && key === ports.key();
+    const live = () => !disposed && run === checks && key === ports.key();
     if (!key) { publish(undefined); return; }
     // Old records stay on show while the same site is checked again; another site starts empty.
     if (key !== lastKey) { lastKey = key; if (records) publish(undefined); }
@@ -56,14 +57,14 @@ export function createMediaUsageController(ports: MediaUsageCheckPorts) {
   }
   function refresh() {
     if (disposed) return;
-    generation++;
+    checks++;
     if (scheduled) return;
     scheduled = true;
-    queueMicrotask(() => { scheduled = false; if (!disposed) void check(generation); });
+    queueMicrotask(() => { scheduled = false; if (!disposed) void check(checks); });
   }
   /** Stops in-flight reads from publishing: their captured sources may be out of date. */
-  function invalidate() { if (!disposed) generation++; }
+  function invalidate() { if (!disposed) checks++; }
   return { refresh, invalidate, usageRecords: () => records,
     onUsageChange(listener: (records: MediaUsageRecords | undefined) => void) { listeners.add(listener); return () => { listeners.delete(listener); }; },
-    dispose() { disposed = true; generation++; listeners.clear(); publish(undefined); } };
+    dispose() { disposed = true; checks++; listeners.clear(); publish(undefined); } };
 }

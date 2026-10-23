@@ -431,7 +431,7 @@ test("two answers made from the same question: the second never overwrites the f
 
 test("takeover fence: an old owner's take or reply after another tab's takeover writes nothing (checked in the transaction)", async () => {
   const records = indexedDbAgentRecords(draftDatabaseName, fakeIndexedDB().factory);
-  await records.setGeneration(workspace, 0, 1);
+  await records.setFence(workspace, 0, 1);
   const put = (value: AgentRequest) => records.putConversation(workspace, { id: value.id, content: value as never, unfinished: true, updatedAt: 1 });
   await put(asked("req-fenced"));
   // Conversations hold JSON; these are the requests this test wrote.
@@ -441,7 +441,7 @@ test("takeover fence: an old owner's take or reply after another tab's takeover 
     save: (value, accept, owner) => records.putConversation(workspace, { id: value.id, content: value as never, unfinished: true, updatedAt: 2 },
       stored => accept(stored && request(stored.content)), owner) });
   // Another tab took over (generation 2) while this tab's ownership hints have not arrived: current() still says yes.
-  await records.setGeneration(workspace, 1, 2);
+  await records.setFence(workspace, 1, 2);
   const run = (tool: AgentRequests["tool"], args: AgentRequests["args"]) => tools.run({ operation: "requests", tool, args, grantId: "g" }, () => true, Date.now() + 9_000, 1);
   assert.deepEqual(((await run("wait_for_requests", {})) as { value: any }).value.requests, []);
   assert.equal((await read())[0].state, "open");

@@ -23,7 +23,7 @@ const draft = (path: string, content = path): SavedDraft => ({ version: 1, ...sc
 let issued = Date.now();
 /** A command that writes `path` (absent before), issued now unless `issuedAt` says otherwise. */
 const command = (operationId: string, path = `${operationId}.html`, issuedAt = ++issued): AgentCommit => ({
-  workspace, generation: 0, expectedRevision: 0, expectedDrafts: [[draftKey(scope, path), null]], drafts: [[draftKey(scope, path), draft(path)]],
+  workspace, fence: 0, expectedRevision: 0, expectedDrafts: [[draftKey(scope, path), null]], drafts: [[draftKey(scope, path), draft(path)]],
   receipt: { operationId, authorizationId: "grant", payloadIdentity: payloadIdentity({ path }), outcome: { path }, createdAt: 0, issuedAt },
 });
 const code = (expected: AgentRecordsError["code"]) => (error: unknown) => error instanceof AgentRecordsError && error.code === expected;
@@ -166,7 +166,7 @@ test("quota relief turns a live receipt over ten minutes old into a marker: its 
   const elsewhere = { ...workspace, branch: "other" }, otherKey = draftKey({ ...scope, branch: "other" }, "x.html");
   await records.commit({ ...command("other-op", "x.html"), workspace: elsewhere, expectedDrafts: [[otherKey, null]],
     drafts: [[otherKey, { ...draft("x.html"), branch: "other" }]] });
-  await records.setGeneration(elsewhere, 0, 3);
+  await records.setFence(elsewhere, 0, 3);
   clock(start);
   fake.state.failure = "QuotaExceededError"; fake.state.failPutAt = 1;
   await records.commit({ ...command("now"), expectedRevision: 1 });

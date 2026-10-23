@@ -87,11 +87,11 @@ function fixture() {
           post() { queueMicrotask(() => { for (const [other, listen] of channels) if (other !== id) listen(); }); },
         },
       }),
-      run: async (incoming, generation) => {
+      run: async (incoming, fence) => {
         runs++;
         const stored = await records.workspace(workspace);
         const outcome = { message: "Kept once.", result: { path: incoming.path } };
-        const result = await records.commit({ workspace, generation, expectedRevision: stored.revision, expectedDrafts: [], drafts: [],
+        const result = await records.commit({ workspace, fence, expectedRevision: stored.revision, expectedDrafts: [], drafts: [],
           receipt: { operationId: incoming.id, authorizationId: incoming.grantId!, payloadIdentity: payloadIdentity({ content: incoming.content }),
             outcome, issuedAt: incoming.createdAt, createdAt: now } });
         if (!result.duplicate) commits++;
@@ -148,10 +148,10 @@ test("second tab is other-owner; focus keeps background owner; explicit takeover
   const f = fixture();
   let release!: () => void, admitted = false, lateCommits = 0;
   const held = new Promise<void>(resolve => { release = resolve; });
-  const a = f.tab("a", { run: async (incoming, generation) => {
+  const a = f.tab("a", { run: async (incoming, fence) => {
     admitted = true; await held;
     const stored = await f.records.workspace(workspace);
-    await f.records.commit({ workspace, generation, expectedRevision: stored.revision, expectedDrafts: [], drafts: [],
+    await f.records.commit({ workspace, fence, expectedRevision: stored.revision, expectedDrafts: [], drafts: [],
       receipt: { operationId: incoming.id, authorizationId: "grant", payloadIdentity: "identity", outcome: {}, issuedAt: incoming.createdAt, createdAt: f.now() } });
     lateCommits++;
   } });
@@ -347,7 +347,7 @@ test("workspace changes at every ownership await never open a stale socket", asy
       pause: race.port("pause", (...args) => f.records.pause(...args)),
       reconcile: race.port("reconcile", (...args) => f.records.reconcile(...args)),
       snapshot: race.port("snapshot", (...args) => f.records.snapshot(...args)),
-      setGeneration: race.port("generation", (...args) => f.records.setGeneration(...args)),
+      setFence: race.port("generation", (...args) => f.records.setFence(...args)),
     } satisfies Options["records"];
     const a = f.tab("a", { records, reload: race.port("reload", async () => {}) });
     const done = a.transport.start().then(() => { a.transport.stop(); });

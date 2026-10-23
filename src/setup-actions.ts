@@ -17,10 +17,12 @@ import type { createBootController } from "./controllers/boot-controller";
 import type { createRepositoryMenu } from "./components/repository-menu";
 import type { RepositoryIndex } from "./repository-loading";
 import type { createSetupChecklistController } from "./controllers/setup-checklist-controller";
+import type { SessionStamp } from "./workspace-session";
 
 interface SetupPorts {
   readonly info: SessionInfo;
-  readonly generation: number;
+  /** The workspace session now (src/workspace-session.ts). */
+  begin(): SessionStamp;
   repositories: Repository[];
   wizardCreated: Repository | undefined;
   waitingForRepositories: boolean;
@@ -269,10 +271,10 @@ export function createSetupActions(ports: SetupPorts) {
     const repo = ports.appStore.repository.value;
     const scope = ports.draftScope();
     if (!repo || !scope) return "Open a repository first.";
-    const epoch = ports.generation;
+    const at = ports.begin();
     // Everything below reads and writes for this repository, branch and snapshot only.
     const snap = ports.appStore.snapshot.value!;
-    const bound = () => ports.generation === epoch && ports.appStore.snapshot.value === snap && ports.appStore.repository.value === repo;
+    const bound = () => at.holds() && ports.appStore.snapshot.value === snap && ports.appStore.repository.value === repo;
     const find = (path: string) => ports.repositoryIndex.find(ports.api, repo, snap, path);
     const siteName = siteNameFromRepository(repo.name);
     let starting: StarterFile[];
@@ -281,7 +283,7 @@ export function createSetupActions(ports: SetupPorts) {
     } catch (error) {
       return error instanceof Error ? error.message : "The Starter site could not be loaded. Try again.";
     }
-    if (epoch !== ports.generation) return "The repository changed meanwhile. Try again.";
+    if (!at.holds()) return "The repository changed meanwhile. Try again.";
     // Finishing a starting point that stopped part way: the files already committed stay as they are, and nothing else is overwritten.
     if (partial) starting = starting.filter((file) => !partial.committed.includes(file.path));
     const state = new Map<string, "free" | "taken" | "folder">();

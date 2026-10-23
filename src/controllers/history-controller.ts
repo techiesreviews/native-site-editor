@@ -32,7 +32,7 @@ export interface HistoryPorts {
 export function createHistoryController(ports: HistoryPorts) {
   let history: ReturnType<typeof createCommitHistory> | undefined;
   let scope: "file" | "site" = "file";
-  let epoch = 0;
+  let openings = 0;
   // Closing invalidates presentation, while an accepted restore keeps its file ownership.
   // Replacing the mounted panel or destroying the controller ends both lifetimes.
   let lifetime = 0;
@@ -50,7 +50,7 @@ export function createHistoryController(ports: HistoryPorts) {
     panel.style.right = `${Math.min(maxRight, Math.max(16, width - rect.right))}px`;
   }
   function close() {
-    epoch++;
+    openings++;
     pending = undefined;
     const panel = ports.panel();
     if (panel?.matches(":popover-open")) panel.hidePopover();
@@ -67,9 +67,9 @@ export function createHistoryController(ports: HistoryPorts) {
     const key = JSON.stringify([context.key, scope, force]);
     if (pending?.key === key) return pending.promise;
     let owner = lifetime;
-    const generation = ++epoch, site = scope === "site" || !context.path;
+    const opening = ++openings, site = scope === "site" || !context.path;
     let mounted = false;
-    const live = () => generation === epoch && panel === ports.panel() && context.isCurrent(mounted && site);
+    const live = () => opening === openings && panel === ports.panel() && context.isCurrent(mounted && site);
     const restoreCurrent = () => owner === lifetime && panel === ports.panel() && context.isCurrent(false) && !context.hasDraft();
     const promise = ports.loadHistory().then(({ createCommitHistory }) => {
       if (!live()) return;

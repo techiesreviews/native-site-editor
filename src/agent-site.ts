@@ -940,7 +940,7 @@ export async function prepareAgentText(command: AgentCommand, scope: DraftScope,
         const [{ indexedDbAgentRecords }, { createAgentOwner }] = await Promise.all([import("./agent-records"), import("./agent-owner")]);
         const records = indexedDbAgentRecords();
         const state = await records.workspace(workspace);
-        return { records, owner: createAgentOwner({ workspace, generation: command.ownerGeneration ?? state.generation, records,
+        return { records, owner: createAgentOwner({ workspace, fence: command.ownerGeneration ?? state.generation, records,
           reload: async () => {} }) };
       })();
       textOwners.set(key, loading);
@@ -956,7 +956,7 @@ export async function prepareAgentText(command: AgentCommand, scope: DraftScope,
     if (!current()) throw new Error("The repository changed meanwhile.");
     if (existing) {
       // Commit performs the identity and revocation checks again in the transaction returning the receipt.
-      const result = await owner.commit({ workspace, generation: owner.generation, expectedRevision: 0, expectedDrafts: [], drafts: [], receipt });
+      const result = await owner.commit({ workspace, fence: owner.fence, expectedRevision: 0, expectedDrafts: [], drafts: [], receipt });
       if (!current()) throw new Error("The repository changed meanwhile.");
       return { duplicate: result.receipt.outcome as AgentCommandOutcome };
     }
@@ -966,7 +966,7 @@ export async function prepareAgentText(command: AgentCommand, scope: DraftScope,
       signal?.throwIfAborted();
       if (!current() || owner.paused) throw new Error("The repository or agent ownership changed meanwhile.");
       const state = await records.workspace(workspace);
-      if (!current() || owner.paused || state.generation !== owner.generation || state.paused) throw new Error("The repository or agent ownership changed meanwhile.");
+      if (!current() || owner.paused || state.generation !== owner.fence || state.paused) throw new Error("The repository or agent ownership changed meanwhile.");
       // Revocation and cancellation are serialized with the eventual write by owner.commit.
       return state;
     };
@@ -994,7 +994,7 @@ export async function prepareAgentText(command: AgentCommand, scope: DraftScope,
         signal?.throwIfAborted();
         if (!current() || !valid()) throw new Error("The repository or source changed meanwhile.");
         try {
-          const result = await owner.commit({ workspace, generation: owner.generation, expectedRevision,
+          const result = await owner.commit({ workspace, fence: owner.fence, expectedRevision,
             expectedDrafts: [...before].map(([path, record]) => [draftKey(scope, path), record ?? null]),
             drafts: [...after].map(([path, record]) => [draftKey(scope, path), record ?? null]), receipt });
           lastAfter = after;

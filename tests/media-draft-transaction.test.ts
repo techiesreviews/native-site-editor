@@ -75,12 +75,12 @@ test("a metadata change with no page open applies and undoes", async () => {
   h.batch.expectedPaths = [previous.path];
   h.batch.expectedSources.set(previous.path, previous.content);
   h.host.historyCurrent = () => h.host.stamp.holds();
-  h.host.history = (undo, redo, dispose) => home.hold("site", undo, redo, dispose);
+  h.host.history = (undo, redo, dispose) => home.hold({ holds: () => true }, undo, redo, dispose);
   await applyMediaWorkspaceBatch(h.batch, mediaDraftTransaction(h.host));
   assert.equal(h.records.get(previous.path)?.content, h.batch.edits.get(previous.path));
   assert.notEqual(h.records.get(previous.path), previous);
   let undo: () => boolean | Promise<boolean> = () => false, redo: typeof undo = () => false, steps = 0;
-  home.adopt("site", (u, r, dispose) => { if (dispose) disposals.push(dispose); undo = u; redo = r; steps++; return true; });
+  home.adopt((u, r, dispose) => { if (dispose) disposals.push(dispose); undo = u; redo = r; steps++; return true; });
   assert.equal(steps, 1);
   assert.equal(await undo(), true);
   assert.equal(h.records.get(previous.path), previous);

@@ -13,7 +13,7 @@ const key = draftKey(draft, draft.path);
 let issued = Date.now();
 const command = (): AgentCommit => ({
   workspace: { account: draft.account, repoId: draft.repoId, branch: draft.branch },
-  generation: 0, expectedRevision: 0, expectedDrafts: [[key, null]], drafts: [[key, { ...draft }]],
+  fence: 0, expectedRevision: 0, expectedDrafts: [[key, null]], drafts: [[key, { ...draft }]],
   receipt: { operationId: "one", authorizationId: "grant", payloadIdentity: payloadIdentity({ content: "agent" }), outcome: { changed: 1 }, createdAt: 1, issuedAt: ++issued },
 });
 const code = (expected: AgentRecordsError["code"]) => (error: unknown) => error instanceof AgentRecordsError && error.code === expected;
@@ -21,7 +21,7 @@ function setup() {
   const fake = fakeIndexedDB();
   let time = 100;
   const records = indexedDbAgentRecords(draftDatabaseName, fake.factory, () => time);
-  const owner = createAgentOwner({ workspace: draft, generation: 0, records, reload: async () => {} });
+  const owner = createAgentOwner({ workspace: draft, fence: 0, records, reload: async () => {} });
   return { fake, records, owner, clock: (next: number) => { time = next; } };
 }
 
@@ -30,7 +30,7 @@ for (const mismatch of ["payload", "authorization", "generation", "account", "re
   await records.commit(input);
   if (mismatch === "payload") input.receipt.payloadIdentity = payloadIdentity({ content: "different" });
   if (mismatch === "authorization") input.receipt.authorizationId = "other";
-  if (mismatch === "generation") input.generation++;
+  if (mismatch === "generation") input.fence++;
   if (mismatch === "account") input.workspace.account = "other";
   if (mismatch === "repository") input.workspace.repoId++;
   if (mismatch === "branch") input.workspace.branch = "other";
@@ -167,7 +167,7 @@ test("cancellation disturbs every commit await; either applied and reported or n
       });
       const records = indexedDbAgentRecords(draftDatabaseName, fake.factory, () => 100);
       const tracked: AgentRecords = { ...records, commit: warm ? race.port("commit transaction", (...args) => records.commit(...args)) : (...args) => records.commit(...args) };
-      const owner = createAgentOwner({ workspace: draft, generation: 0, records: tracked, reload: async () => {} });
+      const owner = createAgentOwner({ workspace: draft, fence: 0, records: tracked, reload: async () => {} });
       const result: { commit?: Awaited<ReturnType<AgentRecords["commit"]>>; cancelled?: boolean; cancellation?: Awaited<ReturnType<AgentRecords["cancel"]>> } = {};
       return { fake, records, result, done: (async () => {
         if (warm) await records.workspace(draft);
@@ -276,9 +276,9 @@ test("takeover pauses admission, reconciles, reloads and only then bumps generat
     pause: async (...args) => { events.push("pause"); return records.pause(...args); },
     reconcile: async (...args) => { events.push("reconcile"); return records.reconcile(...args); },
     snapshot: async (...args) => { events.push("snapshot"); return records.snapshot(...args); },
-    setGeneration: async (...args) => { events.push("bump"); return records.setGeneration(...args); },
+    setFence: async (...args) => { events.push("bump"); return records.setFence(...args); },
   };
-  const owner = createAgentOwner({ workspace: draft, generation: 0, records: tracked, reload: async (snapshot) => {
+  const owner = createAgentOwner({ workspace: draft, fence: 0, records: tracked, reload: async (snapshot) => {
     events.push("reload");
     assert.equal(owner.paused, true);
     assert.equal((await records.workspace(draft)).generation, 0);
@@ -292,14 +292,14 @@ test("takeover pauses admission, reconciles, reloads and only then bumps generat
   const result = await transfer;
   assert.deepEqual(events, ["pause", "reconcile", "snapshot", "reload", "bump", "reconcile"]);
   assert.deepEqual(result.outcomes, [{ operationId: "one", status: "applied", receipt: applied.receipt }, { operationId: "missing", status: "unknown" }]);
-  assert.equal(owner.generation, 1); assert.equal(owner.paused, false);
+  assert.equal(owner.fence, 1); assert.equal(owner.paused, false);
   await assert.rejects(records.commit(missing), code("conflict"));
   assert.equal(fake.stores.get("receipts")!.size, 1, "unknown was never replayed; 0 late commits");
 });
 
 test("reload failure leaves admission paused and generation unchanged", async () => {
   const { records } = setup();
-  const owner = createAgentOwner({ workspace: draft, generation: 0, records, reload: async () => { throw new Error("reload failed"); } });
+  const owner = createAgentOwner({ workspace: draft, fence: 0, records, reload: async () => { throw new Error("reload failed"); } });
   await assert.rejects(owner.takeover(), /reload failed/);
   assert.equal(owner.paused, true);
   assert.deepEqual(await records.workspace(draft), { revision: 0, generation: 0, paused: true });
@@ -315,7 +315,7 @@ test("manual writes disturb every commit await; stale plans never overwrite them
     });
     const records = indexedDbAgentRecords(draftDatabaseName, fake.factory);
     const tracked: AgentRecords = { ...records, commit: race.port("commit", (...args) => records.commit(...args)) };
-    const owner = createAgentOwner({ workspace: draft, generation: 0, records: tracked, reload: async () => {} });
+    const owner = createAgentOwner({ workspace: draft, fence: 0, records: tracked, reload: async () => {} });
     return { fake, boundary: { receipts: 0 }, done: owner.commit(command()).catch((error: unknown) => { assert.ok(code("conflict")(error)); }), manual: indexedDbDrafts(draftDatabaseName, fake.factory) };
   }, async ({ manual, fake, boundary }) => {
     await manual.write([[key, { ...draft, content: "manual" }]]);
@@ -336,7 +336,7 @@ for (const disturbance of ["revocation", "takeover"]) test(`${disturbance} distu
     });
     const records = indexedDbAgentRecords(draftDatabaseName, fake.factory);
     const tracked: AgentRecords = { ...records, commit: race.port("commit", (...args) => records.commit(...args)) };
-    const owner = createAgentOwner({ workspace: draft, generation: 0, records: tracked, reload: async () => {} });
+    const owner = createAgentOwner({ workspace: draft, fence: 0, records: tracked, reload: async () => {} });
     return { fake, records, boundary: { receipts: 0 }, done: owner.commit(command()).catch((error: unknown) => {
       assert.ok(code(disturbance === "revocation" ? "revoked" : "conflict")(error));
     }) };
@@ -346,7 +346,7 @@ for (const disturbance of ["revocation", "takeover"]) test(`${disturbance} distu
       const applied = await current.revoke(draft, "grant");
       boundary.receipts = applied.length;
     } else {
-      await createAgentOwner({ workspace: draft, generation: 0, records: current, reload: async () => {} }).takeover();
+      await createAgentOwner({ workspace: draft, fence: 0, records: current, reload: async () => {} }).takeover();
       boundary.receipts = fake.stores.get("receipts")!.size;
     }
   }, async ({ fake, records, boundary }) => {
@@ -367,9 +367,9 @@ test("manual writes disturb every takeover await; reload/CAS preserve current dr
       pause: race.port("pause", (...args) => records.pause(...args)),
       reconcile: race.port("reconcile", (...args) => records.reconcile(...args)),
       snapshot: race.port("snapshot", (...args) => records.snapshot(...args)),
-      setGeneration: race.port("generation CAS", (...args) => records.setGeneration(...args)),
+      setFence: race.port("generation CAS", (...args) => records.setFence(...args)),
     };
-    const owner = createAgentOwner({ workspace: draft, generation: 0, records: tracked, reload: race.port("reload", async () => {}) });
+    const owner = createAgentOwner({ workspace: draft, fence: 0, records: tracked, reload: race.port("reload", async () => {}) });
     return { fake, records, owner, manual: indexedDbDrafts(draftDatabaseName, fake.factory), done: owner.takeover([command()]).catch((error: unknown) => { assert.ok(code("conflict")(error)); }) };
   }, async ({ manual }) => {
     await manual.write([[key, { ...draft, content: "manual" }]]);
@@ -389,7 +389,7 @@ test("manual workspace revision races disturb every commit await", async () => {
       first = false; return race.port("open", async () => {})();
     });
     const records = indexedDbAgentRecords(draftDatabaseName, fake.factory);
-    const owner = createAgentOwner({ workspace: draft, generation: 0, records, reload: async () => {} });
+    const owner = createAgentOwner({ workspace: draft, fence: 0, records, reload: async () => {} });
     return { fake, done: owner.commit(command()).catch((error: unknown) => { assert.ok(code("conflict")(error)); }) };
   }, async ({ fake }) => {
     const current = indexedDbAgentRecords(draftDatabaseName, fake.factory);
@@ -425,13 +425,13 @@ test("competing takeovers disturb every await; one generation CAS wins", async (
       pause: race.port("pause", (...args) => records.pause(...args)),
       reconcile: race.port("reconcile", (...args) => records.reconcile(...args)),
       snapshot: race.port("snapshot", (...args) => records.snapshot(...args)),
-      setGeneration: race.port("generation CAS", (...args) => records.setGeneration(...args)),
+      setFence: race.port("generation CAS", (...args) => records.setFence(...args)),
     };
-    const owner = createAgentOwner({ workspace: draft, generation: 0, records: tracked, reload: race.port("reload", async () => {}) });
+    const owner = createAgentOwner({ workspace: draft, fence: 0, records: tracked, reload: race.port("reload", async () => {}) });
     const wins: number[] = [];
     return { fake, records, wins, done: owner.takeover([command()]).then(() => { wins.push(1); }).catch((error: unknown) => { assert.ok(code("conflict")(error)); }) };
   }, async ({ records, wins }) => {
-    const contender = createAgentOwner({ workspace: draft, generation: 0, records, reload: async () => {} });
+    const contender = createAgentOwner({ workspace: draft, fence: 0, records, reload: async () => {} });
     try { await contender.takeover(); wins.push(2); }
     catch (error) { assert.ok(code("conflict")(error)); }
   }, async ({ fake, records, wins }) => {
@@ -451,21 +451,21 @@ test("a contender from the acquired generation races the final reconciliation; s
       if (++reconciliations === 2) return race.port("final reconciliation", () => records.reconcile(...args))();
       return records.reconcile(...args);
     } };
-    const owner = createAgentOwner({ workspace: draft, generation: 0, records: tracked, reload: async () => {} });
+    const owner = createAgentOwner({ workspace: draft, fence: 0, records: tracked, reload: async () => {} });
     const result = { superseded: false };
     return { fake, records, owner, result, done: owner.takeover([command()]).catch((error: unknown) => {
       assert.ok(code("not-owner")(error)); result.superseded = true;
     }) };
   }, async ({ records, owner }) => {
-    assert.equal(owner.generation, 1);
-    const contender = createAgentOwner({ workspace: draft, generation: 1, records, reload: async () => {} });
-    assert.equal((await contender.takeover()).generation, 2);
+    assert.equal(owner.fence, 1);
+    const contender = createAgentOwner({ workspace: draft, fence: 1, records, reload: async () => {} });
+    assert.equal((await contender.takeover()).fence, 2);
   }, async ({ fake, records, owner, result }) => {
     // Either order is valid: the final proof is one transaction, so the old owner either
     // owned at that instant or stays paused. Durable fencing rejects it afterwards both ways.
     if (result.superseded) assert.equal(owner.paused, true);
     assert.deepEqual(await records.workspace(draft), { revision: 0, generation: 2 });
-    const stale = command(); stale.generation = 1;
+    const stale = command(); stale.fence = 1;
     await assert.rejects(records.commit(stale), code("conflict"));
     assert.equal(fake.stores.get("receipts")!.size, 0, "0 late commits");
   });
@@ -479,11 +479,11 @@ for (const disturbance of ["contender", "revocation"]) test(`${disturbance} comp
   const tracked: AgentRecords = { ...records, reconcile: async (...args) => {
     if (++reconciliations === 2) {
       if (disturbance === "revocation") await records.revoke(draft, "grant");
-      else await createAgentOwner({ workspace: draft, generation: 1, records, reload: async () => {} }).takeover();
+      else await createAgentOwner({ workspace: draft, fence: 1, records, reload: async () => {} }).takeover();
     }
     return records.reconcile(...args);
   } };
-  const owner = createAgentOwner({ workspace: draft, generation: 0, records: tracked, reload: async () => {} });
+  const owner = createAgentOwner({ workspace: draft, fence: 0, records: tracked, reload: async () => {} });
   if (disturbance === "contender") {
     await assert.rejects(owner.takeover([command()]), code("not-owner"));
     assert.equal(owner.paused, true);
@@ -498,7 +498,7 @@ for (const disturbance of ["contender", "revocation"]) test(`${disturbance} comp
 
 test("takeover reconciles operations admitted before its durable pause", async () => {
   const { records, fake } = setup();
-  const owner = createAgentOwner({ workspace: draft, generation: 0, records, reload: async () => {} });
+  const owner = createAgentOwner({ workspace: draft, fence: 0, records, reload: async () => {} });
   const committing = owner.commit(command());
   const transferring = owner.takeover();
   const [applied, transfer] = await Promise.all([committing, transferring]);
@@ -511,19 +511,19 @@ test("takeover reconciles operations admitted before its durable pause", async (
 test("takeover rechecks authorization after reload before revealing recorded outcomes", async () => {
   const { records } = setup(), input = command();
   const applied = await records.commit(input);
-  const owner = createAgentOwner({ workspace: draft, generation: 0, records, reload: async () => {
+  const owner = createAgentOwner({ workspace: draft, fence: 0, records, reload: async () => {
     assert.deepEqual(await records.revoke(draft, "grant"), [applied.receipt]);
   } });
   const transfer = await owner.takeover([input]);
   assert.deepEqual(transfer.outcomes, [{ operationId: "one", status: "unknown" }]);
-  assert.equal(transfer.generation, 1);
+  assert.equal(transfer.fence, 1);
   await assert.rejects(records.commit(input), code("revoked"));
 });
 
 test("takeover does not expose a receipt evicted while reload was pending", async () => {
   const { records } = setup(), input = command();
   await records.commit(input);
-  const owner = createAgentOwner({ workspace: draft, generation: 0, records, reload: async () => {
+  const owner = createAgentOwner({ workspace: draft, fence: 0, records, reload: async () => {
     await records.evictReceipts(draft, 100 + 24 * 60 * 60 * 1000);
   } });
   assert.deepEqual((await owner.takeover([input])).outcomes, [{ operationId: "one", status: "unknown" }]);

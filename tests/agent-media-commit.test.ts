@@ -353,7 +353,7 @@ test("a page draft another tab persisted after this tab read it refuses removal 
 test("live media generation stays fenced when its owner is first built after takeover", async t => {
   const f = await setup(t);
   const before = await f.records.workspace(f.scope);
-  await f.records.setGeneration(f.scope, before.generation, before.generation + 1);
+  await f.records.setFence(f.scope, before.generation, before.generation + 1);
   await assert.rejects(f.run({ ...f.command, ownerGeneration: before.generation }), /another.*tab|ownership|could not save|workspace or draft changed/i);
   assert.deepEqual(f.store.list(f.scope), []);
   assert.equal(f.counts().steps, 0);

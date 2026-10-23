@@ -7,6 +7,7 @@ import type { RepositoryApi } from "./repository-loading";
 import type { SharedContext } from "./agent-site";
 import type { Stamp } from "./guarded-edit";
 import { createAgentTools, type AgentToolExecutor } from "./agent-tools";
+import { sameBranch } from "./workspace-session";
 
 export interface AgentReadFiles {
   repo: Repository;
@@ -27,7 +28,7 @@ export interface AgentReadPorts {
 /** The browser's existing tree/blob readers and clean cache, pinned before any await. */
 export function agentFileReader(ports: AgentReadFiles, context: EditorContext, signal?: AbortSignal): SiteFileReader {
   const { repo, snapshot, api } = ports;
-  if (repo.id !== context.repository.id || snapshot.branch !== context.branch || snapshot.commit !== context.commit)
+  if (!sameBranch({ repoId: repo.id, branch: snapshot.branch }, { repoId: context.repository.id, branch: context.branch }) || snapshot.commit !== context.commit)
     throw new Error("The editor changed branch or revision. Read the site again.");
   return {
     async commitTree() {
@@ -70,11 +71,11 @@ function readError(error: unknown) {
 export function createAgentReadTools(ports: AgentReadPorts) {
   const executor = (tool: AgentRead["tool"]): AgentToolExecutor => async (args, signal) => {
     const stamp = ports.stamp(), source = ports.files();
-    const repoId = source?.repo.id, branch = source?.snapshot.branch, commit = source?.snapshot.commit;
+    const commit = source?.snapshot.commit;
     const stale = () => {
       signal?.throwIfAborted();
-      const now = ports.files();
-      if (!stamp.holds() || now?.repo.id !== repoId || now?.snapshot.branch !== branch || now?.snapshot.commit !== commit)
+      // The stamp holds while the same repository and branch stay open (src/workspace-session.ts); a save moves the commit within it.
+      if (!stamp.holds() || ports.files()?.snapshot.commit !== commit)
         throw new Error("The editor changed branch or revision. Read the site again.");
     };
     try {

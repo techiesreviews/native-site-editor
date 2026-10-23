@@ -5,7 +5,8 @@
 //
 // - GitHub: one account whatever its capitals ("Lex" and "lex"), one
 //   repository by its id (a renamed repository is the same, a re-created one
-//   with the old name is not), one branch, one version view.
+//   with the old name is not; by its name only when an id is not known), one
+//   branch, one version view.
 // - Local folder: its own kind with no account; never the same as a GitHub
 //   scope, even for the same site.
 // - A GitHub scope with an empty branch is not loaded yet: it is the same as
@@ -19,7 +20,7 @@ export type WorkspaceScope =
   | { kind: "github"; account: string; repoId: number; repo: string; branch: string; view?: string }
   | { kind: "folder"; folderId: string; view?: string };
 
-/** Comparison keys of a scope: equal whenever `same` holds (the view aside). */
+/** Comparison keys of a scope: equal whenever `same` holds (the view aside); none for a repository known only by name. */
 export interface WorkspaceKeys { drafts: string; setup: string; media: string }
 
 /** What moved since a stamp began: another workspace, the version view on it, or a reload of it. */
@@ -40,21 +41,43 @@ export interface WorkspaceSession {
   begin(): SessionStamp;
   /** Starts a new load of `scope` (the same one again is a reload); every stamp before it stops holding. */
   next(scope: WorkspaceScope | undefined): void;
-  /** The keys of `scope`, by default the one open now; none for no scope or an empty branch. */
+  /** The keys of `scope`, by default the one open now; none for no scope, an empty branch or a repository known only by name. */
   keys(scope?: WorkspaceScope): WorkspaceKeys | undefined;
 }
 
-// The workspace a scope names, the view aside; none while it is not loaded.
+// A GitHub repository id is a positive whole number; 0 (or none) means it is not known.
+const known = (repoId: number | undefined) => Number.isSafeInteger(repoId) && repoId! > 0;
+
+// The workspace a scope names, the view aside; none while it is not loaded, or for a repository known only by name.
 function identity(scope: WorkspaceScope | undefined) {
   if (!scope) return undefined;
   if (scope.kind === "folder") return scope.folderId ? JSON.stringify(["folder", scope.folderId]) : undefined;
-  return scope.branch ? JSON.stringify(["github", scope.account.toLowerCase(), scope.repoId, scope.branch]) : undefined;
+  return scope.branch && known(scope.repoId) ? JSON.stringify(["github", scope.account.toLowerCase(), scope.repoId, scope.branch]) : undefined;
+}
+
+/** A branch of a repository, without its account (work within one account: an agent's grant, an approval). */
+export interface BranchScope { repoId?: number; repo?: string; branch: string }
+
+/**
+ * The same repository and branch, the account aside: the repository by its id, or by its
+ * name (ignoring capitals, as GitHub does) only when either id is not known. An empty
+ * branch is the same as nothing.
+ */
+export function sameBranch(a: BranchScope | undefined, b: BranchScope | undefined) {
+  if (!a?.branch || a.branch !== b?.branch) return false;
+  if (known(a.repoId) && known(b.repoId)) return a.repoId === b.repoId;
+  return !!a.repo && a.repo.toLowerCase() === b.repo?.toLowerCase();
+}
+
+// The same workspace, the view aside.
+function sameWorkspace(a: WorkspaceScope | undefined, b: WorkspaceScope | undefined) {
+  if (a?.kind === "folder" || b?.kind === "folder") return a?.kind === "folder" && b?.kind === "folder" && !!a.folderId && a.folderId === b.folderId;
+  return !!a && !!b && a.account.toLowerCase() === b.account.toLowerCase() && sameBranch(a, b);
 }
 
 /** The same workspace and version view. */
 export function same(a: WorkspaceScope | undefined, b: WorkspaceScope | undefined) {
-  const id = identity(a);
-  return id !== undefined && id === identity(b) && a!.view === b!.view;
+  return sameWorkspace(a, b) && a!.view === b!.view;
 }
 
 export function workspaceKeys(scope: WorkspaceScope | undefined): WorkspaceKeys | undefined {
@@ -89,8 +112,7 @@ export function createWorkspaceSession(scope?: WorkspaceScope): WorkspaceSession
       const began = load, at = open;
       const changed = (): SessionChange | undefined => {
         if (load === began) return undefined;
-        const id = identity(at);
-        if (id === undefined || id !== identity(open)) return "scope";
+        if (!sameWorkspace(at, open)) return "scope";
         return at!.view === open!.view ? "generation" : "version-view";
       };
       return { load: began, scope: at, holds: () => load === began, changed };

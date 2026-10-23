@@ -50,7 +50,7 @@ async function receivingTab(worker: Awaited<ReturnType<typeof startWorker>>["wor
   const scope = { workspace, tabId: tab.tabId, generation: 1 };
   const github = new GitHub("github-private-token", (input, init) => fakeGitHub(new Request(input, init), state));
   const records = indexedDbAgentRecords("runtime", fakeIndexedDB().factory);
-  const owner = await records.setGeneration(workspace, 0, 1);
+  const owner = await records.setFence(workspace, 0, 1);
   const snapshot: Snapshot = { branch: "main", commit: "c".repeat(40), entries: [] };
   let context: EditorContext | undefined;
   const commands: AgentCommand[] = [];
@@ -73,7 +73,7 @@ async function receivingTab(worker: Awaited<ReturnType<typeof startWorker>>["wor
     commands.push(command);
     const outcome = { message: "Changed.", result: results.get(command.id) ?? { hash: "f".repeat(64) } };
     const current = await records.workspace(workspace);
-    await records.commit({ workspace, generation: owner.generation, expectedRevision: current.revision, expectedDrafts: [], drafts: [],
+    await records.commit({ workspace, fence: owner.generation, expectedRevision: current.revision, expectedDrafts: [], drafts: [],
       receipt: { operationId: command.id, authorizationId: command.grantId!, payloadIdentity: command.requestIdentity!, outcome,
         issuedAt: command.createdAt, createdAt: Date.now() } });
     return outcome;

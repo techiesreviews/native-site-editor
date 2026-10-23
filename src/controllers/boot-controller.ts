@@ -4,6 +4,7 @@ import { startBootReads } from "../boot-reads";
 import { autoSignInPlan, AUTO_SIGNIN_DELAY_MS, markAutoSignInTried, rememberSignedIn } from "../auto-signin";
 import type { Repository, SessionInfo } from "../../shared/types";
 import type { WorkspaceLocation } from "../workspace-state";
+import type { SessionStamp } from "../workspace-session";
 
 export type Onboarding = "install" | "create";
 type Store = Pick<Storage, "getItem" | "setItem" | "removeItem">;
@@ -50,8 +51,8 @@ export interface BootMenu {
 }
 
 export interface BootPorts {
-  /** Read only: the host bumps generation (loadRepositories, renderLogin). */
-  generation(): number;
+  /** The workspace session now (src/workspace-session.ts); the host starts each load (loadRepositories, renderLogin). */
+  begin(): SessionStamp;
   /** Editor endpoint identity: origin plus pathname. */
   source(): string;
   url(): string;
@@ -67,7 +68,7 @@ export interface BootPorts {
   adoptSession(session: SessionInfo): void;
   /** Resume the link, mount the workspace and start the agent. */
   enterWorkspace(): void;
-  loadRepositories(prefetched?: Repository[], hooks?: { onStarted(epoch: number): void }): Promise<void>;
+  loadRepositories(prefetched?: Repository[], hooks?: { onStarted(at: SessionStamp): void }): Promise<void>;
   renderLogin(mode?: LoginMode): void;
   retainLink(): void;
   showError(error: unknown): void;
@@ -79,7 +80,7 @@ export interface BootPorts {
   applyList(list: Repository[]): void;
 }
 
-/** Session/repository boot orchestration; the host keeps generation and the workspace DOM. */
+/** Session/repository boot orchestration; the host keeps the workspace session and DOM. */
 export function createBootController(ports: BootPorts) {
   let drafts: Promise<void> = Promise.resolve();
   let openNew = false;
@@ -129,15 +130,15 @@ export function createBootController(ports: BootPorts) {
   }
 
   async function start() {
-    const bootEpoch = ports.generation();
-    let handoff: { epoch: number; session: SessionInfo } | undefined;
+    const at = ports.begin();
+    let handoff: { at: SessionStamp; session: SessionInfo } | undefined;
     const source = ports.source();
-    const current = () => ports.generation() === bootEpoch && ports.source() === source;
+    const current = () => at.holds() && ports.source() === source;
     const reads = startBootReads({
       readSession: () => ports.readSession(),
       readRepositories: async () => repositoryReceipt(await ports.readRepositories(false)),
-      scope: { source, epoch: bootEpoch },
-      isCurrent: scope => current() && scope.source === source && scope.epoch === bootEpoch,
+      scope: { source, epoch: at.load },
+      isCurrent: scope => current() && scope.source === source,
     });
     try {
       const sessionResponse = await reads.session;
@@ -179,7 +180,7 @@ export function createBootController(ports: BootPorts) {
         if (prefetched) onboarding = prefetched.value.onboarding;
         await ports.loadRepositories(installed ? undefined : prefetched?.value.repositories ?? session.repositories ?? undefined, {
           // Capture at the increment, before setup callbacks can throw or navigate.
-          onStarted: epoch => { handoff = { epoch, session }; },
+          onStarted: started => { handoff = { at: started, session }; },
         });
       } else if (
         autoSignInPlan({ configured: session.configured, hasSession: false, pathname: new URL(ports.url()).pathname, search: new URL(ports.url()).search, local: ports.storage("local"), session: ports.storage("session") }) === "auto"
@@ -212,7 +213,7 @@ export function createBootController(ports: BootPorts) {
       }
     } catch (error) {
       const ownsFailure = handoff
-        ? ports.generation() === handoff.epoch && ports.session() === handoff.session && ports.source() === source
+        ? handoff.at.holds() && ports.session() === handoff.session && ports.source() === source
         : current();
       if (!ownsFailure) return;
       ports.renderLogin("error");

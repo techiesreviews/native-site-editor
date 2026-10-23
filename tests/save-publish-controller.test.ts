@@ -37,7 +37,6 @@ function fixture() {
       const changed = () => JSON.stringify(ports.scope()) !== scope ? "scope" as const : state.generation !== epoch ? "generation" as const : undefined;
       return { holds: () => !changed(), changed };
     },
-    generation: () => state.generation,
     snapshot: () => state.snapshot,
     scope: () => state.snapshot ? { account: state.account, repoId: state.repoId, repo: `lex/site${state.repoId}`, branch: state.snapshot.branch } : undefined,
     drafts: () => ({
@@ -97,6 +96,24 @@ test("a save goes through only for the generation, account, repository and branc
   assert.deepEqual(refreshed.log, ["saved"], "a refreshed snapshot of the same branch still takes the save");
 });
 
+// One repository rule (src/workspace-session.ts): the head check and the refresh after a save
+// both know the repository by its id, and the account whatever its capitals.
+test("the snapshot after a save is the open repository's by id, whatever its name or the login's capitals", async () => {
+  for (const saved of [{ ...scope1, repo: "lex/renamed" }, { ...scope1, account: "Lex" }]) {
+    const f = fixture(), was = f.controller.proof();
+    f.controller.published(was, saved, result("f".repeat(40)), []);
+    assert.equal(f.controller.headFor(saved), "f".repeat(40));
+    f.answers[0].resolve(snap("f".repeat(40)));
+    await flush();
+    assert.deepEqual(f.log, ["saved", "snapshot f", "shown f", "Selected files saved to GitHub."], saved.repo);
+  }
+  const other = fixture(), was = other.controller.proof();
+  other.controller.published(was, { ...scope1, repoId: 2 }, result("f".repeat(40)), []);
+  other.answers[0].resolve(snap("f".repeat(40)));
+  await flush();
+  assert.deepEqual(other.log, ["saved"], "a re-created repository of the same name is another");
+});
+
 test("head trust: a seen head is trusted, an empty repository commits onto the null commit", () => {
   const f = fixture();
   assert.equal(f.controller.trustedHead(), undefined);
@@ -151,8 +168,8 @@ test("deleted upstream: a missing edit waits to be settled, a missing deletion g
   f.drafts.set("gone.html", draft("gone.html"));
   f.drafts.set("removed.html", draft("removed.html", { deleted: true }));
   f.drafts.set("kept.html", draft("kept.html"));
-  const done = f.controller.checkDeleted(1);
-  assert.equal(f.controller.checkDeleted(1), done, "once per snapshot load");
+  const done = f.controller.checkDeleted(f.ports.stamp());
+  assert.equal(f.controller.checkDeleted(f.ports.stamp()), done, "once per snapshot load");
   f.entries.get("gone.html")!.resolve(undefined);
   f.entries.get("removed.html")!.resolve(undefined);
   f.entries.get("kept.html")!.resolve({ path: "kept.html", sha: "c".repeat(40), mode: "100644", type: "blob" });
@@ -166,7 +183,7 @@ test("deleted upstream: a missing edit waits to be settled, a missing deletion g
 
   const g = fixture();
   g.drafts.set("gone.html", draft("gone.html"));
-  const late = g.controller.checkDeleted(1);
+  const late = g.controller.checkDeleted(g.ports.stamp());
   g.state.snapshot = snap("e".repeat(40));
   g.entries.get("gone.html")!.resolve(undefined);
   await late;
@@ -175,14 +192,16 @@ test("deleted upstream: a missing edit waits to be settled, a missing deletion g
 
   const stale = fixture();
   stale.drafts.set("gone.html", draft("gone.html"));
-  await stale.controller.checkDeleted(0);
-  assert.equal(stale.entries.size, 0, "an old epoch looks nothing up");
+  const old = stale.ports.stamp();
+  stale.state.generation++;
+  await stale.controller.checkDeleted(old);
+  assert.equal(stale.entries.size, 0, "an old load looks nothing up");
 });
 
 test("settling a deleted draft keeps it as a new file or drops it, then reopens what was open", async () => {
   const f = fixture();
   f.drafts.set("gone.html", draft("gone.html"));
-  const check = f.controller.checkDeleted(1);
+  const check = f.controller.checkDeleted(f.ports.stamp());
   f.entries.get("gone.html")!.resolve(undefined);
   await check;
   f.log.length = 0;
@@ -364,7 +383,7 @@ test("discard all counts a rename's two drafts as one change", async () => {
 test("pruned drafts are forgotten and redrawn when a save's refresh adopts a snapshot mid-check", async () => {
   const f = fixture();
   f.drafts.set("same.html", draft("same.html", { content: "x" }));
-  const check = f.controller.checkDeleted(1);
+  const check = f.controller.checkDeleted(f.ports.stamp());
   // The blob SHA of "x", so the draft is GitHub's version and is pruned.
   // The refresh lands while the blob SHAs are worked out (pruneUnchanged reads the draft again).
   f.hooks.get = () => { f.state.snapshot = snap("e".repeat(40)); };
@@ -381,7 +400,7 @@ test("a save refresh adopting during deleted-check lookups drops all stale answe
     for (const value of originals) f.drafts.set(value.path, value);
     f.ports.findEntry = race.port("findEntry", async path => path === "same.html"
       ? { path, sha: "c1b0730e0133447badcfd47fd144e254807b06e1", mode: "100644", type: "blob" as const } : undefined);
-    return { ...f, originals, done: f.controller.checkDeleted(1) };
+    return { ...f, originals, done: f.controller.checkDeleted(f.ports.stamp()) };
   }, async f => {
     // The refresh's independent check sees files still present and changed.
     f.ports.findEntry = async path => ({ path, sha: "b".repeat(40), mode: "100644", type: "blob" });
@@ -409,7 +428,7 @@ test("without a user scope, checks and discard actions do nothing and say nothin
   const before = new Map(f.drafts);
   f.ports.scope = () => undefined;
   await f.controller.checkHead(true);
-  await f.controller.checkDeleted(1);
+  await f.controller.checkDeleted(f.ports.stamp());
   assert.equal(f.controller.discard(), 0);
   assert.equal(f.controller.discard(["a.html"]), 0);
   await f.controller.discardAll();

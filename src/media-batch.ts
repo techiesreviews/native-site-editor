@@ -15,7 +15,6 @@ export interface MediaBatchPorts {
   nativeFiles(scope: DraftScope): string[];
   draftStore: typeof draftStore;
   bytes: typeof import("./uploads").uploadBytes;
-  mediaIdentity(): string;
   mediaTextSource(path: string, scope: DraftScope): string | undefined;
   entryAt(path: string): TreeEntry | undefined;
   findEntry(path: string): Promise<TreeEntry | undefined>;
@@ -38,7 +37,6 @@ export async function applyMediaBatch(ports: MediaBatchPorts, scope: DraftScope,
   // opens later is not proven over this step's text, so changes to page text still need one open.
   const historyPath = ports.appStore.openFile.value, historyHost = historyPath ? editor.captureHistoryHost(historyPath) : undefined;
   if (!historyHost && [...batch.edits.keys()].some(path => path !== MEDIA_RECORDS_PATH)) throw new Error("Open a page before changing images that pages use.");
-  const identity = ports.mediaIdentity();
   const batchPaths = () => {
     if (!listed) return ports.nativeFiles(scope);
     const drafts = ports.draftStore().list(scope), gone = new Set(drafts.filter(draft => draft.deleted).map(draft => draft.path));
@@ -56,7 +54,7 @@ export async function applyMediaBatch(ports: MediaBatchPorts, scope: DraftScope,
       if (historyHost && historyPath) return recordOn(historyPath, undo, redo, dispose);
       // A file that opened while the change was prepared takes it now.
       const opened = ports.appStore.openFile.value;
-      return opened && editor.captureHistoryHost(opened) ? recordOn(opened, undo, redo, dispose) : ports.mediaHistoryHome.hold(identity, undo, redo, dispose);
+      return opened && editor.captureHistoryHost(opened) ? recordOn(opened, undo, redo, dispose) : ports.mediaHistoryHome.hold(stamp, undo, redo, dispose);
     },
     refresh: () => { ports.refresh(); },
     announce: message => ports.announce(message),

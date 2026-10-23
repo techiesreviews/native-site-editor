@@ -9,11 +9,13 @@ import { AgentRecordsError, type AgentRecords } from "./agent-records";
 import { agentCommandSignals } from "./agent-tools";
 import { createAgentOwner } from "./agent-owner";
 import { browserAgentRecovery } from "./agent-recovery";
+import { sameBranch } from "./workspace-session";
 
 type Snapshot = Awaited<ReturnType<AgentRecords["snapshot"]>>;
 type Mode = "connecting" | "live" | "other-owner" | "taken-over" | "taking-over" | "takeover-failed" |
   "reconnecting" | "paused" | "quota" | "workspace-changed" | "unavailable" | "off";
 interface State { mode: Mode; message?: string; closed?: boolean; resetAt?: number; retryAt?: number }
+// `generation`: the relay's wire name of the receiving tab's ownership fence (worker/agent-relay.ts).
 interface Scope { workspace: AgentWorkspace; tabId: string; generation: number }
 interface Result { state: "applied" | "conflict" | "unknown"; message: string; result?: AgentCommand["result"]; operationId: string }
 type Socket = Pick<WebSocket, "readyState" | "send" | "close" | "addEventListener">;
@@ -23,8 +25,8 @@ interface Registry {
   read: () => { tabId: string; generation: number } | undefined;
   write: (owner: { tabId: string; generation: number }) => void;
   clear: (owner: { tabId: string; generation: number }) => void;
-  held: (generation: number) => Promise<boolean>;
-  hold: (generation: number) => Promise<(() => void) | undefined>;
+  held: (fence: number) => Promise<boolean>;
+  hold: (fence: number) => Promise<(() => void) | undefined>;
   /** The tab of this workspace focused most recently: it goes first when the receiving tab closes. */
   focus: (tabId: string) => void;
   focused: () => string | undefined;
@@ -38,13 +40,13 @@ interface Options {
   current: () => AgentWorkspace | undefined;
   records: AgentRecords;
   reload: (snapshot: Snapshot) => Promise<void>;
-  media?: (request: AgentMedia, generation: number, current: () => boolean, deadline: number, seen: { page: string | undefined }, signal?: AbortSignal) => Promise<AgentReadResult>;
+  media?: (request: AgentMedia, fence: number, current: () => boolean, deadline: number, seen: { page: string | undefined }, signal?: AbortSignal) => Promise<AgentReadResult>;
   /** The live page source, read synchronously when a media command arrives: its proof starts there. */
   source?: (path: string) => string | undefined;
-  edit?: (request: AgentEdit | AgentStatus, generation: number, current: () => boolean, signal?: AbortSignal) => Promise<AgentReadResult>;
+  edit?: (request: AgentEdit | AgentStatus, fence: number, current: () => boolean, signal?: AbortSignal) => Promise<AgentReadResult>;
   read?: (read: AgentRead, signal?: AbortSignal) => Promise<AgentReadResult>;
   /** Ticket 18: the request tools, answered from this browser's requests (a wait may be held under Watch). */
-  requests?: (request: AgentRequests, generation: number, current: () => boolean, deadline: number, signal?: AbortSignal) => Promise<AgentReadResult>;
+  requests?: (request: AgentRequests, fence: number, current: () => boolean, deadline: number, signal?: AbortSignal) => Promise<AgentReadResult>;
   run: (command: AgentCommand, ownerGeneration: number, signal?: AbortSignal) => Promise<{ message?: string; result?: AgentCommand["result"] } | void>;
   listen: (state: State) => void;
   socket?: (url: string) => Socket;
@@ -57,10 +59,10 @@ interface Options {
   events?: { window: Pick<EventTarget, "addEventListener" | "removeEventListener">; document: Pick<EventTarget, "addEventListener" | "removeEventListener"> };
 }
 
-/** Hints only: the generation in IndexedDB is the authority at admission and commit. */
+/** Hints only: the fence in IndexedDB is the authority at admission and commit; the hint keeps it as `generation`. */
 function browserRegistry(workspace: AgentWorkspace): Registry {
   const key = `native-site-editor:agent-owner:${workspaceKey(workspace)}`;
-  const name = (generation: number) => `${key}:${generation}`;
+  const name = (fence: number) => `${key}:${fence}`;
   const read = () => {
     try {
       const value = JSON.parse(localStorage.getItem(key) ?? "null") as { tabId?: unknown; generation?: unknown } | null;
@@ -74,16 +76,16 @@ function browserRegistry(workspace: AgentWorkspace): Registry {
       const stored = read();
       if (stored?.tabId === owner.tabId && stored.generation === owner.generation) localStorage.removeItem(key);
     },
-    held: async generation => navigator.locks
-      ? (await navigator.locks.query()).held?.some(lock => lock.name === name(generation)) ?? false
-      : read()?.generation === generation,
+    held: async fence => navigator.locks
+      ? (await navigator.locks.query()).held?.some(lock => lock.name === name(fence)) ?? false
+      : read()?.generation === fence,
     focus: tabId => { try { localStorage.setItem(`${key}:focus`, tabId); } catch { /* A hint only: unordered succession still elects one tab. */ } },
     focused: () => { try { return localStorage.getItem(`${key}:focus`) ?? undefined; } catch { return undefined; } },
     elect: work => navigator.locks ? navigator.locks.request(`${key}:elect`, () => work()) : work(),
-    hold: generation => {
+    hold: fence => {
       if (!navigator.locks) return Promise.resolve(() => {});
       return new Promise((resolve, reject) => {
-        navigator.locks.request(name(generation), { ifAvailable: true }, lock => {
+        navigator.locks.request(name(fence), { ifAvailable: true }, lock => {
           if (!lock) { resolve(undefined); return; }
           return new Promise<void>(release => resolve(release));
         }).catch(reject);
@@ -103,7 +105,7 @@ export function createLiveTransport(options: Options) {
   const clock = options.clock ?? { setTimeout: (callback, delay) => window.setTimeout(callback, delay), clearTimeout: timer => window.clearTimeout(timer) };
   const events = options.events ?? { window, document };
   const socketFactory = options.socket ?? (typeof WebSocket === "undefined" ? undefined : (url: string) => new WebSocket(url));
-  let state: State = { mode: "connecting" }, stopped = false, epoch = 0, generation: number | undefined;
+  let state: State = { mode: "connecting" }, stopped = false, epoch = 0, fence: number | undefined;
   let opening: { socket: Socket; current: () => boolean } | undefined;
   let socket: Socket | undefined, handshaken = false, session = 0, release: (() => void) | undefined;
   let heartbeat: number | undefined, pong: number | undefined;
@@ -114,13 +116,13 @@ export function createLiveTransport(options: Options) {
     for (const call of active.values()) if (call.source === source) { call.stop.abort(); call.dispose(); }
   };
   const flights = new Map<string, { identity: string; promise: Promise<Result> }>();
-  const scope = (): Scope => ({ workspace, tabId: options.tabId, generation: generation! });
+  const scope = (): Scope => ({ workspace, tabId: options.tabId, generation: fence! });
   // A workspace briefly absent (a refresh reloading the repository) is no move: the socket, ownership
   // and recovery carry on, and only command admission waits for it (`present`).
   const moved = () => { const now = options.current(); return now !== undefined && workspaceKey(now) !== key; };
   const current = () => !stopped && !moved();
   const present = () => current() && options.current() !== undefined;
-  const matches = (value: Partial<Scope>) => value.workspace && typeof value.workspace.account === "string" && workspaceKey(value.workspace) === key && value.tabId === options.tabId && value.generation === generation;
+  const matches = (value: Partial<Scope>) => value.workspace && typeof value.workspace.account === "string" && workspaceKey(value.workspace) === key && value.tabId === options.tabId && value.generation === fence;
   function show(next: State) { if (!stopped) { state = next; options.listen(state); } }
   function clearHeartbeat() {
     if (heartbeat !== undefined) clock.clearTimeout(heartbeat);
@@ -139,8 +141,8 @@ export function createLiveTransport(options: Options) {
   }
   function unhold() {
     release?.(); release = undefined;
-    if (generation !== undefined) {
-      try { registry.clear({ tabId: options.tabId, generation }); } catch { /* Hints cannot undo the durable fence. */ }
+    if (fence !== undefined) {
+      try { registry.clear({ tabId: options.tabId, generation: fence }); } catch { /* Hints cannot undo the durable fence. */ }
     }
   }
   function halt(mode: Mode) {
@@ -153,7 +155,7 @@ export function createLiveTransport(options: Options) {
     if (!current() || epoch !== at) return false;
     const stored = await records.workspace(workspace);
     if (!current() || epoch !== at) return false;
-    if (stored.generation !== generation) { halt("taken-over"); return false; }
+    if (stored.generation !== fence) { halt("taken-over"); return false; }
     if (stored.paused) { halt("takeover-failed"); return false; }
     return true;
   }
@@ -183,7 +185,7 @@ export function createLiveTransport(options: Options) {
           typeof read.grantId !== "string" || !read.grantId || !read.args || typeof read.args !== "object" || Array.isArray(read.args) || !await prove(at) || !valid()
           ? { ok: false, message: "This request call is incomplete or belongs to another workspace, tab or generation. Call it again." }
           // Finish an empty wait before the cancellation fence, leaving time for its final IndexedDB read and reply.
-          : await options.requests?.(read, generation!, valid, deadline - 100, signal) ?? { ok: false, message: "Browser request tools are unavailable. Refresh the editor." };
+          : await options.requests?.(read, fence!, valid, deadline - 100, signal) ?? { ok: false, message: "Browser request tools are unavailable. Refresh the editor." };
       } else {
         const editing = read.operation === "edit" || read.operation === "status" || read.operation === "media";
         if (typeof value.id !== "string" || !value.id || !matches(value) || !valid() || (editing ? (typeof read.id !== "string" || !/^[\w.:-]{1,128}$/.test(read.id) || typeof read.grantId !== "string" || !read.grantId ||
@@ -196,9 +198,9 @@ export function createLiveTransport(options: Options) {
             !await prove(at) || !valid())
           result = { ok: false, message: "This read is incomplete or belongs to another workspace, tab or generation. Read the site again." };
         else if (read.operation === "media") result = typeof read.path === "string" && mediaTools.includes(read.tool)
-          ? await options.media?.(read, generation!, valid, deadline, seen, signal) ?? { ok: false, message: "Browser media tools are unavailable. Refresh the editor." }
+          ? await options.media?.(read, fence!, valid, deadline, seen, signal) ?? { ok: false, message: "Browser media tools are unavailable. Refresh the editor." }
           : { ok: false, message: "Unknown browser media tool." };
-        else if (editing) result = await options.edit?.(read, generation!, valid, signal) ?? { ok: false, message: "Browser edit tools are unavailable. Refresh the editor." };
+        else if (editing) result = await options.edit?.(read, fence!, valid, signal) ?? { ok: false, message: "Browser edit tools are unavailable. Refresh the editor." };
         else result = await options.read?.(read, signal) ?? { ok: false, message: "Browser read tools are unavailable. Refresh the editor." };
       }
     } catch (error) { result = { ok: false, message: error instanceof Error ? error.message : "The browser read failed." }; }
@@ -220,7 +222,7 @@ export function createLiveTransport(options: Options) {
     else if (typeof value.id !== "string" || !value.id || !incoming || typeof incoming !== "object" || !operationId || typeof incoming.operation !== "string" || !operations.has(incoming.operation) ||
       typeof incoming.path !== "string" || typeof incoming.content !== "string" || typeof incoming.commit !== "string" ||
       incoming.state !== "pending" || !Number.isFinite(incoming.createdAt) || typeof incoming.grantId !== "string" || !incoming.grantId ||
-      incoming.repoId !== workspace.repoId || incoming.branch !== workspace.branch ||
+      !sameBranch({ repoId: incoming.repoId, branch: incoming.branch ?? "" }, workspace) ||
       (incoming.args !== undefined && (!incoming.args || typeof incoming.args !== "object" || Array.isArray(incoming.args))))
       result = refuse("This agent change is incomplete or belongs to another site or branch. Read the site again.");
     else {
@@ -236,9 +238,9 @@ export function createLiveTransport(options: Options) {
           else {
             const work = existing ?? { identity, promise: (async (): Promise<Result> => {
               try {
-                const command = { ...incoming as AgentCommand, ownerGeneration: generation! };
+                const command = { ...incoming as AgentCommand, ownerGeneration: fence! };
                 agentCommandSignals.set(command, signal);
-                const outcome = await options.run(command, generation!, signal);
+                const outcome = await options.run(command, fence!, signal);
                 return { state: "applied", message: outcome?.message ?? "Applied in the editor as an unsaved draft.", ...outcome, operationId };
               } catch (error) {
                 const message = error instanceof Error ? error.message : "The change could not be applied.";
@@ -252,7 +254,7 @@ export function createLiveTransport(options: Options) {
         }
       } catch (error) { result = refuse(error instanceof Error ? error.message : "Browser storage is unavailable."); }
     }
-    // Check the durable generation even when a frozen tab missed every ownership hint.
+    // Check the durable fence even when a frozen tab missed every ownership hint.
     if (socket !== source || !await prove(at).catch(() => false)) return;
     // Correlation belongs to this socket and handshake epoch, never a replacement connection.
     if (socket === source && source.readyState === 1 && handshaken && session === connection && epoch === at && !stopped && !moved() && state.mode === "live") {
@@ -263,7 +265,7 @@ export function createLiveTransport(options: Options) {
     const at = epoch;
     if (!await prove(at) || !valid()) return;
     close();
-    const source = socketFactory!(`/api/agent/relay?${new URLSearchParams({ repo: options.repo, branch: workspace.branch, tabId: options.tabId, generation: String(generation) })}`);
+    const source = socketFactory!(`/api/agent/relay?${new URLSearchParams({ repo: options.repo, branch: workspace.branch, tabId: options.tabId, generation: String(fence) })}`);
     socket = source;
     opening = { socket: source, current: valid };
     await new Promise<void>((resolve, reject) => {
@@ -373,7 +375,7 @@ export function createLiveTransport(options: Options) {
       }
     });
     recovery.subscribe(() => {
-      if (!current() || generation === undefined) return;
+      if (!current() || fence === undefined) return;
       const next = recovery?.state();
       if (!next) return;
       if (ownerPaused) { close(); show({ mode: "paused", message: "Remote agents are paused by the site owner." }); return; }
@@ -421,22 +423,22 @@ export function createLiveTransport(options: Options) {
       try {
         const stored = await records.workspace(workspace);
         if (!current() || epoch !== at) return;
-        owner = createAgentOwner({ workspace, generation: stored.generation, records, reload: async snapshot => {
+        owner = createAgentOwner({ workspace, fence: stored.generation, records, reload: async snapshot => {
           if (!current() || epoch !== at) throw new Error("The open site changed during takeover.");
           await options.reload(snapshot);
           if (!current() || epoch !== at) throw new Error("The open site changed during takeover.");
         } });
         const acquired = await owner.takeover();
         if (!current() || epoch !== at) return;
-        generation = acquired.generation;
-        const held = await registry.hold(generation);
+        fence = acquired.fence;
+        const held = await registry.hold(fence);
         if (!current() || epoch !== at) { held?.(); return; }
         if (!held) throw new Error("Another tab receives agent changes.");
         release = held;
-        registry.write({ tabId: options.tabId, generation });
+        registry.write({ tabId: options.tabId, generation: fence });
         await open();
       } catch {
-        if (owner) await records.pause(workspace, owner.generation).catch(() => undefined);
+        if (owner) await records.pause(workspace, owner.fence).catch(() => undefined);
         if (current() && epoch === at) halt("takeover-failed");
       }
     })().finally(() => { takeoverFlight = undefined; });
@@ -497,7 +499,7 @@ export function createLiveTransport(options: Options) {
   // one tab receives; the most recently focused tab asks first, the others a moment later.
   let electing = false;
   function succeed() {
-    if (electing || stopped || generation !== undefined || state.mode !== "other-owner") return;
+    if (electing || stopped || fence !== undefined || state.mode !== "other-owner") return;
     electing = true;
     const at = epoch;
     clock.setTimeout(() => {
@@ -512,7 +514,7 @@ export function createLiveTransport(options: Options) {
   const check = () => {
     const at = epoch;
     if (!current()) { if (!stopped && moved()) halt("workspace-changed"); return; }
-    if (generation === undefined) {
+    if (fence === undefined) {
       if (state.mode !== "other-owner") return;
       if (!registry.read()) { show({ mode: "other-owner", closed: true }); succeed(); return; }
       void ownerPresent().then(present => { if (!present && epoch === at) succeed(); }).catch(() => undefined);

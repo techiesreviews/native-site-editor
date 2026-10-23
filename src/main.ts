@@ -212,7 +212,7 @@ const loadMedia = lazyModule(async () => {
 const loadSetupActions = lazyModule(async () => {
   const { createSetupActions } = await import("./setup-actions");
   return createSetupActions({
-    get info() { return info; }, get generation() { return currentLoad(); },
+    get info() { return info; }, begin: () => workspaceSession.begin(),
     get repositories() { return repositories; }, set repositories(value) { repositories = value; },
     get wizardCreated() { return wizardCreated; }, set wizardCreated(value) { wizardCreated = value; },
     get waitingForRepositories() { return waitingForRepositories; }, set waitingForRepositories(value) { waitingForRepositories = value; },
@@ -323,7 +323,7 @@ function openCodeEditor(
   );
   const historyHost = editorModule.captureHistoryHost(file.path), liveScope = draftScope();
   if (appStore.openFile.value === file.path && historyHost) {
-    mediaHistoryHome.adopt(mediaIdentity(), (undo, redo, dispose) => editorModule.recordHistoryAction(file.path, undo, redo, dispose));
+    mediaHistoryHome.adopt((undo, redo, dispose) => editorModule.recordHistoryAction(file.path, undo, redo, dispose));
   }
   primaryHistoryScope = file.scope && historyScope && appStore.openFile.value === file.path && historyHost && liveScope &&
     draftKey(liveScope, file.path) === draftKey(file.scope, file.path)
@@ -2548,7 +2548,7 @@ async function applyMediaBatch(scope: DraftScope, stamp: Stamp, batch: MediaWork
   if (appStore.openFile.value !== openAtStart) throw new Error("The open page changed. No image changes were applied.");
   await module.applyMediaBatch({
     appStore, editor: editorModule, mediaHistoryHome, site: () => nativeSite, load: loadMediaWorkspace,
-    listRepositoryFiles, nativeFiles, draftStore, bytes: uploadBytes, mediaIdentity, mediaTextSource, entryAt, findEntry,
+    listRepositoryFiles, nativeFiles, draftStore, bytes: uploadBytes, mediaTextSource, entryAt, findEntry,
     refresh: () => { afterFileChanges(); updateNativePreviewSources(); if (appStore.selection.value) pageStructureController.renderEditBar(appStore.selection.value); },
     announce,
   }, scope, stamp, batch, openAtStart);
@@ -4160,7 +4160,6 @@ async function discardFileChange(change: FileChange) {
 
 const savePublish = createSavePublishController({
   stamp: () => guardedEdits.stamp("repository"),
-  generation: currentLoad,
   snapshot: () => appStore.snapshot.value,
   scope: draftScope, drafts: draftStore, api, findEntry, changed: afterFileChanges, release: releaseFiles, openAfter, announce, status,
   fail: errorMessage, fallback: nativeFallbackPage, resync: resyncNativeSite,
@@ -4867,7 +4866,7 @@ async function restoreFile(
         return;
       }
       // An edit of a file GitHub deleted: opened to be settled.
-      if (saved && !saved.deleted) await savePublish.checkDeleted(at.load);
+      if (saved && !saved.deleted) await savePublish.checkDeleted(at);
       if (!at.holds() || selection !== fileGeneration) return;
       if (saved && !saved.deleted && savePublish.isDeleted(path)) {
         if (!options.keepExplorer) explorerDropdown?.close();
@@ -4945,7 +4944,7 @@ async function loadSnapshot(
     // Drafts of files GitHub deleted or now holds are looked for once the
     // page is on screen (a file opened before then that needs it waits).
     if (isNative && nativeSite) {
-      afterNativePaint(nativeSourcesRequest, () => void savePublish.checkDeleted(at.load));
+      afterNativePaint(nativeSourcesRequest, () => void savePublish.checkDeleted(at));
       const painted = nativeSourcesRequest;
       let remembered = false;
       afterNativePaint(painted, () => {
@@ -4959,7 +4958,7 @@ async function loadSnapshot(
       });
     } else {
       forgetBootMemory(storage("local"), repo.id);
-      void savePublish.checkDeleted(at.load);
+      void savePublish.checkDeleted(at);
     }
     // A native project opens on its home page when nothing else is selected;
     // its source is already in memory from the site's prefetch.
@@ -5379,13 +5378,13 @@ function takeStartingPoint(repo: Repository): StartingPoint | undefined {
 // the App's Administration permission for it), opened with the chosen
 // starting point written as drafts. When the editor may not create it,
 // Get started offers GitHub's own New repository page instead.
-async function loadRepositories(prefetched?: Repository[], hooks?: { onStarted(epoch: number): void }) {
+async function loadRepositories(prefetched?: Repository[], hooks?: { onStarted(at: SessionStamp): void }) {
   boot.loading();
   removeFinishStarter();
   waitingForRepositories = false;
   mediaHistoryHome.clear();
   const at = nextLoad();
-  hooks?.onStarted(at.load);
+  hooks?.onStarted(at);
   fileGeneration++;
   appStore.reset();
   siteActions?.revalidate();
@@ -5622,7 +5621,7 @@ const agentController = createAgentController<HTMLElement>({
 });
 
 const boot = createBootController({
-  generation: currentLoad,
+  begin: () => workspaceSession.begin(),
   source: () => `${location.origin}${location.pathname}`,
   url: () => location.href,
   replaceUrl: (url) => history.replaceState(null, "", url),

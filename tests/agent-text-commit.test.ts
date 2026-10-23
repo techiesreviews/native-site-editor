@@ -440,7 +440,7 @@ test("a durable manual draft newer than the mounted source is never overwritten"
 test("live transport generation stays fenced when the text owner is first built after takeover", async t => {
   const f = await setup(t);
   const before = await f.records.workspace(f.scope);
-  await f.records.setGeneration(f.scope, before.generation, before.generation + 1);
+  await f.records.setFence(f.scope, before.generation, before.generation + 1);
   await assert.rejects(f.run({ ...f.command, ownerGeneration: before.generation }), /ownership|another.*tab/i);
   assert.equal(f.history.length, 0);
   assert.equal(f.models.text(f.scope, "index.html"), "before");

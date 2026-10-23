@@ -97,7 +97,7 @@ function workspace(initial: string | undefined, paths = [a, b]) {
     source: read, assetVersion: () => "v1", entry: async () => undefined, mounted: () => false,
     prepareSources: edits => { assert.equal(edits.length, 0); return { apply: () => true, undo: () => true, redo: () => true, isCurrent: () => true }; },
     modelState: () => ({ isCurrent: () => true }), evictModel: (_path, proof) => proof,
-    historyCurrent: () => true, history: (undo, redo) => home.hold("site", undo, redo), refresh: () => {}, announce: () => {},
+    historyCurrent: () => true, history: (undo, redo) => home.hold({ holds: () => true }, undo, redo), refresh: () => {}, announce: () => {},
   };
   const reads: string[] = [], batches: string[] = [];
   // SVG is text the usage scan reads (slice 46), so the fake gives it content.
@@ -106,7 +106,7 @@ function workspace(initial: string | undefined, paths = [a, b]) {
     applyBatch: async batch => { assert.deepEqual([...batch.edits.keys()], [MEDIA_RECORDS_PATH]); batches.push(batch.label); await applyMediaWorkspaceBatch(batch, mediaDraftTransaction(host)); }, openPage: async () => {},
   };
   return { picker: createMediaWorkspace(async () => ctx), drafts, read: () => read(MEDIA_RECORDS_PATH), reads, batches,
-    async undo() { let action: () => boolean | Promise<boolean> = () => false, steps = 0; home.adopt("site", undo => { action = undo; steps++; return true; }); assert.equal(steps, 1); assert.equal(await action(), true); },
+    async undo() { let action: () => boolean | Promise<boolean> = () => false, steps = 0; home.adopt(undo => { action = undo; steps++; return true; }); assert.equal(steps, 1); assert.equal(await action(), true); },
   };
 }
 

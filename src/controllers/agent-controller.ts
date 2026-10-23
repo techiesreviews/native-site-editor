@@ -3,6 +3,7 @@ import type { AgentElement } from "../../shared/agent";
 import { workspaceKey, type AgentWorkspace } from "../../shared/agent-command";
 import type { AppStore } from "../app-store";
 import type { AgentApproval, createAgentMenu } from "../components/agent-menu";
+import { sameBranch } from "../workspace-session";
 
 /** Mirrors AGENT_CONNECTED_KEY in components/agent-menu.ts, which loads lazily. */
 const AGENT_CONNECTED_KEY = "native-site-editor:agent-connected";
@@ -57,29 +58,30 @@ export function createAgentController<Root extends { remove(): void } = HTMLElem
   let menu: AgentMenuPort<Root> | undefined;
   let mounted: { account: string; host: NonNullable<ReturnType<typeof options.host>> } | undefined;
   let active = true;
-  let epoch = 0;
-  let loading: { account: string; host: NonNullable<ReturnType<typeof options.host>>; epoch: number; promise: Promise<void> } | undefined;
+  // This controller's own menu mounts (not the workspace session's loads): `destroy` ends them.
+  let mounts = 0;
+  let loading: { account: string; host: NonNullable<ReturnType<typeof options.host>>; mounts: number; promise: Promise<void> } | undefined;
   let listening = false;
-  const isCurrent = (account: string, host: ReturnType<typeof options.host>, revision: number) =>
-    active && epoch === revision && options.account() === account && options.host() === host;
+  const isCurrent = (account: string, host: ReturnType<typeof options.host>, mount: number) =>
+    active && mounts === mount && options.account() === account && options.host() === host;
   function currentMenu() {
-    return mounted && isCurrent(mounted.account, mounted.host, epoch) ? menu : undefined;
+    return mounted && isCurrent(mounted.account, mounted.host, mounts) ? menu : undefined;
   }
   function ensure(): Promise<void> {
     if (!active || currentMenu()) return Promise.resolve();
-    const account = options.account(), host = options.host(), revision = epoch;
+    const account = options.account(), host = options.host(), mount = mounts;
     if (!account || !host) return Promise.resolve();
-    if (loading?.account === account && loading.host === host && loading.epoch === revision) return loading.promise;
-    const request = { account, host, epoch: revision, promise: Promise.resolve() };
+    if (loading?.account === account && loading.host === host && loading.mounts === mount) return loading.promise;
+    const request = { account, host, mounts: mount, promise: Promise.resolve() };
     request.promise = options.load().then(({ createAgentMenu }) => {
-      if (!isCurrent(account, host, revision) || currentMenu()) return;
+      if (!isCurrent(account, host, mount) || currentMenu()) return;
       menu?.destroy();
       menu?.root.remove();
       menu = createAgentMenu({
         ...options.createOptions(account), account,
         repository: () => {
           const repository = options.appStore.repository.value;
-          return isCurrent(account, host, revision) && repository && options.appStore.snapshot.value
+          return isCurrent(account, host, mount) && repository && options.appStore.snapshot.value
             ? { id: repository.id, fullName: repository.full_name, branch: options.appStore.snapshot.value.branch } : undefined;
         },
       });
@@ -91,15 +93,16 @@ export function createAgentController<Root extends { remove(): void } = HTMLElem
   }
   const storage = (event: Event) => {
     if (!("key" in event) || event.key !== AGENT_CONNECTED_KEY || currentMenu() || !active) return;
-    const account = options.account(), host = options.host(), revision = epoch;
+    const account = options.account(), host = options.host(), mount = mounts;
     if (!account || !host) return;
     let approval: AgentApproval;
     try { approval = JSON.parse((event as StorageEvent).newValue ?? "null"); } catch { return; }
     // Only a tab showing the approved repository and branch loads the menu to check it.
     const repository = options.appStore.repository.value;
-    if (!repository || approval?.repo !== repository.full_name || approval?.branch !== options.appStore.snapshot.value?.branch) return;
+    const branch = options.appStore.snapshot.value?.branch;
+    if (!repository || !branch || !sameBranch(approval, { repoId: repository.id, repo: repository.full_name, branch })) return;
     void ensure().then(() => {
-      if (isCurrent(account, host, revision)) currentMenu()?.consentGranted(approval);
+      if (isCurrent(account, host, mount)) currentMenu()?.consentGranted(approval);
     }).catch((error: unknown) => options.onError(error));
   };
   // The open workspace, once its files are read: its kept requests, if any, mount the menu.
@@ -111,13 +114,13 @@ export function createAgentController<Root extends { remove(): void } = HTMLElem
       const account = options.account();
       if (!repository || !snapshot || !account) { checked = ""; currentMenu()?.changed(); return; }
       const workspace = { account, repoId: repository.id, branch: snapshot.branch }, key = JSON.stringify(workspace);
-      const host = options.host(), revision = epoch;
+      const host = options.host(), mount = mounts;
       if (key === checked) return;
       checked = key;
       currentMenu()?.changed();
       if (currentMenu()) return;
       void (options.history ?? browserHistory)(workspace).then((kept) => {
-        if (kept && isCurrent(account, host, revision)) return ensure();
+        if (kept && isCurrent(account, host, mount)) return ensure();
       }).catch(() => { if (checked === key) checked = ""; });
     });
   }
@@ -131,7 +134,7 @@ export function createAgentController<Root extends { remove(): void } = HTMLElem
   }
   function destroy() {
     active = false;
-    epoch++;
+    mounts++;
     loading = undefined;
     menu?.destroy();
     menu?.root.remove();
@@ -147,12 +150,12 @@ export function createAgentController<Root extends { remove(): void } = HTMLElem
   }
   /** Pins an Ask prompt to its original menu and refuses a changed host/account. */
   function captureAsk() {
-    const captured = currentMenu(), account = mounted?.account, host = mounted?.host, revision = epoch;
+    const captured = currentMenu(), account = mounted?.account, host = mounted?.host, mount = mounts;
     if (!captured || !account || !host) return undefined;
     return {
       connected: () => captured.connected(),
       async ask(text: string, element: AgentElement) {
-        if (!isCurrent(account, host, revision) || menu !== captured) throw new Error("The agent connection changed. Ask again.");
+        if (!isCurrent(account, host, mount) || menu !== captured) throw new Error("The agent connection changed. Ask again.");
         return captured.ask(text, element);
       },
     };

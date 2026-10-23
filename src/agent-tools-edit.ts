@@ -20,17 +20,17 @@ const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as JsonValue;
 export function createAgentEditTools(options: Options) {
   const flights = new Map<string, { identity: string; authorizationId: string; promise: Promise<AgentReadResult> }>();
   const { records, workspace, ports } = options;
-  async function execute(request: Request, generation: number, current: () => boolean, signal?: AbortSignal): Promise<AgentReadResult> {
+  async function execute(request: Request, fence: number, current: () => boolean, signal?: AbortSignal): Promise<AgentReadResult> {
     const stamp = ports.stamp(), source = ports.files();
-    const repoId = source?.repo.id, branch = source?.snapshot.branch, commit = source?.snapshot.commit;
+    const commit = source?.snapshot.commit;
     let ran = false, identity: string | undefined;
     // Once the executor ran, its own commit decided the outcome: a later revision change or lost
     // socket must never relabel committed work as a conflict (the transport drops a reply it cannot send).
     const check = () => {
       if (ran) return;
       signal?.throwIfAborted();
-      const now = ports.files();
-      if (!current() || !stamp.holds() || now?.repo.id !== repoId || now?.snapshot.branch !== branch || now?.snapshot.commit !== commit)
+      // The stamp holds while the same repository and branch stay open (src/workspace-session.ts); a save moves the commit within it.
+      if (!current() || !stamp.holds() || ports.files()?.snapshot.commit !== commit)
         throw new Error("The editor changed branch or revision. Read the site again.");
     };
     const reply = (outcome: JsonValue): AgentReadResult => {
@@ -83,7 +83,7 @@ export function createAgentEditTools(options: Options) {
         const record = async (outcome: JsonValue, revision?: number) => {
           const expectedRevision = revision ?? (await records.workspace(workspace)).revision;
           check();
-          const result = await records.commit({ workspace, generation, expectedRevision, expectedDrafts: [], drafts: [],
+          const result = await records.commit({ workspace, fence, expectedRevision, expectedDrafts: [], drafts: [],
             receipt: { operationId: request.id, authorizationId: request.grantId, payloadIdentity: identity!, outcome,
               createdAt: Date.now(), issuedAt: request.createdAt } });
           check();
@@ -93,7 +93,7 @@ export function createAgentEditTools(options: Options) {
         const { input, operation } = prepared;
         const command: AgentCommand = { id: request.id, operation, content: input.content ?? "",
           branch: shared.context.branch, commit: shared.context.commit, ...input, repoId: workspace.repoId,
-          grantId: request.grantId, generation: request.generation, ownerGeneration: generation, requestIdentity: identity!,
+          grantId: request.grantId, generation: request.generation, ownerGeneration: fence, requestIdentity: identity!,
           state: "pending", createdAt: request.createdAt };
         if (signal) agentCommandSignals.set(command, signal);
         signal?.throwIfAborted();
@@ -127,15 +127,15 @@ export function createAgentEditTools(options: Options) {
         ? `${message} Check get_command_status; do not replay the change.` : message } };
     }
   }
-  type Input = { request: Request; generation: number; current: () => boolean; signal?: AbortSignal };
-  const executor = ({ request, generation, current, signal }: Input) => execute(request, generation, current, signal);
+  type Input = { request: Request; fence: number; current: () => boolean; signal?: AbortSignal };
+  const executor = ({ request, fence, current, signal }: Input) => execute(request, fence, current, signal);
   const registry = createAgentTools<Input>({ edit_file: executor, write_file: executor, move_file: executor,
     delete_file: executor, create_page: executor, set_page_details: executor, open_page: executor,
     inspect_preview: executor, make_component: executor, add_section: executor, move_section: executor,
     remove_section: executor, get_command_status: executor });
   return {
-    run(request: Request, generation: number, current: () => boolean, signal?: AbortSignal) {
-      return registry.run(request.operation === "status" ? "get_command_status" : request.tool, { request, generation, current, signal });
+    run(request: Request, fence: number, current: () => boolean, signal?: AbortSignal) {
+      return registry.run(request.operation === "status" ? "get_command_status" : request.tool, { request, fence, current, signal });
     },
   };
 }

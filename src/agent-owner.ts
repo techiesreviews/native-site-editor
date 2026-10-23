@@ -6,30 +6,31 @@ type Snapshot = Awaited<ReturnType<AgentRecords["snapshot"]>>;
 /** A tab's admission gate. Only IndexedDB transactions decide ownership. */
 export function createAgentOwner(options: {
   workspace: AgentWorkspace;
-  generation: number;
+  /** The receiving tab's ownership fence (IndexedDB keeps it as `generation`). */
+  fence: number;
   records: AgentRecords;
   reload: (snapshot: Snapshot) => Promise<void>;
 }) {
   const workspace = structuredClone(options.workspace), key = workspaceKey(workspace);
   const { records, reload } = options;
-  let generation = options.generation, paused = false, takingOver = false;
+  let fence = options.fence, paused = false, takingOver = false;
   const inFlight = new Set<AgentCommit>();
   const conflict = () => new AgentRecordsError("conflict", "Agent ownership changed or admission is paused.");
   return {
     get paused() { return paused; },
-    get generation() { return generation; },
+    get fence() { return fence; },
     async commit(command: AgentCommit) {
       const captured = structuredClone(command);
-      if (paused || captured.generation !== generation || workspaceKey(captured.workspace) !== key) throw conflict();
+      if (paused || captured.fence !== fence || workspaceKey(captured.workspace) !== key) throw conflict();
       inFlight.add(captured);
       try {
-        // The transaction checks this same captured generation, revision and draft proof.
+        // The transaction checks this same captured fence, revision and draft proof.
         return await records.commit(captured);
       } finally { inFlight.delete(captured); }
     },
     async takeover(outstanding: AgentCommit[] = []) {
       if (takingOver) throw conflict();
-      const expected = generation;
+      const expected = fence;
       const pending = structuredClone([...inFlight, ...outstanding]);
       if (pending.some((command) => workspaceKey(command.workspace) !== key)) throw conflict();
       takingOver = paused = true;
@@ -41,14 +42,14 @@ export function createAgentOwner(options: {
         if (snapshot.generation !== expected || !snapshot.paused) throw conflict();
         // Reload is observational; its copy cannot change the CAS proof across this await.
         await reload(structuredClone(snapshot));
-        const changed = await records.setGeneration(workspace, expected, expected + 1, snapshot);
-        generation = changed.generation;
+        const changed = await records.setFence(workspace, expected, expected + 1, snapshot);
+        fence = changed.generation;
         // Reload/CAS can suspend the tab: one transaction rechecks ownership and every
         // authorization before exposing outcomes, with no await after it. Evicted or
         // revoked receipts now remain unknown; a superseded takeover stays paused.
-        const outcomes = await records.reconcile(workspace, pending, generation);
+        const outcomes = await records.reconcile(workspace, pending, fence);
         paused = false;
-        return { outcomes, snapshot, generation };
+        return { outcomes, snapshot, fence };
       } finally {
         takingOver = false;
         // Fail closed: a failed takeover never resumes admission under the old proof.

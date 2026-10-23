@@ -5,6 +5,7 @@ import type { AgentReadResult } from "../shared/agent-read";
 import { AgentRecordsError, type AgentRecords } from "./agent-records";
 import { createAgentTools } from "./agent-tools";
 import type { AgentReadPorts } from "./agent-tools-read";
+import { sameBranch } from "./workspace-session";
 
 /** Internal liveness port; never serialized into a command or receipt. */
 export const mediaCommandProofs = new WeakMap<AgentCommand, () => void>();
@@ -17,9 +18,9 @@ export function createAgentMediaTools(options: {
 }) {
   const { workspace, ports, records } = options;
   const flights = new Map<string, { identity: string; grantId: string; promise: Promise<AgentReadResult> }>();
-  type Input = { request: AgentMedia; generation: number; current: () => boolean; deadline?: number; seen?: { page: string | undefined }; signal?: AbortSignal };
-  const executor = async ({ request, generation, current, deadline = Date.now() + 10_000, seen, signal }: Input): Promise<AgentReadResult> => {
-    const stamp = ports.stamp(), source = ports.files(), branch = source?.snapshot.branch, commit = source?.snapshot.commit, repoId = source?.repo.id;
+  type Input = { request: AgentMedia; fence: number; current: () => boolean; deadline?: number; seen?: { page: string | undefined }; signal?: AbortSignal };
+  const executor = async ({ request, fence, current, deadline = Date.now() + 10_000, seen, signal }: Input): Promise<AgentReadResult> => {
+    const stamp = ports.stamp(), source = ports.files(), commit = source?.snapshot.commit;
     const changing = mediaChanges(request.tool, request.args);
     // A page change's element id points into the page as it was when the command arrived (src/agent-transport.ts
     // reads it before any await), else as it is on admission: that source is the proof to commit.
@@ -30,8 +31,8 @@ export function createAgentMediaTools(options: {
     const check = () => {
       if (applied) return;
       signal?.throwIfAborted();
-      const now = ports.files();
-      if (!current() || !stamp.holds() || now?.repo.id !== repoId || now?.snapshot.branch !== branch || now?.snapshot.commit !== commit)
+      // The stamp holds while the same repository and branch stay open (src/workspace-session.ts); a save moves the commit within it.
+      if (!current() || !stamp.holds() || ports.files()?.snapshot.commit !== commit)
         throw new Error("The editor changed branch or revision, or the relay disconnected. Nothing was changed.");
     };
     const beforeCommit = () => {
@@ -65,9 +66,9 @@ export function createAgentMediaTools(options: {
           if (status.status === "cancelled") return { ok: true, value: { requestId: request.id, state: "cancelled", message: "This delivery was cancelled before it committed. Nothing was changed by it." } };
         }
         check();
-        if (!source || branch !== workspace.branch || repoId !== workspace.repoId) throw new Error("The editor is unavailable. Open the connected site and branch.");
+        if (!source || !sameBranch({ repoId: source.repo.id, branch: source.snapshot.branch }, workspace)) throw new Error("The editor is unavailable. Open the connected site and branch.");
         const command: AgentCommand = { id: request.id, operation: request.tool, args: request.args, path: request.path, content: "",
-          branch, commit: commit!, repoId, ownerGeneration: generation, grantId: request.grantId, generation: request.generation,
+          branch: source.snapshot.branch, commit: commit!, repoId: source.repo.id, ownerGeneration: fence, grantId: request.grantId, generation: request.generation,
           requestIdentity: identity, state: "pending", createdAt: request.createdAt };
         beforeCommit();
         mediaCommandProofs.set(command, beforeCommit);
@@ -105,6 +106,6 @@ export function createAgentMediaTools(options: {
     }
   };
   const registry = createAgentTools<Input>(Object.fromEntries(mediaTools.map(tool => [tool, executor])));
-  return { run: (request: AgentMedia, generation: number, current: () => boolean, deadline?: number, seen?: { page: string | undefined }, signal?: AbortSignal) =>
-    registry.run(request.tool, { request, generation, current, deadline, seen, signal }) };
+  return { run: (request: AgentMedia, fence: number, current: () => boolean, deadline?: number, seen?: { page: string | undefined }, signal?: AbortSignal) =>
+    registry.run(request.tool, { request, fence, current, deadline, seen, signal }) };
 }

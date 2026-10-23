@@ -28,10 +28,11 @@ export interface CommandPalettePorts {
 /** Derives palette views from live workspace state and owns keyboard registration. */
 export function createCommandPaletteController(ports: CommandPalettePorts) {
   let palette: ReturnType<NonNullable<CommandPalettePorts["mountPalette"]>> | undefined;
-  let epoch = 0;
+  // The palette's own mounts (not the workspace session's loads): a disposed one uses no live ports.
+  let mounts = 0;
   const waits = new Set<{ timer: ReturnType<typeof setTimeout>; resolve(): void }>();
   function dispose() {
-    epoch++;
+    mounts++;
     palette?.dispose(); palette = undefined;
     for (const wait of waits) { clearTimeout(wait.timer); wait.resolve(); }
     waits.clear();
@@ -44,8 +45,8 @@ export function createCommandPaletteController(ports: CommandPalettePorts) {
   }
   function mount() {
     dispose();
-    const generation = epoch;
-    const live = () => generation === epoch;
+    const mount = mounts;
+    const live = () => mount === mounts;
     const actions = ports.actions;
     const deps: EditorPaletteDeps = {
       ...actions,
