@@ -37,6 +37,7 @@ registerHooks({
   load: (url, context, next) => /\.css$|\?raw$/.test(url) ? { format: "module", source: "export default '';", shortCircuit: true } : next(url, context),
 });
 const { createSourcePaneController } = await import("../src/controllers/source-pane-controller.ts");
+const { ApiError } = await import("../src/github-reads.ts");
 
 const flush = async () => { for (let i = 0; i < 10; i++) await new Promise<void>((resolve) => setImmediate(resolve)); };
 const REPO = { id: 501, name: "site", full_name: "lex/site", private: false, default_branch: "main", owner: { login: "lex", type: "User" } } satisfies Repository;
@@ -44,7 +45,8 @@ const SNAPSHOT: Snapshot = { commit: "head1234567", branch: "main", entries: [] 
 const SCOPE = { account: "lex", repoId: 501, repo: "lex/site", branch: "main" };
 const entry = (path: string, more: Partial<TreeEntry> = {}): TreeEntry => ({ path, type: "blob", mode: "100644", sha: `${path}-sha`, size: 10, ...more });
 
-function harness(options: { drafts?: Record<string, SavedDraft>; component?: string; read?: (sha: string) => Promise<string>; race?: AwaitRace; mountFails?: boolean; indexed?: boolean } = {}) {
+function harness(options: { drafts?: Record<string, SavedDraft>; component?: string; read?: (sha: string) => Promise<string>; race?: AwaitRace; mountFails?: boolean; indexed?: boolean; route?: string; fallback?: string } = {}) {
+  const statusLine = new FakeElement();
   // The writer's async ports, wrapped for an await race when one is given.
   const port = <Args extends unknown[], Value>(name: string, work: (...args: Args) => Promise<Value>) => options.race ? options.race.port(name, work) : work;
   const content = new FakeElement();
@@ -91,7 +93,7 @@ function harness(options: { drafts?: Record<string, SavedDraft>; component?: str
     nextFileGeneration: () => ++fileGeneration,
     setActiveFileContext: () => {},
     openCodeEditor: port("openCodeEditor", async (file: SourceFile) => { calls.push(`editor ${file.path}`); opened.push(file); if (!options.mountFails) mounted.add(file.path); }),
-    element: () => new FakeElement(),
+    element: (id) => id === "status" ? statusLine : new FakeElement(),
     status: (message) => void calls.push(`status ${message}`),
     settleStatus: (message) => void calls.push(`settle ${message}`),
     errorMessage: (error, retry) => void calls.push(`error ${(error as Error).message}${retry ? " (retry)" : ""}`),
@@ -104,20 +106,20 @@ function harness(options: { drafts?: Record<string, SavedDraft>; component?: str
     showDeletedFile: (path) => void calls.push(`deleted ${path}`),
     isNativeTextFile: () => true,
     nativeModeActive: () => true,
-    nativeRouteForPath: () => undefined,
+    nativeRouteForPath: () => options.route,
     nativeComponentTagForPath: (path) => path === options.component ? "site-card" : undefined,
-    nativeFallbackPage: () => undefined,
+    nativeFallbackPage: () => options.fallback,
     nativeCssWorkspace: () => undefined,
     updateNativePreviewSources: () => void calls.push("preview"),
-    discardedNewPages: () => {},
-    restoreFile: async () => {},
+    discardedNewPages: (paths) => void calls.push(`discarded ${paths.join(" ")}`),
+    restoreFile: async (path) => { calls.push(`restore ${path} (status: ${statusLine.textContent})`); statusLine.textContent = `Viewing ${path}.`; },
     showDirectory: () => {},
     refreshFiles: () => {},
     updateAgentContext: () => {},
     updateCurrentPageLabel: () => {},
     discardFileChange: async () => {},
   } satisfies SourcePanePorts;
-  return { ports, pane: createSourcePaneController(ports), content, calls, opened, session, generation: () => fileGeneration, setLinked: (page: string) => { linkedPage = page; } };
+  return { ports, pane: createSourcePaneController(ports), content, statusLine, calls, opened, session, generation: () => fileGeneration, setLinked: (page: string) => { linkedPage = page; } };
 }
 
 test("opening a page reads it, mounts its source and opens its stylesheet beside it", async () => {
@@ -229,4 +231,31 @@ test("the editor's history target opens the stylesheet beside the page and draws
   h.calls.length = 0;
   assert.equal(await h.opened[0].ensureHistoryTarget!("styles.css"), true);
   assert.deepEqual(h.calls, ["secondary styles.css", "render"]);
+});
+
+test("a page the text index has not read yet is drawn from the branch text before its editor mounts", async () => {
+  const h = harness({ indexed: true });
+  await h.pane.openEntry(entry("index.html"), "index.html", h.session.begin());
+  assert.equal(h.ports.nativeBaseSources.get("index.html"), "text of index.html-sha");
+  assert.ok(h.calls.indexOf("preview") >= 0 && h.calls.indexOf("preview") < h.calls.indexOf("editor index.html"), h.calls.join(", "));
+});
+
+test("a file that cannot be read as text is said in the status line, not as a failed request", async () => {
+  const h = harness({ read: () => Promise.reject(new ApiError(415, "This file is not text.")) });
+  await h.pane.openEntry(entry("logo.bin"), "logo.bin", h.session.begin());
+  assert.equal(h.calls.at(-1), "status logo.bin: This file is not text.");
+  assert.deepEqual(h.calls.filter((call) => call.startsWith("error")), []);
+});
+
+test("discarding a new page opens its fallback page once the discard is done, keeping the discard's words", async () => {
+  const h = harness({ route: "/new/", fallback: "index.html" });
+  await h.pane.mountSource("new/index.html", "", null, false, h.session.begin(), h.ports.nextFileGeneration());
+  h.calls.length = 0;
+  h.opened[0].onDiscardNew!();
+  assert.deepEqual(h.calls, ["discarded new/index.html"]);
+  assert.equal(h.statusLine.textContent, "Discarded the new page new/index.html.");
+  await flush();
+  assert.deepEqual(h.calls, ["discarded new/index.html", "restore index.html (status: Discarded the new page new/index.html.)"]);
+  // The fallback page's own loading message gives way to the discard's.
+  assert.equal(h.statusLine.textContent, "Discarded the new page new/index.html.");
 });

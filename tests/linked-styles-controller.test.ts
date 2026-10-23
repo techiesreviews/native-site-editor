@@ -287,3 +287,42 @@ test("new <body> rules that put another stylesheet first switch the default pane
   assert.equal(h.element("secondary-title").textContent, "theme.css");
   assert.equal(h.linked.linkedPage(), "index.html");
 });
+
+const THEME_ENTRY: TreeEntry = { path: "theme.css", type: "blob", mode: "100644", sha: "theme-sha", size: 20 };
+const CARD_ENTRY: TreeEntry = { path: CARD_CSS, type: "blob", mode: "100644", sha: "card-sha", size: 20 };
+
+test("a selection in the code updates the chips without moving the open stylesheet", async () => {
+  const h = harness({ sources: { "theme.css": ".hero { color: blue; }" }, entries: { "styles.css": STYLES_ENTRY, "theme.css": THEME_ENTRY } });
+  const opening = h.linked.openDefaultLinkedStyle("index.html");
+  await h.settle();
+  assert.equal(await opening, true);
+  const selection = {
+    ...HERO_SELECTION,
+    selectors: [{ path: "theme.css", selector: ".hero", ruleIndex: 0, match: [".hero"], kind: "rule", declarations: [{ property: "color", value: "blue" }] }],
+  } satisfies NativePreviewSelection;
+  await h.linked.linkNativeStyles(selection, false);
+  await h.settle();
+  assert.equal(h.linked.secondaryPath(), "styles.css");
+  assert.deepEqual(h.mounts.map(({ path }) => path), ["styles.css"]);
+  assert.deepEqual(h.revealed, []);
+  const chips = h.element("secondary-rules").children;
+  assert.equal(chips.length, 1);
+  // The rule's own file is named, since it is not the pane's.
+  assert.deepEqual(chips[0].children.map(({ textContent }) => textContent), [".hero", "theme.css"]);
+});
+
+test("an element of a template with no rules of its own keeps the template's stylesheet, not the <body> rules' one", async () => {
+  const h = harness({
+    componentTag: CARD,
+    sources: { "theme.css": "body { color: blue; }", [CARD_CSS]: "site-card { display: block; }" },
+    entries: { "styles.css": STYLES_ENTRY, "theme.css": THEME_ENTRY, [CARD_CSS]: CARD_ENTRY },
+  });
+  h.appStore.openFile.value = CARD;
+  h.linked.updateBodyStyles({ rules: [{ path: "theme.css", selector: "body", ruleIndex: 0, match: ["body"], kind: "rule", declarations: [{ property: "color", value: "blue" }] }] });
+  const linking = h.linked.linkNativeStyles({ path: CARD, tag: "div", text: "", reason: "click", node: [0], selectors: [] }, true);
+  await h.settle();
+  await linking;
+  assert.deepEqual(h.mounts.map(({ path }) => path), [CARD_CSS]);
+  assert.equal(h.linked.secondaryPath(), CARD_CSS);
+  assert.equal(h.linked.linkedPage(), CARD);
+});
