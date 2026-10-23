@@ -97,6 +97,13 @@ test("all migrated MCP reads and the site resource answer from browser drafts; a
     const typedPage = await call("get_page", { page: "/" });
     expect(typedPage).toMatchObject({ source: "draft", html: typed, hash: typedHash });
     expect(typedPage.html).toContain(`>${shown}</h1>`);
+    // The hash read from the tab's text is the one a guarded edit checks against.
+    await page.keyboard.press("Escape");
+    const edited = await client.callTool({ name: "edit_file", arguments: { path: "index.html", expectedHash: typedHash, requestId: "socket-read-then-edit", waitSeconds: 0,
+      edits: [{ oldText: "still typing", newText: "still typing, then edited" }] } });
+    expect(edited.isError, JSON.stringify(edited)).toBeFalsy();
+    expect(JSON.parse((edited.content as { text: string }[])[0].text)).toMatchObject({ state: "applied" });
+    await expect(heading).toHaveText("Unsaved socket read draft, still typing, then edited");
 
     await page.reload();
     // Remote agents are remembered on for this site: the reloaded tab receives again, on the same grant.

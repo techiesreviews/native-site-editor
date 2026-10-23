@@ -100,7 +100,13 @@ test("reads answer with the tab's text now, as the preview shows it: the shared 
     { path: "upload.png", baseSha: null, binary: true, size: 8, updatedAt: 1 });
   const now: Record<string, string> = { "about/index.html": "<h1>Typed, unsaved</h1>", "styles/site.css": "body { color: red }",
     "styles/tokens.css": files["styles/tokens.css"], "index.html": "still held", "upload.png": "not text", "404.html": "x".repeat(1024 * 1024 + 1) };
-  const tools = createAgentReadTools({ ...f.ports, source: path => now[path] });
+  // Every blob the reads ask GitHub for, single or batched.
+  const asked: string[] = [];
+  const tools = createAgentReadTools({ ...f.ports, source: path => now[path], files: () => {
+    const files = f.ports.files();
+    return { ...files, read: (repo, sha) => { asked.push(sha); return files.read(repo, sha); }, batch: (repo, shas) => { asked.push(...shas); return files.batch(repo, shas); } };
+  } });
+  const held = f.tree.find(entry => entry.path === "styles/site.css")!.sha;
   const run = async (name: AgentRead["tool"], args: AgentRead["args"] = {}) => {
     const result = await tools.run(name, args);
     assert.equal(result.ok, true, JSON.stringify(result));
@@ -123,6 +129,7 @@ test("reads answer with the tab's text now, as the preview shows it: the shared 
   const large = await tools.run("read_file", { path: "404.html" });
   assert.ok(!large.ok && /KB in the editor, larger than the 1 MB/.test(large.message), JSON.stringify(large));
   const exported = await run("export_site");
+  assert.ok(!asked.includes(held), "export asks GitHub for no file the tab holds");
   const byPath = (path: string) => exported.files.find((item: { path: string }) => item.path === path);
   assert.equal(byPath("about/index.html").content, now["about/index.html"]);
   assert.equal(byPath("styles/site.css").content, now["styles/site.css"]);
