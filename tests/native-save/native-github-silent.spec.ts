@@ -109,3 +109,49 @@ test('Refresh of a shown site GitHub never answers offers Try again, which reloa
   await expectOpened(page);
   expect(reads.seen).toBe(opened + 5);
 });
+
+test('a remembered boot whose guessed snapshot GitHub never answers shows the toast after four tries, not eight', async ({ page, baseURL }) => {
+  await page.clock.install();
+  const reads = await snapshotRoute(page, () => {});
+  reads.failing = false;
+  // The first open writes the boot memory (src/boot-memory.ts) the reload guesses from.
+  await page.goto(`${baseURL}/${HASH}`);
+  await expectOpened(page);
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('ase:boot-memory:v1:501')), { timeout: 15_000 }).not.toBeNull();
+  const opened = reads.seen;
+
+  // The guessed snapshot goes out with the session and is never answered; the branch list answers.
+  reads.failing = true;
+  await page.reload();
+  await failFourTries(page, reads, opened);
+  await expectFailedOpen(page);
+  // No fresh read after the failed guess: four tries in all.
+  await toast(page).hover();
+  await page.clock.fastForward(10_000);
+
+  reads.failing = false;
+  await toast(page).getByRole('button', { name: 'Try again', exact: true }).click();
+  await expectOpened(page);
+  expect(reads.seen).toBe(opened + 5);
+});
+
+test('a file GitHub never answers, opened outside an open, shows the plain notice and no toast', async ({ page, baseURL }) => {
+  await page.clock.install();
+  const snapshot = page.waitForResponse(/\/api\/snapshot\?/);
+  await page.goto(`${baseURL}/${HASH}`);
+  await expectOpened(page);
+  const { tree } = await (await snapshot).json() as { tree: { path: string; sha: string }[] };
+  const robots = tree.find((entry) => entry.path === 'robots.txt')!.sha;
+  // Reads of robots.txt (alone or in a batch) are never answered.
+  const reads = { seen: 0 };
+  await page.route((url) => /^\/api\/files?$/.test(url.pathname) && url.search.includes(robots), () => { reads.seen++; });
+
+  await page.locator('#explorer-toggle').click();
+  await page.getByRole('tab', { name: 'Files', exact: true }).click();
+  await page.locator('.file-row[data-path="robots.txt"]').click();
+  await failFourTries(page, reads);
+  await expect(page.locator('#notice')).toContainText(SAID);
+  await expect(page.locator('#status')).toHaveText('The last request did not complete.');
+  await expect(toast(page)).toHaveCount(0);
+  expect(reads.seen).toBe(4);
+});
