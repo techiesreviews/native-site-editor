@@ -3958,7 +3958,7 @@ const { loadRepositories, repositoryOptions, refreshRepositoryList, switchAccoun
   get content() { return content; }, get files() { return files; }, get refreshButton() { return refreshButton; },
   get branchSelect() { return branchSelect; }, get repositorySelect() { return repositorySelect; },
   get repositoryMenu() { return repositoryMenu; }, get siteActions() { return siteActions; },
-  nextLoad, storage, options, status, clearError, errorMessage, announce, setCurrentPage, openExplorer,
+  nextLoad, chooseRepository, storage, options, status, clearError, errorMessage, announce, setCurrentPage, openExplorer,
   removeFinishStarter, showGetStarted, knownRepositories, rememberRepositories,
 });
 

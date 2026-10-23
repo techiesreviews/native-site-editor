@@ -37,7 +37,10 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 
 ## Done (2026-10-23)
 
-- `loadRepositories`, `repositoryOptions`, `refreshRepositoryList`, `switchAccount` and `disconnect` moved, bodies unchanged apart from reading host state through live ports, into the new `src/repository-list.ts` (`createRepositoryList`). `main.ts` wires it after the workspace boot; `storage`, `boot()` and the global listeners stay in `main.ts`. `at.holds()` from the workspace session is still the only workspace check in the moved code.
+- `loadRepositories`, `repositoryOptions`, `refreshRepositoryList`, `switchAccount` and `disconnect` moved into the new `src/repository-list.ts` (`createRepositoryList`). `main.ts` wires it after the workspace boot; `storage`, `boot()` and the global listeners stay in `main.ts`. `at.holds()` from the workspace session is still the only workspace check in the moved code.
+- The bodies are the old ones with `ports.` for host state, plus one renamed read: `info.user` is now `ports.user`, backed by `info?.user` (the same once the session is adopted, as it always is when these run). `chooseRepository` is its own port, so the call reads `ports.chooseRepository(plan.resume)`.
+- `tests/repository-list.test.ts`: sign-out after the last account (both marks forgotten), with another account left (boot memory only) and refused (error, no navigation); a refreshed list that keeps the open repository (announcement, selection kept) and one that drops it (listed again from the new list, no second read); a listing superseded during its read writes nothing (await race).
 - No visible change: sign-out still forgets the signed-in mark and the boot memory.
-- `main.ts` 4249 → 4060 lines; `tests/main-ts-ceiling.test.ts` ceiling 4250 → 4060. `docs/agents/code-map.md` names the new module and its section ranges are re-measured.
-- `kit size`: boot 345 KB (−1 KB), budget 355 KB. `npm run check`, `npm run lint`, `npm test` (5167 passing), `kit unit --affected`, `kit specs --affected` (13/13), `native-boot-memory`, `native-org-repositories` and `native-branch-menu` specs pass.
+- `main.ts` 4249 → 4060 lines (−189 against the estimated −270: the port block, `storage` and the listeners stay); `tests/main-ts-ceiling.test.ts` ceiling 4250 → 4060. `docs/agents/code-map.md` names the new module and its section ranges are re-measured.
+- `kit size`: boot 345 KB (−1 KB), budget 355 KB. `npm run check`, `npm run lint`, `npm test` (5167 passing), `kit unit --affected`, `tests/repository-list.test.ts` (6), `kit specs --affected` (13/13), `native-boot-memory`, `native-org-repositories` and `native-branch-menu` specs pass.
+- Commits: f9b138e9 (the move); the review fix commit follows it.
