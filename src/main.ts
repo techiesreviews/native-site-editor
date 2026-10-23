@@ -269,7 +269,7 @@ const loadSiteSettings = lazyModule(async () => {
     nativeUrlPlan: (file, value) => pageActions!.urlPlan(file, value),
     changeNativeUrl: (file, value, keep, since, baseline) => pageActions!.changeUrl(file, value, keep, since, baseline),
     restoreFile: (path, epoch) => restoreFile(path, stampOf(epoch)), nativeSiteReadForCreate,
-    choosePath: (place, accept) => mediaController.choosePath(place, undefined, accept), nativeEffectiveSource: runtime.source, loadNativeAssets,
+    choosePath: (place, accept) => mediaController.choosePath(place, undefined, accept), nativeEffectiveSource: path => runtime.source(path), loadNativeAssets,
     shareImage: request => mediaController.shareImage(request),
     nativeFiles: () => runtime.files(), readMediaText,
   });
@@ -677,9 +677,9 @@ const paletteController = createCommandPaletteController({
   host: () => app,
   site: () => runtime.site,
   routeTitle: route => nativeRouteInfo(route).title,
-  files: runtime.files,
-  sources: runtime.sources,
-  effectiveSource: runtime.source,
+  files: () => runtime.files(),
+  sources: () => runtime.sources(),
+  effectiveSource: path => runtime.source(path),
   indexed: () => runtime.state.textIndexed,
   index: ensureNativeTextIndex,
   stamp: () => guardedEdits.stamp("repository"),
@@ -1040,7 +1040,7 @@ const loadBlockInsert = lazyModule(async () => (await import("./controllers/bloc
 const versions = createVersionView({
   appStore, workspaceSession, guardedEdits, editorModule,
   get nativePreview() { return nativePreview; },
-  currentLoad, setupScope, draftScope, draftStore, nativeEffectiveSource: runtime.source, updateNativePreviewSources, loadHistory, loadConfirmDialog,
+  currentLoad, setupScope, draftScope, draftStore, nativeEffectiveSource: path => runtime.source(path), updateNativePreviewSources, loadHistory, loadConfirmDialog,
   api, postApi, status, errorMessage, refuse,
   restoreFile: (path, at, options) => restoreFile(path, at, options),
   loadSnapshot: path => loadSnapshot(path),
@@ -1051,7 +1051,7 @@ const linkedStyles = createLinkedStylesController({
   appStore, workspaceSession, editorModule,
   get info() { return info; }, get nativeSite() { return runtime.site; },
   get primaryHistoryScope() { return primaryHistoryScope; }, get nativeVariantFiles() { return nativeVariantFiles; },
-  element, nativeModeActive, nativeSources: runtime.sources, nativePageStyles, nativeEffectiveSource: runtime.source, nativeComponentTagForPath, nativeCssWorkspace,
+  element, nativeModeActive, nativeSources: () => runtime.sources(), nativePageStyles, nativeEffectiveSource: path => runtime.source(path), nativeComponentTagForPath, nativeCssWorkspace,
   nativeHistorySession, draftScope, draftStore, findEntry, readFile, errorMessage, updateNativePreviewSources,
   applyWidth: () => codePanes.applyWidth(),
   refreshFiles: () => filesTreeController.refresh(),
@@ -1222,7 +1222,7 @@ const pageStructureController = createPageStructureController({
   get setupScope() { return setupScope; },
   get draftScope() { return draftScope; },
   get openNativeNavigation() { return openNativeNavigation; },
-  get nativeSources() { return runtime.sources; },
+  get nativeSources() { return (site?: NativeSite) => runtime.sources(site); },
   get nativePageStyles() { return nativePageStyles; },
   get nativeTextTags() { return TEXT_LINE_TAGS; },
   get previewSelection() { return previewSelection; },
@@ -1232,7 +1232,7 @@ const pageStructureController = createPageStructureController({
   get nearestLink() { return nearestLink; },
   get nativeRouteInfo() { return nativeRouteInfo; },
   get versionView() { return versions.view; },
-  get nativeEffectiveSource() { return runtime.source; },
+  get nativeEffectiveSource() { return (path: string, scope?: DraftScope) => runtime.source(path, scope); },
   get nativeNamedDescendant() { return nativeNamedDescendant; },
   chooseMediaForImage: (target, files) => mediaController.chooseImage(target, files),
   mediaPlaceState: (page, src, alt) => mediaController.placeState(page, src, alt),
@@ -1852,7 +1852,7 @@ const mediaPorts: import("./controllers/media-controller").MediaControllerPorts 
     ? nativePreview.measureImage({ path, node, slot, style, ...(image.width && image.height ? { image: { width: image.width, height: image.height } } : {}) }) : Promise.resolve(undefined),
   origins: mediaOrigins,
   usage: {
-    key: () => runtime.state.textIndexScope === nativeTextIndexScopeKey() ? nativeTextIndexScopeKey() : "", files: runtime.files,
+    key: () => runtime.state.textIndexScope === nativeTextIndexScopeKey() ? nativeTextIndexScopeKey() : "", files: () => runtime.files(),
     pages: () => Object.values(runtime.site?.routes ?? {}), components: () => runtime.site?.components ?? {},
     source: path => runtime.textSource(path), read: readMediaText,
     url: () => nativeSiteSettings(runtime.textSource(NATIVE_CONFIG_PATH)).url,
@@ -1874,9 +1874,9 @@ const mediaPorts: import("./controllers/media-controller").MediaControllerPorts 
   // then its snapshot's, the branch texts read so far and its drafts.
   pin: () => pinMedia({ shown: () => { const repo = appStore.repository.value, scope = draftScope(), snapshot = appStore.snapshot.value; return repo && scope && snapshot && { repo, scope, snapshot, site: runtime.site }; },
     begin: () => workspaceSession.begin(), base: () => ({ files: runtime.base.files, texts: runtime.base.sources, key: nativeTextIndexScopeKey() }), identity: mediaIdentity, drafts: draftStore,
-    live: { entry: entryAt, find: findEntry, source: runtime.textSource, files: runtime.files, remember: (path, text) => mediaPorts.rememberSource(path, text) },
+    live: { entry: entryAt, find: findEntry, source: (path, scope) => runtime.textSource(path, scope), files: scope => runtime.files(scope), remember: (path, text) => mediaPorts.rememberSource(path, text) },
     entry: (repo, snapshot, path) => repositoryIndex.entry(repo, snapshot, path), find: (repo, snapshot, path) => repositoryIndex.find(api, repo, snapshot, path),
-    files: runtime.files, list: listRepositoryFiles, peek: (repo, revision, path) => cleanSources.peek(repo, revision, path) }),
+    files: (scope, base) => runtime.files(scope, base), list: listRepositoryFiles, peek: (repo, revision, path) => cleanSources.peek(repo, revision, path) }),
   identity: mediaIdentity,
   stamp: () => guardedEdits.stamp("repository"),
   generation: currentLoad,
@@ -1946,7 +1946,7 @@ async function applyMediaBatch(scope: DraftScope, stamp: Stamp, batch: MediaWork
   const opened = appStore.openFile.value, module = await loadMediaBatch();
   return module.applyMediaBatch({
     appStore, editor: editorModule, mediaHistoryHome, site: () => runtime.site, load: loadMediaWorkspace, stamp: () => guardedEdits.stamp("repository"),
-    listRepositoryFiles, nativeFiles: runtime.files, draftStore, bytes: uploadBytes, mediaTextSource: runtime.textSource, entryAt, findEntry, announce,
+    listRepositoryFiles, nativeFiles: scope => runtime.files(scope), draftStore, bytes: uploadBytes, mediaTextSource: (path, scope) => runtime.textSource(path, scope), entryAt, findEntry, announce,
     refresh: () => { afterFileChanges(); updateNativePreviewSources(); if (appStore.selection.value) pageStructureController.renderEditBar(appStore.selection.value); },
   }, scope, stamp, batch, pin, opened);
 }
@@ -2047,9 +2047,8 @@ const isNativeTextFile = (path: string) => /\.(?:html|css)$/i.test(path) && !pat
 // rest of the site follows after the first paint (the text index). All async
 // steps are guarded against a superseding navigation (`at`).
 async function activateNativeSite(repo: Repository, result: Snapshot, at: SessionStamp, openPath?: string) {
-  const request = ++runtime.state.request;
   // A new read: until its text index lands, nothing counts as indexed.
-  runtime.state.textIndexed = false;
+  const request = runtime.begin();
   const live = () => at.holds() && request === runtime.state.request;
   const placeholder: NativeSite = { routes: { "/": NATIVE_HOME_PAGE }, components: {} };
   const scope = draftScope();
@@ -2082,18 +2081,8 @@ async function activateNativeSite(repo: Repository, result: Snapshot, at: Sessio
     return true;
   }
   const site = parsed.site;
-  runtime.base.sources.clear();
-  runtime.state.componentStyles.clear();
-  runtime.state.missingComponentStyles.clear();
-  runtime.state.componentStyleRequests.clear();
-  runtime.state.styleFiles.clear();
-  runtime.state.missingStyleFiles.clear();
-  runtime.state.styleFileRequests.clear();
+  runtime.clearReads();
   noteNativeUnreadable(undefined);
-  runtime.state.shownRequests.clear();
-  runtime.state.assets.clear();
-  runtime.state.missingAssets.clear();
-  runtime.state.assetRequests.clear();
   try {
     // Only what the page on show needs renders first (src/native-boot.ts):
     // the page, its stylesheets with their imports and the components it
@@ -2501,7 +2490,7 @@ function closeWorkspace() {
 
 // Login, Start your site, the Setup checklist and wizard, and Get started (src/setup-host.ts).
 const setup = createSetupHost({
-  app, element, appStore, workspaceSession, closeWorkspace, setupScope, draftScope, draftStore, nativeEffectiveSource: runtime.source, api,
+  app, element, appStore, workspaceSession, closeWorkspace, setupScope, draftScope, draftStore, nativeEffectiveSource: (path, scope) => runtime.source(path, scope), api,
   get info() { return info; }, get repositories() { return repositories; }, get content() { return content; },
   get repositoryMenu() { return repositoryMenu; }, get nativeEngaged() { return runtime.engaged; },
   get agentPrompts() { return agentPrompts; }, get onboardingCopy() { return onboardingCopy; },
@@ -2793,8 +2782,8 @@ const pagePorts = (): Parameters<typeof createPagesController>[0] => ({
   edits: guardedEdits,
   site: () => runtime.site,
   routeForPath: nativeRouteForPath,
-  source: runtime.source,
-  files: runtime.files,
+  source: path => runtime.source(path),
+  files: () => runtime.files(),
   baseFiles: () => runtime.base.files,
   drafts: () => { const scope = draftScope(); return scope ? draftStore().list(scope) : []; },
   hasDraftScope: () => Boolean(draftScope()),
@@ -3110,7 +3099,7 @@ const filePorts = (): Parameters<typeof createLazyFileOperationsController>[0] =
   engaged: () => runtime.engaged, repository: () => appStore.repository.value,
   parentOf, treeState, pathNow, branchFilesUnder, findEntry, draftStore,
   baseSource: path => runtime.base.sources.get(path), readFiles, readFile,
-  nativeFiles: runtime.files,
+  nativeFiles: scope => runtime.files(scope),
   ensureNativeTextIndex, branchPathProblem,
   readMediaText, origins: mediaOrigins,
   onBranchHere, withMovedPageUrls, readNativeRedirects, confirmDialog: () => confirmDialog,

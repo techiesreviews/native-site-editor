@@ -45,17 +45,21 @@ export interface NativeSiteState {
   componentStyles: Map<string, string>;
   missingComponentStyles: Set<string>;
   componentStyleRequests: Set<string>;
-  // The stylesheets the pages link and every file those `@import`: loaded,
-  // or missing from the branch, or being read. Each is a style dependency:
-  // its effective source reaches the preview and edits to it re-render.
+  /**
+   * The stylesheets the pages link and every file those `@import`: loaded,
+   * or missing from the branch, or being read. Each is a style dependency:
+   * its effective source reaches the preview and edits to it re-render.
+   */
   styleFiles: Set<string>;
   missingStyleFiles: Set<string>;
   styleFileRequests: Set<string>;
-  // Files GitHub cannot give as text (not UTF-8, binary, over 1 MB), with why.
-  // Every read of the site skips them: a stylesheet among them is left out of
-  // the preview with a warning, never shown as a preview error.
+  /**
+   * Files GitHub cannot give as text (not UTF-8, binary, over 1 MB), with why.
+   * Every read of the site skips them: a stylesheet among them is left out of
+   * the preview with a warning, never shown as a preview error.
+   */
   unreadable: Map<string, string>;
-  // The project's own warnings (shared/native-project.ts), shown with the unreadable stylesheets'.
+  /** The project's own warnings (shared/native-project.ts), shown with the unreadable stylesheets'. */
   projectWarnings: string[];
   /** The load the reads belong to; a reset or a new load moves it on. */
   request: number;
@@ -63,17 +67,21 @@ export interface NativeSiteState {
   textIndexScope: string;
   textIndexed: boolean;
   releaseTextIndex: (() => void) | undefined;
-  // Paths being read, with the read that owns them: a read left over from a
-  // previous load (cleared with the rest of its state) never clears a newer one's.
+  /**
+   * Paths being read, with the read that owns them: a read left over from a
+   * previous load (cleared with the rest of its state) never clears a newer one's.
+   */
   shownRequests: Map<string, object>;
   assets: Map<string, string>;
   missingAssets: Set<string>;
   assetRequests: Map<string, number>;
   assetRequestId: number;
-  // Paths whose image came from a draft (or that a draft now covers) are read
-  // again after files change, so an upload, move or discard shows at once.
+  /**
+   * Paths whose image came from a draft (or that a draft now covers) are read
+   * again after files change, so an upload, move or discard shows at once.
+   */
   draftAssets: Set<string>;
-  // The load whose first paint happened, the files read for it (for the boot memory) and the work waiting for it.
+  /** The load whose first paint happened, the files read for it (for the boot memory) and the work waiting for it. */
   paintedRequest: number;
   paintedPaths: string[];
   paintWaiters: { request: number; run: () => void }[];
@@ -229,26 +237,37 @@ export function createNativeSiteRuntime(ports: NativeSiteRuntimePorts) {
     if (nativeSite) ports.changed();
   }
 
-  function deactivateNative() {
-    nativeSite = undefined;
-    nativeBaseFiles = [];
-    nativeEngaged = false;
+  // A new load: its reads own the load, and until its text index lands nothing counts as indexed.
+  function beginLoad() {
+    state.textIndexed = false;
+    return ++state.request;
+  }
+
+  // The texts and files a load read for its preview: a new load reads them again.
+  function clearReads() {
     nativeBaseSources.clear();
-    state.opaqueText.clear();
     state.componentStyles.clear();
     state.missingComponentStyles.clear();
     state.componentStyleRequests.clear();
     state.styleFiles.clear();
     state.missingStyleFiles.clear();
     state.styleFileRequests.clear();
-    state.unreadable.clear();
     state.shownRequests.clear();
-    state.textIndexing = undefined;
-    state.textIndexed = false;
-    state.releaseTextIndex = undefined;
     state.assets.clear();
     state.missingAssets.clear();
     state.assetRequests.clear();
+  }
+
+  function deactivateNative() {
+    nativeSite = undefined;
+    nativeBaseFiles = [];
+    nativeEngaged = false;
+    clearReads();
+    state.opaqueText.clear();
+    state.unreadable.clear();
+    state.textIndexing = undefined;
+    state.textIndexed = false;
+    state.releaseTextIndex = undefined;
     state.request++;
     ports.closed();
   }
@@ -274,6 +293,8 @@ export function createNativeSiteRuntime(ports: NativeSiteRuntimePorts) {
     shownPaths: nativeShownPaths,
     readPredicted: readNativePredicted,
     adoptSaved: adoptNativeBaseSources,
+    begin: beginLoad,
+    clearReads,
     reset: deactivateNative,
   };
 }
