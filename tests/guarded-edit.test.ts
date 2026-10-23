@@ -598,7 +598,7 @@ test("finish: another page shown meanwhile, the step lands on its own page as a 
   assert.equal(m.openFile(), "about.html", "the page shown stays");
   assert.deepEqual(m.steps(), [], "no Undo step: its page is not shown");
   assert.deepEqual(m.selected, []);
-  assert.deepEqual(m.announced, ["On index.html: Heading added."], "it says where it landed");
+  assert.deepEqual(m.announced, [], "nothing said: the Pages tree marks its page unsaved (ticket 27, no toasts)");
 });
 
 test("finish: a page switch during the commit's branch read lands the step on its page; a created file opens nothing", async () => {

@@ -897,7 +897,7 @@ test("a pinned placement switched away at any wait lands once, on its own page, 
   const main = '<section><img src="/images/old.png" alt="Old alt"></section>';
   const count = await forEachAwait(race => {
     let here = true;
-    const saved: SavedDraft[] = [], told: string[] = [];
+    const saved: SavedDraft[] = [], told: string[] = [], noted: string[] = [];
     const scope = { account: "lex", repoId: 1, repo: "lex/site", branch: "main" };
     const drafts = { list: () => saved, get: (_scope: unknown, path: string) => saved.find(draft => draft.path === path), save: (draft: SavedDraft) => { saved.push(draft); return true; }, remove: () => true };
     const pin = { repo: scope.repo, scope, identity: "workspace:1", drafts, here: () => here, site: { routes: { "/": "index.html" }, components: {} },
@@ -908,10 +908,10 @@ test("a pinned placement switched away at any wait lands once, on its own page, 
       list: race.port("list", async () => ["index.html"]), remember: () => {} } satisfies MediaPin;
     const f = fixture({
       source: path => path === "index.html" ? here ? main : "<p>feature</p>" : undefined,
-      pin: () => pin, shownScope: () => here ? scope : { ...scope, branch: "feature" },
+      pin: () => pin,
       readText: race.port("read", async () => "read text"),
       measureImage: race.port("measure", async () => undefined), measureAway: race.port("measure away", async () => undefined),
-      announce: text => { told.push(text); },
+      announce: text => { told.push(text); }, finishedAway: to => { noted.push(to.branch); },
       // A pinned batch for its own page: in this fake it lands as that page's draft.
       applyBatch: async (_scope, _stamp, batch, held) => {
         if (held === pin) for (const [path, content] of batch.edits) saved.push({ ...scope, version: 1, path, baseSha: "sha", original: main, content, updatedAt: 0 });
@@ -921,14 +921,15 @@ test("a pinned placement switched away at any wait lands once, on its own page, 
       await f.controller.chooseImage({ path: "index.html", node: [0, 0] });
       await f.pick()!.onPick!({ path: "images/new.png", alt: "New" }, () => false);
     })();
-    return { f, saved, told, done, leave: () => { here = false; } };
+    return { f, saved, told, noted, done, leave: () => { here = false; } };
   }, run => { run.leave(); }, run => {
     assert.deepEqual(run.f.errors, []);
     assert.deepEqual(run.f.changes, [], "nothing written on the page shown");
     assert.equal(run.saved.length, 1, "landed once, as its own page's draft");
     assert.equal(run.saved[0].branch, "main");
     assert.match(run.saved[0].content, /src="\/images\/new.png"/);
-    assert.deepEqual(run.told, ["On main: Image replaced"]);
+    assert.deepEqual(run.told, [], "nothing said (no toasts)");
+    assert.deepEqual(run.noted, ["main"], "counted on main");
   });
   assert.ok(count >= 2, `${count} waits swept`);
 });
@@ -939,7 +940,7 @@ test("a pinned popup shape change switched away at any wait lands once, on its o
   const main = '<section><img src="/images/old.png" alt="Old alt"></section>';
   const count = await forEachAwait(race => {
     let here = true, open = "about/index.html";
-    const saved: SavedDraft[] = [], told: string[] = [];
+    const saved: SavedDraft[] = [], told: string[] = [], noted: string[] = [];
     const scope = { account: "lex", repoId: 1, repo: "lex/site", branch: "main" };
     const drafts = { list: () => saved, get: (_scope: unknown, path: string) => saved.find(draft => draft.path === path), save: (draft: SavedDraft) => { saved.push(draft); return true; }, remove: () => true };
     const pin = { repo: scope.repo, scope, identity: "workspace:1", drafts, here: () => here, site: { routes: { "/": "index.html" }, components: {} },
@@ -952,7 +953,7 @@ test("a pinned popup shape change switched away at any wait lands once, on its o
       openFile: () => here ? open : "index.html",
       restoreFile: race.port("restore", async (path: string) => { if (here) open = path; }),
       measureImage: race.port("measure", async () => undefined), measureAway: race.port("measure away", async () => undefined),
-      shownScope: () => here ? scope : { ...scope, branch: "feature" }, announce: text => { told.push(text); },
+      announce: text => { told.push(text); }, finishedAway: to => { noted.push(to.branch); },
       // A pinned batch for its own page: in this fake it lands as that page's draft.
       applyBatch: async (_scope, _stamp, batch, held) => {
         if (held === pin) for (const [path, content] of batch.edits) saved.push({ ...scope, version: 1, path, baseSha: "sha", original: main, content, updatedAt: 0 });
@@ -961,12 +962,13 @@ test("a pinned popup shape change switched away at any wait lands once, on its o
     const ports = pinnedPorts(f.ports, pin, "index.html");
     const expected = '<img src="/images/old.png" alt="Old alt">';
     const done = framePlace(ports, { path: "index.html", node: [0, 0] }, { shape: "square" }, { stamp: ports.stamp(), epoch: 1, source: main, expected });
-    return { f, saved, told, done, leave: () => { here = false; } };
+    return { f, saved, told, noted, done, leave: () => { here = false; } };
   }, run => { run.leave(); }, run => {
     assert.deepEqual(run.f.changes, [], "nothing on the page shown");
     assert.equal(run.saved.length, 1, "landed once, as its own page's draft");
     assert.match(run.saved[0].content, /aspect-ratio: ?1 \/ 1/);
-    assert.deepEqual(run.told, ["On main: Image shape changed"]);
+    assert.deepEqual(run.told, [], "nothing said (no toasts)");
+    assert.deepEqual(run.noted, ["main"], "counted on main");
   });
   assert.ok(count >= 2, `${count} waits swept`);
 });

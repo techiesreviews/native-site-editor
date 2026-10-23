@@ -164,10 +164,10 @@ test("files added to another repository while it is not shown are counted on its
   await expect(page.locator(".repository-menu__trigger")).toHaveAccessibleName(/^native-routing — repository actions/, { timeout: 30_000 });
   await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
   media.release();
-  await expect(page.locator("#status")).toHaveText("On native-demo-user/native-demo (main): Added images/logo.png.", { timeout: 20_000 });
-
+  // Nothing said (ticket 27, no toasts): the menu counts it on the repository it landed in.
   const trigger = page.locator(".repository-menu__trigger");
-  await expect(trigger.locator(".repository-menu__finished")).toHaveText("1");
+  await expect(trigger.locator(".repository-menu__finished")).toHaveText("1", { timeout: 20_000 });
+  await expect(page.locator("#status")).not.toContainText("images/logo.png");
   await expect(trigger).toHaveAccessibleName(/ — 1 file added on native-demo-user\/native-demo \(main\)$/);
   await trigger.click();
   const row = page.locator("#repository-actions").getByRole("button", { name: /^native-demo native-demo-user/ });
@@ -253,7 +253,9 @@ test("files dropped on a folder, held across a branch switch, are added to the b
 
   await switchSiteMidUpload(page, baseURL);
   media.release();
-  await expect(page.locator("#status")).toHaveText("On main: Added images/logo.png.", { timeout: 20_000 });
+  // Nothing said (ticket 27, no toasts): the menu counts it on main.
+  await expect(page.locator(".repository-menu__trigger .repository-menu__finished")).toHaveText("1", { timeout: 20_000 });
+  await expect(page.locator("#status")).not.toContainText("images/logo.png");
   // The picture and its media records, as any addition writes them.
   expect((await draftsOn(page, "main")).map(draft => [draft.path, Boolean(draft.upload)])).toEqual([[".editor/media.json", false], ["images/logo.png", true]]);
   expect(await draftsOn(page, "feature")).toEqual([]);

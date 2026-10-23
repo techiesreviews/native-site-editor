@@ -133,8 +133,8 @@ for (const to of ["branch", "site"] as const) {
     await switchTo(page, baseURL, to);
     placing.release();
     await expect.poll(async () => (await draftsOn(page, "main")).filter(draft => draft.path === "index.html").map(draft => draft.content.includes('src="/images/studio-desk.svg"')), { timeout: 20_000 }).toEqual([true]);
-    // Its toast says where it landed (the repository too, when another is shown); what is shown has nothing of it.
-    await expect(page.locator("#status")).toHaveText(to === "branch" ? /^On main: Image replaced/ : /^On [^ ]+\/native-demo \(main\): Image replaced/);
+    // Nothing said (Lex: no toasts): the menu counts it where it landed; what is shown has nothing of it.
+    await expect(page.locator("#status")).not.toContainText("Image replaced");
     expect(await draftsOn(page, "feature")).toEqual([]);
     expect(await draftsOn(page, "main", 540)).toEqual([]);
     expect(await shownSource(page)).not.toContain("studio-desk");
@@ -212,8 +212,8 @@ test("the image popup's trim, held across a branch switch as it closes, lands on
   trimming.release();
   await expect.poll(async () => (await draftsOn(page, "main")).map(draft => draft.path).sort(), { timeout: 30_000 }).toContain("media/images/quarters-crop.webp");
   expect((await draftsOn(page, "main")).find(draft => draft.path === "index.html")?.content).toMatch(/src="\/media\/images\/quarters-crop\.webp"/);
-  await expect(page.locator("#status")).toContainText("On main: Picture trimmed");
   await expect(finishedCount(page)).toHaveText("1");
+  await expect(page.locator("#status")).not.toContainText("Picture trimmed");
   expect(await draftsOn(page, "feature")).toEqual([]);
   expect(await shownSource(page)).not.toContain("quarters");
 });
@@ -234,7 +234,7 @@ test("a picture placed with the picker's Use, held while another page of main op
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "about/index.html", { timeout: 30_000 });
   placing.release();
   await expect.poll(async () => (await draftsOn(page, "main")).filter(draft => draft.path === "index.html").map(draft => draft.content.includes('src="/images/studio-desk.svg"')), { timeout: 20_000 }).toEqual([true]);
-  await expect(page.locator("#status")).toHaveText(/^On index.html: Image replaced/);
+  await expect(page.locator("#status")).not.toContainText("Image replaced");
   // Lex stays where he went; that page has nothing of it, and no note is needed for a page of the site shown.
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "about/index.html");
   expect((await draftsOn(page, "main")).map(draft => draft.path)).toEqual(["index.html"]);

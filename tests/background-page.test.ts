@@ -92,9 +92,8 @@ test("a background page belongs to one account (any capitals), repository, branc
 // The ports a placement uses, held to the workspace and page it began on: the editor's while that page
 // is shown, its background page's once another workspace (or another page of its own) is shown.
 function pinned(options: { beganOnPage?: boolean; opened?: string } = {}) {
-  let here = true, shown: DraftScope | undefined, open = options.beganOnPage ? "index.html" : "about/index.html";
+  let here = true, open = options.beganOnPage ? "index.html" : "about/index.html";
   const scope: DraftScope = { account: "lex", repoId: 1, repo: "lex/site", branch: "main" };
-  shown = scope;
   const store = { get: () => undefined, save: () => true, remove: () => true, list: () => [] };
   const pin = { repo: "lex/site", scope, identity: "1", drafts: store, here: () => here,
     entry: () => ({ path: "index.html", sha: "s1", mode: "100644", type: "blob" as const }), find: async () => undefined,
@@ -112,11 +111,10 @@ function pinned(options: { beganOnPage?: boolean; opened?: string } = {}) {
     },
     measureImage: async () => { measured.push("shown"); return undefined; },
     measureAway: async () => { measured.push("away"); return undefined; }, finishedAway: (to: DraftScope) => { away.push(to.branch); },
-    shownScope: () => shown,
   } as unknown as MediaControllerPorts;
   return { ports: options.opened === undefined ? pinnedPorts(live, pin, "index.html") : pinnedPorts(live, pin, "index.html", options.opened), said, changes, away, measured, restored, batches,
-    leave: () => { here = false; shown = { ...scope, branch: "feature" }; },
-    leaveSite: () => { here = false; shown = { account: "lex", repoId: 2, repo: "lex/other", branch: "main" }; },
+    leave: () => { here = false; },
+    leaveSite: () => { here = false; },
     openOther: () => { open = "about/index.html"; } };
 }
 
@@ -140,17 +138,18 @@ test("held ports write a change as one pinned batch for their own page once anot
   assert.deepEqual(p.changes, [], "nothing on the page shown");
   assert.deepEqual(p.batches.map(batch => [batch.label, batch.pinned, [...batch.edits], [...batch.sources]]),
     [["Image replaced", true, [["index.html", "<img src=b.png>"]], [["index.html", "<img src=a.png>"]]]], "one transaction, proved by the page as it was read");
-  assert.deepEqual(p.said, ["On main: Image replaced"]);
+  assert.deepEqual(p.said, [], "nothing said (no toasts): the menu counts it on main");
   assert.deepEqual(p.away, ["main"], "a note on the workspace it landed in");
   await p.ports.measureImage!("index.html", [0], {});
   assert.deepEqual(p.measured, ["away"], "measured in its background page");
 });
 
-test("work that landed on another site says which repository and branch", async () => {
+test("work that landed on another site says nothing, and is counted on its own site and branch", async () => {
   const p = pinned();
   p.leaveSite();
   assert.equal(await p.ports.change("index.html", "<img src=a.png>", [{ start: 9, end: 14, text: "b.png" }], [0], "Image replaced"), true);
-  assert.deepEqual(p.said, ["On lex/site (main): Image replaced"], "another site's main is shown: its own is named");
+  assert.deepEqual(p.said, []);
+  assert.deepEqual(p.away, ["main"]);
 });
 
 // Another page of the same site opened while work begun on its page runs: Lex is not pulled back.
@@ -165,7 +164,7 @@ test("work begun on its page, with another page of the site opened, writes that 
   assert.equal(await p.ports.change("index.html", "<img src=a.png>", [{ start: 9, end: 14, text: "b.png" }], [0], "Image replaced"), true);
   assert.deepEqual(p.changes, []);
   assert.deepEqual(p.batches.map(batch => [batch.pinned, batch.opened]), [[true, "index.html"]], "its Undo step belongs to its own page");
-  assert.deepEqual(p.said, ["On index.html: Image replaced"]);
+  assert.deepEqual(p.said, [], "nothing said: Pages marks the page unsaved");
   assert.deepEqual(p.away, [], "a page of the site shown needs no note");
 });
 
