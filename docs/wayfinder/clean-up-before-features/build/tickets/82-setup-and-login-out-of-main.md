@@ -45,3 +45,8 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `main.ts` 5134 → 4803 lines (−331, against the estimated −395: `closeWorkspace`, `setupScope`, `newDraftPaths` and the two listeners stay), ceiling 5140 → 4810; `docs/agents/code-map.md` ranges re-measured and the Login row names `src/setup-host.ts`.
 - Evidence: `RESULT: ok unit 38/38 (3 files)` (`kit unit --affected`), `RESULT: ok specs 87/87 passed` (`kit specs --affected`, setup checklist, setup wizard, startup and static starter specs among them), `RESULT: ok size boot 344 KB (±0 KB) vs dev@e881491, budget 355 KB`; `npm run check` and `npm run lint` green; `npm test` 5125/5125.
 - Commits: bcf520ce (the move), 870d5822 (review round 1), 5907e23c (review round 2), then review round 3's fixes.
+
+### Follow-ups
+
+- Validation gaps (gap): 5cdeff4a:tests/main-ts-ceiling.test.ts:1045 — The early-use guard only follows hoisted `function` declarations (`ts.isFunctionDeclaration(fn)`). An arrow or fun
+
