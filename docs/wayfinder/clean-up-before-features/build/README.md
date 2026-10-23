@@ -191,3 +191,4 @@ GPT-6.1 Sol hit its usage limit on 2026-10-22 (blocked until 2026-10-27 20:26; L
 - 2026-10-22 (factory slices 11, 12): `review-findings.mjs` reads explanation bullets under `Standards: none` and the sub-bullets of a P3 finding as severity-less findings, which block `kit pr` even after three rounds; the lead landed #125 and #127 with recorded `--waive`. Fix in the parser (indented sub-bullets belong to the finding above; bullets after "none" are notes).
 - 2026-10-22 (slice 93 kit pr): `native-lazy-panels.spec.ts:30` ("a failed connection check keeps browser requests…") failed once under load; 6/6 alone on dev.
 - 2026-10-22 (slice 93 kit pr): `native-media-library.spec.ts:450` (ticket 92's "adding a file keeps the tiles…") failed once under load; 17/17 alone.
+- 2026-10-23 (slice 23 kit pr): `native-agent-quiet.spec.ts:180` ("live: waits are quiet by default…") failed once under load; passes alone on the branch and on dev.

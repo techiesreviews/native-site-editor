@@ -1,6 +1,6 @@
 ---
 title: CI deploy-preview has no Cloudflare token
-status: ready-for-human
+status: closed
 assignee:
 blocked_by: []
 ---
@@ -21,3 +21,5 @@ enforce the budget.
 ## Comments
 
 - 2026-10-22: still Lex's step. Plain checklist (one token for CI preview deploys and the skipped Durable Object baseline report): [clean-up build README](../../../wayfinder/clean-up-before-features/build/README.md#lexs-checklist-the-cloudflare-token). The budget part is done: the workflow's budget step now enforces 355 KB (`npm run test:budget`).
+
+- 2026-10-23: Lex added `CLOUDFLARE_API_TOKEN` to the repository secrets; CI run 39933573300 deployed preview-editor.techies.tools (version af81486c). Closed. The Durable Object baseline report still needs the token locally (lead asks through a secret prompt).
