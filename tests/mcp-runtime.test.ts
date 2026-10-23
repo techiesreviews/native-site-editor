@@ -1,4 +1,5 @@
 import { applyReplacements } from "../shared/agent-replacements";
+import { PAGE_ADDRESS_RULE } from "../shared/site-rules";
 import { agentMediaStorage } from "./support/agent-media-workspace";
 import { MEDIA_ADDING_CHOICES, MEDIA_ADDING_DEFAULTS } from "../src/page-builder/media-settings";
 import { applySiteCommand, type AgentSiteActions } from "../src/agent-site";
@@ -430,10 +431,11 @@ test("MCP site tools read and prepare guarded changes over the runtime socket, r
     refusing.site!.outlines[0].containers.push({ id: "1.5", tag: "main", children: 0 });
     refusing.site!.outlines[0].sections.push({ id: "1.6", tag: "site-header" }, { id: "1.7", tag: "card-note" });
     await tab.show(refusing);
-    for (const [element, reason] of [["1.5", /A <main> cannot be a component/], ["1.6", /site's header component already/], ["1.7", /<card-note> is a component already/]] as const) {
+    // In the tab's words (shared/site-rules.ts), whole.
+    for (const [element, words] of [["1.5", "A <main> cannot be a component."], ["1.6", "<site-header> is the site's header component already."], ["1.7", "<card-note> is a component already."]] as const) {
       const refused = await call("make_component", { ...makeArgs, element });
       assert.equal(refused.isError, true);
-      assert.match(JSON.stringify(refused), reason);
+      assert.ok((refused as { content: { text: string }[] }).content[0].text.includes(words), `${element}: ${JSON.stringify(refused)}`);
     }
     await tab.show(context);
     for (const extra of [{ fixed: Array(33).fill("title") }, { fixed: ["x".repeat(101)] }, { fixed: [1] }]) {
@@ -468,7 +470,11 @@ test("MCP site tools read and prepare guarded changes over the runtime socket, r
     // The Pages tab's words, before anything is queued.
     const strict = await call("create_page", { title: "About us", slug: "About_Us.v2", waitSeconds: 0 });
     assert.equal(strict.isError, true);
-    assert.match(JSON.stringify(strict), /Use lowercase letters, digits and dashes in the URL, at most 80, starting with a letter or digit\./);
+    assert.ok((strict as { content: { text: string }[] }).content[0].text.includes(PAGE_ADDRESS_RULE), JSON.stringify(strict));
+    // Too long: the rule's words too, not the schema's.
+    const long = await call("create_page", { title: "x", slug: "a".repeat(81), waitSeconds: 0 });
+    assert.equal(long.isError, true);
+    assert.ok((long as { content: { text: string }[] }).content[0].text.includes(PAGE_ADDRESS_RULE), JSON.stringify(long));
     assert.equal((await call("create_page", { title: "Orphan", parent: "/nowhere/", waitSeconds: 0 })).isError, true);
     assert.equal((await call("create_page", { title: "Orphan", parent: "/404.html", waitSeconds: 0 })).isError, true, "a single-file page has no subpages");
 

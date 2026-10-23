@@ -41,6 +41,7 @@ import { mountDropdown } from "../components/dropdown";
 import { icon } from "../icons";
 import { button, node } from "../ui/dom";
 import { NATIVE_CONFIG_PATH, nativeSitePrefix, nativePageBody, type NativeSite } from "../../shared/native-project";
+import { componentSourceProblem } from "../../shared/site-rules";
 import type { NativePreviewSelection } from "../components/native-preview";
 import type { CheckboxControl, EditBarControl, EditBarModel, SelectControl } from "../components/edit-bar";
 import type { VariantField } from "./variant-fields";
@@ -1584,7 +1585,7 @@ export function createComponentTools(deps: ComponentDeps) {
     if (!range) return "That element is not on the page any more. Read the page again.";
     // A component, a document element or anything inside an instance gets the plan's own, more telling reason.
     const chain = elementChain(source, nodePath)?.map((element) => element.localName) ?? [];
-    const planRefuses = chain.some((name) => name.includes("-")) || ["html", "head", "body", "main"].includes(range.tag.name);
+    const planRefuses = componentSourceProblem({ tag: range.tag.name }) !== undefined || chain.slice(0, -1).some((name) => name.includes("-"));
     if (!planRefuses && !makeComponentOffered(chain)) return `Make component works only on ${makeComponentContainers}; <${range.tag.name}> cannot become a component here.`;
     const taken = Object.keys(current.components);
     const problem = tagNameProblem(tag, taken);

@@ -113,6 +113,8 @@ test("a new URL meets the address rule; an existing one stays and can be renamed
     "About_Us.v2/team/index.html": "contact/About_Us.v2/team/index.html",
   });
   assert.equal(plan(files, "/contact/", "/Old_Folder/contact/").target, "Old_Folder/contact/index.html");
+  // A typed new folder with a strict name, the old-named page keeping its own.
+  assert.equal(plan(files, "/About_Us.v2/", "/new-folder/About_Us.v2/").target, "new-folder/About_Us.v2/index.html");
   // A single-file page keeps its old name under a folder; a folder URL for it is a new last part.
   const single = ["index.html", "Old_Name.html", "x/index.html"];
   assert.equal(plan(single, "/Old_Name.html", "/x/Old_Name.html").target, "x/Old_Name.html");

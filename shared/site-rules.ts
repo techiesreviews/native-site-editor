@@ -27,6 +27,7 @@ export function componentTagProblem(tag: string, taken: Iterable<string>): strin
   if (!tag.includes("-")) return "A component's name has a dash in it, such as section-intro.";
   if (!/^[a-z][a-z0-9]*(?:-[a-z0-9]+)+$/.test(tag)) return "Use lowercase letters, digits and single dashes between words.";
   if (RESERVED_CUSTOM_ELEMENT_NAMES.has(tag)) return `${tag} is reserved by HTML.`;
+  // The name is taken; not the element's "<x> is a component already." (it is an instance), so the two stay apart.
   if ([...taken].includes(tag)) return `There is a component <${tag}> already.`;
   return undefined;
 }

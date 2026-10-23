@@ -387,14 +387,18 @@ test("a page at an address the new-page rule refuses still opens, saves and can 
   await saveAll(page);
   expect(await branchFile(page, routingRepo, file)).toContain("<title>About the studio</title>");
 
-  // Renaming it to a strict address is offered, not refused.
+  // Renamed to a strict address and saved: the page is there, the old file gone.
   await openSettings(page);
   const url = settingsDialog(page).getByRole("textbox", { name: "URL", exact: true });
   await expect(url).toHaveValue("/About_Us.v2/");
   await url.fill("/about-us/");
   await expect(settingsDialog(page).locator(".url-change__message")).toContainText("Moves About_Us.v2/index.html to about-us/index.html");
   await expect(url).not.toHaveAttribute("aria-invalid", "true");
-  await url.press("Escape");
+  await url.press("Enter");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "about-us/index.html");
+  await saveAll(page);
+  expect(await branchFile(page, routingRepo, "about-us/index.html")).toContain("<title>About the studio</title>");
+  expect(await branchFile(page, routingRepo, file)).toBeUndefined();
 });
 
 const settingsDialog = (page: Page) => page.getByRole("dialog", { name: "Page settings", exact: true });
