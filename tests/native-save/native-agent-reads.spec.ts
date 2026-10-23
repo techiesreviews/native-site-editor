@@ -83,6 +83,21 @@ test("all migrated MCP reads and the site resource answer from browser drafts; a
     expect(new Set(commands.map(value => value.id)).size).toBe(commands.length);
     expect(agentHttp.filter(path => /\/(context|drafts|claim|ack)$/.test(path))).toEqual([]);
 
+    // Typing on while the agent is connected: its reads give exactly what the preview shows.
+    const typed = content.replace("Unsaved socket read draft", "Unsaved socket read draft, still typing");
+    await page.evaluate(async ({ typed, modulePath }) => {
+      const { monaco } = await import(modulePath) as typeof import("../../src/components/monaco");
+      const view = monaco.editor.getEditors().find(item => item.getModel()?.uri.path.endsWith("/index.html"))!;
+      view.executeEdits("socket-read-spec", [{ range: view.getModel()!.getFullModelRange(), text: typed }]);
+    }, { typed, modulePath: "/src/components/monaco.ts" });
+    await expect(heading).toHaveText("Unsaved socket read draft, still typing");
+    const shown = await heading.textContent();
+    const typedHash = await textHash(typed);
+    expect(await call("read_file", { path: "index.html" })).toMatchObject({ source: "draft", content: typed, hash: typedHash });
+    const typedPage = await call("get_page", { page: "/" });
+    expect(typedPage).toMatchObject({ source: "draft", html: typed, hash: typedHash });
+    expect(typedPage.html).toContain(`>${shown}</h1>`);
+
     await page.reload();
     // Remote agents are remembered on for this site: the reloaded tab receives again, on the same grant.
     await expect.poll(async () => JSON.parse(((await client.callTool({ name: "get_site", arguments: {} })).content as { text: string }[])[0].text).available, { timeout: 30_000 }).not.toBe(false);

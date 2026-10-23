@@ -1,8 +1,8 @@
 ---
 title: "Agent reads and media text use the runtime's overlay"
 type: task (AFK)
-status: open
-assignee: lead-32 (this session)
+status: closed
+assignee: lead-32
 builder: claude
 blocked_by: [31-native-site-runtime]
 ---
@@ -36,3 +36,10 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `kit unit --affected`, `kit specs --affected` plus `kit specs native-agent-reads.spec.ts native-mcp.spec.ts`, `kit size`.
 - Review: `kit review --ticket <this ticket>` (GPT-6.1 Sol, medium, read-only). Land: `kit pr --ticket <this ticket>`.
 - Report: unit and specs `RESULT:` lines, `kit size` KB, review folder and decisions, PR and merge SHA, `main.ts` lines and ceiling.
+
+## Done (2026-10-23)
+
+- One function answers "text of this path now": `textNow` in `src/native-site-runtime.ts`. The preview's `source` is it; `textSource` (media text, guarded edits, agent reads) is it with the usage texts (an opaque draft's text read for usage, the wider text index). `mediaTextSource`'s own layering is gone.
+- Agent reads in the tab answer with the runtime's text first: `SiteFiles` (`shared/site-files.ts`) takes the tab's text now as a port and uses it in `read`, `export` and `texts`, before the shared drafts and GitHub; a deleted or binary draft stays what the drafts say, and text past the agents' 1 MB limit is not taken. `src/agent-tools-read.ts` passes the runtime's `textSource`; `src/main.ts` hands the agent context the runtime's `source` for draft texts. A saved file the tab holds is read without asking GitHub.
+- Tests: `tests/native-site-runtime.test.ts` (the media text equals the preview's text wherever the preview has one), `tests/agent-tools-read.test.ts` (reads, get_page and export give the tab's text now; deletions, binaries and over-limit text fall back), `tests/native-save/native-agent-reads.spec.ts` (typing on while an agent is connected: `read_file` and `get_page` return the typed text the preview shows).
+- Left: `src/agent-site.ts` still names its port `mountedSource` and keeps a `?? draft.content` fallback for a held edit away from its workspace; `src/agent-tools-edit.ts` reads the pinned context's drafts (needed while away). Both are outside this slice's files.

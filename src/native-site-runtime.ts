@@ -132,13 +132,23 @@ export function createNativeSiteRuntime(ports: NativeSiteRuntimePorts) {
     return out;
   }
 
-  function nativeEffectiveSource(path: string, scope = ports.scope()) {
+  // The text of `path` now, the one answer for the preview, media text and agent reads.
+  // `usage` adds what only usage reads take (scripts, data, notes…): an opaque draft's text read
+  // for usage, and GitHub's indexed text of a file the preview never read. The preview's readers
+  // (the draft store's commit check) know only HTML and CSS, so `source` leaves those out.
+  function textNow(path: string, scope = ports.scope(), usage = false) {
+    const draft = scope ? ports.drafts().get(scope, path) : undefined;
+    if (usage && draft?.opaque && !draft.deleted) {
+      const cached = state.opaqueText.get(draftKey(scope!, path));
+      return cached?.sha === draft.sourceSha ? cached?.text : undefined;
+    }
     return effectiveText(path, {
       mounted: (file) => ports.mounted(file),
-      draft: (file) => scope ? ports.drafts().get(scope, file) : undefined,
-      base: (file) => nativeBaseSources.get(file),
+      draft: () => draft,
+      base: (file) => nativeBaseSources.get(file) ?? (usage ? ports.clean.peek("", ports.textKey(), file) : undefined),
     });
   }
+  const nativeEffectiveSource = (path: string, scope = ports.scope()) => textNow(path, scope);
 
   // The site's sub-folder from its Site address (`/my-site`); none at a domain root.
   function nativePrefix() {
@@ -154,20 +164,6 @@ export function createNativeSiteRuntime(ports: NativeSiteRuntimePorts) {
     const open = ports.openFile();
     const pages = [page, ...(open ? [open] : [])];
     return new Set([...nativeShownFiles(site, pages, (path) => nativeEffectiveSource(path, scope), (path) => files.has(path), nativePrefix()).files, ...ports.pageStyles()]);
-  }
-
-  // Text read for usage (scripts, data, notes…) is kept out of the preview source map and out of
-  // nativeEffectiveSource, whose readers (the draft store's commit check) know only HTML and CSS.
-  // Media batches and guarded file operations read it through mediaTextSource.
-  function mediaTextSource(path: string, scope = ports.scope()) {
-    const held = nativeEffectiveSource(path, scope);
-    const draft = scope ? ports.drafts().get(scope, path) : undefined;
-    if (draft?.opaque && !draft.deleted && scope) {
-      const cached = state.opaqueText.get(draftKey(scope, path));
-      return cached?.sha === draft.sourceSha ? cached?.text : undefined;
-    }
-    if (held !== undefined || draft) return held;
-    return ports.clean.peek("", ports.textKey(), path);
   }
 
   // Every file of the site as drafted: the branch's not deleted, renamed or
@@ -286,8 +282,10 @@ export function createNativeSiteRuntime(ports: NativeSiteRuntimePorts) {
       set files(files: string[]) { nativeBaseFiles = files; },
     },
     state,
+    /** The text of `path` now, as the preview reads it (pages, templates, stylesheets, settings). */
     source: nativeEffectiveSource,
-    textSource: mediaTextSource,
+    /** The same text now with usage texts too: media batches, guarded edits and agent reads. */
+    textSource: (path: string, scope = ports.scope()) => textNow(path, scope, true),
     files: nativeFiles,
     newDraftPaths: scopeNewDraftPaths,
     sources: nativeSources,

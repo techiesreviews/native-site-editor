@@ -53,7 +53,7 @@ export interface WorkspaceHost {
   /** nativeFiles */
   files(): string[];
   store(): DraftAccess & { error: string | null };
-  /** nativeEffectiveSource */
+  /** The text of `path` now, usage texts included (the site runtime's `textSource`). */
   source(path: string): string | undefined;
   /** nativePathExists, and the tree's paths in a plain repository */
   exists(path: string): boolean;

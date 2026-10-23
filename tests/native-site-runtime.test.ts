@@ -66,6 +66,17 @@ test("the media text also reads an opaque draft's cached text and the wider inde
   assert.equal(runtime.source("notes.txt"), undefined);
 });
 
+test("the media text is the preview's text wherever the preview has one: one rule for both", () => {
+  const { runtime, clean } = setup([draft("about.html", "drafted about"), draft("gone.html", "", { deleted: true })], { "open.html": "typed" });
+  runtime.base.sources.set("index.html", "base index.html");
+  for (const path of ["index.html", "about.html", "open.html", "gone.html"]) clean.put("", "key", path, `indexed ${path}`);
+  for (const path of ["index.html", "about.html", "open.html", "gone.html"]) assert.equal(runtime.textSource(path), runtime.source(path), path);
+  assert.deepEqual(["index.html", "about.html", "open.html"].map((path) => runtime.textSource(path)), ["base index.html", "drafted about", "typed"]);
+  // Where the preview has none, the media text reads on into the wider index.
+  clean.put("", "key", "notes.txt", "notes");
+  assert.deepEqual([runtime.textSource("notes.txt"), runtime.source("notes.txt")], ["notes", undefined]);
+});
+
 test("the site's files are the branch's, less deletions, with new drafts", () => {
   const { runtime } = setup([draft("old.html", "", { deleted: true }), draft("new.html", "new", { baseSha: null }), draft("index.html", "edited")]);
   runtime.base.files = ["index.html", "old.html"];
