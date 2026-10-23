@@ -436,6 +436,12 @@ test("MCP site tools read and prepare guarded changes over the runtime socket, r
       assert.equal(refused.isError, true);
       assert.ok((refused as { content: { text: string }[] }).content[0].text.includes(words), `${element}: ${JSON.stringify(refused)}`);
     }
+    // Any other container is the tab's to judge: a <div> with a free name is queued.
+    refusing.site!.outlines[0].containers.push({ id: "1.8", tag: "div", children: 1 });
+    await tab.show(refusing);
+    const div = await call("make_component", { ...makeArgs, element: "1.8", tag: "section-box", requestId: "make-div" });
+    assert.ok(!div.isError, JSON.stringify(div));
+    assert.equal((await tab.inspect()).commands.find((item: any) => item.id === "make-div")?.operation, "make_component");
     await tab.show(context);
     for (const extra of [{ fixed: Array(33).fill("title") }, { fixed: ["x".repeat(101)] }, { fixed: [1] }]) {
       assert.equal((await call("make_component", { ...makeArgs, ...extra })).isError, true);
@@ -474,6 +480,14 @@ test("MCP site tools read and prepare guarded changes over the runtime socket, r
     const long = await call("create_page", { title: "x", slug: "a".repeat(81), waitSeconds: 0 });
     assert.equal(long.isError, true);
     assert.ok((long as { content: { text: string }[] }).content[0].text.includes(PAGE_ADDRESS_RULE), JSON.stringify(long));
+    // An existing address stays, also as a new page's parent.
+    const oldNamed = structuredClone(context);
+    oldNamed.pages!.push({ route: "/About_Us.v2/", file: "About_Us.v2/index.html", title: "About us" });
+    await tab.show(oldNamed);
+    const under = await call("create_page", { title: "Team", parent: "/About_Us.v2/", slug: "team", requestId: "page-old", waitSeconds: 0 });
+    assert.ok(!under.isError, JSON.stringify(under));
+    assert.deepEqual(tab.commands.find(item => item.id === "page-old")?.args, { parent: "/About_Us.v2/", title: "Team", slug: "team" });
+    await tab.show(context);
     assert.equal((await call("create_page", { title: "Orphan", parent: "/nowhere/", waitSeconds: 0 })).isError, true);
     assert.equal((await call("create_page", { title: "Orphan", parent: "/404.html", waitSeconds: 0 })).isError, true, "a single-file page has no subpages");
 

@@ -10,7 +10,7 @@ import {
   rewriteRouteLinks,
 } from "../src/native-page-moves.ts";
 import { deriveNativeRoutes } from "../shared/native-routes.ts";
-import { pageAddressProblem } from "../shared/site-rules.ts";
+import { PAGE_ADDRESS_RULE, pageAddressProblem } from "../shared/site-rules.ts";
 
 const plan = (files: string[], from: string, to: string) => {
   const result = planPageMove({ files, routes: deriveNativeRoutes(files), from, to });
@@ -113,6 +113,10 @@ test("a new URL meets the address rule; an existing one stays and can be renamed
     "About_Us.v2/team/index.html": "contact/About_Us.v2/team/index.html",
   });
   assert.equal(plan(files, "/contact/", "/Old_Folder/contact/").target, "Old_Folder/contact/index.html");
+  assert.equal(error(files, "/contact/", `/${"a".repeat(81)}/`), PAGE_ADDRESS_RULE);
+  // A new folder under an existing old-named one meets the rule; the old one stays.
+  assert.equal(error(files, "/contact/", "/Old_Folder/New_Sub/contact/"), PAGE_ADDRESS_RULE);
+  assert.equal(plan(files, "/contact/", "/Old_Folder/new-sub/contact/").target, "Old_Folder/new-sub/contact/index.html");
   // A typed new folder with a strict name, the old-named page keeping its own.
   assert.equal(plan(files, "/About_Us.v2/", "/new-folder/About_Us.v2/").target, "new-folder/About_Us.v2/index.html");
   // A single-file page keeps its old name under a folder; a folder URL for it is a new last part.
