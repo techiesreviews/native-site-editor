@@ -285,7 +285,10 @@ for (const operation of ["create_page", "set_page_details", "move_file", "delete
     await prepared.finish!(() => true);
   } finally { scoped.dispose(); }
   const recorded = prepared.outcome;
-  if (operation === "create_page") assert.deepEqual(recorded.result && Object.keys(recorded.result).sort(), ["file", "hash", "route"]);
+  if (operation === "create_page") {
+    assert.deepEqual(recorded.result && Object.keys(recorded.result).sort(), ["file", "hash", "route"]);
+    assert.equal(recorded.result?.file, "new-page/index.html");
+  }
   assert.deepEqual({ ...recorded, ...live }, recorded, "the live reply adds nothing the receipt lacks");
   const drafts = f.store.list(f.scope).length, steps = f.memory.steps();
   const again = await prepareAgentText(command, f.scope, f.store, () => true, () => {});

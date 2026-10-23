@@ -255,6 +255,17 @@ test("a component stylesheet only in the drafts opens from its draft without rea
   assert.deepEqual(h.calls.filter((call) => /^(find|read) /.test(call)), []);
 });
 
+test("an uploaded component stylesheet not on GitHub opens the shared one instead", async () => {
+  const upload = { path: CARD_CSS, baseSha: null, upload: { size: 20, type: "text/css" }, opaque: true } as SavedDraft;
+  const h = harness({ componentTag: CARD, drafts: { [CARD_CSS]: upload } });
+  h.appStore.openFile.value = CARD;
+  const opening = h.linked.openComponentLinkedStyle(CARD);
+  await h.settle();
+  assert.equal(await opening, true);
+  assert.deepEqual(h.mounts.map(({ path }) => path), ["styles.css"]);
+  assert.ok(h.calls.includes(`find ${CARD_CSS}`));
+});
+
 test("an edit to the stylesheet re-maps the linked rules to their new place", async () => {
   const h = harness();
   const linking = h.linked.linkNativeStyles(HERO_SELECTION, true);
