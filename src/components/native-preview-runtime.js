@@ -556,7 +556,7 @@ import { domView } from "../page-builder/rules/tree.ts";
     renderDepth = 0;
     var previous = selected && selected.isConnected ? { path: ownerPath(selected), node: elementIndexPath(selected) } : null;
     // Where the text being typed in sits, so only its replacement keeps typing.
-    var editingAt = editing && editing.isConnected ? JSON.stringify([ownerPath(editing), elementIndexPath(editing)]) : "";
+    var editingAt = editing && editing.isConnected ? placeKey(editing) : "";
     applyAssetChanges(payload.assetChanges);
     state = {
       viewing: payload.viewing === true,
@@ -595,8 +595,9 @@ import { domView } from "../page-builder/rules/tree.ts";
     scrollToTarget();
     // The host selects written text again (commitEditing), unless a click chose another element since.
     // The render after an edit answers it, whether or not it selects (a refused edit only refreshes).
-    var chosen = leftText && selected && selected.isConnected && JSON.stringify([ownerPath(selected), elementIndexPath(selected)]) !== leftText;
-    var stale = chosen && payload.selectNode && JSON.stringify([payload.selectNode.path, payload.selectNode.node]) === leftText;
+    var written = writtenText();
+    var chosen = written && selected && selected.isConnected && placeKey(selected) !== written;
+    var stale = chosen && payload.selectNode && JSON.stringify([payload.selectNode.path, payload.selectNode.node]) === written;
     leftText = "";
     if (payload.selectNode) {
       var requested = !stale && resolveNodePath(payload.selectNode);
@@ -610,7 +611,7 @@ import { domView } from "../page-builder/rules/tree.ts";
       }
     }
     // A block selected in its place (an insert, a drop) is not typed into.
-    if (wasEditing && !editing && selected && JSON.stringify([ownerPath(selected), elementIndexPath(selected)]) === editingAt) startEditing(selected);
+    if (wasEditing && !editing && selected && placeKey(selected) === editingAt) startEditing(selected);
     else if (editing && editing !== selected) stopEditing(false);
     else if (editing && !typing) { editingText = editing.textContent; editingHtml = editing.innerHTML; }
     lastInsertPoints = "";
@@ -2949,8 +2950,19 @@ import { domView } from "../page-builder/rules/tree.ts";
     el.removeAttribute("spellcheck");
     editing = null;
   }
-  // The text last written: the host selects it again after its edit, unless another element was chosen meanwhile.
-  var leftText = "";
+  // An element's place: its file and its index path there.
+  function placeKey(el) {
+    return JSON.stringify([ownerPath(el), elementIndexPath(el)]);
+  }
+  // The text last written (its placeKey): the host selects it again after its edit, unless another
+  // element was chosen meanwhile. The render after the edit answers it; a host that sends none
+  // has let it go after WRITTEN_MS (the host waits up to 10 s for the page's file before writing).
+  // A drag start waits for that render at most START_WAIT_MS.
+  var WRITTEN_MS = 10000, START_WAIT_MS = 1000;
+  var leftText = "", leftTextUntil = 0;
+  function writtenText() {
+    return Date.now() < leftTextUntil ? leftText : "";
+  }
   function commitEditing() {
     if (!editing || !editing.isConnected) return;
     var after = editing.textContent;
@@ -2961,7 +2973,8 @@ import { domView } from "../page-builder/rules/tree.ts";
     var path = ownerPath(editing);
     if (!editingOwner || editingOwner.path !== path) return;
     var edit = { path: path, node: elementIndexPath(editing), before: before, after: after };
-    leftText = JSON.stringify([path, edit.node]);
+    leftText = placeKey(editing);
+    leftTextUntil = Date.now() + WRITTEN_MS;
     emit("text-edit", edit);
   }
   function onEditingInput() {
@@ -3001,7 +3014,10 @@ import { domView } from "../page-builder/rules/tree.ts";
   function onText(el, x, y) {
     var box = el.getBoundingClientRect();
     if (x < box.left + OUTLINE_PX || x > box.right - OUTLINE_PX || y < box.top + OUTLINE_PX || y > box.bottom - OUTLINE_PX) return false;
-    var lineHeight = parseFloat(getComputedStyle(el).lineHeight);
+    var style = getComputedStyle(el);
+    // line-height: normal (the CSS default) has no number: about 1.2 times the font size.
+    var lineHeight = parseFloat(style.lineHeight);
+    if (!isFinite(lineHeight)) lineHeight = parseFloat(style.fontSize) * 1.2;
     var range = document.createRange();
     range.selectNodeContents(el);
     return Array.prototype.some.call(range.getClientRects(), function (r) {
@@ -3052,11 +3068,17 @@ import { domView } from "../page-builder/rules/tree.ts";
     else emit("image-edit", { path: ownerPath(target), node: elementIndexPath(target), width: target.getBoundingClientRect().width });
   }, true);
 
-  // The text typed into for a click on this element: itself, or for formatting that is no text
-  // of its own (the <del> in "Was <del>£40</del> £30") the line of text around it.
+  // The text a click on this element types into: a link (a Button too) around it, else the line
+  // of text around its formatting (a bold word, the <del> in "Was <del>£40</del> £30"), else
+  // the formatting itself where it is text on its own (no line of text around it).
   function textLine(el) {
-    for (var at = el; at && inlineTag(at.localName); at = at.parentElement) if (editableText(at)) return at;
-    return at && editableText(at) ? at : null;
+    var own = null;
+    for (var at = el; at && inlineTag(at.localName); at = at.parentElement) {
+      if (!editableText(at)) continue;
+      if (at.localName === "a") return at;
+      own = own || at;
+    }
+    return at && editableText(at) ? at : own;
   }
   function clearSelectionState() {
     stopEditing(true);
@@ -3234,12 +3256,14 @@ import { domView } from "../page-builder/rules/tree.ts";
       var start = { phase: "start", node: node, tag: block.localName, cls: block.getAttribute("class") || "",
         band: !part && sectionLike(block), template: part, x: e.clientX, y: e.clientY, alt: e.altKey };
       // Typed text was just written (here or by the press): the host hears a start only from
-      // the render it asked for since, so the start waits for that render (startPendingPress),
-      // or a moment, for a host that asked for none.
-      if (leftText) {
-        var waiting = press;
+      // the render it asked for since, so the start waits. It settles once, whichever comes first:
+      // the render paints (startPendingPress: the start is sent); START_WAIT_MS pass, for a host that
+      // asked for no render (the start is sent as it is); the pointer is released (endPress: no
+      // drag, the pressed block selected as a click would) or cancelled (nothing). Each clears the timer.
+      if (writtenText()) {
         press.start = start;
-        setTimeout(function () { if (press === waiting) startPendingPress(); }, 1000);
+        press.block = block;
+        press.timer = setTimeout(startPendingPress, START_WAIT_MS);
       }
       else emit("press-drag", start);
     } else if (press.start) { press.start.x = e.clientX; press.start.y = e.clientY; press.start.alt = e.altKey; }
@@ -3253,6 +3277,7 @@ import { domView } from "../page-builder/rules/tree.ts";
     if (!press || !press.start) return;
     var start = press.start;
     press.start = null;
+    clearTimeout(press.timer);
     emit("press-drag", start);
   }
   function endPress(e, phase) {
@@ -3261,6 +3286,16 @@ import { domView } from "../page-builder/rules/tree.ts";
     press = null;
     if (!was.dragging) return;
     document.documentElement.style.userSelect = was.userSelect;
+    if (was.start) {
+      // Released before its start was sent: no drag; the release selects the pressed block.
+      clearTimeout(was.timer);
+      if (phase === "end" && was.block.isConnected) {
+        swallowClick = true;
+        setTimeout(function () { swallowClick = false; }, 400);
+        canvasSelect(was.block, "click");
+      }
+      return;
+    }
     // The click a release makes is not a click on the page (a cancel makes none).
     if (phase === "end") {
       swallowClick = true;
