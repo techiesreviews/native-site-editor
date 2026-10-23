@@ -70,6 +70,15 @@ Files beyond the ticket's list, needed by the method: `src/agent-tools.ts`, `src
 
 Checks (final round): `kit unit --affected` `RESULT: ok unit 2558/2558 (158 files)`; `npm run check` and `npm run lint` green; `kit size` `RESULT: ok size boot 348 KB (±0 KB) vs dev@e6e63be, budget 355 KB`; `kit specs --affected` `RESULT: ok specs 148/148 passed` (the invisible-multiplayer spec's 7 cells among them). `main.ts` 4086 lines, ceiling 4090.
 
+### Follow-ups
+
+- Spec (P2): a1869ae9:src/background-page.ts:222 — P2: When work lands away from the screen, the count on the repository menu can be wrong. Every `announce` made while not o
+- Spec (P2): 564c603b:docs/wayfinder/clean-up-before-features/build/tickets/27-invisible-multiplayer.md:47 — P2: The `## Done` evidence is out of date after the rebase: It l
+- Standards (P3): a1869ae9:src/page-builder/image-popup.ts:186 — P3: CODING_STANDARDS "Async writers — Proofs survive awaits" says not to take a fresh proof after an await. `done
+- Validation gaps (gap): No test that work landing away is counted exactly once, or not at all when it fails. In `tests/background-page.test.ts`, with `p.leave()`: call `p.ports.change(
+- Validation gaps (gap): The sign-out path isn't wired into any test. `deactivateNative(false)` (`src/main.ts:2490`) should cancel a held Use; only the `pickerClose` state machine has u
+- Validation gaps (gap): The image popup's held write has a browser cell only for a branch switch. Add a cell for another page of main: hold `/src/page-builder/place-trim.ts`, open `abo
+
 ## Lex's answers (2026-10-23, all as recommended)
 
 1. Case 1 (agent page and file commands) moves to [slice 34](34-invisible-multiplayer-pages-and-undo.md), after slice 31; this slice lands with cases 2 to 4.
