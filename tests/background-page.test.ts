@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { BACKGROUND_PAGE_LIMIT, backgroundKey, createBackgroundPages, openBackgroundFrame, pinnedPorts } from "../src/background-page";
 import type { NativePreview } from "../src/components/native-preview";
+import type { NativeSite } from "../shared/native-project";
 import type { MediaControllerPorts, MediaPin } from "../src/controllers/media-controller";
 import type { DraftScope, SavedDraft } from "../src/drafts";
 import { deferred } from "./fakes/memory-workspace";
@@ -168,8 +169,8 @@ test("a background page that fails to open refuses its work and frees its room",
 });
 
 // The hidden frame (openBackgroundFrame): a fake preview and host.
-function frameFixture(answers: (() => unknown)[]) {
-  const calls: string[] = [], reads: string[] = [];
+function frameFixture(answers: (() => unknown)[], options: { failOnUpdate?: boolean } = {}) {
+  const calls: string[] = [], reads: string[] = [], styles: (Record<string, string> | undefined)[] = [];
   const host = { className: "", style: { cssText: "" }, inert: false, attributes: new Map<string, string>(),
     setAttribute(name: string, value: string) { this.attributes.set(name, value); }, remove() { calls.push("host removed"); } };
   // eslint-disable-next-line no-restricted-syntax -- the frame reads only its owner document and append.
@@ -177,29 +178,36 @@ function frameFixture(answers: (() => unknown)[]) {
   // eslint-disable-next-line no-restricted-syntax -- the frame calls only these members of the preview.
   const preview = {
     activate: () => { calls.push("activate"); },
-    update: (input: { sources: Record<string, string>; route?: string }) => { calls.push(`update ${input.route} ${Object.keys(input.sources).sort().join(",")}`); },
+    update: (input: { sources: Record<string, string>; route?: string; componentStyles?: Record<string, string> }) => {
+      if (options.failOnUpdate) throw new Error("The frame could not draw.");
+      calls.push(`update ${input.route} ${Object.keys(input.sources).sort().join(",")}`);
+      styles.push(input.componentStyles);
+    },
     measureImage: async () => { const answer = answers.length > 1 ? answers.shift()! : answers[0]; return answer(); },
     destroy: () => { calls.push("destroy"); },
   } as unknown as NativePreview;
-  const site = { routes: { "/about/": "about/index.html" }, components: { "site-card": "components/site-card.html" } } as never;
-  const texts: Record<string, string> = { "about/index.html": '<link rel="stylesheet" href="/style.css"><site-card></site-card>', "components/site-card.html": "<p>card</p>", "style.css": "p{}" };
+  const site = { routes: { "/about/": "about/index.html" }, components: { "site-card": "components/site-card.html" } } satisfies NativeSite;
+  const texts: Record<string, string> = { "about/index.html": '<link rel="stylesheet" href="/style.css"><site-card></site-card>', "components/site-card.html": "<p>card</p>",
+    "components/site-card.css": ".card{}", "style.css": "p{}" };
+  // As nativeShownFiles: the page, then its template, its stylesheet and the template's own stylesheet.
   const shown = (source: (path: string) => string | undefined) => {
-    const out = ["about/index.html"];
-    if (source("about/index.html") !== undefined) out.push("components/site-card.html", "style.css");
-    return out;
+    const files = ["about/index.html"], componentCss = new Map<string, string>();
+    if (source("about/index.html") !== undefined) { files.push("components/site-card.html", "style.css", "components/site-card.css"); componentCss.set("site-card", "components/site-card.css"); }
+    return { files, componentCss };
   };
-  return { calls, reads, host, open: () => openBackgroundFrame({ site, page: "about/index.html", files: () => new Set(Object.keys(texts)),
+  return { calls, reads, styles, host, open: () => openBackgroundFrame({ site, page: "about/index.html", files: () => new Set(Object.keys(texts)),
     text: async path => { reads.push(path); return texts[path]; }, shown }, () => preview, parent) };
 }
 
 test("a background frame reads its page's texts a level at a time, draws it hidden and inert, and closes", async () => {
   const f = frameFixture([() => ({ width: 10 })]);
   const frame = await f.open();
-  assert.deepEqual(f.reads, ["about/index.html", "components/site-card.html", "style.css"], "the page, then what it shows");
+  assert.deepEqual(f.reads, ["about/index.html", "components/site-card.html", "style.css", "components/site-card.css"], "the page, then what it shows");
   assert.equal(f.host.inert, true);
   assert.equal(f.host.attributes.get("aria-hidden"), "true");
   assert.match(f.host.style.cssText, /visibility:hidden/);
-  assert.deepEqual(f.calls, ["host appended", "activate", "update /about/ about/index.html,components/site-card.html,style.css"]);
+  assert.deepEqual(f.calls, ["host appended", "activate", "update /about/ about/index.html,components/site-card.css,components/site-card.html,style.css"]);
+  assert.deepEqual(f.styles, [{ "site-card": "components/site-card.css" }], "a component's own stylesheet, as the editor draws it");
   assert.deepEqual(await frame.measure({ path: "about/index.html", node: [0] }), { width: 10 });
   frame.close();
   assert.deepEqual(f.calls.slice(-2), ["destroy", "host removed"]);
@@ -213,5 +221,24 @@ test("a background frame asks again while its page is not drawn yet, and gives u
   await assert.rejects((await never.open()).measure({ path: "about/index.html", node: [0] }), /not showing a page yet/);
   const other = frameFixture([() => { throw new Error("Invalid image measurement."); }]);
   await assert.rejects((await other.open()).measure({ path: "about/index.html", node: [0] }), /Invalid image/, "other errors at once");
+});
+
+test("a background frame that fails as it opens leaves nothing in the document", async () => {
+  const f = frameFixture([() => ({})], { failOnUpdate: true });
+  await assert.rejects(f.open(), /could not draw/);
+  assert.deepEqual(f.calls, ["host appended", "activate", "destroy", "host removed"]);
+});
+
+test("work asking for room right as a page closes waits behind the work already waiting", async () => {
+  const r = registry(1);
+  const held = deferred<void>(), order: string[] = [];
+  const first = r.use("first", async () => { await held.promise; });
+  const waiter = r.use("waiter", () => { order.push("waiter"); });
+  await tick();
+  held.resolve(); await first;
+  // Asked synchronously after the room was freed, before the waiter resumed.
+  const late = r.use("late", () => { order.push("late"); });
+  await Promise.all([waiter, late]);
+  assert.deepEqual(order, ["waiter", "late"]);
 });
 

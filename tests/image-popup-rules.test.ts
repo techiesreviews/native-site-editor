@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { POPUP_SHAPES, focusApplies, focusAt, frameBadge, frameChange, nudgeFocus, placePopup, popupMessage, pictureHint, placeShapeOf, seenHints, shapeLabel, shapeRatio, sheetScroll } from "../src/page-builder/image-popup-rules";
+import { POPUP_SHAPES, keepsPopupChanges, focusApplies, focusAt, frameBadge, frameChange, nudgeFocus, placePopup, popupMessage, pictureHint, placeShapeOf, seenHints, shapeLabel, shapeRatio, sheetScroll } from "../src/page-builder/image-popup-rules";
 import { readPlaceFrame, writePlaceFrame } from "../src/page-builder/place-frame";
 import type { MediaRecords } from "../shared/media-records";
 
@@ -130,3 +130,22 @@ test("each hint under the picture shows only the first time: the stored list is 
   assert.deepEqual([...seenHints("{not json")], []);
   assert.deepEqual([...seenHints(JSON.stringify({ hint: "x" }))], []);
 });
+
+// Ticket 27: the popup's changes are kept on its page across a switch, away or away and back.
+test("a pinned popup keeps its changes when closed away, or after leaving and coming back (a new load)", () => {
+  const at = { pinned: true, here: true, sameLoad: true, owned: true, sameBytes: true, viewingVersion: false };
+  assert.equal(keepsPopupChanges(at), true, "on show, as before");
+  assert.equal(keepsPopupChanges({ ...at, here: false, sameLoad: false, owned: false }), true, "another workspace shown");
+  assert.equal(keepsPopupChanges({ ...at, sameLoad: false, owned: false }), true, "left and shown again: a new load, its bytes prove it");
+  assert.equal(keepsPopupChanges({ ...at, owned: false }), false, "a later press owns the bar on the same load: it only closes");
+  assert.equal(keepsPopupChanges({ ...at, sameLoad: false, sameBytes: false }), false, "its page changed meanwhile");
+  assert.equal(keepsPopupChanges({ ...at, viewingVersion: true }), false, "an earlier version shown");
+});
+
+test("a popup with no pin keeps its changes only on the load it opened on, still owned", () => {
+  const at = { pinned: false, here: true, sameLoad: true, owned: true, sameBytes: true, viewingVersion: false };
+  assert.equal(keepsPopupChanges(at), true);
+  assert.equal(keepsPopupChanges({ ...at, sameLoad: false }), false);
+  assert.equal(keepsPopupChanges({ ...at, owned: false }), false);
+});
+

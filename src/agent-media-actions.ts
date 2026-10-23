@@ -477,16 +477,18 @@ export async function applyAgentMedia(...parameters: Parameters<typeof executeAg
 
 /** Main's adapter lives in this lazy chunk, including all media preparation. */
 /**
- * `page` and `taken`: the page and the stamp the caller took before loading this chunk. A change that
+ * `page` and `taken`: the page and the stamp the caller took before loading this chunk; `background`
+ * makes the background page's own controller (tests give theirs). A change that
  * arrived in a workspace pinned as it came (ticket 27) runs in that workspace's background page: a
  * controller of its own over the pinned ports, so every read, write and measurement is that
  * workspace's whatever is shown; its proof is its page as it read on arrival (src/agent-tools-media.ts).
  */
 export async function runAgentMedia(shown: ReturnType<typeof createMediaController>, live: MediaControllerPorts, command: AgentCommand,
-  page = live.source(command.path), taken = live.stamp()) {
+  page = live.source(command.path), taken = live.stamp(),
+  background = (ports: MediaControllerPorts) => createMediaController(ports, () => import("./controllers/media-actions"))) {
   const held = mediaCommandPins.get(command), pin = held?.pin, ports = pinnedPorts(live, pin, command.path);
   if (held) page = held.page;
-  const controller = pin ? createMediaController(ports, () => import("./controllers/media-actions")) : shown;
+  const controller = pin ? background(ports) : shown;
   const since = pin ? ports.stamp() : taken, proof = mediaCommandProofs.get(command), signal = agentCommandSignals.get(command);
   const check = () => { signal?.throwIfAborted(); proof?.(); if (!since.holds()) throw new Error("The editor moved to another site or branch meanwhile. Nothing was changed."); };
   check();

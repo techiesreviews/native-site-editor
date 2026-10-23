@@ -225,17 +225,15 @@ export async function openMediaPicker(options: MediaPickerOptions & { adapter?: 
   const dialog = node("dialog", "media-library media-library--picker");
   // Escape closes only the picker, not a popover it was placed in.
   if (options.within) dialog.addEventListener("keydown", event => { if (event.key === "Escape") event.stopPropagation(); });
-  let used = false;
-  const state = pickerClose();
+  const state = pickerClose(() => options.onClose?.());
   const view = createMediaLibraryView(options.within ?? document.body, adapter, { ...options, onPick: options.onPick && (async (image, _cancelled, held) => {
-    await options.onPick!(image, state.cancelled, held); used = state.used();
+    await state.pick(() => Promise.resolve(options.onPick!(image, state.cancelled, held)));
   }) }, dialog);
   const close = (away = false) => { state.leave(away); dialog.close(); view.dispose(); };
   closeActive = close;
   dialog.addEventListener("close", () => {
-    state.closed();
     if (closeActive === close) closeActive = undefined;
-    if (!used) options.onClose?.();
+    state.closed();
   }, { once: true });
   await view.ready;
 }
