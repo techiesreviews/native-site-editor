@@ -37,3 +37,7 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `kit unit --affected`, `kit specs --affected`, `kit size`.
 - Review: `kit review --ticket <this ticket>` (GPT-6.1 Sol, medium, read-only). Land: `kit pr --ticket <this ticket> --full`.
 - Report: `main.ts` lines before and after and the final ceiling, the modules created, unit and specs `RESULT:` lines, `kit size` delta, review folder and decisions, PR and merge SHA.
+
+## Comments
+
+- 2026-10-23, lead: moved here from slice 31 (its last P1, review lead-31/20261023T185931Z): the remaining `native*` module variables in `src/main.ts` that are screen bookkeeping rather than site data, among them `nativeHistoryAliases`, `nativeMountListener`, `nativeHistoryShares`, `nativeAddPoints`, `nativeVariantFiles`, `nativeLinkParents`, `nativeStructurePaintedSources`, `nativeStructurePaints`, `nativeComponentFieldToken`, `nativeComponentFieldSnapshot`, `nativeTextIndexGate`. Each moves to the controller or module that uses it.
