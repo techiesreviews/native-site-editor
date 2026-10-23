@@ -20,7 +20,7 @@ Each file is followed by its declared entry symbols. Styles, fixtures, scripts a
 | Files explorer and file operations | `src/controllers/files-tree-controller.ts` — `createFilesTreeController`; `src/controllers/file-operations-controller.ts` — `createFileOperationsController`; `src/controllers/file-operation-checks.ts` — `createLazyFileOperationsController`; `src/file-changes.ts` — `listChanges` |
 | Save to GitHub and change status UI | `src/controllers/save-publish-controller.ts` — `createSavePublishController`; `src/deploy-status.ts` — `setDeployStatus` |
 | History and restoring saved versions | `src/controllers/history-controller.ts` — `createHistoryController`; `src/components/commit-history.ts` — `createCommitHistory` |
-| Status, notices and GitHub reads | `src/github-reads.ts` — `createGitHubReads`, `ApiError` (#status, the notice bar, `api`, `postApi`; Try again on a read GitHub never answered); `src/read-retry.ts` — `fetchWithReadRetry`, `ReadUnansweredError` (8 s timeout, three retries) |
+| Status, notices and GitHub reads | `src/github-reads.ts` — `createGitHubReads`, `ApiError` (#status, the notice bar, `api`, `postApi`; Try again when an open's read gets no answer, its retry from `src/workspace-boot.ts`); `src/read-retry.ts` — `fetchWithReadRetry`, `ReadUnansweredError` (8 s timeout, three retries) |
 | Repository opening and first paint | `src/controllers/boot-controller.ts` — `createBootController`; `src/workspace-boot.ts` — `createWorkspaceBoot` (repository choice, snapshot load, file restore, the remembered boot's guess); `src/repository-loading.ts` — `RepositoryIndex`; `src/native-boot.ts` — `nativeShownFiles`; `src/main.ts` — `activateNativeSite` |
 | Setup wizard and Get started | `src/controllers/setup-entry-controller.ts` — `createSetupEntryController`; `src/components/setup-wizard.ts` — `createSetupWizard`; `src/setup-wizard.ts` — `readWizard` |
 | Setup checklist and starting point | `src/controllers/setup-checklist-controller.ts` — `createSetupChecklistController`; `shared/starting-point.ts` — `blankSiteFiles`; `src/setup-actions.ts` — `createSetupActions` |
@@ -248,10 +248,10 @@ Ranges are approximate navigation hints, measured in this worktree; search the s
 | Opening files and mounting source | 4202–4448 | openEntry, mountSource, openComponentLinkedStyle, updateAgentContext |
 | Agent context and commands | 4449–4627 | agentContext, agentSiteActions, applyAgentSiteCommand, agentActing |
 | New, uploaded and deleted drafts | 4628–4762 | openNewDraft, showUpload, applyAgentCommand |
-| Workspace boot ports (src/workspace-boot.ts) | 4763–4798 | workspaceBoot, restoreFile, loadSnapshot, chooseRepository, asOpen |
-| Setup wizard and partial starting points | 4799–4904 | wizardConnection, setupEntry, finishWizard |
-| Get started, repository lists and account switching | 4905–5180 | showGetStarted, loadRepositories, switchAccount, disconnect |
-| Draft baseline, agent/boot ports and startup | 5181–5293 | agentController, boot, workspaceBoot.startGuess, createSite |
+| Workspace boot ports (src/workspace-boot.ts) | 4763–4782 | workspaceBoot, restoreFile, loadSnapshot, chooseRepository |
+| Setup wizard and partial starting points | 4783–4886 | wizardConnection, setupEntry, finishWizard |
+| Get started, repository lists and account switching | 4887–5162 | showGetStarted, loadRepositories, switchAccount, disconnect |
+| Draft baseline, agent/boot ports and startup | 5163–5275 | agentController, boot, workspaceBoot.startGuess, createSite |
 
 ## Main entry points
 

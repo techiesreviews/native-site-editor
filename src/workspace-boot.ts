@@ -14,6 +14,7 @@ import { forgetBootMemory, memoryMatches, provenFiles, readBootMemory, writeBoot
 import type { CleanSourceCache } from "./clean-source-cache";
 import type { createSavePublishController } from "./controllers/save-publish-controller";
 import { draftStore, type DraftScope, type SavedDraft } from "./drafts";
+import { ReadUnansweredError } from "./read-retry";
 import type { RepositoryIndex } from "./repository-loading";
 import { githubScope, type SessionStamp, type WorkspaceScope } from "./workspace-session";
 import { readWorkspaceUrl, rememberWorkspace, type WorkspaceLocation } from "./workspace-state";
@@ -65,7 +66,8 @@ export interface WorkspaceBootPorts {
   status(message: string): void;
   settleStatus(message: string): void;
   clearError(): void;
-  errorMessage(error: unknown): void;
+  /** `retry` repeats the open that failed: a read GitHub never answered in it offers Try again. */
+  errorMessage(error: unknown, retry?: () => void): void;
   draftScope(): DraftScope | undefined;
   entryAt(path: string): TreeEntry | undefined;
   setCurrentPage(path?: string): void;
@@ -95,7 +97,7 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
   async function restoreFile(
     path: string,
     at: SessionStamp,
-    options: { linkDefaultStyle?: boolean; keepExplorer?: boolean; quietStatus?: boolean; beforeMount?: () => boolean } = {},
+    options: { linkDefaultStyle?: boolean; keepExplorer?: boolean; quietStatus?: boolean; beforeMount?: () => boolean; retry?: () => void } = {},
   ) {
     const selection = ++ports.fileGeneration;
     const repo = appStore.repository.value!;
@@ -144,7 +146,7 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
       await ports.openEntry(entry, path, at, options);
     } catch (error) {
       if (at.holds() && selection === ports.fileGeneration)
-        ports.errorMessage(error);
+        ports.errorMessage(error, options.retry);
     }
   }
 
@@ -175,6 +177,8 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
     });
     const repo = appStore.repository.value;
     const branch = appStore.branch.value;
+    // Try again repeats this load with a fresh read, until another load (a repository or branch chosen) supersedes it.
+    const retry = () => { if (at.holds()) void loadSnapshot(reopen); };
     ports.refreshButton.disabled = true;
     ports.element("revision").textContent = "…";
     ports.files.replaceChildren(node("p", "muted sidebar-hint", "Loading files…"));
@@ -250,7 +254,7 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
         });
       if (open) {
         ports.previewSelection.recordIntent(open);
-        const opening = restoreFile(open, at), selection = ports.fileGeneration;
+        const opening = restoreFile(open, at, { retry }), selection = ports.fileGeneration;
         await opening;
         // Its code pane waits for Monaco: a file opened meanwhile (a new page,
         // a rename) has said what happened, and that stands.
@@ -276,7 +280,7 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
         ports.content.replaceChildren(
           node("p", "empty-message", "Your repository could not be opened."),
         );
-        ports.errorMessage(error);
+        ports.errorMessage(error, retry);
       }
     } finally {
       if (at.holds()) ports.refreshButton.disabled = false;
@@ -338,7 +342,8 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
         }).catch(() => api<{ content: string }>("file", { repo: repo.full_name, sha }).then((file) => file.content)));
       }
       return snapshot;
-    }, fresh);
+      // A guess GitHub never answered has had its tries: the open fails with it, not after a second read's.
+    }, (error: unknown) => { if (error instanceof ReadUnansweredError) throw error; return fresh(); });
     return { snapshot, token };
   }
 
@@ -350,6 +355,8 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
       (repo) => String(repo.id) === ports.repositorySelect.value,
     ));
     ports.repositoryMenu?.setRepository(appStore.repository.value);
+    // Try again repeats this choice, until another load supersedes it.
+    const retry = () => { if (at.holds()) void chooseRepository(resume); };
     repositoryIndex.clear();
     ports.setCurrentPage();
     ports.branchSelect.disabled = true;
@@ -466,7 +473,7 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
             "Branches could not be loaded. Reload repositories to retry.",
           ),
         );
-        ports.errorMessage(error);
+        ports.errorMessage(error, retry);
       }
     }
   }

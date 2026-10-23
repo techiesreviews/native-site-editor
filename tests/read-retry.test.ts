@@ -13,14 +13,14 @@ type Step = Response | Error | typeof HANG;
 const run = (script: Step[], init?: RequestInit) => {
   const times: number[] = [], start = Date.now();
   const signals: AbortSignal[] = [];
-  const fetcher = ((_url: string, request: RequestInit = {}) => {
+  const fetcher: typeof fetch = (_url, request = {}) => {
     times.push(Date.now() - start);
     signals.push(request.signal!);
     const next = script[Math.min(times.length - 1, script.length - 1)];
-    if (next === HANG) return new Promise((_, reject) => request.signal!.addEventListener("abort", () => reject(request.signal!.reason)));
+    if (next === HANG) return new Promise<Response>((_, reject) => request.signal!.addEventListener("abort", () => reject(request.signal!.reason)));
     if (next instanceof Error) return Promise.reject(next);
     return Promise.resolve(next.clone());
-  }) as typeof fetch;
+  };
   const result = fetchWithReadRetry("/api/files", init, { fetcher });
   return { result: settle(result), times, signals };
 };
@@ -95,7 +95,7 @@ test("a caller's own abort ends the read without a retry", async () => {
 test("a caller's abort during the wait between tries ends the read at once", async () => {
   const caller = new AbortController();
   let calls = 0, outcome: unknown;
-  const fetcher = (async () => { calls++; return reply(502); }) as typeof fetch;
+  const fetcher: typeof fetch = async () => { calls++; return reply(502); };
   void fetchWithReadRetry("/api/files", { signal: caller.signal }, { fetcher }).then(() => { outcome = "answered"; }, (error) => { outcome = error; });
   const flush = () => new Promise((resolve) => setImmediate(resolve));
   await flush();
