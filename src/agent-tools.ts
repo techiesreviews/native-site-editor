@@ -8,7 +8,7 @@ export const agentCommandSignals = new WeakMap<AgentCommand, AbortSignal>();
 /** The files a command was read from (ticket 23): the editor writes it there if that site is no longer shown. */
 export const agentCommandFiles = new WeakMap<AgentCommand, AgentReadFiles>();
 /** The workspace a Media change arrived in, pinned (ticket 27), and its page as it read on arrival (the proof): it finishes there whatever is shown. */
-export const mediaCommandPins = new WeakMap<AgentCommand, { pin: MediaPin; page: string | undefined }>();
+export const mediaCommandPins = new WeakMap<AgentCommand, { pin: MediaPin; page: string | undefined; opened?: string }>();
 
 export type AgentToolExecutor = (args: AgentRead["args"], signal?: AbortSignal) => Promise<AgentReadResult>;
 

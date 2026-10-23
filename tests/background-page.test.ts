@@ -91,7 +91,7 @@ test("a background page belongs to one account (any capitals), repository, branc
 
 // The ports a placement uses, held to the workspace and page it began on: the editor's while that page
 // is shown, its background page's once another workspace (or another page of its own) is shown.
-function pinned(options: { beganOnPage?: boolean } = {}) {
+function pinned(options: { beganOnPage?: boolean; opened?: string } = {}) {
   let here = true, shown: DraftScope | undefined, open = options.beganOnPage ? "index.html" : "about/index.html";
   const scope: DraftScope = { account: "lex", repoId: 1, repo: "lex/site", branch: "main" };
   shown = scope;
@@ -114,7 +114,7 @@ function pinned(options: { beganOnPage?: boolean } = {}) {
     measureAway: async () => { measured.push("away"); return undefined; }, finishedAway: (to: DraftScope) => { away.push(to.branch); },
     shownScope: () => shown,
   } as unknown as MediaControllerPorts;
-  return { ports: pinnedPorts(live, pin, "index.html"), said, changes, away, measured, restored, batches,
+  return { ports: options.opened === undefined ? pinnedPorts(live, pin, "index.html") : pinnedPorts(live, pin, "index.html", options.opened), said, changes, away, measured, restored, batches,
     leave: () => { here = false; shown = { ...scope, branch: "feature" }; },
     leaveSite: () => { here = false; shown = { account: "lex", repoId: 2, repo: "lex/other", branch: "main" }; },
     openOther: () => { open = "about/index.html"; } };
@@ -270,5 +270,41 @@ test("a background page shared by work holding another pin of it is drawn from t
   await frame.measure({ path: "about/index.html", node: [0] }, other);
   assert.equal(f.calls.at(-1), "update undefined about/index.html", "drawn again from the second work's texts");
   assert.deepEqual(f.styles.at(-1), {});
+});
+
+// An agent's change takes the page open as it arrived (`opened`), not the one open once its code loaded.
+test("work whose page was open as it arrived, with another page open by the time it runs, does not open its page", async () => {
+  const p = pinned({ opened: "index.html" });
+  assert.equal(p.ports.openFile(), "index.html");
+  await p.ports.restoreFile("index.html", 1);
+  assert.deepEqual(p.restored, [], "Lex stays on the page he opened");
+  await p.ports.measureImage!("index.html", [0], {});
+  assert.deepEqual(p.measured, ["away"]);
+});
+
+// Two pieces of work sharing one frame, each holding its own pin of the page, take turns: each is
+// measured on its own drawing, never on the other's.
+test("measurements of one shared frame take turns, each on its own texts", async () => {
+  let drawn = "";
+  const a = deferred<void>(), b = deferred<void>(), gates = [a, b];
+  // eslint-disable-next-line no-restricted-syntax -- the frame calls only these members of the preview.
+  const preview = {
+    activate: () => {}, destroy: () => {},
+    update: (input: { sources: Record<string, string> }) => { drawn = input.sources["about/index.html"] ?? ""; },
+    measureImage: async () => { await gates.shift()!.promise; return { page: drawn }; },
+  } as unknown as NativePreview;
+  const host = { className: "", style: { cssText: "" }, inert: false, setAttribute() {}, remove() {} };
+  // eslint-disable-next-line no-restricted-syntax -- the frame reads only its owner document and append.
+  const parent = { ownerDocument: { createElement: () => host }, append: () => {} } as unknown as HTMLElement;
+  const siteOf = (text: string) => ({ site: { routes: { "/about/": "about/index.html" }, components: {} } satisfies NativeSite, page: "about/index.html",
+    files: () => new Set(["about/index.html"]), text: async () => text, shown: () => ({ files: ["about/index.html"], componentCss: new Map<string, string>() }) });
+  const frame = await openBackgroundFrame(siteOf("A"), () => preview, parent);
+  const first = frame.measure({ path: "about/index.html", node: [0] }, siteOf("A"));
+  const second = frame.measure({ path: "about/index.html", node: [0] }, siteOf("B"));
+  await tick();
+  a.resolve();
+  assert.deepEqual(await first, { page: "A" }, "the first work's own drawing");
+  b.resolve();
+  assert.deepEqual(await second, { page: "B" });
 });
 

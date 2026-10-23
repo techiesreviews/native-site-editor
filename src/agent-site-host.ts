@@ -44,7 +44,8 @@ export function createAgentSiteHost(ports: AgentSiteHostPorts) {
   // it arrived (its drafts then, nothing mounted or on show). A draft changed since refuses its write.
   function pin(build: () => Promise<SharedContext | undefined>) {
     const stamp = ports.stamp(), input = ports.input(), away = () => stamp.changed() === "scope", media = ports.mediaPin?.();
-    return input && { away, media, async context() {
+    // `opened`: the page open as it arrived, so its work knows when Lex has left that page (ticket 27).
+    return input && { away, media, opened: input.native?.openFile, async context() {
       const shown = away() ? undefined : await build();
       if (shown) return shown;
       // Away now: its own. Left and shown again while it was made: the one shown, read again.

@@ -486,7 +486,8 @@ export async function applyAgentMedia(...parameters: Parameters<typeof executeAg
 export async function runAgentMedia(shown: ReturnType<typeof createMediaController>, live: MediaControllerPorts, command: AgentCommand,
   page = live.source(command.path), taken = live.stamp(),
   background = (ports: MediaControllerPorts) => createMediaController(ports, () => import("./controllers/media-actions"))) {
-  const held = mediaCommandPins.get(command), pin = held?.pin, ports = pinnedPorts(live, pin, command.path);
+  // Its page left (another page of the site opened) counts from the page open as it arrived, not as this chunk loaded.
+  const held = mediaCommandPins.get(command), pin = held?.pin, ports = pinnedPorts(live, pin, command.path, held?.opened);
   if (held) page = held.page;
   const controller = pin ? background(ports) : shown;
   const since = pin ? ports.stamp() : taken, proof = mediaCommandProofs.get(command), signal = agentCommandSignals.get(command);
