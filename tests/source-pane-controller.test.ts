@@ -7,6 +7,7 @@ import type { SourceFile } from "../src/components/source-editor.ts";
 import type { SourcePanePorts } from "../src/controllers/source-pane-controller.ts";
 import { draftKey, type SavedDraft } from "../src/drafts.ts";
 import { createWorkspaceSession } from "../src/workspace-session.ts";
+import { forEachAwait, type AwaitRace } from "./support/await-race.ts";
 import type { Repository, Snapshot, TreeEntry } from "../shared/types.ts";
 
 // Just enough DOM for the source pane's messages.
@@ -43,7 +44,9 @@ const SNAPSHOT: Snapshot = { commit: "head1234567", branch: "main", entries: [] 
 const SCOPE = { account: "lex", repoId: 501, repo: "lex/site", branch: "main" };
 const entry = (path: string, more: Partial<TreeEntry> = {}): TreeEntry => ({ path, type: "blob", mode: "100644", sha: `${path}-sha`, size: 10, ...more });
 
-function harness(options: { drafts?: Record<string, SavedDraft>; component?: string; read?: (sha: string) => Promise<string> } = {}) {
+function harness(options: { drafts?: Record<string, SavedDraft>; component?: string; read?: (sha: string) => Promise<string>; race?: AwaitRace; mountFails?: boolean; indexed?: boolean } = {}) {
+  // The writer's async ports, wrapped for an await race when one is given.
+  const port = <Args extends unknown[], Value>(name: string, work: (...args: Args) => Promise<Value>) => options.race ? options.race.port(name, work) : work;
   const content = new FakeElement();
   const calls: string[] = [];
   const opened: SourceFile[] = [];
@@ -65,7 +68,7 @@ function harness(options: { drafts?: Record<string, SavedDraft>; component?: str
       renderLinkedStyle: () => void calls.push("render"),
       linkedPage: () => linkedPage,
       unlink: () => { calls.push("unlink"); linkedPage = undefined; },
-      openDefaultLinkedStyle: async (page) => { calls.push(`default ${page}`); linkedPage = page; return true; },
+      openDefaultLinkedStyle: port("openDefaultLinkedStyle", async (page?: string) => { calls.push(`default ${page}`); linkedPage = page; return true; }),
       openComponentLinkedStyle: async (page) => { calls.push(`component ${page}`); linkedPage = page; return true; },
     },
     savePublish: {
@@ -87,13 +90,13 @@ function harness(options: { drafts?: Record<string, SavedDraft>; component?: str
     fileGeneration: () => fileGeneration,
     nextFileGeneration: () => ++fileGeneration,
     setActiveFileContext: () => {},
-    openCodeEditor: async (file) => { opened.push(file); mounted.add(file.path); },
+    openCodeEditor: port("openCodeEditor", async (file: SourceFile) => { calls.push(`editor ${file.path}`); opened.push(file); if (!options.mountFails) mounted.add(file.path); }),
     element: () => new FakeElement(),
     status: (message) => void calls.push(`status ${message}`),
     settleStatus: (message) => void calls.push(`settle ${message}`),
     errorMessage: (error, retry) => void calls.push(`error ${(error as Error).message}${retry ? " (retry)" : ""}`),
-    readFile: (_repo, sha) => options.read?.(sha) ?? Promise.resolve(`text of ${sha}`),
-    entryAt: () => undefined,
+    readFile: port("readFile", (_repo: string, sha: string) => options.read?.(sha) ?? Promise.resolve(`text of ${sha}`)),
+    entryAt: (path) => options.indexed ? entry(path) : undefined,
     draftScope: () => SCOPE,
     draftStore: () => ({ get: (_scope, path) => options.drafts?.[path] }),
     openAfter: async (path) => void calls.push(`open after ${path}`),
@@ -123,7 +126,7 @@ test("opening a page reads it, mounts its source and opens its stylesheet beside
   assert.deepEqual(h.opened.map(({ key, path, source, baseSha, readOnly }) => ({ key, path, source, baseSha, readOnly })),
     [{ key: draftKey(SCOPE, "index.html"), path: "index.html", source: "text of index.html-sha", baseSha: "index.html-sha", readOnly: false }]);
   assert.deepEqual(h.calls, [
-    "close explorer", "page index.html", "status Reading index.html…", "hide bar", "replay index.html", "unlink",
+    "close explorer", "page index.html", "status Reading index.html…", "editor index.html", "hide bar", "replay index.html", "unlink",
     "hold index.html", "default index.html", "release index.html", "settle Viewing index.html at head123.",
   ]);
   // The open file is remembered for the next visit.
@@ -180,4 +183,50 @@ test("an open from a load that moved on does nothing", async () => {
   await h.pane.openEntry(entry("index.html"), "index.html", at);
   assert.deepEqual(h.calls, []);
   assert.equal(h.generation(), 0);
+});
+
+test("a new selection or load during any await of openEntry opens no editor and remembers nothing", async () => {
+  for (const disturbance of ["selection", "load"] as const) {
+    const points = await forEachAwait(
+      (race) => {
+        shown.href = "https://editor.test/";
+        const h = harness({ race, indexed: true });
+        return { h, since: -1, hash: "", done: h.pane.openEntry(entry("index.html"), "index.html", h.session.begin()) };
+      },
+      (run) => {
+        run.since = run.h.calls.length;
+        run.hash = new URL(shown.href).hash;
+        if (disturbance === "selection") run.h.ports.nextFileGeneration();
+        else run.h.session.next();
+      },
+      (run) => {
+        const after = run.h.calls.slice(run.since);
+        assert.deepEqual(after.filter((call) => /^(preview|editor|unlink|default|hold)/.test(call)), [], `${disturbance}: ${after.join(", ")}`);
+        assert.equal(new URL(shown.href).hash, run.hash, disturbance);
+      },
+    );
+    assert.equal(points, 3);
+  }
+});
+
+test("an editor that did not mount under beforeMount stops before the preview replay and the stylesheet", async () => {
+  const h = harness({ mountFails: true });
+  await h.pane.mountSource("index.html", "<p>Hi</p>", "sha", false, h.session.begin(), h.ports.nextFileGeneration(), { beforeMount: () => true });
+  assert.deepEqual(h.calls, ["editor index.html"]);
+});
+
+test("linkDefaultStyle false still drops another page's stylesheet but opens none", async () => {
+  const h = harness();
+  h.setLinked("about.html");
+  await h.pane.mountSource("index.html", "<p>Hi</p>", "sha", false, h.session.begin(), h.ports.nextFileGeneration(), { linkDefaultStyle: false });
+  assert.ok(h.calls.includes("unlink"));
+  assert.deepEqual(h.calls.filter((call) => /^(default|component|hold)/.test(call)), []);
+});
+
+test("the editor's history target opens the stylesheet beside the page and draws its rules", async () => {
+  const h = harness();
+  await h.pane.mountSource("index.html", "<p>Hi</p>", "sha", false, h.session.begin(), h.ports.nextFileGeneration());
+  h.calls.length = 0;
+  assert.equal(await h.opened[0].ensureHistoryTarget!("styles.css"), true);
+  assert.deepEqual(h.calls, ["secondary styles.css", "render"]);
 });

@@ -240,7 +240,7 @@ export function createSourcePaneController(ports: SourcePanePorts) {
       onSessionExpired: () =>
         ports.errorMessage(new ApiError(401, "Your GitHub session expired. Connect again.")),
     }, options.beforeMount);
-    if (options.beforeMount && !ports.editorModule.isMounted(path)) return;
+    if (options.beforeMount && !ports.editorModule?.isMounted(path)) return;
     // Another file opened over the selected page: its controls would edit the
     // wrong file, so the bar waits for the next preview click.
     if (ports.nativeModeActive() && appStore.selection.value?.path !== path) {
@@ -263,11 +263,11 @@ export function createSourcePaneController(ports: SourcePanePorts) {
     if (linkedStyles.linkedPage() !== path) linkedStyles.unlink();
     if (ports.nativeModeActive() && linkedStyles.linkedPage() === undefined && options.linkDefaultStyle !== false) {
       // A component opens with its own stylesheet beside it; a page with the shared one.
-      const release = ports.editorModule.holdHistoryRefresh(path);
+      const release = ports.editorModule?.holdHistoryRefresh(path);
       try {
         if (ports.nativeComponentTagForPath(path)) await linkedStyles.openComponentLinkedStyle(path);
         else await linkedStyles.openDefaultLinkedStyle(path);
-      } finally { release(); }
+      } finally { release?.(); }
     }
   }
 
