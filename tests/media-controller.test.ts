@@ -9,6 +9,8 @@ import { placeMediaImage } from "../src/page-builder/media-place";
 import type { MediaHeldFiles } from "../src/page-builder/media-picker";
 import { readSource, type SourceNode } from "../src/page-builder/source-tree";
 import { startTags } from "../shared/html-source.ts";
+import { forEachAwait } from "./support/await-race";
+import type { MediaPin } from "../src/controllers/media-controller.ts";
 
 function fixture(overrides: Partial<MediaControllerPorts> = {}, loadActions = () => import("../src/controllers/media-actions")) {
   const workspace = createMemoryWorkspace();
@@ -886,3 +888,42 @@ test("the toast's Undo binds only to the page that took the step's Undo", async 
   }
   assert.deepEqual(toasts, ["index.html"], "only the page open (index.html) that took the step");
 });
+
+// Ticket 27, Async writers: a placement holds the workspace it began on. Switched away at any wait
+// of it, it lands once, on its own page (its draft there), and the page shown gets nothing.
+test("a pinned placement switched away at any wait lands once, on its own page, and nothing on the page shown", async () => {
+  const main = '<section><img src="/images/old.png" alt="Old alt"></section>';
+  const count = await forEachAwait(race => {
+    let here = true;
+    const saved: SavedDraft[] = [], told: string[] = [];
+    const scope = { account: "lex", repoId: 1, repo: "lex/site", branch: "main" };
+    const drafts = { list: () => saved, get: (_scope: unknown, path: string) => saved.find(draft => draft.path === path), save: (draft: SavedDraft) => { saved.push(draft); return true; }, remove: () => true };
+    const pin = { repo: scope.repo, scope, identity: "workspace:1", drafts, here: () => here, site: { routes: { "/": "index.html" }, components: {} },
+      entry: (path: string) => path === "index.html" ? { path, sha: "sha", mode: "100644", type: "blob" as const, size: 12 } : undefined,
+      find: race.port("find", async (path: string) => path === "index.html" ? { path, sha: "sha", mode: "100644", type: "blob" as const, size: 12 } : undefined),
+      source: (path: string) => path === "index.html" ? saved.find(draft => draft.path === path)?.content ?? main : undefined,
+      files: () => ["index.html", "images/old.png", "images/new.png"], get nativePaths() { return ["index.html", "images/old.png", "images/new.png"]; },
+      list: race.port("list", async () => ["index.html"]), remember: () => {} } satisfies MediaPin;
+    const f = fixture({
+      source: path => path === "index.html" ? here ? main : "<p>feature</p>" : undefined,
+      pin: () => pin, shownScope: () => here ? scope : { ...scope, branch: "feature" },
+      readText: race.port("read", async () => "read text"),
+      measureImage: race.port("measure", async () => undefined), measureAway: race.port("measure away", async () => undefined),
+      announce: text => { told.push(text); },
+    });
+    const done = (async () => {
+      await f.controller.chooseImage({ path: "index.html", node: [0, 0] });
+      await f.pick()!.onPick!({ path: "images/new.png", alt: "New" }, () => false);
+    })();
+    return { f, saved, told, done, leave: () => { here = false; } };
+  }, run => { run.leave(); }, run => {
+    assert.deepEqual(run.f.errors, []);
+    assert.deepEqual(run.f.changes, [], "nothing written on the page shown");
+    assert.equal(run.saved.length, 1, "landed once, as its own page's draft");
+    assert.equal(run.saved[0].branch, "main");
+    assert.match(run.saved[0].content, /src="\/images\/new.png"/);
+    assert.deepEqual(run.told, ["On main: Image replaced"]);
+  });
+  assert.ok(count >= 2, `${count} waits swept`);
+});
+

@@ -9,14 +9,28 @@
 // page shares it), held only while work uses it and closed when the last of that work is done; at
 // most `limit` open at once, so memory holds. Work that finds no room waits for a page to close,
 // first come first served; nothing is refused.
+//
+// Settle matrix (CODING_STANDARDS "Racing and speculative reads"), for one `use`:
+//
+// | open \ work      | resolves                        | rejects                         |
+// |------------------|---------------------------------|---------------------------------|
+// | resolves         | its answer; page closed after   | its reason; page closed after   |
+// | rejects          | work never runs; open's reason; the slot is free again             |
+// | never settles    | at `openMs` it rejects ("did not open"), the slot is free; a page  |
+// |                  | that opens later is closed at once                                 |
+//
+// Work's own waits are bounded by it (a measurement asks the frame for at most about 13 s).
 import type { DraftScope } from "./drafts";
 import type { NativeSite } from "../shared/native-project";
 import type { NativePreview } from "./components/native-preview";
 import type { MediaMeasured } from "./page-builder/media-markup";
 import type { MediaControllerPorts, MediaPin } from "./controllers/media-controller";
+import { sameRepository } from "./workspace-session";
 
 /** Background pages open at once, at most: each holds a frame with its page drawn. */
 export const BACKGROUND_PAGE_LIMIT = 3;
+/** How long a background page may take to open (its texts read, its frame made) before its work is refused. */
+export const BACKGROUND_PAGE_OPEN_MS = 20_000;
 
 /** What a background page holds; closed once no work uses it. */
 export interface BackgroundPage { close(): void }
@@ -25,7 +39,18 @@ export interface BackgroundPage { close(): void }
 export const backgroundKey = (scope: Pick<DraftScope, "account" | "repoId" | "branch">, page = "") =>
   JSON.stringify([scope.account.toLowerCase(), scope.repoId, scope.branch, page]);
 
-export function createBackgroundPages<P extends BackgroundPage>(limit = BACKGROUND_PAGE_LIMIT) {
+// `open`, bounded by `ms`: a page that opens after it is closed at once.
+function bounded<P extends BackgroundPage>(open: () => P | Promise<P>, ms: number): Promise<P> {
+  const opening = Promise.resolve().then(open);
+  return new Promise<P>((resolve, reject) => {
+    let late = false;
+    const timer = setTimeout(() => { late = true; reject(new Error("The background page did not open in time. Nothing was changed.")); }, ms);
+    opening.then(page => { if (late) page.close(); else { clearTimeout(timer); resolve(page); } },
+      error => { if (!late) { clearTimeout(timer); reject(error); } });
+  });
+}
+
+export function createBackgroundPages<P extends BackgroundPage>(limit = BACKGROUND_PAGE_LIMIT, openMs = BACKGROUND_PAGE_OPEN_MS) {
   const pages = new Map<string, { page: Promise<P>; users: number }>();
   // Work for a page not open while `limit` are, in the order it came.
   const waiting: (() => void)[] = [];
@@ -45,7 +70,7 @@ export function createBackgroundPages<P extends BackgroundPage>(limit = BACKGROU
       while (!pages.has(key) && pages.size >= limit) await new Promise<void>(resolve => waiting.push(resolve));
       let entry = pages.get(key);
       if (!entry) {
-        entry = { page: Promise.resolve().then(open), users: 0 };
+        entry = { page: bounded(open, openMs), users: 0 };
         pages.set(key, entry);
       }
       entry.users++;
@@ -86,7 +111,7 @@ export async function openBackgroundFrame(site: BackgroundSite, create: (host: H
     const read = await Promise.all(wanted.map(async path => [path, await site.text(path) ?? ""] as const));
     for (const [path, text] of read) texts.set(path, text);
   }
-  const host = document.createElement("div");
+  const host = parent.ownerDocument.createElement("div");
   host.className = "background-page";
   // Laid out at the window's size (so the page is drawn as it would be shown) but off screen and unseen.
   host.style.cssText = "position:fixed;inset:0 auto auto -200vw;inline-size:100vw;block-size:100vh;visibility:hidden;pointer-events:none;contain:strict";
@@ -124,7 +149,8 @@ export async function openBackgroundFrame(site: BackgroundSite, create: (host: H
 export function pinnedPorts(ports: MediaControllerPorts, pin: MediaPin | undefined, page: string): MediaControllerPorts {
   if (!pin) return ports;
   const here = () => pin.here(), live = () => true;
-  const away = (message: string) => `On ${pin.scope.branch}: ${message}`;
+  // Where it landed: its branch, and its repository too when another one is shown (as a Files drop says, ticket 23).
+  const away = (message: string) => `On ${sameRepository(ports.shownScope?.(), pin.scope) ? pin.scope.branch : `${pin.scope.repo} (${pin.scope.branch})`}: ${message}`;
   return { ...ports,
     workspace: () => pin, pin: () => pin, identity: () => pin.identity, stamp: () => ({ holds: live, changed: () => undefined }),
     source: path => pin.source(path), findEntry: path => pin.find(path), entry: path => pin.entry(path),

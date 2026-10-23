@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { BACKGROUND_PAGE_LIMIT, backgroundKey, createBackgroundPages, pinnedPorts } from "../src/background-page";
+import { BACKGROUND_PAGE_LIMIT, backgroundKey, createBackgroundPages, openBackgroundFrame, pinnedPorts } from "../src/background-page";
+import type { NativePreview } from "../src/components/native-preview";
 import type { MediaControllerPorts, MediaPin } from "../src/controllers/media-controller";
 import type { DraftScope, SavedDraft } from "../src/drafts";
 import { deferred } from "./fakes/memory-workspace";
@@ -89,8 +90,9 @@ test("a background page belongs to one account (any capitals), repository, branc
 // The ports a placement uses, held to the workspace it began on: the editor's while it is shown, its
 // background page's once another is shown.
 function pinned() {
-  let here = true;
+  let here = true, shown: DraftScope | undefined;
   const scope: DraftScope = { account: "lex", repoId: 1, repo: "lex/site", branch: "main" };
+  shown = scope;
   const drafts = new Map<string, SavedDraft>();
   const store = { get: (_scope: DraftScope, path: string) => drafts.get(path), save: (draft: SavedDraft) => { drafts.set(draft.path, draft); return true; }, remove: () => true, list: () => [...drafts.values()] };
   const pin = { repo: "lex/site", scope, identity: "1", drafts: store, here: () => here,
@@ -104,8 +106,11 @@ function pinned() {
     change: (path: string) => { changes.push(path); return true; }, announce: (message: string) => { said.push(message); },
     measureImage: async () => { measured.push("shown"); return undefined; },
     measureAway: async () => { measured.push("away"); return undefined; }, finishedAway: (to: DraftScope) => { away.push(to.branch); },
+    shownScope: () => shown,
   } as unknown as MediaControllerPorts;
-  return { ports: pinnedPorts(live, pin, "index.html"), drafts, said, changes, away, measured, leave: () => { here = false; } };
+  return { ports: pinnedPorts(live, pin, "index.html"), drafts, said, changes, away, measured,
+    leave: () => { here = false; shown = { ...scope, branch: "feature" }; },
+    leaveSite: () => { here = false; shown = { account: "lex", repoId: 2, repo: "lex/other", branch: "main" }; } };
 }
 
 test("held ports read and write through the editor while their workspace is shown", async () => {
@@ -135,3 +140,78 @@ test("held ports write a change to their own workspace's drafts once another is 
   assert.equal(p.ports.change("index.html", "<img src=a.png>", [{ start: 0, end: 0, text: "x" }], [0], "Image replaced"), false);
   assert.equal(p.drafts.get("index.html")!.content, "<img src=b.png>");
 });
+
+test("work that landed on another site says which repository and branch", () => {
+  const p = pinned();
+  p.leaveSite();
+  assert.equal(p.ports.change("index.html", "<img src=a.png>", [{ start: 9, end: 14, text: "b.png" }], [0], "Image replaced"), true);
+  assert.deepEqual(p.said, ["On lex/site (main): Image replaced"], "another site's main is shown: its own is named");
+});
+
+test("a background page that never opens refuses its work at the deadline, frees its room, and is closed if it opens later", async () => {
+  const pages = createBackgroundPages<{ close(): void }>(1, 20);
+  const late = deferred<{ close(): void }>();
+  let closed = 0, ran = false;
+  await assert.rejects(pages.use("stuck", () => late.promise, () => { ran = true; }), /did not open in time/);
+  assert.equal(ran, false);
+  assert.deepEqual(pages.open(), [], "its room is free again");
+  assert.equal(await pages.use("next", () => ({ close: () => {} }), () => "ran"), "ran");
+  late.resolve({ close: () => { closed++; } });
+  await tick();
+  assert.equal(closed, 1, "opened too late: closed at once");
+});
+
+test("a background page that fails to open refuses its work and frees its room", async () => {
+  const pages = createBackgroundPages<{ close(): void }>(1);
+  await assert.rejects(pages.use("broken", () => { throw new Error("no texts"); }, () => "ran"), /no texts/);
+  assert.deepEqual(pages.open(), []);
+});
+
+// The hidden frame (openBackgroundFrame): a fake preview and host.
+function frameFixture(answers: (() => unknown)[]) {
+  const calls: string[] = [], reads: string[] = [];
+  const host = { className: "", style: { cssText: "" }, inert: false, attributes: new Map<string, string>(),
+    setAttribute(name: string, value: string) { this.attributes.set(name, value); }, remove() { calls.push("host removed"); } };
+  // eslint-disable-next-line no-restricted-syntax -- the frame reads only its owner document and append.
+  const parent = { ownerDocument: { createElement: () => host }, append: () => { calls.push("host appended"); } } as unknown as HTMLElement;
+  // eslint-disable-next-line no-restricted-syntax -- the frame calls only these members of the preview.
+  const preview = {
+    activate: () => { calls.push("activate"); },
+    update: (input: { sources: Record<string, string>; route?: string }) => { calls.push(`update ${input.route} ${Object.keys(input.sources).sort().join(",")}`); },
+    measureImage: async () => { const answer = answers.length > 1 ? answers.shift()! : answers[0]; return answer(); },
+    destroy: () => { calls.push("destroy"); },
+  } as unknown as NativePreview;
+  const site = { routes: { "/about/": "about/index.html" }, components: { "site-card": "components/site-card.html" } } as never;
+  const texts: Record<string, string> = { "about/index.html": '<link rel="stylesheet" href="/style.css"><site-card></site-card>', "components/site-card.html": "<p>card</p>", "style.css": "p{}" };
+  const shown = (source: (path: string) => string | undefined) => {
+    const out = ["about/index.html"];
+    if (source("about/index.html") !== undefined) out.push("components/site-card.html", "style.css");
+    return out;
+  };
+  return { calls, reads, host, open: () => openBackgroundFrame({ site, page: "about/index.html", files: () => new Set(Object.keys(texts)),
+    text: async path => { reads.push(path); return texts[path]; }, shown }, () => preview, parent) };
+}
+
+test("a background frame reads its page's texts a level at a time, draws it hidden and inert, and closes", async () => {
+  const f = frameFixture([() => ({ width: 10 })]);
+  const frame = await f.open();
+  assert.deepEqual(f.reads, ["about/index.html", "components/site-card.html", "style.css"], "the page, then what it shows");
+  assert.equal(f.host.inert, true);
+  assert.equal(f.host.attributes.get("aria-hidden"), "true");
+  assert.match(f.host.style.cssText, /visibility:hidden/);
+  assert.deepEqual(f.calls, ["host appended", "activate", "update /about/ about/index.html,components/site-card.html,style.css"]);
+  assert.deepEqual(await frame.measure({ path: "about/index.html", node: [0] }), { width: 10 });
+  frame.close();
+  assert.deepEqual(f.calls.slice(-2), ["destroy", "host removed"]);
+});
+
+test("a background frame asks again while its page is not drawn yet, and gives up after 50 tries", async () => {
+  const notYet = () => { throw new Error("The preview is not showing a page yet. Try again in a moment."); };
+  const ready = frameFixture([notYet, notYet, () => ({ width: 5 })]);
+  assert.deepEqual(await (await ready.open()).measure({ path: "about/index.html", node: [0] }), { width: 5 });
+  const never = frameFixture([notYet]);
+  await assert.rejects((await never.open()).measure({ path: "about/index.html", node: [0] }), /not showing a page yet/);
+  const other = frameFixture([() => { throw new Error("Invalid image measurement."); }]);
+  await assert.rejects((await other.open()).measure({ path: "about/index.html", node: [0] }), /Invalid image/, "other errors at once");
+});
+

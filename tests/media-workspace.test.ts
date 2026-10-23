@@ -1472,3 +1472,24 @@ test("an Improve images screen's steps after a switch go to the workspace it ope
     else { await assert.rejects(step, /scope changed/); assert.equal(f.batches.length, 0); }
   }
 });
+
+// Ticket 27: a Media screen holds the workspace it was drawn from. A pane edit made on it after a
+// switch (before it closes) is written to that workspace, never to the one shown; a screen with no
+// pin refuses it, as before.
+test("a pane edit on a screen drawn before a switch is written to the screen's own workspace", async () => {
+  const main = fixture(), shown = fixture();
+  const host = createMediaWorkspace(async () => shown.context, () => async () => ({ ...main.context, assertLive() {} }));
+  await host.load();
+  main.setLive(false);
+  await host.metadata({ "images/a.png": { alt: "After the switch" } });
+  assert.equal(main.batches.length, 1, "written to the screen's workspace");
+  assert.equal(shown.batches.length, 0, "nothing on the workspace shown");
+});
+
+test("a pane edit on a screen with no pin is refused after a switch", async () => {
+  const main = fixture(), host = createMediaWorkspace(async () => main.context);
+  await host.load();
+  main.setLive(false);
+  await assert.rejects(host.metadata({ "images/a.png": { alt: "After the switch" } }), /scope changed/);
+  assert.equal(main.batches.length, 0);
+});

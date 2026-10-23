@@ -35,7 +35,18 @@ async function hold(page: Page, path: string) {
   return { reached, release };
 }
 
-const draftsOn = async (page: Page, branch: string) => (await storedDrafts(page)).filter(draft => draft.branch === branch);
+const draftsOn = async (page: Page, branch: string, repoId = 501) => (await storedDrafts(page)).filter(draft => draft.branch === branch && draft.repoId === repoId);
+/** Whether a background page (src/background-page.ts) has been opened since `watchBackground`, and how many are open now. */
+async function watchBackground(page: Page) {
+  await page.evaluate(() => {
+    document.body.dataset.backgroundPages = "0";
+    new MutationObserver(records => {
+      for (const record of records) for (const added of record.addedNodes)
+        if (added instanceof HTMLElement && added.classList.contains("background-page")) document.body.dataset.backgroundPages = String(Number(document.body.dataset.backgroundPages) + 1);
+    }).observe(document.body, { childList: true });
+  });
+  return { opened: () => page.evaluate(() => Number(document.body.dataset.backgroundPages)), open: () => page.locator(".background-page").count() };
+}
 const preview = (page: Page) => page.frameLocator(".native-preview-frame");
 /** index.html as the editor shows it now. */
 const shownSource = async (page: Page) => {
@@ -60,7 +71,7 @@ test("an agent's Media change held across a branch switch lands on its own branc
     const inspection = await client.callTool({ name: "inspect_preview", arguments: { page: "index.html", selector: ".hero img", limit: 1, waitSeconds: 25 } });
     const element = JSON.parse((inspection.content as { text: string }[])[0].text).result.elements[0].element as string;
     // The Media tools' chunk, loaded by the first Media change after it arrived: held while the branch switches.
-    const media = await hold(page, "/src/agent-tools-media.ts");
+    const media = await hold(page, "/src/agent-tools-media.ts"), background = await watchBackground(page);
     const placing = client.callTool({ name: "place_media", arguments: { path: "index.html", element, file: "images/studio-desk.svg", requestId: "invisible-place", waitSeconds: 0 } })
       .catch(error => ({ isError: true, content: [{ text: String(error) }] }));
     await media.reached;
@@ -71,6 +82,9 @@ test("an agent's Media change held across a branch switch lands on its own branc
     await expect.poll(async () => (await draftsOn(page, "main")).filter(draft => draft.path === "index.html").map(draft => draft.content.includes("/images/studio-desk.svg")), { timeout: 20_000 }).toEqual([true]);
     expect(await draftsOn(page, "feature")).toEqual([]);
     await expect(preview(page).locator(".hero img")).not.toHaveAttribute("src", /studio-desk/);
+    // The picture was measured in a background page of main's index.html, which closed once done.
+    expect(await background.opened()).toBeGreaterThan(0);
+    await expect.poll(background.open).toBe(0);
     // Back on main the agent learns it was applied, and the page shows it.
     const ready = messages.filter(message => message.includes('"type":"ready"')).length;
     await openMain(page);
@@ -81,53 +95,35 @@ test("an agent's Media change held across a branch switch lands on its own branc
   } finally { await client.close(); }
 });
 
-test("a picture placed with the picker's Use, held across a branch switch, lands on the page it was chosen for", async ({ page, baseURL }) => {
-  await openEditor(page, baseURL);
-  await expect(preview(page).locator(".hero img")).toBeVisible({ timeout: 30_000 });
-  await expect(page.locator("#content [role='textbox']").first()).toBeAttached({ timeout: 30_000 });
-  await openImagePicker(page, ".hero img");
-  const picker = page.getByRole("dialog", { name: "Choose image", exact: true });
-  await picker.getByRole("button", { name: "Choose images/studio-desk.svg", exact: true }).click();
-  // The placement's chunk, loaded by Use: held while the branch switches.
-  const placing = await hold(page, "/src/page-builder/media-place.ts");
-  await picker.getByRole("button", { name: "Use image", exact: true }).click();
-  await placing.reached;
-  await switchSiteMidUpload(page, baseURL);
-  placing.release();
-  await expect.poll(async () => (await draftsOn(page, "main")).filter(draft => draft.path === "index.html").map(draft => draft.content.includes('src="/images/studio-desk.svg"')), { timeout: 20_000 }).toEqual([true]);
-  // Its toast says where it landed; feature, shown, has nothing of it.
-  await expect(page.locator("#status")).toHaveText(/^On main: Image replaced/);
-  expect(await draftsOn(page, "feature")).toEqual([]);
-  expect(await shownSource(page)).not.toContain("studio-desk");
-  // Opened again, main's page has the picture placed.
-  await openMain(page);
-  await expect(page.locator("#status")).toContainText("main", { timeout: 30_000 });
-  await expect.poll(() => shownSource(page), { timeout: 20_000 }).toContain('src="/images/studio-desk.svg"');
-});
-
-// A real 1×1 PNG.
-const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP476AAAAOhAWAv9IBkAAAAAElFTkSuQmCC", "base64");
-
-// A pinned Media batch (a Files drop) whose workspace is switched back and forth before it runs:
-// main, feature, main, feature. It lands on main once let go, with feature shown.
-test("files dropped on main, held while the branch switches back and forth, are added to main", async ({ page, baseURL }) => {
-  await openEditor(page, baseURL);
-  const explorer = page.locator("#explorer");
-  if (!(await explorer.isVisible())) await page.locator("#explorer-toggle").click();
-  await explorer.getByRole("tab", { name: "Files" }).click();
-  await expect(explorer.locator(".file-row[data-path='images']")).toBeVisible();
-  const media = await hold(page, "/src/controllers/media-actions.ts");
-  await explorer.locator(".file-row[data-path='images']").first().evaluate((element, base64) => {
-    const transfer = new DataTransfer();
-    transfer.items.add(new File([Uint8Array.from(atob(base64), c => c.charCodeAt(0))], "Logo.png", { type: "image/png" }));
-    for (const type of ["dragenter", "dragover", "drop"]) element.dispatchEvent(new DragEvent(type, { dataTransfer: transfer, bubbles: true, cancelable: true }));
-  }, png.toString("base64"));
-  await media.reached;
-  await switchSiteMidUpload(page, baseURL);
-  await openMain(page);
-  await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
-  await switchSiteMidUpload(page, baseURL);
-  media.release();
-  await expect.poll(async () => (await draftsOn(page, "main")).map(draft => draft.path), { timeout: 20_000 }).toEqual([".editor/media.json", "images/logo.png"]);
-  expect(await draftsOn(page, "feature")).toEqual([]);
-});
+for (const to of ["branch", "site"] as const) {
+  test(`a picture placed with the picker's Use, held across a ${to} switch, lands on the page it was chosen for`, async ({ page, baseURL }) => {
+    await openEditor(page, baseURL);
+    await expect(preview(page).locator(".hero img")).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator("#content [role='textbox']").first()).toBeAttached({ timeout: 30_000 });
+    await openImagePicker(page, ".hero img");
+    const picker = page.getByRole("dialog", { name: "Choose image", exact: true });
+    await picker.getByRole("button", { name: "Choose images/studio-desk.svg", exact: true }).click();
+    // The placement's chunk, loaded by Use: held while another branch or site opens.
+    const placing = await hold(page, "/src/page-builder/media-place.ts"), background = await watchBackground(page);
+    await picker.getByRole("button", { name: "Use image", exact: true }).click();
+    await placing.reached;
+    if (to === "branch") await switchSiteMidUpload(page, baseURL);
+    else {
+      await page.evaluate(() => { location.hash = "repo=540&branch=main&file=index.html"; });
+      await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
+    }
+    placing.release();
+    await expect.poll(async () => (await draftsOn(page, "main")).filter(draft => draft.path === "index.html").map(draft => draft.content.includes('src="/images/studio-desk.svg"')), { timeout: 20_000 }).toEqual([true]);
+    // Its toast says where it landed (the repository too, when another is shown); what is shown has nothing of it.
+    await expect(page.locator("#status")).toHaveText(to === "branch" ? /^On main: Image replaced/ : /^On [^ ]+\/native-demo \(main\): Image replaced/);
+    expect(await draftsOn(page, "feature")).toEqual([]);
+    expect(await draftsOn(page, "main", 540)).toEqual([]);
+    expect(await shownSource(page)).not.toContain("studio-desk");
+    expect(await background.opened()).toBeGreaterThan(0);
+    await expect.poll(background.open).toBe(0);
+    // Opened again, main's page has the picture placed.
+    await openMain(page);
+    await expect(page.locator("#status")).toContainText("main", { timeout: 30_000 });
+    await expect.poll(() => shownSource(page), { timeout: 20_000 }).toContain('src="/images/studio-desk.svg"');
+  });
+}

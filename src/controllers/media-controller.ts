@@ -42,12 +42,14 @@ export interface MediaPin extends MediaWorkspaceSnapshot {
 }
 export interface MediaModule {
   openMediaPicker: (options: MediaPickerOptions & { adapter?: import("../page-builder/media-picker").MediaPickerHost }) => Promise<void>;
-  closeMediaPicker: () => void;
+  closeMediaPicker: (away?: boolean) => void;
   mountMediaLibrary: (container: HTMLElement, options: MediaPickerOptions & { refreshKey?: () => string; cleanUp?: import("../page-builder/media-picker").MediaCleanUpMount }) => MediaLibraryView;
 }
 export interface MediaControllerPorts {
   /** As `measureImage`, for work whose workspace is not shown (ticket 27): measured in a background page of `pin`'s site and page. */
   measureAway?(pin: MediaPin, path: string, node: number[], image: { width?: number; height?: number }, slot?: string, style?: string): Promise<import("../page-builder/media-markup").MediaMeasured | undefined>;
+  /** The draft scope shown now: work that finished elsewhere names its repository when it is another (ticket 27). */
+  shownScope?(): DraftScope | undefined;
   /** Work finished in `scope`, a workspace not shown: its notification (ticket 24). */
   finishedAway?(scope: DraftScope): void;
   /** `slot`: `node` is a component instance; measure its fallback image in that slot (a first fill). */
@@ -373,5 +375,5 @@ export function createMediaController(ports: MediaControllerPorts, loadActions: 
       };
     },
     workspaceContext, preparePlacement, prepareLoop, prepareFrame, chooseImage, insertMedia, choosePath, chooseBackground, videoControls, mediaButton, placeState, placeFrame, editImage, changePlace, ensureGallery, reviewInGallery, requestGalleryRefresh, disposeGallery,
-    closePicker: () => loaded?.closeMediaPicker(), galleryVisible: () => ports.galleryVisible() };
+    closePicker: (away?: boolean) => loaded?.closeMediaPicker(away), galleryVisible: () => ports.galleryVisible() };
 }

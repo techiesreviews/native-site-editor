@@ -75,7 +75,8 @@ export interface WorkspaceBootPorts {
   openNewDraft(draft: SavedDraft, options?: OpenOptions): Promise<void>;
   openEntry(entry: TreeEntry, path: string, at: SessionStamp, options?: OpenOptions): Promise<void>;
   mountSource(path: string, source: string, baseSha: string | null, readOnly: boolean, at: SessionStamp, selection: number, options?: OpenOptions): Promise<void>;
-  deactivateNative(): void;
+  /** `away`: another workspace is opening (a picker's Use under way still lands in its own, ticket 27). */
+  deactivateNative(away?: boolean): void;
   activateNativeSite(repo: Repository, result: Snapshot, at: SessionStamp, openPath?: string): Promise<boolean>;
   afterNativePaint(request: number, run: () => void): void;
   updateAgentContext(): void;
@@ -172,7 +173,7 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
       savePublish.resetDeleted();
       ports.siteActions?.revalidate();
       filesTreeController.reset();
-      ports.deactivateNative();
+      ports.deactivateNative(true);
       ports.setCurrentPage();
       appStore.selection.value = undefined;
     });

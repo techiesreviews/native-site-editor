@@ -12,6 +12,7 @@ import type { MediaToCheckRow } from "./media-descriptions";
 import type { MediaAddingChoices } from "./media-settings";
 import type { MediaReplaceRequest } from "./media-workspace";
 import { createMediaLibraryView, type MediaLibraryView } from "./media-library-view";
+import { pickerClose } from "./media-picker-close";
 export { isMediaLibraryPath } from "./media-library-filter";
 
 /** A YouTube or Vimeo video recorded in Media (slices 67, 68): `key` is "online:<service>:<id>";
@@ -199,8 +200,8 @@ export function configureMediaPicker(value: MediaPickerHost) {
   panes.clear();
   host = value;
 }
-/** The editor left the picker's workspace: it closes, and a Use already under way still lands there (ticket 27). */
-export function closeMediaPicker() { closeActive?.(true); }
+/** Closes the picker. `away`: the editor opened another workspace, so a Use already under way still lands in the picker's own (ticket 27); otherwise (the workspace closed: sign-out, the login page) it cancels. */
+export function closeMediaPicker(away = false) { closeActive?.(away); }
 
 /** Mount a persistent manager directly into the explorer's host. Hiding is safe. */
 export function mountMediaLibrary(container: HTMLElement, options: MediaPickerOptions & { adapter?: MediaPickerHost; refreshKey?: () => string; cleanUp?: MediaCleanUpMount } = {}): MediaLibraryView {
@@ -224,15 +225,15 @@ export async function openMediaPicker(options: MediaPickerOptions & { adapter?: 
   const dialog = node("dialog", "media-library media-library--picker");
   // Escape closes only the picker, not a popover it was placed in.
   if (options.within) dialog.addEventListener("keydown", event => { if (event.key === "Escape") event.stopPropagation(); });
-  // `switched`: closed because another workspace was opened, which cancels no Use under way.
-  let used = false, closed = false, switched = false;
+  let used = false;
+  const state = pickerClose();
   const view = createMediaLibraryView(options.within ?? document.body, adapter, { ...options, onPick: options.onPick && (async (image, _cancelled, held) => {
-    await options.onPick!(image, () => closed && !switched, held); used = !closed || switched;
+    await options.onPick!(image, state.cancelled, held); used = state.used();
   }) }, dialog);
-  const close = (away = false) => { switched = away; dialog.close(); view.dispose(); };
+  const close = (away = false) => { state.leave(away); dialog.close(); view.dispose(); };
   closeActive = close;
   dialog.addEventListener("close", () => {
-    closed = true;
+    state.closed();
     if (closeActive === close) closeActive = undefined;
     if (!used) options.onClose?.();
   }, { once: true });

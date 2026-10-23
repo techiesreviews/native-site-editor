@@ -775,6 +775,34 @@ test("a workspace move lets an edit under way finish, unanswered; turning agents
   }
 });
 
+// Ticket 27: a Media change under way is kept across a workspace move as an edit is (it finishes in
+// its own workspace's background page); turning agents off afterwards cancels it. A Media read is not kept.
+test("a Media change under way is kept across a workspace move, cancelled when agents are then turned off; a Media read is not kept", async () => {
+  for (const cell of ["kept", "then off", "read"] as const) {
+    const f = fixture();
+    let release!: () => void, admitted = false, aborted = false, validAfter: boolean | undefined;
+    const a = f.tab("a", { media: async (request, _generation, valid, _deadline, _seen, signal) => {
+      admitted = true;
+      signal?.addEventListener("abort", () => { aborted = true; });
+      await new Promise<void>(resolve => { release = resolve; });
+      validAfter = valid();
+      return { ok: true, value: { requestId: request.id, state: "applied" } };
+    } });
+    await a.transport.start();
+    a.deliver(cell === "read" ? { operation: "media", tool: "list_media", path: "", args: {}, id: `media-${cell.replace(" ", "-")}`, grantId: "grant", createdAt: 100_000 }
+      : { operation: "media", tool: "place_media", path: "index.html", args: { element: "0", file: "images/a.png" }, id: `media-${cell.replace(" ", "-")}`, grantId: "grant", createdAt: 100_000 });
+    await until(() => admitted);
+    a.change({ ...workspace, branch: "other" });
+    assert.equal(aborted, cell === "read", `${cell}: kept by the move unless it only reads`);
+    if (cell === "then off") a.transport.stop();
+    release(); await drain();
+    assert.equal(aborted, cell !== "kept", cell);
+    assert.equal(validAfter, cell === "kept", cell);
+    assert.equal(a.sockets[0].messages("result").length, 0, `${cell}: no reply on the closed socket`);
+    a.transport.stop();
+  }
+});
+
 // After a move the transport is halted, so only a later stop (agents turned off, the tab closing) can
 // end it; a kept edit is cancelled then, as any call is.
 test("an edit kept after a workspace move is cancelled when agents are then turned off", async () => {
