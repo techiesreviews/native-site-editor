@@ -91,10 +91,12 @@ const MOVED = "The repository changed meanwhile. Try again.";
 /** `race` wraps the host's own awaits (the lazy loads) for `forEachAwait`. */
 function fixture(race?: AwaitRace) {
   replaced.length = 0;
+  storage.values.clear();
   const app = new FakeElement(), action = new FakeElement(), checklistHost = new FakeElement();
   let content = new FakeElement();
   let info: SessionInfo = { configured: true, user: { login: "Lex" }, installUrl: "https://github.test/install" } as SessionInfo;
   let repositories: Repository[] = [];
+  let nativeEngaged = false;
   const session = createWorkspaceSession();
   const appStore = { repository: signal<Repository | undefined>(undefined), snapshot: signal<Snapshot | undefined>(undefined) };
   const drafts = new Map<string, SavedDraft>();
@@ -125,7 +127,7 @@ function fixture(race?: AwaitRace) {
     get repositories() { return repositories; },
     get content() { return asElement(content); },
     repositoryMenu: undefined,
-    nativeEngaged: false,
+    get nativeEngaged() { return nativeEngaged; },
     agentPrompts: { setupPrompt: (options: { name: string }) => `prompt for ${options.name}` },
     onboardingCopy: undefined,
     boot: {
@@ -170,6 +172,7 @@ function fixture(race?: AwaitRace) {
     newContent: () => { content = new FakeElement(); },
     info: (value: Partial<SessionInfo>) => { info = { ...info, ...value }; },
     repositories: (value: Repository[]) => { repositories = value; },
+    engage: () => { nativeEngaged = true; },
     listed: (value: Repository[]) => { listed = value; },
     fetchWith: (fetch: () => Promise<Repository[]>) => { fetchList = fetch; },
     fetches: () => fetches,
@@ -492,6 +495,18 @@ test("the checklist reads the drafted home page, the commit and the site name, a
   // Nothing to save: the publish menu is not there.
   checklist.save();
   assert.deepEqual(f.calls, ["refuse:This repository has a home page already.", "refuse:There is nothing to save yet."]);
+  f.setup.setupController.dispose();
+});
+
+test("the checklist reads the native site's state when it refreshes, not when it was built", async () => {
+  const f = fixture();
+  f.open(repository(1, "my-site"));
+  await f.mountChecklist();
+  assert.equal(f.checklist.updates.at(-1)!.progress.done.start, false);
+  // A site with a committed home page is engaged after the checklist mounted.
+  f.engage();
+  f.setup.setupController.refresh();
+  assert.equal(f.checklist.updates.at(-1)!.progress.done.start, true);
   f.setup.setupController.dispose();
 });
 
