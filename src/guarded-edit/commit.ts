@@ -300,9 +300,10 @@ export function createCommit(ws: EditorWorkspace & { agentText?(): AgentTextComm
     if (away && !op.elsewhere!()) { receipt.dispose(); releaseUploads(); release(); return durable ? recover() : COMMIT_CHANGED; }
     if (!(agent ? agent.publish(after, () => receipt.apply()) : receipt.apply())) { const error = receipt?.error() ?? store.error ?? COMMIT_CHANGED; receipt?.dispose(); releaseUploads(); release(); return durable ? recover() : error; }
     if (away) {
-      // Its page is not shown: the drafts are its change there, with no Undo step to hold them.
+      // Its page is not shown: the drafts are its change there, with no Undo step to hold them, and
+      // nothing is said (ticket 27, Lex: no toasts; the Pages tree marks the page unsaved).
       unrecorded(); unrecorded = undefined;
-      op.recorded(); ws.afterFileChanges(); ws.announce(anchor === undefined ? done : `On ${anchor}: ${done}`);
+      op.recorded(); ws.afterFileChanges();
       return undefined;
     }
     // Files created or moved in keep the anchor's history while the step lives.

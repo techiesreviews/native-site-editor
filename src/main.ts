@@ -112,7 +112,7 @@ import { createAgentSiteHost } from "./agent-site-host";
 import { createGuardedEdits, type GuardedEdits, type Reads, type PlanResult, type Stamp } from "./guarded-edit";
 import { createEditorWorkspace } from "./editor-workspace";
 import { createFinishedElsewhere, openLink } from "./finished-elsewhere";
-import { createWorkspaceSession, draftScopeOf, holdsDraftScope, sameRepository, setupKeyOf, type SessionStamp, type WorkspaceScope } from "./workspace-session";
+import { createWorkspaceSession, draftScopeOf, holdsDraftScope, setupKeyOf, type SessionStamp, type WorkspaceScope } from "./workspace-session";
 import type { AnnounceAs } from "./components/toast-rules";
 import type { ToastAction } from "./components/toast";
 import type {
@@ -1792,15 +1792,14 @@ function nativeImagePaths() {
 async function uploadFilesTo(folder: string, files: File[]): Promise<string[]> {
   const pin = mediaPorts.pin?.();
   if (!pin || !files.length) return [];
-  // Where it landed when that is not shown: the branch, with the repository when it is another.
-  const where = () => sameRepository(draftScope(), pin.scope) ? pin.scope.branch : `${pin.scope.repo} (${pin.scope.branch})`;
   try {
     const { addFilesTo } = await import("./page-builder/media-files-adding");
     return await addFilesTo(element("explorer-files"), folder, files, { error: errorMessage,
-      announce: text => announce(pin.here() ? text : `On ${where()}: ${text}`), context: () => mediaController.workspaceContext(undefined, pin),
-      // Pictures not added yet go to Media's Optimise sheet, still bound for this folder.
+      // Finished on a workspace not shown, nothing is said: the menu counts it there (ticket 27, Lex: no toasts).
+      announce: text => { if (pin.here()) announce(text); }, context: () => mediaController.workspaceContext(undefined, pin),
+      // Pictures not added yet go to Media's Optimise sheet, still bound for this folder (on show only).
       review: element("explorer-tabs").hidden ? undefined : (images, into, reasons) => {
-        if (!pin.here()) { announce(`Open ${where()} to review these pictures.`); return; }
+        if (!pin.here()) return;
         openExplorer(); pagesController.selectTab("media");
         void mediaController.reviewInGallery(images, into, reasons).catch(errorMessage);
       } }).then((paths) => { if (!pin.here()) finishedWork.add(pin.scope, "added", { count: paths.length }); return paths; });
@@ -1852,7 +1851,6 @@ let backgroundPages: ReturnType<typeof import("./background-page").createBackgro
 const mediaPorts: import("./controllers/media-controller").MediaControllerPorts = {
   measureImage: (path, node, image, slot, style) => nativePreview && runtime.site?.routes[nativePreview.shownRoute() ?? ""] === path
     ? nativePreview.measureImage({ path, node, slot, style, ...(image.width && image.height ? { image: { width: image.width, height: image.height } } : {}) }) : Promise.resolve(undefined),
-  shownScope: () => draftScope(),
   finishedAway: (scope) => finishedWork.add(scope, "media"),
   // Work whose workspace is not shown measures in a background page of its site and page (ticket 27).
   measureAway: async (pin, path, node, image, slot, style) => {

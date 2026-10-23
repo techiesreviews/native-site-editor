@@ -33,7 +33,6 @@ import type { NativeSite } from "../shared/native-project";
 import type { NativePreview } from "./components/native-preview";
 import type { MediaMeasured } from "./page-builder/media-markup";
 import type { MediaControllerPorts, MediaPin } from "./controllers/media-controller";
-import { sameRepository } from "./workspace-session";
 
 /** Background pages open at once, at most: each holds a frame with its page drawn. */
 export const BACKGROUND_PAGE_LIMIT = 3;
@@ -205,8 +204,8 @@ export async function openBackgroundFrame(site: BackgroundSite, create: (host: H
  * Once another workspace is shown, or another page of its own if it began on its page, the work goes
  * on in its background page: the pin's reads, nothing opened or selected, the page measured in a
  * hidden frame of it (`measureAway`), its writes one pinned media batch for its own page (a
- * one-page change too: `change`), with no Undo step on the page shown, and the toast saying where it
- * landed (its page, or its branch and repository) with a note on that workspace (`finishedAway`).
+ * one-page change too: `change`), with no Undo step on the page shown and nothing said: another
+ * workspace it landed in gets the menu's count (`finishedAway`).
  * The work's own bytes prove it (each step and its batch compare the page it read), so a switch is
  * no reason to stop: its stamp always holds. Without a pin (nothing open as it began) they are the
  * editor's.
@@ -218,13 +217,11 @@ export function pinnedPorts(ports: MediaControllerPorts, pin: MediaPin | undefin
   // page of the same site shown) is away for its writes too.
   const began = Boolean(page) && opened === page;
   const here = () => pin.here(), onPage = () => here() && (!began || ports.openFile() === page);
-  // Where it landed: its page while its site is shown; else its branch, and its repository too when another
-  // one is shown (as a Files drop says, ticket 23). Another workspace gets a note; a page of the one shown needs none.
+  // Said only on its page, as before. Landed elsewhere, nothing is said (Lex, 2026-10-23: no toasts): another
+  // workspace gets the menu's count (`finishedAway`, ticket 24); a page of the one shown needs none (Pages marks it).
   const say = (message: string) => {
-    if (onPage()) { ports.announce(message); return; }
-    if (here()) { ports.announce(`On ${page}: ${message}`); return; }
-    ports.announce(`On ${sameRepository(ports.shownScope?.(), pin.scope) ? pin.scope.branch : `${pin.scope.repo} (${pin.scope.branch})`}: ${message}`);
-    ports.finishedAway?.(pin.scope);
+    if (onPage()) ports.announce(message);
+    else if (!here()) ports.finishedAway?.(pin.scope);
   };
   const applyBatch: MediaControllerPorts["applyBatch"] = (scope, stamp, batch) => ports.applyBatch(scope, stamp, batch, pin, began ? page : undefined);
   return { ...ports,
