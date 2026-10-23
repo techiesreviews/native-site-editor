@@ -189,8 +189,7 @@ export function createLinkedStylesController(ports: LinkedStylesPorts) {
       branch: appStore.snapshot.value.branch,
     };
     const primaryKey = appStore.openFile.value ? draftKey(scope, appStore.openFile.value) : undefined;
-    const primaryHistoryScope = ports.primaryHistoryScope;
-    const primary = primaryKey && primaryHistoryScope?.key === primaryKey && primaryHistoryScope.proof.isCurrent() ? primaryHistoryScope : undefined;
+    const primary = primaryKey && ports.primaryHistoryScope?.key === primaryKey && ports.primaryHistoryScope.proof.isCurrent() ? ports.primaryHistoryScope : undefined;
     const historyScope = primary?.session ?? (appStore.openFile.value ? ports.nativeHistorySession(scope, appStore.openFile.value) : undefined);
     const current = () => {
       const liveScope = ports.draftScope();
@@ -244,8 +243,8 @@ export function createLinkedStylesController(ports: LinkedStylesPorts) {
     if (!linked || !secondaryPath) return;
     title.textContent = secondaryPath;
     const inPane = (path: string) => linked.rules.filter((rule) => rule.path === path).map(ruleMarks);
-    editorModule.highlightRanges(secondaryPath, inPane(secondaryPath));
-    if (appStore.openFile.value && appStore.openFile.value !== secondaryPath) editorModule.highlightRanges(appStore.openFile.value, inPane(appStore.openFile.value));
+    editorModule?.highlightRanges(secondaryPath, inPane(secondaryPath));
+    if (appStore.openFile.value && appStore.openFile.value !== secondaryPath) editorModule?.highlightRanges(appStore.openFile.value, inPane(appStore.openFile.value));
     if (!linked.rules.length) {
       if (linked.rules !== linkedStyleIdle) chips.append(node("span", "muted", "No rules match this element"));
       return;
@@ -336,14 +335,14 @@ export function createLinkedStylesController(ports: LinkedStylesPorts) {
 
   async function revealRule(rule: StyleRule) {
     if (rule.path === appStore.openFile.value) {
-      editorModule.revealRange(rule.path, rule.start, rule.end);
+      editorModule?.revealRange(rule.path, rule.start, rule.end);
       return;
     }
     if (rule.path !== secondaryPath) {
       if (!(await openSecondary(rule.path))) return;
       renderLinkedStyle();
     }
-    editorModule.revealRange(rule.path, rule.start, rule.end);
+    editorModule?.revealRange(rule.path, rule.start, rule.end);
   }
 
   function refreshLinkedStyleRules() {
@@ -395,7 +394,7 @@ export function createLinkedStylesController(ports: LinkedStylesPorts) {
     // The first rule in the pane's file, which decides the most; the page's
     // own caret stays on the selected element.
     const top = rules.find((rule) => rule.path === css);
-    if (reveal && top && top.path !== page) editorModule.revealRange(top.path, top.start, top.end);
+    if (reveal && top && top.path !== page) editorModule?.revealRange(top.path, top.start, top.end);
   }
 
   // The component's same-named `.css` in the secondary pane, with no rule chips
