@@ -47,3 +47,9 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Commits: fea31670 (the move), 9d8f4659 (review round 1), 7b4ce796 (review round 2), then review round 3's fixes.
 - Review decisions (`.scratch/reviews/lead-80/` in the main checkout: 20261023T073548Z, 20261023T074213Z, 20261023T075300Z). Round 1: code-map ranges re-measured from the code (all sections had drifted about 70 lines); `forEachAwait` races added for the version read and the restore; tests for the latest commit, opening a file at a commit and at the head, superseded and post-load answers, a failed, an unchanged and a repeated restore, the skipped-restore message and the expired session. Round 2: this record's test count; setup-scope change and live preview getter tests. Round 3: commits, decisions and evidence here; the failed read, `viewing` after the scope or file moved on, and the panel closing after a restore. None rejected; optional nits (the kept `editorModule?.`, longer port names, the variant-reads boundary) left as they are.
 - Evidence: `RESULT: ok unit 28/28 (2 files)`, `RESULT: ok specs 4/4 passed` (native-history, native-add-panel, native-make-component-menus, native-media-touch-contrast), `RESULT: ok size boot 344 KB (±0 KB) vs dev@f97599c, budget 355 KB`; `npm run check`, `npm run lint` and `npm test` (5092/5092 at fea31670) green.
+
+### Follow-ups
+
+- Validation gaps (gap): `restoreSkipped` when the file already matched. The test only covers `unchanged: false` with a draft (`tests/version-view.test.ts`, "a restore History made besi
+- Validation gaps (gap): `openFileVersion` when the session moves during `restoreFile`. No test covers this. Add a case: make the fixture's `restoreFile` call `session.next(undefined)` 
+
