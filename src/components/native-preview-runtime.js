@@ -3052,6 +3052,12 @@ import { domView } from "../page-builder/rules/tree.ts";
     else emit("image-edit", { path: ownerPath(target), node: elementIndexPath(target), width: target.getBoundingClientRect().width });
   }, true);
 
+  // The text typed into for a click on this element: itself, or for formatting that is no text
+  // of its own (the <del> in "Was <del>£40</del> £30") the line of text around it.
+  function textLine(el) {
+    for (var at = el; at && inlineTag(at.localName); at = at.parentElement) if (editableText(at)) return at;
+    return at && editableText(at) ? at : null;
+  }
   function clearSelectionState() {
     stopEditing(true);
     hovered = null;
@@ -3076,8 +3082,9 @@ import { domView } from "../page-builder/rules/tree.ts";
       }
     }
     var target = deepestElement(e);
-    var text = editableText(target);
-    var action = canvasGesture("click", { inside: !!(editing && editing.contains(target)), text: text, onText: text && onText(target, e.clientX, e.clientY) });
+    var line = textLine(target);
+    var action = canvasGesture("click", { inside: !!(editing && editing.contains(target)), text: !!line, onText: !!line && onText(line, e.clientX, e.clientY) });
+    if (action === "edit") target = line;
     // Clicks while typing move the caret; the text element stays selected.
     if (action === "caret") {
       e.preventDefault();
@@ -3217,7 +3224,6 @@ import { domView } from "../page-builder/rules/tree.ts";
       if (!node) { press = null; return; }
       press.dragging = true;
       try { document.documentElement.setPointerCapture(e.pointerId); } catch (_) { /* gone */ }
-      var wrote = !!editing && editing.textContent !== editingText;
       stopEditing(true);
       press.userSelect = document.documentElement.style.userSelect;
       document.documentElement.style.userSelect = "none";
@@ -3227,9 +3233,14 @@ import { domView } from "../page-builder/rules/tree.ts";
       reportHover();
       var start = { phase: "start", node: node, tag: block.localName, cls: block.getAttribute("class") || "",
         band: !part && sectionLike(block), template: part, x: e.clientX, y: e.clientY, alt: e.altKey };
-      // Text typed in the dragged block was just written: the host hears a start only from the render
-      // it asked for since, so the start waits for that render (startPendingPress).
-      if (wrote) press.start = start;
+      // Typed text was just written (here or by the press): the host hears a start only from
+      // the render it asked for since, so the start waits for that render (startPendingPress),
+      // or a moment, for a host that asked for none.
+      if (leftText) {
+        var waiting = press;
+        press.start = start;
+        setTimeout(function () { if (press === waiting) startPendingPress(); }, 1000);
+      }
       else emit("press-drag", start);
     } else if (press.start) { press.start.x = e.clientX; press.start.y = e.clientY; press.start.alt = e.altKey; }
     else emit("press-drag", { phase: "move", x: e.clientX, y: e.clientY, alt: e.altKey });

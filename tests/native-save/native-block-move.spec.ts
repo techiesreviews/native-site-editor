@@ -180,7 +180,7 @@ test("typed text is selected with Shift and arrows, and the name chip moves it",
   // Inside the text being typed, Shift and arrows select text (a press and drag moves the block: native-click-to-type.spec.ts).
   await page.keyboard.press("Home");
   for (let i = 0; i < 3; i++) await page.keyboard.press("Shift+ArrowRight");
-  expect(await lead.evaluate(() => document.getSelection()?.toString() ?? "")).toBe("One");
+  await expect.poll(() => lead.evaluate(() => document.getSelection()?.toString() ?? "")).toBe("One");
   await page.keyboard.press("End");
   await page.keyboard.type(" Typed.");
   // Still typing, the bar's name drags the paragraph after the services list; the press commits the text.
