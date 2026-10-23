@@ -17,6 +17,7 @@ const withLinks = indexSource.replace(
   `<img class="hero-image"`,
   `<p data-key="hero-more">Read <a href="/about.html" data-key="hero-link">the about page</a> first.</p>\n    <a class="btn" href="/about.html" data-key="hero-cta">Get started</a>\n    <img class="hero-image"`,
 );
+const withPrice = withLinks.replace(`<img class="hero-image"`, `<p data-key="price">Was <del>£40</del> £30</p>\n    <img class="hero-image"`);
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const bar = (page: Page) => page.getByRole("toolbar", { name: "Edit bar", exact: true });
 const ghost = (page: Page) => page.locator(".pb-drag-ghost");
@@ -32,13 +33,18 @@ test.beforeEach(async ({ page, baseURL }) => {
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath, { timeout: 30_000 });
   await expect(frame(page).locator(".hero h1")).toBeVisible({ timeout: 30_000 });
   await editorMounted(page);
+  await pasteSource(page, withLinks);
+  await expect(frame(page).locator(".hero a.btn")).toHaveText("Get started");
+});
+
+/** Replaces index.html in the code editor with `text`, as pasted. */
+async function pasteSource(page: Page, text: string) {
   const textbox = page.locator("#content [role='textbox']").first();
-  await page.evaluate(async (text) => navigator.clipboard.writeText(text), withLinks);
+  await page.evaluate(async (text) => navigator.clipboard.writeText(text), text);
   await textbox.evaluate((el) => (el as HTMLElement).focus());
   await page.keyboard.press("ControlOrMeta+A");
   await page.keyboard.press("ControlOrMeta+V");
-  await expect(frame(page).locator(".hero a.btn")).toHaveText("Get started");
-});
+}
 
 /** The page point just inside the end of `word` in the element's text (a click there puts the caret after it). */
 async function afterWord(page: Page, selector: string, word: string) {
@@ -57,6 +63,27 @@ async function afterWord(page: Page, selector: string, word: string) {
     throw new Error(`no "${word}" in ${el.outerHTML}`);
   }, word);
   return { x: box.x + at.x, y: box.y + at.y };
+}
+
+const kind = (page: Page) => bar(page).locator(".edit-bar__kind");
+const filler = (n: number) => `[data-key='filler-${n}']`;
+
+/** Presses at `from`, moves past the 7 px threshold to `to` and releases: the block drags as a Paragraph. */
+async function drag(page: Page, from: { x: number; y: number }, to: { x: number; y: number }) {
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(from.x, from.y + 10, { steps: 2 });
+  await page.mouse.move(to.x, to.y, { steps: 8 });
+  await expect(ghost(page)).toHaveText("Paragraph");
+  await page.mouse.up();
+  await expect(ghost(page)).toHaveCount(0);
+}
+
+/** A page point just above the element's bottom edge, across its middle: a drop there lands after it. */
+async function below(page: Page, selector: string) {
+  const box = (await page.locator(".native-preview-frame").boundingBox())!;
+  const r = await frame(page).locator(selector).evaluate((el) => { const b = el.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.bottom - 3 }; });
+  return { x: box.x + r.x, y: box.y + r.y };
 }
 
 const selectedText = (page: Page) => frame(page).locator("body").evaluate(() => getSelection()!.toString());
@@ -81,6 +108,7 @@ test("one click on a heading, a paragraph, a link's text or a button's text type
     await expect(el).not.toHaveAttribute("contenteditable", /.+/);
     await expect(bar(page).locator(".edit-bar__kind")).toHaveText(kind);
     // Escape climbs a level at a time to the page, so the edit bar covers none of the next text.
+    await expect.poll(() => crumbs(page).count()).toBeGreaterThan(1);
     for (let shown = await crumbs(page).count(); shown > 1; shown--) {
       await page.keyboard.press("Escape");
       await expect(crumbs(page)).toHaveCount(shown - 1);
@@ -203,23 +231,8 @@ test("a double-click selects a word, Shift+click extends, and Escape selects the
 
 test("a press and drag that starts on text moves its block, also while typing in it", async ({ page }) => {
   const original = (await source(page))!;
-  const filler = (n: number) => `[data-key='filler-${n}']`;
-  const drag = async (from: { x: number; y: number }, to: { x: number; y: number }) => {
-    await page.mouse.move(from.x, from.y);
-    await page.mouse.down();
-    await page.mouse.move(from.x, from.y + 10, { steps: 2 });
-    await page.mouse.move(to.x, to.y, { steps: 8 });
-    await expect(ghost(page)).toHaveText("Paragraph");
-    await page.mouse.up();
-    await expect(ghost(page)).toHaveCount(0);
-  };
-  const below = async (selector: string) => {
-    const box = (await page.locator(".native-preview-frame").boundingBox())!;
-    const r = await frame(page).locator(selector).evaluate((el) => { const b = el.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.bottom - 3 }; });
-    return { x: box.x + r.x, y: box.y + r.y };
-  };
   await frame(page).locator(filler(1)).scrollIntoViewIfNeeded();
-  await drag(await afterWord(page, filler(1), "section"), await below(filler(2)));
+  await drag(page, await afterWord(page, filler(1), "section"), await below(page, filler(2)));
   await expect.poll(async () => (await source(page))!.indexOf(`data-key="filler-1"`) > (await source(page))!.indexOf(`data-key="filler-2"`)).toBe(true);
   await expect(frame(page).locator("[contenteditable]")).toHaveCount(0);
   const firstMove = (await source(page))!;
@@ -230,7 +243,7 @@ test("a press and drag that starts on text moves its block, also while typing in
   await expect(frame(page).locator(filler(2))).toHaveAttribute("contenteditable", /.+/);
   await page.keyboard.type(" typed");
   at = await afterWord(page, filler(2), "filler");
-  await drag(at, await below(filler(3)));
+  await drag(page, at, await below(page, filler(3)));
   const typed = `<p data-key="filler-2">Paragraph typed two of filler`;
   await expect.poll(async () => { const now = (await source(page))!; return now.indexOf(typed) > now.indexOf(`data-key="filler-3"`); }).toBe(true);
   await expect(frame(page).locator("[contenteditable]")).toHaveCount(0);
@@ -239,6 +252,71 @@ test("a press and drag that starts on text moves its block, also while typing in
   await expect.poll(async () => { const now = (await source(page))!; return now.indexOf(typed) >= 0 && now.indexOf(typed) < now.indexOf(`data-key="filler-3"`); }).toBe(true);
   expect(await undo(page)).toBe(true);
   await expect.poll(() => source(page)).toBe(firstMove);
+});
+
+test("typing in one text, then a press and drag on another block moves that block, the typed text kept", async ({ page }) => {
+  const original = (await source(page))!;
+  const at = await afterWord(page, ".hero h1", "native");
+  await page.mouse.click(at.x, at.y);
+  await expect(frame(page).locator(".hero h1")).toBeFocused();
+  await page.keyboard.type("!");
+  // No Escape: the press on filler-2 writes the heading's text, and the drag still starts.
+  await frame(page).locator(filler(2)).scrollIntoViewIfNeeded();
+  await drag(page, await afterWord(page, filler(2), "Paragraph"), await below(page, filler(3)));
+  const moved = (now: string) => now.includes("A native! browser") && now.indexOf(`data-key="filler-2"`) > now.indexOf(`data-key="filler-3"`);
+  await expect.poll(async () => moved((await source(page))!)).toBe(true);
+  await expect(frame(page).locator("[contenteditable]")).toHaveCount(0);
+  // Two undo steps: the move, then the typing.
+  expect(await undo(page)).toBe(true);
+  await expect.poll(async () => { const now = (await source(page))!; return now.includes("A native! browser") && now.indexOf(`data-key="filler-2"`) < now.indexOf(`data-key="filler-3"`); }).toBe(true);
+  expect(await undo(page)).toBe(true);
+  await expect.poll(() => source(page)).toBe(original);
+});
+
+test("a click on text in formatting that is no text of its own (a <del>) types in its line", async ({ page }) => {
+  await pasteSource(page, withPrice);
+  const price = frame(page).locator("[data-key='price']");
+  await expect(price.locator("del")).toHaveText("£40");
+  // Between "£4" and "0", inside the <del>.
+  const at = await afterWord(page, "[data-key='price']", "£4");
+  await page.mouse.click(at.x, at.y);
+  await expect(price).toHaveAttribute("contenteditable", /plaintext-only|true/);
+  await expect(price).toBeFocused();
+  await expect(price.locator("del")).not.toHaveAttribute("contenteditable", /.+/);
+  await expect(kind(page)).toHaveText("Paragraph");
+  await expect.poll(() => price.evaluate(() => { const sel = getSelection()!; return [sel.anchorNode?.parentElement?.localName, sel.anchorOffset]; })).toEqual(["del", 2]);
+  await page.keyboard.type("5");
+  await page.keyboard.press("Escape");
+  await expect.poll(() => source(page)).toContain(`<p data-key="price">Was <del>£450</del> £30</p>`);
+});
+
+test("after the editor refuses typed text, a click on other text still types there", async ({ page }) => {
+  const heading = frame(page).locator(".hero h1");
+  const lead = frame(page).locator(".hero p.lead");
+  let at = await afterWord(page, ".hero h1", "native");
+  await page.mouse.click(at.x, at.y);
+  await expect(heading).toBeFocused();
+  await page.keyboard.type("!");
+  // Meanwhile the heading's source text changes: the typed text no longer fits and is refused.
+  await page.evaluate(async () => {
+    const editor = await import("/src/components/code-editor.ts");
+    const text = "A native browser preview";
+    const from = editor.getMountedSource("index.html")!.indexOf(text);
+    editor.replaceActiveRange({ path: "index.html", start: from, end: from + text.length, expected: text, text: "Other" });
+  });
+  await expect.poll(() => source(page)).toContain(`<h1 data-key="hero-title">Other</h1>`);
+  at = await afterWord(page, ".hero p.lead", "place");
+  await page.mouse.click(at.x, at.y);
+  await expect(page.getByText("That text change could not be placed in the source.", { exact: false }).first()).toBeVisible();
+  // The refresh render that follows leaves the clicked text selected and typed in.
+  await expect(heading).toHaveText("Other");
+  await expect(lead).toHaveAttribute("contenteditable", /plaintext-only|true/);
+  await expect(lead).toBeFocused();
+  await expect(kind(page)).toHaveText("Paragraph");
+  await page.keyboard.type("X");
+  await page.keyboard.press("Escape");
+  await expect.poll(() => source(page)).toContain("in placeX");
+  await expect(kind(page)).toHaveText("Paragraph");
 });
 
 test("one click on an image selects it; a double-click opens the Image popup", async ({ page }) => {

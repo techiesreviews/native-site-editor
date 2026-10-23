@@ -12,6 +12,8 @@ test("a click on text starts typing; a click beside it, on an image or a section
   // A click on other text while typing types there (the press stopped the typing).
   assert.equal(canvasGesture("press", { editing: true, text: true }), "stop");
   assert.equal(canvasGesture("click", { editing: true, text: true, onText: true }), "edit");
+  // Beside other text while typing: the press stopped the typing, and the click only selects.
+  assert.equal(canvasGesture("click", { editing: true, text: true, onText: false }), "select");
   assert.equal(canvasGesture("press", { text: true }), "none");
 });
 
