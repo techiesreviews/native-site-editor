@@ -36,3 +36,14 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `kit unit --affected`, `kit specs --affected`, `kit size`.
 - Review: `kit review --ticket <this ticket>` (GPT-6.1 Sol, medium, read-only). Land: `kit pr --ticket <this ticket>`.
 - Report: unit and specs `RESULT:` lines, `kit size` delta, review folder and decisions, PR and merge SHA, `main.ts` lines before and after and the new ceiling.
+
+## Done (2026-10-23)
+
+### Follow-ups
+
+- Validation gaps (gap): `revealRule` with a chip whose rule is in a file other than the secondary pane is not tested. Add a test to `tests/linked-styles-controller.test.ts`: open `styl
+- Validation gaps (gap): The `!css` → `closeSecondary()` branch of `linkNativeStyles` is not tested. Add a test with `nativePageStyles: () => []`, no `<body>` styles, and a selection wi
+- Validation gaps (gap): The context reset in `syncLinkedStyles` and `clearSources()` are not tested. Add a test that links rules, then changes `appStore.snapshot` to another branch, th
+- Validation gaps (gap): The `savePublish.reopen` styled branch now calls `linkedStyles.openComponentLinkedStyle` / `openDefaultLinkedStyle` from main.ts, and nothing in this change cov
+- Validation gaps (gap): In `source-pane-controller`, nothing checks that `onContextChange` calls `syncLinkedStyles` only when `value.path` is the open file. Add a test that calls `open
+
