@@ -89,7 +89,7 @@ export class SiteFiles {
     if (draft?.deleted) return undefined;
     if (draft) {
       // Without the tab's text now, the text it shared: inline (older tabs), or stored apart by its hash.
-      const content = this.now ? readableText(path, this.heldText(path, draft)) : draft.content ?? (draft.hash ? await this.text?.(draft.hash) : undefined);
+      const content = this.now ? readableText(path, this.heldText(path, draft), true) : draft.content ?? (draft.hash ? await this.text?.(draft.hash) : undefined);
       if (content === undefined) throw draftProblem(path, draft);
       return {
         path,
@@ -137,7 +137,7 @@ export class SiteFiles {
     const wanted: string[] = [];
     for (const item of texts) {
       const entry = entries.get(item.path);
-      if (this.draft(item.path) || !entry || entry.size === undefined || entry.size > AGENT_TEXT_LIMIT) continue;
+      if (this.draft(item.path) || this.heldText(item.path, undefined) !== undefined || !entry || entry.size === undefined || entry.size > AGENT_TEXT_LIMIT) continue;
       if (planned + entry.size > budget) break;
       planned += entry.size;
       wanted.push(entry.sha);
@@ -162,7 +162,7 @@ export class SiteFiles {
             continue;
           }
           const entry = entries.get(item.path);
-          if (!draft && entry && !this.github.hasText(this.repo, entry.sha) && ++singles > exportSingleReads) {
+          if (!draft && entry && this.heldText(item.path, draft) === undefined && !this.github.hasText(this.repo, entry.sha) && ++singles > exportSingleReads) {
             out.omitted.push(item.path);
             continue;
           }
@@ -235,9 +235,9 @@ export interface SiteExport {
 }
 
 /** The tab's text, refused when it is more than agents can read. */
-function readableText(path: string, text: string | undefined) {
+function readableText(path: string, text: string | undefined, drafted = false) {
   if (text === undefined || textBytes(text) <= AGENT_TEXT_LIMIT) return text;
-  throw new HttpError(413, `${path} is ${Math.ceil(textBytes(text) / 1024)} KB in the editor, larger than the ${AGENT_TEXT_LIMIT / 1024 / 1024} MB agents can read or write. Ask the user to save it first.`);
+  throw new HttpError(413, `${path} is ${Math.ceil(textBytes(text) / 1024)} KB in the editor, larger than the ${AGENT_TEXT_LIMIT / 1024 / 1024} MB agents can read or write.${drafted ? " Ask the user to save it first." : ""}`);
 }
 
 /** Why agents cannot read a draft: binary, too large, or its text not here yet. */

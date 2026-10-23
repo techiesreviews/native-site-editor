@@ -145,7 +145,8 @@ export function createNativeSiteRuntime(ports: NativeSiteRuntimePorts) {
     return effectiveText(path, {
       mounted: (file) => ports.mounted(file),
       draft: () => draft,
-      base: (file) => nativeBaseSources.get(file) ?? (usage ? ports.clean.peek("", ports.textKey(), file) : undefined),
+      // The index is keyed by repository, branch, commit and load; without a site there is no key, and no index.
+      base: (file) => nativeBaseSources.get(file) ?? (usage && ports.textKey() ? ports.clean.peek("", ports.textKey(), file) : undefined),
     });
   }
 

@@ -5,7 +5,8 @@ import { draftKey, type DraftScope, type SavedDraft } from "../src/drafts.ts";
 import { createNativeSiteRuntime, type NativeSiteRuntimePorts } from "../src/native-site-runtime.ts";
 import type { WorkspaceScope } from "../src/workspace-session.ts";
 import { forEachAwait } from "./support/await-race.ts";
-import type { PublishResult } from "../shared/types.ts";
+import type { PublishResult, Repository } from "../shared/types.ts";
+import { SiteFiles } from "../shared/site-files.ts";
 
 const SCOPE = { account: "o", repoId: 1, repo: "o/site", branch: "main" } satisfies DraftScope;
 const SHOWN = { kind: "github", ...SCOPE } satisfies WorkspaceScope;
@@ -75,6 +76,18 @@ test("the media text is the preview's text wherever the preview has one: one rul
   // Where the preview has none, the media text reads on into the wider index.
   clean.put("", "key", "notes.txt", "notes");
   assert.deepEqual([runtime.textSource("notes.txt"), runtime.source("notes.txt")], ["notes", undefined]);
+});
+
+test("without a site there is no text index: a stale text under the empty key never answers, and agents read GitHub's", async () => {
+  const { runtime, clean } = setup([], {}, { textKey: () => "" });
+  clean.put("", "", "CNAME", "old");
+  assert.equal(runtime.textSource("CNAME"), undefined);
+  const reader = { commitTree: async () => [{ path: "CNAME", sha: SHA, type: "blob" as const, mode: "100644" }], file: async () => "new.example",
+    prefetchTexts: async () => {}, hasText: () => true };
+  const context = { repository: { id: 1, fullName: "o/site" }, branch: "main", commit: SHA, file: null, drafts: [] };
+  const files = new SiteFiles(reader, { full_name: "o/site" } as Repository, context, undefined, (path) => runtime.textSource(path));
+  const file = await files.read("CNAME");
+  assert.deepEqual([file?.content, file?.source], ["new.example", "github"]);
 });
 
 test("the site's files are the branch's, less deletions, with new drafts", () => {

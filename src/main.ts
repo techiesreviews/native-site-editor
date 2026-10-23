@@ -1887,7 +1887,8 @@ const mediaPorts: import("./controllers/media-controller").MediaControllerPorts 
   entry: entryAt,
   readText: readFile,
   rememberSource: (path, source) => {
-    // Native preview sources stay separate from the wider text index.
+    // Native preview sources stay separate from the wider text index; without a site nothing keeps either current.
+    if (!runtime.site) return;
     if (/\.(?:html|css)$/i.test(path) || path === MEDIA_RECORDS_PATH) runtime.base.sources.set(path, source);
     else cleanSources.put("", nativeTextIndexScopeKey(), path, source);
   },
@@ -3438,14 +3439,10 @@ function makeAgentSiteActions(edits: GuardedEdits = guardedEdits, atomic = false
   makeComponent: async (request) => componentTools?.makeFromAgent(request) ?? "The component tools are not ready.",
   async text(path) {
     await awaitNativeResync();
-    const mounted = editorModule?.getMountedSource(path);
-    if (mounted !== undefined) return mounted;
     const scope = draftScope();
     const draft = scope ? draftStore().get(scope, path) : undefined;
-    if (draft?.deleted) return undefined;
-    if (draft?.opaque) throw new Error(`${path} is not a text file.`);
-    if (draft) return draft.content;
-    return runtime.base.sources.get(path) ?? (await branchText(path))?.text;
+    if (draft?.opaque && !draft.deleted) throw new Error(`${path} is not a text file.`);
+    return runtime.source(path) ?? (draft ? undefined : (await branchText(path))?.text);
   },
   isMounted: (path) => Boolean(editorModule?.isMounted(path)),
   edits,
