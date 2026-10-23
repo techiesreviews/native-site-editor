@@ -1,8 +1,8 @@
 ---
 title: "GitHub not answering: three automatic retries, then the toast"
 type: task (AFK)
-status: open
-assignee: lead-26 (this session)
+status: closed
+assignee: lead-26
 builder: sol
 blocked_by: [25-boot-and-snapshot]
 ---
@@ -45,3 +45,11 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `kit shots --steps .scratch/cbf-26-toast.json` (the toast after three failed tries).
 - Review: `kit review --ticket <this ticket>` (GPT-6.1 Sol, medium, read-only). Land: `kit pr --ticket <this ticket>`.
 - Report: shots contact sheet, unit and specs `RESULT:` lines, `kit size` KB, review folder and decisions, PR and merge SHA, `main.ts` lines and ceiling.
+
+## Done (2026-10-23)
+
+- `src/read-retry.ts`: every GET through `fetchWithReadRetry` gets 8 s to answer (response headers); a try with no answer is aborted and counts as failed, like a 502, 503 or network error. Three retries, 1, 2 and 4 s apart (was two, 0.6 and 1.5 s). After the last try a 502 or 503 is returned as before; no answer throws `ReadUnansweredError` ("GitHub isn't answering. Try again in a moment."). A caller's own abort ends the read without a retry. Non-GET requests (saves) are passed through once, with no timeout.
+- New `src/github-reads.ts` (`createGitHubReads`, `ApiError`): #status, the notice bar, `errorMessage`, `api`, `apiResponse` and `postApi`, moved out of `src/main.ts` (5345 → 5277 lines; ceiling 5280). For `ReadUnansweredError`, `errorMessage` keeps today's failed-read state (notice, "Your repository could not be opened.", Refresh enabled) and says the message in #status and the toast with **Try again**: it reloads the shown snapshot, or, with none shown, reopens the site from the address. `announce` in main.ts now shows its toast through `showToast(text, action)`. Code map: new row and shifted main.ts ranges.
+- Settle matrix, per try of a held read: answers (headers in 8 s): timer cleared, answer used (502/503 retried); fails (network error): timer cleared, retried, after the last try `ReadUnansweredError`; never answers: the timer aborts it and the abort is the failure, timer gone. Waits between tries are single timers that always fire. After the fourth try the page shows the failed-read state and the toast; it never stays loading.
+- Tests: `tests/read-retry.test.ts` on a fake clock (node `mock.timers`): timeout counts as a failure, tries at 0, 9, 19 and 31 s, three retries then the error, answered and failed tries leave no timer, caller abort, non-GET untouched. New `tests/native-save/native-github-silent.spec.ts`: the snapshot held four times past the timeout (Playwright clock), the toast and failed state show, no fifth try, Try again with the route released opens the site.
+

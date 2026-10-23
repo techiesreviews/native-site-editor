@@ -17,7 +17,6 @@ import type { BlockInsertPorts } from "./controllers/block-insert-controller";
 import { createCardsController } from "./controllers/cards-controller";
 import { createPagesState, explorerTabNames, NATIVE_HOME_UNREAD, type ExplorerTab, pageOnBranchHere } from "./controllers/pages-state";
 import type { createPagesController } from "./controllers/pages-controller";
-import { readApiReceipt, type ApiReceipt } from "./boot-api-response";
 import { createPreviewSelectionController } from "./controllers/preview-selection-controller";
 import { createBootController, planRepositoryOpen } from "./controllers/boot-controller";
 import { createHistoryController } from "./controllers/history-controller";
@@ -106,6 +105,7 @@ import { NATIVE_CONFIG_PATH, NATIVE_HOME_PAGE, NATIVE_REDIRECTS_PATH, minimalTex
 import { dataUrlOf, loadNativeAssetRequests } from "./native-assets";
 import { assetType, audioType, blobUrl, CANVAS_AUDIO_MAX_BYTES, isFontType } from "../shared/asset-types";
 import { fetchWithReadRetry } from "./read-retry";
+import { ApiError, createGitHubReads } from "./github-reads";
 import { RepositoryIndex, readFileText, readFileTexts } from "./repository-loading";
 import { CleanSourceCache } from "./clean-source-cache";
 import { iconMarkup, setIcon } from "./icons";
@@ -120,6 +120,7 @@ import { createGuardedEdits, type GuardedEdits, type Reads, type PlanResult, typ
 import { createEditorWorkspace } from "./editor-workspace";
 import { createWorkspaceSession, draftScopeOf, holdsDraftScope, setupKeyOf, type SessionStamp, type WorkspaceScope } from "./workspace-session";
 import type { AnnounceAs } from "./components/toast-rules";
+import type { ToastAction } from "./components/toast";
 import type {
   EditorContext,
   Directory,
@@ -133,11 +134,18 @@ import type {
   TreeEntry,
 } from "../shared/types";
 
-setErrorReporter(errorMessage);
-
 const app = document.querySelector<HTMLDivElement>("#app")!;
 const element = <T extends HTMLElement>(id: string) =>
   document.getElementById(id) as T;
+// #status, the notice bar and the GitHub reads; Try again on a read GitHub
+// never answered reopens the shown snapshot, else the site from the address.
+const { status, settleStatus, clearError, placeNotice, errorMessage, api, apiResponse, postApi } = createGitHubReads({
+  app, element, explorer: () => explorerDropdown, trackRead: (read) => codePanes.trackRead(read), handleChunkLoadFailure,
+  expired: () => renderLogin("expired"),
+  say: (text, action) => { element("status").textContent = text; showToast(text, action); },
+  retry: () => void (appStore.snapshot.value ? loadSnapshot() : loadRepositories()),
+});
+setErrorReporter(errorMessage);
 let repositorySelect: HTMLSelectElement;
 let branchSelect: HTMLSelectElement;
 let refreshButton: HTMLButtonElement;
@@ -3075,85 +3083,6 @@ let repositories: Repository[] = [];
 let info: SessionInfo;
 let fileGeneration = 0;
 
-let lastStatus = "";
-function status(message: string) {
-  const target = document.getElementById("status");
-  if (target) target.textContent = lastStatus = message;
-}
-// A load-progress announcement ("Viewing…", "Up to date…") lands after async
-// work; if the user has acted meanwhile (a field edit, a section move writes
-// the live region directly) their announcement is newer and must stand.
-function settleStatus(message: string) {
-  const target = document.getElementById("status");
-  if (target && target.textContent === lastStatus) status(message);
-}
-function clearError() {
-  element("notice").hidden = true;
-}
-function placeNotice(notice: HTMLElement) {
-  const explorer = document.getElementById("explorer") as HTMLElement | null;
-  if (explorerDropdown?.isOpen() && explorer) explorer.prepend(notice);
-  else if (!app.classList.contains("login-page"))
-    app.insertBefore(notice, document.querySelector(".workspace"));
-}
-function errorMessage(error: unknown) {
-  if (handleChunkLoadFailure(error)) return;
-  if (error instanceof ApiError && error.status === 401) {
-    renderLogin("expired");
-  }
-  const notice = element("notice");
-  placeNotice(notice);
-  notice.replaceChildren(
-    node(
-      "span",
-      "",
-      error instanceof Error
-        ? error.message
-        : "The request failed. Please try again.",
-    ),
-  );
-  if (error instanceof ApiError && error.status === 401)
-    notice.append(link("Reconnect GitHub", "/auth/login", "text-link"));
-  notice.hidden = false;
-  status("The last request did not complete.");
-}
-class ApiError extends Error {
-  constructor(
-    public status: number,
-    message: string,
-  ) {
-    super(message);
-  }
-}
-async function apiResponse<T>(path: string, params?: Record<string, string>): Promise<ApiReceipt<T>> {
-  return codePanes.trackRead(async () => {
-    const response = await fetchWithReadRetry(`/api/${path}${params ? `?${new URLSearchParams(params)}` : ""}`, { credentials: "same-origin", cache: "no-store" });
-    return await readApiReceipt<T>(response, (status, message) => new ApiError(status, message));
-  });
-}
-async function api<T>(path: string, params?: Record<string, string>): Promise<T> {
-  return (await apiResponse<T>(path, params)).value;
-}
-async function postApi<T>(
-  path: string,
-  params: Record<string, string>,
-  body: unknown,
-): Promise<T> {
-  const response = await fetch(`/api/${path}?${new URLSearchParams(params)}`, {
-    method: "POST",
-    credentials: "same-origin",
-    cache: "no-store",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  const data = await response.json();
-  if (!response.ok)
-    throw new ApiError(
-      response.status,
-      data.error || "Could not update GitHub data.",
-    );
-  return data as T;
-}
 // Immutable blobs share the tab's disposable byte budget with pinned baselines.
 function readFile(repo: string, sha: string): Promise<string> {
   return readFileText(api, cleanSources, repo, sha);
@@ -3903,7 +3832,10 @@ let toast: Toast | undefined, toastLoad: Promise<Toast> | undefined;
 function announce(text: string, as?: AnnounceAs) {
   element("status").textContent = text;
   if (as === "quiet") return;
-  const action = as?.undo === undefined ? undefined : undoAction(as.undo);
+  showToast(text, as?.undo === undefined ? undefined : undoAction(as.undo));
+}
+// Shows `text` (already said in #status) as the toast with `action`.
+function showToast(text: string, action?: ToastAction) {
   if (toast) toast.showToast(text, action);
   else void (toastLoad ??= import("./components/toast")).then(loaded => {
     toast = loaded;
