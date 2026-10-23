@@ -2,7 +2,7 @@
 title: "Repository list, account and sign-out leave main.ts"
 type: task (AFK)
 status: open
-assignee:
+assignee: lead-83 (this session)
 builder: sol
 blocked_by: [82-setup-and-login-out-of-main, 26-github-retries-and-toast]
 ---
