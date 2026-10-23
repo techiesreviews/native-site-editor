@@ -6,6 +6,7 @@ import { EMPTY_COMMIT, type Snapshot, type TreeEntry } from "../shared/types";
 import { createAgentTools } from "../src/agent-tools";
 import { createAgentReadTools, type AgentReadPorts } from "../src/agent-tools-read";
 import { HttpError } from "../shared/http-error";
+import { SiteFiles, type SiteFileReader } from "../shared/site-files";
 import { relayObjectName, type RelaySocket } from "../worker/agent-relay";
 import { startCountedWorker, countedSocket } from "./fakes/counted-agent";
 import { commit, editorTab, files, origin, payload, repo, signIn, siteContext } from "./mcp-harness";
@@ -92,13 +93,13 @@ test("list/read apply modified, added, moved and deleted drafts and keep hash/so
   }
 });
 
-test("reads answer with the tab's text now, as the preview shows it, before the shared drafts and GitHub", async () => {
+test("reads answer with the tab's text now, as the preview shows it: the shared drafts' texts never answer", async () => {
   const f = await fixture();
   const old = f.tree.find(entry => entry.path === "index.html")!;
   f.context.drafts.push({ path: "index.html", baseSha: old.sha, deleted: true, updatedAt: 1 },
     { path: "upload.png", baseSha: null, binary: true, size: 8, updatedAt: 1 });
   const now: Record<string, string> = { "about/index.html": "<h1>Typed, unsaved</h1>", "styles/site.css": "body { color: red }",
-    "index.html": "still held", "upload.png": "not text", "styles/tokens.css": "x".repeat(1024 * 1024 + 1) };
+    "styles/tokens.css": files["styles/tokens.css"], "index.html": "still held", "upload.png": "not text", "404.html": "x".repeat(1024 * 1024 + 1) };
   const tools = createAgentReadTools({ ...f.ports, source: path => now[path] });
   const run = async (name: AgentRead["tool"], args: AgentRead["args"] = {}) => {
     const result = await tools.run(name, args);
@@ -109,20 +110,44 @@ test("reads answer with the tab's text now, as the preview shows it, before the 
   assert.deepEqual([typed.content, typed.source, typed.hash], [now["about/index.html"], "draft", await textHash(now["about/index.html"])]);
   const page = await run("get_page", { page: "/about" });
   assert.deepEqual([page.html, page.hash, page.source], [typed.content, typed.hash, "draft"]);
-  // A saved file the tab holds is its text, without asking GitHub; one it does not hold is GitHub's.
+  // A saved file is the tab's text when it holds one: typing not drafted yet is no longer GitHub's.
   const saved = await run("read_file", { path: "styles/site.css" });
-  assert.deepEqual([saved.content, saved.source], [now["styles/site.css"], "github"]);
-  assert.deepEqual(f.counts(), { reads: 0, trees: 0 });
-  // A deletion and a binary draft stay what the drafts say; text past the agents' limit is not taken.
+  assert.deepEqual([saved.content, saved.source, saved.hash], [now["styles/site.css"], "draft", await textHash(now["styles/site.css"])]);
+  assert.equal((await run("read_file", { path: "styles/tokens.css" })).source, "github");
+  // A deletion and a binary draft stay what the drafts say; text past the agents' limit is refused, not swapped for GitHub's.
   const deleted = await tools.run("read_file", { path: "index.html" });
   assert.equal(deleted.ok, false);
   const binary = await tools.run("read_file", { path: "upload.png" });
   assert.ok(!binary.ok && /binary file/.test(binary.message));
+  const large = await tools.run("read_file", { path: "404.html" });
+  assert.ok(!large.ok && /KB in the editor, larger than the 1 MB/.test(large.message), JSON.stringify(large));
   const exported = await run("export_site");
   const byPath = (path: string) => exported.files.find((item: { path: string }) => item.path === path);
   assert.equal(byPath("about/index.html").content, now["about/index.html"]);
   assert.equal(byPath("styles/site.css").content, now["styles/site.css"]);
-  assert.equal(byPath("styles/tokens.css").content, files["styles/tokens.css"]);
+  assert.ok(exported.unreadable.some((item: { path: string }) => item.path === "404.html"));
+  // A draft the tab gives no text for is refused, never answered from the texts it shared earlier.
+  delete now["about/index.html"];
+  const unshared = await tools.run("read_file", { path: "about/index.html" });
+  assert.ok(!unshared.ok && /still sharing/.test(unshared.message), JSON.stringify(unshared));
+});
+
+test("texts take a saved file the tab holds from the tab, and ask GitHub only for the rest", async () => {
+  const context = await siteContext();
+  const tree: TreeEntry[] = ["styles/site.css", "styles/tokens.css"].map((path, index) =>
+    ({ path, sha: String(index).repeat(40), type: "blob", mode: "100644", size: files[path].length }));
+  const prefetched: string[][] = [];
+  const reader: SiteFileReader = {
+    commitTree: async () => tree,
+    file: async (_repo, sha) => files[tree.find(entry => entry.sha === sha)!.path],
+    prefetchTexts: async (_repo, shas) => { prefetched.push(shas); },
+    hasText: () => true,
+  };
+  const now: Record<string, string> = { "styles/site.css": "body { color: red }" };
+  const read = new SiteFiles(reader, repo, context, undefined, path => now[path]);
+  const texts = await read.texts(["styles/site.css", "styles/tokens.css"]);
+  assert.deepEqual(Object.fromEntries(texts), { "styles/site.css": now["styles/site.css"], "styles/tokens.css": files["styles/tokens.css"] });
+  assert.deepEqual(prefetched, [[tree[1].sha]]);
 });
 
 test("get_page keeps aliases, matching outlines and source=false; stale outline never returned", async () => {

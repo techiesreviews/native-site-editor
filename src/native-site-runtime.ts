@@ -115,7 +115,7 @@ export function createNativeSiteRuntime(ports: NativeSiteRuntimePorts) {
   // baseline. A plan passes its `r` as `effective`.
   function nativeSources(site = nativeSite, effective?: (path: string) => string | undefined): Record<string, string> {
     const scope = ports.scope();
-    return site ? nativeSiteSources(site, effective ?? (path => nativeEffectiveSource(path, scope))) : {};
+    return site ? nativeSiteSources(site, effective ?? (path => textNow(path, scope))) : {};
   }
   /** The site's pages, templates and stylesheets as `effective` reads them. */
   function nativeSiteSources(site: NativeSite, effective: (path: string) => string | undefined): Record<string, string> {
@@ -148,11 +148,10 @@ export function createNativeSiteRuntime(ports: NativeSiteRuntimePorts) {
       base: (file) => nativeBaseSources.get(file) ?? (usage ? ports.clean.peek("", ports.textKey(), file) : undefined),
     });
   }
-  const nativeEffectiveSource = (path: string, scope = ports.scope()) => textNow(path, scope);
 
   // The site's sub-folder from its Site address (`/my-site`); none at a domain root.
   function nativePrefix() {
-    return nativeSitePrefix(nativeEffectiveSource(NATIVE_CONFIG_PATH) ?? "");
+    return nativeSitePrefix(textNow(NATIVE_CONFIG_PATH) ?? "");
   }
 
   // Every file the page on show draws from: its page, templates and stylesheets.
@@ -163,7 +162,7 @@ export function createNativeSiteRuntime(ports: NativeSiteRuntimePorts) {
     const page = (route !== undefined && site.routes[route]) || site.routes[nativeDefaultRoute(site)];
     const open = ports.openFile();
     const pages = [page, ...(open ? [open] : [])];
-    return new Set([...nativeShownFiles(site, pages, (path) => nativeEffectiveSource(path, scope), (path) => files.has(path), nativePrefix()).files, ...ports.pageStyles()]);
+    return new Set([...nativeShownFiles(site, pages, (path) => textNow(path, scope), (path) => files.has(path), nativePrefix()).files, ...ports.pageStyles()]);
   }
 
   // Every file of the site as drafted: the branch's not deleted, renamed or
@@ -283,7 +282,7 @@ export function createNativeSiteRuntime(ports: NativeSiteRuntimePorts) {
     },
     state,
     /** The text of `path` now, as the preview reads it (pages, templates, stylesheets, settings). */
-    source: nativeEffectiveSource,
+    source: (path: string, scope = ports.scope()) => textNow(path, scope),
     /** The same text now with usage texts too: media batches, guarded edits and agent reads. */
     textSource: (path: string, scope = ports.scope()) => textNow(path, scope, true),
     files: nativeFiles,

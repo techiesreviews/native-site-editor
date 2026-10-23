@@ -87,7 +87,7 @@ export function createAgentReadTools(ports: AgentReadPorts) {
       stale();
       if (!shared) throw new Error("The editor is unavailable. Open the connected site and branch, then read the site again.");
       const files = new SiteFiles(agentFileReader(source, shared.context, signal), source.repo, shared.context, async hash => shared.texts.get(hash),
-        path => ports.source?.(path));
+        ports.source && (path => ports.source!(path)));
       const result = await executeAgentRead({ operation: "read", tool, args }, shared.context, files);
       stale();
       // Leave space for the relay's correlation/scope envelope, including JSON escaping and UTF-8.

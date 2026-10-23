@@ -47,16 +47,16 @@ export class SiteFiles {
     private text?: (hash: string) => Promise<string | undefined>,
     /**
      * The tab's text of `path` now (the site runtime's, src/native-site-runtime.ts): exactly what
-     * the preview shows, unsaved typing included. It answers first; the shared drafts and GitHub
-     * answer the paths it holds no text for.
+     * the preview shows, unsaved typing included. Given, it alone answers a draft's text, and a
+     * saved file's whenever it holds one; without it (an edit held away from its workspace) the
+     * texts the tab shared answer.
      */
     private now?: (path: string) => string | undefined,
   ) {}
 
-  /** The tab's text now, unless the draft is binary or the text is more than agents can read. */
-  private textNow(path: string, draft: Draft | undefined) {
-    const text = draft?.binary ? undefined : this.now?.(path);
-    return text !== undefined && textBytes(text) <= AGENT_TEXT_LIMIT ? text : undefined;
+  /** The tab's text now, unless the draft is binary. */
+  private heldText(path: string, draft: Draft | undefined) {
+    return draft?.binary ? undefined : this.now?.(path);
   }
 
   private entries() {
@@ -87,16 +87,15 @@ export class SiteFiles {
   async read(path: string): Promise<SiteFile | undefined> {
     const draft = this.draft(path);
     if (draft?.deleted) return undefined;
-    const now = this.textNow(path, draft);
     if (draft) {
-      // Else the text is inline (older tabs), or stored apart by its hash.
-      const content = now ?? draft.content ?? (draft.hash ? await this.text?.(draft.hash) : undefined);
+      // Without the tab's text now, the text it shared: inline (older tabs), or stored apart by its hash.
+      const content = this.now ? readableText(path, this.heldText(path, draft)) : draft.content ?? (draft.hash ? await this.text?.(draft.hash) : undefined);
       if (content === undefined) throw draftProblem(path, draft);
       return {
         path,
         source: "draft",
         content,
-        hash: (now === undefined && draft.hash) || (await textHash(content)),
+        hash: (!this.now && draft.hash) || (await textHash(content)),
         baseSha: draft.baseSha,
       };
     }
@@ -104,8 +103,10 @@ export class SiteFiles {
     if (!entry) return undefined;
     if (entry.type !== "blob")
       throw new HttpError(400, `${path} is a ${entry.type === "tree" ? "folder" : "submodule"}, not a file.`);
-    const content = now ?? (await this.github.file(this.repo, entry.sha));
-    return { path, source: "github", content, hash: await textHash(content), baseSha: entry.sha };
+    const saved = await this.github.file(this.repo, entry.sha);
+    // Typing the tab holds but has not drafted yet is the tab's text, not GitHub's.
+    const content = readableText(path, this.heldText(path, draft)) ?? saved;
+    return { path, source: content === saved ? "github" : "draft", content, hash: await textHash(content), baseSha: entry.sha };
   }
 
   /**
@@ -137,7 +138,7 @@ export class SiteFiles {
     const wanted: string[] = [];
     for (const item of texts) {
       const entry = entries.get(item.path);
-      if (this.draft(item.path) || this.textNow(item.path, undefined) !== undefined || !entry || entry.size === undefined || entry.size > AGENT_TEXT_LIMIT) continue;
+      if (this.draft(item.path) || !entry || entry.size === undefined || entry.size > AGENT_TEXT_LIMIT) continue;
       if (planned + entry.size > budget) break;
       planned += entry.size;
       wanted.push(entry.sha);
@@ -162,7 +163,7 @@ export class SiteFiles {
             continue;
           }
           const entry = entries.get(item.path);
-          if (!draft && entry && this.textNow(item.path, draft) === undefined && !this.github.hasText(this.repo, entry.sha) && ++singles > exportSingleReads) {
+          if (!draft && entry && !this.github.hasText(this.repo, entry.sha) && ++singles > exportSingleReads) {
             out.omitted.push(item.path);
             continue;
           }
@@ -204,7 +205,9 @@ export class SiteFiles {
       const draft = this.draft(path);
       const entry = entries.get(path);
       if (draft ? draft.deleted || draft.binary || (draft.size ?? 0) > AGENT_TEXT_LIMIT : entry?.type !== "blob" || (entry.size ?? 0) > AGENT_TEXT_LIMIT) continue;
-      if (draft || this.textNow(path, draft) !== undefined) out.set(path, (await this.read(path))!.content);
+      const now = this.heldText(path, draft);
+      if (now !== undefined) { if (textBytes(now) <= AGENT_TEXT_LIMIT) out.set(path, now); }
+      else if (draft) out.set(path, (await this.read(path))!.content);
       else saved.push({ path, sha: entry!.sha });
     }
     await this.github.prefetchTexts(this.repo, saved.map(({ sha }) => sha));
@@ -230,6 +233,12 @@ export interface SiteExport {
   unreadable: { path: string; reason: string }[];
   /** Text files past the export's size budget. */
   omitted: string[];
+}
+
+/** The tab's text, refused when it is more than agents can read. */
+function readableText(path: string, text: string | undefined) {
+  if (text === undefined || textBytes(text) <= AGENT_TEXT_LIMIT) return text;
+  throw new HttpError(413, `${path} is ${Math.ceil(textBytes(text) / 1024)} KB in the editor, larger than the ${AGENT_TEXT_LIMIT / 1024 / 1024} MB agents can read or write. Ask the user to save it first.`);
 }
 
 /** Why agents cannot read a draft: binary, too large, or its text not here yet. */

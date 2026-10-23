@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { parse, ts, walk, type TS } from "./support/source-guard.ts";
 
-const CEILING = 3890;
+const CEILING = 3880;
 
 function checkCeiling(count: number, ceiling: number): void {
   assert.ok(count <= ceiling, `src/main.ts has ${count} lines, above the ceiling of ${ceiling}`);
