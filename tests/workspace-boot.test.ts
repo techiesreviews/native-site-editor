@@ -209,6 +209,32 @@ test("a branch list first: the guess still feeds its own snapshot load and seeds
   assert.equal(f.ports.appStore.snapshot.value, SNAPSHOT);
 });
 
+test("another branch picked while a taken guess is held: the superseded load writes nothing; the guess still seeds its proven files (accepted: keyed by SHA)", async () => {
+  const f = fixture();
+  f.boot.startGuess();
+  const choosing = f.boot.chooseRepository({ repoId: 501, branch: "main" });
+  f.pending("branches")[0].answer.resolve(["main", "dev"]);
+  await flush();
+  assert.equal(f.shown.content, "Opening your repository…");
+  f.ports.appStore.branch.value = "dev";
+  const switching = f.boot.loadSnapshot();
+  const dev = f.pending("snapshot");
+  assert.equal(dev.length, 2, "a fresh snapshot for the picked branch");
+  assert.equal(dev[1].params?.branch, "dev");
+  f.pending("snapshot")[0].answer.resolve(receipt(SNAPSHOT));
+  f.pending("files")[0].answer.resolve(receipt<FilesResult>({ files: { [sha(1)]: "<h1>Guess</h1>" } }));
+  await choosing;
+  await flush();
+  // The guess is not abandoned by a branch change (TD 06 limit 2 covers a cleared selection only).
+  assert.deepEqual(f.seeded, [sha(1)]);
+  assert.equal(f.ports.appStore.snapshot.value, undefined, "the superseded load does not install the guess");
+  const devSnapshot = { ...SNAPSHOT, branch: "dev" };
+  dev[1].answer.resolve(devSnapshot);
+  await switching;
+  assert.equal(f.ports.appStore.snapshot.value, devSnapshot);
+  assert.equal(f.ports.appStore.branch.value, "dev");
+});
+
 test("a dropped guess (navigation, sign-out) is not taken: the choice reads afresh", async () => {
   const f = fixture();
   f.boot.startGuess();
