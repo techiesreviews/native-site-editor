@@ -41,7 +41,8 @@ test("larger reductions suggest the count rounded up to a multiple of 10", () =>
 });
 
 // The setup host's members are consts destructured part way down main.ts, not hoisted
-// functions: above that line they may only be used inside a function, which runs later.
+// functions: above that line they may only be used inside a function that runs later, and
+// a hoisted function that reaches one may not be called there.
 function calledOnTheSpot(fn: TS.Node): boolean {
   let callee: TS.Node = fn;
   while (ts.isParenthesizedExpression(callee.parent)) callee = callee.parent;
@@ -50,22 +51,43 @@ function calledOnTheSpot(fn: TS.Node): boolean {
 
 function setupMembersUsedEarly(source: string): string[] {
   const tree = parse(source, "src/main.ts");
-  const declaration = tree.statements.find((statement): statement is TS.VariableStatement => ts.isVariableStatement(statement) &&
-    statement.declarationList.declarations.some((item) => ts.isObjectBindingPattern(item.name) && item.initializer !== undefined && ts.isIdentifier(item.initializer) && item.initializer.text === "setup"));
-  assert.ok(declaration, "main.ts destructures the setup host (const { … } = setup)");
-  const pattern = declaration.declarationList.declarations[0].name as TS.ObjectBindingPattern;
-  const names = new Set(["setup", ...pattern.elements.map((element) => element.name.getText(tree))]);
-  const early: string[] = [];
-  walk(tree, (node) => {
-    if (!ts.isIdentifier(node) || !names.has(node.text) || node.getStart(tree) >= declaration.getStart(tree)) return;
-    // A name being declared, or a property of that name, is not a use.
+  const destructures = (item: TS.VariableDeclaration) => ts.isObjectBindingPattern(item.name) && item.initializer !== undefined && ts.isIdentifier(item.initializer) && item.initializer.text === "setup";
+  const statement = tree.statements.find((at): at is TS.VariableStatement => ts.isVariableStatement(at) && at.declarationList.declarations.some(destructures));
+  const binding = statement?.declarationList.declarations.find(destructures)?.name;
+  assert.ok(statement && binding && ts.isObjectBindingPattern(binding), "main.ts destructures the setup host (const { … } = setup)");
+  const line = (node: TS.Node) => tree.getLineAndCharacterOfPosition(node.getStart(tree)).line + 1;
+  const before = (node: TS.Node) => node.getStart(tree) < statement.getStart(tree);
+  // A name being declared, or a property of that name, is not a use.
+  const declared = (node: TS.Identifier) => {
     const parent = node.parent;
-    if ((ts.isVariableDeclaration(parent) || ts.isPropertyAccessExpression(parent) || ts.isPropertyAssignment(parent) || ts.isMethodDeclaration(parent)) && parent.name === node) return;
-    // A function runs later, unless it is called on the spot: `(() => …)()`.
-    for (let at: TS.Node = node.parent; !ts.isSourceFile(at); at = at.parent) if (ts.isFunctionLike(at) && !calledOnTheSpot(at)) return;
-    early.push(`${node.text} (line ${tree.getLineAndCharacterOfPosition(node.getStart(tree)).line + 1})`);
-  });
-  return early;
+    return (ts.isVariableDeclaration(parent) || ts.isFunctionDeclaration(parent) || ts.isPropertyAccessExpression(parent) || ts.isPropertyAssignment(parent) || ts.isMethodDeclaration(parent)) && parent.name === node;
+  };
+  // The function a use waits in: a function runs later, unless it is called on the spot (`(() => …)()`).
+  const waitsIn = (node: TS.Node) => {
+    for (let at: TS.Node = node.parent; !ts.isSourceFile(at); at = at.parent) if (ts.isFunctionLike(at) && !calledOnTheSpot(at)) return at;
+    return undefined;
+  };
+  // Each member, and each hoisted function that reaches one when called, by the member it reaches.
+  const reaches = new Map<string, string>([["setup", "setup"], ...binding.elements.map((element) => [element.name.getText(tree), element.name.getText(tree)] as [string, string])]);
+  const early = new Map<string, string>();
+  for (let grew = true; grew;) {
+    grew = false;
+    walk(tree, (node) => {
+      if (!ts.isIdentifier(node) || declared(node)) return;
+      const member = reaches.get(node.text);
+      if (member === undefined) return;
+      const fn = waitsIn(node);
+      if (fn) {
+        if (ts.isFunctionDeclaration(fn) && fn.name && !reaches.has(fn.name.text)) { reaches.set(fn.name.text, member); grew = true; }
+        return;
+      }
+      // A member (a const) may not be read at all; a hoisted function only not called.
+      const called = ts.isCallExpression(node.parent) && node.parent.expression === node;
+      if (before(node) && (node.text === member || called))
+        early.set(`${node.text}:${line(node)}`, `${member}${node.text === member ? "" : ` via ${node.text}()`} (line ${line(node)})`);
+    });
+  }
+  return [...early.values()];
 }
 
 test("setup host members are used before their destructuring only inside functions", () => {
@@ -73,13 +95,15 @@ test("setup host members are used before their destructuring only inside functio
   assert.deepEqual(setupMembersUsedEarly(source), []);
 });
 
-test("a setup host member passed by value or called on the spot above its destructuring is named", () => {
+test("a setup host member passed by value, called on the spot or reached through an early call above its destructuring is named", () => {
   const source = [
     "const early = { show: showGetStarted, later: () => renderLogin() };",
     "(() => startSitePanel())();",
     "(function () { takeStartingPoint(); })();",
+    "function early() { inner(); } function inner() { writeStartingPoint(); } early();",
+    "const later = { open: early };",
     "const setup = createSetupHost({});",
-    "const { renderLogin, showGetStarted, startSitePanel, takeStartingPoint } = setup;",
+    "const answer = 1, { renderLogin, showGetStarted, startSitePanel, takeStartingPoint, writeStartingPoint } = setup;",
   ].join("\n");
-  assert.deepEqual(setupMembersUsedEarly(source), ["showGetStarted (line 1)", "startSitePanel (line 2)", "takeStartingPoint (line 3)"]);
+  assert.deepEqual(setupMembersUsedEarly(source), ["showGetStarted (line 1)", "startSitePanel (line 2)", "takeStartingPoint (line 3)", "writeStartingPoint via early() (line 4)"]);
 });
