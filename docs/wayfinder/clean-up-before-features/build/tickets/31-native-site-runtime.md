@@ -64,3 +64,13 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Evidence: `RESULT: ok unit 27/27 (3 files)` (`kit unit --affected`); `npm test` 5278 passed, 0 failed; `npm run check` and `npm run lint` clean; `RESULT: ok specs 4/4 passed` (`kit specs --affected`); `RESULT: ok size boot 349 KB (+1 KB)`, budget 355 KB.
 
 - 2026-10-23, lead: the remaining `native*` screen-bookkeeping variables in `src/main.ts` move to [slice 85](85-main-ts-wiring-only.md); this slice lands with the site runtime moved.
+
+### Follow-ups
+
+- Defects (P2): 2ed971b1:docs/wayfinder/clean-up-before-features/build/tickets/31-native-site-runtime.md:51 — P2: The ticket's "Decided behaviour" asks for a case of the stale-
+- Defects (P3): 2ed971b1:docs/wayfinder/clean-up-before-features/build/tickets/31-native-site-runtime.md:52,61 — P3: Decide and Done still say "`nativeTextIndexGate` … moves in
+- Defects (P2): 32b284db:tests/native-save/native-boot-requests.spec.ts:201 — P2: CODING_STANDARDS "Racing and speculative reads": "Each matrix row has a browser spec that forc
+- Defects (P3): 32b284db:docs/agents/code-map.md:10 — P3: The code map lists "declared entry symbols" for each file. This row lists `nativeEffectiveSource` and `nativeFiles` as
+- Validation gaps (gap): `reset()` now clears all state before `closed()` runs. Before, `pagesController.updateTabs()`, `disposeGallery()` and `closePicker()` ran while `engaged`, `base
+- Validation gaps (gap): `activateNativeSite` now clears `shownRequests` and the asset caches before `noteNativeUnreadable(undefined)` instead of after. No test covers a load starting w
+
