@@ -1,8 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { effectiveText, isNewDraft, newDraftPaths, newDrafts, type OverlayDraft } from "../shared/site-overlay.ts";
+import { effectiveText, isNewDraft, newDraftPaths, type OverlayDraft } from "../shared/site-overlay.ts";
 import { isImagePath } from "../src/native-structure.ts";
 import { nativePageRoute } from "../shared/native-routes.ts";
+import { SiteFiles, type SiteFileReader } from "../shared/site-files.ts";
+import type { EditorContext, Repository } from "../shared/types.ts";
 
 // One site's drafts, every kind the callers tell apart.
 const SHA = "a".repeat(40);
@@ -16,11 +18,12 @@ const drafts: OverlayDraft[] = [
   { path: "media/logo.svg", baseSha: null, movedFrom: "logo.svg", opaque: true },
   { path: "media/hero.png", baseSha: null },
   { path: "gone.html", baseSha: null, deleted: true },
+  { path: "media/dropped.webp", baseSha: null, deleted: true },
 ];
 const all = ["about/index.html", "styles/card.css", "news/index.html", "media/photo.jpg", "media/logo.svg", "media/hero.png"];
 const notMoved = ["about/index.html", "styles/card.css", "media/photo.jpg", "media/hero.png"];
 
-test("main.ts nativeImagePaths: new images, uploads and moved ones included", () => {
+test("main.ts nativeImagePaths: new images, uploads and moved ones included; deleted ones not", () => {
   assert.deepEqual(newDraftPaths(drafts, { kind: isImagePath }), ["media/photo.jpg", "media/logo.svg", "media/hero.png"]);
 });
 
@@ -69,11 +72,27 @@ test("agent-site structuralOutcome create_page: the first new, unmoved page", ()
   assert.equal([...after].find(([file, record]) => isNewDraft(record, { moved: false }) && nativePageRoute(file))?.[0], "about/index.html");
 });
 
-test("site-files paths: new files marked A, moved ones R", () => {
-  const marks = newDrafts(drafts).map((draft) => [draft.path, draft.movedFrom ? "R" : "A"]);
-  assert.deepEqual(marks, [
-    ["about/index.html", "A"], ["styles/card.css", "A"], ["news/index.html", "R"],
-    ["media/photo.jpg", "A"], ["media/logo.svg", "R"], ["media/hero.png", "A"],
+test("site-files paths: new files marked A, moved ones R, a deleted new one left out", async () => {
+  const reader: SiteFileReader = {
+    commitTree: async () => [{ path: "index.html", mode: "100644", type: "blob", sha: SHA }],
+    file: async () => "",
+    prefetchTexts: async () => {},
+    hasText: () => false,
+  };
+  // eslint-disable-next-line no-restricted-syntax -- paths() reads only the context's commit and drafts
+  const context = {
+    commit: "b".repeat(40),
+    drafts: [
+      { path: "about/index.html", baseSha: null, updatedAt: 1 },
+      { path: "news/index.html", baseSha: null, updatedAt: 1, movedFrom: "blog/index.html" },
+      { path: "gone.html", baseSha: null, updatedAt: 1, deleted: true },
+    ],
+  } as unknown as EditorContext;
+  const files = new SiteFiles(reader, { full_name: "o/r" } as Repository, context);
+  assert.deepEqual(await files.paths(), [
+    { path: "about/index.html", draft: "A" },
+    { path: "index.html" },
+    { path: "news/index.html", draft: "R" },
   ]);
 });
 

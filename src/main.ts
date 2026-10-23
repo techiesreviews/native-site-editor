@@ -84,7 +84,7 @@ import type { CssWorkspace } from "./page-builder/css-intelligence";
 import { expandStyleImports, resolveImportPath, rewriteCssUrls } from "../shared/css-imports";
 import { readStyleFiles } from "./native-style-files";
 import { nativePageRoute } from "../shared/native-routes";
-import { effectiveText, newDraftPaths as draftedPaths } from "../shared/site-overlay";
+import { effectiveText, isNewDraft, newDraftPaths } from "../shared/site-overlay";
 
 
 
@@ -1878,7 +1878,7 @@ function nativeImagePaths() {
   const gone = new Set(drafts.filter((draft) => draft.deleted).map((draft) => draft.path));
   return [...new Set([
     ...(appStore.snapshot.value?.tree ?? []).filter((entry) => entry.type === "blob" && isImagePath(entry.path)).map((entry) => entry.path),
-    ...draftedPaths(drafts, { kind: isImagePath }),
+    ...newDraftPaths(drafts, { kind: isImagePath }),
   ])].filter((path) => !gone.has(path)).sort();
 }
 
@@ -2204,7 +2204,7 @@ const isNativeTextFile = (path: string) => /\.(?:html|css)$/i.test(path) && !pat
 // components are found from these.
 function nativeFiles(scope = draftScope(), base = nativeBaseFiles): string[] {
   const drafts = scope ? draftStore().list(scope) : [];
-  const drafted = draftedPaths(drafts);
+  const drafted = newDraftPaths(drafts);
   const gone = new Set(drafts.filter((draft) => draft.deleted).map((draft) => draft.path));
   return [...new Set([...base.filter((path) => !gone.has(path)), ...drafted])];
 }
@@ -2226,7 +2226,7 @@ async function activateNativeSite(repo: Repository, result: Snapshot, at: Sessio
   // a native error rather than silently hiding the preview.
   // A home page written as a draft (Start your site) counts: the site is native before its first save.
   const draftedHome = scope ? draftStore().get(scope, NATIVE_HOME_PAGE) : undefined;
-  if (!result.entries.some((entry) => entry.path === NATIVE_HOME_PAGE && entry.type === "blob") && !(draftedHome && draftedHome.baseSha === null && !draftedHome.deleted)) return false;
+  if (!result.entries.some((entry) => entry.path === NATIVE_HOME_PAGE && entry.type === "blob") && !isNewDraft(draftedHome)) return false;
   nativeEngaged = true;
   // Load the preview runtime, parked, alongside the file listing and page reads.
   nativePreview?.preload();
@@ -2743,8 +2743,8 @@ function showDirectory(directory: Directory, path = "") {
 }
 
 // Paths of the new files (drafts with no base blob) in the current scope.
-function newDraftPaths(scope = draftScope()) {
-  return scope ? draftedPaths(draftStore().list(scope)) : [];
+function scopeNewDraftPaths(scope = draftScope()) {
+  return scope ? newDraftPaths(draftStore().list(scope)) : [];
 }
 
 // The drafts as the tree shows them: each path's change (A, M, R, D), the
@@ -2760,7 +2760,7 @@ function treeState(scope = draftScope()): TreeState {
   return {
     changes: new Map(changes.map((change) => [change.path, change])),
     deleted: new Map(drafts.filter((draft) => draft.deleted).map((draft) => [draft.path, draft])),
-    drafted: draftedPaths(drafts),
+    drafted: newDraftPaths(drafts),
   };
 }
 let filesTree: ReturnType<typeof createFilesTreeController> | undefined;
@@ -3063,7 +3063,7 @@ interface Creation {
 function planCreation({ kind, folder, name }: CreateRequest): Checked<Creation> {
   const scope = draftScope();
   if (!scope || !appStore.snapshot.value) return { ok: false, error: "Open a repository first." };
-  const drafted = newDraftPaths(scope);
+  const drafted = scopeNewDraftPaths(scope);
   const inFolder = (path: string, folder: string) => path.startsWith(`${folder}/`);
   // A folder is there when the branch has it or a file is (drafted) in it.
   const folderExists = (folder: string) =>
@@ -3371,7 +3371,7 @@ function resyncNativeSite(): boolean {
   const scope = draftScope();
   if (!scope || !appStore.snapshot.value) return false;
   const home = draftStore().get(scope, NATIVE_HOME_PAGE);
-  const drafted = Boolean(home && home.baseSha === null && !home.deleted);
+  const drafted = isNewDraft(home);
   const committed = appStore.snapshot.value.entries.some((entry) => entry.path === NATIVE_HOME_PAGE && entry.type === "blob");
   const wanted = committed || drafted;
   if (wanted === nativeEngaged) return false;
@@ -3411,7 +3411,7 @@ async function openAfter(path: string | undefined, keepExplorer?: boolean, quiet
   const scope = draftScope();
   const draft = path && scope ? draftStore().get(scope, path) : undefined;
   const keep = { keepExplorer: keepExplorer ?? false, quietStatus };
-  if (draft && draft.baseSha === null && !draft.deleted) await openNewDraft(draft, { keepExplorer: keepExplorer ?? true });
+  if (draft && isNewDraft(draft)) await openNewDraft(draft, { keepExplorer: keepExplorer ?? true });
   else if (path && !draft?.deleted) await restoreFile(path, at, keep);
   else if (nativeSite?.routes["/"]) await restoreFile(nativeSite.routes["/"], at, keep);
   else if (appStore.snapshot.value) showDirectory(appStore.snapshot.value);
@@ -3649,7 +3649,7 @@ function makeAgentSiteActions(edits: GuardedEdits = guardedEdits, atomic = false
       const hasHome = () => {
         const home = store.get(scope, NATIVE_HOME_PAGE);
         return snap.entries.some(entry => entry.path === NATIVE_HOME_PAGE && entry.type === "blob") ||
-          Boolean(home && home.baseSha === null && !home.deleted);
+          isNewDraft(home);
       };
       if (hasHome()) return "Open a native site first.";
       const graph = JSON.stringify(snap.tree ?? snap.entries);
