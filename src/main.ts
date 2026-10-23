@@ -1967,13 +1967,11 @@ async function applyMediaBatch(scope: DraftScope, stamp: Stamp, batch: MediaWork
   }, scope, stamp, batch, pin, opened);
 }
 
-
 // `away`: another workspace is opening, so a picker's Use under way still lands in its own (ticket 27); closing the workspace cancels it.
 let deactivatingAway = false;
 function deactivateNative(away = false) {
   deactivatingAway = away;
   try { runtime.reset(); } finally { deactivatingAway = false; }
-}
 }
 
 async function loadNativeComponentStyles(tags: string[]) {
