@@ -426,7 +426,7 @@ test("a version that cannot be read says why, unless a newer choice or the end o
   assert.deepEqual(f.said, ["Not found"]);
   assert.equal(f.versions.view, undefined);
   const moves = [
-    (g: ReturnType<typeof fixture>, panel: HistoryOptions) => panel.onView({ ...OLD, sha: "b".repeat(40) }, "head", false),
+    (_g: ReturnType<typeof fixture>, panel: HistoryOptions) => panel.onView({ ...OLD, sha: "b".repeat(40) }, "head", false),
     (g: ReturnType<typeof fixture>) => g.versions.end(),
   ];
   for (const move of moves) {
