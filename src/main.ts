@@ -34,6 +34,7 @@ import {
   retainWorkspaceLink,
   resumeWorkspaceLink,
   rememberWorkspace,
+  type WorkspaceLocation,
 } from "./workspace-state";
 import { createSetupEntryController } from "./controllers/setup-entry-controller";
 import { createAgentController } from "./controllers/agent-controller";
@@ -137,13 +138,11 @@ import type {
 const app = document.querySelector<HTMLDivElement>("#app")!;
 const element = <T extends HTMLElement>(id: string) =>
   document.getElementById(id) as T;
-// #status, the notice bar and the GitHub reads; Try again on a read GitHub
-// never answered reopens the shown snapshot, else the site from the address.
+// #status, the notice bar and the GitHub reads.
 const { status, settleStatus, clearError, placeNotice, errorMessage, api, apiResponse, postApi } = createGitHubReads({
   app, element, explorer: () => explorerDropdown, trackRead: (read) => codePanes.trackRead(read), handleChunkLoadFailure,
   expired: () => renderLogin("expired"),
   say: (text, action) => { element("status").textContent = text; showToast(text, action); },
-  retry: () => void (appStore.snapshot.value ? loadSnapshot() : loadRepositories()),
 });
 setErrorReporter(errorMessage);
 let repositorySelect: HTMLSelectElement;
@@ -4774,12 +4773,29 @@ const workspaceBoot = createWorkspaceBoot({
   source: () => location.origin + location.pathname,
   sessionTag: () => boot.sessionTag(),
   draftsReady: () => boot.draftsReady(),
-  nextLoad, api, apiResponse, readFile, storage, element, node, options, status, settleStatus, clearError, errorMessage,
+  nextLoad, api, apiResponse, readFile, storage, element, node, options, status, settleStatus, clearError,
+  errorMessage: (error) => errorMessage(error, openRetry),
   draftScope, entryAt, setCurrentPage, openNewDraft, openEntry, mountSource, deactivateNative, activateNativeSite, afterNativePaint,
   updateAgentContext, updatePreview, showDirectory, takeStartingPoint, writeStartingPoint, readPartialStart, offerFinishStarter,
   removeFinishStarter: () => removeFinishStarter(),
 });
-const { restoreFile, loadSnapshot, chooseRepository } = workspaceBoot;
+const { restoreFile } = workspaceBoot;
+// The open under way (a repository chosen, a snapshot loaded or refreshed): a
+// read in it GitHub never answered offers Try again, which repeats that open
+// with fresh reads. Reads outside an open show the plain notice.
+let openRetry: (() => void) | undefined;
+async function asOpen(open: () => Promise<void>, retry: () => void) {
+  openRetry = retry;
+  try { await open(); } finally { if (openRetry === retry) openRetry = undefined; }
+}
+function loadSnapshot(resumePath?: string, prefetched?: Promise<Snapshot>) {
+  // The file it reopens, read before the load clears the snapshot.
+  const reopen = resumePath ?? (appStore.snapshot.value?.branch === appStore.branch.value ? appStore.openFile.value : undefined);
+  return asOpen(() => workspaceBoot.loadSnapshot(resumePath, prefetched), () => void loadSnapshot(reopen));
+}
+function chooseRepository(resume?: WorkspaceLocation) {
+  return asOpen(() => workspaceBoot.chooseRepository(resume), () => void chooseRepository(resume));
+}
 
 // ---- Setup wizard (src/setup-wizard.ts, components/setup-wizard.ts) ----
 // A full-screen guide over the page for a signed-in account with no

@@ -24,7 +24,8 @@ export interface ReadRetryOptions {
  * request (saves), are returned as they are and never timed out.
  *
  * Settles every try: an answer clears its timer; a failure clears it; a try
- * that never answers is aborted by it. A caller's own abort ends the read.
+ * that never answers is aborted by it. A caller's own abort ends the read,
+ * during a try or a wait between tries.
  */
 export async function fetchWithReadRetry(
   url: string,
@@ -46,6 +47,16 @@ export async function fetchWithReadRetry(
     } finally {
       clearTimeout(timer);
     }
-    await new Promise((resolve) => setTimeout(resolve, delays[attempt]));
+    await pause(delays[attempt], init.signal);
   }
+}
+
+// Waits `ms`, or rejects as soon as `signal` aborts; its timer and listener go either way.
+function pause(ms: number, signal?: AbortSignal | null) {
+  signal?.throwIfAborted();
+  return new Promise<void>((resolve, reject) => {
+    const stop = () => { clearTimeout(timer); reject(signal!.reason); };
+    const timer = setTimeout(() => { signal?.removeEventListener("abort", stop); resolve(); }, ms);
+    signal?.addEventListener("abort", stop, { once: true });
+  });
 }
