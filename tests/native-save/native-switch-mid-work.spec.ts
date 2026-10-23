@@ -111,6 +111,9 @@ test("a save that finished on main while feature was shown is counted in the men
   await expect(page.locator("#repository-actions .repository-menu__finished")).toHaveCount(2);
   await expect(page.locator("#repository-actions .repository-menu__finished:is(button, a, [tabindex])")).toHaveCount(0);
   await main.click();
+  // Handed over as a branch chosen there is: the menu and its Branches close.
+  await expect(page.locator("#repository-actions")).toBeHidden();
+  await expect(branches).toBeHidden();
 
   await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
   const panel = page.locator("#publish-files");

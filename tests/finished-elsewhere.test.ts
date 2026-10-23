@@ -4,7 +4,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createFinishedElsewhere, noteCount, noteWords, openLink, tileWords, type FinishedNote } from "../src/finished-elsewhere";
 import type { Repository } from "../shared/types";
-import { githubScope } from "../src/workspace-session";
+import { githubScope, holdsDraftScope } from "../src/workspace-session";
+import { forEachAwait } from "./support/await-race";
 import type { DraftScope } from "../src/drafts";
 import type { SavedCommit } from "../src/components/site-actions";
 
@@ -15,13 +16,20 @@ const commit: SavedCommit = { repo: "lex/site", commit: "abc1234", url: "https:/
 
 function notes() {
   const drawn: (readonly FinishedNote[])[] = [], opened: DraftScope[] = [], followed: [SavedCommit, DraftScope][] = [];
+  // The workspace open now, if any.
+  const open: { scope?: DraftScope } = {};
   const list = createFinishedElsewhere({
     draw: (notes) => drawn.push(notes),
     open: (scope) => opened.push(scope),
     follow: (commit, scope) => followed.push([commit, scope]),
+    showing: (scope) => !!open.scope && holdsDraftScope(githubScope(open.scope), scope),
   });
-  return { list, drawn, opened, followed };
+  return { list, drawn, opened, followed, open };
 }
+
+// A folder's view: no editor, so no Publish caret.
+// eslint-disable-next-line no-restricted-syntax -- only querySelector is read, and it finds nothing.
+const folderView = { querySelector: () => null } as unknown as ParentNode;
 
 // A toolbar with the Publish panel's caret and its folded changes; the panel open when `shown`.
 function toolbar(disabled = false, shown = false) {
@@ -72,10 +80,10 @@ test("a workspace shown again (its editor mounted) takes its note away; a load t
   list.loading(githubScope(main));
   assert.equal(list.notes().length, 2);
   const { host } = toolbar();
-  list.mounted(main, host);
+  list.shown(main, host);
   assert.deepEqual(list.notes().map((note) => note.scope.branch), ["feature"]);
   assert.equal(drawn.length, 3);
-  list.mounted(undefined, host);
+  list.shown(undefined, host);
   assert.equal(list.notes().length, 1);
   assert.equal(drawn.length, 3);
 });
@@ -94,15 +102,15 @@ test("a note clicked opens its workspace, and once its editor mounts the note go
   list.loading(githubScope(feature));
   // Another workspace's editor first: nothing yet.
   const { host, clicks, total } = toolbar();
-  list.mounted(main, host);
+  list.shown(main, host);
   assert.deepEqual(clicks, []);
-  list.mounted(feature, host);
+  list.shown(feature, host);
   assert.deepEqual(list.notes().map((note) => note.scope.repo), ["lex/blog"]);
   assert.deepEqual(followed, [[commit, feature]]);
   assert.deepEqual(clicks, ["more"]);
   assert.equal(total.open, true);
   // Once only.
-  list.mounted(feature, host);
+  list.shown(feature, host);
   assert.deepEqual(clicks, ["more"]);
 });
 
@@ -112,7 +120,7 @@ test("a note clicked and then left for another workspace opens nothing there lat
   list.open(list.notes()[0]);
   list.loading(githubScope(other));
   const { host, clicks } = toolbar();
-  list.mounted(feature, host);
+  list.shown(feature, host);
   assert.deepEqual(clicks, []);
   assert.deepEqual(followed, []);
 });
@@ -122,7 +130,7 @@ test("with nothing to show, the Publish caret stays shut", () => {
   list.add(feature, "agent");
   list.open(list.notes()[0]);
   const { host, clicks, total } = toolbar(true);
-  list.mounted(feature, host);
+  list.shown(feature, host);
   assert.deepEqual(clicks, []);
   assert.equal(total.open, true);
 });
@@ -135,7 +143,7 @@ test("a second delivery of an agent command already noted is no new work", () =>
   assert.deepEqual(list.notes().map((note) => note.done.agent), [2]);
   assert.equal(drawn.length, 2);
   // Still once after its workspace was shown and left again.
-  list.mounted(main, toolbar().host);
+  list.shown(main, toolbar().host);
   list.add(main, "agent", { id: "edit-1" });
   assert.deepEqual(list.notes(), []);
 });
@@ -145,7 +153,7 @@ test("a Publish panel already open is left open", () => {
   list.add(feature, "added");
   list.open(list.notes()[0]);
   const { host, clicks, total } = toolbar(false, true);
-  list.mounted(feature, host);
+  list.shown(feature, host);
   assert.deepEqual(clicks, []);
   assert.equal(total.open, true);
 });
@@ -195,4 +203,71 @@ test("an agent's write is noted only when it changed the draft there", async () 
   await list.agent(main, { id: "d", path: "index.html" }, draft, async () => { drafts.set("index.html", { updatedAt: 3 }); return undefined; })();
   await list.agent(undefined, { id: "e", path: "index.html" }, draft, async () => { drafts.set("index.html", { updatedAt: 4 }); return outcome; })();
   assert.deepEqual(list.notes().map((note) => note.done), [{ saved: 0, added: 0, agent: 1 }]);
+});
+
+test("work that finished on the workspace open now leaves no note", () => {
+  const { list, open } = notes();
+  open.scope = main;
+  list.add({ ...main, account: "Lex" }, "saved");
+  list.add(main, "added", { count: 2 });
+  list.add(feature, "agent");
+  assert.deepEqual(list.notes().map((note) => note.scope.branch), ["feature"]);
+});
+
+test("a note opened onto a folder's view goes there, follows its save once, and opens Publish when an editor mounts", () => {
+  const { list, followed } = notes();
+  list.add(feature, "saved", { commit });
+  list.open(list.notes()[0]);
+  list.loading(githubScope(feature));
+  list.shown(feature, folderView);
+  assert.deepEqual(list.notes(), []);
+  assert.deepEqual(followed, [[commit, feature]]);
+  const { host, clicks } = toolbar();
+  list.shown(feature, host);
+  assert.deepEqual(clicks, ["more"]);
+  assert.deepEqual(followed, [[commit, feature]]);
+});
+
+test("a note opened onto a folder's view is let go by the next load, so a later editor opens nothing", () => {
+  const { list, followed } = notes();
+  list.add(feature, "saved", { commit });
+  list.open(list.notes()[0]);
+  list.shown(feature, folderView);
+  // Feature opened again by hand later (a reload of it).
+  list.loading(githubScope(feature));
+  const { host, clicks } = toolbar();
+  list.shown(feature, host);
+  assert.deepEqual(clicks, []);
+  assert.equal(followed.length, 1);
+});
+
+test("an agent's write run again through the same wrapper compares its draft as each run began", async () => {
+  const { list } = notes();
+  const drafts = new Map<string, { updatedAt: number }>([["index.html", { updatedAt: 1 }]]);
+  let runs = 0;
+  const write = list.agent(main, { id: "a", path: "index.html" }, (_scope, path) => drafts.get(path), async () => {
+    runs++;
+    // First on show: nothing elsewhere, while the user's typing is saved to the draft.
+    if (runs === 1) { drafts.set("index.html", { updatedAt: 2 }); return undefined; }
+    // Then the fallback: a recorded duplicate, the draft as it was.
+    return { message: "Changed" };
+  });
+  await write();
+  await write();
+  assert.deepEqual(list.notes(), []);
+});
+
+test("an agent's write whose workspace is shown while it runs leaves no note", async () => {
+  const points = await forEachAwait(
+    (race) => {
+      const { list, open } = notes();
+      const drafts = new Map<string, { updatedAt: number }>();
+      const run = race.port("run", async () => { drafts.set("index.html", { updatedAt: 1 }); return { message: "Changed" }; });
+      const done = list.agent(main, { id: "a", path: "index.html" }, (_scope, path) => drafts.get(path), run)();
+      return { list, open, done };
+    },
+    ({ open }) => { open.scope = main; },
+    ({ list }) => assert.deepEqual(list.notes(), []),
+  );
+  assert.equal(points, 1);
 });

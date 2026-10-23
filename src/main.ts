@@ -155,7 +155,7 @@ const workspaceSession = createWorkspaceSession();
 function currentLoad() { return workspaceSession.current().load; }
 function nextLoad(scope?: WorkspaceScope) { workspaceSession.next(scope); finishedWork.loading(scope); return workspaceSession.begin(); }
 // Work finished on another project or branch, counted in the repository menu until it is opened (src/finished-elsewhere.ts).
-const finishedWork = createFinishedElsewhere({ draw: (notes) => repositoryMenu?.setNotes(notes), open: (scope) => openLink(scope), follow: (commit, scope) => { if (nativeEngaged) siteActions?.track(commit, () => holdsDraftScope(workspaceSession.current().scope, scope)); } });
+const finishedWork = createFinishedElsewhere({ draw: (notes) => repositoryMenu?.setNotes(notes), open: (scope) => openLink(scope), showing: (scope) => holdsDraftScope(workspaceSession.current().scope, scope), follow: (commit, scope) => { if (nativeEngaged) siteActions?.track(commit, () => holdsDraftScope(workspaceSession.current().scope, scope)); } });
 // A controller's load number as a stamp (until the follow-ups in ticket 22's Done section); once that load moved on, a deny-all stand-in that says the scope changed.
 function stampOf(epoch: number): SessionStamp {
   const stamp = workspaceSession.begin();
@@ -328,7 +328,7 @@ function openCodeEditor(
     draftKey(liveScope, file.path) === draftKey(file.scope, file.path)
     ? { key: draftKey(file.scope, file.path), session: historyScope, proof: historyHost } : undefined;
   nativeMountListener?.(file.path, false);
-  finishedWork.mounted(file.scope, element("editor-toolbar-host"));
+  finishedWork.shown(file.scope, element("editor-toolbar-host"));
   void codePanes.whenDue(defer).catch((error) => {
     if (request !== editorRequest) return;
     content.querySelector(".code-editor__body")?.replaceChildren(
@@ -395,7 +395,7 @@ function mountWorkspace() {
     onReload: () => void refreshRepositoryList(),
     onAccessChanged: () => void refreshRepositoryList(),
     onSwitchAccount: (login) => void switchAccount(login),
-    onSignOut: reported(disconnect), onNote: (note) => finishedWork.open(note),
+    onSignOut: reported(disconnect), onNote: (note) => { finishedWork.open(note); handOver(); },
   });
   element("repository-menu").append(repositoryMenu.root);
   element("site-settings-toggle").addEventListener("click", () => void openNativeSiteSettings());
@@ -2698,6 +2698,7 @@ function setupScope() { return setupKeyOf(shownScope()); }
 function showDirectory(directory: Directory, path = "") {
   fileGeneration++;
   setCurrentPage();
+  finishedWork.shown(draftScope(), element("editor-toolbar-host"));
   if (!path && !nativeEngaged && appStore.repository.value && appStore.snapshot.value) {
     const host = content, at = workspaceSession.begin(), fileEpoch = fileGeneration;
     void startSitePanel().then((panel) => {

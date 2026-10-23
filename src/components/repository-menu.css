@@ -99,8 +99,10 @@
 .repository-menu__finished {
   background: var(--primary);
 }
+/* Over the remove ×'s corner: a tap there still reaches the ×. */
 .repository-menu__item .repository-menu__finished {
   z-index: 2;
+  pointer-events: none;
   inset-block-start: 4px;
   inset-inline-start: 26px;
 }
