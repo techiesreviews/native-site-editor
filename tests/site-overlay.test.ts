@@ -2,12 +2,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { effectiveText, isNewDraft, newDraftPaths, type OverlayDraft } from "../shared/site-overlay.ts";
 import { isImagePath } from "../src/native-structure.ts";
-import { nativePageRoute } from "../shared/native-routes.ts";
 import { SiteFiles, type SiteFileReader } from "../shared/site-files.ts";
 import type { EditorContext, Repository } from "../shared/types.ts";
 
 // One site's drafts, every kind the callers tell apart.
 const SHA = "a".repeat(40);
+const REPO = { id: 1, name: "site", full_name: "o/site", private: false, default_branch: "main", owner: { login: "o", type: "User" } } satisfies Repository;
 const drafts: OverlayDraft[] = [
   { path: "index.html", baseSha: SHA },
   { path: "about/index.html", baseSha: null },
@@ -27,17 +27,9 @@ test("main.ts nativeImagePaths: new images, uploads and moved ones included; del
   assert.deepEqual(newDraftPaths(drafts, { kind: isImagePath }), ["media/photo.jpg", "media/logo.svg", "media/hero.png"]);
 });
 
-test("main.ts nativeFiles: every new file, moved and uploaded ones included", () => {
-  assert.deepEqual(newDraftPaths(drafts), all);
-});
-
-test("main.ts newDraftPaths: every new file in the scope", () => {
+test("main.ts nativeFiles, newDraftPaths and treeState: every new file, moved and uploaded ones included", () => {
   assert.deepEqual(newDraftPaths(drafts), all);
   assert.deepEqual(newDraftPaths([]), []);
-});
-
-test("main.ts treeState: the tree's drafted paths are every new file", () => {
-  assert.deepEqual(newDraftPaths(drafts), all);
 });
 
 test("linked-styles openSecondary: a stylesheet new in the drafts, not an upload or opaque file", () => {
@@ -50,8 +42,9 @@ test("linked-styles openSecondary: a stylesheet new in the drafts, not an upload
   assert.equal(isNewDraft(undefined, { uploads: false }), false);
 });
 
-test("linked-styles openComponentLinkedStyle: the same answer as openSecondary", () => {
-  assert.deepEqual(newDraftPaths(drafts, { uploads: false }), ["about/index.html", "styles/card.css", "news/index.html", "media/hero.png"]);
+test("linked-styles openComponentLinkedStyle: the same answer as openSecondary (its fallbacks: tests/linked-styles-controller.test.ts)", () => {
+  assert.equal(isNewDraft({ path: "components/card.css", baseSha: null }, { uploads: false }), true);
+  assert.equal(isNewDraft({ path: "components/card.css", baseSha: null, upload: { size: 1, type: "text/css" } }, { uploads: false }), false);
 });
 
 test("pages-state renderPagesTree: new pages marked, a moved page is the same page", () => {
@@ -62,14 +55,10 @@ test("agent-site buildAgentContext: new files without moved ones", () => {
   assert.deepEqual(newDraftPaths(drafts, { moved: false }), notMoved);
 });
 
-test("agent-site structuralOutcome create_page: the first new, unmoved page", () => {
-  const after = new Map<string, OverlayDraft | undefined>([
-    ["index.html", undefined],
-    ["news/index.html", drafts[3]],
-    ["styles/card.css", drafts[2]],
-    ["about/index.html", drafts[1]],
-  ]);
-  assert.equal([...after].find(([file, record]) => isNewDraft(record, { moved: false }) && nativePageRoute(file))?.[0], "about/index.html");
+test("agent-site structuralOutcome create_page: a new page, not a moved one (the real command: tests/agent-structural-commit.test.ts)", () => {
+  assert.equal(isNewDraft(drafts[1], { moved: false }), true);
+  assert.equal(isNewDraft(drafts[3], { moved: false }), false);
+  assert.equal(isNewDraft(undefined, { moved: false }), false);
 });
 
 test("site-files paths: new files marked A, moved ones R, a deleted new one left out", async () => {
@@ -88,7 +77,7 @@ test("site-files paths: new files marked A, moved ones R, a deleted new one left
       { path: "gone.html", baseSha: null, updatedAt: 1, deleted: true },
     ],
   } as unknown as EditorContext;
-  const files = new SiteFiles(reader, { full_name: "o/r" } as Repository, context);
+  const files = new SiteFiles(reader, REPO, context);
   assert.deepEqual(await files.paths(), [
     { path: "about/index.html", draft: "A" },
     { path: "index.html" },

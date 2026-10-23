@@ -7,6 +7,7 @@
 import type { OwnerInstallation, Repository, SessionInfo } from "../shared/types";
 import { NATIVE_CONFIG_PATH, NATIVE_HOME_PAGE, nativeSiteSettings } from "../shared/native-project";
 import { siteNameFromRepository, type StartingPoint } from "../shared/starting-point";
+import { isNewDraft } from "../shared/site-overlay";
 import type { AppStore } from "./app-store";
 import type { createGetStarted } from "./components/get-started";
 import type { createStartSite } from "./components/start-site";
@@ -199,7 +200,7 @@ export function createSetupHost(ports: SetupHostPorts) {
     return {
       homePage: drafted || (ports.nativeEngaged && !home?.deleted),
       committed: !ports.appStore.snapshot.value.empty,
-      homeUnsaved: drafted && home!.baseSha === null,
+      homeUnsaved: isNewDraft(home),
       siteName: settings.name,
       defaultName: siteNameFromRepository(repo.name),
     };
