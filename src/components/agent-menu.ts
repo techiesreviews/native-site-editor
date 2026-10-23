@@ -65,6 +65,8 @@ export interface AgentApproval {
 }
 
 export const AGENT_CONNECTED_KEY = "native-site-editor:agent-connected";
+/** An unused token younger than this may be another tab's fresh prompt: kept. */
+const FRESH_TOKEN_MS = 2 * 60_000;
 /** How long the button's own label confirms a copy. */
 const CONFIRM_MS = 2000;
 
@@ -335,9 +337,9 @@ export function createAgentMenu(options: {
     return repo ? hub.grants.filter((grant) => sameBranch(grant, branchOf(repo))) : [];
   };
   const usedGrants = () => liveGrants().filter((grant) => grant.via === "oauth" || grant.usedAt);
-  /** The token this tab made, while no agent has used it yet. */
   /** A token no agent has used yet: this tab's, or one another tab of this browser just copied. */
-  const waiting = () => liveGrants().some((grant) => grant.via === "token" && !grant.usedAt);
+  const unused = (grant: HubGrant) => grant.via === "token" && !grant.usedAt;
+  const waiting = () => liveGrants().some(unused);
   /** The tab's connection state, on the dot (`data-state`). */
   function state() {
     if (!remote) return options.repository() ? "off" : "closed";
@@ -529,7 +531,8 @@ export function createAgentMenu(options: {
     // Wait for MCP copies this tab's prompt again; a tab without it (another tab copied it, or
     // a reload) copies a prompt of its own, leaving the other token alone.
     else if (offered === "wait") await (token ? copyPrompt() : start());
-    else if (current === "idle") await start();
+    // Idle, or another tab receives with nothing connected: a new prompt from here.
+    else if (current === "idle" || elsewhere(current)) await start();
     else {
       // Off, or a problem (paused, lost, another site shown): turn on again for the open site.
       turnOff();
@@ -601,9 +604,19 @@ export function createAgentMenu(options: {
     changing = true;
     paint();
     try {
-      // Unused tokens stay: another tab of this browser may have just copied one. Disconnect MCP
-      // revokes them all; unused ones end with the sign-in at the latest.
-      const result = await api("connect", { repo: repo.fullName, repoId: repo.id, branch: repo.branch });
+      // Unused tokens older than a moment are revoked, so they never fill the site's five
+      // connections; a newer one may be the prompt another tab of this browser just copied.
+      await dropUnused(at, Date.now() - FRESH_TOKEN_MS);
+      if (!live(at)) return;
+      const made = () => api("connect", { repo: repo.fullName, repoId: repo.id, branch: repo.branch });
+      let result;
+      try { result = await made(); } catch (error) {
+        // Refused (the five are full): every unused token goes, then one more try.
+        if (!liveGrants().some(unused)) throw error;
+        await dropUnused(at, Infinity);
+        if (!live(at)) return;
+        result = await made();
+      }
       if (disposed) return;
       // The tab moved to another repository or branch meanwhile: that token is pinned to the old one.
       const now = options.repository();
@@ -614,6 +627,7 @@ export function createAgentMenu(options: {
       token = result.token;
       changing = false;
       await readConnections();
+      if (!live(at)) return;
       await copyPrompt();
     } catch {
       changing = false;
@@ -622,6 +636,13 @@ export function createAgentMenu(options: {
     } finally {
       changing = false;
       paint();
+    }
+  }
+  /** Revokes the site's unused tokens made before `before`. */
+  async function dropUnused(at: number, before: number) {
+    for (const grant of liveGrants()) {
+      if (unused(grant) && grant.createdAt < before) await api("revoke", { id: grant.id }).catch(() => undefined);
+      if (!live(at)) return;
     }
   }
   async function revoke() {
