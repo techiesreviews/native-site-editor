@@ -1,9 +1,9 @@
 // Work that finished on a project and branch other than the one shown (ticket 23) leaves a
 // note there (ticket 24). The repository menu counts the notes on that project's tile, on its
 // branch's row and on the menu's own tile, and names what happened ("Saved", "3 files added",
-// "Agent changes waiting"). A note goes when its workspace opens again: clicked, it opens with
-// its changes (the Publish panel, a save's Change status on its button). Nothing of it is
-// stored, so a reload or a closed tab forgets it. Work on another page of the shown site needs
+// "Agent changes waiting"). A note goes once its workspace is on show again (its editor mounted):
+// clicked, it opens with its changes (the Publish panel, a save's Change status on its button).
+// Nothing of it is stored, so a reload or a closed tab forgets it. Work on another page of the shown site needs
 // no note: that page shows its change when opened, and Pages marks it unsaved.
 import type { DraftScope } from "./drafts";
 import type { SavedCommit } from "./components/site-actions";
@@ -35,9 +35,10 @@ export function noteWords(note: FinishedNote) {
 }
 
 /**
- * What the repository menu's tile says after its name: the questions agents ask, then the finished work by
- * where it is (the branch, with the repository when it is not `open`, as the Files drop's message
- * says it); and whether its corner counts the finished work, which a waiting question takes.
+ * What the repository menu's tile says after its name: the questions agents ask, then the
+ * finished work by where it is (the branch, with the repository when it is not `open`, as the
+ * Files drop's message says it); and whether its corner counts the finished work, which a
+ * waiting question takes.
  */
 export function tileWords(questions: number, notes: readonly FinishedNote[], open: { repoId?: number; repo?: string }, repositories: readonly Repository[]) {
   const asking = questions < 1 ? "" : ` — ${questions === 1 ? "an agent asks you a question" : `agents ask you ${questions} questions`}`;
@@ -45,6 +46,16 @@ export function tileWords(questions: number, notes: readonly FinishedNote[], ope
   const where = (note: FinishedNote) => (sameRepository(note.scope, open) ? note.scope.branch : `${named(note)} (${note.scope.branch})`);
   const done = notes.length ? ` — ${notes.map((note) => `${noteWords(note)} on ${where(note)}`).join("; ")}` : "";
   return { words: `${asking}${done}`, counted: notes.length > 0 && questions < 1 };
+}
+
+/**
+ * Opens `scope` by its workspace link. A link already in the address bar (a folder's view, a load
+ * not remembered yet) changes nothing there, so its hashchange is sent as if it had.
+ */
+export function openLink(scope: DraftScope, win: { location: { hash: string }; dispatchEvent(event: Event): boolean } = window) {
+  const link = new URLSearchParams({ repo: String(scope.repoId), branch: scope.branch }).toString();
+  if (win.location.hash.slice(1) === link) win.dispatchEvent(new Event("hashchange"));
+  else win.location.hash = link;
 }
 
 export function createFinishedElsewhere(ports: {
@@ -65,32 +76,45 @@ export function createFinishedElsewhere(ports: {
     notes = next;
     ports.draw(notes);
   }
+  /** `count` pieces of work of `kind` (1 by default) finished on `scope`, not shown; work with an `id` counts once. */
+  function add(scope: DraftScope, kind: FinishedKind, { count = 1, commit, id }: { count?: number; commit?: SavedCommit; id?: string } = {}) {
+    if (count < 1 || id !== undefined && noted.has(id)) return;
+    if (id !== undefined) noted.add(id);
+    const was = at(githubScope(scope));
+    const done = { saved: 0, added: 0, agent: 0, ...was?.done };
+    done[kind] += count;
+    const note: FinishedNote = { scope: was?.scope ?? { ...scope }, done, commit: commit ?? was?.commit };
+    set([note, ...notes.filter((other) => other !== was)]);
+  }
   return {
     notes: () => notes,
-    /** `count` pieces of work of `kind` (1 by default) finished on `scope`, not shown; work with an `id` counts once. */
-    add(scope: DraftScope, kind: FinishedKind, { count = 1, commit, id }: { count?: number; commit?: SavedCommit; id?: string } = {}) {
-      if (count < 1 || id !== undefined && noted.has(id)) return;
-      if (id !== undefined) noted.add(id);
-      const was = at(githubScope(scope));
-      const done = { saved: 0, added: 0, agent: 0, ...was?.done };
-      done[kind] += count;
-      const note: FinishedNote = { scope: was?.scope ?? { ...scope }, done, commit: commit ?? was?.commit };
-      set([note, ...notes.filter((other) => other !== was)]);
+    add,
+    /**
+     * An agent's write for `scope`, done by `run`: noted when the draft at its path there changed,
+     * as read before and after (`draft`). A second delivery of the command, or text that is the
+     * branch's own, leaves nothing waiting and no note.
+     */
+    agent<T>(scope: DraftScope | undefined, command: { id: string; path: string }, draft: (scope: DraftScope, path: string) => { updatedAt: number } | undefined, run: () => Promise<T>) {
+      const before = scope && draft(scope, command.path)?.updatedAt;
+      return async () => {
+        const done = await run(), left = done && scope && draft(scope, command.path);
+        if (scope && left && left.updatedAt !== before) add(scope, "agent", { id: command.id });
+        return done;
+      };
     },
-    /** A load of `scope` began: its notes go, as it is shown; one clicked for another workspace is let go. */
-    shown(scope: WorkspaceScope | undefined) {
+    /** A load of `scope` began: a note clicked for another workspace is let go (its own stays till shown). */
+    loading(scope: WorkspaceScope | undefined) {
       if (opening && workspaceKeys(scope) && !holdsDraftScope(scope, opening.scope)) opening = undefined;
-      const note = at(scope);
-      if (note) set(notes.filter((other) => other !== note));
     },
-    /** A note clicked: its workspace opens, and its changes once its editor is there (`mounted`). */
+    /** A note clicked: its workspace opens, and once its editor is there (`mounted`) the note goes and its changes show. */
     open(note: FinishedNote) {
       opening = note;
-      set(notes.filter((other) => other !== note));
       ports.open(note.scope);
     },
-    /** An editor mounted on `scope`, its toolbar in `host`: a note opened for it shows its changes. */
+    /** An editor mounted on `scope`, its toolbar in `host`: its note goes, and one opened for it shows its changes. */
     mounted(scope: DraftScope | undefined, host: ParentNode) {
+      const shown = scope && at(githubScope(scope));
+      if (shown) set(notes.filter((other) => other !== shown));
       const note = opening;
       if (!note || !scope || !holdsDraftScope(githubScope(scope), note.scope)) return;
       opening = undefined;

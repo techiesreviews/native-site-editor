@@ -109,7 +109,7 @@ import { addSectionStep } from "./page-builder/component-plans";
 import { createAgentSiteHost } from "./agent-site-host";
 import { createGuardedEdits, type GuardedEdits, type Reads, type PlanResult, type Stamp } from "./guarded-edit";
 import { createEditorWorkspace } from "./editor-workspace";
-import { createFinishedElsewhere } from "./finished-elsewhere";
+import { createFinishedElsewhere, openLink } from "./finished-elsewhere";
 import { createWorkspaceSession, draftScopeOf, holdsDraftScope, sameRepository, setupKeyOf, type SessionStamp, type WorkspaceScope } from "./workspace-session";
 import type { AnnounceAs } from "./components/toast-rules";
 import type { ToastAction } from "./components/toast";
@@ -153,10 +153,9 @@ const appStore = createAppStore(editorModule.sourceStore());
 // What is open and which load of it (src/workspace-session.ts): signing out and each load below start the next.
 const workspaceSession = createWorkspaceSession();
 function currentLoad() { return workspaceSession.current().load; }
-function nextLoad(scope?: WorkspaceScope) { workspaceSession.next(scope); finishedWork.shown(scope); return workspaceSession.begin(); }
+function nextLoad(scope?: WorkspaceScope) { workspaceSession.next(scope); finishedWork.loading(scope); return workspaceSession.begin(); }
 // Work finished on another project or branch, counted in the repository menu until it is opened (src/finished-elsewhere.ts).
-const finishedWork = createFinishedElsewhere({ draw: (notes) => repositoryMenu?.setNotes(notes), open: (to) => { location.hash = new URLSearchParams({ repo: String(to.repoId), branch: to.branch }).toString(); },
-  follow: (commit, scope) => { if (nativeEngaged) siteActions?.track(commit, () => holdsDraftScope(workspaceSession.current().scope, scope)); } });
+const finishedWork = createFinishedElsewhere({ draw: (notes) => repositoryMenu?.setNotes(notes), open: (scope) => openLink(scope), follow: (commit, scope) => { if (nativeEngaged) siteActions?.track(commit, () => holdsDraftScope(workspaceSession.current().scope, scope)); } });
 // A controller's load number as a stamp (until the follow-ups in ticket 22's Done section); once that load moved on, a deny-all stand-in that says the scope changed.
 function stampOf(epoch: number): SessionStamp {
   const stamp = workspaceSession.begin();
@@ -3763,8 +3762,8 @@ async function applyAgentSiteCommand(command: AgentCommand) {
   // Ticket 23: an edit read from a site or branch no longer shown finishes there, on its files. On show the editor writes it, holding the workspace
   // from the moment that is known (its stamp below), proved by the commit the command was read on and the bytes its write reads (expectedHash;
   // the guarded edit's own reads); switched away before it was kept, it finishes where it was read after all (editorOrElsewhere), noted there (ticket 24).
-  const read = agentCommandFiles.get(command), login = info.user?.login, elsewhere = () => finishAgentTextElsewhere(command, draftScope, login, draftStore(), (files, path) => repositoryIndex.find(api, files.repo, files.snapshot, path))
-    .then((done) => { if (done && read && login) finishedWork.add({ account: login, repoId: read.repo.id, repo: read.repo.full_name, branch: read.snapshot.branch }, "agent", { id: command.id }); return done; });
+  const read = agentCommandFiles.get(command), login = info.user?.login, landed = read && login ? { account: login, repoId: read.repo.id, repo: read.repo.full_name, branch: read.snapshot.branch } : undefined;
+  const elsewhere = finishedWork.agent(landed, command, (scope, path) => draftStore().get(scope, path), () => finishAgentTextElsewhere(command, draftScope, login, draftStore(), (files, path) => repositoryIndex.find(api, files.repo, files.snapshot, path)));
   const finished = await elsewhere(); if (finished) return finished;
   const scope = draftScope(), at = workspaceSession.begin(), revision = appStore.snapshot.value?.commit, current = () => at.holds() && revision === appStore.snapshot.value?.commit && !versions.view;
   if (!current() || !appStore.snapshot.value || command.branch !== appStore.snapshot.value.branch ||

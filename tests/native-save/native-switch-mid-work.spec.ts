@@ -121,6 +121,31 @@ test("a save that finished on main while feature was shown is counted in the men
   await expect(trigger).toHaveAccessibleName(/repository actions$/);
 });
 
+// A save GitHub answers as no change (`unchanged`) finished on main: nothing happened there, so no count.
+test("a save held across a branch switch that changed nothing on main leaves no count", async ({ page, baseURL }) => {
+  await openEditor(page, baseURL);
+  await appendToOpenFile(page, "index.html", "\n<!-- unchanged -->\n");
+  await expect.poll(async () => (await draftsOn(page, "main")).map(draft => draft.path)).toEqual(["index.html"]);
+  let arrive!: () => void, release!: () => void;
+  const arrived = new Promise<void>(resolve => { arrive = resolve; }), released = new Promise<void>(resolve => { release = resolve; });
+  await page.route(url => url.pathname === "/api/publish", async route => {
+    arrive();
+    await released;
+    const response = await route.fetch();
+    await route.fulfill({ response, json: { ...await response.json(), unchanged: true } });
+  });
+  await showPublish(page);
+  await publishButton(page).click();
+  await arrived;
+  await switchSiteMidUpload(page, baseURL);
+  const answered = page.waitForResponse(response => new URL(response.url()).pathname === "/api/publish");
+  release();
+  expect((await answered).ok()).toBe(true);
+  await expect.poll(async () => (await draftsOn(page, "main")).filter(draft => draft.content !== draft.original)).toEqual([]);
+  await expect(page.locator(".repository-menu__trigger .repository-menu__finished")).toBeHidden();
+  await expect(page.locator(".repository-menu__trigger")).toHaveAccessibleName(/repository actions$/);
+});
+
 // Files dropped on native-demo's main and added while another repository is shown: that repository's
 // row counts them, the tile names where, and the row's click opens native-demo on main with them listed.
 test("files added to another repository while it is not shown are counted on its row, and its click lists them there", async ({ page, baseURL }) => {
