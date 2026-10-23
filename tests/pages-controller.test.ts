@@ -6,6 +6,7 @@ import { createMemoryWorkspace } from "./fakes/memory-workspace";
 import { nativePageHead, nativePageWithDetail, resolveNativeProject } from "../shared/native-project";
 import { readNavigation } from "../src/page-builder/site-navigation";
 import type { NativeSiteTree } from "../src/native-pages";
+import type { SavedDraft } from "../src/drafts";
 
 const target = { file: "about/index.html", route: "/about/", label: "About", home: false, subpages: 0, isNew: false };
 const home = '<html><head><title>Home</title></head><body><header><nav><ul><li><a href="/about/">About</a></li></ul></nav></header><main><h1>Home</h1></main></body></html>';
@@ -177,6 +178,18 @@ test("tabs and tree continue reading live state", () => {
   h.controller.selectTab("files"); h.controller.updateTabs(true); assert.deepEqual(painted, ["files", "pages"]);
   h.controller.renderTree(); assert.equal(rendered.length, 1);
   h.memory.setSite(undefined); h.controller.updateTabs(); assert.equal(painted.at(-1), "files");
+});
+
+test("the Pages tree marks a new page new, and a moved page not", () => {
+  const h = fixture(), rendered: NativeSiteTree[] = [];
+  const scope = { account: "lex", repoId: 1, repo: "lex/site", branch: "main" };
+  const draft = (path: string, extra: Partial<SavedDraft> = {}): SavedDraft => ({ ...scope, version: 1, path, baseSha: null, original: "", content: "<h1>Page</h1>", updatedAt: 1, ...extra });
+  h.ports.site = () => ({ routes: { "/": "index.html", "/about/": "about/index.html", "/contact/": "contact/index.html", "/news/": "news/index.html" }, components: {} });
+  h.ports.drafts = () => [draft("contact/index.html"), draft("news/index.html", { movedFrom: "blog/index.html" })];
+  h.ports.tree = () => ({ render: tree => { rendered.push(tree); } });
+  h.controller.renderTree();
+  const marks = Object.fromEntries(rendered[0]!.children.map((node) => [node.file, node.isNew]));
+  assert.deepEqual(marks, { "about/index.html": false, "contact/index.html": true, "news/index.html": false });
 });
 
 test("new-page planning validates title, URL and unread template", () => {

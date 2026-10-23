@@ -48,6 +48,23 @@ test("the agent context lists every draft by hash and hands over each text up to
   assert.equal(texts.size, 150);
 });
 
+test("the agent context marks a new page new, and a moved page not", async () => {
+  const scope = { account: "lex", repoId: 1, repo: "lex/site", branch: "main" };
+  const draft = (path: string, extra: Partial<SavedDraft> = {}): SavedDraft => ({ ...scope, version: 1, path, baseSha: null, original: "", content: "<h1>Page</h1>", updatedAt: 1, ...extra });
+  const site = { routes: { "/": "index.html", "/contact/": "contact/index.html", "/news/": "news/index.html" }, components: {} };
+  const { context } = await buildAgentContext({
+    repository: { id: 1, fullName: "lex/site" }, branch: "main", commit: "c".repeat(40), file: null,
+    drafts: [draft("contact/index.html"), draft("news/index.html", { movedFrom: "blog/index.html" })],
+    mountedSource: () => undefined,
+    native: { site, routeInfo: () => ({}), source: () => undefined, exists: () => true },
+  });
+  assert.deepEqual(context.pages?.map(({ file, isNew }) => ({ file, isNew })), [
+    { file: "index.html", isNew: undefined },
+    { file: "contact/index.html", isNew: true },
+    { file: "news/index.html", isNew: undefined },
+  ]);
+});
+
 test("make_component opens the guarded page, forwards its request and reports flat results", async () => {
   let source = "<html><head></head><body><main><section><h2>Title</h2></section></main></body></html>";
   const hash = await textHash(source);
