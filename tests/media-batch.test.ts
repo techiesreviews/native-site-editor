@@ -159,18 +159,35 @@ test("a switch during a pinned attempt rolls it back and runs it again elsewhere
   assert.deepEqual(h.hosts.map(host => host.mounted("index.html")), [true, false], "on show, then elsewhere");
 });
 
-test("a workspace switched back and forth during each attempt is tried three times, then says why", async () => {
+// Ticket 27: nothing stops a pinned batch for a switch. Switched back and forth during each of its
+// first attempts (away and back within one too), it runs again each time on the side then shown,
+// and lands once an attempt is left alone.
+test("a workspace switched back and forth during each attempt runs again until one is left alone, then lands", async () => {
   let flips = 0;
   const h = harness({ stage: async host => {
-    flips++;
-    if (flips % 2) h.switchRepository(); else h.back();
+    if (++flips > 3) return;
+    if (flips === 3) { h.switchRepository(); h.back(); }
+    else if (flips % 2) h.switchRepository(); else h.back();
     if (!host.stamp.holds()) throw new Error("The repository changed. Close Media and open it again.");
   } });
   const pending = h.run(true);
   h.workspace.resolve(h.modules);
   h.listing.resolve([]);
-  await assert.rejects(pending, /repository changed/);
-  assert.deepEqual(h.hosts.map(host => host.mounted("index.html")), [true, false, true]);
+  await pending;
+  assert.deepEqual(h.hosts.map(host => host.mounted("index.html")), [true, false, true, true], "on show, elsewhere, on show (away and back during it), on show");
+});
+
+test("without a pin, another page opened during each attempt is tried three times, then says why", async () => {
+  const pages = ["a.html", "b.html", "c.html"];
+  const h = harness({ stage: async () => {
+    h.appStore.openFile.value = pages.shift();
+    throw new Error("This page changed.");
+  } });
+  const pending = h.run();
+  h.workspace.resolve(h.modules);
+  h.listing.resolve([]);
+  await assert.rejects(pending, /page changed/);
+  assert.equal(h.counts().staged, 3);
 });
 
 // Ticket 23, Async writers: a pinned batch switched away at any wait of its staging lands on one side

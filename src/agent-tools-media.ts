@@ -3,12 +3,14 @@ import { payloadIdentity, type AgentWorkspace, type JsonValue } from "../shared/
 import { mediaChanges, mediaTools, type AgentMedia } from "../shared/agent-media";
 import type { AgentReadResult } from "../shared/agent-read";
 import { AgentRecordsError, type AgentRecords } from "./agent-records";
-import { createAgentTools } from "./agent-tools";
+import { createAgentTools, mediaCommandPins } from "./agent-tools";
 import type { AgentReadPorts } from "./agent-tools-read";
 import { sameBranch } from "./workspace-session";
+import type { Held } from "./agent-tools-edit";
 
 /** Internal liveness port; never serialized into a command or receipt. */
 export const mediaCommandProofs = new WeakMap<AgentCommand, () => void>();
+
 const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as JsonValue;
 const tooLarge = "The media result is too large; narrow the folder or page with offset/limit.";
 
@@ -18,26 +20,29 @@ export function createAgentMediaTools(options: {
 }) {
   const { workspace, ports, records } = options;
   const flights = new Map<string, { identity: string; grantId: string; promise: Promise<AgentReadResult> }>();
-  type Input = { request: AgentMedia; fence: number; current: () => boolean; deadline?: number; seen?: { page: string | undefined }; signal?: AbortSignal };
-  const executor = async ({ request, fence, current, deadline = Date.now() + 10_000, seen, signal }: Input): Promise<AgentReadResult> => {
-    const stamp = ports.stamp(), source = ports.files(), commit = source?.snapshot.commit;
+  type Input = { request: AgentMedia; fence: number; current: () => boolean; deadline?: number; seen?: { page: string | undefined }; signal?: AbortSignal; held?: Held };
+  const executor = async ({ request, fence, current, deadline = Date.now() + 10_000, seen, signal, held }: Input): Promise<AgentReadResult> => {
+    const pin = held?.pin ?? ports.pin?.(), stamp = held?.stamp ?? ports.stamp(), source = held ? held.source : ports.files(), commit = source?.snapshot.commit;
+    // Its page as it reads where it arrived: the pinned workspace's while another is shown.
+    const media = pin && "media" in pin ? pin.media : undefined, pageSource = (path: string) => media && !media.here() ? media.source(path) : ports.source!(path);
     const changing = mediaChanges(request.tool, request.args);
     // A page change's element id points into the page as it was when the command arrived (src/agent-transport.ts
     // reads it before any await), else as it is on admission: that source is the proof to commit.
     const pageChange = changing && ["place_media", "frame_image", "loop_video"].includes(request.tool) && ports.source !== undefined;
-    const page = pageChange ? seen ? seen.page : ports.source!(request.path) : undefined;
+    const page = pageChange ? seen ? seen.page : pageSource(request.path) : undefined;
     // The relay's total deadline as the transport measured it on arrival (src/agent-transport.ts): never a fresh 10 s.
     let applied = false, identity: string | undefined;
     const check = () => {
       if (applied) return;
       signal?.throwIfAborted();
       // The stamp holds while the same repository and branch stay open (src/workspace-session.ts); a save moves the commit within it.
-      if (!current() || !stamp.holds() || ports.files()?.snapshot.commit !== commit)
-        throw new Error("The editor changed branch or revision, or the relay disconnected. Nothing was changed.");
+      // Another site or branch shown meanwhile stops nothing (ticket 27): with a pin it finishes in its own workspace.
+      if (!current() || !(media && media.here() === false) && (ports.files()?.snapshot.commit !== commit || !media && !stamp.holds()))
+        throw new Error("The relay disconnected or the site was saved meanwhile. Nothing was changed.");
     };
     const beforeCommit = () => {
       check();
-      if (pageChange && ports.source!(request.path) !== page)
+      if (pageChange && pageSource(request.path) !== page)
         throw new Error(`${request.path} changed in the editor meanwhile. Read it again with get_page; nothing was changed.`);
       if (Date.now() >= deadline) throw new Error("The media command deadline passed. Cancelled before commit; nothing was changed.");
     };
@@ -72,6 +77,7 @@ export function createAgentMediaTools(options: {
           requestIdentity: identity, state: "pending", createdAt: request.createdAt };
         beforeCommit();
         mediaCommandProofs.set(command, beforeCommit);
+        if (media) mediaCommandPins.set(command, media);
         // Cancellation races the same records transaction as commit; a committed receipt wins.
         const timer = changing && !signal ? setTimeout(() => { void records.cancel(workspace, request.id, request.grantId, { live: true }).catch(() => {}); }, Math.max(0, deadline - Date.now())) : undefined;
         try {
@@ -86,7 +92,7 @@ export function createAgentMediaTools(options: {
           beforeCommit();
           const result = reply(json(outcome ?? {}));
           return textBytes(JSON.stringify(result)) > 8 * 1024 * 1024 - 4096 ? { ok: false, message: tooLarge } : result;
-        } finally { if (timer !== undefined) clearTimeout(timer); mediaCommandProofs.delete(command); }
+        } finally { if (timer !== undefined) clearTimeout(timer); mediaCommandProofs.delete(command); mediaCommandPins.delete(command); }
       })();
       if (!changing) return await promise;
       const flight = { identity, grantId: request.grantId, promise };
@@ -106,6 +112,6 @@ export function createAgentMediaTools(options: {
     }
   };
   const registry = createAgentTools<Input>(Object.fromEntries(mediaTools.map(tool => [tool, executor])));
-  return { run: (request: AgentMedia, fence: number, current: () => boolean, deadline?: number, seen?: { page: string | undefined }, signal?: AbortSignal) =>
-    registry.run(request.tool, { request, fence, current, deadline, seen, signal }) };
+  return { run: (request: AgentMedia, fence: number, current: () => boolean, deadline?: number, seen?: { page: string | undefined }, signal?: AbortSignal, held?: Held) =>
+    registry.run(request.tool, { request, fence, current, deadline, seen, signal, held }) };
 }

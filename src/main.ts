@@ -1846,10 +1846,21 @@ function mediaOrigins() {
   return mediaOwnOrigins(nativeSiteSettings(runtime.textSource(NATIVE_CONFIG_PATH)).url, runtime.textSource("CNAME"));
 }
 
+// Background pages of workspaces not shown (src/background-page.ts), made with the first.
+let backgroundPages: ReturnType<typeof import("./background-page").createBackgroundPages<import("./background-page").BackgroundFrame>> | undefined;
 // Media context and UI lifecycle use live getters; binary/Undo writes stay here.
 const mediaPorts: import("./controllers/media-controller").MediaControllerPorts = {
   measureImage: (path, node, image, slot, style) => nativePreview && runtime.site?.routes[nativePreview.shownRoute() ?? ""] === path
     ? nativePreview.measureImage({ path, node, slot, style, ...(image.width && image.height ? { image: { width: image.width, height: image.height } } : {}) }) : Promise.resolve(undefined),
+  // Work whose workspace is not shown measures in a background page of its site and page (ticket 27).
+  measureAway: async (pin, path, node, image, slot, style) => {
+    const site = pin.site, module = await import("./background-page");
+    backgroundPages ??= module.createBackgroundPages();
+    return site && backgroundPages.use(module.backgroundKey(pin.scope, path), () => module.openBackgroundFrame({ site, page: path, files: () => new Set(pin.files()),
+      text: async (file) => pin.source(file) ?? await pin.find(file).then((entry) => entry && readFile(pin.repo, entry.sha)),
+      shown: (source, isFile) => [...nativeShownFiles(site, [path], source, isFile, nativeSitePrefix(pin.source(NATIVE_CONFIG_PATH))).files] }, (host) => createNativePreview(host)),
+    (frame) => frame.measure({ path, node, slot, style, ...(image.width && image.height ? { image: { width: image.width, height: image.height } } : {}) }));
+  },
   origins: mediaOrigins,
   usage: {
     key: () => runtime.state.textIndexScope === nativeTextIndexScopeKey() ? nativeTextIndexScopeKey() : "", files: () => runtime.files(),
@@ -3408,6 +3419,7 @@ const agentSiteHost = createAgentSiteHost({
   },
   dialog: () => confirmDialog,
   setDialog: dialog => { confirmDialog = dialog; },
+  mediaPin: () => mediaPorts.pin?.(),
 });
 function buildAgentSiteContext(): Promise<SharedContext | undefined> {
   return agentSiteHost.context();
@@ -3546,10 +3558,10 @@ function makeAgentSiteActions(edits: GuardedEdits = guardedEdits, atomic = false
     return nativePreview.inspect(request);
   },
   async listMedia(request) {
-    const since = guardedEdits.stamp("repository");
+    // The workspace shown as it was asked: listed from there whatever is shown by the time it is read (ticket 27).
+    const pin = mediaPorts.pin?.();
     const media = await import("./agent-media");
-    if (!since.holds()) throw new Error("The editor changed branch or revision.");
-    const ctx = await mediaController.workspaceContext(media.isAgentMediaPath);
+    const ctx = await mediaController.workspaceContext(media.isAgentMediaPath, pin);
     return media.listWorkspaceMedia(ctx, request);
   },
   async previewMedia(path) {
@@ -3557,15 +3569,17 @@ function makeAgentSiteActions(edits: GuardedEdits = guardedEdits, atomic = false
     return media.previewWorkspaceMedia(ctx, path, path => editorModule?.getMountedSource(path));
   },
   async media(command) {
-    const since = guardedEdits.stamp("repository"), page = mediaPorts.source(command.path);
+    // Pinned as it arrived (agent-tools-media.ts), the change runs in its workspace's background page (ticket 27).
+    const page = mediaPorts.source(command.path);
     const { runAgentMedia } = await import("./agent-media-actions");
-    if (!since.holds()) throw new Error("The editor changed branch or revision.");
     return runAgentMedia(mediaController, mediaPorts, command, page);
   },
   legacy: applyAgentCommand,
 }; }
 async function applyAgentSiteCommand(command: AgentCommand) {
-  const [{ applySiteCommand, prepareAgentText, atomicAgentCommand, agentStructuralActions, finishAgentTextElsewhere, editorOrElsewhere }, { createPagesController }, { createLazyFileOperationsController }, { agentCommandFiles }] = await Promise.all([loadAgentSite(), loadPagesActions(), loadFileOps(), import("./agent-tools")]);
+  const [{ applySiteCommand, prepareAgentText, atomicAgentCommand, agentStructuralActions, finishAgentTextElsewhere, editorOrElsewhere, pinnedMedia }, { createPagesController }, { createLazyFileOperationsController }, { agentCommandFiles }] = await Promise.all([loadAgentSite(), loadPagesActions(), loadFileOps(), import("./agent-tools")]);
+  // Ticket 27: a Media change runs in its own workspace's background page, whatever is shown.
+  if (pinnedMedia(command)) return agentActing(() => applySiteCommand(agentSiteActions, command));
   // Ticket 23: an edit read from a site or branch no longer shown finishes there, on its files. On show the editor writes it, holding the workspace
   // from the moment that is known (its stamp below), proved by the commit the command was read on and the bytes its write reads (expectedHash;
   // the guarded edit's own reads); switched away before it was kept, it finishes where it was read after all (editorOrElsewhere), noted there (ticket 24).

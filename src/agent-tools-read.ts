@@ -1,3 +1,4 @@
+import type { MediaPin } from "./controllers/media-controller";
 import type { AgentRead, AgentReadResult } from "../shared/agent-read";
 import { HttpError } from "../shared/http-error";
 import { executeAgentRead } from "../shared/agent-read";
@@ -21,7 +22,8 @@ export interface AgentReadPorts {
   stamp(): Stamp;
   context(): Promise<SharedContext | undefined>;
   /** The workspace now, held by an edit (ticket 23): `away` once another is shown; its context there either way. */
-  pin?(): { away(): boolean; context(): Promise<SharedContext | undefined> } | undefined;
+  /** `media`: the same workspace pinned for Media work (ticket 27). */
+  pin?(): { away(): boolean; context(): Promise<SharedContext | undefined>; media?: MediaPin } | undefined;
   files(): AgentReadFiles | undefined;
   /** The text of `path` now (the site runtime's): agent reads, and the live source a page edit starts from (media place/frame/loop proofs). */
   source?(path: string): string | undefined;

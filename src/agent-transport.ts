@@ -112,8 +112,9 @@ export function createLiveTransport(options: Options) {
   let ownerPaused = false;
   let recovery: Recovery | undefined, first = true, takeoverFlight: Promise<void> | undefined;
   const active = new Map<string, { source: Socket; stop: AbortController; edit: boolean; dispose: () => void }>();
-  // Edits under way when another workspace opens finish in theirs (ticket 23): they are not
-  // cancelled and stay valid; their replies go nowhere (the socket is closed), their receipts stay.
+  // Edits (ticket 23) and Media changes (ticket 27) under way when another workspace opens finish in
+  // theirs: they are not cancelled and stay valid; their replies go nowhere (the socket is closed),
+  // their receipts stay.
   const finishing = new Set<AbortSignal>();
   const cancelSocket = (source: Socket | undefined, keepEdits = false) => {
     for (const call of active.values()) if (call.source === source) {
@@ -345,7 +346,7 @@ export function createLiveTransport(options: Options) {
           };
           stop.signal.addEventListener("abort", abort, { once: true });
           const timer = clock.setTimeout(() => stop.abort(), Math.max(0, deadline - Date.now()));
-          const call = { source, stop, edit: incoming?.operation === "edit", dispose: () => { clock.clearTimeout(timer); finishing.delete(stop.signal); if (active.get(value.id) === call) active.delete(value.id); } };
+          const call = { source, stop, edit: incoming?.operation === "edit" || incoming?.operation === "media" && mediaChanges(incoming.tool!, incoming.args ?? {}), dispose: () => { clock.clearTimeout(timer); finishing.delete(stop.signal); if (active.get(value.id) === call) active.delete(value.id); } };
           active.set(value.id, call);
           stop.signal.addEventListener("abort", call.dispose, { once: true });
           void readiness.then(() => {

@@ -7,7 +7,8 @@ import { NATIVE_CONFIG_PATH, nativeSitePrefix } from "../../shared/native-projec
 // Zoom, Turn and Free trimming (slice 41) save a Trimmed copy for this spot only; a trimmed spot
 // re-opens on the full original with its trim put back. Open large editor (slice 42) edits the
 // same state in a large window: its Done writes and closes; its Cancel puts the popup back.
-import type { MediaControllerPorts, MediaModule } from "../controllers/media-controller";
+import type { MediaControllerPorts, MediaModule, MediaPin } from "../controllers/media-controller";
+import { pinnedPorts } from "../background-page";
 import type { MediaWorkspaceContext } from "./media-workspace";
 import type { MediaBox } from "./media-markup";
 import { mediaExistingAlt } from "./media-attributes";
@@ -46,7 +47,8 @@ export interface ImagePopupHost extends MediaPopupHost {
 export interface ImagePopupOptions {
   ports: MediaControllerPorts;
   host: ImagePopupHost;
-  workspaceContext: () => Promise<MediaWorkspaceContext>;
+  /** `pin`: the context of the workspace the popup opened on, whatever is shown (ticket 27). */
+  workspaceContext: (include?: (path: string) => boolean, pin?: MediaPin) => Promise<MediaWorkspaceContext>;
   load: () => Promise<MediaModule>;
   target: { path: string; node: number[] };
   /** The press that opened it still owns the popup (no later press, repository or page change). */
@@ -55,8 +57,10 @@ export interface ImagePopupOptions {
 }
 
 export async function openImagePopup(options: ImagePopupOptions) {
-  const { ports, host, target } = options;
-  const stamp = ports.stamp(), epoch = ports.generation(), source = ports.source(target.path);
+  const { host, target } = options;
+  // What it writes goes to the page it opened on, wherever Lex is by then (ticket 27, `pinnedPorts`).
+  const pin = options.ports.pin?.(), ports = pinnedPorts(options.ports, pin, target.path), workspaceContext = () => options.workspaceContext(undefined, pin);
+  const stamp = options.ports.stamp(), epoch = ports.generation(), source = ports.source(target.path);
   const range = source === undefined ? undefined : (ports.locateElement ?? locateNativeElementRange)(source, target.node);
   if (source === undefined || !range || range.tag.name !== "img" || ports.viewingVersion()) return undefined;
   const expected = source.slice(range.tag.start, range.tag.end);
@@ -71,7 +75,7 @@ export async function openImagePopup(options: ImagePopupOptions) {
   // is gone leaves the trimmed copy as the picture).
   const earlier = read.trimmed && read.source ? records?.files[placed]?.trimmedFrom : undefined;
   // A trim is cut from the revision the popup shows: it is read before the picture's bytes.
-  const files = options.workspaceContext().catch(() => undefined);
+  const files = workspaceContext().catch(() => undefined);
   const load = async (path: string) => {
     const ctx = trimmable(path) ? await files : undefined;
     let version: string | undefined;
@@ -172,12 +176,14 @@ export async function openImagePopup(options: ImagePopupOptions) {
   // writing, it finishes (the window shows it busy).
   const cancel = () => {
     if (state.busy) return;
-    if (stamp.holds() && options.live() && ports.source(target.path) === source && !ports.viewingVersion()) void done();
+    // Another workspace shown keeps it too: it is written there, on its page (ticket 27).
+    const away = Boolean(pin) && !pin!.here();
+    if ((away || stamp.holds() && options.live()) && ports.source(target.path) === source && !ports.viewingVersion()) void done();
     else close();
   };
   async function done() {
     if (state.busy) return;
-    const trim = trimNow(), proof = { stamp, epoch, source: source!, expected }, initialAlt = mediaExistingAlt(expected);
+    const trim = trimNow(), proof = { stamp: pin ? ports.stamp() : stamp, epoch, source: source!, expected }, initialAlt = mediaExistingAlt(expected);
     // A re-crop left as it was keeps its copy; at most the place's shape changes.
     const same = restored && trim && (sameTrim(trim, restored.trim) || editKey(edit()) === opened);
     const shape = kept(), change = same ? (frameNow()?.shape !== undefined ? shape : undefined) : frameNow();
@@ -187,11 +193,11 @@ export async function openImagePopup(options: ImagePopupOptions) {
       if (trim && !same) {
         // The earlier trimmed copy is replaced when nothing else uses it.
         const { trimPlace } = await import("./place-trim");
-        await trimPlace(ports, options.workspaceContext, target,
+        await trimPlace(ports, workspaceContext, target,
           { source: state.file, sourceVersion: state.version, trim, frame: { ...shape, focus: trimFocus() } }, proof);
       } else if (!same && swapped()) {
-        const image = mediaImageForPlacement(state.file, state.size ?? {}, (await options.workspaceContext()).paths);
-        await placeMediaImage(ports, options.workspaceContext, target, image, { ...proof, initialAlt }, () => false, undefined, change);
+        const image = mediaImageForPlacement(state.file, state.size ?? {}, (await workspaceContext()).paths);
+        await placeMediaImage(ports, workspaceContext, target, image, { ...proof, initialAlt }, () => false, undefined, change);
       } else if (change) {
         await framePlace(ports, target, change, proof);
         ports.announce(change.shape !== undefined ? "Image shape changed" : "Focus point moved");
@@ -214,7 +220,7 @@ export async function openImagePopup(options: ImagePopupOptions) {
     // so far stays (Free leaves Original), the focus goes to the middle and a trim or turn is dropped.
     const frame = frameChange(start, { shape: shapeNow(), focus: centred, component: state.component }, true);
     close();
-    const proof = { stamp, epoch, source: source! }, imageProof = { ...proof, expected, initialAlt: mediaExistingAlt(expected) };
+    const proof = { stamp: pin ? ports.stamp() : stamp, epoch, source: source! }, imageProof = { ...proof, expected, initialAlt: mediaExistingAlt(expected) };
     // The Media block starts as this image; Replace chooses any media for its place.
     if (placed === PLACEHOLDER_IMAGE_PATH && !spot) {
       const place = { path: target.path, parent: target.node.slice(0, -1), index: target.node.at(-1)!, replaces: true };
@@ -223,15 +229,15 @@ export async function openImagePopup(options: ImagePopupOptions) {
           const added = held?.chosen?.()?.request, extension = added?.result?.outputs[0]?.extension;
           const kind = mediaKind(added ? extension ? `added.${extension}` : added.file.name : chosen.path);
           if (kind === "image") {
-            await placeMediaImage(ports, options.workspaceContext, target, chosen, imageProof, cancelled, held, frame);
+            await placeMediaImage(ports, workspaceContext, target, chosen, imageProof, cancelled, held, frame);
             return;
           }
           const { placeChosenMedia } = await import("./media-insert");
-          await placeChosenMedia(ports, options.workspaceContext, { kind: "insert", place }, chosen, proof, cancelled, held);
+          await placeChosenMedia(ports, workspaceContext, { kind: "insert", place }, chosen, proof, cancelled, held);
         },
         onlineVideo: async (video, cancelled, picker) => {
           const { placeOnlineVideo } = await import("./online-video-place");
-          await placeOnlineVideo(ports, options.workspaceContext, { place }, video, picker, proof, cancelled);
+          await placeOnlineVideo(ports, workspaceContext, { place }, video, picker, proof, cancelled);
         } }).catch((error: unknown) => ports.error(error));
       return;
     }
@@ -239,8 +245,8 @@ export async function openImagePopup(options: ImagePopupOptions) {
     // A picture spot also takes a video, which loops silently there (slice 119).
     await openMediaPicker({ accept: spot ? SPOT_ACCEPT : "image/*", chosenNote: spot ? spotNote : undefined, report: ports, place: `${ports.placeLabel?.(target.path) ?? target.path} · ${words || "Image"}`,
       onPick: async (image, cancelled, held) => {
-        if (spot && pickedVideo(image, held)) await placeSpotVideo(ports, options.workspaceContext, target, image, proof, cancelled, held);
-        else await placeMediaImage(ports, options.workspaceContext, target, image, imageProof, cancelled, held, frame);
+        if (spot && pickedVideo(image, held)) await placeSpotVideo(ports, workspaceContext, target, image, proof, cancelled, held);
+        else await placeMediaImage(ports, workspaceContext, target, image, imageProof, cancelled, held, frame);
       } }).catch((error: unknown) => ports.error(error));
   }
 

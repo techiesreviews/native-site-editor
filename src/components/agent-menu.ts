@@ -153,12 +153,16 @@ export function createAgentMenu(options: {
       current: scope, records, reload: snapshot => options.reload?.(snapshot) ?? Promise.resolve(),
       source: path => options.tools?.source?.(path),
       media: async (request, fence, current, deadline, seen, signal) => {
-        const ports = options.tools, stamp = ports?.stamp(), commit = ports?.files()?.snapshot.commit;
+        const ports = options.tools, stamp = ports?.stamp(), source = ports?.files(), commit = source?.snapshot.commit;
         if (!ports || !stamp) return { ok: false, message: "Browser media tools are unavailable. Refresh the editor." };
+        // As an edit (below): held before its tools load, a Media change finishes in its own workspace
+        // when another is shown meanwhile (ticket 27), in that workspace's background page.
+        const pin = ports.pin?.(), held = { source, stamp, pin: pin ?? { away: () => false, context: () => ports.context() }, pinned: Boolean(pin) };
         mediaTools ??= import("../agent-tools-media").then(({ createAgentMediaTools }) => createAgentMediaTools({
           workspace: { account: options.account, repoId: repo.id, branch: repo.branch }, ports, records, run,
         }));
-        return (await mediaTools).run(request, fence, () => current() && stamp.holds() && ports.files()?.snapshot.commit === commit, deadline, seen, signal);
+        const shown = () => ports.files()?.snapshot.commit === commit;
+        return (await mediaTools).run(request, fence, () => current() && (pin ? stamp.changed() === "scope" || shown() : stamp.holds() && shown()), deadline, seen, signal, held);
       },
       edit: async (request, fence, current, signal) => {
         const ports = options.tools, stamp = ports?.stamp();

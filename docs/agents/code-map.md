@@ -57,6 +57,7 @@ Each file is followed by its declared entry symbols. Styles, fixtures, scripts a
 | Agent command and request contracts | `shared/agent.ts` — `AgentCommand`, `AgentRequest`; `shared/types.ts` — `EditorContext`, `Snapshot` |
 | Guarded read proofs and edit plans | `src/guarded-edit.ts` — `createGuardedEdits`, `Reads`, `Planned`; `src/main.ts` — `guardedEdits` |
 | Same workspace and load (the editor's guards and its draft and setup scopes; controllers in slice 22) | `src/workspace-session.ts` — `createWorkspaceSession`, `same`, `workspaceKeys`, `githubScope`, `draftScopeOf`, `setupKeyOf`, `holdsDraftScope`; `src/main.ts` — `workspaceSession`, `nextLoad`, `shownScope` |
+| Background pages: work finishing on a site, branch or page not shown (invisible multiplayer) | `src/background-page.ts` — `createBackgroundPages`, `openBackgroundFrame`, `pinnedPorts`; `src/controllers/media-pin.ts` — `pinMedia` |
 | Atomic draft commit and Undo/Redo receipts | `src/guarded-edit/commit.ts` — `createCommit`; `src/editor-workspace.ts` — `createEditorWorkspace` |
 
 ### Page builder and media manager

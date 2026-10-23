@@ -263,8 +263,8 @@ const familyVersions = (ctx: MediaWorkspaceContext, paths: string[]) =>
 
 /**
  * `pinned`: the workspace shown now, held as a context factory that never goes stale (ticket 23).
- * Taken as an addition, a Replace everywhere or an Improve images screen begins, so that work
- * finishes in its workspace whatever is shown later.
+ * Taken as a screen loads and as an addition, a Replace everywhere or an Improve images screen
+ * begins, so that work finishes in its workspace whatever is shown later.
  */
 export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContext>, pinned?: () => (() => Promise<MediaWorkspaceContext>) | undefined) {
   let session: MediaWorkspaceContext | undefined;
@@ -794,7 +794,9 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     begin() { session = undefined; },
     async load() {
       if (session) session.assertLive();
-      session = await context();
+      // The screen holds the workspace it is drawn from (ticket 27): an edit made on it after a
+      // switch, before it closes, finishes there.
+      session = await (pinned?.() ?? context)();
       const ctx = active();
       const text = await sources(ctx);
       const read = readSiteMediaRecords(await ctx.read(MEDIA_RECORDS_PATH), ctx.items.map(item => item.path)); ctx.assertLive();
