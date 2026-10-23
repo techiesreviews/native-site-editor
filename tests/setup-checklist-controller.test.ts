@@ -1,14 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createSetupChecklistController, type SetupChecklistPorts } from "../src/controllers/setup-checklist-controller.ts";
-import { readSetupMemory } from "../src/setup-checklist.ts";
+import { readSetupMemory, writeSetupMemory } from "../src/setup-checklist.ts";
+import { githubScope, setupKeyOf } from "../src/workspace-session.ts";
 import type { SetupActions, SetupView } from "../src/components/setup-checklist.ts";
 
-function fixture() {
+function fixture(init: { account?: string; scope?: string; siteName?: string } = {}) {
   const data = new Map<string, string>();
   const storage = { getItem: (key: string) => data.get(key) ?? null, setItem: (key: string, value: string) => data.set(key, value) };
-  let account: string | undefined = "lex", repo = { id: 1 }, scope = "lex/1/main";
-  let state = { homePage: true, committed: true, homeUnsaved: false, siteName: "My site", defaultName: "Repository" };
+  let account: string | undefined = init.account ?? "lex", repo = { id: 1 }, scope = init.scope ?? "lex/1/main";
+  let state = { homePage: true, committed: true, homeUnsaved: false, siteName: init.siteName ?? "My site", defaultName: "Repository" };
   let saveName = async (): Promise<string | undefined> => undefined;
   let actions!: SetupActions, request!: () => void;
   let resolve!: (value: Awaited<ReturnType<SetupChecklistPorts["loadChecklist"]>>) => void;
@@ -43,6 +44,18 @@ test("lazy mount is shared and disposal refuses a late load, allowing a fresh mo
   f.controller.dispose();
   assert.equal(f.counters().closes, 1);
   assert.equal(f.counters().removes, 1);
+});
+
+test("a login differing only in capitals keeps its setup checklist: Lex sees the name lex confirmed", async () => {
+  const lexScope = { repoId: 1, branch: "main" }, scope = setupKeyOf(githubScope({ account: "Lex", ...lexScope }));
+  // The default name counts as named only once confirmed, so the tick comes from the stored memory alone.
+  const f = fixture({ account: "Lex", scope, siteName: "Repository" });
+  writeSetupMemory(f.storage, "lex", 1, { named: true });
+  const pending = f.controller.mount(); f.resolve(); await pending;
+  assert.equal(f.views.at(-1)?.progress.done.name, true);
+  assert.equal(f.views.at(-1)?.scope, setupKeyOf(githubScope({ account: "lex", ...lexScope })));
+  const fresh = fixture({ account: "Lex", scope, siteName: "Repository" }), mounted = fresh.controller.mount(); fresh.resolve(); await mounted;
+  assert.equal(fresh.views.at(-1)?.progress.done.name, false);
 });
 
 test("account changes refuse a pending mount", async () => {
