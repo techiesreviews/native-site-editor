@@ -49,7 +49,7 @@ export class SiteFiles {
      * The tab's text of `path` now (the site runtime's, src/native-site-runtime.ts): exactly what
      * the preview shows, unsaved typing included. Given, it alone answers a draft's text, and a
      * saved file's whenever it holds one; without it (an edit held away from its workspace) the
-     * texts the tab shared answer.
+     * texts the tab shared answer. Which files are drafts is the shared context's, taken before.
      */
     private now?: (path: string) => string | undefined,
   ) {}
@@ -103,10 +103,9 @@ export class SiteFiles {
     if (!entry) return undefined;
     if (entry.type !== "blob")
       throw new HttpError(400, `${path} is a ${entry.type === "tree" ? "folder" : "submodule"}, not a file.`);
-    const saved = await this.github.file(this.repo, entry.sha);
-    // Typing the tab holds but has not drafted yet is the tab's text, not GitHub's.
-    const content = readableText(path, this.heldText(path, draft)) ?? saved;
-    return { path, source: content === saved ? "github" : "draft", content, hash: await textHash(content), baseSha: entry.sha };
+    // `source` says what list_files marks: whether the drafts hold the file, not who typed its text.
+    const content = readableText(path, this.heldText(path, draft)) ?? (await this.github.file(this.repo, entry.sha));
+    return { path, source: "github", content, hash: await textHash(content), baseSha: entry.sha };
   }
 
   /**
