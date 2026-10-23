@@ -27,3 +27,4 @@ Lex: "I want to simplify the statuses for MCP, no explainer or what soever neede
 ## Comments
 
 - 2026-10-23, Lex: **no toasts anywhere in the editor**: "I don't think it's ever needed, the interface should show what is happening or what is doing." UX rulebook rule. The MCP menu follows it now (clean-up slice 29); the rest of the editor moves its feedback to the place of the action in the atomic design catalogue build (recorded on the software-factory map).
+- 2026-10-23, Lex (the rule, sharpened): messages exist to inform what is happening, so the feedback is visible **where it happens**. An expected outcome needs no message (edited text is saved: that is as expected). **When an agent works on the page Lex is on, show that the agent is working on that section.** See [Lex request 03](03-agent-working-on-section.md).
