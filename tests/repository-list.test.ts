@@ -9,6 +9,7 @@ import { createWorkspaceSession } from "../src/workspace-session.ts";
 import type { RepositoryListPorts } from "../src/repository-list.ts";
 import type { Repository } from "../shared/types.ts";
 import type { WorkspaceLocation } from "../src/workspace-state.ts";
+import { readWizard, WIZARD_KEY } from "../src/setup-wizard.ts";
 import { forEachAwait, type AwaitRace } from "./support/await-race.ts";
 
 // Just enough DOM for the welcome panel (node and button, src/ui/dom.ts).
@@ -28,7 +29,8 @@ const saved = ["location", "history", "localStorage", "fetch", "document"].map((
 const assigned: string[] = [], replaced: string[] = [];
 let answer: () => Response = () => new Response(null, { status: 204 });
 const fetched: string[] = [];
-Object.defineProperty(globalThis, "location", { configurable: true, value: { origin: "https://editor.test", pathname: "/", hash: "", href: "https://editor.test/", assign: (url: string) => { assigned.push(url); } } });
+const page = { origin: "https://editor.test", pathname: "/", hash: "", href: "https://editor.test/", assign: (url: string) => { assigned.push(url); } };
+Object.defineProperty(globalThis, "location", { configurable: true, value: page });
 Object.defineProperty(globalThis, "history", { configurable: true, value: { replaceState: (_state: unknown, _unused: string, url: string) => { replaced.push(url); } } });
 const pageStorage = store();
 Object.defineProperty(globalThis, "localStorage", { configurable: true, value: pageStorage });
@@ -60,12 +62,12 @@ function store() {
 const repo = (id: number): Repository => ({ id, name: `site-${id}`, full_name: `lex/site-${id}`, private: false, default_branch: "main", owner: { login: "lex", type: "User" } });
 const A = repo(1), B = repo(2), C = repo(3);
 
-type Options = { user?: { login: string }; dismissed?: boolean };
+type Options = { user?: { login: string }; dismissed?: boolean; recover?: boolean };
 function fixture(listed: Repository[] = [], fetchList: (refresh: boolean) => Promise<Repository[]> = async () => listed, options: Options = {}) {
   const session = createWorkspaceSession(), local = store();
   const shown = { content: [] as (FakeElement | string)[], files: [] as (FakeElement | string)[] };
-  const calls = { loading: 0, ready: 0, listed: 0, fetchList: 0, cleared: 0, gotStarted: 0, opened: 0 };
-  const errors: unknown[] = [], announced: string[] = [], chosen: (WorkspaceLocation | undefined)[] = [];
+  const calls = { loading: 0, ready: 0, failed: 0, listed: 0, fetchList: 0, cleared: 0, gotStarted: 0, opened: 0, remembered: 0 };
+  const errors: unknown[] = [], announced: string[] = [], chosen: (WorkspaceLocation | undefined)[] = [], started: number[] = [];
   const content = { replaceChildren: (...nodes: (FakeElement | string)[]) => { shown.content = nodes; } };
   const files = { replaceChildren: (...nodes: (FakeElement | string)[]) => { shown.files = nodes; } };
   // The list code reads and writes only disabled and value: the fake stands in for the select.
@@ -81,11 +83,11 @@ function fixture(listed: Repository[] = [], fetchList: (refresh: boolean) => Pro
     workspaceBoot: { abandonGuess: () => {} },
     setup: { waitingForRepositories: true },
     setupEntry: { dismissed: () => options.dismissed ?? true, open: async () => { calls.opened++; }, active: () => false },
-    setupController: { start: () => {} },
+    setupController: { start: (id: number) => { started.push(id); } },
     boot: {
-      loading: () => { calls.loading++; }, ready: () => { calls.ready++; }, failed: () => {}, listed: () => { calls.listed++; },
+      loading: () => { calls.loading++; }, ready: () => { calls.ready++; }, failed: () => { calls.failed++; }, listed: () => { calls.listed++; },
       fetchList: (refresh = false) => { calls.fetchList++; return fetchList(refresh); },
-      refreshPending: () => false, takeRefresh: () => false, recover: async () => false,
+      refreshPending: () => false, takeRefresh: () => false, recover: async () => options.recover ?? false,
     },
     user: "user" in options ? options.user : { login: "lex" },
     get repositories() { return repositories; }, set repositories(value) { repositories = value; },
@@ -107,9 +109,9 @@ function fixture(listed: Repository[] = [], fetchList: (refresh: boolean) => Pro
     removeFinishStarter: () => {},
     showGetStarted: async () => { calls.gotStarted++; },
     knownRepositories: () => undefined,
-    rememberRepositories: () => {},
+    rememberRepositories: () => { calls.remembered++; },
   } satisfies RepositoryListPorts & Record<string, unknown>;
-  return { ports, list: createRepositoryList(ports), shown, calls, errors, announced, chosen };
+  return { ports, list: createRepositoryList(ports), shown, calls, errors, announced, chosen, started };
 }
 
 test("sign-out of the last account forgets the signed-in mark and the boot memory", async () => {
@@ -250,4 +252,110 @@ test("no repositories for a new user opens the Setup wizard", async () => {
   assert.equal(calls.opened, 1);
   assert.equal(calls.gotStarted, 0);
   assert.equal((shown.content[0] as FakeElement).textContent, "Create your first site to get started.");
+});
+
+test("a failed listing says so and offers Reload", async () => {
+  const failure = new Error("GitHub is down");
+  const { ports, list, calls, shown, errors } = fixture([], async () => { throw failure; });
+  await list.loadRepositories();
+  assert.equal(calls.failed, 1);
+  assert.equal((shown.content[0] as FakeElement).textContent, "Repositories could not be loaded. Use Reload to try again.");
+  assert.deepEqual(errors, [failure]);
+  assert.deepEqual(ports.repositories, []);
+});
+
+test("a listing that fails after a later load has begun writes nothing", async () => {
+  const points = await forEachAwait(
+    (race: AwaitRace) => {
+      const run = fixture([], race.port("fetchList", async (): Promise<Repository[]> => { throw new Error("GitHub is down"); }));
+      return { ...run, done: run.list.loadRepositories() };
+    },
+    (run) => { run.ports.nextLoad(); },
+    (run) => {
+      assert.equal(run.calls.failed, 0);
+      assert.deepEqual(run.errors, []);
+      assert.equal((run.shown.content[0] as FakeElement).textContent, "Finding your selected repositories…");
+    },
+  );
+  assert.equal(points, 1);
+});
+
+for (const [name, hash, message] of [
+  ["an invalid workspace link", "#repo=nope", "This workspace link is invalid. Choose a repository to continue."],
+  ["a link to a repository this account cannot see", `#repo=${C.id}&branch=main`, "The linked repository is not available to this GitHub account. Check repository access or choose another project."],
+] as const) {
+  test(`${name} says so and leaves the choice open`, async () => {
+    page.hash = hash;
+    try {
+      const { ports, list, chosen, errors } = fixture([A, B]);
+      await list.loadRepositories();
+      assert.equal((errors[0] as Error).message, message);
+      assert.equal(ports.repositorySelect.disabled, false);
+      assert.deepEqual(chosen, []);
+    } finally {
+      page.hash = "";
+    }
+  });
+}
+
+const wizardWith = (id: number) => JSON.stringify({ step: "open", at: Date.now(), repo: { id, name: `site-${id}`, fullName: `lex/site-${id}` } });
+
+test("a wizard interrupted after making a listed site keeps its checklist", async () => {
+  pageStorage.setItem(WIZARD_KEY, wizardWith(B.id));
+  try {
+    const { list, started } = fixture([A, B]);
+    await list.loadRepositories();
+    assert.deepEqual(started, [B.id]);
+  } finally {
+    pageStorage.removeItem(WIZARD_KEY);
+  }
+});
+
+test("a wizard's site that is not listed is forgotten when the wizard is not open", async () => {
+  pageStorage.setItem(WIZARD_KEY, wizardWith(C.id));
+  const { list, started } = fixture([A, B]);
+  await list.loadRepositories();
+  assert.deepEqual(started, []);
+  assert.equal(readWizard(pageStorage), undefined);
+});
+
+test("a refresh whose read fails shows the error and keeps the list", async () => {
+  const failure = new Error("GitHub is down");
+  const { ports, list, calls, errors } = fixture([], async () => { throw failure; });
+  ports.repositories = [A, B];
+  await list.refreshRepositoryList();
+  assert.deepEqual(errors, [failure]);
+  assert.equal(calls.loading, 0);
+  assert.deepEqual(ports.repositories, [A, B]);
+});
+
+test("a refresh the boot recovers from goes no further", async () => {
+  const { ports, list, calls, announced } = fixture([], async () => [A, C], { recover: true });
+  ports.repositories = [A, B];
+  await list.refreshRepositoryList();
+  assert.equal(calls.listed, 0);
+  assert.deepEqual(announced, []);
+  assert.deepEqual(ports.repositories, [A, B]);
+});
+
+test("an unchanged refresh only marks the list as loaded", async () => {
+  const { ports, list, calls, announced } = fixture([], async () => [A, B]);
+  ports.repositories = [A, B];
+  ports.appStore.repository.value = A;
+  await list.refreshRepositoryList();
+  assert.equal(calls.listed, 1);
+  assert.deepEqual(announced, []);
+  assert.equal(calls.remembered, 0);
+  assert.equal(calls.loading, 0);
+});
+
+test("a refresh with no repository open lists again without touching the address", async () => {
+  const { ports, list, calls } = fixture([], async () => [A, C]);
+  ports.repositories = [A, B];
+  replaced.length = 0;
+  await list.refreshRepositoryList();
+  assert.deepEqual(replaced, []);
+  assert.equal(calls.loading, 1);
+  assert.equal(calls.fetchList, 1);
+  assert.deepEqual(ports.repositories, [A, C]);
 });
