@@ -26,4 +26,4 @@ Lex: "I want to simplify the statuses for MCP, no explainer or what soever neede
 
 ## Comments
 
-- Open with Lex: does "no toasts, feedback where the action happens" apply to the whole editor, or only the MCP menu?
+- 2026-10-23, Lex: **no toasts anywhere in the editor**: "I don't think it's ever needed, the interface should show what is happening or what is doing." UX rulebook rule. The MCP menu follows it now (clean-up slice 29); the rest of the editor moves its feedback to the place of the action in the atomic design catalogue build (recorded on the software-factory map).

@@ -34,6 +34,8 @@ One written recipe (the kitchen rulebook) that every session and every model fol
 - [Write the kitchen rulebook, version 1](tickets/07-recipe-v1.md#resolution-2026-10-22): `docs/agents/kitchen.md` is the front door: twelve stations from idea to release with tools, deciders, evidence and done criteria; current pins; ladder rung 1; planned items marked with their ticket (PR #122)
 - [Hand off the factory build plan](tickets/08-handoff-plan.md#resolution-2026-10-22): 20 slices in `build/` (kit follow-ups, scoreboard, `kit next` and heartbeat, `kit ux` with rulebook and feature list, sweep, chat learning, triage groups, context card, copy plan); starts after the clean-up build lands (PR #124)
 
+- **UX rule (Lex, 2026-10-23): no toasts anywhere.** "The interface should show what is happening or what it is doing": feedback appears where the action happens (the button, the field, the item). Seeds the UX rulebook (factory slice 40); the editor-wide removal of toasts is a step of the atomic design catalogue build; the MCP menu follows it first (clean-up slice 29).
+
 ## Not yet specified
 
 - How the recipe is copied to other projects (template repo, shared skill, or kit command), once it is proven here.
