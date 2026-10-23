@@ -3,6 +3,7 @@ import { firstHeadingText, buildNativePagesTree, nativePageLabel, type NativeNew
 import type { readNavigation } from "../page-builder/site-navigation";
 import type { PageMovePlan } from "../native-page-moves";
 import { nativePageUrl, type NativeSite } from "../../shared/native-project";
+import { newDraftPaths } from "../../shared/site-overlay";
 import type { NativeNewRequest } from "../components/pages-tree";
 import type { PagePickerItem } from "../components/page-picker";
 import type { SavedDraft } from "../drafts";
@@ -125,7 +126,7 @@ export function createPagesState(ports: PagesPorts) {
     if (!view || !site || ports.pagesHidden()) return;
     ports.clearPendingTitles();
     // New pages are marked; a renamed or moved one is the same page.
-    const drafted = new Set(ports.hasDraftScope() ? ports.drafts().filter((draft) => draft.baseSha === null && !draft.deleted && !draft.movedFrom).map((draft) => draft.path) : []);
+    const drafted = new Set(ports.hasDraftScope() ? newDraftPaths(ports.drafts(), { moved: false }) : []);
     const tree = buildNativePagesTree({
       routes: site.routes,
       titles: ports.titles(site),

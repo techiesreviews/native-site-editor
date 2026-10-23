@@ -7,6 +7,7 @@
 
 import type { DeclarationStatus, RuleStatus } from "../../shared/cascade";
 import { nativeComponentCssPath, type NativeSite } from "../../shared/native-project";
+import { isNewDraft } from "../../shared/site-overlay";
 import type { SessionInfo, TreeEntry } from "../../shared/types";
 import type { VariantFiles } from "../../shared/variant-lookup";
 import type { AppStore } from "../app-store";
@@ -201,7 +202,7 @@ export function createLinkedStylesController(ports: LinkedStylesPorts) {
     try {
       // A stylesheet only in the drafts (a new component's) opens from its draft.
       const draft = ports.draftStore().get(scope, css);
-      const created = draft && draft.baseSha === null && !draft.deleted && !draft.upload && !draft.opaque;
+      const created = isNewDraft(draft, { uploads: false });
       const entry = created ? undefined : await ports.findEntry(css);
       if (!current() || request !== secondaryRequest) return false;
       if (!created && (!entry || (entry.size ?? 0) > 1024 * 1024)) throw new Error(`Could not open ${css}.`);
@@ -408,7 +409,7 @@ export function createLinkedStylesController(ports: LinkedStylesPorts) {
     const draft = ports.draftStore().get(scope, css);
     // A new component's stylesheet may exist only in drafts, as openSecondary
     // already supports. A branch-tree miss must not hide that authored file.
-    const created = draft && draft.baseSha === null && !draft.deleted && !draft.upload && !draft.opaque;
+    const created = isNewDraft(draft, { uploads: false });
     const entry = created ? undefined : await ports.findEntry(css);
     if (request !== linkedStyleRequest || !at.holds() || appStore.openFile.value !== page) return false;
     const latestDraft = ports.draftStore().get(scope, css);

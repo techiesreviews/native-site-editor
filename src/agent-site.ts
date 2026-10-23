@@ -11,6 +11,7 @@ import type { MoveAt, MoveOutcome } from "./page-builder/block-move";
 import { expandStyleImports } from "../shared/css-imports";
 import { touchesGithubConfig, GITHUB_CONFIG_REFUSED, touchesMediaRecords, MEDIA_RECORDS_REFUSED } from "../shared/protected-paths";
 import { nativePageRoute } from "../shared/native-routes";
+import { isNewDraft, newDraftPaths } from "../shared/site-overlay";
 import { NATIVE_CONFIG_PATH, minimalTextEdit, nativeComponentCssPath, nativePageStylesheets, nativeSiteSettings, type NativeSite } from "../shared/native-project";
 import { agentMediaArgsProblem } from "../shared/agent-media-args";
 import { isMediaUploadWrite, OUTSIDE_MEDIA_REFUSED, AGENT_TEXT_LIMIT, INSPECTION_LIMIT, isPreviewablePicture, picturePreviewRefusal, REQUEST_HTML_LIMIT, outlineId, parseOutlineId, textBytes, textHash, type AgentCommand, type AgentElement } from "../shared/agent";
@@ -450,7 +451,7 @@ export async function buildAgentContext(input: AgentSiteInput): Promise<SharedCo
   const native = input.native;
   if (!native) return { context, texts };
   const { site } = native;
-  const newFiles = new Set(input.drafts.filter((draft) => draft.baseSha === null && !draft.deleted && !draft.movedFrom).map((draft) => draft.path));
+  const newFiles = new Set(newDraftPaths(input.drafts, { moved: false }));
   const tree = buildNativePagesTree({
     routes: site.routes,
     titles: Object.fromEntries(Object.keys(site.routes).map((route) => [route, native.routeInfo(route).title])),
@@ -891,7 +892,7 @@ async function structuralOutcome(command: AgentCommand, after: Map<string, Saved
   if (!after.size) return { message: `Nothing needed changing; ${path} is as it was.`, result: { path } };
   switch (command.operation) {
     case "create_page": {
-      const file = [...after].find(([file, record]) => record && !record.deleted && record.baseSha === null && !record.movedFrom && nativePageRoute(file))?.[0];
+      const file = [...after].find(([file, record]) => isNewDraft(record, { moved: false }) && nativePageRoute(file))?.[0];
       const route = file && nativePageRoute(file);
       if (!file || !route) break;
       return { message: `Created the page ${String(args.title ?? "").trim()} at ${route} (${file}), unsaved.`, result: { file, route, ...await hash(file) } };

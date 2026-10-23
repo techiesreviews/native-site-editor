@@ -84,6 +84,7 @@ import type { CssWorkspace } from "./page-builder/css-intelligence";
 import { expandStyleImports, resolveImportPath, rewriteCssUrls } from "../shared/css-imports";
 import { readStyleFiles } from "./native-style-files";
 import { nativePageRoute } from "../shared/native-routes";
+import { effectiveText, newDraftPaths as draftedPaths } from "../shared/site-overlay";
 
 
 
@@ -1496,14 +1497,11 @@ function nativeMoveItems() {
 }
 
 function nativeEffectiveSource(path: string, scope = draftScope()) {
-  let content = nativeBaseSources.get(path);
-  const draft = scope ? draftStore().get(scope, path) : undefined;
-  // A file deleted in the drafts has no source; a binary one moved has none to show.
-  if (draft?.deleted || draft?.opaque) return undefined;
-  if (draft) content = draft.content;
-  const mounted = editorModule?.getMountedSource(path);
-  if (mounted !== undefined) content = mounted;
-  return content;
+  return effectiveText(path, {
+    mounted: (file) => editorModule?.getMountedSource(file),
+    draft: (file) => scope ? draftStore().get(scope, file) : undefined,
+    base: (file) => nativeBaseSources.get(file),
+  });
 }
 
 // The site's sub-folder from its Site address (`/my-site`); none at a domain root.
@@ -1880,7 +1878,7 @@ function nativeImagePaths() {
   const gone = new Set(drafts.filter((draft) => draft.deleted).map((draft) => draft.path));
   return [...new Set([
     ...(appStore.snapshot.value?.tree ?? []).filter((entry) => entry.type === "blob" && isImagePath(entry.path)).map((entry) => entry.path),
-    ...drafts.filter((draft) => draft.baseSha === null && !draft.deleted && isImagePath(draft.path)).map((draft) => draft.path),
+    ...draftedPaths(drafts, { kind: isImagePath }),
   ])].filter((path) => !gone.has(path)).sort();
 }
 
@@ -2206,7 +2204,7 @@ const isNativeTextFile = (path: string) => /\.(?:html|css)$/i.test(path) && !pat
 // components are found from these.
 function nativeFiles(scope = draftScope(), base = nativeBaseFiles): string[] {
   const drafts = scope ? draftStore().list(scope) : [];
-  const drafted = drafts.filter((draft) => draft.baseSha === null && !draft.deleted).map((draft) => draft.path);
+  const drafted = draftedPaths(drafts);
   const gone = new Set(drafts.filter((draft) => draft.deleted).map((draft) => draft.path));
   return [...new Set([...base.filter((path) => !gone.has(path)), ...drafted])];
 }
@@ -2746,7 +2744,7 @@ function showDirectory(directory: Directory, path = "") {
 
 // Paths of the new files (drafts with no base blob) in the current scope.
 function newDraftPaths(scope = draftScope()) {
-  return scope ? draftStore().list(scope).filter((draft) => draft.baseSha === null && !draft.deleted).map((draft) => draft.path) : [];
+  return scope ? draftedPaths(draftStore().list(scope)) : [];
 }
 
 // The drafts as the tree shows them: each path's change (A, M, R, D), the
@@ -2762,7 +2760,7 @@ function treeState(scope = draftScope()): TreeState {
   return {
     changes: new Map(changes.map((change) => [change.path, change])),
     deleted: new Map(drafts.filter((draft) => draft.deleted).map((draft) => [draft.path, draft])),
-    drafted: drafts.filter((draft) => draft.baseSha === null && !draft.deleted).map((draft) => draft.path),
+    drafted: draftedPaths(drafts),
   };
 }
 let filesTree: ReturnType<typeof createFilesTreeController> | undefined;
