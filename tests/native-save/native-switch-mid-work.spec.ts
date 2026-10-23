@@ -201,9 +201,15 @@ test("an agent's edit held across a branch switch waits on its own branch as an 
     await expect.poll(async () => (await draftsOn(page, "main")).map(draft => [draft.path, draft.content.startsWith("# agent on main")]), { timeout: 20_000 }).toEqual([["robots.txt", true]]);
     expect(await draftsOn(page, "feature")).toEqual([]);
     expect(await committed(page, baseURL, "robots.txt")).toBe(robots);
+    // Back on main, with agents on there again, the agent learns its change was kept.
+    const ready = messages.filter(message => message.includes('"type":"ready"')).length;
+    await page.evaluate(() => { location.hash = "repo=501&branch=main&file=index.html"; });
+    await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
+    await expect.poll(() => messages.filter(message => message.includes('"type":"ready"')).length, { timeout: 30_000 }).toBeGreaterThan(ready);
+    const status = await client.callTool({ name: "get_command_status", arguments: { requestId: "switch-mid-edit" } });
+    expect(JSON.parse((status.content as { text: string }[])[0].text)).toMatchObject({ requestId: "switch-mid-edit", state: "applied" });
   } finally { await client.close(); }
 });
-
 
 // The never-settles cell: an addition held across the switch stays on its way with its Cancel; cancelled, nothing is added anywhere.
 test("files held across a branch switch can still be cancelled there, and nothing is added", async ({ page, baseURL }) => {

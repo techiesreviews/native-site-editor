@@ -68,7 +68,8 @@ export interface MediaControllerPorts {
   rememberSource(path: string, source: string): void;
   uploadedBlob(scope: DraftScope, sha: string): Promise<Blob | undefined>;
   readBlob(repo: string, sha: string, path: string): Promise<Blob>;
-  applyBatch(scope: DraftScope, stamp: Stamp, batch: MediaWorkspaceBatch, pin?: MediaPin): Promise<void>;
+  /** Resolves to where the step landed: `undoOn`, the page whose history took its Undo step. */
+  applyBatch(scope: DraftScope, stamp: Stamp, batch: MediaWorkspaceBatch, pin?: MediaPin): Promise<{ undoOn?: string } | void>;
   openPage(path: string): Promise<void>;
   load(): Promise<MediaModule>;
   openFile(): string | undefined;

@@ -1038,6 +1038,20 @@ export async function prepareAgentText(command: AgentCommand, scope: DraftScope,
 }
 
 /**
+ * The editor path of an agent command (ticket 23): when it fails before its write was kept and another
+ * workspace is shown by then, the write finishes where it was read (`elsewhere`, finishAgentTextElsewhere)
+ * instead of refusing; otherwise its own reason stands.
+ */
+export async function editorOrElsewhere<T>(editor: () => Promise<T>, applied: () => boolean, moved: () => boolean, elsewhere: () => Promise<T | undefined>): Promise<T> {
+  try { return await editor(); }
+  catch (error) {
+    const done = !applied() && moved() ? await elsewhere() : undefined;
+    if (done !== undefined) return done;
+    throw error;
+  }
+}
+
+/**
  * An agent's text write (edit_file, write_file) read from a site or branch no longer shown finishes
  * there, on its files (ticket 23); undefined while it is the one shown (`shown`, asked after every
  * wait), which writes it through the editor as before. The file's text there now (its draft, else the

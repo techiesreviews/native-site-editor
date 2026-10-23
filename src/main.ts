@@ -13,6 +13,7 @@ import type { VariantFiles, VariantSite } from "../shared/variant-lookup";
 import type { createFilesTreeController } from "./controllers/files-tree-controller";
 import { createPageStructureController } from "./controllers/page-structure-controller";
 import { createMediaController, type MediaPin } from "./controllers/media-controller";
+import { pinMedia } from "./controllers/media-pin";
 import type { BlockInsertPorts } from "./controllers/block-insert-controller";
 import { createCardsController } from "./controllers/cards-controller";
 import { createPagesState, explorerTabNames, NATIVE_HOME_UNREAD, type ExplorerTab, pageOnBranchHere } from "./controllers/pages-state";
@@ -112,7 +113,7 @@ import { addSectionStep } from "./page-builder/component-plans";
 import { createAgentSiteHost } from "./agent-site-host";
 import { createGuardedEdits, type GuardedEdits, type Reads, type PlanResult, type Stamp } from "./guarded-edit";
 import { createEditorWorkspace } from "./editor-workspace";
-import { createWorkspaceSession, draftScopeOf, holdsDraftScope, onShow, sameRepository, setupKeyOf, type SessionStamp, type WorkspaceScope } from "./workspace-session";
+import { createWorkspaceSession, draftScopeOf, holdsDraftScope, sameRepository, setupKeyOf, type SessionStamp, type WorkspaceScope } from "./workspace-session";
 import type { AnnounceAs } from "./components/toast-rules";
 import type { ToastAction } from "./components/toast";
 import type {
@@ -1984,17 +1985,11 @@ const mediaPorts: import("./controllers/media-controller").MediaControllerPorts 
   },
   // The workspace shown, for work to finish in (ticket 23): the editor's reads while it is on show,
   // then its snapshot's, the branch texts read so far and its drafts.
-  pin: () => {
-    const repo = appStore.repository.value, scope = draftScope(), snapshot = appStore.snapshot.value; if (!repo || !scope || !snapshot) return undefined;
-    const at = workspaceSession.begin(), here = () => onShow(at);
-    const site = nativeSite, base = nativeBaseFiles, texts = new Map(nativeBaseSources), key = nativeTextIndexScopeKey(), files = () => nativeFiles(scope, here() ? nativeBaseFiles : base);
-    const entry = (path: string) => here() ? entryAt(path) : repositoryIndex.entry(repo, snapshot, path);
-    const text = (path: string, draft = draftStore().get(scope, path), sha = entry(path)?.sha) => draft ? draft.deleted || draft.opaque ? undefined : draft.content
-      : texts.get(path) ?? cleanSources.peek("", key, path) ?? (sha && cleanSources.peek(repo.full_name, sha));
-    return { repo: repo.full_name, repoSize: repo.size, scope, identity: mediaIdentity(), site, drafts: draftStore(), here, entry, files, get nativePaths() { return site && files(); },
-      list: () => listRepositoryFiles(repo, snapshot), find: path => here() ? findEntry(path) : repositoryIndex.find(api, repo, snapshot, path),
-      source: path => here() ? mediaTextSource(path, scope) : text(path), remember: (path, source) => { if (here()) mediaPorts.rememberSource(path, source); } };
-  },
+  pin: () => pinMedia({ shown: () => { const repo = appStore.repository.value, scope = draftScope(), snapshot = appStore.snapshot.value; return repo && scope && snapshot && { repo, scope, snapshot, site: nativeSite }; },
+    begin: () => workspaceSession.begin(), base: () => ({ files: nativeBaseFiles, texts: nativeBaseSources, key: nativeTextIndexScopeKey() }), identity: mediaIdentity, drafts: draftStore,
+    live: { entry: entryAt, find: findEntry, source: mediaTextSource, files: nativeFiles, remember: (path, text) => mediaPorts.rememberSource(path, text) },
+    entry: (repo, snapshot, path) => repositoryIndex.entry(repo, snapshot, path), find: (repo, snapshot, path) => repositoryIndex.find(api, repo, snapshot, path),
+    files: nativeFiles, list: listRepositoryFiles, peek: (repo, revision, path) => cleanSources.peek(repo, revision, path) }),
   identity: mediaIdentity,
   stamp: () => guardedEdits.stamp("repository"),
   generation: currentLoad,
@@ -2062,7 +2057,7 @@ function mediaIdentity() { return `${currentLoad()}:${setupScope()}`; }
 const loadMediaBatch = lazyModule(() => import("./media-batch"));
 async function applyMediaBatch(scope: DraftScope, stamp: Stamp, batch: MediaWorkspaceBatch, pin?: MediaPin) {
   const opened = appStore.openFile.value, module = await loadMediaBatch();
-  await module.applyMediaBatch({
+  return module.applyMediaBatch({
     appStore, editor: editorModule, mediaHistoryHome, site: () => nativeSite, load: loadMediaWorkspace, stamp: () => guardedEdits.stamp("repository"),
     listRepositoryFiles, nativeFiles, draftStore, bytes: uploadBytes, mediaTextSource, entryAt, findEntry, announce,
     refresh: () => { afterFileChanges(); updateNativePreviewSources(); if (appStore.selection.value) pageStructureController.renderEditBar(appStore.selection.value); },
@@ -3764,14 +3759,13 @@ function makeAgentSiteActions(edits: GuardedEdits = guardedEdits, atomic = false
   legacy: applyAgentCommand,
 }; }
 async function applyAgentSiteCommand(command: AgentCommand) {
-  const began = workspaceSession.begin(), revision = appStore.snapshot.value?.commit;
-  const [{ applySiteCommand, prepareAgentText, atomicAgentCommand, agentStructuralActions, finishAgentTextElsewhere }, { createPagesController }, { createLazyFileOperationsController }] = await Promise.all([loadAgentSite(), loadPagesActions(), loadFileOps()]);
-  // Ticket 23: an edit read from a site or branch no longer shown finishes there, on its files; on show the editor writes it. A named exception
-  // to "Proofs survive awaits": only a new load of its branch since it arrived (left and shown again; not a version view) takes a new stamp, and
-  // the revision it arrived on must still hold, as must the bytes its write reads (expectedHash in applySiteCommand; the guarded edit's own reads).
+  const [{ applySiteCommand, prepareAgentText, atomicAgentCommand, agentStructuralActions, finishAgentTextElsewhere, editorOrElsewhere }, { createPagesController }, { createLazyFileOperationsController }] = await Promise.all([loadAgentSite(), loadPagesActions(), loadFileOps()]);
+  // Ticket 23: an edit read from a site or branch no longer shown finishes there, on its files. On show the editor writes it, holding the workspace
+  // from the moment that is known (its stamp below), proved by the commit the command was read on and the bytes its write reads (expectedHash;
+  // the guarded edit's own reads); switched away before it was kept, it finishes where it was read after all (editorOrElsewhere).
   const elsewhere = () => finishAgentTextElsewhere(command, draftScope, info.user?.login, draftStore(), (files, path) => repositoryIndex.find(api, files.repo, files.snapshot, path));
   const finished = await elsewhere(); if (finished) return finished;
-  const scope = draftScope(), at = began.changed() === "generation" ? workspaceSession.begin() : began, current = () => at.holds() && revision === appStore.snapshot.value?.commit && !versions.view;
+  const scope = draftScope(), at = workspaceSession.begin(), revision = appStore.snapshot.value?.commit, current = () => at.holds() && revision === appStore.snapshot.value?.commit && !versions.view;
   if (!current() || !appStore.snapshot.value || command.branch !== appStore.snapshot.value.branch ||
     command.repoId !== undefined && command.repoId !== scope?.repoId) throw new Error("The editor changed repository or branch.");
   if (!atomicAgentCommand(command)) {
@@ -3779,32 +3773,32 @@ async function applyAgentSiteCommand(command: AgentCommand) {
     return agentActing(() => applySiteCommand(agentSiteActions, command));
   }
   if (!scope) throw new Error("Open a repository first.");
-  const prepared = await prepareAgentText(command, scope, draftStore(), current, (scope, paths) => editorModule.flushAgentTyping(scope, paths),
-    () => { if (holdsDraftScope(shownScope(), scope)) afterFileChanges(); });
-  if (prepared.duplicate) return prepared.duplicate;
-  if (!current() || command.commit !== appStore.snapshot.value?.commit) throw new Error("The editor changed branch or revision.");
-  const scoped = agentStructuralActions(editorWorkspace, prepared.context!, current, {
-    actions: makeAgentSiteActions, pages: pagePorts(), files: filePorts(), components: componentPorts, loader: nativeComponentLoaderPlan,
-    factories: { createGuardedEdits, createPagesController, createLazyFileOperationsController, createBlockMoves, withPageField },
-  });
-  try {
-    const detail = await agentActing(() => applySiteCommand(scoped.actions, command));
-    await prepared.finish!(() => scoped.current(), scoped.readDrafts);
-    // The scoped page-details step skips writeNativePageMeta: its labels refresh here.
-    if (command.operation === "set_page_details" && current()) {
-      pageStructure?.refreshMeta(); pagesController.renderTree(); updateCurrentPageLabel(); updateAgentContext();
-    }
-    // The recorded reply wins (a duplicate delivery gets exactly it); live-only detail adds result fields.
-    return { ...prepared.outcome, result: { ...detail.result, ...prepared.outcome.result } };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error), unchanged = "Nothing was changed; your drafts are as they were.";
-    // Switched away before it was kept: it finishes where it was read.
-    const late = !prepared.applied && at.changed() === "scope" ? await elsewhere() : undefined;
-    if (late) return late;
-    if (!prepared.applied) throw new Error(message.includes(unchanged) ? message : `${message} ${unchanged}`);
-    await prepared.recover!();
-    return prepared.outcome;
-  } finally { scoped.dispose(); }
+  let prepared: Awaited<ReturnType<typeof prepareAgentText>> | undefined;
+  return editorOrElsewhere(async () => {
+    const kept = prepared = await prepareAgentText(command, scope, draftStore(), current, (scope, paths) => editorModule.flushAgentTyping(scope, paths),
+      () => { if (holdsDraftScope(shownScope(), scope)) afterFileChanges(); });
+    if (kept.duplicate) return kept.duplicate;
+    if (!current() || command.commit !== appStore.snapshot.value?.commit) throw new Error("The editor changed branch or revision.");
+    const scoped = agentStructuralActions(editorWorkspace, kept.context!, current, {
+      actions: makeAgentSiteActions, pages: pagePorts(), files: filePorts(), components: componentPorts, loader: nativeComponentLoaderPlan,
+      factories: { createGuardedEdits, createPagesController, createLazyFileOperationsController, createBlockMoves, withPageField },
+    });
+    try {
+      const detail = await agentActing(() => applySiteCommand(scoped.actions, command));
+      await kept.finish!(() => scoped.current(), scoped.readDrafts);
+      // The scoped page-details step skips writeNativePageMeta: its labels refresh here.
+      if (command.operation === "set_page_details" && current()) {
+        pageStructure?.refreshMeta(); pagesController.renderTree(); updateCurrentPageLabel(); updateAgentContext();
+      }
+      // The recorded reply wins (a duplicate delivery gets exactly it); live-only detail adds result fields.
+      return { ...kept.outcome, result: { ...detail.result, ...kept.outcome.result } };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error), unchanged = "Nothing was changed; your drafts are as they were.";
+      if (!kept.applied) throw new Error(message.includes(unchanged) ? message : `${message} ${unchanged}`);
+      await kept.recover!();
+      return kept.outcome;
+    } finally { scoped.dispose(); }
+  }, () => Boolean(prepared?.applied), () => at.changed() === "scope", elsewhere);
 }
 // While an agent's command runs, its guarded edits leave .github alone (src/guarded-edit/commit.ts).
 let agentActingDepth = 0;

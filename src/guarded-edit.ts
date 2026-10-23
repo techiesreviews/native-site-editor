@@ -421,19 +421,28 @@ export function createGuardedEdits(workspace: EditorWorkspace): GuardedEdits {
       if (changed) return stale(changed);
     }
     // The anchor's editor and model, proved from here to the record.
-    const opened = anchor === undefined || left ? undefined : ws.anchor(anchor);
+    let opened = anchor === undefined || left ? undefined : ws.anchor(anchor), retaken = false;
     // Another page shown while its page opened: a finishing step lands there as drafts (`away`).
     if (anchor !== undefined && !opened && !left && !(options.finish && ws.openFile() !== anchor)) return stale("anchor");
-    // The step's page is not the one shown (any more): it lands there as drafts. Shown again, it is not:
-    // with no proof of that page's editor (`opened`), the step is then stale.
+    // The step's page is not the one shown (any more): it lands there as drafts. Shown again (left and
+    // back), its editor is taken again: a named exception to "Proofs survive awaits", as that page's
+    // reads are proved by their bytes from then on, so the step lands there with its Undo step.
     const away = () => options.finish === true && ws.openFile() !== anchor;
+    const retake = () => {
+      if (!options.finish || anchor === undefined || away() || opened?.isCurrent()) return;
+      const now = ws.anchor(anchor);
+      if (now) { opened = now; retaken = true; }
+    };
     const reads = track();
     let result: PlanResult;
     try { result = await plan(reads.r); }
     finally { reads.seal(); }
     const writes = "done" in result ? prepare(result, reads) : undefined;
     // With no page open, none may open meanwhile: the step would land over it (unless it finishes away).
-    const current = (): StaleKey | undefined => proved() ?? (away() || (opened ? opened.isCurrent() : ws.openFile() === undefined) ? undefined : "anchor") ?? reads.changed(away());
+    const current = (): StaleKey | undefined => {
+      retake();
+      return proved() ?? (away() || (opened ? opened.isCurrent() : ws.openFile() === undefined) ? undefined : "anchor") ?? reads.changed(away() || retaken);
+    };
     changed = current();
     if (changed) return stale(changed);
     if ("refuse" in result) return refused(result.refuse);
