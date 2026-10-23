@@ -37,7 +37,7 @@ type Modules = Awaited<ReturnType<MediaBatchPorts["load"]>>;
  * A page other than `opened` (the one open as the step was asked for) shown by then takes no Undo
  * step: the step lands as drafts, and an Undo there would change the page it began on.
  * Each attempt runs whole on one side; a switch either way during one, or another page opened on
- * show, rolls it back and runs it again (twice at most), proved by the batch's own reads (paths,
+ * show, rolls it back and runs it again (three attempts in all), proved by the batch's own reads (paths,
  * sources and assets). Without a pin, the caller's stamp holds the step: a switch of workspace refuses.
  *
  * A pinned attempt on show takes a new stamp as it starts, a deliberate exception to "Proofs survive

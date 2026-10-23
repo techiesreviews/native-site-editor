@@ -4,7 +4,7 @@
 // module on the memory workspace with a session in place of its generation.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createWorkspaceSession, draftScopeOf, githubScope, holdsDraftScope, same, sameBranch, sameRepository, setupKeyOf, workspaceKeys, type WorkspaceScope } from "../src/workspace-session";
+import { createWorkspaceSession, draftScopeOf, githubScope, holdsDraftScope, onShow, same, sameBranch, sameRepository, setupKeyOf, workspaceKeys, type WorkspaceScope } from "../src/workspace-session";
 import { createGuardedEdits } from "../src/guarded-edit";
 import { createMemoryWorkspace } from "./fakes/memory-workspace";
 
@@ -200,4 +200,18 @@ test("sameRepository is one repository by id (by name only without ids), whateve
   assert.equal(sameRepository({ repoId: 1, repo: "lex/site" }, { repoId: 2, repo: "lex/site" }), false);
   assert.equal(sameRepository({ repo: "Lex/Site" }, { repo: "lex/site" }), true);
   assert.equal(sameRepository(undefined, { repoId: 1 }), false);
+});
+
+// Ticket 23: work pinned to a workspace is on show while it is, a new load of it too; another
+// workspace or a version view of it is elsewhere (drafts, no Undo step).
+test("onShow: the same workspace and a new load of it are on show; another one or a version view is not", () => {
+  const scope: WorkspaceScope = { kind: "github", account: "lex", repoId: 1, repo: "lex/site", branch: "main" };
+  const session = createWorkspaceSession(scope), stamp = session.begin();
+  assert.equal(onShow(stamp), true);
+  session.next(scope);
+  assert.equal(onShow(stamp), true, "a new load of it");
+  session.next({ ...scope, view: "abc1234" });
+  assert.equal(onShow(stamp), false, "a version view of it");
+  session.next({ ...scope, branch: "feature" });
+  assert.equal(onShow(stamp), false, "another workspace");
 });

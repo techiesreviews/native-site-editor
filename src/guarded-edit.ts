@@ -413,7 +413,8 @@ export function createGuardedEdits(workspace: EditorWorkspace): GuardedEdits {
     // Its page already left before it ran: which page it was must be said.
     if (moved(held.changed()) && options.anchor === undefined) return stale(held.changed()!);
     // No page open and none asked for: the step's files go without an anchor (the commit opens the page after).
-    const anchor = options.anchor ?? ws.openFile(), left = moved(held.changed());
+    // Left: another page shown since it began, not its own; it is not opened then.
+    const anchor = options.anchor ?? ws.openFile(), left = moved(held.changed()) && ws.openFile() !== anchor;
     if (!left && anchor !== undefined && (ws.openFile() !== anchor || !ws.anchor(anchor))) {
       await ws.open(anchor, options.openOnlyIfCurrent ? () => !proved() : undefined);
       changed = proved();
@@ -423,8 +424,9 @@ export function createGuardedEdits(workspace: EditorWorkspace): GuardedEdits {
     const opened = anchor === undefined || left ? undefined : ws.anchor(anchor);
     // Another page shown while its page opened: a finishing step lands there as drafts (`away`).
     if (anchor !== undefined && !opened && !left && !(options.finish && ws.openFile() !== anchor)) return stale("anchor");
-    // The step's page is not the one shown (any more): it lands there as drafts.
-    const away = () => left || moved(held.changed()) || options.finish === true && ws.openFile() !== anchor;
+    // The step's page is not the one shown (any more): it lands there as drafts. Shown again, it is not:
+    // with no proof of that page's editor (`opened`), the step is then stale.
+    const away = () => options.finish === true && ws.openFile() !== anchor;
     const reads = track();
     let result: PlanResult;
     try { result = await plan(reads.r); }

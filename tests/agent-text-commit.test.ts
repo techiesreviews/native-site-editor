@@ -519,6 +519,8 @@ async function elsewhere(t: TestContext, race?: AwaitRace) {
   const read = async () => "before", find = async (_files: AgentReadFiles, path: string) => path === "index.html" ? { sha: "a".repeat(40) } : undefined;
   const files = { repo: { id: 1, full_name: "lex/site" }, snapshot: { branch: "main", commit: "commit", entries: [] }, read: race ? race.port("read", read) : read } as unknown as AgentReadFiles; // eslint-disable-line no-restricted-syntax -- only the repository, snapshot and blob reader are used.
   const shown: DraftScope = { ...f.scope, branch: "dev" };
+  // The draft store's agent fence is a wait before its reads too.
+  if (race) f.store.fenceAgent = race.port("fence", f.store.fenceAgent.bind(f.store));
   const finish = (command: AgentCommand, on: () => DraftScope | undefined = () => shown) => {
     agentCommandFiles.set(command, files);
     return finishAgentTextElsewhere(command, on, f.scope.account, f.store, race ? race.port("find", find) : find);
@@ -570,7 +572,7 @@ test("a text write elsewhere whose branch is shown again at any wait writes noth
     assert.equal(run.f!.store.get(run.f!.scope, "index.html"), undefined);
     assert.equal(await run.f!.records.receipt(run.f!.scope, "operation", "grant"), undefined);
   });
-  assert.equal(count, 2); // find, read
+  assert.equal(count, 3); // fence, find, read
 });
 
 test("a text write elsewhere to a protected path is refused with nothing kept", async t => {

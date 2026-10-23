@@ -16,31 +16,40 @@ interface Options {
 type Request = AgentEdit | AgentStatus;
 const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as JsonValue;
 
-/** What an edit holds of the workspace it arrived in, taken before any wait (ticket 23). */
+/**
+ * What an edit holds of the workspace it arrived in, taken before any wait (ticket 23): its files, its
+ * repository stamp, and its pin. `pinned` is false when no pin could be taken (nothing open as it
+ * arrived): then the edit cannot finish elsewhere, and the stamp must hold.
+ */
 export interface Held {
   source: ReturnType<AgentReadPorts["files"]>;
+  stamp: ReturnType<AgentReadPorts["stamp"]>;
   pin: NonNullable<ReturnType<NonNullable<AgentReadPorts["pin"]>>>;
+  pinned: boolean;
+}
+/** The workspace shown now, as an edit holds it. */
+function holdWorkspace(ports: AgentReadPorts): Held {
+  const pin = ports.pin?.();
+  return { source: ports.files(), stamp: ports.stamp(), pin: pin ?? { away: () => false, context: () => ports.context() }, pinned: Boolean(pin) };
 }
 
 /** Receipts precede preparation: replacements must never run twice against their own output. */
 export function createAgentEditTools(options: Options) {
   const flights = new Map<string, { identity: string; authorizationId: string; promise: Promise<AgentReadResult> }>();
   const { records, workspace, ports } = options;
-  // The workspace shown now, as an edit holds it: its files and, once another is shown, its own context.
-  const hold = (): Held => ({ source: ports.files(), pin: ports.pin?.() ?? { away: () => false, context: () => ports.context() } });
   async function execute(request: Request, fence: number, current: () => boolean, signal?: AbortSignal, held?: Held): Promise<AgentReadResult> {
-    const { source, pin } = held ?? hold(), stamp = ports.stamp();
+    const { source, pin, pinned, stamp } = held ?? holdWorkspace(ports);
     const commit = source?.snapshot.commit;
     let ran = false, identity: string | undefined;
     // Once the executor ran, its own commit decided the outcome: a later revision change or lost
     // socket must never relabel committed work as a conflict (the transport drops a reply it cannot send).
     // Another site or branch shown meanwhile stops nothing (ticket 23): the edit reads its own
     // workspace (`source`, the pin's context) and the editor writes it there; on show, a save moves
-    // the commit. Without a pin (no host to finish elsewhere) the repository stamp must still hold.
+    // the commit. Without a pin (no host to finish elsewhere) the arrival stamp must still hold.
     const check = () => {
       if (ran) return;
       signal?.throwIfAborted();
-      if (!current() || !pin.away() && (ports.files()?.snapshot.commit !== commit || !ports.pin && !stamp.holds()))
+      if (!current() || !pin.away() && (ports.files()?.snapshot.commit !== commit || !pinned && !stamp.holds()))
         throw new Error("The editor changed branch or revision. Read the site again.");
     };
     const reply = (outcome: JsonValue): AgentReadResult => {

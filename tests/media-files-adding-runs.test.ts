@@ -6,7 +6,13 @@ import type { MediaWorkspaceContext } from "../src/page-builder/media-workspace"
 
 const ctx = { key: "repo", assertLive() {} } as MediaWorkspaceContext;
 // A drop holds the context of the repository it was made in (src/main.ts uploadFilesTo pins it).
-const otherCtx = { key: "other", assertLive() {} } as MediaWorkspaceContext;
+const otherCtx = {
+  key: "other", scope: { account: "a", repoId: 2, repo: "a/other", branch: "main" },
+  drafts: { get: () => undefined, save: () => true, remove: () => true },
+  paths: [], items: [], pages: [], components: {}, history: false, assertLive: () => {},
+  read: async () => undefined, blob: async () => new Blob(), assetVersion: () => undefined,
+  applyBatch: async () => {}, openPage: async () => {},
+} satisfies MediaWorkspaceContext;
 const settle = () => new Promise(resolve => setTimeout(resolve, 0));
 
 /** Preparation each test releases by hand, so files can be cancelled on the way. */

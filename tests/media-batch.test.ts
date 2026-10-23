@@ -12,7 +12,7 @@ import { forEachAwait } from "./support/await-race";
 // The batch body loads with Media. Without a pin a repository switch while any of its loads is held
 // refuses before staging; with one (ticket 23) the batch lands in the pin's workspace.
 function harness(options: { stage?: (host: MediaDraftHost) => Promise<void> } = {}) {
-  let live = true, load = 0, staged = 0, listings = 0;
+  let live = true, view = false, load = 0, staged = 0, listings = 0;
   const histories: string[] = [], hosts: MediaDraftHost[] = [];
   const appStore = { openFile: { value: "index.html" as string | undefined }, repository: { value: { full_name: "lex/site" } }, snapshot: { value: { branch: "main" } } };
   const workspace = deferred<Awaited<ReturnType<MediaBatchPorts["load"]>>>();
@@ -39,13 +39,14 @@ function harness(options: { stage?: (host: MediaDraftHost) => Promise<void> } = 
   } as unknown as MediaBatchPorts;
   const pin = {
     repo: "lex/site", scope: { account: "lex", repoId: 1, repo: "lex/site", branch: "main" }, identity: "1", drafts: { list: () => [], get: () => undefined, save: () => true, remove: () => true },
-    here: () => live, entry: () => ({ path: "index.html", sha: "pinned-sha", mode: "100644", type: "blob" as const }), find: async () => undefined,
+    // As src/main.ts's pin (onShow, src/workspace-session.ts): a version view is elsewhere.
+    here: () => live && !view, entry: () => ({ path: "index.html", sha: "pinned-sha", mode: "100644", type: "blob" as const }), find: async () => undefined,
     source: () => "pinned", files: () => ["pinned.html"], list: () => listing.promise, remember: () => {},
   } satisfies MediaPin;
   const batch: MediaWorkspaceBatch = { label: "Swap image", expectedPaths: [], expectedSources: new Map(), expectedAssets: new Map(),
     edits: new Map([["index.html", "<img>"]]), moves: [], deletes: [], restores: [], uploads: [] };
   const run = (pinned = false) => applyMediaBatch(ports, pin.scope satisfies DraftScope, stamp, batch, pinned ? pin : undefined);
-  return { appStore, workspace, listing, modules, run, hosts, histories, switchRepository: () => { live = false; }, back: () => { live = true; load++; }, reload: () => { load++; }, counts: () => ({ staged, listings }) };
+  return { appStore, workspace, listing, modules, run, hosts, histories, switchRepository: () => { live = false; }, viewVersion: () => { view = true; }, back: () => { live = true; load++; }, reload: () => { load++; }, counts: () => ({ staged, listings }) };
 }
 
 test("without a pin, a media batch refuses a repository switch while its workspace chunk loads or the listing is read", async () => {
@@ -192,4 +193,18 @@ test("a pinned batch switched at any staging wait commits only on the side its w
     assert.deepEqual(run.committed, [false], "written once, elsewhere: the workspace shown is another");
   });
   assert.equal(count, 2);
+});
+
+test("a pinned batch with a version view entered before its first attempt is written as drafts, with no Undo step", async () => {
+  const h = harness();
+  const pending = h.run(true);
+  h.viewVersion();
+  h.workspace.resolve(h.modules);
+  h.listing.resolve([]);
+  await pending;
+  assert.equal(h.counts().staged, 1);
+  assert.equal(h.hosts[0].mounted("index.html"), false, "not through the editor showing the old version");
+  let disposed = false;
+  assert.equal(h.hosts[0].history(() => true, () => true, () => { disposed = true; }), true);
+  assert.equal(disposed, true);
 });

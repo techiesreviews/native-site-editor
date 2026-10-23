@@ -296,6 +296,8 @@ export function createCommit(ws: EditorWorkspace & { agentText?(): AgentTextComm
       durable = after;
       if (stale() || !receipt.isCurrent()) { receipt.dispose(); releaseUploads(); release(); return recover(); }
     }
+    // Its page shown again since `away` was read (an agent's durable commit waited): not here with no Undo.
+    if (away && !op.elsewhere!()) { receipt.dispose(); releaseUploads(); release(); return durable ? recover() : COMMIT_CHANGED; }
     if (!(agent ? agent.publish(after, () => receipt.apply()) : receipt.apply())) { const error = receipt?.error() ?? store.error ?? COMMIT_CHANGED; receipt?.dispose(); releaseUploads(); release(); return durable ? recover() : error; }
     if (away) {
       // Its page is not shown: the drafts are its change there, with no Undo step to hold them.
