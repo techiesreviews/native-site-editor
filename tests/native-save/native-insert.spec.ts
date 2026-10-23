@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
+import { clickOnText } from "./click-text";
 
 // Plus buttons between page sections open a picker of the components that
 // fit a section slot (template is one <section>); choosing one writes an
@@ -95,7 +96,7 @@ test("a section plus inserts a component from its section-only group into the pa
   await expect(page.getByRole("toolbar", { name: "Edit bar" }).locator(".edit-bar__kind")).toHaveText("Feature block");
   // Typing in its title changes this page, not the shared template.
   const title = frame.locator("feature-block [slot='title']");
-  await title.dblclick();
+  await clickOnText(title);
   await page.keyboard.press("ControlOrMeta+A");
   await page.keyboard.type("Only here");
   await page.keyboard.press("Enter");

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { selectText } from "./click-text";
 
 // Default fixture group. Variants in the edit bar (tickets 07 §5 and 71):
 // a dropdown per variant and a checkbox per yes/no variant on a selected
@@ -30,9 +31,9 @@ test.beforeEach(async ({ page, baseURL }) => {
   await expect(page.locator("#content [role=textbox]").first()).toBeAttached();
 });
 
-// The instance around a slotted heading: click the heading, Escape selects its parent.
+// The instance around a slotted heading: select the heading (a click types in it, Escape ends that), Escape selects its parent.
 async function selectInstance(page: Page, heading: string, kind: string) {
-  await frame(page).getByRole("heading", { name: heading }).click({ position: { x: 5, y: 5 } });
+  await selectText(frame(page).getByRole("heading", { name: heading }));
   await frame(page).getByRole("heading", { name: heading }).press("Escape");
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText(kind);
 }

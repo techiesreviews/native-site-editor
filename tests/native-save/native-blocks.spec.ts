@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { clickOnText } from "./click-text";
 import { editorMounted, storedDraft } from "./drafts";
 
 // Default fixture group: native-starter (#repo=501) and native-cards (#repo=540, no images/placeholder.svg).
@@ -50,7 +51,7 @@ test("a rail click immediately after typing keeps the text and inserts after the
   const original = await source(page);
   const lead = frame(page).locator(".hero p.lead");
   const originalText = await lead.textContent();
-  await lead.dblclick();
+  await clickOnText(lead);
   await expect(lead).toHaveAttribute("contenteditable", /.+/);
   await page.keyboard.press("ControlOrMeta+End");
   await page.keyboard.type(" typed");

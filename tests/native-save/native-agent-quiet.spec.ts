@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { clickOnText } from "./click-text";
 import { storedDrafts } from "./drafts";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 
@@ -330,7 +331,7 @@ test("live: another tab of this browser shows the agent's progress on a request 
 test("relay paused by owner: one explicit attempt, one manual Retry, no reconnect loop; manual edits and browser drafts survive", async ({ page, baseURL }) => {
   await open(page, baseURL);
   const heading = page.frameLocator(".native-preview-frame").locator(".hero h1");
-  await heading.dblclick();
+  await clickOnText(heading);
   await expect(heading).toHaveAttribute("contenteditable", /.+/);
   await heading.fill("Draft before pause");
   await page.keyboard.press("Escape");
@@ -365,7 +366,7 @@ test("relay paused by owner: one explicit attempt, one manual Retry, no reconnec
   expect(sockets).toBe(0);
   expect(await storedDrafts(page)).toEqual(before);
   await page.keyboard.press("Escape");
-  await heading.dblclick();
+  await clickOnText(heading);
   await heading.fill("Manual edit during pause");
   await page.keyboard.press("Escape");
   await expect.poll(async () => (await storedDrafts(page)).find(draft => draft.path === "index.html")?.content).toContain("Manual edit during pause");

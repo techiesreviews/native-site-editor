@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
+import { clickOnText } from "./click-text";
 
 // Drill from a section template into its fallback card, edit shared text,
 // and return by its breadcrumb; the preview document stays the same.
@@ -85,7 +86,7 @@ test("nested card opens in place, edits its template and returns by the breadcru
     return Math.abs(box.y + 4 - card.y) + Math.abs(box.height - 8 - card.height);
   }).toBeLessThan(4);
   const title = work.locator("h3:visible");
-  await title.dblclick();
+  await clickOnText(title);
   await expect(title).toHaveAttribute("contenteditable", "plaintext-only");
   await title.fill("Drilled project");
   await title.press("Enter");

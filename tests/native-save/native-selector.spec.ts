@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
+import { clickOnText } from "./click-text";
 
 const fixture = "fixtures/native-starter";
 const indexPath = "index.html";
@@ -533,7 +534,7 @@ test("folders only expand, and a component file opens beside its own CSS", async
   await expect(page.getByRole("toolbar", { name: "Edit bar" }).locator(".edit-bar__kind")).toHaveText("Heading");
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "components/feature-block/feature-block.html");
   // Editing the template renders in place.
-  await featureTitle.dblclick();
+  await clickOnText(featureTitle);
   await page.keyboard.press("End");
   await page.keyboard.type("!");
   await page.keyboard.press("Enter");

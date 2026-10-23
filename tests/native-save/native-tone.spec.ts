@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { selectText } from "./click-text";
 
 // Default fixture group: native-variants (541), with isolated page tone rules.
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
@@ -13,7 +14,7 @@ async function variants(page: Page) {
 const source = (page: Page) => page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("tones.html")!);
 async function selectParent(page: Page, heading: string, kind: string) {
   const target = frame(page).getByRole("heading", { name: heading, exact: true });
-  await target.click({ position: { x: 5, y: 5 } });
+  await selectText(target);
   await target.press("Escape");
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText(kind);
 }

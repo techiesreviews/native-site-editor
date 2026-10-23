@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { clickOnText } from "./click-text";
 import { effectiveSource } from "./drafts";
 
 // Edit component mode: the template's fixed text is edited in place (build
@@ -49,7 +50,7 @@ test("Edit component mode edits a fixed heading in place: every page shows it, o
 
   // Placeholder text edits the slot's fallback.
   const fallback = promo.getByText("Say what it is.", { exact: true });
-  await fallback.dblclick();
+  await clickOnText(fallback);
   await expect(fallback).toHaveAttribute("contenteditable", /^(plaintext-only|true)$/);
   await page.keyboard.press("ControlOrMeta+A");
   await page.keyboard.type("A short line on it.");

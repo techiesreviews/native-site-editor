@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import { selectText } from "./click-text";
 
 // Default fixture group: selected and focused text stays clear while typing,
 // on the page and in Edit component mode, including wrapped controls.
@@ -34,7 +35,7 @@ async function edit(page: Page, heading: Locator, width: number) {
     await page.locator(".native-preview-frame").evaluate(el => { el.style.flex = "none"; el.style.width = "200px"; });
     await expect.poll(async () => (await page.locator(".native-preview-frame").boundingBox())?.width).toBe(200);
   }
-  await heading.click();
+  await selectText(heading);
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Heading");
   await clear(page, heading);
   // Enter types in the selected heading.

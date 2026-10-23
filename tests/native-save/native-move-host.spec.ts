@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { selectText } from "./click-text";
 import { storedDraft, editorMounted } from "./drafts";
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const source = (page: Page) => page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html")!);
@@ -17,7 +18,7 @@ test.beforeEach(async ({ page, baseURL }) => {
     editor.replaceActiveRange({ path: "index.html", start: 0, end: before.length, expected: before, text: next });
   });
   await expect(frame(page).locator("#moving")).toBeVisible();
-  await frame(page).locator("#moving").click({ position: { x: 5, y: 5 } });
+  await selectText(frame(page).locator("#moving"));
 });
 
 const FIRST = '<section id="first"><p id="moving">Moving paragraph</p><p id="second">Second paragraph</p></section>';
@@ -133,7 +134,7 @@ test("Page structure Alt+Down uses the painted element's source proof and one Un
 
 test("Alt+Down while typing remains native and does not move the element", async ({ page }) => {
   const before = await source(page);
-  // beforeEach clicked the paragraph: selected, not typed in, until Enter.
+  // beforeEach selected the paragraph (a click, then Escape): not typed in, until Enter.
   await expect(frame(page).locator("#moving")).not.toHaveAttribute("contenteditable", /.+/);
   await page.keyboard.press("Enter");
   await expect(frame(page).locator("#moving")).toHaveAttribute("contenteditable", "plaintext-only");

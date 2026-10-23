@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { selectText } from './click-text';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createServer } from 'node:http';
@@ -197,7 +198,7 @@ test('the Starter site drafted into an empty repository offers Layout and Tone o
   const heroFields = async () => {
     const heading = frame.locator('section-hero > h1[slot="title"]');
     await expect(heading).toBeVisible({ timeout: 30_000 });
-    await heading.click({ position: { x: 5, y: 5 } });
+    await selectText(heading);
     await heading.press('Escape');
     await expect(bar.locator('.edit-bar__kind')).toHaveText('Section hero');
     // Variants sit behind one Variants button.

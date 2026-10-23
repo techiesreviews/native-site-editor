@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { clickOnText } from "./click-text";
 import { openPageSettingsFromPages } from "./settings-entry";
 
 // A page whose bytes are not UTF-8 text (GitHub's text read refuses it with
@@ -63,7 +64,7 @@ test("a page that is not UTF-8 text, opened by a link or from Pages, shows the n
   // The text on the home page still edits.
   if (await explorer(page).evaluate((element) => element.matches(":popover-open"))) await page.keyboard.press("Escape");
   const heading = preview(page).locator(".hero h1");
-  await heading.dblclick();
+  await clickOnText(heading);
   await expect(heading).toHaveAttribute("contenteditable", /plaintext-only|true/);
   await page.keyboard.press("ControlOrMeta+A");
   await page.keyboard.type("Back home");

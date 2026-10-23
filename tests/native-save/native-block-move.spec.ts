@@ -1,9 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
+import { selectText } from "./click-text";
 import { editorMounted } from "./drafts";
 
 // Blocks drag themselves (ticket 12 §10, §12): a press on a page block moved
 // 7 px moves it across containers, one undo step; cards reorder sideways; a
-// click selects (a double-click or Enter types); the header does not drag.
+// click on text types there, and a press on it still drags; the header does not drag.
 // Default fixture group: native-cards (#repo=540), a Section › Div (grid) › two cards.
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const ghost = (page: Page) => page.locator(".pb-drag-ghost");
@@ -125,20 +126,13 @@ test("a card dragged over the third card's title reorders in the grid, one undo 
   await expect(titles).toHaveText(["Fern & Kettle", "Harbour Lane Pottery", "Untitled project"]);
 });
 
-test("a click selects a paragraph, a double-click types into it, Escape keeps it selected, and a just-clicked paragraph drags", { tag: "@smoke" }, async ({ page, baseURL }) => {
+test("a click types into a paragraph where it was clicked, Escape keeps it selected, and a paragraph being typed in drags", { tag: "@smoke" }, async ({ page, baseURL }) => {
   await open(page, baseURL);
   const original = await source(page);
   const lead = frame(page).locator(".hero .lead");
   const text = (await lead.textContent())!;
   expect(text).toMatch(/^One or two sentences/);
-  // A click selects: the edit bar, no caret, and keys type nothing.
-  await lead.click();
-  await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Paragraph");
-  await expect(lead).not.toHaveAttribute("contenteditable", /.+/);
-  await expect(lead).not.toBeFocused();
-  await page.keyboard.type("x");
-  await expect(lead).toHaveText(text);
-  // A double-click puts the caret where it was double-clicked: after "One".
+  // A click puts the caret where it was clicked: after "One".
   const box = (await page.locator(".native-preview-frame").boundingBox())!;
   const after = await lead.evaluate(el => {
     const range = document.createRange();
@@ -147,7 +141,8 @@ test("a click selects a paragraph, a double-click types into it, Escape keeps it
     const r = range.getBoundingClientRect();
     return { x: r.right - 1, y: r.top + r.height / 2 };
   });
-  await page.mouse.dblclick(box.x + after.x, box.y + after.y);
+  await page.mouse.click(box.x + after.x, box.y + after.y);
+  await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Paragraph");
   await expect(lead).toHaveAttribute("contenteditable", /.+/);
   await expect(lead).toBeFocused();
   await page.keyboard.type(" (or three)");
@@ -157,8 +152,9 @@ test("a click selects a paragraph, a double-click types into it, Escape keeps it
   await expect(lead).not.toHaveAttribute("contenteditable", /.+/);
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Paragraph");
   await expect.poll(async () => flat(await source(page))).toContain('<p class="lead">One (or three) or two sentences');
-  // Pressed and moved at once, the clicked paragraph drags after the services list.
+  // Pressed and moved at once, the paragraph being typed in (clicked again) drags after the services list.
   await lead.click();
+  await expect(lead).toHaveAttribute("contenteditable", /.+/);
   // In the list's own padding, beside its items: a list item would take it (slice 82), the list passes it beside itself.
   await pressAndMove(page, await pointIn(page, ".hero .lead", 0.3), await pointIn(page, "#services ul", 0, 0.6, 10));
   await expect(page.locator(".pb-drag-ghost__name")).toHaveText("Paragraph");
@@ -174,22 +170,17 @@ test("a click selects a paragraph, a double-click types into it, Escape keeps it
   await expect.poll(() => source(page)).toBe(original);
 });
 
-test("a press in typed text selects it, and the name chip moves it", async ({ page, baseURL }) => {
+test("typed text is selected with Shift and arrows, and the name chip moves it", async ({ page, baseURL }) => {
   await open(page, baseURL);
   const lead = frame(page).locator(".hero .lead");
-  await lead.click();
-  await expect(lead).not.toHaveAttribute("contenteditable", /.+/);
+  await selectText(lead);
   await page.keyboard.press("Enter");
   await expect(lead).toHaveAttribute("contenteditable", /.+/);
   await expect(bar(page).locator(".edit-bar__kind")).toHaveText("Paragraph");
-  // Press and move inside the text being typed: a text selection, no drag.
-  const from = await pointIn(page, ".hero .lead", 0.1);
-  await page.mouse.move(from.x, from.y);
-  await page.mouse.down();
-  await page.mouse.move(from.x + 80, from.y, { steps: 6 });
-  await expect(ghost(page)).toHaveCount(0);
-  await page.mouse.up();
-  expect((await lead.evaluate(() => document.getSelection()?.toString() ?? "")).length).toBeGreaterThan(0);
+  // Inside the text being typed, Shift and arrows select text (a press and drag moves the block: native-click-to-type.spec.ts).
+  await page.keyboard.press("Home");
+  for (let i = 0; i < 3; i++) await page.keyboard.press("Shift+ArrowRight");
+  expect(await lead.evaluate(() => document.getSelection()?.toString() ?? "")).toBe("One");
   await page.keyboard.press("End");
   await page.keyboard.type(" Typed.");
   // Still typing, the bar's name drags the paragraph after the services list; the press commits the text.

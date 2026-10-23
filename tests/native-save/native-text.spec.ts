@@ -1,10 +1,11 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
+import { clickOnText } from "./click-text";
 
-// Typing into a text element in the native preview: a click selects it, a
-// double-click (or Enter) puts the caret in it, and Enter, Escape, blur or a
-// click elsewhere writes only the changed text into the source as one undo step.
+// Typing into a text element in the native preview: a click on its text (or
+// Enter once it is selected) puts the caret in it, and Enter, Escape, blur or
+// a click elsewhere writes only the changed text into the source as one undo step.
 const fixture = "fixtures/native-starter";
 const indexPath = "index.html";
 const indexSource = readFileSync(resolve(fixture, indexPath), "utf8");
@@ -26,10 +27,10 @@ async function editorText(page: Page, host: string) {
   return text;
 }
 
-test("double-clicking a heading puts the caret in it, and typed text lands in the source", { tag: "@smoke" }, async ({ page }) => {
+test("clicking a heading puts the caret in it, and typed text lands in the source", { tag: "@smoke" }, async ({ page }) => {
   const frame = page.frameLocator(".native-preview-frame");
   const heading = frame.locator(".hero h1");
-  await heading.dblclick();
+  await clickOnText(heading);
   await expect(heading).toHaveAttribute("contenteditable", /plaintext-only|true/);
   await expect(heading).toBeFocused();
 
@@ -53,7 +54,7 @@ test("double-clicking a heading puts the caret in it, and typed text lands in th
 test("a small edit keeps the formatting around it; Escape and a click elsewhere commit", { tag: "@smoke" }, async ({ page }) => {
   const frame = page.frameLocator(".native-preview-frame");
   const lead = frame.locator(".hero p.lead");
-  await lead.click();
+  await clickOnText(lead);
   await expect(page.getByRole("toolbar", { name: "Edit bar" }).locator(".edit-bar__kind")).toHaveText("Paragraph");
   // Bold one word through the edit bar's shortcut.
   await lead.evaluate((el) => {
@@ -69,7 +70,7 @@ test("a small edit keeps the formatting around it; Escape and a click elsewhere 
   await expect(lead.locator("strong")).toHaveText("plain");
 
   // Type at the end of the paragraph.
-  await lead.dblclick();
+  await clickOnText(lead);
   await page.keyboard.press("ControlOrMeta+End");
   await page.keyboard.type(" Try it.");
   // Escape leaves typing with what was typed kept, the paragraph still selected.
@@ -80,16 +81,16 @@ test("a small edit keeps the formatting around it; Escape and a click elsewhere 
     "Edit <strong>plain</strong> HTML, CSS, and shared component templates and watch the preview update in place — no build, no iframe reload. Try it.</p>",
   );
 
-  await lead.dblclick();
+  await clickOnText(lead);
   await page.keyboard.press("ControlOrMeta+End");
   await page.keyboard.type(" Again.");
-  // Clicking another element commits the typing.
-  await frame.locator(".hero h1").click();
+  // Clicking another element (the image) commits the typing.
+  await frame.locator(".hero img").click();
   await expect.poll(() => editorText(page, "#content")).toContain(
     "Edit <strong>plain</strong> HTML, CSS, and shared component templates and watch the preview update in place — no build, no iframe reload. Try it. Again.</p>",
   );
   await expect(lead.locator("strong")).toHaveText("plain");
-  await expect(frame.locator(".hero h1")).not.toHaveAttribute("contenteditable", /.+/);
+  await expect(lead).not.toHaveAttribute("contenteditable", /.+/);
 });
 
 test("text inside a component template is typed into that template", async ({ page }) => {
@@ -107,11 +108,9 @@ test("text inside a component template is typed into that template", async ({ pa
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", footerPath);
   await expect.poll(async () => typeof (await mounted(footerPath))).toBe("string");
   expect(await mounted(footerPath)).toBe(footerSource);
-  // A click selects the paragraph once the mode has settled; a double-click types in it.
-  await footer.click();
+  // A click on the paragraph's text once the mode has settled types in it.
+  await clickOnText(footer);
   await expect(page.getByRole("toolbar", { name: "Edit bar" }).locator(".edit-bar__kind")).toHaveText("Paragraph");
-  await expect(footer).not.toHaveAttribute("contenteditable", /.+/);
-  await footer.dblclick();
   await expect(footer).toHaveAttribute("contenteditable", /plaintext-only|true/);
   await page.keyboard.press("Home");
   await page.keyboard.type("New: ");
@@ -122,10 +121,10 @@ test("text inside a component template is typed into that template", async ({ pa
   await expect.poll(() => editorText(page, "#content")).toMatch(/<p[^>]*>New: /);
 });
 
-// A real click (or double-click) on the text an element shows, as a user
-// makes it: text is no event target, so the press lands on whatever shows it
-// (a slot, for text a page gives a component).
-async function clickText(page: Page, selector: string, nth = 0, double = false) {
+// A real click on the text an element shows, as a user makes it: text is no
+// event target, so the press lands on whatever shows it (a slot, for text a
+// page gives a component).
+async function clickText(page: Page, selector: string, nth = 0) {
   const frameBox = (await page.locator(".native-preview-frame").boundingBox())!;
   const at = await page.frameLocator(".native-preview-frame").locator(selector).nth(nth).evaluate((el) => {
     el.scrollIntoView({ block: "center" });
@@ -134,7 +133,7 @@ async function clickText(page: Page, selector: string, nth = 0, double = false) 
     const box = range.getBoundingClientRect();
     return { x: box.left + 12, y: box.top + box.height / 2 };
   });
-  await (double ? page.mouse.dblclick(frameBox.x + at.x, frameBox.y + at.y) : page.mouse.click(frameBox.x + at.x, frameBox.y + at.y));
+  await page.mouse.click(frameBox.x + at.x, frameBox.y + at.y);
 }
 
 async function pasteInto(page: Page, host: string, source: string) {
@@ -145,7 +144,7 @@ async function pasteInto(page: Page, host: string, source: string) {
   await page.keyboard.press("ControlOrMeta+V");
 }
 
-test("text a page gives a component's default slot is the page's: a click selects the instance and a double-click types into the page", async ({ page }) => {
+test("text a page gives a component's default slot is the page's: a click selects the instance and types into the page", async ({ page }) => {
   const frame = page.frameLocator(".native-preview-frame");
   const withNote = indexSource.replace(
     `<h2 data-key="filler-title">Scroll to verify</h2>`,
@@ -158,8 +157,6 @@ test("text a page gives a component's default slot is the page's: a click select
   await clickText(page, "card-note[data-key='page-note']");
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
   await expect(page.getByRole("toolbar", { name: "Edit bar" }).locator(".edit-bar__kind")).toHaveText("Card note");
-  await expect(note).not.toHaveAttribute("contenteditable", /.+/);
-  await clickText(page, "card-note[data-key='page-note']", 0, true);
   await expect(note).toHaveAttribute("contenteditable", /plaintext-only|true/);
   await page.keyboard.press("End");
   await page.keyboard.type(" · Visit");
@@ -181,7 +178,7 @@ test("text a page gives a component's default slot is the page's: a click select
   await page.getByRole("treeitem", { name: /^Project card/ }).nth(1).locator(".page-structure__label").first().click();
   await page.getByRole("toolbar", { name: "Edit bar" }).getByRole("button", { name: "Edit Project card component", exact: true }).click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", cardPath);
-  await clickText(page, "project-card >> card-note", 1, true);
+  await clickText(page, "project-card >> card-note", 1);
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", cardPath);
   await expect(frame.locator("project-card").nth(1).locator("card-note")).toHaveAttribute("contenteditable", /plaintext-only|true/);
 });
@@ -206,8 +203,8 @@ test("a line with a price struck through is text: typed into on the page and in 
   await expect(priceRow).toBeVisible();
   await expect(priceRow.locator("[role=treeitem]")).toHaveCount(0);
 
-  // On the page: a double-click puts the caret in the whole line, the <del> kept.
-  await clickText(page, "p[data-key='price']", 0, true);
+  // On the page: a click puts the caret in the whole line, the <del> kept.
+  await clickText(page, "p[data-key='price']");
   await expect(price).toHaveAttribute("contenteditable", /plaintext-only|true/);
   await page.keyboard.press("End");
   await page.keyboard.type(" today");
@@ -219,7 +216,6 @@ test("a line with a price struck through is text: typed into on the page and in 
   await clickText(page, "project-card[data-key='card-1'] > p[slot='body']");
   await expect(kind).toHaveText("Paragraph");
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
-  await clickText(page, "project-card[data-key='card-1'] > p[slot='body']", 0, true);
   await expect(cardBody).toHaveAttribute("contenteditable", /plaintext-only|true/);
   await page.keyboard.press("End");
   await page.keyboard.type(" now");
@@ -239,7 +235,7 @@ test("a click on an image selects it; a double-click opens Choose image", async 
   await expect(chooser.getByRole("button", { name: "Choose images/placeholder.svg", exact: true })).toBeVisible();
 });
 
-test("a link is selected by a click and typed into on a double-click; Enter types into selected text", async ({ page }) => {
+test("a click on a link's text types into it, never following it; Enter types into selected text", async ({ page }) => {
   const frame = page.frameLocator(".native-preview-frame");
   await pasteInto(page, "#content", indexSource.replace(
     `<h2 data-key="filler-title">Scroll to verify</h2>`,
@@ -251,10 +247,8 @@ test("a link is selected by a click and typed into on a double-click; Enter type
   await link.click();
   const kind = page.getByRole("toolbar", { name: "Edit bar" }).locator(".edit-bar__kind");
   await expect(kind).toHaveText("Link");
-  await expect(link).not.toHaveAttribute("contenteditable", /.+/);
-  // The click neither followed the link nor put a caret in it.
+  // The click did not follow the link; it put the caret in its text.
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath);
-  await link.dblclick();
   await expect(link).toHaveAttribute("contenteditable", /plaintext-only|true/);
   await expect(link).toBeFocused();
   await page.keyboard.press("Escape");
@@ -264,8 +258,10 @@ test("a link is selected by a click and typed into on a double-click; Enter type
   // Escape, not typing, selects the parent.
   await page.keyboard.press("Escape");
   await expect(kind).toHaveText("Section");
-  // Enter on the selected link types at its end; Enter again finishes, still selected.
+  // Enter on the selected link (a click, then Escape) types at its end; Enter again finishes, still selected.
   await link.click();
+  await page.keyboard.press("Escape");
+  await expect(link).not.toHaveAttribute("contenteditable", /.+/);
   await expect(kind).toHaveText("Link");
   await page.keyboard.press("Enter");
   await expect(link).toHaveAttribute("contenteditable", /plaintext-only|true/);
@@ -298,7 +294,7 @@ test("a click on a Structure row selects; a double-click edits its text in the r
   await expect(heading).toHaveText("A native browser preview today");
   await expect.poll(() => editorText(page, "#content")).toContain(">A native browser preview today</h1>");
   // Typing on the page, a click on the same row selects it, no longer typed in.
-  await heading.dblclick();
+  await clickOnText(heading);
   await expect(heading).toHaveAttribute("contenteditable", /plaintext-only|true/);
   await row.locator(".page-structure__label").click();
   await expect(heading).not.toHaveAttribute("contenteditable", /.+/);

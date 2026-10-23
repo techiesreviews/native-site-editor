@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { clickOnText } from "./click-text";
 import { openPageSettingsFromPages } from "./settings-entry";
 
 // A stylesheet whose bytes are not UTF-8 text (GitHub's text read refuses it
@@ -53,7 +54,7 @@ test("a page linking a stylesheet that is not UTF-8 text paints, indexes and edi
   // Text on the page still edits.
   if (await page.locator("#explorer").evaluate((element) => element.matches(":popover-open"))) await page.keyboard.press("Escape");
   const heading = preview(page).locator(".hero h1");
-  await heading.dblclick();
+  await clickOnText(heading);
   await expect(heading).toHaveAttribute("contenteditable", /plaintext-only|true/);
   await page.keyboard.press("ControlOrMeta+A");
   await page.keyboard.type("Still editable");
@@ -103,7 +104,7 @@ test("the text index meeting an unreadable stylesheet after the paint skips it, 
   // Text on the page still edits.
   if (await page.locator("#explorer").evaluate((element) => element.matches(":popover-open"))) await page.keyboard.press("Escape");
   const heading = preview(page).locator(".hero h1");
-  await heading.dblclick();
+  await clickOnText(heading);
   await expect(heading).toHaveAttribute("contenteditable", /plaintext-only|true/);
   await page.keyboard.press("ControlOrMeta+A");
   await page.keyboard.type("Edited after the index");

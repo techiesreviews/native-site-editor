@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
+import { clickOnText } from "./click-text";
 
 // Fixed parts are locked on the page (build slice 48, ticket 14 §7): the
 // starter's Recent work made a section component with a fixed paragraph.
@@ -82,8 +83,8 @@ test("Fixed parts select the page instance with its normal edit bar and stay loc
   await expectInstanceBar(page);
   if (shots) await page.screenshot({ path: `${shots}/90-instance-bar.png` });
 
-  // Fixed source never becomes an editable text surface, even on double-click and typing.
-  await paragraph.dblclick();
+  // Fixed source never becomes an editable text surface, even on a click on its text and typing.
+  await clickOnText(paragraph);
   await page.keyboard.type("Cannot change");
   await expect(paragraph).not.toHaveAttribute("contenteditable", /.+/);
   await expect(paragraph).toHaveText("Selected projects.");
@@ -140,7 +141,7 @@ test("Clicking another fixed Paragraph keeps the normal instance bar and refuses
   const note = work.locator("p.note");
   await note.click();
   await expectInstanceBar(page);
-  await note.dblclick();
+  await clickOnText(note);
   await page.keyboard.type("Cannot change");
   await expect(note).not.toHaveAttribute("contenteditable", /.+/);
   await expect(note).toHaveText("More projects soon.");

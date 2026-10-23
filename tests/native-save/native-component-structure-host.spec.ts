@@ -42,7 +42,7 @@ test("clicking a nested shared fallback selects the real page instance with its 
   const before = await source(page);
   const fallback = frame(page).locator("project-card").first().locator("card-note p");
   const sharedBefore = await storedDraft(page, "components/card-note/card-note.html");
-  await fallback.dblclick({ position: { x: 5, y: 5 } });
+  await fallback.click({ position: { x: 5, y: 5 } });
   await fallback.press("x");
   await expect(fallback).not.toHaveAttribute("contenteditable", /.+/);
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
@@ -112,7 +112,7 @@ test("explicit Edit permits native typing in an outer template fallback and Undo
   const before = await source(page, path);
   const body = frame(page).locator("project-card").first().locator(".project-card__body");
   await expect(body).toHaveText("No description yet.");
-  await body.dblclick({ position: { x: 5, y: 5 } });
+  await body.click({ position: { x: 5, y: 5 } });
   await expect(body).toHaveAttribute("contenteditable", "plaintext-only");
   await body.fill("Explicit shared inline edit"); await body.press("Enter");
   await expect.poll(() => source(page, path)).toBe(before!.replace("No description yet.", "Explicit shared inline edit"));
@@ -122,7 +122,7 @@ test("explicit Edit permits native typing in an outer template fallback and Undo
   await page.getByRole("button", { name: "Done editing component", exact: true }).click();
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html");
   const templateDraft = await storedDraft(page, path);
-  await body.dblclick({ position: { x: 5, y: 5 } }); await body.press("x");
+  await body.click({ position: { x: 5, y: 5 } }); await body.press("x");
   await expect(body).not.toHaveAttribute("contenteditable", /.+/);
   expect(await storedDraft(page, path)).toEqual(templateDraft);
   await expect(body).toHaveText("No description yet.");
@@ -197,7 +197,7 @@ test("changing branch clears an old same-path template permission before the new
   const before = await source(page);
   const fallback = frame(page).locator("project-card").first().locator(".project-card__body");
   await expect(fallback).toHaveText("No description yet.");
-  await fallback.dblclick({ position: { x: 5, y: 5 } }); await fallback.press("x");
+  await fallback.click({ position: { x: 5, y: 5 } }); await fallback.press("x");
   await expect(fallback).not.toHaveAttribute("contenteditable", /.+/);
   expect(await source(page)).toBe(before);
   expect(await storedDraft(page, "components/project-card/project-card.html")).toBeUndefined();
@@ -274,7 +274,7 @@ test("a delayed component mode keeps the template part selected while it loads",
     await expect.poll(() => source(page, path)).toContain("No description yet.");
     const body = frame(page).locator("project-card").first().locator(".project-card__body");
     await expect(body).toHaveText("No description yet.");
-    await body.dblclick({ position: { x: 5, y: 5 } });
+    await body.click({ position: { x: 5, y: 5 } });
     await expect(body).toHaveAttribute("contenteditable", "plaintext-only");
     await expect(body).toBeFocused();
     release();

@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { effectiveSource } from "./drafts";
 import { expect, test, type Page } from "@playwright/test";
+import { clickOnText } from "./click-text";
 
 // Slice 45: a slot change in Edit component mode rewrites the template and
 // every page using the component as one undo step. Home and About both use
@@ -133,7 +134,7 @@ test("slot changes rewrite the template and both pages as one undo step", { tag:
   if (shots) await page.screenshot({ path: `${shots}/3-home-after-done.png` });
   // A page edit after Done, then three Undos and three Redos on the page: each step finds the pages as it left them.
   const redo = () => page.getByRole("button", { name: "Redo", exact: true }).click();
-  await frame(page).locator("card-project h3", { hasText: "Fern & Kettle" }).dblclick();
+  await clickOnText(frame(page).locator("card-project h3", { hasText: "Fern & Kettle" }));
   await page.keyboard.press("ControlOrMeta+A");
   await page.keyboard.type("Fern and Kettle");
   await page.keyboard.press("Enter");
