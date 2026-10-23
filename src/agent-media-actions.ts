@@ -475,8 +475,8 @@ export async function applyAgentMedia(...parameters: Parameters<typeof executeAg
   }
 }
 
-/** Main's adapter lives in this lazy chunk, including all media preparation. */
 /**
+ * Main's adapter lives in this lazy chunk, including all media preparation.
  * `page` and `taken`: the page and the stamp the caller took before loading this chunk; `background`
  * makes the background page's own controller (tests give theirs). A change that
  * arrived in a workspace pinned as it came (ticket 27) runs in that workspace's background page: a
@@ -492,7 +492,12 @@ export async function runAgentMedia(shown: ReturnType<typeof createMediaControll
   const since = pin ? ports.stamp() : taken, proof = mediaCommandProofs.get(command), signal = agentCommandSignals.get(command);
   const check = () => { signal?.throwIfAborted(); proof?.(); if (!since.holds()) throw new Error("The editor moved to another site or branch meanwhile. Nothing was changed."); };
   check();
-  const improve = command.operation === "improve_images" ? controller.prepareImprove() : undefined;
+  // Lex's own Media work comes first while the workspace is shown: the shown controller knows whether
+  // its pane is busy (the background controller has no pane), asked as it starts and before each context.
+  const paneFree = () => { if (pin && pin.here()) shown.prepareImprove(); };
+  const own = command.operation === "improve_images" ? controller.prepareImprove() : undefined;
+  if (own) paneFree();
+  const improve = own && pin ? { ...own, context: async () => { paneFree(); const ctx = await own.context(); paneFree(); return ctx; } } : own;
   const target = () => ({ path: command.path, node: parseOutlineId(command.args!.element!)! });
   const { isAgentMediaPath } = await import("./agent-media"); check();
   const context = await controller.workspaceContext(isAgentMediaPath); check();

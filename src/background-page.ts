@@ -124,18 +124,24 @@ export interface BackgroundFrame extends BackgroundPage {
 /**
  * Opens `site.page` in a hidden preview frame: its texts are read (each level of templates and
  * stylesheets in turn, at most 10), drawn off screen, inert and hidden from assistive technology.
+ * Each measurement reads them again first, so work sharing the page measures it as it is now.
  */
 export async function openBackgroundFrame(site: BackgroundSite, create: (host: HTMLElement) => NativePreview, parent: HTMLElement = document.body): Promise<BackgroundFrame> {
-  const texts = new Map<string, string>(), files = site.files();
-  let componentCss: ReadonlyMap<string, string> = new Map();
-  for (let round = 0; round < 10; round++) {
-    const shown = site.shown(path => texts.get(path), path => files.has(path));
-    componentCss = shown.componentCss;
-    const wanted = [...shown.files].filter(path => !texts.has(path));
-    if (!wanted.length) break;
-    const read = await Promise.all(wanted.map(async path => [path, await site.text(path) ?? ""] as const));
-    for (const [path, text] of read) texts.set(path, text);
+  // The page's texts as its workspace has them now, a level at a time (at most 10).
+  async function read() {
+    const texts = new Map<string, string>(), files = site.files();
+    let componentCss: ReadonlyMap<string, string> = new Map();
+    for (let round = 0; round < 10; round++) {
+      const shown = site.shown(path => texts.get(path), path => files.has(path));
+      componentCss = shown.componentCss;
+      const wanted = [...shown.files].filter(path => !texts.has(path));
+      if (!wanted.length) break;
+      const read = await Promise.all(wanted.map(async path => [path, await site.text(path) ?? ""] as const));
+      for (const [path, text] of read) texts.set(path, text);
+    }
+    return { sources: Object.fromEntries(texts), componentStyles: Object.fromEntries(componentCss) };
   }
+  let drawn = await read();
   const host = parent.ownerDocument.createElement("div");
   host.className = "background-page";
   // Laid out at the window's size (so the page is drawn as it would be shown) but off screen and unseen.
@@ -149,25 +155,28 @@ export async function openBackgroundFrame(site: BackgroundSite, create: (host: H
     const route = Object.keys(site.site.routes).find(route => site.site.routes[route] === site.page);
     preview.activate(site.site);
     // As the editor draws it: each component's own stylesheet comes by its tag (composeStyles).
-    preview.update({ sources: Object.fromEntries(texts), componentStyles: Object.fromEntries(componentCss), ...route ? { route } : {} });
+    preview.update({ ...drawn, ...route ? { route } : {} });
   } catch (error) {
     // Failed while it opened: nothing of it stays in the document.
     try { preview?.destroy(); } finally { host.remove(); }
     throw error;
   }
-  const drawn = preview;
+  const frame = preview;
   return {
     async measure(request) {
+      // Work sharing this page may have changed it since it was drawn: drawn again from its texts now.
+      const now = await read();
+      if (JSON.stringify(now) !== JSON.stringify(drawn)) { drawn = now; frame.update(now); }
       // The frame's runtime loads beside the editor's: until it has drawn the page, ask again (about 5 s).
       for (let attempt = 0; ; attempt++) {
-        try { return await drawn.measureImage(request); }
+        try { return await frame.measureImage(request); }
         catch (error) {
           if (attempt >= 50 || !(error instanceof Error) || !/not showing a page yet/.test(error.message)) throw error;
           await new Promise(resolve => setTimeout(resolve, 100));
         }
       }
     },
-    close() { drawn.destroy(); host.remove(); },
+    close() { frame.destroy(); host.remove(); },
   };
 }
 
@@ -204,6 +213,12 @@ export function pinnedPorts(ports: MediaControllerPorts, pin: MediaPin | undefin
     change(path, source, edits, node, message) {
       if (here()) return ports.change(path, source, edits, node, message);
       // Its workspace is not shown: the page's draft there takes the change, as the editor's own would.
+      // A named exception to CODING_STANDARDS "One transaction per user action" (a write goes through
+      // one guarded edit): the guarded drafts-only commit (`elsewhere`, src/guarded-edit/commit.ts)
+      // needs an editor workspace of the pin's site, which this page does not have (ticket 27, case 1).
+      // What proves it: the page's bytes there are the ones the change was made on (`pin.source`),
+      // checked synchronously with no wait before the draft is saved, in the record shape the guarded
+      // commit's edits-only path writes; it has no Undo step (see the ticket's Not done).
       if (pin.source(path) !== source) return false;
       let text = source;
       for (const edit of [...edits].sort((a, b) => b.start - a.start)) text = text.slice(0, edit.start) + edit.text + text.slice(edit.end);

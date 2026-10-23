@@ -81,6 +81,15 @@ Review round 2 (behaviour and tests):
 - A `forEachAwait` sweep of a pinned agent Media change through `runAgentMedia` (its background page's own controller, `background`), switched away at each wait: written once, as its workspace's draft, receipt applied. Test: `tests/agent-tools-media.test.ts`.
 - Checks: `kit unit --affected` `RESULT: ok unit 1409/1409 (85 files)`; `npm run check` and `npm run lint` green; `kit size` `RESULT: ok size boot 347 KB (-1 KB) vs dev@c15fe5c, budget 355 KB`; `kit specs native-invisible-multiplayer.spec.ts` `RESULT: ok specs 1/1 passed` (5 tests); `kit specs --affected` `RESULT: fail specs 2 of 109 failed: native-media-library.spec.ts, native-structure-inplace.spec.ts` (one shard under a load of about 30, 874 tests passed), and both rerun alone `RESULT: ok specs 2/2 passed`. `main.ts` 4076 lines, ceiling 4080.
 
+Review round 3 (behaviour and tests):
+
+- An agent's Improve images in a workspace still shown refuses while Lex's Media pane is busy, as before: its background controller has no pane, so the shown controller is asked as it starts and before each context (`runAgentMedia`). Test: `tests/agent-tools-media.test.ts`.
+- A background page shared by later work is drawn again from its workspace's texts before each measurement, so a page changed by earlier work is measured as it is now (`openBackgroundFrame`).
+- `pinnedPorts` `change` names its direct draft write as an exception to "One transaction per user action", with what proves it (the page's bytes there, checked with no wait before the save).
+- The editor's own preview frame is looked up inside the editor's preview (`main.ts`), never a background page's.
+- Tests: a pinned Media change shown again at another commit is refused ("The relay disconnected or the site was saved meanwhile") and never runs (`tests/agent-tools-media.test.ts`); a `forEachAwait` sweep of the image popup's shape change written through the held ports (`framePlace` over `pinnedPorts`): once, on its own page, "On main: Image shape changed" (`tests/media-controller.test.ts`). Spec: the picker cells see the hidden frame answer a measurement, and the branch cell's picture written away matches the same Use done on show.
+- Checks: `kit unit --affected` `RESULT: ok unit 1412/1412 (85 files)`; `npm run check` and `npm run lint` green; `kit size` `RESULT: ok size boot 347 KB (-1 KB) vs dev@c15fe5c, budget 355 KB`; touched specs (native-invisible-multiplayer, native-mcp-media, native-image-popup, native-media-video, native-media-picker, native-improve-images, native-switch-mid-work) `RESULT: ok specs 7/7 passed`. `main.ts` 4076 lines, ceiling 4080.
+
 ## Question for Lex (open)
 
 Put to Lex (until he answers, `status: open`):
