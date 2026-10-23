@@ -56,6 +56,10 @@ test("the media text also reads an opaque draft's cached text and the wider inde
   const { runtime, clean } = setup([draft("logo.svg", "", { opaque: true, sourceSha: "b".repeat(40) })]);
   assert.equal(runtime.textSource("logo.svg"), undefined);
   runtime.state.opaqueText.set(draftKey(SCOPE, "logo.svg"), { sha: "b".repeat(40), text: "<svg/>" });
+  assert.equal(runtime.textSource("logo.svg"), "<svg/>");
+  // Text cached for another blob is not this draft's.
+  runtime.state.opaqueText.set(draftKey(SCOPE, "logo.svg"), { sha: "c".repeat(40), text: "<svg>old</svg>" });
+  assert.equal(runtime.textSource("logo.svg"), undefined);
   clean.put("", "key", "notes.txt", "notes");
   assert.equal(runtime.textSource("notes.txt"), "notes");
   assert.equal(runtime.source("notes.txt"), undefined);
@@ -275,4 +279,25 @@ test("the site's sources read through a plan's reader when one is given", () => 
   assert.deepEqual(runtime.sources(site, (path) => `r:${path}`), { "index.html": "r:index.html", "components/site-card.html": "r:components/site-card.html" });
   assert.deepEqual(runtime.sources(site), { "index.html": "typed", "components/site-card.html": "base card" });
   assert.deepEqual(runtime.sources(), {});
+});
+
+test("a save while the project is native but its site is not loaded becomes GitHub's layer without a preview update", () => {
+  const { runtime, calls } = setup();
+  runtime.engaged = true;
+  const result = { commit: "c", branch: "main", url: "", files: [], unchanged: false } satisfies PublishResult;
+  runtime.adoptSaved(SCOPE, result, [draft("index.html", "saved")]);
+  assert.equal(runtime.base.sources.get("index.html"), "saved");
+  assert.deepEqual(runtime.base.files, ["index.html"]);
+  assert.deepEqual(calls, []);
+});
+
+test("reset lets the state go before the views that show the site close", () => {
+  const seen: unknown[] = [];
+  const { runtime } = setup([], {}, { closed: () => { seen.push({ site: runtime.site, engaged: runtime.engaged, files: runtime.base.files.length, sources: runtime.base.sources.size }); } });
+  runtime.site = SITE;
+  runtime.engaged = true;
+  runtime.base.files = ["index.html"];
+  runtime.base.sources.set("index.html", "home");
+  runtime.reset();
+  assert.deepEqual(seen, [{ site: undefined, engaged: false, files: 0, sources: 0 }]);
 });
