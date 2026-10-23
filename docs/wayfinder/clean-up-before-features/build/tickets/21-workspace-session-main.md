@@ -59,3 +59,12 @@ Checks on the final code: `kit size` `RESULT: ok size boot 342 KB (±0 KB) vs de
 Round 3 tests: `tests/setup-checklist-controller.test.ts` signs in as "Lex" over setup memory saved as lex and sees the name ticked, with the view's key equal to lex's; `tests/editor-workspace.test.ts` takes a stamp through `open` while the snapshot is not shown, shows it without a load (the stamp holds), then loads again (it stops). `kit unit --affected` `RESULT: ok unit 2317/2317 (148 files)`.
 
 Commits: `95346ceb` (main.ts guards and the editor workspace ask the session), `725ce545` (review fixes round 1), `b4532e1a` (round 2 record), and round 3's tests.
+
+### Follow-ups
+
+- Spec (P3): 95346ceb:src/main.ts:1316 — P3: The goal says `draftScope()` should come from the session. `openSecondary` still builds its own draft scope from live state (`in
+- Validation gaps (gap): `stampOf` (`src/main.ts:210`) has no test. It turns a controller's stale load number into a stand-in stamp that never holds and reports `changed() === "scope"`.
+- Validation gaps (gap): The stricter `awaitNativeResync` (`src/main.ts:4527`) is only proven at session level (`tests/workspace-session.test.ts`, "work begun with nothing open…"). An a
+- Validation gaps (gap): `memoryMatches` (`src/boot-memory.ts:93`) changed for an empty branch. `branch === ""` with `memory.branch === ""` used to match; now it does not, because an em
+- Validation gaps (gap): The new stamps follow the Async writers rule (CODING_STANDARDS.md, "Tests prove it with `tests/support/await-race.ts` (`forEachAwait`)"), but `forEachAwait` was
+
