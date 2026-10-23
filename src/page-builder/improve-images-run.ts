@@ -262,13 +262,17 @@ export async function undoRows(real: MediaWorkspaceContext, outcomes: readonly R
 }
 
 /** What the Improve images screen asks of the workspace; each call reads the site afresh. */
-export function improveImagesSession(context: () => Promise<MediaWorkspaceContext>) {
+export function improveImagesSession(context: () => Promise<MediaWorkspaceContext>, ports?: ImproveRowPorts) {
   return {
     async plan(known: KnownSizes): Promise<ImproveImagesPlan> {
       const ctx = await context();
       return (await readPlan(ctx, facts(ctx, known))).plan;
     },
-    async row(request: ImproveRowRequest) { return improveRow(await context(), request); },
+    // A page measures its pictures only while its workspace is shown; elsewhere the safe sizes stand.
+    async row(request: ImproveRowRequest) {
+      const ctx = await context(), measure = request.measure;
+      return improveRow(ctx, { ...request, measure: measure && ((...args) => ctx.here?.() === false ? Promise.resolve(undefined) : measure(...args)) }, ports);
+    },
     /** The records text (left-alone pictures live there), so the screen can tell an outside Undo changed them. */
     async records() { return (await context()).read(MEDIA_RECORDS_PATH); },
     async undo(outcomes: readonly RowOutcome[], kept?: readonly string[]) { return undoRows(await context(), outcomes, kept); },

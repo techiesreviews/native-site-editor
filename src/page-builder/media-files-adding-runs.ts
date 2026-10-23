@@ -11,9 +11,8 @@ export interface FilesAddingEntry {
 }
 /** One drop on Files (or one Upload files…): the repository it was made in and where it goes. */
 export interface FilesAddingHost {
-  /** The drop's repository and branch; throws once they changed. */
+  /** The drop's repository and branch, even once another is shown (ticket 23): the files land there. */
   context(): Promise<MediaWorkspaceContext>;
-  live(): boolean;
   announce(text: string): void;
   error(error: unknown): void;
   /** Today's Optimise sheet with its before/after review, in Media, for pictures not added yet. */
@@ -28,13 +27,14 @@ export interface FilesAddingDeps {
   paint(): void;
 }
 
-const CHANGED = "The repository or branch changed while adding files. Nothing was added.";
 const problem = (error: unknown) => error instanceof Error ? error.message : "The file could not be added.";
 
 /** Adding from Files (ticket 07, slice 31): it starts at once, one file at a time, each with its
  * progress and Cancel; the files of one drop that are ready are saved together into the folder
- * chosen (one Undo step). A drop made meanwhile waits its turn as its own addition. Failures keep
- * their reason and advice for Retry; Large download notes stay with their files. */
+ * chosen (one Undo step). A drop made meanwhile, in this repository or another, waits its turn as
+ * its own addition; a switch stops none (ticket 23): each saves into the repository and branch it
+ * was dropped in. Failures keep their reason and advice for Retry; Large download notes stay with
+ * their files. */
 export function createFilesAdding(deps: FilesAddingDeps) {
   let additions: FilesAddition[] = [], queue: Promise<unknown> = Promise.resolve();
   const entries = () => additions.flatMap(addition => addition.entries);
@@ -44,11 +44,11 @@ export function createFilesAdding(deps: FilesAddingDeps) {
     if (!mediaAddingCancellable(entry.state)) return;
     entry.work?.abort(); entry.state = "cancelled";
   }
-  /** Another repository or branch: the addition goes, with advice if nothing was saved. */
-  function drop(addition: FilesAddition, error?: unknown) {
+  /** Its workspace cannot take it (its context failed): the addition goes, with the reason. */
+  function drop(addition: FilesAddition, error: unknown) {
     addition.entries.forEach(stop);
     additions = additions.filter(other => other !== addition);
-    deps.paint(); if (error !== undefined) addition.host.error(error);
+    deps.paint(); addition.host.error(error);
   }
   function enqueue(addition: FilesAddition) {
     const done = queue.then(() => run(addition));
@@ -58,54 +58,41 @@ export function createFilesAdding(deps: FilesAddingDeps) {
   async function run(addition: FilesAddition): Promise<string[]> {
     const { host } = addition;
     if (!addition.entries.some(entry => entry.state === "waiting")) return [];
-    let ctx: MediaWorkspaceContext | undefined, quality: MediaImageQuality | undefined, keepOriginal = false, videoQuality: import("./video-prepare").VideoQuality | undefined, audio: AudioQuality = "balanced";
-    const current = () => {
-      if (!host.live()) return false;
-      try { ctx?.assertLive(); return true; } catch { return false; }
-    };
+    let ctx: MediaWorkspaceContext, quality: MediaImageQuality | undefined, keepOriginal = false, videoQuality: import("./video-prepare").VideoQuality | undefined, audio: AudioQuality = "balanced";
     try {
-      if (!current()) throw new Error(CHANGED);
       ctx = await host.context();
-      if (!current()) throw new Error(CHANGED);
       const settings = await deps.settings?.(ctx);
-      if (!current()) throw new Error(CHANGED);
       quality = settings?.image; videoQuality = settings?.video; audio = settings?.audio ?? "balanced"; keepOriginal = settings?.keepOriginal === true;
-    } catch (error) { drop(addition, current() ? error : new Error(CHANGED)); return []; }
+    } catch (error) { drop(addition, error); return []; }
     for (const entry of addition.entries) {
       if (entry.state !== "waiting") continue;
-      if (!current()) { drop(addition, new Error(CHANGED)); return []; }
       const work = entry.work = new AbortController();
       entry.quality = quality;
       set(entry, "preparing");
       try {
         const prepared = await deps.prepare(entry.file, ctx.key, addition.folder, work.signal, quality, keepOriginal, videoQuality, audio);
-        if (!current()) { drop(addition, new Error(CHANGED)); return []; }
         // Cancelled meanwhile: the file is left alone.
         if (work.signal.aborted) continue;
         entry.request = prepared.request; entry.note = prepared.warning;
         set(entry, "ready");
       } catch (error) {
-        if (!current()) { drop(addition, new Error(CHANGED)); return []; }
         if (!work.signal.aborted) { entry.error = problem(error); set(entry, "failed"); }
       }
     }
-    if (!current()) { drop(addition, new Error(CHANGED)); return []; }
     const ready = addition.entries.filter(entry => entry.state === "ready");
     if (!ready.length) return [];
     ready.forEach(entry => { entry.state = "adding"; });
     deps.paint();
     try {
       const paths = await deps.save(ctx, () => host.context(), ready.map(entry => entry.request!));
-      if (!current()) { drop(addition); return []; }
       ready.forEach((entry, index) => { entry.path = paths[index]; entry.state = "added"; });
       host.announce([`Added ${paths.join(", ")}.`, ...ready.flatMap(entry => entry.note ?? [])].join(" "));
       return paths;
     } catch (error) {
       // A save that failed added nothing: its reason (usually "Nothing was added") still holds.
-      if (!current()) { drop(addition, error); return []; }
       ready.forEach(entry => { entry.error = problem(error); entry.state = "failed"; });
       return [];
-    } finally { if (current()) deps.paint(); }
+    } finally { deps.paint(); }
   }
   /** The pictures of one addition not added yet (the earliest with any) go to the Optimise sheet. */
   const reviewable = () => additions.find(addition =>
@@ -117,9 +104,6 @@ export function createFilesAdding(deps: FilesAddingDeps) {
     /** Files dropped into `folder`; resolves to the paths added. A finished summary is replaced. */
     start(folder: string, files: File[], host: FilesAddingHost) {
       if (!running()) additions = [];
-      // Another repository's additions go, and their preparation stops so this one starts at once.
-      for (const addition of additions) if (!addition.host.live()) addition.entries.forEach(stop);
-      additions = additions.filter(addition => addition.host.live());
       const addition: FilesAddition = { folder, host, entries: files.map(file => ({ file, state: "waiting" })) };
       additions.push(addition); deps.paint();
       return enqueue(addition);
@@ -131,7 +115,7 @@ export function createFilesAdding(deps: FilesAddingDeps) {
       if (running()) return;
       for (const addition of additions) {
         const again = addition.entries.filter(entry => entry.state === "failed");
-        if (!again.length || !addition.host.live()) continue;
+        if (!again.length) continue;
         for (const entry of again) { entry.state = "waiting"; entry.error = entry.note = entry.request = entry.work = undefined; }
         void enqueue(addition);
       }

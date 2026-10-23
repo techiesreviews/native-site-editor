@@ -4,7 +4,7 @@ import { nativeSitePrefix, NATIVE_CONFIG_PATH } from "../../shared/native-projec
 import { locateNativeElementRange } from "../native-source-location";
 import { mediaAttribute, mediaExistingAlt } from "../page-builder/media-attributes";
 import { startTags } from "../../shared/html-source";
-import type { MediaControllerPorts, MediaModule } from "./media-controller";
+import type { MediaControllerPorts, MediaModule, MediaPin } from "./media-controller";
 import type { MediaWorkspaceContext } from "../page-builder/media-workspace";
 import type { MediaPathPlacement, MediaCleanUpMount } from "../page-builder/media-picker";
 import type { MediaImage } from "../page-builder/media-markup";
@@ -16,19 +16,26 @@ import { SPOT_ACCEPT, pickedVideo, placeSpotVideo, spotNote } from "../page-buil
 
 /** Action-only workspace reads and picker sessions; boot retains the badge and edit-bar hooks. */
 export function createMediaActions(ports: MediaControllerPorts, load: () => Promise<MediaModule>, mountCleanUp: MediaCleanUpMount) {
-  async function workspaceContext(include: (path: string) => boolean = isImagePath): Promise<MediaWorkspaceContext> {
-    const workspace = ports.workspace();
+  /**
+   * The Media context of the workspace shown, or of `pin`'s (ticket 23): work that holds a pin reads
+   * and writes its own workspace whatever is shown, so it never goes stale; without one, a switch
+   * makes the context refuse.
+   */
+  async function workspaceContext(include: (path: string) => boolean = isImagePath, pin?: MediaPin): Promise<MediaWorkspaceContext> {
+    const workspace = pin ?? ports.workspace();
     if (!workspace) throw new Error("Choose a repository before opening Media.");
     const { repo, repoSize, scope, drafts, site } = workspace;
-    const stamp = ports.stamp();
-    const assertLive = () => { if (!stamp.holds()) throw new Error("The repository changed. Close Media and open it again."); };
-    const branchPaths = workspace.nativePaths ?? await ports.listPaths(workspace);
+    // The workspace now, for work begun on this context to finish in (`again`).
+    const own = pin ?? ports.pin?.(), stamp = ports.stamp(), here = () => !pin || pin.here();
+    const assertLive = () => { if (!pin && !stamp.holds()) throw new Error("The repository changed. Close Media and open it again."); };
+    const entryOf = (path: string) => pin ? pin.entry(path) : ports.entry(path), find = (path: string) => pin ? pin.find(path) : ports.findEntry(path);
+    const branchPaths = workspace.nativePaths ?? await (pin ? pin.list() : ports.listPaths(workspace));
     assertLive();
     const gone = new Set(drafts.list(scope).filter((draft) => draft.deleted).map((draft) => draft.path));
     const paths = [...new Set([...branchPaths, ...drafts.list(scope).filter((draft) => !draft.deleted).map((draft) => draft.path)])].filter((path) => !gone.has(path));
     const read = async (path: string) => {
       assertLive();
-      const held = ports.source(path, scope);
+      const held = pin ? pin.source(path) : ports.source(path, scope);
       if (held !== undefined) return held;
       const draft = drafts.get(scope, path);
       if (draft?.deleted) return undefined;
@@ -37,10 +44,11 @@ export function createMediaActions(ports: MediaControllerPorts, load: () => Prom
         const text = draft.upload ? await (await ports.uploadedBlob(scope, draft.sourceSha))?.text() : await ports.readText(repo, draft.sourceSha);
         assertLive(); return text;
       }
-      const entry = await ports.findEntry(path); assertLive();
+      const entry = await find(path); assertLive();
       if (!entry) return undefined;
       const text = await ports.readText(repo, entry.sha); assertLive();
-      ports.rememberSource(path, text); return text;
+      if (pin) pin.remember(path, text); else ports.rememberSource(path, text);
+      return text;
     };
     for (const path of [".editor/config.json", "CNAME"]) if (paths.includes(path)) await read(path);
     assertLive();
@@ -48,7 +56,7 @@ export function createMediaActions(ports: MediaControllerPorts, load: () => Prom
       key: `${scope.account}:${scope.repoId}`, scope, drafts, paths, repoSize, history: true,
       removedCopies: removedCopies(),
       items: paths.filter(include).map((path) => {
-        const draft = drafts.get(scope, path), entry = ports.entry(path);
+        const draft = drafts.get(scope, path), entry = entryOf(path);
         // An unsaved upload's time dates it until its record's `added` does (slice 103).
         return { path, size: draft?.upload?.size ?? entry?.size, date: draft?.upload ? draft.updatedAt : undefined, draft: Boolean(draft) };
       }),
@@ -63,7 +71,7 @@ export function createMediaActions(ports: MediaControllerPorts, load: () => Prom
           if (!blob) throw new Error(`${path} is missing from this browser's storage. Upload it again.`);
           return blob;
         }
-        const entry = draft?.sourceSha ? { sha: draft.sourceSha } : await ports.findEntry(path); assertLive();
+        const entry = draft?.sourceSha ? { sha: draft.sourceSha } : await find(path); assertLive();
         if (!entry) throw new Error(`${path} is unavailable.`);
         const blob = await ports.readBlob(repo, entry.sha, path); assertLive();
         const type = uploadImageType(path);
@@ -77,12 +85,14 @@ export function createMediaActions(ports: MediaControllerPorts, load: () => Prom
       assetVersion: (path) => {
         assertLive();
         const record = drafts.get(scope, path);
-        return record ? JSON.stringify(record) : ports.entry(path)?.sha;
+        return record ? JSON.stringify(record) : entryOf(path)?.sha;
       },
-      applyBatch: async (batch) => { assertLive(); await ports.applyBatch(scope, stamp, batch); },
-      openPage: async (path) => { assertLive(); await ports.openPage(path); },
+      applyBatch: async (batch) => { assertLive(); await ports.applyBatch(scope, stamp, batch, pin); },
+      // Elsewhere nothing opens, and a step there has no Undo on the page shown.
+      openPage: async (path) => { assertLive(); if (here()) await ports.openPage(path); },
       // The step is recorded on the open page (media-batch): its Undo, captured as the step commits.
-      undoReceipt: () => { const open = ports.openFile(); return open ? ports.undoAction?.(open) : undefined; },
+      undoReceipt: () => { const open = here() ? ports.openFile() : undefined; return open ? ports.undoAction?.(open) : undefined; },
+      here, ...own ? { again: () => workspaceContext(include, own) } : {},
     };
   }
 

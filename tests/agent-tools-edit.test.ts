@@ -8,6 +8,7 @@ import type { AgentReadResult } from "../shared/agent-read";
 import { SiteFiles } from "../shared/site-files";
 import type { Snapshot, TreeEntry } from "../shared/types";
 import { createAgentEditTools } from "../src/agent-tools-edit";
+import { agentCommandFiles } from "../src/agent-tools";
 import { agentFileReader, type AgentReadPorts } from "../src/agent-tools-read";
 import { AgentRecordsError, indexedDbAgentRecords } from "../src/agent-records";
 import { applySiteCommand, atomicAgentCommand, prepareAgentText, type AgentSiteActions } from "../src/agent-site";
@@ -413,6 +414,32 @@ test("a branch switch while an agent edit prepares stops the real repository sta
   assert.equal(f.snapshot.commit, commit, "the commit stayed the same");
   assert.equal(writes, 0);
   assert.equal(await f.records.receipt(workspace, input.id, input.grantId), undefined);
+});
+
+// Ticket 23: with the host's pin (src/agent-site-host.ts), a switch while the edit prepares stops
+// nothing: it is prepared from the workspace it arrived in and handed to the editor with those files.
+test("a branch switch while a pinned agent edit prepares finishes it on the branch it arrived on", async () => {
+  const f = await fixture(), memory = createMemoryWorkspace({ branch: { "index.html": "before" } }), edits = createGuardedEdits(memory.workspace);
+  const opened = deferred<void>(), gate = deferred<void>(), shownContext = { ...f.context, branch: "dev" };
+  let shown = f.context;
+  const ports: AgentReadPorts = { ...f.ports, stamp: () => edits.stamp("repository"),
+    // As the host's (src/agent-site-host.ts): the context shown, or none once a switch interrupted it.
+    context: async () => { const at = edits.stamp("repository"); opened.resolve(); await gate.promise; return at.holds() ? { context: shown, texts: f.texts } : undefined; },
+    pin: () => {
+      const at = edits.stamp("repository"), own = f.context, away = () => at.changed() === "scope";
+      return { away, context: async () => (away() ? undefined : await ports.context()) ?? (away() ? { context: own, texts: f.texts } : undefined) };
+    } };
+  const ran: AgentCommand[] = [];
+  const tools = createAgentEditTools({ workspace, ports, records: f.records, run: async command => { ran.push(command); return { message: "Applied there." }; } });
+  const input = request("edit_file", { path: "index.html", expectedHash: f.context.site!.outlines[0].hash, edits: [{ oldText: "Welcome", newText: "Hello" }] });
+  const reply = tools.run(input, 0, () => true);
+  await opened.promise;
+  memory.setScope("lex/site@dev"); shown = shownContext;
+  gate.resolve();
+  assert.equal(body(await reply).state, "applied");
+  assert.equal(ran.length, 1);
+  assert.equal(ran[0].branch, "main", "the branch it arrived on, not the one shown");
+  assert.equal(agentCommandFiles.get(ran[0])?.snapshot, f.snapshot, "with the files it was read from");
 });
 
 test("a revision change after the executor committed still reports applied, never conflict", async () => {

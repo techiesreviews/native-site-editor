@@ -749,6 +749,32 @@ test("browser edit and receipt dispatches carry the owner fence; stale scope nev
 });
 
 
+// Ticket 23: an edit under way when the editor opens another workspace finishes in its own: it is
+// not cancelled and stays valid, though its reply has no socket to go back on. Any other stop cancels it.
+test("a workspace move lets an edit under way finish, unanswered; turning agents off cancels it", async () => {
+  for (const stop of ["move", "off"] as const) {
+    const f = fixture();
+    let release!: () => void, admitted = false, aborted = false, validAfter: boolean | undefined;
+    const a = f.tab("a", { edit: async (request, _generation, valid, signal) => {
+      admitted = true;
+      signal?.addEventListener("abort", () => { aborted = true; });
+      await new Promise<void>(resolve => { release = resolve; });
+      validAfter = valid();
+      return { ok: true, value: { requestId: request.id, state: "applied" } };
+    } });
+    await a.transport.start();
+    a.deliver({ operation: "edit", tool: "write_file", args: { path: "new.txt", content: "new" }, id: `edit-${stop}`, grantId: "grant", createdAt: 100_000 });
+    await until(() => admitted);
+    if (stop === "move") a.change({ ...workspace, branch: "other" }); else a.transport.stop();
+    release(); await drain();
+    assert.equal(a.transport.state().mode, stop === "move" ? "workspace-changed" : "off");
+    assert.equal(aborted, stop === "off", stop);
+    assert.equal(validAfter, stop === "move", stop);
+    assert.equal(a.sockets[0].messages("result").length, 0, `${stop}: no reply on the closed socket`);
+    a.transport.stop();
+  }
+});
+
 test("an owner-paused relay stops automatic reconnects; each manual Retry tries once and never replays", async () => {
   const f = fixture();
   let probes = 0;

@@ -4,7 +4,7 @@ import { prepareAgentEdit, type AgentEdit, type AgentStatus } from "../shared/ag
 import type { AgentReadResult } from "../shared/agent-read";
 import { SiteFiles } from "../shared/site-files";
 import { AgentRecordsError, type AgentRecords } from "./agent-records";
-import { agentCommandSignals, createAgentTools } from "./agent-tools";
+import { agentCommandFiles, agentCommandSignals, createAgentTools } from "./agent-tools";
 import { agentFileReader, type AgentReadPorts } from "./agent-tools-read";
 
 interface Options {
@@ -16,21 +16,31 @@ interface Options {
 type Request = AgentEdit | AgentStatus;
 const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as JsonValue;
 
+/** What an edit holds of the workspace it arrived in, taken before any wait (ticket 23). */
+export interface Held {
+  source: ReturnType<AgentReadPorts["files"]>;
+  pin: NonNullable<ReturnType<NonNullable<AgentReadPorts["pin"]>>>;
+}
+
 /** Receipts precede preparation: replacements must never run twice against their own output. */
 export function createAgentEditTools(options: Options) {
   const flights = new Map<string, { identity: string; authorizationId: string; promise: Promise<AgentReadResult> }>();
   const { records, workspace, ports } = options;
-  async function execute(request: Request, fence: number, current: () => boolean, signal?: AbortSignal): Promise<AgentReadResult> {
-    const stamp = ports.stamp(), source = ports.files();
+  // The workspace shown now, as an edit holds it: its files and, once another is shown, its own context.
+  const hold = (): Held => ({ source: ports.files(), pin: ports.pin?.() ?? { away: () => false, context: () => ports.context() } });
+  async function execute(request: Request, fence: number, current: () => boolean, signal?: AbortSignal, held?: Held): Promise<AgentReadResult> {
+    const { source, pin } = held ?? hold(), stamp = ports.stamp();
     const commit = source?.snapshot.commit;
     let ran = false, identity: string | undefined;
     // Once the executor ran, its own commit decided the outcome: a later revision change or lost
     // socket must never relabel committed work as a conflict (the transport drops a reply it cannot send).
+    // Another site or branch shown meanwhile stops nothing (ticket 23): the edit reads its own
+    // workspace (`source`, the pin's context) and the editor writes it there; on show, a save moves
+    // the commit. Without a pin (no host to finish elsewhere) the repository stamp must still hold.
     const check = () => {
       if (ran) return;
       signal?.throwIfAborted();
-      // The stamp holds while the same repository and branch stay open (src/workspace-session.ts); a save moves the commit within it.
-      if (!current() || !stamp.holds() || ports.files()?.snapshot.commit !== commit)
+      if (!current() || !pin.away() && (ports.files()?.snapshot.commit !== commit || !ports.pin && !stamp.holds()))
         throw new Error("The editor changed branch or revision. Read the site again.");
     };
     const reply = (outcome: JsonValue): AgentReadResult => {
@@ -70,7 +80,7 @@ export function createAgentEditTools(options: Options) {
         // commit landing meanwhile refuses it. Such a receipt writes no drafts, so no manual work is touched.
         const before = await records.workspace(workspace);
         check();
-        const shared = await ports.context();
+        const shared = await pin.context();
         check();
         if (!shared) throw new Error("The editor is unavailable. Open the connected site and branch.");
         const files = new SiteFiles(agentFileReader(source, shared.context, signal), source.repo, shared.context, async hash => {
@@ -96,6 +106,7 @@ export function createAgentEditTools(options: Options) {
           grantId: request.grantId, generation: request.generation, ownerGeneration: fence, requestIdentity: identity!,
           state: "pending", createdAt: request.createdAt };
         if (signal) agentCommandSignals.set(command, signal);
+        agentCommandFiles.set(command, source);
         signal?.throwIfAborted();
         ran = true;
         const outcome = await options.run(command);
@@ -127,15 +138,16 @@ export function createAgentEditTools(options: Options) {
         ? `${message} Check get_command_status; do not replay the change.` : message } };
     }
   }
-  type Input = { request: Request; fence: number; current: () => boolean; signal?: AbortSignal };
-  const executor = ({ request, fence, current, signal }: Input) => execute(request, fence, current, signal);
+  type Input = { request: Request; fence: number; current: () => boolean; signal?: AbortSignal; held?: Held };
+  const executor = ({ request, fence, current, signal, held }: Input) => execute(request, fence, current, signal, held);
   const registry = createAgentTools<Input>({ edit_file: executor, write_file: executor, move_file: executor,
     delete_file: executor, create_page: executor, set_page_details: executor, open_page: executor,
     inspect_preview: executor, make_component: executor, add_section: executor, move_section: executor,
     remove_section: executor, get_command_status: executor });
   return {
-    run(request: Request, fence: number, current: () => boolean, signal?: AbortSignal) {
-      return registry.run(request.operation === "status" ? "get_command_status" : request.tool, { request, fence, current, signal });
+    /** `held`: the workspace as the edit arrived, when the caller waited before this (src/components/agent-menu.ts). */
+    run(request: Request, fence: number, current: () => boolean, signal?: AbortSignal, held?: Held) {
+      return registry.run(request.operation === "status" ? "get_command_status" : request.tool, { request, fence, current, signal, held });
     },
   };
 }

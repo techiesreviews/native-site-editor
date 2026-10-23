@@ -57,7 +57,7 @@ function site(pages: Record<string, string>) {
   const maps = runMaps();
   const picture = async () => new Response(await imageBlob().arrayBuffer(), { headers: { "content-type": "image/png" } });
   const row = (file: string, signal = new AbortController().signal) => improveRow(ctx, { row: file, known, maps, signal, fetch: picture, siteUrl: "https://own.example/" }, ports);
-  return { ctx, text, bytes, batches, row, get encodes() { return encodes; }, onEncode(work: () => void) { hook = work; } };
+  return { ctx, text, bytes, batches, row, ports, picture, get encodes() { return encodes; }, onEncode(work: () => void) { hook = work; } };
 }
 
 test("a row fixed by several engines is saved once: one Undo step for the page", async () => {
@@ -253,4 +253,18 @@ test("leave alone everywhere is one Undo step on the records; the screen's rows 
   assert.equal(s.batches.at(-1)!.label, "Improve a picture again");
   assert.equal(parseMediaRecords(s.text.get(MEDIA_RECORDS_PATH)).leftAsIs, undefined);
   assert.equal((await session.plan({ "images/heavy.jpg": { width: 3000, height: 2000 } })).count, 2);
+});
+
+// Ticket 23: a row's workspace no longer shown (another site or branch opened meanwhile) is not measured
+// on the page shown; the row goes on with the picture's safe sizes.
+test("a row whose workspace is not shown measures nothing there", async () => {
+  for (const shown of [true, false]) {
+    const s = site({ "index.html": `<title>Home</title><img src="/images/heavy.jpg">` });
+    const measured: string[] = [];
+    const session = improveImagesSession(async () => ({ ...s.ctx, here: () => shown }), s.ports);
+    const outcome = await session.row({ row: "index.html", known: { "images/heavy.jpg": { width: 3000, height: 2000 } }, maps: runMaps(), signal: new AbortController().signal,
+      fetch: s.picture, siteUrl: "https://own.example/", measure: async file => { measured.push(file); return undefined; } });
+    assert.equal(outcome.changed, true, `shown: ${shown}: the row is improved either way`);
+    assert.deepEqual(measured, shown ? ["index.html"] : [], `shown: ${shown}`);
+  }
 });

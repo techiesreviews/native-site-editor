@@ -20,6 +20,8 @@ export interface AgentReadFiles {
 export interface AgentReadPorts {
   stamp(): Stamp;
   context(): Promise<SharedContext | undefined>;
+  /** The workspace now, held by an edit (ticket 23): `away` once another is shown; its context there either way. */
+  pin?(): { away(): boolean; context(): Promise<SharedContext | undefined> } | undefined;
   files(): AgentReadFiles | undefined;
   /** The live source a page edit starts from (media place/frame/loop proofs). */
   source?(path: string): string | undefined;

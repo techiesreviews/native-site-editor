@@ -574,3 +574,71 @@ for (const registration of ["accepted", "refused", "absent", "store", "opening"]
   await sweepUploads(bytes, m.scope, []);
   assert.equal(await bytes.get(key), undefined);
 });
+
+// ---- Work that finishes where it started (ticket 23) ----
+
+/** Holds `plan` after its reads while `meanwhile` shows another page, then lets it finish. */
+async function finishing(edits: ReturnType<typeof createGuardedEdits>, plan: (r: Reads) => PlanResult, meanwhile: () => void | Promise<void>, options: RunOptions = {}) {
+  const wait = deferred();
+  const pending = edits.run(async r => { const result = plan(r); await wait.promise; return result; }, { finish: true, ...options });
+  await Promise.resolve();
+  await meanwhile();
+  wait.resolve();
+  return pending;
+}
+const showAbout = async (m: MemoryWorkspace) => { m.setRoute("/about/"); await m.workspace.open("about.html"); };
+
+test("finish: another page shown meanwhile, the step lands on its own page as a draft, with no Undo step and nothing selected", async () => {
+  const { m, edits } = setup();
+  const outcome = await finishing(edits, insertH2, () => showAbout(m));
+  assert.deepEqual(outcome, { ok: true, status: "applied" });
+  assert.equal(m.draft("index.html")?.content, PAGE.replace("</main>", "<h2>New</h2></main>"));
+  assert.equal(m.draft("about.html"), undefined, "nothing on the page shown");
+  assert.equal(m.openFile(), "about.html", "the page shown stays");
+  assert.deepEqual(m.steps(), [], "no Undo step: its page is not shown");
+  assert.deepEqual(m.selected, []);
+  assert.deepEqual(m.announced, ["Heading added."]);
+});
+
+test("finish: a page switch during the commit's branch read lands the step on its page; a created file opens nothing", async () => {
+  for (const shape of ["edit", "create"] as const) {
+    const { m, edits } = setup();
+    const read = m.holdBranchRead();
+    const pending = edits.run(shape === "edit" ? r => { r.source("index.html"); return step("about.html", `${r.source("about.html")}<!-- also -->`); }
+      : r => { r.exists("new.html"); return { creates: [{ path: "new.html", content: "<p>new</p>" }], done: "Created.", undone: "Removed." }; }, { finish: true });
+    await read.reached;
+    await showAbout(m);
+    read.release();
+    assert.deepEqual(await pending, { ok: true, status: "applied" }, shape);
+    if (shape === "edit") assert.equal(m.draft("about.html")?.content, `${ABOUT}<!-- also -->`);
+    else assert.equal(m.draft("new.html")?.content, "<p>new</p>");
+    assert.deepEqual(m.opened, [], `${shape}: nothing opened after it`);
+    assert.deepEqual(m.steps(), [], shape);
+  }
+});
+
+test("finish: its page already left before it ran, it lands on the page it names; with none named it is stale", async () => {
+  const { m, edits } = setup(), since = edits.stamp();
+  await showAbout(m);
+  const outcome = await edits.run(insertH2, { since, finish: true, anchor: "index.html" });
+  assert.deepEqual(outcome, { ok: true, status: "applied" });
+  assert.equal(m.draft("index.html")?.content, PAGE.replace("</main>", "<h2>New</h2></main>"));
+  assert.equal(m.openFile(), "about.html", "its page is not opened");
+  const other = setup(), at = other.edits.stamp();
+  other.m.setRoute("/about/");
+  assert.deepEqual(await other.edits.run(insertH2, { since: at, finish: true }), staleOn("route"));
+});
+
+test("finish: bytes that moved on its page, another workspace or a reload still stop it, nothing written", async () => {
+  const typed = setup();
+  assert.deepEqual(await racing(typed.m, typed.edits, insertH2, () => { typed.m.typeInto("index.html"); typed.m.setRoute("/about/"); }, { finish: true }), staleOn({ file: "index.html" }));
+  for (const [key, move] of [["scope", (m: MemoryWorkspace) => m.setScope("lex/site@dev")], ["generation", (m: MemoryWorkspace) => m.bumpGeneration()]] as const) {
+    const { m, edits } = setup();
+    assert.deepEqual(await racing(m, edits, insertH2, () => move(m), { finish: true }), staleOn(key));
+  }
+});
+
+test("without finish, another page shown meanwhile is stale as before", async () => {
+  const { m, edits } = setup();
+  assert.deepEqual(await racing(m, edits, insertH2, () => m.setRoute("/about/")), staleOn("route"));
+});
