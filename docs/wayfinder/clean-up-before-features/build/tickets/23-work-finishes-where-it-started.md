@@ -141,6 +141,18 @@ Review round 6 (behaviour and tests):
 - The pin moved out of `main.ts` into `src/controllers/media-pin.ts` (`pinMedia`, live ports). Test: `tests/media-pin.test.ts`. `main.ts`: 5341 lines (ceiling 5350 since the rebase).
 - Checks: `kit unit --affected` `RESULT: ok unit 2480/2480 (154 files)`; `npm run check` and `npm run lint` green; `kit specs native-switch-mid-work.spec.ts` `RESULT: ok specs 1/1 passed` (7 tests); `kit specs --affected` `RESULT: ok specs 163/163 passed`; `kit size` `RESULT: ok size boot 344 KB (±0 KB) vs dev@f97599c, budget 355 KB`.
 
+### Follow-ups
+
+- Spec (P2): 11be0b8e:docs/wayfinder/clean-up-before-features/build/tickets/23-work-finishes-where-it-started.md:149 — P2: Lex said "the remaining refusals move to 27". The 
+- Spec (P2): 11be0b8e:docs/wayfinder/clean-up-before-features/build/tickets/23-work-finishes-where-it-started.md:4 — P2: Lex answered on 2026-10-23, but the ticket still say
+- Spec (P2): d846c10b:docs/wayfinder/clean-up-before-features/build/tickets/23-work-finishes-where-it-started.md:94 — P2: Two "Done when" items have no evidence. First, "a `
+- Spec (P3): 11be0b8e:docs/wayfinder/clean-up-before-features/build/tickets/23-work-finishes-where-it-started.md:146 — P3: The "Question for Lex" paragraph and Lex's answer 
+- Standards (P2): d846c10b:docs/wayfinder/clean-up-before-features/build/tickets/23-work-finishes-where-it-started.md:83 — P2: Two matrix cells have no browser spec: the guarded 
+- Validation gaps (gap): No test covers agents remembered on both branches. Add an agent-menu or browser test: agents on for main and feature, an edit held on main (the edit tools' chun
+- Validation gaps (gap): `finishAgentTextElsewhere` (src/agent-site.ts): only "a draft over the branch text" and "the draft changed" are tested. Add `tests/agent-text-commit.test.ts` ca
+- Validation gaps (gap): Add a `tests/media-files-adding-runs.test.ts` case: a failed entry from a main drop, retried while another branch is shown, saves through main's pinned context.
+- Validation gaps (gap): `applyAgentSiteCommand`'s wiring of `editorOrElsewhere` (the `applied` and `moved` predicates and the stamp taken after `elsewhere()`) is only tested through a 
+
 ## Question for Lex (open)
 
 Lex's comment of 2026-10-22: nothing should stop, and actions that need the page drawn run in an invisible background copy. This ticket finishes saves, Files uploads, Media library additions, Replace everywhere, the Improve images row in progress, agent text edits and agent page commands across a page switch. The list "Still refusing across a switch of site or branch" in the Done section is left; items 1, 2 and 4 need the background copy, which is not built here. Ask Lex: build it in this ticket, or close this one with that list and build the background copy as its own ticket. Until he answers, `status: open`. Also put to Lex: the guarded `finish` row and the agent edit's late hand-over have unit and `forEachAwait` cases but no browser spec, as no request inside them can be held with `page.route`.
