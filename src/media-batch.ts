@@ -26,6 +26,8 @@ export interface MediaBatchPorts {
   announce(message: string): void;
 }
 type Modules = Awaited<ReturnType<MediaBatchPorts["load"]>>;
+/** Where the step landed: `undoOn`, the page whose history took its Undo step (none: no Undo step on a page shown). */
+export interface MediaBatchLanded { undoOn?: string }
 
 /**
  * Atomic staging keeps the host's source receipts, upload rollback and single Undo step, on the page
@@ -49,12 +51,13 @@ type Modules = Awaited<ReturnType<MediaBatchPorts["load"]>>;
  * that changed them (a save, another commit) still refuses; the new stamp only binds the attempt to the
  * editor it runs through.
  */
-export async function applyMediaBatch(ports: MediaBatchPorts, scope: DraftScope, stamp: Stamp, batch: MediaWorkspaceBatch, pin?: MediaPin, opened = ports.appStore.openFile.value) {
+export async function applyMediaBatch(ports: MediaBatchPorts, scope: DraftScope, stamp: Stamp, batch: MediaWorkspaceBatch, pin?: MediaPin, opened = ports.appStore.openFile.value): Promise<MediaBatchLanded> {
   const modules = await ports.load();
   for (let attempt = 0; ; attempt++) {
     const here = !pin || pin.here(), page = ports.appStore.openFile.value;
     try {
-      return here ? await onShow(ports, modules, scope, pin ? ports.stamp() : stamp, batch, pin, opened === undefined || page === opened) : await elsewhere(ports, modules, scope, batch, pin!);
+      if (!here) { await elsewhere(ports, modules, scope, batch, pin!); return {}; }
+      return await onShow(ports, modules, scope, pin ? ports.stamp() : stamp, batch, pin, opened === undefined || page === opened);
     } catch (error) {
       const away = !!pin && pin.here() !== here, moved = here && ports.appStore.openFile.value !== page;
       if (attempt === 2 || !away && !moved) throw error;
@@ -62,7 +65,8 @@ export async function applyMediaBatch(ports: MediaBatchPorts, scope: DraftScope,
   }
 }
 
-async function onShow(ports: MediaBatchPorts, modules: Modules, scope: DraftScope, stamp: Stamp, batch: MediaWorkspaceBatch, pin: MediaPin | undefined, undoHere: boolean) {
+async function onShow(ports: MediaBatchPorts, modules: Modules, scope: DraftScope, stamp: Stamp, batch: MediaWorkspaceBatch, pin: MediaPin | undefined, undoHere: boolean): Promise<MediaBatchLanded> {
+  let undoOn: string | undefined;
   const [{ applyMediaWorkspaceBatch }, { mediaDraftTransaction }, { MEDIA_RECORDS_PATH }] = modules;
   const assertLive = () => { if (!stamp.holds()) throw new Error("The repository changed. Close Media and open it again."); };
   const repo = ports.appStore.repository.value, snapshot = ports.appStore.snapshot.value;
@@ -85,12 +89,17 @@ async function onShow(ports: MediaBatchPorts, modules: Modules, scope: DraftScop
     history: (undo, redo, dispose) => {
       // Another page than the one it was asked on is shown: no Undo step there.
       if (!undoHere) { dispose(); return true; }
-      if (historyHost && historyPath) return recordOn(historyPath, undo, redo, dispose);
-      // A file that opened while the change was prepared takes it now.
-      const opened = ports.appStore.openFile.value;
-      return opened && editor.captureHistoryHost(opened) ? recordOn(opened, undo, redo, dispose) : ports.mediaHistoryHome.hold(stamp, undo, redo, dispose);
+      // A file that opened while the change was prepared takes it now; with none, the next one does.
+      const path = historyHost && historyPath ? historyPath : ports.appStore.openFile.value;
+      if (path && (path === historyPath && historyHost || editor.captureHistoryHost(path))) {
+        const recorded = recordOn(path, undo, redo, dispose);
+        if (recorded) undoOn = path;
+        return recorded;
+      }
+      return ports.mediaHistoryHome.hold(stamp, undo, redo, dispose);
     },
   }));
+  return { undoOn };
 }
 
 // Another workspace is shown: the pin's reads, no editor model mounted, the step with no Undo.

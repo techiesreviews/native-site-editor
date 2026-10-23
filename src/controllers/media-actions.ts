@@ -26,6 +26,7 @@ export function createMediaActions(ports: MediaControllerPorts, load: () => Prom
     if (!workspace) throw new Error("Choose a repository before opening Media.");
     const { repo, repoSize, scope, drafts, site } = workspace;
     const stamp = ports.stamp(), here = () => !pin || pin.here();
+    let undoOn: string | undefined;
     const assertLive = () => { if (!pin && !stamp.holds()) throw new Error("The repository changed. Close Media and open it again."); };
     const entryOf = (path: string) => pin ? pin.entry(path) : ports.entry(path), find = (path: string) => pin ? pin.find(path) : ports.findEntry(path);
     const branchPaths = workspace.nativePaths ?? await (pin ? pin.list() : ports.listPaths(workspace));
@@ -86,11 +87,12 @@ export function createMediaActions(ports: MediaControllerPorts, load: () => Prom
         const record = drafts.get(scope, path);
         return record ? JSON.stringify(record) : entryOf(path)?.sha;
       },
-      applyBatch: async (batch) => { assertLive(); await ports.applyBatch(scope, stamp, batch, pin); },
+      applyBatch: async (batch) => { assertLive(); undoOn = (await ports.applyBatch(scope, stamp, batch, pin))?.undoOn; },
       // Elsewhere nothing opens, and a step there has no Undo on the page shown.
       openPage: async (path) => { assertLive(); if (here()) await ports.openPage(path); },
       // The step is recorded on the open page (media-batch): its Undo, captured as the step commits.
-      undoReceipt: () => { const open = here() ? ports.openFile() : undefined; return open ? ports.undoAction?.(open) : undefined; },
+      // Only that page's own step: a step that took none (on another page, elsewhere) offers no Undo.
+      undoReceipt: () => { const open = here() ? ports.openFile() : undefined; return open && open === undoOn ? ports.undoAction?.(open) : undefined; },
       here,
     };
   }

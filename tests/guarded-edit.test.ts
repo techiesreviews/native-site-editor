@@ -632,8 +632,8 @@ test("finish: its page already left before it ran, it lands on the page it names
 
 test("finish: bytes that moved on its page, another workspace or a reload still stop it, nothing written", async () => {
   const typed = setup();
-  // Its page still open (the preview moved), typed into: its editor moved on, so it is stale.
-  assert.deepEqual(await racing(typed.m, typed.edits, insertH2, () => { typed.m.typeInto("index.html"); typed.m.setRoute("/about/"); }, { finish: true }), staleOn("anchor"));
+  // Its page still open (the preview moved), typed into: its bytes moved on, so it is stale.
+  assert.deepEqual(await racing(typed.m, typed.edits, insertH2, () => { typed.m.typeInto("index.html"); typed.m.setRoute("/about/"); }, { finish: true }), staleOn({ file: "index.html" }));
   for (const [key, move] of [["scope", (m: MemoryWorkspace) => m.setScope("lex/site@dev")], ["generation", (m: MemoryWorkspace) => m.bumpGeneration()]] as const) {
     const { m, edits } = setup();
     assert.deepEqual(await racing(m, edits, insertH2, () => move(m), { finish: true }), staleOn(key));
@@ -672,10 +672,10 @@ test("finish: another page shown at any wait lands the step on its page, never o
   assert.equal(count, 4); // open, plan, two branch reads
 });
 
-// Its page shown again at any wait of a step that began away from it: no proof of that page's editor
-// was taken, so the step is stale with nothing written, or (shown again before the step began) applied
-// with its one Undo step there. Never a step with no Undo on the page shown.
-test("finish: its page shown again at any wait is stale with nothing written, or one Undo step there", async () => {
+// Its page shown again at any wait of a step that began away from it (left and back): its editor is
+// taken again, proved by the step's bytes, and the step lands there with its one Undo step. Never a
+// step with no Undo on the page shown.
+test("finish: its page shown again at any wait lands the step there with its one Undo step", async () => {
   await forEachAwait(race => {
     const { m, edits } = setup({ open: "about.html" });
     m.setRoute("/about/");
@@ -690,9 +690,9 @@ test("finish: its page shown again at any wait is stale with nothing written, or
     }, { since, finish: true, anchor: "index.html" });
     return { m, done, before };
   }, async run => { run.m.setRoute("/"); await run.m.workspace.open("index.html"); }, async run => {
-    const outcome = await run.done;
-    if (!outcome.ok) assert.equal(state(run.m), run.before, "stale: nothing written");
-    else assert.deepEqual(run.m.steps(), ["operation"], "one Undo step on its page");
-    assert.ok(!outcome.ok || run.m.steps().length === 1);
+    assert.deepEqual(await run.done, { ok: true, status: "applied" });
+    assert.notEqual(state(run.m), run.before);
+    assert.deepEqual(run.m.steps(), ["operation"], "one Undo step on its page, shown again");
+    assert.equal(run.m.draft("index.html")?.content, PAGE.replace("</main>", "<h2>New</h2></main>"));
   });
 });

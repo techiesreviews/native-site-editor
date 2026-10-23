@@ -873,3 +873,16 @@ test("disposing Media while the actions chunk loads prevents a late gallery moun
   await f.controller.ensureGallery();
   assert.equal(f.counts().mounts, 1);
 });
+
+// Ticket 23: the toast's Undo is the step's own. A batch that took no Undo step on the page shown
+// (another page than it was asked on, or elsewhere) offers none, never the page's newest edit.
+test("the toast's Undo binds only to the page that took the step's Undo", async () => {
+  const toasts: string[] = [];
+  for (const undoOn of ["index.html", undefined, "about/index.html"]) {
+    const f = fixture({ applyBatch: async () => ({ undoOn }), undoAction: path => { toasts.push(path); return { label: "Undo", run: () => {} }; } });
+    const context = await f.controller.workspaceContext();
+    await context.applyBatch({ label: "Replace everywhere", expectedPaths: [], expectedSources: new Map(), expectedAssets: new Map(), edits: new Map(), moves: [], deletes: [], restores: [], uploads: [] });
+    assert.equal(Boolean(context.undoReceipt?.()), undoOn === "index.html", String(undoOn));
+  }
+  assert.deepEqual(toasts, ["index.html"], "only the page open (index.html) that took the step");
+});

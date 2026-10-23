@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test, type TestContext } from "node:test";
 import { textHash, type AgentCommand } from "../shared/agent.ts";
-import { applySiteCommand, finishAgentTextElsewhere, prepareAgentText, type AgentSiteActions } from "../src/agent-site.ts";
+import { applySiteCommand, editorOrElsewhere, finishAgentTextElsewhere, prepareAgentText, type AgentSiteActions } from "../src/agent-site.ts";
 import { agentCommandFiles, agentCommandSignals } from "../src/agent-tools.ts";
 import type { AgentReadFiles } from "../src/agent-tools-read.ts";
 import { indexedDbAgentRecords } from "../src/agent-records.ts";
@@ -582,4 +582,22 @@ test("a text write elsewhere to a protected path is refused with nothing kept", 
     assert.equal(f.store.get(f.scope, path), undefined, path);
     assert.equal(await f.records.receipt(f.scope, `protected-${path}`, "grant"), undefined, path);
   }
+});
+
+// The editor path (src/main.ts applyAgentSiteCommand): switched away at any wait before its write was
+// kept, it finishes where it was read instead of refusing; kept already, the editor's outcome stands.
+test("an agent edit's editor path switched away at any wait before it is kept finishes elsewhere", async () => {
+  const count = await forEachAwait(race => {
+    const run = { moved: false, applied: false, result: undefined as string | undefined, done: Promise.resolve() };
+    run.done = editorOrElsewhere(async () => {
+      await race.port("prepare", async () => {})();
+      if (run.moved) throw new Error("The repository changed meanwhile. Nothing was changed; your drafts are as they were.");
+      await race.port("commit", async () => { run.applied = true; })();
+      return "editor";
+    }, () => run.applied, () => run.moved, async () => run.moved ? "elsewhere" : undefined).then(result => { run.result = result; });
+    return run;
+  }, run => { run.moved = true; }, run => {
+    assert.equal(run.result, run.applied ? "editor" : "elsewhere");
+  });
+  assert.equal(count, 2);
 });

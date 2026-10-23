@@ -208,3 +208,15 @@ test("a pinned batch with a version view entered before its first attempt is wri
   assert.equal(h.hosts[0].history(() => true, () => true, () => { disposed = true; }), true);
   assert.equal(disposed, true);
 });
+
+// Ticket 23: the batch says which page took its Undo step, so the toast's Undo is that step's.
+test("a batch reports the page that took its Undo step, and none when another page is shown", async () => {
+  for (const moved of [false, true]) {
+    const h = harness({ stage: async host => { host.history(() => true, () => true, () => {}); } });
+    const pending = h.run();
+    if (moved) h.appStore.openFile.value = "about/index.html";
+    h.workspace.resolve(h.modules);
+    h.listing.resolve([]);
+    assert.deepEqual(await pending, moved ? { undoOn: undefined } : { undoOn: "index.html" }, String(moved));
+  }
+});
