@@ -75,6 +75,7 @@ function fixture(race?: AwaitRace, awaits = ["api", "loadConfirmDialog", "ask", 
   const histories: HistoryOptions[] = [];
   const drafts = new Map<string, SavedDraft>();
   const errors: unknown[] = [];
+  let preview: VersionViewPorts["nativePreview"] = { setViewing: (bar) => { viewing.push(bar); } }, setup = "lex/site";
   let source = "<p>Now</p>", refreshes = 0, confirm = true, repositoryHolds = true, dialogs = 0;
   let restore: () => Promise<RestoreResult> = async () => RESULT;
   const read = (path: string, params?: Record<string, string>) => { const answer = deferred<unknown>(); reads.push({ path, params, answer }); return answer.promise; };
@@ -85,9 +86,9 @@ function fixture(race?: AwaitRace, awaits = ["api", "loadConfirmDialog", "ask", 
     appStore, workspaceSession: session,
     guardedEdits: { stamp: () => ({ holds: () => repositoryHolds, changed: () => undefined }) },
     editorModule: { compareVersion: (path, version) => { compared.push([path, version]); } },
-    nativePreview: { setViewing: (bar) => { viewing.push(bar); } },
+    get nativePreview() { return preview; },
     currentLoad: () => session.current().load,
-    setupScope: () => "lex/site",
+    setupScope: () => setup,
     draftScope: () => SCOPE,
     draftStore: () => ({ get: (_scope, path) => drafts.get(path) }),
     nativeEffectiveSource: () => source,
@@ -110,6 +111,10 @@ function fixture(race?: AwaitRace, awaits = ["api", "loadConfirmDialog", "ask", 
     versions, appStore, session, said, refused, compared, viewing, reads, posts, opened, snapshots, histories, drafts, errors,
     refreshes: () => refreshes,
     dialogs: () => dialogs,
+    /** The host's preview now: none before the site's preview mounts. */
+    setPreview: (next: VersionViewPorts["nativePreview"]) => { preview = next; },
+    /** An account or branch switch that starts no new load. */
+    switchSetup: (next: string) => { setup = next; },
     restoreWith: (next: () => Promise<RestoreResult>) => { restore = next; },
     edit: (next: string) => { source = next; },
     decline: () => { confirm = false; },
@@ -371,4 +376,41 @@ test("an expired GitHub session in History asks to connect again", async () => {
   const [error] = f.errors;
   assert.ok(error instanceof ApiError);
   assert.equal(error.status, 401);
+});
+
+test("the version on show ends once the setup scope changes, and an answer after that writes nothing", async () => {
+  const f = fixture();
+  await show(f);
+  f.switchSetup("lex/other");
+  f.versions.check();
+  assert.equal(f.versions.view, undefined);
+  assert.deepEqual(f.compared.at(-1), ["index.html", undefined]);
+  const late = fixture(), history = await late.history();
+  history.onView(OLD, "head", false);
+  late.switchSetup("lex/other");
+  late.reads[0].answer.resolve({ content: "<p>Then</p>" });
+  await flush();
+  assert.equal(late.versions.view, undefined);
+  assert.deepEqual(late.compared, []);
+  assert.deepEqual(late.viewing, []);
+});
+
+test("the preview is read when the version shows or ends, not when the view is made", async () => {
+  const f = fixture();
+  f.setPreview(undefined);
+  const history = await show(f);
+  assert.ok(f.versions.view, "the code pane still compares without a preview");
+  assert.deepEqual(f.viewing, []);
+  const bars: (HTMLElement | undefined)[] = [];
+  f.setPreview({ setViewing: (bar) => { bars.push(bar); } });
+  history.onView({ ...OLD, sha: "b".repeat(40) }, "head", false);
+  f.reads[1].answer.resolve({ content: "<p>Second</p>" });
+  await flush();
+  assert.equal(bars.length, 2);
+  assert.equal(bars[0], undefined);
+  assert.equal(bars[1]?.getAttribute("aria-label"), "Earlier version");
+  click(bars[1], 1);
+  assert.deepEqual(bars.slice(2), [undefined]);
+  assert.equal(f.versions.view, undefined);
+  assert.deepEqual(f.viewing, []);
 });
