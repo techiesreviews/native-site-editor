@@ -18,6 +18,10 @@ const withLinks = indexSource.replace(
   `<p data-key="hero-more">Read <a href="/about.html" data-key="hero-link">the about page</a> first.</p>\n    <a class="btn" href="/about.html" data-key="hero-cta">Get started</a>\n    <img class="hero-image"`,
 );
 const withPrice = withLinks.replace(`<img class="hero-image"`, `<p data-key="price">Was <del>£40</del> £30</p>\n    <img class="hero-image"`);
+const withFormatting = withLinks.replace(`<img class="hero-image"`,
+  `<p data-key="formatted"><strong>Please</strong> read <a href="/about.html" data-key="formatted-link"><strong>about</strong> us</a> now.</p>\n    <img class="hero-image"`);
+const withNormalLines = withLinks.replace(`<img class="hero-image"`,
+  `<p data-key="normal" style="line-height: normal; max-width: 20em">A paragraph with the browser's own line height, long enough to wrap onto a second line and a third one too.</p>\n    <img class="hero-image"`);
 const frame = (page: Page) => page.frameLocator(".native-preview-frame");
 const bar = (page: Page) => page.getByRole("toolbar", { name: "Edit bar", exact: true });
 const ghost = (page: Page) => page.locator(".pb-drag-ghost");
@@ -29,6 +33,15 @@ const source = async (page: Page) => (await editorMounted(page), page.evaluate(a
 test.use({ viewport: { width: 1400, height: 1500 } });
 
 test.beforeEach(async ({ page, baseURL }) => {
+  // In every frame, ahead of the preview runtime's own listener: renders held while `heldRenders` is set (holdRenders).
+  await page.addInitScript(() => {
+    const w = window as Held;
+    w.addEventListener("message", (e) => {
+      if (!w.heldRenders || (e.data as { type?: string } | null)?.type !== "update") return;
+      e.stopImmediatePropagation();
+      w.heldRenders.push(e.data);
+    }, true);
+  });
   await page.goto(`${baseURL}/#repo=501&branch=main&file=${encodeURIComponent(indexPath)}`);
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", indexPath, { timeout: 30_000 });
   await expect(frame(page).locator(".hero h1")).toBeVisible({ timeout: 30_000 });
@@ -68,13 +81,13 @@ async function afterWord(page: Page, selector: string, word: string) {
 const kind = (page: Page) => bar(page).locator(".edit-bar__kind");
 const filler = (n: number) => `[data-key='filler-${n}']`;
 
-/** Presses at `from`, moves past the 7 px threshold to `to` and releases: the block drags as a Paragraph. */
-async function drag(page: Page, from: { x: number; y: number }, to: { x: number; y: number }) {
+/** Presses at `from`, moves past the 7 px threshold to `to` and releases: the block drags, named `name`. */
+async function drag(page: Page, from: { x: number; y: number }, to: { x: number; y: number }, name = "Paragraph") {
   await page.mouse.move(from.x, from.y);
   await page.mouse.down();
   await page.mouse.move(from.x, from.y + 10, { steps: 2 });
   await page.mouse.move(to.x, to.y, { steps: 8 });
-  await expect(ghost(page)).toHaveText("Paragraph");
+  await expect(ghost(page)).toHaveText(name);
   await page.mouse.up();
   await expect(ghost(page)).toHaveCount(0);
 }
@@ -260,9 +273,20 @@ test("typing in one text, then a press and drag on another block moves that bloc
   await page.mouse.click(at.x, at.y);
   await expect(frame(page).locator(".hero h1")).toBeFocused();
   await page.keyboard.type("!");
-  // No Escape: the press on filler-2 writes the heading's text, and the drag still starts.
+  // No Escape: the press on filler-2 writes the heading's text; the drag's start waits for the
+  // render that asks for (held here until the pointer has moved), then the drag runs.
   await frame(page).locator(filler(2)).scrollIntoViewIfNeeded();
-  await drag(page, await afterWord(page, filler(2), "Paragraph"), await below(page, filler(3)));
+  const from = await afterWord(page, filler(2), "Paragraph"), to = await below(page, filler(3));
+  const release = await holdRenders(page);
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(from.x, from.y + 10, { steps: 2 });
+  await expect(ghost(page)).toHaveCount(0);
+  expect(await release()).toBeGreaterThan(0);
+  await page.mouse.move(to.x, to.y, { steps: 8 });
+  await expect(ghost(page)).toHaveText("Paragraph");
+  await page.mouse.up();
+  await expect(ghost(page)).toHaveCount(0);
   const moved = (now: string) => now.includes("A native! browser") && now.indexOf(`data-key="filler-2"`) > now.indexOf(`data-key="filler-3"`);
   await expect.poll(async () => moved((await source(page))!)).toBe(true);
   await expect(frame(page).locator("[contenteditable]")).toHaveCount(0);
@@ -317,6 +341,119 @@ test("after the editor refuses typed text, a click on other text still types the
   await page.keyboard.press("Escape");
   await expect.poll(() => source(page)).toContain("in placeX");
   await expect(kind(page)).toHaveText("Paragraph");
+});
+
+test("a click on a link's formatted text types in the link; a click on a bold word types in its line", async ({ page }) => {
+  await pasteSource(page, withFormatting);
+  const line = frame(page).locator("[data-key='formatted']");
+  const link = frame(page).locator("[data-key='formatted-link']");
+  await expect(link.locator("strong")).toHaveText("about");
+  // "about" is a <strong> inside the link: the link is typed in, two levels up.
+  const at = await afterWord(page, "[data-key='formatted-link']", "abo");
+  await page.mouse.click(at.x, at.y);
+  await expect(link).toHaveAttribute("contenteditable", /plaintext-only|true/);
+  await expect(link).toBeFocused();
+  await expect(kind(page)).toHaveText("Link");
+  await page.keyboard.type("X");
+  await page.keyboard.press("Escape");
+  await expect.poll(() => source(page)).toContain(`<a href="/about.html" data-key="formatted-link"><strong>aboXut</strong> us</a>`);
+  // "Please" is a <strong> straight in the paragraph: the whole line is typed in.
+  const please = await afterWord(page, "[data-key='formatted']", "Ple");
+  await page.mouse.click(please.x, please.y);
+  await expect(line).toHaveAttribute("contenteditable", /plaintext-only|true/);
+  await expect(line.locator("strong").first()).not.toHaveAttribute("contenteditable", /.+/);
+  await expect(kind(page)).toHaveText("Paragraph");
+});
+
+test("with the browser's own line height (normal), a click between two lines still types", async ({ page }) => {
+  await pasteSource(page, withNormalLines);
+  const para = frame(page).locator("[data-key='normal']");
+  await expect(para).toBeVisible();
+  const box = (await page.locator(".native-preview-frame").boundingBox())!;
+  const lines = await para.evaluate((el) => {
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const rects = Array.from(range.getClientRects());
+    const second = rects.find((r) => r.top > rects[0].bottom - 1)!;
+    return { lineHeight: getComputedStyle(el).lineHeight, x: rects[0].left + 40, y: (rects[0].bottom + second.top) / 2 };
+  });
+  expect(lines.lineHeight).toBe("normal");
+  await page.mouse.click(box.x + lines.x, box.y + lines.y);
+  await expect(para).toHaveAttribute("contenteditable", /plaintext-only|true/);
+  await expect(para).toBeFocused();
+});
+
+type Held = typeof window & { heldRenders?: unknown[] };
+
+/** Holds the editor's renders (its `update` messages) in the preview; the function returned replays them. */
+async function holdRenders(page: Page) {
+  await frame(page).locator("body").evaluate(() => { (window as Held).heldRenders = []; });
+  return async () => {
+    const held = await frame(page).locator("body").evaluate(() => { const w = window as Held; const list = w.heldRenders ?? []; w.heldRenders = undefined; return list; });
+    await page.locator(".native-preview-frame").evaluate((el, list) => { for (const data of list) (el as HTMLIFrameElement).contentWindow!.postMessage(data, "*"); }, held);
+    return held.length;
+  };
+}
+
+test("a drag released before the render its typed text asked for is a click: no move, the text written, the pressed block selected", async ({ page }) => {
+  await frame(page).locator(filler(2)).scrollIntoViewIfNeeded();
+  let at = await afterWord(page, filler(2), "Paragraph");
+  await page.mouse.click(at.x, at.y);
+  await expect(frame(page).locator(filler(2))).toHaveAttribute("contenteditable", /.+/);
+  await page.keyboard.type(" typed");
+  const release = await holdRenders(page);
+  // Pressed on filler-3 and moved 10 px: the typed text is written, the start waits for the held render; then released.
+  at = await afterWord(page, filler(3), "three");
+  await page.mouse.move(at.x, at.y);
+  await page.mouse.down();
+  await page.mouse.move(at.x, at.y + 10, { steps: 2 });
+  await page.mouse.up();
+  await expect(ghost(page)).toHaveCount(0);
+  expect(await release()).toBeGreaterThan(0);
+  const typed = `<p data-key="filler-2">Paragraph typed two of filler`;
+  await expect.poll(async () => { const now = (await source(page))!; return now.indexOf(typed) >= 0 && now.indexOf(typed) < now.indexOf(`data-key="filler-3"`); }).toBe(true);
+  // The release was no swallowed no-op: the pressed paragraph is selected, not typed in.
+  await expect(kind(page)).toHaveText("Paragraph");
+  await expect(page.getByRole("tree", { name: "Page structure", exact: true }).locator("[role=treeitem][aria-selected=true]")).toHaveAccessibleName(/Paragraph three/);
+  await expect(frame(page).locator("[contenteditable]")).toHaveCount(0);
+  await expect(ghost(page)).toHaveCount(0);
+});
+
+test("in Edit component mode, a part being typed in drags to another place in the template, two undo steps", async ({ page }) => {
+  const template = "components/project-card/project-card.html";
+  const mounted = () => page.evaluate(async (path) => (await import("/src/components/code-editor.ts")).getMountedSource(path), template);
+  // On the page the note is the shared template's: a click selects the card, whose bar opens Edit component mode.
+  await frame(page).locator("project-card[data-key='card-1']").locator("card-note").click();
+  await expect(kind(page)).toHaveText("Project card");
+  await bar(page).getByRole("button", { name: "Edit Project card component", exact: true }).click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", template);
+  await expect.poll(async () => typeof (await mounted())).toBe("string");
+  const original = (await mounted())!;
+  const card = "project-card[data-key='card-1']";
+  const note = frame(page).locator(card).locator("card-note");
+  const title = frame(page).locator(card).locator("h3");
+  const box = (await page.locator(".native-preview-frame").boundingBox())!;
+  const point = async (target: typeof note, fy: number) => {
+    const r = await target.evaluate((el) => { const b = el.getBoundingClientRect(); return { x: b.left + b.width / 2, top: b.top, height: b.height }; });
+    return { x: box.x + r.x, y: box.y + r.top + r.height * fy };
+  };
+  // A click on the note's text types in the template's note.
+  await note.scrollIntoViewIfNeeded();
+  const at = await afterWord(page, `${card} card-note`, "across");
+  await page.mouse.click(at.x, at.y);
+  await expect(note).toHaveAttribute("contenteditable", /plaintext-only|true/);
+  await page.keyboard.press("End");
+  await page.keyboard.type("!");
+  // Pressed on its text and dragged above the title: the part moves, its typed text kept.
+  await drag(page, at, await point(title, 0.2), "Card note");
+  const flat = (html: string) => html.replace(/\s+(?=<)/g, "");
+  await expect.poll(async () => { const now = flat((await mounted()) ?? ""); return now.includes("Shared across cards!</card-note>") && now.indexOf("<card-note") < now.indexOf("<h3"); }).toBe(true);
+  // Two undo steps: the move, then the typing.
+  const undoTemplate = () => page.evaluate(async (path) => (await import("/src/components/code-editor.ts")).runVisualHistory("undo", path), template);
+  expect(await undoTemplate()).toBe(true);
+  await expect.poll(async () => { const now = flat((await mounted()) ?? ""); return now.includes("Shared across cards!</card-note>") && now.indexOf("<card-note") > now.indexOf("<h3"); }).toBe(true);
+  expect(await undoTemplate()).toBe(true);
+  await expect.poll(() => mounted()).toBe(original);
 });
 
 test("one click on an image selects it; a double-click opens the Image popup", async ({ page }) => {
