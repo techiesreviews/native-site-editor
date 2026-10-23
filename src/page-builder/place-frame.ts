@@ -177,6 +177,6 @@ export async function framePlace(ports: PlaceFramePorts, target: { path: string;
   const range = current();
   // A press on another element (which closes the popup and saves) keeps that element selected.
   const select = ports.selected?.(target.path, target.node) === false ? undefined : target.node;
-  if (!ports.change(target.path, proof.source, [...page.edits, { start: range.tag.start, end: range.tag.end, text }], select,
+  if (!await ports.change(target.path, proof.source, [...page.edits, { start: range.tag.start, end: range.tag.end, text }], select,
     change.shape !== undefined ? "Image shape changed" : "Focus point moved")) throw new Error("The image place could not be changed.");
 }

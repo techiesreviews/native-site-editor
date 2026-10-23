@@ -138,7 +138,7 @@ export async function placeMediaPath(
           expectedSources: new Map([...prefixSources, [placement.path, placement.source], [MEDIA_RECORDS_PATH, metadata]]),
           expectedAssets: new Map([[image.path, version]]), live: () => !cancelled() && stamp.holds(),
           edits: new Map([[placement.path, page]]), uploads: copies.uploads, moves: [], deletes: [], restores: [] });
-      } else if ([...prefixSources].some(([path, source]) => ports.source(path) !== source) || !ports.change(placement.path, placement.source, [{ start: 0, end: placement.source.length, text: page }], placement.node ?? [], "Image replaced")) throw new Error("The image could not be replaced.");
+      } else if ([...prefixSources].some(([path, source]) => ports.source(path) !== source) || !(await ports.change(placement.path, placement.source, [{ start: 0, end: placement.source.length, text: page }], placement.node ?? [], "Image replaced"))) throw new Error("The image could not be replaced.");
       if (copyNote) ports.announce(`Image replaced.${copyNote}`);
       placement.placed = true;
     }

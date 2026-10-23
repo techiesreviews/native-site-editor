@@ -118,7 +118,8 @@ export interface BackgroundSite {
 
 /** A hidden preview frame of one page, for measuring its pictures where they stand. */
 export interface BackgroundFrame extends BackgroundPage {
-  measure(request: { path: string; node: number[]; image?: { width: number; height: number }; slot?: string; style?: string }): Promise<MediaMeasured | undefined>;
+  /** `from`: the work's own site and texts (work sharing the page may hold another pin of it); by default the opener's. */
+  measure(request: { path: string; node: number[]; image?: { width: number; height: number }; slot?: string; style?: string }, from?: BackgroundSite): Promise<MediaMeasured | undefined>;
 }
 
 /**
@@ -128,7 +129,7 @@ export interface BackgroundFrame extends BackgroundPage {
  */
 export async function openBackgroundFrame(site: BackgroundSite, create: (host: HTMLElement) => NativePreview, parent: HTMLElement = document.body): Promise<BackgroundFrame> {
   // The page's texts as its workspace has them now, a level at a time (at most 10).
-  async function read() {
+  async function read(site: BackgroundSite) {
     const texts = new Map<string, string>(), files = site.files();
     let componentCss: ReadonlyMap<string, string> = new Map();
     for (let round = 0; round < 10; round++) {
@@ -141,7 +142,7 @@ export async function openBackgroundFrame(site: BackgroundSite, create: (host: H
     }
     return { sources: Object.fromEntries(texts), componentStyles: Object.fromEntries(componentCss) };
   }
-  let drawn = await read();
+  let drawn = await read(site);
   const host = parent.ownerDocument.createElement("div");
   host.className = "background-page";
   // Laid out at the window's size (so the page is drawn as it would be shown) but off screen and unseen.
@@ -163,9 +164,10 @@ export async function openBackgroundFrame(site: BackgroundSite, create: (host: H
   }
   const frame = preview;
   return {
-    async measure(request) {
-      // Work sharing this page may have changed it since it was drawn: drawn again from its texts now.
-      const now = await read();
+    async measure(request, from = site) {
+      // Work sharing this page may have changed it since it was drawn, or hold another pin of it:
+      // drawn again from the measuring work's own texts now.
+      const now = await read(from);
       if (JSON.stringify(now) !== JSON.stringify(drawn)) { drawn = now; frame.update(now); }
       // The frame's runtime loads beside the editor's: until it has drawn the page, ask again (about 5 s).
       for (let attempt = 0; ; attempt++) {
@@ -181,53 +183,56 @@ export async function openBackgroundFrame(site: BackgroundSite, create: (host: H
 }
 
 /**
- * The ports a placement, frame, trim or Decorative change uses, held to the workspace it began on
- * (ticket 27, invisible multiplayer). While that workspace is shown they are the editor's; once
- * another is shown the work goes on in its background page: the pin's reads, nothing opened or
- * selected, the page measured in a hidden frame of it (`measureAway`), a one-page change written
- * straight to its drafts with no Undo step on the page shown, and the toast saying where it landed.
- * The work's own bytes prove it (each step compares the page it read), so a switch is no reason to
- * stop: its stamp always holds. Without a pin (nothing open as it began) they are the editor's.
+ * The ports a placement, frame, trim or Decorative change uses, held to the workspace and page it
+ * began on (ticket 27, invisible multiplayer). While that page is shown they are the editor's.
+ * Once another workspace is shown, or another page of its own if it began on its page, the work goes
+ * on in its background page: the pin's reads, nothing opened or selected, the page measured in a
+ * hidden frame of it (`measureAway`), its writes one pinned media batch for its own page (a
+ * one-page change too: `change`), with no Undo step on the page shown, and the toast saying where it
+ * landed (its page, or its branch and repository) with a note on that workspace (`finishedAway`).
+ * The work's own bytes prove it (each step and its batch compare the page it read), so a switch is
+ * no reason to stop: its stamp always holds. Without a pin (nothing open as it began) they are the
+ * editor's.
  */
 export function pinnedPorts(ports: MediaControllerPorts, pin: MediaPin | undefined, page: string): MediaControllerPorts {
   if (!pin) return ports;
-  const here = () => pin.here(), live = () => true;
-  // Where it landed: its branch, and its repository too when another one is shown (as a Files drop says, ticket 23).
-  const away = (message: string) => `On ${sameRepository(ports.shownScope?.(), pin.scope) ? pin.scope.branch : `${pin.scope.repo} (${pin.scope.branch})`}: ${message}`;
+  const live = () => true, holds = { holds: live, changed: () => undefined };
+  // Its page open as it began: leaving that page (another page of the same site shown) is away for its writes too.
+  const began = Boolean(page) && ports.openFile() === page;
+  const here = () => pin.here(), onPage = () => here() && (!began || ports.openFile() === page);
+  // Where it landed: its page while its site is shown; else its branch, and its repository too when another
+  // one is shown (as a Files drop says, ticket 23). Another workspace gets a note; a page of the one shown needs none.
+  const say = (message: string) => {
+    if (onPage()) { ports.announce(message); return; }
+    if (here()) { ports.announce(`On ${page}: ${message}`); return; }
+    ports.announce(`On ${sameRepository(ports.shownScope?.(), pin.scope) ? pin.scope.branch : `${pin.scope.repo} (${pin.scope.branch})`}: ${message}`);
+    ports.finishedAway?.(pin.scope);
+  };
+  const applyBatch: MediaControllerPorts["applyBatch"] = (scope, stamp, batch) => ports.applyBatch(scope, stamp, batch, pin, began ? page : undefined);
   return { ...ports,
-    workspace: () => pin, pin: () => pin, identity: () => pin.identity, stamp: () => ({ holds: live, changed: () => undefined }),
+    workspace: () => pin, pin: () => pin, identity: () => pin.identity, stamp: () => holds,
     source: path => pin.source(path), findEntry: path => pin.find(path), entry: path => pin.entry(path),
-    rememberSource: (path, text) => pin.remember(path, text), listPaths: () => pin.list(),
-    applyBatch: (scope, stamp, batch) => ports.applyBatch(scope, stamp, batch, pin),
-    openPage: path => here() ? ports.openPage(path) : Promise.resolve(),
-    showPage: path => here() ? ports.showPage?.(path) ?? Promise.resolve() : Promise.resolve(),
-    openFile: () => here() ? ports.openFile() : page,
+    rememberSource: (path, text) => pin.remember(path, text), listPaths: () => pin.list(), applyBatch,
+    openPage: path => onPage() ? ports.openPage(path) : Promise.resolve(),
+    showPage: path => onPage() ? ports.showPage?.(path) ?? Promise.resolve() : Promise.resolve(),
+    openFile: () => onPage() ? ports.openFile() : page,
     viewingVersion: () => here() && ports.viewingVersion(),
-    restoreFile: (path, generation) => here() ? ports.restoreFile(path, generation) : Promise.resolve(),
-    selected: (path, node) => here() ? ports.selected?.(path, node) ?? true : false,
-    select: (path, node) => { if (here()) ports.select?.(path, node); },
-    measureImage: (path, node, image, slot, style) => here() ? ports.measureImage?.(path, node, image, slot, style) ?? Promise.resolve(undefined)
+    restoreFile: (path, generation) => onPage() ? ports.restoreFile(path, generation) : Promise.resolve(),
+    selected: (path, node) => onPage() ? ports.selected?.(path, node) ?? true : false,
+    select: (path, node) => { if (onPage()) ports.select?.(path, node); },
+    measureImage: (path, node, image, slot, style) => onPage() ? ports.measureImage?.(path, node, image, slot, style) ?? Promise.resolve(undefined)
       : ports.measureAway?.(pin, path, node, image, slot, style) ?? Promise.resolve(undefined),
-    undoAction: path => here() ? ports.undoAction?.(path) : undefined,
-    announce: message => { if (here()) ports.announce(message); else { ports.announce(away(message)); ports.finishedAway?.(pin.scope); } },
+    undoAction: path => onPage() ? ports.undoAction?.(path) : undefined,
+    announce: say,
     change(path, source, edits, node, message) {
-      if (here()) return ports.change(path, source, edits, node, message);
-      // Its workspace is not shown: the page's draft there takes the change, as the editor's own would.
-      // A named exception to CODING_STANDARDS "One transaction per user action" (a write goes through
-      // one guarded edit): the guarded drafts-only commit (`elsewhere`, src/guarded-edit/commit.ts)
-      // needs an editor workspace of the pin's site, which this page does not have (ticket 27, case 1).
-      // What proves it: the page's bytes there are the ones the change was made on (`pin.source`),
-      // checked synchronously with no wait before the draft is saved, in the record shape the guarded
-      // commit's edits-only path writes; it has no Undo step (see the ticket's Not done).
-      if (pin.source(path) !== source) return false;
+      if (onPage()) return ports.change(path, source, edits, node, message);
+      // Its page is not the one shown: one pinned media batch for that page (src/media-batch.ts), proved
+      // by the page's bytes as the change read them; on a page of the site shown it goes through the
+      // editor's transaction with no Undo step there, in another workspace as that workspace's drafts.
       let text = source;
       for (const edit of [...edits].sort((a, b) => b.start - a.start)) text = text.slice(0, edit.start) + edit.text + text.slice(edit.end);
-      const scope = pin.scope, draft = pin.drafts.get(scope, path), now = Date.now();
-      const saved = draft && !draft.deleted ? { ...draft, content: text, updatedAt: now }
-        : { ...scope, version: 1 as const, path, baseSha: draft?.baseSha ?? pin.entry(path)?.sha ?? null, original: draft?.original ?? source, content: text, updatedAt: now };
-      if (!pin.drafts.save(saved)) return false;
-      ports.announce(away(message)); ports.finishedAway?.(scope);
-      return true;
+      return applyBatch(pin.scope, holds, { label: message, expectedPaths: pin.files(), expectedSources: new Map([[path, source]]), expectedAssets: new Map(),
+        edits: new Map([[path, text]]), moves: [], deletes: [], restores: [], uploads: [] }).then(() => { say(message); return true; });
     },
   };
 }

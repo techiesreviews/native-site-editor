@@ -11,11 +11,12 @@ import type { SavedCommit } from "./components/site-actions";
 import type { Repository } from "../shared/types";
 import { githubScope, holdsDraftScope, sameRepository, workspaceKeys, type WorkspaceScope } from "./workspace-session";
 
-export type FinishedKind = "saved" | "added" | "agent";
+/** `media`: a picture placed, framed or trimmed, or another Media change made there (ticket 27). */
+export type FinishedKind = "saved" | "added" | "agent" | "media";
 
 export interface FinishedNote {
   readonly scope: DraftScope;
-  /** How many of each finished there: saves, files added, agent edits. */
+  /** How many of each finished there: saves, files added, agent edits, Media changes. */
   readonly done: Readonly<Record<FinishedKind, number>>;
   /** The last save's commit, followed as Change status when the note is opened. */
   readonly commit?: SavedCommit;
@@ -23,15 +24,16 @@ export interface FinishedNote {
 
 /** Pieces of work finished in `notes`: what a tile counts. */
 export const noteCount = (notes: readonly FinishedNote[]) =>
-  notes.reduce((sum, note) => sum + note.done.saved + note.done.added + note.done.agent, 0);
+  notes.reduce((sum, note) => sum + note.done.saved + note.done.added + note.done.agent + note.done.media, 0);
 
 /** What happened, in words: "Saved", "3 files added", "Agent changes waiting". */
 export function noteWords(note: FinishedNote) {
-  const { saved, added, agent } = note.done;
+  const { saved, added, agent, media } = note.done;
   return [
     saved && (saved === 1 ? "Saved" : `Saved ${saved} times`),
     added && `${added} ${added === 1 ? "file" : "files"} added`,
     agent && "Agent changes waiting",
+    media && (media === 1 ? "A Media change waiting" : `${media} Media changes waiting`),
   ].filter(Boolean).join(", ");
 }
 
@@ -84,7 +86,7 @@ export function createFinishedElsewhere(ports: {
     if (count < 1 || id !== undefined && noted.has(id) || ports.showing(scope)) return;
     if (id !== undefined) noted.add(id);
     const was = at(githubScope(scope));
-    const done = { saved: 0, added: 0, agent: 0, ...was?.done };
+    const done = { saved: 0, added: 0, agent: 0, media: 0, ...was?.done };
     done[kind] += count;
     const note: FinishedNote = { scope: was?.scope ?? { ...scope }, done, commit: commit ?? was?.commit };
     set([note, ...notes.filter((other) => other !== was)]);

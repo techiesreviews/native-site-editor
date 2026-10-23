@@ -37,7 +37,7 @@ export function createAgentMediaTools(options: {
       // The stamp holds while the same repository and branch stay open (src/workspace-session.ts); a save moves the commit within it.
       // Another site or branch shown meanwhile stops nothing (ticket 27): with a pin it finishes in its own workspace.
       if (!media && !stamp.holds()) throw new Error("The editor moved to another site or branch meanwhile. Nothing was changed.");
-      if (!current() || !(media && !media.here()) && ports.files()?.snapshot.commit !== commit)
+      if (!current() || (!(media && !media.here()) && ports.files()?.snapshot.commit !== commit))
         throw new Error("The relay disconnected or the site was saved meanwhile. Nothing was changed.");
     };
     const beforeCommit = () => {

@@ -912,6 +912,10 @@ test("a pinned placement switched away at any wait lands once, on its own page, 
       readText: race.port("read", async () => "read text"),
       measureImage: race.port("measure", async () => undefined), measureAway: race.port("measure away", async () => undefined),
       announce: text => { told.push(text); },
+      // A pinned batch for its own page: in this fake it lands as that page's draft.
+      applyBatch: async (_scope, _stamp, batch, held) => {
+        if (held === pin) for (const [path, content] of batch.edits) saved.push({ ...scope, version: 1, path, baseSha: "sha", original: main, content, updatedAt: 0 });
+      },
     });
     const done = (async () => {
       await f.controller.chooseImage({ path: "index.html", node: [0, 0] });
@@ -949,6 +953,10 @@ test("a pinned popup shape change switched away at any wait lands once, on its o
       restoreFile: race.port("restore", async (path: string) => { if (here) open = path; }),
       measureImage: race.port("measure", async () => undefined), measureAway: race.port("measure away", async () => undefined),
       shownScope: () => here ? scope : { ...scope, branch: "feature" }, announce: text => { told.push(text); },
+      // A pinned batch for its own page: in this fake it lands as that page's draft.
+      applyBatch: async (_scope, _stamp, batch, held) => {
+        if (held === pin) for (const [path, content] of batch.edits) saved.push({ ...scope, version: 1, path, baseSha: "sha", original: main, content, updatedAt: 0 });
+      },
     });
     const ports = pinnedPorts(f.ports, pin, "index.html");
     const expected = '<img src="/images/old.png" alt="Old alt">';
