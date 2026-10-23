@@ -168,5 +168,19 @@ test("disabled storage: agent edits are refused with a plain error and the tab's
     expect(Object.keys(files).sort()).toEqual(["README.txt", "changes.json", `files/${indexPath}`]);
     expect(new TextDecoder().decode(files[`files/${indexPath}`])).toBe(edited);
     expect(new TextDecoder().decode(files["README.txt"])).toContain('The folder "files" holds 1 file,');
+    // Blocked storage stays blocked after the download: the button stays, also through the next edit
+    // (the user's, then an agent's).
+    await expect(downloadButton(page)).toBeVisible();
+    await page.keyboard.press("Escape");
+    const later = edited.replace("Manual heading kept in this tab", "A later manual heading");
+    await page.evaluate(async (text) => navigator.clipboard.writeText(text), later);
+    await page.locator("#content [role=\"textbox\"]").first().evaluate((el) => (el as HTMLElement).focus());
+    await page.keyboard.press("ControlOrMeta+A");
+    await page.keyboard.press("ControlOrMeta+V");
+    await expect(frame(page).locator(".hero h1")).toHaveText("A later manual heading");
+    const again = await call("edit_file", { path: indexPath, expectedHash: "0".repeat(64), edits: [{ oldText: "A later manual heading", newText: "Agent heading" }] });
+    expect(again.error, again.text).toBe(true);
+    await page.locator(".repository-menu__trigger").click();
+    await expect(downloadButton(page)).toBeVisible({ timeout: 15_000 });
   } finally { await client.close(); }
 });
