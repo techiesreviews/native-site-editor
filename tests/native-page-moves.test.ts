@@ -10,6 +10,7 @@ import {
   rewriteRouteLinks,
 } from "../src/native-page-moves.ts";
 import { deriveNativeRoutes } from "../shared/native-routes.ts";
+import { pageAddressProblem } from "../shared/site-rules.ts";
 
 const plan = (files: string[], from: string, to: string) => {
   const result = planPageMove({ files, routes: deriveNativeRoutes(files), from, to });
@@ -98,6 +99,22 @@ test("a URL change is refused for the home page, into its own subtree, onto a ta
   assert.equal(error(files, "/contact/", "/components/contact/"), "No page file can give the URL /components/contact/.");
   const warned = plan(["index.html", "missing/index.html"], "/missing/", "/404.html");
   assert.deepEqual(warned.warnings, ["/404.html is the page shown for addresses the site does not have."]);
+});
+
+test("a new URL meets the address rule; an existing one stays and can be renamed to a strict one", () => {
+  const files = ["index.html", "About_Us.v2/index.html", "About_Us.v2/team/index.html", "Old_Folder/index.html", "contact/index.html"];
+  const words = pageAddressProblem("About_Us.v2");
+  assert.equal(error(files, "/contact/", "/About_Us.v3/"), words);
+  assert.equal(error(files, "/contact/", "/New_Folder/contact/"), words);
+  assert.equal(error(files, "/contact/", "/Contact.html"), words);
+  // An existing address moves under another page and keeps its name; folders already there stay.
+  assert.deepEqual(moves(plan(files, "/About_Us.v2/", "/contact/About_Us.v2/")), {
+    "About_Us.v2/index.html": "contact/About_Us.v2/index.html",
+    "About_Us.v2/team/index.html": "contact/About_Us.v2/team/index.html",
+  });
+  assert.equal(plan(files, "/contact/", "/Old_Folder/contact/").target, "Old_Folder/contact/index.html");
+  // Renamed to a strict address, its subpages follow.
+  assert.deepEqual(plan(files, "/About_Us.v2/", "/about-us/").routes, [["/About_Us.v2/", "/about-us/"], ["/About_Us.v2/team/", "/about-us/team/"]]);
 });
 
 test("root links to a moved page and everything under its folder follow it, in HTML and CSS; nothing else changes", () => {

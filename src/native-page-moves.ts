@@ -10,6 +10,7 @@
 // `company/team/index.html`), and a single-file page moves alone.
 import { NATIVE_NOT_FOUND_ROUTE, isFolderRoute, nativePageRoute, nativeRouteFile } from "../shared/native-routes";
 import { rootRoute, routeAddress } from "../shared/site-path-prefix";
+import { pageAddressProblem } from "../shared/site-rules";
 import type { Checked } from "./native-create";
 
 export interface FileMove {
@@ -85,7 +86,6 @@ export function planPageMove(input: PageMoveInput): Checked<PageMovePlan> {
   if (nativePageRoute(target) !== to) return { ok: false, error: `No page file can give the URL ${to}.` };
   const parent = parentRoute(to);
   if (parent !== "/" && !isFolderRoute(parent)) return { ok: false, error: `${parent} is a single-file page, so nothing can go under it.` };
-
   const moves = new Map<string, string>();
   const folder = isFolderRoute(from) ? routeFolder(from) : undefined;
   const inside = folder === undefined ? [] : files.filter((path) => path.startsWith(folder) && path !== file);
@@ -129,6 +129,17 @@ export function planPageMove(input: PageMoveInput): Checked<PageMovePlan> {
   };
   const blocked = [...moves.values()].flatMap(folders).find((folder) => present.has(folder) && !moves.has(folder));
   if (blocked) return { ok: false, error: `${blocked} is a file, so nothing can go in it.` };
+  // A new part of the URL meets the address rule; the page's own last part and folders already there stay as they are.
+  const parts = routeFolder(parent).split("/").filter(Boolean);
+  const fresh = parts.filter((_, index) => {
+    const folder = `${parts.slice(0, index + 1).join("/")}/`;
+    return !files.some((path) => path.startsWith(folder));
+  });
+  if (routeSlug(to) !== routeSlug(from)) fresh.push(routeSlug(to).replace(/\.html$/, ""));
+  for (const part of fresh) {
+    const problem = pageAddressProblem(part);
+    if (problem) return { ok: false, error: problem };
+  }
 
   return {
     ok: true,

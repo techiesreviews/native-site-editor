@@ -306,6 +306,9 @@ test("a page, a subpage under it and another are made in place as folders of the
   await editRow(page).getByRole("button", { name: "URL /videos/my-first-video/, change it" }).click();
   const slug = explorer(page).getByRole("textbox", { name: "URL of the new page, after /videos/" });
   await expect(slug).toBeFocused();
+  // The agent and Change URL refuse it with the same words.
+  await slug.fill("About_Us.v2");
+  await expect(editRow(page).locator(".pages-edit__message")).toHaveText("Use lowercase letters, digits and dashes in the URL, at most 80, starting with a letter or digit.");
   await slug.fill("second-take");
   await expect(editRow(page).locator(".pages-edit__message")).toBeEmpty();
   await title.fill("Another title");

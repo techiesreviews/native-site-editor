@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createPageOffer, pageChoices } from "../src/page-builder/page-choices.ts";
+import { pageAddressProblem } from "../shared/site-rules.ts";
 
 const routes = { "/": "index.html", "/work/old/": "work/old/index.html" };
 const input = { routes, pages: [{ route: "/work/old/", file: "work/old/index.html", title: "Old page" }], folders: ["/", "/work/", "/work/old/"], inGrid: ["/work/old/"], exists: () => false };
@@ -12,7 +13,9 @@ test("a title goes under the cards' folder, then the default folder, then root",
   assert.equal(createPageOffer({ ...input, inGrid: [], query: "Hello there" })?.route, "/hello-there/");
 });
 test("a typed address stays as typed, lowercased, including its slug", () => {
-  assert.deepEqual(offer("/WORK/HELLO_THERE///"), { title: "Hello there", route: "/work/hello_there/", request: { title: "Hello there", parent: "/work/", slug: "hello_there" } });
+  assert.deepEqual(offer("/WORK/HELLO-THERE///"), { title: "Hello there", route: "/work/hello-there/", request: { title: "Hello there", parent: "/work/", slug: "hello-there" } });
+  // An address outside the rule keeps its offer, disabled with the Pages tab's words.
+  assert.deepEqual(offer("/WORK/HELLO_THERE///"), { title: "Hello there", route: "/work/hello_there/", request: { title: "Hello there", parent: "/work/", slug: "hello_there" }, error: pageAddressProblem("hello_there") });
 });
 test("one new folder is allowed; two new levels explain the refusal", () => {
   assert.deepEqual(offer("/work/new/hello")?.request, { title: "Hello", parent: "/work/", newFolder: "new", slug: "hello" });

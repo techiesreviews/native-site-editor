@@ -3,7 +3,7 @@ import { AGENT_TEXT_LIMIT, isMediaUploadWrite, OUTSIDE_MEDIA_REFUSED, parseOutli
 import { applyReplacements } from "./agent-replacements";
 import { HttpError } from "./http-error";
 import { SiteFiles, writablePathProblem } from "./site-files";
-import { isNativeComponentTag } from "./native-project";
+import { makeComponentProblem, pageAddressProblem } from "./site-rules";
 import { findPageRef, noHomePage } from "./agent-read";
 import type { AgentPageOutline, EditorContext } from "./types";
 type Page = NonNullable<EditorContext["pages"]>[number];
@@ -144,6 +144,8 @@ export async function prepareAgentEdit(request: AgentEdit, context: EditorContex
       const under = parent ? parent.replace(/^\/?/, "/").replace(/\/?$/, "/") : "/";
       if (under !== "/" && !context.pages.some((page) => page.route === under))
         return refuse(`No page at ${under}. get_site lists the pages; a page at an .html URL has no subpages.`);
+      const address = slug === undefined ? undefined : pageAddressProblem(slug);
+      if (address) return refuse(address);
       return queue("create_page", {
         // The parent's folder: one new page there waits at a time.
         path: under === "/" ? "." : under.slice(1, -1),
@@ -189,16 +191,15 @@ export async function prepareAgentEdit(request: AgentEdit, context: EditorContex
     case "make_component": {
       const { page: ref, element, tag, fixed, expectedHash } = request.args;
       if (!parseOutlineId(element)) return refuse(`${element} is not an element id; get_page lists them.`);
-      if (!isNativeComponentTag(tag)) return refuse(`<${tag}> is not a valid custom-element name.`);
+      const named = makeComponentProblem(undefined, tag, []);
+      if (named) return refuse(named);
       const page = findPage(context, ref);
       const outline = outlineOf(context, page.file);
       checkHash(expectedHash, outline.hash, page.file);
-      if (context.site?.components.some((item) => item.tag === tag)) return refuse(`There is a component <${tag}> already.`);
-      const container = outline.containers.find((item) => item.id === element && (item.tag === "main" || item.tag === "body"));
-      if (container) return refuse(`A <${container.tag}> cannot be a component.`);
-      const section = outline.sections.find((item) => item.id === element);
-      if (section?.tag.includes("-"))
-        return refuse(/^site-(?:header|footer)$/.test(section.tag) ? `<${section.tag}> is the site's ${section.tag.slice(5)} component already.` : `<${section.tag}> is a component already.`);
+      // The outline knows the tags of the containers and sections; the editor checks any other element.
+      const source = outline.containers.find((item) => item.id === element) ?? outline.sections.find((item) => item.id === element);
+      const problem = makeComponentProblem(source, tag, context.site?.components.map((item) => item.tag) ?? []);
+      if (problem) return refuse(problem);
       return queue("make_component", {
         path: page.file,
         expectedHash,

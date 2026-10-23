@@ -414,8 +414,8 @@ test("MCP site tools read and prepare guarded changes over the runtime socket, r
     const makeArgs = { page: "/", element: "1.0", tag: "section-welcome", expectedHash: page.hash, waitSeconds: 0 };
     for (const [extra, reason] of [
       [{ element: "bad.id" }, /not an element id/],
-      [{ tag: "section" }, /not a valid custom-element name/],
-      [{ tag: "font-face" }, /not a valid custom-element name/],
+      [{ tag: "section" }, /has a dash in it/],
+      [{ tag: "font-face" }, /font-face is reserved by HTML/],
       [{ tag: "feature-block" }, /component.*already/],
       [{ expectedHash: "0".repeat(64) }, /changed since you read it/],
       [{ element: "" }, /not an element id/],
@@ -464,6 +464,10 @@ test("MCP site tools read and prepare guarded changes over the runtime socket, r
     assert.equal(pageCommand.path, "about");
     assert.equal(created.state, "applied");
     assert.equal(created.result.route, "/about/our-team/");
+    // The Pages tab's words, before anything is queued.
+    const strict = await call("create_page", { title: "About us", slug: "About_Us.v2", waitSeconds: 0 });
+    assert.equal(strict.isError, true);
+    assert.match(JSON.stringify(strict), /Use lowercase letters, digits and dashes in the URL, at most 80, starting with a letter or digit\./);
     assert.equal((await call("create_page", { title: "Orphan", parent: "/nowhere/", waitSeconds: 0 })).isError, true);
     assert.equal((await call("create_page", { title: "Orphan", parent: "/404.html", waitSeconds: 0 })).isError, true, "a single-file page has no subpages");
 

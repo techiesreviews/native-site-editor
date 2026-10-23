@@ -19,7 +19,7 @@ import { siteAddress } from "../../shared/site-path-prefix";
 // Every edit here is a range edit of the file the instance is in: the
 // page's own markup inside the instance tag, or the instance's attributes.
 
-import { RESERVED_CUSTOM_ELEMENT_NAMES } from "../../shared/custom-element-names";
+import { componentSourceProblem, componentTagProblem } from "../../shared/site-rules";
 import { asciiLower, decodeEntity, isSectionTemplate, startTagAttribute, startTags, textRangeInSource, type StartTag } from "../../shared/html-source";
 import { CARD_ITEM_TAGS, itemKind } from "./rules/items";
 import { isPageHeaderFooter } from "./rules/page-bands";
@@ -1089,16 +1089,8 @@ export function detachMarkup(source: string, template: string, instance: Instanc
 
 // ---- Make component: an element of the page becomes a component. ----
 
-/** Why `name` cannot be a new component's tag, or nothing. */
-export function tagNameProblem(name: string, taken: Iterable<string>) {
-  if (!name) return "Type a name with a dash, such as section-intro.";
-  if (!/^[a-z]/.test(name)) return "A component's name starts with a lowercase letter.";
-  if (!name.includes("-")) return "A component's name has a dash in it, such as section-intro.";
-  if (!/^[a-z][a-z0-9]*(?:-[a-z0-9]+)+$/.test(name)) return "Use lowercase letters, digits and single dashes between words.";
-  if (RESERVED_CUSTOM_ELEMENT_NAMES.has(name)) return `${name} is reserved by HTML.`;
-  if ([...taken].includes(name)) return `There is a component <${name}> already.`;
-  return undefined;
-}
+/** Why `name` cannot be a new component's tag, or nothing: the agent's make_component words (shared/site-rules.ts). */
+export const tagNameProblem: (name: string, taken: Iterable<string>) => string | undefined = componentTagProblem;
 
 /** The containers Make component accepts, also named in agent refusals. */
 export const makeComponentContainers = "section, div, article, aside, figure, nav, header or footer";
@@ -1459,8 +1451,8 @@ function planComponent(source: string, range: InstanceRange, tag: string, choice
   const written = source.slice(range.start, range.end);
   const element = elements(parseSource(written))[0];
   if (!element?.close) return { error: "The element's end tag could not be found in the source." };
-  if (element.name.includes("-")) return { error: "This is a component already." };
-  if (["main", "body", "html", "head"].includes(element.name)) return { error: `A <${element.name}> cannot be a component.` };
+  const refused = componentSourceProblem({ tag: element.name });
+  if (refused) return { error: refused };
   const ancestors = ancestry(source, range.start).slice(0, -1).map(el => el.name);
   const host = ancestors.find(name => name.includes("-"));
   if (host) return { error: `This is inside the component instance <${host}>; edit the component instead.` };

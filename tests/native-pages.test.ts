@@ -12,6 +12,7 @@ import {
   type NativePageNode,
   type NativeSiteTree,
 } from "../src/native-pages.ts";
+import { pageAddressProblem } from "../shared/site-rules.ts";
 import { deriveNativeRoutes } from "../shared/native-routes.ts";
 
 // A tree as lines: "label route [flags]", indented two spaces per level.
@@ -135,8 +136,10 @@ test("a new page is <parent>/<slug>/index.html, under any folder page; a single-
   assert.deepEqual(value(nativeNewTarget("/videos/", "my-first-video")), { route: "/videos/my-first-video/", file: "videos/my-first-video/index.html" });
   assert.deepEqual(value(nativeNewTarget("/about/", "team")), { route: "/about/team/", file: "about/team/index.html" });
   assert.match(nativeNewTarget("/notes.html", "x").ok ? "" : (nativeNewTarget("/notes.html", "x") as { error: string }).error, /single file/);
-  for (const slug of ["", "  ", "_draft", ".hidden", "a b", "a/b", "-x", "x-", "é"])
+  for (const slug of ["", "  ", "_draft", ".hidden", "a b", "a/b", "-x", "é", "About_Us.v2", "a.b", "a".repeat(81)])
     assert.equal(nativeNewTarget("/videos/", slug).ok, false, slug);
+  assert.deepEqual(nativeNewTarget("/", "About_Us.v2"), { ok: false, error: pageAddressProblem("About_Us.v2") });
+  assert.equal(nativeNewTarget("/", "a".repeat(80)).ok, true);
   assert.equal(nativeNewTarget("/", "components").ok, false);
 });
 
