@@ -2,7 +2,7 @@
 title: "One overlay rule and new-draft list (the nine copies go)"
 type: task (AFK)
 status: open
-assignee:
+assignee: lead-30 (this session)
 builder: claude
 blocked_by: [22-workspace-session-callers, 23-work-finishes-where-it-started, 24-work-notification-icon]
 ---
