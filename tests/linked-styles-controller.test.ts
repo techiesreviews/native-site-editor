@@ -47,14 +47,15 @@ const SNAPSHOT: Snapshot = { commit: "head", branch: "main", entries: [] };
 const SCOPE = { account: "lex", repoId: 501, repo: "lex/site", branch: "main" };
 const SOURCES: Record<string, string> = { "index.html": "<main class=\"hero\">Hi</main>", "styles.css": ".hero { color: red; }" };
 
-function harness(options: { entries?: Record<string, TreeEntry>; drafts?: Record<string, SavedDraft>; race?: AwaitRace; sources?: Record<string, string>; componentTag?: string } = {}) {
+function harness(options: { entries?: Record<string, TreeEntry>; drafts?: Record<string, SavedDraft>; race?: AwaitRace; sources?: Record<string, string>; componentTag?: string;
+  primary?: LinkedStylesPorts["primaryHistoryScope"]; afterFind?: () => void } = {}) {
   // The writer's async ports, wrapped for an await race when one is given (its reads then answer at once).
   const port = <Args extends unknown[], Value>(name: string, work: (...args: Args) => Promise<Value>) => options.race ? options.race.port(name, work) : work;
   const sources = { ...SOURCES, ...options.sources };
   const drafts = options.drafts ?? {};
   const ids = new Map<string, FakeElement>();
   const element = (id: string) => { if (!ids.has(id)) ids.set(id, new FakeElement()); return ids.get(id)!; };
-  const mounts: { path: string; key: string; host: unknown; source: string; baseSha?: string | null }[] = [];
+  const mounts: { path: string; key: string; host: unknown; source: string; baseSha?: string | null; historyScope?: string }[] = [];
   const disposed: string[] = [];
   const highlights: { path: string; ranges: string[] }[] = [];
   const revealed: string[] = [];
@@ -68,7 +69,7 @@ function harness(options: { entries?: Record<string, TreeEntry>; drafts?: Record
     workspaceSession: session,
     editorModule: {
       mountSourceEditor: (host, file) => {
-        mounts.push({ path: file.path, key: file.key, host, source: file.source, baseSha: file.baseSha });
+        mounts.push({ path: file.path, key: file.key, host, source: file.source, baseSha: file.baseSha, historyScope: file.historyScope });
         return () => void disposed.push(file.path);
       },
       highlightRanges: (path, ranges) => void highlights.push({ path, ranges: ranges.map(({ start, end }) => `${start}-${end}`) }),
@@ -76,7 +77,7 @@ function harness(options: { entries?: Record<string, TreeEntry>; drafts?: Record
     },
     info: { user: { login: "lex", avatar_url: "" } },
     nativeSite: { routes: { "/": "index.html" }, components: {} },
-    primaryHistoryScope: undefined,
+    get primaryHistoryScope() { return options.primary; },
     nativeVariantFiles: { site: () => undefined, read: () => undefined },
     // eslint-disable-next-line no-restricted-syntax -- a partial DOM fake: the pane, its title and chips use only these members
     element: (id) => element(id) as unknown as HTMLElement,
@@ -89,7 +90,7 @@ function harness(options: { entries?: Record<string, TreeEntry>; drafts?: Record
     nativeHistorySession: (_scope, path) => `history:${path}`,
     draftScope: () => SCOPE,
     draftStore: () => ({ get: (_scope, path) => drafts[path] }),
-    findEntry: port("findEntry", async (path: string) => { calls.push(`find ${path}`); return entries[path]; }),
+    findEntry: port("findEntry", async (path: string) => { calls.push(`find ${path}`); options.afterFind?.(); return entries[path]; }),
     readFile: port("readFile", (_repo: string, sha: string) => { calls.push(`read ${sha}`); return options.race ? Promise.resolve(`/* ${sha} */`) : new Promise<string>((resolve) => reads.push(() => resolve(`/* ${sha} */`))); }),
     applyWidth: () => void calls.push("width"),
     updateNativePreviewSources: () => void calls.push("preview"),
@@ -325,4 +326,59 @@ test("an element of a template with no rules of its own keeps the template's sty
   assert.deepEqual(h.mounts.map(({ path }) => path), [CARD_CSS]);
   assert.equal(h.linked.secondaryPath(), CARD_CSS);
   assert.equal(h.linked.linkedPage(), CARD);
+});
+
+test("a preview click's rules open beside the page unless the page, the load or a newer click moved on at any await", async () => {
+  for (const disturbance of ["page", "load", "click"] as const) {
+    const points = await forEachAwait(
+      (race) => {
+        const h = harness({ race });
+        return { h, linkedPage: undefined as string | undefined, done: h.linked.linkNativeStyles(HERO_SELECTION, true) };
+      },
+      (run) => {
+        run.linkedPage = run.h.linked.linkedPage();
+        if (disturbance === "page") run.h.appStore.openFile.value = "about.html";
+        else if (disturbance === "load") run.h.session.next();
+        else run.h.linked.beginReveal();
+      },
+      (run) => {
+        assert.deepEqual(run.h.mounts, [], disturbance);
+        assert.deepEqual(run.h.revealed, [], disturbance);
+        assert.equal(run.h.linked.linkedPage(), run.linkedPage, disturbance);
+      },
+    );
+    assert.equal(points, 2);
+  }
+});
+
+test("the stylesheet beside a page shares the page's live history journal", async () => {
+  const proof = { current: true, isCurrent() { return this.current; } };
+  const h = harness({ primary: { key: draftKey(SCOPE, "index.html"), session: "s1", proof } });
+  const opening = h.linked.openSecondary("styles.css");
+  await h.settle();
+  assert.equal(await opening, true);
+  assert.deepEqual(h.mounts.map(({ path, historyScope }) => ({ path, historyScope })), [{ path: "styles.css", historyScope: "s1" }]);
+});
+
+test("a page journal that stops being current while the stylesheet is found mounts nothing", async () => {
+  const proof = { current: true, isCurrent() { return this.current; } };
+  const h = harness({ primary: { key: draftKey(SCOPE, "index.html"), session: "s1", proof }, afterFind: () => { proof.current = false; } });
+  const opening = h.linked.openSecondary("styles.css");
+  await h.settle();
+  assert.equal(await opening, false);
+  assert.deepEqual(h.mounts, []);
+  assert.equal(h.linked.secondaryPath(), undefined);
+});
+
+test("new <body> rules that still put the same stylesheet first redraw its chips in place", async () => {
+  const h = harness({ sources: { "styles.css": "body { color: red; }" } });
+  const opening = h.linked.openDefaultLinkedStyle("index.html");
+  await h.settle();
+  assert.equal(await opening, true);
+  assert.deepEqual(h.element("secondary-rules").children, []);
+  h.linked.updateBodyStyles({ rules: [{ path: "styles.css", selector: "body", ruleIndex: 0, match: ["body"], kind: "rule", declarations: [{ property: "color", value: "red" }] }] });
+  await h.settle();
+  assert.deepEqual(h.mounts.map(({ path }) => path), ["styles.css"]);
+  assert.deepEqual(h.disposed, []);
+  assert.deepEqual(h.element("secondary-rules").children.map((chip) => chip.children[0].textContent), ["body"]);
 });
