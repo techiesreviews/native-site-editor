@@ -52,9 +52,9 @@ const { ApiError } = await import("../src/github-reads.ts");
 
 const flush = async () => { for (let i = 0; i < 10; i++) await new Promise<void>((resolve) => setImmediate(resolve)); };
 function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((yes) => { resolve = yes; });
-  return { promise, resolve };
+  let resolve!: (value: T) => void, reject!: (error: unknown) => void;
+  const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
 }
 const REPO = { id: 501, name: "site", full_name: "lex/site", private: false, default_branch: "main", owner: { login: "lex", type: "User" } } satisfies Repository;
 const SNAPSHOT: Snapshot = { commit: "head", branch: "main", entries: [] };
@@ -76,7 +76,7 @@ function fixture(race?: AwaitRace, awaits = ["api", "loadConfirmDialog", "ask", 
   const drafts = new Map<string, SavedDraft>();
   const errors: unknown[] = [];
   let preview: VersionViewPorts["nativePreview"] = { setViewing: (bar) => { viewing.push(bar); } }, setup = "lex/site";
-  let source = "<p>Now</p>", refreshes = 0, confirm = true, repositoryHolds = true, dialogs = 0;
+  let source = "<p>Now</p>", refreshes = 0, confirm = true, repositoryHolds = true, dialogs = 0, destroyed = 0;
   let restore: () => Promise<RestoreResult> = async () => RESULT;
   const read = (path: string, params?: Record<string, string>) => { const answer = deferred<unknown>(); reads.push({ path, params, answer }); return answer.promise; };
   const readNow = wrap("api", async (path: string, params?: Record<string, string>) => { reads.push({ path, params, answer: deferred() }); return { content: "<p>Then</p>" }; });
@@ -95,7 +95,7 @@ function fixture(race?: AwaitRace, awaits = ["api", "loadConfirmDialog", "ask", 
     updateNativePreviewSources: () => { refreshes++; },
     loadHistory: async () => ({ createCommitHistory: (options: HistoryOptions) => {
       histories.push(options);
-      return { root: {} as HTMLElement, destroy: () => {}, mark: () => {}, refresh: () => {} };
+      return { root: {} as HTMLElement, destroy: () => { destroyed++; }, mark: () => {}, refresh: () => {} };
     } }),
     loadConfirmDialog: wrap("loadConfirmDialog", async () => ({ createConfirmDialog: () => { dialogs++; return { root: {} as HTMLElement, ask }; } })),
     api: <T,>(path: string, params?: Record<string, string>) => (race ? readNow(path, params) : read(path, params)) as Promise<T>,
@@ -111,6 +111,8 @@ function fixture(race?: AwaitRace, awaits = ["api", "loadConfirmDialog", "ask", 
     versions, appStore, session, said, refused, compared, viewing, reads, posts, opened, snapshots, histories, drafts, errors,
     refreshes: () => refreshes,
     dialogs: () => dialogs,
+    /** Mounted History panels destroyed. */
+    destroyed: () => destroyed,
     /** The host's preview now: none before the site's preview mounts. */
     setPreview: (next: VersionViewPorts["nativePreview"]) => { preview = next; },
     /** An account or branch switch that starts no new load. */
@@ -299,6 +301,7 @@ test("Restore this version asks, commits against the head it showed, then reload
   assert.equal(f.versions.view, undefined);
   assert.deepEqual(f.snapshots, ["index.html"]);
   assert.deepEqual(f.said, ["Restoring file…", "Restored index.html in a new commit. Other files are unchanged."]);
+  assert.equal(f.destroyed(), 1, "the History panel closes");
 });
 
 test("Restore refuses over the file's draft, and stops when declined or once the repository moved", async () => {
@@ -413,4 +416,38 @@ test("the preview is read when the version shows or ends, not when the view is m
   assert.deepEqual(bars.slice(2), [undefined]);
   assert.equal(f.versions.view, undefined);
   assert.deepEqual(f.viewing, []);
+});
+
+test("a version that cannot be read says why, unless a newer choice or the end of the view came first", async () => {
+  const f = fixture(), history = await f.history();
+  history.onView(OLD, "head", false);
+  f.reads[0].answer.reject(new Error("Not found"));
+  await flush();
+  assert.deepEqual(f.said, ["Not found"]);
+  assert.equal(f.versions.view, undefined);
+  const moves = [
+    (g: ReturnType<typeof fixture>, panel: HistoryOptions) => panel.onView({ ...OLD, sha: "b".repeat(40) }, "head", false),
+    (g: ReturnType<typeof fixture>) => g.versions.end(),
+  ];
+  for (const move of moves) {
+    const g = fixture(), panel = await g.history();
+    panel.onView(OLD, "head", false);
+    move(g, panel);
+    g.reads[0].answer.reject(new Error("Not found"));
+    await flush();
+    assert.deepEqual(g.said, []);
+  }
+});
+
+test("History reports no version on show once the setup scope or the open file moved on", async () => {
+  const f = fixture(), history = await show(f);
+  assert.equal(history.viewing(), OLD.sha);
+  f.switchSetup("lex/other");
+  assert.equal(history.viewing(), undefined);
+  f.switchSetup("lex/site");
+  f.appStore.openFile.value = "about.html";
+  f.versions.history.close();
+  const other = await f.history();
+  assert.notEqual(other, history);
+  assert.equal(other.viewing(), undefined);
 });
