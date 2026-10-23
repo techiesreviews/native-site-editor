@@ -2,7 +2,7 @@
 title: "Invisible multiplayer: agent and Media work finishes in a background page"
 type: task (AFK)
 status: open
-assignee:
+assignee: lead-27 (this session)
 builder: claude
 blocked_by: [23-work-finishes-where-it-started]
 ---
