@@ -112,8 +112,6 @@ export interface MediaWorkspaceContext {
   openPage(path: string): Promise<void>;
   /** Whether this context's workspace is the one shown (ticket 23); false once work on it finishes elsewhere. */
   here?(): boolean;
-  /** A fresh context of the same workspace that never goes stale: work begun on this one finishes there. */
-  again?(): Promise<MediaWorkspaceContext>;
   /** The toast's Undo for the step just made, bound to it now (slice 113). */
   undoReceipt?(): import("../components/toast").ToastAction | undefined;
 }
@@ -263,7 +261,12 @@ export async function unusedTrimmedCopy(ctx: MediaWorkspaceContext, input: {
 const familyVersions = (ctx: MediaWorkspaceContext, paths: string[]) =>
   new Map(paths.map(path => [path, ctx.assetVersion(path)]));
 
-export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContext>) {
+/**
+ * `pinned`: the workspace shown now, held as a context factory that never goes stale (ticket 23).
+ * Taken as an addition, a Replace everywhere or an Improve images screen begins, so that work
+ * finishes in its workspace whatever is shown later.
+ */
+export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContext>, pinned?: () => (() => Promise<MediaWorkspaceContext>) | undefined) {
   let session: MediaWorkspaceContext | undefined;
   const active = () => {
     if (!session) throw new Error("Open the image library first.");
@@ -395,10 +398,9 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
   };
   const importMedia = async (requests: MediaImportRequest[], place?: MediaPlacement) => {
     session?.assertLive();
-    const live = await context();
     // Files added (not placed on a page) finish in the workspace they were added in (ticket 23).
-    if (place) session?.assertLive();
-    const ctx = place ? live : await (live.again?.() ?? live);
+    const own = place ? undefined : pinned?.(), ctx = await (own ?? context)();
+    if (!own) session?.assertLive();
     ctx.assertLive();
     const { batch, text, metadata } = await prepare(ctx, place?.label ?? (requests[0]?.onlineVideo ? `Add ${requests[0].onlineVideo.service === "youtube" ? "YouTube" : "Vimeo"} video` : "Add images"), requests.some((item) => item.replaceFrom));
     if (place?.expectedPaths) batch.expectedPaths = place.expectedPaths;
@@ -590,7 +592,7 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
   };
   const replace = async (request: MediaReplaceRequest, agent = false, ports: { encode?: typeof import("./media-optimise").optimiseMedia } = {}) => {
     // Begun on the library shown, it finishes in that workspace (ticket 23).
-    const shown = active(), ctx = agent ? shown : await (shown.again?.() ?? shown);
+    const shown = active(), own = agent ? undefined : pinned?.(), ctx = own ? await own() : shown;
     if (!ctx.items.some(item => item.path === request.path)) throw new Error("Choose an image Media file to replace.");
     // Capture every binary proof before the first read, including trims discovered in records later.
     const versions = familyVersions(ctx, ctx.paths);
@@ -944,8 +946,8 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     share,
     // Its rows read the workspace the screen opened on, whatever is shown later (ticket 23).
     async improveImages() {
-      const [module, opened] = await Promise.all([import("./improve-images-run"), context()]);
-      return module.improveImagesSession(opened.again ? () => opened.again!() : context);
+      const own = pinned?.();
+      return (await import("./improve-images-run")).improveImagesSession(own ?? context);
     },
     async rename(path, name, options) {
       const ctx = active();

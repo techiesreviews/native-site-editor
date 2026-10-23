@@ -1389,35 +1389,52 @@ test("Media lists a file by the date it was added; a lighter version (Optimise) 
   assert.equal(after.items.find(item => item.path === "media/images/a.webp")?.date, Date.parse("2026-01-02T03:04:05.000Z"));
 });
 
-// Ticket 23: files added to the library finish in the workspace they were added in. The context the
-// host gives offers `again`, a context of that workspace that does not go stale; a switch meanwhile
-// stops nothing. Without it (a host that cannot pin) the switch still refuses.
+// Ticket 23: files added to the library and Replace everywhere finish in the workspace they began on.
+// The host pins it synchronously as the work begins (`pinned`, a context factory of that workspace
+// that does not go stale); a switch meanwhile, even while that context is still being made, stops
+// nothing. Without a pin the switch still refuses.
+function pinnedHost(f: ReturnType<typeof fixture>, pinned: boolean, made?: Promise<void>) {
+  let pins = 0;
+  const host = createMediaWorkspace(async () => f.context, pinned ? () => { pins++; return async () => { await made; return { ...f.context, assertLive() {} }; }; } : undefined);
+  return { host, pins: () => pins };
+}
+const lateFile = () => ({ file: new File(["bytes"], "late.png"), result: { outputs: [{ blob: new Blob(["late"], { type: "image/webp" }), extension: "webp" }], before: 5, after: 4 }, folder: "images" });
+
 test("files added while the workspace switches land in the workspace they were added in", async () => {
   for (const pinned of [true, false]) {
-    const f = fixture();
-    let finishing = 0;
-    if (pinned) f.context.again = async () => { finishing++; return { ...f.context, assertLive() {} }; };
-    await f.host.load();
+    const f = fixture(), p = pinnedHost(f, pinned);
+    await p.host.load();
     f.afterRead(() => f.setLive(false));
-    const request = { file: new File(["bytes"], "late.png"), result: { outputs: [{ blob: new Blob(["late"], { type: "image/webp" }), extension: "webp" }], before: 5, after: 4 }, folder: "images" };
     if (pinned) {
-      assert.deepEqual(await f.host.import([request]), ["images/late.webp"]);
-      assert.equal(finishing, 1);
+      assert.deepEqual(await p.host.import([lateFile()]), ["images/late.webp"]);
+      assert.equal(p.pins(), 1);
       assert.equal(await f.bytes.get("images/late.webp")?.text(), "late");
     } else {
-      await assert.rejects(f.host.import([request]), /scope changed/);
+      await assert.rejects(p.host.import([lateFile()]), /scope changed/);
       assert.equal(f.bytes.has("images/late.webp"), false);
     }
   }
 });
 
+test("files added while their context is still being made land in the workspace they were added in", async () => {
+  const f = fixture();
+  let made!: () => void;
+  const p = pinnedHost(f, true, new Promise<void>(resolve => { made = resolve; }));
+  await p.host.load();
+  const adding = p.host.import([lateFile()]);
+  await Promise.resolve();
+  f.setLive(false);
+  made();
+  assert.deepEqual(await adding, ["images/late.webp"]);
+  assert.equal(await f.bytes.get("images/late.webp")?.text(), "late");
+});
+
 test("Replace everywhere begun on the library shown finishes in its workspace when it switches meanwhile", async () => {
   for (const pinned of [true, false]) {
-    const f = fixture();
-    if (pinned) f.context.again = async () => ({ ...f.context, assertLive() {} });
-    await f.host.load();
+    const f = fixture(), p = pinnedHost(f, pinned);
+    await p.host.load();
     f.afterRead(() => f.setLive(false));
-    const replace = f.host.replace({ path: "images/a.png", result: { before: 10, after: 8, outputs: [{ blob: new Blob(["new main"], { type: "image/png" }), extension: "png", width: 800, height: 400 }] } });
+    const replace = p.host.replace({ path: "images/a.png", result: { before: 10, after: 8, outputs: [{ blob: new Blob(["new main"], { type: "image/png" }), extension: "png", width: 800, height: 400 }] } });
     if (pinned) {
       assert.equal(await replace, "images/a.png");
       assert.equal(await f.bytes.get("images/a.png")!.text(), "new main");

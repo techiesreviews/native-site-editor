@@ -7,11 +7,12 @@ import type { Stamp } from "../src/guarded-edit";
 import type { MediaDraftHost } from "../src/page-builder/media-draft-transaction";
 import type { MediaWorkspaceBatch } from "../src/page-builder/media-workspace";
 import { deferred } from "./fakes/memory-workspace";
+import { forEachAwait } from "./support/await-race";
 
 // The batch body loads with Media. Without a pin a repository switch while any of its loads is held
 // refuses before staging; with one (ticket 23) the batch lands in the pin's workspace.
 function harness(options: { stage?: (host: MediaDraftHost) => Promise<void> } = {}) {
-  let live = true, staged = 0, listings = 0;
+  let live = true, load = 0, staged = 0, listings = 0;
   const histories: string[] = [], hosts: MediaDraftHost[] = [];
   const appStore = { openFile: { value: "index.html" as string | undefined }, repository: { value: { full_name: "lex/site" } }, snapshot: { value: { branch: "main" } } };
   const workspace = deferred<Awaited<ReturnType<MediaBatchPorts["load"]>>>();
@@ -22,10 +23,12 @@ function harness(options: { stage?: (host: MediaDraftHost) => Promise<void> } = 
     { mediaDraftTransaction: (input: unknown) => input },
     { MEDIA_RECORDS_PATH: ".editor/media.json" },
   ] as unknown as Awaited<ReturnType<MediaBatchPorts["load"]>>;
-  const stamp: Stamp = { holds: () => live, changed: () => (live ? undefined : "scope") };
+  // A repository stamp: another workspace shown, or a new load of this one (a reload, or back after a switch).
+  const stampNow = (): Stamp => { const at = load; return { holds: () => live && load === at, changed: () => (!live ? "scope" : load !== at ? "generation" : undefined) }; };
+  const stamp = stampNow();
   // eslint-disable-next-line no-restricted-syntax -- the editor, stores and history home are faked by the members the batch body calls.
   const ports = {
-    appStore, site: () => undefined, load: () => workspace.promise, stamp: () => stamp,
+    appStore, site: () => undefined, load: () => workspace.promise, stamp: stampNow,
     listRepositoryFiles: () => { listings++; return listing.promise; },
     editor: { captureHistoryHost: (path: string) => ({ isCurrent: () => appStore.openFile.value === path }), isMounted: () => true,
       recordHistoryAction: (path: string) => { histories.push(path); return true; } },
@@ -42,7 +45,7 @@ function harness(options: { stage?: (host: MediaDraftHost) => Promise<void> } = 
   const batch: MediaWorkspaceBatch = { label: "Swap image", expectedPaths: [], expectedSources: new Map(), expectedAssets: new Map(),
     edits: new Map([["index.html", "<img>"]]), moves: [], deletes: [], restores: [], uploads: [] };
   const run = (pinned = false) => applyMediaBatch(ports, pin.scope satisfies DraftScope, stamp, batch, pinned ? pin : undefined);
-  return { appStore, workspace, listing, modules, run, hosts, histories, switchRepository: () => { live = false; }, back: () => { live = true; }, counts: () => ({ staged, listings }) };
+  return { appStore, workspace, listing, modules, run, hosts, histories, switchRepository: () => { live = false; }, back: () => { live = true; load++; }, reload: () => { load++; }, counts: () => ({ staged, listings }) };
 }
 
 test("without a pin, a media batch refuses a repository switch while its workspace chunk loads or the listing is read", async () => {
@@ -60,8 +63,9 @@ test("without a pin, a media batch refuses a repository switch while its workspa
   }
 });
 
-// Ticket 23: another page opened meanwhile stops nothing; the step's Undo goes to the page open as it commits.
-test("a page opened while the batch loads takes the step's Undo", async () => {
+// Ticket 23: another page opened meanwhile stops nothing, and it takes no Undo step: an Undo there
+// would change the page the step was asked on.
+test("a page opened while the batch loads: the step lands with no Undo step", async () => {
   const h = harness();
   const pending = h.run();
   h.appStore.openFile.value = "about/index.html";
@@ -69,8 +73,34 @@ test("a page opened while the batch loads takes the step's Undo", async () => {
   h.listing.resolve([]);
   await pending;
   assert.equal(h.counts().staged, 1);
-  assert.equal(h.hosts[0].history(() => true, () => true, () => {}), true);
-  assert.deepEqual(h.histories, ["about/index.html"]);
+  let disposed = false;
+  assert.equal(h.hosts[0].history(() => true, () => true, () => { disposed = true; }), true);
+  assert.equal(disposed, true);
+  assert.deepEqual(h.histories, []);
+});
+
+test("a page opened during an attempt rolls it back and runs it again with no Undo step", async () => {
+  const h = harness({ stage: async host => {
+    if (h.counts().staged > 1) return;
+    h.appStore.openFile.value = "about/index.html";
+    if (!host.historyCurrent()) throw new Error("The files changed while preparing image changes.");
+  } });
+  const pending = h.run();
+  h.workspace.resolve(h.modules);
+  h.listing.resolve([]);
+  await pending;
+  assert.equal(h.counts().staged, 2);
+  assert.equal(h.hosts[1].history(() => true, () => true, () => {}), true);
+  assert.deepEqual(h.histories, [], "no Undo on the page shown");
+});
+
+test("a pinned batch's first attempt holds the caller's stamp: a reload before it refuses", async () => {
+  const h = harness();
+  const pending = h.run(true);
+  h.reload();
+  h.workspace.resolve(h.modules);
+  h.listing.resolve([]);
+  await assert.rejects(pending, /repository changed/);
 });
 
 test("a media batch with nothing switched stages once on show, through the editor", async () => {
@@ -133,4 +163,26 @@ test("a workspace switched back and forth during each attempt is tried three tim
   h.listing.resolve([]);
   await assert.rejects(pending, /repository changed/);
   assert.deepEqual(h.hosts.map(host => host.mounted("index.html")), [true, false, true]);
+});
+
+// Ticket 23, Async writers: a pinned batch switched away at any wait of its staging lands on one side
+// only, the one its workspace is on by the end: never on show once another workspace is shown.
+test("a pinned batch switched at any staging wait commits only on the side its workspace is on", async () => {
+  const count = await forEachAwait(race => {
+    const committed: boolean[] = [];
+    const h = harness({ stage: async host => {
+      for (const name of ["hash", "put"]) {
+        await race.port(name, async () => {})();
+        if (!host.stamp.holds()) throw new Error("The repository changed. Close Media and open it again.");
+      }
+      committed.push(host.mounted("index.html"));
+    } });
+    const done = h.run(true);
+    h.workspace.resolve(h.modules);
+    h.listing.resolve([]);
+    return { h, committed, done };
+  }, run => { run.h.switchRepository(); }, run => {
+    assert.deepEqual(run.committed, [false], "written once, elsewhere: the workspace shown is another");
+  });
+  assert.equal(count, 2);
 });

@@ -126,7 +126,7 @@ export function agentStructuralActions(workspace: EditorWorkspace, context: Agen
       if (claimed) throw new Error("An agent command must use one guarded edit.");
       claimed = true;
       // Another page shown meanwhile stops nothing: the step lands on its page (ticket 23, `finish`).
-      const held = options?.since ?? edits.stamp(), kept = () => [undefined, "route", "edit-mode"].includes(held.changed() as string | undefined);
+      const held = options?.since ?? edits.stamp(), kept = () => { const key = held.changed(); return key === undefined || key === "route" || key === "edit-mode"; };
       finishProofs.set("stamp", () => kept() && (options?.guard?.() ?? true));
       await context.check?.();
       verify();
@@ -1031,26 +1031,32 @@ export async function prepareAgentText(command: AgentCommand, scope: DraftScope,
 
 /**
  * An agent's text write (edit_file, write_file) read from a site or branch no longer shown finishes
- * there, on its files (ticket 23); undefined when it was read from the one shown, which writes it as
- * before. The file's text there now (its draft, else the branch's) must still be what the agent read;
- * the draft goes through the agent records with its receipt, then into the draft store, as another
- * tab's would. Other commands need the editor's own actions on that site, so they refuse.
+ * there, on its files (ticket 23); undefined while it is the one shown (`shown`, asked after every
+ * wait), which writes it through the editor as before. The file's text there now (its draft, else the
+ * branch's) must still be what the agent read; the draft goes through the agent records with its
+ * receipt, then into the draft store, as another tab's would. Other commands need the editor's own
+ * actions on that site, so they refuse.
  */
-export async function finishAgentTextElsewhere(command: AgentCommand, shown: DraftScope | undefined, account: string | undefined, store: DraftStore,
+export async function finishAgentTextElsewhere(command: AgentCommand, shown: () => DraftScope | undefined, account: string | undefined, store: DraftStore,
   find: (files: AgentReadFiles, path: string) => Promise<{ sha: string } | undefined>): Promise<AgentCommandOutcome | undefined> {
   const files = agentCommandFiles.get(command);
-  if (!files || !account || shown && sameBranch(shown, { repoId: files.repo.id, branch: files.snapshot.branch })) return undefined;
+  const away = () => { const now = shown(); return !now || !sameBranch(now, { repoId: files!.repo.id, branch: files!.snapshot.branch }); };
+  if (!files || !account || !away()) return undefined;
   if (command.operation !== "write_file")
     throw new Error(`The editor shows another site or branch now; open ${files.snapshot.branch} again and repeat this change. Nothing was changed; your drafts are as they were.`);
   const scope: DraftScope = { account, repoId: files.repo.id, repo: files.repo.full_name, branch: files.snapshot.branch }, path = command.path;
   const prepared = await prepareAgentText(command, scope, store, () => true, () => {});
   if (prepared.duplicate) return prepared.duplicate;
+  if (!away()) return undefined;
   const context = prepared.context!, release = await context.fence(scope, [path]);
   try {
     const draft = store.get(scope, path), entry = draft ? undefined : await find(files, path), now = Date.now(), text = command.content;
     const branch = entry && { sha: entry.sha, text: await files.read(files.repo.full_name, entry.sha) };
     const shownText = draft ? (draft.deleted || draft.opaque ? undefined : draft.content) : branch?.text;
-    if ((shownText === undefined ? null : await textHash(shownText)) !== (command.expectedHash ?? null))
+    const hash = shownText === undefined ? null : await textHash(shownText);
+    // Its branch shown again meanwhile: the editor writes it, through the open file's model.
+    if (!away()) return undefined;
+    if (hash !== (command.expectedHash ?? null))
       throw new Error(`${path} changed in the editor meanwhile. Read it again. Nothing was changed; your drafts are as they were.`);
     // The draft the editor's own write leaves (src/guarded-edit/commit.ts, edits only).
     const after: SavedDraft | undefined = draft && !draft.deleted ? (draft.baseSha !== null && !draft.movedFrom && text === draft.original ? undefined : { ...draft, content: text, updatedAt: now })
@@ -1058,7 +1064,7 @@ export async function finishAgentTextElsewhere(command: AgentCommand, shown: Dra
       : branch && text === branch.text ? undefined
       : { ...scope, version: 1, path, baseSha: branch?.sha ?? null, original: branch?.text ?? "", content: text, updatedAt: now };
     const changes = new Map([[path, after]]);
-    await context.commit(new Map([[path, draft]]), changes, () => store.get(scope, path) === draft);
+    await context.commit(new Map([[path, draft]]), changes, () => away() && store.get(scope, path) === draft);
     await context.settle(changes);
     return prepared.outcome;
   } finally { release(); }

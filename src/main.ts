@@ -205,7 +205,8 @@ const loadMedia = lazyModule(async () => {
   const [module, [{ createMediaWorkspace }]] = await Promise.all([import("./page-builder/media-picker"), loadMediaWorkspace()]);
   // Usage badges read the site's usage check, which runs on open.
   // Media lists every kind (pictures, video, audio, PDFs and other downloads); pickers narrow by `accept`.
-  module.configureMediaPicker({ ...createMediaWorkspace(() => mediaController.workspaceContext(module.isMediaLibraryPath)),
+  module.configureMediaPicker({ ...createMediaWorkspace(() => mediaController.workspaceContext(module.isMediaLibraryPath),
+    () => { const pin = mediaPorts.pin?.(); return pin && (() => mediaController.workspaceContext(module.isMediaLibraryPath, pin)); }),
     usage: { records: () => mediaController.usageRecords(), onChange: listener => mediaController.onUsageChange(listener), pageLabel: (file) => pagesController.pageLabel(file) } });
   return module;
 });
@@ -2231,14 +2232,15 @@ function nativeImagePaths() {
 async function uploadFilesTo(folder: string, files: File[]): Promise<string[]> {
   const pin = mediaPorts.pin?.();
   if (!pin || !files.length) return [];
+  // Where it landed when that is not shown: the branch, with the repository when it is another.
+  const where = () => draftScope()?.repoId === pin.scope.repoId ? pin.scope.branch : `${pin.scope.repo} (${pin.scope.branch})`;
   try {
     const { addFilesTo } = await import("./page-builder/media-files-adding");
     return await addFilesTo(element("explorer-files"), folder, files, { error: errorMessage,
-      announce: text => announce(pin.here() ? text : `On ${pin.scope.branch}: ${text}`),
-      context: () => mediaController.workspaceContext(undefined, pin),
+      announce: text => announce(pin.here() ? text : `On ${where()}: ${text}`), context: () => mediaController.workspaceContext(undefined, pin),
       // Pictures not added yet go to Media's Optimise sheet, still bound for this folder.
       review: element("explorer-tabs").hidden ? undefined : (images, into, reasons) => {
-        if (!pin.here()) return;
+        if (!pin.here()) { announce(`Open ${where()} to review these pictures.`); return; }
         openExplorer(); pagesController.selectTab("media");
         void mediaController.reviewInGallery(images, into, reasons).catch(errorMessage);
       } });
@@ -2324,8 +2326,7 @@ const mediaPorts: import("./controllers/media-controller").MediaControllerPorts 
   // The workspace shown, for work to finish in (ticket 23): the editor's reads while it is on show,
   // then its snapshot's, the branch texts read so far and its drafts.
   pin: () => {
-    const repo = appStore.repository.value, scope = draftScope(), snapshot = appStore.snapshot.value, at = workspaceSession.begin(), here = () => at.changed() !== "scope";
-    if (!repo || !scope || !snapshot) return undefined;
+    const repo = appStore.repository.value, scope = draftScope(), snapshot = appStore.snapshot.value, at = workspaceSession.begin(), here = () => at.changed() !== "scope"; if (!repo || !scope || !snapshot) return undefined;
     const site = nativeSite, base = nativeBaseFiles, texts = new Map(nativeBaseSources), key = nativeTextIndexScopeKey(), files = () => nativeFiles(scope, here() ? nativeBaseFiles : base);
     const entry = (path: string) => here() ? entryAt(path) : repositoryIndex.entry(repo, snapshot, path);
     const text = (path: string, draft = draftStore().get(scope, path), sha = entry(path)?.sha) => draft ? draft.deleted || draft.opaque ? undefined : draft.content
@@ -2400,12 +2401,12 @@ function mediaIdentity() { return `${currentLoad()}:${setupScope()}`; }
 // Undo goes to the page open as the step commits; a pinned batch finishes where it started (src/media-batch.ts).
 const loadMediaBatch = lazyModule(() => import("./media-batch"));
 async function applyMediaBatch(scope: DraftScope, stamp: Stamp, batch: MediaWorkspaceBatch, pin?: MediaPin) {
-  const module = await loadMediaBatch();
+  const opened = appStore.openFile.value, module = await loadMediaBatch();
   await module.applyMediaBatch({
     appStore, editor: editorModule, mediaHistoryHome, site: () => nativeSite, load: loadMediaWorkspace, stamp: () => guardedEdits.stamp("repository"),
     listRepositoryFiles, nativeFiles, draftStore, bytes: uploadBytes, mediaTextSource, entryAt, findEntry, announce,
     refresh: () => { afterFileChanges(); updateNativePreviewSources(); if (appStore.selection.value) pageStructureController.renderEditBar(appStore.selection.value); },
-  }, scope, stamp, batch, pin);
+  }, scope, stamp, batch, pin, opened);
 }
 
 // After a successful save, the committed content becomes the new clean baseline.
@@ -4316,13 +4317,14 @@ function makeAgentSiteActions(edits: GuardedEdits = guardedEdits, atomic = false
   legacy: applyAgentCommand,
 }; }
 async function applyAgentSiteCommand(command: AgentCommand) {
-  const scope = draftScope(), at = workspaceSession.begin(), revision = appStore.snapshot.value?.commit;
-  const current = () => at.holds() && revision === appStore.snapshot.value?.commit && !versions.view;
   const [{ applySiteCommand, prepareAgentText, atomicAgentCommand, agentStructuralActions, finishAgentTextElsewhere }, { createPagesController }, { createLazyFileOperationsController }] = await Promise.all([loadAgentSite(), loadPagesActions(), loadFileOps()]);
-  // An edit read from a site or branch no longer shown finishes there, on its files (ticket 23).
-  const elsewhere = () => finishAgentTextElsewhere(command, draftScope(), info.user?.login, draftStore(), (files, path) => repositoryIndex.find(api, files.repo, files.snapshot, path));
+  // An edit read from a site or branch no longer shown finishes there, on its files (ticket 23);
+  // on show it goes through the editor, which holds the workspace from here (its branch is checked below).
+  const elsewhere = () => finishAgentTextElsewhere(command, draftScope, info.user?.login, draftStore(), (files, path) => repositoryIndex.find(api, files.repo, files.snapshot, path));
   const finished = await elsewhere();
   if (finished) return finished;
+  const scope = draftScope(), at = workspaceSession.begin(), revision = appStore.snapshot.value?.commit;
+  const current = () => at.holds() && revision === appStore.snapshot.value?.commit && !versions.view;
   if (!current() || !appStore.snapshot.value || command.branch !== appStore.snapshot.value.branch ||
     command.repoId !== undefined && command.repoId !== scope?.repoId) throw new Error("The editor changed repository or branch.");
   if (!atomicAgentCommand(command)) {

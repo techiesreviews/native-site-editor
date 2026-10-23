@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { createAgentSiteHost, type AgentSiteHostPorts } from "../src/agent-site-host";
 import { createGuardedEdits } from "../src/guarded-edit";
 import { createMemoryWorkspace, deferred } from "./fakes/memory-workspace";
+import { forEachAwait } from "./support/await-race";
 import type { AgentSiteInput, SharedContext } from "../src/agent-site";
 
 function fixture() {
@@ -83,4 +84,27 @@ test("agent answers restore the real dialog when the action fails", async () => 
   await assert.rejects(pending, /failed/);
   assert.equal(f.dialog(), f.real);
   assert.equal(f.counts().swapped, 2);
+});
+
+// Ticket 23: an edit's pin, taken as it arrives. Switched to another branch at any wait of its context,
+// it is the context of the workspace it arrived in (its drafts then, nothing mounted or on show),
+// never the one shown meanwhile.
+test("an edit's pinned context, switched at any wait, is the workspace it arrived in", async () => {
+  const count = await forEachAwait(race => {
+    const f = fixture(), seen: AgentSiteInput[] = [];
+    f.module.buildAgentContext = race.port("build", async value => { seen.push(value); return f.result; });
+    const edits = createGuardedEdits(f.workspace.workspace);
+    const host = createAgentSiteHost({ stamp: () => edits.stamp("repository"), load: race.port("load", async () => f.module), input: () => f.input, dialog: f.dialog, setDialog: () => {} });
+    const build = () => host.context();
+    const pin = host.tools(build).pin()!;
+    const run = { f, seen, context: undefined as SharedContext | undefined, done: Promise.resolve() };
+    run.done = pin.context().then(value => { run.context = value; });
+    return run;
+  }, run => { run.f.workspace.setScope("lex/site@dev"); }, run => {
+    assert.equal(run.context, run.f.result, "a context, not none");
+    const last = run.seen.at(-1)!;
+    assert.equal(last.branch, "main");
+    assert.equal(last.native, undefined, "nothing on show is read once away");
+  });
+  assert.ok(count >= 2);
 });

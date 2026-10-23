@@ -25,8 +25,7 @@ export function createMediaActions(ports: MediaControllerPorts, load: () => Prom
     const workspace = pin ?? ports.workspace();
     if (!workspace) throw new Error("Choose a repository before opening Media.");
     const { repo, repoSize, scope, drafts, site } = workspace;
-    // The workspace now, for work begun on this context to finish in (`again`).
-    const own = pin ?? ports.pin?.(), stamp = ports.stamp(), here = () => !pin || pin.here();
+    const stamp = ports.stamp(), here = () => !pin || pin.here();
     const assertLive = () => { if (!pin && !stamp.holds()) throw new Error("The repository changed. Close Media and open it again."); };
     const entryOf = (path: string) => pin ? pin.entry(path) : ports.entry(path), find = (path: string) => pin ? pin.find(path) : ports.findEntry(path);
     const branchPaths = workspace.nativePaths ?? await (pin ? pin.list() : ports.listPaths(workspace));
@@ -92,7 +91,7 @@ export function createMediaActions(ports: MediaControllerPorts, load: () => Prom
       openPage: async (path) => { assertLive(); if (here()) await ports.openPage(path); },
       // The step is recorded on the open page (media-batch): its Undo, captured as the step commits.
       undoReceipt: () => { const open = here() ? ports.openFile() : undefined; return open ? ports.undoAction?.(open) : undefined; },
-      here, ...own ? { again: () => workspaceContext(include, own) } : {},
+      here,
     };
   }
 

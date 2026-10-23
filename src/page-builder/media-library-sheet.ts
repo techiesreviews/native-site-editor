@@ -15,6 +15,8 @@ export interface LibrarySheet {
   focus?: { path: string; active: Element | null };
   /** The running optimisation preview. */
   work?: AbortController;
+  /** `work` that finishes when the pane closes on a switch (an Improve images row, ticket 23). */
+  finishes?: AbortController;
   /** Redraws a list screen (Manage collections) after the library refreshes. */
   redraw?: () => void;
   /** Repaints the open File details' usage with newer check results. */

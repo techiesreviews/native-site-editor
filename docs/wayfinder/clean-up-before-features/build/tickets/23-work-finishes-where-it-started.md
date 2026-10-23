@@ -1,7 +1,7 @@
 ---
 title: "Work finishes where it started"
 type: task (AFK)
-status: closed
+status: open
 assignee: lead-23
 builder: claude
 blocked_by: [22-workspace-session-callers]
@@ -68,7 +68,7 @@ The four cases, each with its method and test:
 - **An agent** keeps working: the live connection no longer cancels an edit tool call under way when another workspace opens (`agent-transport.ts`; its reply has no socket, its receipt stays for `get_command_status`); the edit holds its workspace from arrival (`agent-menu.ts` → `agent-tools-edit.ts` `held`, `agent-site-host.ts` `pin`), is prepared from those files and that context, and a text write (edit_file, write_file) for a site or branch no longer shown is written there on its files directly (`finishAgentTextElsewhere`, `src/agent-site.ts`): its text there must still hash to what the agent read, the draft goes through the agent records with its receipt and is settled into the draft store. Tests: `tests/agent-transport.test.ts`, `tests/agent-tools-edit.test.ts`, `tests/agent-text-commit.test.ts`; spec case 3.
 - **An edit started on one page lands on that page** when another page is shown: guarded edits take `finish` (`src/guarded-edit.ts`); another page shown (or Edit component mode entered or left) is no reason to stop, the reads are proved by their bytes, and the commit's drafts-only shape (`elsewhere`, `src/guarded-edit/commit.ts`) writes the step's drafts there with no Undo step, opening and selecting nothing. Agent page commands use it (`agentStructuralActions`). Another workspace or a reload still stops such a step. Tests: `tests/guarded-edit.test.ts` (`finish:` cases), `tests/agent-structural-commit.test.ts`.
 
-Spec: `tests/native-save/native-switch-mid-work.spec.ts` holds a save (`/api/publish`), a Files upload (the Media actions chunk) and an agent edit (the edit tools' chunk) with `page.route`, switches main to feature, and releases: each result is on main (a commit, an upload draft with its records, an agent draft of robots.txt), nothing on feature. `tests/native-save/server.ts`'s `/__demo/file` takes `&branch=` for it.
+Spec: `tests/native-save/native-switch-mid-work.spec.ts` holds a save (`/api/publish`), a Files upload (the Media actions chunk) and an agent edit (the edit tools' chunk) with `page.route`, switches main to feature, and releases: each result is on main (a commit, an upload draft with its records, an agent draft of robots.txt), nothing on feature. Two more cells: the save answered 500 after the switch keeps main's draft unsaved and writes nothing on feature; the upload still held after the switch is cancelled from its row and adds nothing anywhere. `tests/native-save/server.ts`'s `/__demo/file` takes `&branch=` for it.
 
 Settle matrix (each racing input against a switch of site or branch):
 
@@ -80,18 +80,33 @@ Settle matrix (each racing input against a switch of site or branch):
 | Agent edit (tools chunk, context, commit) | drafted on its branch with its receipt; reply dropped, `get_command_status` says applied | conflict or unknown, as before | the relay's deadline cancels it before commit |
 | Guarded edit with `finish` (another page) | drafts on its page, no Undo step | stale or refused, as before | nothing written |
 
-No timer is added; the transport's existing deadline timer still bounds a call that finishes after a switch and is cleared in its dispose.
+The Files upload row is also the pinned media batch row's browser case (the upload goes through it elsewhere); the guarded `finish` row has unit cases only (no request inside a guarded run can be held with `page.route`). No timer is added; the transport's existing deadline timer still bounds a call that finishes after a switch and is cleared in its dispose.
 
 Still refusing across a switch of site or branch (the remaining refusals, with their reason and method):
 
 1. Agent page and file commands (create_page, set_page_details, make_component, add, move or remove a section, move_file, delete_file) read from a site or branch no longer shown: "The editor shows another site or branch now; open <branch> again and repeat this change." They run the editor's own page and file actions on the site as loaded. Method: the invisible background copy (a files-only editor workspace of the pin behind the same controllers). Across a page switch on the same site they finish (`finish`).
 2. Agent media commands (`agent-tools-media.ts`, `listMedia`/`media` in `main.ts`): "The editor changed branch or revision…". Method: the same pinned media context as uploads; placing on a page needs the page drawn (background copy).
-3. Media pane work not under way at the switch: files still being prepared in the Media pane, and Improve images rows not yet started, stop with the pane. Method: the pane's queue outliving its screen, as the Files queue does.
+3. Media pane work not under way at the switch: files still being prepared in the Media pane (and the Optimise sheet's preparation), and Improve images rows not yet started, stop with the pane. Method: the pane's queue outliving its screen, as the Files queue does.
 4. Media work without a pin: placing a picture on a page (picker Use, image popup, place/trim/frame) and Media pane edits started on a stale screen keep "The repository changed. Close Media and open it again." A placement selects the placed element on the page shown, so it needs the background copy.
 5. A pinned media batch whose workspace switches back and forth during each of three attempts: "The repository changed. Close Media and open it again."
 6. Guarded edits (with or without `finish`) across a switch of site or branch or a reload: stale, as before; only agent page commands would use it (item 1).
 
+Review round 1 (behaviour and tests):
+
+- A media batch whose page changed after it was asked for (`opened`, taken as `applyBatch` is called) lands with no Undo step, pinned or not, instead of putting its Undo on the page now shown; a page opened during an attempt runs it again that way. A pinned batch's first attempt holds the caller's stamp (a reload before it refuses); a new stamp only after its workspace was seen to move away and back. Tests: `tests/media-batch.test.ts` (page opened before and during an attempt, the caller's stamp, a `forEachAwait` switch at each staging wait).
+- Library additions, Replace everywhere and an Improve images screen take their pin synchronously as they begin (`createMediaWorkspace`'s `pinned`, from `main.ts`), so a switch while their context is still being made lands too; contexts lost `again`. Tests: `tests/media-workspace.test.ts`.
+- Only an Improve images row in progress outlives the Media pane (`sheet.finishes`); other pane work is cancelled with it again.
+- The agent connection cancels an edit kept from a workspace move when agents are then turned off (`agent-transport.ts` `halt`). Test: `tests/agent-transport.test.ts`.
+- An agent's text write elsewhere asks after every wait whether its branch is shown again (`shown()`, also in its commit guard); then it is left to the editor, which writes it through the open file's model (`applyAgentSiteCommand` takes its stamp after that check). Tests: `tests/agent-text-commit.test.ts` (`forEachAwait`), `tests/agent-site-host.test.ts` (the pinned context, `forEachAwait`).
+- A Files drop that finished elsewhere names the repository when it is another ("On lex/site (main): …"), and its Review… says "Open main to review these pictures." instead of nothing.
+
+Round 1 checks: `kit unit --affected` `RESULT: ok unit 2334/2334 (145 files)`; `npm run check` and `npm run lint` green; `kit specs native-switch-mid-work.spec.ts` `RESULT: ok specs 1/1 passed` (5 tests); `kit specs --affected` `RESULT: fail specs 1 of 133 failed: native-mcp.spec.ts` (the Ask agent history test: its Request 2 card did not open under shards), and alone `kit specs native-mcp.spec.ts` `RESULT: ok specs 1/1 passed` (19 tests); `kit size` `RESULT: ok size boot 343 KB (±0 KB) vs dev@3152d0b, budget 355 KB`; `main.ts` 5700 lines (ceiling 5700).
+
 Checks: `kit unit --affected` `RESULT: ok unit 2327/2327 (145 files)`; `npm run check` and `npm run lint` green; `kit specs native-switch-mid-work.spec.ts` `RESULT: ok specs 1/1 passed` (3 tests); `kit specs --affected` `RESULT: ok specs 133/133 passed`; `kit size` `RESULT: ok size boot 343 KB (+1 KB) vs dev@d3531e0, budget 355 KB`. `main.ts`: 5698 lines (ceiling 5700): the pin, the upload and agent wiring, and three small media and save ports joined to one line each.
 
 Files beyond the ticket's list, needed by the method: `src/controllers/media-controller.ts`, `src/controllers/media-actions.ts` (the pin and `again`), `src/page-builder/media-workspace.ts`, `src/page-builder/media-library-view.ts` (Media pane work), `src/agent-transport.ts`, `src/components/agent-menu.ts`, `src/agent-site-host.ts`, `src/agent-tools.ts`, `src/agent-tools-read.ts` (the agent edit's hold), `tests/native-save/server.ts`.
+
+## Question for Lex (open)
+
+Lex's comment of 2026-10-22: nothing should stop, and actions that need the page drawn run in an invisible background copy. This ticket finishes saves, Files uploads, Media library additions, Replace everywhere, the Improve images row in progress, agent text edits and agent page commands across a page switch. The list "Still refusing across a switch of site or branch" in the Done section is left; items 1, 2 and 4 need the background copy, which is not built here. Ask Lex: build it in this ticket, or close this one with that list and build the background copy as its own ticket. Until he answers, `status: open`.
 - 2026-10-23, Lex: split. This slice lands with the cases that already finish where they started; the remaining refusals (agent page and file commands, agent Media commands, picture placement without a pin, a batch switched back and forth) move to [Invisible multiplayer](27-invisible-multiplayer.md), built before release.
