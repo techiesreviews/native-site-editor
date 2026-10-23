@@ -329,10 +329,11 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
       // Content is addressed by SHA: a path with the remembered SHA in this
       // fresh snapshot has exactly the remembered read's content.
       for (const { sha } of guess.files && !token.abandoned ? provenFiles(guess.memory, snapshot.tree ?? snapshot.entries) : []) {
-        // Readers await this cached promise and handle its rejection.
+        // Readers await this cached promise and handle its rejection. A batch
+        // landing after the guess is abandoned is not used: the file is read afresh.
         void ports.cleanSources.load(repo.full_name, sha, () => guess.files!.then((files) => {
           const text = files.value.files[sha];
-          if (files.sessionTag !== tag || typeof text !== "string") throw new Error();
+          if (token.abandoned || files.sessionTag !== tag || typeof text !== "string") throw new Error();
           return text;
         }).catch(() => api<{ content: string }>("file", { repo: repo.full_name, sha }).then((file) => file.content)));
       }
