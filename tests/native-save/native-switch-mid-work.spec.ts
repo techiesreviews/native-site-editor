@@ -194,11 +194,31 @@ test("files held across a branch switch can still be cancelled there, and nothin
   const adding = explorer.getByRole("region", { name: "Files being added" });
   await adding.getByRole("button", { name: "Cancel adding Logo.png" }).click();
   await expect(adding.getByRole("button", { name: "Cancel adding Logo.png" })).toBeHidden();
-  const loaded = page.waitForResponse(response => new URL(response.url()).pathname === "/src/controllers/media-actions.ts");
   media.release();
-  await loaded;
-  // The addition's context is made once the chunk runs; with its only file cancelled it saves nothing.
-  await page.evaluate(async () => { await import("/src/controllers/media-actions.ts"); await new Promise(requestAnimationFrame); });
+  // Additions run one after another: one dropped now on feature is added once the cancelled one has
+  // finished, so its toast says the first is done.
+  await expect(explorer.locator(".file-row[data-path='images']")).toBeVisible();
+  await dropFiles(page, "#explorer .file-row[data-path='images']", [{ name: "Second.png", type: "image/png", base64: png.toString("base64") }]);
+  await expect(page.locator("#status")).toHaveText("Added images/second.png.", { timeout: 20_000 });
   expect(await draftsOn(page, "main")).toEqual([]);
+  expect((await draftsOn(page, "feature")).map(draft => draft.path)).toEqual([".editor/media.json", "images/second.png"]);
+});
+
+// Left and shown again before it lands (a new load of main): the drop still lands on main.
+test("files dropped on main, held while feature is opened and main again, are added to main", async ({ page, baseURL }) => {
+  await openEditor(page, baseURL);
+  const explorer = page.locator("#explorer");
+  if (!(await explorer.isVisible())) await page.locator("#explorer-toggle").click();
+  await explorer.getByRole("tab", { name: "Files" }).click();
+  await expect(explorer.locator(".file-row[data-path='images']")).toBeVisible();
+  const media = await hold(page, "/src/controllers/media-actions.ts");
+  await dropFiles(page, "#explorer .file-row[data-path='images']", [{ name: "Logo.png", type: "image/png", base64: png.toString("base64") }]);
+  await media.reached;
+  await switchSiteMidUpload(page, baseURL);
+  await page.evaluate(() => { location.hash = "repo=501&branch=main&file=index.html"; });
+  await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
+  media.release();
+  await expect(page.locator("#status")).toHaveText("Added images/logo.png.", { timeout: 20_000 });
+  expect((await draftsOn(page, "main")).map(draft => [draft.path, Boolean(draft.upload)])).toEqual([[".editor/media.json", false], ["images/logo.png", true]]);
   expect(await draftsOn(page, "feature")).toEqual([]);
 });

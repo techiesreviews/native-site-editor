@@ -94,13 +94,20 @@ test("a page opened during an attempt rolls it back and runs it again with no Un
   assert.deepEqual(h.histories, [], "no Undo on the page shown");
 });
 
-test("a pinned batch's first attempt holds the caller's stamp: a reload before it refuses", async () => {
-  const h = harness();
-  const pending = h.run(true);
-  h.reload();
-  h.workspace.resolve(h.modules);
-  h.listing.resolve([]);
-  await assert.rejects(pending, /repository changed/);
+// Its workspace left and shown again before the first attempt (a new load of it): it lands on show.
+// Its bytes, not the stamp, prove it (applyMediaWorkspaceBatch's guard); without a pin it still refuses.
+test("a pinned batch whose workspace moved away and back before its first attempt lands on show", async () => {
+  for (const pinned of [true, false]) {
+    const h = harness();
+    const pending = h.run(pinned);
+    h.switchRepository(); h.back();
+    h.workspace.resolve(h.modules);
+    h.listing.resolve([]);
+    if (!pinned) { await assert.rejects(pending, /repository changed/); continue; }
+    await pending;
+    assert.equal(h.counts().staged, 1);
+    assert.equal(h.hosts[0].mounted("index.html"), true);
+  }
 });
 
 test("a media batch with nothing switched stages once on show, through the editor", async () => {

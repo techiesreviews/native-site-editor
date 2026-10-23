@@ -38,20 +38,25 @@ type Modules = Awaited<ReturnType<MediaBatchPorts["load"]>>;
  * step: the step lands as drafts, and an Undo there would change the page it began on.
  * Each attempt runs whole on one side; a switch either way during one, or another page opened on
  * show, rolls it back and runs it again (twice at most), proved by the batch's own reads (paths,
- * sources and assets). The first attempt holds the caller's stamp; one after its workspace was seen
- * to move away and back holds a new one. Without a pin, a switch of workspace refuses.
+ * sources and assets). Without a pin, the caller's stamp holds the step: a switch of workspace refuses.
+ *
+ * A pinned attempt on show takes a new stamp as it starts, a deliberate exception to "Proofs survive
+ * awaits": its workspace may have been left and shown again (a new load of it) since the context was
+ * made, and that must not stop it. What the step depends on is proved by the batch's own reads, taken
+ * as it was prepared and proved again after every wait of the attempt and before its commit
+ * (`applyMediaWorkspaceBatch`'s guard: the paths, the sources and the assets' versions), so a reload
+ * that changed them (a save, another commit) still refuses; the new stamp only binds the attempt to the
+ * editor it runs through.
  */
 export async function applyMediaBatch(ports: MediaBatchPorts, scope: DraftScope, stamp: Stamp, batch: MediaWorkspaceBatch, pin?: MediaPin, opened = ports.appStore.openFile.value) {
   const modules = await ports.load();
-  let held = stamp;
   for (let attempt = 0; ; attempt++) {
     const here = !pin || pin.here(), page = ports.appStore.openFile.value;
     try {
-      return here ? await onShow(ports, modules, scope, held, batch, pin, opened === undefined || page === opened) : await elsewhere(ports, modules, scope, batch, pin!);
+      return here ? await onShow(ports, modules, scope, pin ? ports.stamp() : stamp, batch, pin, opened === undefined || page === opened) : await elsewhere(ports, modules, scope, batch, pin!);
     } catch (error) {
       const away = !!pin && pin.here() !== here, moved = here && ports.appStore.openFile.value !== page;
       if (attempt === 2 || !away && !moved) throw error;
-      if (away && !here) held = ports.stamp();
     }
   }
 }
