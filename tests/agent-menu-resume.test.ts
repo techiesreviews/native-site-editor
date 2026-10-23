@@ -2,6 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { resumeAgents, revokeUnused, serialReads, siteFull } from "../src/agent-resume.ts";
 import { forEachAwait } from "./support/await-race.ts";
+import { startCountedWorker } from "./fakes/counted-agent.ts";
+import { editorTab, repo, signIn } from "./mcp-harness.ts";
 
 // The agent menu's state around resumeAgents (src/components/agent-menu.ts): the open site, this
 // browser's agents-on marks, activations, and the live socket opened after a dynamic import.
@@ -143,4 +145,17 @@ test("siteFull: only the Worker's full-site 409 reclaims unused tokens; other re
   assert.equal(siteFull(500, "This site already has 5 agent connections on this branch."), false);
   assert.equal(siteFull(503, "Agent connection capacity could not be checked. Try again."), false);
   assert.equal(siteFull(undefined, "Agent connection failed."), false);
+});
+
+test("siteFull matches the Worker's own refusal: the sixth connection of a site is refused as full", async () => {
+  const h = await startCountedWorker();
+  try {
+    const { cookie } = await signIn(h.worker), tab = editorTab(h.worker, cookie);
+    const connect = () => tab.post("/api/agent/connect", { repo: repo.full_name, repoId: repo.id, branch: "main" });
+    for (let made = 0; made < 5; made++) assert.equal((await connect()).status, 200);
+    const refused = await connect();
+    const { error } = await refused.json() as { error: string };
+    assert.equal(refused.status, 409);
+    assert.equal(siteFull(refused.status, error), true, error);
+  } finally { await h.worker.dispose(); }
 });

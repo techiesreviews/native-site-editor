@@ -416,7 +416,74 @@ test("a failed connect revokes nothing: another tab's fresh prompt keeps working
       data: { jsonrpc: "2.0", id: 1, method: "tools/list" },
     });
     expect(response.status(), "the first tab's token was not revoked").toBe(200);
+    // An agent then uses that token: the failed dot gives way to Disconnect MCP, and the press it
+    // offers never disconnected anyone before.
+    const { client, call } = await agent(baseURL, first, "after-failure-agent");
+    try {
+      await call("get_site");
+      await expect.poll(async () => { await refresh(second); return second.locator(".agent-menu").getAttribute("data-state"); }, { timeout: 15_000 }).not.toBe("failed");
+      await expect(action).toHaveText("Disconnect MCP", { timeout: 15_000 });
+      expect((await client.listTools()).tools.length).toBeGreaterThan(0);
+    } finally { await client.close().catch(() => undefined); }
   } finally { await second.close(); }
+});
+
+test("the failed dot belongs to the site it failed on: another site shown clears it", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  const index = await (await page.request.get(`${baseURL}/__demo/file?path=index.html`)).text();
+  await page.request.post(`${baseURL}/__demo/branch`, { data: { name: "feature", path: "index.html", content: index } });
+  await page.locator(".repository-menu__trigger").click();
+  await page.route("**/api/agent/connect", route => route.fulfill({ status: 500, json: { error: "Internal error" } }));
+  await page.locator(".agent-menu__action").click();
+  await expect(page.locator(".agent-menu")).toHaveAttribute("data-state", "failed");
+  await page.keyboard.press("Escape");
+  await page.evaluate(() => { location.hash = "#repo=501&branch=feature&file=index.html"; });
+  await expect(page.locator("#status")).toContainText("Up to date with feature", { timeout: 30_000 });
+  await page.locator(".repository-menu__trigger").click();
+  await expect(page.locator(".agent-menu")).not.toHaveAttribute("data-state", "failed");
+  await expect(page.locator(".agent-menu__action")).toHaveText("Connect to MCP");
+});
+
+test("Wait for MCP after another tab reclaimed this tab's token, with the connections check failing: the reclaimed token is never copied", async ({ page, context, baseURL }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  const connect = (tab: Page) => tab.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST");
+  await open(page, baseURL);
+  await page.locator(".repository-menu__trigger").click();
+  let made = connect(page);
+  await page.locator(".agent-menu__action").click();
+  const first = (await (await made).json() as { token: string }).token;
+  await expect(page.locator(".agent-menu__action")).toHaveText("Wait for MCP");
+  const second = await context.newPage();
+  try {
+    await open(second, baseURL);
+    await second.locator(".repository-menu__trigger").click();
+    await expect(second.locator(".agent-menu__action")).toHaveText("Wait for MCP", { timeout: 15_000 });
+    await second.clock.setSystemTime(Date.now() + 3 * 60_000);
+    made = connect(second);
+    await second.locator(".agent-menu__action").click();
+    await made;
+    await second.clock.setSystemTime(Date.now());
+    // The first tab cannot read its connections now: its old list still shows its own token.
+    await page.route("**/api/agent/connections", route => route.abort());
+    await page.bringToFront();
+    await page.evaluate(() => navigator.clipboard.writeText("before the press"));
+    await page.locator(".agent-menu__action").click();
+    // Unproven, the old token is not copied: the press ends without a prompt and the dot shows a problem.
+    await expect(page.locator(".agent-menu")).toHaveAttribute("data-state", /failed|reconnecting|paused/, { timeout: 30_000 });
+    await expect(page.locator(".agent-menu__action")).not.toHaveText("Copied");
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe("before the press");
+    expect(await page.evaluate(() => navigator.clipboard.readText())).not.toContain(first);
+  } finally { await second.close(); }
+});
+
+test("old Watch records left in the browser are removed when the menu opens", async ({ page, baseURL }) => {
+  await page.addInitScript(() => {
+    if (window.top === window) localStorage.setItem('native-site-editor:agent-watch:["native-demo-user",501,"main"]', JSON.stringify({ startedAt: 1, until: 2, waits: 0 }));
+  });
+  await open(page, baseURL);
+  await page.locator(".repository-menu__trigger").click();
+  await expect(page.locator(".agent-menu__action")).toHaveText("Connect to MCP");
+  expect(await page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith("native-site-editor:agent-watch:")))).toEqual([]);
 });
 
 test("a failed first prompt: Connect to MCP shows the problem dot, not the plain off one, with no toast; the next press tries again", async ({ page, context, baseURL }) => {
