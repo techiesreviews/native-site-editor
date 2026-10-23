@@ -23,7 +23,7 @@ Each file is followed by its declared entry symbols. Styles, fixtures, scripts a
 | Save to GitHub and change status UI | `src/controllers/save-publish-controller.ts` — `createSavePublishController`; `src/deploy-status.ts` — `setDeployStatus` |
 | History and restoring saved versions | `src/version-view.ts` — `createVersionView` (History's wiring, the earlier version on show, its restore); `src/controllers/history-controller.ts` — `createHistoryController`; `src/components/commit-history.ts` — `createCommitHistory` |
 | Status, notices and GitHub reads | `src/github-reads.ts` — `createGitHubReads`, `ApiError` (#status, the notice bar, `api`, `postApi`; Try again when an open's read gets no answer, its retry from `src/workspace-boot.ts`); `src/read-retry.ts` — `fetchWithReadRetry`, `ReadUnansweredError` (8 s timeout, three retries) |
-| Repository opening and first paint | `src/controllers/boot-controller.ts` — `createBootController`; `src/workspace-boot.ts` — `createWorkspaceBoot` (repository choice, snapshot load, file restore, the remembered boot's guess); `src/repository-loading.ts` — `RepositoryIndex`; `src/native-boot.ts` — `nativeShownFiles`; `src/main.ts` — `activateNativeSite` |
+| Repository opening and first paint | `src/controllers/boot-controller.ts` — `createBootController`; `src/workspace-boot.ts` — `createWorkspaceBoot` (repository choice, snapshot load, file restore, the remembered boot's guess); `src/repository-list.ts` — `createRepositoryList` (the repository list, its refresh after GitHub's access page, account switching, sign-out); `src/repository-loading.ts` — `RepositoryIndex`; `src/native-boot.ts` — `nativeShownFiles`; `src/main.ts` — `activateNativeSite` |
 | Login, Setup wizard and Get started | `src/setup-host.ts` — `createSetupHost`, `renderLogin`, `showGetStarted`; `src/controllers/setup-entry-controller.ts` — `createSetupEntryController`; `src/components/setup-wizard.ts` — `createSetupWizard`; `src/setup-wizard.ts` — `readWizard` |
 | Setup checklist and starting point | `src/setup-host.ts` — `createSetupHost` (checklist state, starting-point and site-name writes, partial start); `src/controllers/setup-checklist-controller.ts` — `createSetupChecklistController`; `shared/starting-point.ts` — `blankSiteFiles`; `src/setup-actions.ts` — `createSetupActions` |
 | Settings dialog actions | `src/native-settings.ts` — `createNativeSettings` |
@@ -227,32 +227,32 @@ Ranges are approximate navigation hints, measured in this worktree; search the s
 
 | Section, in source order | Approximate lines | Key functions / wiring |
 | --- | --- | --- |
-| Imports, host handles, lazy loading, source pane | 1–340 | lazyModule, openCodeEditor, nativeHistorySession |
-| Workspace DOM and command palette | 341–705 | mountWorkspace, paletteController |
-| Component tools and section insertion | 706–859 | mountComponentTools, nativeElementAddPoint, nativeComponentLoaderPlan, insertNativeComponent |
-| Guarded edit adapter, block move / drag / insert | 860–1021 | guardedEdits, blockMoves, dragPageBlock, finishRailTyping |
-| History wiring and the version on show (src/version-view.ts) | 1022–1030 | versions |
-| Linked styles and secondary pane ports (src/controllers/linked-styles-controller.ts), repository index, preview selection | 1031–1110 | linkedStyles, repositoryIndex, findEntry, previewSelection |
-| Variant reads and CSS workspace | 1111–1194 | readVariantFiles, nativeCssWorkspace |
-| Page Structure and edit-bar controller ports | 1195–1333 | pageStructureController, renderNativeEditBar, applyNativeTextEdit |
-| Native state, draft scope and page metadata | 1334–1421 | nativeModeActive, draftScope, nativePageMeta, writeNativePageMeta |
-| Site, page and navigation settings | 1422–1453 | openNativePageSettings, openNativeSiteSettings, openNativeNavigation |
-| Routes, effective sources and preview updates | 1454–1593 | refreshNativeRoutes, nativeSources, nativeEffectiveSource, updateNativePreviewSources |
-| Shown source files and stylesheet loading | 1594–1791 | readNativeShownFiles, readNativeStyleFiles, loadNativeShownFiles |
-| Media reads, uploads and media manager ports | 1792–2073 | loadNativeAssets, uploadFilesTo, applyMediaBatch, mediaController |
-| Site activation, base sources and component styles | 2074–2359 | adoptNativeBaseSources, deactivateNative, activateNativeSite |
-| Deferred text index and first-paint/title gates | 2360–2546 | startNativeTextIndex, noteNativePainted, indexNativeTextFiles, ensureNativeTextIndex |
-| Current page, GitHub reads wiring and closing the workspace before sign-in | 2547–2687 | setCurrentPage, readFile, closeWorkspace (status, errorMessage, api: src/github-reads.ts) |
-| Login, Start your site, Setup checklist, wizard and Get started ports (src/setup-host.ts), directory summary | 2688–2766 | setup, setupScope, showDirectory, newDraftPaths |
-| Files/Pages/media explorer, page and card ports | 2767–3072 | treeState, mountExplorerTabs, cardsController, pagesController |
-| File and folder creation | 3073–3397 | planCreation, branchPathProblem, createFromRequest |
-| File operations, site resync and save ports | 3398–3548 | fileOperationsController, afterFileChanges, undoFileChanges, savePublish |
-| Source pane ports (src/controllers/source-pane-controller.ts) | 3549–3577 | sourcePane, openEntry, mountSource, nativeComponentTagForPath, updateAgentContext |
-| Agent context and commands | 3578–3828 | agentContext, agentSiteActions, applyAgentSiteCommand, agentActing |
-| New, uploaded and deleted drafts | 3829–3934 | openNewDraft, showUpload, applyAgentCommand |
-| Workspace boot ports (src/workspace-boot.ts) | 3935–3955 | workspaceBoot, restoreFile, loadSnapshot, chooseRepository |
-| Repository lists and account switching | 3956–4173 | checkNewRepositories listeners, loadRepositories, switchAccount, disconnect |
-| Draft baseline, agent/boot ports and startup | 4174–4249 | agentController, boot, renderLogin("loading"), workspaceBoot.startGuess |
+| Imports, host handles, lazy loading, source pane | 1–336 | lazyModule, openCodeEditor, nativeHistorySession |
+| Workspace DOM and command palette | 337–701 | mountWorkspace, paletteController |
+| Component tools and section insertion | 702–855 | mountComponentTools, nativeElementAddPoint, nativeComponentLoaderPlan, insertNativeComponent |
+| Guarded edit adapter, block move / drag / insert | 856–1017 | guardedEdits, blockMoves, dragPageBlock, finishRailTyping |
+| History wiring and the version on show (src/version-view.ts) | 1018–1026 | versions |
+| Linked styles and secondary pane ports (src/controllers/linked-styles-controller.ts), repository index, preview selection | 1027–1106 | linkedStyles, repositoryIndex, findEntry, previewSelection |
+| Variant reads and CSS workspace | 1107–1190 | readVariantFiles, nativeCssWorkspace |
+| Page Structure and edit-bar controller ports | 1191–1329 | pageStructureController, renderNativeEditBar, applyNativeTextEdit |
+| Native state, draft scope and page metadata | 1330–1417 | nativeModeActive, draftScope, nativePageMeta, writeNativePageMeta |
+| Site, page and navigation settings | 1418–1449 | openNativePageSettings, openNativeSiteSettings, openNativeNavigation |
+| Routes, effective sources and preview updates | 1450–1589 | refreshNativeRoutes, nativeSources, nativeEffectiveSource, updateNativePreviewSources |
+| Shown source files and stylesheet loading | 1590–1787 | readNativeShownFiles, readNativeStyleFiles, loadNativeShownFiles |
+| Media reads, uploads and media manager ports | 1788–2069 | loadNativeAssets, uploadFilesTo, applyMediaBatch, mediaController |
+| Site activation, base sources and component styles | 2070–2355 | adoptNativeBaseSources, deactivateNative, activateNativeSite |
+| Deferred text index and first-paint/title gates | 2356–2542 | startNativeTextIndex, noteNativePainted, indexNativeTextFiles, ensureNativeTextIndex |
+| Current page, GitHub reads wiring and closing the workspace before sign-in | 2543–2683 | setCurrentPage, readFile, closeWorkspace (status, errorMessage, api: src/github-reads.ts) |
+| Login, Start your site, Setup checklist, wizard and Get started ports (src/setup-host.ts), directory summary | 2684–2762 | setup, setupScope, showDirectory, newDraftPaths |
+| Files/Pages/media explorer, page and card ports | 2763–3068 | treeState, mountExplorerTabs, cardsController, pagesController |
+| File and folder creation | 3069–3393 | planCreation, branchPathProblem, createFromRequest |
+| File operations, site resync and save ports | 3394–3544 | fileOperationsController, afterFileChanges, undoFileChanges, savePublish |
+| Source pane ports (src/controllers/source-pane-controller.ts) | 3545–3573 | sourcePane, openEntry, mountSource, nativeComponentTagForPath, updateAgentContext |
+| Agent context and commands | 3574–3824 | agentContext, agentSiteActions, applyAgentSiteCommand, agentActing |
+| New, uploaded and deleted drafts | 3825–3930 | openNewDraft, showUpload, applyAgentCommand |
+| Workspace boot ports (src/workspace-boot.ts) | 3931–3951 | workspaceBoot, restoreFile, loadSnapshot, chooseRepository |
+| Repository list, account switching and sign-out ports (src/repository-list.ts), storage | 3952–3977 | checkNewRepositories listeners, loadRepositories, refreshRepositoryList, disconnect, storage |
+| Draft baseline, agent/boot ports and startup | 3978–4060 | agentController, boot, renderLogin("loading"), workspaceBoot.startGuess |
 
 ## Main entry points
 
