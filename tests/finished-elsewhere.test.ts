@@ -2,7 +2,7 @@
 // workspace, counted and named, gone once that workspace opens, and a clicked one opens its changes.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createFinishedElsewhere, noteCount, noteWords, tileWords, type FinishedNote } from "../src/finished-elsewhere";
+import { createFinishedElsewhere, noteCount, noteWords, openLink, tileWords, type FinishedNote } from "../src/finished-elsewhere";
 import type { Repository } from "../shared/types";
 import { githubScope } from "../src/workspace-session";
 import type { DraftScope } from "../src/drafts";
@@ -64,36 +64,40 @@ test("words for one and many", () => {
   assert.equal(noteCount(list.notes()), 3);
 });
 
-test("a workspace shown takes its note away; another branch's note stays", () => {
+test("a workspace shown again (its editor mounted) takes its note away; a load that only began does not", () => {
   const { list, drawn } = notes();
   list.add(main, "saved");
   list.add(feature, "added", { count: 2 });
-  list.shown(githubScope(main));
+  // A load of main began, and may yet fail: its note stays.
+  list.loading(githubScope(main));
+  assert.equal(list.notes().length, 2);
+  const { host } = toolbar();
+  list.mounted(main, host);
   assert.deepEqual(list.notes().map((note) => note.scope.branch), ["feature"]);
   assert.equal(drawn.length, 3);
-  // Nothing loaded yet, or a version view of feature: not feature shown.
-  list.shown(undefined);
-  list.shown({ ...githubScope(feature), view: "abc1234" });
+  list.mounted(undefined, host);
   assert.equal(list.notes().length, 1);
   assert.equal(drawn.length, 3);
 });
 
-test("a note clicked opens its workspace, goes at once, and its changes open once its editor mounts", () => {
+test("a note clicked opens its workspace, and once its editor mounts the note goes and its changes open", () => {
   const { list, opened, followed } = notes();
   list.add(feature, "saved", { commit });
   list.add(other, "agent");
   const note = list.notes().find((note) => note.scope.branch === "feature")!;
   list.open(note);
   assert.deepEqual(opened, [feature]);
-  assert.deepEqual(list.notes().map((note) => note.scope.repo), ["lex/blog"]);
+  // Until it is shown, the note stays: a click that opened nothing leaves it to click again.
+  assert.equal(list.notes().length, 2);
   // The repository's load begins with no branch yet, then the branch's.
-  list.shown(undefined);
-  list.shown(githubScope(feature));
+  list.loading(undefined);
+  list.loading(githubScope(feature));
   // Another workspace's editor first: nothing yet.
   const { host, clicks, total } = toolbar();
   list.mounted(main, host);
   assert.deepEqual(clicks, []);
   list.mounted(feature, host);
+  assert.deepEqual(list.notes().map((note) => note.scope.repo), ["lex/blog"]);
   assert.deepEqual(followed, [[commit, feature]]);
   assert.deepEqual(clicks, ["more"]);
   assert.equal(total.open, true);
@@ -106,7 +110,7 @@ test("a note clicked and then left for another workspace opens nothing there lat
   const { list, followed } = notes();
   list.add(feature, "added", { count: 1 });
   list.open(list.notes()[0]);
-  list.shown(githubScope(other));
+  list.loading(githubScope(other));
   const { host, clicks } = toolbar();
   list.mounted(feature, host);
   assert.deepEqual(clicks, []);
@@ -131,7 +135,7 @@ test("a second delivery of an agent command already noted is no new work", () =>
   assert.deepEqual(list.notes().map((note) => note.done.agent), [2]);
   assert.equal(drawn.length, 2);
   // Still once after its workspace was shown and left again.
-  list.shown(githubScope(main));
+  list.mounted(main, toolbar().host);
   list.add(main, "agent", { id: "edit-1" });
   assert.deepEqual(list.notes(), []);
 });
@@ -161,4 +165,34 @@ test("the menu's tile: a waiting question takes its corner, and its name says bo
   });
   assert.deepEqual(tileWords(2, [], open, listed), { words: " — agents ask you 2 questions", counted: false });
   assert.deepEqual(tileWords(0, [], open, listed), { words: "", counted: false });
+});
+
+test("a note's workspace link opens it, and a link already in the address bar opens it again", () => {
+  const sent: string[] = [];
+  const win = { location: { hash: "#repo=1&branch=feature" }, dispatchEvent: (event: Event) => { sent.push(event.type); return true; } };
+  openLink(main, win);
+  assert.equal(win.location.hash, "repo=1&branch=main");
+  assert.deepEqual(sent, []);
+  // A folder's view or a load not remembered yet leaves the link as it is: no hashchange would come.
+  win.location.hash = "#repo=1&branch=main";
+  openLink(main, win);
+  assert.equal(win.location.hash, "#repo=1&branch=main");
+  assert.deepEqual(sent, ["hashchange"]);
+});
+
+test("an agent's write is noted only when it changed the draft there", async () => {
+  const { list } = notes();
+  const drafts = new Map<string, { updatedAt: number }>([["index.html", { updatedAt: 1 }]]);
+  const draft = (_scope: DraftScope, path: string) => drafts.get(path);
+  const outcome = { message: "Changed" };
+  // A fresh write: its draft changed.
+  await list.agent(main, { id: "a", path: "index.html" }, draft, async () => { drafts.set("index.html", { updatedAt: 2 }); return outcome; })();
+  // A second delivery recorded before (applied while main was shown): its draft as it was.
+  await list.agent(main, { id: "b", path: "index.html" }, draft, async () => outcome)();
+  // Text that is the branch's own: no draft left.
+  await list.agent(main, { id: "c", path: "robots.txt" }, draft, async () => outcome)();
+  // Finished on show (nothing elsewhere), or with no scope read.
+  await list.agent(main, { id: "d", path: "index.html" }, draft, async () => { drafts.set("index.html", { updatedAt: 3 }); return undefined; })();
+  await list.agent(undefined, { id: "e", path: "index.html" }, draft, async () => { drafts.set("index.html", { updatedAt: 4 }); return outcome; })();
+  assert.deepEqual(list.notes().map((note) => note.done), [{ saved: 0, added: 0, agent: 1 }]);
 });
