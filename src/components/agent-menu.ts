@@ -385,32 +385,34 @@ export function createAgentMenu(options: {
   // This browser's requests of the open workspace (`historyKey`), dismissed ones included.
   const records = options.records ?? indexedDbAgentRecords();
   let history = new Map<string, StoredRequest>();
-  let historyKey = "", historyScope: AgentWorkspace | undefined, loadingKey: string | undefined, historyReads = 0;
+  // `historyKey` is the loaded workspace's key as other tabs hear it (BroadcastChannel); `loading` is a read under way.
+  let historyKey = "", historyScope: AgentWorkspace | undefined, loading: { scope: AgentWorkspace | undefined } | undefined, historyReads = 0;
   const scope = (): AgentWorkspace | undefined => {
     const repo = options.repository();
     return repo ? { account: options.account, repoId: repo.id, branch: repo.branch } : undefined;
   };
-  const scopeKey = () => { const current = scope(); return current ? workspaceKey(current) : ""; };
-  // Whether `was` is still the open workspace (none then and none now count as the same), under the
-  // workspace session's one rule (src/workspace-session.ts).
-  const stillOpen = (was: AgentWorkspace | undefined) => { const now = scope(); return was ? !!now && same(githubScope(was), githubScope(now)) : !now; };
+  // Two of this menu's workspaces under the workspace session's one rule (src/workspace-session.ts);
+  // none and none count as the same.
+  const sameScope = (a: AgentWorkspace | undefined, b: AgentWorkspace | undefined) => a && b ? same(githubScope(a), githubScope(b)) : !a && !b;
+  // Whether `was` is still the open workspace.
+  const stillOpen = (was: AgentWorkspace | undefined) => sameScope(was, scope());
   /** Reads the workspace's requests: on opening it, and when the tab is seen again. */
   async function loadHistory() {
     const current = scope(), key = current ? workspaceKey(current) : "", read = ++historyReads;
-    loadingKey = key;
+    loading = { scope: current };
     let list: StoredRequest[] = [];
     try {
       if (current) list = (await records.conversations(current)).map((item) => item.content as unknown as StoredRequest);
     } catch { /* Browser storage unavailable: no history; Ask agent says so. */ }
     if (disposed || read !== historyReads || !stillOpen(current)) return;
-    loadingKey = undefined;
+    loading = undefined;
     history = new Map(list.map((item) => [item.id, item]));
     historyKey = key; historyScope = current;
     tellRequests();
   }
   function followHistory() {
-    const key = scopeKey();
-    if (key !== historyKey && key !== loadingKey) void loadHistory();
+    const now = scope();
+    if (!sameScope(now, historyScope) && !(loading && sameScope(now, loading.scope))) void loadHistory();
   }
   /** Keeps a browser request, optionally fenced against concurrent changes. */
   async function keep(workspace: AgentWorkspace, request: StoredRequest, accept?: (current?: { content: JsonValue }) => boolean, owner?: number) {
@@ -420,8 +422,8 @@ export function createAgentMenu(options: {
     // Shown at once; then read again, as the write may have evicted others and a read begun
     // before it may miss it.
     historyReads++;
-    loadingKey = undefined;
-    if (kept && workspaceKey(workspace) === historyKey) {
+    loading = undefined;
+    if (kept && sameScope(workspace, historyScope)) {
       history.set(content.id, content);
       tellRequests();
     }
@@ -438,7 +440,7 @@ export function createAgentMenu(options: {
     if (key === lastRequests) return;
     lastRequests = key;
     const workspace = scope();
-    if (workspace && historyKey === workspaceKey(workspace)) {
+    if (workspace && sameScope(historyScope, workspace)) {
       markStartup(workspace, next.length > 0 || agentsOn(workspace));
     }
     requests = [...next].sort((a, b) => a.createdAt - b.createdAt);
@@ -526,7 +528,7 @@ export function createAgentMenu(options: {
   // countdown re-renders it each second from memory while it runs (no reads, no requests).
   let watchReport: ReturnType<ReturnType<typeof agentWatch>["report"]> = { state: "off" }, watchWorkspace = "";
   let watchTicker: ReturnType<typeof setInterval> | undefined;
-  const watchOf = () => { const workspace = pinned && scope(); return workspace && workspaceKey(workspace) === workspaceKey({ account: options.account, repoId: pinned!.id, branch: pinned!.branch }) ? agentWatch(workspace) : undefined; };
+  const watchOf = () => { const workspace = pinned && scope(); return workspace && sameRepository(options.repository(), pinned) ? agentWatch(workspace) : undefined; };
   function refreshWatch() {
     const watch = watchOf();
     watchWorkspace = watch?.key ?? "";
@@ -680,7 +682,7 @@ export function createAgentMenu(options: {
       if (on) localStorage.setItem(agentsOnKey(workspace), "1");
       else localStorage.removeItem(agentsOnKey(workspace));
     } catch { /* Storage full or blocked: this tab keeps them on; a reload starts with them off. */ }
-    if (on || historyKey === workspaceKey(workspace)) markStartup(workspace, on || requests.length > 0);
+    if (on || sameScope(historyScope, workspace)) markStartup(workspace, on || requests.length > 0);
   }
   function startRemote() {
     if (remote || disposed) return;

@@ -138,8 +138,9 @@ test("duplicate delivery joins in-flight work; durable receipt returns the same 
 test("wrong generation, tab, workspace and malformed commands refuse without running", async () => {
   const f = fixture(), a = f.tab("a"); await a.transport.start();
   for (const patch of [{ generation: 99 }, { tabId: "b" }, { workspace: { ...workspace, branch: "other" } }]) a.deliver(command(), patch);
-  for (const patch of [{ repoId: 2 }, { branch: "other" }, { grantId: "" }, { operation: "invented" }, { createdAt: "bad" }]) a.deliver({ ...command(), ...patch });
-  await until(() => a.sockets[0].messages("result").length === 8);
+  // A command without the repository's id is refused, even naming the pinned repository (src/workspace-session.ts sameBranch).
+  for (const patch of [{ repoId: 2 }, { repoId: undefined, repo: "lex/site" }, { repoId: 0, repo: "lex/site", repository: "lex/site" }, { branch: "other" }, { grantId: "" }, { operation: "invented" }, { createdAt: "bad" }]) a.deliver({ ...command(), ...patch });
+  await until(() => a.sockets[0].messages("result").length === 10);
   assert.ok(a.sockets[0].messages("result").every(value => value.result.state === "conflict"));
   assert.equal(f.counts().runs, 0); a.transport.stop();
 });

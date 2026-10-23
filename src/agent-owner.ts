@@ -1,5 +1,6 @@
-import { workspaceKey, type AgentWorkspace } from "../shared/agent-command.ts";
+import type { AgentWorkspace } from "../shared/agent-command.ts";
 import { AgentRecordsError, type AgentCommit, type AgentRecords } from "./agent-records.ts";
+import { githubScope, same } from "./workspace-session.ts";
 
 type Snapshot = Awaited<ReturnType<AgentRecords["snapshot"]>>;
 
@@ -11,7 +12,9 @@ export function createAgentOwner(options: {
   records: AgentRecords;
   reload: (snapshot: Snapshot) => Promise<void>;
 }) {
-  const workspace = structuredClone(options.workspace), key = workspaceKey(workspace);
+  const workspace = structuredClone(options.workspace);
+  // A command for this owner's workspace, under the workspace session's one rule (src/workspace-session.ts).
+  const ours = (command: AgentCommit) => same(githubScope(command.workspace), githubScope(workspace));
   const { records, reload } = options;
   let fence = options.fence, paused = false, takingOver = false;
   const inFlight = new Set<AgentCommit>();
@@ -21,7 +24,7 @@ export function createAgentOwner(options: {
     get fence() { return fence; },
     async commit(command: AgentCommit) {
       const captured = structuredClone(command);
-      if (paused || captured.fence !== fence || workspaceKey(captured.workspace) !== key) throw conflict();
+      if (paused || captured.fence !== fence || !ours(captured)) throw conflict();
       inFlight.add(captured);
       try {
         // The transaction checks this same captured fence, revision and draft proof.
@@ -32,7 +35,7 @@ export function createAgentOwner(options: {
       if (takingOver) throw conflict();
       const expected = fence;
       const pending = structuredClone([...inFlight, ...outstanding]);
-      if (pending.some((command) => workspaceKey(command.workspace) !== key)) throw conflict();
+      if (pending.some((command) => !ours(command))) throw conflict();
       takingOver = paused = true;
       try {
         // Durable pause serializes even an unresponsive old tab against admission.

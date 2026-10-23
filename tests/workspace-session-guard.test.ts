@@ -27,14 +27,21 @@ function operand(node: TS.Node): { name: string; call: boolean; member: boolean;
 // `load`, or a port read of it (`ports.epoch()`).
 const loadRead = (read: ReturnType<typeof operand>) =>
   !!read && (/generation/i.test(read.name) || read.name === "currentLoad" || read.name === "load" && (read.member || read.call) || read.name === "epoch" && read.call);
-// A scope or its keys spelled by hand: the old scope helpers, or a port's `scope()` / `identity()`.
-const SCOPE_NAMES = new Set(["setupScope", "draftScope", "mediaIdentity", "scopeKey", "setupKeyOf"]);
+// A scope or its keys spelled by hand: the old scope helpers, an agent workspace's key, or a port's `scope()` / `identity()`.
+const SCOPE_NAMES = new Set(["setupScope", "draftScope", "mediaIdentity", "scopeKey", "setupKeyOf", "workspaceKey"]);
 const scopeRead = (read: ReturnType<typeof operand>) => !!read && (SCOPE_NAMES.has(read.name) || read.call && read.member && ["scope", "identity"].includes(read.name));
-// Two workspaces' own fields compared field by field (the session's `same` and `sameBranch` own that).
-// A repository list looked up by `id` is not a workspace compare.
+// Two workspaces' own fields compared field by field (the session's `same` and `sameBranch` own that):
+// the same field on both sides; a repository's id or name under its other spellings (`id` against
+// `repoId`, `repo` against `fullName`); a repository list looked up by `id` against `id` is not one.
 const WORKSPACE_FIELDS = new Set(["repoId", "branch", "account", "full_name", "fullName", "repo"]);
-const sameWorkspace = (left: ReturnType<typeof operand>, right: ReturnType<typeof operand>) =>
-  !!left?.member && !!right?.member && !left.call && !right.call && left.name === right.name && WORKSPACE_FIELDS.has(left.name);
+const REPOSITORY_NAMES = new Set(["repo", "fullName", "full_name"]);
+function sameWorkspace(left: ReturnType<typeof operand>, right: ReturnType<typeof operand>) {
+  if (!left || !right || left.call || right.call) return false;
+  if (left.member && right.member && left.name === right.name) return WORKSPACE_FIELDS.has(left.name);
+  if (left.member && right.member && REPOSITORY_NAMES.has(left.name) && REPOSITORY_NAMES.has(right.name)) return true;
+  const ids = [left, right].map(read => read.name);
+  return ids.includes("id") && ids.includes("repoId") && (left.name === "id" ? left : right).member;
+}
 
 const detect: Detector = (source, file) => {
   if (file === SESSION) return [];
@@ -71,6 +78,13 @@ const allowlist: AllowlistEntry[] = [
   { file: "src/agent-transport.ts", match: { rule: "load-compare", function: "held" }, reason: FENCE },
   { file: "src/agent-transport.ts", match: { rule: "load-compare", function: "matches" }, reason: FENCE },
   { file: "src/agent-transport.ts", match: { rule: "load-compare", function: "prove" }, reason: FENCE },
+  // Agent records are stored under the workspace's key string (IndexedDB): a record belongs to the key it was written under.
+  { file: "src/agent-records.ts", match: { rule: "scope-compare", function: "attempt" }, reason: "A stored draft record belongs to the workspace key IndexedDB keeps it under." },
+  { file: "src/agent-records.ts", match: { rule: "scope-compare", function: "settle" }, reason: "A stored receipt belongs to the workspace key IndexedDB keeps it under." },
+  { file: "src/agent-records.ts", match: { rule: "scope-compare", function: "reconcile" }, reason: "A command's workspace against the store's key for this transaction (IndexedDB)." },
+  // Repository lists looked up by a remembered id: a lookup, not two workspaces compared.
+  { file: "src/controllers/boot-controller.ts", match: { rule: "same-workspace", function: "planRepositoryOpen" }, reason: "Looks the linked or remembered repository up in the listing by its id.", count: 2 },
+  { file: "src/boot-memory.ts", match: { rule: "same-workspace", function: "memoryMatches" }, reason: `${FOLLOW_UP} boot memory also requires the remembered repository name (slice 21 kept that rule beside \`same\`).` },
   { file: "src/agent-recovery.ts", match: { rule: "load-compare", function: "current" }, reason: `${OWN} the agent recovery's own reconnect counter.` },
   { file: "src/agent-recovery.ts", match: { rule: "load-compare", function: "attemptAlone" }, reason: `${OWN} the agent recovery's own reconnect counter.`, count: 2 },
   { file: "src/main.ts", match: { rule: "load-compare", function: "showDirectory" }, reason: FILE_SELECTION },
@@ -106,7 +120,8 @@ const allowlist: AllowlistEntry[] = [
   { file: "src/components/publish-menu.ts", match: { rule: "same-workspace", function: "createPublishMenu" }, reason: `${FOLLOW_UP} the publish status compares its repository by name; it should ask \`sameBranch\`.` },
   { file: "src/main.ts", match: { rule: "same-workspace", function: "applyAgentSiteCommand" }, reason: `${FOLLOW_UP} an agent command's repository and branch against the open one; it should ask \`sameBranch\`.`, count: 2 },
   { file: "src/main.ts", match: { rule: "same-workspace", function: "applyAgentCommand" }, reason: `${FOLLOW_UP} an agent command's branch against the open one; it should ask \`sameBranch\`.` },
-  { file: "src/main.ts", match: { rule: "same-workspace", function: "openNewDraft" }, reason: `${FOLLOW_UP} a draft's branch against the open one; it should ask \`holdsDraftScope\`.` },
+  { file: "src/main.ts", match: { rule: "same-workspace", function: "openNewDraft" }, reason: `${FOLLOW_UP} a draft's repository and branch against the open one; it should ask \`holdsDraftScope\`.`, count: 2 },
+  { file: "src/main.ts", match: { rule: "same-workspace", function: "takeBootGuess" }, reason: `${FOLLOW_UP} the link's repository id against the guessed repository; it should ask \`same\`.` },
   { file: "src/main.ts", match: { rule: "same-workspace", function: "startBootGuess" }, reason: `${FOLLOW_UP} the remembered workspace's branch against the link's; it should ask \`same\`.` },
   { file: "shared/agent-requests.ts", match: { rule: "same-workspace", function: "inWorkspace" }, reason: `${FOLLOW_UP} shared with the Worker, which does not load the session module yet.`, count: 2 },
 ];
@@ -126,7 +141,7 @@ test("a load counter compared by hand fires, in every spelling", () => {
 });
 
 test("a scope or its key compared by hand fires", () => {
-  for (const source of ["key !== setupScope()", "draftScope() === scope", "identity !== ports.identity()", "scopeKey === ws.scope()", "setupKeyOf(a) === setupKeyOf(b)", "const current = () => scopeKey() === key;"])
+  for (const source of ["workspaceKey(now) !== key", "workspaceKey(a) === workspaceKey(b)", "key !== setupScope()", "draftScope() === scope", "identity !== ports.identity()", "scopeKey === ws.scope()", "setupKeyOf(a) === setupKeyOf(b)", "const current = () => scopeKey() === key;"])
     fires(source, "scope-compare");
   for (const source of ["selectionIdentity(a) === b", "running.identity === identity", "scope === undefined", "key === ports.key()"])
     assert.deepEqual(detect(source, FAKE), [], source);
@@ -134,9 +149,10 @@ test("a scope or its key compared by hand fires", () => {
 
 test("two workspaces compared field by field fire", () => {
   for (const source of ["repo.id !== pinned.id || repo.branch !== pinned.branch", "grant.repoId === repo.repoId", "now?.repo !== scope.repo", "a.account.toLowerCase() === b.account",
-    "seen.branch !== scope.branch", "repository.full_name === other.full_name", "approval.fullName === repo.fullName"])
+    "seen.branch !== scope.branch", "repository.full_name === other.full_name", "approval.fullName === repo.fullName",
+    "grant.repoId === repo.id", "repo?.fullName === approval.repo", "now?.repo.id !== repoId", "incoming.repoId !== workspace.repoId", "status.repo === repo.full_name"])
     fires(source, "same-workspace");
-  for (const source of ["grant.id === command.grantId", "now.branch === branch", "snapshot.commit !== commit", "item.repo === name", "known.id !== repo.id"])
+  for (const source of ["grant.id === command.grantId", "now.branch === branch", "snapshot.commit !== commit", "item.repo === name", "known.id !== repo.id", "id === repoId"])
     assert.deepEqual(detect(source, FAKE), [], source);
 });
 

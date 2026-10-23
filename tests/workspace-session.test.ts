@@ -44,6 +44,21 @@ test("a repository is compared by name only when an id is not known, ignoring ca
   assert.ok(!sameBranch(undefined, undefined));
 });
 
+// The agent menu's checks (src/components/agent-menu.ts) in the shapes it passes: the open and pinned
+// repositories as { repoId, repo: fullName, branch }, a hub grant, and an approval that names no id.
+test("the agent menu's repository checks: a renamed repository stays pinned; an approval matches by name, any capitals", () => {
+  const pinned = { repoId: 1, repo: "lex/site", branch: "main" }, renamed = { ...pinned, repo: "lex/renamed" };
+  assert.ok(sameBranch(renamed, pinned), "live(at) holds and no move shows");
+  const grant = { id: "g", repoId: 1, repo: "lex/site", branch: "main", via: "oauth" };
+  assert.ok(sameBranch(grant, renamed), "liveGrants() keeps the grant");
+  assert.ok(!sameBranch({ ...pinned, repoId: 2 }, pinned), "a re-created repository is a move");
+  assert.ok(!sameBranch({ ...pinned, branch: "dev" }, pinned), "another branch is a move");
+  const approval = { at: 1, repo: "Lex/Site", branch: "main", approval: "a" };
+  assert.ok(sameBranch(approval, pinned), "matches(approval)");
+  assert.ok(!sameBranch(approval, renamed), "an approval names its repository; a renamed one is another");
+  assert.ok(!sameBranch({ ...approval, branch: "dev" }, pinned));
+});
+
 test("another branch is another workspace; an empty branch is none", () => {
   assert.ok(!same(lex, { ...lex, branch: "dev" }));
   const empty: WorkspaceScope = { ...lex, branch: "" };

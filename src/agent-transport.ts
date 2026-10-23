@@ -9,7 +9,7 @@ import { AgentRecordsError, type AgentRecords } from "./agent-records";
 import { agentCommandSignals } from "./agent-tools";
 import { createAgentOwner } from "./agent-owner";
 import { browserAgentRecovery } from "./agent-recovery";
-import { sameBranch } from "./workspace-session";
+import { githubScope, same, sameBranch } from "./workspace-session";
 
 type Snapshot = Awaited<ReturnType<AgentRecords["snapshot"]>>;
 type Mode = "connecting" | "live" | "other-owner" | "taken-over" | "taking-over" | "takeover-failed" |
@@ -119,10 +119,12 @@ export function createLiveTransport(options: Options) {
   const scope = (): Scope => ({ workspace, tabId: options.tabId, generation: fence! });
   // A workspace briefly absent (a refresh reloading the repository) is no move: the socket, ownership
   // and recovery carry on, and only command admission waits for it (`present`).
-  const moved = () => { const now = options.current(); return now !== undefined && workspaceKey(now) !== key; };
+  // The pinned workspace, under the workspace session's one rule (src/workspace-session.ts).
+  const pinned = (other: AgentWorkspace) => same(githubScope(other), githubScope(workspace));
+  const moved = () => { const now = options.current(); return now !== undefined && !pinned(now); };
   const current = () => !stopped && !moved();
   const present = () => current() && options.current() !== undefined;
-  const matches = (value: Partial<Scope>) => value.workspace && typeof value.workspace.account === "string" && workspaceKey(value.workspace) === key && value.tabId === options.tabId && value.generation === fence;
+  const matches = (value: Partial<Scope>) => value.workspace && typeof value.workspace.account === "string" && pinned(value.workspace) && value.tabId === options.tabId && value.generation === fence;
   function show(next: State) { if (!stopped) { state = next; options.listen(state); } }
   function clearHeartbeat() {
     if (heartbeat !== undefined) clock.clearTimeout(heartbeat);
