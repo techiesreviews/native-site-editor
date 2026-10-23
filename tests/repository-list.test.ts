@@ -8,6 +8,7 @@ import { createDraftStore } from "../src/draft-store.ts";
 import { createWorkspaceSession } from "../src/workspace-session.ts";
 import type { RepositoryListPorts } from "../src/repository-list.ts";
 import type { Repository } from "../shared/types.ts";
+import type { WorkspaceLocation } from "../src/workspace-state.ts";
 import { forEachAwait, type AwaitRace } from "./support/await-race.ts";
 
 // Just enough DOM for the welcome panel (node and button, src/ui/dom.ts).
@@ -29,7 +30,8 @@ let answer: () => Response = () => new Response(null, { status: 204 });
 const fetched: string[] = [];
 Object.defineProperty(globalThis, "location", { configurable: true, value: { origin: "https://editor.test", pathname: "/", hash: "", href: "https://editor.test/", assign: (url: string) => { assigned.push(url); } } });
 Object.defineProperty(globalThis, "history", { configurable: true, value: { replaceState: (_state: unknown, _unused: string, url: string) => { replaced.push(url); } } });
-Object.defineProperty(globalThis, "localStorage", { configurable: true, value: store() });
+const pageStorage = store();
+Object.defineProperty(globalThis, "localStorage", { configurable: true, value: pageStorage });
 Object.defineProperty(globalThis, "fetch", { configurable: true, value: async (url: string) => { fetched.push(url); return answer(); } });
 Object.defineProperty(globalThis, "document", { configurable: true, value: { createElement: (name: string) => new FakeElement(name) } });
 after(() => {
@@ -58,11 +60,14 @@ function store() {
 const repo = (id: number): Repository => ({ id, name: `site-${id}`, full_name: `lex/site-${id}`, private: false, default_branch: "main", owner: { login: "lex", type: "User" } });
 const A = repo(1), B = repo(2), C = repo(3);
 
-function fixture(listed: Repository[] = [], fetchList: (refresh: boolean) => Promise<Repository[]> = async () => listed) {
+type Options = { user?: { login: string }; dismissed?: boolean };
+function fixture(listed: Repository[] = [], fetchList: (refresh: boolean) => Promise<Repository[]> = async () => listed, options: Options = {}) {
   const session = createWorkspaceSession(), local = store();
-  const shown = { content: [] as (FakeElement | string)[] }, calls = { loading: 0, ready: 0, listed: 0, fetchList: 0, cleared: 0 };
-  const errors: unknown[] = [], announced: string[] = [];
-  const box = { replaceChildren: (...nodes: (FakeElement | string)[]) => { shown.content = nodes; } };
+  const shown = { content: [] as (FakeElement | string)[], files: [] as (FakeElement | string)[] };
+  const calls = { loading: 0, ready: 0, listed: 0, fetchList: 0, cleared: 0, gotStarted: 0, opened: 0 };
+  const errors: unknown[] = [], announced: string[] = [], chosen: (WorkspaceLocation | undefined)[] = [];
+  const content = { replaceChildren: (...nodes: (FakeElement | string)[]) => { shown.content = nodes; } };
+  const files = { replaceChildren: (...nodes: (FakeElement | string)[]) => { shown.files = nodes; } };
   // The list code reads and writes only disabled and value: the fake stands in for the select.
   // eslint-disable-next-line no-restricted-syntax -- a partial DOM fake, see above
   const select = () => ({ disabled: false, value: "" }) as unknown as HTMLSelectElement;
@@ -75,22 +80,22 @@ function fixture(listed: Repository[] = [], fetchList: (refresh: boolean) => Pro
     cleanSources: { clear: () => { calls.cleared++; } },
     workspaceBoot: { abandonGuess: () => {} },
     setup: { waitingForRepositories: true },
-    setupEntry: { dismissed: () => true, open: async () => {}, active: () => false },
+    setupEntry: { dismissed: () => options.dismissed ?? true, open: async () => { calls.opened++; }, active: () => false },
     setupController: { start: () => {} },
     boot: {
       loading: () => { calls.loading++; }, ready: () => { calls.ready++; }, failed: () => {}, listed: () => { calls.listed++; },
       fetchList: (refresh = false) => { calls.fetchList++; return fetchList(refresh); },
       refreshPending: () => false, takeRefresh: () => false, recover: async () => false,
     },
-    user: { login: "lex" },
+    user: "user" in options ? options.user : { login: "lex" },
     get repositories() { return repositories; }, set repositories(value) { repositories = value; },
     get fileGeneration() { return fileGeneration; }, set fileGeneration(value) { fileGeneration = value; },
-    content: box, files: box, refreshButton: { disabled: false },
+    content, files, refreshButton: { disabled: false },
     branchSelect: select(), repositorySelect: select(),
     repositoryMenu: undefined,
     siteActions: undefined,
     nextLoad: () => { session.next(undefined); return session.begin(); },
-    chooseRepository: async () => {},
+    chooseRepository: async (resume?: WorkspaceLocation) => { chosen.push(resume); },
     storage: () => local,
     options: () => {},
     status: () => {},
@@ -100,11 +105,11 @@ function fixture(listed: Repository[] = [], fetchList: (refresh: boolean) => Pro
     setCurrentPage: () => {},
     openExplorer: () => {},
     removeFinishStarter: () => {},
-    showGetStarted: async () => {},
+    showGetStarted: async () => { calls.gotStarted++; },
     knownRepositories: () => undefined,
     rememberRepositories: () => {},
   } satisfies RepositoryListPorts & Record<string, unknown>;
-  return { ports, list: createRepositoryList(ports), shown, calls, errors, announced };
+  return { ports, list: createRepositoryList(ports), shown, calls, errors, announced, chosen };
 }
 
 test("sign-out of the last account forgets the signed-in mark and the boot memory", async () => {
@@ -179,4 +184,70 @@ test("a listing superseded by a later load writes nothing", async () => {
     },
   );
   assert.equal(points, 1);
+});
+
+test("switching account goes to the editor's home", async () => {
+  const { list, errors } = fixture();
+  answer = () => new Response(null, { status: 200 });
+  fetched.length = 0;
+  assigned.length = 0;
+  await list.switchAccount("other");
+  assert.deepEqual(fetched, ["/api/accounts/switch"]);
+  assert.deepEqual(assigned, ["/"]);
+  assert.deepEqual(errors, []);
+});
+
+test("a refused account switch shows the server's reason and stays on the page", async () => {
+  const { list, errors } = fixture();
+  answer = () => new Response(JSON.stringify({ error: "nope" }), { status: 403 });
+  assigned.length = 0;
+  await list.switchAccount("other");
+  assert.equal((errors[0] as Error).message, "nope");
+  assert.deepEqual(assigned, []);
+});
+
+test("the listing opens the account's remembered repository where it was left", async () => {
+  const resume = { repoId: B.id, branch: "dev", path: "about.html" };
+  pageStorage.setItem("astro-site-editor:workspace:v1:lex", JSON.stringify(resume));
+  try {
+    const { ports, list, chosen, shown } = fixture([A, B]);
+    await list.loadRepositories();
+    assert.deepEqual(chosen, [resume]);
+    assert.equal(ports.repositorySelect.value, String(B.id));
+    // The file selection counter is the host's, written through its setter.
+    assert.equal(ports.fileGeneration, 1);
+    assert.deepEqual(shown.files, []);
+  } finally {
+    pageStorage.removeItem("astro-site-editor:workspace:v1:lex");
+  }
+});
+
+test("a listing before the session has a user offers the choice of a project", async () => {
+  pageStorage.setItem("astro-site-editor:workspace:v1:lex", JSON.stringify({ repoId: B.id, branch: "main" }));
+  try {
+    const { list, chosen, shown, errors } = fixture([A, B], undefined, { user: undefined });
+    await list.loadRepositories();
+    assert.deepEqual(chosen, []);
+    assert.deepEqual(errors, []);
+    const panel = shown.content[0] as FakeElement;
+    assert.equal(panel.className, "welcome");
+    assert.equal((panel.children[0] as FakeElement).textContent, "Open a project");
+  } finally {
+    pageStorage.removeItem("astro-site-editor:workspace:v1:lex");
+  }
+});
+
+test("no repositories, with setup dismissed, shows Get started", async () => {
+  const { list, calls } = fixture([], undefined, { dismissed: true });
+  await list.loadRepositories();
+  assert.equal(calls.gotStarted, 1);
+  assert.equal(calls.opened, 0);
+});
+
+test("no repositories for a new user opens the Setup wizard", async () => {
+  const { list, calls, shown } = fixture([], undefined, { dismissed: false });
+  await list.loadRepositories();
+  assert.equal(calls.opened, 1);
+  assert.equal(calls.gotStarted, 0);
+  assert.equal((shown.content[0] as FakeElement).textContent, "Create your first site to get started.");
 });
