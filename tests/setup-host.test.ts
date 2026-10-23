@@ -6,10 +6,13 @@ import { signal } from "@preact/signals-core";
 import type { SetupActions } from "../src/components/setup-checklist.ts";
 import type { SetupWizardOptions } from "../src/components/setup-wizard.ts";
 import type { createStartSite } from "../src/components/start-site.ts";
+import type { createGetStarted } from "../src/components/get-started.ts";
+import type { createSetupChecklist } from "../src/components/setup-checklist.ts";
 import type { SavedDraft } from "../src/drafts.ts";
 import type { SetupHostPorts } from "../src/setup-host.ts";
 import { createWorkspaceSession } from "../src/workspace-session.ts";
-import { setupProgress, type SetupProgress } from "../src/setup-checklist.ts";
+import { forEachAwait, type AwaitRace } from "./support/await-race.ts";
+import { setupProgress } from "../src/setup-checklist.ts";
 import { NATIVE_CONFIG_PATH, NATIVE_HOME_PAGE } from "../shared/native-project.ts";
 import { siteNameFromRepository } from "../shared/starting-point.ts";
 import type { Repository, SessionInfo, Snapshot } from "../shared/types.ts";
@@ -67,6 +70,11 @@ const { createSetupHost, EDITOR_LOGIN } = await import("../src/setup-host.ts");
 
 const flush = async () => { for (let i = 0; i < 10; i++) await new Promise<void>((resolve) => setImmediate(resolve)); };
 type StartSiteOptions = Parameters<typeof createStartSite>[0];
+type GetStartedOptions = Parameters<typeof createGetStarted>[0];
+type LoadedActions = Awaited<ReturnType<SetupHostPorts["loadSetupActions"]>>;
+// The one place a fake element stands in for the DOM's.
+// eslint-disable-next-line no-restricted-syntax -- FakeElement implements only the members the setup UI touches.
+const asElement = <T extends HTMLElement = HTMLElement>(fake: FakeElement) => fake as unknown as T;
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((yes) => { resolve = yes; });
@@ -76,8 +84,10 @@ const repository = (id: number, name = `site-${id}`): Repository => ({
   id, name, full_name: `lex/${name}`, private: false, default_branch: "main", owner: { login: "lex" },
 } as Repository);
 const snapshot = (empty = false): Snapshot => ({ commit: "c1", branch: "main", entries: [], empty } as Partial<Snapshot> as Snapshot);
+const MOVED = "The repository changed meanwhile. Try again.";
 
-function fixture() {
+/** `race` wraps the host's own awaits (the lazy loads) for `forEachAwait`. */
+function fixture(race?: AwaitRace) {
   const app = new FakeElement(), action = new FakeElement(), checklistHost = new FakeElement();
   let content = new FakeElement();
   let info: SessionInfo = { configured: true, user: { login: "Lex" }, installUrl: "https://github.test/install" } as SessionInfo;
@@ -89,25 +99,26 @@ function fixture() {
   const calls: string[] = [], statuses: string[] = [], errors: unknown[] = [], loads: (Repository[] | undefined)[] = [], writes: unknown[][] = [];
   const wizards: SetupWizardOptions[] = [];
   const started: StartSiteOptions[] = [];
-  const checklist: { options?: SetupActions; updates: { progress: SetupProgress; siteName?: string; defaultName: string }[] } = { updates: [] };
+  const checklist: { options?: SetupActions; updates: Parameters<ReturnType<typeof createSetupChecklist>["update"]>[0][] } = { updates: [] };
   let actions = deferred<void>();
   let writeAnswer: string | undefined;
   let listed: Repository[] = [];
-  let created: { root: FakeElement; options: Record<string, unknown> } | undefined;
+  let created: { root: FakeElement; options: GetStartedOptions } | undefined;
   const scope = { account: "lex", repoId: 1, repo: "lex/site-1", branch: "main" };
   const setupActions = {
-    createSiteInWizard: async () => ({ ok: false, message: "Unused" }),
+    createSiteInWizard: async () => ({ ok: false as const, message: "Unused" }),
     findWizardRepository: async () => undefined,
     wizardPreview: async () => undefined,
-    createSite: async () => ({ ok: false, message: "Unused" }),
-    writeSiteSettings: async (...args: unknown[]) => { writes.push(["settings", ...args]); return writeAnswer; },
-    writeStartingPoint: async (...args: unknown[]) => { writes.push(["start", ...args]); return writeAnswer; },
-  };
+    createSite: async () => ({ ok: false as const, message: "Unused" }),
+    writeSiteSettings: async (change: { name?: string; url?: string }) => { writes.push(["settings", change]); return writeAnswer; },
+    writeStartingPoint: async (...args: Parameters<LoadedActions["writeStartingPoint"]>) => { writes.push(["start", ...args]); return writeAnswer; },
+  } satisfies LoadedActions;
+  const lazy = <Value,>(name: string, load: () => Promise<Value>) => race ? race.port(name, load) : load;
   const ports = {
-    app,
+    app: asElement(app),
     get info() { return info; },
     get repositories() { return repositories; },
-    get content() { return content; },
+    get content() { return asElement(content); },
     repositoryMenu: undefined,
     nativeEngaged: false,
     agentPrompts: { setupPrompt: (options: { name: string }) => `prompt for ${options.name}` },
@@ -122,29 +133,31 @@ function fixture() {
     appStore,
     workspaceSession: session,
     closeWorkspace: () => { calls.push("close"); },
-    element: (id: string) => id === "login-action" ? action : checklistHost,
+    element: <T extends HTMLElement>(id: string) => asElement<T>(id === "login-action" ? action : checklistHost),
     setupScope: () => "lex/1/main",
     draftScope: () => appStore.snapshot.value ? scope : undefined,
     draftStore: () => ({ get: (_scope: unknown, path: string) => drafts.get(path) }),
     nativeEffectiveSource: (path: string) => sources.get(path),
     api: async <T,>() => [] as T,
     loadRepositories: async (prefetched?: Repository[]) => { loads.push(prefetched); },
-    loadSetupActions: async () => { await actions.promise; return setupActions; },
-    loadWizard: async () => ({ createSetupWizard: (options: SetupWizardOptions) => { wizards.push(options); return { root: new FakeElement(), focus: () => {}, destroy: () => {} }; } }),
+    loadSetupActions: lazy("loadSetupActions", async () => { await actions.promise; return setupActions; }),
+    loadWizard: async () => ({ createSetupWizard: (options: SetupWizardOptions) => { wizards.push(options); return { root: asElement<HTMLDivElement>(new FakeElement()), focus: () => {}, destroy: () => {} }; } }),
     loadChecklist: async () => ({ createSetupChecklist: (options: SetupActions) => {
       checklist.options = options;
-      return { root: new FakeElement(), update: (view: (typeof checklist.updates)[number]) => { checklist.updates.push(view); }, onRequest: () => {}, open: () => {}, close: () => {} };
+      return { root: asElement(new FakeElement()), menuItem: asElement<HTMLButtonElement>(new FakeElement()), update: (view: (typeof checklist.updates)[number]) => { checklist.updates.push(view); }, onRequest: () => {}, open: () => {}, close: () => {}, isOpen: () => false };
     } }),
     loadSpotlight: async () => { throw new Error("Unused"); },
-    loadGetStarted: async () => ({ createGetStarted: (options: Record<string, unknown>) => { created = { root: Object.assign(new FakeElement(), { className: "get-started" }), options }; return created; } }),
-    loadStartSite: async () => ({ createStartSite: (options: StartSiteOptions) => { started.push(options); return { root: new FakeElement() }; } }),
+    loadGetStarted: lazy("loadGetStarted", async () => ({ createGetStarted: (options: GetStartedOptions) => {
+      created = { root: Object.assign(new FakeElement(), { className: "get-started" }), options };
+      return { root: asElement(created.root), focus: () => {} };
+    } })),
+    loadStartSite: async () => ({ createStartSite: (options: StartSiteOptions) => { started.push(options); return { root: asElement(new FakeElement()) }; } }),
     loadAgentPrompts: async () => ({ setupPrompt: (options: { name: string }) => `prompt for ${options.name}` }),
     status: (message: string) => { statuses.push(message); },
     errorMessage: (error: unknown) => { errors.push(error); },
     refuse: (message: string) => { calls.push(`refuse:${message}`); },
-  };
-  // eslint-disable-next-line no-restricted-syntax -- the fakes cover only the members this module reads.
-  const setup = createSetupHost(ports as unknown as SetupHostPorts);
+  } satisfies SetupHostPorts;
+  const setup = createSetupHost(ports);
   return {
     setup, app, action, session, checklist, started, appStore, drafts, sources, calls, statuses, errors, loads, writes, wizards,
     created: () => created!,
@@ -153,11 +166,16 @@ function fixture() {
     info: (value: Partial<SessionInfo>) => { info = { ...info, ...value }; },
     repositories: (value: Repository[]) => { repositories = value; },
     listed: (value: Repository[]) => { listed = value; },
-    actions: () => actions,
     readyActions: () => { actions.resolve(); },
-    pendingActions: () => { actions = deferred<void>(); },
     writeAnswer: (value: string | undefined) => { writeAnswer = value; },
-    open: (repo = repository(1)) => { appStore.repository.value = repo; appStore.snapshot.value = snapshot(); session.next({ account: "lex", repoId: repo.id, repo: repo.full_name, branch: "main", commit: "c1" }); },
+    open: (repo = repository(1)) => { appStore.repository.value = repo; appStore.snapshot.value = snapshot(); session.next({ kind: "github", account: "lex", repoId: repo.id, repo: repo.full_name, branch: "main" }); },
+    /** The checklist on show for repository 1, and its actions. */
+    async mountChecklist() {
+      setup.setupController.start(1);
+      setup.setupController.refresh();
+      await flush();
+      return checklist.options!;
+    },
   };
 }
 
@@ -258,19 +276,6 @@ test("Get started shows for an account with no repository and waits for one", as
   assert.deepEqual(f.loads, [[repository(3)]]);
 });
 
-test("Get started is dropped when the page, the account or the repositories moved on while it loaded", async () => {
-  for (const change of ["content", "account", "repositories"] as const) {
-    const f = fixture();
-    const showing = f.setup.showGetStarted();
-    if (change === "content") f.newContent();
-    else if (change === "account") f.info({ user: { login: "other" } as SessionInfo["user"] });
-    else f.repositories([repository(1)]);
-    await showing;
-    assert.equal(f.content().children.length, 0, change);
-    assert.equal(f.setup.waitingForRepositories, false, change);
-  }
-});
-
 test("coming back without waiting for repositories lists nothing", async () => {
   const f = fixture();
   f.listed([repository(3)]);
@@ -292,7 +297,7 @@ test("the wizard's last step opens the repository it made, even before GitHub li
   assert.equal(f.setup.setupEntry.dismissed(), true);
 });
 
-test("a starting point or site name write is refused when the repository changed while the actions loaded", async () => {
+test("a starting point write is refused when the repository changed while the actions loaded", async () => {
   for (const change of ["session", "snapshot", "none"] as const) {
     const f = fixture();
     f.open();
@@ -303,9 +308,80 @@ test("a starting point or site name write is refused when the repository changed
     const answer = await writing;
     if (change === "none") assert.deepEqual(f.writes, [["start", "starter"]]);
     else {
-      assert.equal(answer, "The repository changed meanwhile. Try again.", change);
+      assert.equal(answer, MOVED, change);
       assert.deepEqual(f.writes, [], change);
     }
+  }
+});
+
+test("a site name saved from the checklist is refused when the repository changed while the actions loaded", async () => {
+  for (const change of ["session", "snapshot", "none"] as const) {
+    const f = fixture();
+    f.open();
+    const checklist = await f.mountChecklist();
+    const saving = checklist.saveName("Bakery");
+    if (change === "session") f.session.next(undefined);
+    if (change === "snapshot") f.appStore.snapshot.value = snapshot();
+    f.readyActions();
+    const answer = await saving;
+    if (change === "none") assert.deepEqual(f.writes, [["settings", { name: "Bakery" }]]);
+    else {
+      assert.equal(answer, MOVED, change);
+      assert.deepEqual(f.writes, [], change);
+    }
+    f.setup.setupController.dispose();
+  }
+});
+
+test("starting point and site name writes write nothing once the session or snapshot moved at any await", async () => {
+  const writers = {
+    start: (f: ReturnType<typeof fixture>) => f.setup.writeStartingPoint("starter"),
+    // The checklist is mounted first (not a wrapped await): only the write's own awaits are counted.
+    name: (f: ReturnType<typeof fixture>) => f.checklist.options!.saveName("Bakery"),
+  };
+  for (const [writer, write] of Object.entries(writers)) {
+    for (const move of ["session", "snapshot"] as const) {
+      const points = await forEachAwait(
+        (race) => {
+          const f = fixture(race);
+          f.open();
+          f.readyActions();
+          const done = (writer === "name" ? f.mountChecklist() : Promise.resolve()).then(() => write(f));
+          return { f, done };
+        },
+        ({ f }) => {
+          if (move === "session") f.session.next(undefined);
+          else f.appStore.snapshot.value = snapshot();
+        },
+        async ({ f, done }) => {
+          assert.equal(await done, MOVED, `${writer} ${move}`);
+          assert.deepEqual(f.writes, [], `${writer} ${move}`);
+        },
+      );
+      assert.equal(points, 1, `${writer} ${move}`);
+    }
+  }
+});
+
+test("Get started writes nothing once the page, the account or the repositories moved at any await", async () => {
+  for (const change of ["content", "account", "repositories"] as const) {
+    const points = await forEachAwait(
+      (race) => {
+        const f = fixture(race);
+        return { f, done: f.setup.showGetStarted() };
+      },
+      ({ f }) => {
+        if (change === "content") f.newContent();
+        else if (change === "account") f.info({ user: { login: "other" } as SessionInfo["user"] });
+        else f.repositories([repository(1)]);
+      },
+      ({ f }) => {
+        assert.equal(f.content().children.length, 0, change);
+        assert.deepEqual(f.statuses, [], change);
+        assert.equal(f.setup.waitingForRepositories, false, change);
+      },
+    );
+    assert.equal(points, 1, change);
   }
 });
 
@@ -343,19 +419,17 @@ test("the checklist reads the drafted home page, the commit and the site name, a
   const f = fixture();
   f.open(repository(1, "my-site"));
   f.readyActions();
-  f.drafts.set(NATIVE_HOME_PAGE, { path: NATIVE_HOME_PAGE, baseSha: null, deleted: false } as SavedDraft);
+  f.drafts.set(NATIVE_HOME_PAGE, { account: "lex", repoId: 1, repo: "lex/my-site", branch: "main", version: 1, path: NATIVE_HOME_PAGE, baseSha: null, original: "", content: "<h1>Home</h1>", updatedAt: 0 } satisfies SavedDraft);
   f.sources.set(NATIVE_CONFIG_PATH, JSON.stringify({ site: { name: "Bakery" } }));
-  f.setup.setupController.start(1);
-  f.setup.setupController.refresh();
-  await flush();
+  const checklist = await f.mountChecklist();
   const update = f.checklist.updates.at(-1)!;
   assert.equal(update.siteName, "Bakery");
   assert.equal(update.defaultName, siteNameFromRepository("my-site"));
   assert.deepEqual(update.progress, setupProgress({ homePage: true, committed: true, homeUnsaved: true, siteName: "Bakery", defaultName: siteNameFromRepository("my-site"), nameConfirmed: false, agent: false }));
-  assert.equal(await f.checklist.options!.saveName("New name"), undefined);
+  assert.equal(await checklist.saveName("New name"), undefined);
   assert.deepEqual(f.writes, [["settings", { name: "New name" }]]);
   // Start your site is not on show: a home page is there already.
-  f.checklist.options!.start();
+  checklist.start();
   assert.deepEqual(f.calls, ["refuse:This repository has a home page already."]);
   f.setup.setupController.dispose();
 });
@@ -376,8 +450,10 @@ test("Start your site copies the setup prompt for a coding agent", async () => {
 test("the setup module keeps the lazy modules as type-only imports", () => {
   const source = readFileSync(new URL("../src/setup-host.ts", import.meta.url), "utf8");
   for (const lazy of ["./components/setup-wizard", "./components/get-started", "./components/start-site", "./components/setup-checklist", "./setup-actions", "./agent-prompts", "./onboarding-copy"]) {
-    const imports = source.split("\n").filter((line) => line.startsWith("import") && line.includes(`"${lazy}"`));
-    for (const line of imports) assert.match(line, /^import type /, line);
-    assert.doesNotMatch(source, new RegExp(`await import\\("${lazy}"\\)`));
+    const path = lazy.replaceAll(".", "\\.").replaceAll("/", "\\/");
+    // Any import statement, one line or several, from the lazy module that is not `import type`.
+    assert.doesNotMatch(source, new RegExp(`^import\\s+(?!type\\b)[^;]*from "${path}"`, "m"), lazy);
+    // A dynamic import of it (a type position, `typeof import(…)`, is allowed).
+    assert.doesNotMatch(source, new RegExp(`(?<!typeof )import\\("${path}"\\)`), lazy);
   }
 });
