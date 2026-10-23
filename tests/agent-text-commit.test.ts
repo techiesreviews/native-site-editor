@@ -549,11 +549,12 @@ test("a text write elsewhere refuses when the file there changed since the agent
   assert.equal(await f.records.receipt(f.scope, "operation", "grant"), undefined);
 });
 
-test("a command read from the branch shown is left to the editor; other commands elsewhere refuse", async t => {
+test("a command read from the branch shown is left to the editor; a page or file command elsewhere holding no workspace refuses", async t => {
   const f = await elsewhere(t);
   assert.equal(await f.finish(f.command, () => f.scope), undefined);
   assert.equal(f.store.get(f.scope, "index.html"), undefined);
-  await assert.rejects(f.finish({ ...f.command, operation: "move_file", args: { to: "moved.html" } }), /open main again/);
+  // Without its workspace held as it arrived (siteCommandPins) there is no background site to run it in (ticket 34).
+  await assert.rejects(f.finish({ ...f.command, operation: "move_file", args: { to: "moved.html" } }), /needs its page on screen\. Nothing was changed/);
   assert.equal(await f.records.receipt(f.scope, "operation", "grant"), undefined);
 });
 

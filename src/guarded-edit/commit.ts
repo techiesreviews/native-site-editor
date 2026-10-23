@@ -16,12 +16,14 @@
 // the open page with no refresh; anything else plans its drafts with
 // planNativeStructuralDrafts and reopens the page after. A step whose page is no
 // longer shown (`elsewhere`, ticket 23) plans its drafts the second way and
-// stops once they are written: no Undo step, nothing opened.
+// stops once they are written: nothing opened, and its Undo step parked for
+// its own page (`park`, src/guarded-edit/parked.ts, ticket 34).
 
 import { GITHUB_CONFIG_REFUSED, splitProtectedEdits, touchesGithubConfig } from "../../shared/protected-paths";
 import { prepareNativeTextHistory } from "../page-builder/native-operation-history";
 import { planNativeStructuralDrafts } from "../page-builder/native-structural-history";
 import { holdUploadDrafts } from "../uploads";
+import { parkedStep } from "./parked";
 import type { AgentTextCommit } from "../editor-workspace";
 import type { SavedDraft } from "../drafts";
 import type { MovableFile } from "../file-changes";
@@ -300,9 +302,13 @@ export function createCommit(ws: EditorWorkspace & { agentText?(): AgentTextComm
     if (away && !op.elsewhere!()) { receipt.dispose(); releaseUploads(); release(); return durable ? recover() : COMMIT_CHANGED; }
     if (!(agent ? agent.publish(after, () => receipt.apply()) : receipt.apply())) { const error = receipt?.error() ?? store.error ?? COMMIT_CHANGED; receipt?.dispose(); releaseUploads(); release(); return durable ? recover() : error; }
     if (away) {
-      // Its page is not shown: the drafts are its change there, with no Undo step to hold them, and
-      // nothing is said (ticket 27, Lex: no toasts; the Pages tree marks the page unsaved).
+      // Its page is not shown: the drafts are its change there and nothing is said (ticket 27, Lex: no
+      // toasts; the Pages tree marks the page unsaved). Its Undo waits for its own page (ticket 34): the
+      // page it opens, or where its page went, unless the step deleted it (Restore brings that back).
       unrecorded(); unrecorded = undefined;
+      const moved = new Map(moves.map(move => [move.from, move.to]));
+      const page = op.open ?? (anchor === undefined ? undefined : moved.get(anchor) ?? (deletes.includes(anchor) ? undefined : anchor));
+      if (page !== undefined) ws.park?.(parkedStep(scope, page, { before, after }, done, op.undone, anchor === undefined || deletes.includes(anchor) ? undefined : anchor));
       op.recorded(); ws.afterFileChanges();
       return undefined;
     }
