@@ -129,7 +129,7 @@ test("all 32 combinations independently gate routes before DO work, retain grant
         if (!control.watch) {
           assert.equal(commands.at(-1)!.waitMs, 0);
           assert.equal(h.counters.waitedMs, 0);
-          assert.equal(result.hint, `${WATCH_PAUSED} Do not call wait_for_requests again on your own: tell the user you are ready.`);
+          assert.equal(result.hint, `${WATCH_PAUSED} Stop the watchdog: do not call wait_for_requests again on your own; tell the user you are ready.`);
         } else {
           assert.equal(commands.at(-1)!.waitMs, 25_000);
           assert.equal(h.counters.waitedMs, 24_000);

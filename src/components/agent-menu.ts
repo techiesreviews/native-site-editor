@@ -90,8 +90,8 @@ export function createAgentMenu(options: {
 }) {
   const tabId = `tab-${crypto.randomUUID()}`;
   let hub: HubState = { grants: [] };
-  let token: string | undefined,
-    tokenId: string | undefined;
+  /** The token this tab made and copied; the hub's grants tell whether an agent used it. */
+  let token: string | undefined;
   let disposed = false,
     changing = false,
     remote = false,
@@ -254,6 +254,7 @@ export function createAgentMenu(options: {
   let confirmed: { label: string; until: number; offer: string } | undefined;
   /** The retry time a repaint is set for. */
   let repaintAt = 0;
+  let repaintTimer: ReturnType<typeof setTimeout> | undefined, confirmTimer: ReturnType<typeof setTimeout> | undefined;
 
   /** `at` fences a request to the activation that started it. */
   async function api(action: string, body?: unknown, at?: number) {
@@ -335,7 +336,8 @@ export function createAgentMenu(options: {
   };
   const usedGrants = () => liveGrants().filter((grant) => grant.via === "oauth" || grant.usedAt);
   /** The token this tab made, while no agent has used it yet. */
-  const waiting = () => Boolean(token && tokenId && liveGrants().some((grant) => grant.id === tokenId && !grant.usedAt));
+  /** A token no agent has used yet: this tab's, or one another tab of this browser just copied. */
+  const waiting = () => liveGrants().some((grant) => grant.via === "token" && !grant.usedAt);
   /** The tab's connection state, on the dot (`data-state`). */
   function state() {
     if (!remote) return options.repository() ? "off" : "closed";
@@ -451,7 +453,8 @@ export function createAgentMenu(options: {
     // Pressable again once the retry time passes.
     if (retryAt > Date.now() && retryAt !== repaintAt) {
       repaintAt = retryAt;
-      setTimeout(() => { if (!disposed) paint(); }, retryAt - Date.now());
+      clearTimeout(repaintTimer);
+      repaintTimer = setTimeout(() => { if (!disposed) paint(); }, retryAt - Date.now());
     }
     // Until the moment passes or the state moves on (an agent connected meanwhile).
     const shown = confirmed && confirmed.until > Date.now() && confirmed.offer === offered ? confirmed.label : undefined;
@@ -468,7 +471,8 @@ export function createAgentMenu(options: {
   function confirmOnButton(label: string) {
     const shown = (confirmed = { label, until: Date.now() + CONFIRM_MS, offer: offer() });
     paint();
-    setTimeout(() => {
+    clearTimeout(confirmTimer);
+    confirmTimer = setTimeout(() => {
       if (confirmed !== shown || disposed) return;
       confirmed = undefined;
       paint();
@@ -522,7 +526,9 @@ export function createAgentMenu(options: {
   async function act() {
     const current = state(), offered = offer(current);
     if (offered === "disconnect") await revoke();
-    else if (offered === "wait") await copyPrompt();
+    // Wait for MCP copies this tab's prompt again; a tab without it (another tab copied it, or
+    // a reload) copies a prompt of its own, leaving the other token alone.
+    else if (offered === "wait") await (token ? copyPrompt() : start());
     else if (current === "idle") await start();
     else {
       // Off, or a problem (paused, lost, another site shown): turn on again for the open site.
@@ -595,11 +601,8 @@ export function createAgentMenu(options: {
     changing = true;
     paint();
     try {
-      // Tokens made earlier that no agent used cannot be copied again.
-      for (const grant of liveGrants()) {
-        if (grant.via === "token" && !grant.usedAt) await api("revoke", { id: grant.id }).catch(() => undefined);
-        if (!live(at)) return;
-      }
+      // Unused tokens stay: another tab of this browser may have just copied one. Disconnect MCP
+      // revokes them all; unused ones end with the sign-in at the latest.
       const result = await api("connect", { repo: repo.fullName, repoId: repo.id, branch: repo.branch });
       if (disposed) return;
       // The tab moved to another repository or branch meanwhile: that token is pinned to the old one.
@@ -609,7 +612,6 @@ export function createAgentMenu(options: {
         return;
       }
       token = result.token;
-      tokenId = result.id;
       changing = false;
       await readConnections();
       await copyPrompt();
@@ -627,9 +629,11 @@ export function createAgentMenu(options: {
     changing = true;
     paint();
     try {
-      // Every agent on this site's connections, the shared token's included.
-      for (const grant of liveGrants()) await api("revoke", { id: grant.id });
-      token = tokenId = undefined;
+      // Every agent on this site's connections, the shared token's and ones this tab has not
+      // read yet included (the server lists them).
+      const shown = pinned ?? options.repository();
+      if (shown) await api("revoke", { all: true, repoId: shown.id, branch: shown.branch });
+      token = undefined;
       changing = false;
       turnOff(true);
     } catch { /* Still connected: the button stays Disconnect MCP. */ } finally {
@@ -749,8 +753,11 @@ export function createAgentMenu(options: {
       if (state() === "waiting" && token) {
         goal = task;
         await copyPrompt();
-      } else if (!remote) await turnOn(task);
-      else await start(task);
+      } else if (!remote) {
+        await turnOn(task);
+        // Another tab's token waits: this tab makes a prompt of its own.
+        if (!token && offer() === "wait") await start(task);
+      } else await start(task);
       return Boolean(token);
     },
     /** Whether an agent is connected now. */
@@ -822,13 +829,15 @@ export function createAgentMenu(options: {
     },
     destroy() {
       disposed = true;
+      clearTimeout(repaintTimer);
+      clearTimeout(confirmTimer);
       flyout.destroy();
       turnOff();
       window.removeEventListener("storage", onStorage);
       document.removeEventListener("visibilitychange", reread);
       channel?.close();
       unsubscribeStorage();
-      token = tokenId = undefined;
+      token = undefined;
     },
   };
 }

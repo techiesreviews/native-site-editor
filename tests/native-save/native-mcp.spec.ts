@@ -380,7 +380,7 @@ test("an agent measures elements as the preview renders them: box, computed styl
   }
 });
 
-test("Disconnect MCP revokes the agent's token, and a new Connect to MCP drops a token no agent used", { tag: "@smoke" }, async ({ page, baseURL }) => {
+test("Disconnect MCP revokes the agent's token; after a reload Wait for MCP copies a new prompt and Disconnect MCP ends the unused token too", { tag: "@smoke" }, async ({ page, baseURL }) => {
   await open(page, baseURL);
   const client = await connectAgent(page, baseURL);
   try {
@@ -394,18 +394,30 @@ test("Disconnect MCP revokes the agent's token, and a new Connect to MCP drops a
   // A new token: the first one's prompt is still on the clipboard.
   const { token } = await copyConnectionPrompt(page);
   await expect(page.getByRole("button", { name: "Wait for MCP", exact: true })).toBeVisible();
-  // A reload offers Wait for MCP no more (this tab's token is gone with it); Connect to MCP makes a
-  // new token and drops the unused one.
+  // After a reload the tab no longer has that token, but its agent may still connect: Wait for MCP
+  // stays, and its press copies a new prompt, leaving the first token alone.
   await page.reload();
   await open(page, baseURL);
   await page.locator(".repository-menu__trigger").click();
-  await page.getByRole("button", { name: "Connect to MCP", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Wait for MCP", exact: true })).toBeVisible();
-  const response = await page.request.post(`${baseURL}/mcp`, {
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
+  const fresh = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST");
+  await page.getByRole("button", { name: "Wait for MCP", exact: true }).click();
+  const { token: next } = await (await fresh).json() as { token: string };
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain(`Bearer ${next}`);
+  const list = (each: string) => page.request.post(`${baseURL}/mcp`, {
+    headers: { Authorization: `Bearer ${each}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
     data: { jsonrpc: "2.0", id: 1, method: "tools/list" },
   });
-  expect(response.status()).toBe(401);
+  expect((await list(token)).status()).toBe(200);
+  // An agent on the new prompt, then Disconnect MCP: every token of the site ends, the unused one too.
+  const agent = new Client({ name: "playwright-agent", version: "1.0.0" });
+  await agent.connect(new StreamableHTTPClientTransport(new URL(`${baseURL}/mcp`), { requestInit: { headers: { Authorization: `Bearer ${next}` } } }));
+  try {
+    await waitForConnection(page);
+    await page.getByRole("button", { name: "Disconnect MCP", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Connect to MCP", exact: true })).toBeVisible();
+  } finally { await agent.close().catch(() => undefined); }
+  expect((await list(token)).status()).toBe(401);
+  expect((await list(next)).status()).toBe(401);
 });
 
 // The clipboard is shared by the tests of a worker: the prompt the tab copies once it has shared

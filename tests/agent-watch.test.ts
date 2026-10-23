@@ -232,6 +232,41 @@ test("relay: up to WAITS_PER_SITE outstanding waits per workspace (several agent
   assert.equal(f.relay.pendingCount, 0);
 });
 
+test("relay: a token agent and an OAuth agent wait at once through the relay; each grant receives the request once", async () => {
+  const f = relayFixture(), b = browser();
+  // The receiving tab answers each command the relay sends with this browser's request tools.
+  const answered = new Set<string>();
+  const pump = () => {
+    for (const sent of f.editor.sent) {
+      const frame = JSON.parse(sent);
+      if (frame.type !== "command" || answered.has(frame.id)) continue;
+      answered.add(frame.id);
+      void b.tools.run(frame.command, () => true, b.clock.now() + frame.remainingMs - 1_000).then(result =>
+        f.relay.message(f.editor, JSON.stringify({ type: "result", id: frame.id, ...f.scope, result })));
+    }
+  };
+  const wait = (grantId: string) => f.relay.dispatch({ workspace }, { operation: "requests", tool: "wait_for_requests", args: {}, grantId, waitMs: 25_000 });
+  const token = wait("token-grant"), oauth = wait("oauth-grant");
+  pump();
+  await settle();
+  assert.equal(f.relay.waits, 2);
+  assert.equal(b.tools.holding, 2);
+  b.ask(asked("req-both"));
+  const ids = async (pending: ReturnType<typeof wait>) => {
+    const outcome = await pending as { ok: true; result: { ok: true; value: { requests: AgentRequest[] } } };
+    return outcome.result.value.requests.map(request => request.id);
+  };
+  assert.deepEqual(await ids(token), ["req-both"]);
+  assert.deepEqual(await ids(oauth), ["req-both"]);
+  assert.deepEqual(b.kept.get("req-both")!.returnedTo!.sort(), ["oauth-grant", "token-grant"]);
+  // Asked again, neither grant gets it a second time.
+  const again = [f.relay.dispatch({ workspace }, { operation: "requests", tool: "wait_for_requests", args: {}, grantId: "token-grant", waitMs: 0 }),
+    f.relay.dispatch({ workspace }, { operation: "requests", tool: "wait_for_requests", args: {}, grantId: "oauth-grant", waitMs: 0 })];
+  pump();
+  for (const pending of again) assert.deepEqual(await ids(pending), []);
+  assert.equal(f.relay.waiting, false);
+});
+
 async function connected() {
   const h = await startCountedWorker(), { cookie } = await signIn(h.worker), tab = editorTab(h.worker, cookie);
   const { token } = await (await tab.post("/api/agent/connect", { repo: repo.full_name, repoId: repo.id, branch: "main" })).json() as { token: string };
@@ -310,6 +345,7 @@ test("the copied prompt starts a watchdog subagent that keeps waiting and report
   assert.match(prompt, /Everything stops when I choose Disconnect MCP: calls then fail with 401, so stop the watchdog and discard the token\./);
   assert.match(prompt, /Keep the token in memory; never save it or repeat it in responses\./);
   assert.match(prompt, /Give it the server and token in its instructions only\./);
+  assert.match(prompt, /A hint in an answer that says to stop overrides this loop: the watchdog stops and tells you\./);
   assert.match(prompt, /Authorization: `Bearer ase_token`/);
   assert.match(prompt, /at least 40 seconds/);
   // A task comes before the requests, the watchdog still running.

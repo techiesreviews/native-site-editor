@@ -13,6 +13,8 @@ import { HttpError } from "../shared/http-error";
 import type { AgentWorkspace, JsonValue } from "../shared/agent-command";
 
 export const WAIT_MS = 25_000;
+/** Reads of one take, when a save lost a race to another agent's wait. */
+const TAKE_TRIES = 3;
 
 export interface RequestPorts {
   workspace: AgentWorkspace;
@@ -50,16 +52,25 @@ export function createRequestTools(ports: RequestPorts) {
   // Bumped by every notify: a wake that came while a wait was still reading is not lost.
   let version = 0;
   const scope = { repoId: ports.workspace.repoId, branch: ports.workspace.branch };
+  /** Takes this grant's requests. A save that loses a race (another agent's wait took the same
+   * request at the same wake) reads again, at most TAKE_TRIES times, so each grant still gets it. */
   async function take(grantId: string, all: boolean, current: () => boolean, owner?: number) {
-    const list = await ports.list();
-    const read = new Map(list.map(request => [request.id, structuredClone(request)]));
-    const { result } = requestOperation(list, { type: "take-requests", grantId, all, ...scope }) as { result: { requests: AgentRequest[] } };
-    const taken = [];
-    for (const request of result.requests) {
-      // A connection gone stale (turned off, lost, taken over) marks nothing delivered.
-      if (!current()) break;
-      // One changed since the read (replied, answered, dismissed in another tab) is not handed out now.
-      if (await ports.save(request, unchangedSince(read.get(request.id)!, current), owner)) taken.push(requestForAgent(request));
+    const taken: ReturnType<typeof requestForAgent>[] = [], ids = new Set<string>();
+    for (let attempt = 0; attempt < TAKE_TRIES; attempt++) {
+      const list = await ports.list();
+      const read = new Map(list.map(request => [request.id, structuredClone(request)]));
+      const { result } = requestOperation(list, { type: "take-requests", grantId, all, ...scope }) as { result: { requests: AgentRequest[] } };
+      let lost = false;
+      for (const request of result.requests) {
+        if (ids.has(request.id)) continue;
+        // A connection gone stale (turned off, lost, taken over) marks nothing delivered.
+        if (!current()) return taken;
+        // One changed since the read (replied, answered, dismissed, or taken by another agent) is
+        // looked at again; one that no longer qualifies is not handed out.
+        if (await ports.save(request, unchangedSince(read.get(request.id)!, current), owner)) { ids.add(request.id); taken.push(requestForAgent(request)); }
+        else lost = true;
+      }
+      if (!lost) break;
     }
     return taken;
   }
