@@ -62,7 +62,7 @@ export function workspaceKeys(scope: WorkspaceScope | undefined): WorkspaceKeys 
   return id === undefined ? undefined : { drafts: `drafts:${id}`, setup: `setup:${id}`, media: `media:${id}` };
 }
 
-/** A draft scope (src/drafts.ts) or a remembered workspace as a GitHub scope; `same` reads the id, not the name (left out, it stays empty). */
+/** A draft scope (src/drafts.ts) or a remembered workspace as a GitHub scope. `repo` may be left out (empty): `same` compares the repository id, not its name. */
 export function githubScope(scope: { account: string; repoId: number; repo?: string; branch: string }): WorkspaceScope {
   return { kind: "github", account: scope.account, repoId: scope.repoId, repo: scope.repo ?? "", branch: scope.branch };
 }
