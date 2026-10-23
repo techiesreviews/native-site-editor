@@ -28,8 +28,9 @@ Connections last at most the eight-hour editor session, with no refresh tokens.
 
 For clients accepting headers, choose Connect to MCP in the editor's project
 selector. It copies a connection prompt with the server URL and Authorization
-Bearer header. Waiting for connection changes to Disconnect MCP when an agent
-uses it. The unused connection can be cancelled. The token is a password for the
+Bearer header. Wait for MCP changes to Disconnect MCP once an agent uses it;
+Disconnect MCP ends every connection of the site, unused ones included. An
+unused token older than two minutes is revoked when the menu makes a new one. The token is a password for the
 session: keep it out of repositories, logs and URLs. Disconnect MCP revokes this workspace’s
 connections, OAuth included. Signing out or session expiry also revokes.
 

@@ -249,3 +249,93 @@ test("a refused copy: the label never reads Copied and stays Wait for MCP, with 
   expect(await page.evaluate(() => (window as Window & { agentLabels?: string[] }).agentLabels)).not.toContain("Copied");
   await onlyLabel(page, "Wait for MCP");
 });
+
+test("unused tokens never fill the site's five connections: five reloads, each pressing Wait for MCP, still copy a working prompt", async ({ page, context, baseURL }) => {
+  test.setTimeout(180_000);
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await open(page, baseURL);
+  const connect = () => page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST" && response.ok());
+  const list = (token: string) => page.request.post(`${baseURL}/mcp`, {
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
+    data: { jsonrpc: "2.0", id: 1, method: "tools/list" },
+  });
+  await page.locator(".repository-menu__trigger").click();
+  let made = connect();
+  await page.locator(".agent-menu__action").click();
+  let token = (await (await made).json() as { token: string }).token;
+  for (let round = 0; round < 5; round++) {
+    await page.reload();
+    await open(page, baseURL);
+    await page.locator(".repository-menu__trigger").click();
+    const action = page.locator(".agent-menu__action");
+    await expect(action).toHaveText("Wait for MCP", { timeout: 15_000 });
+    made = connect();
+    await action.click();
+    token = (await (await made).json() as { token: string }).token;
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText()), { message: `round ${round}` }).toContain(`Bearer ${token}`);
+    await expect(action).toHaveText("Wait for MCP");
+    const { grants } = await (await page.request.get(`${baseURL}/api/agent/connections`)).json() as { grants: unknown[] };
+    expect(grants.length, `round ${round}`).toBeLessThanOrEqual(5);
+  }
+  expect((await list(token)).status(), "the last prompt works").toBe(200);
+});
+
+test("while the site owner pauses agents the menu offers Connect to MCP; once unpaused it comes back to Disconnect MCP, which ends the agent", async ({ page, context, baseURL }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await open(page, baseURL);
+  await page.locator(".repository-menu__trigger").click();
+  const action = page.locator(".agent-menu__action"), menu = page.locator(".agent-menu");
+  const made = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST");
+  await action.click();
+  const { token } = await (await made).json() as { token: string };
+  const { client, call } = await agent(baseURL, token, "paused-agent");
+  try {
+    await call("get_site");
+    await expect.poll(async () => { await refresh(page); return action.textContent(); }, { timeout: 15_000 }).toBe("Disconnect MCP");
+    expect((await page.request.post(`${baseURL}/__demo/agent-controls`, { data: { relay: false } })).status()).toBe(204);
+    // A reload checks once and finds agents paused: the dot shows it, the button offers Connect to MCP.
+    await page.reload();
+    await open(page, baseURL);
+    await page.locator(".repository-menu__trigger").click();
+    await expect(menu).toHaveAttribute("data-state", "paused", { timeout: 15_000 });
+    await onlyLabel(page, "Connect to MCP");
+    // The permission itself still holds (CONTEXT.md "Agent connection"): unpaused, the agent works again.
+    expect((await page.request.post(`${baseURL}/__demo/agent-controls`, { data: { relay: true } })).status()).toBe(204);
+    await action.click();
+    await expect(action).toHaveText("Disconnect MCP", { timeout: 15_000 });
+    await action.click();
+    await expect(action).toHaveText("Connect to MCP");
+    await expect(client.callTool({ name: "get_site", arguments: {} })).rejects.toThrow();
+  } finally {
+    await page.request.post(`${baseURL}/__demo/agent-controls`, { data: { relay: true } });
+    await client.close().catch(() => undefined);
+  }
+});
+
+test("another tab receives and nothing is connected: Connect to MCP in this tab makes and copies a prompt", async ({ page, context, baseURL }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await open(page, baseURL);
+  await page.locator(".repository-menu__trigger").click();
+  await page.locator(".agent-menu__action").click();
+  await expect(page.locator(".agent-menu__action")).toHaveText("Wait for MCP", { timeout: 15_000 });
+  const second = await context.newPage();
+  try {
+    // The second tab's check goes unanswered: agents stay on with no connections known, another tab receiving.
+    let first = true;
+    await second.route("**/api/agent/connections", route => {
+      if (!first) return route.continue();
+      first = false;
+      return route.abort();
+    });
+    await open(second, baseURL);
+    await second.locator(".repository-menu__trigger").click();
+    const action = second.locator(".agent-menu__action");
+    await expect(second.locator(".agent-menu")).toHaveAttribute("data-state", "other-owner", { timeout: 30_000 });
+    await expect(action).toHaveText("Connect to MCP");
+    const made = second.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST");
+    await action.click();
+    const { token } = await (await made).json() as { token: string };
+    await expect(action).toHaveText("Copied");
+    await expect.poll(() => second.evaluate(() => navigator.clipboard.readText())).toContain(`Bearer ${token}`);
+  } finally { await second.close(); }
+});
