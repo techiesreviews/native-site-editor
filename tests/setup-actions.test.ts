@@ -65,9 +65,13 @@ test("a new load while the Starter site is fetched writes nothing and says the r
     begin: () => session.begin(), appStore, draftScope: () => ({ account: "user", repoId: 1, repo: "user/my-site", branch: "main" }),
     guardedEdits: createGuardedEdits(createMemoryWorkspace({ branch: {} }).workspace),
     pathNow: () => undefined, repositoryIndex: { find: async () => undefined },
-    api: () => { asked(); return new Promise(resolve => { fetched = resolve; }); }, readFile: async () => "",
+    api: <T>() => { asked(); return new Promise<T>(resolve => { fetched = resolve as (value: unknown) => void; }); }, readFile: async () => "",
     draftStore: () => ({ get: () => undefined, save: (draft: { path: string; content: string }) => { drafts.set(draft.path, draft.content); }, error: null }),
     setupController: { start() {} }, loadSnapshot: async () => {}, announce() {}, errorMessage(error: unknown) { throw error; },
+  } satisfies Pick<Parameters<typeof createSetupActions>[0], "begin" | "appStore" | "draftScope" | "guardedEdits" | "pathNow" | "api" | "readFile" | "loadSnapshot" | "announce" | "errorMessage"> & {
+    repositoryIndex: { find: (...args: unknown[]) => Promise<{ sha: string } | undefined> };
+    draftStore: () => { get(): undefined; save(draft: { path: string; content: string }): void; error: null };
+    setupController: { start(): void };
   };
   try {
     const module = await bundled;

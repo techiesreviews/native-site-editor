@@ -32,6 +32,7 @@ export interface HistoryPorts {
 export function createHistoryController(ports: HistoryPorts) {
   let history: ReturnType<typeof createCommitHistory> | undefined;
   let scope: "file" | "site" = "file";
+  // The panel's own openings (not the workspace session's loads): a closed or newer one ends the older.
   let openings = 0;
   // Closing invalidates presentation, while an accepted restore keeps its file ownership.
   // Replacing the mounted panel or destroying the controller ends both lifetimes.

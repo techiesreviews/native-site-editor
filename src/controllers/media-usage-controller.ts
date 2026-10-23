@@ -26,9 +26,9 @@ export function createMediaUsageController(ports: MediaUsageCheckPorts) {
     records = value; ports.changed(value);
     for (const listener of listeners) listener(value);
   };
-  async function check(run: number) {
+  async function check(started: number) {
     const key = ports.key();
-    const live = () => !disposed && run === checks && key === ports.key();
+    const live = () => !disposed && started === checks && key === ports.key();
     if (!key) { publish(undefined); return; }
     // Old records stay on show while the same site is checked again; another site starts empty.
     if (key !== lastKey) { lastKey = key; if (records) publish(undefined); }
