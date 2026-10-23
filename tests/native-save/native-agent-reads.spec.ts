@@ -42,7 +42,7 @@ test("all migrated MCP reads and the site resource answer from browser drafts; a
   expect(await (await page.request.get(`${baseURL}/__demo/file?path=index.html`)).text()).toBe(original);
   await page.locator(".repository-menu__trigger").click();
   const made = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST");
-  await page.getByRole("button", { name: "Connect with MCP", exact: true }).click();
+  await page.getByRole("button", { name: "Connect to MCP", exact: true }).click();
   const answer = await made;
   expect(answer.ok()).toBe(true);
   const { token } = await answer.json() as { token: string };

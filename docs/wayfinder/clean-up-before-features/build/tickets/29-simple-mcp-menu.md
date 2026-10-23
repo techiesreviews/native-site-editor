@@ -1,8 +1,8 @@
 ---
 title: "The MCP menu: Connect, Wait, Disconnect, and nothing else"
 type: task (AFK)
-status: open
-assignee: lead-29 (this session)
+status: closed
+assignee: lead-29
 builder: claude
 blocked_by: [98-agent-connection-stays]
 ---
@@ -41,3 +41,22 @@ Read the request's "Decided" list; it is the spec. In short:
 ## Kit commands and evidence
 
 Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runner.md)). `kit bg slice-29 -- scripts/agents/kit slice --ticket <this ticket> --builder claude-opus-5-5`.
+
+## Done (2026-10-23)
+
+### Behaviour
+
+- **One button and its dot** (`src/components/agent-menu.ts`, `agent-menu.css`): **Connect to MCP** (off, idle, another site shown, or any problem) copies the prompt and its label reads **Copied** for 2 s (`CONFIRM_MS`), then **Wait for MCP** (pulsing amber dot), whose press copies the same prompt again; once an agent uses the connection, **Disconnect MCP** (green dot) revokes every connection of the site, the shared token included. The dot alone shows in-between states (grey pulse: connecting, reconnecting, taking over) and problems (red: paused, quota, unavailable, takeover failed). In a problem state, Connect to MCP turns agents on again for the open site; with another site shown it makes that site's own connection (the first site stays remembered). A tab where another tab receives shows Disconnect MCP or Wait for MCP as that tab would.
+- **Removed**: the hint line and every tab, error and status text, the Copy again, Cancel, Retry, Take over, Try again, Move agents here, Turn on again and Connect another agent links, the Watch row (Watch for requests, Stop watching, Watch again, the 10-minute countdown and its texts), the button tooltips, and the menu's notices (`say()`). The flyout beside Disconnect MCP lists the requests still with an agent or the user (an agent's question replaces its text), only when there are some: no heading, no summary line, no "Nothing waiting". Download unsaved changes is the one other control, shown only while this browser cannot keep agent edits; a finished download lets agents try again (a browser still full stops them again before any write).
+- **Watching is automatic** (`src/agent-watch.ts`): the Watch record (`agentWatch`, `WATCH_MS`, `WATCH_WAITS`) is gone; the receiving tab holds every wait up to 25 s (the relay's budget) until a request arrives; `waitMs` 0 (the site owner's switch) answers at once. `worker/mcp.ts`: an empty wait asks the agent to call again until Disconnect MCP; the closed-editor, busy and lost answers ask it to wait a moment and call again; the `wait_for_requests` description, the `watch_editor` prompt and the conventions resource (`worker/site-conventions.ts`) say the same. `WatchReport` left `shared/agent-requests.ts`.
+- **Several agents on one connection**: the server already accepted several MCP clients on one token (each POST authenticates the token); the relay allowed only one held wait per site, which refused a second agent's watchdog. It now holds up to `WAITS_PER_SITE` (3) waits per site (`worker/agent-relay.ts`), leaving pending slots for edits; a request reaches exactly one of them.
+- **Prompt** (`connectionPrompt`, `src/agent-prompts.ts`): shorter; connect, `get_site`, start a "watchdog" subagent that keeps calling `wait_for_requests` and reports each request to the main thread, which makes the change and replies; everything stops at Disconnect MCP (calls fail with 401). Token rules kept (in memory only, never saved or repeated; given to the watchdog in its instructions only). A task (Build it with an agent) comes before the requests step.
+- The label reads **Connect to MCP** everywhere it is named (`src/onboarding-copy.ts`, setup checklist, spotlight CSS, worker messages). `CONTEXT.md` "Agent connection": automatic watching, Disconnect ends every agent, several agents per connection; the Take over sentence went.
+
+`grep` finds none of these in `src/`: "Connect with MCP", "Waiting for connection…", "Copy again", "Copy the prompt again", "Connect another agent", "Take over", "Move agents here", "Turn on again", "Reconnecting to remote agents…", "Taking over agent changes…", "Another tab receives agent changes for this site.", "The receiving tab closed.", "Watch for requests", "Stop watching", "Watch again", "Watching for requests until", "Watch paused", "Watch is paused by the site owner.", "Nothing waiting", "agent working", "What agents wait on", "Your sign-in to the editor ended", "Remote agents are paused: the editor", "This browser can't keep a live connection for agents.", "Agent edits are stopped", "Agent edits are off", "Downloaded … file", "The download failed", the menu's "Clipboard access was denied…", "Show it and answer". (Agent-facing transport messages and other screens' own texts remain.)
+
+### Tests
+
+- New `tests/native-save/native-mcp-menu.spec.ts`: Connect to MCP (label reads Copied, no toast) → Wait for MCP (pulsing dot; a press copies the same prompt again) → an agent connects (Disconnect MCP, green dot) → a second agent joins the same token, both watchdogs hold a wait at once and one gets the request → Disconnect MCP ends both agents and the dot returns; a cut relay socket returns the button to Connect to MCP with no toast or text and a changed dot. Each state checks the menu shows only its label.
+- `tests/agent-watch.test.ts`: automatic holds (any number in a row, 25 s, the relay budget, release on notify), two agents on one connection, the relay's `WAITS_PER_SITE`, the usage harness without Watch, and the prompt's watchdog lines pinned.
+- Updated for the removed controls and texts: `agent-controls`, `agent-runtime-budget`, `mcp-runtime` unit tests; `native-agent-quiet` (automatic watching live test, owner pauses with no text), `native-agent-lifecycle` (automatic takeover instead of Take over; Connect to MCP for another site instead of Move agents here; the frozen-owner explicit takeover spec went with the button, its fence stays in `agent-transport.test.ts`), `native-agent-live`, `native-agent-recovery` (download only), `native-mcp`, and the label rename in the other MCP specs.

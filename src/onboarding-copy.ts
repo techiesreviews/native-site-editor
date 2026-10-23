@@ -9,12 +9,12 @@ export const AGENT_EXPLAINER = [
   "You can always disconnect.",
 ];
 
-/** Where the connection lives: the project menu (the tile at the top left), and its Connect with MCP entry. */
+/** Where the connection lives: the project menu (the tile at the top left), and its Connect to MCP entry. */
 export function agentWhere(): Node {
   const line = document.createDocumentFragment();
   line.append("Agents connect here, from the project menu. Open it and choose ");
   const strong = document.createElement("strong");
-  strong.textContent = "Connect with MCP";
+  strong.textContent = "Connect to MCP";
   line.append(strong, " to copy the setup for your agent.");
   return line;
 }

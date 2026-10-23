@@ -36,14 +36,14 @@ async function open(page: Page, baseURL: string | undefined) {
 
 const draft = storedDraft;
 
-// Connects an agent with the prompt "Connect with MCP" copies.
+// Connects an agent with the prompt "Connect to MCP" copies.
 async function connectAgent(page: Page, baseURL: string | undefined) {
   await page.locator(".repository-menu__trigger").click();
   const { url, token } = await copyConnectionPrompt(page);
-  await expect(page.getByRole("button", { name: "Waiting for connection…", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Wait for MCP", exact: true })).toBeVisible();
   await expect(page.locator(".agent-menu")).toHaveAttribute("data-state", "waiting");
-  // Waiting shows only its links: no explainer line and no Turn off.
-  await expect(page.locator(".agent-menu__hint")).toBeHidden();
+  // Waiting shows only its one button: no explainer line, no links and no Turn off.
+  await expect(page.locator(".agent-menu")).toHaveText("Wait for MCP", { useInnerText: true });
   await expect(page.getByRole("button", { name: "Turn off", exact: true })).toHaveCount(0);
   expect(url).toBe(`${baseURL}/mcp`);
   const client = new Client({ name: "playwright-agent", version: "1.0.0" });
@@ -52,7 +52,6 @@ async function connectAgent(page: Page, baseURL: string | undefined) {
   );
   await waitForConnection(page);
   await expect(page.getByRole("button", { name: "Disconnect MCP", exact: true })).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByRole("button", { name: "Disconnect MCP", exact: true })).toHaveAttribute("title", /playwright-agent connected/);
   await page.keyboard.press("Escape");
   return client;
 }
@@ -381,22 +380,27 @@ test("an agent measures elements as the preview renders them: box, computed styl
   }
 });
 
-test("Disconnect MCP revokes the agent's token, and Cancel drops a token no agent used", { tag: "@smoke" }, async ({ page, baseURL }) => {
+test("Disconnect MCP revokes the agent's token, and a new Connect to MCP drops a token no agent used", { tag: "@smoke" }, async ({ page, baseURL }) => {
   await open(page, baseURL);
   const client = await connectAgent(page, baseURL);
   try {
     await page.locator(".repository-menu__trigger").click();
     await page.getByRole("button", { name: "Disconnect MCP", exact: true }).click();
-    await expect(page.getByRole("button", { name: "Connect with MCP", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Connect to MCP", exact: true })).toBeVisible();
     await expect(client.callTool({ name: "get_site", arguments: {} })).rejects.toThrow();
   } finally {
     await client.close().catch(() => undefined);
   }
   // A new token: the first one's prompt is still on the clipboard.
   const { token } = await copyConnectionPrompt(page);
-  await expect(page.getByRole("button", { name: "Waiting for connection…", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Cancel", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Connect with MCP", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Wait for MCP", exact: true })).toBeVisible();
+  // A reload offers Wait for MCP no more (this tab's token is gone with it); Connect to MCP makes a
+  // new token and drops the unused one.
+  await page.reload();
+  await open(page, baseURL);
+  await page.locator(".repository-menu__trigger").click();
+  await page.getByRole("button", { name: "Connect to MCP", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Wait for MCP", exact: true })).toBeVisible();
   const response = await page.request.post(`${baseURL}/mcp`, {
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
     data: { jsonrpc: "2.0", id: 1, method: "tools/list" },
@@ -491,7 +495,6 @@ test("an MCP client connected by OAuth reaches the open editor tab",async ({ pag
     await expect.poll(async () => result(await client.callTool({ name: "get_site", arguments: {} })).editor?.openFile, { timeout: 15_000 }).toBe(indexPath);
     await page.locator(".repository-menu__trigger").click();
     await waitForConnection(page);
-    await expect(page.getByRole("button", { name: "Disconnect MCP", exact: true })).toHaveAttribute("title", /Playwright OAuth connected/);
     const opened = result(await client.callTool({ name: "open_page", arguments: { page: "/about/" } }));
     expect(opened.state).toBe("applied");
     await expect(page.locator("#current-page")).toHaveAttribute("data-path", "about/index.html");
@@ -885,13 +888,16 @@ test("Ask agent: an agent's question turns its pin orange, the user answers it o
     await expect(pin).toHaveAttribute("data-state", "seen");
     // Hovering Disconnect MCP says what the agent has: nothing asks the user yet.
     const disconnect = page.getByRole("button", { name: "Disconnect MCP", exact: true });
-    const waiting = page.getByRole("menu", { name: "What agents wait on" });
+    const waiting = page.getByRole("menu", { name: "Requests" });
     await page.locator(".repository-menu__trigger").click();
     await expect(disconnect.locator(".agent-menu__count")).toBeHidden();
     await disconnect.hover();
     await expect(waiting).toBeVisible();
     await expect(waiting.locator(".agent-menu__agents")).toHaveCount(0);
-    await expect(waiting.locator(".flyout__note")).toHaveText("1 request: agent working");
+    // The request with an agent: listed by itself, with no heading or summary line.
+    await expect(waiting.locator(".flyout__note")).toHaveCount(0);
+    await expect(waiting.getByRole("menuitem")).toHaveCount(1);
+    await expect(waiting.getByRole("menuitem").locator(".agent-menu__question-line")).toHaveText("Make this heading friendlier");
     await page.keyboard.press("Escape");
     await expect(waiting).toBeHidden();
 
@@ -1096,7 +1102,7 @@ test("Ask agent history stays in this browser: after a reload its pins show, cle
 
     // On again, the receiving tab reads the local dismissal: agents no longer get it.
     await page.locator(".repository-menu__trigger").click();
-    await page.getByRole("button", { name: "Connect with MCP", exact: true }).click();
+    await page.getByRole("button", { name: "Connect to MCP", exact: true }).click();
     await waitForConnection(page);
     await expect(page.getByRole("button", { name: "Disconnect MCP", exact: true })).toBeVisible({ timeout: 15_000 });
     await page.keyboard.press("Escape");

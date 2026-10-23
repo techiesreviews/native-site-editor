@@ -50,9 +50,9 @@ test("remote agents off: startup, the agent menu and idle visible or hidden tabs
     // Opening the menu mounts it, with remote agents off.
     await page.locator(".repository-menu__trigger").click();
     const action = page.locator(".agent-menu__action");
-    await expect(action).toHaveText("Connect with MCP");
+    await expect(action).toHaveText("Connect to MCP");
     await expect(page.locator(".agent-menu")).toHaveAttribute("data-state", "off");
-    await expect(page.locator(".agent-menu__hint")).toBeHidden();
+    await expect(page.locator(".agent-menu")).toHaveText("Connect to MCP", { useInnerText: true });
     await page.clock.runFor(65_000);
     await page.keyboard.press("Escape");
     expect(requests, "menu opening").toEqual([]);
@@ -137,7 +137,7 @@ test("an approval with another approval id or another repository or branch does 
   await page.clock.runFor(65_000);
   expect(calls).toBe(3);
   await page.locator(".repository-menu__trigger").click();
-  await expect(page.locator(".agent-menu__action")).toHaveText("Connect with MCP");
+  await expect(page.locator(".agent-menu__action")).toHaveText("Connect to MCP");
   await expect(page.locator(".agent-menu")).toHaveAttribute("data-state", "off");
 });
 
@@ -177,8 +177,8 @@ test("the exact approval enables its repository and branch even after a delayed 
   await expect.poll(async () => { await page.clock.runFor(1000); return page.locator(".agent-menu__action").textContent(); }).toBe("Disconnect MCP");
 });
 
-// Ticket 18: quiet waiting and explicit Watch over the fixture's real Worker, relay and socket.
-test("live: waits are quiet by default; Watch holds one wait until Ask agent, shows its deadline, never renews itself and ends without disconnecting", { tag: "@live" }, async ({ page, context, baseURL }) => {
+// Automatic watching (Lex, 2026-10-23) over the fixture's real Worker, relay and socket.
+test("live: watching is automatic: a wait is held until Ask agent, an empty one runs out and asks to wait again, and the menu has no Watch controls", { tag: "@live" }, async ({ page, context, baseURL }) => {
   const frames: { tool?: string; remainingMs?: number }[] = [];
   page.on("websocket", socket => {
     if (!socket.url().includes("/api/agent/relay?")) return;
@@ -193,7 +193,7 @@ test("live: waits are quiet by default; Watch holds one wait until Ask agent, sh
   await open(page, baseURL);
   await page.locator(".repository-menu__trigger").click();
   const made = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST");
-  await page.getByRole("button", { name: "Connect with MCP", exact: true }).click();
+  await page.getByRole("button", { name: "Connect to MCP", exact: true }).click();
   const { token } = await (await made).json() as { token: string };
   const client = new Client({ name: "watch-agent", version: "1.0.0" });
   await client.connect(new StreamableHTTPClientTransport(new URL(`${baseURL}/mcp`), { requestInit: { headers: { Authorization: `Bearer ${token}` } } }));
@@ -202,40 +202,25 @@ test("live: waits are quiet by default; Watch holds one wait until Ask agent, sh
     expect(response.isError, JSON.stringify(response)).toBeFalsy();
     return JSON.parse((response.content as { text: string }[])[0].text);
   };
-  const watchKey = 'native-site-editor:agent-watch:["native-demo-user",501,"main"]';
-  const record = () => page.evaluate(key => JSON.parse(localStorage.getItem(key) ?? "null"), watchKey);
   try {
     await expect.poll(() => page.locator(".agent-menu").getAttribute("data-state"), { timeout: 15_000 }).toMatch(/idle|waiting|connected/);
     const requests = agentRequests(page);
-    // Quiet default: an empty wait answers at once with no "call again", over one socket command.
-    const started = Date.now();
-    const quiet = await call("wait_for_requests");
-    expect(Date.now() - started).toBeLessThan(8_000);
-    expect(quiet.requests).toEqual([]);
-    expect(quiet.hint).toContain("Do not call wait_for_requests again on your own");
-    expect(frames.map(frame => frame.tool)).toEqual(["wait_for_requests"]);
-
-    // The agent is connected; the menu offers Watch, with no explainer lines and no Turn off.
-    const action = page.locator(".agent-menu__action");
-    await expect(action).toHaveText("Disconnect MCP");
-    const watchText = page.locator(".agent-menu__watch-text");
-    await expect(watchText).toBeHidden();
-    await expect(page.locator(".agent-menu__hint")).toBeHidden();
-    await expect(page.getByRole("button", { name: "Turn off", exact: true })).toHaveCount(0);
-    await page.getByRole("button", { name: "Watch for requests" }).click();
-    await expect(watchText).toContainText(/Watching for requests until .+ \((10:00|9:5\d) left, 25 waits left\)/);
-    const watch = await record();
-    expect(Object.keys(watch).sort()).toEqual(["startedAt", "until", "waits"]);
-    expect(watch.until - watch.startedAt).toBe(600_000);
-    await page.screenshot({ path: test.info().outputPath("watch-on.png") });
-
-    // Watch: the wait is held (no answer yet), until the user asks from the edit bar.
+    // The watchdog's first wait: held (no answer yet), until the user asks from the edit bar.
     let settled = false;
     const held = call("wait_for_requests").finally(() => { settled = true; });
-    await expect.poll(() => frames.length).toBe(2);
-    expect(frames[1].remainingMs).toBeGreaterThan(20_000);
-    await page.waitForTimeout(1_500); // fixed-wait: proving the wait stays unanswered (a negative) while Watch is on
-    expect(settled, "held while Watch is on").toBe(false);
+    await expect.poll(() => frames.length).toBe(1);
+    expect(frames[0]).toMatchObject({ tool: "wait_for_requests" });
+    expect(frames[0].remainingMs).toBeGreaterThan(20_000);
+    await page.waitForTimeout(1_500); // fixed-wait: proving the wait stays unanswered (a negative) while connected
+
+    expect(settled, "held while connected").toBe(false);
+    // Connected: one button, no Watch controls, no explainer lines and no Turn off.
+    const action = page.locator(".agent-menu__action");
+    await expect(action).toHaveText("Disconnect MCP");
+    await expect(page.locator(".agent-menu")).toHaveText("Disconnect MCP", { useInnerText: true });
+    await expect(page.locator(".agent-menu")).not.toHaveAttribute("data-watch");
+    await expect(page.getByRole("button", { name: /Watch|Stop watching|Turn off/ })).toHaveCount(0);
+    expect(await page.evaluate(() => Object.keys(localStorage).filter(key => key.includes("agent-watch")))).toEqual([]);
     await page.keyboard.press("Escape");
     await page.frameLocator(".native-preview-frame").locator(".hero h1").click();
     const bar = page.getByRole("toolbar", { name: "Edit bar" });
@@ -244,46 +229,29 @@ test("live: waits are quiet by default; Watch holds one wait until Ask agent, sh
     await page.keyboard.press("Enter");
     const woken = await held;
     expect(woken.requests.map((item: { text: string }) => item.text)).toEqual(["Make this heading friendlier"]);
-    expect(woken.watch.waitsLeft).toBe(24);
+    expect(woken.watch).toBeUndefined();
     const [asked] = woken.requests;
     expect(asked.element.html).toContain("<h1");
     await expect(page.locator(".agent-pin").first()).toHaveAttribute("data-state", "seen");
     // Ask, the held wait and the take made no hub call: they live in this browser and the socket.
-    expect(requests, "no /api/agent or polling while Watch waits").toEqual([]);
+    expect(requests, "no /api/agent or polling while the agent waits").toEqual([]);
 
     // Replying reaches the pin over the socket.
     expect((await call("reply_to_request", { request: asked.id, status: "done", message: "Made it friendlier." })).state).toBe("done");
     await expect(page.locator(".agent-pin").first()).toHaveAttribute("data-state", "done");
     expect((await call("get_selection", { request: asked.id })).state).toBe("done");
 
-    // An empty Watch wait runs out on its own (10 s asked: held about 9 s inside the relay's budget) and
-    // invites the next call, but never renews Watch: its deadline stays, only the count moves.
-    const before = await record();
+    // An empty wait runs out on its own (10 s asked: held about 9 s inside the relay's budget) and asks
+    // the watchdog to wait again; the connection stays and a separate edit still applies.
     const quietStart = Date.now();
     const timedOut = await call("wait_for_requests", { waitSeconds: 10 });
     expect(Date.now() - quietStart).toBeGreaterThan(7_000);
     expect(timedOut.requests).toEqual([]);
-    expect(timedOut.hint).toContain("you may call wait_for_requests again now");
-    expect(await record()).toEqual({ ...before, waits: before.waits + 1 });
-
-    // Expiry (forced by its own record): the next wait answers at once, paused; no renewal, the
-    // connection stays and a separate edit still applies.
-    await page.evaluate(key => {
-      const value = JSON.parse(localStorage.getItem(key)!);
-      const until = Date.now() - 1;
-      localStorage.setItem(key, JSON.stringify({ ...value, startedAt: until - 600_000, until }));
-    }, watchKey);
-    const endedAt = Date.now();
-    const ended = await call("wait_for_requests");
-    expect(Date.now() - endedAt).toBeLessThan(8_000);
-    expect(ended.hint).toContain("Watch ended, so stop waiting");
+    expect(timedOut.hint).toContain("Call wait_for_requests again now");
     await page.locator(".repository-menu__trigger").click();
-    await expect(watchText).toContainText("Watch paused at");
-    await expect(page.getByRole("button", { name: "Watch again" })).toBeVisible();
-    await page.screenshot({ path: test.info().outputPath("watch-paused.png") });
     await expect(action).toHaveText("Disconnect MCP");
     expect((await call("write_file", { path: "after-watch.txt", content: "still connected" })).state).toBe("applied");
-    expect(requests.filter(request => request.path === "/api/agent/revoke"), "expiry revokes nothing").toEqual([]);
+    expect(requests.filter(request => request.path === "/api/agent/revoke"), "waiting revokes nothing").toEqual([]);
   } finally {
     await client.close();
   }
@@ -294,7 +262,7 @@ test("live: another tab of this browser shows the agent's progress on a request 
   await open(page, baseURL);
   await page.locator(".repository-menu__trigger").click();
   const made = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST");
-  await page.getByRole("button", { name: "Connect with MCP", exact: true }).click();
+  await page.getByRole("button", { name: "Connect to MCP", exact: true }).click();
   const { token } = await (await made).json() as { token: string };
   const client = new Client({ name: "two-tab-agent", version: "1.0.0" });
   await client.connect(new StreamableHTTPClientTransport(new URL(`${baseURL}/mcp`), { requestInit: { headers: { Authorization: `Bearer ${token}` } } }));
@@ -305,7 +273,7 @@ test("live: another tab of this browser shows the agent's progress on a request 
   };
   const other = await context.newPage();
   try {
-    expect((await call("wait_for_requests")).requests).toEqual([]);
+    expect((await call("wait_for_requests", { waitSeconds: 0 })).requests).toEqual([]);
     await expect(page.locator(".agent-menu__action")).toHaveText("Disconnect MCP");
     await page.keyboard.press("Escape");
     await page.frameLocator(".native-preview-frame").locator(".hero h1").click();
@@ -317,7 +285,7 @@ test("live: another tab of this browser shows the agent's progress on a request 
     await open(other, baseURL);
     const pin = other.locator(".agent-pin").first();
     await expect(pin).toHaveAttribute("data-state", "open", { timeout: 15_000 });
-    const [request] = (await call("wait_for_requests")).requests;
+    const [request] = (await call("wait_for_requests", { waitSeconds: 0 })).requests;
     expect(request.text).toBe("Seen from the other tab");
     await expect(pin).toHaveAttribute("data-state", "seen");
     await call("reply_to_request", { request: request.id, status: "question", message: "Which words?" });
@@ -328,7 +296,7 @@ test("live: another tab of this browser shows the agent's progress on a request 
   }
 });
 
-test("relay paused by owner: one explicit attempt, one manual Retry, no reconnect loop; manual edits and browser drafts survive", async ({ page, baseURL }) => {
+test("relay paused by owner: one explicit attempt, one manual try again with Connect to MCP, no reconnect loop and no text; manual edits and browser drafts survive", async ({ page, baseURL }) => {
   await open(page, baseURL);
   const heading = page.frameLocator(".native-preview-frame").locator(".hero h1");
   await clickOnText(heading);
@@ -347,9 +315,11 @@ test("relay paused by owner: one explicit attempt, one manual Retry, no reconnec
   await page.locator(".repository-menu__trigger").click();
   await page.clock.runFor(65_000);
   expect(requests, "opening the remote-off menu stays quiet").toEqual([]);
-  await page.getByRole("button", { name: "Connect with MCP", exact: true }).click();
-  const hint = page.locator(".agent-menu__hint");
-  await expect(hint).toHaveText("Remote agents are paused by the site owner.");
+  await page.getByRole("button", { name: "Connect to MCP", exact: true }).click();
+  // The dot shows the pause; the button returns to Connect to MCP, with no text.
+  const menu = page.locator(".agent-menu");
+  await expect(menu).toHaveAttribute("data-state", "paused");
+  await expect(menu).toHaveText("Connect to MCP", { useInnerText: true });
   expect(requests).toEqual([{ method: "GET", path: "/api/agent/connections" }]);
   await page.screenshot({ path: test.info().outputPath("owner-paused.png") });
   await page.clock.runFor(600_000);
@@ -358,9 +328,9 @@ test("relay paused by owner: one explicit attempt, one manual Retry, no reconnec
   await setVisibility(page, "visible");
   await page.clock.runFor(65_000);
   expect(requests).toHaveLength(1);
-  await page.getByRole("button", { name: "Retry", exact: true }).click();
+  await page.getByRole("button", { name: "Connect to MCP", exact: true }).click();
   await expect.poll(() => requests.length).toBe(2);
-  await expect(hint).toHaveText("Remote agents are paused by the site owner.");
+  await expect(menu).toHaveAttribute("data-state", "paused");
   await page.clock.runFor(600_000);
   expect(requests).toEqual(Array.from({ length: 2 }, () => ({ method: "GET", path: "/api/agent/connections" })));
   expect(sockets).toBe(0);
@@ -377,38 +347,43 @@ test("relay paused by owner: one explicit attempt, one manual Retry, no reconnec
   await expect.poll(() => requests.length).toBe(3);
   expect(requests[2]).toEqual({ method: "GET", path: "/api/agent/connections" });
   expect(sockets).toBe(0);
-  // Removing access remains possible even though the paused check cannot list grants.
   await page.locator(".repository-menu__trigger").click();
-  await expect(hint).toHaveText("Remote agents are paused by the site owner.");
-  await page.getByRole("button", { name: "Disconnect MCP", exact: true }).click();
-  await expect(page.locator(".agent-menu")).toHaveAttribute("data-state", "off");
-  expect(requests.at(-1)).toEqual({ method: "POST", path: "/api/agent/revoke" });
+  await expect(menu).toHaveAttribute("data-state", "paused");
+  await expect(menu).toHaveText("Connect to MCP", { useInnerText: true });
   await page.request.post(`${baseURL}/__demo/agent-controls`, { data: { relay: true } });
+  // Unpaused, Connect to MCP makes a new prompt and drops the token no agent used.
+  await page.getByRole("button", { name: "Connect to MCP", exact: true }).click();
+  await expect(menu).toHaveAttribute("data-state", "waiting");
+  expect(requests).toContainEqual({ method: "POST", path: "/api/agent/revoke" });
   const remaining = await (await page.request.get(`${baseURL}/api/agent/connections`)).json() as { grants: { id: string }[] };
   expect(remaining.grants.some(entry => entry.id === grant.id)).toBe(false);
 });
 
-test("Watch paused by owner: the existing connection check updates the menu; quiet tools and edits remain available", async ({ page, context, baseURL }) => {
+test("waiting paused by owner: waits answer at once and ask the agent to stop; the menu shows only Disconnect MCP; edits remain available", async ({ page, context, baseURL }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await open(page, baseURL);
   expect((await page.request.post(`${baseURL}/__demo/agent-controls`, { data: { watch: false } })).status()).toBe(204);
   await page.locator(".repository-menu__trigger").click();
   const made = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST");
-  await page.getByRole("button", { name: "Connect with MCP", exact: true }).click();
+  await page.getByRole("button", { name: "Connect to MCP", exact: true }).click();
   const { token } = await (await made).json() as { token: string };
   const client = new Client({ name: "watch-paused", version: "1" });
   await client.connect(new StreamableHTTPClientTransport(new URL(`${baseURL}/mcp`), { requestInit: { headers: { Authorization: `Bearer ${token}` } } }));
   try {
     const requests = agentRequests(page);
+    const started = Date.now();
     const result = await client.callTool({ name: "wait_for_requests", arguments: {} });
+    expect(Date.now() - started).toBeLessThan(8_000);
     await expect(page.locator(".agent-menu__action")).toHaveText("Disconnect MCP", { timeout: 15_000 });
-    await expect(page.locator(".agent-menu__watch-text")).toHaveText("Watch is paused by the site owner.");
-    await expect(page.getByRole("button", { name: "Watch for requests", exact: true })).toBeHidden();
+    await expect(page.locator(".agent-menu")).toHaveText("Disconnect MCP", { useInnerText: true });
     expect(result.isError).toBeFalsy();
     const value = JSON.parse((result.content as { text: string }[])[0].text);
     expect(value.requests).toEqual([]);
-    expect(value.hint).toBe("Watch is paused by the site owner. Agents still get requests when they ask.");
+    expect(value.hint).toBe("Waiting for requests is paused by the site owner. Agents still get requests when they ask. Do not call wait_for_requests again on your own: tell the user you are ready.");
     expect((await client.callTool({ name: "write_file", arguments: { path: "watch-paused.txt", content: "still available" } })).isError).toBeFalsy();
     expect(requests).toEqual([]);
-  } finally { await client.close(); }
+  } finally {
+    await page.request.post(`${baseURL}/__demo/agent-controls`, { data: { watch: true } });
+    await client.close();
+  }
 });

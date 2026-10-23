@@ -16,11 +16,11 @@ async function open(page: Page, baseURL: string | undefined) {
 }
 
 
-// Connects an agent with the prompt "Connect with MCP" copies.
+// Connects an agent with the prompt "Connect to MCP" copies.
 async function connectAgent(page: Page, baseURL: string | undefined) {
   await page.locator(".repository-menu__trigger").click();
   const { url, token } = await copyConnectionPrompt(page);
-  await expect(page.getByRole("button", { name: "Waiting for connection…", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Wait for MCP", exact: true })).toBeVisible();
   await expect(page.locator(".agent-menu")).toHaveAttribute("data-state", "waiting");
   expect(url).toBe(`${baseURL}/mcp`);
   const client = new Client({ name: "playwright-agent", version: "1.0.0" });
@@ -33,7 +33,6 @@ async function connectAgent(page: Page, baseURL: string | undefined) {
     return page.getByRole("button", { name: "Disconnect MCP", exact: true }).isVisible();
   }).toBe(true);
   await expect(page.getByRole("button", { name: "Disconnect MCP", exact: true })).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByRole("button", { name: "Disconnect MCP", exact: true })).toHaveAttribute("title", /playwright-agent connected/);
   await page.keyboard.press("Escape");
   return client;
 }

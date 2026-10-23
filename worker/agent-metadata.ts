@@ -1,6 +1,6 @@
 // Persistent workspace agent metadata consists of the AgentGrant record, its
 // HubGrant entry (including reserved first-use growth), and this ledger. The
-// relay's command payloads remain in memory; Watch lives in browser localStorage.
+// relay's command payloads remain in memory.
 // SessionStore holds lifecycle fences separately and schedules disconnect cleanup;
 // this accounting function itself only expires entries lazily.
 export const METADATA_KEY = "agent-metadata";

@@ -241,7 +241,7 @@ test("editor boot leaves optional panels unloaded and the first palette key open
   expect(feature("commit-history")).toBe(true);
   await page.keyboard.press("Escape");
   await page.locator(".repository-menu__trigger").click();
-  await expect(page.getByRole("button", { name: "Connect with MCP", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Connect to MCP", exact: true })).toBeVisible();
   expect(feature("agent-menu")).toBe(true);
   expect(feature("agent-pins")).toBe(false);
 });
@@ -266,7 +266,7 @@ test("a failed connection check keeps browser requests and never adopts hub cont
       { id: request.id, content: request, unfinished: true, updatedAt: Date.now() });
   });
   await page.locator(".repository-menu__trigger").click();
-  await page.getByRole("button", { name: "Connect with MCP", exact: true }).click();
+  await page.getByRole("button", { name: "Connect to MCP", exact: true }).click();
   await expect(page.locator(".agent-pin__question")).toHaveText("Which heading?", { timeout: 15_000 });
   // Connect checks once, makes its token and reads once more; the pin may show before or after
   // that second read, so wait for it rather than count at the pin.

@@ -5,7 +5,7 @@ import { DISCONNECT_GRACE, LIFECYCLE_KEY, type LifecycleRecord } from "../worker
 import { accountMetadata, METADATA_KEY, type MetadataAction } from "../worker/agent-metadata";
 import { accountPending, PENDING_KEY } from "../worker/oauth-pending";
 import { REGISTRATION_BUDGET } from "../worker/oauth-registration";
-import { agentWatch, createRequestTools } from "../src/agent-watch";
+import { createRequestTools } from "../src/agent-watch";
 import { indexedDbAgentRecords, type AgentCommit } from "../src/agent-records";
 import { draftKey, type SavedDraft } from "../src/drafts";
 import { fakeIndexedDB } from "./support/fake-agent-indexeddb";
@@ -127,13 +127,11 @@ for (const [tool, args] of [["read_file", { path: "index.html" }], ["write_file"
   });
 }
 
-test("Watch: <=25 waits per activation, <=25000 ms each, <=600000 ms total; 0 server storage", async t => {
-  const stored = new Map<string, string>();
-  const watch = agentWatch(workspace, { getItem: key => stored.get(key) ?? null, setItem: (key, value) => { stored.set(key, value); }, removeItem: key => { stored.delete(key); } }, () => Date.now());
+test("watching: each wait <=25000 ms, held until a request, any number in a row; 0 server storage", async t => {
   const h = await startCountedWorker();
   try {
-    h.clock.install(); watch.start();
-    const tools = createRequestTools({ workspace, watch, now: () => Date.now(), list: async () => [], save: async () => false });
+    h.clock.install();
+    const tools = createRequestTools({ workspace, now: () => Date.now(), list: async () => [], save: async () => false });
     let waits = 0;
     for (let n = 0; n < 26; n++) {
       const before = Date.now();
@@ -142,8 +140,8 @@ test("Watch: <=25 waits per activation, <=25000 ms each, <=600000 ms total; 0 se
       assert.ok(duration <= 25_000);
       if (duration) waits++;
     }
-    assert.ok(waits <= 25); assert.equal(waits, 24, "ten-minute deadline clips this empty 25 s sequence");
-    assert.equal(h.counters.waitedMs, 600_000);
+    assert.equal(waits, 26, "no ten-minute or 25-wait limit: watching lasts until Disconnect MCP");
+    assert.equal(h.counters.waitedMs, 26 * 25_000);
     assert.deepEqual(totals(h.counters), { calls: 0, keys: 0, bytes: 0, alarms: 0 });
     t.diagnostic(`browser request-tools layer: ${waits} held waits, ${h.counters.waitedMs} ms; relay call cost: agent-watch.test.ts`);
   } finally { await h.worker.dispose(); }

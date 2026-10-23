@@ -146,7 +146,7 @@ test("an ordinary repository keeps setup hidden and omits the removed menu entry
 const spotlight = (page: Page) => page.getByRole("dialog", { name: "Connect an agent" });
 const tile = (page: Page) => page.locator(".repository-menu__trigger");
 
-test("Connect an agent spotlights the project menu, and Show me opens it with Connect with MCP lit", async ({ page, baseURL }) => {
+test("Connect an agent spotlights the project menu, and Show me opens it with Connect to MCP lit", async ({ page, baseURL }) => {
   await startBlankSite(page, baseURL);
   await openChecklist(page);
   await item(page, "agent").getByRole("button").click();
@@ -156,7 +156,7 @@ test("Connect an agent spotlights the project menu, and Show me opens it with Co
   await expect(callout).toContainText("An AI agent such as Claude Code or Codex can build and edit your site for you.");
   await expect(callout).toContainText("It connects to this editor over MCP and its changes arrive here as drafts you review and save.");
   await expect(callout).toContainText("You can always disconnect.");
-  await expect(callout).toContainText("Agents connect here, from the project menu. Open it and choose Connect with MCP to copy the setup for your agent.");
+  await expect(callout).toContainText("Agents connect here, from the project menu. Open it and choose Connect to MCP to copy the setup for your agent.");
   // The focus is in the callout; the highlight sits over the tile, and the callout beside it, not over it.
   await expect(page.locator(".spotlight__callout")).toBeFocused();
   const hole = (await page.locator(".spotlight__hole").boundingBox())!;
@@ -181,7 +181,7 @@ test("Connect an agent spotlights the project menu, and Show me opens it with Co
   await callout.getByRole("button", { name: "Show me" }).click();
   await expect(callout).toHaveCount(0);
   await expect(page.locator("#repository-actions")).toBeVisible();
-  const entry = page.getByRole("button", { name: "Connect with MCP" });
+  const entry = page.getByRole("button", { name: "Connect to MCP" });
   await expect(entry).toBeVisible();
   await expect(entry).toHaveClass(/is-spotlit/);
   await expect(entry).toBeFocused();

@@ -34,7 +34,7 @@ export function createSetupChecklistController(ports: SetupChecklistPorts) {
   /**
    * Connect an agent (the checklist): says what an agent is for and spotlights
    * the project menu's tile, where the agent connection lives. "Show me" opens
-   * the menu with Connect with MCP lit; "Got it" just closes.
+   * the menu with Connect to MCP lit; "Got it" just closes.
    */
   async function spotlightAgentConnection() {
     const trigger = ports.menu()?.trigger, epoch = lifetime;

@@ -77,7 +77,7 @@ async function openCards(page: Page, baseURL: string | undefined) {
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "index.html", { timeout: 30_000 });
   await expect(status(page)).toContainText("Up to date with main", { timeout: 30_000 });
 }
-// The agent connection the editor hands out (Connect with MCP), used as an agent does.
+// The agent connection the editor hands out (Connect to MCP), used as an agent does.
 async function connectAgent(page: Page) {
   await page.locator(".repository-menu__trigger").click();
   const { url, token } = await copyConnectionPrompt(page);

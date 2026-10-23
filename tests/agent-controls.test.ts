@@ -7,7 +7,7 @@ import { handle, type Env } from "../worker/app";
 import { createGrant, getGrant, getHub } from "../worker/agent-context";
 import { DEADLINES_KEY, LIFECYCLE_KEY, DISCONNECT_GRACE } from "../worker/agent-lifecycle";
 import { relayObjectName, type RelaySocket } from "../worker/agent-relay";
-import { agentWatch, createRequestTools } from "../src/agent-watch";
+import { createRequestTools } from "../src/agent-watch";
 import { startCountedWorker, CountedStorage, UsageCounters } from "./fakes/counted-agent";
 import { fakeGitHub, origin, payload, repo, signIn } from "./mcp-harness";
 
@@ -41,7 +41,7 @@ test("all three Wrangler configs explicitly keep agreed defaults", () => {
   }
 });
 
-test("all 32 combinations independently gate routes before DO work, retain grants and keep waits quiet when Watch is paused", async () => {
+test("all 32 combinations independently gate routes before DO work, retain grants and keep waits quiet when waiting is paused", async () => {
   const h = await startCountedWorker();
   const { cookie } = await signIn(h.worker);
   const sessionId = cookie.split("=")[1];
@@ -55,9 +55,7 @@ test("all 32 combinations independently gate routes before DO work, retain grant
   }), env, (input, init) => fakeGitHub(new Request(input, init), h.github));
   const rpc = (method: string, params: object) => send("/mcp", "POST", { jsonrpc: "2.0", id: 1, method, params });
   const scope = { workspace, tabId: "owner", generation: 1 }, name = await relayObjectName(workspace);
-  const values = new Map<string, string>();
-  const watch = agentWatch(workspace, { getItem: key => values.get(key) ?? null, setItem: (key, value) => { values.set(key, value); }, removeItem: key => { values.delete(key); } }, () => Date.now());
-  const tools = createRequestTools({ workspace, watch, now: () => Date.now(), list: async () => [], save: async () => true });
+  const tools = createRequestTools({ workspace, now: () => Date.now(), list: async () => [], save: async () => true });
   const commands: { operation: string; waitMs?: number }[] = [];
   let attachment: unknown = { ...scope, role: "editor", owner: { tabId: scope.tabId, generation: scope.generation } };
   const socket = {
@@ -113,7 +111,6 @@ test("all 32 combinations independently gate routes before DO work, retain grant
       }
       h.counters.reset();
       const before = commands.length;
-      watch.start();
       const response = await rpc("tools/call", { name: "wait_for_requests", arguments: {} });
       assert.equal(response.status, 200);
       const answer = await response.text();
@@ -132,12 +129,11 @@ test("all 32 combinations independently gate routes before DO work, retain grant
         if (!control.watch) {
           assert.equal(commands.at(-1)!.waitMs, 0);
           assert.equal(h.counters.waitedMs, 0);
-          assert.equal(result.hint, WATCH_PAUSED);
-          assert.equal(result.watch, undefined);
+          assert.equal(result.hint, `${WATCH_PAUSED} Do not call wait_for_requests again on your own: tell the user you are ready.`);
         } else {
           assert.equal(commands.at(-1)!.waitMs, 25_000);
           assert.equal(h.counters.waitedMs, 24_000);
-          assert.match(result.hint, /may call wait_for_requests again now/);
+          assert.match(result.hint, /Call wait_for_requests again now/);
         }
         const menu = await send("/api/agent/connections", "GET");
         assert.equal((await menu.json() as { controls: { watch: boolean } }).controls.watch, control.watch);

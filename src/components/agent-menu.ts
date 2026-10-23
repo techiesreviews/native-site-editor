@@ -3,9 +3,9 @@ import { recordFailure, recoveryHolds } from "../agent-recovery";
 import { AgentFailureError, classifyAgentFailure } from "../../shared/agent-failure";
 import { button, node } from "../ui/dom";
 import { REQUEST_HTML_LIMIT, REQUEST_TEXT_LIMIT, type AgentCommand, type AgentElement, type AgentRequest } from "../../shared/agent";
-import { WATCH_WAITS, agentWatch, answerRequest, createRequestTools } from "../agent-watch";
+import { answerRequest, createRequestTools } from "../agent-watch";
 import { workspaceKey, type AgentWorkspace, type JsonValue } from "../../shared/agent-command";
-import { AgentRecordsError, agentStorageStatus, indexedDbAgentRecords, isUnfinishedRequest, type AgentRecords, type AgentStorageProblem } from "../agent-records";
+import { AgentRecordsError, agentStorageStatus, indexedDbAgentRecords, isUnfinishedRequest, type AgentRecords } from "../agent-records";
 import type { createLiveTransport } from "../agent-transport";
 import type { AgentReadPorts } from "../agent-tools-read";
 import type { SharedContext } from "../agent-site";
@@ -55,7 +55,6 @@ interface HubGrant {
 }
 interface HubState {
   grants: HubGrant[];
-  controls?: { watch: boolean };
 }
 
 export interface AgentApproval {
@@ -66,7 +65,8 @@ export interface AgentApproval {
 }
 
 export const AGENT_CONNECTED_KEY = "native-site-editor:agent-connected";
-const QUOTA_PAUSE = "Remote agents are paused: the editor's service has used up today's allowance. Your drafts and sign-in are safe, and you can keep editing.";
+/** How long the button's own label confirms a copy. */
+const CONFIRM_MS = 2000;
 
 export function createAgentMenu(options: {
   account: string;
@@ -99,9 +99,7 @@ export function createAgentMenu(options: {
     activation = 0;
   let lastRead = 0;
   let consentChecks: ReturnType<typeof setTimeout>[] = [];
-  let retrying = false;
   let ownerPaused = false;
-  let watchAllowed = true;
   let transport: ReturnType<typeof createLiveTransport> | undefined;
   let transportMode: "pending" | "socket" = "pending";
   let pinned: ReturnType<typeof options.repository>;
@@ -142,7 +140,7 @@ export function createAgentMenu(options: {
     };
     const workspace = { account: options.account, repoId: repo.id, branch: repo.branch };
     requestTools = createRequestTools({
-      workspace, watch: agentWatch(workspace),
+      workspace,
       list: async () => (await records.conversations(workspace)).map(item => item.content as unknown as AgentRequest),
       save: (request, accept, owner) => keep(workspace, request as StoredRequest, current => accept(current?.content as unknown as AgentRequest | undefined), owner),
     });
@@ -201,7 +199,7 @@ export function createAgentMenu(options: {
         try { return await tools.run(request, current, deadline, fence, signal); }
         finally {
           if (request.tool !== "get_request") broadcast(workspaceKey(workspace));
-          if (live(at)) { refreshWatch(); paint(); }
+          if (live(at)) paint();
         }
       },
       run,
@@ -214,84 +212,48 @@ export function createAgentMenu(options: {
         paint();
       },
     });
-    await transport.start().catch((error: unknown) => { if (live(at)) say((error as Error).message); });
+    // A start that fails leaves the transport's state on the dot; Connect to MCP tries again.
+    await transport.start().catch(() => { if (live(at)) paint(); });
   }
   // Grants this tab saw before it turned off: a later approval elsewhere never turns them back on.
   const declined = new Set<string>();
 
-  // One button: "Connect with MCP" makes a token and copies a prompt that
-  // tells an agent how to connect; it waits until an agent first uses the
-  // connection, then offers "Disconnect MCP", which revokes the
-  // repository's connections (OAuth ones included).
+  // One button and its dot (Lex, 2026-10-23): "Connect to MCP" makes a token and copies a prompt
+  // that tells an agent how to connect, its label confirming the copy; "Wait for MCP" copies it
+  // again until an agent first uses the connection; then "Disconnect MCP" revokes the
+  // repository's connections (OAuth ones included). No hints, toasts or other controls: the dot
+  // shows in-between states and problems, which return the button to Connect to MCP.
   const root = node("div", "agent-menu");
   const action = button("", () => void act(), "text-button agent-menu__action");
-  const actionLabel = node("span", "agent-menu__label", "Connect with MCP");
+  const actionLabel = node("span", "agent-menu__label", "Connect to MCP");
   // The questions waiting for the user, as on the project selector's tile.
   const count = node("span", "agent-menu__count");
   count.setAttribute("aria-hidden", "true");
   count.hidden = true;
   action.append(actionLabel, count);
-  const hint = node("p", "agent-menu__hint");
-  hint.setAttribute("role", "status");
-  const again = button("Copy again", () => void copyPrompt(), "text-button agent-menu__link");
-  const cancel = button("Cancel", () => void revoke(), "text-button agent-menu__link");
-  const retry = button("Retry", () => {
-    if (retrying) return;
-    if (ownerPaused && !transport) {
-      retrying = true;
-      turnOff();
-      void turnOn().finally(() => { retrying = false; paint(); });
-      return;
-    }
-    if (!transport) return;
-    retrying = true;
-    paint();
-    void transport.retry().finally(() => { retrying = false; paint(); });
-  }, "text-button agent-menu__link");
-  const links = node("span", "agent-menu__links");
-  const takeover = button("Take over", () => {
-    void transport?.takeover().catch((error: unknown) => showError(error));
-  }, "text-button agent-menu__link");
-  const move = button("Move agents here", () => void moveHere(), "text-button agent-menu__link");
-  const another = button("Connect another agent", () => { turnOff(); void turnOn(); }, "text-button agent-menu__link");
-  links.append(again, cancel, retry, takeover, move, another);
-  // Agent edits stopped because this browser cannot keep them: what to do, and a copy of the work.
+  // The one exception (keeps work safe): this browser cannot keep agent edits and the open
+  // workspace has unsaved changes, so the menu offers a copy of them.
   const storage = agentStorageStatus();
-  const trouble = node("div", "agent-menu__storage");
-  trouble.setAttribute("role", "alert");
-  const troubleText = node("p", "agent-menu__storage-text");
   let exporting = false;
-  const download = button("Download unsaved changes", () => void exportWork(), "text-button agent-menu__link");
-  const tryAgain = button("Try again", () => { storage.resume(); paint(); }, "text-button agent-menu__link");
-  tryAgain.title = "Let agents edit again once there is space; a full browser stops them again.";
-  const troubleLinks = node("span", "agent-menu__links");
-  troubleLinks.append(download, tryAgain);
-  trouble.append(troubleText, troubleLinks);
-  trouble.hidden = true;
-  // What the connected agents wait on, beside Disconnect MCP.
+  const download = button("Download unsaved changes", () => void exportWork(), "text-button agent-menu__download");
+  download.hidden = true;
+  // The requests of the open workspace, beside Disconnect MCP, only while there are some.
   const waitingOn = node("div", "agent-menu__waiting");
   waitingOn.id = "agent-waiting";
   waitingOn.setAttribute("role", "menu");
-  // Watch (ticket 18): the user lets agents wait for requests here, for at most ten minutes.
-  const watchRow = node("div", "agent-menu__watch");
-  const watchText = node("p", "agent-menu__watch-text");
-  const watchStart = button("Watch for requests", () => setWatch(true), "text-button agent-menu__link");
-  const watchStop = button("Stop watching", () => setWatch(false), "text-button agent-menu__link");
-  const watchLinks = node("span", "agent-menu__links");
-  watchLinks.append(watchStart, watchStop);
-  watchRow.append(watchText, watchLinks);
-  watchRow.hidden = true;
-  root.append(action, hint, links, watchRow, trouble, waitingOn);
+  root.append(action, download, waitingOn);
   const flyout = mountFlyout({
     panel: waitingOn,
-    label: "What agents wait on",
+    label: "Requests",
     render: drawWaiting,
-    enabled: () => state() === "connected",
+    enabled: () => offer() === "disconnect" && pending().length > 0,
     openOnFocus: true,
   });
   flyout.attach(action);
-  /** A message that replaces the state's own hint until the state changes. */
-  let notice: { text: string; state: string } | undefined;
+  /** Until when, and in which offer, the button's label confirms the last copy. */
+  let confirmed: { label: string; until: number; offer: string } | undefined;
+  /** The retry time a repaint is set for. */
+  let repaintAt = 0;
 
   /** `at` fences a request to the activation that started it. */
   async function api(action: string, body?: unknown, at?: number) {
@@ -347,17 +309,12 @@ export function createAgentMenu(options: {
     consentChecks = [];
   }
   function failed(error: AgentFailureError) {
-    if (error.failure.kind === "auth") {
-      turnOff(true);
-      say("Your sign-in to the editor ended. Sign in again, then choose Connect with MCP.");
-    } else if (transportMode === "socket") transport?.report(error.failure);
+    // Sign-in ended: back to Connect to MCP.
+    if (error.failure.kind === "auth") turnOff(true);
+    else if (transportMode === "socket") transport?.report(error.failure);
     else if (pinned) {
       try { recordFailure(localStorage, { account: options.account.toLowerCase(), repoId: pinned.id }, error.failure, Date.now()); } catch { /* Activation still reports the failure below. */ }
-      if (error.failure.kind === "quota") say(QUOTA_PAUSE);
     }
-  }
-  function showError(error: unknown) {
-    if (!(error instanceof AgentFailureError) || error.failure.kind === "other") say((error as Error).message);
   }
   function recoverWorkspace() {
     const repo = options.repository();
@@ -379,6 +336,7 @@ export function createAgentMenu(options: {
   const usedGrants = () => liveGrants().filter((grant) => grant.via === "oauth" || grant.usedAt);
   /** The token this tab made, while no agent has used it yet. */
   const waiting = () => Boolean(token && tokenId && liveGrants().some((grant) => grant.id === tokenId && !grant.usedAt));
+  /** The tab's connection state, on the dot (`data-state`). */
   function state() {
     if (!remote) return options.repository() ? "off" : "closed";
     if (workspaceChanged) return "workspace-changed";
@@ -462,8 +420,16 @@ export function createAgentMenu(options: {
     options.onQuestions?.(questions);
     paint();
   }
-  // The connected agents' names, as MCP `initialize` gave them.
-  const agentNames = () => [...new Set(usedGrants().map((grant) => grant.client ?? "An agent"))].join(", ");
+  // Another tab of this browser receives for the site: this one offers what it would.
+  const elsewhere = (current: string) => ["other-owner", "taken-over", "taking-over"].includes(current);
+  /** What the one button offers in `current`: problems and in-between states offer Connect to MCP. */
+  function offer(current = state()): "connect" | "wait" | "disconnect" {
+    if (current === "connected" || elsewhere(current) && usedGrants().length) return "disconnect";
+    if (current === "waiting" || elsewhere(current) && waiting()) return "wait";
+    return "connect";
+  }
+  // Requests still waiting for an agent or for the user, in pin order.
+  const pending = () => requests.filter((request) => isUnfinishedRequest(request.state));
   function paint() {
     const current = state();
     if (current !== lastState) {
@@ -475,128 +441,42 @@ export function createAgentMenu(options: {
     }
     followHistory();
     tellRequests();
-    if (notice && notice.state !== current) notice = undefined;
+    const offered = offer(current);
     root.dataset.state = current;
-    action.disabled = changing || current === "closed" ||
-      !["off", "idle", "connected", "waiting", "workspace-changed"].includes(current);
-    if (current === "workspace-changed") action.hidden = true;
-    else action.hidden = false;
-    actionLabel.textContent =
-      current === "connected" ? "Disconnect MCP" : current === "waiting" ? "Waiting for connection…" : "Connect with MCP";
-    const asked = current === "connected" ? lastQuestions : 0;
+    root.dataset.offer = offered;
+    // A press is refused only while a change is under way, before a site is open, while the
+    // connection is first made, or until a recorded retry time.
+    const retryAt = transportState?.retryAt ?? 0;
+    action.disabled = changing || current === "closed" || current === "connecting" || current === "taking-over" || retryAt > Date.now();
+    // Pressable again once the retry time passes.
+    if (retryAt > Date.now() && retryAt !== repaintAt) {
+      repaintAt = retryAt;
+      setTimeout(() => { if (!disposed) paint(); }, retryAt - Date.now());
+    }
+    // Until the moment passes or the state moves on (an agent connected meanwhile).
+    const shown = confirmed && confirmed.until > Date.now() && confirmed.offer === offered ? confirmed.label : undefined;
+    actionLabel.textContent = shown ?? (offered === "disconnect" ? "Disconnect MCP" : offered === "wait" ? "Wait for MCP" : "Connect to MCP");
+    const asked = offered === "disconnect" ? lastQuestions : 0;
     root.classList.toggle("is-asking", asked > 0);
     count.hidden = !asked;
     count.textContent = asked ? String(asked) : "";
-    const names = agentNames();
-    action.title =
-      current === "connected"
-        ? `${names} connected. Choose to revoke its access.`
-        : current === "waiting"
-          ? "Copy the prompt again"
-          : current === "off"
-            ? "Turn on remote agents in this tab and copy a prompt that connects Claude, Codex or another agent"
-            : "Copy a prompt that connects Claude, Codex or another agent to this site";
-    links.hidden = changing || current === "off" || current === "closed";
-    again.hidden = current !== "waiting";
-    cancel.hidden = current !== "waiting" && !ownerPaused;
-    cancel.textContent = ownerPaused ? "Disconnect MCP" : "Cancel";
-    const recovering = transportState;
-    takeover.hidden = !["other-owner", "taken-over", "takeover-failed"].includes(current);
-    takeover.textContent = current === "takeover-failed" ? "Try again" : "Take over";
-    move.hidden = another.hidden = current !== "workspace-changed";
-    move.disabled = changing;
-    const returned = workspaceChanged && pinned && sameRepository(options.repository(), pinned);
-    move.textContent = returned ? "Turn on again" : "Move agents here";
-    retry.hidden = !["paused", "quota"].includes(current);
-    retry.disabled = retrying || (recovering?.retryAt ?? 0) > Date.now();
-    let pause = "";
-    if (ownerPaused || recovering?.message) pause = recovering?.message ?? "Remote agents are paused by the site owner.";
-    else if (recovering?.mode === "quota") {
-      pause = QUOTA_PAUSE;
-      if (recovering.resetAt !== undefined) pause += ` It should work again after ${new Date(recovering.resetAt).toLocaleString()} (midnight UTC).`;
-    } else if (recovering?.mode === "unavailable") pause = "This browser can't keep a live connection for agents.";
-    else if (recovering?.mode === "paused") pause = "Remote agents are paused: the editor could not reach its service. Your drafts are safe. Choose Retry to try again.";
-    else if (recovering?.mode === "reconnecting") pause = "Reconnecting to remote agents…";
-    if (pause && (recovering?.retryAt ?? 0) > Date.now()) pause += ` You can retry after ${new Date(recovering!.retryAt!).toLocaleString()}.`;
-    const liveCopy: Record<string, string> = {
-      "other-owner": transportState?.closed ? "The receiving tab closed." : "Another tab receives agent changes for this site.",
-      "taken-over": "Another tab took over agent changes for this site.",
-      "taking-over": "Taking over agent changes…",
-      "takeover-failed": "Agent changes are paused for this site until a tab takes over.",
-    };
-    const moved = workspaceChanged && pinned ? `Agents are connected to ${pinned.fullName} on ${pinned.branch}; this tab now shows ${options.repository()?.fullName ?? "no site"} on ${options.repository()?.branch ?? "no branch"}.` : "";
-    hint.textContent = moved || pause || notice?.text || (transportMode === "socket" ? liveCopy[transportState?.mode ?? ""] ?? "" : "");
-    hint.hidden = !hint.textContent;
-    const problem = storage.problem;
-    trouble.hidden = !problem || current === "closed";
-    root.dataset.storage = problem?.reason ?? "";
-    if (problem) troubleText.textContent = storageText(problem);
+    download.hidden = !storage.problem || current === "closed";
     download.disabled = exporting;
-    paintWatch(current);
+    root.dataset.storage = storage.problem?.reason ?? "";
   }
-  // Watch's record is read on paint, on its own changes and on another tab's storage event; the
-  // countdown re-renders it each second from memory while it runs (no reads, no requests).
-  let watchReport: ReturnType<ReturnType<typeof agentWatch>["report"]> = { state: "off" }, watchWorkspace = "";
-  let watchTicker: ReturnType<typeof setInterval> | undefined;
-  const watchOf = () => { const workspace = pinned && scope(); return workspace && sameRepository(options.repository(), pinned) ? agentWatch(workspace) : undefined; };
-  function refreshWatch() {
-    const watch = watchOf();
-    watchWorkspace = watch?.key ?? "";
-    try { watchReport = watch?.report() ?? { state: "off" }; } catch { watchReport = { state: "off" }; }
-  }
-  function paintWatch(current = state()) {
-    const shown = remote && transportMode === "socket" && current === "connected";
-    if (shown && !watchWorkspace) refreshWatch();
-    let report = shown ? watchReport : { state: "off" as const };
-    // Ended while shown: paused, without a new read.
-    if (report.state === "on" && Date.now() >= report.until) {
-      report = watchReport = { state: "paused", reason: "ended", at: report.until };
-      requestTools?.notify();
-    }
-    watchRow.hidden = !shown;
-    root.dataset.watch = shown ? report.state : "";
-    const ticking = shown && watchAllowed && report.state === "on";
-    if (ticking && watchTicker === undefined) watchTicker = setInterval(() => paintWatch(), 1000);
-    if (!ticking && watchTicker !== undefined) { clearInterval(watchTicker); watchTicker = undefined; }
-    if (!shown) return;
-    watchStart.hidden = !watchAllowed;
-    if (!watchAllowed) {
-      root.dataset.watch = "paused";
-      watchStop.hidden = true;
-      watchText.textContent = "Watch is paused by the site owner.";
-      watchText.hidden = false;
-      return;
-    }
-    const time = (at: number) => new Date(at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-    watchStop.hidden = report.state !== "on";
-    watchStart.textContent = report.state === "off" ? "Watch for requests" : "Watch again";
-    watchStart.title = "Let your agent wait for your requests for the next 10 minutes";
-    if (report.state === "on") {
-      const left = Math.max(0, Math.ceil((report.until - Date.now()) / 1000));
-      watchText.textContent = `Watching for requests until ${time(report.until)} (${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")} left, ${report.waitsLeft} ${report.waitsLeft === 1 ? "wait" : "waits"} left).`;
-    } else if (report.state === "paused") {
-      watchText.textContent = report.reason === "used"
-        ? `Watch paused: your agent used all ${WATCH_WAITS} waits.`
-        : `Watch paused at ${time(report.at)}.`;
-    } else watchText.textContent = "";
-    watchText.hidden = !watchText.textContent;
-  }
-  /** Only the user starts (or renews) and stops Watch; a stopped one releases a held wait at once. */
-  function setWatch(on: boolean) {
-    const watch = watchOf();
-    if (!watch || on && !watchAllowed) return;
-    try {
-      if (on) watch.start(); else watch.stop();
-    } catch {
-      say("This browser could not keep Watch: its storage is full or blocked.");
-      return;
-    }
-    refreshWatch();
-    if (!on) requestTools?.notify();
+  /** The button's label reads `label` for a moment, then its state again. */
+  function confirmOnButton(label: string) {
+    const shown = (confirmed = { label, until: Date.now() + CONFIRM_MS, offer: offer() });
     paint();
+    setTimeout(() => {
+      if (confirmed !== shown || disposed) return;
+      confirmed = undefined;
+      paint();
+    }, CONFIRM_MS);
   }
   const unsubscribeStorage = storage.subscribe(() => paint());
-  /** Downloads the open workspace's unsaved drafts and says what the file holds. */
+  /** Downloads the open workspace's unsaved drafts (README.txt in it lists what is missing); then
+   * agents may edit again: a browser still full stops them again before any write. */
   async function exportWork() {
     const repo = options.repository(), workspace = scope();
     if (!repo || exporting) return;
@@ -609,69 +489,48 @@ export function createAgentMenu(options: {
       if (!current()) return;
       const done = await downloadUnsavedWork({ account: options.account, repository: repo }, current);
       if (!done || !current()) return;
-      const { name, entries } = done;
-      const included = entries.filter((entry) => entry.status === "included").length;
-      const missing = entries.filter((entry) => entry.status === "missing").length;
-      say(`Downloaded ${name}: ${included} file${included === 1 ? "" : "s"}.${missing ? ` ${missing} uploaded file${missing === 1 ? " is" : "s are"} no longer in this browser; README.txt lists ${missing === 1 ? "it" : "them"}.` : ""}`);
-    } catch (error) {
-      if (current()) say(`The download failed: ${(error as Error).message}. Your unsaved changes are still in this tab.`);
-    } finally {
+      storage.resume();
+    } catch { /* The button stays: the unsaved changes are still in this tab. */ } finally {
       exporting = false;
       if (!disposed) paint();
     }
   }
-  // The flyout: the questions waiting for the user (each shows its pin),
-  // or what the agents have otherwise.
+  // The flyout: the requests waiting for an agent or for the user, each showing its pin; an
+  // agent's question shows instead of the request's text.
   function drawWaiting() {
-    const questions = requests.filter((request) => request.state === "question");
-    const parts: Node[] = [];
-    if (questions.length) {
-      for (const request of questions) {
-        const number = requests.indexOf(request) + 1;
-        const question = request.reply?.message.trim() || request.text;
-        const item = node("button", "flyout__item agent-menu__question");
-        item.type = "button";
-        item.setAttribute("role", "menuitem");
-        item.dataset.key = request.id;
-        const where = request.element.route ?? request.element.file;
-        const text = node("span", "agent-menu__question-text");
-        text.append(
-          node("span", "agent-menu__question-line", clip(question, 60)),
-          node("span", "agent-menu__question-where", `<${request.element.tag}> · ${where}`),
-        );
-        item.append(node("span", "agent-menu__question-number", String(number)), text);
-        item.setAttribute("aria-label", `Request ${number}: ${question}, on <${request.element.tag}> of ${where}`);
-        item.title = "Show it and answer";
-        item.addEventListener("click", () => options.onShowRequest?.(request.id));
-        parts.push(item);
-      }
-    } else {
-      const working = requests.filter((request) => request.state === "seen").length;
-      const open = requests.filter((request) => request.state === "open").length;
-      const busy = working + open;
-      // "2 requests: agent working", "3 requests: 1 agent working, 2 waiting for an agent".
-      const doing = !open ? "agent working" : !working ? "waiting for an agent" : `${working} agent working, ${open} waiting for an agent`;
-      parts.push(node("p", "flyout__note", busy ? `${busy} request${busy === 1 ? "" : "s"}: ${doing}` : "Nothing waiting"));
-    }
+    const parts = pending().map((request) => {
+      const number = requests.indexOf(request) + 1;
+      const asking = request.state === "question";
+      const line = (asking && request.reply?.message.trim()) || request.text;
+      const item = node("button", `flyout__item agent-menu__question${asking ? " is-asking" : ""}`);
+      item.type = "button";
+      item.setAttribute("role", "menuitem");
+      item.dataset.key = request.id;
+      const where = request.element.route ?? request.element.file;
+      const text = node("span", "agent-menu__question-text");
+      text.append(
+        node("span", "agent-menu__question-line", clip(line, 60)),
+        node("span", "agent-menu__question-where", `<${request.element.tag}> · ${where}`),
+      );
+      item.append(node("span", "agent-menu__question-number", String(number)), text);
+      item.setAttribute("aria-label", `Request ${number}: ${line}, on <${request.element.tag}> of ${where}`);
+      item.addEventListener("click", () => options.onShowRequest?.(request.id));
+      return item;
+    });
     waitingOn.replaceChildren(...parts);
   }
-  function say(text: string) {
-    const shown = (notice = { text, state: state() });
-    paint();
-    setTimeout(() => {
-      if (notice !== shown) return;
-      notice = undefined;
-      paint();
-    }, 8000);
-  }
   async function act() {
-    const current = state();
-    if (current === "connected") await revoke();
-    else if (current === "waiting") await copyPrompt();
-    else if (current === "off") await turnOn();
-    else await start();
+    const current = state(), offered = offer(current);
+    if (offered === "disconnect") await revoke();
+    else if (offered === "wait") await copyPrompt();
+    else if (current === "idle") await start();
+    else {
+      // Off, or a problem (paused, lost, another site shown): turn on again for the open site.
+      turnOff();
+      await turnOn();
+    }
   }
-  // Connect with MCP while remote agents are off: an agent connected before
+  // Connect to MCP while remote agents are off: an agent connected before
   // is used again (it may need resuming); otherwise a new prompt is made.
   async function turnOn(task?: string) {
     if (!options.repository() || changing) return;
@@ -720,7 +579,6 @@ export function createAgentMenu(options: {
     transport?.stop(); transport = undefined;
     transportState = undefined;
     requestTools?.notify(); requestTools = undefined;
-    watchWorkspace = "";
     workspaceChanged = false;
     document.removeEventListener("visibilitychange", wake);
     window.removeEventListener("focus", wake);
@@ -728,27 +586,7 @@ export function createAgentMenu(options: {
     hub = { grants: [] };
     paint();
   }
-  async function moveHere() {
-    const target = options.repository(), old = pinned, at = activation;
-    if (!target || !old || changing) return;
-    const grants = hub.grants.filter(grant => sameBranch(grant, branchOf(old)) && (grant.via === "oauth" || grant.usedAt));
-    changing = true; paint();
-    const current = () => !disposed && remote && activation === at && sameRepository(options.repository(), target);
-    try {
-      for (const grant of grants) {
-        if (sameRepository(target, old)) break;
-        if (!current()) return;
-        await api("rebind", { id: grant.id, repo: target.fullName, repoId: target.id, branch: target.branch });
-        if (!current()) return;
-      }
-      turnOff(true);
-      changing = false;
-      await turnOn();
-    } catch (error) { showError(error); }
-    finally { changing = false; paint(); }
-  }
-  // A task the copied prompt ends with instead of watching for requests
-  // (Start your site's Build it with an agent).
+  // A task the copied prompt asks for first (Start your site's Build it with an agent).
   let goal: string | undefined;
   async function start(task?: string) {
     const repo = options.repository(), at = activation;
@@ -775,11 +613,10 @@ export function createAgentMenu(options: {
       changing = false;
       await readConnections();
       await copyPrompt();
-    } catch (error) {
+    } catch {
       changing = false;
       // A failed first prompt leaves remote agents off; a connected agent keeps them on.
       if (!usedGrants().length && !["paused", "quota", "reconnecting"].includes(transportState?.mode ?? "")) turnOff(true);
-      showError(error);
     } finally {
       changing = false;
       paint();
@@ -790,14 +627,12 @@ export function createAgentMenu(options: {
     changing = true;
     paint();
     try {
-      if (ownerPaused && pinned) await api("revoke", { all: true, repoId: pinned.id, branch: pinned.branch });
-      else for (const grant of liveGrants()) await api("revoke", { id: grant.id });
+      // Every agent on this site's connections, the shared token's included.
+      for (const grant of liveGrants()) await api("revoke", { id: grant.id });
       token = tokenId = undefined;
       changing = false;
       turnOff(true);
-    } catch (error) {
-      showError(error);
-    } finally {
+    } catch { /* Still connected: the button stays Disconnect MCP. */ } finally {
       changing = false;
       paint();
     }
@@ -807,10 +642,8 @@ export function createAgentMenu(options: {
     if (!token || !repo) return;
     try {
       await navigator.clipboard.writeText(connectionPrompt(`${location.origin}/mcp`, token, repo.fullName, goal));
-      paint();
-    } catch {
-      say("Clipboard access was denied. Allow it in your browser, then choose Copy again.");
-    }
+      confirmOnButton("Copied");
+    } catch { /* Clipboard refused: the label does not confirm; pressing again tries again. */ }
   }
 
   // One connections read at a time (src/agent-resume.ts).
@@ -821,11 +654,10 @@ export function createAgentMenu(options: {
       const next: HubState = await api("connections", undefined, at);
       if (!live(at)) return false;
       hub = next;
-      watchAllowed = next.controls?.watch !== false;
       lastRead = Date.now();
       paint();
       return true;
-    } catch (error) { if (live(at)) showError(error); return false; }
+    } catch { return false; }
   });
   /** Explicit metadata refresh; never loads or uploads site content. True when this read answered
    * and set the connections for the current activation. A read already in flight skips this one,
@@ -879,7 +711,6 @@ export function createAgentMenu(options: {
       if (error.failure.kind === "quota") {
         for (const check of consentChecks) clearTimeout(check);
         consentChecks = [];
-        say(QUOTA_PAUSE);
       }
       try { recordFailure(localStorage, workspace, error.failure, Date.now()); } catch { /* storage full: nothing shared */ }
       return undefined;
@@ -892,18 +723,10 @@ export function createAgentMenu(options: {
     consentChecks = [];
     startRemote();
     hub = found;
-    watchAllowed = found.controls?.watch !== false;
     await activateSocket();
     paint();
   }
   const onStorage = (event: StorageEvent) => {
-    if (event.key && event.key === watchWorkspace) {
-      refreshWatch();
-      // Stopped or renewed in another tab: a wait held here looks again (and ends when Watch is off).
-      if (watchReport.state !== "on") requestTools?.notify();
-      paint();
-      return;
-    }
     if (event.key === AGENT_CONNECTED_KEY) {
       try { consentGranted(JSON.parse(event.newValue ?? "null")); } catch { /* Old or invalid announcements grant nothing. */ }
     }
@@ -918,7 +741,7 @@ export function createAgentMenu(options: {
     root,
     consentGranted,
     /**
-     * Makes a token, as Connect with MCP does, and copies the prompt ending
+     * Makes a token, as Connect to MCP does, and copies the prompt ending
      * with `task`; while a token waits for its agent, copies it again.
      * Resolves to whether the prompt was copied.
      */
@@ -956,7 +779,7 @@ export function createAgentMenu(options: {
     /** Answer an agent's question from its pin: the request waits for agents again. */
     async answer(id: string, text: string) {
       const workspace = scope(), at = activation;
-      if (!remote) throw new Error("Remote agents are off in this tab. Choose Connect with MCP in the project menu, then send your answer.");
+      if (!remote) throw new Error("Remote agents are off in this tab. Choose Connect to MCP in the project menu, then send your answer.");
       if (!workspace || !history.has(id)) throw new Error("This request is not in this site's history any more.");
       const local = history.get(id)!, key = workspaceKey(workspace);
       // Refused before it is sent when this browser cannot keep the conversation with the answer.
@@ -981,12 +804,8 @@ export function createAgentMenu(options: {
       const workspace = scope(), local = history.get(id);
       if (!workspace || !local || local.state === "dismissed") return;
       const waiting = isUnfinishedRequest(local.state);
-      try {
-        await keep(workspace, { ...local, state: "dismissed" });
-      } catch (error) {
-        say(refusalText(error));
-        return;
-      }
+      // Not kept (browser storage refused): the pin stays, showing it was not dismissed.
+      try { await keep(workspace, { ...local, state: "dismissed" }); } catch { return; }
       if (!waiting || !remote) return;
       requestsChanged(workspaceKey(workspace));
     },
@@ -994,7 +813,7 @@ export function createAgentMenu(options: {
     changed() {
       recoverWorkspace();
       // Switched in this tab to another site remembered on: its agents come back on here, and the
-      // site left stays remembered (no Move agents here needed).
+      // site left stays remembered.
       const repo = options.repository();
       if (workspaceChanged && !changing && repo && agentsOn(site(repo))) turnOff();
       paint();
@@ -1008,18 +827,10 @@ export function createAgentMenu(options: {
       window.removeEventListener("storage", onStorage);
       document.removeEventListener("visibilitychange", reread);
       channel?.close();
-      if (watchTicker !== undefined) clearInterval(watchTicker);
       unsubscribeStorage();
       token = tokenId = undefined;
     },
   };
-}
-
-/** What the user reads when this browser stopped keeping agent edits, and what to do. */
-function storageText(problem: AgentStorageProblem) {
-  return problem.reason === "full"
-    ? "Agent edits are stopped: this browser's storage is full, so it cannot keep new changes. Your unsaved changes are still in this tab. Download them to keep a copy, free up space in your browser or save your changes, then choose Try again."
-    : "Agent edits are off: this browser does not let the editor keep data here (private browsing or blocked site data). Your unsaved changes are only in this tab: download them to keep a copy before you close it.";
 }
 
 // A line of at most `limit` characters, with … when cut.
