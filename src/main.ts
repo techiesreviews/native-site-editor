@@ -32,7 +32,6 @@ import {
   readWorkspaceUrl,
   retainWorkspaceLink,
   resumeWorkspaceLink,
-  rememberWorkspace,
 } from "./workspace-state";
 import { createSetupHost, EDITOR_LOGIN } from "./setup-host";
 import { createAgentController } from "./controllers/agent-controller";
@@ -40,7 +39,7 @@ import { createVersionView } from "./version-view";
 import type { AgentSiteActions, SharedContext } from "./agent-site";
 import type { AgentCommand } from "../shared/agent";
 import { draftStore, type DraftScope, type SavedDraft } from "./drafts";
-import { nativeBootExtras, nativeBootStyleExtras, nativeShownFiles, readSiteTexts, unreadableAsText, unreadableNeededFile, withSiteIndexed, type SiteIndexGate, type UnreadableFile } from "./native-boot";
+import { nativeBootExtras, nativeBootStyleExtras, nativeShownFiles, readSiteTexts, unreadableNeededFile, withSiteIndexed, type SiteIndexGate, type UnreadableFile } from "./native-boot";
 import { draftKey } from "./drafts";
 import { mountDropdown } from "./components/dropdown";
 import { createRepositoryMenu } from "./components/repository-menu";
@@ -48,7 +47,7 @@ import { mountSiteActions } from "./components/site-actions";
 import type { SiteFiles } from "./site-download";
 import { mountSidebarResize, type SidebarResize } from "./components/sidebar-resize";
 import { mountBlockRail } from "./components/block-rail";
-import { createNativePreview, routeStylesheets, type NativePreviewSelection, type NativeStructureItem, type PressedBlock } from "./components/native-preview";
+import { createNativePreview, routeStylesheets, type NativeStructureItem, type PressedBlock } from "./components/native-preview";
 import { trackDrag, type DragPress } from "./page-builder/insert-drag";
 import type { DraggedBlock } from "./page-builder/drop-target";
 import { createPageStructure, type PageMetaField } from "./components/page-structure";
@@ -83,11 +82,8 @@ import { mountCodeResize, mountCodeWidthResize } from "./components/code-resize"
 import * as sourceEditor from "./components/source-editor";
 import { createMediaHistoryHome } from "./page-builder/media-history-home";
 import { isRenamableMedia, mediaFileName } from "./page-builder/media-names";
-import { declarationRanges, findStyleRulesInSources, type StyleRule } from "./styles-index";
-import { resolveSelectedRules, ruleOrigin, type NativeCascade, type NativeSelectedRule } from "./style-cascade";
 import type { MediaWorkspaceBatch } from "./page-builder/media-workspace";
 import type { CssWorkspace } from "./page-builder/css-intelligence";
-import type { DeclarationStatus, RuleStatus } from "../shared/cascade";
 import { expandStyleImports, resolveImportPath, rewriteCssUrls } from "../shared/css-imports";
 import { readStyleFiles } from "./native-style-files";
 import { nativePageRoute } from "../shared/native-routes";
@@ -107,6 +103,8 @@ import { CleanSourceCache } from "./clean-source-cache";
 import { iconMarkup, setIcon } from "./icons";
 import { createCommandPaletteController } from "./controllers/command-palette-controller";
 import { createCodePanesController } from "./controllers/code-panes-controller";
+import { createLinkedStylesController } from "./controllers/linked-styles-controller";
+import { createSourcePaneController } from "./controllers/source-pane-controller";
 import { createSavePublishController } from "./controllers/save-publish-controller";
 import type { createLazyFileOperationsController } from "./controllers/file-operation-checks";
 import { createComponentTools, type ComponentTools, type PreparedComponentLoader } from "./page-builder/components";
@@ -540,7 +538,7 @@ function mountWorkspace() {
     },
     cards: cardsController.preview,
     onComponentStyles: (tags) => void loadNativeComponentStyles(tags),
-    onDefaultStyles: (styles) => updateBodyStyles({ rules: styles.selectors, cascade: styles.cascade }),
+    onDefaultStyles: (styles) => linkedStyles.updateBodyStyles({ rules: styles.selectors, cascade: styles.cascade }),
     onFormat: (format) => pageStructureController.nativeFormatActions[format]?.(),
     onImageDrop: (target, files) => void mediaController.chooseImage(target, files),
     onImageEdit: (target) => void mediaController.chooseImage(target),
@@ -898,8 +896,8 @@ const editorWorkspace = createEditorWorkspace({
     return () => { for (const [key, value] of nativeHistoryAliases) if (value === alias) nativeHistoryAliases.delete(key); };
   },
   onMount: listener => { nativeMountListener = listener; },
-  paneFile: () => secondaryPath,
-  closePane: closeSecondary,
+  paneFile: () => linkedStyles.secondaryPath(),
+  closePane: () => linkedStyles.closeSecondary(),
   afterFileChanges,
   openAfter: (path, keepExplorer) => openAfter(path, keepExplorer, true),
   showRow: focus => { if (explorerDropdown?.isOpen() && pagesController.explorerTab() === "pages") pagesController.renderTree(focus); },
@@ -1030,134 +1028,18 @@ const versions = createVersionView({
   loadSnapshot: path => loadSnapshot(path),
 });
 
-// Side by side with the page: its stylesheet, and after a click in the
-// preview, every rule that styles the selected element in the order the
-// cascade applies them (shared/cascade.ts): rules that decide the element's
-// look first, rules whose declarations all lose last. An edit to either file
-// re-maps the rules to their source.
-const linkedStyleSourceByPath = new Map<string, string>();
-let linkedStyleContext = "";
-function syncLinkedStyles(path: string, content: string) {
-  const context = `${info.user?.login}:${appStore.repository.value?.id}:${appStore.snapshot.value?.branch}`;
-  if (linkedStyleContext !== context) {
-    linkedStyleSourceByPath.clear();
-    linkedStyleContext = context;
-  }
-  const previous = linkedStyleSourceByPath.get(path);
-  linkedStyleSourceByPath.set(path, content);
-  if (previous !== content && linkedStyle && (path === linkedStyle.page || path === secondaryPath)) void refreshLinkedStyleRules();
-}
-// A rule in the Source editor rule chips: its range in its file and how the cascade treats it.
-interface LinkedRule extends StyleRule {
-  rule: NativeSelectedRule;
-  status: RuleStatus;
-  // Per declaration of `rule.declarations`, and for an overridden one the rule that wins its property.
-  declarations: DeclarationStatus[];
-  winners: (NativeSelectedRule | undefined)[];
-}
-// Rules the preview matched on an element, with what resolves them.
-interface NativeStyles {
-  rules: NativeSelectedRule[];
-  cascade?: NativeCascade;
-  // The element, for its `style` attribute's range in the source.
-  node?: number[];
-}
-let linkedStyle: { page: string; css?: string; rules: LinkedRule[]; isDefault?: boolean } | undefined;
-let nativeLinkedStyles: NativeStyles | undefined;
-// The rules styling the preview's <body>: with nothing selected, the first
-// stylesheet among them opens beside a page.
-let nativeBodyStyles: NativeStyles | undefined;
-let linkedStyleRequest = 0;
-let disposeSecondary: (() => void) | undefined;
-let secondaryPath: string | undefined;
-let secondaryHistoryScope: string | undefined;
-let secondaryRequest = 0;
+// Linked styles, the secondary pane and its rule chips (src/controllers/linked-styles-controller.ts).
+const linkedStyles = createLinkedStylesController({
+  appStore, workspaceSession, editorModule,
+  get info() { return info; }, get nativeSite() { return nativeSite; },
+  get primaryHistoryScope() { return primaryHistoryScope; }, get nativeVariantFiles() { return nativeVariantFiles; },
+  element, nativeModeActive, nativeSources, nativePageStyles, nativeEffectiveSource, nativeComponentTagForPath, nativeCssWorkspace,
+  nativeHistorySession, draftScope, draftStore, findEntry, readFile, errorMessage, updateNativePreviewSources,
+  applyWidth: () => codePanes.applyWidth(),
+  refreshFiles: () => filesTreeController.refresh(),
+  mounted: (path, pane) => nativeMountListener?.(path, pane),
+});
 
-// The cascade over `styles`, in display order, mapped to source ranges. A
-// rule whose declarations the CSSOM splits around nested rules is one entry.
-function linkedRules(styles: NativeStyles): LinkedRule[] {
-  const sources = nativeSources();
-  const result = resolveSelectedRules(styles.rules, styles.cascade);
-  const found = new Map<number, StyleRule[]>();
-  const lookups = styles.rules.map((rule) => rule.kind === "inline" ? { path: "", selector: "" } : rule);
-  for (const rule of findStyleRulesInSources(sources, lookups)) {
-    if (!found.has(rule.match)) found.set(rule.match, []);
-    found.get(rule.match)!.push(rule);
-  }
-  styles.rules.forEach((rule, index) => {
-    const source = sources[rule.path];
-    const tag = rule.kind === "inline" && styles.node && source !== undefined ? locateNativeElement(source, styles.node) : undefined;
-    if (tag) found.set(index, [{ path: rule.path, selector: rule.selector, start: tag.start, end: tag.end, match: index }]);
-  });
-  const winner = (property: string) => {
-    const at = result.winners[property];
-    return at ? styles.rules[at.rule] : undefined;
-  };
-  const out: LinkedRule[] = [];
-  const byRange = new Map<string, LinkedRule>();
-  for (const index of result.order) {
-    const rule = styles.rules[index];
-    const statuses = result.declarations[index];
-    const winners = (rule.declarations ?? []).map((item, n) => statuses[n] === "overridden" ? winner(item.property) : undefined);
-    for (const located of found.get(index) ?? []) {
-      const key = `${located.path}\n${located.start}\n${located.end}`;
-      const same = byRange.get(key);
-      if (!same) {
-        const linked: LinkedRule = { ...located, rule, status: result.rules[index], declarations: statuses, winners };
-        byRange.set(key, linked);
-        out.push(linked);
-        continue;
-      }
-      same.rule = { ...same.rule, declarations: [...(same.rule.declarations ?? []), ...(rule.declarations ?? [])] };
-      same.declarations = [...same.declarations, ...statuses];
-      same.winners = [...same.winners, ...winners];
-      same.status = same.status === "wins" || result.rules[index] === "wins" ? "wins"
-        : same.status === "overridden" && result.rules[index] === "overridden" ? "overridden" : "neutral";
-    }
-  }
-  return out;
-}
-
-function defaultLinkedStyle() {
-  if (!nativeSite) return undefined;
-  const rules = nativeBodyStyles ? linkedRules(nativeBodyStyles) : [];
-  const css = rules.find((rule) => /\.css$/.test(rule.path))?.path ?? nativePageStyles()[0];
-  return css ? { css, rules } : undefined;
-}
-async function openDefaultLinkedStyle(page = appStore.openFile.value) {
-  const found = defaultLinkedStyle();
-  if (!page || !found) return false;
-  const request = ++linkedStyleRequest;
-  const at = workspaceSession.begin();
-  nativeLinkedStyles = nativeBodyStyles;
-  linkedStyle = { page, css: found.css, rules: found.rules.length ? found.rules : linkedStyleIdle, isDefault: true };
-  if (!(await openSecondary(found.css))) return false;
-  if (request !== linkedStyleRequest || !at.holds() || linkedStyle?.page !== page) return false;
-  renderLinkedStyle();
-  return true;
-}
-// New <body> rules from the preview: a page showing them follows, opening
-// another stylesheet when the cascade now puts another one first.
-function updateBodyStyles(styles: NativeStyles) {
-  nativeBodyStyles = styles;
-  if (!linkedStyle?.isDefault || linkedStyle.page !== appStore.openFile.value) return;
-  const found = defaultLinkedStyle();
-  if (found && found.css === linkedStyle.css) {
-    nativeLinkedStyles = styles;
-    linkedStyle = { ...linkedStyle, rules: found.rules.length ? found.rules : linkedStyleIdle };
-    renderLinkedStyle();
-  } else void openDefaultLinkedStyle(linkedStyle.page);
-}
-function closeSecondary() {
-  secondaryRequest++;
-  disposeSecondary?.();
-  disposeSecondary = undefined;
-  secondaryPath = undefined;
-  secondaryHistoryScope = undefined;
-  element("secondary-pane").hidden = true;
-  element("main").classList.remove("has-secondary");
-  codePanes.applyWidth();
-}
 // With the whole commit listed in the snapshot, any path resolves without a
 // request; otherwise directories are walked one `/api/tree` call at a time.
 const repositoryIndex = new RepositoryIndex();
@@ -1166,224 +1048,6 @@ function entryAt(path: string): TreeEntry | undefined {
 }
 function findEntry(path: string) {
   return appStore.repository.value && appStore.snapshot.value ? repositoryIndex.find(api, appStore.repository.value, appStore.snapshot.value, path) : Promise.resolve(undefined);
-}
-// Opens `css` in the secondary pane (or keeps it if already there), then resolves.
-async function openSecondary(css: string, guard: () => boolean = () => true) {
-  if (!appStore.repository.value || !appStore.snapshot.value || !info.user || !guard()) return false;
-  const request = ++secondaryRequest;
-  const scope = {
-    account: info.user.login,
-    repoId: appStore.repository.value.id,
-    repo: appStore.repository.value.full_name,
-    branch: appStore.snapshot.value.branch,
-  };
-  const primaryKey = appStore.openFile.value ? draftKey(scope, appStore.openFile.value) : undefined;
-  const primary = primaryKey && primaryHistoryScope?.key === primaryKey && primaryHistoryScope.proof.isCurrent() ? primaryHistoryScope : undefined;
-  const historyScope = primary?.session ?? (appStore.openFile.value ? nativeHistorySession(scope, appStore.openFile.value) : undefined);
-  const current = () => {
-    const liveScope = draftScope();
-    return guard() && (!primary || primaryHistoryScope === primary && primary.proof.isCurrent() &&
-      !!appStore.openFile.value && !!liveScope && draftKey(liveScope, appStore.openFile.value) === primary.key);
-  };
-  if (draftStore().get(scope, css)?.deleted) return false;
-  if (secondaryPath === css && secondaryHistoryScope === historyScope && disposeSecondary) return true;
-  try {
-    // A stylesheet only in the drafts (a new component's) opens from its draft.
-    const draft = draftStore().get(scope, css);
-    const created = draft && draft.baseSha === null && !draft.deleted && !draft.upload && !draft.opaque;
-    const entry = created ? undefined : await findEntry(css);
-    if (!current() || request !== secondaryRequest) return false;
-    if (!created && (!entry || (entry.size ?? 0) > 1024 * 1024)) throw new Error(`Could not open ${css}.`);
-    // The stylesheet's source editor mounts at once; its code shows with Monaco.
-    const source = entry ? await readFile(scope.repo, entry.sha) : "";
-    if (request !== secondaryRequest || !current() || draftStore().get(scope, css)?.deleted) return false;
-    disposeSecondary?.();
-    element("secondary-pane").hidden = false;
-    element("main").classList.add("has-secondary");
-    codePanes.applyWidth();
-    disposeSecondary = editorModule.mountSourceEditor(
-      element("content-secondary"),
-      { key: draftKey(scope, css), historyScope, cssWorkspace: nativeCssWorkspace, variants: nativeVariantFiles, scope, baseSha: entry?.sha ?? null, path: css, source, readOnly: entry?.mode === "120000",
-        onContextChange: (value) => {
-          if (value) {
-            syncLinkedStyles(value.path, value.content);
-            if (nativeModeActive()) updateNativePreviewSources();
-          }
-          filesTreeController.refresh();
-        } },
-      null,
-    );
-    secondaryPath = css;
-    secondaryHistoryScope = historyScope;
-    nativeMountListener?.(css, true);
-    return true;
-  } catch (error) {
-    if (request === secondaryRequest) errorMessage(error);
-    return false;
-  }
-}
-// Title and rule chips of the secondary pane; highlights the rules in both
-// panes, crossing out the declarations the cascade overrides.
-function renderLinkedStyle() {
-  const linked = linkedStyle;
-  const title = element("secondary-title");
-  const chips = element("secondary-rules");
-  chips.replaceChildren();
-  if (!linked || !secondaryPath) return;
-  title.textContent = secondaryPath;
-  const inPane = (path: string) => linked.rules.filter((rule) => rule.path === path).map(ruleMarks);
-  editorModule?.highlightRanges(secondaryPath, inPane(secondaryPath));
-  if (appStore.openFile.value && appStore.openFile.value !== secondaryPath) editorModule?.highlightRanges(appStore.openFile.value, inPane(appStore.openFile.value));
-  if (!linked.rules.length) {
-    if (linked.rules !== linkedStyleIdle) chips.append(node("span", "muted", "No rules match this element"));
-    return;
-  }
-  for (const rule of linked.rules) chips.append(ruleChip(rule));
-}
-const linkedStyleIdle: LinkedRule[] = [];
-
-// Longhands a property sets, as this browser expands it (itself for a longhand).
-const longhandCache = new Map<string, string[]>();
-function longhandsOf(property: string) {
-  if (!longhandCache.has(property)) {
-    const style = document.createElement("div").style;
-    if (!property.startsWith("--")) style.setProperty(property, "inherit");
-    const list = Array.from(style);
-    longhandCache.set(property, list.length ? list : [property]);
-  }
-  return longhandCache.get(property)!;
-}
-
-// A rule's highlight: the whole rule, dimmed when all of it is overridden,
-// and each declaration in its source whose longhands are all overridden.
-function ruleMarks(rule: LinkedRule) {
-  const struck: { start: number; end: number }[] = [];
-  const source = nativeSources()[rule.path];
-  if (rule.rule.kind !== "inline" && source !== undefined) {
-    const items = rule.rule.declarations ?? [];
-    for (const declaration of declarationRanges(source, rule.start, rule.end)) {
-      const longhands = new Set(longhandsOf(declaration.property));
-      const statuses = items.flatMap((item, index) =>
-        longhands.has(item.property) || item.shorthand === declaration.property ? [rule.declarations[index]] : []);
-      if (statuses.length && statuses.every((status) => status === "overridden")) struck.push(declaration);
-    }
-  }
-  return { start: rule.start, end: rule.end, overridden: rule.status === "overridden", struck };
-}
-
-const fileName = (path: string) => path.split("/").pop() ?? path;
-
-// A chip per rule: its selector, where it comes from (context, layer,
-// conditions, state), its file when that is not the pane's, and a tooltip
-// listing its declarations with what the cascade makes of each.
-function ruleChip(rule: LinkedRule) {
-  const origin = ruleOrigin(rule.rule);
-  const inline = rule.rule.kind === "inline";
-  const chip = button("", () => void revealRule(rule), `code-pane__rule code-pane__rule--${rule.status}`);
-  chip.append(node("span", "code-pane__rule-selector", inline ? "style=\"…\"" : rule.selector));
-  const layer = origin.layer === "unlayered" ? "" : origin.layer.replace(/^@layer /, "");
-  const tags = [inline ? "" : origin.context, layer, ...origin.conditions.map((condition) => condition.split(" ")[0]),
-    ...origin.state.filter((state) => !rule.selector.includes(state))].filter(Boolean);
-  if (tags.length) chip.append(node("span", "code-pane__rule-origin", [...new Set(tags)].join(" ")));
-  if (rule.path !== secondaryPath) chip.append(node("span", "code-pane__rule-file", fileName(rule.path)));
-  const items = rule.rule.declarations ?? [];
-  const having = (status: DeclarationStatus) => [...new Set(items.filter((_, index) => rule.declarations[index] === status).map((item) => item.property))];
-  chip.dataset.cascade = rule.status;
-  chip.dataset.wins = having("wins").join(" ");
-  chip.dataset.overridden = having("overridden").join(" ");
-  chip.title = ruleTooltip(rule);
-  return chip;
-}
-
-const MAX_TOOLTIP_DECLARATIONS = 14;
-function ruleTooltip(rule: LinkedRule) {
-  const origin = ruleOrigin(rule.rule);
-  const lines = [
-    rule.rule.kind === "inline" ? "style attribute" : rule.selector,
-    rule.path + (rule.rule.importer ? ` (imported by ${rule.rule.importer})` : ""),
-    [origin.context, origin.layer, ...origin.conditions, ...origin.state.map((state) => `in ${state} state`)].filter(Boolean).join(" · "),
-  ];
-  // A shorthand written with var() is one line, not one per longhand.
-  const seen = new Set<string>();
-  const described = (rule.rule.declarations ?? []).flatMap((item, index) => {
-    const text = `${item.shorthand ?? item.property}: ${item.value}${item.important ? " !important" : ""}`;
-    const status = rule.declarations[index];
-    const by = rule.winners[index];
-    const line = status === "overridden" ? `✕ ${text} — overridden${by ? ` by ${by.kind === "inline" ? "style attribute" : by.selector} (${fileName(by.path)})` : ""}`
-      : status === "wins" ? `✓ ${text}`
-      : status === "inactive" ? `· ${text} — @container not met`
-      : status === "state" ? `· ${text} — ${origin.state.join(", ")} only`
-      : `· ${text} — not verified`;
-    if (seen.has(line)) return [];
-    seen.add(line);
-    return [line];
-  });
-  if (described.length > MAX_TOOLTIP_DECLARATIONS) described.splice(MAX_TOOLTIP_DECLARATIONS, Infinity, `… ${described.length - MAX_TOOLTIP_DECLARATIONS} more`);
-  return [...lines.filter(Boolean), ...described].join("\n");
-}
-
-async function revealRule(rule: StyleRule) {
-  if (rule.path === appStore.openFile.value) {
-    editorModule?.revealRange(rule.path, rule.start, rule.end);
-    return;
-  }
-  if (rule.path !== secondaryPath) {
-    if (!(await openSecondary(rule.path))) return;
-    renderLinkedStyle();
-  }
-  editorModule?.revealRange(rule.path, rule.start, rule.end);
-}
-
-function refreshLinkedStyleRules() {
-  if (!appStore.repository.value || !appStore.snapshot.value || !linkedStyle || !nativeLinkedStyles?.rules.length || !nativeModeActive()) return;
-  const page = linkedStyle.page;
-  if (page !== appStore.openFile.value) return;
-  linkedStyle = { ...linkedStyle, rules: linkedRules(nativeLinkedStyles) };
-  renderLinkedStyle();
-}
-
-async function linkNativeStyles(selection: NativePreviewSelection, reveal: boolean) {
-  const request = reveal ? ++linkedStyleRequest : linkedStyleRequest;
-  const at = workspaceSession.begin();
-  const page = selection.path;
-  // An element no rule matches shows what it inherits from: the <body> rules.
-  const styles = selection.selectors.length
-    ? { rules: selection.selectors, cascade: selection.cascade, node: selection.node }
-    : nativeBodyStyles;
-  if (!reveal && (!styles?.rules.length || !secondaryPath)) return;
-  nativeLinkedStyles = styles;
-  const rules = styles ? linkedRules(styles) : [];
-  if (request !== linkedStyleRequest || !at.holds() || page !== appStore.openFile.value) return;
-  // Explicit template entry keeps its authored stylesheet when the selected
-  // template element has no direct rules, rather than using page-body rules.
-  const componentCss = page && nativeComponentTagForPath(page) && !selection.selectors.length
-    ? nativeComponentCssPath(page) : undefined;
-  const scope = draftScope();
-  const componentDraft = componentCss && scope ? draftStore().get(scope, componentCss) : undefined;
-  const fallbackCss = componentCss && !componentDraft?.deleted && !componentDraft?.upload && !componentDraft?.opaque &&
-    nativeEffectiveSource(componentCss) !== undefined ? componentCss : undefined;
-  const css = fallbackCss ?? rules.find((rule) => rule.path !== page)?.path ??
-    styles?.rules.find((rule) => rule.path !== page)?.path ?? defaultLinkedStyle()?.css ?? secondaryPath;
-  if (!reveal && css !== secondaryPath) {
-    // Code selection updates matching rules without moving the open CSS pane.
-    linkedStyle = { page, css: secondaryPath, rules };
-    renderLinkedStyle();
-    return;
-  }
-  linkedStyle = { page, css, rules };
-  const current = () => {
-    const draft = fallbackCss && scope ? draftStore().get(scope, fallbackCss) : undefined;
-    return request === linkedStyleRequest && at.holds() && page === appStore.openFile.value &&
-      (!fallbackCss || (!draft?.deleted && !draft?.upload && !draft?.opaque && nativeEffectiveSource(fallbackCss) !== undefined));
-  };
-  if (css && !(await openSecondary(css, current))) return;
-  if (!current()) return;
-  if (!css) closeSecondary();
-  renderLinkedStyle();
-  // The first rule in the pane's file, which decides the most; the page's
-  // own caret stays on the selected element.
-  const top = rules.find((rule) => rule.path === css);
-  if (reveal && top && top.path !== page) editorModule?.revealRange(top.path, top.start, top.end);
 }
 
 const previewSelection = createPreviewSelectionController({
@@ -1402,24 +1066,19 @@ const previewSelection = createPreviewSelectionController({
   tagName: (source, node) => locateNativeElementRange(source, [...node])?.tag.name,
   openFile: (path, epoch) => restoreFile(path, stampOf(epoch), { linkDefaultStyle: false }),
   renderEditBar: (selection) => pageStructureController.renderEditBar(selection),
-  linkStyles: (selection, reveal) => void linkNativeStyles(selection, reveal),
+  linkStyles: (selection, reveal) => void linkedStyles.linkNativeStyles(selection, reveal),
   clearMoveAction: () => { pageStructureController.nativeElementMoveAction = undefined; },
   structureSelect: (target) => pageStructure?.select(target),
   hideComponentTools: () => componentTools?.show(undefined),
   agentContext: () => updateAgentContext(),
   announce: (message) => refuse(message),
   beginReveal: () => {
-    const request = ++linkedStyleRequest;
+    const request = linkedStyles.beginReveal();
     fileGeneration++;
-    secondaryRequest++;
     return request;
   },
-  styleRequest: () => linkedStyleRequest,
-  clearStyles: () => {
-    nativeLinkedStyles = undefined;
-    linkedStyle = undefined;
-    void openDefaultLinkedStyle();
-  },
+  styleRequest: () => linkedStyles.styleRequest(),
+  clearStyles: () => linkedStyles.clearStyles(),
 });
 
 // The site's files for its one Variant lookup (shared/variant-lookup.ts), for
@@ -1485,9 +1144,9 @@ function nativeCssWorkspace(): CssWorkspace | undefined {
       const current = () => at.holds() && appStore.openFile.value === requester && !versions.view &&
         requesterProof.isCurrent() && nativeCssWorkspace()?.revision === revision;
       if (!current() || !targetProof.isCurrent()) return false;
-      if (path !== requester && !(await openSecondary(path, () => current() && targetProof.isCurrent()))) return false;
+      if (path !== requester && !(await linkedStyles.openSecondary(path, () => current() && targetProof.isCurrent()))) return false;
       if (!current() || editorModule?.getMountedSource(path) !== sources[path] || !editorModule.isMounted(path)) return false;
-      renderLinkedStyle();
+      linkedStyles.renderLinkedStyle();
       editorModule.revealRange(path, start, end);
       return true;
     },
@@ -2462,7 +2121,7 @@ function deactivateNative() {
   nativeAssets.clear();
   nativeMissingAssets.clear();
   nativeAssetRequests.clear();
-  nativeBodyStyles = undefined;
+  linkedStyles.clearBodyStyles();
   nativeSourcesRequest++;
   nativePreview?.deactivate();
 }
@@ -2894,10 +2553,8 @@ function setCurrentPage(path?: string) {
   updateAgentContext();
   updatePreview();
   // Another page re-links its own stylesheet once it opens; anything else closes the pane.
-  if (linkedStyle && path !== linkedStyle.page) {
-    linkedStyle = undefined;
-    closeSecondary();
-  }
+  const linkedPage = linkedStyles.linkedPage();
+  if (linkedPage !== undefined && path !== linkedPage) linkedStyles.unlink();
   updateCurrentPageLabel();
   element("primary-title").textContent = path ?? "";
   componentTools?.refresh();
@@ -3011,7 +2668,7 @@ function closeWorkspace() {
   deactivateNative();
   nativePreview?.destroy();
   nativePreview = undefined;
-  linkedStyleSourceByPath.clear();
+  linkedStyles.clearSources();
   editorModule?.clearDrafts();
   mediaHistoryHome.clear();
   nextLoad();
@@ -3704,10 +3361,8 @@ function releaseFiles(paths: Set<string>) {
     fileGeneration++;
     setCurrentPage();
   }
-  if (secondaryPath && paths.has(secondaryPath)) {
-    linkedStyle = undefined;
-    closeSecondary();
-  }
+  const pane = linkedStyles.secondaryPath();
+  if (pane && paths.has(pane)) linkedStyles.unlink();
   if (scope) for (const path of paths) editorModule?.forgetDraftModel(scope, path);
   return open;
 }
@@ -3855,7 +3510,7 @@ const savePublish = createSavePublishController({
   },
   change: (path) => treeState().changes.get(path),
   openFile: () => appStore.openFile.value,
-  secondary: () => secondaryPath,
+  secondary: () => linkedStyles.secondaryPath(),
   drop: (scope, path) => Boolean(editorModule?.dropDraft(scope, path)),
   clearHistory: () => editorModule?.clearHistory(),
   reopen: (opened, back, styled) => {
@@ -3864,8 +3519,8 @@ const savePublish = createSavePublishController({
     if (opened) void openAfter(back);
     else if (styled && page && nativeModeActive()) {
       // The open page stays; its stylesheet opens again as GitHub has it.
-      if (nativeComponentTagForPath(page)) void openComponentLinkedStyle(page);
-      else void openDefaultLinkedStyle(page);
+      if (nativeComponentTagForPath(page)) void linkedStyles.openComponentLinkedStyle(page);
+      else void linkedStyles.openDefaultLinkedStyle(page);
     }
   },
   confirm: async (question, all) => {
@@ -3891,235 +3546,26 @@ async function dropFileTarget(source: FileRowTarget, folder: string) {
   if (error) errorMessage(new Error(error));
 }
 
-async function openEntry(
-  entry: TreeEntry,
-  path: string,
-  at: SessionStamp,
-  options: { linkDefaultStyle?: boolean; keepExplorer?: boolean; quietStatus?: boolean; beforeMount?: () => boolean; retry?: () => void } = {},
-) {
-  const scope = draftScope();
-  if (!at.holds() || !appStore.repository.value || !scope) return;
-  // A file deleted in the drafts opens as a note with Restore; one renamed
-  // or moved opens where it is now.
-  const marker = draftStore().get(scope, path);
-  if (marker?.deleted) {
-    if (marker.movedTo) { await openAfter(marker.movedTo, options.keepExplorer, options.quietStatus); return; }
-    ++fileGeneration;
-    if (!options.keepExplorer) explorerDropdown?.close();
-    setCurrentPage(path);
-    showDeletedFile(path);
-    return;
-  }
-  const selection = ++fileGeneration;
-  if (!options.keepExplorer) explorerDropdown?.close();
-  setCurrentPage(path);
-  if (entry.type === "commit") {
-    content.replaceChildren(
-      node(
-        "p",
-        "empty-message",
-        `Git submodule at ${entry.sha.slice(0, 12)}. Submodule contents are not loaded by this editor.`,
-      ),
-    );
-    status("Submodule selected.");
-    return;
-  }
-  if ((entry.size ?? 0) > 1024 * 1024) {
-    content.replaceChildren(
-      node(
-        "p",
-        "empty-message",
-        "This file is larger than the 1 MB the editor opens as text.",
-      ),
-    );
-    status("Large file selected.");
-    return;
-  }
-  content.replaceChildren(node("p", "empty-message", "Loading source…"));
-  if (!options.quietStatus) status(`Reading ${path}…`);
-  try {
-    const content = await readFile(appStore.repository.value.full_name, entry.sha);
-    if (!at.holds() || selection !== fileGeneration) return;
-    // A page the text index has not read yet: its text is the branch's, so
-    // the preview draws it now, with what it shows (src/native-boot.ts).
-    if (nativeSite && isNativeTextFile(path) && !nativeBaseSources.has(path) && entryAt(path)?.sha === entry.sha) {
-      nativeBaseSources.set(path, content);
-      updateNativePreviewSources();
-    }
-    await mountSource(
-      path,
-      content,
-      entry.sha,
-      entry.mode === "120000",
-      at,
-      selection,
-      options,
-    );
-    // A file opened while this one's editor loaded has the last word.
-    if (!options.quietStatus && selection === fileGeneration) settleStatus(`Viewing ${path} at ${appStore.snapshot.value?.commit.slice(0, 7)}.`);
-  } catch (error) {
-    if (at.holds() && selection === fileGeneration) {
-      content.replaceChildren(
-        node(
-          "p",
-          "empty-message",
-          error instanceof Error ? error.message : "Could not read this file.",
-        ),
-      );
-      // A file that is not text (or too big) is said here, where it was asked for, not as a failed request.
-      if (unreadableAsText(error)) status(`${path}: ${error instanceof Error ? error.message : "This file cannot be read as text."}`);
-      else errorMessage(error, options.retry);
-    }
-  }
-}
-
-async function mountSource(
-  path: string,
-  source: string,
-  baseSha: string | null,
-  readOnly: boolean,
-  at: SessionStamp,
-  selection: number,
-  options: { linkDefaultStyle?: boolean; beforeMount?: () => boolean } = {},
-) {
-  const scope = draftScope();
-  if (!scope || !at.holds() || selection !== fileGeneration) return;
-  const saveProof = savePublish.proof();
-  await openCodeEditor({
-    key: draftKey(scope, path),
-    scope,
-    baseSha: baseSha,
-    onPublished: (result, submitted) => savePublish.published(saveProof, scope, result, submitted),
-    onDiscardNew: () => {
-      // A discarded page no longer routes; the site shows the page's parent
-      // page, else home.
-      const page = Boolean(nativeSite && (nativeRouteForPath(path) ?? nativePageRoute(path)));
-      if (page) {
-        discardedNewPages([path]);
-        element("status").textContent = `Discarded the new page ${path}.`;
-        const fallback = nativeFallbackPage(path);
-        // Opened once the discard is done; what was announced (the discard,
-        // or an undo's own words) outlasts the page's loading messages.
-        if (fallback)
-          queueMicrotask(reported(async () => {
-            const said = element("status").textContent;
-            const at = workspaceSession.begin();
-            await restoreFile(fallback, at);
-            if (at.holds() && said) element("status").textContent = said;
-          }));
-      }
-      if (appStore.snapshot.value && info.user) {
-        showDirectory(appStore.snapshot.value);
-        rememberWorkspace(info.user.login, {
-          repoId: scope.repoId,
-          branch: scope.branch,
-        });
-        filesTreeController.refresh();
-        updateAgentContext();
-      }
-    },
-    onContextChange: (value) => {
-      activeFileContext = value;
-      if (value && appStore.openFile.value === value.path) syncLinkedStyles(value.path, value.content);
-      updateAgentContext();
-      filesTreeController.refresh();
-      versions.history.refresh();
-      if (nativeModeActive()) updateNativePreviewSources();
-      // An open template's banner counts its instances again.
-      componentTools?.refresh();
-      // The Page fields follow the page's head (typed, undone or redone).
-      if (value && nativeRouteForPath(value.path)) pageStructure?.refreshMeta();
-      // A heading or title typed in the open file renames it in the top bar.
-      updateCurrentPageLabel();
-    },
-    onHistory: () => void versions.history.open().catch(errorMessage),
-    onDiscardAll: () => void savePublish.discardAll(),
-    publishHead: () => savePublish.headFor(scope),
-    onRefused: () => void savePublish.checkHead(true),
-    onDiscardChange: reported(discardFileChange),
-    deletedUpstream: savePublish.isDeleted,
-    onSettleDeleted: savePublish.settleDeleted,
-    cssWorkspace: nativeCssWorkspace, variants: nativeVariantFiles,
-    ensureHistoryTarget: async (path) => {
-      const opened = await openSecondary(path);
-      if (opened) renderLinkedStyle();
-      return opened;
-    },
-    path,
-    source: source,
-    readOnly: readOnly,
-    onSessionExpired: () =>
-      errorMessage(new ApiError(401, "Your GitHub session expired. Connect again.")),
-  }, options.beforeMount);
-  if (options.beforeMount && !editorModule?.isMounted(path)) return;
-  // Another file opened over the selected page: its controls would edit the
-  // wrong file, so the bar waits for the next preview click.
-  if (nativeModeActive() && appStore.selection.value?.path !== path) {
-    nativePreview?.hideEditBar();
-    componentTools?.show(undefined);
-  }
-  componentTools?.refresh();
-  // Checked before the file-generation guard: handling that click is what
-  // superseded this open.
-  previewSelection.replayPending(path);
-  if (!at.holds() || selection !== fileGeneration || !info.user)
-    return;
-  rememberWorkspace(info.user.login, {
-    repoId: scope.repoId,
-    branch: scope.branch,
-    path,
-  });
-  // Another page's linked stylesheet does not carry over; a click in the
-  // preview links this page's own rules.
-  if (linkedStyle?.page !== path) {
-    linkedStyle = undefined;
-    closeSecondary();
-  }
-  if (nativeModeActive() && !linkedStyle && options.linkDefaultStyle !== false) {
-    // A component opens with its own stylesheet beside it; a page with the shared one.
-    const release = editorModule?.holdHistoryRefresh(path);
-    try {
-      if (nativeComponentTagForPath(path)) await openComponentLinkedStyle(path);
-      else await openDefaultLinkedStyle(path);
-    } finally { release?.(); }
-  }
-}
+// Opening a file in the source pane (src/controllers/source-pane-controller.ts).
+const sourcePane = createSourcePaneController({
+  appStore, workspaceSession, editorModule, linkedStyles, savePublish, versions, previewSelection, nativeBaseSources, nativeVariantFiles,
+  get info() { return info; }, get content() { return content; }, get explorerDropdown() { return explorerDropdown; },
+  get nativeSite() { return nativeSite; }, get nativePreview() { return nativePreview; },
+  get componentTools() { return componentTools; }, get pageStructure() { return pageStructure; },
+  fileGeneration: () => fileGeneration, nextFileGeneration: () => ++fileGeneration,
+  setActiveFileContext: (value) => { activeFileContext = value; },
+  openCodeEditor, element, status, settleStatus, errorMessage, readFile, entryAt, draftScope, draftStore, openAfter, setCurrentPage, showDeletedFile,
+  isNativeTextFile, nativeModeActive, nativeRouteForPath, nativeComponentTagForPath, nativeFallbackPage, nativeCssWorkspace,
+  updateNativePreviewSources, discardedNewPages, showDirectory, updateAgentContext, updateCurrentPageLabel, discardFileChange,
+  restoreFile: (path, at) => restoreFile(path, at),
+  refreshFiles: () => filesTreeController.refresh(),
+});
+const { openEntry, mountSource } = sourcePane;
 
 // The component whose template is `path`.
 function nativeComponentTagForPath(path: string) {
   if (!nativeSite) return undefined;
   return Object.entries(nativeSite.components).find(([, file]) => file === path)?.[0];
-}
-
-// The component's same-named `.css` in the secondary pane, with no rule chips
-// until an element is selected; the shared stylesheet when it has none.
-async function openComponentLinkedStyle(page: string) {
-  const css = nativeComponentCssPath(page);
-  const request = ++linkedStyleRequest;
-  const at = workspaceSession.begin();
-  const scope = draftScope();
-  if (!scope) return false;
-  const draft = draftStore().get(scope, css);
-  // A new component's stylesheet may exist only in drafts, as openSecondary
-  // already supports. A branch-tree miss must not hide that authored file.
-  const created = draft && draft.baseSha === null && !draft.deleted && !draft.upload && !draft.opaque;
-  const entry = created ? undefined : await findEntry(css);
-  if (request !== linkedStyleRequest || !at.holds() || appStore.openFile.value !== page) return false;
-  const latestDraft = draftStore().get(scope, css);
-  if (latestDraft?.deleted || latestDraft?.upload || latestDraft?.opaque ||
-      (!entry && !(latestDraft && latestDraft.baseSha === null))) return openDefaultLinkedStyle(page);
-  nativeLinkedStyles = undefined;
-  linkedStyle = { page, css, rules: linkedStyleIdle };
-  const current = () => {
-    const draft = draftStore().get(scope, css);
-    return request === linkedStyleRequest && at.holds() && appStore.openFile.value === page &&
-      linkedStyle?.page === page && linkedStyle.css === css && !draft?.deleted && !draft?.upload && !draft?.opaque &&
-      Boolean(entry || (draft && draft.baseSha === null));
-  };
-  if (!(await openSecondary(css, current))) return false;
-  if (request !== linkedStyleRequest || !at.holds() || linkedStyle?.page !== page) return false;
-  renderLinkedStyle();
-  return true;
 }
 
 function updateAgentContext() {
