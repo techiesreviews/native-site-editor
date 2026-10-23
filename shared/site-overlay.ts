@@ -12,7 +12,7 @@ export interface OverlayDraft {
   /** A file renamed or moved here (its new path is a new draft). */
   movedFrom?: string;
   /** An uploaded file (its type and size), held as bytes. */
-  upload?: object | boolean;
+  upload?: unknown;
   /** A binary or large file whose text the draft does not hold. */
   opaque?: boolean;
 }

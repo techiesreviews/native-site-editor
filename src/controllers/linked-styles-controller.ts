@@ -414,14 +414,14 @@ export function createLinkedStylesController(ports: LinkedStylesPorts) {
     if (request !== linkedStyleRequest || !at.holds() || appStore.openFile.value !== page) return false;
     const latestDraft = ports.draftStore().get(scope, css);
     if (latestDraft?.deleted || latestDraft?.upload || latestDraft?.opaque ||
-        (!entry && !(latestDraft && latestDraft.baseSha === null))) return openDefaultLinkedStyle(page);
+        (!entry && !isNewDraft(latestDraft, { uploads: false }))) return openDefaultLinkedStyle(page);
     nativeLinkedStyles = undefined;
     linkedStyle = { page, css, rules: linkedStyleIdle };
     const current = () => {
       const draft = ports.draftStore().get(scope, css);
       return request === linkedStyleRequest && at.holds() && appStore.openFile.value === page &&
         linkedStyle?.page === page && linkedStyle.css === css && !draft?.deleted && !draft?.upload && !draft?.opaque &&
-        Boolean(entry || (draft && draft.baseSha === null));
+        Boolean(entry || isNewDraft(draft, { uploads: false }));
     };
     if (!(await openSecondary(css, current))) return false;
     if (request !== linkedStyleRequest || !at.holds() || linkedStyle?.page !== page) return false;
