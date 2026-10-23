@@ -45,7 +45,7 @@ interface Options {
   source?: (path: string) => string | undefined;
   edit?: (request: AgentEdit | AgentStatus, fence: number, current: () => boolean, signal?: AbortSignal) => Promise<AgentReadResult>;
   read?: (read: AgentRead, signal?: AbortSignal) => Promise<AgentReadResult>;
-  /** Ticket 18: the request tools, answered from this browser's requests (a wait may be held under Watch). */
+  /** Ticket 18: the request tools, answered from this browser's requests (a wait is held until a request arrives). */
   requests?: (request: AgentRequests, fence: number, current: () => boolean, deadline: number, signal?: AbortSignal) => Promise<AgentReadResult>;
   run: (command: AgentCommand, ownerGeneration: number, signal?: AbortSignal) => Promise<{ message?: string; result?: AgentCommand["result"] } | void>;
   listen: (state: State) => void;

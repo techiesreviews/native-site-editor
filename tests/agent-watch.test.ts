@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { AgentRequest } from "../shared/agent";
 import type { AgentRequests } from "../shared/agent-requests";
-import { WAIT_MS, answerRequest, createRequestTools } from "../src/agent-watch";
+import { TAKE_TRIES, WAIT_MS, answerRequest, createRequestTools } from "../src/agent-watch";
 import { connectionPrompt } from "../src/agent-prompts";
 import { AgentRelay, WAITS_PER_SITE, relayObjectName, type RelayClock, type RelayScope, type RelaySocket } from "../worker/agent-relay";
 import { countedSocket, startCountedWorker } from "./fakes/counted-agent";
@@ -334,6 +334,42 @@ test("usage harness: held waits over the real relay — 3 auth + 1 dispatch each
     const edit = await measure("edit after waits", () => h.rpc("write_file", { path: "after-watch.txt", content: "still connected" }));
     assert.equal(edit.result.state, "applied");
   } finally { await h.worker.dispose(); }
+});
+
+test("wait_for_requests hints drive the watchdog: too many waits wait 30 s, a lost wait 10 s, a closed editor a minute", async () => {
+  const h = await connected();
+  const scope = { workspace, tabId: "owner-tab", generation: 1 }, name = await relayObjectName(workspace);
+  // An editor tab that receives commands and never answers them.
+  const frames: unknown[] = [];
+  let attachment: unknown = { ...scope, role: "editor", owner: { tabId: scope.tabId, generation: 1 } };
+  const editor = {
+    readyState: 1, close() {}, serializeAttachment(value: unknown) { attachment = value; }, deserializeAttachment: () => attachment,
+    send(message: string) { const value = JSON.parse(message); if (value.type === "command") frames.push(value); },
+  } satisfies RelaySocket;
+  try {
+    h.attach(name, editor, JSON.stringify({ type: "handshake", ...scope, owner: true }));
+    await h.settle(name);
+    const held = Array.from({ length: WAITS_PER_SITE }, () => h.rpc("wait_for_requests", {}));
+    while (frames.length < WAITS_PER_SITE) await settle();
+    const over = payload(await h.rpc("wait_for_requests", {}));
+    assert.deepEqual(over.requests, []);
+    assert.match(over.hint, /at most 3 at a time\)\. Wait about 30 seconds, then call wait_for_requests again\./);
+    // The tab goes: each held wait is lost, and the watchdog waits a little before the next.
+    await h.close(name, editor);
+    for (const pending of held) assert.match(payload(await pending).hint, /Wait about 10 seconds, then call wait_for_requests again\./);
+    // No tab at all: the editor is closed; wait about a minute.
+    const closed = payload(await h.rpc("wait_for_requests", {}));
+    assert.match(closed.hint, /The editor isn't open/);
+    assert.match(closed.hint, /Wait about a minute, then call wait_for_requests again\./);
+  } finally { await h.worker.dispose(); }
+});
+
+test("a take whose saves keep losing reads at most TAKE_TRIES times and hands out nothing", async () => {
+  let reads = 0;
+  const tools = createRequestTools({ workspace, list: async () => { reads++; return [asked("req-fenced")]; }, save: async () => false });
+  const result = await tools.run({ operation: "requests", tool: "wait_for_requests", args: {}, grantId: "g", waitMs: 0 }, () => true, Date.now() + 9_000);
+  assert.deepEqual((result as { value: unknown }).value, { requests: [] });
+  assert.equal(reads, TAKE_TRIES);
 });
 
 test("the copied prompt starts a watchdog subagent that keeps waiting and reports back, until Disconnect MCP; the token rules stay", () => {

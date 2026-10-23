@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { resumeAgents, serialReads } from "../src/agent-resume.ts";
+import { resumeAgents, revokeUnused, serialReads } from "../src/agent-resume.ts";
 import { forEachAwait } from "./support/await-race.ts";
 
 // The agent menu's state around resumeAgents (src/components/agent-menu.ts): the open site, this
@@ -107,4 +107,31 @@ test("connections reads: a read ahead that rejects keeps its rejection and only 
   await new Promise(resolve => setTimeout(resolve, 20));
   assert.equal(waited, false, "a read that never settles holds its waiter: read must settle (the menu's API deadline)");
   assert.equal(settle, undefined, "the waiter has not read yet");
+});
+
+// The agent menu's new prompt (src/components/agent-menu.ts start()): its site's unused tokens go,
+// fenced by the activation and site it began on.
+test("revokeUnused: a site switch or turn-off at any await revokes nothing more; fresh and used tokens stay", async () => {
+  const grants = [
+    { id: "old-1", via: "token", createdAt: 1 }, { id: "old-2", via: "token", createdAt: 2 },
+    { id: "used", via: "token", createdAt: 1, usedAt: 5 }, { id: "oauth", via: "oauth", createdAt: 1 }, { id: "fresh", via: "token", createdAt: 100 },
+  ];
+  const all: string[] = [];
+  await revokeUnused({ grants, before: 50, live: () => true, revoke: async id => { all.push(id); } });
+  assert.deepEqual(all, ["old-1", "old-2"]);
+  const points = await forEachAwait(race => {
+    const state = { live: true, revoked: [] as string[], after: [] as string[] };
+    const done = revokeUnused({ grants, before: 50, live: () => state.live,
+      revoke: race.port("revoke", async (id: string) => { (state.live ? state.revoked : state.after).push(id); }) });
+    return { state, done };
+  }, run => { run.state.live = false; }, run => {
+    // Revokes sent before the change (the one in flight included) may land; none is sent after it.
+    assert.deepEqual(run.state.after, []);
+    assert.ok(run.state.revoked.every(id => id.startsWith("old-")), run.state.revoked.join());
+  });
+  assert.equal(points, 2);
+  // Not live from the start: nothing is sent.
+  const none: string[] = [];
+  await revokeUnused({ grants, before: Infinity, live: () => false, revoke: async id => { none.push(id); } });
+  assert.deepEqual(none, []);
 });

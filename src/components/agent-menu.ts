@@ -11,7 +11,7 @@ import type { AgentReadPorts } from "../agent-tools-read";
 import type { SharedContext } from "../agent-site";
 import type { PinRequest } from "./agent-pins";
 import { agentHistoryKey } from "../controllers/agent-controller";
-import { resumeAgents, serialReads } from "../agent-resume";
+import { resumeAgents, revokeUnused, serialReads } from "../agent-resume";
 import { mountFlyout } from "./flyout";
 import { githubScope, same, sameBranch } from "../workspace-session";
 import "./agent-menu.css";
@@ -233,8 +233,8 @@ export function createAgentMenu(options: {
   count.setAttribute("aria-hidden", "true");
   count.hidden = true;
   action.append(actionLabel, count);
-  // The one exception (keeps work safe): this browser cannot keep agent edits and the open
-  // workspace has unsaved changes, so the menu offers a copy of them.
+  // The one exception (keeps work safe): this browser cannot keep agent edits, so the menu offers
+  // a copy of the open workspace's unsaved changes.
   const storage = agentStorageStatus();
   let exporting = false;
   const download = button("Download unsaved changes", () => void exportWork(), "text-button agent-menu__download");
@@ -481,8 +481,8 @@ export function createAgentMenu(options: {
     }, CONFIRM_MS);
   }
   const unsubscribeStorage = storage.subscribe(() => paint());
-  /** Downloads the open workspace's unsaved drafts (README.txt in it lists what is missing); then
-   * agents may edit again: a browser still full stops them again before any write. */
+  /** Downloads the open workspace's unsaved drafts (README.txt in it lists what is missing); after
+   * a full storage, agents may edit again: a browser still full stops them before any write. */
   async function exportWork() {
     const repo = options.repository(), workspace = scope();
     if (!repo || exporting) return;
@@ -495,7 +495,9 @@ export function createAgentMenu(options: {
       if (!current()) return;
       const done = await downloadUnsavedWork({ account: options.account, repository: repo }, current);
       if (!done || !current()) return;
-      storage.resume();
+      // Full: agents may try again (still full stops them before any write). Blocked storage stays
+      // blocked for this tab, and so does the button.
+      if (storage.problem?.reason === "full") storage.resume();
     } catch { /* The button stays: the unsaved changes are still in this tab. */ } finally {
       exporting = false;
       if (!disposed) paint();
@@ -606,15 +608,20 @@ export function createAgentMenu(options: {
     try {
       // Unused tokens older than a moment are revoked, so they never fill the site's five
       // connections; a newer one may be the prompt another tab of this browser just copied.
-      await dropUnused(at, Date.now() - FRESH_TOKEN_MS);
-      if (!live(at)) return;
+      // Every check holds the site this prompt is for, read before the first await.
+      const current = () => live(at) && sameRepository(options.repository(), repo);
+      const own = () => hub.grants.filter((grant) => sameBranch(grant, branchOf(repo)));
+      const drop = (before: number) => revokeUnused({ grants: own(), before, live: current, revoke: (id) => api("revoke", { id }) });
+      await drop(Date.now() - FRESH_TOKEN_MS);
+      if (!current()) return;
       const made = () => api("connect", { repo: repo.fullName, repoId: repo.id, branch: repo.branch });
       let result;
       try { result = await made(); } catch (error) {
-        // Refused (the five are full): every unused token goes, then one more try.
-        if (!liveGrants().some(unused)) throw error;
-        await dropUnused(at, Infinity);
-        if (!live(at)) return;
+        if (!current()) return;
+        // Refused (the five are full): every unused token of the site goes, then one more try.
+        if (!own().some(unused)) throw error;
+        await drop(Infinity);
+        if (!current()) return;
         result = await made();
       }
       if (disposed) return;
@@ -636,13 +643,6 @@ export function createAgentMenu(options: {
     } finally {
       changing = false;
       paint();
-    }
-  }
-  /** Revokes the site's unused tokens made before `before`. */
-  async function dropUnused(at: number, before: number) {
-    for (const grant of liveGrants()) {
-      if (unused(grant) && grant.createdAt < before) await api("revoke", { id: grant.id }).catch(() => undefined);
-      if (!live(at)) return;
     }
   }
   async function revoke() {

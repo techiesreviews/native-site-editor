@@ -14,7 +14,7 @@ import type { AgentWorkspace, JsonValue } from "../shared/agent-command";
 
 export const WAIT_MS = 25_000;
 /** Reads of one take, when a save lost a race to another agent's wait. */
-const TAKE_TRIES = 3;
+export const TAKE_TRIES = 3;
 
 export interface RequestPorts {
   workspace: AgentWorkspace;

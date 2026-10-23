@@ -126,9 +126,9 @@ export function receiptRetention(receipts: [string, AgentReceipt][], fences: [st
   return { remove, retire, horizon };
 }
 
-/** Why agent edits stopped in this browser, until the user chooses Try again (`resume`). */
+/** Why agent edits stopped in this browser: a full storage until the user downloads the unsaved changes (`resume`), a blocked one for the tab. */
 export interface AgentStorageProblem { reason: "full" | "unavailable"; message: string }
-const FULL_MESSAGE = "Agent storage transaction aborted: this browser's storage is full, so agent edits are stopped until the user frees space and chooses Try again in the project menu.";
+const FULL_MESSAGE = "Agent storage transaction aborted: this browser's storage is full, so agent edits are stopped until the user frees space and downloads the unsaved changes from the project menu (Download unsaved changes).";
 const UNKNOWN_MESSAGE = "This browser's storage is full and could not confirm whether the change was kept; agent edits are stopped. Read the files again before trying it again.";
 interface StorageStatus { problem?: AgentStorageProblem; stopped: boolean; listeners: Set<() => void> }
 const statuses = new WeakMap<object, StorageStatus>();
@@ -147,7 +147,8 @@ function report(status: StorageStatus, problem: AgentStorageProblem, stop: boole
 }
 /**
  * This browser's agent storage: the problem that stopped or refused agent edits, if any. A full
- * storage stops every agent edit (each is refused before mutation) until `resume`, the user's Try again.
+ * storage stops every agent edit (each is refused before mutation) until `resume`, after the user's
+ * download of the unsaved changes (Download unsaved changes in the agent menu).
  */
 export function agentStorageStatus(factory: IDBFactory | undefined = browserFactory()) {
   const status = statusOf(factory);

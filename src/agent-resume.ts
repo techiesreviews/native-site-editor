@@ -46,3 +46,23 @@ export function serialReads(read: () => Promise<boolean>) {
     },
   };
 }
+
+/**
+ * Revokes a site's unused tokens made before `before` (the agent menu's new prompt). An async
+ * writer: `live` (same activation and site) is checked before and after each revoke, so a site
+ * switch or turn-off meanwhile revokes nothing more; another site's fresh prompt stays.
+ */
+export async function revokeUnused(ports: {
+  /** The site's grants, read before the first await (its own site only). */
+  grants: readonly { id: string; via: string; usedAt?: number; createdAt: number }[];
+  before: number;
+  live(): boolean;
+  revoke(id: string): Promise<unknown>;
+}) {
+  for (const grant of ports.grants) {
+    if (grant.via !== "token" || grant.usedAt || grant.createdAt >= ports.before) continue;
+    if (!ports.live()) return;
+    await ports.revoke(grant.id).catch(() => undefined);
+    if (!ports.live()) return;
+  }
+}
