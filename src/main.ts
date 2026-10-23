@@ -112,7 +112,7 @@ import { addSectionStep } from "./page-builder/component-plans";
 import { createAgentSiteHost } from "./agent-site-host";
 import { createGuardedEdits, type GuardedEdits, type Reads, type PlanResult, type Stamp } from "./guarded-edit";
 import { createEditorWorkspace } from "./editor-workspace";
-import { createWorkspaceSession, draftScopeOf, holdsDraftScope, setupKeyOf, type SessionStamp, type WorkspaceScope } from "./workspace-session";
+import { createWorkspaceSession, draftScopeOf, holdsDraftScope, sameRepository, setupKeyOf, type SessionStamp, type WorkspaceScope } from "./workspace-session";
 import type { AnnounceAs } from "./components/toast-rules";
 import type { ToastAction } from "./components/toast";
 import type {
@@ -1892,7 +1892,7 @@ async function uploadFilesTo(folder: string, files: File[]): Promise<string[]> {
   const pin = mediaPorts.pin?.();
   if (!pin || !files.length) return [];
   // Where it landed when that is not shown: the branch, with the repository when it is another.
-  const where = () => draftScope()?.repoId === pin.scope.repoId ? pin.scope.branch : `${pin.scope.repo} (${pin.scope.branch})`;
+  const where = () => sameRepository(draftScope(), pin.scope) ? pin.scope.branch : `${pin.scope.repo} (${pin.scope.branch})`;
   try {
     const { addFilesTo } = await import("./page-builder/media-files-adding");
     return await addFilesTo(element("explorer-files"), folder, files, { error: errorMessage,

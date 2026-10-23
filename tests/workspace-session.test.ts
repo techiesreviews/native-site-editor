@@ -4,7 +4,7 @@
 // module on the memory workspace with a session in place of its generation.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createWorkspaceSession, draftScopeOf, githubScope, holdsDraftScope, same, sameBranch, setupKeyOf, workspaceKeys, type WorkspaceScope } from "../src/workspace-session";
+import { createWorkspaceSession, draftScopeOf, githubScope, holdsDraftScope, same, sameBranch, sameRepository, setupKeyOf, workspaceKeys, type WorkspaceScope } from "../src/workspace-session";
 import { createGuardedEdits } from "../src/guarded-edit";
 import { createMemoryWorkspace } from "./fakes/memory-workspace";
 
@@ -192,4 +192,12 @@ test("a draft scope belongs to a workspace under the one account rule", () => {
   assert.ok(holdsDraftScope(lex, { account: "LEX", repoId: 1, branch: "main" }));
   assert.ok(!holdsDraftScope(lex, { account: "lex", repoId: 1, branch: "dev" }));
   assert.ok(!holdsDraftScope(undefined, { account: "lex", repoId: 1, branch: "main" }));
+});
+
+// Ticket 23: a Files drop that finished elsewhere names the repository only when it is another one.
+test("sameRepository is one repository by id (by name only without ids), whatever the branch", () => {
+  assert.equal(sameRepository({ repoId: 1, repo: "lex/site" }, { repoId: 1, repo: "lex/renamed" }), true);
+  assert.equal(sameRepository({ repoId: 1, repo: "lex/site" }, { repoId: 2, repo: "lex/site" }), false);
+  assert.equal(sameRepository({ repo: "Lex/Site" }, { repo: "lex/site" }), true);
+  assert.equal(sameRepository(undefined, { repoId: 1 }), false);
 });
