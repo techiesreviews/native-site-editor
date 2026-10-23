@@ -5,7 +5,10 @@ import { ts, parse, walk, strip, member, isFunction, functionName, finding, anal
 type Rule = "plan-read" | "plan-unresolved" | "plan-wait" | "reads-helper" | "plan-default" | "stale-compare";
 
 // Exact counts keep a new compare in the same function from inheriting an exception.
+const FILE_SELECTION = "Not edit staleness: `fileGeneration` counts file selections within one load (moved from src/main.ts in ticket 81).";
 const allowlist: AllowlistEntry[] = [
+  { file: "src/controllers/source-pane-controller.ts", match: { rule: "stale-compare", function: "openEntry" }, reason: FILE_SELECTION, count: 3 },
+  { file: "src/controllers/source-pane-controller.ts", match: { rule: "stale-compare", function: "mountSource" }, reason: FILE_SELECTION, count: 2 },
   { file: "src/controllers/preview-selection-controller.ts", match: { rule: "stale-compare", function: "editableTemplatePath" }, reason: "Follow-up (ticket 22, outside its files): preview selection compares the workspace load number it began on (`generation: currentLoad`); it should hold a session stamp." },
   { file: "src/controllers/preview-selection-controller.ts", match: { rule: "stale-compare", function: "select" }, reason: "Follow-up (ticket 22, outside its files): preview selection compares the workspace load number it began on (`generation: currentLoad`); it should hold a session stamp.", count: 2 },
   { file: "src/controllers/preview-selection-controller.ts", match: { rule: "stale-compare", function: "replayPending" }, reason: "Follow-up (ticket 22, outside its files): preview selection compares the workspace load number it began on (`generation: currentLoad`); it should hold a session stamp." },

@@ -1,8 +1,8 @@
 ---
 title: "Code panes leave main.ts: linked styles, secondary pane, openEntry, mountSource"
 type: task (AFK)
-status: open
-assignee: lead-81 (this session)
+status: closed
+assignee: lead-81
 builder: sol
 blocked_by: [80-version-and-history-out-of-main]
 ---
@@ -36,3 +36,13 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `kit unit --affected`, `kit specs --affected`, `kit size`.
 - Review: `kit review --ticket <this ticket>` (GPT-6.1 Sol, medium, read-only). Land: `kit pr --ticket <this ticket>`.
 - Report: unit and specs `RESULT:` lines, `kit size` delta, review folder and decisions, PR and merge SHA, `main.ts` lines before and after and the new ceiling.
+
+## Done (2026-10-23)
+
+No visible change; Monaco and the code editor stay lazy (the new modules import only types from the editor chunk). One session, no 81a/81b split.
+
+- `src/controllers/linked-styles-controller.ts` (`createLinkedStylesController`, 467 lines): linked styles, the secondary pane, rule chips and tooltips, `linkNativeStyles`, and the default and component linked style. Bodies kept; host state comes in as live ports (getters for `info`, `nativeSite`, `primaryHistoryScope`, `nativeVariantFiles`). The host's former direct writes go through `unlink`, `beginReveal`, `clearStyles`, `clearBodyStyles` and `clearSources`.
+- `src/controllers/source-pane-controller.ts` (`createSourcePaneController`, 274 lines): `openEntry` and `mountSource`, bodies kept; `fileGeneration` is read and bumped through ports.
+- `src/main.ts`: 4803 → 4249 lines (−554); ceiling 4810 → 4250. `kit size`: boot 345 KB (+1 KB), budget 355 KB.
+- Tests: `tests/linked-styles-controller.test.ts` (8) and `tests/source-pane-controller.test.ts` (7), with ports typed by `satisfies`. The `fileGeneration` compares keep their exception, now under the new file, in `tests/workspace-session-guard.test.ts` and in `tests/guarded-edit-reads.test.ts` (its stale-compare rule covers `src/controllers/`). `docs/agents/code-map.md` rows and section ranges are updated.
+- Validation: `kit unit --affected` 28/28; `npm run check`, `npm run lint` and `npm test` (5149/5149) all pass; `kit specs --affected` 1/1 (native-cascade).
