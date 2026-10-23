@@ -32,7 +32,7 @@ const SCOPE_NAMES = new Set(["setupScope", "draftScope", "mediaIdentity", "scope
 const scopeRead = (read: ReturnType<typeof operand>) => !!read && (SCOPE_NAMES.has(read.name) || read.call && read.member && ["scope", "identity"].includes(read.name));
 // Two workspaces' own fields compared field by field (the session's `same` and `sameBranch` own that):
 // the same field on both sides; a repository's id or name under its other spellings (`id` against
-// `repoId`, `repo` against `fullName`); a repository list looked up by `id` against `id` is not one.
+// `repoId`, `repo` against `fullName`); two ids outside a lookup (sameId below).
 const WORKSPACE_FIELDS = new Set(["repoId", "branch", "account", "full_name", "fullName", "repo"]);
 const REPOSITORY_NAMES = new Set(["repo", "fullName", "full_name"]);
 function sameWorkspace(left: ReturnType<typeof operand>, right: ReturnType<typeof operand>) {
@@ -51,6 +51,24 @@ function sameWorkspace(left: ReturnType<typeof operand>, right: ReturnType<typeo
   return ids.includes("id") && ids.includes("repoId") && (left.name === "id" ? left : right).member;
 }
 
+// A list looked up by id (`list.find(item => item.id === id)`): the compare sits in a find, filter,
+// some, every or findIndex callback and one operand reads that callback's parameter.
+const LOOKUPS = new Set(["find", "findIndex", "findLast", "filter", "some", "every"]);
+function lookup(node: TS.Node, reads: ReturnType<typeof operand>[]) {
+  for (let parent = node.parent; parent; parent = parent.parent) {
+    if (!ts.isArrowFunction(parent) && !ts.isFunctionExpression(parent)) continue;
+    const call = parent.parent;
+    if (!ts.isCallExpression(call) || !LOOKUPS.has(member(strip(call.expression))?.name ?? "")) return false;
+    const parameters = new Set(parent.parameters.map(parameter => parameter.name.getText()));
+    return reads.some(read => { const receiver = read?.receiver && strip(read.receiver); return !!receiver && ts.isIdentifier(receiver) && parameters.has(receiver.text); });
+  }
+  return false;
+}
+// Two repositories' ids compared (a receiver names a repository or the pinned one), outside a lookup.
+const sameId = (node: TS.Node, left: ReturnType<typeof operand>, right: ReturnType<typeof operand>) =>
+  !!left?.member && !!right?.member && !left.call && !right.call && left.name === "id" && right.name === "id" &&
+  [left, right].some(read => /repo|pinned/i.test(read.receiver?.getText() ?? "")) && !lookup(node, [left, right]);
+
 const detect: Detector = (source, file) => {
   if (file === SESSION) return [];
   const tree = parse(source, file), hits: Finding[] = [];
@@ -58,7 +76,7 @@ const detect: Detector = (source, file) => {
     if (!ts.isBinaryExpression(node) || !EQUALITY.includes(node.operatorToken.kind)) return;
     const left = operand(node.left), right = operand(node.right);
     const rule: Rule | undefined = loadRead(left) || loadRead(right) ? "load-compare"
-      : scopeRead(left) || scopeRead(right) ? "scope-compare" : sameWorkspace(left, right) ? "same-workspace" : undefined;
+      : scopeRead(left) || scopeRead(right) ? "scope-compare" : sameWorkspace(left, right) || sameId(node, left, right) ? "same-workspace" : undefined;
     if (rule) hits.push(finding(tree, node, rule));
   });
   return hits;
@@ -130,6 +148,8 @@ const allowlist: AllowlistEntry[] = [
   { file: "src/main.ts", match: { rule: "same-workspace", function: "applyAgentCommand" }, reason: `${FOLLOW_UP} an agent command's branch against the open one; it should ask \`sameBranch\`.` },
   { file: "src/main.ts", match: { rule: "same-workspace", function: "openNewDraft" }, reason: `${FOLLOW_UP} a draft's repository and branch against the open one; it should ask \`holdsDraftScope\`.`, count: 2 },
   { file: "src/main.ts", match: { rule: "same-workspace", function: "takeBootGuess" }, reason: `${FOLLOW_UP} the link's repository and branch, and the guessed snapshot's branch, against the one opening; it should ask \`same\`.`, count: 3 },
+  { file: "src/setup-actions.ts", match: { rule: "same-workspace", function: "createSite" }, reason: "Not two workspaces: whether choosing the created repository opened it, by its id (the session's repository rule; no branch is chosen yet)." },
+  { file: "src/main.ts", match: { rule: "same-workspace", function: "offerFinishStarter" }, reason: `${FOLLOW_UP} the finish banner's repository against the open one beside its stamp; the stamp alone should decide.` },
   { file: "src/boot-memory.ts", match: { rule: "same-workspace", function: "readBootMemory" }, reason: `${FOLLOW_UP} reads the remembered workspace back by its repository id; it should ask \`same\`.` },
   { file: "shared/agent-read.ts", match: { rule: "same-workspace", function: "openRequests" }, reason: `${FOLLOW_UP} shared with the Worker, which does not load the session module yet.` },
   { file: "src/controllers/agent-controller.ts", match: { rule: "same-workspace", function: "ensure" }, reason: "Not two workspaces: a lazy menu load is joined only for the same signed-in login and host it began for." },
@@ -162,9 +182,10 @@ test("two workspaces compared field by field fire", () => {
   for (const source of ["repo.id !== pinned.id || repo.branch !== pinned.branch", "grant.repoId === repo.repoId", "now?.repo !== scope.repo", "a.account.toLowerCase() === b.account",
     "seen.branch !== scope.branch", "repository.full_name === other.full_name", "approval.fullName === repo.fullName",
     "grant.repoId === repo.id", "repo?.fullName === approval.repo", "now?.repo.id !== repoId", "incoming.repoId !== workspace.repoId", "status.repo === repo.full_name",
-    "repoId !== workspace.repoId", "branch !== workspace.branch", "link.branch !== branch", "receipt.value.branch !== branch", "value.repoId === repoId", "account === scope.account"])
+    "repoId !== workspace.repoId", "branch !== workspace.branch", "link.branch !== branch", "receipt.value.branch !== branch", "value.repoId === repoId", "account === scope.account",
+    "options.repository()?.id !== repo.id", "now?.id !== pinned.id", "repos.find(item => item.id === id) && repo.id === pinned.id"])
     fires(source, "same-workspace");
-  for (const source of ["grant.id === command.grantId", "now.branch === branch", "snapshot.commit !== commit", "item.repo === name", "known.id !== repo.id", "id === repoId"])
+  for (const source of ["grant.id === command.grantId", "now.branch === branch", "snapshot.commit !== commit", "item.repo === name", "list.filter(known => known.id !== repo.id)", "list.find(item => item.id === id)", "list.find(function (item) { return item.id === other.id; })", "a.id === b.id", "data.id !== msg.id", "id === repoId"])
     assert.deepEqual(detect(source, FAKE), [], source);
 });
 

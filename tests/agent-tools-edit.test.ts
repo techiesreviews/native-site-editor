@@ -396,6 +396,25 @@ test("a changed revision at every preparation await never reaches the guarded ex
   assert.ok(points >= 3);
 });
 
+// The tools trust the guarded edit's repository stamp for the repository and branch (src/workspace-session.ts):
+// a real one stops holding on a branch switch even when the commit stays the same.
+test("a branch switch while an agent edit prepares stops the real repository stamp; nothing runs or is kept", async () => {
+  const f = await fixture(), memory = createMemoryWorkspace({ branch: { "index.html": "before" } }), edits = createGuardedEdits(memory.workspace);
+  const opened = deferred<void>(), gate = deferred<void>();
+  const ports: AgentReadPorts = { ...f.ports, stamp: () => edits.stamp("repository"), context: async () => { opened.resolve(); await gate.promise; return f.ports.context(); } };
+  let writes = 0;
+  const tools = createAgentEditTools({ workspace, ports, records: f.records, run: async () => { writes++; return { message: "Applied." }; } });
+  const input = request("edit_file", { path: "index.html", expectedHash: f.context.site!.outlines[0].hash, edits: [{ oldText: "Welcome", newText: "Hello" }] });
+  const reply = tools.run(input, 0, () => true);
+  await opened.promise;
+  memory.setScope("lex/site@dev");
+  gate.resolve();
+  assert.deepEqual(await reply, { ok: true, value: { requestId: input.id, state: "conflict", message: "The editor changed branch or revision. Read the site again." } });
+  assert.equal(f.snapshot.commit, commit, "the commit stayed the same");
+  assert.equal(writes, 0);
+  assert.equal(await f.records.receipt(workspace, input.id, input.grantId), undefined);
+});
+
 test("a revision change after the executor committed still reports applied, never conflict", async () => {
   const f = await fixture();
   let live = true;

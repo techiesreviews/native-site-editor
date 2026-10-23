@@ -211,6 +211,22 @@ test("an approval for another repository or branch does not mount a menu", async
   f.cleanup();
 });
 
+// The approval names its repository without an id: matched by name in any capitals (src/workspace-session.ts sameBranch).
+test("an approval naming the repository in other capitals mounts the menu and reaches it; another branch does not", async () => {
+  const f = fixture(), approval = (branch: string) => JSON.stringify({ at: 1800, repo: "User/My-Site", branch, approval: "approval-1" });
+  f.show("user/my-site", "main");
+  f.controller.start();
+  f.consent(undefined, approval("preview"));
+  await settle();
+  assert.equal(f.loads.length, 0, "another branch loads nothing");
+  f.consent(undefined, approval("main"));
+  assert.equal(f.loads.length, 1);
+  f.loads[0].resolve({ createAgentMenu: f.createMenu });
+  await settle();
+  assert.deepEqual(f.menus[0].calls, ["consent:1800"]);
+  f.cleanup();
+});
+
 test("a mounted menu hears both leaving a workspace and returning to the same workspace", async () => {
   const f = fixture(); f.show(); f.controller.start(); await f.mount();
   f.menus[0].calls.length = 0;

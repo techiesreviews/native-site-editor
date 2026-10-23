@@ -18,7 +18,8 @@ import { uploadKey } from "../src/uploads";
 import { MEDIA_RECORDS_PATH } from "../shared/media-records";
 import { relayObjectName, type RelaySocket } from "../worker/agent-relay";
 import { startCountedWorker } from "./fakes/counted-agent";
-import { deferred } from "./fakes/memory-workspace";
+import { createMemoryWorkspace, deferred } from "./fakes/memory-workspace";
+import { createGuardedEdits } from "../src/guarded-edit";
 import { agentMediaStorage } from "./support/agent-media-workspace";
 import { forEachAwait, type AwaitRace } from "./support/await-race";
 import { commit, editorTab, origin, payload, repo, signIn, siteContext } from "./mcp-harness";
@@ -31,7 +32,7 @@ function body(result: AgentReadResult) {
   assert.ok(result.ok, JSON.stringify(result));
   return payload({ content: [{ text: JSON.stringify(result.value) }] });
 }
-async function fixture(race?: AwaitRace) {
+async function fixture(race?: AwaitRace, stamp?: AgentReadPorts["stamp"]) {
   const text = new Map([["index.html", '<!doctype html><html><head><title>Media</title></head><body><main><section><img src="/images/photo.svg" alt=""><video src="/media/film.mp4" controls></video></section></main></body></html>'],
     [MEDIA_RECORDS_PATH, JSON.stringify({ version: 2, collections: [], files: { "images/photo.svg": { description: { text: "Draft description", byAgent: true } } } })]]);
   const paths = [...text.keys(), "images/photo.svg", "media/film.mp4", "files/menu.pdf", "styles/media-player.css", "scripts/media-player.js", "scripts/media-online.js"];
@@ -43,7 +44,7 @@ async function fixture(race?: AwaitRace) {
   const history: (() => void)[] = [];
   const snapshot: Snapshot = { branch: "main", commit, entries: [] };
   const context = await siteContext();
-  const toolsPorts = { stamp: () => ({ holds: () => valid, changed: () => undefined }), source: (path: string) => text.get(path),
+  const toolsPorts = { stamp: stamp ?? (() => ({ holds: () => valid, changed: () => undefined })), source: (path: string) => text.get(path),
     context: async () => ({ context, texts: new Map<string, string>() }),
     files: () => ({ repo, snapshot, api: async <T>() => ({ entries: [] }) as T, read: async () => "", batch: async () => ({}), has: () => false }),
   } satisfies AgentReadPorts;
@@ -178,6 +179,24 @@ test("deadline and cancellation before commit leave drafts unchanged", async t =
     assert.equal(f.storage.store.list({ ...workspace, repo: repo.full_name }).length, 0); assert.equal(f.history.length, 0);
     assert.equal(await f.records.receipt(workspace, input.id, input.grantId), undefined);
   }
+});
+
+// The tools trust the guarded edit's repository stamp for the repository and branch (src/workspace-session.ts):
+// a real one stops holding on a branch switch before commit even when the commit stays the same.
+test("a branch switch before an agent media change commits stops the real repository stamp; nothing is kept", async () => {
+  const memory = createMemoryWorkspace({ branch: { "index.html": "before" } }), edits = createGuardedEdits(memory.workspace);
+  const f = await fixture(undefined, () => edits.stamp("repository")), hold = deferred<void>(); f.hold(hold.promise);
+  const input = request("adding_settings", { image: "smaller" });
+  const pending = f.run(input);
+  for (let turn = 0; turn < 200 && f.counts().runs === 0; turn++) await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(f.counts().runs, 1, "the change reached its run before commit");
+  memory.setScope("lex/site@dev");
+  hold.resolve();
+  const result = await pending;
+  assert.equal(f.snapshot.commit, commit, "the commit stayed the same");
+  assert.ok(!result.ok || (result.value as { state?: string }).state !== "applied", JSON.stringify(result));
+  assert.equal(f.storage.store.list({ ...workspace, repo: repo.full_name }).length, 0); assert.equal(f.history.length, 0);
+  assert.equal(await f.records.receipt(workspace, input.id, input.grantId), undefined);
 });
 
 test("in-flight reuse with different work or another grant is refused before preparation", async () => {
