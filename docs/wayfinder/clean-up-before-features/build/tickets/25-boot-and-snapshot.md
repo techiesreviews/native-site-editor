@@ -1,8 +1,8 @@
 ---
 title: "Boot and snapshot leave main.ts; boot-memory limits 2 and 3"
 type: task (AFK)
-status: open
-assignee: lead-25 (this session)
+status: closed
+assignee: lead-25
 builder: claude
 blocked_by: [22-workspace-session-callers]
 ---
@@ -38,3 +38,11 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `kit unit --affected`, `kit specs --affected` plus `kit specs native-boot-memory.spec.ts native-boot-parallel.spec.ts native-boot-requests.spec.ts`, `kit size`.
 - Review: `kit review --ticket <this ticket>` (GPT-6.1 Sol, medium, read-only). Land: `kit pr --ticket <this ticket>`.
 - Report: unit and specs `RESULT:` lines, `kit size` KB, review folder and decisions, PR and merge SHA, `main.ts` lines before and after and the new ceiling.
+
+## Done (2026-10-23)
+
+- `restoreFile`, `loadSnapshot`, the boot guess and `chooseRepository` moved to `src/workspace-boot.ts` (`createWorkspaceBoot`); `src/main.ts` hands in the session, DOM and native-site state as live ports (getters) and keeps the three names. `main.ts` 5699 → 5345 lines; ceiling 5350. Boot bundle 342 → 343 KB (budget 355).
+- Bodies kept; changes beyond `ports.` prefixes: `info.user` reads `ports.user`; `location.origin + location.pathname` reads `ports.source()`; `boot.draftsReady()`/`boot.sessionTag()` are ports; the DOM helper `node` is a port (node tests cannot load `src/ui/dom.ts`); `GUESS_AFTER_FAILED_LIST_MS` is exported for the unit test; the boot port's `bootGuess = undefined` is `workspaceBoot.forgetGuess()`.
+- TD 06 limit 2: `loadRepositories` abandons a taken guess before its next load (`abandonGuess`, split out of `dropBootGuess`), so a guess that lands after a new listing cleared the selection seeds nothing, not even the clean-source cache. A guess fed to its own snapshot load (branch list first) still seeds, as before.
+- TD 06 limit 3: `sessionTag()` unit test (`tests/boot-controller.test.ts`); browser test: sign-out posts `/auth/logout` and no `ase:boot-memory:` record is left.
+- Tests: `tests/workspace-boot.test.ts` (proven guess, cleared selection, branch list first, dropped guess, other session tag, no tag, failed branch list at the bound); `native-boot-memory.spec.ts` gains the cleared-selection row (fails without the fix) and the sign-out row. The session guard's allowlist entries for the moved functions name `src/workspace-boot.ts`.
