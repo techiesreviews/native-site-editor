@@ -2,7 +2,7 @@
 title: "GitHub not answering: three automatic retries, then the toast"
 type: task (AFK)
 status: open
-assignee:
+assignee: lead-26 (this session)
 builder: sol
 blocked_by: [25-boot-and-snapshot]
 ---
