@@ -199,6 +199,23 @@ test("deleted upstream: a missing edit waits to be settled, a missing deletion g
   assert.equal(stale.entries.size, 0, "an old load looks nothing up");
 });
 
+test("a new load starts its own deleted-upstream check; the earlier load's answer publishes nothing", async () => {
+  const f = fixture();
+  f.drafts.set("gone.html", draft("gone.html"));
+  const first = f.controller.checkDeleted(f.ports.stamp()), firstLookup = f.entries.get("gone.html")!;
+  f.state.generation++;
+  const second = f.controller.checkDeleted(f.ports.stamp());
+  assert.notEqual(second, first, "a new load checks again");
+  assert.notEqual(f.entries.get("gone.html"), firstLookup, "with fresh lookups");
+  firstLookup.resolve(undefined);
+  await first;
+  assert.equal(f.controller.isDeleted("gone.html"), false, "the earlier load's check publishes nothing");
+  assert.deepEqual(f.log, []);
+  f.entries.get("gone.html")!.resolve(undefined);
+  await second;
+  assert.equal(f.controller.isDeleted("gone.html"), true);
+});
+
 test("settling a deleted draft keeps it as a new file or drops it, then reopens what was open", async () => {
   const f = fixture();
   f.drafts.set("gone.html", draft("gone.html"));

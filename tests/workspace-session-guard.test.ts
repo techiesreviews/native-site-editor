@@ -39,6 +39,14 @@ function sameWorkspace(left: ReturnType<typeof operand>, right: ReturnType<typeo
   if (!left || !right || left.call || right.call) return false;
   if (left.member && right.member && left.name === right.name) return WORKSPACE_FIELDS.has(left.name);
   if (left.member && right.member && REPOSITORY_NAMES.has(left.name) && REPOSITORY_NAMES.has(right.name)) return true;
+  // A local copy of a field against a workspace's own: always for `repoId` and `account`; for `branch`
+  // when the member reads a workspace, scope, link, guess or receipt (a local `branch` against a
+  // snapshot's is the open branch read twice, not two workspaces).
+  if (left.member !== right.member && left.name === right.name) {
+    const field = left.member ? left : right;
+    if (["repoId", "account"].includes(field.name)) return true;
+    if (field.name === "branch") return /workspace|scope|link|guess|receipt/i.test(field.receiver?.getText() ?? "");
+  }
   const ids = [left, right].map(read => read.name);
   return ids.includes("id") && ids.includes("repoId") && (left.name === "id" ? left : right).member;
 }
@@ -121,7 +129,10 @@ const allowlist: AllowlistEntry[] = [
   { file: "src/main.ts", match: { rule: "same-workspace", function: "applyAgentSiteCommand" }, reason: `${FOLLOW_UP} an agent command's repository and branch against the open one; it should ask \`sameBranch\`.`, count: 2 },
   { file: "src/main.ts", match: { rule: "same-workspace", function: "applyAgentCommand" }, reason: `${FOLLOW_UP} an agent command's branch against the open one; it should ask \`sameBranch\`.` },
   { file: "src/main.ts", match: { rule: "same-workspace", function: "openNewDraft" }, reason: `${FOLLOW_UP} a draft's repository and branch against the open one; it should ask \`holdsDraftScope\`.`, count: 2 },
-  { file: "src/main.ts", match: { rule: "same-workspace", function: "takeBootGuess" }, reason: `${FOLLOW_UP} the link's repository id against the guessed repository; it should ask \`same\`.` },
+  { file: "src/main.ts", match: { rule: "same-workspace", function: "takeBootGuess" }, reason: `${FOLLOW_UP} the link's repository and branch, and the guessed snapshot's branch, against the one opening; it should ask \`same\`.`, count: 3 },
+  { file: "src/boot-memory.ts", match: { rule: "same-workspace", function: "readBootMemory" }, reason: `${FOLLOW_UP} reads the remembered workspace back by its repository id; it should ask \`same\`.` },
+  { file: "shared/agent-read.ts", match: { rule: "same-workspace", function: "openRequests" }, reason: `${FOLLOW_UP} shared with the Worker, which does not load the session module yet.` },
+  { file: "src/controllers/agent-controller.ts", match: { rule: "same-workspace", function: "ensure" }, reason: "Not two workspaces: a lazy menu load is joined only for the same signed-in login and host it began for." },
   { file: "src/main.ts", match: { rule: "same-workspace", function: "startBootGuess" }, reason: `${FOLLOW_UP} the remembered workspace's branch against the link's; it should ask \`same\`.` },
   { file: "shared/agent-requests.ts", match: { rule: "same-workspace", function: "inWorkspace" }, reason: `${FOLLOW_UP} shared with the Worker, which does not load the session module yet.`, count: 2 },
 ];
@@ -150,7 +161,8 @@ test("a scope or its key compared by hand fires", () => {
 test("two workspaces compared field by field fire", () => {
   for (const source of ["repo.id !== pinned.id || repo.branch !== pinned.branch", "grant.repoId === repo.repoId", "now?.repo !== scope.repo", "a.account.toLowerCase() === b.account",
     "seen.branch !== scope.branch", "repository.full_name === other.full_name", "approval.fullName === repo.fullName",
-    "grant.repoId === repo.id", "repo?.fullName === approval.repo", "now?.repo.id !== repoId", "incoming.repoId !== workspace.repoId", "status.repo === repo.full_name"])
+    "grant.repoId === repo.id", "repo?.fullName === approval.repo", "now?.repo.id !== repoId", "incoming.repoId !== workspace.repoId", "status.repo === repo.full_name",
+    "repoId !== workspace.repoId", "branch !== workspace.branch", "link.branch !== branch", "receipt.value.branch !== branch", "value.repoId === repoId", "account === scope.account"])
     fires(source, "same-workspace");
   for (const source of ["grant.id === command.grantId", "now.branch === branch", "snapshot.commit !== commit", "item.repo === name", "known.id !== repo.id", "id === repoId"])
     assert.deepEqual(detect(source, FAKE), [], source);

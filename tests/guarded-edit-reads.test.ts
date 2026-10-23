@@ -6,9 +6,9 @@ type Rule = "plan-read" | "plan-unresolved" | "plan-wait" | "reads-helper" | "pl
 
 // Exact counts keep a new compare in the same function from inheriting an exception.
 const allowlist: AllowlistEntry[] = [
-  { file: "src/controllers/preview-selection-controller.ts", match: { rule: "stale-compare", function: "editableTemplatePath" }, reason: "Preview selection intent pins the editable template to the file generation that selected it." },
-  { file: "src/controllers/preview-selection-controller.ts", match: { rule: "stale-compare", function: "select" }, reason: "Preview selection intents reject stale instance clicks and superseded file reveals, not edits.", count: 2 },
-  { file: "src/controllers/preview-selection-controller.ts", match: { rule: "stale-compare", function: "replayPending" }, reason: "Preview selection intent is replayed only in its original file generation." },
+  { file: "src/controllers/preview-selection-controller.ts", match: { rule: "stale-compare", function: "editableTemplatePath" }, reason: "Follow-up (ticket 22, outside its files): preview selection compares the workspace load number it began on (`generation: currentLoad`); it should hold a session stamp." },
+  { file: "src/controllers/preview-selection-controller.ts", match: { rule: "stale-compare", function: "select" }, reason: "Follow-up (ticket 22, outside its files): preview selection compares the workspace load number it began on (`generation: currentLoad`); it should hold a session stamp.", count: 2 },
+  { file: "src/controllers/preview-selection-controller.ts", match: { rule: "stale-compare", function: "replayPending" }, reason: "Follow-up (ticket 22, outside its files): preview selection compares the workspace load number it began on (`generation: currentLoad`); it should hold a session stamp." },
 ];
 // Same-file helpers a plan calls are scanned too, except these waits: the module re-proves
 // every read after them, and the plan reads what it uses through `r` once they settle.
