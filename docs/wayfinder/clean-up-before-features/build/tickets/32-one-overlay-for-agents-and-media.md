@@ -2,7 +2,7 @@
 title: "Agent reads and media text use the runtime's overlay"
 type: task (AFK)
 status: open
-assignee:
+assignee: lead-32 (this session)
 builder: claude
 blocked_by: [31-native-site-runtime]
 ---
