@@ -108,6 +108,15 @@ export const setupKeyOf = (scope: WorkspaceScope | undefined) => workspaceKeys(s
 /** Whether `draft` (a draft scope, src/drafts.ts) is the workspace of `scope`, under the one account rule. */
 export const holdsDraftScope = (scope: WorkspaceScope | undefined, draft: { account: string; repoId: number; branch: string }) => same(scope, githubScope(draft));
 
+/**
+ * Whether work begun on `stamp` is on show: its workspace is (a new load of it too). Another workspace
+ * or a version view of it is elsewhere (ticket 23: there work finishes as drafts, with no Undo step).
+ */
+export function onShow(stamp: SessionStamp) {
+  const change = stamp.changed();
+  return change === undefined || change === "generation";
+}
+
 // A frozen copy, so a caller changing its own object later cannot move a stamp's scope.
 const held = (scope: WorkspaceScope | undefined) => scope && Object.freeze({ ...scope });
 

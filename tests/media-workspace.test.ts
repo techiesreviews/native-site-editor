@@ -1444,3 +1444,30 @@ test("Replace everywhere begun on the library shown finishes in its workspace wh
     }
   }
 });
+
+// The proof is the library as the click found it: a picture changed while the pinned context is made refuses.
+test("Replace everywhere refuses when the picture's bytes changed after the click, while its context is made (pinned)", async () => {
+  const f = fixture();
+  let made!: () => void;
+  const p = pinnedHost(f, true, new Promise<void>(resolve => { made = resolve; }));
+  await p.host.load();
+  const replace = p.host.replace({ path: "images/a.png", result: { before: 10, after: 8, outputs: [{ blob: new Blob(["new main"], { type: "image/png" }), extension: "png", width: 800, height: 400 }] } });
+  await Promise.resolve();
+  f.versions.set("images/a.png", "a-v2");
+  made();
+  await assert.rejects(replace, /changed while preparing/);
+  assert.equal(await f.bytes.get("images/a.png")!.text(), "original");
+  assert.equal(f.batches.length, 0);
+});
+
+test("an Improve images screen's steps after a switch go to the workspace it opened on; without a pin they refuse", async () => {
+  for (const pinned of [true, false]) {
+    const f = fixture(), p = pinnedHost(f, pinned);
+    await p.host.load();
+    const session = await p.host.improveImages!();
+    f.setLive(false);
+    const step = session.leftAsIs({ picture: "images/a.png", row: "index.html" }, true);
+    if (pinned) { await step; assert.equal(f.batches.at(-1)?.label, "Leave a picture as it is"); }
+    else { await assert.rejects(step, /scope changed/); assert.equal(f.batches.length, 0); }
+  }
+});

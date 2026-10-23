@@ -466,6 +466,25 @@ test("a pinned agent edit whose branch is shown again (away and back) before it 
   assert.equal(ran[0].branch, "main");
 });
 
+// No pin could be taken as it arrived (nothing open then): it cannot finish elsewhere, so the stamp
+// it arrived with must hold, even on a branch at the same commit (a branch just made from main).
+test("an agent edit with no pin switched to a branch at the same commit while it prepares refuses", async () => {
+  const f = await fixture(), memory = createMemoryWorkspace({ branch: { "index.html": "before" } }), edits = createGuardedEdits(memory.workspace);
+  const opened = deferred<void>(), gate = deferred<void>();
+  const ports: AgentReadPorts = { ...f.ports, stamp: () => edits.stamp("repository"), pin: () => undefined,
+    context: async () => { opened.resolve(); await gate.promise; return { context: f.context, texts: f.texts }; } };
+  let writes = 0;
+  const tools = createAgentEditTools({ workspace, ports, records: f.records, run: async () => { writes++; return { message: "Applied." }; } });
+  const input = request("edit_file", { path: "index.html", expectedHash: f.context.site!.outlines[0].hash, edits: [{ oldText: "Welcome", newText: "Hello" }] });
+  const reply = tools.run(input, 0, () => true);
+  await opened.promise;
+  memory.setScope("lex/site@dev");
+  gate.resolve();
+  assert.deepEqual(await reply, { ok: true, value: { requestId: input.id, state: "conflict", message: "The editor changed branch or revision. Read the site again." } });
+  assert.equal(f.snapshot.commit, commit, "the same commit");
+  assert.equal(writes, 0);
+});
+
 test("a revision change after the executor committed still reports applied, never conflict", async () => {
   const f = await fixture();
   let live = true;

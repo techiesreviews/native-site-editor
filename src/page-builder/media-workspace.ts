@@ -591,11 +591,12 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
     return path;
   };
   const replace = async (request: MediaReplaceRequest, agent = false, ports: { encode?: typeof import("./media-optimise").optimiseMedia } = {}) => {
-    // Begun on the library shown, it finishes in that workspace (ticket 23).
-    const shown = active(), own = agent ? undefined : pinned?.(), ctx = own ? await own() : shown;
-    if (!ctx.items.some(item => item.path === request.path)) throw new Error("Choose an image Media file to replace.");
-    // Capture every binary proof before the first read, including trims discovered in records later.
-    const versions = familyVersions(ctx, ctx.paths);
+    // Begun on the library shown, it finishes in that workspace (ticket 23). Every binary proof is
+    // the library Lex saw, captured before the first wait, including trims discovered in records later.
+    const shown = active(), own = agent ? undefined : pinned?.();
+    if (!shown.items.some(item => item.path === request.path)) throw new Error("Choose an image Media file to replace.");
+    const versions = familyVersions(shown, shown.paths), ctx = own ? await own() : shown;
+    if ([...versions].some(([path, version]) => ctx.assetVersion(path) !== version)) throw new Error(`${request.path} changed while preparing image changes. No image changes were applied.`);
     const { batch, metadata, text } = await prepare(ctx, agent ? "Agent replaced picture everywhere" : "Replace everywhere", true);
     batch.live = request.live;
     const { replacementFamilies, replacementImageSize, planMediaReplace } = await import("./replace-everywhere");

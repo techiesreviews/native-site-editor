@@ -114,7 +114,7 @@ import { addSectionStep } from "./page-builder/component-plans";
 import { createAgentSiteHost } from "./agent-site-host";
 import { createGuardedEdits, type GuardedEdits, type Reads, type PlanResult, type Stamp } from "./guarded-edit";
 import { createEditorWorkspace } from "./editor-workspace";
-import { createWorkspaceSession, draftScopeOf, holdsDraftScope, sameRepository, setupKeyOf, type SessionStamp, type WorkspaceScope } from "./workspace-session";
+import { createWorkspaceSession, draftScopeOf, holdsDraftScope, onShow, sameRepository, setupKeyOf, type SessionStamp, type WorkspaceScope } from "./workspace-session";
 import type { AnnounceAs } from "./components/toast-rules";
 import type { ToastAction } from "./components/toast";
 import type {
@@ -2326,7 +2326,8 @@ const mediaPorts: import("./controllers/media-controller").MediaControllerPorts 
   // The workspace shown, for work to finish in (ticket 23): the editor's reads while it is on show,
   // then its snapshot's, the branch texts read so far and its drafts.
   pin: () => {
-    const repo = appStore.repository.value, scope = draftScope(), snapshot = appStore.snapshot.value, at = workspaceSession.begin(), here = () => at.changed() !== "scope"; if (!repo || !scope || !snapshot) return undefined;
+    const repo = appStore.repository.value, scope = draftScope(), snapshot = appStore.snapshot.value; if (!repo || !scope || !snapshot) return undefined;
+    const at = workspaceSession.begin(), here = () => onShow(at);
     const site = nativeSite, base = nativeBaseFiles, texts = new Map(nativeBaseSources), key = nativeTextIndexScopeKey(), files = () => nativeFiles(scope, here() ? nativeBaseFiles : base);
     const entry = (path: string) => here() ? entryAt(path) : repositoryIndex.entry(repo, snapshot, path);
     const text = (path: string, draft = draftStore().get(scope, path), sha = entry(path)?.sha) => draft ? draft.deleted || draft.opaque ? undefined : draft.content
