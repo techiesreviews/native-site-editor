@@ -49,3 +49,15 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
   - Round 1 declined: closing the ticket before review (the builder closes under `kit slice`, runner.md › Review and close); passing `setup` once instead of its members (the bodies would read `ports.setup.x`, against "A moved function keeps its body").
   - Round 2 fixed: tests for account switching, the remembered repository through `ports.user` and the host's file selection counter, no user yet, and the empty list. Taken nit: separate `content` and `files` fakes.
   - Round 3 fixed: this list of review decisions; tests for the failed listing, the link plans, the interrupted wizard and the remaining refresh branches. Taken nit: the getter-block comment in `src/repository-list.ts` covers the whole block.
+
+### Follow-ups
+
+- Spec (P2): ad4757d7:docs/wayfinder/clean-up-before-features/build/tickets/83-repositories-and-account-out-of-main.md:46 — P2: the Done section's "Commits" line gives f9b13
+- Spec (P2): ad4757d7:docs/wayfinder/clean-up-before-features/build/tickets/83-repositories-and-account-out-of-main.md:44 — P2: the Report says "`main.ts` 4249 → 4060 lines"
+- Spec (P3): d771558b:docs/agents/code-map.md:68 — P3: the re-measured ranges are about 4 lines too high at the end of the file. Measured ranges: the repository-list wiring 
+- Standards (P2): d771558b:src/repository-list.ts:562 — P2: CODING_STANDARDS.md › Async writers says "Every async writer follows this rule… capture the proof… before the first aw
+- Validation gaps (gap): `ports.boot.takeRefresh()` returning true is never tested; every fixture returns false (`tests/repository-list.test.ts:743`). Add a test where `takeRefresh: () 
+- Validation gaps (gap): The `setupEntry.active()` true branch is not covered. Add a test with `active: () => true` and a `WIZARD_KEY` site that is not listed. Assert that `readWizard(p
+- Validation gaps (gap): `hooks.onStarted` is never asserted. The boot's `loadRepositories` port (`main.ts:4030`) depends on it. Add a test that passes `{ onStarted: (at) => seen.push(a
+- Validation gaps (gap): Rejections from `showGetStarted()` and `setupEntry.open()` (the `.catch(errorMessage)` paths) are not covered. Add a test where each one rejects and assert that
+
