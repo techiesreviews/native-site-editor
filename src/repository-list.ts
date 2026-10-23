@@ -23,7 +23,7 @@ export interface RepositoryListPorts {
   repositoryIndex: { clear(): void };
   mediaHistoryHome: { clear(): void };
   cleanSources: { clear(): void };
-  workspaceBoot: { abandonGuess(): void; chooseRepository(resume?: WorkspaceLocation): Promise<void> };
+  workspaceBoot: { abandonGuess(): void };
   setup: { waitingForRepositories: boolean };
   setupEntry: Pick<Setup["setupEntry"], "dismissed" | "open" | "active">;
   setupController: Pick<Setup["setupController"], "start">;
@@ -40,6 +40,7 @@ export interface RepositoryListPorts {
   readonly repositoryMenu: { setRepository(repo?: Repository): void; setRepositories(list: Repository[], message?: string): void } | undefined;
   readonly siteActions: { revalidate(): void } | undefined;
   nextLoad(): SessionStamp;
+  chooseRepository(resume?: WorkspaceLocation): Promise<void>;
   storage: (kind: "local" | "session") => Pick<Storage, "getItem" | "setItem" | "removeItem">;
   options: (select: HTMLSelectElement, values: { value: string; label: string }[]) => void;
   status: (message: string) => void;
@@ -136,7 +137,7 @@ export function createRepositoryList(ports: RepositoryListPorts) {
       }
       if (plan.kind === "open") {
         ports.repositorySelect.value = String(plan.id);
-        await workspaceBoot.chooseRepository(plan.resume);
+        await ports.chooseRepository(plan.resume);
         return;
       }
       const panel = node("section", "welcome");
