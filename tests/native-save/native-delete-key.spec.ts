@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { clickOnText } from "./click-text";
+import { clickOnText, selectText } from "./click-text";
 import { editorMounted } from "./drafts";
 
 // Default native-starter fixture; nightly selection keys on canvas and Structure.
@@ -21,7 +21,8 @@ test.beforeEach(async ({ page, baseURL }) => {
 
 test("Delete removes a selected paragraph, selects the next sibling, and one keyboard undo restores it", async ({ page }) => {
   const original = await source(page);
-  await frame(page).locator(".hero .lead").click();
+  // Selected as a block: a click on its text types, Escape ends that.
+  await selectText(frame(page).locator(".hero .lead"));
   await expect(bar(page).getByRole("button", { name: "Remove", exact: true })).toBeVisible();
   await expect(frame(page).locator(".hero .lead")).not.toHaveAttribute("contenteditable", /.+/);
   await focusCanvas(page);
