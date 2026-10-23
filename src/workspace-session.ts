@@ -59,14 +59,21 @@ function identity(scope: WorkspaceScope | undefined) {
 export interface BranchScope { repoId?: number; repo?: string; branch: string }
 
 /**
- * The same repository and branch, the account aside: the repository by its id, or by its
- * name (ignoring capitals, as GitHub does) only when either id is not known. An empty
- * branch is the same as nothing.
+ * The same repository, the account and branch aside: by its id, or by its name (ignoring
+ * capitals, as GitHub does) only when either id is not known.
  */
-export function sameBranch(a: BranchScope | undefined, b: BranchScope | undefined) {
-  if (!a?.branch || a.branch !== b?.branch) return false;
+export function sameRepository(a: Omit<BranchScope, "branch"> | undefined, b: Omit<BranchScope, "branch"> | undefined) {
+  if (!a || !b) return false;
   if (known(a.repoId) && known(b.repoId)) return a.repoId === b.repoId;
   return !!a.repo && a.repo.toLowerCase() === b.repo?.toLowerCase();
+}
+
+/**
+ * The same repository and branch, the account aside (`sameRepository`). An empty branch is
+ * the same as nothing.
+ */
+export function sameBranch(a: BranchScope | undefined, b: BranchScope | undefined) {
+  return !!a?.branch && a.branch === b?.branch && sameRepository(a, b);
 }
 
 // The same workspace, the view aside.
