@@ -48,3 +48,10 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Commits: `e9809be9` (the rule and the ten copies), `b5835395` (the remaining single-draft checks, the `SiteFiles` case), and this round's (`setup-host.ts`, the controller and `create_page` cases).
 - Evidence: `RESULT: ok unit 1130/1130 (59 files)` (`kit unit --affected`); `npm run check` and `npm run lint` clean; `RESULT: ok specs 89/89 passed` (`kit specs --affected`; in earlier runs `native-agent-quiet.spec.ts`, the load flake in software-factory ticket 16, failed only in the full run and passed alone); `native-canvas.spec.ts` 1/1 (Code typing shows in the preview); `RESULT: ok size boot 348 KB (±0 KB)`, budget 355 KB.
 
+### Follow-ups
+
+- Spec (P3): b5447461:docs/wayfinder/clean-up-before-features/build/tickets/30-site-overlay-rule.md:48 — P3: `docs/agents/runner.md:67` says the Done section must list the c
+- Spec (P2): b5447461:docs/wayfinder/clean-up-before-features/build/tickets/30-site-overlay-rule.md:41-49 — P2: the same rule (`runner.md:67`) asks for the review decisions 
+- Validation gaps (gap): `src/setup-host.ts:203` `homeUnsaved` changed but no test runs through `createSetupHost().setupState`. Add a unit case where `draftStore().get` returns three ho
+- Validation gaps (gap): The `main.ts` home checks (`activateNativeSite` 2229, `resyncNativeSite` 3374, the agent's `hasHome` 3644) have no case for a home draft that is new and deleted
+
