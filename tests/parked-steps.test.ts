@@ -75,6 +75,19 @@ test("a draft changed since the step refuses its Undo, and nothing is written", 
   assert.match(s.m.refusals.at(-1)!, /index\.html changed since/);
 });
 
+test("typing on its page not yet in its draft refuses the parked Undo and keeps what was typed", async () => {
+  const s = setup();
+  await landAway(s, insertH2);
+  s.m.setRoute("/"); await s.m.workspace.open("index.html");
+  // The open model moved on; its draft still holds the step's text (typing not flushed yet).
+  const model = s.m.model("index.html")!;
+  model.text = "<main>typed, unsaved</main>"; model.version += 1000;
+  const { undo } = parkedTransitions(s.workspace, s.parked[0]);
+  assert.equal(undo(), false);
+  assert.equal(s.m.model("index.html")?.text, "<main>typed, unsaved</main>");
+  assert.equal(s.m.draft("index.html")?.content, NEW);
+});
+
 test("only the files a parked step wrote prove its Undo: its page and what its plan read may change since", async () => {
   const s = setup();
   const notes = (r: Reads): PlanResult => { r.source("about.html"); r.source("notes.txt"); return { edits: new Map([["notes.txt", "notes, by an agent"]]), done: "Notes changed.", undone: "Undid the notes." }; };
@@ -103,6 +116,18 @@ test("a page created away is parked on the page itself; its Undo removes it and 
   s.m.workspace.recordHistory("new.html", undo, () => false, () => {});
   assert.equal(s.m.undo(), true);
   assert.equal(s.m.draft("new.html"), undefined);
+});
+
+test("a step that deleted its own page away is parked on the home page, its Undo bringing the file back", async () => {
+  const s = setup();
+  const remove = (r: Reads): PlanResult => { r.source("notes.txt"); return { deletes: ["notes.txt"], done: "Deleted.", undone: "Restored." }; };
+  assert.deepEqual(await landAway(s, remove, { anchor: "notes.txt" }), { ok: true, status: "applied" });
+  assert.equal(s.m.draft("notes.txt")?.deleted, true);
+  assert.deepEqual(s.parked.map(step => [step.page, step.home]), [["index.html", undefined]]);
+  s.m.setRoute("/"); await s.m.workspace.open("index.html");
+  const { undo } = parkedTransitions(s.workspace, s.parked[0]);
+  assert.equal(undo(), true);
+  assert.equal(s.m.draft("notes.txt"), undefined);
 });
 
 test("parked steps: one landing on its page open now is recorded there at once; at most PARKED_LIMIT wait", () => {

@@ -1,7 +1,7 @@
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { expect, test, type Page, type Route } from "@playwright/test";
 import { openEditor, openImagePicker, pickPicture, switchSiteMidUpload } from "../support/scenarios";
-import { storedDrafts } from "./drafts";
+import { editorMounted, storedDrafts } from "./drafts";
 
 // Invisible multiplayer (ticket 27): work started on main keeps going there after Lex opens
 // feature (or another site, or another page of main), as a second, invisible user would, and lands
@@ -114,6 +114,12 @@ for (const to of ["branch", "site"] as const) {
     await expect.poll(() => messages.filter(message => message.includes('"type":"ready"')).length, { timeout: 30_000 }).toBeGreaterThan(ready);
     const status = await client.callTool({ name: "get_command_status", arguments: { requestId: "invisible-place" } });
     expect(JSON.parse((status.content as { text: string }[])[0].text)).toMatchObject({ requestId: "invisible-place", state: "applied" });
+    // Its Undo waited for its own page (ticket 34): main's index.html offers it, and Undo takes the picture back.
+    await editorMounted(page);
+    const undo = page.locator(".code-editor__undo").first();
+    await expect(undo).toBeEnabled();
+    await undo.click();
+    await expect.poll(async () => (await draftsOn(page, "main")).filter(draft => draft.path === "index.html"), { timeout: 20_000 }).toEqual([]);
   } finally { await client.close(); }
 });
 }

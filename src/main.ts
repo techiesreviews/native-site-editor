@@ -114,7 +114,7 @@ import { createGuardedEdits, type GuardedEdits, type Reads, type PlanResult, typ
 import { createParkedSteps, parkedTransitions } from "./guarded-edit/parked";
 import { createEditorWorkspace } from "./editor-workspace";
 import { createFinishedElsewhere, openLink } from "./finished-elsewhere";
-import { createWorkspaceSession, draftScopeOf, holdsDraftScope, setupKeyOf, type SessionStamp, type WorkspaceScope } from "./workspace-session";
+import { createWorkspaceSession, draftScopeOf, githubScope, holdsDraftScope, setupKeyOf, type SessionStamp, type WorkspaceScope } from "./workspace-session";
 import type { AnnounceAs } from "./components/toast-rules";
 import type { ToastAction } from "./components/toast";
 import type {
@@ -3567,7 +3567,7 @@ async function applyAgentSiteCommand(command: AgentCommand) {
   const read = agentCommandFiles.get(command), login = info.user?.login, landed = read && login ? { account: login, repoId: read.repo.id, repo: read.repo.full_name, branch: read.snapshot.branch } : undefined;
   // Ticket 34: a page or file command read there runs in its background site, the editor's own ports pinned to it.
   const away: AgentAwayPorts = { landed: scope => finishedWork.add(scope, "agent", { id: command.id }), site: { pages: pagePorts(), files: filePorts(), components: componentPorts, actions: makeAgentSiteActions,
-    store: draftStore, forget: editorModule.forgetDraftModel, prepareSources: edits => editorModule.prepareHistorySources(edits, true), park: step => parkedSteps.park(step), factories } };
+    store: draftStore, forget: (scope, path) => editorModule.forgetDraftModel(scope, path), visits: scope => workspaceSession.visits(githubScope(scope)), prepareSources: edits => editorModule.prepareHistorySources(edits, true), park: step => parkedSteps.park(step), factories } };
   const elsewhere = finishedWork.agent(landed, command, (scope, path) => draftStore().get(scope, path), () => finishAgentTextElsewhere(command, draftScope, login, draftStore(), (files, path) => repositoryIndex.find(api, files.repo, files.snapshot, path), away));
   const finished = await elsewhere(); if (finished) return finished;
   const scope = draftScope(), at = workspaceSession.begin(), revision = appStore.snapshot.value?.commit, current = () => at.holds() && revision === appStore.snapshot.value?.commit && !versions.view;

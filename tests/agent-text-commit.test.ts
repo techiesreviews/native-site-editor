@@ -2,7 +2,14 @@ import assert from "node:assert/strict";
 import { test, type TestContext } from "node:test";
 import { textHash, type AgentCommand } from "../shared/agent.ts";
 import { applySiteCommand, editorOrElsewhere, finishAgentTextElsewhere, prepareAgentText, type AgentSiteActions } from "../src/agent-site.ts";
-import { agentCommandFiles, agentCommandSignals } from "../src/agent-tools.ts";
+import { agentCommandFiles, agentCommandSignals, siteCommandPins } from "../src/agent-tools.ts";
+import type { BackgroundSitePorts } from "../src/background-site.ts";
+import type { MediaPin } from "../src/controllers/media-controller.ts";
+import type { ParkedStep } from "../src/guarded-edit/parked.ts";
+import { createPagesController } from "../src/controllers/pages-controller.ts";
+import { createLazyFileOperationsController } from "../src/controllers/file-operation-checks.ts";
+import { createBlockMoves } from "../src/page-builder/block-move.ts";
+import { withPageField } from "../src/page-builder/site-head.ts";
 import type { AgentReadFiles } from "../src/agent-tools-read.ts";
 import { indexedDbAgentRecords } from "../src/agent-records.ts";
 import { DraftStore, draftDatabaseName, draftKey, indexedDbDrafts, type DraftScope } from "../src/drafts.ts";
@@ -554,7 +561,7 @@ test("a command read from the branch shown is left to the editor; a page or file
   assert.equal(await f.finish(f.command, () => f.scope), undefined);
   assert.equal(f.store.get(f.scope, "index.html"), undefined);
   // Without its workspace held as it arrived (siteCommandPins) there is no background site to run it in (ticket 34).
-  await assert.rejects(f.finish({ ...f.command, operation: "move_file", args: { to: "moved.html" } }), /needs its page on screen\. Nothing was changed/);
+  await assert.rejects(f.finish({ ...f.command, operation: "move_file", args: { to: "moved.html" } }), /was not tied to the one it was read on\. Nothing was changed/);
   assert.equal(await f.records.receipt(f.scope, "operation", "grant"), undefined);
 });
 
@@ -601,4 +608,70 @@ test("an agent edit's editor path switched away at any wait before it is kept fi
     assert.equal(run.result, run.applied ? "editor" : "elsewhere");
   });
   assert.equal(count, 2);
+});
+
+// Ticket 34: a page command read on a branch no longer shown runs in its background site. Its branch
+// shown again at any wait before its step is kept stops it with nothing kept, and the editor runs it
+// (undefined); shown and left again, it runs there again and lands once.
+async function structuralElsewhere(t: TestContext, race?: AwaitRace) {
+  const f = await elsewhere(t, race);
+  const PAGE = "<html><head><title>Old</title></head><body><main></main></body></html>";
+  let here = false, visits = 0, shown: DraftScope | undefined = f.shown;
+  const parked: ParkedStep[] = [];
+  const entry = (path: string) => path === "index.html" ? { path, sha: "a".repeat(40), mode: "100644", type: "blob" as const } : undefined;
+  const find = async (path: string) => entry(path);
+  const pin = {
+    repo: "lex/site", scope: f.scope, identity: "1", site: { routes: { "/": "index.html" }, components: {} }, drafts: f.store, here: () => here, entry,
+    find: race ? race.port("pin find", find) : find,
+    source: (path: string) => { const draft = f.store.get(f.scope, path); return draft ? draft.deleted ? undefined : draft.content : path === "index.html" ? PAGE : undefined; },
+    files: () => ["index.html"], list: async () => ["index.html"], remember: () => {},
+  } satisfies MediaPin;
+  // eslint-disable-next-line no-restricted-syntax -- the background site reads only these members of the editor's live ports here.
+  const site = {
+    pages: {}, files: { readFile: async () => PAGE, readFiles: async () => ({}), draftStore: () => f.store }, components: () => ({}), actions: () => ({}),
+    store: () => f.store, forget: () => {}, prepareSources: () => ({ isCurrent: () => true, apply: () => true, undo: () => true, redo: () => true }),
+    park: (step: ParkedStep) => { parked.push(step); }, visits: () => visits,
+    factories: { createGuardedEdits, createPagesController, createLazyFileOperationsController, createBlockMoves, withPageField },
+  } as unknown as BackgroundSitePorts;
+  const command: AgentCommand = { ...f.command, operation: "set_page_details", content: "", expectedHash: undefined, args: { title: "Agent title" } };
+  siteCommandPins.set(command, { pin, opened: "index.html" });
+  agentCommandFiles.set(command, { repo: { id: 1, full_name: "lex/site" }, snapshot: { branch: "main", commit: "commit", entries: [] } } as unknown as AgentReadFiles); // eslint-disable-line no-restricted-syntax -- only the repository and snapshot are read.
+  const finish = () => finishAgentTextElsewhere(command, () => shown, f.scope.account, f.store, async () => undefined, { site, landed: () => {} });
+  return { ...f, parked, finish, show: () => { here = true; visits++; shown = f.scope; }, showAndLeave: () => { visits++; } };
+}
+
+test("a page command for a branch no longer shown lands there through its background site, its Undo parked", async t => {
+  const f = await structuralElsewhere(t);
+  const outcome = await f.finish();
+  assert.match(outcome!.message, /Page details of index\.html updated/);
+  assert.match(f.store.get(f.scope, "index.html")!.content, /<title>Agent title<\/title>/);
+  assert.deepEqual(f.parked.map(step => step.page), ["index.html"]);
+  assert.deepEqual((await f.records.receipt(f.scope, "operation", "grant"))?.outcome, outcome);
+});
+
+test("a page command elsewhere whose branch is shown again at any wait keeps nothing and is left to the editor", async t => {
+  const count = await forEachAwait(race => {
+    const run = { outcome: undefined as unknown, f: undefined as Awaited<ReturnType<typeof structuralElsewhere>> | undefined, done: Promise.resolve() };
+    const made = structuralElsewhere(t, race);
+    run.done = made.then(async f => { run.f = f; run.outcome = await f.finish(); });
+    return run;
+  }, async run => { await Promise.resolve(); run.f?.show(); }, async run => {
+    assert.equal(run.outcome, undefined);
+    assert.equal(run.f!.store.get(run.f!.scope, "index.html"), undefined);
+    assert.deepEqual(run.f!.parked, []);
+    assert.equal(await run.f!.records.receipt(run.f!.scope, "operation", "grant"), undefined);
+  });
+  assert.ok(count >= 2);
+});
+
+test("a page command elsewhere whose branch is shown and left again at any wait runs there again and lands once", async t => {
+  await forEachAwait(race => {
+    const run = { outcome: undefined as { message: string } | undefined, f: undefined as Awaited<ReturnType<typeof structuralElsewhere>> | undefined, done: Promise.resolve() };
+    run.done = structuralElsewhere(t, race).then(async f => { run.f = f; run.outcome = await f.finish(); });
+    return run;
+  }, async run => { await Promise.resolve(); run.f?.showAndLeave(); }, async run => {
+    assert.match(run.outcome!.message, /Page details of index\.html updated/);
+    assert.match(run.f!.store.get(run.f!.scope, "index.html")!.content, /<title>Agent title<\/title>/);
+    assert.equal(run.f!.parked.length, 1);
+  });
 });

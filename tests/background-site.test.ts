@@ -19,7 +19,7 @@ const site = { routes: { "/": "index.html", "/about/": "about/index.html" }, com
 const branch: Record<string, string> = { "index.html": PAGE, "about/index.html": "<main><h1>About</h1></main>", "robots.txt": "User-agent: *" };
 
 function fixture(race?: AwaitRace) {
-  let shown = false;
+  let shown = false, visits = 0;
   const records = new Map<string, SavedDraft>(), parked: ParkedStep[] = [], forgotten: string[] = [];
   const store = {
     error: null, get: (_scope: DraftScope, path: string) => records.get(path), list: () => [...records.values()],
@@ -39,10 +39,10 @@ function fixture(race?: AwaitRace) {
     pages: {}, files: { readFile: async (_repo: string, sha: string) => branch[sha.slice(4)], readFiles: async () => ({}), draftStore: () => store }, components: () => ({}), actions: () => ({}),
     store: () => store, forget: (_scope: DraftScope, path: string) => { forgotten.push(path); },
     prepareSources: () => ({ isCurrent: () => true, apply: () => true, undo: () => true, redo: () => true }),
-    park: (step: ParkedStep) => { parked.push(step); }, factories: { createLazyFileOperationsController },
+    park: (step: ParkedStep) => { parked.push(step); }, visits: () => visits, factories: { createLazyFileOperationsController },
   } as unknown as BackgroundSitePorts;
   const bg = backgroundSite(pin, ports, "index.html");
-  return { bg, edits: createGuardedEdits(bg.workspace), records, parked, forgotten, show: () => { shown = true; } };
+  return { bg, edits: createGuardedEdits(bg.workspace), records, parked, forgotten, show: () => { shown = true; visits++; }, showAndLeave: () => { visits++; } };
 }
 const insertH2 = (r: Reads): PlanResult => ({ edits: new Map([["index.html", r.source("index.html")!.replace("</main>", "<h2>Agent</h2></main>")]]), done: "Heading added.", undone: "Undid adding the Heading." });
 
@@ -88,4 +88,16 @@ test("its workspace shown again at any wait of a step writes nothing", async () 
     assert.deepEqual(run.f.parked, []);
   });
   assert.ok(count >= 1);
+});
+
+// Shown and left again between two waits (its loads moved, `generation`): the step still stops.
+test("its workspace shown and left again at any wait of a step writes nothing", async () => {
+  await forEachAwait(race => {
+    const f = fixture(race);
+    return { f, done: f.edits.run(insertH2, { finish: true, anchor: f.bg.home }).then(outcome => { (f as { outcome?: unknown }).outcome = outcome; }) };
+  }, run => { run.f.showAndLeave(); }, run => {
+    assert.equal((run.f as { outcome?: { ok: boolean } }).outcome?.ok, false);
+    assert.equal(run.f.records.size, 0);
+    assert.deepEqual(run.f.parked, []);
+  });
 });
