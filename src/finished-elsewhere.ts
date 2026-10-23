@@ -7,7 +7,8 @@
 // no note: that page shows its change when opened, and Pages marks it unsaved.
 import type { DraftScope } from "./drafts";
 import type { SavedCommit } from "./components/site-actions";
-import { githubScope, holdsDraftScope, workspaceKeys, type WorkspaceScope } from "./workspace-session";
+import type { Repository } from "../shared/types";
+import { githubScope, holdsDraftScope, sameRepository, workspaceKeys, type WorkspaceScope } from "./workspace-session";
 
 export type FinishedKind = "saved" | "added" | "agent";
 
@@ -33,6 +34,19 @@ export function noteWords(note: FinishedNote) {
   ].filter(Boolean).join(", ");
 }
 
+/**
+ * What the repository menu's tile says after its name: the questions agents ask, then the finished work by
+ * where it is (the branch, with the repository when it is not `open`, as the Files drop's message
+ * says it); and whether its corner counts the finished work, which a waiting question takes.
+ */
+export function tileWords(questions: number, notes: readonly FinishedNote[], open: { repoId?: number; repo?: string }, repositories: readonly Repository[]) {
+  const asking = questions < 1 ? "" : ` — ${questions === 1 ? "an agent asks you a question" : `agents ask you ${questions} questions`}`;
+  const named = (note: FinishedNote) => repositories.find((repo) => sameRepository(note.scope, { repoId: repo.id, repo: repo.full_name }))?.full_name ?? note.scope.repo;
+  const where = (note: FinishedNote) => (sameRepository(note.scope, open) ? note.scope.branch : `${named(note)} (${note.scope.branch})`);
+  const done = notes.length ? ` — ${notes.map((note) => `${noteWords(note)} on ${where(note)}`).join("; ")}` : "";
+  return { words: `${asking}${done}`, counted: notes.length > 0 && questions < 1 };
+}
+
 export function createFinishedElsewhere(ports: {
   /** The notes changed: the menu draws them again. */
   draw(notes: readonly FinishedNote[]): void;
@@ -42,6 +56,8 @@ export function createFinishedElsewhere(ports: {
   follow(commit: SavedCommit, scope: DraftScope): void;
 }) {
   let notes: FinishedNote[] = [];
+  // Work noted by its id (an agent command's): a second delivery of it is not new work.
+  const noted = new Set<string>();
   // The note clicked, until its workspace's editor mounts.
   let opening: FinishedNote | undefined;
   const at = (scope: WorkspaceScope | undefined) => notes.find((note) => holdsDraftScope(scope, note.scope));
@@ -51,9 +67,10 @@ export function createFinishedElsewhere(ports: {
   }
   return {
     notes: () => notes,
-    /** `count` pieces of work of `kind` finished on `scope`, not shown. */
-    add(scope: DraftScope, kind: FinishedKind, count = 1, commit?: SavedCommit) {
-      if (count < 1) return;
+    /** `count` pieces of work of `kind` (1 by default) finished on `scope`, not shown; work with an `id` counts once. */
+    add(scope: DraftScope, kind: FinishedKind, { count = 1, commit, id }: { count?: number; commit?: SavedCommit; id?: string } = {}) {
+      if (count < 1 || id !== undefined && noted.has(id)) return;
+      if (id !== undefined) noted.add(id);
       const was = at(githubScope(scope));
       const done = { saved: 0, added: 0, agent: 0, ...was?.done };
       done[kind] += count;
@@ -78,8 +95,9 @@ export function createFinishedElsewhere(ports: {
       if (!note || !scope || !holdsDraftScope(githubScope(scope), note.scope)) return;
       opening = undefined;
       if (note.commit) ports.follow(note.commit, note.scope);
-      // The Publish panel as its caret opens it, its changes unfolded (src/components/publish-menu.ts).
-      host.querySelector<HTMLButtonElement>(".publish-menu__more:not(:disabled)")?.click();
+      // The Publish panel as its caret opens it, its changes unfolded (src/components/publish-menu.ts);
+      // the caret toggles, so an open panel is left open.
+      if (!host.querySelector(".publish-menu__panel:popover-open")) host.querySelector<HTMLButtonElement>(".publish-menu__more:not(:disabled)")?.click();
       const total = host.querySelector<HTMLDetailsElement>(".publish-menu__total");
       if (total) total.open = true;
     },
