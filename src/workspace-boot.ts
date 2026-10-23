@@ -19,7 +19,8 @@ import type { RepositoryIndex } from "./repository-loading";
 import { githubScope, type SessionStamp, type WorkspaceScope } from "./workspace-session";
 import { readWorkspaceUrl, rememberWorkspace, type WorkspaceLocation } from "./workspace-state";
 
-type OpenOptions = { linkDefaultStyle?: boolean; keepExplorer?: boolean; quietStatus?: boolean; beforeMount?: () => boolean };
+// `retry`: the open this file is part of, offered as Try again when its read gets no answer.
+type OpenOptions = { linkDefaultStyle?: boolean; keepExplorer?: boolean; quietStatus?: boolean; beforeMount?: () => boolean; retry?: () => void };
 type Api = <T>(path: string, params?: Record<string, string>) => Promise<T>;
 type PartialStart = { point: StartingPoint; committed: string[] };
 type Box = Pick<HTMLElement, "replaceChildren">;
@@ -97,7 +98,7 @@ export function createWorkspaceBoot(ports: WorkspaceBootPorts) {
   async function restoreFile(
     path: string,
     at: SessionStamp,
-    options: { linkDefaultStyle?: boolean; keepExplorer?: boolean; quietStatus?: boolean; beforeMount?: () => boolean; retry?: () => void } = {},
+    options: OpenOptions = {},
   ) {
     const selection = ++ports.fileGeneration;
     const repo = appStore.repository.value!;

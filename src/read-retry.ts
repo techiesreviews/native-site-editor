@@ -3,10 +3,13 @@ export const READ_RETRY_DELAYS = [1000, 2000, 4000];
 /** A try with no answer (no response headers) in this long counts as failed. */
 export const READ_TIMEOUT_MS = 8000;
 
+/** What the editor says when a read's tries all failed. */
+export const UNANSWERED = "GitHub isn't answering. Try again in a moment.";
+
 /** Every try of a read got no answer: it timed out or the network failed. */
 export class ReadUnansweredError extends Error {
   constructor(cause: unknown) {
-    super("GitHub isn't answering. Try again in a moment.", { cause });
+    super(UNANSWERED, { cause });
   }
 }
 

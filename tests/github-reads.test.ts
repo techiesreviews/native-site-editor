@@ -89,3 +89,26 @@ test("an expired session (401) goes to sign-in and the notice links Reconnect Gi
   assert.equal(reconnect.href, "/auth/login");
   assert.equal(status(), "The last request did not complete.");
 });
+
+test("a 502 or 503 to every try of an open's read says the same with Try again; the notice keeps the Worker's words", () => {
+  for (const code of [502, 503]) {
+    const { reads, said } = setup();
+    let retried = 0;
+    reads.errorMessage(new ApiError(code, "GitHub is unavailable."), () => { retried++; });
+    assert.equal(said.length, 1);
+    assert.equal(said[0].text, "GitHub isn't answering. Try again in a moment.");
+    said[0].action.run();
+    assert.equal(retried, 1);
+    assert.equal(notice().children[0].textContent, "GitHub is unavailable.");
+  }
+});
+
+test("other errors in an open stay plain: no Try again", () => {
+  for (const error of [new Error("x"), new ApiError(404, "Not found."), new ApiError(500, "Broken.")]) {
+    const { reads, said } = setup();
+    reads.errorMessage(error, () => {});
+    assert.equal(said.length, 0);
+    assert.equal(status(), "The last request did not complete.");
+    assert.equal(notice().hidden, false);
+  }
+});

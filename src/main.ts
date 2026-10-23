@@ -105,7 +105,7 @@ import { NATIVE_CONFIG_PATH, NATIVE_HOME_PAGE, NATIVE_REDIRECTS_PATH, minimalTex
 import { dataUrlOf, loadNativeAssetRequests } from "./native-assets";
 import { assetType, audioType, blobUrl, CANVAS_AUDIO_MAX_BYTES, isFontType } from "../shared/asset-types";
 import { fetchWithReadRetry } from "./read-retry";
-import { ApiError, createGitHubReads } from "./github-reads";
+import { ApiError, createGitHubReads, unanswered } from "./github-reads";
 import { RepositoryIndex, readFileText, readFileTexts } from "./repository-loading";
 import { CleanSourceCache } from "./clean-source-cache";
 import { iconMarkup, setIcon } from "./icons";
@@ -141,6 +141,7 @@ const element = <T extends HTMLElement>(id: string) =>
 const { status, settleStatus, clearError, placeNotice, errorMessage, api, apiResponse, postApi } = createGitHubReads({
   app, element, explorer: () => explorerDropdown, trackRead: (read) => codePanes.trackRead(read), handleChunkLoadFailure,
   expired: () => renderLogin("expired"),
+  // As say() in src/components/toast.ts, which loads on first use.
   say: (text, action) => { element("status").textContent = text; showToast(text, action); },
 });
 setErrorReporter(errorMessage);
@@ -2735,6 +2736,8 @@ async function activateNativeSite(repo: Repository, result: Snapshot, at: Sessio
     nativeBaseFiles = await listRepositoryFiles(repo, result);
   } catch (error) {
     if (!live()) return true;
+    // GitHub not answering fails the open itself (the snapshot load's failed state and Try again).
+    if (unanswered(error)) throw error;
     nativePreview?.activate(placeholder);
     nativePreview?.setError(error instanceof Error ? error.message : "The site's files could not be listed.");
     return true;
@@ -2807,6 +2810,7 @@ async function activateNativeSite(repo: Repository, result: Snapshot, at: Sessio
     if (!live()) return true;
   } catch (error) {
     if (!live()) return true;
+    if (unanswered(error)) throw error;
     nativePreview?.activate(site);
     nativePreview?.setError(error instanceof Error ? error.message : "Native sources could not be loaded.");
     return true;
@@ -4167,7 +4171,7 @@ async function openEntry(
   entry: TreeEntry,
   path: string,
   at: SessionStamp,
-  options: { linkDefaultStyle?: boolean; keepExplorer?: boolean; quietStatus?: boolean; beforeMount?: () => boolean } = {},
+  options: { linkDefaultStyle?: boolean; keepExplorer?: boolean; quietStatus?: boolean; beforeMount?: () => boolean; retry?: () => void } = {},
 ) {
   const scope = draftScope();
   if (!at.holds() || !appStore.repository.value || !scope) return;
@@ -4240,7 +4244,7 @@ async function openEntry(
       );
       // A file that is not text (or too big) is said here, where it was asked for, not as a failed request.
       if (unreadableAsText(error)) status(`${path}: ${error instanceof Error ? error.message : "This file cannot be read as text."}`);
-      else errorMessage(error);
+      else errorMessage(error, options.retry);
     }
   }
 }
