@@ -66,3 +66,9 @@ export async function revokeUnused(ports: {
     if (!ports.live()) return;
   }
 }
+
+/** The Worker's refusal of a new connection because the site's connections are full (five, or
+ * their metadata limit; `worker/agent-context.ts`): only this refusal reclaims unused tokens. */
+export function siteFull(status: number | undefined, message: string) {
+  return status === 409 && /^This site(?: already has \d+ agent connections|'s agent connections have reached .+) on this branch\./.test(message);
+}

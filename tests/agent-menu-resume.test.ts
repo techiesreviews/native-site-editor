@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { resumeAgents, revokeUnused, serialReads } from "../src/agent-resume.ts";
+import { resumeAgents, revokeUnused, serialReads, siteFull } from "../src/agent-resume.ts";
 import { forEachAwait } from "./support/await-race.ts";
 
 // The agent menu's state around resumeAgents (src/components/agent-menu.ts): the open site, this
@@ -134,4 +134,13 @@ test("revokeUnused: a site switch or turn-off at any await revokes nothing more;
   const none: string[] = [];
   await revokeUnused({ grants, before: Infinity, live: () => false, revoke: async id => { none.push(id); } });
   assert.deepEqual(none, []);
+});
+
+test("siteFull: only the Worker's full-site 409 reclaims unused tokens; other refusals and failures do not", () => {
+  assert.equal(siteFull(409, "This site already has 5 agent connections on this branch. Disconnect one in the editor's agent menu first."), true);
+  assert.equal(siteFull(409, "This site's agent connections have reached the 64 KiB metadata limit on this branch. Disconnect one in the editor's agent menu first."), true);
+  assert.equal(siteFull(409, "This editor session already has 20 agent connections. Disconnect one in the editor's agent menu first."), false);
+  assert.equal(siteFull(500, "This site already has 5 agent connections on this branch."), false);
+  assert.equal(siteFull(503, "Agent connection capacity could not be checked. Try again."), false);
+  assert.equal(siteFull(undefined, "Agent connection failed."), false);
 });
