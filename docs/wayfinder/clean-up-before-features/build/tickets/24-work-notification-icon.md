@@ -1,8 +1,8 @@
 ---
 title: "Notification icon on the project and branch where work finished"
 type: task (AFK)
-status: open
-assignee: lead-24 (this session)
+status: closed
+assignee: lead-24
 builder: sol
 blocked_by: [23-work-finishes-where-it-started]
 ---
@@ -49,3 +49,21 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 ## Comments
 
 - 2026-10-22, Lex: reuse the indication already built for agents (MCP): the count on the corner of the site tile in the repository menu (`src/components/repository-menu.ts:40`, style `src/components/repository-menu.css:69`). Same look and placement, its own meaning ("finished work waiting on this site"); no new indicator style.
+
+## Done (2026-10-23)
+
+Work that finishes on a project and branch other than the one shown leaves a note there (`src/finished-elsewhere.ts`, kept in memory only, so a reload or a closed tab forgets it). Three kinds feed it from `src/main.ts`: a save that landed elsewhere (`saved` with `shown` false and a commit), files added by a Files drop that finished elsewhere (their count), and an agent text edit written elsewhere (`finishAgentTextElsewhere`). Work on one workspace adds up in one note; the latest workspace comes first.
+
+The repository menu shows it as Lex asked in the comment above: the count on the corner of a tile, the same shape and place as agents' questions, in the action colour (`--primary`) for its own meaning. It shows on the menu's tile (while no question waits; the tile's name and title still say both), on the project's row (over the tile's corner, above the remove ×) and on the branch's row in the Branches flyout. The words ("Saved", "3 files added", "Agent changes waiting", "Saved 2 times") are part of each row's accessible name ("main — Saved"; the project row and the tile say "Saved on main", with the repository too when it is another). The count is an `aria-hidden` span inside the row's button, so there is no new tab stop.
+
+Clicking a row with a note opens that project and branch (by the workspace link, `#repo=…&branch=…`); the note goes at once. Once that branch's editor is mounted, its Publish panel opens with the changes unfolded, and a save's commit is followed as Change status on Publish (Saved, then the deploy, for native sites as after any save). A note also goes when its workspace opens any other way. The open project's row still opens its Branches flyout, where the branch with the note carries the count.
+
+Lead decisions (check with Lex):
+
+- A note goes when its project and branch are opened by any route, not only by its click; otherwise a note on the branch now shown could not be cleared.
+- The menu's tile shows one count: agents' questions win when both wait.
+- An agent edit's note needs the command's repository id (all current agents send it); without it no note is left.
+
+Tests: `tests/finished-elsewhere.test.ts` (notes add up per workspace, words and counts, a shown workspace takes its note, a clicked note opens once its editor mounts and not after another workspace opened, a closed Publish caret stays shut). `tests/native-save/native-switch-mid-work.spec.ts`: a save held across the switch to feature is counted on the tile, the project row and main's branch row, with "Saved on main" / "main — Saved" in their names and no focusable count; clicking main lands on main with the Publish panel open, "Saved to GitHub." and its View commit link, and the count gone. A Files drop finished on main is counted as "1 file added" and the click lists `images/logo.png` in main's changes.
+
+Checks: `kit doctor` `RESULT: ok doctor 7/7 checks passed`; `kit unit tests/finished-elsewhere.test.ts` `RESULT: ok unit 6/6 (1 files)`; `kit unit --affected` `RESULT: ok unit 71/71 (5 files)`; `kit unit tests/main-ts-ceiling.test.ts tests/workspace-session-guard.test.ts` `RESULT: ok unit 13/13 (2 files)`; `npm test` 5218/5218; `npm run check` and `npm run lint` green; `kit specs native-switch-mid-work.spec.ts` `RESULT: ok specs 1/1 passed` (9 tests); `kit size` `RESULT: ok size boot 347 KB (+1 KB) vs dev@a557f7b, budget 355 KB`; `kit shots --spec .scratch/cbf-24-icon.spec.ts` (390, 768, 1280 × light, dark: the count fits the tile, the row and the branch row). `kit specs --affected` `RESULT: ok specs 50/50 passed`. `main.ts`: 4250 lines (ceiling 4250).

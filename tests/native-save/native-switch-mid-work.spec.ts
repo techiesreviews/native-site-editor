@@ -79,6 +79,75 @@ test("a save held across a branch switch commits on its own branch, and its draf
   await expect(publishButton(page)).toBeDisabled();
 });
 
+// Ticket 24: work that finished on another branch is counted on its project's tile, its branch's
+// row and the menu's own tile, and named in each one's accessible name. Clicked, that branch opens
+// with its changes (the Publish panel, the save's Change status in it), and the count goes.
+test("a save that finished on main while feature was shown is counted in the menu, and its click opens main's Change status", async ({ page, baseURL }) => {
+  await openEditor(page, baseURL);
+  await appendToOpenFile(page, "index.html", "\n<!-- noted on main -->\n");
+  await expect.poll(async () => (await draftsOn(page, "main")).map(draft => draft.path)).toEqual(["index.html"]);
+  const publish = await hold(page, "/api/publish");
+  await showPublish(page);
+  await publishButton(page).click();
+  await publish.reached;
+  await switchSiteMidUpload(page, baseURL);
+  const trigger = page.locator(".repository-menu__trigger"), count = trigger.locator(".repository-menu__finished");
+  await expect(count).toBeHidden();
+  publish.release();
+  await expect.poll(() => committed(page, baseURL, "index.html")).toContain("<!-- noted on main -->");
+
+  await expect(count).toHaveText("1");
+  await expect(trigger).toHaveAccessibleName(/ — Saved on main$/);
+  await trigger.click();
+  const row = page.locator('.repository-menu__repo[aria-current="true"]');
+  await expect(row.locator(".repository-menu__finished")).toHaveText("1");
+  await expect(row).toHaveAccessibleName(/ — Saved on main$/);
+  await row.click();
+  const branches = page.getByRole("menu", { name: "Branches" });
+  const main = branches.getByRole("menuitemradio", { name: "main — Saved", exact: true });
+  await expect(main.locator(".repository-menu__finished")).toHaveText("1");
+  await expect(branches.getByRole("menuitemradio", { name: "feature", exact: true })).toHaveAttribute("aria-checked", "true");
+  // The count is no tab stop of its own: only the rows are.
+  await expect(page.locator("#repository-actions .repository-menu__finished")).toHaveCount(2);
+  await expect(page.locator("#repository-actions .repository-menu__finished:is(button, a, [tabindex])")).toHaveCount(0);
+  await main.click();
+
+  await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
+  const panel = page.locator("#publish-files");
+  await expect(panel).toBeVisible();
+  await expect(panel.locator(".publish-menu__message")).toContainText("Saved to GitHub.");
+  await expect(panel.getByRole("link", { name: "View the commit on GitHub" })).toBeVisible();
+  await expect(count).toBeHidden();
+  await expect(trigger).toHaveAccessibleName(/repository actions$/);
+});
+
+// Files dropped on main and added while feature is shown: the count names them, and the click lists them.
+test("files added to main while feature was shown are counted, and the click lists them in main's changes", async ({ page, baseURL }) => {
+  await openEditor(page, baseURL);
+  const explorer = page.locator("#explorer");
+  if (!(await explorer.isVisible())) await page.locator("#explorer-toggle").click();
+  await explorer.getByRole("tab", { name: "Files" }).click();
+  await expect(explorer.locator(".file-row[data-path='images']")).toBeVisible();
+  const media = await hold(page, "/src/controllers/media-actions.ts");
+  await dropFiles(page, "#explorer .file-row[data-path='images']", [{ name: "Logo.png", type: "image/png", base64: png.toString("base64") }]);
+  await media.reached;
+  await switchSiteMidUpload(page, baseURL);
+  media.release();
+  await expect(page.locator("#status")).toHaveText("On main: Added images/logo.png.", { timeout: 20_000 });
+
+  const trigger = page.locator(".repository-menu__trigger");
+  await expect(trigger.locator(".repository-menu__finished")).toHaveText("1");
+  await expect(trigger).toHaveAccessibleName(/ — 1 file added on main$/);
+  await trigger.click();
+  await page.locator('.repository-menu__repo[aria-current="true"]').click();
+  await page.getByRole("menu", { name: "Branches" }).getByRole("menuitemradio", { name: "main — 1 file added", exact: true }).click();
+  await expect(page.locator("#status")).toContainText("Up to date with main", { timeout: 30_000 });
+  const panel = page.locator("#publish-files");
+  await expect(panel.locator(".publish-menu__files")).toBeVisible();
+  await expect(panel.locator(".publish-menu__path")).toContainText(["images/logo.png"]);
+  await expect(trigger.locator(".repository-menu__finished")).toBeHidden();
+});
+
 // Left and shown again (a new load of main at the commit it was saved from) while the save is held:
 // the save follows as on the same load, so the next save of the page goes on top of it, with no conflict.
 test("a save held while feature and then main are opened commits on main, and the next save goes on top of it", async ({ page, baseURL }) => {
