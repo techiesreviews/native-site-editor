@@ -1,6 +1,6 @@
 ---
 title: "Lex (2026-10-23): click in the preview and type straight away"
-status: needs-info
+status: closed
 assignee: Lex + claude (grilling)
 blocked_by: []
 ---
@@ -16,3 +16,4 @@ Today (`src/components/native-preview-runtime.js` around lines 3000–3030): one
 Kind (UX feedback log): felt wrong once used. The look-back of 2026-10-22 already listed "click to select and double-click to edit" among the behaviours Lex corrected.
 
 ## Comments
+- 2026-10-23, Lex decided: C1 one click on text puts the caret where he clicked and he types at once (edit bar shows for that text); C2 **dragging always drags the block** (also when the press starts on text); C3 Esc while typing (or a click on the outline) selects the whole block; C4 links and buttons work like C1 (their text is edited by one click; the link address stays in the edit bar); C5 images unchanged (one click selects, double-click opens the Image popup); C6 build now beside the clean-up, Lex tries it on preview. Lead decision: with drag reserved for blocks, words are selected by double-click (word), triple-click (paragraph), Shift+click or Shift+arrows. Built as [clean-up slice 28](../../../wayfinder/clean-up-before-features/build/tickets/28-click-to-type.md).
