@@ -20,7 +20,7 @@ Each file is followed by its declared entry symbols. Styles, fixtures, scripts a
 | Files explorer and file operations | `src/controllers/files-tree-controller.ts` — `createFilesTreeController`; `src/controllers/file-operations-controller.ts` — `createFileOperationsController`; `src/controllers/file-operation-checks.ts` — `createLazyFileOperationsController`; `src/file-changes.ts` — `listChanges` |
 | Save to GitHub and change status UI | `src/controllers/save-publish-controller.ts` — `createSavePublishController`; `src/deploy-status.ts` — `setDeployStatus` |
 | History and restoring saved versions | `src/controllers/history-controller.ts` — `createHistoryController`; `src/components/commit-history.ts` — `createCommitHistory` |
-| Repository opening and first paint | `src/controllers/boot-controller.ts` — `createBootController`; `src/repository-loading.ts` — `RepositoryIndex`; `src/native-boot.ts` — `nativeShownFiles`; `src/main.ts` — `activateNativeSite` |
+| Repository opening and first paint | `src/controllers/boot-controller.ts` — `createBootController`; `src/workspace-boot.ts` — `createWorkspaceBoot` (repository choice, snapshot load, file restore, the remembered boot's guess); `src/repository-loading.ts` — `RepositoryIndex`; `src/native-boot.ts` — `nativeShownFiles`; `src/main.ts` — `activateNativeSite` |
 | Setup wizard and Get started | `src/controllers/setup-entry-controller.ts` — `createSetupEntryController`; `src/components/setup-wizard.ts` — `createSetupWizard`; `src/setup-wizard.ts` — `readWizard` |
 | Setup checklist and starting point | `src/controllers/setup-checklist-controller.ts` — `createSetupChecklistController`; `shared/starting-point.ts` — `blankSiteFiles`; `src/setup-actions.ts` — `createSetupActions` |
 | Settings dialog actions | `src/native-settings.ts` — `createNativeSettings` |
@@ -246,11 +246,11 @@ Ranges are approximate navigation hints, measured in this worktree; search the s
 | File operations, site resync and save ports | 3959–4269 | fileOperationsController, afterFileChanges, undoFileChanges, savePublish |
 | Opening files and mounting source | 4270–4516 | openEntry, mountSource, openComponentLinkedStyle, updateAgentContext |
 | Agent context and commands | 4517–4695 | agentContext, agentSiteActions, applyAgentSiteCommand, agentActing |
-| New, uploaded and deleted drafts; snapshot loading | 4696–5014 | openNewDraft, showUpload, applyAgentCommand, restoreFile, loadSnapshot |
-| Speculative boot reads and repository choice | 5015–5199 | startBootGuess, takeBootGuess, chooseRepository |
+| New, uploaded and deleted drafts | 4696–4830 | openNewDraft, showUpload, applyAgentCommand |
+| Workspace boot ports (src/workspace-boot.ts) | 4831–4850 | workspaceBoot, restoreFile, loadSnapshot, chooseRepository |
 | Setup wizard and partial starting points | 5200–5450 | wizardConnection, setupEntry, finishWizard |
 | Get started, repository lists and account switching | 5451–5758 | showGetStarted, createSite, loadRepositories, switchAccount, disconnect |
-| Draft baseline, agent/boot ports and startup | 5759–5833 | agentController, boot, startBootGuess |
+| Draft baseline, agent/boot ports and startup | 5233–5345 | agentController, boot, workspaceBoot.startGuess |
 
 ## Main entry points
 

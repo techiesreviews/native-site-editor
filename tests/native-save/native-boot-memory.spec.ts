@@ -206,3 +206,60 @@ test('a failed branch list and a failed guess take the normal error path', async
   await expect(page.locator('#branch option')).toHaveText(['Branches unavailable']);
   await expect(page.locator('#content')).toContainText('Branches could not be loaded. Reload repositories to retry.');
 });
+
+// Reload repositories from the menu (src/main.ts refreshRepositoryList).
+async function reloadRepositories(page: Page) {
+  await page.locator('.repository-menu__trigger').click();
+  await page.getByRole('button', { name: 'Reload repositories', exact: true }).click();
+  await page.keyboard.press('Escape');
+}
+
+test('a guess taken before a new listing clears the selection writes nothing when it lands', async ({ page, baseURL }) => {
+  const memory = await firstBoot(page, baseURL);
+  const { state } = await watchGuesses(page);
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  // The guessed snapshot (asked for before the session) is held until the selection is cleared.
+  await page.route(/\/api\/snapshot\?/, async (route) => {
+    if (state.sessionDone) return route.fallback();
+    const response = await route.fetch();
+    await gate;
+    await route.fulfill({ response });
+  });
+  // Access to the repository removed: the listing has two others, so nothing opens by itself.
+  const listed = { without: false };
+  await page.route(/\/api\/repositories\?refresh=1/, async (route) => {
+    if (!listed.without) return route.fallback();
+    const response = await route.fetch();
+    const [base] = await response.json() as { id: number; name: string; full_name: string }[];
+    await route.fulfill({ response, json: [9001, 9002].map((id) => ({ ...base, id, name: `other-${id}`, full_name: `native-demo-user/other-${id}` })) });
+  });
+  await page.reload();
+  // The branch list came first: the snapshot load waits on the held guess.
+  await expect(page.locator('#content')).toContainText('Opening your repository…');
+
+  listed.without = true;
+  await reloadRepositories(page);
+  await expect(page.locator('#content')).toContainText('Open a project');
+  const landed = page.waitForResponse((response) => response.url().includes('/api/snapshot'));
+  release();
+  await (await landed).finished();
+
+  // Access back: the remembered repository opens afresh, and its page is read, not taken from the guess.
+  listed.without = false;
+  await reloadRepositories(page);
+  await expect(preview(page).locator('.hero h1')).toBeVisible();
+  await expect(preview(page).locator('[data-guess]')).toHaveCount(0);
+  expect(state.late.some((read) => read.startsWith('/api/file') && read.includes(sha(memory, 'index.html'))), 'the page is read afresh').toBe(true);
+});
+
+test('sign-out posts /auth/logout and forgets the remembered boot', async ({ page, baseURL }) => {
+  await firstBoot(page, baseURL);
+  await page.locator('.repository-menu__trigger').click();
+  const logout = page.waitForRequest((request) => new URL(request.url()).pathname === '/auth/logout');
+  await page.getByRole('button', { name: /^Sign out/ }).click();
+  expect((await logout).method()).toBe('POST');
+  // The memory is forgotten before the editor goes to its signed-out home.
+  await page.waitForURL(`${baseURL}/`);
+  expect(await page.evaluate(() => Object.keys(localStorage).filter((key) => key.startsWith('ase:boot-memory:')))).toEqual([]);
+});

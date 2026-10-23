@@ -220,6 +220,32 @@ test("reset clears listing state and onboarding", async () => {
   assert.equal(f.controller.onboarding(), undefined); assert.equal(f.controller.needsRecovery(), true);
 });
 
+test("sessionTag is the adopted signed-in session's tag until reset; none for a signed-out session", async () => {
+  const f = fixture();
+  assert.equal(f.controller.sessionTag(), undefined);
+  const started = f.controller.start();
+  f.lists[0].read.resolve(receipt([repo(1)], "t1"));
+  // Not adopted while the session read is out.
+  assert.equal(f.controller.sessionTag(), undefined);
+  f.sessions[0].resolve(receipt(signedIn(), "t1"));
+  await started;
+  assert.equal(f.controller.sessionTag(), "t1");
+  f.controller.reset();
+  assert.equal(f.controller.sessionTag(), undefined);
+
+  const untagged = fixture(), boot = untagged.controller.start();
+  untagged.lists[0].read.resolve(receipt([repo(1)], null));
+  untagged.sessions[0].resolve(receipt(signedIn(), null));
+  await boot;
+  assert.equal(untagged.controller.sessionTag(), null);
+
+  const out = fixture(), signedOutBoot = out.controller.start();
+  out.lists[0].read.resolve(receipt([], "t2"));
+  out.sessions[0].resolve(receipt(signedOut, "t2"));
+  await signedOutBoot;
+  assert.equal(out.controller.sessionTag(), undefined);
+});
+
 test("planRepositoryOpen decides the repository to open", () => {
   const list = [repo(1), repo(2)];
   const cases: [string, Parameters<typeof planRepositoryOpen>[0], ReturnType<typeof planRepositoryOpen>][] = [
