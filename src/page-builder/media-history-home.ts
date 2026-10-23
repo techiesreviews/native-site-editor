@@ -14,8 +14,9 @@ export function createMediaHistoryHome() {
   let steps: { stamp: Pick<Stamp, "holds">; undo: HistoryAction; redo: HistoryAction; dispose?: () => void }[] = [];
   // Drops the steps of another workspace or load; the rest stay in order.
   function keep() {
-    for (const step of steps) if (!step.stamp.holds()) step.dispose?.();
-    return steps.filter(step => step.stamp.holds());
+    const kept: typeof steps = [];
+    for (const step of steps) { if (step.stamp.holds()) kept.push(step); else step.dispose?.(); }
+    return kept;
   }
   return {
     hold(stamp: Pick<Stamp, "holds">, undo: HistoryAction, redo: HistoryAction, dispose?: () => void): boolean {

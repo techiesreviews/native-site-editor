@@ -20,7 +20,7 @@ export type WorkspaceScope =
   | { kind: "github"; account: string; repoId: number; repo: string; branch: string; view?: string }
   | { kind: "folder"; folderId: string; view?: string };
 
-/** Comparison keys of a scope: equal whenever `same` holds (the view aside); none for a repository known only by name. */
+/** Comparison keys of a scope: for two scopes with known repository ids, equal whenever `same` holds (the view aside); none for a repository known only by name. */
 export interface WorkspaceKeys { drafts: string; setup: string; media: string }
 
 /** What moved since a stamp began: another workspace, the version view on it, or a reload of it. */

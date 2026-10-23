@@ -109,6 +109,7 @@ test("the snapshot after a save is the open repository's by id, whatever its nam
   }
   const other = fixture(), was = other.controller.proof();
   other.controller.published(was, { ...scope1, repoId: 2 }, result("f".repeat(40)), []);
+  assert.equal(other.controller.headFor({ ...scope1, repoId: 2 }), undefined, "no head for a re-created repository of the same name");
   other.answers[0].resolve(snap("f".repeat(40)));
   await flush();
   assert.deepEqual(other.log, ["saved"], "a re-created repository of the same name is another");
