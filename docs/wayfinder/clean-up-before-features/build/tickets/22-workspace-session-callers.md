@@ -79,4 +79,10 @@ Callers outside this ticket's files that still keep a workspace load number or c
 - `src/drafts.ts` (`list`), `src/boot-memory.ts` (`readBootMemory`, `memoryMatches`), `src/components/publish-menu.ts`: ask `same`/`holdsDraftScope`/`sameBranch`.
 - `shared/agent-requests.ts`, `shared/agent-read.ts`: shared with the Worker, which does not load the session module yet.
 - The fence's stored and wire name `generation` (IndexedDB, localStorage hint, relay parameter, `ownerGeneration`) and the agent-facing "tab or generation" messages: rename with a data migration and Worker change.
+- Spec (P2): 699bea38:tests/guarded-edit-reads.test.ts:9 — P2: "Done when" item 2 says the `guarded-edit-reads` entries for load epochs the session now covers must be gone. 
+- Spec (P3): 699bea38:src/components/agent-menu.ts:848 — P3: `matches(approval)` used to compare `repo?.fullName === approval.repo` exactly. It now goes through `sameBranch`
+- Validation gaps (gap): `tests/agent-tools-media.test.ts` (branch-switch test, round 3): `assert.ok(!result.ok || state !== "applied")` passes on any failure, including one unrelated t
+- Validation gaps (gap): `save-publish-controller.ts` `headFor`/`isOpen` now also compare the account, which the old `headFor` did not. No test shows that another account gets no head. 
+- Validation gaps (gap): The agent menu's new repository checks (`sameRepository`, `liveGrants`, `live`, `stillOpen`) are only tested by calling `sameBranch` on hand-built shapes in `te
+- Validation gaps (gap): `same` and `sameBranch` now treat a repository whose id is unknown (`repoId: 0`) as having no keys, while `same` can still say it equals one with a known id. No
 
