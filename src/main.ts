@@ -25,7 +25,7 @@ import { handleChunkLoadFailure, hasEditableRecoveryState, installChunkRecovery 
 import "./utilities.css";
 import "./style.css";
 import "./theme.css";
-import { node, link, button } from "./ui/dom";
+import { node, button } from "./ui/dom";
 import { reported, setErrorReporter } from "./ui/report-failure";
 import {
   readWorkspace,
@@ -34,7 +34,7 @@ import {
   resumeWorkspaceLink,
   rememberWorkspace,
 } from "./workspace-state";
-import { createSetupEntryController } from "./controllers/setup-entry-controller";
+import { createSetupHost, EDITOR_LOGIN } from "./setup-host";
 import { createAgentController } from "./controllers/agent-controller";
 import { createVersionView } from "./version-view";
 import type { AgentSiteActions, SharedContext } from "./agent-site";
@@ -62,15 +62,11 @@ import "./components/phone-sheet.css";
 import type { createFileRowActions, FileRowTarget } from "./components/file-row-actions";
 import "./components/files-tree.css";
 import type { createConfirmDialog } from "./components/confirm-dialog";
-import type { OwnerInstallation } from "../shared/types";
 import { forgetBootMemory } from "./boot-memory";
 import { createWorkspaceBoot } from "./workspace-boot";
-import { clearWizard, connectionFromOnboarding, readWizard, writeWizard, type Connection, type WizardRepo } from "./setup-wizard";
+import { clearWizard, readWizard } from "./setup-wizard";
 import { forgetSignedIn } from "./auto-signin";
 
-import { createSetupChecklistController } from "./controllers/setup-checklist-controller";
-import type { SetupState } from "./setup-checklist";
-import { siteNameFromRepository, type StartingPoint } from "../shared/starting-point";
 import type { createPagePicker } from "./components/page-picker";
 import type { MenuItem } from "./components/row-menu";
 import { duplicateFile, listChanges, restoreFile as restoreDraftFile, type FileChange } from "./file-changes";
@@ -218,8 +214,8 @@ const loadSetupActions = lazyModule(async () => {
   return createSetupActions({
     get info() { return info; }, begin: () => workspaceSession.begin(),
     get repositories() { return repositories; }, set repositories(value) { repositories = value; },
-    get wizardCreated() { return wizardCreated; }, set wizardCreated(value) { wizardCreated = value; },
-    get waitingForRepositories() { return waitingForRepositories; }, set waitingForRepositories(value) { waitingForRepositories = value; },
+    get wizardCreated() { return setup.wizardCreated; }, set wizardCreated(value) { setup.wizardCreated = value; },
+    get waitingForRepositories() { return setup.waitingForRepositories; }, set waitingForRepositories(value) { setup.waitingForRepositories = value; },
     get repositorySelect() { return repositorySelect; }, get repositoryMenu() { return repositoryMenu; },
     boot, appStore, guardedEdits, nativeBaseSources, repositoryIndex, setupController,
     api, readFiles, readFile, readBlob, branchText, draftScope, draftStore, pathNow,
@@ -2996,13 +2992,8 @@ function options(
   );
 }
 
-// Addresses of the editor itself, independent of the opened site.
-const EDITOR_HOME = "/";
-const EDITOR_LOGIN = "/auth/login";
-
-function renderLogin(
-  mode: "loading" | "auto" | "ready" | "expired" | "error" = "ready",
-) {
+// Everything open goes before the login page shows (renderLogin, src/setup-host.ts).
+function closeWorkspace() {
   workspaceBoot.dropGuess();
   paletteController.dispose();
   agentController.destroy();
@@ -3034,149 +3025,27 @@ function renderLogin(
   appStore.reset();
   repositoryIndex.clear();
   cleanSources.clear();
-  app.className = "login-page";
-  // One layout for every state, so nothing jumps when the answer arrives: the
-  // loading and automatic states keep the card's size and hide what is below.
-  app.innerHTML = `
-    <main class="login-card" aria-labelledby="login-title" data-mode="${mode}">
-      <a class="brand login-brand" href="${EDITOR_HOME}" aria-label="Native Site Editor home"><span class="brand-mark">n<span>✦</span></span><span>Native <strong>Site Editor</strong></span></a>
-      <h1 id="login-title">Welcome to Native Site Editor</h1>
-      <div id="login-action" class="login-action"></div>
-      <div id="notice" class="login-notice" role="alert" hidden></div>
-    </main>
-  `;
-  const action = element("login-action");
-  if (mode === "loading" || mode === "auto") {
-    const loading = node("p", "login-state login-busy");
-    loading.setAttribute("role", "status");
-    const spinner = node("span", "login-spinner");
-    spinner.setAttribute("aria-hidden", "true");
-    loading.append(spinner, node("span", "", mode === "auto" ? "Signing you in with GitHub…" : "Checking your account…"));
-    action.append(loading);
-    if (mode === "auto")
-      action.append(button("Use the button instead", () => boot.cancelAutoSignIn(), "text-link login-cancel"));
-  } else if (mode === "error") {
-    action.append(
-      button(
-        "Retry connection",
-        () => void boot.start(),
-        "button primary login-button",
-      ),
-    );
-  } else if (info?.configured) {
-    // One button for everyone: the Worker decides where the sign-in leads
-    // (the editor, GitHub's install page for an account without the App, or
-    // the Setup wizard for a first site), so there is no choice to make here.
-    action.append(link("Continue with GitHub", "/auth/login", "button primary login-button login-signin"));
-  } else if (info?.ownerSetupOpen && info.ownerSetupUrl) {
-    // A fresh self-hosted editor (Deploy to Cloudflare): its owner has one
-    // thing left to do, which the Setup wizard's Connect step explains and
-    // starts. Nothing leaves this page before that click.
-    action.append(link("Connect your editor to GitHub", info.ownerSetupUrl, "button primary login-button"));
-    if (mode === "ready") void setupEntry.openOwner(info.ownerSetupUrl).catch(errorMessage);
-  } else {
-    const disabled = button(
-      "Continue with GitHub",
-      () => {},
-      "button primary login-button",
-    );
-    disabled.disabled = true;
-    action.append(
-      disabled,
-      node("p", "login-state", "GitHub sign-in has not been configured for this editor yet."),
-    );
-    const details = node("details", "login-setup");
-    details.append(
-      node("summary", "", "Owner setup"),
-      node(
-        "p",
-        "",
-        "Is this your editor? In its GitHub repository, set OWNER_GITHUB in wrangler.jsonc to your GitHub username and commit. Cloudflare deploys it again within a minute or two; then reload this page. (An editor with an OWNER_SETUP_TOKEN uses its private setup link instead.)",
-      ),
-    );
-    if (info?.ownerSetupUrl)
-      details.append(link("Open owner setup", info.ownerSetupUrl, "text-link"));
-    action.append(details);
-  }
 }
 
-// Start your site: in place of the preview when the repository has nothing
-// to show, because it is empty or has no index.html at its top.
-async function startSitePanel() {
-  const repo = appStore.repository.value!;
-  const empty = Boolean(appStore.snapshot.value?.empty);
-  const [{ createStartSite }, { setupPrompt }] = await Promise.all([loadStartSite(), loadAgentPrompts()]);
-  return createStartSite({
-    repository: repo.name,
-    empty,
-    start: writeStartingPoint,
-    agent: async (about) => {
-      const prompt = setupPrompt({ editor: location.origin, installUrl: info.installUrl, name: repo.name, private: repo.private, about, repository: repo.full_name });
-      try {
-        await navigator.clipboard.writeText(prompt);
-        return "Copied. Paste it into Claude Code, Codex or another coding agent.";
-      } catch {
-        return "Clipboard access was denied. Allow it in your browser and copy again.";
-      }
-    },
-  }).root;
-}
-
-// ---- Set up your site (src/setup-checklist.ts, components/setup-checklist.ts) ----
-// A pill in the top bar for a repository that went through Get started or
-// Start your site, and for any repository from the project menu. Its items
-// are ticked from the state the editor holds, each time it may have changed.
+// Login, Start your site, the Setup checklist and wizard, and Get started (src/setup-host.ts).
+const setup = createSetupHost({
+  app, element, appStore, workspaceSession, closeWorkspace, setupScope, draftScope, draftStore, nativeEffectiveSource, api,
+  get info() { return info; }, get repositories() { return repositories; }, get content() { return content; },
+  get repositoryMenu() { return repositoryMenu; }, get nativeEngaged() { return nativeEngaged; },
+  get agentPrompts() { return agentPrompts; }, get onboardingCopy() { return onboardingCopy; },
+  get boot() { return boot; }, get agentController() { return agentController; },
+  loadRepositories: (prefetched) => loadRepositories(prefetched),
+  loadSetupActions, loadWizard, loadChecklist, loadSpotlight, loadGetStarted, loadStartSite, loadAgentPrompts,
+  status, errorMessage, refuse,
+});
+const {
+  renderLogin, startSitePanel, setupController, setupEntry, showGetStarted, checkNewRepositories,
+  rememberRepositories, knownRepositories, rememberStartingPoint, takeStartingPoint,
+  rememberPartialStart, readPartialStart, forgetPartialStart, offerFinishStarter, removeFinishStarter, writeStartingPoint,
+} = setup;
 
 /** Account, repository and branch the checklist is of. */
 function setupScope() { return setupKeyOf(shownScope()); }
-
-const setupController = createSetupChecklistController({
-  account: () => info.user?.login,
-  repository: () => appStore.repository.value,
-  scope: setupScope,
-  state: setupState,
-  host: () => element("setup-checklist"),
-  menu: () => repositoryMenu,
-  connected: () => agentController.connected(),
-  ensureAgent: () => agentController.ensure(),
-  agentText: () => onboardingCopy ? [onboardingCopy.AGENT_EXPLAINER.join(" "), onboardingCopy.agentWhere()] : [],
-  storage: localStorage,
-  loadChecklist,
-  loadSpotlight,
-  onError: errorMessage,
-  start: () => {
-    const choice = content.querySelector<HTMLElement>(".start-site .onboard-choice");
-    if (choice) choice.focus();
-    else refuse("This repository has a home page already.");
-  },
-  save: () => {
-    const trigger = document.querySelector<HTMLButtonElement>(".publish-menu__trigger");
-    if (!trigger || trigger.disabled) { refuse("There is nothing to save yet."); return; }
-    trigger.focus();
-    trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
-  },
-  saveName: name => writeSiteSettings({ name }),
-});
-
-function setupState(): Omit<SetupState, "nameConfirmed" | "agent"> | undefined {
-  const repo = appStore.repository.value;
-  const scope = draftScope();
-  if (!repo || !scope || !appStore.snapshot.value) return undefined;
-  const home = draftStore().get(scope, NATIVE_HOME_PAGE);
-  const drafted = Boolean(home && !home.deleted);
-  const settings = nativeSiteSettings(nativeEffectiveSource(NATIVE_CONFIG_PATH, scope));
-  return {
-    homePage: drafted || (nativeEngaged && !home?.deleted),
-    committed: !appStore.snapshot.value.empty,
-    homeUnsaved: drafted && home!.baseSha === null,
-    siteName: settings.name,
-    defaultName: siteNameFromRepository(repo.name),
-  };
-}
-
-// The site's name or address into `.editor/config.json` as a draft (the
-// rest of the file kept); Publish keeps it. Undo in the editor takes it back.
-
 
 function showDirectory(directory: Directory, path = "") {
   fileGeneration++;
@@ -4638,184 +4507,14 @@ const workspaceBoot = createWorkspaceBoot({
 });
 const { restoreFile, loadSnapshot, chooseRepository } = workspaceBoot;
 
-// ---- Setup wizard (src/setup-wizard.ts, components/setup-wizard.ts) ----
-// A full-screen guide over the page for a signed-in account with no
-// repository, in place of Get started: Connect GitHub, Create your site, then
-// a page that celebrates the new site and opens the editor. Connect GitHub is its first
-// step: done for an account with the App, and a retry for one that came back
-// from GitHub's install page without installing it (the worker sends a new
-// sign-in without the App to that page by itself). Its state is kept in
-// localStorage so it survives a reload.
-/** The repository the wizard made, for the editor to open at the end. */
-let wizardCreated: Repository | undefined;
-
-/** What this account's GitHub connection is: signed in without the App, or with it installed. */
-async function wizardConnection(): Promise<Connection> {
-  try {
-    const response = await fetch("/api/owners", { credentials: "same-origin", cache: "no-store" });
-    if (response.status === 401) return "signed-out";
-    if (!response.ok) return "not-installed";
-    const owners = (await response.json()) as OwnerInstallation[];
-    return owners.length ? "installed" : "not-installed";
-  } catch {
-    return "signed-out";
-  }
-}
-
-const setupEntry = createSetupEntryController({
-  login: () => info.user?.login,
-  ownerSetupUrl: () => info.ownerSetupUrl ?? undefined,
-  repositoryCount: () => repositories.length,
-  connectionHint: () => connectionFromOnboarding(boot.onboarding()),
-  connection: wizardConnection,
-  readMemory: () => readWizard(localStorage),
-  writeMemory: change => writeWizard(localStorage, change),
-  clearMemory: () => clearWizard(localStorage),
-  loadWizard,
-  append: root => document.body.append(root),
-  actions: {
-    loadOwners: () => api<OwnerInstallation[]>("owners"),
-    create: createSiteInWizard,
-    findRepository: findWizardRepository,
-    loadPreview: wizardPreview,
-    // Loaded with the wizard (loadWizard).
-    agentPrompt: (choice, about) => agentPrompts?.setupPrompt({ editor: location.origin, installUrl: info.installUrl, name: choice.name, private: choice.private, owner: choice.owner, about, repository: choice.repository }) ?? "",
-    finish: repo => void finishWizard(repo),
-  },
-  onExit: () => { if (info.user && !repositories.length) void showGetStarted().catch(errorMessage); },
-});
-
-/** Create site: the repository, with its starting point already committed (POST /api/repositories). */
-// A starting point that stopped part way (the first file is committed, the rest is not): which files are in, kept
-// (localStorage, by account and repository id) until the user finishes adding it or leaves it.
-const partialStartKey = (repoId: number) => `native-site-editor:partial-start:${info.user?.login.toLowerCase() ?? ""}/${repoId}`;
-function rememberPartialStart(repoId: number, point: StartingPoint, committed: string[]) {
-  try { localStorage.setItem(partialStartKey(repoId), JSON.stringify({ point, committed })); } catch { /* Not kept. */ }
-}
-function readPartialStart(repoId: number): { point: StartingPoint; committed: string[] } | undefined {
-  try {
-    const value = JSON.parse(localStorage.getItem(partialStartKey(repoId)) ?? "null");
-    if (!value || (value.point !== "starter" && value.point !== "blank") || !Array.isArray(value.committed) || !value.committed.every((path: unknown) => typeof path === "string")) return undefined;
-    return { point: value.point, committed: value.committed };
-  } catch {
-    return undefined;
-  }
-}
-function forgetPartialStart(repoId: number) {
-  try { localStorage.removeItem(partialStartKey(repoId)); } catch { /* Nothing kept. */ }
-}
-
-/** Says the starting point stopped part way and offers to add the files that are missing, as drafts that overwrite nothing. */
-const removeFinishStarter = () => document.getElementById("finish-starter")?.remove();
-function offerFinishStarter(repo: Repository, partial: { point: StartingPoint; committed: string[] }) {
-  // Its own banner: an error notice replaces the shared one (a missing stylesheet is one here).
-  removeFinishStarter();
-  // The banner belongs to this repository, branch and load: it goes when any of them changes, and refuses if it was left behind.
-  const at = workspaceSession.begin();
-  const banner = node("div", "notice");
-  banner.id = "finish-starter";
-  banner.setAttribute("role", "status");
-  const what = partial.point === "starter" ? "Starter site" : "blank page";
-  const finish = button(`Finish adding the ${what}`, async () => {
-    if (!at.holds() || appStore.repository.value?.id !== repo.id) {
-      banner.remove();
-      return;
-    }
-    finish.disabled = true;
-    // writeStartingPoint forgets the recovery record and removes this banner once the drafts are written.
-    const problem = await writeStartingPoint(partial.point, { ...partial, repoId: repo.id });
-    if (problem) {
-      finish.disabled = false;
-      errorMessage(new Error(problem));
-    }
-  }, "text-link");
-  banner.append(node("span", "", `Adding the ${what} to ${repo.name} stopped part way, so some of its files are missing. `), finish);
-  app.insertBefore(banner, document.querySelector(".workspace"));
-}
-
-/** The last step: the editor opens on the new repository, and the Setup checklist takes over. */
-async function finishWizard(repo: WizardRepo) {
-  setupEntry.complete();
-  setupController.start(repo.id);
-  history.replaceState(null, "", `#repo=${repo.id}&branch=${encodeURIComponent(repo.defaultBranch)}`);
-  // GitHub may not list a repository it has just made yet: the one made here is added.
-  const listed = await boot.fetchList(true).catch(() => repositories);
-  await loadRepositories(wizardCreated && !listed.some((known) => known.id === wizardCreated!.id) ? [...listed, wizardCreated] : listed);
-}
-
-// Get started: the screen of an account with no repository in the editor.
-// Coming back to the tab (from GitHub, where access was given or a
-// repository made) lists the repositories again.
-let waitingForRepositories = false;
-// The repository ids this browser last listed, kept (localStorage, as the
-// install page opens in another tab) to tell which one is new on return.
-const knownRepositoriesKey = () => `native-site-editor:repositories:${info.user?.login.toLowerCase() ?? ""}`;
-function rememberRepositories(list: Repository[]) {
-  try { localStorage.setItem(knownRepositoriesKey(), JSON.stringify(list.map((repo) => repo.id))); } catch { /* Not kept. */ }
-}
-function knownRepositories(): number[] | undefined {
-  try {
-    const value = JSON.parse(localStorage.getItem(knownRepositoriesKey()) ?? "null");
-    return Array.isArray(value) && value.every((id) => typeof id === "number") ? value : undefined;
-  } catch {
-    return undefined;
-  }
-}
-async function showGetStarted() {
-  const host = content, login = info.user?.login;
-  const { createGetStarted } = await loadGetStarted();
-  if (host !== content || login !== info.user?.login || repositories.length) return;
-  const screen = createGetStarted({
-    login: info.user?.login ?? "",
-    installUrl: info.installUrl,
-    editor: location.origin,
-    create: createSite,
-    reload: () => void loadRepositories(),
-    loadOwners: () => api<OwnerInstallation[]>("owners"),
-  });
-  content.replaceChildren(screen.root);
-  status("Connected. Create a site or choose a repository.");
-  waitingForRepositories = true;
-}
+// Coming back to the tab lists the repositories again for Get started (src/setup-host.ts).
 window.addEventListener("focus", () => void checkNewRepositories());
 document.addEventListener("visibilitychange", () => void checkNewRepositories());
-async function checkNewRepositories() {
-  if (!waitingForRepositories || document.visibilityState !== "visible" || !content.querySelector(".get-started")) return;
-  try {
-    const next = await boot.fetchList(true);
-    if (next.length && waitingForRepositories && content.querySelector(".get-started")) await loadRepositories(next);
-  } catch {
-    // Listed again on the next visit.
-  }
-}
 
-// The starting point chosen on Get started when the repository was made on
-// GitHub's own page: kept (localStorage, by account, owner and repository name, as
-// the way back may be a new tab) until that repository opens.
-const startingPointKey = (owner: string | undefined, name: string) => `native-site-editor:starting-point:${info.user?.login.toLowerCase() ?? ""}/${(owner ?? info.user?.login ?? "").toLowerCase()}/${name.toLowerCase()}`;
-function rememberStartingPoint(owner: string | undefined, name: string, point: StartingPoint) {
-  try { localStorage.setItem(startingPointKey(owner, name), point); } catch { /* Not kept: Start your site asks. */ }
-}
-function takeStartingPoint(repo: Repository): StartingPoint | undefined {
-  try {
-    const key = startingPointKey(repo.owner.login, repo.name);
-    const point = localStorage.getItem(key);
-    if (point === null) return undefined;
-    localStorage.removeItem(key);
-    return point === "starter" || point === "blank" ? point : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-// Create a site: a new empty repository on the account (the Worker needs
-// the App's Administration permission for it), opened with the chosen
-// starting point written as drafts. When the editor may not create it,
-// Get started offers GitHub's own New repository page instead.
 async function loadRepositories(prefetched?: Repository[], hooks?: { onStarted(at: SessionStamp): void }) {
   boot.loading();
   removeFinishStarter();
-  waitingForRepositories = false;
+  setup.waitingForRepositories = false;
   mediaHistoryHome.clear();
   workspaceBoot.abandonGuess();
   const at = nextLoad();
@@ -5102,33 +4801,3 @@ window.addEventListener("hashchange", () => { workspaceBoot.dropGuess(); boot.on
 renderLogin("loading");
 workspaceBoot.startGuess();
 void boot.start();
-
-async function createSiteInWizard(...args: Parameters<Awaited<ReturnType<typeof loadSetupActions>>["createSiteInWizard"]>) {
-  return (await loadSetupActions()).createSiteInWizard(...args);
-}
-
-async function findWizardRepository(...args: Parameters<Awaited<ReturnType<typeof loadSetupActions>>["findWizardRepository"]>) {
-  return (await loadSetupActions()).findWizardRepository(...args);
-}
-
-async function wizardPreview(...args: Parameters<Awaited<ReturnType<typeof loadSetupActions>>["wizardPreview"]>) {
-  return (await loadSetupActions()).wizardPreview(...args);
-}
-
-async function createSite(...args: Parameters<Awaited<ReturnType<typeof loadSetupActions>>["createSite"]>) {
-  return (await loadSetupActions()).createSite(...args);
-}
-
-async function writeSiteSettings(...args: Parameters<Awaited<ReturnType<typeof loadSetupActions>>["writeSiteSettings"]>) {
-  const at = workspaceSession.begin(), snapshot = appStore.snapshot.value;
-  const actions = await loadSetupActions();
-  if (!at.holds() || snapshot !== appStore.snapshot.value) return "The repository changed meanwhile. Try again.";
-  return actions.writeSiteSettings(...args);
-}
-
-async function writeStartingPoint(...args: Parameters<Awaited<ReturnType<typeof loadSetupActions>>["writeStartingPoint"]>) {
-  const at = workspaceSession.begin(), snapshot = appStore.snapshot.value;
-  const actions = await loadSetupActions();
-  if (!at.holds() || snapshot !== appStore.snapshot.value) return "The repository changed meanwhile. Try again.";
-  return actions.writeStartingPoint(...args);
-}

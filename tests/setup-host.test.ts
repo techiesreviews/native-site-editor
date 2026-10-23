@@ -1,0 +1,383 @@
+import { after, test } from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { registerHooks } from "node:module";
+import { signal } from "@preact/signals-core";
+import type { SetupActions } from "../src/components/setup-checklist.ts";
+import type { SetupWizardOptions } from "../src/components/setup-wizard.ts";
+import type { createStartSite } from "../src/components/start-site.ts";
+import type { SavedDraft } from "../src/drafts.ts";
+import type { SetupHostPorts } from "../src/setup-host.ts";
+import { createWorkspaceSession } from "../src/workspace-session.ts";
+import { setupProgress, type SetupProgress } from "../src/setup-checklist.ts";
+import { NATIVE_CONFIG_PATH, NATIVE_HOME_PAGE } from "../shared/native-project.ts";
+import { siteNameFromRepository } from "../shared/starting-point.ts";
+import type { Repository, SessionInfo, Snapshot } from "../shared/types.ts";
+
+// Just enough DOM for the login card, the finish banner and Get started.
+class FakeElement {
+  children: FakeElement[] = [];
+  attributes = new Map<string, string>();
+  listeners = new Map<string, () => unknown>();
+  className = ""; textContent = ""; innerHTML = ""; href = ""; id = ""; type = "";
+  disabled = false; removed = false;
+  parent: FakeElement | undefined;
+  setAttribute(name: string, value: string) { this.attributes.set(name, value); }
+  getAttribute(name: string) { return this.attributes.get(name) ?? null; }
+  append(...children: FakeElement[]) { for (const child of children) child.parent = this; this.children.push(...children); }
+  replaceChildren(...children: FakeElement[]) { this.children = []; this.append(...children); }
+  insertBefore(child: FakeElement) { this.append(child); }
+  remove() { this.removed = true; if (this.parent) this.parent.children = this.parent.children.filter((child) => child !== this); }
+  addEventListener(type: string, listener: () => unknown) { this.listeners.set(type, listener); }
+  async click() { await this.listeners.get("click")?.(); }
+  querySelector(selector: string): FakeElement | null { return this.all().find((element) => selector === `.${element.className}`) ?? null; }
+  all(): FakeElement[] { return this.children.flatMap((child) => [child, ...child.all()]); }
+  text(): string { return [this.textContent, ...this.children.map((child) => child.text())].join(""); }
+}
+class FakeStorage {
+  values = new Map<string, string>();
+  getItem(key: string) { return this.values.get(key) ?? null; }
+  setItem(key: string, value: string) { this.values.set(key, value); }
+  removeItem(key: string) { this.values.delete(key); }
+}
+const body = new FakeElement();
+const storage = new FakeStorage();
+const saved = ["document", "localStorage", "location", "history", "navigator"].map((name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)] as const);
+const fakeGlobals = globalThis as Record<string, unknown>;
+const replaced: string[] = [];
+fakeGlobals.document = {
+  createElement: () => new FakeElement(), body, visibilityState: "visible",
+  getElementById: (id: string) => body.all().find((element) => element.id === id) ?? null,
+  querySelector: () => null,
+};
+fakeGlobals.localStorage = storage;
+fakeGlobals.location = { origin: "https://editor.test" };
+fakeGlobals.history = { replaceState: (_state: unknown, _title: string, url: string) => { replaced.push(url); } };
+after(() => {
+  for (const [name, descriptor] of saved) {
+    if (descriptor) Object.defineProperty(globalThis, name, descriptor);
+    else delete fakeGlobals[name];
+  }
+});
+
+registerHooks({
+  load: (url, context, next) => /\.css$|\?raw$/.test(url) ? { format: "module", source: "export default '';", shortCircuit: true } : next(url, context),
+});
+const { createSetupHost, EDITOR_LOGIN } = await import("../src/setup-host.ts");
+
+const flush = async () => { for (let i = 0; i < 10; i++) await new Promise<void>((resolve) => setImmediate(resolve)); };
+type StartSiteOptions = Parameters<typeof createStartSite>[0];
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((yes) => { resolve = yes; });
+  return { promise, resolve };
+}
+const repository = (id: number, name = `site-${id}`): Repository => ({
+  id, name, full_name: `lex/${name}`, private: false, default_branch: "main", owner: { login: "lex" },
+} as Repository);
+const snapshot = (empty = false): Snapshot => ({ commit: "c1", branch: "main", entries: [], empty } as Partial<Snapshot> as Snapshot);
+
+function fixture() {
+  const app = new FakeElement(), action = new FakeElement(), checklistHost = new FakeElement();
+  let content = new FakeElement();
+  let info: SessionInfo = { configured: true, user: { login: "Lex" }, installUrl: "https://github.test/install" } as SessionInfo;
+  let repositories: Repository[] = [];
+  const session = createWorkspaceSession();
+  const appStore = { repository: signal<Repository | undefined>(undefined), snapshot: signal<Snapshot | undefined>(undefined) };
+  const drafts = new Map<string, SavedDraft>();
+  const sources = new Map<string, string>();
+  const calls: string[] = [], statuses: string[] = [], errors: unknown[] = [], loads: (Repository[] | undefined)[] = [], writes: unknown[][] = [];
+  const wizards: SetupWizardOptions[] = [];
+  const started: StartSiteOptions[] = [];
+  const checklist: { options?: SetupActions; updates: { progress: SetupProgress; siteName?: string; defaultName: string }[] } = { updates: [] };
+  let actions = deferred<void>();
+  let writeAnswer: string | undefined;
+  let listed: Repository[] = [];
+  let created: { root: FakeElement; options: Record<string, unknown> } | undefined;
+  const scope = { account: "lex", repoId: 1, repo: "lex/site-1", branch: "main" };
+  const setupActions = {
+    createSiteInWizard: async () => ({ ok: false, message: "Unused" }),
+    findWizardRepository: async () => undefined,
+    wizardPreview: async () => undefined,
+    createSite: async () => ({ ok: false, message: "Unused" }),
+    writeSiteSettings: async (...args: unknown[]) => { writes.push(["settings", ...args]); return writeAnswer; },
+    writeStartingPoint: async (...args: unknown[]) => { writes.push(["start", ...args]); return writeAnswer; },
+  };
+  const ports = {
+    app,
+    get info() { return info; },
+    get repositories() { return repositories; },
+    get content() { return content; },
+    repositoryMenu: undefined,
+    nativeEngaged: false,
+    agentPrompts: { setupPrompt: (options: { name: string }) => `prompt for ${options.name}` },
+    onboardingCopy: undefined,
+    boot: {
+      cancelAutoSignIn: () => { calls.push("cancel"); },
+      start: async () => { calls.push("start"); },
+      onboarding: () => "create" as const,
+      fetchList: async () => listed,
+    },
+    agentController: { connected: () => false, ensure: async () => undefined },
+    appStore,
+    workspaceSession: session,
+    closeWorkspace: () => { calls.push("close"); },
+    element: (id: string) => id === "login-action" ? action : checklistHost,
+    setupScope: () => "lex/1/main",
+    draftScope: () => appStore.snapshot.value ? scope : undefined,
+    draftStore: () => ({ get: (_scope: unknown, path: string) => drafts.get(path) }),
+    nativeEffectiveSource: (path: string) => sources.get(path),
+    api: async <T,>() => [] as T,
+    loadRepositories: async (prefetched?: Repository[]) => { loads.push(prefetched); },
+    loadSetupActions: async () => { await actions.promise; return setupActions; },
+    loadWizard: async () => ({ createSetupWizard: (options: SetupWizardOptions) => { wizards.push(options); return { root: new FakeElement(), focus: () => {}, destroy: () => {} }; } }),
+    loadChecklist: async () => ({ createSetupChecklist: (options: SetupActions) => {
+      checklist.options = options;
+      return { root: new FakeElement(), update: (view: (typeof checklist.updates)[number]) => { checklist.updates.push(view); }, onRequest: () => {}, open: () => {}, close: () => {} };
+    } }),
+    loadSpotlight: async () => { throw new Error("Unused"); },
+    loadGetStarted: async () => ({ createGetStarted: (options: Record<string, unknown>) => { created = { root: Object.assign(new FakeElement(), { className: "get-started" }), options }; return created; } }),
+    loadStartSite: async () => ({ createStartSite: (options: StartSiteOptions) => { started.push(options); return { root: new FakeElement() }; } }),
+    loadAgentPrompts: async () => ({ setupPrompt: (options: { name: string }) => `prompt for ${options.name}` }),
+    status: (message: string) => { statuses.push(message); },
+    errorMessage: (error: unknown) => { errors.push(error); },
+    refuse: (message: string) => { calls.push(`refuse:${message}`); },
+  };
+  // eslint-disable-next-line no-restricted-syntax -- the fakes cover only the members this module reads.
+  const setup = createSetupHost(ports as unknown as SetupHostPorts);
+  return {
+    setup, app, action, session, checklist, started, appStore, drafts, sources, calls, statuses, errors, loads, writes, wizards,
+    created: () => created!,
+    content: () => content,
+    newContent: () => { content = new FakeElement(); },
+    info: (value: Partial<SessionInfo>) => { info = { ...info, ...value }; },
+    repositories: (value: Repository[]) => { repositories = value; },
+    listed: (value: Repository[]) => { listed = value; },
+    actions: () => actions,
+    readyActions: () => { actions.resolve(); },
+    pendingActions: () => { actions = deferred<void>(); },
+    writeAnswer: (value: string | undefined) => { writeAnswer = value; },
+    open: (repo = repository(1)) => { appStore.repository.value = repo; appStore.snapshot.value = snapshot(); session.next({ account: "lex", repoId: repo.id, repo: repo.full_name, branch: "main", commit: "c1" }); },
+  };
+}
+
+test("the login page clears the workspace first and keeps one card for every state", () => {
+  const f = fixture();
+  f.setup.renderLogin("loading");
+  assert.deepEqual(f.calls, ["close"]);
+  assert.equal(f.app.className, "login-page");
+  assert.match(f.app.innerHTML, /data-mode="loading"/);
+  assert.match(f.app.innerHTML, /href="\/"/);
+  assert.match(f.action.text(), /Checking your account…/);
+});
+
+test("the automatic sign-in offers the button instead, and an error retries the connection", async () => {
+  const f = fixture();
+  f.setup.renderLogin("auto");
+  assert.match(f.action.text(), /Signing you in with GitHub…/);
+  await f.action.all().find((element) => element.textContent === "Use the button instead")!.click();
+  f.setup.renderLogin("error");
+  await f.action.all().find((element) => element.textContent === "Retry connection")!.click();
+  assert.deepEqual(f.calls, ["close", "cancel", "close", "start"]);
+});
+
+test("a configured editor signs in with one GitHub link", () => {
+  const f = fixture();
+  f.setup.renderLogin();
+  const signIn = f.action.all().find((element) => element.textContent === "Continue with GitHub")!;
+  assert.equal(signIn.href, EDITOR_LOGIN);
+  assert.equal(signIn.className, "button primary login-button login-signin");
+});
+
+test("a fresh self-hosted editor links to owner setup and opens the wizard only when ready", async () => {
+  const f = fixture();
+  f.info({ configured: false, user: undefined, ownerSetupOpen: true, ownerSetupUrl: "/owner/setup" });
+  f.setup.renderLogin("expired");
+  await flush();
+  assert.equal(f.action.all().find((element) => element.textContent === "Connect your editor to GitHub")!.href, "/owner/setup");
+  assert.equal(f.wizards.length, 0);
+  f.setup.renderLogin("ready");
+  await flush();
+  assert.equal(f.wizards.length, 1);
+  assert.equal(f.wizards[0].connectUrl, "/owner/setup");
+});
+
+test("an unconfigured editor shows a disabled sign-in and the owner instructions", () => {
+  const f = fixture();
+  f.info({ configured: false, ownerSetupOpen: false, ownerSetupUrl: "/owner/private" });
+  f.setup.renderLogin();
+  const all = f.action.all();
+  assert.equal(all.find((element) => element.textContent === "Continue with GitHub")!.disabled, true);
+  assert.match(f.action.text(), /GitHub sign-in has not been configured/);
+  assert.equal(all.find((element) => element.textContent === "Open owner setup")!.href, "/owner/private");
+});
+
+test("a partial start is kept by account and repository until forgotten, and a damaged record is ignored", () => {
+  const f = fixture();
+  f.setup.rememberPartialStart(7, "starter", ["index.html"]);
+  assert.ok(localStorage.getItem("native-site-editor:partial-start:lex/7"));
+  assert.deepEqual(f.setup.readPartialStart(7), { point: "starter", committed: ["index.html"] });
+  assert.equal(f.setup.readPartialStart(8), undefined);
+  f.setup.forgetPartialStart(7);
+  assert.equal(f.setup.readPartialStart(7), undefined);
+  localStorage.setItem("native-site-editor:partial-start:lex/9", JSON.stringify({ point: "other", committed: [] }));
+  assert.equal(f.setup.readPartialStart(9), undefined);
+  localStorage.setItem("native-site-editor:partial-start:lex/9", "{");
+  assert.equal(f.setup.readPartialStart(9), undefined);
+});
+
+test("a starting point chosen on Get started is taken once, by owner and name in any case", () => {
+  const f = fixture();
+  f.setup.rememberStartingPoint(undefined, "My-Site", "blank");
+  assert.equal(f.setup.takeStartingPoint(repository(1, "my-site")), "blank");
+  assert.equal(f.setup.takeStartingPoint(repository(1, "my-site")), undefined);
+  localStorage.setItem("native-site-editor:starting-point:lex/lex/odd", "other");
+  assert.equal(f.setup.takeStartingPoint(repository(2, "odd")), undefined);
+  assert.equal(localStorage.getItem("native-site-editor:starting-point:lex/lex/odd"), null);
+});
+
+test("the repositories this browser listed are kept by account", () => {
+  const f = fixture();
+  f.setup.rememberRepositories([repository(1), repository(2)]);
+  assert.deepEqual(f.setup.knownRepositories(), [1, 2]);
+  localStorage.setItem("native-site-editor:repositories:lex", JSON.stringify(["1"]));
+  assert.equal(f.setup.knownRepositories(), undefined);
+});
+
+test("Get started shows for an account with no repository and waits for one", async () => {
+  const f = fixture();
+  await f.setup.showGetStarted();
+  assert.equal(f.content().children[0], f.created().root);
+  assert.equal(f.created().options.login, "Lex");
+  assert.equal(f.created().options.installUrl, "https://github.test/install");
+  assert.deepEqual(f.statuses, ["Connected. Create a site or choose a repository."]);
+  assert.equal(f.setup.waitingForRepositories, true);
+  // Back on the tab: a new repository is listed and opens.
+  f.listed([repository(3)]);
+  await f.setup.checkNewRepositories();
+  assert.deepEqual(f.loads, [[repository(3)]]);
+});
+
+test("Get started is dropped when the page, the account or the repositories moved on while it loaded", async () => {
+  for (const change of ["content", "account", "repositories"] as const) {
+    const f = fixture();
+    const showing = f.setup.showGetStarted();
+    if (change === "content") f.newContent();
+    else if (change === "account") f.info({ user: { login: "other" } as SessionInfo["user"] });
+    else f.repositories([repository(1)]);
+    await showing;
+    assert.equal(f.content().children.length, 0, change);
+    assert.equal(f.setup.waitingForRepositories, false, change);
+  }
+});
+
+test("coming back without waiting for repositories lists nothing", async () => {
+  const f = fixture();
+  f.listed([repository(3)]);
+  await f.setup.checkNewRepositories();
+  assert.deepEqual(f.loads, []);
+});
+
+test("the wizard's last step opens the repository it made, even before GitHub lists it", async () => {
+  const f = fixture();
+  await f.setup.setupEntry.open();
+  assert.equal(f.wizards.length, 1);
+  const made = repository(5, "new-site");
+  f.setup.wizardCreated = made;
+  f.listed([repository(1)]);
+  f.wizards[0].finish({ id: 5, name: "new-site", defaultBranch: "main" } as Parameters<SetupWizardOptions["finish"]>[0]);
+  await flush();
+  assert.deepEqual(replaced, ["#repo=5&branch=main"]);
+  assert.deepEqual(f.loads, [[repository(1), made]]);
+  assert.equal(f.setup.setupEntry.dismissed(), true);
+});
+
+test("a starting point or site name write is refused when the repository changed while the actions loaded", async () => {
+  for (const change of ["session", "snapshot", "none"] as const) {
+    const f = fixture();
+    f.open();
+    const writing = f.setup.writeStartingPoint("starter");
+    if (change === "session") f.session.next(undefined);
+    if (change === "snapshot") f.appStore.snapshot.value = snapshot();
+    f.readyActions();
+    const answer = await writing;
+    if (change === "none") assert.deepEqual(f.writes, [["start", "starter"]]);
+    else {
+      assert.equal(answer, "The repository changed meanwhile. Try again.", change);
+      assert.deepEqual(f.writes, [], change);
+    }
+  }
+});
+
+test("Finish adding writes the missing starter files, and says why when it cannot", async () => {
+  const f = fixture();
+  f.open();
+  f.readyActions();
+  f.setup.offerFinishStarter(repository(1), { point: "starter", committed: ["index.html"] });
+  const banner = f.app.children[0];
+  assert.equal(banner.id, "finish-starter");
+  assert.match(banner.text(), /Adding the Starter site to site-1 stopped part way/);
+  const finish = banner.all().find((element) => element.textContent === "Finish adding the Starter site")!;
+  f.writeAnswer("No room.");
+  await finish.click();
+  await flush();
+  assert.deepEqual(f.writes, [["start", "starter", { point: "starter", committed: ["index.html"], repoId: 1 }]]);
+  assert.equal(finish.disabled, false);
+  assert.equal((f.errors[0] as Error).message, "No room.");
+});
+
+test("Finish adding left behind by another load removes itself and writes nothing", async () => {
+  const f = fixture();
+  f.open();
+  f.readyActions();
+  f.setup.offerFinishStarter(repository(1), { point: "blank", committed: [] });
+  const banner = f.app.children[0];
+  f.open(repository(2));
+  await banner.all().find((element) => element.textContent === "Finish adding the blank page")!.click();
+  await flush();
+  assert.equal(banner.removed, true);
+  assert.deepEqual(f.writes, []);
+});
+
+test("the checklist reads the drafted home page, the commit and the site name, and saves the name through the setup actions", async () => {
+  const f = fixture();
+  f.open(repository(1, "my-site"));
+  f.readyActions();
+  f.drafts.set(NATIVE_HOME_PAGE, { path: NATIVE_HOME_PAGE, baseSha: null, deleted: false } as SavedDraft);
+  f.sources.set(NATIVE_CONFIG_PATH, JSON.stringify({ site: { name: "Bakery" } }));
+  f.setup.setupController.start(1);
+  f.setup.setupController.refresh();
+  await flush();
+  const update = f.checklist.updates.at(-1)!;
+  assert.equal(update.siteName, "Bakery");
+  assert.equal(update.defaultName, siteNameFromRepository("my-site"));
+  assert.deepEqual(update.progress, setupProgress({ homePage: true, committed: true, homeUnsaved: true, siteName: "Bakery", defaultName: siteNameFromRepository("my-site"), nameConfirmed: false, agent: false }));
+  assert.equal(await f.checklist.options!.saveName("New name"), undefined);
+  assert.deepEqual(f.writes, [["settings", { name: "New name" }]]);
+  // Start your site is not on show: a home page is there already.
+  f.checklist.options!.start();
+  assert.deepEqual(f.calls, ["refuse:This repository has a home page already."]);
+  f.setup.setupController.dispose();
+});
+
+test("Start your site copies the setup prompt for a coding agent", async () => {
+  const f = fixture();
+  f.open(repository(1, "my-site"));
+  const copied: string[] = [];
+  Object.defineProperty(globalThis, "navigator", { value: { clipboard: { writeText: async (text: string) => { copied.push(text); } } }, configurable: true });
+  await f.setup.startSitePanel();
+  const [options] = f.started;
+  assert.equal(options.repository, "my-site");
+  assert.equal(options.empty, false);
+  assert.equal(await options.agent("A bakery"), "Copied. Paste it into Claude Code, Codex or another coding agent.");
+  assert.deepEqual(copied, ["prompt for my-site"]);
+});
+
+test("the setup module keeps the lazy modules as type-only imports", () => {
+  const source = readFileSync(new URL("../src/setup-host.ts", import.meta.url), "utf8");
+  for (const lazy of ["./components/setup-wizard", "./components/get-started", "./components/start-site", "./components/setup-checklist", "./setup-actions", "./agent-prompts", "./onboarding-copy"]) {
+    const imports = source.split("\n").filter((line) => line.startsWith("import") && line.includes(`"${lazy}"`));
+    for (const line of imports) assert.match(line, /^import type /, line);
+    assert.doesNotMatch(source, new RegExp(`await import\\("${lazy}"\\)`));
+  }
+});
