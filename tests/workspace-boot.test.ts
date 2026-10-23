@@ -52,7 +52,7 @@ function fixture() {
   const session = createWorkspaceSession();
   const local = store();
   writeBootMemory(local, MEMORY);
-  const reads: Read[] = [], seeded: string[] = [], shown = { content: "", status: "" };
+  const reads: Read[] = [], seeded: string[] = [], cached = new Map<string, string>(), shown = { content: "", status: "" };
   let fileGeneration = 0, tag: string | null | undefined = "t1";
   const read = (path: string, params?: Record<string, string>) => {
     const answer = deferred<unknown>();
@@ -70,7 +70,7 @@ function fixture() {
       load: (_repo: string, revision: string, readText: () => Promise<string>) => {
         seeded.push(revision);
         const text = readText();
-        void text.catch(() => {});
+        text.then((value) => { cached.set(revision, value); }, () => {});
         return text;
       },
     },
@@ -121,7 +121,7 @@ function fixture() {
   const boot = createWorkspaceBoot(ports);
   const pending = (path: string) => reads.filter((entry) => entry.path === path);
   return {
-    boot, ports, reads, seeded, shown, branchSelect,
+    boot, ports, reads, seeded, cached, shown, branchSelect,
     paths: () => reads.map((entry) => entry.path),
     pending,
     setTag: (value: string | null | undefined) => { tag = value; },
@@ -160,6 +160,38 @@ test("a taken guess whose repository selection a new listing clears writes nothi
   assert.equal(f.ports.appStore.snapshot.value, undefined);
   assert.equal(f.ports.appStore.branch.value, undefined);
   assert.equal(f.shown.content, "Loading branches…", "the abandoned choice shows nothing after the listing");
+});
+
+test("a guess that won, abandoned by a new listing before its file batch lands: the batch is not cached, the file is read afresh", async () => {
+  const f = fixture();
+  f.boot.startGuess();
+  const choosing = f.boot.chooseRepository({ repoId: 501, branch: "main" });
+  f.pending("snapshot")[0].answer.resolve(receipt(SNAPSHOT));
+  await choosing;
+  assert.deepEqual(f.seeded, [sha(1)], "the loader is registered while the guess is live");
+  f.newListing();
+  f.pending("files")[0].answer.resolve(receipt<FilesResult>({ files: { [sha(1)]: "<h1>Guess</h1>" } }));
+  await flush();
+  assert.equal(f.cached.has(sha(1)), false);
+  const fresh = f.pending("file");
+  assert.deepEqual(fresh.map((read) => read.params?.sha), [sha(1)]);
+  fresh[0].answer.resolve({ content: "<h1>Fresh</h1>" });
+  await flush();
+  assert.equal(f.cached.get(sha(1)), "<h1>Fresh</h1>");
+});
+
+test("sign-out (dropGuess) while a taken guess is held: it writes nothing when it lands", async () => {
+  const f = fixture();
+  f.boot.startGuess();
+  const choosing = f.boot.chooseRepository({ repoId: 501, branch: "main" });
+  f.boot.dropGuess();
+  f.pending("snapshot")[0].answer.resolve(receipt(SNAPSHOT));
+  f.pending("files")[0].answer.resolve(receipt<FilesResult>({ files: { [sha(1)]: "<h1>Guess</h1>" } }));
+  await flush();
+  assert.deepEqual(f.seeded, []);
+  assert.equal(f.cached.size, 0);
+  f.pending("branches")[0].answer.resolve(["main"]);
+  await choosing;
 });
 
 test("a branch list first: the guess still feeds its own snapshot load and seeds when it lands", async () => {
