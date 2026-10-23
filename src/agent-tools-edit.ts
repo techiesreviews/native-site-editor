@@ -4,7 +4,7 @@ import { prepareAgentEdit, type AgentEdit, type AgentStatus } from "../shared/ag
 import type { AgentReadResult } from "../shared/agent-read";
 import { SiteFiles } from "../shared/site-files";
 import { AgentRecordsError, type AgentRecords } from "./agent-records";
-import { agentCommandFiles, agentCommandSignals, createAgentTools } from "./agent-tools";
+import { agentCommandFiles, agentCommandSignals, createAgentTools, siteCommandPins } from "./agent-tools";
 import { agentFileReader, type AgentReadPorts } from "./agent-tools-read";
 
 interface Options {
@@ -116,6 +116,7 @@ export function createAgentEditTools(options: Options) {
           state: "pending", createdAt: request.createdAt };
         if (signal) agentCommandSignals.set(command, signal);
         agentCommandFiles.set(command, source);
+        if (pin.media) siteCommandPins.set(command, { pin: pin.media, opened: pin.opened });
         signal?.throwIfAborted();
         ran = true;
         const outcome = await options.run(command);

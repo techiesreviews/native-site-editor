@@ -6,6 +6,7 @@ import type { MediaDraftHost } from "./page-builder/media-draft-transaction";
 import type { MediaWorkspaceBatch } from "./page-builder/media-workspace";
 import type { NativeSite } from "../shared/native-project";
 import type { Repository, Snapshot, TreeEntry } from "../shared/types";
+import { parkedStep, type ParkedStep } from "./guarded-edit/parked";
 
 export interface MediaBatchPorts {
   appStore: AppStore;
@@ -24,6 +25,8 @@ export interface MediaBatchPorts {
   stamp(): Stamp;
   refresh(): void;
   announce(message: string): void;
+  /** A step written away from its page, for that page's Undo once it opens (src/guarded-edit/parked.ts). */
+  park?(step: ParkedStep): void;
 }
 type Modules = Awaited<ReturnType<MediaBatchPorts["load"]>>;
 /** Where the step landed: `undoOn`, the page whose history took its Undo step (none: no Undo step on a page shown). */
@@ -60,8 +63,8 @@ export async function applyMediaBatch(ports: MediaBatchPorts, scope: DraftScope,
   for (let attempt = 0; ; attempt++) {
     const here = !pin || pin.here(), page = ports.appStore.openFile.value, on = pin && here ? ports.stamp() : stamp;
     try {
-      if (!here) { await elsewhere(ports, modules, scope, batch, pin!); return {}; }
-      return await onShow(ports, modules, scope, on, batch, pin, opened === undefined || page === opened);
+      if (!here) { await elsewhere(ports, modules, scope, batch, pin!, opened); return {}; }
+      return await onShow(ports, modules, scope, on, batch, pin, opened === undefined || page === opened, opened);
     } catch (error) {
       const away = !!pin && (pin.here() !== here || here && !on.holds()), moved = here && ports.appStore.openFile.value !== page;
       if (!away && !moved || !pin && attempt === 2) throw error;
@@ -69,7 +72,7 @@ export async function applyMediaBatch(ports: MediaBatchPorts, scope: DraftScope,
   }
 }
 
-async function onShow(ports: MediaBatchPorts, modules: Modules, scope: DraftScope, stamp: Stamp, batch: MediaWorkspaceBatch, pin: MediaPin | undefined, undoHere: boolean): Promise<MediaBatchLanded> {
+async function onShow(ports: MediaBatchPorts, modules: Modules, scope: DraftScope, stamp: Stamp, batch: MediaWorkspaceBatch, pin: MediaPin | undefined, undoHere: boolean, opened: string | undefined): Promise<MediaBatchLanded> {
   let undoOn: string | undefined;
   const [{ applyMediaWorkspaceBatch }, { mediaDraftTransaction }, { MEDIA_RECORDS_PATH }] = modules;
   const assertLive = () => { if (!stamp.holds()) throw new Error("The repository changed. Close Media and open it again."); };
@@ -90,9 +93,9 @@ async function onShow(ports: MediaBatchPorts, modules: Modules, scope: DraftScop
     entry: async path => { const entry = await ports.findEntry(path); assertLive(); return entry ? { path, sha: entry.sha, mode: entry.mode, text: ports.mediaTextSource(path, scope) } : undefined; },
     historyCurrent: undoHere && historyHost ? historyHost.isCurrent : () => stamp.holds(),
     mounted: path => editor.isMounted(path), prepareSources: edits => editor.prepareHistorySources(edits),
-    history: (undo, redo, dispose) => {
-      // Another page than the one it was asked on is shown: no Undo step there.
-      if (!undoHere) { dispose(); return true; }
+    history: (undo, redo, dispose, sides) => {
+      // Another page than the one it was asked on is shown: no Undo step there; its own page takes it (ticket 34).
+      if (!undoHere) { dispose(); park(ports, scope, batch, sides, opened); return true; }
       // A file that opened while the change was prepared takes it now; with none, the next one does.
       const path = historyHost && historyPath ? historyPath : ports.appStore.openFile.value;
       if (path && (path === historyPath && historyHost || editor.captureHistoryHost(path))) {
@@ -107,7 +110,7 @@ async function onShow(ports: MediaBatchPorts, modules: Modules, scope: DraftScop
 }
 
 // Another workspace is shown: the pin's reads, no editor model mounted, the step with no Undo.
-async function elsewhere(ports: MediaBatchPorts, modules: Modules, scope: DraftScope, batch: MediaWorkspaceBatch, pin: MediaPin) {
+async function elsewhere(ports: MediaBatchPorts, modules: Modules, scope: DraftScope, batch: MediaWorkspaceBatch, pin: MediaPin, opened: string | undefined) {
   const [{ applyMediaWorkspaceBatch }, { mediaDraftTransaction }] = modules;
   // Its workspace shown again: the attempt stops, to run again on show.
   const away = () => !pin.here(), stamp: Stamp = { holds: away, changed: () => (away() ? undefined : "scope") };
@@ -119,7 +122,7 @@ async function elsewhere(ports: MediaBatchPorts, modules: Modules, scope: DraftS
     assetVersion: path => { const record = ports.draftStore().get(scope, path); return record ? JSON.stringify(record) : pin.entry(path)?.sha; },
     entry: async path => { const entry = await pin.find(path); return entry ? { path, sha: entry.sha, mode: entry.mode, text: pin.source(path) } : undefined; },
     historyCurrent: away, mounted: () => false, prepareSources: () => nothing,
-    history: (_undo, _redo, dispose) => { dispose(); return true; },
+    history: (_undo, _redo, dispose, sides) => { dispose(); park(ports, scope, batch, sides, opened); return true; },
   }));
 }
 
@@ -136,4 +139,11 @@ function shared(ports: MediaBatchPorts, scope: DraftScope): Pick<MediaDraftHost,
 function listedPaths(ports: MediaBatchPorts, scope: DraftScope, listed: string[]) {
   const drafts = ports.draftStore().list(scope), gone = new Set(drafts.filter(draft => draft.deleted).map(draft => draft.path));
   return [...new Set([...listed, ...drafts.filter(draft => !draft.deleted).map(draft => draft.path)])].filter(path => !gone.has(path));
+}
+
+// A step written away from its page parks for it (ticket 34): the page it was asked on, else the page it
+// changes. A step that adds files keeps none: its Redo would need their bytes again.
+function park(ports: MediaBatchPorts, scope: DraftScope, batch: MediaWorkspaceBatch, sides: Parameters<MediaDraftHost["history"]>[3], opened: string | undefined) {
+  const page = opened ?? [...batch.edits.keys()].find(path => /\.html$/i.test(path));
+  if (page && sides && !batch.uploads.length) ports.park?.(parkedStep(scope, page, sides, batch.label, `Undid: ${batch.label}`));
 }

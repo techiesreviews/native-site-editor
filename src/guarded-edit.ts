@@ -27,6 +27,7 @@ import type { NativeSite } from "../shared/native-project";
 import type { DraftScope } from "./drafts";
 import type { DraftAccess, MovableFile } from "./file-changes";
 import { createCommit } from "./guarded-edit/commit";
+import type { ParkedStep } from "./guarded-edit/parked";
 
 /** A preview element: a body path in a file. */
 export interface NodeRef { path: string; node: number[] }
@@ -58,7 +59,8 @@ export interface RunOptions {
   /**
    * `run` only: the work finishes where it started (ticket 23). Another page shown meanwhile (or Edit
    * component mode entered or left) stops nothing: the step lands on its page, `anchor` (by default the
-   * page open as it runs), as drafts with no Undo step, nothing opened or selected. Its reads are proved
+   * page open as it runs), as drafts, nothing opened or selected, its Undo step waiting for that page
+   * (`park`, ticket 34). Its reads are proved
    * by their bytes. Another workspace or a reload still stops it.
    */
   finish?: boolean;
@@ -205,6 +207,8 @@ export interface EditorWorkspace {
   /** A refusal said on screen (`history`: an Undo or Redo refused). */
   refuse(message: string, history?: "undo" | "redo"): void;
   error(error: unknown): void;
+  /** A step written away from its page, for that page's history once it opens (src/guarded-edit/parked.ts); none: no Undo step. */
+  park?(step: ParkedStep): void;
 }
 
 /** What stale outcomes say; callers that need other words switch on `changed`. */

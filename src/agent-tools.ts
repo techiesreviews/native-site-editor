@@ -9,6 +9,8 @@ export const agentCommandSignals = new WeakMap<AgentCommand, AbortSignal>();
 export const agentCommandFiles = new WeakMap<AgentCommand, AgentReadFiles>();
 /** The workspace a Media change arrived in, pinned (ticket 27), and its page as it read on arrival (the proof): it finishes there whatever is shown. */
 export const mediaCommandPins = new WeakMap<AgentCommand, { pin: MediaPin; page: string | undefined; opened?: string }>();
+/** The workspace an edit arrived in, pinned (ticket 34), and the page open then: a page or file command finishes there whatever is shown. */
+export const siteCommandPins = new WeakMap<AgentCommand, { pin: MediaPin; opened?: string }>();
 
 export type AgentToolExecutor = (args: AgentRead["args"], signal?: AbortSignal) => Promise<AgentReadResult>;
 

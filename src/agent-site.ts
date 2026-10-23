@@ -3,7 +3,7 @@
 // drafts), and how it applies the changes agents queue, each through the
 // same code the editor's own controls run, so it lands as an ordinary draft
 // with Undo. main.ts supplies the editor's state and actions.
-import { agentCommandFiles, agentCommandSignals, mediaCommandPins } from "./agent-tools";
+import { agentCommandFiles, agentCommandSignals, mediaCommandPins, siteCommandPins } from "./agent-tools";
 import type { AgentReadFiles } from "./agent-tools-read";
 import { sameBranch } from "./workspace-session";
 import { decodeHtmlEntities } from "./page-builder/html-entities";
@@ -30,6 +30,7 @@ import { removeEdit } from "./native-structure";
 import type { createGuardedEdits, EditorWorkspace, GuardedEdits, NodeRef, Outcome, Reads } from "./guarded-edit";
 import { addSectionStep, type LoaderPlanner, type SectionPlanned } from "./page-builder/component-plans";
 import type { AgentCommandOutcome } from "./components/agent-menu";
+import type { MediaPin } from "./controllers/media-controller";
 
 import type { createPagesController } from "./controllers/pages-controller";
 import type { createLazyFileOperationsController } from "./controllers/file-operation-checks";
@@ -65,6 +66,8 @@ export function agentStructuralActions(workspace: EditorWorkspace, context: Agen
   components(): ComponentDeps;
   loader?(path: string, text: string, reads: Reads, check: () => Promise<void>): ReturnType<LoaderPlanner>;
   factories: AgentStructuralFactories;
+  /** The page a step belongs to when it names none and none is open (a background site's, ticket 34). */
+  home?: string;
 }) {
   const { createGuardedEdits, createPagesController, createLazyFileOperationsController, createBlockMoves, withPageField } = ports.factories;
   let keepAddress: boolean | undefined;
@@ -167,7 +170,7 @@ export function agentStructuralActions(workspace: EditorWorkspace, context: Agen
         // historyOnly keeps the step on the staged commit; the plan's own selection follows once it applied.
         if ("done" in result && !result.select?.historyOnly && result.select?.after) selection = { after: result.select.after, flash: result.select.flash };
         return "done" in result ? { ...result, select: { ...result.select, historyOnly: true } } : result;
-      }, { ...options, since: held, guard: () => valid() && (options?.guard?.() ?? true), finish: true });
+      }, { ...options, ...ports.home !== undefined && options?.anchor === undefined ? { anchor: ports.home } : {}, since: held, guard: () => valid() && (options?.guard?.() ?? true), finish: true });
       // A step that landed on a page not shown selects nothing there.
       if (selection && outcome.ok && outcome.status === "applied" && !outcome.message && valid() && workspace.openFile() === selection.after.path)
         workspace.select({ ...selection.after, source: workspace.source(selection.after.path) }, selection.flash);
@@ -570,30 +573,6 @@ export interface AgentSiteActions {
   media(command: AgentCommand): Promise<void | { message: string; result: Record<string, string> }>;
   /** The Astro-era active-file operations. */
   legacy(command: AgentCommand): Promise<void>;
-}
-
-interface Question {
-  title: string;
-  notes: string[];
-}
-/**
- * The confirmation dialog as an agent's action sees it: every question
- * answered yes (the action it offers last), with the dialog's option
- * (Keep the old URL working) as asked, else as the dialog would preset it.
- * The change is an unsaved draft the user can still undo.
- */
-export function agentAnswers<D extends {
-  ask(question: Question & { action: string }): Promise<boolean>;
-  choose(question: Question & { actions: { label: string; value: string }[]; option?: { label: string; checked: boolean } }): Promise<{ value?: string; option: boolean }>;
-}>(dialog: D, answers: { option?: boolean }): D {
-  return {
-    ...dialog,
-    ask: async () => true,
-    choose: async (question) => ({
-      value: question.actions.at(-1)?.value,
-      option: answers.option ?? question.option?.checked ?? false,
-    }),
-  };
 }
 
 export class Conflict extends Error {}
@@ -1078,28 +1057,64 @@ export async function editorOrElsewhere<T>(editor: () => Promise<T>, applied: ()
   }
 }
 
+type PreparedText = Awaited<ReturnType<typeof prepareAgentText>>;
 /**
- * An agent's text write (edit_file, write_file) read from a site or branch no longer shown finishes
- * there, on its files (ticket 23); undefined while it is the one shown (`shown`, asked after every
- * wait), which writes it through the editor as before. The file's text there now (its draft, else the
- * branch's) must still be what the agent read; the draft goes through the agent records with its
- * receipt, then into the draft store, as another tab's would. Other commands need the editor's own
- * actions on that site, so they refuse.
+ * A page or file command run through its own controllers (`scoped`, agentStructuralActions) under the
+ * receipt `kept` prepared for it (prepareAgentText): the recorded reply wins, a command whose step was
+ * kept answers with it even when what follows fails, and one that kept nothing says its drafts are as
+ * they were. `applied`: once the receipt is kept (the page details' labels refresh there on show).
+ */
+export async function applyStructural(command: AgentCommand, kept: PreparedText, scoped: ReturnType<typeof agentStructuralActions>,
+  run: (apply: () => Promise<AgentCommandOutcome>) => Promise<AgentCommandOutcome> = apply => apply(), applied: () => void = () => {}): Promise<AgentCommandOutcome> {
+  try {
+    const detail = await run(() => applySiteCommand(scoped.actions, command));
+    await kept.finish!(() => scoped.current(), scoped.readDrafts);
+    applied();
+    // The recorded reply wins (a duplicate delivery gets exactly it); live-only detail adds result fields.
+    return { ...kept.outcome!, result: { ...detail.result, ...kept.outcome!.result } };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error), unchanged = "Nothing was changed; your drafts are as they were.";
+    if (!kept.applied) throw new Error(message.includes(unchanged) ? message : `${message} ${unchanged}`);
+    await kept.recover!();
+    return kept.outcome!;
+  } finally { scoped.dispose(); }
+}
+
+/** The shown editor's ports a page or file command borrows to run on a site not shown (ticket 34), and where it is counted. */
+export interface AgentAwayPorts {
+  site: import("./background-site").BackgroundSitePorts;
+  /** The command's step was kept in `scope`, not shown: the repository menu counts it there (ticket 24). */
+  landed(scope: DraftScope): void;
+}
+
+/**
+ * An agent's command read from a site or branch no longer shown finishes there (tickets 23 and 34);
+ * undefined while it is the one shown (`shown`, asked after every wait), which runs it through the
+ * editor as before. A text write (edit_file, write_file) is written on its files: the file's text
+ * there now (its draft, else the branch's) must still be what the agent read; the draft goes through
+ * the agent records with its receipt, then into the draft store, as another tab's would. A page or
+ * file command runs in its background site (src/background-site.ts, `away`): the editor's own
+ * controllers over the workspace it held as it arrived, its step parked for its own page's Undo.
+ * Only a command that needs the page on screen (open_page, inspect_preview) refuses.
  */
 export async function finishAgentTextElsewhere(command: AgentCommand, shown: () => DraftScope | undefined, account: string | undefined, store: DraftStore,
-  find: (files: AgentReadFiles, path: string) => Promise<{ sha: string } | undefined>): Promise<AgentCommandOutcome | undefined> {
+  find: (files: AgentReadFiles, path: string) => Promise<{ sha: string } | undefined>, away?: AgentAwayPorts): Promise<AgentCommandOutcome | undefined> {
   // A Media change holds its own pinned workspace (ticket 27): its background page runs it (runAgentMedia).
   if (pinnedMedia(command)) return undefined;
   const files = agentCommandFiles.get(command);
-  const away = () => { const now = shown(); return !now || !sameBranch(now, { repoId: files!.repo.id, branch: files!.snapshot.branch }); };
-  if (!files || !account || !away()) return undefined;
-  if (command.operation !== "write_file")
-    throw new Error(`The editor shows another site or branch now; open ${files.snapshot.branch} again and repeat this change. Nothing was changed; your drafts are as they were.`);
-  refuseProtected(command);
+  const left = () => { const now = shown(); return !now || !sameBranch(now, { repoId: files!.repo.id, branch: files!.snapshot.branch }); };
+  if (!files || !account || !left()) return undefined;
   const scope: DraftScope = { account, repoId: files.repo.id, repo: files.repo.full_name, branch: files.snapshot.branch }, path = command.path;
+  const held = siteCommandPins.get(command);
+  if (command.operation !== "write_file") {
+    if (!away || !held || !atomicAgentCommand(command))
+      throw new Error("The editor shows another site or branch now, and this needs its page on screen. Nothing was changed; your drafts are as they were.");
+    return finishStructuralElsewhere(command, scope, store, held, away, left);
+  }
+  refuseProtected(command);
   const prepared = await prepareAgentText(command, scope, store, () => true, () => {});
   if (prepared.duplicate) return prepared.duplicate;
-  if (!away()) return undefined;
+  if (!left()) return undefined;
   const context = prepared.context!, release = await context.fence(scope, [path]);
   try {
     const draft = store.get(scope, path), entry = draft ? undefined : await find(files, path), now = Date.now(), text = command.content;
@@ -1107,7 +1122,7 @@ export async function finishAgentTextElsewhere(command: AgentCommand, shown: () 
     const shownText = draft ? (draft.deleted || draft.opaque ? undefined : draft.content) : branch?.text;
     const hash = shownText === undefined ? null : await textHash(shownText);
     // Its branch shown again meanwhile: the editor writes it, through the open file's model.
-    if (!away()) return undefined;
+    if (!left()) return undefined;
     if (hash !== (command.expectedHash ?? null))
       throw new Error(`${path} changed in the editor meanwhile. Read it again. Nothing was changed; your drafts are as they were.`);
     // The draft the editor's own write leaves (src/guarded-edit/commit.ts, edits only).
@@ -1116,8 +1131,28 @@ export async function finishAgentTextElsewhere(command: AgentCommand, shown: () 
       : branch && text === branch.text ? undefined
       : { ...scope, version: 1, path, baseSha: branch?.sha ?? null, original: branch?.text ?? "", content: text, updatedAt: now };
     const changes = new Map([[path, after]]);
-    await context.commit(new Map([[path, draft]]), changes, () => away() && store.get(scope, path) === draft);
+    await context.commit(new Map([[path, draft]]), changes, () => left() && store.get(scope, path) === draft);
     await context.settle(changes);
     return prepared.outcome;
   } finally { release(); }
+}
+
+/**
+ * A page or file command in the workspace it arrived in, not shown (ticket 34): its background site's
+ * controllers run it there. A page command's steps belong to its page; a page moved, to where it goes;
+ * anything else to the page open as it arrived (else the home page), as on show. Shown again before
+ * its step is written, it stops: the editor's scope it held moved.
+ */
+async function finishStructuralElsewhere(command: AgentCommand, scope: DraftScope, store: DraftStore, held: { pin: MediaPin; opened?: string }, away: AgentAwayPorts, left: () => boolean) {
+  const prepared = await prepareAgentText(command, scope, store, () => true, () => {});
+  if (prepared.duplicate) return prepared.duplicate;
+  if (!left()) return undefined;
+  const { backgroundSite } = await import("./background-site");
+  const pages = Object.values(held.pin.site?.routes ?? {}), own = command.operation === "set_page_details" || command.operation === "move_file" && pages.includes(command.path);
+  const site = backgroundSite(held.pin, away.site, own ? command.path : held.opened);
+  const scoped = agentStructuralActions(site.workspace, prepared.context!, () => !held.pin.here(), {
+    actions: site.actions, pages: site.pages, files: site.files, components: () => site.components(command.path), loader: site.loader,
+    factories: away.site.factories, home: site.home,
+  });
+  return applyStructural(command, prepared, scoped, undefined, () => away.landed(scope));
 }

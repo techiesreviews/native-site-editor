@@ -20,7 +20,8 @@ export interface MediaDraftHost {
   modelState(path: string): { isCurrent(): boolean };
   evictModel(path: string, proof: { isCurrent(): boolean }): { isCurrent(): boolean } | undefined;
   historyCurrent(): boolean;
-  history(undo: () => boolean, redo: () => boolean | Promise<boolean>, dispose: () => void): boolean;
+  /** `sides`: the drafts each side of the step, for one written away to park for its own page (src/guarded-edit/parked.ts). */
+  history(undo: () => boolean, redo: () => boolean | Promise<boolean>, dispose: () => void, sides?: { before: Map<string, SavedDraft | undefined>; after: Map<string, SavedDraft | undefined> }): boolean;
   refresh(): void;
   announce(message: string): void;
 }
@@ -280,7 +281,7 @@ export function mediaDraftTransaction(host: MediaDraftHost): MediaBatchTransacti
             refuse(error instanceof Error ? error.message : "The image history action could not be restored.");
             return false;
           } finally { release(restaged); }
-        }, state.dispose);
+        }, state.dispose, { before: new Map(state.before), after: new Map(state.after) });
         if (!registered || !host.historyCurrent()) {
           if (batch.agent) throw new Error("The change was saved, but its editor history could not be updated.");
           state.committed = false;

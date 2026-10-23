@@ -1,6 +1,6 @@
 import { siteAddress } from "../../shared/site-path-prefix";
 import { expandStyleImports, resolveImportPath } from "../../shared/css-imports";
-import { nativePageStylesheets } from "../../shared/native-project";
+import { NATIVE_CONFIG_PATH, nativePageStylesheets, nativeSitePrefix } from "../../shared/native-project";
 import { blockEnd, preludeEnd, skipSpace, withoutComments } from "../../shared/slotted-css";
 import { descendants, parseSource, startTagAttributes, type SourceElement } from "./component-model";
 
@@ -137,4 +137,22 @@ export function componentLoaderPlan(input: ComponentLoaderInput): ComponentLoade
   const where = addedPages.length === 1 ? " to the page" : addedPages.length ? ` to ${addedPages.length} pages` : "";
   const added = `Added the component loader${where}${rulePath ? `, and its :not(:defined) rule to ${rulePath}` : ""}${creates.length ? ` (components/components.js created)` : ""}.`;
   return { creates, edits, pages: addedPages, added, notes };
+}
+
+/**
+ * The loader a site needs once `path` holds `nextPageText` (a section or component added), planned from
+ * the site's `sources` as the plan's reader `r` reads them: none when the site has it already; else
+ * the vendored loader's bytes are read and created with it. `check` re-proves the plan after each wait.
+ */
+export async function siteLoaderPlan(path: string, nextPageText: string, r: { site(): { routes: Record<string, string> } | undefined; source(path: string): string | undefined; exists(path: string): boolean },
+  sources: Record<string, string>, check?: () => Promise<void>): Promise<ComponentLoaderPlan | undefined> {
+  const input = { prefix: nativeSitePrefix(r.source(NATIVE_CONFIG_PATH)), pages: Object.values(r.site()?.routes ?? {}), sources: { ...sources, [path]: nextPageText }, exists: (file: string) => r.exists(file), loader: "" };
+  // The first pass avoids loading the vendored bytes when the site already has its loader.
+  const needed = componentLoaderPlan(input);
+  if (!needed?.creates.length) return needed;
+  const { starterLoader } = await import("./starter-loader");
+  if (check) await check();
+  const loader = await starterLoader();
+  if (check) await check();
+  return componentLoaderPlan({ ...input, loader });
 }

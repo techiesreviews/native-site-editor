@@ -8,6 +8,7 @@ import type { DraftScope, SavedDraft } from "./drafts";
 import type { DraftAccess, MovableFile } from "./file-changes";
 import type { NativeSite } from "../shared/native-project";
 import type { EditorWorkspace, NodeRef } from "./guarded-edit";
+import type { ParkedStep } from "./guarded-edit/parked";
 import type { HistoryCompanion, HistorySourceEdit, HistorySourceReceipt } from "./components/source-editor";
 import { draftScopeOf, setupKeyOf, type SessionStamp, type WorkspaceScope, type WorkspaceSession } from "./workspace-session";
 
@@ -80,6 +81,8 @@ export interface WorkspaceHost {
   announce(message: string, as?: AnnounceAs): void;
   refuse(message: string, history?: "undo" | "redo"): void;
   error(error: unknown): void;
+  /** A step written away from its page, waiting for that page (src/guarded-edit/parked.ts). */
+  park?(step: ParkedStep): void;
 }
 
 export function createEditorWorkspace(host: WorkspaceHost): EditorWorkspace {
@@ -154,5 +157,6 @@ export function createEditorWorkspace(host: WorkspaceHost): EditorWorkspace {
     announce: (message, as) => host.announce(message, as),
     refuse: (message, history) => host.refuse(message, history),
     error: error => host.error(error),
+    park: step => host.park?.(step),
   };
 }

@@ -7,13 +7,15 @@ import type { Stamp } from "../src/guarded-edit";
 import type { MediaDraftHost } from "../src/page-builder/media-draft-transaction";
 import type { MediaWorkspaceBatch } from "../src/page-builder/media-workspace";
 import { deferred } from "./fakes/memory-workspace";
+import type { ParkedStep } from "../src/guarded-edit/parked";
+import type { SavedDraft } from "../src/drafts";
 import { forEachAwait } from "./support/await-race";
 
 // The batch body loads with Media. Without a pin a repository switch while any of its loads is held
 // refuses before staging; with one (ticket 23) the batch lands in the pin's workspace.
 function harness(options: { stage?: (host: MediaDraftHost) => Promise<void> } = {}) {
   let live = true, view = false, load = 0, staged = 0, listings = 0;
-  const histories: string[] = [], hosts: MediaDraftHost[] = [];
+  const histories: string[] = [], hosts: MediaDraftHost[] = [], parked: ParkedStep[] = [];
   const appStore = { openFile: { value: "index.html" as string | undefined }, repository: { value: { full_name: "lex/site" } }, snapshot: { value: { branch: "main" } } };
   const workspace = deferred<Awaited<ReturnType<MediaBatchPorts["load"]>>>();
   const listing = deferred<string[]>();
@@ -35,7 +37,7 @@ function harness(options: { stage?: (host: MediaDraftHost) => Promise<void> } = 
     mediaHistoryHome: { hold: () => { histories.push("home"); return true; } },
     nativeFiles: () => ["shown.html"], draftStore: () => ({ list: () => [], get: () => undefined }), bytes: () => ({}),
     mediaTextSource: () => "shown", entryAt: () => undefined, findEntry: async () => undefined,
-    refresh: () => {}, announce: () => {},
+    refresh: () => {}, announce: () => {}, park: (step: ParkedStep) => { parked.push(step); },
   } as unknown as MediaBatchPorts;
   const pin = {
     repo: "lex/site", scope: { account: "lex", repoId: 1, repo: "lex/site", branch: "main" }, identity: "1", drafts: { list: () => [], get: () => undefined, save: () => true, remove: () => true },
@@ -46,8 +48,12 @@ function harness(options: { stage?: (host: MediaDraftHost) => Promise<void> } = 
   const batch: MediaWorkspaceBatch = { label: "Swap image", expectedPaths: [], expectedSources: new Map(), expectedAssets: new Map(),
     edits: new Map([["index.html", "<img>"]]), moves: [], deletes: [], restores: [], uploads: [] };
   const run = (pinned = false) => applyMediaBatch(ports, pin.scope satisfies DraftScope, stamp, batch, pinned ? pin : undefined);
-  return { appStore, workspace, listing, modules, run, hosts, histories, switchRepository: () => { live = false; }, viewVersion: () => { view = true; }, back: () => { live = true; load++; }, reload: () => { load++; }, counts: () => ({ staged, listings }) };
+  return { appStore, workspace, listing, modules, run, hosts, histories, parked, switchRepository: () => { live = false; }, viewVersion: () => { view = true; }, back: () => { live = true; load++; }, reload: () => { load++; }, counts: () => ({ staged, listings }) };
 }
+
+// The drafts each side of a step: index.html's draft made by it, over the branch's text.
+const sides = { before: new Map<string, SavedDraft | undefined>([["index.html", undefined]]),
+  after: new Map<string, SavedDraft | undefined>([["index.html", { account: "lex", repoId: 1, repo: "lex/site", branch: "main", version: 1, path: "index.html", baseSha: "pinned-sha", original: "<p>branch</p>", content: "<img>", updatedAt: 1 }]]) };
 
 test("without a pin, a media batch refuses a repository switch while its workspace chunk loads or the listing is read", async () => {
   for (const at of ["chunk", "listing"] as const) {
@@ -75,9 +81,11 @@ test("a page opened while the batch loads: the step lands with no Undo step", as
   await pending;
   assert.equal(h.counts().staged, 1);
   let disposed = false;
-  assert.equal(h.hosts[0].history(() => true, () => true, () => { disposed = true; }), true);
+  assert.equal(h.hosts[0].history(() => true, () => true, () => { disposed = true; }, sides), true);
   assert.equal(disposed, true);
   assert.deepEqual(h.histories, []);
+  // Its Undo waits for the page it was asked on (ticket 34).
+  assert.deepEqual(h.parked.map(step => [step.page, step.done, [...step.after.keys()]]), [["index.html", "Swap image", ["index.html"]]]);
 });
 
 test("a page opened during an attempt rolls it back and runs it again with no Undo step", async () => {
@@ -137,9 +145,11 @@ test("a pinned batch switched away while it loads is written to its own workspac
   assert.equal(host.assetVersion("index.html"), "pinned-sha");
   assert.deepEqual(host.paths(), ["a.png"]);
   let disposed = false;
-  assert.equal(host.history(() => true, () => true, () => { disposed = true; }), true);
-  assert.equal(disposed, true, "the step's holds go at once: it has no Undo");
+  assert.equal(host.history(() => true, () => true, () => { disposed = true; }, sides), true);
+  assert.equal(disposed, true, "the step's holds go at once: no Undo step on any page shown");
   assert.deepEqual(h.histories, []);
+  // Its own page takes its Undo once opened (ticket 34): the page it was asked on.
+  assert.deepEqual(h.parked.map(step => [step.page, step.beforeSources.get("index.html"), step.afterSources.get("index.html")]), [["index.html", "<p>branch</p>", "<img>"]]);
   // Its workspace shown again stops the attempt, which then runs again on show.
   assert.equal(host.stamp.holds(), true);
   h.back();
