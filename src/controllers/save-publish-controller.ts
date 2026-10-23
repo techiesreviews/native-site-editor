@@ -1,4 +1,5 @@
 import type { Stamp } from "../guarded-edit";
+import { githubScope, same } from "../workspace-session";
 import type { DraftScope, SavedDraft } from "../drafts";
 import { keepAsNewFile, listChanges, pruneUnchanged, settleDeletedUpstream, type DraftAccess, type FileChange } from "../file-changes";
 import { EMPTY_COMMIT, type PublishResult, type Snapshot, type TreeEntry } from "../../shared/types";
@@ -7,7 +8,6 @@ type Store = DraftAccess & { list(scope: DraftScope): SavedDraft[] };
 
 export interface SavePublishPorts {
   /** Live reads: never cached across an await. */
-  generation(): number;
   stamp(): Stamp;
   snapshot(): Snapshot | undefined;
   /** Account, repository and branch of the open workspace (src/main.ts scope). */
@@ -87,12 +87,12 @@ export function createSavePublishController(ports: SavePublishPorts) {
   let headCheck = 0, refresh = 0, asking = 0;
   // Paths whose drafts are edits of files GitHub deleted since they began.
   let deletedUpstream = new Set<string>();
-  // The boot's check, once per snapshot load (`epoch`).
-  let deletedUpstreamCheck: { epoch: number; done: Promise<void> } | undefined;
+  // The boot's check, once per snapshot load (while its stamp holds).
+  let deletedUpstreamCheck: { at: Stamp; done: Promise<void> } | undefined;
 
   const proof = (): SaveProof => ({ stamp: ports.stamp(), snapshot: ports.snapshot() });
   /**
-   * Whether `was` still holds: the generation, account, repository, branch
+   * Whether `was` still holds: the load, account, repository, branch
    * and (unless `same` is false, for a refreshed snapshot of the same
    * branch) the snapshot itself. A proof is never re-taken in its place.
    */
@@ -104,10 +104,12 @@ export function createSavePublishController(ports: SavePublishPorts) {
     headSeen = { commit, at: Date.now() };
   }
   const trustedHead = () => (headSeen && Date.now() - headSeen.at < headTrust ? headSeen.commit : undefined);
+  // Whether `scope` is the workspace open now (src/workspace-session.ts: the repository by id).
+  const isOpen = (scope: DraftScope) => { const now = ports.scope(); return !!now && same(githubScope(now), githubScope(scope)); };
   /** The head a save of `scope` commits onto; nothing once the workspace moved on. */
   function headFor(scope: DraftScope) {
-    const seen = ports.snapshot(), now = ports.scope();
-    if (!seen || seen.branch !== scope.branch || now?.repoId !== scope.repoId) return undefined;
+    const seen = ports.snapshot();
+    if (!seen || !isOpen(scope)) return undefined;
     return seen.empty && (!headSeen || headSeen.commit === EMPTY_COMMIT) ? EMPTY_COMMIT : trustedHead();
   }
   // Whether GitHub moved the branch on (a pull request merged, a save in
@@ -139,8 +141,8 @@ export function createSavePublishController(ports: SavePublishPorts) {
   // writing the same text) are no change and go too, compared by blob SHA.
   // At boot it runs after the first paint (checkDeleted); every
   // draft's file is looked up at once, so folders listed for one serve all.
-  async function findDeletedUpstream(epoch: number) {
-    if (epoch !== ports.generation()) return;
+  async function findDeletedUpstream(at: Stamp) {
+    if (!at.holds()) return;
     deletedUpstream = new Set();
     const was = proof(), scope = ports.scope();
     if (!scope) return;
@@ -171,8 +173,9 @@ export function createSavePublishController(ports: SavePublishPorts) {
     if (dropped.length || deletedUpstream.size || missing.size) ports.redraw();
   }
   // Run after the first paint, or at once by a file opened before then that needs it.
-  function checkDeleted(epoch: number) {
-    if (deletedUpstreamCheck?.epoch !== epoch) deletedUpstreamCheck = { epoch, done: findDeletedUpstream(epoch).catch(() => undefined) };
+  function checkDeleted(at: Stamp) {
+    if (!at.holds()) return Promise.resolve();
+    if (!deletedUpstreamCheck?.at.holds()) deletedUpstreamCheck = { at, done: findDeletedUpstream(at).catch(() => undefined) };
     return deletedUpstreamCheck.done;
   }
   // Discard draft (`keep` false) or Keep as new file, for an edit of a file GitHub deleted.
@@ -276,11 +279,10 @@ export function createSavePublishController(ports: SavePublishPorts) {
     try {
       const result = await ports.api<Snapshot>("snapshot", { repo: scope.repo, branch: scope.branch, commit });
       if (token !== refresh || !live(was)) return;
-      const now = ports.scope();
-      if (now?.repo !== scope.repo || now.branch !== scope.branch) return;
+      if (!isOpen(scope)) return;
       ports.adopt(result);
       seeHead(result.commit);
-      await findDeletedUpstream(ports.generation());
+      await findDeletedUpstream(was.stamp);
       if (token !== refresh || !live({ ...was, snapshot: result })) return;
       ports.showSaved(result.commit);
       ports.status("Selected files saved to GitHub.");

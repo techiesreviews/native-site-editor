@@ -145,7 +145,7 @@ for (const kind of ["create", "move", "delete", "component"] as const) {
       const f = state.f!;
       if (disturbance === "revocation") await f.records.revoke(f.scope, "grant");
       else if (disturbance === "cancellation") await f.records.cancel(f.scope, "operation", "grant");
-      else if (disturbance === "takeover") await f.records.setGeneration(f.scope, 0, 1);
+      else if (disturbance === "takeover") await f.records.setFence(f.scope, 0, 1);
       else if (disturbance === "stale") f.memory.bumpGeneration();
       else { f.fake.state.failure = disturbance === "abort" ? "AbortError" : "QuotaExceededError"; f.fake.state.failPutAt = 1; }
     }, async ({ state }) => state.f!.unchanged());
@@ -307,7 +307,7 @@ for (const disturbance of ["takeover", "revocation", "cancel", "manual"] as cons
     return { state, done };
   }, async ({ state }) => {
     const f = state.f!;
-    if (disturbance === "takeover") await f.records.setGeneration(f.scope, 0, 1);
+    if (disturbance === "takeover") await f.records.setFence(f.scope, 0, 1);
     else if (disturbance === "revocation") await f.records.revoke(f.scope, "grant");
     else if (disturbance === "cancel") await f.records.cancel(f.scope, "operation", "grant");
     else {

@@ -6,22 +6,9 @@ type Rule = "plan-read" | "plan-unresolved" | "plan-wait" | "reads-helper" | "pl
 
 // Exact counts keep a new compare in the same function from inheriting an exception.
 const allowlist: AllowlistEntry[] = [
-  { file: "src/controllers/media-usage-controller.ts", match: { rule: "stale-compare", function: "live" }, reason: "Read-only usage check owns cancellation of obsolete batches; it never plans or writes edits." },
-  { file: "src/controllers/agent-controller.ts", match: { rule: "stale-compare", function: "isCurrent" }, reason: "Agent menu load epoch pins the account and host, not edit staleness." },
-  { file: "src/controllers/agent-controller.ts", match: { rule: "stale-compare", function: "ensure" }, reason: "Agent menu load epoch deduplicates lazy loads for the same account and host." },
-  { file: "src/controllers/boot-controller.ts", match: { rule: "stale-compare", function: "current" }, reason: "Boot read generation rejects a superseded login/session load, not an edit." },
-  { file: "src/controllers/boot-controller.ts", match: { rule: "stale-compare", function: "start" }, reason: "Boot read generation pins the failure handoff to the session it owns." },
-  { file: "src/controllers/command-palette-controller.ts", match: { rule: "stale-compare", function: "live" }, reason: "Palette controller lifetime counter prevents an obsolete palette from using live ports." },
-  { file: "src/controllers/history-controller.ts", match: { rule: "stale-compare", function: "live" }, reason: "History panel load counter owns its lazy mount; edit staleness belongs to the module." },
   { file: "src/controllers/preview-selection-controller.ts", match: { rule: "stale-compare", function: "editableTemplatePath" }, reason: "Preview selection intent pins the editable template to the file generation that selected it." },
   { file: "src/controllers/preview-selection-controller.ts", match: { rule: "stale-compare", function: "select" }, reason: "Preview selection intents reject stale instance clicks and superseded file reveals, not edits.", count: 2 },
   { file: "src/controllers/preview-selection-controller.ts", match: { rule: "stale-compare", function: "replayPending" }, reason: "Preview selection intent is replayed only in its original file generation." },
-  { file: "src/controllers/save-publish-controller.ts", match: { rule: "stale-compare", function: "findDeletedUpstream" }, reason: "Boot-triggered draft reconciliation checks its read generation before looking for upstream deletions; not a guarded edit plan." },
-  { file: "src/controllers/setup-entry-controller.ts", match: { rule: "stale-compare", function: "live" }, reason: "Setup wizard's own lifetime counter prevents obsolete lazy mounts." },
-  { file: "src/controllers/setup-entry-controller.ts", match: { rule: "stale-compare", function: "remember" }, reason: "Setup wizard's own lifetime counter prevents a disposed wizard from saving onboarding memory." },
-  { file: "src/controllers/setup-entry-controller.ts", match: { rule: "stale-compare", function: "finish" }, reason: "Setup wizard's own lifetime counter prevents a disposed wizard from finishing onboarding." },
-  { file: "src/controllers/setup-entry-controller.ts", match: { rule: "stale-compare", function: "exit" }, reason: "Setup wizard's own lifetime counter prevents either disposed wizard variant from closing its replacement.", count: 2 },
-  { file: "src/controllers/setup-entry-controller.ts", match: { rule: "stale-compare", function: "openOwner" }, reason: "Setup wizard's own lifetime counter rejects a superseded owner-setup load." },
 ];
 // Same-file helpers a plan calls are scanned too, except these waits: the module re-proves
 // every read after them, and the plan reads what it uses through `r` once they settle.

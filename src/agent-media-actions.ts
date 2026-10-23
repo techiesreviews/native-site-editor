@@ -305,7 +305,7 @@ export async function applyAgentMedia(...parameters: Parameters<typeof executeAg
       loading = (async () => {
         const [{ indexedDbAgentRecords }, { createAgentOwner }] = await Promise.all([import("./agent-records"), import("./agent-owner")]);
         const records = ctx.agentRecords ?? indexedDbAgentRecords(), state = await records.workspace(workspace);
-        return { records, owner: createAgentOwner({ workspace, generation: command.ownerGeneration ?? state.generation, records,
+        return { records, owner: createAgentOwner({ workspace, fence: command.ownerGeneration ?? state.generation, records,
           reload: async () => {} }) };
       })();
       owners.set(key, loading);
@@ -318,7 +318,7 @@ export async function applyAgentMedia(...parameters: Parameters<typeof executeAg
     const existing = await records.receipt(workspace, command.id, command.grantId).catch(validateBeforeRefusal);
     assertCurrent();
     if (existing) {
-      const result = await owner.commit({ workspace, generation: owner.generation, expectedRevision: 0, expectedDrafts: [], drafts: [], receipt });
+      const result = await owner.commit({ workspace, fence: owner.fence, expectedRevision: 0, expectedDrafts: [], drafts: [], receipt });
       return result.receipt.outcome as Exclude<typeof outcome, void>;
     }
     const batches: MediaWorkspaceBatch[] = [];
@@ -439,7 +439,7 @@ export async function applyAgentMedia(...parameters: Parameters<typeof executeAg
         store.stageAgent(after);
         assertCurrent();
         if (!current()) throw new Error("Media changed before the change could be applied.");
-        const result = await owner.commit({ workspace, generation: owner.generation, expectedRevision,
+        const result = await owner.commit({ workspace, fence: owner.fence, expectedRevision,
           expectedDrafts: [...before].map(([path, record]) => [draftKey(scope, path), record ?? null]),
           drafts: [...after].map(([path, record]) => [draftKey(scope, path), record ?? null]), receipt });
         applied = true;

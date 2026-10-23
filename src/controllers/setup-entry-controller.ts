@@ -20,11 +20,11 @@ export interface SetupEntryPorts {
 export function createSetupEntryController(ports: SetupEntryPorts) {
   let wizard: ReturnType<typeof createSetupWizard> | undefined;
   let dismissed = false;
-  let epoch = 0;
+  let mounts = 0;
   let pending: { key: string; promise: Promise<void> } | undefined;
 
   function remove() {
-    epoch++;
+    mounts++;
     pending = undefined;
     wizard?.destroy();
     wizard = undefined;
@@ -38,10 +38,11 @@ export function createSetupEntryController(ports: SetupEntryPorts) {
     complete();
     ports.onExit();
   }
-  function run(key: string, mount: (generation: number) => Promise<void>) {
+  // `mounts` counts this wizard's own mounts (not the workspace session's loads): a removed or replaced one does nothing.
+  function run(key: string, show: (mount: number) => Promise<void>) {
     if (pending?.key === key) return pending.promise;
-    const generation = ++epoch;
-    const promise = mount(generation).finally(() => {
+    const mount = ++mounts;
+    const promise = show(mount).finally(() => {
       if (pending?.promise === promise) pending = undefined;
     });
     pending = { key, promise };
@@ -51,8 +52,8 @@ export function createSetupEntryController(ports: SetupEntryPorts) {
     const login = ports.login();
     if (wizard || !login) return Promise.resolve();
     dismissed = false;
-    return run(`account:${login}`, async generation => {
-      const live = () => generation === epoch && !wizard && !dismissed && ports.login() === login && !ports.repositoryCount();
+    return run(`account:${login}`, async mount => {
+      const live = () => mount === mounts && !wizard && !dismissed && ports.login() === login && !ports.repositoryCount();
       const { createSetupWizard } = await ports.loadWizard();
       if (!live()) return;
       const memory = ports.readMemory();
@@ -63,9 +64,9 @@ export function createSetupEntryController(ports: SetupEntryPorts) {
       wizard = createSetupWizard({
         login, connected: connection === "installed", step, memory: kept,
         connectUrl: "/auth/install", ...ports.actions,
-        remember: change => { if (generation === epoch) ports.writeMemory(change); },
-        finish: repo => { if (generation === epoch) ports.actions.finish(repo); },
-        exit: () => { if (generation === epoch) close(); },
+        remember: change => { if (mount === mounts) ports.writeMemory(change); },
+        finish: repo => { if (mount === mounts) ports.actions.finish(repo); },
+        exit: () => { if (mount === mounts) close(); },
       });
       ports.append(wizard.root);
       wizard.focus();
@@ -73,16 +74,16 @@ export function createSetupEntryController(ports: SetupEntryPorts) {
   }
   function openOwner(ownerSetupUrl: string) {
     if (wizard || dismissed) return Promise.resolve();
-    return run(`owner:${ownerSetupUrl}`, async generation => {
+    return run(`owner:${ownerSetupUrl}`, async mount => {
       const { createSetupWizard } = await ports.loadWizard();
-      if (generation !== epoch || wizard || dismissed || ports.login() || ports.ownerSetupUrl() !== ownerSetupUrl) return;
+      if (mount !== mounts || wizard || dismissed || ports.login() || ports.ownerSetupUrl() !== ownerSetupUrl) return;
       wizard = createSetupWizard({
         login: "", connected: false, step: "connect", connectUrl: ownerSetupUrl,
         connectPurpose: "register-app", loadOwners: async () => [],
         create: async () => ({ ok: false, message: "Sign in first." }),
         findRepository: async () => undefined, agentPrompt: () => "",
         remember: () => {}, finish: () => {},
-        exit: () => { if (generation === epoch) { remove(); dismissed = true; } },
+        exit: () => { if (mount === mounts) { remove(); dismissed = true; } },
       });
       ports.append(wizard.root);
       wizard.focus();

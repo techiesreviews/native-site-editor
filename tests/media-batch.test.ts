@@ -25,7 +25,7 @@ function harness() {
     editor: { captureHistoryHost: () => ({ isCurrent: () => true }), recordHistoryAction: () => { histories++; } },
     mediaHistoryHome: { hold: () => { histories++; } },
     nativeFiles: () => [], draftStore: () => ({ list: () => [], get: () => undefined }), bytes: () => ({}),
-    mediaIdentity: () => "lex/site", mediaTextSource: () => undefined, entryAt: () => undefined, findEntry: async () => undefined,
+    mediaTextSource: () => undefined, entryAt: () => undefined, findEntry: async () => undefined,
     refresh: () => {}, announce: () => {},
   } as unknown as MediaBatchPorts;
   const stamp: Stamp = { holds: () => live, changed: () => (live ? undefined : "scope") };

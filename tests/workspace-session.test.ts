@@ -4,7 +4,7 @@
 // module on the memory workspace with a session in place of its generation.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createWorkspaceSession, draftScopeOf, githubScope, holdsDraftScope, same, setupKeyOf, workspaceKeys, type WorkspaceScope } from "../src/workspace-session";
+import { createWorkspaceSession, draftScopeOf, githubScope, holdsDraftScope, same, sameBranch, setupKeyOf, workspaceKeys, type WorkspaceScope } from "../src/workspace-session";
 import { createGuardedEdits } from "../src/guarded-edit";
 import { createMemoryWorkspace } from "./fakes/memory-workspace";
 
@@ -26,6 +26,22 @@ test("a repository is its id: a re-created one is another, a renamed one is the 
   const renamed: WorkspaceScope = { ...lex, repo: "lex/new-name" };
   assert.ok(same(lex, renamed));
   assert.deepEqual(workspaceKeys(renamed), workspaceKeys(lex));
+});
+
+test("a repository is compared by name only when an id is not known, ignoring capitals", () => {
+  const named: WorkspaceScope = { ...lex, repoId: 0, repo: "Lex/Site" };
+  assert.ok(same(named, lex));
+  assert.ok(same(lex, named));
+  assert.ok(!same(named, { ...lex, repo: "lex/other" }));
+  assert.ok(!same({ ...named, repo: "" }, { ...lex, repo: "" }), "no id and no name is no repository");
+  assert.equal(workspaceKeys(named), undefined, "nothing is kept under a repository known only by name");
+  // Both ids known: the name does not count (renamed and re-created repositories).
+  assert.ok(sameBranch({ repoId: 1, repo: "lex/old", branch: "main" }, { repoId: 1, repo: "lex/new", branch: "main" }));
+  assert.ok(!sameBranch({ repoId: 1, repo: "lex/site", branch: "main" }, { repoId: 2, repo: "lex/site", branch: "main" }));
+  assert.ok(sameBranch({ repo: "lex/site", branch: "main" }, { repoId: 2, repo: "LEX/site", branch: "main" }));
+  assert.ok(!sameBranch({ repo: "lex/site", branch: "main" }, { repoId: 2, repo: "lex/site", branch: "dev" }));
+  assert.ok(!sameBranch({ repoId: 1, branch: "" }, { repoId: 1, branch: "" }));
+  assert.ok(!sameBranch(undefined, undefined));
 });
 
 test("another branch is another workspace; an empty branch is none", () => {

@@ -361,7 +361,7 @@ test("duplicate edit: recorded browser outcome, 1 receipt and 1 revision", async
   const fake = fakeIndexedDB(), records = indexedDbAgentRecords("budget-duplicates", fake.factory);
   const draft: SavedDraft = { ...workspace, version: 1, repo: repo.full_name, path: "new.txt", baseSha: null, original: "", content: "once", updatedAt: Date.now() };
   const key = draftKey(draft, draft.path);
-  const input: AgentCommit = { workspace, generation: 0, expectedRevision: 0, expectedDrafts: [[key, null]], drafts: [[key, draft]], receipt: { operationId: "once", authorizationId: "g", payloadIdentity: "same-work", outcome: { message: "Recorded." }, createdAt: Date.now(), issuedAt: Date.now() } };
+  const input: AgentCommit = { workspace, fence: 0, expectedRevision: 0, expectedDrafts: [[key, null]], drafts: [[key, draft]], receipt: { operationId: "once", authorizationId: "g", payloadIdentity: "same-work", outcome: { message: "Recorded." }, createdAt: Date.now(), issuedAt: Date.now() } };
   const first = await records.commit(input);
   assert.deepEqual(await records.commit(input), { receipt: first.receipt, duplicate: true });
   assert.equal(fake.stores.get("drafts")!.size, 1); assert.equal(fake.stores.get("receipts")!.size, 1);

@@ -56,7 +56,7 @@ async function browser(socketFactory: (receive: (text: string) => void) => Brows
       await before.promise;
     const stored = await records.workspace(workspace);
     const draft = { ...workspace, repo: repo.full_name, version: 1 as const, path: command.path, baseSha: null, content: command.content, original: "", updatedAt: Date.now() };
-    const result = await records.commit({ workspace, generation: command.ownerGeneration!, expectedRevision: stored.revision,
+    const result = await records.commit({ workspace, fence: command.ownerGeneration!, expectedRevision: stored.revision,
       expectedDrafts: [[draftKey(draft, draft.path), null]], drafts: [[draftKey(draft, draft.path), draft]],
       receipt: { operationId: command.id, authorizationId: command.grantId!, payloadIdentity: command.requestIdentity!,
         outcome: { message: "Applied once." }, issuedAt: command.createdAt, createdAt: Date.now() } });
@@ -242,7 +242,7 @@ test("every preparation and commit await serializes cancellation: cancelled mean
     const tools = createAgentEditTools({ workspace, records, ports, run: async command => {
       runs++;
       const draft = { ...workspace, repo: repo.full_name, version: 1 as const, path: "fresh.txt", content: "new", original: "", baseSha: null, updatedAt: Date.now() };
-      await records.commit({ workspace, generation: 0, expectedRevision: 0, expectedDrafts: [], drafts: [[draftKey(draft, draft.path), draft]],
+      await records.commit({ workspace, fence: 0, expectedRevision: 0, expectedDrafts: [], drafts: [[draftKey(draft, draft.path), draft]],
         receipt: { operationId: command.id, authorizationId: command.grantId!, payloadIdentity: command.requestIdentity!, outcome: {}, createdAt: Date.now(), issuedAt: command.createdAt } });
     } });
     const request = { operation: "edit" as const, tool: "write_file" as const, args: { path: "fresh.txt", content: "new" }, id: "race", grantId: "grant", createdAt: Date.now() };
@@ -309,7 +309,7 @@ test("socket loss cancels a pending tab edit locally; wrong-scope cancel cannot"
 test("expired/retired application evidence stays unknown after cancellation and retention; a fresh tombstone is definite", async () => {
   let now = Date.now();
   const fake = fakeIndexedDB(), records = indexedDbAgentRecords("retention", fake.factory, () => now);
-  const command: AgentCommit = { workspace, generation: 0, expectedRevision: 0, expectedDrafts: [], drafts: [],
+  const command: AgentCommit = { workspace, fence: 0, expectedRevision: 0, expectedDrafts: [], drafts: [],
     receipt: { operationId: "expired", authorizationId: "grant", payloadIdentity: "identity", outcome: {}, createdAt: now, issuedAt: now } };
   await records.commit(command); now += 24 * 60 * 60 * 1000;
   await records.evictReceipts(workspace);
@@ -345,7 +345,7 @@ test("the tab's own remaining-budget timer cancels and fences an executor before
 
 for (const media of [false, true]) test(`${media ? "media" : "edit"}: a receipt appearing between lookup and status still refuses a different payload`, async () => {
   const fake = fakeIndexedDB(), stored = indexedDbAgentRecords("receipt-race", fake.factory);
-  await stored.commit({ workspace, generation: 0, expectedRevision: 0, expectedDrafts: [], drafts: [], receipt: {
+  await stored.commit({ workspace, fence: 0, expectedRevision: 0, expectedDrafts: [], drafts: [], receipt: {
     operationId: "reused", authorizationId: "grant", payloadIdentity: "old-payload", outcome: {}, createdAt: Date.now(), issuedAt: Date.now() } });
   // The first read saw nothing; another call's commit is visible to the status transaction.
   const records: AgentRecords = { ...stored, receipt: async () => undefined };
@@ -470,7 +470,7 @@ test("SessionStore legacy cancel during body intake or before dispatch sends not
 test("live cancellation preserves expired application uncertainty and definite tombstones expire", async () => {
   let now = Date.now();
   const fake = fakeIndexedDB(), records = indexedDbAgentRecords("uncertain", fake.factory, () => now);
-  await records.commit({ workspace, generation: 0, expectedRevision: 0, expectedDrafts: [], drafts: [],
+  await records.commit({ workspace, fence: 0, expectedRevision: 0, expectedDrafts: [], drafts: [],
     receipt: { operationId: "old", authorizationId: "grant", payloadIdentity: "identity", outcome: {}, createdAt: now, issuedAt: now } });
   now += 24 * 60 * 60 * 1000;
   await records.cancel(workspace, "old", "grant", { live: true });

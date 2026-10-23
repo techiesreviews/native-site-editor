@@ -271,7 +271,7 @@ async function connected() {
 test("real media relay: 3 authentication + 1 dispatch, zero result polls or server draft fetches; preview contract", async t => {
   const h = await connected(), browser = await fixture();
   const scope = { workspace, tabId: "media-tab", generation: 1 }, name = await relayObjectName(workspace);
-  await browser.records.setGeneration(workspace, 0, 1);
+  await browser.records.setFence(workspace, 0, 1);
   let attachment: unknown = { ...scope, role: "editor", owner: { tabId: scope.tabId, generation: 1 } };
   const socket = { readyState: 1, close() {}, serializeAttachment(value: unknown) { attachment = value; }, deserializeAttachment: () => attachment,
     send(message: string) {
@@ -309,7 +309,7 @@ test("a committed edit whose reply arrives after the deadline stays unknown on t
   const commit = browser.records.commit;
   browser.records.commit = async input => { const result = await commit(input); now += 10_001; return result; };
   const scope = { workspace, tabId: "late-tab", generation: 1 }, name = await relayObjectName(workspace);
-  await browser.records.setGeneration(workspace, 0, 1);
+  await browser.records.setFence(workspace, 0, 1);
   let attachment: unknown = { ...scope, role: "editor", owner: { tabId: scope.tabId, generation: 1 } };
   const socket = { readyState: 1, close() {}, serializeAttachment(value: unknown) { attachment = value; }, deserializeAttachment: () => attachment,
     send(message: string) {

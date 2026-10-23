@@ -5,6 +5,7 @@ import { createAppStore } from "../src/app-store";
 import { createDraftStore } from "../src/draft-store";
 import { createGuardedEdits } from "../src/guarded-edit";
 import { createMemoryWorkspace } from "./fakes/memory-workspace";
+import { createWorkspaceSession } from "../src/workspace-session";
 import type { createSetupActions } from "../src/setup-actions";
 
 // Replace only the modal UI; run the real starting-point action and file generation.
@@ -21,17 +22,17 @@ for (const choice of ["replace", "keep"]) test(`Blank ${choice} generates links 
   const appStore = createAppStore(createDraftStore());
   appStore.repository.value = { id: 1, name: "my-site", full_name: "user/my-site", private: false, default_branch: "main", owner: { login: "user", type: "User" } };
   appStore.snapshot.value = { branch: "main", commit: "commit", entries: [] };
-  const drafts = new Map<string, string>();
+  const drafts = new Map<string, string>(), session = createWorkspaceSession();
   // Only these live ports are used by writeStartingPoint; the other setup actions are not invoked.
   const ports = {
-    generation: 0, appStore, draftScope: () => ({ account: "user", repoId: 1, repo: "user/my-site", branch: "main" }),
+    begin: () => session.begin(), appStore, draftScope: () => ({ account: "user", repoId: 1, repo: "user/my-site", branch: "main" }),
     guardedEdits: createGuardedEdits(workspace.workspace),
     pathNow: (path: string) => path === ".editor/config.json" ? "file" as const : undefined,
     repositoryIndex: { find: async (_api: unknown, _repo: unknown, _snap: unknown, path: string) => path === ".editor/config.json" ? { sha: "config" } : undefined },
     api: async () => { throw new Error("Unused"); }, readFile: async () => config,
     draftStore: () => ({ get: () => undefined, save: (draft: { path: string; content: string }) => { drafts.set(draft.path, draft.content); }, error: null }),
     setupController: { start() {} }, loadSnapshot: async () => {}, announce() {}, errorMessage(error: unknown) { throw error; },
-  } satisfies Pick<Parameters<typeof createSetupActions>[0], "generation" | "appStore" | "draftScope" | "guardedEdits" | "pathNow" | "api" | "readFile" | "loadSnapshot" | "announce" | "errorMessage"> & {
+  } satisfies Pick<Parameters<typeof createSetupActions>[0], "begin" | "appStore" | "draftScope" | "guardedEdits" | "pathNow" | "api" | "readFile" | "loadSnapshot" | "announce" | "errorMessage"> & {
     repositoryIndex: { find: (...args: unknown[]) => Promise<{ sha: string } | undefined> };
     draftStore: () => { get(): undefined; save(draft: { path: string; content: string }): void; error: null };
     setupController: { start(): void };

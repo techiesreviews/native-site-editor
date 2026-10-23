@@ -7,6 +7,7 @@ import { OPEN_REQUESTS_LIMIT, type AgentRequestState } from "../shared/agent.ts"
  * retired marker this workspace dropped. A delivery without a live receipt issued at or before
  * it stays unknown and never applies as a fresh edit.
  */
+/** `generation`: the stored name of the receiving tab's ownership fence. */
 interface WorkspaceRecord { revision: number; generation: number; paused?: boolean; horizon?: number }
 interface WorkspaceSnapshot extends WorkspaceRecord { drafts: [string, SavedDraft][] }
 /**
@@ -17,7 +18,8 @@ interface WorkspaceSnapshot extends WorkspaceRecord { drafts: [string, SavedDraf
 export interface Conversation { id: string; content: JsonValue; unfinished: boolean; updatedAt: number }
 export interface AgentCommit {
   workspace: AgentWorkspace;
-  generation: number;
+  /** The receiving tab's ownership fence; receipts keep it as `generation`. */
+  fence: number;
   expectedRevision: number;
   /**
    * draftKey and the whole record the command was planned against, or null
@@ -37,11 +39,11 @@ export interface AgentRecords {
   cancel: (workspace: AgentWorkspace, operationId: OperationId, authorizationId: string, options?: { live: true }) => Promise<CancellationResult>;
   status: (workspace: AgentWorkspace, operationId: OperationId, authorizationId: string) => Promise<CancellationResult>;
   receipt: (workspace: AgentWorkspace, operationId: OperationId, authorizationId: string) => Promise<AgentReceipt | undefined>;
-  /** With `owner`, the same transaction also proves that generation still owns the workspace unpaused. */
+  /** With `owner`, the same transaction also proves that fence still owns the workspace unpaused. */
   reconcile: (workspace: AgentWorkspace, commands: AgentCommit[], owner?: number) => Promise<AgentOutcome[]>;
   workspace: (workspace: AgentWorkspace) => Promise<WorkspaceRecord>;
-  setGeneration: (workspace: AgentWorkspace, expected: number, next: number, snapshot?: WorkspaceSnapshot) => Promise<WorkspaceRecord>;
-  pause: (workspace: AgentWorkspace, generation: number) => Promise<void>;
+  setFence: (workspace: AgentWorkspace, expected: number, next: number, snapshot?: WorkspaceSnapshot) => Promise<WorkspaceRecord>;
+  pause: (workspace: AgentWorkspace, fence: number) => Promise<void>;
   snapshot: (workspace: AgentWorkspace) => Promise<WorkspaceSnapshot>;
   revoke: (workspace: AgentWorkspace, authorizationId: string) => Promise<AgentReceipt[]>;
   evictReceipts: (workspace: AgentWorkspace, now?: number) => Promise<number>;
@@ -49,7 +51,7 @@ export interface AgentRecords {
    * Stores one conversation, evicting expired and then oldest completed ones; refuses at capacity.
    * With `accept`, the same transaction first asks it about the stored one (none when absent) and
    * writes nothing, resolving false, when it says no. With `owner` (an agent's take or reply, ticket 18), the
-   * same transaction also proves that generation still owns the workspace unpaused, else resolves false.
+   * same transaction also proves that fence still owns the workspace unpaused, else resolves false.
    */
   putConversation: (workspace: AgentWorkspace, conversation: Conversation, accept?: (stored: Conversation | undefined) => boolean, owner?: number) => Promise<boolean>;
   /** Whether putConversation would accept it now, without writing (before asking an agent). */
@@ -222,7 +224,7 @@ export function unavailableAgentRecords(factory?: IDBFactory): AgentRecords {
     return Promise.reject(new AgentRecordsError("unavailable", message));
   };
   return { reconcile: refuse, pause: refuse, snapshot: refuse, revoke: refuse, cancel: refuse, evictReceipts: refuse, commit: refuse,
-    status: refuse, receipt: refuse, workspace: refuse, setGeneration: refuse, putConversation: refuse, checkConversation: refuse, conversations: refuse };
+    status: refuse, receipt: refuse, workspace: refuse, setFence: refuse, putConversation: refuse, checkConversation: refuse, conversations: refuse };
 }
 
 const isFence = (value: unknown): value is Fence => typeof value === "object" && value !== null &&
@@ -304,7 +306,7 @@ export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFact
   };
   const withHorizon = (record: WorkspaceRecord, horizon: number): WorkspaceRecord => horizon > 0 ? { ...record, horizon } : record;
   async function attempt(command: AgentCommit) {
-    const { workspace, generation, expectedRevision, expectedDrafts, drafts, receipt } = structuredClone(command);
+    const { workspace, fence, expectedRevision, expectedDrafts, drafts, receipt } = structuredClone(command);
     const key = workspaceKey(workspace), receiptKey = recordKey(workspace, receipt.operationId);
     return run<CommitResult>([draftStores.drafts, draftStores.receipts, draftStores.workspaces], "readwrite", (tx, read, done) => {
       const receipts = tx.objectStore(draftStores.receipts), workspaces = tx.objectStore(draftStores.workspaces), files = tx.objectStore(draftStores.drafts);
@@ -318,7 +320,7 @@ export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFact
             const recorded = all.find((value) => value.operationId === receipt.operationId);
             if (recorded) {
               if (recorded.workspace !== key || recorded.authorizationId !== receipt.authorizationId ||
-                recorded.generation !== generation || recorded.payloadIdentity !== receipt.payloadIdentity)
+                recorded.generation !== fence || recorded.payloadIdentity !== receipt.payloadIdentity)
                 throw new AgentRecordsError("duplicate-id", "Operation identifier was reused for different work.");
               // Keep refusing this identifier even if a caller supplies fresh revision proofs.
               if (expired(recorded)) conflict();
@@ -331,8 +333,8 @@ export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFact
                 if (retired || legacy) conflict();
                 read(workspaces.get(key), (stored: WorkspaceRecord | undefined) => {
                   const current = stored ?? initial(), time = now();
-                  if (!receipt.authorizationId || !Number.isSafeInteger(generation) || !Number.isSafeInteger(expectedRevision) ||
-                    current.paused || current.generation !== generation || current.revision !== expectedRevision) conflict();
+                  if (!receipt.authorizationId || !Number.isSafeInteger(fence) || !Number.isSafeInteger(expectedRevision) ||
+                    current.paused || current.generation !== fence || current.revision !== expectedRevision) conflict();
                   // Issued at or before a dropped receipt, or so long ago its fences may be gone: unknown.
                   if (!Number.isFinite(receipt.issuedAt) || receipt.issuedAt <= (current.horizon ?? 0) || receipt.issuedAt <= time - COMMAND_MAX_AGE_MS) conflict();
                   const expected = new Map(expectedDrafts);
@@ -342,7 +344,7 @@ export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFact
                       (workspaceKey(value) !== key || draftKey(value, value.path) !== draft))) conflict();
                   }
                   const apply = () => readFences(workspaces, read, (fences) => {
-                    const committed: AgentReceipt = { ...receipt, workspace: key, generation, revision: current.revision + 1, createdAt: time };
+                    const committed: AgentReceipt = { ...receipt, workspace: key, generation: fence, revision: current.revision + 1, createdAt: time };
                     const rows: [string, AgentReceipt][] = all.filter((value) => value.workspace === key).map((value) => [receiptKeyOf(value), value]);
                     const decided = receiptRetention(rows, fences.filter(([, fence]) => fence.workspace === key), time, [receiptKey, committed]);
                     const horizon = retain(receipts, workspaces, decided, new Set(rows.map(([key]) => key)), current.horizon);
@@ -375,7 +377,7 @@ export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFact
       if (revoked) throw new AgentRecordsError("revoked", "Agent authorization has been revoked.");
       read(tx.objectStore(draftStores.receipts).get(recordKey(workspace, wanted.operationId)), (receipt: AgentReceipt | undefined) => {
         const ours = receipt && !expired(receipt) && receipt.workspace === workspaceKey(workspace) && receipt.authorizationId === wanted.authorizationId &&
-          receipt.generation === command.generation && receipt.payloadIdentity === wanted.payloadIdentity;
+          receipt.generation === command.fence && receipt.payloadIdentity === wanted.payloadIdentity;
         // Landed on the revision it was planned against: this commit's own, still to be published.
         done(ours ? { receipt, duplicate: receipt.revision !== command.expectedRevision + 1 } : undefined);
       });
@@ -529,7 +531,7 @@ export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFact
           const { operationId, authorizationId, payloadIdentity } = command.receipt;
           const finish = (receipt?: AgentReceipt) => {
             if (receipt && expired(receipt)) receipt = undefined;
-            if (receipt && (receipt.authorizationId !== authorizationId || receipt.generation !== command.generation || receipt.payloadIdentity !== payloadIdentity))
+            if (receipt && (receipt.authorizationId !== authorizationId || receipt.generation !== command.fence || receipt.payloadIdentity !== payloadIdentity))
               throw new AgentRecordsError("duplicate-id", "Outstanding command identity differs from its receipt.");
             outcomes[index] = receipt ? { operationId, status: "applied", receipt } : { operationId, status: "unknown" };
             if (--remaining === 0) done(outcomes);
@@ -545,7 +547,7 @@ export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFact
       const key = workspaceKey(workspace);
       return run([draftStores.workspaces], "readonly", (tx, read, done) => read(tx.objectStore(draftStores.workspaces).get(key), (value: WorkspaceRecord | undefined) => done(value ?? initial())));
     },
-    setGeneration(workspace, expected, next, snapshot) {
+    setFence(workspace, expected, next, snapshot) {
       const proof = snapshot && structuredClone(snapshot);
       const scope = structuredClone(workspace);
       const key = workspaceKey(workspace);
@@ -553,7 +555,7 @@ export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFact
         const store = tx.objectStore(draftStores.workspaces);
         read(store.get(key), (value: WorkspaceRecord | undefined) => {
           const current = value ?? initial();
-          // Generations only increase, so a fence once passed can never be reused.
+          // Fences only increase, so a fence once passed can never be reused.
           if (current.generation !== expected || !Number.isSafeInteger(next) || next <= current.generation) conflict();
           const change = () => {
             const changed = withHorizon({ revision: current.revision, generation: next }, current.horizon ?? 0);
@@ -573,13 +575,13 @@ export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFact
         });
       });
     },
-    pause(workspace, generation) {
+    pause(workspace, fence) {
       const key = workspaceKey(workspace);
       return run([draftStores.workspaces], "readwrite", (tx, read, done) => {
         const store = tx.objectStore(draftStores.workspaces);
         read(store.get(key), (stored: WorkspaceRecord | undefined) => {
           const current = stored ?? initial();
-          if (current.generation !== generation) conflict();
+          if (current.generation !== fence) conflict();
           store.put({ ...current, paused: true }, key);
           done(undefined);
         });

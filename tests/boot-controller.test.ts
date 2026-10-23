@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createBootController, planRepositoryOpen, type BootMenu, type BootPorts } from "../src/controllers/boot-controller.ts";
 import type { ApiReceipt } from "../src/boot-api-response.ts";
+import { createWorkspaceSession, type SessionStamp } from "../src/workspace-session.ts";
 import type { Repository, SessionInfo } from "../shared/types.ts";
 
 function deferred<T>() {
@@ -19,21 +20,23 @@ function store() {
 }
 
 function fixture(href = "https://editor.test/") {
-  let generation = 0, info: SessionInfo | undefined, url = new URL(href), menu: BootMenu | undefined = { setRepositories: () => {} };
+  const workspace = createWorkspaceSession();
+  let info: SessionInfo | undefined, url = new URL(href), menu: BootMenu | undefined = { setRepositories: () => {} };
   const log: string[] = [];
   const sessions: ReturnType<typeof deferred<ApiReceipt<SessionInfo>>>[] = [];
   const lists: { refresh: boolean; read: ReturnType<typeof deferred<ApiReceipt<Repository[]>>> }[] = [];
   const loads: { prefetched?: Repository[]; started?: number }[] = [];
   const errors: unknown[] = [];
   const drafts = deferred<void>();
-  let loadImpl: (prefetched?: Repository[], hooks?: { onStarted(epoch: number): void }) => Promise<void> = async (prefetched, hooks) => {
-    const epoch = ++generation;
-    hooks?.onStarted(epoch);
-    loads.push({ prefetched, started: epoch });
+  let loadImpl: (prefetched?: Repository[], hooks?: { onStarted(at: SessionStamp): void }) => Promise<void> = async (prefetched, hooks) => {
+    workspace.next(undefined);
+    const at = workspace.begin();
+    hooks?.onStarted(at);
+    loads.push({ prefetched, started: at.load });
   };
   const local = store(), session = store();
   const ports: BootPorts = {
-    generation: () => generation,
+    begin: () => workspace.begin(),
     source: () => `${url.origin}${url.pathname}`,
     url: () => url.href,
     replaceUrl: next => { url = new URL(next); log.push(`replace ${next.href}`); },
@@ -47,7 +50,7 @@ function fixture(href = "https://editor.test/") {
     adoptSession: value => { info = value; },
     enterWorkspace: () => { log.push("enter"); },
     loadRepositories: (prefetched, hooks) => { log.push("load"); return loadImpl(prefetched, hooks); },
-    renderLogin: mode => { generation++; log.push(`login ${mode ?? "ready"}`); controller.reset(); },
+    renderLogin: mode => { workspace.next(undefined); log.push(`login ${mode ?? "ready"}`); controller.reset(); },
     retainLink: () => { log.push("retain"); },
     showError: error => { errors.push(error); },
     storage: kind => kind === "local" ? local : session,
@@ -59,7 +62,8 @@ function fixture(href = "https://editor.test/") {
   const controller = createBootController(ports);
   return {
     controller, log, sessions, lists, loads, errors, drafts,
-    bump: () => { generation++; },
+    bump: () => { workspace.next(undefined); },
+    begin: () => workspace.begin(),
     setInfo: (value: SessionInfo) => { info = value; },
     setMenu: (value: BootMenu | undefined) => { menu = value; },
     setLoad: (impl: typeof loadImpl) => { loadImpl = impl; },
@@ -132,21 +136,21 @@ test("a generation bump before the session resolves adopts nothing", async () =>
 
 test("a late boot error cannot replace a newer workspace; an owned one shows the login", async () => {
   const late = fixture();
-  late.setLoad(async (_prefetched, hooks) => { late.bump(); hooks?.onStarted(1); late.bump(); throw new Error("late"); });
+  late.setLoad(async (_prefetched, hooks) => { late.bump(); hooks?.onStarted(late.begin()); late.bump(); throw new Error("late"); });
   const first = late.controller.start();
   late.sessions[0].resolve(receipt(signedIn())); late.lists[0].read.resolve(receipt([], "x"));
   await first;
   assert.equal(late.errors.length, 0); assert.ok(!late.log.includes("login error"));
 
   const owned = fixture();
-  owned.setLoad(async (_prefetched, hooks) => { hooks?.onStarted(0); throw new Error("owned"); });
+  owned.setLoad(async (_prefetched, hooks) => { hooks?.onStarted(owned.begin()); throw new Error("owned"); });
   const second = owned.controller.start();
   owned.sessions[0].resolve(receipt(signedIn())); owned.lists[0].read.resolve(receipt([], "x"));
   await second;
   assert.equal((owned.errors[0] as Error).message, "owned"); assert.ok(owned.log.includes("login error"));
 
   const replaced = fixture();
-  replaced.setLoad(async (_prefetched, hooks) => { hooks?.onStarted(0); replaced.setInfo(signedIn()); throw new Error("other session"); });
+  replaced.setLoad(async (_prefetched, hooks) => { hooks?.onStarted(replaced.begin()); replaced.setInfo(signedIn()); throw new Error("other session"); });
   const third = replaced.controller.start();
   replaced.sessions[0].resolve(receipt(signedIn())); replaced.lists[0].read.resolve(receipt([], "x"));
   await third;
