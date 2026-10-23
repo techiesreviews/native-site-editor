@@ -16,6 +16,8 @@ Split from [Three load-sensitive tests pass on a busy machine](14-load-sensitive
 
 - Added 2026-10-23: `tests/native-save/native-agent-quiet.spec.ts:180` ("live: waits are quiet by default; Watch holds one wait…") failed twice in slice 23's full `kit pr` runs (`expected ["wait_for_requests"], received []`) and passed 3/3 alone.
 
+- Added 2026-10-23: `native-lazy-panels.spec.ts:68` ("Files works again after a failed chunk load and recovery") and `native-placed-media.spec.ts:113` ("an audio whose file arrives while it plays keeps its real length after Stop") failed once each in slice 27's full `kit pr` run under load; both pass alone.
+
 ## Decided behaviour
 
 Diagnose first (`mattpocock-skills:diagnosing-bugs`). Wait for states, not times; use the page clock where a product timer is involved; do not raise timeouts and do not add entries to `tests/known-failures.json`. If the ring timing is a real product issue on slow machines, say so in Done and ask the lead before changing product behaviour.
@@ -25,6 +27,8 @@ Diagnose first (`mattpocock-skills:diagnosing-bugs`). Wait for states, not times
 - `tests/native-save/native-editor-toast.spec.ts`
 - `tests/native-save/native-media-library.spec.ts`
 - `tests/native-save/native-agent-quiet.spec.ts`
+- `tests/native-save/native-lazy-panels.spec.ts`
+- `tests/native-save/native-placed-media.spec.ts`
 
 ## Done when
 
