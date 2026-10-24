@@ -10,7 +10,7 @@ import { contractCases, repairedPages } from "./fakes/source-tree-contract.ts";
 // source adapter (`readSource(page, { page: true })`). Then parity: every
 // element of every fixture page reads the same through both, and the
 // markup the browser repairs reads differently (so a new repair shows up).
-// Bundled as tests/cards-controller.test.ts bundles the cards, no server.
+// Bundled as tests/cards.test.ts bundles the cards, no server.
 
 declare global {
   var sourceTreeContract: {

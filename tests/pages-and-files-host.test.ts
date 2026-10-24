@@ -106,7 +106,7 @@ function setup() {
     guardedEdits: { stamp: () => holds, run: async () => ({ ok: false, reason: "refused", message: "No writes here." }),
       peek: { source: () => undefined, exists: () => false, template: () => undefined, site: () => undefined } },
     mediaController: { requestGalleryRefresh: record("gallery"), disposeGallery: () => {}, ensureGallery: async () => {}, galleryVisible: () => false },
-    cardsController: { cardOffer: () => undefined, cardsLinkingTo: () => undefined, createWithCard: () => undefined },
+    cards: { cardOffer: () => undefined, cardsLinkingTo: () => undefined, createWithCard: () => undefined },
     linkedStyles: { secondaryPath: () => undefined, unlink: () => {}, openComponentLinkedStyle: async () => {}, openDefaultLinkedStyle: async () => {} },
     versions: { history: { refresh: record("history") } }, previewSelection: { recordIntent: () => {} },
     repositoryIndex: { seed: () => {} }, finishedWork: { add: () => {} },

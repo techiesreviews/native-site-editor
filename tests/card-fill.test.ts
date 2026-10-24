@@ -434,11 +434,11 @@ test("a new default card uses the placeholder and creates its missing file in on
         const home = '<!doctype html><html><body><main><section><h2>Work</h2><div class="cards"><article><h3>One</h3><p>Body</p><img src="/my-site/images/placeholder.svg"></article><article><h3>Two</h3><p>Body</p><img src="/my-site/images/placeholder.svg"></article></div></section></main></body></html>';
         const branch = { "index.html": home, "about/index.html": '<!doctype html><html><head><title>About</title></head><body><main><h1>About</h1></main></body></html>',
           ".editor/config.json": '{"site":{"url":"https://example.test/my-site/"}}', ...(present ? { "images/placeholder.svg": "Existing placeholder" } : {}) };
-        const { controller, m } = placeholderCardsFixture(branch, { routes: { "/": "index.html", "/about/": "about/index.html" }, components: {} });
-        const card = await controller.preview.addCard({ path: "index.html", parent: [0, 0, 1], index: -1, row: false });
+        const { cards, m } = placeholderCardsFixture(branch, { routes: { "/": "index.html", "/about/": "about/index.html" }, components: {} });
+        const card = await cards.addCard({ path: "index.html", parent: [0, 0, 1], index: -1, row: false });
         if (!card) throw new Error("Card was not added");
         const before = home;
-        const after = m.source("index.html"), added = controller.preview.cardText(card), placeholder = m.source("images/placeholder.svg"), steps = m.steps().length;
+        const after = m.source("index.html"), added = cards.cardText(card), placeholder = m.source("images/placeholder.svg"), steps = m.steps().length;
         const undone = m.undo();
         return { after, added, placeholder, steps, undone, restored: m.source("index.html") === before, fileAfterUndo: m.source("images/placeholder.svg") };
       }, present);
@@ -468,10 +468,10 @@ test("filling a plain card without a page image fills its empty image with the p
         const about = '<!doctype html><html><head><title>About</title><meta name="description" content="About our work"></head><body><main><h1>About</h1></main></body></html>';
         const branch = { "index.html": home, "about/index.html": about,
           ".editor/config.json": '{"site":{"url":"https://example.test/my-site/"}}', ...(present ? { "images/placeholder.svg": "Existing placeholder" } : {}) };
-        const { controller, m } = placeholderCardsFixture(branch, { routes: { "/": "index.html", "/about/": "about/index.html" }, components: {} });
+        const { cards, m } = placeholderCardsFixture(branch, { routes: { "/": "index.html", "/about/": "about/index.html" }, components: {} });
         const card = { path: "index.html", node: [0, 0, 1, 0] };
-        const filled = await controller.preview.fillCard(card, "/about/");
-        const after = m.source("index.html"), markup = controller.preview.cardText(card), placeholder = m.source("images/placeholder.svg"), steps = m.steps().length;
+        const filled = await cards.fillCard(card, "/about/");
+        const after = m.source("index.html"), markup = cards.cardText(card), placeholder = m.source("images/placeholder.svg"), steps = m.steps().length;
         const unchangedPage = m.source("about/index.html") === about;
         const undone = m.undo();
         return { filled, after, markup, placeholder, steps, unchangedPage, undone, restored: m.source("index.html") === home, fileAfterUndo: m.source("images/placeholder.svg") };

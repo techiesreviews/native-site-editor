@@ -2,41 +2,25 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { cardsFixture } from "./fakes/cards-fixture.ts";
 import { createCards } from "../src/page-builder/cards.ts";
-import type { NativeSite } from "../shared/native-project.ts";
 import type { NativePreviewSelection } from "../src/components/native-preview.ts";
 
 const page = "<!doctype html><html><head><title>Home</title></head><body><main><section><h2>Work</h2><div class=\"cards\">"
   + ["One", "Two", "Three"].map((name) => `<article class="card"><h3>${name}</h3><p>About ${name}.</p></article>`).join("")
   + "</div></section></main></body></html>";
 
-const plain: NativeSite = { routes: { "/": "index.html" }, components: {} };
-const fixture = (site: NativeSite | undefined = plain) => cardsFixture({ "index.html": page }, site, false);
-
 const selection = (node: number[]): NativePreviewSelection => ({ path: "index.html", tag: "article", text: "", reason: "click", selectors: [], node });
 
-test("before mounting, card adapters refuse or offer nothing", async () => {
-  const { controller, edits } = fixture();
-  assert.equal(await controller.preview.addCard({ path: "index.html", parent: [], index: -1, row: false }), undefined);
-  assert.equal(controller.preview.createPage({ path: "index.html", node: [] }, { title: "Oak", parent: "/" }), undefined);
-  assert.equal(controller.preview.describe({} as never), undefined);
-  assert.deepEqual(controller.controls(selection([1, 0, 0, 1, 0]), page), []);
-  assert.equal(controller.cardOffer("/"), undefined);
-  assert.equal(controller.cardsLinkingTo("/", new Set(), edits.peek), undefined);
-  assert.equal(controller.createWithCard({ parent: "/", title: "x", slug: "x" }), undefined);
-});
-
-test("mounting creates the card operations once the workspace mounts", async () => {
-  const { controller } = cardsFixture({ "index.html": page }, undefined, false);
-  assert.equal(controller.createWithCard({ parent: "/", title: "x", slug: "x" }), undefined);
-  controller.mount();
-  // Mounted, the operations answer: with no site, no grid lists the pages.
-  assert.equal(await controller.createWithCard({ parent: "/", title: "x", slug: "x" }), "No grid lists the pages under / any more.");
-  assert.deepEqual(controller.controls(selection([1, 0, 0, 1, 1]), page), []);
-  assert.equal(controller.cardOffer("/"), undefined);
+// With no site, no grid lists the pages, so a Pages tab subpage gets no card.
+test("with no site, cards offer nothing and a subpage with its card is refused", async () => {
+  const { cards, edits } = cardsFixture({ "index.html": page }, undefined);
+  assert.equal(await cards.createWithCard({ parent: "/", title: "x", slug: "x" }), "No grid lists the pages under / any more.");
+  assert.deepEqual(cards.controls(selection([1, 0, 0, 1, 1]), page), []);
+  assert.equal(cards.cardOffer("/"), undefined);
+  assert.equal(cards.cardsLinkingTo("/", new Set(), edits.peek), undefined);
 });
 
 // Card source locations use the browser's HTML parser. Bundle the real memory
-// workspace and controller into Chromium, without a preview server or proof ports.
+// workspace and card operations into Chromium, without a preview server or proof ports.
 declare global {
   var cardsFixture: typeof import("./fakes/cards-fixture.ts").cardsFixture;
   var cardsCreate: typeof createCards;
@@ -72,8 +56,8 @@ test("guarded card actions on the memory workspace with the browser parser", asy
 
     await t.test("add on a plain grid is one range step, undone to the original page", async () => {
       const result = await browserPage.evaluate(async ({ page, site }) => {
-        const { controller, m } = cardsFixture({ "index.html": page }, site);
-        const card = await controller.preview.addCard({ path: "index.html", parent: [0, 0, 1], index: -1, row: false });
+        const { cards, m } = cardsFixture({ "index.html": page }, site);
+        const card = await cards.addCard({ path: "index.html", parent: [0, 0, 1], index: -1, row: false });
         const after = m.source("index.html"), steps = m.steps(), selected = m.selected;
         const undone = m.undo();
         return { card, after, steps, selected, undone, restored: m.source("index.html") };
@@ -90,9 +74,9 @@ test("guarded card actions on the memory workspace with the browser parser", asy
       const result = await browserPage.evaluate(async ({ branch, site, card }) => {
         const prefixed = { ...branch, ".editor/config.json": '{"site":{"url":"https://user.github.io/my-site/"}}',
           "index.html": branch["index.html"].replace('href="/work/oak/"', 'href="/my-site/work/oak/"') };
-        const { controller, m } = cardsFixture(prefixed, site);
-        const inGrid = controller.preview.linkPages(card)?.inGrid;
-        const fill = await controller.preview.fillCard(card, "/work/oak/");
+        const { cards, m } = cardsFixture(prefixed, site);
+        const inGrid = cards.linkPages(card)?.inGrid;
+        const fill = await cards.fillCard(card, "/work/oak/");
         return { inGrid, fill, after: m.source(card.path), steps: m.steps() };
       }, data);
       assert.deepEqual(result.inGrid, ["/work/oak/"]);
@@ -104,11 +88,11 @@ test("guarded card actions on the memory workspace with the browser parser", asy
     await t.test("plain cards and copied collection cards write prefixed links", async () => {
       const result = await browserPage.evaluate(async ({ site, oak }) => {
         const source = '<html><head></head><body><main><div><article class="card"><h3><a href="/my-site/work/oak/">Oak</a></h3><p>Oak</p></article><article class="card"><h3>Blank</h3><p>Blank</p></article><article class="card"><h3><a href="/my-site/work/pine/">Pine</a></h3><p>Pine</p></article></div></main></body></html>';
-        const { controller, m } = cardsFixture({ "index.html": source, "work/index.html": oak, "work/oak/index.html": oak, "work/pine/index.html": oak,
+        const { cards, m } = cardsFixture({ "index.html": source, "work/index.html": oak, "work/oak/index.html": oak, "work/pine/index.html": oak,
           ".editor/config.json": '{"site":{"url":"https://user.github.io/my-site/"}}' }, { routes: { ...site.routes, "/work/pine/": "work/pine/index.html" }, components: {} });
-        const filled = await controller.preview.fillCard({ path: "index.html", node: [0, 0, 1] }, "/work/oak/");
+        const filled = await cards.fillCard({ path: "index.html", node: [0, 0, 1] }, "/work/oak/");
         const afterFill = m.source("index.html");
-        const created = await controller.createWithCard({ parent: "/work/", title: "Birch", slug: "birch" });
+        const created = await cards.createWithCard({ parent: "/work/", title: "Birch", slug: "birch" });
         return { filled, afterFill, created, after: m.source("index.html"), page: m.source("work/birch/index.html") };
       }, { site: componentSite, oak });
       assert.deepEqual(result.filled, { title: "Oak", route: "/work/oak/" });
@@ -120,8 +104,8 @@ test("guarded card actions on the memory workspace with the browser parser", asy
 
     await t.test("fill and missing host CSS are one operation; undo removes both changes", async () => {
       const result = await browserPage.evaluate(async ({ branch, site, card }) => {
-        const { controller, m } = cardsFixture(branch, site);
-        const fill = await controller.preview.fillCard(card, "/work/oak/");
+        const { cards, m } = cardsFixture(branch, site);
+        const fill = await cards.fillCard(card, "/work/oak/");
         const after = m.source(card.path), css = m.draft("_components/card-quote.css")?.content, steps = m.steps();
         const undone = m.undo();
         return { fill, after, css, steps, undone, restored: m.source(card.path), files: m.files(), selected: m.selected };
@@ -139,8 +123,8 @@ test("guarded card actions on the memory workspace with the browser parser", asy
     await t.test("a component with a link slot fills without creating CSS", async () => {
       const result = await browserPage.evaluate(async ({ branch, site, card }) => {
         branch[card.path] = branch[card.path].replaceAll("card-quote", "card-project");
-        const { controller, m } = cardsFixture(branch, site);
-        await controller.preview.fillCard(card, "/work/oak/");
+        const { cards, m } = cardsFixture(branch, site);
+        await cards.fillCard(card, "/work/oak/");
         return { after: m.source(card.path), steps: m.steps(), files: m.files() };
       }, data);
       assert.match(result.after!, /<a slot="link" href="\/work\/oak\/">Read about Oak<\/a>/);
@@ -150,8 +134,8 @@ test("guarded card actions on the memory workspace with the browser parser", asy
 
     await t.test("editing the look template during card-swap import refuses without a step", async () => {
       const result = await browserPage.evaluate(async ({ branch, site, card }) => {
-        const { controller, m } = cardsFixture(branch, site);
-        const pending = controller.preview.swapCard(card, { tag: "card-project", label: "card-project" }, { variants: [] });
+        const { cards, m } = cardsFixture(branch, site);
+        const pending = cards.swapCard(card, { tag: "card-project", label: "card-project" }, { variants: [] });
         m.typeInto("_components/card-project.html");
         return { swap: await pending, after: m.source(card.path), steps: m.steps(), said: m.announced, files: m.files() };
       }, data);
@@ -164,8 +148,8 @@ test("guarded card actions on the memory workspace with the browser parser", asy
 
     await t.test("creating CSS during card-link-css import refuses and preserves that draft", async () => {
       const result = await browserPage.evaluate(async ({ branch, site, card }) => {
-        const { controller, m } = cardsFixture(branch, site);
-        const pending = controller.preview.fillCard(card, "/work/oak/");
+        const { cards, m } = cardsFixture(branch, site);
+        const pending = cards.fillCard(card, "/work/oak/");
         m.writeDraft("_components/card-quote.css", ":host { color: red; }");
         return { fill: await pending, after: m.source(card.path), css: m.draft("_components/card-quote.css")?.content, steps: m.steps(), said: m.announced };
       }, data);
@@ -178,8 +162,8 @@ test("guarded card actions on the memory workspace with the browser parser", asy
 
     await t.test("a site address change during a card fill refuses the old-prefix write", async () => {
       const result = await browserPage.evaluate(async ({ branch, site, card }) => {
-        const { controller, m } = cardsFixture({ ...branch, ".editor/config.json": '{"site":{"url":"https://user.github.io/my-site/"}}' }, site);
-        const pending = controller.preview.fillCard(card, "/work/oak/");
+        const { cards, m } = cardsFixture({ ...branch, ".editor/config.json": '{"site":{"url":"https://user.github.io/my-site/"}}' }, site);
+        const pending = cards.fillCard(card, "/work/oak/");
         m.writeDraft(".editor/config.json", '{"site":{"url":"https://user.github.io/elsewhere/"}}');
         return { fill: await pending, after: m.source(card.path), steps: m.steps(), said: m.announced };
       }, data);
@@ -191,8 +175,8 @@ test("guarded card actions on the memory workspace with the browser parser", asy
 
     await t.test("create page, fill and host CSS undo together", async () => {
       const result = await browserPage.evaluate(async ({ branch, site, card }) => {
-        const { controller, m } = cardsFixture(branch, site);
-        const fill = await controller.preview.createPage(card, { parent: "/work/", title: "Birch" });
+        const { cards, m } = cardsFixture(branch, site);
+        const fill = await cards.createPage(card, { parent: "/work/", title: "Birch" });
         const created = m.draft("work/birch/index.html")?.content, after = m.source(card.path), steps = m.steps();
         const css = m.draft("_components/card-quote.css")?.content;
         const undone = m.undo();
@@ -237,10 +221,10 @@ test("guarded card actions on the memory workspace with the browser parser", asy
             inputs[file] = `<html><head><title>${name}</title></head><body><main><section data-sibling="${name}"><h1>Different heading</h1><h2>${name} card stays in this sentence.</h2></section></main></body></html>`;
           });
           const pairedSite = { ...site, routes: siteRoutes, components: { ...site.components, "section-pair": "_components/section-pair.html" } };
-          const { controller, m } = cardsFixture(inputs, pairedSite);
+          const { cards, m } = cardsFixture(inputs, pairedSite);
           const card = { path: "index.html", node: [0, 0, !parentImplied ? 1 : 3] };
-          const choices = controller.preview.linkPages(card);
-          const fill = await controller.preview.createPage(card, { parent: "/work/", title: "Birch" });
+          const choices = cards.linkPages(card);
+          const fill = await cards.createPage(card, { parent: "/work/", title: "Birch" });
           return { fill, inGrid: choices?.inGrid, created: m.draft("work/birch/index.html")?.content, after: m.source("index.html"), steps: m.steps() };
         }, { branch, site: componentSite, scenario });
         assert.deepEqual(result.fill, { title: "Birch", route: "/work/birch/" });
@@ -255,18 +239,17 @@ test("guarded card actions on the memory workspace with the browser parser", asy
 
     const collectionPage = cardPage.replace("Blank</h3>", '<a href="/work/pine/">Pine</a></h3>');
     const collectionData = { branch: { ...branch, "index.html": collectionPage, "work/pine/index.html": oak.replaceAll("Oak", "Pine") }, site: { ...componentSite, routes: { ...componentSite.routes, "/work/pine/": "work/pine/index.html" } } };
-    await t.test("mounted adapters expose card controls, grid details, linked cards and a collection offer", async () => {
+    await t.test("card operations expose card controls, grid details, linked cards and a collection offer", async () => {
       const result = await browserPage.evaluate(({ branch, site }) => {
-        const { controller, m, edits } = cardsFixture(branch, site, false);
-        controller.mount();
+        const { cards, m, edits } = cardsFixture(branch, site);
         const selection = { path: "index.html", node: [0, 0, 1, 1], tag: "card-quote", text: "Oak", reason: "click" as const, selectors: [] };
-        const controls = controller.controls(selection, branch["index.html"]).map(control => ({ kind: control.kind, label: control.label }));
-        const description = controller.preview.describe({ path: "index.html", parent: [0, 0, 1], index: 1, position: 1, count: 2, row: false, beside: false, ghost: { top: 0, left: 0, width: 1, height: 1 } });
-        const linked = controller.cardsLinkingTo("/work/oak/", new Set(["work/oak/index.html"]), edits.peek);
-        const excluded = controller.cardsLinkingTo("/work/oak/", new Set(["index.html"]), edits.peek);
+        const controls = cards.controls(selection, branch["index.html"]).map(control => ({ kind: control.kind, label: control.label }));
+        const description = cards.describe({ path: "index.html", parent: [0, 0, 1], index: 1, position: 1, count: 2, row: false, beside: false, ghost: { top: 0, left: 0, width: 1, height: 1 } });
+        const linked = cards.cardsLinkingTo("/work/oak/", new Set(["work/oak/index.html"]), edits.peek);
+        const excluded = cards.cardsLinkingTo("/work/oak/", new Set(["index.html"]), edits.peek);
         return {
           controls, description, linked: linked && { label: linked.label, edits: [...linked.edits] }, excluded,
-          offer: controller.cardOffer("/work/"), unlisted: controller.cardOffer("/unlisted/"),
+          offer: cards.cardOffer("/work/"), unlisted: cards.cardOffer("/unlisted/"),
           steps: m.steps(), source: m.source("index.html"),
         };
       }, collectionData);
@@ -283,9 +266,9 @@ test("guarded card actions on the memory workspace with the browser parser", asy
 
     await t.test("Pages tab creates the page and collection card in one step", async () => {
       const result = await browserPage.evaluate(async ({ branch, site }) => {
-        const { controller, m } = cardsFixture(branch, site);
-        const offer = controller.cardOffer("/work/");
-        const error = await controller.createWithCard({ parent: "/work/", title: "Birch", slug: "birch" });
+        const { cards, m } = cardsFixture(branch, site);
+        const offer = cards.cardOffer("/work/");
+        const error = await cards.createWithCard({ parent: "/work/", title: "Birch", slug: "birch" });
         const created = m.draft("work/birch/index.html")?.content, after = m.source("index.html"), steps = m.steps(), opened = m.opened;
         const undone = m.undo();
         return { offer, error, created, after, steps, opened, undone, restored: m.source("index.html"), files: m.files() };
@@ -305,8 +288,8 @@ test("guarded card actions on the memory workspace with the browser parser", asy
       const result = await browserPage.evaluate(async ({ branch, site }) => {
         const source = branch["index.html"].replace('Oak</a></h3></card-quote>', 'Oak card</a></h3><p>Unclosed<div>After</div></card-quote>');
         const inputs = { ...branch, "index.html": source, "work/oak/index.html": '<html><head><title>Oak</title></head><body><main><h1>Different heading</h1><h2>Oak card stays in this sentence.</h2></main></body></html>' };
-        const { controller, m } = cardsFixture(inputs, site);
-        const error = await controller.createWithCard({ parent: "/work/", title: "Birch", slug: "birch" });
+        const { cards, m } = cardsFixture(inputs, site);
+        const error = await cards.createWithCard({ parent: "/work/", title: "Birch", slug: "birch" });
         return { error, created: m.draft("work/birch/index.html")?.content, steps: m.steps() };
       }, collectionData);
       assert.equal(result.error, undefined);
@@ -317,9 +300,9 @@ test("guarded card actions on the memory workspace with the browser parser", asy
 
     await t.test("a page delete's card removal reads every page through the delete's plan", async () => {
       const result = await browserPage.evaluate(async ({ branch, site }) => {
-        const { controller, m, edits } = cardsFixture(branch, site);
+        const { cards, m, edits } = cardsFixture(branch, site);
         const outcome = await edits.run(async r => {
-          const card = controller.cardsLinkingTo("/work/pine/", new Set(["work/pine/index.html"]), r);
+          const card = cards.cardsLinkingTo("/work/pine/", new Set(["work/pine/index.html"]), r);
           if (!card) return { refuse: "no card" };
           for (const path of card.edits.keys()) r.source(path);
           // A page with no card, read only to find cards, changes while the dialog is open.
@@ -336,8 +319,8 @@ test("guarded card actions on the memory workspace with the browser parser", asy
 
     await t.test("Pages tab refuses a grid page edited meanwhile", async () => {
       const result = await browserPage.evaluate(async ({ branch, site }) => {
-        const { controller, m } = cardsFixture(branch, site);
-        const pending = controller.createWithCard({ parent: "/work/", title: "Birch", slug: "birch" });
+        const { cards, m } = cardsFixture(branch, site);
+        const pending = cards.createWithCard({ parent: "/work/", title: "Birch", slug: "birch" });
         m.typeInto("index.html");
         return { error: await pending, after: m.source("index.html"), steps: m.steps(), files: m.files() };
       }, collectionData);
@@ -350,8 +333,8 @@ test("guarded card actions on the memory workspace with the browser parser", asy
     for (const action of ["Duplicate", "Remove"] as const) {
       await t.test(`${action} uses now: one step and undo`, async () => {
         const result = await browserPage.evaluate(({ page, site, action }) => {
-          const { controller, m } = cardsFixture({ "index.html": page }, site);
-          const controls = controller.controls({ path: "index.html", node: [0, 0, 1, 0], tag: "article", text: "", reason: "click", selectors: [] }, page);
+          const { cards, m } = cardsFixture({ "index.html": page }, site);
+          const controls = cards.controls({ path: "index.html", node: [0, 0, 1, 0], tag: "article", text: "", reason: "click", selectors: [] }, page);
           const button = controls.find(control => control.kind === "button" && control.label === action);
           if (button?.kind === "button") button.onPress();
           const after = m.source("index.html"), steps = m.steps(), undone = m.undo();
@@ -365,8 +348,8 @@ test("guarded card actions on the memory workspace with the browser parser", asy
       for (const mode of ["stale", "closed"] as const) {
         await t.test(`${action} refuses ${mode} painted controls`, async () => {
           const result = await browserPage.evaluate(({ page, site, action, mode }) => {
-            const { controller, m } = cardsFixture({ "index.html": page }, site);
-            const controls = controller.controls({ path: "index.html", node: [0, 0, 1, 0], tag: "article", text: "", reason: "click", selectors: [] }, page);
+            const { cards, m } = cardsFixture({ "index.html": page }, site);
+            const controls = cards.controls({ path: "index.html", node: [0, 0, 1, 0], tag: "article", text: "", reason: "click", selectors: [] }, page);
             if (mode === "stale") m.typeInto("index.html"); else m.close();
             const button = controls.find(control => control.kind === "button" && control.label === action);
             if (button?.kind === "button") button.onPress();
@@ -381,9 +364,9 @@ test("guarded card actions on the memory workspace with the browser parser", asy
 
     await t.test("Duplicate refuses when a template read for the grid changed since the bar was painted", async () => {
       const result = await browserPage.evaluate(({ branch, site, card }) => {
-        const { controller, m } = cardsFixture(branch, site);
+        const { cards, m } = cardsFixture(branch, site);
         const source = m.source(card.path)!;
-        const controls = controller.controls({ ...card, tag: "card-quote", text: "", reason: "click", selectors: [] }, source);
+        const controls = cards.controls({ ...card, tag: "card-quote", text: "", reason: "click", selectors: [] }, source);
         m.writeDraft("_components/card-quote.html", "<section><slot></slot></section>");
         const button = controls.find(control => control.kind === "button" && control.label === "Duplicate");
         if (button?.kind === "button") button.onPress();
@@ -397,10 +380,10 @@ test("guarded card actions on the memory workspace with the browser parser", asy
 
     await t.test("an unchanged fill and swap still return their results without another step", async () => {
       const result = await browserPage.evaluate(async ({ branch, site, card }) => {
-        const { controller, m } = cardsFixture(branch, site);
-        await controller.preview.fillCard(card, "/work/oak/");
-        const fill = await controller.preview.fillCard(card, "/work/oak/");
-        const swap = await controller.preview.swapCard(card, { tag: "card-quote", label: "card-quote" }, { variants: [] });
+        const { cards, m } = cardsFixture(branch, site);
+        await cards.fillCard(card, "/work/oak/");
+        const fill = await cards.fillCard(card, "/work/oak/");
+        const swap = await cards.swapCard(card, { tag: "card-quote", label: "card-quote" }, { variants: [] });
         return { fill, swap, steps: m.steps() };
       }, data);
       assert.deepEqual(result.fill, { title: "Oak", route: "/work/oak/" });
@@ -412,9 +395,9 @@ test("guarded card actions on the memory workspace with the browser parser", asy
       const result = await browserPage.evaluate(async ({ branch, site, card }) => {
         branch[card.path] = branch[card.path].replaceAll("card-quote", "card-project").replace('<h3 slot="title"><a href="/work/oak/">Oak</a></h3>', '<h3 slot="title">Oak</h3><a slot="link" href="/work/oak/">Read about Oak</a>');
         branch["_components/card-quote.css"] = ":host { color: red; }";
-        const { controller, m } = cardsFixture(branch, site);
+        const { cards, m } = cardsFixture(branch, site);
         const linked = { ...card, node: [0, 0, 1, 1] };
-        const swap = await controller.preview.swapCard(linked, { tag: "card-quote", label: "card-quote" }, { variants: [] });
+        const swap = await cards.swapCard(linked, { tag: "card-quote", label: "card-quote" }, { variants: [] });
         const after = m.source(card.path), css = m.draft("_components/card-quote.css")?.content, steps = m.steps();
         const undone = m.undo();
         return { original: branch[card.path], swap, after, css, steps, undone, restored: m.source(card.path), cssRestored: m.source("_components/card-quote.css"), said: m.announced };
@@ -457,9 +440,9 @@ test("guarded card actions on the memory workspace with the browser parser", asy
         inputs[".editor/config.json"] = '{"site":{"url":"https://example.test"}}';
         const anchoredSite = { ...site, routes: { ...site.routes, "/work/list/": anchor } };
         for (const path of ["work/oak/index.html", "index.html", ".editor/config.json", "_components/card-quote.html", "work/birch/index.html"]) {
-          const { controller, m } = cardsFixture(inputs, anchoredSite);
+          const { cards, m } = cardsFixture(inputs, anchoredSite);
           await m.workspace.open(anchor);
-          const pending = controller.preview.createPage({ ...card, path: anchor }, { parent: "/work/", title: "Birch" });
+          const pending = cards.createPage({ ...card, path: anchor }, { parent: "/work/", title: "Birch" });
           m.writeDraft(path, `${inputs[path] ?? ""}<!-- changed -->`);
           const fill = await pending;
           outputs.push({ fill, steps: m.steps(), after: m.source(anchor), files: m.files(), said: m.announced });
@@ -477,9 +460,9 @@ test("guarded card actions on the memory workspace with the browser parser", asy
 
     await t.test("a written create with a failed refresh reports the message but returns success", async () => {
       const result = await browserPage.evaluate(async ({ branch, site, card }) => {
-        const { controller, m } = cardsFixture(branch, site);
+        const { cards, m } = cardsFixture(branch, site);
         m.failRefresh();
-        const fill = await controller.preview.createPage(card, { parent: "/work/", title: "Birch" });
+        const fill = await cards.createPage(card, { parent: "/work/", title: "Birch" });
         return { fill, steps: m.steps(), created: m.draft("work/birch/index.html")?.content, said: m.announced };
       }, data);
       assert.deepEqual(result.fill, { title: "Birch", route: "/work/birch/" });
@@ -490,9 +473,9 @@ test("guarded card actions on the memory workspace with the browser parser", asy
 
     await t.test("Pages tab returns a failed refresh's message with the step written", async () => {
       const result = await browserPage.evaluate(async ({ branch, site }) => {
-        const { controller, m } = cardsFixture(branch, site);
+        const { cards, m } = cardsFixture(branch, site);
         m.failRefresh();
-        const error = await controller.createWithCard({ parent: "/work/", title: "Birch", slug: "birch" });
+        const error = await cards.createWithCard({ parent: "/work/", title: "Birch", slug: "birch" });
         return { error, steps: m.steps(), created: m.draft("work/birch/index.html")?.content, said: m.announced };
       }, collectionData);
       assert.match(result.error!, /The files changed, but the editor changed while opening them/);
