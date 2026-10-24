@@ -17,7 +17,7 @@ import { agentMediaArgsProblem } from "../shared/agent-media-args";
 import { mediaChanges, type MediaTool } from "../shared/agent-media";
 import { isAtomicOperation } from "../shared/agent-tool-table";
 import { isMediaUploadWrite, OUTSIDE_MEDIA_REFUSED, AGENT_TEXT_LIMIT, INSPECTION_LIMIT, isPreviewablePicture, picturePreviewRefusal, REQUEST_HTML_LIMIT, WORKING_NOTE, outlineId, parseOutlineId, textBytes, textHash, type AgentCommand, type AgentElement, type AgentWorking } from "../shared/agent";
-import type { WorkingPart } from "./working-part";
+import { lineOf, type WorkingPart } from "./working-part";
 import type { AgentOutlineSection, AgentPageOutline, AgentSiteContext, EditorContext } from "../shared/types";
 import { draftKey, type DraftScope, type DraftStore, type SavedDraft } from "./drafts";
 import { payloadIdentity, workspaceKey, type JsonValue } from "../shared/agent-command";
@@ -327,11 +327,6 @@ export interface ElementInput {
   host?: { tag: string; selector: string };
 }
 
-const lineAt = (source: string, offset: number) => {
-  let line = 1;
-  for (let at = source.indexOf("\n"); at >= 0 && at < offset; at = source.indexOf("\n", at + 1)) line++;
-  return line;
-};
 
 /**
  * The element as an agent is told it (get_selection, a request): where it
@@ -360,7 +355,7 @@ export function agentElement(input: ElementInput, site: NativeSite, source: stri
     const html = source.slice(start, end);
     element.html = html.length > REQUEST_HTML_LIMIT ? html.slice(0, REQUEST_HTML_LIMIT) : html;
     if (html.length > REQUEST_HTML_LIMIT) element.htmlClipped = true;
-    element.lines = { start: lineAt(source, start), end: lineAt(source, Math.max(start, end - 1)) };
+    element.lines = { start: lineOf(source, start), end: lineOf(source, Math.max(start, end - 1)) };
   }
   // The elements from the file's root down to this one.
   const { root } = parseMarked(source);
@@ -416,7 +411,7 @@ function workSpan(part: WorkingPart, source: string): Span | undefined {
 export function agentWorking(part: WorkingPart, site: NativeSite, source: string | undefined): AgentWorking {
   const route = Object.entries(site.routes).find(([, file]) => file === part.path)?.[0];
   const range = "node" in part && source !== undefined ? elementAt(source, part.node) : undefined;
-  const lines = range && source !== undefined ? { start: lineAt(source, range.start), end: lineAt(source, Math.max(range.start, range.end - 1)) }
+  const lines = range && source !== undefined ? { start: lineOf(source, range.start), end: lineOf(source, Math.max(range.start, range.end - 1)) }
     : "lines" in part ? part.lines : undefined;
   return {
     file: part.path,

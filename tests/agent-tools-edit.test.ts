@@ -740,19 +740,19 @@ const settle = () => new Promise(resolve => setImmediate(resolve));
 // index.html's <h1>: body > main (1) > section (0) > h1 (0).
 const heading = { path: "index.html", node: [1, 0, 0] } as const;
 /** Edit tools over a live text; `wrap` swaps records or ports (an await race's). A change lands only once its receipt is committed. */
-async function waitsFixture(wrap: { records?: (records: AgentRecords) => AgentRecords; ports?: (ports: AgentReadPorts) => AgentReadPorts } = {}) {
+async function waitsFixture(wrap: { records?: (records: AgentRecords) => AgentRecords; ports?: (ports: AgentReadPorts) => AgentReadPorts; run?: () => Promise<never> } = {}) {
   const live: Record<string, string> = { ...files };
   let away = false;
   const f = await fixture({ source: path => live[path] });
   const plain = { ...f.ports, source: (path: string) => live[path], pin: () => ({ away: () => away, context: f.ports.context }) } satisfies AgentReadPorts;
-  const make = (records: AgentRecords, ports: AgentReadPorts) => createAgentEditTools({ workspace, records, ports, run: async command => {
+  const make = (records: AgentRecords, ports: AgentReadPorts) => createAgentEditTools({ workspace, records, ports, run: wrap.run ?? (async command => {
     const state = await f.records.workspace(workspace);
     const outcome = { message: "Applied once.", result: { path: command.path } };
     const result = await f.records.commit({ workspace, fence: command.ownerGeneration!, expectedRevision: state.revision, expectedDrafts: [], drafts: [],
       receipt: { operationId: command.id, authorizationId: command.grantId!, payloadIdentity: command.requestIdentity!, outcome, createdAt: Date.now(), issuedAt: command.createdAt } });
     if (!result.duplicate) { f.commands.push(command); live[command.path] = command.content; }
     return result.receipt.outcome as typeof outcome;
-  } });
+  }) });
   const tools = make(wrap.records?.(f.records) ?? f.records, wrap.ports?.(plain) ?? plain);
   // Another connection's tools in the same tab (a reconnect), on the records as they are.
   const again = () => make(f.records, plain);
@@ -905,6 +905,71 @@ test("a waiting edit whose connection is disconnected never lands, and its statu
   assert.match(body(await f.run(edit)).message, /revoked/);
   assert.equal(f.commands.length, 0);
   assert.equal(f.live["index.html"], files["index.html"]);
+});
+
+/** Records whose first receipt read (the first call's) waits for `release`. */
+function heldFirstReceipt() {
+  let release!: () => void, reached!: () => void, first = true;
+  const released = new Promise<void>(resolve => { release = resolve; }), arrived = new Promise<void>(resolve => { reached = resolve; });
+  const wrap = (records: AgentRecords): AgentRecords => ({ ...records, receipt: async (...args) => {
+    if (first) { first = false; reached(); await released; }
+    return records.receipt(...args);
+  } });
+  return { wrap, release, arrived };
+}
+
+test("a duplicate that joins while the edit still prepares is told waiting the moment it starts to wait, and it lands once", async t => {
+  t.after(() => workingPart.left());
+  const held = heldFirstReceipt();
+  const f = await waitsFixture({ records: held.wrap });
+  workingPart.typed(heading);
+  const edit = await editHeading(f, "wait-joined");
+  const first = f.run(edit);
+  await held.arrived;
+  const duplicate = f.run(edit);
+  held.release();
+  assert.equal(body(await first).state, "waiting");
+  // Nobody left the part: the duplicate still answers.
+  assert.equal(body(await duplicate).state, "waiting");
+  assert.equal(f.commands.length, 0);
+  workingPart.left(heading);
+  assert.equal((await f.status("wait-joined")).state, "applied");
+  assert.equal(f.commands.length, 1);
+});
+
+test("a duplicate joining an edit whose waiting record cannot be written is told its refusal, never waiting", async t => {
+  t.after(() => workingPart.left());
+  const held = heldFirstReceipt();
+  const f = await waitsFixture({ records: records => ({ ...held.wrap(records),
+    wait: async (...args) => { await records.revoke(workspace, "grant"); return records.wait(...args); } }) });
+  workingPart.typed(heading);
+  const edit = await editHeading(f, "wait-unwritten");
+  const first = f.run(edit);
+  await held.arrived;
+  const duplicate = f.run(edit);
+  held.release();
+  const answer = body(await first);
+  assert.equal(answer.state, "conflict");
+  assert.match(answer.message, /revoked/);
+  assert.deepEqual(body(await duplicate), answer);
+  assert.deepEqual(await f.status("wait-unwritten"), answer);
+  assert.equal(f.commands.length, 0);
+});
+
+test("a waited edit whose outcome is unknown is told unknown afterwards, never as lost with its tab", async t => {
+  t.after(() => workingPart.left());
+  const f = await waitsFixture({ run: async () => { throw new Error("The editor could not confirm whether the change was kept."); } });
+  workingPart.typed(heading);
+  const edit = await editHeading(f, "wait-unknown");
+  assert.equal(body(await f.run(edit)).state, "waiting");
+  workingPart.left(heading);
+  const ended = await f.status("wait-unknown");
+  assert.equal(ended.state, "unknown");
+  // The flight gone, its kept record says the same.
+  await settle();
+  const later = await f.status("wait-unknown", "grant", f.again());
+  assert.deepEqual(later, ended);
+  assert.doesNotMatch(later.message, /reloaded or closed/);
 });
 
 test("a waiting edit lands as it is once its workspace is no longer shown", async t => {
