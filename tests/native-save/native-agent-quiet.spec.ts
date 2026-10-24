@@ -77,8 +77,9 @@ test("remote agents off: startup, the agent menu and idle visible or hidden tabs
         else if (String(payload).includes('"type":"ready"')) ready++;
       });
     });
-    // The socket opens after the connections read. Its handshake needs no timers: holding the
-    // fake clock still meanwhile keeps a slow machine from tripping the 10 s handshake limit.
+    // The socket opens after the connections read: the fake clock moves in 100 ms steps until it
+    // opens, then holds still for its handshake, which needs no timers (a slow machine would trip
+    // the 10 s handshake limit otherwise).
     const socketReady = async (count: number) => {
       await expect.poll(async () => { if (sockets < count) await page.clock.runFor(100); return sockets; }).toBe(count);
       await expect.poll(() => ready, { timeout: 15_000 }).toBe(count);
