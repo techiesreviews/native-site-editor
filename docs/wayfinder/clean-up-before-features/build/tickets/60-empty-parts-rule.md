@@ -1,8 +1,8 @@
 ---
 title: "One empty-parts rule, in step with the site's own loader"
 type: task (AFK)
-status: open
-assignee: lead-60 (this session)
+status: closed
+assignee: lead-60
 builder: sol
 blocked_by: [52-agents-wait-for-lex]
 ---
@@ -37,3 +37,11 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `kit unit --affected`, `kit specs --affected`, `kit size`.
 - Review: `kit review --ticket <this ticket>` (GPT-6.1 Sol, medium, read-only). Land: `kit pr --ticket <this ticket>`.
 - Report: unit and specs `RESULT:` lines, `kit size` KB, review folder and decisions, PR and merge SHA.
+
+## Done (2026-10-25)
+
+- One rule for empty optional parts, `src/page-builder/rules/empty-parts.ts` (`emptyParts`, `isContent`), over `RuleView`. The preview runtime (`applyEmptyRules`, the slot ghosts) and the editor's source reading (`shownSlots` in `component-model.ts`, so slot states and Detach) both call it; the runtime's own copies (`slotHasContent`, `slotConditionUnmet`, `fillsAnySlot`, `ownText`) are gone. It reads as the site's loader does: a later slot of a taken name is never filled (so it hides in a filled section), and blank text is `trim()`'s (U+00A0 is blank). The editor's placeholders mode still shows every fallback.
+- The `<br>` allowance (`takesBreaks`, now given the element) excludes source-tree.ts's raw-text list (`RAW_TEXT`, now exported), `<plaintext>`, and SVG or MathML content; HTML inside a `<foreignObject>` still takes breaks.
+- `tests/rules-empty-parts.test.ts`: parity cases run the starter loader's own `hideEmpty` and `isSection` (`fixtures/actual-starter/components/components.js`) on every component in `fixtures/native-starter` and `fixtures/actual-starter`. Each component is tested bare, with each slot filled alone, with all slots filled, with white space only, with content for no slot, and with blank fills. The rule as the runtime reads it, the rule as the editor reads it, and `slotStates` all match the loader. Three deliberately changed copies of `hideEmpty` each fail the cases. `tests/component-model.test.ts` gains the `<br>` cases.
+- No `main.ts` change. `kit size`: boot 353 KB (±0 KB, budget 355 KB); preview runtime 97,607 bytes minified (32 KB gzip, 16 sources).
+- Validation: `RESULT: ok doctor 7/7 checks passed`; `RESULT: ok unit 2523/2523 (159 files)`; `npm test` 5441/5441; `npm run check` and `npm run lint` green. `kit specs --affected` (83 specs): 742 tests passed, none failed. The run hit the 20-minute tool limit as its last group started, and that group re-ran alone: `RESULT: ok specs 2/2 passed`.
