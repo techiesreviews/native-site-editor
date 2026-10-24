@@ -4,9 +4,11 @@ import { build } from "esbuild";
 import { chromium } from "@playwright/test";
 import type { createStructureEditing, StructureEditingHost } from "../src/components/structure-editing.ts";
 import type { NativeStructure } from "../src/components/native-preview.ts";
+import type { workingPart } from "../src/working-part.ts";
 
 declare global {
   var structureEditingFactory: typeof createStructureEditing;
+  var workingPartNow: typeof workingPart;
 }
 
 test("typing holds unrelated and structural paints until blur; focus requests select their own row", async () => {
@@ -67,5 +69,40 @@ test("typing holds unrelated and structural paints until blur; focus requests se
       return { untyped, beforeWrite, pendingSource, own, other, held, released, blurred, focused, correct, caret, rowless, firstTaken, visibleTaken, templateHeld, navigation };
     });
     assert.deepEqual(result, { untyped: false, beforeWrite: true, pendingSource: "before", own: true, other: true, held: true, released: false, blurred: false, focused: true, correct: true, caret: [2, 2], rowless: true, firstTaken: true, visibleTaken: true, templateHeld: true, navigation: false });
+  } finally { await browser.close(); }
+});
+
+test("typing in a row's field makes its element where the user works; ending the edit leaves it (ticket 52)", async () => {
+  const bundle = await build({
+    stdin: { contents: "import { createStructureEditing } from './src/components/structure-editing'; import { workingPart } from './src/working-part'; globalThis.structureEditingFactory = createStructureEditing; globalThis.workingPartNow = workingPart;", resolveDir: process.cwd() },
+    bundle: true, write: false, format: "iife", platform: "browser", loader: { ".css": "empty", ".svg": "text" },
+  });
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.addScriptTag({ content: "globalThis.__name = (fn) => fn;" + bundle.outputFiles[0].text });
+    const result = await page.evaluate(async () => {
+      const working = workingPartNow;
+      const tree = document.createElement("div"); document.body.append(tree);
+      const editing = structureEditingFactory({
+        tree, componentSlots: () => undefined, announce: () => {}, pageSource: () => "", path: () => "index.html", rowElement: () => undefined,
+        rendering: () => false, iconAction: () => document.createElement("button"), isolate: () => {}, ended: () => {}, fieldPrefix: () => "row:",
+      } satisfies StructureEditingHost);
+      const row = document.createElement("div"), label = document.createElement("span");
+      row.append(label); tree.append(row);
+      editing.editTextRow(row, label, { path: "index.html", node: [1, 0, 0], name: "", label: "Heading", field: "Text", text: "Title", breaks: false, prefix: "row:",
+        open: () => ({ write: () => true, close: () => {}, cancel: () => true, stale: () => false, patchable: false, patch: () => false }) }, "owner");
+      const field = row.querySelector("textarea")!;
+      field.focus();
+      const before = working.now();
+      field.value = "Titles"; field.dispatchEvent(new Event("input"));
+      const typed = working.now();
+      editing.finish("commit", false);
+      await new Promise(resolve => setTimeout(resolve));
+      const finished = working.now();
+      editing.destroy(); tree.remove();
+      return { before: before ?? null, typed, finished: finished ?? null };
+    });
+    assert.deepEqual(result, { before: null, typed: { path: "index.html", node: [1, 0, 0] }, finished: null });
   } finally { await browser.close(); }
 });

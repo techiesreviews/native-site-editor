@@ -228,6 +228,8 @@ test("an agent's change waits only when it changes the part the user works in (t
     ["the code pane's lines", { path: "index.html", lines: { start: 4, end: 4 } }, command("set_page_details", { args: { title: "New" } }), true],
     ["other lines", { path: "index.html", lines: { start: 10, end: 10 } }, write("Welcome", "Hello"), false],
     ["those lines", { path: "index.html", lines: { start: 9, end: 9 } }, write("Welcome", "Hello"), true],
+    ["the end of those lines, at the caret", { path: "index.html", lines: { start: 9, end: 9 } }, write("Welcome</h1>\n", "Welcome</h1>!\n"), true],
+    ["the start of the next line", { path: "index.html", lines: { start: 8, end: 8 } }, write("    <h1>", "<!-- -->    <h1>"), false],
     ["nobody typing", undefined, write("Welcome", "Hello"), false],
   ];
   for (const [name, part, change, waits] of cases) assert.equal(changesWork(part, change, source), waits, name);

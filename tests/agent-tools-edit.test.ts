@@ -16,7 +16,7 @@ import { createAgentEditTools } from "../src/agent-tools-edit";
 import { workingPart } from "../src/working-part";
 import { agentCommandFiles } from "../src/agent-tools";
 import { agentFileReader, type AgentReadPorts } from "../src/agent-tools-read";
-import { AgentRecordsError, indexedDbAgentRecords } from "../src/agent-records";
+import { AgentRecordsError, indexedDbAgentRecords, type AgentRecords } from "../src/agent-records";
 import { applySiteCommand, atomicAgentCommand, prepareAgentText, type AgentSiteActions } from "../src/agent-site";
 import { createGuardedEdits, type EditorWorkspace, type GuardedEdits, type Reads } from "../src/guarded-edit";
 import type { AgentTextCommit } from "../src/editor-workspace";
@@ -739,22 +739,25 @@ test("get_command_status never turns an undelivered lookup into a failed change"
 const settle = () => new Promise(resolve => setImmediate(resolve));
 // index.html's <h1>: body > main (1) > section (0) > h1 (0).
 const heading = { path: "index.html", node: [1, 0, 0] } as const;
-async function waitsFixture() {
+/** Edit tools over a live text; `wrap` swaps records or ports (an await race's). A change lands only once its receipt is committed. */
+async function waitsFixture(wrap: { records?: (records: AgentRecords) => AgentRecords; ports?: (ports: AgentReadPorts) => AgentReadPorts } = {}) {
   const live: Record<string, string> = { ...files };
   let away = false;
   const f = await fixture({ source: path => live[path] });
-  const ports = { ...f.ports, source: (path: string) => live[path], pin: () => ({ away: () => away, context: f.ports.context }) } satisfies AgentReadPorts;
-  const tools = createAgentEditTools({ workspace, records: f.records, ports, run: async command => {
-    f.commands.push(command);
-    live[command.path] = command.content;
+  const plain = { ...f.ports, source: (path: string) => live[path], pin: () => ({ away: () => away, context: f.ports.context }) } satisfies AgentReadPorts;
+  const make = (records: AgentRecords, ports: AgentReadPorts) => createAgentEditTools({ workspace, records, ports, run: async command => {
     const state = await f.records.workspace(workspace);
     const outcome = { message: "Applied once.", result: { path: command.path } };
     const result = await f.records.commit({ workspace, fence: command.ownerGeneration!, expectedRevision: state.revision, expectedDrafts: [], drafts: [],
       receipt: { operationId: command.id, authorizationId: command.grantId!, payloadIdentity: command.requestIdentity!, outcome, createdAt: Date.now(), issuedAt: command.createdAt } });
+    if (!result.duplicate) { f.commands.push(command); live[command.path] = command.content; }
     return result.receipt.outcome as typeof outcome;
   } });
-  const status = async (id: string) => body(await tools.run({ operation: "status", id, grantId: "grant" }, 0, () => true));
-  return { ...f, live, tools, status, run: (input: AgentEdit) => tools.run(input, 0, () => true), leave: () => { away = true; } };
+  const tools = make(wrap.records?.(f.records) ?? f.records, wrap.ports?.(plain) ?? plain);
+  // Another connection's tools in the same tab (a reconnect), on the records as they are.
+  const again = () => make(f.records, plain);
+  const status = async (id: string, grantId = "grant", by = tools) => body(await by.run({ operation: "status", id, grantId }, 0, () => true));
+  return { ...f, live, tools, again, status, run: (input: AgentEdit) => tools.run(input, 0, () => true), leave: () => { away = true; } };
 }
 const editHeading = async (f: { live: Record<string, string> }, id: string, newText = "Hello") =>
   request("edit_file", { path: "index.html", expectedHash: await textHash(f.live["index.html"]), edits: [{ oldText: "Welcome", newText }] }, id);
@@ -768,16 +771,19 @@ test("an edit of the element the user types in waits, a duplicate joins it, and 
   assert.equal(first.state, "waiting");
   assert.match(first.message, /editing this part; the change lands when they click away/);
   assert.equal(f.commands.length, 0);
-  // A duplicate joins it and the status says so; neither runs it.
+  // A duplicate joins it and the status says so, through this connection's tools or a reconnected one's; neither runs it.
   assert.equal(body(await f.run(edit)).state, "waiting");
   assert.equal((await f.status("wait-1")).state, "waiting");
+  assert.equal(body(await f.again().run(edit, 0, () => true)).state, "waiting");
+  // Another grant is told nothing of it.
+  assert.equal((await f.status("wait-1", "other")).state, "unknown");
   // The same id for other work is refused.
   assert.match(JSON.stringify(await f.run({ ...edit, args: { ...edit.args, edits: [{ oldText: "Welcome", newText: "Other" }] } } as AgentEdit)), /already running with different work/);
   // An edit elsewhere on the page lands at once.
   const elsewhere = request("edit_file", { path: "index.html", expectedHash: await textHash(files["index.html"]), edits: [{ oldText: ">Fast<", newText: ">Quick<" }] }, "elsewhere");
   assert.equal(body(await f.run(elsewhere)).state, "applied");
   assert.equal(f.commands.length, 1);
-  // The user's typing lands first; the replacement is made again on it.
+  // The user's typing is written as they leave; the replacement is made again on it.
   f.live["index.html"] = f.live["index.html"].replace("<h1>Welcome</h1>", "<h1>Welcome back</h1>");
   workingPart.left(heading);
   await settle();
@@ -792,7 +798,23 @@ test("an edit of the element the user types in waits, a duplicate joins it, and 
   assert.equal(f.commands.length, 2);
 });
 
-test("a waiting edit whose text the user changed is refused once let go, and stays refused for its status and a duplicate", async t => {
+test("a waiting edit is made again on the text it lands on even when that text changed before it began to wait", async t => {
+  t.after(() => workingPart.left());
+  // The text changes between the edit's preparation (against the agent's read) and its wait.
+  let typedBefore = false;
+  const f = await waitsFixture({ records: records => ({ ...records, wait: async (...args) => {
+    if (!typedBefore) { typedBefore = true; f.live["index.html"] = f.live["index.html"].replace("<h1>Welcome</h1>", "<h1>Welcome all</h1>"); }
+    return records.wait(...args);
+  } }) });
+  workingPart.typed(heading);
+  assert.equal(body(await f.run(await editHeading(f, "wait-before"))).state, "waiting");
+  workingPart.left(heading);
+  await settle();
+  assert.equal((await f.status("wait-before")).state, "applied");
+  assert.match(f.live["index.html"], /<h1>Hello all<\/h1>/);
+});
+
+test("a waiting edit whose text the user changed is refused once let go, and stays refused, after a reload too", async t => {
   t.after(() => workingPart.left());
   const f = await waitsFixture();
   workingPart.typed(heading);
@@ -805,6 +827,8 @@ test("a waiting edit whose text the user changed is refused once let go, and sta
   assert.equal(refused.state, "conflict");
   assert.match(refused.message, /The user changed index.html where this change goes while it waited/);
   assert.equal(body(await f.run(edit)).state, "conflict");
+  // Kept beside its receipt: another connection's tools (or a reloaded tab's) tell the same.
+  assert.deepEqual(await f.status("wait-2", "grant", f.again()), refused);
   assert.equal(f.commands.length, 0);
   // A whole write of a file the user changed while it waited is refused too.
   workingPart.typed({ path: "index.html", lines: { start: 1, end: 3 } });
@@ -817,6 +841,37 @@ test("a waiting edit whose text the user changed is refused once let go, and sta
   await settle();
   assert.equal((await f.status("wait-3")).state, "conflict");
   assert.equal(f.commands.length, 0);
+});
+
+test("a change that was waiting in a tab since reloaded or closed is refused, never prepared again", async () => {
+  const f = await waitsFixture();
+  const edit = await editHeading(f, "wait-lost");
+  // What the gone tab left: its waiting record, and no receipt.
+  await f.records.wait(workspace, edit.id, edit.grantId, await textHash(payloadIdentity(json({ tool: edit.tool, args: edit.args, branch: "main" }))));
+  const lost = await f.status("wait-lost");
+  assert.equal(lost.state, "conflict");
+  assert.match(lost.message, /reloaded or closed while this change waited/);
+  assert.deepEqual(body(await f.run(edit)), lost);
+  assert.match(JSON.stringify(await f.run({ ...edit, args: { ...edit.args, edits: [{ oldText: "Welcome", newText: "Other" }] } } as AgentEdit)), /already used for different work/);
+  assert.equal((await f.status("wait-lost", "other")).state, "unknown");
+  assert.equal(f.commands.length, 0);
+});
+
+test("a waiting edit whose connection is disconnected never lands, and its status and duplicates say so", async t => {
+  t.after(() => workingPart.left());
+  const f = await waitsFixture();
+  workingPart.typed(heading);
+  const edit = await editHeading(f, "wait-revoked");
+  assert.equal(body(await f.run(edit)).state, "waiting");
+  await f.records.revoke(workspace, "grant");
+  // Its status is not told to the revoked grant while it waits.
+  assert.match((await f.status("wait-revoked")).message, /revoked/);
+  workingPart.left(heading);
+  await settle();
+  assert.match((await f.status("wait-revoked")).message, /revoked/);
+  assert.match(body(await f.run(edit)).message, /revoked/);
+  assert.equal(f.commands.length, 0);
+  assert.equal(f.live["index.html"], files["index.html"]);
 });
 
 test("a waiting edit lands as it is once its workspace is no longer shown", async t => {
@@ -832,25 +887,64 @@ test("a waiting edit lands as it is once its workspace is no longer shown", asyn
   assert.equal(f.commands.length, 1);
 });
 
-test("where the user works is left by a pause in typing, by leaving that part, or once what they typed is written", async t => {
+test("at every await of a waiting edit, a disconnect, a revision move or another site shown leaves it landed at most once, and never against its proofs", async () => {
+  let id = 0;
+  for (const disturbance of ["revoke", "revision", "switch"] as const) {
+    const points = await forEachAwait(race => {
+      const state = { disturb: () => {}, landed: -1, applied: false, text: "", done: Promise.resolve() };
+      state.done = (async () => {
+        const f = await waitsFixture({
+          records: records => ({ ...records, receipt: race.port("receipt", records.receipt), status: race.port("status", records.status),
+            waiting: race.port("waiting", records.waiting), wait: race.port("wait", records.wait) }),
+          ports: ports => ({ ...ports, context: race.port("context", () => ports.context()) }),
+        });
+        state.disturb = disturbance === "revoke" ? () => { void f.records.revoke(workspace, "grant"); }
+          : disturbance === "revision" ? () => { f.snapshot.commit = "another revision"; } : () => f.leave();
+        workingPart.typed(heading);
+        const edit = await editHeading(f, `race-wait-${++id}`);
+        await f.run(edit);
+        workingPart.left(heading);
+        // The status of a change that waited answers once it settled.
+        state.applied = (await f.status(edit.id, "grant", f.again())).state === "applied";
+        state.landed = f.commands.length;
+        state.text = f.live["index.html"];
+      })().finally(() => workingPart.left());
+      return state;
+    }, state => state.disturb(), state => {
+      assert.ok(state.landed <= 1, `${disturbance}: landed ${state.landed} times`);
+      if (disturbance === "switch") assert.equal(state.landed, 1, "a switch stops nothing");
+      if (disturbance === "revision") assert.equal(state.landed, 0, "a revision move refuses it");
+      if (state.landed) assert.match(state.text, /<h1>Hello<\/h1>/);
+      assert.equal(state.applied, state.landed === 1, `${disturbance}: its status says what landed`);
+      if (disturbance === "revoke") assert.equal(state.landed, 0, "a revoked grant lands nothing");
+    });
+    assert.ok(points >= 4, `${disturbance}: ${points} awaits`);
+  }
+});
+
+test("the code pane's lines are left by a pause in typing; an element only by leaving it, once what was typed there is written", async t => {
   t.after(() => { t.mock.timers.reset(); workingPart.left(); });
   t.mock.timers.enable({ apis: ["setTimeout"] });
   let changes = 0;
   const stop = workingPart.subscribe(() => changes++);
   t.after(stop);
-  workingPart.typed(heading);
+  // Typed in the code pane: the lines of the change, in the text it made.
+  workingPart.typedLines("index.html", "a\nb\nc!\nd\n", { start: 5, text: "!" });
+  assert.deepEqual(workingPart.now(), { path: "index.html", lines: { start: 3, end: 3 } });
   t.mock.timers.tick(4999);
-  workingPart.typed({ ...heading, node: [...heading.node] });
+  workingPart.typedLines("index.html", "a\nb\nc!!\nd\n", { start: 6, text: "!" });
   t.mock.timers.tick(4999);
-  // Typing on in the same part keeps it, told once.
-  assert.deepEqual(workingPart.now(), heading);
+  // Typing on in the same lines keeps them, told once.
   assert.equal(changes, 1);
   t.mock.timers.tick(1);
   assert.equal(workingPart.now(), undefined);
-  // Leaving another element, or the code pane's lines of another file, leaves nothing.
+  // An element stays through any pause.
   workingPart.typed(heading);
+  t.mock.timers.tick(60_000);
+  assert.deepEqual(workingPart.now(), heading);
+  // Leaving another element, or the code pane's lines of its file (the pane closing), leaves it.
   workingPart.left({ path: "index.html", node: [1, 0] });
-  workingPart.left({ path: "about/index.html" });
+  workingPart.left({ path: "index.html" });
   await settle();
   assert.deepEqual(workingPart.now(), heading);
   // Left: once its text edit is written.
@@ -859,6 +953,11 @@ test("where the user works is left by a pause in typing, by leaving that part, o
   await settle();
   assert.deepEqual(workingPart.now(), heading);
   written();
+  await settle();
+  assert.equal(workingPart.now(), undefined);
+  // The pane closing leaves its lines.
+  workingPart.typedLines("index.html", "a\n", { start: 0, text: "a" });
+  workingPart.left({ path: "index.html" });
   await settle();
   assert.equal(workingPart.now(), undefined);
 });

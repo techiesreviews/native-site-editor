@@ -389,15 +389,15 @@ export function agentElement(input: ElementInput, site: NativeSite, source: stri
 // ---- Where the user is working (ticket 52) ----
 
 type Span = { start: number; end: number };
-/** The offset where line `line` (from 1) of `source` starts; its end when `end`. */
-function lineOffset(source: string, line: number, end = false) {
+/** The offset where line `line` (from 1) of `source` starts; the text's end past its last line. */
+function lineOffset(source: string, line: number) {
   let at = 0;
-  for (let n = 1; n < line + Number(end); n++) {
+  for (let n = 1; n < line; n++) {
     const next = source.indexOf("\n", at);
-    if (next < 0) return source.length;
+    if (next < 0) return source.length + 1;
     at = next + 1;
   }
-  return end ? Math.max(0, at - 1) : at;
+  return at;
 }
 /** The element at `node` in `source`, as the preview counts the page (as agentPresenceTarget reads it). */
 function elementAt(source: string, node: readonly number[] | undefined) {
@@ -407,7 +407,8 @@ function elementAt(source: string, node: readonly number[] | undefined) {
 }
 /** The stretch of `source` (the text of `part.path` now) the user works in. */
 function workSpan(part: WorkingPart, source: string): Span | undefined {
-  return "lines" in part ? { start: lineOffset(source, part.lines.start), end: lineOffset(source, part.lines.end, true) } : elementAt(source, part.node);
+  // Lines end where the next line starts: typing at the end of a line is in it.
+  return "lines" in part ? { start: lineOffset(source, part.lines.start), end: lineOffset(source, part.lines.end + 1) } : elementAt(source, part.node);
 }
 
 /** The part as agents are told it, read in `source`, its file's text now. */

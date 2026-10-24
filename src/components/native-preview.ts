@@ -742,7 +742,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     handlers.onTextEdit?.(edit);
   });
   // Where typing happens (ticket 52), and when it is left: after that element's text edit above.
-  link.on("typing", (message) => { if (site && nativeSitePaths(site).includes(message.path)) handlers.onTyping?.({ path: message.path, node: message.node }, message.left); });
+  // Left is said whatever the site shown: a render of another site is what can leave it.
+  link.on("typing", (message) => { if (message.left || site && nativeSitePaths(site).includes(message.path)) handlers.onTyping?.({ path: message.path, node: message.node }, message.left); });
   // A Ctrl/⌘+click on a link inside the preview (including inside shadow
   // roots) to one of the site's pages navigates the preview only, keeping
   // the current source edits untouched.

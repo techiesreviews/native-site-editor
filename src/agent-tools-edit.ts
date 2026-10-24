@@ -1,6 +1,6 @@
 import { textHash, WAITING_MESSAGE, type AgentCommand } from "../shared/agent";
 import { applyReplacements } from "../shared/agent-replacements";
-import { payloadIdentity, type AgentWorkspace, type JsonValue } from "../shared/agent-command";
+import { payloadIdentity, workspaceKey, type AgentWorkspace, type JsonValue } from "../shared/agent-command";
 import { prepareAgentEdit, type AgentEdit, type AgentStatus } from "../shared/agent-edit";
 import { agentToolsOn } from "../shared/agent-tool-table";
 import type { AgentReadResult } from "../shared/agent-read";
@@ -37,21 +37,23 @@ function holdWorkspace(ports: AgentReadPorts): Held {
   return { source: ports.files(), stamp: ports.stamp(), pin: pin ?? { away: () => false, context: () => ports.context() }, pinned: Boolean(pin) };
 }
 
-/** How many refusals of changes that waited this tab keeps for their status. */
-const REFUSED_KEPT = 100;
+/**
+ * The edits under way in this tab, by workspace and id, whichever connection's tools took them (a
+ * reconnect makes new ones while a change still waits). `waiting`: held for the part the user works in
+ * (ticket 52), so a duplicate or a status lookup is told so at once; `waited`: it was, and it runs now.
+ */
+const flights = new Map<string, { identity: string; authorizationId: string; promise: Promise<AgentReadResult>; waiting: boolean; waited: boolean }>();
+/** A waiting change's record whose tab is gone: it never landed (AgentRecords.wait). */
+const WAIT_LOST = "The editor tab was reloaded or closed while this change waited for the user. Nothing was changed; read the site again and send the change anew.";
 
 /** Receipts precede preparation: replacements must never run twice against their own output. */
 export function createAgentEditTools(options: Options) {
-  // `waiting`: held for the part the user works in (ticket 52), so a duplicate or a status lookup is told so
-  // at once; `waited`: it was, and it runs now.
-  const flights = new Map<string, { identity: string; authorizationId: string; promise: Promise<AgentReadResult>; waiting: boolean; waited: boolean }>();
-  // A change that waited and was refused once let go writes no receipt: its answer is kept here while this tab runs.
-  const refused = new Map<string, { identity: string; authorizationId: string; result: AgentReadResult }>();
   const { records, workspace, ports } = options;
   const waiting = (id: string): AgentReadResult => ({ ok: true, value: { requestId: id, state: "waiting", message: WAITING_MESSAGE } });
+  const refusal = (id: string, message: string): AgentReadResult => ({ ok: true, value: { requestId: id, state: "conflict", message } });
   /**
    * Ticket 52, the stand-in until multiplayer: a change to the part the user works in waits until they
-   * leave it, or its workspace is no longer shown (the pause in typing leaves it in time); none otherwise.
+   * leave it, or its workspace is no longer shown (a workspace load leaves the part); none otherwise.
    */
   function userPart(command: AgentCommand, away: () => boolean): Promise<void> | undefined {
     const blocked = () => !away() && changesWork(workingPart.now(), command, ports.source?.(command.path));
@@ -64,10 +66,11 @@ export function createAgentEditTools(options: Options) {
    * Once let go, a text change lands on what the user typed meanwhile: an edit_file's replacements again
    * on the text now, which refuses when the user changed the text they replace; a whole write is refused.
    */
-  async function afterWait(request: AgentEdit, command: AgentCommand, before: string | undefined) {
-    if (command.operation !== "write_file" || typeof command.expectedHash !== "string" || before === undefined) return;
+  async function afterWait(request: AgentEdit, command: AgentCommand) {
+    if (command.operation !== "write_file" || typeof command.expectedHash !== "string") return;
     const now = ports.source?.(command.path);
-    if (now === undefined || now === before) return;
+    // The command's own proof: the text it was made from.
+    if (now === undefined || await textHash(now) === command.expectedHash) return;
     const again = request.tool === "edit_file" ? applyReplacements(now, request.args.edits) : undefined;
     if (!again?.ok) throw new Error(`The user changed ${command.path} where this change goes while it waited. Read it again; nothing was changed.`);
     command.content = again.text;
@@ -99,7 +102,8 @@ export function createAgentEditTools(options: Options) {
       check();
       identity = request.operation === "edit" ? await textHash(payloadIdentity(json({ tool: request.tool, args: request.args, branch: workspace.branch }))) : "";
       check();
-      const running = request.operation === "edit" ? flights.get(request.id) : undefined;
+      const key = JSON.stringify([workspaceKey(workspace), request.id]);
+      const running = request.operation === "edit" ? flights.get(key) : undefined;
       if (running) {
         // Joining work still checks this grant's authorization before revealing its outcome.
         await records.receipt(workspace, request.id, request.grantId);
@@ -108,12 +112,14 @@ export function createAgentEditTools(options: Options) {
           ? { ok: false, message: "This change's id is already running with different work or authorization." }
           : running.waiting ? waiting(request.id) : await running.promise;
       }
-      // A status lookup of a change that waits, or waited and runs now, answers as a duplicate would.
-      const waited = request.operation === "status" ? flights.get(request.id) : undefined;
-      if (waited?.waited && waited.authorizationId === request.grantId) return waited.waiting ? waiting(request.id) : await waited.promise;
-      const kept = refused.get(request.id);
-      if (kept?.authorizationId === request.grantId) return request.operation === "status" || kept.identity === identity ? kept.result
-        : { ok: false, message: "This change's id was already used for different work. Nothing was changed." };
+      // A status lookup of a change that waits, or waited and runs now, answers as a duplicate would,
+      // this grant's authorization checked first.
+      const waited = request.operation === "status" ? flights.get(key) : undefined;
+      if (waited?.waited && waited.authorizationId === request.grantId) {
+        await records.receipt(workspace, request.id, request.grantId);
+        check();
+        return waited.waiting ? waiting(request.id) : await waited.promise;
+      }
       let answer: (result: AgentReadResult) => void = () => {};
       const answered = new Promise<AgentReadResult>(resolve => { answer = resolve; });
       const flight = { identity, authorizationId: request.grantId, promise: answered, waiting: false, waited: false };
@@ -131,6 +137,12 @@ export function createAgentEditTools(options: Options) {
         if (status.status === "applied") return request.operation === "edit" && status.receipt.payloadIdentity !== identity
           ? { ok: false, message: "This change's id was already used for different work. Nothing was changed." } : reply(status.receipt.outcome);
         if (status.status === "cancelled") return { ok: true, value: { requestId: request.id, state: "cancelled", message: "This delivery was cancelled before it committed. Nothing was changed by it." } };
+        // A change that waited and did not land (refused once let go, or its tab gone; no flight holds it
+        // in this tab): told so again, never prepared again.
+        const kept = await records.waiting(workspace, request.id, request.grantId);
+        check();
+        if (kept) return request.operation === "edit" && kept.identity !== identity
+          ? { ok: false, message: "This change's id was already used for different work. Nothing was changed." } : refusal(request.id, kept.refused ?? WAIT_LOST);
         if (request.operation === "status") return { ok: true, value: { requestId: request.id, state: "unknown",
           message: "Change not found, or its receipt expired. The outcome is unknown; do not replay the change." } };
         if (!source) throw new Error("The editor is unavailable. Open the connected site and branch.");
@@ -167,16 +179,19 @@ export function createAgentEditTools(options: Options) {
         agentCommandFiles.set(command, source);
         if (pin.media) siteCommandPins.set(command, { pin: pin.media, opened: pin.opened });
         signal?.throwIfAborted();
-        const text = ports.source?.(command.path), free = userPart(command, () => pin.away());
+        const free = userPart(command, () => pin.away());
         if (free && request.operation === "edit") {
+          flight.waiting = flight.waited = true;
+          // Kept beside its receipt first, so a reload meanwhile still answers for it.
+          await records.wait(workspace, request.id, request.grantId, identity!);
+          check();
           attached = false;
           agentCommandSignals.delete(command);
-          flight.waiting = flight.waited = true;
           answer(waiting(request.id));
           await free;
           flight.waiting = false;
           check();
-          if (!pin.away()) await afterWait(request, command, text);
+          if (!pin.away()) await afterWait(request, command);
           check();
         }
         ran = true;
@@ -191,20 +206,23 @@ export function createAgentEditTools(options: Options) {
           return reply(json({ ...outcome, result: report }));
         }
         return reply(json(outcome ?? {}));
-      })().catch(settle);
+      })().catch(settle).then(async result => {
+        // Refused once let go: its answer is kept beside its receipt for a duplicate or a status lookup.
+        const value = result.ok ? result.value : null;
+        const refused = !result.ok ? result.message : value && typeof value === "object" && !Array.isArray(value) && value.state === "conflict" ? String(value.message) : undefined;
+        if (flight.waited && refused !== undefined) await records.wait(workspace, request.id, request.grantId, identity!, refused).catch(() => undefined);
+        return result;
+      });
       if (request.operation === "status") return await promise;
       flight.promise = promise;
-      flights.set(request.id, flight);
-      void promise.then(result => {
-        if (flights.get(request.id) === flight) flights.delete(request.id);
-        // Refused once let go: its answer stays for a duplicate or a status lookup.
-        const value = result.ok ? result.value : null;
-        if (flight.waited && (!result.ok || value && typeof value === "object" && !Array.isArray(value) && value.state === "conflict")) {
-          refused.delete(request.id);
-          refused.set(request.id, { identity: identity!, authorizationId: request.grantId, result });
-          for (const id of refused.keys()) if (refused.size > REFUSED_KEPT) refused.delete(id);
-        }
-      });
+      flights.set(key, flight);
+      void promise.then(() => { if (flights.get(key) === flight) flights.delete(key); });
+      // Settle matrix of this race. `promise` (the edit) always settles: its errors become results
+      // (settle), and a change that waits goes on until the part is let go, with no time limit (the
+      // user leaving it, or a workspace load leaving it; src/working-part.ts). `answered` settles only
+      // when the change starts waiting, and never otherwise. So: no wait, the edit's result answers;
+      // a wait, "waiting" answers at once, and the edit goes on to write its receipt or its refusal
+      // (above), which a duplicate or status lookup then reads; the reply is the call's only write.
       return await Promise.race([promise, answered]);
     } catch (error) {
       return settle(error);
