@@ -111,13 +111,20 @@ test("a setup host member passed by value, called on the spot or reached through
 
 // The Pages & files host and the agent's commands read main.ts's `let` state when they run: such a value goes in
 // as a getter (and a setter where the host writes it, as the Pages & files host's `fileGeneration`), never as a
-// copy taken when the host is made.
+// copy taken when the host is made. A `const` declared after the call is not there yet when the host is made
+// (CODING_STANDARDS "Module order holds"): it goes in as an arrow, never by name.
 function letsHandedByValue(source: string, factory = "createPagesAndFilesHost"): string[] {
   const tree = parse(source, "src/main.ts");
-  const lets = new Set<string>();
+  const lets = new Set<string>(), consts = new Map<string, number>();
+  const bound = (name: TS.BindingName, at: number) => {
+    if (ts.isIdentifier(name)) consts.set(name.text, at);
+    else for (const element of name.elements) if (!ts.isOmittedExpression(element)) bound(element.name, at);
+  };
   for (const statement of tree.statements)
     if (ts.isVariableStatement(statement) && statement.declarationList.flags & ts.NodeFlags.Let)
-      for (const item of statement.declarationList.declarations) if (ts.isIdentifier(item.name)) lets.add(item.name.text);
+      for (const item of statement.declarationList.declarations) { if (ts.isIdentifier(item.name)) lets.add(item.name.text); }
+    else if (ts.isVariableStatement(statement) && statement.declarationList.flags & ts.NodeFlags.Const)
+      for (const item of statement.declarationList.declarations) bound(item.name, item.getStart(tree));
   const found: string[] = [];
   let called = false;
   walk(tree, (node) => {
@@ -130,16 +137,26 @@ function letsHandedByValue(source: string, factory = "createPagesAndFilesHost"):
     for (const item of ports.properties) {
       const value = ts.isShorthandPropertyAssignment(item) ? item.name : ts.isPropertyAssignment(item) ? item.initializer : undefined;
       if (value && ts.isIdentifier(value) && lets.has(value.text)) found.push(`${item.name!.getText(tree)} (by value)`);
+      if (value && ts.isIdentifier(value) && (consts.get(value.text) ?? -1) > node.getStart(tree)) found.push(`${item.name!.getText(tree)} (declared after)`);
     }
   });
   assert.ok(called, `main.ts calls ${factory}`);
   return found;
 }
 
-test("main.ts hands the Pages & files host and the agent's commands their let state through accessors, read when they run", () => {
+test("main.ts hands the Pages & files host and the agent's commands their let state through accessors and later consts through arrows", () => {
   const source = readFileSync(new URL("../src/main.ts", import.meta.url), "utf8");
   assert.deepEqual(letsHandedByValue(source), []);
   assert.deepEqual(letsHandedByValue(source, "createAgentCommands"), []);
+});
+
+test("a const handed to the agent's commands by name before it is declared is named", () => {
+  const source = [
+    "const early = 1;",
+    "const commands = createAgentCommands({ early, restoreFile, open: openEntry, later: (...args) => restoreFile(...args) });",
+    "const { restoreFile, openEntry } = boot;",
+  ].join("\n");
+  assert.deepEqual(letsHandedByValue(source, "createAgentCommands"), ["restoreFile (declared after)", "open (declared after)"]);
 });
 
 test("a let handed to the agent's commands by value is named", () => {

@@ -7,7 +7,7 @@ import type { AgentCommand } from "../shared/agent";
 import type { Repository, SessionInfo, Snapshot } from "../shared/types";
 import * as agentSite from "../src/agent-site";
 import { draftKey, draftStore, type DraftScope, type SavedDraft } from "../src/drafts";
-import type { SessionStamp } from "../src/workspace-session";
+import { createWorkspaceSession, githubScope, type SessionStamp } from "../src/workspace-session";
 import { createGuardedEdits } from "../src/guarded-edit";
 import { createMemoryWorkspace, deferred } from "./fakes/memory-workspace";
 import { forEachAwait } from "./support/await-race";
@@ -89,9 +89,12 @@ test("an edit's pinned context, switched at any wait, is the workspace it arrive
 });
 
 // The agent's commands (createAgentCommands) read the host's state as they run, not as the host was made.
-/** A port these cases never reach: reading anything on it throws, so a case that starts to use it fails naming it. */
-function unusedPort<T extends object>(name: string): T {
-  return new Proxy({} as T, { get: (_, key) => { throw new Error(`${name}.${String(key)} is not used here`); } });
+/** A port these cases never reach, but for its `used` members: reading anything else throws, so a case that starts to use it fails naming it. */
+function unusedPort<T extends object>(name: string, used: Partial<T> = {}): T {
+  return new Proxy({} as T, { get: (_, key) => {
+    if (Object.hasOwn(used, key)) return used[key as keyof T];
+    throw new Error(`${name}.${String(key)} is not used here`);
+  } });
 }
 const unused = (): never => { throw new Error("not used here"); };
 const signedOut = { configured: true, user: null, installUrl: null } satisfies SessionInfo;
@@ -223,4 +226,41 @@ test("a reload after an agent's write reads the open page again on the stamp it 
   holds = false;
   await f.commands.reload(snapshot);
   assert.equal(restored.length, 1, "left meanwhile: nothing mounted is read, nothing restored");
+});
+
+// An agent's read waits for a home page's resync, refused once another site or branch was opened meanwhile.
+const SWITCHED = "The editor tab switched to another site meanwhile. Call get_site and try again.";
+function resyncFixture(resync: () => Promise<void>) {
+  const session = createWorkspaceSession();
+  session.next(githubScope(SCOPE));
+  let pending: Promise<void> | undefined;
+  const f = commandsFixture({
+    workspaceSession: session, draftScope: () => SCOPE,
+    pagesAndFiles: { get nativeResyncDone() { return pending ??= resync(); }, pageActions: undefined },
+    runtime: unusedPort<AgentCommandPorts["runtime"]>("runtime", { source: () => "<p>Home</p>" }),
+  });
+  return { ...f, switchBranch: () => session.next(githubScope({ ...SCOPE, branch: "dev" })) };
+}
+
+test("an agent's read across a home page's resync is refused once another branch was opened", async () => {
+  const resync = deferred();
+  const f = resyncFixture(() => resync.promise);
+  const reading = f.commands.actions.text("index.html");
+  f.switchBranch();
+  resync.resolve();
+  await assert.rejects(reading, { message: SWITCHED });
+  const again = resyncFixture(async () => {});
+  assert.equal(await again.commands.actions.text("index.html"), "<p>Home</p>", "nothing switched: the text as the editor has it");
+});
+
+test("an agent's read, switched to another branch at any wait of the resync, is refused", async () => {
+  const count = await forEachAwait(race => {
+    const f = resyncFixture(race.port("resync", async () => {}));
+    const run = { f, outcome: undefined as string | undefined, done: Promise.resolve() };
+    run.done = f.commands.actions.text("index.html").then(text => { run.outcome = text; }, (error: Error) => { run.outcome = error.message; });
+    return run;
+  }, run => { run.f.switchBranch(); }, run => {
+    assert.equal(run.outcome, SWITCHED);
+  });
+  assert.ok(count >= 1);
 });
