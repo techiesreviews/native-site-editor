@@ -41,3 +41,11 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Specs added in round 2: a browser that refuses the waiting copy still writes the prompt once the token is known; two quick Wait for MCP presses during a held check each confirm "Copied" and never show the problem dot; a press while the owner pauses agents leaves the clipboard as it was. The slow-server spec now releases its held token request before the later presses.
 - Commits: 2a06deed (the fix and its spec), 0af9e184 (per-press copies, `connect(task)`, the settle matrix and more specs), acf4843e (the round-2 specs and the narrowed settle matrix).
 - Other browsers (2026-10-24, by hand, not in the suite): in Firefox (Playwright's, with its clipboard testing preference) the first MCP menu spec, the slow-server, refusing-browser, no-ClipboardItem and failed-first-prompt specs pass: a copy that waits six seconds for its text lands, and a dropped one leaves the clipboard as it was. Playwright's WebKit does not start on this machine (missing `libevent-2.1.so.7`), so Safari still needs a manual check on preview-editor.techies.tools.
+
+### Follow-ups
+
+- Spec (P2): d385cf57:docs/wayfinder/clean-up-before-features/build/tickets/37-mcp-copy-keeps-the-click.md:42 — P2: The Done section lists commits 2a06deed, 0af9e184 and acf
+- Standards (P2): d385cf57:src/components/agent-menu.ts:947 — P2: The "write never settles" row of the `reserveCopy` settle matrix says outright that it has no spec. CODING_STAND
+- Validation gaps (gap): No spec for a write that never settles. Concrete test in tests/native-save/native-mcp-menu.spec.ts: An init script replaces `navigator.clipboard.write` with `()
+- Validation gaps (gap): Safari, the browser the ticket says always refuses the old copy, has no automated or recorded check. The Decided behaviour names "Chrome, Edge, Safari and Firef
+
