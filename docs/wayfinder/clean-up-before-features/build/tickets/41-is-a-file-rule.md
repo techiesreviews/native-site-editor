@@ -44,3 +44,11 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Follow-up, left to [51](51-one-agent-command-path.md): the Goal's "path validity runs three times for an agent edit" is not answered here. `worker/mcp.ts` still runs `writablePathProblem` (and write_file's `isMediaUploadWrite` and content check) before `prepareAgentEdit` runs them again; `worker/mcp.ts` is outside this slice's Files, and 51 owns the three layers.
 - Tests: `tests/site-rules.test.ts` covers a file as the direct parent and as the grandparent, a folder that is a file or sits in one, and paths with no folder.
 - The new wording is pinned at its sites: Files move under a file (direct parent and grandparent, also before the chunk loads) in `tests/file-operations-controller.test.ts`; skipped starter files ("was" and "were") in `tests/setup-actions.test.ts`; the kept original, trimmed copy and sharing copy in `tests/media-originals.test.ts` and `tests/media-workspace.test.ts`; Replace everywhere in `tests/replace-everywhere.test.ts`, with a top-level picture no longer checked against a cut-off name of itself; agent write_file at each depth in `tests/agent-tools-edit.test.ts`; an upload into a folder that is a file, or sits in one, in `tests/media-workspace.test.ts`; and the Files tab's New file field in `tests/native-save/native-create.spec.ts`.
+
+### Follow-ups
+
+- Spec (P2): 16c339e0:docs/wayfinder/clean-up-before-features/build/tickets/41-is-a-file-rule.md:39 — P2: The ticket's `## Done (2026-10-24)` section lists behaviour and tes
+- Validation gaps (gap): `src/main.ts:3492`: no test covers the agent new-draft `checkPath` path, where `parentProblem` runs before `branchPathProblem`. Add a test, in `tests/agent-site
+- Validation gaps (gap): `src/main.ts:2955` (`branchPathProblem`, without the whole-commit tree): no test pins the `fileInTheWay(at)` wording. Add a case with a snapshot that has `entri
+- Validation gaps (gap): `src/native-page-moves.ts:290-293`: the existing tests (`tests/native-page-moves.test.ts:96-97`) only cover a file as the direct parent. Add a grandparent case,
+
