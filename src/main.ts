@@ -10,14 +10,11 @@ import { nativeChoiceMarkup, placeholderImageCreates } from "./page-builder/nati
 import { nativeDestinations, nativeMarkupInsertEdit } from "./page-builder/native-operations";
 import { INLINE_FORMATTING, TEXT_LINE_TAGS, TEXT_TAGS } from "./page-builder/rules/text-level";
 import type { VariantFiles, VariantSite } from "../shared/variant-lookup";
-import type { createFilesTreeController } from "./controllers/files-tree-controller";
 import { createPageStructureController } from "./controllers/page-structure-controller";
 import { createMediaController, type MediaPin } from "./controllers/media-controller";
 import { pinMedia } from "./controllers/media-pin";
 import type { BlockInsertPorts } from "./controllers/block-insert-controller";
 import { createCardsController } from "./controllers/cards-controller";
-import { createPagesState, explorerTabNames, NATIVE_HOME_UNREAD, type ExplorerTab, pageOnBranchHere } from "./controllers/pages-state";
-import type { createPagesController } from "./controllers/pages-controller";
 import { createPreviewSelectionController } from "./controllers/preview-selection-controller";
 import { createBootController } from "./controllers/boot-controller";
 import { batch, effect } from "@preact/signals-core";
@@ -53,20 +50,12 @@ import type { DraggedBlock } from "./page-builder/drop-target";
 import { createPageStructure, type PageMetaField } from "./components/page-structure";
 import { readNavigation } from "./page-builder/site-navigation";
 import { withPageField } from "./page-builder/site-head";
-import { newFilePath, newFolderPath, renamedPath, type Checked } from "./native-create";
-import type { createCreateDialog, CreateKind, CreateRequest } from "./components/create-dialog";
-import type { createPagesTree } from "./components/pages-tree";
 import "./components/pages-tree.css";
 import "./components/phone-sheet.css";
-import type { createFileRowActions, FileRowTarget } from "./components/file-row-actions";
 import "./components/files-tree.css";
-import type { createConfirmDialog } from "./components/confirm-dialog";
 import { createWorkspaceBoot } from "./workspace-boot";
 
-import type { createPagePicker } from "./components/page-picker";
-import type { MenuItem } from "./components/row-menu";
-import { duplicateFile, listChanges, restoreFile as restoreDraftFile, type FileChange } from "./file-changes";
-import { formatBytes, pickFiles, sweepUploads, uploadBytes, uploadDataUrl, uploadKey } from "./uploads";
+import { formatBytes, sweepUploads, uploadBytes, uploadDataUrl, uploadKey } from "./uploads";
 import { firstHeadingText, nativeLinkSuggestions, nativePageLabel } from "./native-pages";
 import { elementPathAt, locateNativeElement, locateNativeElementRange, startTagAttribute, wrapperAround, type ElementRange } from "./native-source-location";
 import { positionText } from "./page-builder/insert-target";
@@ -78,21 +67,20 @@ import { gridOfItem } from "./page-builder/card-source";
 import { mountCodeResize, mountCodeWidthResize } from "./components/code-resize";
 import * as sourceEditor from "./components/source-editor";
 import { createMediaHistoryHome } from "./page-builder/media-history-home";
-import { isRenamableMedia, mediaFileName } from "./page-builder/media-names";
 import type { MediaWorkspaceBatch } from "./page-builder/media-workspace";
 import type { CssWorkspace } from "./page-builder/css-intelligence";
 import { expandStyleImports, resolveImportPath, rewriteCssUrls } from "../shared/css-imports";
 import { readStyleFiles } from "./native-style-files";
 import { nativePageRoute } from "../shared/native-routes";
-import { isNewDraft, newDraftPaths } from "../shared/site-overlay";
-import { fileInTheWay, parentProblem } from "../shared/site-rules";
+import { isNewDraft } from "../shared/site-overlay";
+import { parentProblem } from "../shared/site-rules";
 
 
 
 
 
 import { descendants, parseSource } from "./page-builder/component-model";
-import { NATIVE_CONFIG_PATH, NATIVE_HOME_PAGE, NATIVE_REDIRECTS_PATH, minimalTextEdit, nativeComponentCssPath, nativeDefaultRoute, nativePageHead, nativePageStylesheets, nativePageMovedUrl, nativeSitePaths, nativeSiteSettings, resolveNativeProject, type NativeSite, nativeSitePrefix } from "../shared/native-project";
+import { NATIVE_CONFIG_PATH, NATIVE_HOME_PAGE, minimalTextEdit, nativeComponentCssPath, nativeDefaultRoute, nativePageHead, nativePageStylesheets, nativeSitePaths, nativeSiteSettings, resolveNativeProject, type NativeSite, nativeSitePrefix } from "../shared/native-project";
 import { dataUrlOf, loadNativeAssetRequests } from "./native-assets";
 import { assetType, audioType, blobUrl, CANVAS_AUDIO_MAX_BYTES, isFontType } from "../shared/asset-types";
 import { fetchWithReadRetry } from "./read-retry";
@@ -100,16 +88,15 @@ import { ApiError, createGitHubReads, unanswered } from "./github-reads";
 import { RepositoryIndex, readFileText, readFileTexts } from "./repository-loading";
 import { CleanSourceCache } from "./clean-source-cache";
 import { createNativeSiteRuntime } from "./native-site-runtime";
-import { iconMarkup, setIcon } from "./icons";
+import { iconMarkup } from "./icons";
 import { createCommandPaletteController } from "./controllers/command-palette-controller";
 import { createCodePanesController } from "./controllers/code-panes-controller";
 import { createLinkedStylesController } from "./controllers/linked-styles-controller";
 import { createSourcePaneController } from "./controllers/source-pane-controller";
-import { createSavePublishController } from "./controllers/save-publish-controller";
-import type { createLazyFileOperationsController } from "./controllers/file-operation-checks";
 import { createComponentTools, type ComponentTools, type PreparedComponentLoader } from "./page-builder/components";
 import { addSectionStep } from "./page-builder/component-plans";
 import { createAgentSiteHost } from "./agent-site-host";
+import { createPagesAndFilesHost } from "./pages-and-files-host";
 import { createGuardedEdits, type GuardedEdits, type Reads, type PlanResult, type Stamp } from "./guarded-edit";
 import { createParkedSteps, parkedTransitions } from "./guarded-edit/parked";
 import { createEditorWorkspace } from "./editor-workspace";
@@ -208,20 +195,7 @@ function lazyModule<T>(load: () => Promise<T>) {
     throw error;
   });
 }
-let pageActions: ReturnType<typeof createPagesController> | undefined;
-const loadPagesActions = lazyModule(async () => {
-  const [module] = await Promise.all([import("./controllers/pages-controller"), loadFileOps()]);
-  pageActions = module.createPagesController(pagePorts(), pagesController);
-  return module;
-});
 const loadConfirmDialog = lazyModule(() => import("./components/confirm-dialog"));
-const loadExplorerModules = lazyModule(async () => {
-  const [create, actions, confirm, picker, tree] = await Promise.all([
-    import("./components/create-dialog"), import("./components/file-row-actions"), loadConfirmDialog(),
-    import("./components/page-picker"), import("./controllers/files-tree-controller"), loadPagesActions(), loadFileOps(),
-  ]);
-  return { ...create, ...actions, ...confirm, ...picker, ...tree };
-});
 const loadHistory = lazyModule(() => import("./components/commit-history"));
 // The media picker and the media workspace behind it (its batches are staged by applyMediaBatch).
 const loadMediaWorkspace = lazyModule(() => Promise.all([import("./page-builder/media-workspace"), import("./page-builder/media-draft-transaction"), import("../shared/media-records")]));
@@ -274,8 +248,8 @@ const loadSiteSettings = lazyModule(async () => {
     get nativeSite() { return runtime.site; }, get generation() { return currentLoad(); },
     appStore, guardedEdits, nativeAssets: runtime.state.assets, setupScope,
     nativePageLabelOf: (file) => pagesController.pageLabel(file),
-    nativeUrlPlan: (file, value) => pageActions!.urlPlan(file, value),
-    changeNativeUrl: (file, value, keep, since, baseline) => pageActions!.changeUrl(file, value, keep, since, baseline),
+    nativeUrlPlan: (file, value) => pagesAndFiles.pageActions!.urlPlan(file, value),
+    changeNativeUrl: (file, value, keep, since, baseline) => pagesAndFiles.pageActions!.changeUrl(file, value, keep, since, baseline),
     restoreFile: (path, epoch) => restoreFile(path, stampOf(epoch)), nativeSiteReadForCreate,
     choosePath: (place, accept) => mediaController.choosePath(place, undefined, accept), nativeEffectiveSource: path => runtime.source(path), loadNativeAssets,
     shareImage: request => mediaController.shareImage(request),
@@ -514,26 +488,7 @@ function mountWorkspace() {
     below: app.querySelector<HTMLElement>(".topbar")!,
     anchor: "--explorer",
   });
-  createDialog = confirmDialog = discardDialog = pagePicker = fileActions = undefined;
-  filesTree = undefined;
-  explorerMount = undefined;
-  const newAtRoot = element<HTMLButtonElement>("new-at-root");
-  newAtRoot.addEventListener("click", () => openCreate("", newAtRoot));
-  pagesTree = undefined;
-  pagesTreeMount = undefined;
-  mountExplorerTabs();
-  element("explorer").addEventListener("toggle", () => {
-    if (explorerDropdown?.isOpen()) {
-      void ensureExplorer().then(() => {
-        pagesController.renderTree();
-        if (filesTreeController.visible()) filesTreeController.shown();
-      }).catch(errorMessage);
-    } else {
-      pagesTree?.reset();
-      fileActions?.close();
-      confirmDialog?.close();
-    }
-  });
+  mountExplorer();
   codePanes.mountResize(element("main"), element("code-split"), element("secondary-pane"));
   cardsController.mount();
   // A selection inside a component's template gets Select card once the runtime says which card.
@@ -642,7 +597,7 @@ function mountWorkspace() {
     },
     planUrl: (file, value) => {
       // The sidebar's URL field is hidden while Page settings holds the URL; this keeps it calm if it shows again.
-      if (pageActions) return pageActions.urlPlan(file, value);
+      if (pagesAndFiles.pageActions) return pagesAndFiles.pageActions.urlPlan(file, value);
       if (value === nativeRouteForPath(file)) return { ok: false, error: "", unchanged: true };
       void loadPagesActions().then(() => pageStructure?.refreshMeta()).catch(errorMessage);
       return { ok: false, error: "Loading page actions…", pending: true };
@@ -650,7 +605,7 @@ function mountWorkspace() {
     applyUrl: async (file, value, keep) => {
       const since = guardedEdits.stamp("repository");
       await loadPagesActions();
-      return since.holds() ? pageActions!.changeUrl(file, value, keep) : "The repository changed meanwhile. Try again.";
+      return since.holds() ? pagesAndFiles.pageActions!.changeUrl(file, value, keep) : "The repository changed meanwhile. Try again.";
     },
     onPageMetaClose: (path) => editorModule?.closeActiveEditGroup(path),
     // A row's Alt+arrows, by the Block move module. In Edit component mode a row of the template
@@ -696,7 +651,7 @@ const paletteController = createCommandPaletteController({
   beginNewPage: () => { openExplorer(); pagesController.selectTab("pages"); },
   startNewPage: () => {
     const since = guardedEdits.stamp("repository");
-    void ensureExplorer().then(() => { if (since.holds() && explorerDropdown?.isOpen()) pagesTree?.startNew("/"); }).catch(errorMessage);
+    void ensureExplorer().then(() => { if (since.holds() && explorerDropdown?.isOpen()) pagesAndFiles.pagesTree?.startNew("/"); }).catch(errorMessage);
   },
   actions: {
     open: (path) => {
@@ -901,8 +856,8 @@ const editorWorkspace = createEditorWorkspace({
   source: path => runtime.textSource(path),
   exists: path => nativePathExists(path) || (!runtime.site && (pathNow(path, treeState()) === "file" || pathNow(path, treeState()) === "folder")),
   base: path => runtime.base.sources.get(path),
-  branchText,
-  entry: async path => { await loadFileOps(); return (await fileOps!.targetFiles({ path, name: path.slice(path.lastIndexOf("/") + 1), folder: false }, true))[0]; },
+  branchText: path => branchText(path),
+  entry: async path => { await loadFileOps(); return (await pagesAndFiles.fileOps!.targetFiles({ path, name: path.slice(path.lastIndexOf("/") + 1), folder: false }, true))[0]; },
   createProblem: async path => (await findEntry(path)) ? `${path} already exists.` : branchPathProblem(path),
   openFile: () => appStore.openFile.value,
   restore: (path, at, beforeMount) => restoreFile(path, at, { linkDefaultStyle: false, beforeMount }),
@@ -917,7 +872,7 @@ const editorWorkspace = createEditorWorkspace({
   onMount: listener => { nativeMountListener = listener; },
   paneFile: () => linkedStyles.secondaryPath(),
   closePane: () => linkedStyles.closeSecondary(),
-  afterFileChanges,
+  afterFileChanges: () => afterFileChanges(),
   openAfter: (path, keepExplorer) => openAfter(path, keepExplorer, true),
   showRow: focus => { if (explorerDropdown?.isOpen() && pagesController.explorerTab() === "pages") pagesController.renderTree(focus); },
   status: () => element("status").textContent ?? "",
@@ -1936,7 +1891,7 @@ const mediaPorts: import("./controllers/media-controller").MediaControllerPorts 
     frame: () => element("main").querySelector(".native-preview-frame")?.getBoundingClientRect(),
     watch: (listener) => appStore.selection.subscribe(listener),
   },
-  openPage: openAfter,
+  openPage: (...args) => openAfter(...args),
   load: loadMedia,
   openFile: () => appStore.openFile.value,
   viewingVersion: () => Boolean(versions.view),
@@ -2286,7 +2241,7 @@ document.addEventListener("dragend", finishNativePageTitlePointer, true);
 window.addEventListener("blur", finishNativePageTitlePointer);
 
 function pagesBusy(explorer: HTMLElement) {
-  return nativePageTitlePointer !== undefined || Boolean(pagesTree?.busy()) || explorer.matches(":popover-open") &&
+  return nativePageTitlePointer !== undefined || Boolean(pagesAndFiles.pagesTree?.busy()) || explorer.matches(":popover-open") &&
     Boolean(explorer.querySelector("[role=menu]:not([hidden]), input:focus, [popover]:popover-open:not(.editor-toast)"));
 }
 function flushPendingNativePageTitles() {
@@ -2582,210 +2537,9 @@ function showDirectory(directory: Directory, path = "") {
 }
 
 
-// The drafts as the tree shows them: each path's change (A, M, R, D), the
-// deletions by path, and the new paths (new and renamed files).
-interface TreeState {
-  changes: Map<string, FileChange>;
-  deleted: Map<string, SavedDraft>;
-  drafted: string[];
-}
-function treeState(scope = draftScope()): TreeState {
-  const drafts = scope ? draftStore().list(scope) : [];
-  const changes = listChanges(drafts);
-  return {
-    changes: new Map(changes.map((change) => [change.path, change])),
-    deleted: new Map(drafts.filter((draft) => draft.deleted).map((draft) => [draft.path, draft])),
-    drafted: newDraftPaths(drafts),
-  };
-}
-let filesTree: ReturnType<typeof createFilesTreeController> | undefined;
-// Folder listings by tree SHA (content-addressed, so never stale) for path checks before the tree loads.
-const spareListings = new Map<string, Directory["entries"]>();
-// Files is on show: its tab, or the only panel of a repository with no site (its tab state stays "pages").
-const filesShown = () => !!explorerDropdown?.isOpen() && (pagesController.explorerTab() === "files" || !element("explorer-files").hidden);
-const filesTreeController = {
-  refresh: () => filesTree ? filesTree.refresh() : mediaController.requestGalleryRefresh(), render: () => filesTree?.render(), reset: () => { spareListings.clear(); filesTree?.reset(); },
-  shown: () => filesTree?.shown(), row: (path: string) => filesTree?.row(path),
-  openFolder: (path: string) => filesTree?.openFolder(path), listings: () => filesTree?.listings() ?? spareListings, visible: filesShown,
-};
-let explorerMount: Promise<void> | undefined;
-function ensureExplorer() {
-  if (filesTree) return ensurePagesTree();
-  if (explorerMount) return explorerMount;
-  const host = element("explorer");
-  const pending = loadExplorerModules().then(async ({ createCreateDialog, createFileRowActions, createConfirmDialog, createPagePicker, createFilesTreeController }) => {
-    if (!host.isConnected || host !== document.getElementById("explorer")) return;
-    createDialog = createCreateDialog({
-      plan: (request) => {
-        const planned = planCreation(request);
-        return planned.ok ? { ok: true, summary: planned.value.summary } : planned;
-      },
-      create: createFromRequest,
-    });
-    element("explorer").append(createDialog.root);
-    confirmDialog ??= createConfirmDialog();
-    element("explorer").append(confirmDialog.root);
-    pagePicker = createPagePicker();
-    element("explorer").append(pagePicker.root);
-    fileActions = createFileRowActions({
-      host: element("explorer-files"),
-      items: fileRowItems,
-      checkRename: (target, name) => renameProblem(target, name),
-      rename: renameFileTarget,
-      remove: (target) => void fileOps!.deleteFileTarget(target),
-      dropProblem: (source, folder) => dropProblem(source, folder),
-      drop: (source, folder) => void dropFileTarget(source, folder),
-      dropFiles: (files, folder) => void uploadFilesTo(folder, files),
-      announce,
-    });
-    fileActions.attachRoot(files);
-    fileActions.attachRoot(element("explorer-files").querySelector<HTMLElement>(".files-heading")!);
-    filesTree = createFilesTreeController({
-      ui: { node, button, setIcon },
-      snapshot: () => appStore.snapshot.value, repo: () => appStore.repository.value,
-      openFile: () => appStore.openFile.value, epoch: currentLoad, root: () => files,
-      state: treeState, scope: draftScope, draft: (scope, path) => draftStore().get(scope, path),
-      load: input => api<Directory>("tree", input), images: () => mediaController.requestGalleryRefresh(),
-      clearError, error: errorMessage, status, announce, refuse, intent: (path) => previewSelection.recordIntent(path),
-      openDraft: openNewDraft, openEntry: (entry, path, epoch) => openEntry(entry, path, stampOf(epoch)), restore: target => fileOps!.restoreFileTarget(target),
-      create: openCreate, actions: () => fileActions,
-      visible: filesShown,
-      count: (total) => {
-        // The commit the tree shows, in full (set on the hidden #revision before each draw).
-        const count = element("files-count"), commit = element("revision").title;
-        // A number beside the heading, as Pages shows its page count; the tooltip says it in words.
-        count.textContent = total === undefined ? "" : String(total);
-        count.title = [total === undefined ? "" : `${total} ${total === 1 ? "file" : "files"}`, /^[0-9a-f]{40}$/.test(commit) ? `Version ${commit}` : ""].filter(Boolean).join("\n");
-      },
-    });
-    filesTreeController.render();
-    if (filesTreeController.visible()) filesTreeController.shown();
-    await ensurePagesTree();
-  }).finally(() => { if (explorerMount === pending) explorerMount = undefined; });
-  explorerMount = pending;
-  return pending;
-}
-
-
-// The explorer's Pages | Media | Files tabs: tab state and tree rendering
-// live in the Pages controller; the host mounts the DOM and paints the tabs.
-let pagesTree: ReturnType<typeof createPagesTree> | undefined;
-const loadPagesTree = lazyModule(async () => (await Promise.all([import("./components/pages-tree"), loadPagesActions()]))[0]);
-let pagesTreeMount: Promise<void> | undefined;
-function ensurePagesTree() {
-  if (pagesTree) return Promise.resolve();
-  if (pagesTreeMount) return pagesTreeMount;
-  const host = element("explorer-pages");
-  const pending = loadPagesTree().then(({ createPagesTree }) => {
-    if (!host.isConnected || host !== document.getElementById("explorer-pages")) return;
-    pagesTree = createPagesTree({
-      open: (file) => {
-        // The open page chosen again shows in the preview, which a link may have taken elsewhere.
-        if (file === appStore.openFile.value && editorModule?.isMounted(file)) { explorerDropdown?.close(); updatePreview(); }
-        else void restoreFile(file, workspaceSession.begin());
-      },
-      plan: (request) => {
-        const planned = pageActions!.planNew(request);
-        return planned.ok ? { ok: true, value: { route: planned.value.route, file: planned.value.file, note: planned.value.note } } : planned;
-      },
-      create: (request) => pageActions!.createNew(request),
-      announce,
-      onInteractionEnd: flushPendingNativePageTitles,
-      retitle: (file, title) => pageActions!.retitle(file, title),
-      changed: (file) => Boolean(treeState().changes.get(file)),
-      discard: (file) => void savePublish.discardFile(file),
-      duplicate: (file) => void pageActions!.duplicate(file),
-      remove: (target) => void pageActions!.remove(target),
-      createPage: (route) => void pageActions!.createFolderPage(route),
-      pageSettings: (path) => { element("explorer-toggle").focus(); void openNativePageSettings(path); },
-      navigation: (path) => { element("explorer-toggle").focus(); void openNativeNavigation(path); },
-      canAddToNavigation: () => Boolean(nativeNavigationTarget(runtime.site?.routes["/"])),
-      planUrl: (target, value) => (target.file ? pageActions!.urlPlan(target.file, value) : { ok: false, error: "This row has no page." }),
-      changeUrl: (target, value, keep) => (target.file ? pageActions!.changeUrl(target.file, value, keep) : Promise.resolve("This row has no page.")),
-      moveTo: (target) => void pageActions!.moveTo(target),
-      dropProblem: (source, parent) => pageActions!.dropProblem(source, parent),
-      drop: (source, parent) => void pageActions!.confirmMove(source, parent),
-      cardOffer: cardsController.cardOffer,
-    });
-    element("explorer-pages").replaceChildren(pagesTree.root);
-
-    if (explorerDropdown?.isOpen()) pagesController.renderTree();
-  }).finally(() => { if (pagesTreeMount === pending) pagesTreeMount = undefined; });
-  pagesTreeMount = pending;
-  return pending;
-}
-
-
 function imagesSignature() {
   const scope = draftScope();
   return JSON.stringify([currentLoad(), setupScope(), appStore.snapshot.value?.commit, scope ? draftStore().list(scope) : []]);
-}
-
-function mountExplorerTabs() {
-  const explorer = element("explorer");
-  explorer.addEventListener("toggle", () => {
-    // Closing a popover queues its toggle; session expiry may detach it before dispatch.
-    if (!explorer.isConnected) return;
-    if (mediaController.galleryVisible() && pagesController.explorerTab() === "media") void ensureExplorer().then(() => mediaController.ensureGallery()).catch(errorMessage);
-  });
-  const tabs = { pages: element<HTMLButtonElement>("explorer-tab-pages"), media: element<HTMLButtonElement>("explorer-tab-media"), files: element<HTMLButtonElement>("explorer-tab-files") };
-  for (const [name, tab] of Object.entries(tabs) as [ExplorerTab, HTMLButtonElement][]) {
-    tab.addEventListener("click", () => pagesController.selectTab(name));
-    tab.addEventListener("keydown", (event) => {
-      if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-      event.preventDefault();
-      const index = explorerTabNames.indexOf(name);
-      const next = event.key === "Home" ? "pages" : event.key === "End" ? "files" : explorerTabNames[(index + (event.key === "ArrowRight" ? 1 : -1) + 3) % 3];
-      pagesController.selectTab(next);
-      tabs[next].focus();
-    });
-  }
-}
-
-function paintExplorerTabs(tab: ExplorerTab, native: boolean) {
-  element("explorer-tabs").hidden = !native;
-  element("site-settings-toggle").hidden = !native;
-  for (const name of explorerTabNames) {
-    const button = element(`explorer-tab-${name}`);
-    const panel = element(`explorer-${name}`);
-    button.setAttribute("aria-selected", String(tab === name));
-    button.tabIndex = tab === name ? 0 : -1;
-    panel.hidden = tab !== name;
-    if (name === "files" && tab === name && explorerDropdown?.isOpen()) filesTreeController.shown();
-    // Without tabs the files are the whole explorer, not a tab's panel.
-    if (native) panel.setAttribute("role", "tabpanel");
-    else panel.removeAttribute("role");
-  }
-}
-
-// Whether the repository path (a file, or a folder something is in) is
-// there, on the branch or drafted.
-function nativePathExists(path: string) {
-  return runtime.files().some((file) => file === path || file.startsWith(`${path}/`));
-}
-
-// The whole site read for the repository open now: an error message, or nothing.
-async function nativeSiteReadForCreate() {
-  const at = workspaceSession.begin();
-  const problem = await ensureNativeTextIndex();
-  if (problem) return problem;
-  if (!at.holds() || !runtime.site) return "The repository changed meanwhile. Try again.";
-  return pagesController.homeTemplate() === undefined ? NATIVE_HOME_UNREAD : undefined;
-}
-
-// Pages whose URL changes keep their own address: the canonical link and
-// og:url of each (`file`, at `moved` after the move) follow it from `from`
-// to `to`, written into `edits` (by the path after the move) on top of the
-// link updates there.
-function withMovedPageUrls(edits: Map<string, string>, pages: { file: string; moved?: string; from: string; to: string }[], r: Reads) {
-  const siteUrl = nativeSiteSettings(r.source(NATIVE_CONFIG_PATH)).url;
-  for (const page of pages) {
-    const path = page.moved ?? page.file;
-    const text = edits.get(path) ?? r.source(page.file);
-    if (text === undefined) continue;
-    const next = nativePageMovedUrl(text, page.from, page.to, siteUrl);
-    if (next !== text) edits.set(path, next);
-  }
 }
 
 // ---- Card grids (src/page-builder/cards.ts, docs/page-builder/cards.md). ----
@@ -2801,233 +2555,24 @@ const cardsController = createCardsController({
   announce,
 });
 
-// Pages policy belongs to the controller; guarded writes remain host transactions.
-const pagePorts = (): Parameters<typeof createPagesController>[0] => ({
-  edits: guardedEdits,
-  site: () => runtime.site,
-  routeForPath: nativeRouteForPath,
-  source: path => runtime.source(path),
-  files: () => runtime.files(),
-  baseFiles: () => runtime.base.files,
-  drafts: () => { const scope = draftScope(); return scope ? draftStore().list(scope) : []; },
-  hasDraftScope: () => Boolean(draftScope()),
-  routeInfo: nativeRouteInfo,
-  titles: nativeTitles,
-  siteUrl: () => nativeSiteSettings(runtime.source(NATIVE_CONFIG_PATH)).url,
-  writeMeta: (file, field, value, flush) => writeNativePageMeta(file, field, value, flush),
-  ensureIndex: ensureNativeTextIndex,
-  readRedirects: readNativeRedirects,
-  withMovedPageUrls,
-  pageLinks: (...args) => fileOps!.pageLinks(...args),
-  cardsLinkingTo: cardsController.cardsLinkingTo,
-  confirmation: () => confirmDialog,
-  picker: () => pagePicker,
-  refreshMeta: () => pageStructure?.refreshMeta(),
-  refreshLabel: updateCurrentPageLabel,
-  tree: () => pagesTree,
-  pagesHidden: () => Boolean(element("explorer-pages").hidden),
-  openFile: () => appStore.openFile.value,
-  clearPendingTitles: () => { pendingNativePageTitles = undefined; },
-  tabsMounted: () => Boolean(document.getElementById("explorer-tabs")),
-  paintTabs: paintExplorerTabs,
-  resetExplorer: () => { pagesTree?.reset(); mediaController.disposeGallery(); },
-  showMedia: () => { if (explorerDropdown?.isOpen()) void ensureExplorer().then(() => mediaController.ensureGallery()).catch(errorMessage); },
-  siteReadForCreate: nativeSiteReadForCreate,
-  createWithCard: cardsController.createWithCard,
-  navigationTarget: nativeNavigationTarget,
-  restoreDeleted: file => undoFileChanges({ restore: [file] }),
-  announce,
-  refuse,
-  error: errorMessage,
+// Pages & files: the trees and explorer tabs, Create, file operations, resync and save/publish (src/pages-and-files-host.ts).
+const pagesAndFiles = createPagesAndFilesHost({
+  app, element, appStore, runtime, workspaceSession, editorModule, guardedEdits, mediaController, cardsController, linkedStyles, versions,
+  previewSelection, repositoryIndex, finishedWork, lazyModule, loadConfirmDialog, api, status, clearError, errorMessage, announce,
+  currentLoad, stampOf, draftScope, entryAt, findEntry, readFile, readFiles, readMediaText, mediaOrigins, ensureNativeTextIndex,
+  nativeRouteForPath, nativeRouteInfo, nativeTitles, nativeNavigationTarget, writeNativePageMeta, refreshNativeRoutes, forgetDraftedAssets,
+  loadNativeComponentStyles, updateAgentContext, updateCurrentPageLabel, updateNativePreviewSources, updatePreview, setCurrentPage,
+  showDirectory, openNewDraft, discardUpload, uploadFilesTo, nativeFallbackPage, nativeModeActive, nativeComponentTagForPath,
+  startNativeTextIndex, openNativePageSettings, openNativeNavigation, flushPendingNativePageTitles,
+  // Declared further down: read at call time.
+  restoreFile: (...args) => restoreFile(...args), loadSnapshot: (...args) => loadSnapshot(...args), openEntry: (...args) => openEntry(...args),
+  get explorerDropdown() { return explorerDropdown; }, get files() { return files; }, get pageStructure() { return pageStructure; },
+  get siteActions() { return siteActions; }, set pendingNativePageTitles(value: undefined) { pendingNativePageTitles = value; },
+  get fileGeneration() { return fileGeneration; }, set fileGeneration(value) { fileGeneration = value; },
 });
-const pagesController = createPagesState(pagePorts());
-
-// Shared file operations use the same pure source/draft policy as Pages.
-function onBranchHere(path: string) {
-  const scope = draftScope();
-  return pageOnBranchHere(path, runtime.base.files, scope ? draftStore().list(scope) : []);
-}
-// `_redirects` as it is now: its draft, or the branch's file.
-async function readNativeRedirects(): Promise<string | undefined> {
-  const repo = appStore.repository.value, at = workspaceSession.begin();
-  const scope = draftScope();
-  const draft = scope ? draftStore().get(scope, NATIVE_REDIRECTS_PATH) : undefined;
-  if (draft) return draft.deleted ? undefined : draft.content;
-  if (!runtime.base.files.includes(NATIVE_REDIRECTS_PATH) || !appStore.repository.value) return undefined;
-  const entry = await findEntry(NATIVE_REDIRECTS_PATH);
-  if (!at.holds() || !repo) throw new Error("The repository changed while reading redirects.");
-  const text = entry ? await readFile(repo.full_name, entry.sha) : undefined;
-  if (!at.holds()) throw new Error("The repository changed while reading redirects.");
-  if (text !== undefined) runtime.base.sources.set(NATIVE_REDIRECTS_PATH, text);
-  return text;
-}
-
-// A branch file's blob and text, for a draft of an edit to it.
-async function branchText(path: string): Promise<{ sha: string; text: string } | undefined> {
-  if (!appStore.repository.value) return undefined;
-  const entry = await findEntry(path);
-  if (!entry) return undefined;
-  const text = runtime.base.sources.get(path) ?? await readFile(appStore.repository.value.full_name, entry.sha);
-  return { sha: entry.sha, text };
-}
-
-// New page files discarded (Discard changes, an undo): routes are found
-// again and the trees drawn.
-function discardedNewPages(_paths: string[]) {
-  if (!runtime.site) return;
-  refreshNativeRoutes();
-  filesTreeController.render();
-  updateAgentContext();
-}
-
-let createDialog: ReturnType<typeof createCreateDialog> | undefined;
-
-// What a creation in the Files tab writes: new files (drafts with no base
-// blob), and what to show after. Planned as the name is typed, so the dialog says the result
-// live. Pages are made in the Pages tab (`pageActions!.createNew`), where the URL is
-// the site's; a file or folder here is only ever what was typed.
-interface Creation {
-  files: { path: string; content: string }[];
-  /** The file to open after; else the folder to show in the tree. */
-  open?: string;
-  folder?: string;
-  summary: string;
-  done: string;
-}
-
-function planCreation({ kind, folder, name }: CreateRequest): Checked<Creation> {
-  const scope = draftScope();
-  if (!scope || !appStore.snapshot.value) return { ok: false, error: "Open a repository first." };
-  const drafted = runtime.newDraftPaths({}, scope);
-  const inFolder = (path: string, folder: string) => path.startsWith(`${folder}/`);
-  // A folder is there when the branch has it or a file is (drafted) in it.
-  const folderExists = (folder: string) =>
-    entryAt(folder)?.type === "tree" || runtime.base.files.some((path) => inFolder(path, folder)) || drafted.some((path) => inFolder(path, folder));
-  // What stands in the way of a new file at `path`, as far as is known here;
-  // without the whole-commit tree, GitHub is asked on confirm.
-  const problem = (path: string) => {
-    if (draftStore().get(scope, path)?.deleted) return `${path} is deleted in your changes. Restore it instead.`;
-    if (draftStore().get(scope, path)) return `${path} already has a draft in this browser.`;
-    if (folderExists(path)) return `There is a folder ${path} already.`;
-    if (entryAt(path) || runtime.base.files.includes(path)) return `${path} already exists.`;
-    return parentProblem(path, (parent) => entryAt(parent)?.type === "blob" || Boolean(draftStore().get(scope, parent)));
-  };
-  const routes = runtime.site?.routes ?? {};
-  const routeTaken = (route: string) => (Object.hasOwn(routes, route) ? `The URL ${route} already has a page, ${routes[route]}.` : undefined);
-  const fail = (error: string): Checked<Creation> => ({ ok: false, error });
-
-  if (kind === "file") {
-    const path = newFilePath(folder, name);
-    if (!path.ok) return path;
-    const blocked = problem(path.value);
-    if (blocked) return fail(blocked);
-    const route = runtime.site ? nativePageRoute(path.value) : undefined;
-    if (route && routeTaken(route)) return fail(routeTaken(route)!);
-    const page = route ? `, the page at ${route}` : "";
-    return { ok: true, value: {
-      files: [{ path: path.value, content: "" }], open: path.value,
-      summary: `Creates the empty file ${path.value}${page}.`,
-      done: `Created ${path.value}${page}.`,
-    } };
-  }
-
-  const path = newFolderPath(folder, name);
-  if (!path.ok) return path;
-  if (folderExists(path.value) || entryAt(path.value)) return fail(`${path.value} already exists.`);
-  const keep = `${path.value}/.gitkeep`;
-  const blocked = problem(keep);
-  if (blocked) return fail(blocked);
-  const pagesHint = runtime.site && !path.value.startsWith("components/") ? " To add pages and subpages, use the Pages tab." : "";
-  return { ok: true, value: {
-    files: [{ path: keep, content: "" }], folder: path.value,
-    summary: `Creates ${keep}: git stores no empty folders, so the folder holds this empty file until it has others.${pagesHint}`,
-    done: `Created the folder ${path.value}.`,
-  } };
-}
-
-// Whether the branch has `path`, or a file where a folder of it would go,
-// asked of GitHub a folder at a time; only needed without the whole-commit
-// tree, which the plan already checked. Its own walk, not parentProblem: each folder's listing is awaited.
-async function branchPathProblem(path: string) {
-  if (!appStore.snapshot.value || appStore.snapshot.value.tree || !appStore.repository.value) return undefined;
-  let entries = appStore.snapshot.value.entries;
-  const parts = path.split("/");
-  for (let index = 0; index < parts.length; index++) {
-    const entry = entries.find((entry) => entry.path === parts[index]);
-    if (!entry) return undefined;
-    const at = parts.slice(0, index + 1).join("/");
-    if (index === parts.length - 1) return `${at} already exists on GitHub.`;
-    if (entry.type !== "tree") return fileInTheWay(at);
-    let listing = filesTreeController.listings().get(entry.sha);
-    if (!listing) {
-      listing = (await api<Directory>("tree", { repo: appStore.repository.value.full_name, sha: entry.sha })).entries;
-      filesTreeController.listings().set(entry.sha, listing);
-    }
-    entries = listing;
-  }
-  return undefined;
-}
-
-// Carries out a creation: the new files as drafts, the routes found again, the tree drawn with the new files, and the new file
-// opened (a new folder shown). Resolves to an error message when it could not.
-async function createFromRequest(request: CreateRequest): Promise<string | undefined> {
-  const planned = planCreation(request);
-  if (!planned.ok) return planned.error;
-  const creation = planned.value;
-  const scope = draftScope()!;
-  const at = workspaceSession.begin();
-  try {
-    for (const file of creation.files) {
-      const problem = await branchPathProblem(file.path);
-      if (!at.holds()) return "The repository changed meanwhile. Try again.";
-      if (problem) return problem;
-    }
-  } catch (error) {
-    return error instanceof Error ? error.message : "GitHub could not be asked whether the path is free.";
-  }
-  for (const file of creation.files)
-    draftStore().save({ ...scope, version: 1, path: file.path, baseSha: null, original: "", content: file.content, updatedAt: Date.now() });
-  const failure = draftStore().error;
-  if (failure) return failure;
-  editorModule?.refreshDrafts();
-  versions.history.refresh();
-  if (runtime.site) refreshNativeRoutes();
-  updateAgentContext();
-  if (resyncNativeSite()) return undefined;
-  if (creation.folder) {
-    // The new folder shows open in the tree, with the dialog's focus returned to it.
-    const parts = creation.folder.split("/");
-    parts.forEach((_, index) => filesTreeController.openFolder(parts.slice(0, index + 1).join("/")));
-    filesTreeController.render();
-    const row = [...files.querySelectorAll<HTMLElement>(".file-row")].find((row) => row.dataset.path === creation.folder);
-    if (row) createDialog?.returnFocusTo(row);
-  } else filesTreeController.render();
-  const opened = creation.open ? draftStore().get(scope, creation.open) : undefined;
-  if (opened) await openNewDraft(opened);
-  // Written as the user's own announcement, so a load finishing later keeps it.
-  element("status").textContent = creation.done;
-  return undefined;
-}
-
-// The "+" on a folder: a new file or folder in it.
-function openCreate(folder: string, opener: HTMLElement) {
-  if (!appStore.snapshot.value) return;
-  const since = guardedEdits.stamp("repository");
-  void ensureExplorer().then(() => { if (since.holds()) createDialog?.open({ in: folder, kinds: ["file", "folder"], first: "file", opener }); }).catch(errorMessage);
-}
-
-// ---- Deleting, renaming, moving and duplicating files. ----
-//
-// Each is a pending change in the browser drafts (src/file-changes.ts),
-// saved with Publish in one commit. In a native site, pages and
-// components are found again from the files after each, and a page whose
-// URL changes has the links to it updated in the same operation. Undo
-// right after (the open file's editor), Restore on a deletion
-// and Move back on a rename take the whole operation back.
-let fileActions: ReturnType<typeof createFileRowActions> | undefined;
-let confirmDialog: ReturnType<typeof createConfirmDialog> | undefined;
-let discardDialog: ReturnType<typeof createConfirmDialog> | undefined;
-let pagePicker: ReturnType<typeof createPagePicker> | undefined;
+const { loadPagesActions, loadFileOps, pagePorts, filePorts, pagesController, savePublish, filesTreeController, mountExplorer, ensureExplorer,
+  openCreate, treeState, pathNow, nativePathExists, nativeSiteReadForCreate, branchText, branchPathProblem, discardedNewPages, afterFileChanges,
+  openAfter, undoFileChanges, discardFileChange } = pagesAndFiles;
 
 type Toast = typeof import("./components/toast");
 let toast: Toast | undefined, toastLoad: Promise<Toast> | undefined;
@@ -3055,313 +2600,6 @@ function undoAction(path: string) {
   } };
 }
 
-const parentOf = (path: string) => (path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "");
-
-// The actions of a Files row.
-function fileRowItems(target: FileRowTarget): MenuItem[] {
-  if (target.gone) return [{ label: "Restore", run: () => void fileOps!.restoreFileTarget(target) }];
-  const items: MenuItem[] = [];
-  if (target.folder)
-    items.push(
-      { label: "New file…", run: () => openCreateKind(target.path, "file") },
-      { label: "New folder…", run: () => openCreateKind(target.path, "folder") },
-      { label: "Upload files…", run: () => void pickFiles().then((picked) => uploadFilesTo(target.path, picked)) },
-    );
-  items.push({ label: "Rename", shortcut: "F2", run: () => fileActions?.rename(files, target.path) });
-  if (!target.folder) items.push({ label: "Duplicate", run: () => void fileOps!.duplicateFileTarget(target) });
-  const change = treeState().changes.get(target.path);
-  if (change?.kind === "R" && change.from) items.push({ label: `Move back to ${change.from}`, run: () => undoFileChanges({ moveBack: [target.path] }) });
-  if (change && !target.folder) items.push({ label: "Discard changes", run: () => void savePublish.discardFile(target.path) });
-  items.push(
-    { label: "Delete", shortcut: "Delete", run: () => void fileOps!.deleteFileTarget(target) },
-    { label: "Copy path", run: () => void copyFilePath(target.path) },
-  );
-  return items;
-}
-
-// New file… and New folder… from a folder's menu: the + dialog, that kind chosen.
-function openCreateKind(folder: string, kind: CreateKind) {
-  if (!appStore.snapshot.value) return;
-  const opener = filesTreeController.row(folder) ?? element<HTMLButtonElement>("new-at-root");
-  createDialog?.open({ in: folder, kinds: ["file", "folder"], first: kind, opener });
-}
-
-async function copyFilePath(path: string) {
-  try {
-    await navigator.clipboard.writeText(path);
-    announce(`Copied ${path}`);
-  } catch {
-    refuse(`The path could not be copied: ${path}`);
-  }
-}
-
-// What is at `path` now: a file or a folder with something in it (on the
-// branch and not deleted, or drafted), or a deletion in the drafts (a file,
-// or a folder only deletions are in).
-function pathNow(path: string, state = treeState()): "file" | "folder" | "deleted" | undefined {
-  if (state.deleted.has(path)) return "deleted";
-  if (state.drafted.includes(path)) return "file";
-  const entry = entryAt(path);
-  if (entry?.type === "blob" || entry?.type === "commit" || runtime.base.files.includes(path)) return "file";
-  const prefix = `${path}/`;
-  if (state.drafted.some((file) => file.startsWith(prefix))) return "folder";
-  const inside = appStore.snapshot.value?.tree
-    ? appStore.snapshot.value.tree.filter((item) => item.type !== "tree" && item.path.startsWith(prefix)).map((item) => item.path)
-    : runtime.base.files.filter((file) => file.startsWith(prefix));
-  if (inside.some((file) => !state.deleted.has(file))) return "folder";
-  if (inside.length) return "deleted";
-  return entry?.type === "tree" ? "folder" : undefined;
-}
-
-const filePorts = (): Parameters<typeof createLazyFileOperationsController>[0] => ({
-  edits: guardedEdits, draftScope,
-  engaged: () => runtime.engaged, repository: () => appStore.repository.value,
-  parentOf, treeState, pathNow, branchFilesUnder, findEntry, draftStore,
-  baseSource: path => runtime.base.sources.get(path), readFiles, readFile,
-  nativeFiles: scope => runtime.files(scope),
-  ensureNativeTextIndex, branchPathProblem,
-  readMediaText, origins: mediaOrigins,
-  onBranchHere, withMovedPageUrls, readNativeRedirects, confirmDialog: () => confirmDialog,
-  undoFileChanges,
-  duplicateFile: (scope, file, to) => duplicateFile(draftStore(), scope, file, to),
-  afterFileChanges, announce, refuse, errorMessage, requestAnimationFrame: callback => { requestAnimationFrame(callback); },
-  openFolder: path => filesTreeController.openFolder(path), fileRow: path => filesTreeController.row(path), renderFileTree: () => filesTreeController.render(),
-  filesTabOpen: () => filesTreeController.visible(),
-});
-// Files checks and actions load with the explorer, Pages actions or an agent's file command.
-let fileOps: ReturnType<typeof createLazyFileOperationsController> | undefined;
-const loadFileOps = lazyModule(async () => {
-  const module = await import("./controllers/file-operation-checks");
-  fileOps ??= module.createLazyFileOperationsController(filePorts(), lazyModule(() => import("./controllers/file-operations-controller")));
-  return module;
-});
-
-// A media file's new name is tidied by the media rules (any language, its own format); a folder typed before it is checked as usual.
-function renameTarget(target: FileRowTarget, name: string): Checked<string> {
-  const parent = parentOf(target.path), at = name.lastIndexOf("/"), file = name.slice(at + 1);
-  if (target.folder || !isRenamableMedia(target.path) || !file.trim()) return renamedPath(parent, name, target.folder ? "folder" : "file");
-  const folder = at < 0 ? { ok: true as const, value: parent } : renamedPath(parent, name.slice(0, at), "folder");
-  return folder.ok ? { ok: true, value: `${folder.value ? `${folder.value}/` : ""}${mediaFileName(target.path, file)}` } : folder;
-}
-
-function renameProblem(target: FileRowTarget, name: string) {
-  const to = renameTarget(target, name);
-  return to.ok ? fileOps!.fileMoveProblem(target, to.value, "rename") : to.error;
-}
-
-function dropProblem(source: FileRowTarget, folder: string) {
-  if (source.gone) return "A deleted file cannot move.";
-  if (parentOf(source.path) === folder) return "It is already there.";
-  if (source.folder && (folder === source.path || folder.startsWith(`${source.path}/`))) return "A folder cannot go inside itself.";
-  return fileOps!.moveProblem(source, folder ? `${folder}/${source.name}` : source.name, "move");
-}
-
-// Every file on the branch under `folder`, with full paths.
-async function branchFilesUnder(folder: string): Promise<TreeEntry[]> {
-  if (!appStore.snapshot.value || !appStore.repository.value) return [];
-  if (appStore.snapshot.value.tree) return appStore.snapshot.value.tree.filter((entry) => entry.type !== "tree" && entry.path.startsWith(`${folder}/`));
-  let entries = appStore.snapshot.value.entries;
-  let entry: TreeEntry | undefined;
-  for (const part of folder.split("/")) {
-    entry = entries.find((item) => item.path === part);
-    if (!entry || entry.type !== "tree") return [];
-    entries = (await api<Directory>("tree", { repo: appStore.repository.value.full_name, sha: entry.sha })).entries;
-  }
-  if (!entry) return [];
-  const listed = await api<Directory>("tree", { repo: appStore.repository.value.full_name, sha: entry.sha, recursive: "1" });
-  return listed.entries.filter((item) => item.type !== "tree").map((item) => ({ ...item, path: `${folder}/${item.path}` }));
-}
-
-// Closes what shows the files among `paths` (the editor, the style pane) and
-// forgets the models kept for them. Returns the open file when it is one.
-function releaseFiles(paths: Set<string>) {
-  const scope = draftScope();
-  const open = appStore.openFile.value && paths.has(appStore.openFile.value) ? appStore.openFile.value : undefined;
-  if (open) {
-    fileGeneration++;
-    setCurrentPage();
-  }
-  const pane = linkedStyles.secondaryPath();
-  if (pane && paths.has(pane)) linkedStyles.unlink();
-  if (scope) for (const path of paths) editorModule?.forgetDraftModel(scope, path);
-  return open;
-}
-
-// After files changed: the drafts' listings, routes, both trees and the agent.
-// The native site switches on or off with the home page: a root index.html
-// written as a draft (by the user, Start your site or an agent) makes the
-// repository a native site, and discarding it, with none on GitHub, makes
-// it a site-less repository again (Start your site). Done by opening the
-// project again, as the drafts are kept. True while that is pending.
-let nativeResyncing = false;
-// Pending while the project is opened again, so an agent's write waits for the updated context.
-let nativeResyncDone: Promise<void> | undefined;
-function resyncNativeSite(): boolean {
-  if (nativeResyncing) return true;
-  const scope = draftScope();
-  if (!scope || !appStore.snapshot.value) return false;
-  const home = draftStore().get(scope, NATIVE_HOME_PAGE);
-  const drafted = isNewDraft(home);
-  const committed = appStore.snapshot.value.entries.some((entry) => entry.path === NATIVE_HOME_PAGE && entry.type === "blob");
-  const wanted = committed || drafted;
-  if (wanted === runtime.engaged) return false;
-  nativeResyncing = true;
-  nativeResyncDone = new Promise<void>((resolve) => {
-    queueMicrotask(() => {
-      // Nothing is reopened when the home page went away; else the open file is.
-      void loadSnapshot(wanted ? undefined : "").finally(() => { nativeResyncing = false; nativeResyncDone = undefined; resolve(); });
-    });
-  });
-  return true;
-}
-
-function afterFileChanges() {
-  forgetDraftedAssets();
-  editorModule?.refreshDrafts();
-  versions.history.refresh();
-  if (runtime.site) {
-    // Component stylesheets are found again where their components now are.
-    runtime.state.componentStyles.clear();
-    runtime.state.missingComponentStyles.clear();
-    refreshNativeRoutes();
-    void loadNativeComponentStyles(Object.keys(runtime.site.components));
-  }
-  filesTreeController.render();
-  updateAgentContext();
-  updateCurrentPageLabel();
-  resyncNativeSite();
-  mediaController.requestGalleryRefresh();
-}
-
-// Opens `path` after an operation, or the home page (else the folder summary)
-// when it is gone. `keepExplorer`: the explorer stays open (true) or closes
-// (false); by default a new file keeps it open and a branch file closes it.
-async function openAfter(path: string | undefined, keepExplorer?: boolean, quietStatus = false) {
-  const at = workspaceSession.begin();
-  const scope = draftScope();
-  const draft = path && scope ? draftStore().get(scope, path) : undefined;
-  const keep = { keepExplorer: keepExplorer ?? false, quietStatus };
-  if (draft && isNewDraft(draft)) await openNewDraft(draft, { keepExplorer: keepExplorer ?? true });
-  else if (path && !draft?.deleted) await restoreFile(path, at, keep);
-  else if (runtime.site?.routes["/"]) await restoreFile(runtime.site.routes["/"], at, keep);
-  else if (appStore.snapshot.value) showDirectory(appStore.snapshot.value);
-}
-
-/**
- * Restores deletions and moves renamed files back (Restore in the tree, the
- * Save panel's Restore and Move back, Discard changes on a renamed file).
- */
-function undoFileChanges(what: { restore?: string[]; moveBack?: string[] }) {
-  const scope = draftScope();
-  if (!scope) return;
-  const store = draftStore();
-  const involved = new Set<string>();
-  for (const path of [...(what.restore ?? []), ...(what.moveBack ?? [])]) {
-    involved.add(path);
-    const draft = store.get(scope, path);
-    if (draft?.movedTo) involved.add(draft.movedTo);
-  }
-  const opened = releaseFiles(involved);
-  const reversed: { from: string; to: string }[] = [];
-  const done: string[] = [];
-  const results = [
-    ...(what.restore ?? []).map((path) => restoreDraftFile(store, scope, path)),
-    ...(what.moveBack ?? []).map((path) => {
-      const draft = store.get(scope, path);
-      const origin = draft?.movedFrom;
-      return origin ? restoreDraftFile(store, scope, origin) : undefined;
-    }),
-  ];
-  for (const result of results) {
-    if (!result) continue;
-    done.push(result.path);
-    if (result.from) reversed.push({ from: result.from, to: result.path });
-  }
-  afterFileChanges();
-  const back = opened && (reversed.find((move) => move.from === opened)?.to ?? opened);
-  if (back) void openAfter(back);
-  announce(done.length === 1 ? (reversed.length ? `Moved ${reversed[0].from} back to ${reversed[0].to}.` : `Restored ${done[0]}.`) : `Restored ${done.length} files.`);
-}
-
-// A change's Restore (a deletion), Move back (a rename) or Discard (an edit, a new file) in the Save panel.
-async function discardFileChange(change: FileChange) {
-  if (change.kind === "A" && change.drafts[0]?.upload) await discardUpload(change.path);
-  else if (change.kind === "D") undoFileChanges({ restore: [change.path] });
-  else if (change.kind === "R") undoFileChanges({ moveBack: [change.path] });
-  else if (savePublish.discard([change.path])) announce(`Discarded the changes to ${change.path}.`);
-}
-
-const savePublish = createSavePublishController({
-  stamp: () => guardedEdits.stamp("repository"),
-  snapshot: () => appStore.snapshot.value,
-  scope: draftScope, drafts: draftStore, api, findEntry, changed: afterFileChanges, release: releaseFiles, openAfter, announce, status,
-  fail: errorMessage, fallback: nativeFallbackPage, resync: resyncNativeSite,
-  onWake: (check) => { document.addEventListener("visibilitychange", check); addEventListener("focus", check); return () => { document.removeEventListener("visibilitychange", check); removeEventListener("focus", check); }; },
-  visible: () => document.visibilityState === "visible",
-  reload: () => loadSnapshot(),
-  forget: (scope, path) => editorModule?.forgetDraftModel(scope, path),
-  redraw: () => {
-    editorModule?.refreshDrafts();
-    filesTreeController.render();
-    if (runtime.site) updateNativePreviewSources();
-  },
-  saved: (scope, result, submitted, shown) => {
-    if (shown) runtime.adoptSaved(scope, result, submitted);
-    else if (!result.unchanged) finishedWork.add(scope, "saved", { commit: { repo: scope.repo, commit: result.commit, url: result.url } });
-    // Saved uploads are GitHub's now; this browser lets their bytes go.
-    void sweepUploads(uploadBytes(), scope, draftStore().list(scope)).catch(() => undefined);
-    if (runtime.engaged && !result.unchanged)
-      siteActions?.track({ repo: scope.repo, commit: result.commit, url: result.url },
-        () => holdsDraftScope(workspaceSession.current().scope, scope));
-  },
-  adopt: (result) => {
-    appStore.snapshot.value = result;
-    repositoryIndex.seed(appStore.repository.value!, result);
-  },
-  showSaved: (commit) => {
-    updateAgentContext();
-    element("revision").textContent = commit.slice(0, 7);
-    element("revision").title = commit;
-    filesTreeController.render();
-    if (runtime.engaged && runtime.site) startNativeTextIndex(appStore.repository.value!, runtime.site, draftScope(), workspaceSession.begin(), runtime.state.request);
-  },
-  change: (path) => treeState().changes.get(path),
-  openFile: () => appStore.openFile.value,
-  secondary: () => linkedStyles.secondaryPath(),
-  drop: (scope, path) => Boolean(editorModule?.dropDraft(scope, path)),
-  clearHistory: () => editorModule?.clearHistory(),
-  reopen: (opened, back, styled) => {
-    if (nativeModeActive()) updateNativePreviewSources();
-    const page = appStore.openFile.value;
-    if (opened) void openAfter(back);
-    else if (styled && page && nativeModeActive()) {
-      // The open page stays; its stylesheet opens again as GitHub has it.
-      if (nativeComponentTagForPath(page)) void linkedStyles.openComponentLinkedStyle(page);
-      else void linkedStyles.openDefaultLinkedStyle(page);
-    }
-  },
-  confirm: async (question, all) => {
-    const since = guardedEdits.stamp("repository");
-    const { createConfirmDialog } = await loadConfirmDialog();
-    if (!since.holds()) return false;
-    if (all && !discardDialog) { discardDialog = createConfirmDialog("discard-dialog"); app.append(discardDialog.root); }
-    if (!all && !confirmDialog) { confirmDialog = createConfirmDialog(); element("explorer").append(confirmDialog.root); }
-    return (all ? discardDialog : confirmDialog)!.ask(question);
-  },
-});
-
-async function renameFileTarget(target: FileRowTarget, name: string): Promise<string | undefined> {
-  const to = renameTarget(target, name);
-  if (!to.ok) return to.error;
-  return fileOps!.moveFileTarget(target, to.value, "rename");
-}
-
-async function dropFileTarget(source: FileRowTarget, folder: string) {
-  const problem = dropProblem(source, folder);
-  if (problem) { refuse(problem); return; }
-  const error = await fileOps!.moveFileTarget(source, folder ? `${folder}/${source.name}` : source.name, "move");
-  if (error) errorMessage(new Error(error));
-}
 
 // Opening a file in the source pane (src/controllers/source-pane-controller.ts).
 const sourcePane = createSourcePaneController({
@@ -3433,9 +2671,9 @@ function buildAgentSiteContext(): Promise<SharedContext | undefined> {
 // account's, repository's or branch's site meanwhile: the agent's command
 // was checked against the one it started on.
 async function awaitNativeResync() {
-  if (!nativeResyncDone) return;
+  if (!pagesAndFiles.nativeResyncDone) return;
   const at = workspaceSession.begin();
-  await nativeResyncDone;
+  await pagesAndFiles.nativeResyncDone;
   if (at.changed() === "scope")
     throw new Error("The editor tab switched to another site meanwhile. Call get_site and try again.");
 }
@@ -3502,7 +2740,7 @@ function makeAgentSiteActions(edits: GuardedEdits = guardedEdits, atomic = false
       : { edits: new Map([[path, content]]), ...nativePageRoute(path) && (!atomic || !editorModule.isMounted(path)) && !componentTools?.typingTemplate() ? { open: path } : {},
         ...atomic ? { select: { historyOnly: true } } : {}, done, undone }, { since });
     // A home page just written switches the site on: the context is whole before the write is answered.
-    await nativeResyncDone;
+    await pagesAndFiles.nativeResyncDone;
     return outcome.message;
   },
   async open(path) {
@@ -3513,9 +2751,9 @@ function makeAgentSiteActions(edits: GuardedEdits = guardedEdits, atomic = false
     const since = edits.stamp("repository");
     await loadPagesActions();
     if (!since.holds()) return "The repository changed meanwhile. Try again.";
-    const plan = pageActions!.planNew(request);
+    const plan = pagesAndFiles.pageActions!.planNew(request);
     if (!plan.ok) return plan.error;
-    return (await pageActions!.createNew(request)) ?? { file: plan.value.file, route: plan.value.route };
+    return (await pagesAndFiles.pageActions!.createNew(request)) ?? { file: plan.value.file, route: plan.value.route };
   },
   async setPageDetail(path, field, value) {
     const error = await writeNativePageMeta(path, field, value, false);
