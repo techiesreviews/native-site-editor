@@ -83,3 +83,11 @@ Spec changes only; no source file changed. Each cause was found in a failing tra
 
 **Checks.** `scripts/agents/kit unit --affected`: `RESULT: ok unit none affected`. `scripts/agents/kit specs --affected`: `RESULT: ok specs 5/5 passed` (54 tests). `npm run lint` and `npm run check` clean.
 
+### Follow-ups
+
+- Spec (P2): a08d84f6:docs/wayfinder/software-factory/build/tickets/16-toast-and-ring-specs-under-load.md:4 — P2: The ticket is marked `status: closed`, but four product def
+- Spec (P3): a08d84f6:docs/wayfinder/software-factory/build/tickets/16-toast-and-ring-specs-under-load.md:74 — P3: The Commits line names 61aafc15, 66776ab5 and 70b96034. Th
+- Spec (P3): a08d84f6:docs/wayfinder/software-factory/build/tickets/16-toast-and-ring-specs-under-load.md:80 — P3: The Done section says "The two tall-window drag tests now 
+- Validation gaps (gap): tests/native-save/native-placed-media.spec.ts:451-470 (the `test.fixme` "a render while the audio plays…"): nothing checks that a render actually happened while
+- Validation gaps (gap): tests/native-save/native-click-to-type.spec.ts:273-309 (the `test.fixme` "typing in a text scrolled out of view…"): after the drop it only checks the move. It d
+
