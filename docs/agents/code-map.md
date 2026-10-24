@@ -289,8 +289,8 @@ Frequently used top-level functions and constants in src/main.ts (28). Descripti
 | `announce` | Writes an accessibility announcement. |
 | `afterFileChanges` | Refreshes trees, routes, preview, agent (pages-and-files-host.ts). |
 | `updateAgentContext` | Tells the agent controller that shared context changed. |
-| `pagesController` | Owns page operations and explorer tab policy. |
-| `savePublish` | Coordinates saving drafts, review and publishing controls. |
+| `pagesController` | Page operations and explorer tabs (pages-and-files-host.ts). |
+| `savePublish` | Saving drafts, review and publishing (pages-and-files-host.ts). |
 
 ## How to find things fast
 
