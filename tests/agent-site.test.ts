@@ -117,6 +117,9 @@ test("make_component reports refusals as conflicts and never calls the action fo
   assert.equal(calls, 1);
   await assert.rejects(applySiteCommand(actions, { ...command, args: { ...command.args, element: "9.9" } }), /not on the page/);
   assert.equal(calls, 2);
+  // An element id the Worker would have refused: a malformed command, never handed to Make component.
+  await assert.rejects(applySiteCommand(actions, { ...command, args: { ...command.args, element: "bad.id" } }), /cannot apply that change/);
+  assert.equal(calls, 2);
   await assert.rejects(applySiteCommand(actions, { ...command, expectedHash: "stale" }), /changed in the editor/);
   assert.equal(calls, 2);
 });
@@ -166,6 +169,11 @@ test("move_section reports the module's moved id and stayed reply; Undo reselect
   assert.ok(m.undo());
   assert.equal(m.workspace.source(path), source);
   assert.deepEqual(m.selected.at(-1), { path, node: [0, 0] });
+  // Before a section: into its place, that section and the rest after it.
+  const first = await applySiteCommand(actions as AgentSiteActions, { ...command, args: { section: "0.2", before: "0.0" } });
+  assert.equal(first.result!.section, "0.0");
+  assert.deepEqual([...m.workspace.source(path)!.matchAll(/<section>(\w)<\/section>/g)].map(match => match[1]), ["C", "A", "B"]);
+  assert.ok(m.undo());
   // The id is the module's node, not one worked out from the gap.
   const elsewhere = await applySiteCommand({ ...actions, moveSection: () => ({ status: "moved", node: [0, 1] }) } as AgentSiteActions, command);
   assert.equal(elsewhere.message, "Section moved to 0.1, unsaved.");
@@ -182,4 +190,13 @@ test("move_section reports the module's moved id and stayed reply; Undo reselect
       return true;
     });
   }
+});
+
+test("inspect_preview with an element id the Worker would have refused is malformed; nothing is opened", async () => {
+  let opened = 0;
+  const actions = { open: async () => { opened++; return true; }, inspect: async () => assert.fail("must not inspect") } satisfies Pick<AgentSiteActions, "open" | "inspect">;
+  const command: AgentCommand = { id: "inspect-1", operation: "inspect_preview", path: "index.html", branch: "dev", commit: "c", content: "",
+    args: { element: "bad.id" }, state: "pending", createdAt: 1 };
+  await assert.rejects(applySiteCommand(actions as AgentSiteActions, command), /cannot apply that change/);
+  assert.equal(opened, 0);
 });

@@ -359,7 +359,7 @@ test("MCP site tools read and prepare guarded changes over the runtime socket, r
     // edit_file needs the hash just read, and a unique old text.
     const stale = await call("edit_file", { path: "styles/site.css", expectedHash: "0".repeat(64), edits: [{ oldText: "margin: 0", newText: "margin: 1px" }], waitSeconds: 0 });
     assert.equal(stale.isError, true);
-    assert.match(JSON.stringify(stale), /changed since you read it/);
+    assert.match(JSON.stringify(stale), /changed in the editor since it was read/);
     const edit = { path: "styles/site.css", expectedHash: css.hash, edits: [{ oldText: "margin: 0", newText: "margin: 1px" }], requestId: "css-1", waitSeconds: 0 };
     assert.equal(payload(await call("edit_file", edit)).state, "applied");
     assert.equal(payload(await call("edit_file", edit)).state, "applied", "a retry with the same requestId is the same change");
