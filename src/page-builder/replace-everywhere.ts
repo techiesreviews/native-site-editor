@@ -7,6 +7,7 @@ import { mediaPictureUnwrap, mediaEscape } from "./media-markup";
 import { decodeHtmlEntities } from "./html-entities";
 import { readSource } from "./source-tree";
 import { startTags, startTagAttribute } from "../../shared/html-source";
+import { parentProblem } from "../../shared/site-rules";
 import type { MediaRecords } from "../../shared/media-records";
 import { declarationRanges } from "../styles-index";
 import { editNativeRedirects } from "../native-page-moves";
@@ -150,10 +151,8 @@ export function planMediaReplace(input: ReplaceInput) {
     const problem = uploadProblem({ name: upload.path, size: upload.blob.size });
     if (problem) throw new Error(problem);
     if (paths.some(file => file.startsWith(upload.path + "/")) || paths.includes(upload.path) && !family.includes(upload.path)) throw new Error(`${upload.path} is taken. Nothing was replaced.`);
-    for (let folder = upload.path.slice(0, upload.path.lastIndexOf("/")); folder; folder = folder.slice(0, folder.lastIndexOf("/"))) {
-      if (paths.includes(folder)) throw new Error(`${folder} is a file, so it cannot contain uploaded files.`);
-      if (!folder.includes("/")) break;
-    }
+    const blocked = parentProblem(upload.path, (folder) => paths.includes(folder));
+    if (blocked) throw new Error(blocked);
   }
   const sources = { ...input.sources }, artDirected: string[] = [];
   for (const [file, references] of refs) {

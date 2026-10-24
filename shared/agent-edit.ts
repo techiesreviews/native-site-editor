@@ -2,7 +2,8 @@ import { AGENT_TEXT_LIMIT, isMediaUploadWrite, OUTSIDE_MEDIA_REFUSED, parseOutli
   type AgentCommandArgs, type AgentOperation } from "./agent";
 import { applyReplacements } from "./agent-replacements";
 import { HttpError } from "./http-error";
-import { SiteFiles, writablePathProblem } from "./site-files";
+import { SiteFiles } from "./site-files";
+import { fileInTheWay, foldersAbove, writablePathProblem } from "./site-rules";
 import { makeComponentProblem, pageAddressProblem } from "./site-rules";
 import { findPageRef, noHomePage } from "./agent-read";
 import type { AgentPageOutline, EditorContext } from "./types";
@@ -113,12 +114,8 @@ export async function prepareAgentEdit(request: AgentEdit, context: EditorContex
       } else {
         if (expectedHash) return refuse(`${path} does not exist; omit expectedHash to create it.`);
         if (await files.isFolder(path)) return refuse(`${path} is a folder.`);
-        const parts = path.split("/");
-        for (let index = 1; index < parts.length; index++) {
-          const parent = parts.slice(0, index).join("/");
-          if (await files.read(parent).catch(() => undefined))
-            return refuse(`${parent} is a file, so nothing can go in it.`);
-        }
+        for (const parent of foldersAbove(path))
+          if (await files.read(parent).catch(() => undefined)) return refuse(fileInTheWay(parent));
       }
       return queue("write_file", { path, content, expectedHash: file?.hash ?? null });
     }

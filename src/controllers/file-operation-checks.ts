@@ -4,6 +4,7 @@ import { pageLinkSources } from "./pages-state";
 import { filesLinkingTo, linkNote, protectedPathProblem, type FileOperation } from "../native-files";
 import { nativePageRoute } from "../../shared/native-routes";
 import { NATIVE_HOME_PAGE } from "../../shared/native-project";
+import { parentProblem } from "../../shared/site-rules";
 import type { Reads } from "../guarded-edit";
 import type { FileRowTarget } from "../components/file-row-actions";
 import type { FileOperationsPorts, FileOperationsTreeState, FileOperationsController } from "./file-operations-controller";
@@ -50,12 +51,7 @@ export function createFileOperationChecks(ports: FileOperationsPorts) {
         : state.deleted.get(to)?.movedTo === source.path;
       if (!back) return `${to} is deleted in your changes. Restore it, or choose another name.`;
     }
-    const parts = to.split("/");
-    for (let index = 1; index < parts.length; index++) {
-      const parent = parts.slice(0, index).join("/");
-      if (ports.pathNow(parent, state) === "file") return `${parent} is a file, so nothing can go in it.`;
-    }
-    return undefined;
+    return parentProblem(to, (parent) => ports.pathNow(parent, state) === "file");
   }
 
   function targetFamily(target: FileRowTarget) {

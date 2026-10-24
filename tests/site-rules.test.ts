@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { componentSourceProblem, makeComponentProblem, pageAddressProblem } from "../shared/site-rules.ts";
+import { componentSourceProblem, fileInTheWay, folderProblem, foldersAbove, makeComponentProblem, pageAddressProblem, parentProblem } from "../shared/site-rules.ts";
 
 const ADDRESS = "Use lowercase letters, digits and dashes in the URL, at most 80, starting with a letter or digit.";
 
@@ -26,4 +26,24 @@ test("make component checks the name, then the element, with one wording each", 
   // The name is checked first.
   assert.equal(makeComponentProblem({ tag: "main" }, "section", []), "A component's name has a dash in it, such as section-intro.");
   assert.equal(componentSourceProblem({ tag: "div" }), undefined);
+});
+
+test("a file in the way of a new path is refused with one wording at each depth", () => {
+  const files = (...paths: string[]) => (path: string) => paths.includes(path);
+  assert.deepEqual(foldersAbove("a/b/c.html"), ["a", "a/b"]);
+  assert.deepEqual(foldersAbove("index.html"), []);
+  assert.equal(fileInTheWay("notes.html"), "notes.html is a file, so nothing can go in it.");
+  // Direct parent, then grandparent.
+  assert.equal(parentProblem("a/b/c.html", files("a/b")), "a/b is a file, so nothing can go in it.");
+  assert.equal(parentProblem("a/b/c.html", files("a")), "a is a file, so nothing can go in it.");
+  assert.equal(parentProblem("a/b/c.html", files("a/b/c.html", "b")), undefined);
+  assert.equal(parentProblem("index.html", files("index.html")), undefined);
+});
+
+test("nothing can go in a folder that is a file, or sits in one", () => {
+  const files = (...paths: string[]) => (path: string) => paths.includes(path);
+  assert.equal(folderProblem("media/images", files("media/images")), "media/images is a file, so nothing can go in it.");
+  assert.equal(folderProblem("media/images", files("media")), "media is a file, so nothing can go in it.");
+  assert.equal(folderProblem("media/images", files("images")), undefined);
+  assert.equal(folderProblem("", files("")), undefined);
 });
