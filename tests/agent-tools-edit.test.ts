@@ -158,9 +158,13 @@ interface Refusal {
   setup?(f: Fixture, live: Live): void;
   /** The live page's ports that answer otherwise for it (a page that will not open). */
   ports?: Partial<LivePorts>;
+  /** A preparation refusal's: the command preparation would have made without that check, which the live page must not refuse alike. */
+  bypass?(f: Fixture): Extract<PreparedEdit, { operation: unknown }>;
 }
 const refusal = <K extends AgentEditTool>(tool: K, layer: Layer, says: string, file: string,
   args: (f: Fixture, live: Live) => Promise<AgentEditArgsMap[K]> | AgentEditArgsMap[K], setup?: Refusal["setup"], ports?: Refusal["ports"]): Refusal => ({ tool, layer, says, file, args, setup, ports });
+const unless = (r: Refusal, bypass: NonNullable<Refusal["bypass"]>): Refusal => ({ ...r, bypass });
+const written = (path: string, content: string, expectedHash: string | null) => ({ operation: "write_file" as const, input: { path, content, expectedHash } });
 const gone = (path: string) => (_f: Fixture, live: Live) => { delete live[path]; };
 const home = (live: Live) => textHash(live["index.html"]);
 const homeHash = (f: Fixture) => f.context.site!.outlines[0].hash;
@@ -170,9 +174,9 @@ const refusals: Refusal[] = [
   refusal("edit_file", "Worker", GITHUB_CONFIG_REFUSED, "shared/protected-paths.ts", f => ({ path: ".github/workflows/ci.yml", expectedHash: homeHash(f), edits: [{ oldText: "x", newText: "y" }] })),
   refusal("edit_file", "Worker", "Invalid path. Use a repository path such as about/index.html.", "shared/site-rules.ts", f => ({ path: "../secret", expectedHash: homeHash(f), edits: [{ oldText: "x", newText: "y" }] })),
   refusal("edit_file", "preparation", " does not exist. Use write_file to create it.", "shared/agent-edit.ts", f => ({ path: "missing.txt", expectedHash: homeHash(f), edits: [{ oldText: "x", newText: "y" }] })),
-  refusal("edit_file", "preparation", " changed in the editor since it was read. Read it again.", "shared/agent-edit.ts", () => ({ path: "index.html", expectedHash: "0".repeat(64), edits: [{ oldText: "Welcome", newText: "Hello" }] })),
+  unless(refusal("edit_file", "preparation", " changed in the editor since it was read. Read it again.", "shared/agent-edit.ts", () => ({ path: "index.html", expectedHash: "0".repeat(64), edits: [{ oldText: "Welcome", newText: "Hello" }] })), f => written("index.html", files["index.html"].replace("Welcome", "Hello"), homeHash(f))),
   refusal("edit_file", "preparation", "oldText was not found", "shared/agent-replacements.ts", f => ({ path: "index.html", expectedHash: homeHash(f), edits: [{ oldText: "absent", newText: "y" }] })),
-  refusal("edit_file", "preparation", "Drafts hold text files up to ", "shared/agent-edit.ts", f => ({ path: "index.html", expectedHash: homeHash(f), edits: [{ oldText: "Welcome", newText: "\0" }] })),
+  unless(refusal("edit_file", "preparation", "Drafts hold text files up to ", "shared/agent-edit.ts", f => ({ path: "index.html", expectedHash: homeHash(f), edits: [{ oldText: "Welcome", newText: "\0" }] })), f => written("index.html", files["index.html"].replace("Welcome", "\0"), homeHash(f))),
   // Typed in the editor after the tab read it: the guarded write's own proof.
   refusal("edit_file", "live page", " changed in the editor since it was read. Read it again.", "shared/agent-edit.ts", f => ({ path: "index.html", expectedHash: homeHash(f), edits: [{ oldText: "Welcome", newText: "Hello" }] }),
     (_f, live) => { live["index.html"] += "<!-- typed -->"; }),
@@ -180,9 +184,9 @@ const refusals: Refusal[] = [
   refusal("write_file", "Worker", MEDIA_RECORDS_REFUSED, "shared/protected-paths.ts", () => ({ path: ".editor/media.json", content: "{}" })),
   refusal("write_file", "Worker", OUTSIDE_MEDIA_REFUSED, "shared/agent.ts", () => ({ path: "media/x.png", content: "x" })),
   refusal("write_file", "Worker", "Drafts hold text files up to ", "shared/agent-edit.ts", () => ({ path: "fresh.txt", content: "\0" })),
-  refusal("write_file", "preparation", " exists (hash ", "shared/agent-edit.ts", () => ({ path: "index.html", content: "x" })),
-  refusal("write_file", "preparation", " does not exist; omit expectedHash to create it.", "shared/agent-edit.ts", f => ({ path: "missing.txt", content: "x", expectedHash: homeHash(f) })),
-  refusal("write_file", "preparation", " is a file, so nothing can go in it.", "shared/site-rules.ts", () => ({ path: "index.html/child.txt", content: "x" })),
+  unless(refusal("write_file", "preparation", " exists (hash ", "shared/agent-edit.ts", () => ({ path: "index.html", content: "x" })), f => written("index.html", "x", homeHash(f))),
+  unless(refusal("write_file", "preparation", " does not exist; omit expectedHash to create it.", "shared/agent-edit.ts", f => ({ path: "missing.txt", content: "x", expectedHash: homeHash(f) })), () => written("missing.txt", "x", null)),
+  unless(refusal("write_file", "preparation", " is a file, so nothing can go in it.", "shared/site-rules.ts", () => ({ path: "index.html/child.txt", content: "x" })), () => written("index.html/child.txt", "x", null)),
   refusal("write_file", "live page", " exists now. Read it and edit it instead.", "src/agent-site.ts", () => ({ path: "fresh.txt", content: "x" }), (_f, live) => { live["fresh.txt"] = "made meanwhile"; }),
   refusal("move_file", "Worker", GITHUB_CONFIG_REFUSED, "shared/protected-paths.ts", () => ({ path: "about", to: ".github/about" })),
   refusal("move_file", "Worker", "The new path is the same.", "shared/agent-edit.ts", () => ({ path: "about", to: "about" })),
@@ -191,7 +195,7 @@ const refusals: Refusal[] = [
   refusal("delete_file", "editor", "No file or folder at ", "src/agent-site.ts", () => ({ path: "absent" })),
   refusal("delete_file", "Worker", MEDIA_RECORDS_REFUSED, "shared/protected-paths.ts", () => ({ path: ".editor/media.json" })),
   refusal("create_page", "Worker", PAGE_ADDRESS_RULE, "shared/site-rules.ts", () => ({ title: "About us", slug: "About_Us" })),
-  refusal("create_page", "preparation", "No page at ", "shared/agent-edit.ts", () => ({ title: "Team", parent: "/absent/" })),
+  unless(refusal("create_page", "preparation", "No page at ", "shared/agent-edit.ts", () => ({ title: "Team", parent: "/absent/" })), () => ({ operation: "create_page", input: { path: "absent", args: { parent: "/absent/", title: "Team" } } })),
   refusal("create_page", "editor", " is taken by ", "src/native-pages.ts", () => ({ title: "Team", parent: "/about/", slug: "team" })),
   refusal("set_page_details", "Worker", "Give a title, a description, or both.", "shared/agent-edit.ts", () => ({ page: "/" })),
   refusal("set_page_details", "preparation", ". get_site lists the pages.", "shared/agent-edit.ts", () => ({ page: "/absent/", title: "x" })),
@@ -279,7 +283,14 @@ async function firstRefusal(r: Refusal): Promise<{ layer: Layer; message: string
   }
   let prepared: PreparedEdit;
   try { prepared = await prepareAgentEdit(input, f.context, f.local()); }
-  catch (error) { return { layer: "preparation", message: (error as Error).message }; }
+  catch (error) {
+    // The live page does not decide it again: given the command preparation would have made without its check, it does not say it.
+    if (r.bypass) {
+      const message = await applySiteCommand(liveActions(live, r.ports), commandOf(input, r.bypass(f))).then(() => "", (error: Error) => error.message);
+      assert.ok(!message.includes(r.says), `${r.tool}: the live page decides "${r.says}" too`);
+    }
+    return { layer: "preparation", message: (error as Error).message };
+  }
   if ("unchanged" in prepared) return undefined;
   try { await applySiteCommand(liveActions(live, r.ports), commandOf(input, prepared)); }
   catch (error) {
@@ -326,6 +337,9 @@ test("a section goes before or after the section named, on the live page", async
   // Named: before it, or after it. Unnamed: at the end of the page's one place (its <main>, two sections in).
   for (const [anchor, section] of [[{ before: "1.0" }, "1.0"], [{ after: "1.0" }, "1.1"], [{ before: "1.1" }, "1.1"], [{}, "1.2"]] as const)
     assert.equal((await add(anchor)).result?.section, section, JSON.stringify(anchor));
+  // A wrong component and a wrong place: the component is told first.
+  await assert.rejects(applySiteCommand(liveActions(live), { id: "add", operation: "add_section", path: "index.html", content: "", branch: "main", commit,
+    expectedHash: await home(live), args: { component: "site-header", after: "9.9" }, state: "pending", createdAt: 1 }), /<site-header> is not a section component/);
   // Sections straight in <body>: the page itself is the place (container id "").
   live["index.html"] = page("<section>A</section><section>B</section>");
   assert.equal((await add({})).result?.section, "2");
