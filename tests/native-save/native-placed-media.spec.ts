@@ -143,6 +143,29 @@ test("an audio whose file arrives while it plays keeps its real length after Sto
   await expect.poll(() => audio.evaluate((el: HTMLAudioElement) => el.duration || 0), { timeout: 15_000 }).toBeCloseTo(41.9, 1);
 });
 
+// A render during Play (here the code editor arriving late) pauses the audio while the bar still
+// says Stop: open for the lead (ticket 16). Runs once the bar and the audio agree.
+test.fixme("a render while the audio plays leaves the bar saying what the audio does", async ({ page, baseURL }) => {
+  let release!: () => void;
+  const editorHeld = new Promise<void>(resolve => { release = resolve; });
+  await page.route(url => /monaco/.test(url.href), async route => { await editorHeld; await route.continue(); });
+  await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
+  await page.reload();
+  await expect(page.locator("#status")).toContainText("Up to date with main");
+  const audio = frame(page).locator('audio[aria-label="Tour"]');
+  await choose(page, /^Audio/);
+  await bar(page).getByRole("button", { name: "Play", exact: true }).click();
+  await expect(bar(page).getByRole("button", { name: "Stop", exact: true })).toBeVisible();
+  await expect.poll(() => audio.evaluate((el: HTMLAudioElement) => !el.paused)).toBe(true);
+  release();
+  await editorMounted(page);
+  // Playing, the bar offers Stop; stopped, it offers Play.
+  await expect.poll(async () => {
+    const paused = await audio.evaluate((el: HTMLAudioElement) => el.paused);
+    return bar(page).getByRole("button", { name: paused ? "Play" : "Stop", exact: true }).count();
+  }).toBe(1);
+});
+
 test("a video inside a scrolling box, chosen in Page structure, is scrolled into view in that box", async ({ page }) => {
   const inner = frame(page).locator('video[title="Inner"]');
   const scroller = frame(page).locator(".scroller");
