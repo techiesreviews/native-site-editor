@@ -9,12 +9,7 @@ import { siteAddress } from "../../shared/site-path-prefix";
 // named "title", anything without a `slot` attribute the unnamed (default)
 // slot. The template decides what shows when the page fills nothing: a
 // slot's fallback content, or nothing at all for an optional part, by the
-// rules the site's loader (`hideEmpty` in the starter's components.js) and
-// the editor's preview runtime (`applyEmptyRules`) share:
-//   - in a section component the page fills at all, every slot it does not
-//     fill is hidden with its fallback;
-//   - an element holding slots, with no text of its own, whose slots all show
-//     nothing, is hidden too.
+// site's own rule (rules/empty-parts.ts, which the preview runtime shares).
 //
 // Every edit here is a range edit of the file the instance is in: the
 // page's own markup inside the instance tag, or the instance's attributes.
@@ -26,13 +21,14 @@ import { isPageHeaderFooter } from "./rules/page-bands";
 import { INLINE_FORMATTING, TEXT_RUN_TAGS } from "./rules/text-level";
 import { decodeHtmlEntities } from "./html-entities";
 import { hasHeadingSlot as headingSlotIn, isCardTag, isItemsSlot } from "./rules/cards";
+import { emptyParts } from "./rules/empty-parts";
 import type { NativeStructureItem } from "../components/native-preview";
-import { descendants, parseSource, sourceView, type SourceElement, type SourceNode } from "./source-tree";
+import { descendants, parseSource, RAW_TEXT, sourceView, type SourceElement, type SourceNode } from "./source-tree";
 
 // The source tree moved to source-tree.ts; its other users still import it from here.
 export { descendants, parseSource, sourceView, type SourceElement, type SourceNode } from "./source-tree";
 
-const elements = (nodes: SourceNode[]) => nodes.filter((node): node is SourceElement => node.type === "element");
+const elements = (nodes: readonly SourceNode[]) => nodes.filter((node): node is SourceElement => node.type === "element");
 
 export interface TemplateStructureItem extends NativeStructureItem {
   children: TemplateStructureItem[];
@@ -222,9 +218,16 @@ export function plainText(html: string) {
 /**
  * Whether an element takes `<br>` among its text: any whose content is flow
  * or phrasing (p, h1-h6, a, span, li, button, div, …), not one whose children
- * are options, rows or list items, nor raw text.
+ * are options, rows or list items, nor raw text (source-tree.ts's list, and
+ * `<plaintext>`), nor SVG or MathML content (HTML inside a `<foreignObject>`
+ * is HTML again).
  */
-export const takesBreaks = (name: string) => !/^(?:option|optgroup|select|datalist|textarea|title|script|style|template|t(?:able|head|body|foot|r)|colgroup|ul|ol|dl|menu)$/.test(name);
+export function takesBreaks(element: SourceElement) {
+  if (/^(?:option|optgroup|select|datalist|template|plaintext|t(?:able|head|body|foot|r)|colgroup|ul|ol|dl|menu)$/.test(element.name) || RAW_TEXT.has(element.name)) return false;
+  for (let at: SourceElement | undefined = element; at && at.name !== "foreignobject"; at = at.parent)
+    if (at.name === "svg" || at.name === "math") return false;
+  return true;
+}
 
 // Only the element's own (direct-child) <br>s are line boundaries: the lines
 // between them hold whole elements, so a line's range never splits a tag.
@@ -493,39 +496,39 @@ export interface SlotState {
 }
 
 /**
- * Which slots show on an instance that fills `filled`, by the shared rules
- * (see the top of this file); `hostHasContent` is whether the instance holds
+ * Which slots show on an instance that fills `filled`, by the site's own
+ * empty-parts rule (rules/empty-parts.ts); `hostHasContent` is whether the instance holds
  * anything at all, which decides a section component's rule.
  */
 function shownSlots(template: string, filled: ReadonlySet<string>, hostHasContent: boolean) {
+  const view = sourceView(template);
   const tree = parseSource(template);
-  const section = isSectionTemplate(template);
-  const slots = new Map<string, SourceElement>();
-  for (const el of descendants(tree)) if (el.name === "slot") {
-    const name = attribute(template, el, "name") ?? "";
-    if (!slots.has(name)) slots.set(name, el);
-  }
   const nameOf = (slot: SourceElement) => attribute(template, slot, "name") ?? "";
-  const assigned = (name: string) => slots.has(name) && filled.has(name);
-  const unmet = (slot: SourceElement) => section && hostHasContent && !assigned(nameOf(slot));
-  const hasFallback = (slot: SourceElement) => meaningful(template, slot.children).length > 0;
-  const showsSomething = (slot: SourceElement) => assigned(nameOf(slot)) || (!unmet(slot) && hasFallback(slot));
-  const ownText = (el: SourceElement): boolean => el.children.some((node) =>
-    node.type === "text" ? !blank(template, node) : node.name !== "slot" && ownText(node));
-  const hidden = (el: SourceElement) => {
-    if (el.name === "slot") return unmet(el);
-    const inner = [...descendants(el.children)].filter((node) => node.name === "slot");
-    return inner.length > 0 && !inner.some(showsSomething) && !ownText(el);
+  // The browser assigns what the page gives a name to the first slot of that name only.
+  const first = new Map<string, SourceElement>();
+  const findSlots = (nodes: readonly SourceNode[]) => {
+    for (const node of elements(nodes)) {
+      if (node.name === "slot" && !first.has(nameOf(node))) first.set(nameOf(node), node);
+      findSlots(view.children(node));
+    }
   };
+  findSlots(tree);
+  const rule = emptyParts(view, {
+    section: isSectionTemplate(template),
+    hostHasContent,
+    // By place in the template: callers may pass nodes of their own parse.
+    filled: (slot) => slot.type === "element" && first.get(nameOf(slot))?.start === slot.start && filled.has(nameOf(slot)),
+  });
+  const hidden = (el: SourceElement) => rule.empty(el);
   const shown = new Map<string, boolean>();
-  const visit = (nodes: SourceNode[], hiddenAbove: boolean) => {
+  const visit = (nodes: readonly SourceNode[], hiddenAbove: boolean) => {
     for (const node of elements(nodes)) {
       const off = hiddenAbove || hidden(node);
       if (node.name === "slot") {
         const name = nameOf(node);
-        if (!shown.has(name)) shown.set(name, !off && (assigned(name) || hasFallback(node)));
+        if (!shown.has(name)) shown.set(name, !off && rule.showsSomething(node));
       }
-      visit(node.children, off);
+      visit(view.children(node), off);
     }
   };
   visit(tree, false);
@@ -587,7 +590,7 @@ export function slotValue(source: string, template: string, instance: Instance, 
       : false;
     if (value.editable && only?.close) {
       const inner = source.slice(only.tag.end, only.close.start);
-      value.breaks = takesBreaks(only.name) && breaksAllowed(inner);
+      value.breaks = takesBreaks(only) && breaksAllowed(inner);
       value.lines = value.breaks ? breakText(inner) : value.text;
     } else if (value.editable) value.lines = value.text;
     return value;
@@ -824,7 +827,7 @@ export interface ElementText {
 export function elementText(source: string, element: SourceElement): ElementText | undefined {
   if (!element.close || !textOnly(element.children)) return undefined;
   const inner = source.slice(element.tag.end, element.close.start);
-  const breaks = takesBreaks(element.name) && breaksAllowed(inner);
+  const breaks = takesBreaks(element) && breaksAllowed(inner);
   return {
     lines: breaks ? breakText(inner) : plainText(inner),
     breaks,

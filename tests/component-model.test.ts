@@ -1111,7 +1111,7 @@ test("review: detach retains whitespace and comments between fills, without copy
 });
 
 // ---- Line breaks typed in a Structure field ----
-import { breakSpelling, breaksAllowed, breakText, breakTextEdit } from "../src/page-builder/component-model.ts";
+import { breakSpelling, breaksAllowed, breakText, breakTextEdit, descendants, elementText, takesBreaks } from "../src/page-builder/component-model.ts";
 
 const applyEdit = (source: string, edit: { start: number; end: number; text: string } | undefined) =>
   edit ? source.slice(0, edit.start) + edit.text + source.slice(edit.end) : source;
@@ -1197,6 +1197,22 @@ test("new breaks copy the content's <br> spelling, never its attributes", () => 
   const source = '<p>One<br id="x">Two</p>';
   const { from, to } = innerOf(source);
   assert.equal(applyEdit(source, breakTextEdit(source, from, to, "One\nTwo\nThree")), '<p>One<br id="x">Two<br>Three</p>');
+});
+
+test("SVG, MathML and raw-text elements take no <br>; HTML inside a foreignObject does", () => {
+  const first = (source: string, name: string) => [...descendants(parseSource(source))].find((el) => el.name === name)!;
+  for (const name of ["xmp", "iframe", "noembed", "noframes", "plaintext", "textarea", "title", "script", "style", "ul", "select"])
+    assert.equal(takesBreaks(first(`<${name}></${name}>`, name)), false, name);
+  for (const name of ["p", "h2", "a", "span", "li", "button", "div"]) assert.equal(takesBreaks(first(`<${name}></${name}>`, name)), true, name);
+  const svg = `<svg><text>Line</text><a href="/x"><text>Go</text></a><foreignObject><p>Html</p></foreignObject></svg>`;
+  for (const name of ["svg", "text", "a"]) assert.equal(takesBreaks(first(svg, name)), false, `svg ${name}`);
+  assert.equal(takesBreaks(first(svg, "p")), true, "HTML in a foreignObject");
+  const math = `<p><math><mi>x</mi><mtext>is one</mtext></math></p>`;
+  for (const name of ["math", "mi", "mtext"]) assert.equal(takesBreaks(first(math, name)), false, `math ${name}`);
+  // A field editing SVG text stays one line.
+  const source = `<svg><text>One</text></svg>`;
+  assert.equal(elementText(source, first(source, "text"))?.breaks, false);
+  assert.equal(elementText("<p>One</p>", first("<p>One</p>", "p"))?.breaks, true);
 });
 
 

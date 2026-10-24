@@ -77,7 +77,8 @@ export interface SourceText {
 }
 export type SourceNode = SourceElement | SourceText;
 
-const RAW_TEXT = new Set(["script", "style", "textarea", "title", "xmp", "iframe", "noembed", "noframes"]);
+/** Elements whose content is raw text, not markup (the parser reads it to the end tag). */
+export const RAW_TEXT = new Set(["script", "style", "textarea", "title", "xmp", "iframe", "noembed", "noframes"]);
 // Raw text whose character references the browser keeps as written (textarea and title decode them).
 const UNDECODED = new Set(["script", "style", "xmp", "iframe", "noembed", "noframes"]);
 // The browser drops one newline right after these start tags.

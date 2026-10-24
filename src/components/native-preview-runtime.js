@@ -13,6 +13,7 @@ import { isInstance, movableBlock, sealed } from "../page-builder/rules/movable.
 import { TEMPLATE_BLOCK_TAGS } from "../page-builder/rules/template-blocks.ts";
 import { INLINE_FORMATTING, TEXT_RUN_TAGS, TEXT_TAGS } from "../page-builder/rules/text-level.ts";
 import { domView } from "../page-builder/rules/tree.ts";
+import { emptyParts, isContent } from "../page-builder/rules/empty-parts.ts";
 
 (function () {
   // Nested measuring documents share the runtime URL, but stop before any
@@ -2561,17 +2562,13 @@ import { domView } from "../page-builder/rules/tree.ts";
     return n.localName === "style" && (n.hasAttribute("data-native-css") || n.hasAttribute("data-native-component-css"));
   }
 
-  // In a section component, empty slots hide with their fallbacks when the
-  // page fills the instance.
-  // A bare instance shows fallbacks. Wrappers with no slot output or own
-  // text hide too, without changing source paths.
+  // Optional parts hide by the site's own rule (rules/empty-parts.ts, see
+  // applyEmptyRules), marked rather than removed so source paths hold.
   // Content the page gave the slot; its fallback does not count (flattened
   // alone, a slot with nothing assigned reports its fallback nodes).
   function slotAssigned(slot) {
     if (!slot.assignedNodes().length) return false;
-    return slot.assignedNodes({ flatten: true }).some(function (n) {
-      return n.nodeType === 1 || (n.nodeType === 3 && n.textContent.trim());
-    });
+    return slot.assignedNodes({ flatten: true }).some(function (n) { return isContent(n, ruleView); });
   }
   // Only page-authored instances can be filled. Nested template instances
   // have no unambiguous page-source node and deliberately produce no target.
@@ -2622,13 +2619,14 @@ import { domView } from "../page-builder/rules/tree.ts";
         if (slots.length <= 100) {
           var occurrences = Object.create(null);
           var assigned = Object.create(null);
+          var rule = emptyRule(host.shadowRoot);
           slots.forEach(function (slot) { if (slotAssigned(slot)) assigned[slot.name] = true; });
           var entries = slots.map(function (slot) {
             var name = slot.name;
             var occurrence = occurrences[name] || 0;
             occurrences[name] = occurrence + 1;
             var rect = rectOf(slot);
-            var hidden = !slotGhostVisible(slot) || slotConditionUnmet(slot);
+            var hidden = !slotGhostVisible(slot) || rule.unmet(slot);
             var entry = { name: name, occurrence: occurrence, slotNode: elementIndexPath(slot), assigned: !!assigned[name], hidden: hidden };
             if (!hidden && rect.width > 0 && rect.height > 0) entry.rect = rect;
             return entry;
@@ -2644,46 +2642,20 @@ import { domView } from "../page-builder/rules/tree.ts";
     if (key !== lastSlotGhosts) { lastSlotGhosts = key; emit("slot-ghosts", { report: report }); }
   }
 
-  function slotHasContent(slot) {
-    if (slotAssigned(slot)) return true;
-    if (slotConditionUnmet(slot)) return false;
-    return Array.prototype.some.call(slot.childNodes, function (n) {
-      return n.nodeType === 1 || (n.nodeType === 3 && n.textContent.trim());
-    });
-  }
-  function slotConditionUnmet(slot) {
-    var root = slot.getRootNode();
-    if (!(root instanceof ShadowRoot) || !sectionLike(root.host) || !fillsAnySlot(root.host)) return false;
-    // Placeholders show every fallback.
-    if (placeholdersOn(root.host)) return false;
-    // The first slot of its name is the one filled (the name as the browser reads it, not trimmed).
-    var name = slot.getAttribute("name") || "";
-    var named = Array.prototype.find.call(root.querySelectorAll("slot"), function (s) { return (s.getAttribute("name") || "") === name; });
-    return !named || !slotAssigned(named);
-  }
-  function fillsAnySlot(host) {
-    return Array.prototype.some.call(host.childNodes, function (n) {
-      return n.nodeType === 1 || (n.nodeType === 3 && n.textContent.trim());
-    });
-  }
-  // An element's text outside its slots (a slot's fallback is the slot's).
-  function ownText(el) {
-    return Array.prototype.some.call(el.childNodes, function (n) {
-      if (n.nodeType === 3) return Boolean(n.textContent.trim());
-      return n.nodeType === 1 && n.localName !== "slot" && ownText(n);
+  // The empty-parts rule (rules/empty-parts.ts) for the instance `root` (its shadow root) renders.
+  function emptyRule(root) {
+    var host = root instanceof ShadowRoot ? root.host : null;
+    return emptyParts(ruleView, {
+      // Placeholders show every fallback.
+      section: !!host && sectionLike(host) && !placeholdersOn(host),
+      hostHasContent: !!host && Array.prototype.some.call(host.childNodes, function (n) { return isContent(n, ruleView); }),
+      filled: slotAssigned,
     });
   }
   function applyEmptyRules(root) {
+    var rule = emptyRule(root);
     root.querySelectorAll("*").forEach(function (el) {
-      if (el.localName === "style") return;
-      if (el.localName === "slot") {
-        if (slotConditionUnmet(el)) el.setAttribute("data-native-empty", "");
-        else el.removeAttribute("data-native-empty");
-        return;
-      }
-      var slots = el.querySelectorAll("slot");
-      var empty = slots.length > 0 && !Array.prototype.some.call(slots, slotHasContent) && !ownText(el);
-      if (empty) el.setAttribute("data-native-empty", "");
+      if (rule.empty(el)) el.setAttribute("data-native-empty", "");
       else el.removeAttribute("data-native-empty");
     });
   }
