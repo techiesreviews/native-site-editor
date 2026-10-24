@@ -622,6 +622,7 @@ import { domView } from "../page-builder/rules/tree.ts";
     if (wasEditing && !editing && selected && placeKey(selected) === editingAt) startEditing(selected);
     else if (editing && editing !== selected) stopEditing(false);
     else if (editing && !typing) { editingText = editing.textContent; editingHtml = editing.innerHTML; }
+    typingPlace();
     lastInsertPoints = "";
     lastStructure = "";
     lastHover = null;
@@ -3002,6 +3003,15 @@ import { domView } from "../page-builder/rules/tree.ts";
     emit("typing", { path: typingAt.path, node: typingAt.node, left: true });
     typingAt = null;
     typingSaid = 0;
+  }
+  // After a render: the element typed in, where it is now (a change before it moves it), or left when it is gone.
+  function typingPlace() {
+    if (!typingAt) return;
+    if (!editing || !editing.isConnected) { leftTyping(); return; }
+    var at = { path: ownerPath(editing), node: elementIndexPath(editing) };
+    if (JSON.stringify(at) === JSON.stringify(typingAt)) return;
+    typingAt = at;
+    emit("typing", { path: at.path, node: at.node, left: false });
   }
   function onEditingBlur() {
     commitEditing();

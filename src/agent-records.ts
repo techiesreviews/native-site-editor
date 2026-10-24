@@ -38,6 +38,13 @@ export interface AgentRecords {
   /** Fences future delivery. Only an abort of a live in-flight delivery can prove cancellation. */
   cancel: (workspace: AgentWorkspace, operationId: OperationId, authorizationId: string, options?: { live: true }) => Promise<CancellationResult>;
   status: (workspace: AgentWorkspace, operationId: OperationId, authorizationId: string) => Promise<CancellationResult>;
+  /**
+   * A change that waits for the part the user types in (ticket 52), kept beside its receipt so a tab
+   * reloaded or closed meanwhile still answers for it: `identity` its work, `refused` why it did not
+   * land (a refusal let go, or the tab gone). Written while the change waits and once it is refused.
+   */
+  wait: (workspace: AgentWorkspace, operationId: OperationId, authorizationId: string, identity: string, refused?: string) => Promise<void>;
+  waiting: (workspace: AgentWorkspace, operationId: OperationId, authorizationId: string) => Promise<{ identity: string; refused?: string } | undefined>;
   receipt: (workspace: AgentWorkspace, operationId: OperationId, authorizationId: string) => Promise<AgentReceipt | undefined>;
   /** With `owner`, the same transaction also proves that fence still owns the workspace unpaused. */
   reconcile: (workspace: AgentWorkspace, commands: AgentCommit[], owner?: number) => Promise<AgentOutcome[]>;
@@ -63,10 +70,12 @@ export interface AgentRecords {
 /**
  * Small fences kept beside a workspace's receipts (in the `workspaces` store): a retired marker for
  * a receipt evicted before its 24 hours ended (so an agent reusing that operation id meanwhile
- * stays unknown), a cancellation tombstone and an authorization revocation. Each is kept 24 hours.
+ * stays unknown), a cancellation tombstone, an authorization revocation and a change that waits for
+ * the user (AgentRecords.wait). Each is kept 24 hours.
  */
 type Fence = { retired: true; workspace: string; operationId: OperationId; issuedAt: number; createdAt: number } |
-  { cancelled: true; workspace: string; at: number; definite?: boolean; uncertain?: boolean } | { revoked: true; workspace: string; at: number };
+  { cancelled: true; workspace: string; at: number; definite?: boolean; uncertain?: boolean } | { revoked: true; workspace: string; at: number } |
+  { waiting: true; workspace: string; at: number; identity: string; refused?: string };
 
 /** Per account/repository/branch workspace: receipts are kept 24 hours, at most 1,000 of them. */
 export const RECEIPT_RETENTION_MS = 24 * 60 * 60 * 1000;
@@ -225,12 +234,13 @@ export function unavailableAgentRecords(factory?: IDBFactory): AgentRecords {
     return Promise.reject(new AgentRecordsError("unavailable", message));
   };
   return { reconcile: refuse, pause: refuse, snapshot: refuse, revoke: refuse, cancel: refuse, evictReceipts: refuse, commit: refuse,
-    status: refuse, receipt: refuse, workspace: refuse, setFence: refuse, putConversation: refuse, checkConversation: refuse, conversations: refuse };
+    status: refuse, wait: refuse, waiting: refuse, receipt: refuse, workspace: refuse, setFence: refuse, putConversation: refuse, checkConversation: refuse, conversations: refuse };
 }
 
 const isFence = (value: unknown): value is Fence => typeof value === "object" && value !== null &&
   typeof (value as { workspace?: unknown }).workspace === "string" &&
-  ((value as { retired?: unknown }).retired === true || (value as { cancelled?: unknown }).cancelled === true || (value as { revoked?: unknown }).revoked === true);
+  ((value as { retired?: unknown }).retired === true || (value as { cancelled?: unknown }).cancelled === true || (value as { revoked?: unknown }).revoked === true ||
+    (value as { waiting?: unknown }).waiting === true);
 const receiptKeyOf = (receipt: AgentReceipt) => JSON.stringify([receipt.workspace, receipt.operationId]);
 const group = <T>(rows: [string, T][], by: (value: T) => string) => {
   const groups = new Map<string, [string, T][]>();
@@ -254,6 +264,7 @@ export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFact
   const initial = (): WorkspaceRecord => ({ revision: 0, generation: 0 });
   const revocationKey = (workspace: AgentWorkspace, authorizationId: string) => JSON.stringify(["revoked", workspaceKey(workspace), authorizationId]);
   const cancellationKey = (workspace: AgentWorkspace, operationId: OperationId, authorizationId: string) => JSON.stringify(["cancelled", workspaceKey(workspace), authorizationId, operationId]);
+  const waitingKey = (workspace: AgentWorkspace, operationId: OperationId, authorizationId: string) => JSON.stringify(["waiting", workspaceKey(workspace), authorizationId, operationId]);
   // Markers written before the caps (one per operation id, any workspace) are no longer made, and still refuse.
   const legacyRetiredKey = (operationId: OperationId) => JSON.stringify(["retired", operationId]);
   const expired = (receipt: AgentReceipt, time = now()) => receipt.createdAt <= time - RECEIPT_RETENTION_MS;
@@ -500,6 +511,29 @@ export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFact
                 });
               });
             });
+          });
+        });
+      });
+    },
+    wait(workspace, operationId, authorizationId, identity, refused) {
+      const scope = workspaceKey(workspace);
+      return run<void>([draftStores.workspaces], "readwrite", (tx, read, done) => {
+        const workspaces = tx.objectStore(draftStores.workspaces);
+        read(workspaces.get(revocationKey(workspace, authorizationId)), (revoked: unknown) => {
+          if (revoked) throw new AgentRecordsError("revoked", "Agent authorization has been revoked.");
+          workspaces.put({ waiting: true, workspace: scope, at: now(), identity, ...(refused ? { refused } : {}) } satisfies Fence, waitingKey(workspace, operationId, authorizationId));
+          done();
+        });
+      });
+    },
+    waiting(workspace, operationId, authorizationId) {
+      return run<{ identity: string; refused?: string } | undefined>([draftStores.workspaces], "readonly", (tx, read, done) => {
+        const workspaces = tx.objectStore(draftStores.workspaces);
+        read(workspaces.get(revocationKey(workspace, authorizationId)), (revoked: unknown) => {
+          if (revoked) throw new AgentRecordsError("revoked", "Agent authorization has been revoked.");
+          read(workspaces.get(waitingKey(workspace, operationId, authorizationId)), (fence: Fence | undefined) => {
+            done(fence && "waiting" in fence && fenceTime(fence) > now() - RECEIPT_RETENTION_MS
+              ? { identity: fence.identity, ...(fence.refused ? { refused: fence.refused } : {}) } : undefined);
           });
         });
       });

@@ -327,12 +327,6 @@ export interface HistorySourceReceipt {
   redo(): boolean;
   isCurrent(): boolean;
 }
-/** The line (from 1) of `text` at `offset`. */
-function lineOf(text: string, offset: number) {
-  let line = 1;
-  for (let at = text.indexOf("\n"); at >= 0 && at < offset; at = text.indexOf("\n", at + 1)) line++;
-  return line;
-}
 /** Settle touched typing steps before staging an agent command. */
 export function flushAgentTyping(scope: DraftScope, paths: string[]) {
   sourceStore().flushTyping(scope, paths);
@@ -935,10 +929,11 @@ export function mountSourceEditor(
     onStore(event) {
       if (disposed) return;
       if (event.type === "text") update(event.changes);
-      // Typing here: the lines it changes are where the user works (ticket 52).
-      const typed = event.type === "text" && event.origin === "typing" && stored ? event.changes?.[0] : undefined;
-      if (typed && event.type === "text") workingPart.typed({ path: file.path, lines: { start: lineOf(event.text, typed.start), end: lineOf(event.text, typed.start + typed.text.length) } });
       else if (event.type === "file" && (event.change === "base" || event.change === "saved")) update();
+      // Typing here: the lines it changes are where the user works (ticket 52). A typing event
+      // carries one change (the store's diff of the pane's text), so the first is all of it.
+      const typed = event.type === "text" && event.origin === "typing" && stored ? event.changes?.[0] : undefined;
+      if (typed && event.type === "text") workingPart.typedLines(file.path, event.text, typed);
     },
     refused(message) {
       if (disposed) return;

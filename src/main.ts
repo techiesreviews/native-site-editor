@@ -147,7 +147,7 @@ const agentPresence = createAgentPresence({
   pages: () => Object.values(runtime.site?.routes ?? {}), source: path => runtime.source(path), begin: () => workspaceSession.begin(),
   paint: target => { nativePreview?.agentPresence(target); pageStructure?.agentPresence(target); },
 });
-function nextLoad(scope?: WorkspaceScope) { workspaceSession.next(scope); finishedWork.loading(scope); agentPresence.refresh(); return workspaceSession.begin(); }
+function nextLoad(scope?: WorkspaceScope) { workspaceSession.next(scope); finishedWork.loading(scope); agentPresence.refresh(); workingPart.left(); return workspaceSession.begin(); }
 const cleanSources = new CleanSourceCache(() => info?.user?.login);
 // The open native site's state (src/native-site-runtime.ts); its preview adapter stays here.
 const runtime = createNativeSiteRuntime({

@@ -70,9 +70,9 @@ test("an agent's edit of the heading Lex types in waits until he clicks away, th
   const { client, call } = await connect(page, baseURL);
   try {
     await typeInHeading(page, " to");
-    // Agents are told where he works.
+    // Agents are told where he works, at once.
     const working = { file: "index.html", route: "/", element: "1.0.0", tag: "h1", note: expect.stringMatching(/waiting/) };
-    await expect.poll(async () => (await call("get_site")).editor.userEditing).toMatchObject(working);
+    await expect.poll(async () => (await call("get_site")).editor.userEditing, { timeout: 3_000 }).toMatchObject(working);
     const shown = await call("get_page", { page: "/" });
     expect(shown.userEditing).toMatchObject(working);
     // An edit elsewhere on the page lands at once, beside his typing.
@@ -81,9 +81,12 @@ test("an agent's edit of the heading Lex types in waits until he clicks away, th
     await expect(frame(page).locator(".hero .lead")).toContainText("Edit simple HTML");
     const heading = frame(page).locator(".hero h1");
     await expect(heading).toHaveText("A native browser preview to");
-    // He types on (within the pause); the agent's edit of his heading waits, and a duplicate joins it.
+    // He types on, then stops; what he typed is not written until he leaves the heading, so no pause lets it go.
     await page.keyboard.type("day");
     await expect(heading).toHaveText("A native browser preview today");
+    // fixed-wait: longer than the code pane's 5 s pause, which the page's typing does not have.
+    await page.waitForTimeout(6_000);
+    expect((await call("get_site")).editor.userEditing).toMatchObject(working);
     const args = { path: "index.html", expectedHash: elsewhere.result.hash, edits: [{ oldText: "A native", newText: "One agent's" }], requestId: "wait-heading", waitSeconds: 0 };
     const waiting = await call("edit_file", args);
     expect(waiting).toMatchObject({ requestId: "wait-heading", state: "waiting", message: expect.stringMatching(/lands when they click away/) });
@@ -116,9 +119,11 @@ test("an agent's edit waiting for Lex lands on its own site as an unsaved change
     await page.request.post(`${baseURL}/__demo/branch`, { data: { name: "feature" } });
     await page.evaluate(() => { location.hash = "repo=501&branch=feature&file=index.html"; });
     await expect(page.locator("#status")).toContainText("Up to date with feature", { timeout: 30_000 });
-    // Left on main (typing there has paused since): it lands there, not here.
+    // Opening feature leaves main's heading: the change lands on main, not here. Main's typing " now" was never
+    // written (the page writes typing when it is left), so it is not kept across the switch, as before ticket 52.
     await expect.poll(async () => (await drafts(page, "main")).map(draft => [draft.path, draft.content.includes(">Main's agent browser preview</h1>")]), { timeout: 20_000 })
       .toEqual([["index.html", true]]);
+    expect((await drafts(page, "main"))[0].content).not.toContain(" now");
     expect(await drafts(page, "feature")).toEqual([]);
     await expect(frame(page).locator(".hero h1")).toHaveText("A native browser preview");
     // Back on main, agents on there again: it was applied.
@@ -127,5 +132,28 @@ test("an agent's edit waiting for Lex lands on its own site as an unsaved change
     await expect.poll(ready, { timeout: 30_000 }).toBeGreaterThan(before);
     await expect.poll(async () => (await call("get_command_status", { requestId: "wait-switch" })).state, { timeout: 15_000 }).toBe("applied");
     await expect(frame(page).locator(".hero h1")).toHaveText("Main's agent browser preview");
+  } finally { await client.close(); }
+});
+
+test("an element an agent adds before the heading Lex types in moves where he works; an edit of his heading still waits", async ({ page, baseURL }) => {
+  const { client, call } = await connect(page, baseURL);
+  try {
+    await typeInHeading(page, " here");
+    await expect.poll(async () => (await call("get_site")).editor.userEditing?.element).toBe("1.0.0");
+    const shown = await call("get_page", { page: "/" });
+    const added = await call("edit_file", { path: "index.html", expectedHash: shown.hash, requestId: "wait-add", waitSeconds: 0,
+      edits: [{ oldText: '<section class="hero"', newText: '<p data-key="agent-note">A note first</p>\n  <section class="hero"' }] });
+    expect(added).toMatchObject({ state: "applied" });
+    await expect(frame(page).locator('[data-key="agent-note"]')).toHaveText("A note first");
+    const heading = frame(page).locator(".hero h1");
+    await expect(heading).toHaveText("A native browser preview here");
+    // The page tells the heading's new place; agents are told it.
+    await expect.poll(async () => (await call("get_site")).editor.userEditing?.element).toBe("1.1.0");
+    const page2 = await call("get_page", { page: "/" });
+    expect(await call("edit_file", { path: "index.html", expectedHash: page2.hash, edits: [{ oldText: "A native", newText: "Moved agent's" }], requestId: "wait-moved", waitSeconds: 0 }))
+      .toMatchObject({ state: "waiting" });
+    await clickOnText(frame(page).locator(".filler h2"));
+    await expect.poll(async () => (await call("get_command_status", { requestId: "wait-moved" })).state, { timeout: 15_000 }).toBe("applied");
+    await expect(heading).toHaveText("Moved agent's browser preview here");
   } finally { await client.close(); }
 });
