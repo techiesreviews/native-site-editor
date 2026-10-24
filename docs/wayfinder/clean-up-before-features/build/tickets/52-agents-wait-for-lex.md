@@ -2,7 +2,7 @@
 title: "Agents know where Lex is working and wait for that part"
 type: task (AFK)
 status: open
-assignee:
+assignee: lead-52 (this session)
 builder: claude
 blocked_by: [51-one-agent-command-path, 32-one-overlay-for-agents-and-media]
 ---
