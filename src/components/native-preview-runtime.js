@@ -716,6 +716,7 @@ import { domView } from "../page-builder/rules/tree.ts";
     drawBox(selectBox, selected);
     canvasPaint();
     drawComponentBoxes();
+    drawPresence();
     scheduleRect();
     schedulePins();
     scheduleItemGrids();
@@ -4043,6 +4044,40 @@ import { domView } from "../page-builder/rules/tree.ts";
   }
   // ---- End of canvas ----
 
+  // ---- Agent presence (ticket 33) ----
+  // An agent working on a section of this page, shown as a collaborator is in
+  // Figma or Paper: a thin outline in the agent's colour (the editor's
+  // connected MCP dot) with its name in a chip on the outline's top-left
+  // corner, and nothing else. Drawn over the page, never part of it and never
+  // a click target; the editor ends it once the change lands or stops.
+  var presenceColor = "#3f9a4f";
+  var presenceRequest = null;
+  var presenceName = "";
+  var presenceBox = null;
+  var presenceChip = null;
+  function drawPresence() {
+    if (!presenceBox) {
+      presenceBox = canvasOverlay("agent-presence");
+      presenceChip = canvasOverlay("agent-presence-chip");
+      presenceChip.style.cssText += "z-index:2147483647;padding:0 6px;border-radius:3px 3px 3px 0;white-space:nowrap;" +
+        "font:600 11px/16px system-ui,-apple-system,'Segoe UI',sans-serif;letter-spacing:0;max-width:60vw;overflow:hidden;text-overflow:ellipsis;";
+    }
+    var target = presenceRequest ? resolveNodePath(presenceRequest) : null;
+    drawBox(presenceBox, target);
+    if (presenceBox.style.display === "none") { presenceChip.style.display = "none"; return; }
+    presenceBox.style.border = "2px solid " + presenceColor;
+    presenceChip.textContent = presenceName;
+    presenceChip.style.background = presenceColor;
+    presenceChip.style.color = canvasInk(presenceColor);
+    presenceChip.style.display = "block";
+    // On the outline's top-left corner, just above it, or inside it at the top of the page.
+    var rect = rectOf(target);
+    var left = Math.max(0, Math.min(rect.left, document.documentElement.clientWidth - presenceChip.offsetWidth));
+    var top = rect.top + window.scrollY >= 16 ? rect.top - 16 : rect.top;
+    presenceChip.style.left = left + window.scrollX + "px";
+    presenceChip.style.top = top + window.scrollY + "px";
+  }
+
   function refreshScroll(event) {
     dismissContextMenu();
     var root = event.target && event.target.getRootNode ? event.target.getRootNode() : null;
@@ -4153,9 +4188,16 @@ import { domView } from "../page-builder/rules/tree.ts";
     if (msg.type === "theme") {
       if (typeof msg.focus === "string" && msg.focus) boxColor = msg.focus;
       if (typeof msg.component === "string" && msg.component) componentColor = msg.component;
+      if (typeof msg.presence === "string" && msg.presence) presenceColor = msg.presence;
       paintBoxes();
       if (selectBox) { selectBox.__tint = hoverBox.__tint = ""; }
       updateBoxes();
+      return;
+    }
+    if (msg.type === "agent-presence") {
+      presenceRequest = msg.request && Array.isArray(msg.request.node) ? msg.request : null;
+      presenceName = typeof msg.name === "string" && msg.name ? msg.name.slice(0, 60) : "Agent";
+      drawPresence();
       return;
     }
     if (msg.type === "component-focus") {

@@ -9,7 +9,7 @@ const HOST_TYPES = {
   inspect: true, "measure-image": true, theme: true, "component-focus": true, "edit-component": true,
   viewing: true, "scroll-by": true, pins: true, "show-pin": true, assets: true,
   "canvas-crumb": true, "canvas-avoid": true, "canvas-hint": true, "canvas-code-select": true,
-  "clear-selection": true, "select-node": true, "select-parent": true, "item-grid-track": true,
+  "clear-selection": true, "select-node": true, "select-parent": true, "item-grid-track": true, "agent-presence": true,
 } satisfies Record<HostMessage["type"], true>;
 
 const runtime = readFileSync(new URL("../src/components/native-preview-runtime.js", import.meta.url), "utf8");

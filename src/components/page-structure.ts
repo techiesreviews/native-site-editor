@@ -572,6 +572,13 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
   const templateRoots = new WeakMap<NativeStructureItem, { path: string; node: number[] }>();
   let rootAlias: { key: string; id: string; path: string; node: number[]; painted?: string } | undefined;
   const templateKey = (path: string, at: number[]) => `@${path}:${key(at)}`;
+  // An agent working on an element of the page (ticket 33): its row wears the agent's dot, says it is busy, nothing more.
+  let presence: { path: string; node: number[] } | undefined;
+  const presenceRow = () => presence && structure?.path === presence.path ? key(presence.node) : undefined;
+  function markAgent(el: HTMLElement, on: boolean) {
+    el.classList.toggle("page-structure__row--agent", on);
+    if (on) el.setAttribute("aria-busy", "true"); else el.removeAttribute("aria-busy");
+  }
   const itemKey = (item: NativeStructureItem) => {
     const path = templatePaths.get(item);
     return path ? templateKey(path, item.node) : key(item.node);
@@ -784,6 +791,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
       onKey(event, item, el);
     });
     rows.set(id, el);
+    if (id === presenceRow()) markAgent(el, true);
     const editor = editing && slotContext ? editingNow() : undefined;
     // The row's own text being edited: drawn from the source as it is now.
     const typed = textEditing ? rowText(item) : undefined;
@@ -1335,6 +1343,13 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
         if (current) reveal(current);
         current?.scrollIntoView({ block: "nearest" });
       }
+    },
+    /** An agent working on the element `node` of the page `path` (ticket 33): its row wears the agent's dot; undefined ends it. */
+    agentPresence(target: { path: string; node: readonly number[] } | undefined) {
+      presence = target && { path: target.path, node: [...target.node] };
+      for (const el of tree.querySelectorAll<HTMLElement>(".page-structure__row--agent")) markAgent(el, false);
+      const id = presenceRow(), el = id !== undefined ? rows.get(id) : undefined;
+      if (el) markAgent(el, true);
     },
     /** Mark the row of the element selected in the preview, and show it. */
     select(target: SelectTarget | undefined) {

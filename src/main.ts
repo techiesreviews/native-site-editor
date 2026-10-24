@@ -3550,7 +3550,23 @@ function makeAgentSiteActions(edits: GuardedEdits = guardedEdits, atomic = false
     return runAgentMedia(mediaController, mediaPorts, command, page, since);
   },
   legacy: applyAgentCommand,
+  presence: showAgentPresence,
 }; }
+// Ticket 33: an agent at work on a section of the page shown draws its presence there and on its
+// Page Structure row, while the workspace it began in is shown; the latest change's wins.
+let agentPresence: { path: string; node: number[]; at: SessionStamp } | undefined;
+function showAgentPresence(path: string, find: (source: string) => number[] | undefined) {
+  const source = runtime.source(path), node = source === undefined ? undefined : find(source);
+  if (!node) return () => {};
+  const mine = agentPresence = { path, node, at: workspaceSession.begin() };
+  paintAgentPresence();
+  return () => { if (agentPresence === mine) { agentPresence = undefined; paintAgentPresence(); } };
+}
+function paintAgentPresence() {
+  const shown = agentPresence?.at.holds() ? { path: agentPresence.path, node: agentPresence.node } : undefined;
+  nativePreview?.agentPresence(shown);
+  pageStructure?.agentPresence(shown);
+}
 async function applyAgentSiteCommand(command: AgentCommand) {
   const [{ applySiteCommand, applyStructural, prepareAgentText, atomicAgentCommand, agentStructuralActions, finishAgentTextElsewhere, editorOrElsewhere, pinnedMedia, pinnedMediaActions, pinnedMediaAway }, { createPagesController }, { createLazyFileOperationsController }, { agentCommandFiles }] = await Promise.all([loadAgentSite(), loadPagesActions(), loadFileOps(), import("./agent-tools")]);
   const factories = { createGuardedEdits, createPagesController, createLazyFileOperationsController, createBlockMoves, withPageField };

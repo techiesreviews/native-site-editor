@@ -29,6 +29,7 @@ import { startTagAttribute, locateNativeElement, locateNativeElementRange, parse
 import { removeEdit } from "./native-structure";
 import type { createGuardedEdits, EditorWorkspace, GuardedEdits, NodeRef, Outcome, Reads } from "./guarded-edit";
 import { addSectionStep, type LoaderPlanner, type SectionPlanned } from "./page-builder/component-plans";
+import { readSource, type SourceNode } from "./page-builder/source-tree";
 import type { AgentCommandOutcome } from "./components/agent-menu";
 import type { MediaPin } from "./controllers/media-controller";
 
@@ -188,6 +189,8 @@ export function agentStructuralActions(workspace: EditorWorkspace, context: Agen
   const base = ports.actions(scoped, true);
   const loader: LoaderPlanner | undefined = ports.loader ? (path, text, reads) => ports.loader!(path, text, reads, checkReads) : checked(base).loaderPlan;
   const actions: AgentSiteActions = { ...checked(base), edits: scoped,
+    // Presence reads nothing the command proves (ticket 33).
+    presence: base.presence,
     loaderPlan: loader,
     async createPage(request) {
       const plan = pages.planNew(request);
@@ -573,6 +576,11 @@ export interface AgentSiteActions {
   media(command: AgentCommand): Promise<void | { message: string; result: Record<string, string> }>;
   /** The Astro-era active-file operations. */
   legacy(command: AgentCommand): Promise<void>;
+  /**
+   * An agent at work on the page `path` (ticket 33): `find` names the element it works on in that page's
+   * text now (its section), which shows the agent's presence while that page is shown; ended by the returned call.
+   */
+  presence?: (path: string, find: (source: string) => number[] | undefined) => () => void;
 }
 
 export class Conflict extends Error {}
@@ -650,10 +658,51 @@ function refuseProtected(command: AgentCommand) {
   if (command.operation === "write_file" && isMediaUploadWrite(path)) throw new Error(OUTSIDE_MEDIA_REFUSED);
 }
 
+// ---- Agent presence (ticket 33) ----
+
+/**
+ * The element of the page `source` an agent's change works on, as its presence shows it (ticket 33):
+ * the section the change is in (a section moved or removed, the section of an element it changes, of a
+ * place it adds a section to, of the text it rewrites), else the element changed itself. None for a
+ * change of no one element (page details, a file, text outside any section, the page's top level).
+ * Read as the preview counts the page (readSource), so the path is the editor's node path.
+ */
+export function agentPresenceTarget(command: AgentCommand, source: string, sectionTags: ReadonlySet<string>): number[] | undefined {
+  const args = command.args ?? {}, tree = readSource(source, { page: true });
+  const sectionLike = (el: SourceNode | undefined) => el?.type === "element" && (el.name === "section" || sectionTags.has(el.name));
+  // The deepest section holding the element at `node` (or being it), else that element.
+  const within = (node: number[] | undefined) => {
+    if (!node?.length || !tree.at(node)) return undefined;
+    for (let depth = node.length; depth > 0; depth--) if (sectionLike(tree.at(node.slice(0, depth)))) return node.slice(0, depth);
+    return node;
+  };
+  switch (command.operation) {
+    case "move_section":
+    case "remove_section": return within(parseOutlineId(String(args.section ?? "")));
+    case "add_section": return args.container ? within(parseOutlineId(args.container)) : undefined;
+    case "make_component":
+    case "frame_image":
+    case "place_media":
+    case "loop_video": return args.element ? within(parseOutlineId(args.element)) : undefined;
+    case "write_file": {
+      const edit = minimalTextEdit(source, command.content);
+      if (!edit) return undefined;
+      // Elements come in document order: the last section holding the edit is the deepest.
+      const holding = tree.elements().filter(el => {
+        const range = sectionLike(el) ? tree.range(el) : undefined;
+        return range && range.start <= edit.start && edit.end <= range.end;
+      }).at(-1);
+      return holding && tree.path(holding);
+    }
+  }
+  return undefined;
+}
+
 /**
  * Applies one queued change. Resolves to what the agent is told; throws with
  * the reason when the change no longer fits (the file changed, the section
- * moved), and nothing is changed then.
+ * moved), and nothing is changed then. While it runs, the agent's presence
+ * shows on the section it works on (ticket 33), gone once it lands or stops.
  */
 export async function applySiteCommand(actions: AgentSiteActions, command: AgentCommand): Promise<AgentCommandOutcome> {
   if (command.operation === "update_active_draft" || command.operation === "create_file_draft") {
@@ -662,11 +711,24 @@ export async function applySiteCommand(actions: AgentSiteActions, command: Agent
   }
   refuseProtected(command);
   const args = command.args ?? {};
-  const path = command.path;
-  const mediaProblem = agentMediaArgsProblem(command.operation, args, path);
+  const mediaProblem = agentMediaArgsProblem(command.operation, args, command.path);
   if (mediaProblem) throw new Conflict(mediaProblem);
   for (const candidate of [args.file, args.with, ...args.files ?? []])
     if (candidate && touchesMediaRecords(candidate)) throw new Error(MEDIA_RECORDS_REFUSED);
+  // Admitted: the agent is at work from here until the change lands or stops.
+  const admitted = command;
+  let end = () => {};
+  try {
+    const started = actions.presence?.(admitted.path, source => agentPresenceTarget(admitted, source, actions.sectionTags()));
+    if (typeof started === "function") end = started;
+  } catch { /* Presence is a picture of the work: it never stops it. */ }
+  try { return await applyAdmitted(actions, admitted); }
+  finally { end(); }
+}
+
+async function applyAdmitted(actions: AgentSiteActions, command: AgentCommand): Promise<AgentCommandOutcome> {
+  const args = command.args ?? {};
+  const path = command.path;
   switch (command.operation) {
     case "write_file": {
       const before = await expectHash(actions, path, command.expectedHash);
@@ -1040,6 +1102,8 @@ export function pinnedMediaActions(actions: AgentSiteActions, command: AgentComm
     text: async path => left() ? pin.source(path) : actions.text(path),
     open: async path => left() ? true : actions.open(path),
     isMounted: path => left() || actions.isMounted(path),
+    // Its presence shows only on its own page shown (ticket 33).
+    presence: (path, find) => left() ? () => {} : actions.presence?.(path, find) ?? (() => {}),
   };
 }
 

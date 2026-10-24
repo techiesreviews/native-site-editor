@@ -82,7 +82,9 @@ export type HostMessage =
   | Host<"finish-typing", { id: number }>
   | Host<"measure-image", { id: number; request: NativeNodeRequest & { image?: { width: number; height: number }; slot?: string; style?: string } }>
   | Host<"inspect", { id: number; request: { path?: string; node?: number[]; selector?: string; limit?: number } }>
-  | Host<"theme", { focus: string; component: string }>
+  | Host<"theme", { focus: string; component: string; presence: string }>
+  // An agent working on the element at `request` (its page's section, ticket 33); null: no agent at work here.
+  | Host<"agent-presence", { request: NativeNodeRequest | null; name: string }>
   | Host<"component-focus", { tag: string }>
   | Host<"edit-component", { mode: EditComponentFrameMode | undefined }>
   | Host<"viewing", { viewing: boolean }>
