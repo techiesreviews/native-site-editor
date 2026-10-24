@@ -567,8 +567,12 @@ test("a press while the failed prompt's reconnect is under way makes one prompt 
   await expect(menu).toHaveAttribute("data-state", "failed");
   await reconnecting;
   refuse = false;
+  // Time stands still from here: a press that waited out the reconnect's backoff never prompts.
+  await page.clock.install();
+  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 100));
   await action.click();
-  await expect(action).toHaveText("Wait for MCP", { timeout: 15_000 });
+  // Copied stays while the clock stands still (Wait for MCP follows it).
+  await expect(action).toHaveText("Copied");
   expect(made).toBe(1);
 });
 

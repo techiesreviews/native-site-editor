@@ -558,12 +558,16 @@ export function createAgentMenu(options: {
   async function turnOn(task?: string) {
     if (!options.repository() || changing) return;
     startRemote();
+    // A turn-off, another turn-on or a site move while this press waits ends it.
+    const at = activation;
     await readConnections();
-    if (ownerPaused) return;
+    if (ownerPaused || !live(at)) return;
     await activateSocket();
+    if (!live(at)) return;
     // A reconnect left from before the press (a failed request is reported to the socket too, and
     // its attempts outlive the connection) waits out its backoff: the press tries now, as a retry.
     if (state() === "reconnecting") await transport?.retry().catch(() => undefined);
+    if (!live(at)) return;
     const now = state();
     if (now === "idle") await start(task);
     // A token already waits (another tab's, another browser's, or this tab's own): Connect to MCP
