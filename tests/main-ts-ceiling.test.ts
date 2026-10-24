@@ -109,32 +109,45 @@ test("a setup host member passed by value, called on the spot or reached through
   assert.deepEqual(hostMembersUsedEarly(source), ["showGetStarted (line 1)", "startSitePanel (line 2)", "takeStartingPoint (line 3)", "writeStartingPoint via early() (line 4)"]);
 });
 
-// The Pages & files host reads main.ts's `let` state when it runs: such a value goes in as a getter (and a
-// setter where the host writes it, as `fileGeneration`), never as a copy taken when the host is made.
-function letsHandedByValue(source: string): string[] {
+// The Pages & files host and the agent's commands read main.ts's `let` state when they run: such a value goes in
+// as a getter (and a setter where the host writes it, as the Pages & files host's `fileGeneration`), never as a
+// copy taken when the host is made.
+function letsHandedByValue(source: string, factory = "createPagesAndFilesHost"): string[] {
   const tree = parse(source, "src/main.ts");
   const lets = new Set<string>();
   for (const statement of tree.statements)
     if (ts.isVariableStatement(statement) && statement.declarationList.flags & ts.NodeFlags.Let)
       for (const item of statement.declarationList.declarations) if (ts.isIdentifier(item.name)) lets.add(item.name.text);
   const found: string[] = [];
+  let called = false;
   walk(tree, (node) => {
-    if (!ts.isCallExpression(node) || !ts.isIdentifier(node.expression) || node.expression.text !== "createPagesAndFilesHost") return;
+    if (!ts.isCallExpression(node) || !ts.isIdentifier(node.expression) || node.expression.text !== factory) return;
+    called = true;
     const ports = node.arguments[0];
-    assert.ok(ports && ts.isObjectLiteralExpression(ports), "main.ts hands createPagesAndFilesHost an object of ports");
+    assert.ok(ports && ts.isObjectLiteralExpression(ports), `main.ts hands ${factory} an object of ports`);
     const accessors = (kind: TS.SyntaxKind) => new Set(ports.properties.filter((item) => item.kind === kind).map((item) => item.name?.getText(tree)));
-    if (!accessors(ts.SyntaxKind.GetAccessor).has("fileGeneration") || !accessors(ts.SyntaxKind.SetAccessor).has("fileGeneration")) found.push("fileGeneration (no getter and setter)");
+    if (factory === "createPagesAndFilesHost" && (!accessors(ts.SyntaxKind.GetAccessor).has("fileGeneration") || !accessors(ts.SyntaxKind.SetAccessor).has("fileGeneration"))) found.push("fileGeneration (no getter and setter)");
     for (const item of ports.properties) {
       const value = ts.isShorthandPropertyAssignment(item) ? item.name : ts.isPropertyAssignment(item) ? item.initializer : undefined;
       if (value && ts.isIdentifier(value) && lets.has(value.text)) found.push(`${item.name!.getText(tree)} (by value)`);
     }
   });
+  assert.ok(called, `main.ts calls ${factory}`);
   return found;
 }
 
-test("main.ts hands the Pages & files host its let state through accessors, read when the host runs", () => {
+test("main.ts hands the Pages & files host and the agent's commands their let state through accessors, read when they run", () => {
   const source = readFileSync(new URL("../src/main.ts", import.meta.url), "utf8");
   assert.deepEqual(letsHandedByValue(source), []);
+  assert.deepEqual(letsHandedByValue(source, "createAgentCommands"), []);
+});
+
+test("a let handed to the agent's commands by value is named", () => {
+  const source = [
+    "let info = {}, componentTools, pageStructure, nativePreview;",
+    "const commands = createAgentCommands({ info, tools: componentTools, get pageStructure() { return pageStructure; }, get nativePreview() { return nativePreview; } });",
+  ].join("\n");
+  assert.deepEqual(letsHandedByValue(source, "createAgentCommands"), ["info (by value)", "tools (by value)"]);
 });
 
 test("a let handed to the Pages & files host by value, or fileGeneration without its setter, is named", () => {

@@ -248,9 +248,9 @@ Ranges are approximate navigation hints, measured in this worktree; search the s
 | Media reads, uploads and media manager ports | 1624–1922 | loadNativeAssets, uploadFilesTo, applyMediaBatch, mediaController |
 | Site activation and component styles | 1923–2126 | deactivateNative, loadNativeComponentStyles, activateNativeSite |
 | Deferred text index and first-paint/title gates | 2127–2314 | startNativeTextIndex, noteNativePainted, indexNativeTextFiles, ensureNativeTextIndex |
-| Current page, GitHub reads wiring and closing the workspace before sign-in | 2315–2459 | setCurrentPage, readFile, closeWorkspace (status, errorMessage, api: src/github-reads.ts) |
-| Login, Start your site, Setup checklist, wizard and Get started ports (src/setup-host.ts), directory summary | 2460–2541 | setup, setupScope, showDirectory |
-| Card grids; Pages & files host ports (src/pages-and-files-host.ts: trees, tabs, Create, file operations, resync, save) | 2542–2599 | cardsController, pagesAndFiles, pagesController, savePublish, afterFileChanges, treeState |
+| Current page, GitHub reads wiring and closing the workspace before sign-in | 2313–2457 | setCurrentPage, readFile, closeWorkspace (status, errorMessage, api: src/github-reads.ts) |
+| Login, Start your site, Setup checklist, wizard and Get started ports (src/setup-host.ts), directory summary | 2458–2539 | setup, setupScope, showDirectory |
+| Card grids; Pages & files host ports (src/pages-and-files-host.ts: trees, tabs, Create, file operations, resync, save) | 2540–2596 | cardsController, pagesAndFiles, pagesController, savePublish, afterFileChanges, treeState |
 | Source pane ports (src/controllers/source-pane-controller.ts) | 2597–2628 | sourcePane, openEntry, mountSource, nativeComponentTagForPath, updateAgentContext |
 | Agent context and command ports (src/agent-site-host.ts) | 2629–2678 | agentContext, agentSiteHost, agentCommands |
 | Fallback page; new, uploaded and deleted drafts | 2679–2754 | nativeFallbackPage, openNewDraft, showUpload, showDeletedFile |
