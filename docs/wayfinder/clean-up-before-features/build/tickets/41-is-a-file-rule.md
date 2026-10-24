@@ -2,7 +2,7 @@
 title: "One \"is a file\" rule everywhere"
 type: task (AFK)
 status: open
-assignee:
+assignee: lead-41 (this session)
 builder: sol
 blocked_by: [40-page-address-and-component-rules]
 ---
