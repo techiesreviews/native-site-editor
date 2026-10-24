@@ -102,7 +102,7 @@ import { createParkedSteps, parkedTransitions } from "./guarded-edit/parked";
 import { createEditorWorkspace } from "./editor-workspace";
 import { createFinishedElsewhere, openLink } from "./finished-elsewhere";
 import { createAgentPresence } from "./agent-presence";
-import { createWorkspaceSession, draftScopeOf, githubScope, holdsDraftScope, setupKeyOf, type SessionStamp, type WorkspaceScope } from "./workspace-session";
+import { createWorkspaceSession, draftScopeOf, githubScope, holdsDraftScope, sameBranch, setupKeyOf, type SessionStamp, type WorkspaceScope } from "./workspace-session";
 import type { AnnounceAs } from "./components/toast-rules";
 import type { ToastAction } from "./components/toast";
 import type {
@@ -2819,8 +2819,8 @@ async function applyAgentSiteCommand(command: AgentCommand) {
   // Left and shown again before its step was kept, it runs on show again, on a new stamp (editorOrElsewhere).
   const onShow = async (): ReturnType<typeof applySiteCommand> => {
     const scope = draftScope(), { at, left } = holdWorkspace(workspaceSession), revision = appStore.snapshot.value?.commit, current = () => at.holds() && revision === appStore.snapshot.value?.commit && !versions.view;
-    if (!current() || !appStore.snapshot.value || command.branch !== appStore.snapshot.value.branch ||
-      command.repoId !== undefined && command.repoId !== scope?.repoId) throw new Error("The editor changed repository or branch.");
+    if (!current() || !appStore.snapshot.value || !sameBranch({ repoId: command.repoId ?? scope?.repoId, repo: command.repoId === undefined ? scope?.repo : undefined, branch: command.branch },
+      { ...scope, branch: appStore.snapshot.value.branch })) throw new Error("The editor changed repository or branch.");
     if (!atomicAgentCommand(command)) {
       if (command.commit !== appStore.snapshot.value.commit) throw new Error(AGENT_REVISION_MOVED);
       return agentActing(() => applySiteCommand(agentSiteActions, command));
