@@ -3,8 +3,7 @@ import { AGENT_TEXT_LIMIT, isMediaUploadWrite, OUTSIDE_MEDIA_REFUSED, parseOutli
 import { applyReplacements } from "./agent-replacements";
 import { HttpError } from "./http-error";
 import { SiteFiles } from "./site-files";
-import { fileInTheWay, foldersAbove, writablePathProblem } from "./site-rules";
-import { makeComponentProblem, pageAddressProblem } from "./site-rules";
+import { fileInTheWay, foldersAbove, makeComponentProblem, pageAddressProblem, writablePathProblem } from "./site-rules";
 import { findPageRef, noHomePage } from "./agent-read";
 import type { AgentPageOutline, EditorContext } from "./types";
 type Page = NonNullable<EditorContext["pages"]>[number];

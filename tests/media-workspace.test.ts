@@ -686,6 +686,14 @@ function trimFixture() {
   });
   return { ...f, request };
 }
+test("a file where media/images goes refuses the trim, the file named", async () => {
+  for (const file of ["media", "media/images"]) {
+    const f = trimFixture();
+    f.paths.add(file);
+    await assert.rejects(f.host.trim(f.request()), { message: `${file} is a file, so nothing can go in it.` });
+    assert.equal(f.batches.length, 0);
+  }
+});
 test("trim uploads, page swap, records and unused family deletion share one Undo step", async () => {
   const f = trimFixture(), original = f.bytes.get("images/a.png"), originalRecord = parseMediaRecords(f.text.get(MEDIA_RECORDS_PATH)).files["images/a.png"];
   const before = new Map(f.text);
@@ -1011,6 +1019,15 @@ function shareFixture() {
   };
   return { ...f, previous, request };
 }
+
+test("a file where media/images goes refuses the sharing copy, the file named", async () => {
+  for (const file of ["media", "media/images"]) {
+    const f = shareFixture();
+    f.paths.add(file);
+    await assert.rejects(f.host.share(f.request()), { message: `${file} is a file, so nothing can go in it.` });
+    assert.equal(f.batches.length, 0);
+  }
+});
 
 test("sharing uploads one JPEG with provenance, updates page and config and removes unused previous copy in one Undo", async () => {
   const f = shareFixture(), original = f.bytes.get("images/a.png"), before = new Map(f.text);

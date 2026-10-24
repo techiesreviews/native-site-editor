@@ -130,6 +130,11 @@ test("dirty originals fail this file, never silently omit or store them", async 
   assert.equal(f.batches.length, 0);
   assert.ok(mediaOriginalProblem(new TextEncoder().encode('<svg onload="evil()"/>'), "svg"));
 });
+test("a file where media/originals goes refuses the original, the file named", async () => {
+  const f = fixture({ "index.html": '<img src="/images/old.png">', "media/originals": "bytes" });
+  await assert.rejects(f.host.import([{ file: new File(["main"], "photo.webp"), folder: "images", original }]), { message: "media/originals is a file, so nothing can go in it." });
+  assert.equal(f.batches.length, 0);
+});
 test("over-cap asks only when website files fit: yes omits original; no/missing skips file; other files continue", async () => {
   const large = { blob: new Blob([cleanJpeg(MEDIA_FILE_CAP_BYTES + 1)]), extension: "jpg" };
   const encode: typeof optimiseMedia = async (file, options) => ({ ...await encoder(file, options), original: large });
