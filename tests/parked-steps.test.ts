@@ -13,8 +13,8 @@ const site = { routes: { "/": "index.html", "/about/": "about.html" }, component
 const insertH2 = (r: Reads): PlanResult => ({ edits: new Map([["index.html", r.source("index.html")!.replace("</main>", "<h2>New</h2></main>")]]), done: "Heading added.", undone: "Undid adding the Heading." });
 const NEW = PAGE.replace("</main>", "<h2>New</h2></main>");
 
-function setup() {
-  const m = createMemoryWorkspace({ branch: { "index.html": PAGE, "about.html": ABOUT, "notes.txt": "notes" }, open: "index.html", site });
+function setup(drafts: Record<string, string> = {}) {
+  const m = createMemoryWorkspace({ branch: { "index.html": PAGE, "about.html": ABOUT, "notes.txt": "notes" }, drafts, open: "index.html", site });
   const parked: ParkedStep[] = [];
   const workspace = { ...m.workspace, park: (step: ParkedStep) => { parked.push(step); } };
   return { m, workspace, parked, edits: createGuardedEdits(workspace) };
@@ -182,4 +182,46 @@ test("parked steps: one landing on its page open now is recorded there at once; 
   assert.deepEqual(recorded, ["index.html"]);
   steps.clear();
   assert.equal(steps.count(), 0);
+});
+
+test("a parked step pushed out of the parked list lets its upload hold go", async () => {
+  const s = setup();
+  await landAway(s, remove2(s));
+  const steps = createParkedSteps({ open: () => undefined, transitions: step => parkedTransitions(s.workspace, step) });
+  steps.park(s.parked[0]);
+  const key = uploadKey(s.m.scope, "e".repeat(40));
+  assert.equal(uploadKeyHeld(key), true);
+  for (let index = 0; index < PARKED_LIMIT; index++)
+    steps.park({ scope: s.m.scope, page: `page-${index}.html`, before: new Map(), after: new Map(), beforeSources: new Map(), afterSources: new Map(), done: "", undone: "" });
+  assert.equal(steps.count(), PARKED_LIMIT);
+  assert.equal(uploadKeyHeld(key), false);
+});
+
+// The page had unsaved changes before the step: Undo puts that draft back, and Redo works over it even
+// once the open model has saved the same draft again.
+test("a parked step over an unsaved draft: Undo restores that draft, Redo puts the step back", async () => {
+  const LEX = "<main><h1>Home</h1><p>Lex's unsaved</p></main>";
+  const s = setup({ "index.html": LEX });
+  await landAway(s, insertH2);
+  const step = s.parked[0];
+  assert.equal(step.before.get("index.html")?.content, LEX);
+  s.m.setRoute("/"); await s.m.workspace.open("index.html");
+  const { undo, redo } = parkedTransitions(s.workspace, step);
+  assert.equal(undo(), true);
+  assert.equal(s.m.draft("index.html")?.content, LEX);
+  assert.equal(s.m.model("index.html")?.text, LEX);
+  s.m.writeDraft("index.html", LEX);
+  assert.equal(redo(), true);
+  assert.equal(s.m.draft("index.html")?.content, LEX.replace("</main>", "<h2>New</h2></main>"));
+  assert.equal(s.m.model("index.html")?.text, LEX.replace("</main>", "<h2>New</h2></main>"));
+});
+
+test("a parked step's Undo refuses while another branch is shown, and writes nothing", async () => {
+  const s = setup();
+  await landAway(s, insertH2);
+  const feature = { ...s.workspace, draftScope: () => ({ ...s.m.scope, branch: "feature" }) };
+  const { undo } = parkedTransitions(feature, s.parked[0]);
+  assert.equal(undo(), false);
+  assert.match(s.m.refusals.at(-1)!, /belongs to another site or branch/);
+  assert.equal(s.m.draft("index.html")?.content, NEW);
 });

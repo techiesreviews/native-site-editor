@@ -1148,30 +1148,49 @@ export async function finishAgentTextElsewhere(command: AgentCommand, shown: () 
 
 /**
  * A page or file command in the workspace it arrived in, not shown (ticket 34): its background site's
- * controllers run it there. A page command's steps belong to its page; a page moved, to where it goes;
- * anything else to the page open as it arrived (else the home page), as on show. Its workspace shown
- * again before its step is kept, even briefly (its loads moved), stops the attempt with nothing kept:
- * shown now, the editor runs it (undefined); left again, it runs here again, as often as it is switched
- * under (each switch needs Lex to move, so it ends once Lex stays). A receipt is kept only with its step,
- * so an attempt stopped before leaves none to count as a duplicate.
+ * controllers run it there. A page command's steps belong to its page; a page moved (or a folder with
+ * pages), to where its page goes; anything else to the page open as it arrived (else the home page), as
+ * on show. Its workspace shown again before its step is kept, even briefly (its loads moved), stops the
+ * attempt with nothing kept. Shown now, the editor runs it (undefined); while that load is still opening
+ * it waits for it, at most `AWAY_WAIT_MS`. Left again, it runs here again only while that workspace's
+ * drafts are still as they were when it began (its proof, taken before any wait), else it refuses: it
+ * never plans again over what Lex changed there meanwhile. A receipt is kept only with its step, so an
+ * attempt stopped before leaves none to count as a duplicate.
  */
 async function finishStructuralElsewhere(command: AgentCommand, scope: DraftScope, store: DraftStore, held: { pin: MediaPin; opened?: string }, away: AgentAwayPorts, left: () => boolean) {
+  const draftsNow = () => JSON.stringify(store.list(scope).map(({ updatedAt: _, ...draft }) => draft).sort((a, b) => a.path.localeCompare(b.path)));
+  const proof = draftsNow();
   const { backgroundSite } = await import("./background-site");
-  for (;;) {
+  const pages = Object.values(held.pin.site?.routes ?? {});
+  const moved = command.operation === "move_file" ? pages.find(page => page === command.path || page.startsWith(`${command.path}/`)) : undefined;
+  const home = command.operation === "set_page_details" ? command.path : moved ?? held.opened;
+  for (let attempt = 0; ; attempt++) {
+    // Shown again, its load still opening (no snapshot on show yet): a wait, not a retry.
+    if (held.pin.here() && left() && !await until(() => !held.pin.here() || !left(), AWAY_WAIT_MS))
+      throw new Error(`The editor is still opening ${scope.branch}. Nothing was changed; your drafts are as they were.`);
+    if (!left()) return undefined;
+    if (draftsNow() !== proof || attempt >= AWAY_ATTEMPTS)
+      throw new Error(`${scope.branch} changed in the editor meanwhile. Read it again. Nothing was changed; your drafts are as they were.`);
     const visits = away.site.visits(scope), stays = () => !held.pin.here() && left() && away.site.visits(scope) === visits;
     const prepared = await prepareAgentText(command, scope, store, () => true, () => {});
     if (prepared.duplicate) return prepared.duplicate;
-    if (!stays()) { if (!left()) return undefined; continue; }
-    const pages = Object.values(held.pin.site?.routes ?? {}), own = command.operation === "set_page_details" || command.operation === "move_file" && pages.includes(command.path);
-    const site = backgroundSite(held.pin, away.site, own ? command.path : held.opened);
+    if (!stays()) continue;
+    const site = backgroundSite(held.pin, away.site, home);
     const scoped = agentStructuralActions(site.workspace, prepared.context!, stays, {
       actions: site.actions, pages: site.pages, files: site.files, components: () => site.components(command.path), loader: site.loader,
       factories: away.site.factories, home: site.home,
     });
     try { return await applyStructural(command, prepared, scoped, undefined, () => away.landed(scope)); }
-    catch (error) {
-      if (prepared.applied || stays()) throw error;
-      if (!left()) return undefined;
-    }
+    catch (error) { if (prepared.applied || stays()) throw error; }
   }
+}
+/** How long a command whose workspace is shown again waits for that load to open; and its attempts, at most. */
+const AWAY_WAIT_MS = 30_000, AWAY_ATTEMPTS = 5;
+// Whether `done` holds within `ms`, asked every 100 ms.
+async function until(done: () => boolean, ms: number) {
+  for (const end = Date.now() + ms; !done(); ) {
+    if (Date.now() >= end) return false;
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  return true;
 }

@@ -613,18 +613,20 @@ test("an agent edit's editor path switched away at any wait before it is kept fi
 // Ticket 34: a page command read on a branch no longer shown runs in its background site. Its branch
 // shown again at any wait before its step is kept stops it with nothing kept, and the editor runs it
 // (undefined); shown and left again, it runs there again and lands once.
+const STRUCTURAL_ABOUT = "<html><head><title>About</title></head><body><main><section>About</section></main></body></html>";
 async function structuralElsewhere(t: TestContext, race?: AwaitRace, overrides: Partial<AgentCommand> = {}) {
   const f = await elsewhere(t, race);
   const PAGE = "<html><head><title>Old</title></head><body><main></main></body></html>";
+  const texts: Record<string, string> = { "index.html": PAGE, "about/index.html": STRUCTURAL_ABOUT };
   let here = false, visits = 0, shown: DraftScope | undefined = f.shown;
   const parked: ParkedStep[] = [];
-  const entry = (path: string) => path === "index.html" ? { path, sha: "a".repeat(40), mode: "100644", type: "blob" as const } : undefined;
+  const entry = (path: string) => Object.hasOwn(texts, path) ? { path, sha: "a".repeat(40), mode: "100644", type: "blob" as const } : undefined;
   const find = async (path: string) => entry(path);
   const pin = {
-    repo: "lex/site", scope: f.scope, identity: "1", site: { routes: { "/": "index.html" }, components: {} }, drafts: f.store, here: () => here, entry,
+    repo: "lex/site", scope: f.scope, identity: "1", site: { routes: { "/": "index.html", "/about/": "about/index.html" }, components: {} }, drafts: f.store, here: () => here, entry,
     find: race ? race.port("pin find", find) : find,
-    source: (path: string) => { const draft = f.store.get(f.scope, path); return draft ? draft.deleted ? undefined : draft.content : path === "index.html" ? PAGE : undefined; },
-    files: () => ["index.html"], list: async () => ["index.html"], remember: () => {},
+    source: (path: string) => { const draft = f.store.get(f.scope, path); return draft ? draft.deleted ? undefined : draft.content : texts[path]; },
+    files: () => Object.keys(texts), list: async () => Object.keys(texts), remember: () => {},
   } satisfies MediaPin;
   // eslint-disable-next-line no-restricted-syntax -- the background site reads only these members of the editor's live ports here.
   const site = {
@@ -638,7 +640,9 @@ async function structuralElsewhere(t: TestContext, race?: AwaitRace, overrides: 
   agentCommandFiles.set(command, { repo: { id: 1, full_name: "lex/site" }, snapshot: { branch: "main", commit: "commit", entries: [] } } as unknown as AgentReadFiles); // eslint-disable-line no-restricted-syntax -- only the repository and snapshot are read.
   let landed = 0;
   const finish = () => finishAgentTextElsewhere(command, () => shown, f.scope.account, f.store, async () => undefined, { site, landed: () => { landed++; } });
-  return { ...f, parked, finish, landed: () => landed, show: () => { here = true; visits++; shown = f.scope; }, showAndLeave: () => { visits++; } };
+  return { ...f, parked, finish, landed: () => landed, show: () => { here = true; visits++; shown = f.scope; }, showAndLeave: () => { visits++; },
+    // Its branch opening again: the session moved to it, but its snapshot is not on show yet.
+    showLoading: () => { here = true; visits++; shown = undefined; }, shownNow: () => { shown = f.scope; } };
 }
 
 test("a page command for a branch no longer shown lands there through its background site, its Undo parked", async t => {
@@ -699,4 +703,38 @@ test("a kept page command whose follow-up fails answers with its receipt and is 
   const command: AgentCommand = { id: "kept", grantId: "grant", operation: "set_page_details", path: "index.html", branch: "main", commit: "commit", content: "", state: "pending", createdAt: 1, args: { title: "New" } };
   assert.deepEqual(await applyStructural(command, kept, scoped, undefined, () => { applied++; }), outcome);
   assert.deepEqual([applied, recovered, disposed], [1, 1, 1]);
+});
+
+// Its branch opening again while it runs: the command waits for that load (no attempt meanwhile), then is left to the editor.
+test("a page command elsewhere whose branch is opening again waits for it, then is left to the editor", async t => {
+  const f = await structuralElsewhere(t);
+  let lists = 0;
+  const list = f.store.list.bind(f.store);
+  f.store.list = scope => { lists++; return list(scope); };
+  f.showLoading();
+  const pending = f.finish();
+  await new Promise(resolve => setTimeout(resolve, 350));
+  assert.ok(lists <= 2, `no attempt while it opens (${lists} reads of its drafts)`);
+  f.shownNow();
+  assert.equal(await pending, undefined);
+  assert.equal(f.store.get(f.scope, "index.html"), undefined);
+  assert.deepEqual(f.parked, []);
+  assert.equal(await f.records.receipt(f.scope, "operation", "grant"), undefined);
+});
+
+// Shown and left again, a retry runs only over the drafts it began with: one written there meanwhile refuses it.
+test("a page command elsewhere refuses when its branch's drafts changed while it was shown", async t => {
+  const f = await structuralElsewhere(t);
+  const done = f.finish();
+  f.showAndLeave();
+  f.store.save({ ...f.scope, version: 1, path: "notes.txt", baseSha: null, original: "", content: "Lex's", updatedAt: 1 });
+  await assert.rejects(done, /main changed in the editor meanwhile\. Read it again\. Nothing was changed/);
+  assert.equal(f.store.get(f.scope, "index.html"), undefined);
+  assert.deepEqual(f.parked, []);
+});
+
+test("a page command elsewhere on a page other than the one open as it arrived waits on its own page", async t => {
+  const f = await structuralElsewhere(t, undefined, { path: "about/index.html", args: { title: "Agent about" } });
+  assert.match((await f.finish())!.message, /Page details of about\/index\.html updated/);
+  assert.deepEqual(f.parked.map(step => step.page), ["about/index.html"]);
 });
