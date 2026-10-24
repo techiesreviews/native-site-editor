@@ -14,7 +14,7 @@ Lex wants real multiplayer at "the cheapest possible option", for internal use f
 
 ## Decision (Lex, 2026-10-24)
 
-1. **Yjs merges the site's source text in each browser** (about 30 KB). Merging is on plain source text, never on the element tree, so each file keeps its own formatting.
+1. **Yjs merges the site's source text in each browser** (about 30 KB gzipped, 93 KB unzipped, measured in the proof of concept). Merging is on plain source text, never on the element tree, so each file keeps its own formatting.
 2. **Edits travel encrypted through the existing agent relay Durable Object, which forwards them and stores nothing.**
    - Someone who has the page open must be online for others to join.
    - A synced-session link carries its key after `#`, so the server cannot read the edits.
@@ -26,6 +26,23 @@ Lex wants real multiplayer at "the cheapest possible option", for internal use f
    - hot preview links;
    - "branch now at commit X" from a GitHub push webhook, after which each tab fetches files with its own sign-in.
 6. **Saving shared changes:** whoever presses Save to GitHub saves everyone's changes in those files, and the commit names every author.
+
+## Proven (2026-10-24)
+
+[Prove typing together on the real stack](../wayfinder/agents-and-multiplayer/tickets/12-prototype-typing-together-poc.md), branch `prototype/am-12-typing-together-poc` (commit `ae2d7569`, never merged), passed all five checks:
+
+- two windows typing in one paragraph end identical;
+- carets show with name chips in both the code and the preview;
+- going offline and catching up loses nothing;
+- the agent waits while someone types in its element;
+- the relay saw only ciphertext and stored 0 keys.
+
+It added four rules:
+
+- **Starting text:** each file's text enters the shared copy under a client id derived from its Git blob sha, so two people opening an empty room at once do not double the page.
+- **Room access check:** encryption stops strangers reading or forging edits, but the relay still checks who may join a room, so nobody can flood it or listen to its traffic.
+- **Presence timeout:** a store-nothing relay cannot announce that someone left. A crashed tab's caret lingers up to 30 seconds and can hold an agent's change that long; a clean leave is announced at once.
+- **Join traffic** grows with the square of the people in a room, because every reply goes to everyone. That is fine for the 2–5 people this is for. Each tab's 15-second presence heartbeat wakes the relay and is billed per message.
 
 ## Consequences
 

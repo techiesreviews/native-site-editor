@@ -19,3 +19,15 @@ Does [ADR 0003](../../../adr/0003-shared-editing-over-a-store-nothing-relay.md) 
 - an "agent" client (a script) whose whole-element change waits while someone types in that element.
 
 It is a throwaway on a `prototype/am-12-typing-together-poc` branch, run locally (`wrangler dev`), and never merged. Deploying it to a `workers.dev` address on Lex's account waits for his OK. Lex tries it, and the result either confirms the ADR or changes it.
+
+## Comments
+
+- 2026-10-24, builder: branch `prototype/am-12-typing-together-poc` (commit `ae2d7569`); `kit doctor` 7/7.
+  - **All five checks pass** (Playwright, `shots/verify-results.txt`). Client 29.7 KB gzipped. Encryption about 6 ms for ~135 messages.
+  - **Four additions** are written into ADR 0003's "Proven" section: starting text under a blob-sha client id, a room access check, the 30 s presence timeout, and join traffic growing with the square of the people.
+  - **Kit gaps:**
+    - `kit deps add` writes the root `package.json` (Yjs went into the folder's own `node_modules`);
+    - the guard hook blocks wrapping `port.sh` in `timeout` or a pipe;
+    - `kit shots` only knows the editor's screens.
+  - **Run locally:** `cd prototypes/typing-together-poc && npm start` in the branch's worktree, then open the two printed links.
+  - **Waiting:** Lex trying it, and his OK to deploy it to a throwaway `workers.dev` address.
