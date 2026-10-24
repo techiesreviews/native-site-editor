@@ -3,11 +3,12 @@
 // browser drafts (new, changed, renamed and deleted files). A file's text is
 // the site runtime's text now when the tab holds it, so agents read what the
 // preview shows.
-import { touchesGithubConfig, GITHUB_CONFIG_REFUSED, touchesMediaRecords, MEDIA_RECORDS_REFUSED } from "./protected-paths";
 import { AGENT_TEXT_LIMIT, TEXT_PATH, textBytes, textHash } from "./agent";
 import { EMPTY_COMMIT, type EditorContext, type Repository, type TreeEntry } from "./types";
 import { HttpError } from "./http-error";
 import { newDrafts } from "./site-overlay";
+
+export { writablePathProblem } from "./site-rules";
 
 export interface SiteFileReader {
   commitTree(repo: Repository, commit: string): Promise<TreeEntry[]>;
@@ -251,24 +252,3 @@ function draftProblem(path: string, draft: Draft) {
   return new HttpError(409, `The editor tab did not share ${path}'s unsaved draft. Reload the editor, or ask the user to save it first.`);
 }
 
-/** Paths agents may write; read-only opening also permits the media records. */
-export function writablePathProblem(path: string, { readOnly = false }: { readOnly?: boolean } = {}): string | undefined {
-  if (touchesGithubConfig(path)) return GITHUB_CONFIG_REFUSED;
-  if (!readOnly && touchesMediaRecords(path)) return MEDIA_RECORDS_REFUSED;
-  if (
-    !path ||
-    path.length > 1024 ||
-    path
-      .split("/")
-      .some(
-        (part) =>
-          !part ||
-          part === "." ||
-          part === ".." ||
-          part.toLowerCase() === ".git",
-      ) ||
-    /[\\\u0000-\u001f]/.test(path)
-  )
-    return "Invalid path. Use a repository path such as about/index.html.";
-  return undefined;
-}

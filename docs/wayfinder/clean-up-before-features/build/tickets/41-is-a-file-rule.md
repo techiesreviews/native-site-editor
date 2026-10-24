@@ -1,8 +1,8 @@
 ---
 title: "One \"is a file\" rule everywhere"
 type: task (AFK)
-status: open
-assignee: lead-41 (this session)
+status: closed
+assignee: lead-41
 builder: sol
 blocked_by: [40-page-address-and-component-rules]
 ---
@@ -35,3 +35,10 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `kit unit --affected`, `kit specs --affected`.
 - Review: `kit review --ticket <this ticket>` (GPT-6.1 Sol, medium, read-only). Land: `kit pr --ticket <this ticket>`.
 - Report: sites replaced (count), unit and specs `RESULT:` lines, review folder and decisions, PR and merge SHA, `main.ts` lines and ceiling.
+
+## Done (2026-10-24)
+
+- `shared/site-rules.ts` holds the one rule: `fileInTheWay(file)` is the wording, "X is a file, so nothing can go in it."; `foldersAbove(path)` lists the folders a path sits in; `parentProblem(path, isFile)` and `folderProblem(folder, isFile)` return the refusal for the first file in the way. `writablePathProblem` moved here; `shared/site-files.ts` re-exports it for the Worker.
+- 11 sites use it: `src/main.ts` (new file or folder, `branchPathProblem`, new drafts' `checkPath`), `src/controllers/file-operation-checks.ts`, `src/native-page-moves.ts`, `shared/agent-edit.ts` (write_file), `src/setup-actions.ts` (skipped starter files), `src/page-builder/media-workspace.ts` (4) and `src/page-builder/replace-everywhere.ts`.
+- Wording changes: media's "…so it cannot contain uploaded files" and "…cannot contain originals", and the starting point's "…is a file here, so…", now read "X is a file, so nothing can go in it." Nothing else changes.
+- Tests: `tests/site-rules.test.ts` covers a file as the direct parent and as the grandparent, a folder that is a file or sits in one, and paths with no folder.

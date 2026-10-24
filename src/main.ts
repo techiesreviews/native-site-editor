@@ -85,6 +85,7 @@ import { expandStyleImports, resolveImportPath, rewriteCssUrls } from "../shared
 import { readStyleFiles } from "./native-style-files";
 import { nativePageRoute } from "../shared/native-routes";
 import { isNewDraft, newDraftPaths } from "../shared/site-overlay";
+import { fileInTheWay, parentProblem } from "../shared/site-rules";
 
 
 
@@ -2904,12 +2905,7 @@ function planCreation({ kind, folder, name }: CreateRequest): Checked<Creation> 
     if (draftStore().get(scope, path)) return `${path} already has a draft in this browser.`;
     if (folderExists(path)) return `There is a folder ${path} already.`;
     if (entryAt(path) || runtime.base.files.includes(path)) return `${path} already exists.`;
-    const parts = path.split("/");
-    for (let index = 1; index < parts.length; index++) {
-      const parent = parts.slice(0, index).join("/");
-      if (entryAt(parent)?.type === "blob" || draftStore().get(scope, parent)) return `${parent} is a file, so nothing can go in it.`;
-    }
-    return undefined;
+    return parentProblem(path, (parent) => entryAt(parent)?.type === "blob" || Boolean(draftStore().get(scope, parent)));
   };
   const routes = runtime.site?.routes ?? {};
   const routeTaken = (route: string) => (Object.hasOwn(routes, route) ? `The URL ${route} already has a page, ${routes[route]}.` : undefined);
@@ -2956,7 +2952,7 @@ async function branchPathProblem(path: string) {
     if (!entry) return undefined;
     const at = parts.slice(0, index + 1).join("/");
     if (index === parts.length - 1) return `${at} already exists on GitHub.`;
-    if (entry.type !== "tree") return `${at} is a file, so nothing can go in it.`;
+    if (entry.type !== "tree") return fileInTheWay(at);
     let listing = filesTreeController.listings().get(entry.sha);
     if (!listing) {
       listing = (await api<Directory>("tree", { repo: appStore.repository.value.full_name, sha: entry.sha })).entries;
@@ -3493,14 +3489,7 @@ function makeAgentSiteActions(edits: GuardedEdits = guardedEdits, atomic = false
       const error = await writeNewDrafts([{ path, content }], {
         scope, store, isCurrent,
         exists: path => pathNow(path, treeState(scope)) !== undefined,
-        checkPath: async path => {
-          const parts = path.split("/");
-          for (let index = 1; index < parts.length; index++) {
-            const parent = parts.slice(0, index).join("/");
-            if (pathNow(parent, treeState(scope)) === "file") return `${parent} is a file, so nothing can go in it.`;
-          }
-          return branchPathProblem(path);
-        },
+        checkPath: async path => parentProblem(path, parent => pathNow(parent, treeState(scope)) === "file") ?? branchPathProblem(path),
         drop: (scope, path) => editor?.dropDraft(scope, path) ?? store.remove(scope, path),
         refresh: afterFileChanges,
       });

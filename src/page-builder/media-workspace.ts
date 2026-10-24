@@ -6,6 +6,7 @@ import { NATIVE_CONFIG_PATH, nativeSiteSettings, nativeSitePrefix } from "../../
 import { mediaAddedTime, mediaKind } from "./media-library-filter";
 import { OUTSIDE_MEDIA_REFUSED, parseOutlineId } from "../../shared/agent";
 import { startTags, startTagAttribute } from "../../shared/html-source";
+import { folderProblem } from "../../shared/site-rules";
 import { locateNativeElementRange } from "../native-source-location";
 import { mediaResolvePath } from "./media-references";
 import { decodeHtmlEntities } from "./html-entities";
@@ -423,11 +424,8 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       if (folder.split("/").some((part) => part === "." || part === "..") || /[\\\u0000-\u001f]/.test(folder)) throw new Error("Choose a repository folder without . or .. segments.");
       const dir = folder.replace(/^\/+|\/+$/g, "");
       if (request.original && /^media\/originals(?:\/|$)/i.test(dir)) throw new Error(`${file.name}: Choose a website folder outside media/originals when keeping an original.`);
-      const segments = dir.split("/");
-      for (let index = 1; index <= segments.length; index++) {
-        const parent = segments.slice(0, index).join("/");
-        if (parent && reserved.has(parent)) throw new Error(`${parent} is a file, so it cannot contain uploaded files.`);
-      }
+      const blocked = folderProblem(dir, (folder) => reserved.has(folder));
+      if (blocked) throw new Error(blocked);
       if (request.original && !/^[a-z0-9]+$/i.test(request.original.extension)) throw new Error("The original must use a supported file extension.");
       const first = result?.outputs[0];
       if (result && (!first || first.variantWidth)) throw new Error("No primary media file was encoded.");
@@ -467,7 +465,8 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
           mediaOriginalProblem(new Uint8Array(await blob.arrayBuffer()), extension);
         ctx.assertLive();
         if (problem) throw new Error(`${file.name}: ${problem}`);
-        for (const folder of ["media", "media/originals"]) if (reserved.has(folder)) throw new Error(`${folder} is a file, so it cannot contain originals.`);
+        const blocked = folderProblem("media/originals", (folder) => reserved.has(folder));
+        if (blocked) throw new Error(blocked);
         const path = mediaOriginalPath(primary, extension);
         reserved.add(path); batch.uploads.push({ path, blob });
       }
@@ -549,8 +548,8 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       const problem = uploadProblem({ name: source, size: output.blob.size });
       if (problem) throw new Error(problem);
     }
-    for (const folder of ["media", "media/images"]) if (batch.expectedPaths.includes(folder))
-      throw new Error(folder + " is a file, so it cannot contain uploaded files.");
+    const blocked = folderProblem("media/images", (folder) => batch.expectedPaths.includes(folder));
+    if (blocked) throw new Error(blocked);
     // Addresses on the Recently removed list stay taken, so a cached old trim can never reappear.
     const path = trimmedCopyPath({ source, extension: first.extension, copies: widths, previous,
       paths: [...batch.expectedPaths, ...metadata.removed?.flatMap(item => [item.path, ...item.family?.map(member => member.path) ?? []]) ?? []] });
@@ -718,8 +717,8 @@ export function createMediaWorkspace(context: () => Promise<MediaWorkspaceContex
       throw new Error("A sharing copy must be one JPEG image.");
     const problem = uploadProblem({ name: source, size: output.blob.size });
     if (problem) throw new Error(problem);
-    for (const folder of ["media", "media/images"]) if (batch.expectedPaths.includes(folder))
-      throw new Error(folder + " is a file, so it cannot contain uploaded files.");
+    const blocked = folderProblem("media/images", (folder) => batch.expectedPaths.includes(folder));
+    if (blocked) throw new Error(blocked);
     const path = socialCopyPath({ source, paths: batch.expectedPaths, records: metadata, previous });
     batch.live = request.live;
     for (const [file, edit] of request.edits(path)) {

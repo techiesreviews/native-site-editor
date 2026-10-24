@@ -6,6 +6,7 @@ import { siteNameFromRepository, blankSiteFiles, startingConfig, type StartingPo
 import { nativePageBody, nativePageStylesheets, NATIVE_CONFIG_PATH, nativeSitePrefix } from "../shared/native-project";
 import { expandStyleImports, resolveImportPath, rewriteCssUrls } from "../shared/css-imports";
 import { assetType } from "../shared/asset-types";
+import { fileInTheWay, foldersAbove } from "../shared/site-rules";
 import { dataUrlOf } from "./native-assets";
 import { withSiteSettings } from "./setup-checklist";
 import { addUpload, uploadBytes, uploadImageType } from "./uploads";
@@ -298,9 +299,7 @@ export function createSetupActions(ports: SetupPorts) {
     };
     try {
       for (const file of starting) {
-        const parts = file.path.split("/");
-        for (let index = 1; index < parts.length; index++) {
-          const ancestor = parts.slice(0, index).join("/");
+        for (const ancestor of foldersAbove(file.path)) {
           const blocked = await isFile(ancestor);
           if (!bound()) return "The repository changed meanwhile. Try again.";
           if (blocked) { blockedBy.set(file.path, ancestor); break; }
@@ -343,7 +342,7 @@ export function createSetupActions(ports: SetupPorts) {
     const skipped = new Map<string, string[]>();
     for (const [path, ancestor] of blockedBy) skipped.set(ancestor, [...(skipped.get(ancestor) ?? []), path]);
     for (const [ancestor, paths] of skipped)
-      problems.push(`${paths.join(", ")} ${paths.length === 1 ? "was" : "were"} skipped: ${ancestor} is a file here, so nothing can go in it.`);
+      problems.push(`${paths.join(", ")} ${paths.length === 1 ? "was" : "were"} skipped: ${fileInTheWay(ancestor)}`);
     let added = 0;
     for (const file of starting) {
       if (!bound()) return "The repository changed meanwhile. Some files may have been added as drafts; the rest were not.";
