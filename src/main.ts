@@ -2631,7 +2631,7 @@ function updateAgentContext() {
 // Agents see the whole site (its pages are read after the first paint):
 // the context waits for the complete index of the repository open then.
 function agentContext(): Promise<SharedContext | undefined> {
-  return withSiteIndexed(nativeTextIndexGate, agentSiteHost.context);
+  return withSiteIndexed(nativeTextIndexGate, () => agentSiteHost.context());
 }
 const agentSiteHost = createAgentSiteHost({
   files: () => appStore.repository.value && appStore.snapshot.value ? { repo: appStore.repository.value, snapshot: appStore.snapshot.value,
@@ -2815,8 +2815,8 @@ const agentController = createAgentController<HTMLElement>({
   createOptions: () => ({
     context: agentContext,
     tools: agentSiteHost.tools(agentContext),
-    onCommand: agentCommands.apply,
-    reload: agentCommands.reload,
+    onCommand: command => agentCommands.apply(command),
+    reload: snapshot => agentCommands.reload(snapshot),
     // Ask agent shows in the edit bar while an agent is connected.
     onConnection: (connected) => { setupController.noteAgent(connected); if (appStore.selection.value) pageStructureController.renderEditBar(appStore.selection.value); },
     onRequests: (requests) => nativePreview?.setRequests(requests),
