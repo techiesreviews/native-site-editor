@@ -1,0 +1,814 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE (throwaway) · 08 Typing together</title>
+<!--
+  THROWAWAY PROTOTYPE, planning only. Not product code.
+  Question: with ADR 0003 (Yjs in each browser, a relay that forwards encrypted edits and stores nothing),
+  do Lex, Anna and an agent always end with the same page source, with nobody's words lost,
+  even when they type in the same spot, when someone drops offline, and when an agent replaces
+  the element someone is typing in (clean-up slice 52 rule: it waits until they click away)?
+  docs/wayfinder/agents-and-multiplayer, item 08; docs/adr/0003-shared-editing-over-a-store-nothing-relay.md.
+
+  Real Yjs (esm.sh) merges the text. The "relay" is faked in this page: it forwards every packet
+  after a visible delay and keeps nothing. "Encryption" here is a stand-in scramble with a key that
+  never reaches the relay; the real build uses proper encryption with the key after # in the link.
+  Catching up after offline uses Yjs's real "send only what the other one is missing" exchange.
+-->
+<style>
+:root {
+  color-scheme: light dark;
+  --ink: light-dark(oklch(23% 0 none), oklch(93% 0 none));
+  --muted: light-dark(oklch(46% 0 none), oklch(72% 0 none));
+  --surface: light-dark(oklch(99.5% 0 none), oklch(24% 0 none));
+  --surface-sunk: light-dark(oklch(96.5% 0 none), oklch(19% 0 none));
+  --line: light-dark(oklch(87% 0 none), oklch(38% 0 none));
+  --lex: light-dark(oklch(52% 0.2 262), oklch(73% 0.14 262));
+  --anna: light-dark(oklch(50% 0.22 305), oklch(74% 0.15 305));
+  --agent: light-dark(oklch(50% 0.13 150), oklch(75% 0.15 150));
+  --relay: light-dark(oklch(40% 0 none), oklch(80% 0 none));
+  --wait: light-dark(oklch(55% 0.14 65), oklch(80% 0.14 75));
+  --ok: light-dark(oklch(48% 0.12 150), oklch(78% 0.13 150));
+  --on-color: light-dark(oklch(100% 0 none), oklch(18% 0 none));
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --radius: 8px;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+}
+*, *::before, *::after { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 1rem;
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: var(--ink);
+  -webkit-tap-highlight-color: transparent;
+}
+main {
+  max-inline-size: 72rem;
+  margin-inline: auto;
+  display: grid;
+  gap: 0.9rem;
+  container-type: inline-size;
+}
+h1, h2, h3, p { margin: 0; }
+h1 { font-size: 1.15rem; text-wrap: balance; }
+.intro { color: var(--muted); max-inline-size: 60ch; text-wrap: pretty; }
+.tag {
+  font-size: 0.7rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+  padding: 0.1em 0.5em; border-radius: 99px; border: 1px solid var(--line); color: var(--muted);
+  vertical-align: middle; margin-inline-start: 0.4em;
+}
+
+/* ---------- Demo strip (controls for the demo, not editor UI) ---------- */
+.strip {
+  border: 1.5px dashed var(--line);
+  border-radius: var(--radius);
+  padding: 0.7rem;
+  display: grid;
+  gap: 0.55rem;
+  background: var(--surface-sunk);
+}
+.strip h2 { font-size: 0.8rem; color: var(--muted); font-weight: 600; }
+.buttons { display: flex; flex-wrap: wrap; gap: 0.45rem; }
+button {
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  min-block-size: 2.25rem;
+  padding: 0.3rem 0.75rem;
+  cursor: pointer;
+}
+button:focus-visible { outline: 2px solid var(--lex); outline-offset: 2px; }
+button:active:not(:disabled) { transform: scale(0.97); }
+button:disabled { opacity: 0.45; cursor: default; }
+button.reset { margin-inline-start: auto; }
+@media (hover: hover) and (pointer: fine) {
+  button:hover:not(:disabled) { background: color-mix(in oklch, var(--ink) 7%, var(--surface)); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  button { transition: transform 160ms var(--ease-out); }
+}
+.captions { display: flex; flex-wrap: wrap; gap: 0.4rem 1rem; align-items: baseline; justify-content: space-between; }
+.caption { font-weight: 600; text-wrap: pretty; flex: 1 1 18rem; }
+.match { font-size: 0.8rem; color: var(--muted); display: inline-flex; gap: 0.35em; align-items: center; }
+.match::before { content: ""; inline-size: 0.6em; block-size: 0.6em; border-radius: 50%; background: var(--wait); }
+.match.is-ok { color: var(--ok); }
+.match.is-ok::before { background: var(--ok); }
+
+/* ---------- Relay diagram ---------- */
+.relay {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 0.6rem;
+  display: grid;
+  gap: 0.5rem;
+}
+.diagram { position: relative; block-size: 8.5rem; }
+.diagram > svg { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; overflow: visible; }
+.diagram line { stroke: var(--line); stroke-width: 3; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.diagram.anna-offline #spoke-anna { stroke-dasharray: 2 6; }
+.node {
+  position: absolute;
+  inset-inline-start: calc(var(--x) * 1%);
+  inset-block-start: calc(var(--y) * 1%);
+  translate: -50% -50%;
+  z-index: 1;
+  white-space: nowrap;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.2em 0.6em;
+  border-radius: 99px;
+  color: var(--on-color);
+  background: var(--c);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+}
+.node.relay-node {
+  background: var(--surface);
+  color: var(--relay);
+  border: 1.5px solid var(--relay);
+  border-radius: 6px;
+  padding: 0.3em 0.6em;
+}
+.node svg { inline-size: 0.95em; block-size: 0.95em; flex: none; }
+.diagram.anna-offline .node.anna { background: var(--surface); color: var(--muted); border: 1.5px dashed var(--line); }
+.packets { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
+.packet {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  inline-size: 1.25rem;
+  block-size: 1.25rem;
+  border-radius: 50%;
+  background: var(--c);
+  color: var(--on-color);
+  display: grid;
+  place-items: center;
+  box-shadow: 0 1px 4px oklch(0% 0 none / 0.3);
+}
+.packet svg { inline-size: 0.7rem; block-size: 0.7rem; }
+.stats { display: flex; flex-wrap: wrap; gap: 0.3rem 1.2rem; margin: 0; font-size: 0.8rem; }
+.stats div { display: flex; gap: 0.35em; align-items: baseline; min-inline-size: 0; }
+.stats dt { color: var(--muted); }
+.stats dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+.stats .stored dd { color: var(--ok); }
+.stats .hex { font-family: var(--mono); font-weight: 400; overflow-wrap: anywhere; }
+
+/* ---------- Three panes ---------- */
+.panes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.6rem; }
+@container (inline-size < 40rem) {
+  .panes { grid-template-columns: minmax(0, 1fr); }
+}
+.pane {
+  border: 1px solid var(--line);
+  border-block-start: 4px solid var(--c);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 0.55rem;
+  display: grid;
+  gap: 0.4rem;
+  align-content: start;
+  min-inline-size: 0;
+}
+.pane header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.1rem 0.5rem; }
+.pane h3 { font-size: 0.92rem; color: var(--c); }
+.pane .who { font-size: 0.72rem; color: var(--muted); flex: 1 1 auto; }
+.status { font-size: 0.72rem; font-weight: 600; color: var(--muted); inline-size: 100%; }
+.status.is-offline, .status.is-waiting { color: var(--wait); }
+.pane.is-offline .code { border-style: dashed; }
+.label { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+
+.code {
+  display: grid;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-sunk);
+  overflow: clip;
+}
+.code:has(textarea:focus-visible) { outline: 2px solid var(--c); outline-offset: 1px; }
+.src {
+  grid-area: 1 / 1;
+  margin: 0;
+  border: 0;
+  padding: 1.5em 0.6em 0.6em;
+  font: 12px/1.6 var(--mono);
+  letter-spacing: normal;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  tab-size: 2;
+}
+textarea.src {
+  resize: none;
+  overflow: hidden;
+  background: transparent;
+  color: var(--ink);
+  inline-size: 100%;
+  block-size: 100%;
+  min-block-size: 0;
+  outline: 0 solid transparent;
+}
+textarea.src[readonly] { cursor: default; }
+.mirror { color: transparent; pointer-events: none; position: relative; z-index: 1; }
+.mirror mark { background: color-mix(in oklch, var(--c) 28%, transparent); color: transparent; border-radius: 2px; }
+.caret { position: relative; }
+.caret::before {
+  content: "";
+  position: absolute;
+  inset-block: -0.15em;
+  inset-inline-start: -1px;
+  inline-size: 2px;
+  background: var(--c);
+}
+.chip {
+  position: absolute;
+  inset-block-end: calc(100% + 0.1em);
+  inset-inline-start: -1px;
+  font: 600 10px/1.35 system-ui, sans-serif;
+  color: var(--on-color);
+  background: var(--c);
+  padding: 0 0.35em;
+  border-radius: 3px 3px 3px 0;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25em;
+}
+.chip svg { inline-size: 1em; block-size: 1em; }
+.chip.is-waiting { background: var(--wait); }
+.caret.is-offline { opacity: 0.5; }
+
+.preview { border: 1px solid var(--line); border-radius: 6px; overflow: clip; }
+.error { color: var(--wait); font-weight: 600; }
+</style>
+<script>
+  // Shown only if the merge library cannot load (it comes from the internet).
+  window.addEventListener("error", (e) => {
+    const p = document.getElementById("loading");
+    if (p) p.textContent = "Could not load the merge library (Yjs from esm.sh). This demo needs an internet connection.";
+  }, true);
+</script>
+</head>
+<body>
+<main>
+  <header style="display:grid;gap:0.3rem">
+    <h1>How typing together works <span class="tag">throwaway demo</span></h1>
+    <p class="intro">Lex, Anna and an agent edit the same page section at once. Each tab keeps its own copy and merges the others' changes. Changes travel locked through a relay that passes them on and keeps nothing.</p>
+  </header>
+
+  <section class="strip" aria-labelledby="strip-title">
+    <h2 id="strip-title">Try it (demo buttons, not part of the editor). Or type in Lex's or Anna's tab yourself.</h2>
+    <div class="buttons">
+      <button type="button" data-act="both">Both type at once</button>
+      <button type="button" data-act="offline">Anna goes offline</button>
+      <button type="button" data-act="lexHeading">Lex types in the heading</button>
+      <button type="button" data-act="agent">Agent rewrites the heading</button>
+      <button type="button" data-act="clickAway">Lex clicks away</button>
+      <button type="button" data-act="reset" class="reset">Reset</button>
+    </div>
+  </section>
+
+  <div class="captions">
+    <p class="caption" id="caption" aria-live="polite"><span id="loading">Loading the merge library…</span></p>
+    <p class="match" id="match"></p>
+  </div>
+
+  <section class="relay" aria-label="How changes travel">
+    <div class="diagram" id="diagram">
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+        <line id="spoke-lex" x1="13" y1="28" x2="50" y2="28"/>
+        <line id="spoke-anna" x1="50" y1="28" x2="87" y2="28"/>
+        <line id="spoke-agent" x1="50" y1="28" x2="50" y2="80"/>
+      </svg>
+      <span class="node" style="--x:13;--y:28;--c:var(--lex)">Lex</span>
+      <span class="node relay-node" style="--x:50;--y:28"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="7" width="10" height="7.5" rx="1.5" fill="currentColor"/><path d="M5.3 7V5.2a2.7 2.7 0 0 1 5.4 0V7" fill="none" stroke="currentColor" stroke-width="1.7"/></svg>Relay (stores nothing)</span>
+      <span class="node anna" id="node-anna" style="--x:87;--y:28;--c:var(--anna)">Anna</span>
+      <span class="node" style="--x:50;--y:80;--c:var(--agent)">Agent</span>
+      <div class="packets" id="packets"></div>
+    </div>
+    <dl class="stats">
+      <div class="stored"><dt>Stored on server:</dt><dd id="stored">0 bytes</dd></div>
+      <div><dt>Passed through, then forgotten:</dt><dd id="passed">0 packets</dd></div>
+      <div><dt>What the relay sees:</dt><dd id="sees" class="hex">nothing yet</dd></div>
+    </dl>
+  </section>
+
+  <div class="panes" id="panes"></div>
+</main>
+
+<template id="pane-template">
+  <article class="pane">
+    <header><h3></h3><span class="who"></span><span class="status"></span></header>
+    <span class="label">Page source</span>
+    <div class="code">
+      <textarea class="src" rows="1" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+      <div class="src mirror" aria-hidden="true"></div>
+    </div>
+    <span class="label">Preview</span>
+    <div class="preview"></div>
+  </article>
+</template>
+
+<script type="module">
+import * as Y from "https://esm.sh/yjs@13";
+
+/* =====================================================================
+   Logic module: three peers, each with its own Y.Doc, joined by a relay
+   that forwards scrambled packets after a delay and keeps nothing.
+   No DOM in here; the page below only calls in and listens.
+   ===================================================================== */
+const INITIAL = `<section class="hero">
+  <h1>Fresh bread every morning</h1>
+  <p>Our bakery opens at seven. Come early for warm loaves.</p>
+</section>`;
+const DELAY = 400;
+const IDS = ["lex", "anna", "agent"];
+const NAMES = { lex: "Lex", anna: "Anna", agent: "Agent" };
+const HEADINGS = ["Warm bread from seven", "Baked fresh while you sleep", "Fresh bread every morning"];
+// The key lives in the browsers only (in the real build: after # in the link). The relay never gets it.
+const KEY = crypto.getRandomValues(new Uint8Array(32));
+const enc = new TextEncoder();
+const dec = new TextDecoder();
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function createSession(hooks) {
+  let alive = true;
+  let inFlight = 0;
+  let scripts = 0;
+  let rewriteWanted = false;
+  const stats = { packets: 0, bytes: 0, lastSeen: null };
+
+  const seed = new Y.Doc();
+  seed.getText("src").insert(0, INITIAL);
+  const seedUpdate = Y.encodeStateAsUpdate(seed);
+
+  const peers = {};
+  for (const id of IDS) {
+    const doc = new Y.Doc();
+    const text = doc.getText("src");
+    Y.applyUpdate(doc, seedUpdate, "remote");
+    const peer = { id, name: NAMES[id], doc, text, online: true, waitingChanges: 0, me: { cursor: null, waiting: null }, others: {} };
+    peers[id] = peer;
+    doc.on("update", (update, origin) => {
+      if (origin === "remote") return hooks.onChange();
+      if (peer.online) broadcast(id, "edit", update);
+      else peer.waitingChanges++;
+      hooks.onChange();
+    });
+  }
+
+  function scramble(bytes) {
+    const out = new Uint8Array(bytes.length);
+    for (let i = 0; i < bytes.length; i++) out[i] = bytes[i] ^ KEY[i % KEY.length] ^ ((i * 31) & 255);
+    return out;
+  }
+
+  function send(fromId, toId, kind, payload) {
+    const sealed = scramble(payload);
+    stats.packets++;
+    stats.bytes += sealed.length;
+    stats.lastSeen = sealed.slice(0, 10);
+    inFlight++;
+    hooks.onPacket(fromId, toId, kind, peers[toId].online);
+    setTimeout(() => {
+      inFlight--;
+      if (!alive) return;
+      const to = peers[toId];
+      if (!to.online) return hooks.onChange(); // relay has nowhere to put it, so it is gone
+      const opened = scramble(sealed);
+      if (kind === "edit") Y.applyUpdate(to.doc, opened, "remote");
+      else to.others[fromId] = JSON.parse(dec.decode(opened));
+      if (toId === "agent") tryLand();
+      hooks.onChange();
+    }, DELAY);
+  }
+
+  function broadcast(fromId, kind, payload) {
+    if (!peers[fromId].online) return;
+    for (const to of IDS) if (to !== fromId) send(fromId, to, kind, payload);
+  }
+
+  const relAt = (p, index, assoc = 0) =>
+    Y.relativePositionToJSON(Y.createRelativePositionFromTypeIndex(p.text, index, assoc));
+  function absOf(p, json) {
+    if (!json) return null;
+    const abs = Y.createAbsolutePositionFromRelativePosition(Y.createRelativePositionFromJSON(json), p.doc);
+    return abs ? abs.index : null;
+  }
+
+  function setPresence(id, patch) {
+    const p = peers[id];
+    const next = { ...p.me, ...patch };
+    if (JSON.stringify(next) === JSON.stringify(p.me)) return;
+    p.me = next;
+    broadcast(id, "presence", enc.encode(JSON.stringify(p.me)));
+    hooks.onChange();
+  }
+  const setCursor = (id, anchor, head) =>
+    setPresence(id, { cursor: { anchor: relAt(peers[id], anchor), head: relAt(peers[id], head) } });
+  const clearCursor = (id) => setPresence(id, { cursor: null });
+
+  // A tab's own typing: turn "old text -> new text" into one small insert/delete.
+  function editLocal(id, next) {
+    const p = peers[id];
+    const prev = p.text.toString();
+    if (prev === next) return;
+    let s = 0;
+    while (s < prev.length && s < next.length && prev[s] === next[s]) s++;
+    let e = 0;
+    while (e < prev.length - s && e < next.length - s && prev[prev.length - 1 - e] === next[next.length - 1 - e]) e++;
+    p.doc.transact(() => {
+      if (prev.length - s - e > 0) p.text.delete(s, prev.length - s - e);
+      const ins = next.slice(s, next.length - e);
+      if (ins) p.text.insert(s, ins);
+    }, "local");
+  }
+
+  // Scripted typing, letter by letter, with the caret following along.
+  async function typeAt(id, locate, word, speed = 110) {
+    const p = peers[id];
+    let index = locate(p.text.toString());
+    if (index < 0) return;
+    scripts++;
+    try {
+      for (const ch of word) {
+        if (!alive) return;
+        p.doc.transact(() => p.text.insert(index, ch), "local");
+        const rel = relAt(p, index + ch.length, -1);
+        setPresence(id, { cursor: { anchor: rel, head: rel } });
+        await sleep(speed);
+        if (!alive) return;
+        index = absOf(p, rel);
+        if (index == null) return;
+      }
+    } finally { scripts--; }
+  }
+
+  function h1Range(str) {
+    const a = str.indexOf("<h1>");
+    const b = a < 0 ? -1 : str.indexOf("</h1>", a);
+    return a < 0 || b < 0 ? null : { start: a + 4, end: b };
+  }
+
+  // Slice 52 rule: the agent's change that replaces the heading waits while
+  // a person's caret (as the agent last heard it) is inside that heading.
+  function blocker() {
+    const ag = peers.agent;
+    const r = h1Range(ag.text.toString());
+    if (!r) return null;
+    for (const id of ["lex", "anna"]) {
+      const c = ag.others[id]?.cursor;
+      if (!c || !peers[id].online) continue;
+      const i = absOf(ag, c.head);
+      if (i != null && i >= r.start && i <= r.end) return NAMES[id];
+    }
+    return null;
+  }
+
+  function requestRewrite() {
+    rewriteWanted = true;
+    tryLand();
+  }
+
+  function tryLand() {
+    if (!rewriteWanted) return;
+    const ag = peers.agent;
+    const str = ag.text.toString();
+    const r = h1Range(str);
+    if (!r) {
+      rewriteWanted = false;
+      setPresence("agent", { waiting: null });
+      return hooks.onEvent("no-heading");
+    }
+    const who = blocker();
+    if (who) {
+      if (ag.me.waiting !== who) {
+        setPresence("agent", { waiting: who, cursor: { anchor: relAt(ag, r.start), head: relAt(ag, r.start) } });
+        hooks.onEvent("agent-waits", who);
+      }
+      return;
+    }
+    rewriteWanted = false;
+    const current = str.slice(r.start, r.end);
+    const next = HEADINGS.find((h) => h !== current);
+    ag.doc.transact(() => {
+      ag.text.delete(r.start, r.end - r.start);
+      ag.text.insert(r.start, next);
+    }, "local");
+    const end = relAt(ag, r.start + next.length);
+    setPresence("agent", { waiting: null, cursor: { anchor: end, head: end } });
+    hooks.onEvent("agent-landed");
+  }
+
+  function setOnline(id, on) {
+    const p = peers[id];
+    if (p.online === on) return;
+    p.online = on;
+    if (on) {
+      // Catch up: each side sends only what the other one is missing. Nothing came from storage.
+      for (const o of IDS) {
+        if (o === id || !peers[o].online) continue;
+        send(o, id, "edit", Y.encodeStateAsUpdate(peers[o].doc, Y.encodeStateVector(p.doc)));
+        send(id, o, "edit", Y.encodeStateAsUpdate(p.doc, Y.encodeStateVector(peers[o].doc)));
+        send(o, id, "presence", enc.encode(JSON.stringify(peers[o].me)));
+      }
+      broadcast(id, "presence", enc.encode(JSON.stringify(p.me)));
+      p.waitingChanges = 0;
+    }
+    hooks.onChange();
+  }
+
+  return {
+    peers, stats, absOf, editLocal, setCursor, clearCursor, typeAt, requestRewrite, setOnline,
+    get waitingRewrite() { return rewriteWanted; },
+    busy: () => inFlight > 0 || scripts > 0,
+    idle: async () => { while (alive && (inFlight > 0 || scripts > 0)) await sleep(50); },
+    destroy() { alive = false; for (const id of IDS) peers[id].doc.destroy(); },
+  };
+}
+
+/* =====================================================================
+   Page shell (throwaway): panes, relay animation, demo buttons.
+   ===================================================================== */
+const LOCK = `<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="7" width="10" height="7.5" rx="1.5" fill="currentColor"/><path d="M5.3 7V5.2a2.7 2.7 0 0 1 5.4 0V7" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>`;
+const CLOCK = `<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8 4.6V8l2.4 1.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`;
+const POINTS = { lex: [13, 28], relay: [50, 28], anna: [87, 28], agent: [50, 80] };
+const PANE_INFO = {
+  lex: { title: "Lex's tab", who: "site owner" },
+  anna: { title: "Anna's tab", who: "GitHub collaborator or guest with a link" },
+  agent: { title: "Agent", who: "a scripted bot (watch only)" },
+};
+const PREVIEW_CSS = `
+  :host { display: block; }
+  .paper { background: oklch(99% 0.01 85); color: oklch(25% 0.02 60); padding: 0.8rem 0.9rem; font: 13px/1.45 Georgia, serif; }
+  h1 { font-size: 1.2rem; line-height: 1.2; margin: 0 0 0.35em; color: oklch(38% 0.09 50); }
+  p { margin: 0; }
+`;
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)");
+const $ = (id) => document.getElementById(id);
+const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+let session = null;
+let gen = 0;
+let renderQueued = false;
+const running = new Set();
+const panes = {};
+
+for (const id of IDS) {
+  const node = $("pane-template").content.firstElementChild.cloneNode(true);
+  node.style.setProperty("--c", `var(--${id})`);
+  node.querySelector("h3").textContent = PANE_INFO[id].title;
+  node.querySelector(".who").textContent = PANE_INFO[id].who;
+  const ta = node.querySelector("textarea");
+  ta.dataset.peer = id;
+  ta.setAttribute("aria-label", `${PANE_INFO[id].title}: page source`);
+  if (id === "agent") ta.readOnly = true;
+  const root = node.querySelector(".preview").attachShadow({ mode: "open" });
+  root.innerHTML = `<style>${PREVIEW_CSS}</style><div class="paper"></div>`;
+  panes[id] = { node, ta, mirror: node.querySelector(".mirror"), status: node.querySelector(".status"), paper: root.querySelector(".paper"), lastPreview: null };
+  $("panes").append(node);
+
+  if (id !== "agent") {
+    ta.addEventListener("input", () => { session.editLocal(id, ta.value); pushCaret(id); });
+    for (const ev of ["select", "keyup", "mouseup", "focus"]) ta.addEventListener(ev, () => pushCaret(id));
+  }
+}
+document.addEventListener("selectionchange", () => {
+  const peer = document.activeElement?.dataset?.peer;
+  if (peer && peer !== "agent") pushCaret(peer);
+});
+
+function pushCaret(id) {
+  const ta = panes[id].ta;
+  if (document.activeElement !== ta || !session) return;
+  const back = ta.selectionDirection === "backward";
+  session.setCursor(id, back ? ta.selectionEnd : ta.selectionStart, back ? ta.selectionStart : ta.selectionEnd);
+}
+
+// Keep each textarea equal to its tab's copy right away, so typing never works on stale text.
+function syncTextareas() {
+  for (const id of IDS) {
+    const p = session.peers[id];
+    const ta = panes[id].ta;
+    const str = p.text.toString();
+    if (ta.value === str) continue;
+    const focused = document.activeElement === ta;
+    ta.value = str;
+    if (focused && p.me.cursor) {
+      const a = session.absOf(p, p.me.cursor.anchor);
+      const h = session.absOf(p, p.me.cursor.head);
+      if (a != null && h != null) ta.setSelectionRange(Math.min(a, h), Math.max(a, h), a > h ? "backward" : "forward");
+    }
+  }
+}
+
+function onChange() {
+  syncTextareas();
+  if (renderQueued) return;
+  renderQueued = true;
+  requestAnimationFrame(() => { renderQueued = false; render(); });
+}
+
+function mirrorHTML(p, str, focused) {
+  const marks = [];
+  for (const oid of IDS) {
+    const self = oid === p.id;
+    if (self && focused) continue; // the real caret shows while focused; otherwise draw where this person last was
+    const pres = self ? p.me : p.others[oid];
+    if (!pres?.cursor) continue;
+    const a = session.absOf(p, pres.cursor.anchor);
+    const h = session.absOf(p, pres.cursor.head);
+    if (a == null || h == null) continue;
+    marks.push({ id: oid, a: Math.min(a, str.length), h: Math.min(h, str.length), waiting: pres.waiting, offline: !session.peers[oid].online });
+  }
+  const pts = [...new Set([0, str.length, ...marks.flatMap((m) => [m.a, m.h])])].sort((x, y) => x - y);
+  let html = "";
+  for (let i = 0; i < pts.length; i++) {
+    const pos = pts[i];
+    for (const m of marks) {
+      if (m.h !== pos) continue;
+      const label = m.waiting ? `${CLOCK}${NAMES[m.id]} waits for ${esc(m.waiting)}` : `${NAMES[m.id]}${m.offline ? " (offline)" : ""}`;
+      html += `<span class="caret${m.offline ? " is-offline" : ""}" style="--c:var(--${m.id})"><span class="chip${m.waiting ? " is-waiting" : ""}">${label}</span></span>`;
+    }
+    if (i === pts.length - 1) break;
+    const end = pts[i + 1];
+    const seg = esc(str.slice(pos, end));
+    const cover = marks.find((m) => m.a !== m.h && Math.min(m.a, m.h) <= pos && end <= Math.max(m.a, m.h));
+    html += cover ? `<mark style="--c:var(--${cover.id})">${seg}</mark>` : seg;
+  }
+  return html + " ";
+}
+
+function renderPreview(pane, str) {
+  const t = document.createElement("template");
+  t.innerHTML = str;
+  t.content.querySelectorAll("script,iframe,object,embed,link,meta,style,base,form").forEach((n) => n.remove());
+  t.content.querySelectorAll("*").forEach((el) => {
+    for (const a of [...el.attributes]) if (/^on/i.test(a.name) || /^\s*javascript:/i.test(a.value)) el.removeAttribute(a.name);
+  });
+  pane.paper.replaceChildren(t.content);
+}
+
+function render() {
+  const s = session;
+  const texts = IDS.map((id) => s.peers[id].text.toString());
+  for (const id of IDS) {
+    const p = s.peers[id];
+    const pane = panes[id];
+    const str = p.text.toString();
+    pane.mirror.innerHTML = mirrorHTML(p, str, document.activeElement === pane.ta);
+    if (pane.lastPreview !== str) { renderPreview(pane, str); pane.lastPreview = str; }
+    let status = "Online";
+    let cls = "status";
+    if (!p.online) {
+      status = `Offline: ${p.waitingChanges} change${p.waitingChanges === 1 ? "" : "s"} kept in this tab, none on the server`;
+      cls += " is-offline";
+    } else if (id === "agent" && p.me.waiting) {
+      status = `Waiting for ${p.me.waiting} to click away from the heading`;
+      cls += " is-waiting";
+    }
+    pane.status.textContent = status;
+    pane.status.className = cls;
+    pane.node.classList.toggle("is-offline", !p.online);
+  }
+  const annaOn = s.peers.anna.online;
+  $("diagram").classList.toggle("anna-offline", !annaOn);
+  $("node-anna").textContent = annaOn ? "Anna" : "Anna (offline)";
+  const same = texts.every((t) => t === texts[0]);
+  const match = $("match");
+  match.classList.toggle("is-ok", same && !s.busy());
+  match.textContent = same && !s.busy() ? "All three tabs match" : !annaOn ? "Anna's tab is behind until she is back" : "Catching up…";
+  $("stored").textContent = "0 bytes";
+  const kb = s.stats.bytes < 1024 ? `${s.stats.bytes} bytes` : `${(s.stats.bytes / 1024).toFixed(1)} KB`;
+  $("passed").textContent = `${s.stats.packets} packets, ${kb}`;
+  $("sees").textContent = s.stats.lastSeen
+    ? [...s.stats.lastSeen].map((b) => b.toString(16).padStart(2, "0")).join(" ") + " … (locked)"
+    : "nothing yet";
+  updateButtons();
+}
+
+function animatePacket(from, to, kind, receiverOnline) {
+  if (kind !== "edit") return; // caret positions travel the same way; not drawn, to keep it calm
+  const box = $("diagram").getBoundingClientRect();
+  const at = (k) => `translate(${(POINTS[k][0] * box.width) / 100}px, ${(POINTS[k][1] * box.height) / 100}px) translate(-50%, -50%)`;
+  const el = document.createElement("span");
+  el.className = "packet";
+  el.style.setProperty("--c", `var(--${from})`);
+  el.innerHTML = LOCK;
+  $("packets").append(el);
+  const end = receiverOnline ? { transform: at(to), opacity: 1 } : { transform: at("relay") + " scale(0.4)", opacity: 0 };
+  const frames = reduceMotion.matches
+    ? [
+        { transform: at(from), opacity: 1, offset: 0 }, { transform: at(from), opacity: 1, offset: 0.33 },
+        { transform: at("relay"), opacity: 1, offset: 0.34 }, { transform: at("relay"), opacity: 1, offset: 0.66 },
+        { ...end, offset: 0.67 }, { ...end, offset: 1 },
+      ]
+    : [{ transform: at(from), opacity: 1 }, { transform: at("relay"), opacity: 1, offset: 0.5 }, end];
+  const anim = el.animate(frames, { duration: DELAY, easing: "linear", fill: "forwards" });
+  anim.onfinish = () => el.remove();
+}
+
+let caption = (t) => { $("caption").textContent = t; };
+
+function onEvent(type, who) {
+  if (type === "agent-waits") caption(`The agent wants to replace the heading, but ${who} is typing in it. It waits (clock) until ${who} clicks away.`);
+  if (type === "agent-landed") caption("Nobody is typing in the heading, so the agent's new heading lands in every tab.");
+  if (type === "no-heading") caption("The agent found no heading to rewrite.");
+}
+
+function start() {
+  gen++;
+  session?.destroy();
+  running.clear();
+  $("packets").replaceChildren();
+  for (const id of IDS) { panes[id].ta.value = ""; panes[id].lastPreview = null; }
+  session = createSession({ onChange, onPacket: animatePacket, onEvent });
+  syncTextareas();
+  caption("Type in Lex's or Anna's tab and watch the change travel through the relay to the others.");
+  render();
+}
+
+function updateButtons() {
+  const q = (a) => document.querySelector(`[data-act="${a}"]`);
+  const annaOn = session.peers.anna.online;
+  q("offline").textContent = annaOn ? "Anna goes offline" : "Anna comes back online";
+  q("offline").disabled = running.has("offline");
+  q("both").disabled = running.has("both") || !annaOn;
+  q("lexHeading").disabled = running.has("lexHeading");
+  q("agent").disabled = session.waitingRewrite;
+  q("clickAway").disabled = !session.peers.lex.me.cursor;
+}
+
+async function run(name, fn) {
+  const g = gen;
+  running.add(name);
+  updateButtons();
+  try { await fn(() => g === gen); } finally { if (g === gen) { running.delete(name); onChange(); } }
+}
+
+const endOfP = (s) => s.indexOf("</p>");
+const startOfP = (s) => { const i = s.indexOf("<p>"); return i < 0 ? -1 : i + 3; };
+
+const actions = {
+  both: () => run("both", async (same) => {
+    caption("Lex and Anna type in the very same spot at the same moment…");
+    await Promise.all([
+      session.typeAt("lex", endOfP, " Coffee too."),
+      session.typeAt("anna", endOfP, " Cash or card."),
+    ]);
+    await session.idle();
+    if (same()) caption("Both sentences are kept, their letters never mix, and all three tabs end the same.");
+  }),
+  offline: () => run("offline", async (same) => {
+    if (session.peers.anna.online) {
+      session.setOnline("anna", false);
+      caption("Anna lost her connection. Her typing stays in her own tab; the relay keeps nothing for her.");
+      await Promise.all([
+        session.typeAt("anna", endOfP, " Closed on Mondays."),
+        session.typeAt("lex", startOfP, "Hello! "),
+      ]);
+      await session.idle();
+      if (same()) caption("Anna's tab and the others now differ. Press \"Anna comes back online\".");
+    } else {
+      session.setOnline("anna", true);
+      caption("Anna is back. Her tab and the others swap only what each one missed…");
+      await session.idle();
+      if (same()) caption("Nothing was lost: Anna's line and Lex's line are both in every tab.");
+    }
+  }),
+  lexHeading: () => run("lexHeading", async (same) => {
+    caption("Lex is typing in the heading…");
+    await session.typeAt("lex", (s) => s.indexOf("</h1>"), ", baked daily");
+    await session.idle();
+    if (same()) caption("Lex's caret is still in the heading. Now try \"Agent rewrites the heading\".");
+  }),
+  agent: () => { caption("The agent asks to replace the whole heading…"); session.requestRewrite(); render(); },
+  clickAway: () => {
+    panes.lex.ta.blur();
+    session.clearCursor("lex");
+    caption("Lex clicked away from the heading.");
+  },
+  reset: () => start(),
+};
+
+document.querySelector(".buttons").addEventListener("click", (e) => {
+  const act = e.target.closest("button")?.dataset.act;
+  if (act && session) actions[act]();
+});
+
+// Hooks for the headless check only.
+window.__demo = {
+  texts: () => IDS.map((id) => session.peers[id].text.toString()),
+  busy: () => session.busy() || running.size > 0,
+};
+
+start();
+</script>
+</body>
+</html>
