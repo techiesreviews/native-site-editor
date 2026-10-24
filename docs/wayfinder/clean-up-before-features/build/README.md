@@ -192,3 +192,4 @@ GPT-6.1 Sol hit its usage limit on 2026-10-22 (blocked until 2026-10-27 20:26; L
 - 2026-10-22 (slice 93 kit pr): `native-lazy-panels.spec.ts:30` ("a failed connection check keeps browser requests…") failed once under load; 6/6 alone on dev.
 - 2026-10-22 (slice 93 kit pr): `native-media-library.spec.ts:450` (ticket 92's "adding a file keeps the tiles…") failed once under load; 17/17 alone.
 - 2026-10-23 (slice 23 kit pr): `native-agent-quiet.spec.ts:180` ("live: waits are quiet by default…") failed once under load; passes alone on the branch and on dev.
+- 2026-10-24 (slice 50 kit pr): `native-settings-final-proof.spec.ts:59` ("Pages Delete waiting for the index refuses a newer target edit…") failed once under load; 2/2 alone.
