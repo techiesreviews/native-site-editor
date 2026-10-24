@@ -61,5 +61,11 @@ Each refusal an agent edit can get is now decided by one layer. Agents see the s
 - Standards (P2): 1baaf997:src/agent-site.ts:642 — P2: This breaks the Async writers rule in CODING_STANDARDS.md: "re-check that same proof after every await… Taking a fresh proo
 - Validation gaps (gap): Shape refusals through the Worker are tested end to end for only two tools: `add_section` with both anchors, and `make_component` (`tests/mcp-runtime.test.ts`).
 - Validation gaps (gap): `openPage` has no test where the text changes between the read before opening and the read after it when `expectedHash` is absent. Add a test in `tests/agent-si
-- Validation gaps (gap): `agentPresenceTarget` for `add_section` with no section named is tested on a single `<main>` and on a page with several places. Nothing covers sections sitting 
+- Validation gaps (gap): `agentPresenceTarget` for `add_section` with no section named is tested on a single `<main>` and on a page with several places. Nothing covers sections sitting
+- Spec (P3): 5b249f4d:docs/wayfinder/clean-up-before-features/build/tickets/51-one-agent-command-path.md:61 — P3: The ticket's Follow-ups lines are cut off mid-sentence. Lin
+- Spec (P2): dd15d2c1:src/agent-site.ts:631 — P2: The `openPage` doc comment says "Opened, its text must still be that one", and the ticket's Done section (line 53) says "th
+- Standards (P2): dd15d2c1:src/agent-site.ts:642 — P2: This breaks CODING_STANDARDS.md, Async writers: "re-check that same proof after every await… Taking a fresh proof after an 
+- Validation gaps (gap): `openPage` with no `expectedHash` has no test where the text changes between the read before opening and the read after it. CODING_STANDARDS.md (Async writers) 
+- Validation gaps (gap): Moving the shape checks to the Worker (`editShapeProblem` in `worker/mcp.ts` `edit()`) is tested end to end only for `add_section` with both anchors and for `ma
+- Validation gaps (gap): `agentPresenceTarget` for `add_section` with no section named is tested only on a single `<main>` and on a page with several places. Nothing covers sections sit 
 
