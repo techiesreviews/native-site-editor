@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test, type TestContext } from "node:test";
 import { textHash, type AgentCommand } from "../shared/agent.ts";
 import { applySiteCommand, applyStructural, editorOrElsewhere, finishAgentTextElsewhere, holdWorkspace, prepareAgentText, type AgentSiteActions } from "../src/agent-site.ts";
-import { createWorkspaceSession, githubScope, type WorkspaceSession } from "../src/workspace-session.ts";
+import { createWorkspaceSession, githubScope, same, type SessionStamp, type WorkspaceSession } from "../src/workspace-session.ts";
 import { agentCommandFiles, agentCommandSignals, siteCommandPins } from "../src/agent-tools.ts";
 import { backgroundSitePorts } from "./fakes/background-site-ports.ts";
 import type { MediaPin } from "../src/controllers/media-controller.ts";
@@ -83,11 +83,14 @@ async function setup(t: TestContext, race?: AwaitRace, cancelRace?: AwaitRace) {
   const edits = createGuardedEdits(agentWorkspace), manual = createGuardedEdits(workspace);
   const command: AgentCommand = { id: "operation", grantId: "grant", operation: "write_file", path: "index.html", branch: "main", commit: "commit",
     content: "agent", state: "pending", createdAt: Date.now(), expectedHash: await textHash("before") };
-  const prepareText = (input = command) => prepareAgentText(input, scope, store, () => true, (scope, paths) => models.flushTyping(scope, paths));
+  const prepareText = (input = command, current = () => true) => prepareAgentText(input, scope, store, current, (scope, paths) => models.flushTyping(scope, paths));
   const prepare = cancelRace ? cancelRace.port("prepareAgentText", prepareText) : prepareText;
-  const run = async (input = command, changes = new Map([["index.html", input.content]]), open?: string, afterCommit?: () => void) => {
-    const prepared = await prepare(input);
+  // `held`: its stamp's proof (`current`), and a wait once it is prepared, before its edit (`prepared`).
+  const run = async (input = command, changes = new Map([["index.html", input.content]]), open?: string, afterCommit?: () => void,
+    held?: { current: () => boolean; prepared: () => Promise<void> }) => {
+    const prepared = await prepare(input, held?.current);
     if (prepared.duplicate) return prepared.duplicate;
+    await held?.prepared();
     context = prepared.context;
     if (afterCommit) context = { ...context!, commit: async (...args) => {
       const result = await prepared.context!.commit(...args);
@@ -609,28 +612,73 @@ test("an agent edit's editor path switched away at any wait before it is kept fi
 
 // Grok on 34 (ticket 36): its branch left and shown again before its step was kept, the attempt's stamp no longer
 // holds and the away finish leaves it to the editor (undefined): a new attempt on a new stamp runs it on show, once
-// (src/main.ts applyAgentSiteCommand's shape). A reload alone still refuses.
+// (src/main.ts applyAgentSiteCommand's shape), however often that repeats. Left and not shown again, or reloaded
+// alone, its own reason stands.
+const MAIN = githubScope({ account: "lex", repoId: 1, branch: "main" }), FEATURE = githubScope({ account: "lex", repoId: 1, branch: "feature" });
+const RELOADED = "The editor reloaded this branch or opened an earlier version meanwhile. Read the site again.";
+function onShowAttempts(meanwhile: (session: WorkspaceSession) => void, cycles: number, attempt: (at: SessionStamp, session: WorkspaceSession) => Promise<string>) {
+  const session = createWorkspaceSession(MAIN), counts = { attempts: 0, away: 0 };
+  let applied = false;
+  const onShow = (): Promise<string> => {
+    const { at, left } = holdWorkspace(session);
+    return editorOrElsewhere(async () => {
+      if (counts.attempts++ < cycles) meanwhile(session);
+      const done = await attempt(at, session);
+      applied = true;
+      return done;
+    }, () => applied, left, async () => { counts.away++; return undefined; }, () => same(session.current().scope, MAIN) ? onShow() : undefined);
+  };
+  return { counts, run: onShow };
+}
 test("an agent command's editor path left and shown again before it is kept runs on show again, once", async () => {
-  const main = githubScope({ account: "lex", repoId: 1, branch: "main" }), feature = githubScope({ account: "lex", repoId: 1, branch: "feature" });
-  for (const [label, meanwhile, expected] of [
-    ["left and shown again", (session: WorkspaceSession) => { session.next(feature); session.next(main); }, { result: "on show", attempts: 2, kept: 1, away: 1 }],
-    ["left for the overview and shown again", (session: WorkspaceSession) => { session.next(undefined); session.next(main); }, { result: "on show", attempts: 2, kept: 1, away: 1 }],
-    ["reloaded", (session: WorkspaceSession) => { session.next(main); }, { result: "refused", attempts: 1, kept: 0, away: 0 }],
+  for (const [label, meanwhile, cycles, expected] of [
+    ["left and shown again", (session: WorkspaceSession) => { session.next(FEATURE); session.next(MAIN); }, 1, { result: "on show", attempts: 2, kept: 1, away: 1 }],
+    ["left and shown again twice", (session: WorkspaceSession) => { session.next(FEATURE); session.next(MAIN); }, 2, { result: "on show", attempts: 3, kept: 1, away: 2 }],
+    ["left for the overview and shown again", (session: WorkspaceSession) => { session.next(undefined); session.next(MAIN); }, 1, { result: "on show", attempts: 2, kept: 1, away: 1 }],
+    ["left, not shown again", (session: WorkspaceSession) => { session.next(FEATURE); }, 1, { result: "refused", attempts: 1, kept: 0, away: 1 }],
+    ["reloaded", (session: WorkspaceSession) => { session.next(MAIN); }, 1, { result: "refused", attempts: 1, kept: 0, away: 0 }],
   ] as const) {
-    const session = createWorkspaceSession(main);
-    let attempts = 0, kept = 0, away = 0;
-    const onShow = (): Promise<string> => {
-      const { at, left } = holdWorkspace(session);
-      return editorOrElsewhere(async () => {
-        if (attempts++ === 0) meanwhile(session);
-        await Promise.resolve();
-        if (!at.holds()) throw new Error("The editor reloaded this branch or opened an earlier version meanwhile. Read the site again.");
-        kept++;
-        return "on show";
-      }, () => kept > 0, left, async () => { away++; return undefined; }, onShow);
-    };
-    const result = await onShow().catch((error: Error) => { assert.match(error.message, /reloaded this branch/, label); return "refused"; });
-    assert.deepEqual({ result, attempts, kept, away }, expected, label);
+    let kept = 0;
+    const { counts, run } = onShowAttempts(meanwhile, cycles, async at => {
+      await Promise.resolve();
+      if (!at.holds()) throw new Error(RELOADED);
+      kept++;
+      return "on show";
+    });
+    const result = await run().catch((error: Error) => { assert.equal(error.message, RELOADED, label); return "refused"; });
+    assert.deepEqual({ result, attempts: counts.attempts, kept, away: counts.away }, expected, label);
+  }
+});
+
+// The same for a text write (write_file): its stamp gone by its commit, it is written once on show, its read proved again
+// there (expectedHash, as the editor's write proves it); its text changed meanwhile, it refuses as on show.
+test("an agent text write's editor path left and shown again before it is kept is written once on show, or refuses when its text changed", async t => {
+  const CHANGED = "index.html changed in the editor since it was read. Read it again.";
+  for (const changed of [false, true]) {
+    const f = await setup(t);
+    let prepared = 0;
+    const { counts, run } = onShowAttempts(() => {}, 0, async (at, session) => {
+      if (await textHash(f.models.text(f.scope, "index.html")!) !== f.command.expectedHash) throw new Error(CHANGED);
+      return JSON.stringify(await f.run(f.command, undefined, undefined, undefined, { current: () => at.holds(), prepared: async () => {
+        // Read and fenced on show, then left and shown again before its commit.
+        if (prepared++ > 0) return;
+        session.next(FEATURE);
+        if (changed) assert.equal((await f.manual.run(r => { r.source("index.html"); return { edits: new Map([["index.html", "lex"]]), done: "Manual", undone: "Undo manual", select: { historyOnly: true } }; })).ok, true);
+        session.next(MAIN);
+      } }));
+    });
+    const outcome = await run().catch((error: Error) => error.message);
+    assert.equal(counts.attempts, 2, `changed: ${changed}`);
+    if (changed) {
+      assert.equal(outcome, CHANGED);
+      assert.equal(f.models.text(f.scope, "index.html"), "lex");
+      assert.equal(await f.records.receipt(f.scope, "operation", "grant"), undefined);
+    } else {
+      assert.match(outcome, /Changed index\.html|"hash"/);
+      assert.equal(f.models.text(f.scope, "index.html"), "agent");
+      assert.equal(f.history.length, 1, "written once");
+      assert.ok(await f.records.receipt(f.scope, "operation", "grant"));
+    }
   }
 });
 
