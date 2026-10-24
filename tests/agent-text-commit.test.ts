@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test, type TestContext } from "node:test";
 import { textHash, type AgentCommand } from "../shared/agent.ts";
-import { applySiteCommand, applyStructural, draftsProof, editorOrElsewhere, finishAgentTextElsewhere, holdWorkspace, prepareAgentText, type AgentSiteActions } from "../src/agent-site.ts";
+import { applySiteCommand, applyStructural, editorOrElsewhere, finishAgentTextElsewhere, holdWorkspace, retryProof, prepareAgentText, type AgentSiteActions } from "../src/agent-site.ts";
 import { createWorkspaceSession, githubScope, same, type SessionStamp, type WorkspaceSession } from "../src/workspace-session.ts";
 import { agentCommandFiles, agentCommandSignals, siteCommandPins } from "../src/agent-tools.ts";
 import { backgroundSitePorts } from "./fakes/background-site-ports.ts";
@@ -85,12 +85,13 @@ async function setup(t: TestContext, race?: AwaitRace, cancelRace?: AwaitRace) {
     content: "agent", state: "pending", createdAt: Date.now(), expectedHash: await textHash("before") };
   const prepareText = (input = command, current = () => true) => prepareAgentText(input, scope, store, current, (scope, paths) => models.flushTyping(scope, paths));
   const prepare = cancelRace ? cancelRace.port("prepareAgentText", prepareText) : prepareText;
-  // `held`: its stamp's proof (`current`), and a wait once it is prepared, before its edit (`prepared`).
+  // `held`: its stamp's proof (`current`), a wait once it is prepared, before its edit (`prepared`), and the
+  // command's own run in place of the plain edit (`apply`: applySiteCommand over the agent's guarded edits).
   const run = async (input = command, changes = new Map([["index.html", input.content]]), open?: string, afterCommit?: () => void,
-    held?: { current: () => boolean; prepared: () => Promise<void> }) => {
+    held?: { current: () => boolean; prepared?: () => Promise<void>; apply?: (agent: typeof edits) => Promise<unknown> }) => {
     const prepared = await prepare(input, held?.current);
     if (prepared.duplicate) return prepared.duplicate;
-    await held?.prepared();
+    await held?.prepared?.();
     context = prepared.context;
     if (afterCommit) context = { ...context!, commit: async (...args) => {
       const result = await prepared.context!.commit(...args);
@@ -106,11 +107,14 @@ async function setup(t: TestContext, race?: AwaitRace, cancelRace?: AwaitRace) {
       fence: cancelRace.port("fence", (...args) => prepared.context!.fence(...args)),
       commit: cancelRace.port("commit", (...args) => prepared.context!.commit(...args)) };
     try {
-      const result = await edits.run(r => {
-        for (const path of changes.keys()) r.source(path);
-        return { edits: changes, done: "Changed text.", undone: "Undid text.", select: { historyOnly: true }, ...open === undefined ? {} : { open } };
-      });
-      assert.equal(result.ok, true, JSON.stringify(result));
+      if (held?.apply) await held.apply(edits);
+      else {
+        const result = await edits.run(r => {
+          for (const path of changes.keys()) r.source(path);
+          return { edits: changes, done: "Changed text.", undone: "Undid text.", select: { historyOnly: true }, ...open === undefined ? {} : { open } };
+        });
+        assert.equal(result.ok, true, JSON.stringify(result));
+      }
       await prepared.finish!(() => workspace.source(input.path) === input.content);
       return prepared.outcome;
     } catch (error) {
@@ -612,9 +616,9 @@ test("an agent edit's editor path switched away at any wait before it is kept fi
 
 // Grok on 34 (ticket 36): its branch left and shown again before its step was kept, the attempt's stamp no longer
 // holds and the away finish leaves it to the editor (undefined): a new attempt on a new stamp runs it on show, once
-// (src/main.ts applyAgentSiteCommand's shape), however often that repeats, while its branch's drafts are as they
-// were when it began (`proof`, draftsProof). Left and not shown again, reloaded alone, or an earlier version opened
-// and closed (not leaving it: the editor path refuses that as before, ticket 23), its own reason stands.
+// (src/main.ts applyAgentSiteCommand's shape), however often that repeats, while its proof holds (`proof`,
+// retryProof). Left and not shown again, reloaded alone, or an earlier version opened and closed (not leaving it:
+// the editor path refuses that as before, ticket 23), its own reason stands.
 const MAIN = githubScope({ account: "lex", repoId: 1, branch: "main" }), FEATURE = githubScope({ account: "lex", repoId: 1, branch: "feature" });
 const RELOADED = "The editor reloaded this branch or opened an earlier version meanwhile. Read the site again.";
 function onShowAttempts(meanwhile: (session: WorkspaceSession) => void, cycles: number, attempt: (at: SessionStamp, session: WorkspaceSession) => Promise<string>, proof = () => {}) {
@@ -629,7 +633,7 @@ function onShowAttempts(meanwhile: (session: WorkspaceSession) => void, cycles: 
       return done;
     }, () => applied, left, async () => { counts.away++; return undefined; }, { shown: () => same(session.current().scope, MAIN), proof, run: onShow });
   };
-  return { counts, run: onShow };
+  return { counts, session, run: onShow };
 }
 test("an agent command's editor path left and shown again before it is kept runs on show again, once", async () => {
   for (const [label, meanwhile, cycles, expected] of [
@@ -652,27 +656,39 @@ test("an agent command's editor path left and shown again before it is kept runs
   }
 });
 
+// A text write on show as the editor runs it: applySiteCommand's write_file (its read proved by expectedHash), written
+// through the atomic port over the agent's guarded edits, carrying the source it checked (as src/main.ts writes it).
+const textOnShow = (f: Awaited<ReturnType<typeof setup>>, at: SessionStamp, prepared?: () => Promise<void>) => f.run(f.command, undefined, undefined, undefined, {
+  current: () => at.holds(), prepared,
+  // eslint-disable-next-line no-restricted-syntax -- an atomic write_file reads only these.
+  apply: edits => applySiteCommand({
+    text: async (path: string) => f.models.text(f.scope, path), atomicText: () => true,
+    async writeDraft(path: string, content: string, _create: boolean, expected?: string) {
+      const outcome = await edits.run(r => r.source(path) !== expected ? { refuse: `${path} changed in the editor since it was read. Read it again.` }
+        : { edits: new Map([[path, content]]), done: "Changed text.", undone: "Undid text.", select: { historyOnly: true } });
+      return outcome.ok ? undefined : outcome.message;
+    },
+  } as unknown as AgentSiteActions, f.command),
+}).then(outcome => JSON.stringify(outcome));
+const lexEdits = (f: Awaited<ReturnType<typeof setup>>, path: string, text: string) => f.manual.run(r => { r.source(path); return { edits: new Map([[path, text]]), done: "Manual", undone: "Undo manual", select: { historyOnly: true } }; });
+
 // The same for a text write (write_file): its stamp gone by its commit, it is written once on show, its read proved again
-// there (expectedHash, as the editor's write proves it); its text changed meanwhile, it refuses as on show.
+// there by the editor's own write (expectedHash); its text changed meanwhile, the editor refuses it.
 test("an agent text write's editor path left and shown again before it is kept is written once on show, or refuses when its text changed", async t => {
-  const CHANGED = "index.html changed in the editor since it was read. Read it again.";
   for (const changed of [false, true]) {
     const f = await setup(t);
     let prepared = 0;
-    const { counts, run } = onShowAttempts(() => {}, 0, async (at, session) => {
-      if (await textHash(f.models.text(f.scope, "index.html")!) !== f.command.expectedHash) throw new Error(CHANGED);
-      return JSON.stringify(await f.run(f.command, undefined, undefined, undefined, { current: () => at.holds(), prepared: async () => {
-        // Read and fenced on show, then left and shown again before its commit.
-        if (prepared++ > 0) return;
-        session.next(FEATURE);
-        if (changed) assert.equal((await f.manual.run(r => { r.source("index.html"); return { edits: new Map([["index.html", "lex"]]), done: "Manual", undone: "Undo manual", select: { historyOnly: true } }; })).ok, true);
-        session.next(MAIN);
-      } }));
-    });
+    const { counts, run } = onShowAttempts(() => {}, 0, (at, session) => textOnShow(f, at, async () => {
+      // Read and fenced on show, then left and shown again before its write.
+      if (prepared++ > 0) return;
+      session.next(FEATURE);
+      if (changed) assert.equal((await lexEdits(f, "index.html", "lex")).ok, true);
+      session.next(MAIN);
+    }), retryProof(f.command, f.store, f.scope));
     const outcome = await run().catch((error: Error) => error.message);
     assert.equal(counts.attempts, 2, `changed: ${changed}`);
     if (changed) {
-      assert.equal(outcome, CHANGED);
+      assert.equal(outcome, "index.html changed in the editor since it was read. Read it again.");
       assert.equal(f.models.text(f.scope, "index.html"), "lex");
       assert.equal(await f.records.receipt(f.scope, "operation", "grant"), undefined);
     } else {
@@ -684,25 +700,66 @@ test("an agent text write's editor path left and shown again before it is kept i
   }
 });
 
-// Review of ticket 36: a page or file command run again on show only while its branch's drafts are as they were when
+// Async writers: left for feature and main shown again at any wait of its on-show attempts, a text write is kept once
+// with one receipt, or refused with nothing kept.
+test("an agent text write's on-show attempts left and shown again at any wait keep it once or nothing", async t => {
+  const count = await forEachAwait(race => {
+    const run = { done: Promise.resolve(), f: undefined as Awaited<ReturnType<typeof setup>> | undefined, session: undefined as WorkspaceSession | undefined, error: undefined as string | undefined };
+    run.done = (async () => {
+      const f = run.f = await setup(t, race);
+      const attempts = onShowAttempts(() => {}, 0, at => textOnShow(f, at), retryProof(f.command, f.store, f.scope));
+      run.session = attempts.session;
+      await attempts.run().catch((error: Error) => { run.error = error.message; });
+    })();
+    return run;
+  }, run => { run.session!.next(FEATURE); run.session!.next(MAIN); }, async run => {
+    const f = run.f!, receipt = await f.records.receipt(f.scope, "operation", "grant");
+    if (run.error === undefined) {
+      assert.equal(f.models.text(f.scope, "index.html"), "agent");
+      assert.ok(receipt);
+      assert.equal(f.history.length, 1, "one step");
+    } else {
+      assert.match(run.error, /Nothing was changed|changed/);
+      assert.equal(f.models.text(f.scope, "index.html"), "before");
+      assert.equal(receipt, undefined);
+      assert.equal(f.history.length, 0);
+    }
+  });
+  assert.ok(count >= 2);
+});
+
+// Review of ticket 36: a page or file command runs again on show only while its branch's drafts are as they were when
 // it began (ticket 34's away rule): Lex changing another file there meanwhile refuses it, with nothing kept, though its
-// own file is as it was (it would plan again over that change).
-test("an agent command's editor path left and shown again refuses when its branch's drafts changed meanwhile; nothing is kept", async t => {
+// own page is as it was (it would plan again over that change).
+test("a page command's editor path left and shown again refuses when its branch's drafts changed meanwhile; nothing is kept", async t => {
   const f = await setup(t);
-  const proof = draftsProof(f.store, f.scope);
-  let prepared = 0;
-  const { counts, run } = onShowAttempts(() => {}, 0, async (at, session) => JSON.stringify(await f.run(f.command, undefined, undefined, undefined, { current: () => at.holds(), prepared: async () => {
-    if (prepared++ > 0) return;
-    session.next(FEATURE);
-    assert.equal((await f.manual.run(r => { r.source("other.css"); return { edits: new Map([["other.css", "lex css"]]), done: "Manual", undone: "Undo manual", select: { historyOnly: true } }; })).ok, true);
-    session.next(MAIN);
-  } })), proof);
+  const command: AgentCommand = { ...f.command, operation: "set_page_details", content: "", expectedHash: undefined, args: { title: "New" } };
+  const actions = { setPageDetails: async () => undefined, text: async () => "<title>New</title>" } as unknown as AgentSiteActions; // eslint-disable-line no-restricted-syntax -- set_page_details reads only these two.
+  let attempt = 0;
+  const { counts, run } = onShowAttempts(() => {}, 0, async (at, session) => {
+    const kept = await f.prepare(command, () => at.holds());
+    if (attempt++ === 0) {
+      session.next(FEATURE);
+      assert.equal((await lexEdits(f, "other.css", "lex css")).ok, true);
+      session.next(MAIN);
+    }
+    return JSON.stringify(await applyStructural(command, kept, { actions, readDrafts: new Map(), current: () => at.holds(), dispose: () => {} }));
+  }, retryProof(command, f.store, f.scope));
   await assert.rejects(run(), { message: "main changed in the editor meanwhile. Read it again. Nothing was changed; your drafts are as they were." });
   assert.deepEqual(counts, { attempts: 1, away: 1 });
-  assert.equal(f.models.text(f.scope, "index.html"), "before");
   assert.equal(f.store.get(f.scope, "other.css")?.content, "lex css", "Lex's change is left as it is");
   assert.equal(await f.records.receipt(f.scope, "operation", "grant"), undefined);
   assert.equal(f.history.length, 1, "only Lex's step");
+});
+
+test("an on-show retry's proof: none for a text write, its branch's drafts for a page command, a refusal with no branch known", async t => {
+  const f = await setup(t);
+  const page: AgentCommand = { ...f.command, operation: "delete_file", content: "", expectedHash: undefined };
+  const text = retryProof(f.command, f.store, f.scope), drafts = retryProof(page, f.store, f.scope), unknown = retryProof(page, f.store, undefined);
+  assert.equal((await lexEdits(f, "other.css", "lex css")).ok, true);
+  assert.doesNotThrow(text, "a text write is proved by its own read");
+  assert.throws(drafts, { message: "main changed in the editor meanwhile. Read it again. Nothing was changed; your drafts are as they were." });
+  assert.throws(unknown, { message: "main changed in the editor meanwhile. Read it again. Nothing was changed; your drafts are as they were." });
 });
 
 test("a workspace hold is left once another workspace or none loads, even when shown again; a reload alone is not leaving", () => {
@@ -753,7 +810,8 @@ async function structuralElsewhere(t: TestContext, race?: AwaitRace, overrides: 
   agentCommandFiles.set(command, { repo: { id: 1, full_name: "lex/site" }, snapshot: { branch: "main", commit: "commit", entries: [] } } as unknown as AgentReadFiles); // eslint-disable-line no-restricted-syntax -- only the repository and snapshot are read.
   let landed = 0;
   const finish = () => finishAgentTextElsewhere(command, () => shown, f.scope.account, f.store, async () => undefined, { site, landed: () => { landed++; } });
-  return { ...f, parked, finish, landed: () => landed, show: () => { here = true; visits++; shown = f.scope; }, showAndLeave: () => { visits++; },
+  return { ...f, parked, finish, structural: command, landed: () => landed, show: () => { here = true; visits++; shown = f.scope; }, showAndLeave: () => { visits++; },
+    leave: () => { here = false; shown = f.shown; },
     // Its branch opening again: the session moved to it, but its snapshot is not on show yet.
     showLoading: () => { here = true; visits++; shown = undefined; }, shownNow: () => { shown = f.scope; } };
 }
@@ -793,6 +851,24 @@ test("a page command elsewhere whose branch is shown and left again at any wait 
     assert.match(run.f!.store.get(run.f!.scope, "index.html")!.content, /<title>Agent title<\/title>/);
     assert.equal(run.f!.parked.length, 1);
   });
+});
+
+// Review of ticket 36: begun on show, Lex changing another draft there, then another branch opened before it was kept:
+// its first run away proves the drafts as that run begins (ticket 34), not as the command began, so it lands there once.
+// The proof taken as it began (retryProof) is only for running it on show again.
+test("a page command begun on show, other drafts there changed, then left before it is kept, lands away once", async t => {
+  const f = await structuralElsewhere(t);
+  f.show();
+  const onShowProof = retryProof(f.structural, f.store, f.scope);
+  f.store.save({ ...f.scope, version: 1, path: "other.css", baseSha: "a".repeat(40), original: "old css", content: "lex css", updatedAt: 1 });
+  f.leave();
+  const outcome = await f.finish();
+  assert.match(outcome!.message, /Page details of index\.html updated/);
+  assert.equal(f.landed(), 1);
+  assert.match(f.store.get(f.scope, "index.html")!.content, /<title>Agent title<\/title>/);
+  assert.equal(f.store.get(f.scope, "other.css")!.content, "lex css");
+  assert.equal(f.parked.length, 1);
+  assert.throws(onShowProof, /main changed in the editor meanwhile/, "it would not run on show again");
 });
 
 // Only the ticket's page and file commands run in a background site: the open file's own writes need it on screen.

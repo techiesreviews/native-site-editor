@@ -2798,7 +2798,7 @@ function makeAgentSiteActions(edits: GuardedEdits = guardedEdits, atomic = false
   presence: (path, find) => agentPresence.show(path, find),
 }; }
 async function applyAgentSiteCommand(command: AgentCommand) {
-  const [{ applySiteCommand, applyStructural, prepareAgentText, atomicAgentCommand, agentStructuralActions, finishAgentTextElsewhere, editorOrElsewhere, holdWorkspace, draftsProof, pinnedMedia, pinnedMediaActions, pinnedMediaAway }, { createPagesController }, { createLazyFileOperationsController }, { agentCommandFiles }] = await Promise.all([loadAgentSite(), loadPagesActions(), loadFileOps(), import("./agent-tools")]);
+  const [{ applySiteCommand, applyStructural, prepareAgentText, atomicAgentCommand, agentStructuralActions, finishAgentTextElsewhere, editorOrElsewhere, holdWorkspace, retryProof, pinnedMedia, pinnedMediaActions, pinnedMediaAway }, { createPagesController }, { createLazyFileOperationsController }, { agentCommandFiles }] = await Promise.all([loadAgentSite(), loadPagesActions(), loadFileOps(), import("./agent-tools")]);
   const factories = { createGuardedEdits, createPagesController, createLazyFileOperationsController, createBlockMoves, withPageField };
   // Ticket 27: a Media change runs in its own workspace's background page, whatever is shown.
   // Finished while another workspace is shown, its note waits on that one (ticket 24), as an agent's text write's does.
@@ -2810,9 +2810,9 @@ async function applyAgentSiteCommand(command: AgentCommand) {
   // Ticket 23: an edit read from a site or branch no longer shown finishes there, on its files. On show the editor writes it, holding the workspace
   // from the moment that is known (its stamp below), proved by the commit the command was read on and the bytes its write reads (expectedHash;
   // the guarded edit's own reads); switched away before it was kept, it finishes where it was read after all (editorOrElsewhere), noted there (ticket 24).
-  const read = agentCommandFiles.get(command), login = info.user?.login, landed = read && login ? { account: login, repoId: read.repo.id, repo: read.repo.full_name, branch: read.snapshot.branch } : undefined;
-  // Ticket 34: a page or file command read there runs in its background site, the editor's own ports pinned to it; again after a leave only while its branch's drafts are as now.
-  const away: AgentAwayPorts = { unchanged: landed && command.operation !== "write_file" ? draftsProof(draftStore(), landed) : undefined, landed: scope => finishedWork.add(scope, "agent", { id: command.id }), site: { pages: pagePorts(), files: filePorts(), components: componentPorts, actions: makeAgentSiteActions,
+  const read = agentCommandFiles.get(command), login = info.user?.login, landed = read && login ? { account: login, repoId: read.repo.id, repo: read.repo.full_name, branch: read.snapshot.branch } : undefined, unchanged = retryProof(command, draftStore(), landed);
+  // Ticket 34: a page or file command read there runs in its background site, the editor's own ports pinned to it; run on show again only while `unchanged` holds.
+  const away: AgentAwayPorts = { landed: scope => finishedWork.add(scope, "agent", { id: command.id }), site: { pages: pagePorts(), files: filePorts(), components: componentPorts, actions: makeAgentSiteActions,
     store: draftStore, forget: (scope, path) => editorModule.forgetDraftModel(scope, path), visits: scope => workspaceSession.visits(githubScope(scope)), prepareSources: edits => editorModule.prepareHistorySources(edits, true), park: step => parkedSteps.park(step), factories } };
   const elsewhere = finishedWork.agent(landed, command, (scope, path) => draftStore().get(scope, path), () => finishAgentTextElsewhere(command, draftScope, login, draftStore(), (files, path) => repositoryIndex.find(api, files.repo, files.snapshot, path), away));
   const finished = await elsewhere(); if (finished) return finished;
@@ -2841,7 +2841,7 @@ async function applyAgentSiteCommand(command: AgentCommand) {
       return applyStructural(command, kept, scoped, agentActing, () => {
         if (command.operation === "set_page_details" && current()) { pageStructure?.refreshMeta(); pagesController.renderTree(); updateCurrentPageLabel(); updateAgentContext(); }
       });
-    }, () => Boolean(prepared?.applied), left, elsewhere, { shown: () => holdsDraftScope(shownScope(), scope), proof: () => away.unchanged?.(), run: onShow });
+    }, () => Boolean(prepared?.applied), left, elsewhere, { shown: () => holdsDraftScope(shownScope(), scope), proof: unchanged, run: onShow });
   };
   return onShow();
 }

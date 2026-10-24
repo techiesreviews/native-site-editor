@@ -1115,7 +1115,7 @@ export function pinnedMediaActions(actions: AgentSiteActions, command: AgentComm
  * (`elsewhere`, finishAgentTextElsewhere) instead of refusing; left to the editor there (undefined) and
  * its branch the one shown (`again.shown`), a new attempt runs it on show (`again.run`, on a new stamp:
  * the old one no longer holds), so it lands once either way. That attempt runs only while its branch's
- * drafts are as they were when it began (`again.proof`, draftsProof), else it refuses: it never plans
+ * drafts are as they were when it began (`again.proof`, retryProof), else it refuses: it never plans
  * again over what Lex changed there meanwhile. Otherwise its own reason stands.
  */
 export async function editorOrElsewhere<T>(editor: () => Promise<T>, applied: () => boolean, moved: () => boolean, elsewhere: () => Promise<T | undefined>,
@@ -1138,9 +1138,21 @@ export async function editorOrElsewhere<T>(editor: () => Promise<T>, applied: ()
 export function draftsProof(store: DraftStore, scope: DraftScope): () => void {
   const now = () => JSON.stringify(store.list(scope).map(({ updatedAt: _, ...draft }) => draft).sort((a, b) => a.path.localeCompare(b.path)));
   const proof = now();
-  return () => {
-    if (now() !== proof) throw new Error(`${scope.branch} changed in the editor meanwhile. Read it again. Nothing was changed; your drafts are as they were.`);
-  };
+  return () => { if (now() !== proof) throw changedMeanwhile(scope.branch); };
+}
+const changedMeanwhile = (branch: string) => new Error(`${branch} changed in the editor meanwhile. Read it again. Nothing was changed; your drafts are as they were.`);
+
+/**
+ * The proof an agent command's on-show attempt runs again under (editorOrElsewhere `again.proof`), taken
+ * as it begins: a text write (write_file) is proved by its own read (expectedHash) and needs none; a page
+ * or file command, by its branch's drafts (`scope`, the workspace it was read in, draftsProof). With no
+ * such workspace known, it refuses rather than plan again unproved. Its first run away keeps the proof
+ * taken as that run begins (finishStructuralElsewhere), as before.
+ */
+export function retryProof(command: AgentCommand, store: DraftStore, scope: DraftScope | undefined): () => void {
+  if (command.operation === "write_file") return () => {};
+  if (scope) return draftsProof(store, scope);
+  return () => { throw changedMeanwhile(command.branch); };
 }
 
 /**
@@ -1188,8 +1200,6 @@ export interface AgentAwayPorts {
   site: import("./background-site").BackgroundSitePorts;
   /** The command's step was kept in `scope`, not shown: the repository menu counts it there (ticket 24). */
   landed(scope: DraftScope): void;
-  /** The command's drafts proof, taken as it began (draftsProof); by default as it begins here. */
-  unchanged?: () => void;
 }
 
 /**
@@ -1253,12 +1263,12 @@ export async function finishAgentTextElsewhere(command: AgentCommand, shown: () 
  * on show. Its workspace shown again before its step is kept, even briefly (its loads moved), stops the
  * attempt with nothing kept. Shown now, the editor runs it (undefined); while that load is still opening
  * it waits for it, at most `AWAY_WAIT_MS`. Left again, it runs here again only while that workspace's
- * drafts are still as they were when it began (`away.unchanged`, taken before any wait), else it refuses: it
+ * drafts are still as they were when it began (its proof, taken before any wait), else it refuses: it
  * never plans again over what Lex changed there meanwhile. A receipt is kept only with its step, so an
  * attempt stopped before leaves none to count as a duplicate.
  */
 async function finishStructuralElsewhere(command: AgentCommand, scope: DraftScope, store: DraftStore, held: { pin: MediaPin; opened?: string }, away: AgentAwayPorts, left: () => boolean) {
-  const unchanged = away.unchanged ?? draftsProof(store, scope);
+  const unchanged = draftsProof(store, scope);
   const { backgroundSite } = await import("./background-site");
   const pages = Object.values(held.pin.site?.routes ?? {});
   // A folder moved: the page open as it arrived when it is one of the folder's, else the folder's first.
