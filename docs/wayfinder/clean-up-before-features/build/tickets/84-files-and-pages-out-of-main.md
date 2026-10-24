@@ -2,7 +2,7 @@
 title: "Files and Pages actions leave main.ts"
 type: task (AFK)
 status: open
-assignee:
+assignee: lead-84 (this session)
 builder: sol
 blocked_by: [11-lazy-media-and-pages, 41-is-a-file-rule]
 ---
