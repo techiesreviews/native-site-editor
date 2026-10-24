@@ -106,6 +106,7 @@ for (const to of ["branch", "site"] as const) {
       await undo(page).click();
       await expect.poll(async () => (await draftsOn(page, "main")).filter(draft => draft.path === "index.html"), { timeout: 20_000 }).toEqual([]);
       expect(await draftsOn(page, "feature")).toEqual([]);
+      expect(await draftsOn(page, "main", 540)).toEqual([]);
     } finally { await client.close(); }
   });
 }
