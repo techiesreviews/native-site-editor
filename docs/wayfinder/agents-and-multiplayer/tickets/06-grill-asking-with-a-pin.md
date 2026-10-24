@@ -9,3 +9,12 @@ blocked_by: [01-research-agents-on-own-subscriptions, 02-research-what-an-mcp-ca
 ## Question
 
 Lex (2026-10-24): asking agents with a pin is a pain today, and pins stay (a chat does not replace them). With research 01 and 02 in hand: what is clunky about today's pin (the edit bar's agent request, `src/components/agent-menu.ts`, the pin overlay), what replaces those steps, and is there also a chat panel (in the editor, or the agent's own client through an extensive MCP)? If a chat exists: where it sits, what it holds (replies, questions, progress), and how a pin and the chat relate.
+
+## Comments
+
+- 2026-10-24, round 1 with Lex:
+  - **What's clunky:** "a, When there are more changes I am not able to ask for more changes". The pin waits because no agent is listening; the second part gets a follow-up question.
+  - **No chat panel:** "No panel it is".
+  - **Always-listening helper:** "Yes, instead of connect this computer can we use the mcp?" Follow-up in round 2.
+  - **Six new agent abilities:** yes. A picture of the page, "I'm working here", the agent asks first with a question pin, undo its own change, next step in every reply, shorter first instructions.
+  - **The pin takes the colour and name of the agent on it:** yes.
