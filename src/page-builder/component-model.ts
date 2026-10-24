@@ -495,7 +495,7 @@ export function readInstance(source: string, range: InstanceRange): Instance {
 }
 
 export interface SlotState {
-  /** The page fills the slot. */
+  /** The page gives the slot something as written (the browser assigns it), even text the loader reads as blank, such as a lone `&nbsp;`; `shown` follows the loader. */
   filled: boolean;
   /** The slot shows something on this instance: what the page gave it, else its fallback. */
   shown: boolean;

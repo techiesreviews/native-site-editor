@@ -1077,6 +1077,23 @@ test("review: detach keeps entities and the page's own spacing", () => {
   assert.equal(detachMarkup(pair, `<p><slot name="s"></slot></p>`, readInstance(pair, rangeOf(pair, "x-b"))).markup, `<p><b>a</b><i>b</i></p>`);
 });
 
+test("detach hides what the site's loader hides: a later slot of a taken name, and a page of blank text shows every fallback", () => {
+  const template = `<section><slot name="a"><p>First</p></slot><div><slot name="a"><p>Again</p></slot></div></section>`;
+  const detach = (page: string) => detachMarkup(page, template, readInstance(page, rangeOf(page, "x-s"))).markup;
+  // The page's fill takes the first slot; the second is never filled, so it and its <div> go in a filled section.
+  assert.equal(detach(`<x-s><b slot="a">Ours</b></x-s>`), `<section><b>Ours</b></section>`);
+  // `&nbsp;` alone is blank to the loader: a bare tag, every fallback kept.
+  assert.equal(detach(`<x-s>&nbsp;</x-s>`), `<section><p>First</p><div><p>Again</p></div></section>`);
+});
+
+test("slot states: a lone &nbsp; fills the slot as written, but every fallback shows as the loader reads it", () => {
+  const template = `<section><slot><p>Default</p></slot><slot name="b"><p>B</p></slot></section>`;
+  const page = `<x-s>&nbsp;</x-s>`;
+  const states = slotStates(template, readInstance(page, rangeOf(page, "x-s")));
+  assert.deepEqual(states.get(""), { filled: true, shown: true, whenEmpty: "fallback" });
+  assert.deepEqual(states.get("b"), { filled: false, shown: true, whenEmpty: "fallback" });
+});
+
 test("review: usage counts elements, not text in scripts, textareas or comments", () => {
   const site = { routes: { "/": "index.html" }, components: { "x-card": "components/x-card/x-card.html" } };
   const sources = { "index.html": `<body><script>const example = "<x-card></x-card>";</script><textarea><x-card></x-card></textarea><!-- <x-card> --></body>`, "components/x-card/x-card.html": `<p></p>` };
