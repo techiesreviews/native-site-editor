@@ -2,7 +2,7 @@
 title: "Four product races found by the sturdy-tests slice"
 type: task (AFK)
 status: open
-assignee:
+assignee: lead-35 (this session)
 builder: claude
 blocked_by: []
 ---
