@@ -31,6 +31,7 @@ Built in stages: (1) several agents at once and seeing them work; (2) typing in 
 ## Decisions so far
 
 <!-- one line per closed ticket: [title](tickets/file.md): gist -->
+- [Find how the editor can drive agents on Lex's own subscriptions](tickets/01-research-agents-on-own-subscriptions.md#resolution-2026-10-24): only via a helper on his computer that connects out to our server and runs Claude Code and Codex (ACP) on his plans, at no extra cost; the hosted tab can never use a subscription; ChatGPT writes on Plus untested
 - [Find how the editor can always show the latest files](tickets/04-research-always-the-latest.md#resolution-2026-10-24): GitHub push webhook relayed to open tabs (seconds, nearly free; webhook is off today), folder watcher in Chromium; three-way merge into drafts; unpushed local clones are the one gap
 
 ## Not yet specified
