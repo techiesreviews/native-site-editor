@@ -6,6 +6,7 @@ import type { ComponentFieldSession, ComponentSlotEditSession, ComponentSlotPart
 import type { FieldSuggestion, FieldSuggestions } from "./field-suggestions";
 import type { mark } from "../page-builder/component-icon";
 import "./structure-editing.css";
+import { workingPart } from "../working-part";
 
 // Editing in the Page Structure tree, loaded the first time it is needed (a
 // row's text edited in place, its card, an instance's Attributes): none of it
@@ -30,6 +31,8 @@ export type FocusRequest = { prefix: string; row: string | undefined; caret?: nu
  */
 export interface RowText {
   path: string;
+  /** The element whose text it is (an instance's, for a slot): where the user works while typing (ticket 52). */
+  node?: readonly number[];
   /** The slot's name; "" for an element's own text. */
   name: string;
   /** Who the row is, for the field's name and what is said ("Title", "Heading"). */
@@ -99,6 +102,7 @@ export function createStructureEditing(host: StructureEditingHost) {
   interface Mode {
     owner: string;
     path: string;
+    node?: readonly number[];
     name: string;
     label: string;
     breaks: boolean;
@@ -116,14 +120,14 @@ export function createStructureEditing(host: StructureEditingHost) {
   // A slot's row text: its session opens on the instance as it is then.
   function slotText(model: ComponentStructureModel, slot: Slot): RowText {
     const { path } = model.host, node = [...model.host.node];
-    return { path, name: slot.name, label: slot.label, field: slot.kind === "link" ? "Button text" : "Text", text: slot.value.lines ?? slot.value.text,
+    return { path, node, name: slot.name, label: slot.label, field: slot.kind === "link" ? "Button text" : "Text", text: slot.value.lines ?? slot.value.text,
       breaks: Boolean(slot.value.breaks), prefix: host.fieldPrefix(model, slot.name), open: () => host.componentSlots(path, node)?.openSlotEdit(slot.name) };
   }
   function startMode(target: RowText, owner: string) {
     if (mode?.owner === owner && mode.name === target.name && mode.path === target.path) return mode;
     if (mode) finish("commit", false, true);
     suggestionsFailed = false;
-    mode = { owner, path: target.path, name: target.name, label: target.label, breaks: target.breaks, prefix: target.prefix, open: target.open,
+    mode = { owner, path: target.path, node: target.node, name: target.name, label: target.label, breaks: target.breaks, prefix: target.prefix, open: target.open,
       fields: new Map(), pending: new Map(), parts: [] };
     return mode;
   }
@@ -148,6 +152,7 @@ export function createStructureEditing(host: StructureEditingHost) {
   function change(current: Mode, part: ComponentSlotPart) {
     const field = current.fields.get(part);
     if (!field) return;
+    if (current.node) workingPart.typed({ path: current.path, node: current.node });
     const edit = session(current);
     if (!edit) { field.setAttribute("aria-invalid", "true"); return; }
     if (part === "text" && edit.patchable && edit.patch(field.value, () => writeNow(current, part))) {
@@ -171,6 +176,7 @@ export function createStructureEditing(host: StructureEditingHost) {
     typingHeld = false;
     if (how === "cancel") current.session?.cancel();
     else current.session?.close();
+    if (current.node) workingPart.left({ path: current.path, node: current.node });
     if (how === "stale") refuse(`Editing ${current.label} ended: the page changed meanwhile.`);
     if (!quiet) host.ended(current.owner, focus);
   }

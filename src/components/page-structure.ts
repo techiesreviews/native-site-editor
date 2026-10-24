@@ -323,7 +323,7 @@ export function createPageStructure(host: HTMLElement, handlers: PageStructureHa
     const { path, node } = rowTarget(item, structure.path);
     const model = handlers.textRow?.(path, node, item.tag);
     if (!model) return;
-    return { path, name: "", label: handlers.label(item).kind, field: "Text", text: model.lines, breaks: model.breaks, prefix: `${path}:text:${key(node)}:`,
+    return { path, node, name: "", label: handlers.label(item).kind, field: "Text", text: model.lines, breaks: model.breaks, prefix: `${path}:text:${key(node)}:`,
       open: () => handlers.textRow?.(path, node, item.tag)?.open() };
   }
   /** Opens the row's text in place (everything selected, or the caret at `caret`) and selects its element; false when it has none. */

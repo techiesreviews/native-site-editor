@@ -36,6 +36,10 @@ const cases: Record<FrameMessage["type"], Case> = {
     valid: { path: "index.html", node: [0, 1], before: "Hi", after: "Hello" },
     malformed: [{ path: 2 }, { before: undefined }, { after: 5 }, { after: long(100_001) }, { node: steps(501) }, { node: [-1] }],
   },
+  typing: {
+    valid: { path: "index.html", node: [1, 0, 0], left: true },
+    malformed: [{ path: 2 }, { node: undefined }, { node: steps(501) }, { node: [-1] }],
+  },
   route: { valid: { href: "/about.html" }, malformed: [{ href: undefined }] },
   format: { valid: { format: "em" }, malformed: [{ format: "u" }] },
   move: { valid: { direction: "out" }, malformed: [{ direction: "left" }] },

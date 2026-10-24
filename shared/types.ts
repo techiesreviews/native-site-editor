@@ -1,4 +1,4 @@
-import type { AgentElement } from "./agent";
+import type { AgentElement, AgentWorking } from "./agent";
 
 export interface Repository {
   id: number;
@@ -266,6 +266,8 @@ export interface AgentSiteContext {
   openRoute: string | null;
   /** The element selected in the preview (get_selection gives all of it). */
   selection: AgentElement | null;
+  /** Where the user is typing (ticket 52); absent from tabs before it. */
+  working?: AgentWorking | null;
   components: { tag: string; file: string; css?: string; section: boolean; slots: string[] }[];
   /** The stylesheets the pages' heads link, in order, each with the files it `@import`s (in cascade order). */
   stylesheets: { file: string; imports: string[] }[];
