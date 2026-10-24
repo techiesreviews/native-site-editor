@@ -85,3 +85,13 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 ### Evidence
 
 - Before/after against dev (`kit shots --compare dev`, 1280 and 390, light and dark): Connect state `/home/ubulex/Projects/native-site-editor/.scratch/shots/lead-29/20261023-182201/`, Wait state `.../lead-29/20261023-191126/`. Copied, Disconnect and a problem need an agent and a cut socket, which shot steps cannot drive: `kit shots --spec .scratch/lead29/menu-states.spec.ts` on the real starter shot all five states (Connect, Copied, Wait, Disconnect, problem; light and dark) in `.../lead-29/20261023-195221/`.
+
+### Follow-ups
+
+- Spec (P2): e27b7897:src/components/agent-menu.ts:353 — P2: The red "failed" dot comes back when the tab returns to the site where the press failed. The Done section and th
+- Spec (P2): b5f2f29d:src/components/agent-menu.ts:684 — P2: A failed Disconnect MCP press gives no feedback where the action happened. The catch is empty, and `state()` nev
+- Standards (P2): 52271787:src/components/agent-menu.ts:664 — P2: CODING_STANDARDS.md "Async writers": "re-check that same proof after every await and before every write." In `st
+- Validation gaps (gap): `native-mcp-menu.spec.ts` has no test for the switch-back case: after "the failed dot belongs to the site it failed on: another site shown clears it", switch th
+- Validation gaps (gap): The full-site reclaim path in `start()` (siteFull 409 → `drop(Infinity)` → second connect) has no browser spec. Only `siteFull` itself is unit-tested. Add a spe
+- Validation gaps (gap): The declined `forEachAwait` tests: the reason holds, since the unit runner has no DOM to mount the menu. But the browser specs named in the decline cover only `
+
