@@ -26,6 +26,9 @@ test("an agent's change shows on the section it is in: the section moved or remo
   // Outside any section: the element itself; a place for sections: that place.
   assert.deepEqual(agentPresenceTarget(command("place_media", { args: { element: "0.0.0" } }), page, tags), [0, 0, 0]);
   assert.deepEqual(agentPresenceTarget(command("add_section", { args: { container: "1", component: "site-cards" } }), page, tags), [1]);
+  // A place for sections inside a section: that section; a video looped: its section.
+  assert.deepEqual(agentPresenceTarget(command("add_section", { args: { container: "1.1", component: "site-cards" } }), page, tags), [1, 1]);
+  assert.deepEqual(agentPresenceTarget(command("loop_video", { args: { element: "1.1.1.0", looping: true } }), page, tags), [1, 1, 1]);
   // A text edit: the deepest section holding all of it.
   assert.deepEqual(agentPresenceTarget(command("write_file", { content: page.replace("Hello", "Hi there") }), page, tags), [1, 0]);
   assert.deepEqual(agentPresenceTarget(command("write_file", { content: page.replace("Deep", "Deeper") }), page, tags), [1, 1, 1]);

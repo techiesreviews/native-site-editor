@@ -4049,8 +4049,10 @@ import { domView } from "../page-builder/rules/tree.ts";
   // Figma or Paper: a thin outline in the agent's colour (the editor's
   // connected MCP dot) with its name in a chip on the outline's top-left
   // corner, and nothing else. Drawn over the page, never part of it and never
-  // a click target; the editor ends it once the change lands or stops.
-  var presenceColor = "#3f9a4f";
+  // a click target; the editor ends it once the change lands or stops. The
+  // colour is the editor's --agent-presence token only: nothing is drawn
+  // until the editor's `theme` message has brought it.
+  var presenceColor = "";
   var presenceRequest = null;
   var presenceName = "";
   var presenceBox = null;
@@ -4062,7 +4064,7 @@ import { domView } from "../page-builder/rules/tree.ts";
       presenceChip.style.cssText += "z-index:2147483647;padding:0 6px;border-radius:3px 3px 3px 0;white-space:nowrap;" +
         "font:600 11px/16px system-ui,-apple-system,'Segoe UI',sans-serif;letter-spacing:0;max-width:60vw;overflow:hidden;text-overflow:ellipsis;";
     }
-    var target = presenceRequest ? resolveNodePath(presenceRequest) : null;
+    var target = presenceRequest && presenceColor ? resolveNodePath(presenceRequest) : null;
     drawBox(presenceBox, target);
     if (presenceBox.style.display === "none") { presenceChip.style.display = "none"; return; }
     presenceBox.style.border = "2px solid " + presenceColor;
