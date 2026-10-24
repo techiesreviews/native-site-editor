@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { resumeAgents, revokeUnused, serialReads, siteFull } from "../src/agent-resume.ts";
+import { resumeAgents, revokeUnused, serialReads, siteFull, turnOnAgents } from "../src/agent-resume.ts";
 import { forEachAwait } from "./support/await-race.ts";
 import { startCountedWorker } from "./fakes/counted-agent.ts";
 import { editorTab, repo, signIn } from "./mcp-harness.ts";
@@ -62,6 +62,57 @@ for (const how of ["switch", "destroy", "disconnect"] as const) {
         assert.equal(marks.main, how === "disconnect" ? undefined : "1", `${read}: the resumed site's mark`);
       });
       assert.equal(points, read === "gone" ? 1 : 2, `${read}: await points`);
+    }
+  });
+}
+
+// The agent menu's Connect to MCP press with agents off (turnOn): the connection is found
+// reconnecting, its retry leaves the menu `after`, and the press then prompts, copies or is stuck.
+function press(race: Parameters<Parameters<typeof forEachAwait>[0]>[0], after: "idle" | "waiting" | "reconnecting") {
+  let site = "main", pinned = "", activation = 0, remote = false, retried = false;
+  const writes: string[] = [];
+  const live = (at: number) => remote && activation === at && site === pinned;
+  const done = turnOnAgents({
+    start: () => { remote = true; activation++; pinned = site; return activation; },
+    live,
+    paused: () => false,
+    read: race.port("read", async () => true),
+    open: race.port("open", async () => {}),
+    state: () => retried ? after : "reconnecting",
+    retry: race.port("retry", async () => { retried = true; }),
+    retryWaits: () => false,
+    waits: now => now === "waiting",
+    prompt: async () => { writes.push("POST /api/agent/connect"); },
+    copyAgain: async () => { writes.push("copy"); },
+    stuck: () => { writes.push("stuck"); },
+  });
+  return {
+    done,
+    disturb(how: "off" | "switch" | "again") {
+      if (how === "switch") site = "feature";
+      else { remote = false; activation++; }
+      // Turned on again by another press: a new activation this one must not drive.
+      if (how === "again") { remote = true; activation++; pinned = site; }
+    },
+    writes,
+  };
+}
+
+test("Connect to MCP finding a reconnect: undisturbed, it retries and then prompts, copies again or shows the press stuck", async () => {
+  for (const [after, write] of [["idle", "POST /api/agent/connect"], ["waiting", "copy"], ["reconnecting", "stuck"]] as const) {
+    const run = press({ port: (_name, work) => work }, after);
+    await run.done;
+    assert.deepEqual(run.writes, [write], after);
+  }
+});
+
+for (const how of ["off", "switch", "again"] as const) {
+  test(`Connect to MCP finding a reconnect: a ${how} at any await makes no prompt, no copy and no stuck dot`, async () => {
+    for (const after of ["idle", "waiting", "reconnecting"] as const) {
+      const points = await forEachAwait(race => press(race, after), run => run.disturb(how), run => {
+        assert.deepEqual(run.writes, [], `${after}: nothing written after the ${how}`);
+      });
+      assert.equal(points, 3, `${after}: read, open and retry`);
     }
   });
 }
