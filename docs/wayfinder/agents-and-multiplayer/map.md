@@ -1,0 +1,47 @@
+---
+label: wayfinder:map
+title: Agents and multiplayer
+charted: 2026-10-24
+tracker: local markdown (tickets live in tickets/ with a blocked_by line in each)
+---
+
+## Destination
+
+A finished build plan with mock-ups Lex has approved, for working with agents in the editor. It covers:
+
+- several agents and subagents working at the same time while Lex works, each one shown working where it works;
+- asking them easily: pins stay, plus whatever chat or MCP form the research favours;
+- real shared editing with agents and people: GitHub collaborators, and guests with no account who join through a synced session;
+- what anyone sees is always the latest version, whoever or whatever changed it, including coding tools that edit the files directly;
+- the cheapest running cost, and easy to self-host so each team pays for its own.
+
+Built in stages: (1) several agents at once and seeing them work; (2) typing in the same paragraph together; (3) people, and live outside changes.
+
+## Notes
+
+- **Planning only.** Tickets produce decisions, not code. The build starts after the clean-up ships (`docs/wayfinder/clean-up-before-features/`, do not edit) and is first in Lex's order of 2026-10-23 (`todo-list` memory): this map, then the atomic design catalogue, the detail pass, site quality, site structure, styling.
+- **What the clean-up already decides or builds** (inputs, do not re-ask): invisible multiplayer, where agent and Media work finishes in a background page on its own site and page (build slices 27 and 34); agent presence on a section like Figma (slice 33); the three-state MCP menu with a watchdog subagent (slice 29, [Lex request 02](../../work/lex-requests/issues/02-simple-mcp-menu.md)); the 8-hour connection with automatic tab takeover (slice 98, on dev, not yet in production); agents told where Lex is typing, with a change to that exact part waiting until he clicks away (slice 52). Slices 27 and 34 are built so this map's shared editing can reuse the background page and per-page Undo.
+- **Lex in plain words** ([kitchen.md](../../agents/kitchen.md) house rules): one question round at a time, each question with a recommended answer; technical questions too, explained plainly with file paths. Status reports terse.
+- **UX rules:** no toasts and no explainer lines anywhere; feedback appears where the action happens (`no-toasts-feedback-in-place` memory).
+- **Cost:** Lex (2026-10-24): "the cheapest possible option"; internal use first; self-hosters set it up themselves (the Deploy to Cloudflare button, root `wrangler.jsonc`) so the cost is theirs. Anything that costs money waits for Lex. Today's rule "drafts, context, commands and conversations are never mirrored in Durable Objects" (CONTEXT.md, Agent connection; the Durable Object reduction map) may have to change for shared editing: that is a decision for Lex with numbers, probably an ADR.
+- **Skills:** `grilling` with `domain-modeling` for every grilling ticket (CONTEXT.md is the glossary; GLOSSARY.md for sign-in terms); `research` for research tickets (findings on a `research/am-NN-<slug>` branch, never merged); `prototype` for mock-ups.
+- **Charting answers (Lex, 2026-10-24):** agentic workflow means agents inside the editor (the kitchen keeps its own software-factory map); everyone is in for multiplayer (one agent with Lex, several agents and subagents at once, and other people), with several agents at the same time mattering most; direct file edits by coding tools join, so syncing must keep what is shown the latest; worst pains today: asking agents with a pin, the connection not staying up, and not seeing agents work while he works; the chat does not need to work when his computer is off; pins are not replaced by a chat; whether a chat panel exists at all waits on research ("let's first see what is available, or that we just use an extensive MCP"), with [Dive Radio: How to Design an MCP](https://www.youtube.com/live/uwUqcQKx6Ww) as his reference.
+- **To find takeable tickets:** `node scripts/agents/tickets.mjs frontier agents-and-multiplayer`. Claim by filling in `assignee:` and pushing before work.
+
+## Decisions so far
+
+<!-- one line per closed ticket: [title](tickets/file.md): gist -->
+
+## Not yet specified
+
+- **Rights and roles beyond a synced session:** whether guests ever get lasting access, and what a collaborator may do that a guest may not. Sharpens after the synced session ticket.
+- **Undo and history with several editors:** whose Undo undoes what when Lex, agents and people edit one page; per-person history. Hangs on the shared-editing mechanism.
+- **Saving with several editors:** who presses Save to GitHub for shared drafts, and what a commit says about who wrote what.
+- **Self-host setup for shared editing:** what a self-hoster must switch on (services, keys, limits) and how the Deploy button covers it. Hangs on the mechanism and its cost.
+- **Agent identity:** names and colours per agent and subagent across tabs and sessions; whether Lex can tell two Claude subagents apart.
+- **Stage hand-off:** the build folder (README with rules, gates and waves; slices), once the decisions above are closed.
+
+## Out of scope
+
+- **The kitchen** (agents building the editor): the [software-factory map](../software-factory/map.md).
+- **Agents that run without Lex's computer** (paid cloud agents on an API key): Lex 2026-10-24, the chat does not need to work when his computer is off. Back on the list for later.

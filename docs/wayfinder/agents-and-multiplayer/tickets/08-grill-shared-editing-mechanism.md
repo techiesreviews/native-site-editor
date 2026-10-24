@@ -1,0 +1,11 @@
+---
+title: Decide how shared editing works and what it may cost
+type: grilling (HITL)
+status: open
+assignee:
+blocked_by: [03-research-cheapest-shared-editing, 04-research-always-the-latest, 07-grill-synced-session]
+---
+
+## Question
+
+With research 03 and 04 and the synced-session decision: which way do edits travel (peer-to-peer or a relay per page), which library merges them, what is kept on the server and for how long, and what monthly cost is acceptable for internal use and for a self-hoster? Does today's "never mirrored in Durable Objects" rule change (an ADR if so)? How do typing in the same paragraph, an agent's whole-section change, and an outside change from GitHub or a folder meet without anyone losing work?
