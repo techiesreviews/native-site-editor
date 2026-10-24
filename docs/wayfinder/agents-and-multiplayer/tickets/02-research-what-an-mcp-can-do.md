@@ -1,7 +1,7 @@
 ---
 title: Find what an "extensive MCP" can do for working with agents
 type: research (AFK)
-status: open
+status: closed
 assignee: claude (research subagent)
 blocked_by: []
 ---
@@ -15,6 +15,30 @@ Lex's alternative to a chat in the editor is "that we just use an extensive MCP"
 - What our 12 tools (`shared/agent-*.ts`, `worker/mcp.ts`) and `wait_for_requests` would need to change.
 
 End with a plain comparison against a chat panel in the editor (what Lex would see and do in each).
+
+## Resolution (2026-10-24)
+
+Findings: `docs/wayfinder/agents-and-multiplayer/research/02-what-an-mcp-can-do.md` on branch `research/am-02-what-an-mcp-can-do` (commit `1a0456d4`, never merged).
+
+- **Canvas tools build no chat panels.** Figma, Webflow, Framer, Paper, Pencil, tldraw and Canva all have people bring their own agent through MCP and give it a screenshot to check its work. Live selection needs a bridge to an open editor, and our receiving tab already is one.
+- **MCP 2026-07-28:** sessions are dropped, tasks (long jobs) become an extension, sampling is on its way out, and MCP Apps are final.
+- **Support by client:**
+  - Claude Code: elicitation and tasks, but no MCP Apps.
+  - Claude desktop and claude.ai: MCP Apps, but no elicitation or tasks, and a 240 s call limit.
+  - ChatGPT: MCP Apps and elicitation.
+  - Codex: elicitation, with a 60 s call limit by its docs and 300 s by its source.
+  - No client lets a remote server push a pin into a running agent; only Claude Code channels from a local helper can (research preview).
+- **`wait_for_requests` stays the base:** its 25 s wait fits every client. A tasks version in Claude Code would let the agent start on a pin without the watchdog subagent.
+- **Biggest gaps are ours:**
+  - no picture of the preview;
+  - no way to show where the agent works;
+  - agents cannot start a conversation on a pin;
+  - no undo or discard of their own drafts.
+- **Tool count:** 36 tools today, not 12.
+- **Compared with a chat panel:** an extensive MCP covers asking and watching in apps Lex already uses; a panel would still need ticket 01's helper. Recommendation: build the MCP upgrades and the helper first, then decide on a panel (ticket 06).
+- **Unconfirmed:**
+  - whether channels stop on 2026-07-28 connections;
+  - whether Codex shows MCP Apps.
 
 ## Comments
 

@@ -1,0 +1,904 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE (throwaway) · 05 Several agents at once</title>
+<!--
+  THROWAWAY PROTOTYPE, planning only. Not product code.
+  Question: how does the editor look and feel when several agents work on Lex's site
+  at once while he keeps typing? Decided with Lex 2026-10-24
+  (docs/wayfinder/agents-and-multiplayer, item 05). Extends ticket 33's single-agent presence.
+  Tokens copied from src/theme.css; row, menu and presence looks from page-structure.css,
+  agent-menu.css and native-preview-runtime.js (drawPresence).
+  Agent colours, in order of arrival, reuse existing theme colours (no new raw colour):
+  1 --agent-presence (the MCP green), 2 --color-component (violet), 3 --file-video (pink), 4 --file-data (teal).
+  Orange (--agent-question-strong) is kept for a question, blue (--primary) for Lex's own selection.
+-->
+<style>
+/* ---------- Editor tokens (subset of src/theme.css + src/style.css) ---------- */
+:root {
+  --color-primary: oklch(54.6% 0.215 262.9);
+  --color-primary-lightest: oklch(from var(--color-primary) 98.9% calc(c * 0.01395349) calc(h + 12.9));
+  --color-primary-lighter: oklch(from var(--color-primary) 95.4% calc(c * 0.08837209) calc(h + 12.6));
+  --color-primary-light: oklch(from var(--color-primary) 88.3% calc(c * 0.22325581) calc(h + 11.8));
+  --color-primary-dark: oklch(from var(--color-primary) 40.4% calc(c * 0.73488372) h);
+  --color-primary-darker: oklch(from var(--color-primary) 27.3% calc(c * 0.49767442) h);
+  --color-primary-darkest: oklch(from var(--color-primary) 15.3% calc(c * 0.27906977) h);
+
+  --semantic-action: oklch(from var(--color-primary) min(l, 0.5) min(c, 0.18) h);
+  --semantic-on-action: var(--color-primary-lightest);
+  --semantic-surface: var(--color-primary-lightest);
+  --semantic-background: oklch(from var(--color-primary-lighter) 97% c h);
+  --semantic-surface-subtle: var(--color-primary-lighter);
+  --semantic-surface-raised: var(--color-primary-light);
+  --semantic-text: var(--color-primary-darkest);
+  --semantic-text-muted: oklch(from var(--color-primary-dark) l min(c, 0.045) h);
+  --semantic-border: var(--color-primary-light);
+  --semantic-focus: var(--semantic-action);
+  --semantic-shadow: oklch(from var(--color-primary-darkest) l c h / 0.18);
+
+  --color-warning: oklch(75% 0.14 75);
+  --color-success: oklch(60% 0.13 145);
+  --color-component: oklch(55% 0.2 300);
+  --file-page: oklch(66% 0.17 45);
+  --file-video: oklch(62% 0.17 340);
+  --file-data: oklch(64% 0.11 190);
+
+  --agent-presence: var(--color-success);
+  --agent-question-strong: oklch(66% 0.18 48);
+  --on-accent: oklch(100% 0 none);
+  --preview-paper: oklch(100% 0 none);
+
+  /* Prototype: the fixed set of agent colours, handed out in order of arrival. */
+  --agent-1: var(--agent-presence);
+  --agent-2: var(--color-component);
+  --agent-3: var(--file-video);
+  --agent-4: var(--file-data);
+
+  --surface: var(--semantic-surface);
+  --background: var(--semantic-background);
+  --surface-subtle: var(--semantic-surface-subtle);
+  --text: var(--semantic-text);
+  --line: var(--semantic-border);
+  --muted: var(--semantic-text-muted);
+  --primary: var(--semantic-action);
+  --on-primary: var(--semantic-on-action);
+  --focus: var(--semantic-focus);
+  --preview-focus: var(--semantic-action);
+  --danger: oklch(from var(--color-success) l c 25);
+  --shadow: 0 12px 32px var(--semantic-shadow);
+  --shadow-small: 0 2px 6px var(--semantic-shadow);
+  --hover: color-mix(in oklch, var(--text) 9%, transparent);
+  --current: color-mix(in oklch, var(--primary) 16%, transparent);
+  --control-line: color-mix(in oklch, var(--text) 16%, transparent);
+  --focus-ring: 2px solid var(--focus);
+  --panel-surface: var(--semantic-surface-raised);
+
+  --type-badge: 11px;
+  --type-small: 12px;
+  --type-base: 13px;
+  --type-title: 15px;
+  --radius-small: 4px;
+  --radius: 6px;
+  --radius-panel: 8px;
+  --size-icon: 24px;
+  --size-control: 32px;
+  --panel-padding: 6px;
+
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --semantic-surface: oklch(from var(--color-primary-darkest) 22% min(c, 0.02) h);
+  --semantic-background: var(--color-primary-darkest);
+  --semantic-surface-subtle: oklch(from var(--color-primary-darkest) 18% min(c, 0.02) h);
+  --semantic-surface-raised: oklch(from var(--color-primary-darker) 32% min(c, 0.035) h);
+  --semantic-text: var(--color-primary-lighter);
+  --semantic-text-muted: oklch(from var(--color-primary-light) 80% min(c, 0.035) h);
+  --semantic-border: oklch(from var(--color-primary-darker) 36% min(c, 0.04) h);
+  --semantic-focus: var(--color-primary-light);
+  --semantic-shadow: oklch(from var(--color-primary-darkest) 5% c h / 0.35);
+}
+
+/* ---------- Page shell: mock editor above, prototype strip below ---------- */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; block-size: 100%; }
+body {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  block-size: 100dvh;
+  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: var(--type-base);
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--background);
+}
+button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+button:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+
+.editor {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-block-size: 0;
+}
+
+/* ---------- Top bar ---------- */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-block-size: 56px;
+  padding-block: 8px;
+  padding-inline: 16px;
+  background: var(--surface);
+  border-block-end: 1px solid var(--line);
+}
+.icon-button {
+  display: none;
+  place-items: center;
+  inline-size: var(--size-control);
+  block-size: var(--size-control);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--muted);
+}
+.project {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-inline-size: 0;
+  padding-block: 7px;
+  padding-inline: 8px 10px;
+  border: 0;
+  border-radius: var(--radius-panel);
+  background: transparent;
+  font-size: var(--type-title);
+  font-weight: 600;
+}
+.project__initial {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  inline-size: 28px;
+  block-size: 28px;
+  border-radius: var(--radius);
+  background: oklch(from var(--primary) 0.58 0.12 150);
+  color: var(--on-accent);
+  font-size: 13px;
+}
+.project__name { overflow: clip; text-overflow: ellipsis; white-space: nowrap; }
+.project svg, .mcp svg { flex: none; color: var(--muted); }
+.mcp {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-inline-start: auto;
+  min-block-size: var(--size-control);
+  padding-block: 4px;
+  padding-inline: 10px 8px;
+  border: 1px solid var(--control-line);
+  border-radius: var(--radius);
+  background: transparent;
+  font-weight: 600;
+}
+.mcp::before, .agent-row__dot, .menu-action::before {
+  content: "";
+  flex: none;
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+  opacity: 0.5;
+}
+.mcp.is-connected::before, .menu-action.is-connected::before { background: var(--color-success); opacity: 1; }
+/* An agent's question waiting: the MCP dot turns orange (existing agent-menu rule). */
+.mcp.is-asking::before { background: var(--agent-question-strong); opacity: 1; }
+@media (hover: hover) and (pointer: fine) {
+  .project:hover, .mcp:hover, .icon-button:hover { background: var(--hover); }
+}
+.project:active, .mcp:active, .icon-button:active { background: var(--hover); }
+.mcp[aria-expanded="true"] { background: var(--hover); }
+
+/* ---------- MCP menu (agent-menu.css look, inside a flyout panel) ---------- */
+.menu {
+  position: fixed;
+  inset: auto;
+  inset-block-start: 52px;
+  inset-inline-end: 12px;
+  margin: 0;
+  inline-size: min(280px, calc(100vw - 24px));
+  padding: var(--panel-padding);
+  border: 0;
+  border-radius: var(--radius-panel);
+  background: var(--panel-surface);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+.menu__agents { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.menu__agents:empty { display: none; }
+.menu__agents:not(:empty) + .menu__divider { display: block; }
+.menu__divider { display: none; block-size: 1px; margin-block: 6px; margin-inline: 4px; background: var(--control-line); }
+.agent-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-block-size: var(--size-control);
+  padding-block: 2px;
+  padding-inline: 8px 4px;
+  border-radius: var(--radius);
+}
+.agent-row__dot { background: var(--agent); opacity: 1; }
+.agent-row__name { flex: 1; min-inline-size: 0; overflow: clip; text-overflow: ellipsis; white-space: nowrap; }
+.agent-row__stop {
+  flex: none;
+  min-block-size: 26px;
+  padding-block: 0;
+  padding-inline: 10px;
+  border: 1px solid var(--control-line);
+  border-radius: var(--radius);
+  background: transparent;
+  font-size: var(--type-small);
+  font-weight: 600;
+}
+.menu-action {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  inline-size: 100%;
+  min-block-size: var(--size-control);
+  padding-block: 4px;
+  padding-inline: 8px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  text-align: start;
+}
+@media (hover: hover) and (pointer: fine) {
+  .menu-action:hover, .agent-row__stop:hover { background: var(--hover); }
+}
+.menu-action:active, .agent-row__stop:active { background: var(--hover); }
+.menu-action:focus-visible, .agent-row__stop:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+
+/* ---------- Workspace: sidebar + canvas ---------- */
+.workspace {
+  position: relative;
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  min-block-size: 0;
+}
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-inline-size: 0;
+  padding-block: 4px 16px;
+  padding-inline: 10px;
+  overflow: auto;
+  background: var(--surface-subtle);
+}
+.eyebrow {
+  display: flex;
+  align-items: center;
+  min-block-size: 36px;
+  margin: 0;
+  padding-inline: 10px;
+  font-size: var(--type-small);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.eyebrow:not(:first-child) { margin-block-start: 10px; border-block-start: 1px solid var(--line); padding-block-start: 10px; min-block-size: 46px; }
+.tree { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-block-size: var(--size-control);
+  padding-inline: 8px;
+  border-radius: var(--radius);
+  line-height: 1.3;
+  user-select: none;
+}
+.row[aria-selected="true"], .row[aria-current="page"] { background: var(--current); font-weight: 600; }
+@media (hover: hover) and (pointer: fine) {
+  .row:not([aria-selected="true"], [aria-current="page"]):hover { background: var(--hover); }
+}
+.row__caret { flex: none; inline-size: 14px; color: var(--muted); }
+.row__kind { flex: none; font-size: var(--type-small); font-weight: 600; color: var(--muted); }
+.row[aria-selected="true"] .row__kind { color: var(--text); }
+.row__text { min-inline-size: 0; overflow: clip; text-overflow: ellipsis; white-space: nowrap; }
+.row__page-icon { flex: none; color: var(--file-page); }
+/* The agents' dots after the row's name (ticket 33's row dot, one per agent). */
+.row__dots { display: inline-flex; gap: 3px; flex: none; }
+.row__dots > i { inline-size: 8px; block-size: 8px; border-radius: 50%; background: var(--agent); }
+@media (prefers-reduced-motion: no-preference) {
+  .row__dots > i { animation: dot-in 220ms var(--ease-out); }
+}
+@keyframes dot-in { from { transform: scale(0.3); opacity: 0; } }
+
+.canvas {
+  min-inline-size: 0;
+  min-block-size: 0;
+  overflow: auto;
+  padding: 12px;
+  background: var(--background);
+}
+
+/* ---------- Agent presence on a section (drawPresence in native-preview-runtime.js) ---------- */
+.presence {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  border: 2px solid var(--agent);
+  pointer-events: none;
+}
+.presence__chip {
+  position: absolute;
+  inset-block-start: -18px;
+  inset-inline-start: -2px;
+  max-inline-size: 60vw;
+  padding-block: 0;
+  padding-inline: 6px;
+  border-radius: 3px 3px 3px 0;
+  overflow: clip;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: var(--agent);
+  color: var(--on-accent);
+  font: 600 11px/16px system-ui, -apple-system, "Segoe UI", sans-serif;
+  letter-spacing: 0;
+}
+/* At the very top of the page the chip stands inside the outline's corner. */
+[data-section]:first-child > .presence > .presence__chip { inset-block-start: -2px; border-radius: 0 0 3px 0; }
+/* A question for Lex: the chip itself turns orange, nothing else. */
+.presence.is-asking > .presence__chip { background: var(--agent-question-strong); }
+@media (prefers-reduced-motion: no-preference) {
+  .presence { transition: opacity 260ms var(--ease-out); }
+  .presence__chip { transition: background-color 200ms var(--ease-out); }
+  @starting-style { .presence { opacity: 0; } }
+  .presence.is-leaving { opacity: 0; }
+  .is-fresh { animation: fresh 520ms var(--ease-out); }
+}
+@keyframes fresh { from { opacity: 0; filter: blur(3px); } }
+
+/* ---------- The site on show (its own look, always light, like the real preview) ---------- */
+.site {
+  --s-ink: oklch(22% 0.01 70);
+  --s-soft: oklch(45% 0.015 70);
+  --s-paper: oklch(98.5% 0.008 85);
+  --s-sand: oklch(93% 0.025 80);
+  --s-clay: oklch(70% 0.07 50);
+  --s-moss: oklch(62% 0.05 130);
+  max-inline-size: 1040px;
+  margin-inline: auto;
+  background: var(--s-paper);
+  color: var(--s-ink);
+  font: 16px/1.6 ui-sans-serif, -apple-system, "Segoe UI", sans-serif;
+  border-radius: var(--radius-small);
+  box-shadow: var(--shadow-small);
+  color-scheme: light;
+}
+.site [data-section] { position: relative; }
+.site h1, .site h2, .site h3 { font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif; font-weight: 600; line-height: 1.15; margin: 0; text-wrap: balance; }
+.site p { margin: 0; text-wrap: pretty; }
+.s-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding-block: 18px;
+  padding-inline: clamp(18px, 5cqi + 8px, 48px);
+}
+.site { container-type: inline-size; }
+.s-logo { font-family: "Iowan Old Style", Georgia, serif; font-size: 20px; font-weight: 600; }
+.s-logo span { color: var(--s-clay); }
+.s-nav { display: flex; gap: clamp(12px, 3cqi, 28px); font-size: 14px; color: var(--s-soft); }
+.s-hero {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  align-items: center;
+  gap: clamp(20px, 4cqi, 48px);
+  padding-block: clamp(24px, 4cqi, 44px);
+  padding-inline: clamp(18px, 5cqi + 8px, 48px);
+}
+.s-hero h1 { font-size: clamp(30px, 4.2cqi + 12px, 52px); }
+.s-hero p { margin-block-start: 16px; color: var(--s-soft); font-size: 17px; max-inline-size: 46ch; }
+.s-button { display: inline-block; margin-block-start: 24px; padding-block: 10px; padding-inline: 18px; border-radius: 999px; background: var(--s-ink); color: var(--s-paper); font-size: 14px; font-weight: 600; text-decoration: none; }
+.s-art {
+  aspect-ratio: 3 / 2;
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at 70% 30%, oklch(88% 0.06 85) 0 18%, transparent 19%),
+    radial-gradient(ellipse at 30% 100%, var(--s-moss) 0 38%, transparent 39%),
+    radial-gradient(ellipse at 85% 110%, oklch(55% 0.05 140) 0 42%, transparent 43%),
+    linear-gradient(oklch(86% 0.04 60), var(--s-clay));
+}
+.s-services { padding-block: clamp(28px, 5cqi, 56px); padding-inline: clamp(18px, 5cqi + 8px, 48px); background: var(--s-sand); }
+.s-services h2, .s-quotes h2 { font-size: clamp(24px, 2cqi + 16px, 32px); }
+/* Lex is typing here: the editor's own selection box (2px focus colour, 10% tint). */
+.s-intro {
+  margin-block-start: 10px !important;
+  max-inline-size: 60ch;
+  color: var(--s-soft);
+  border-radius: 2px;
+  outline-offset: 4px;
+  caret-color: var(--s-ink);
+}
+.s-intro { outline: 2px solid var(--preview-focus); background: color-mix(in oklch, var(--preview-focus) 10%, transparent); }
+.s-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 16px; margin-block-start: 24px; }
+.s-card { padding: 20px; border-radius: 12px; background: var(--s-paper); }
+.s-card h3 { font-size: 19px; }
+.s-card p { margin-block-start: 6px; font-size: 14px; color: var(--s-soft); }
+.s-quotes { padding-block: clamp(28px, 5cqi, 56px); padding-inline: clamp(18px, 5cqi + 8px, 48px); }
+.s-quote-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 24px; margin-block-start: 24px; }
+.s-quote { margin: 0; }
+.s-quote blockquote { margin: 0; font-family: "Iowan Old Style", Georgia, serif; font-size: 18px; line-height: 1.45; }
+.s-quote figcaption { display: flex; align-items: center; gap: 12px; margin-block-start: 14px; font-size: 14px; color: var(--s-soft); }
+.s-avatar {
+  display: grid;
+  place-items: center;
+  flex: none;
+  inline-size: 44px;
+  block-size: 44px;
+  border-radius: 50%;
+  background: oklch(88% 0 none);
+  color: oklch(50% 0 none);
+  font-size: 13px;
+  font-weight: 700;
+}
+.s-quotes.has-portraits .s-avatar { color: transparent; }
+.s-quotes.has-portraits .s-avatar.p1 { background: radial-gradient(circle at 50% 38%, oklch(78% 0.06 55) 0 22%, transparent 23%), radial-gradient(ellipse at 50% 100%, oklch(45% 0.06 250) 0 45%, transparent 46%), linear-gradient(oklch(85% 0.04 200), oklch(75% 0.05 210)); }
+.s-quotes.has-portraits .s-avatar.p2 { background: radial-gradient(circle at 50% 38%, oklch(62% 0.07 50) 0 22%, transparent 23%), radial-gradient(ellipse at 50% 100%, oklch(55% 0.09 30) 0 45%, transparent 46%), linear-gradient(oklch(88% 0.05 95), oklch(80% 0.06 80)); }
+.s-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px 24px;
+  padding-block: 22px;
+  padding-inline: clamp(18px, 5cqi + 8px, 48px);
+  border-block-start: 1px solid oklch(88% 0.015 80);
+  font-size: 14px;
+  color: var(--s-soft);
+}
+
+/* ---------- Narrow: the sidebar collapses behind a button ---------- */
+@media (width <= 760px) {
+  .icon-button { display: inline-grid; }
+  .workspace { grid-template-columns: minmax(0, 1fr); }
+  .sidebar {
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: 0;
+    z-index: 20;
+    inline-size: min(280px, 86vw);
+    box-shadow: var(--shadow);
+    translate: -105% 0;
+    visibility: hidden;
+  }
+  .workspace.is-sidebar-open .sidebar { translate: 0 0; visibility: visible; }
+  .canvas { padding: 6px; }
+  .mcp { padding-inline: 8px; }
+}
+@media (width <= 760px) and (prefers-reduced-motion: no-preference) {
+  .sidebar { transition: translate 240ms var(--ease-out), visibility 240ms; }
+}
+
+/* ---------- Prototype strip (outside the mock editor) ---------- */
+.proto {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  padding-block: 8px;
+  padding-inline: 12px;
+  background: oklch(24% 0 none);
+  color: oklch(92% 0 none);
+  border-block-start: 3px dashed oklch(80% 0.15 95);
+  font: 12px/1.4 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+.proto__tag { padding-block: 2px; padding-inline: 6px; border-radius: 3px; background: oklch(80% 0.15 95); color: oklch(20% 0 none); font-weight: 700; letter-spacing: 0.06em; }
+.proto button {
+  min-block-size: 30px;
+  padding-block: 0;
+  padding-inline: 12px;
+  border: 1px solid oklch(50% 0 none);
+  border-radius: 4px;
+  background: oklch(32% 0 none);
+  font: inherit;
+}
+@media (hover: hover) and (pointer: fine) { .proto button:hover { background: oklch(40% 0 none); } }
+.proto button:active { background: oklch(46% 0 none); }
+.proto button:focus-visible { outline: 2px solid oklch(80% 0.15 95); outline-offset: 2px; }
+.proto__readout { flex: 1 1 260px; min-inline-size: 0; color: oklch(78% 0 none); overflow-wrap: anywhere; }
+</style>
+</head>
+<body>
+
+<div class="editor" id="editor">
+  <header class="topbar">
+    <button class="icon-button" id="sidebarToggle" type="button" aria-label="Page structure" aria-expanded="false" aria-controls="sidebar">
+      <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2.5" y="3" width="13" height="12" rx="2"/><path d="M7 3v12"/></svg>
+    </button>
+    <button class="project" type="button" aria-haspopup="menu">
+      <span class="project__initial" aria-hidden="true">F</span>
+      <span class="project__name">fern-field-studio</span>
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="m3 4.5 3 3 3-3"/></svg>
+    </button>
+    <button class="mcp is-connected" id="mcp" type="button" popovertarget="mcpMenu" aria-expanded="false">
+      MCP
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="m3 4.5 3 3 3-3"/></svg>
+    </button>
+    <div class="menu" id="mcpMenu" popover>
+      <ul class="menu__agents" id="menuAgents"></ul>
+      <div class="menu__divider"></div>
+      <button class="menu-action is-connected" id="mcpAction" type="button">Disconnect MCP</button>
+    </div>
+  </header>
+
+  <div class="workspace" id="workspace">
+    <aside class="sidebar" id="sidebar">
+      <h2 class="eyebrow">Page structure</h2>
+      <ul class="tree" id="structure" role="tree" aria-label="Page structure">
+        <li class="row" role="treeitem" data-row="header"><span class="row__caret"></span><span class="row__kind">Header</span><span class="row__dots"></span></li>
+        <li class="row" role="treeitem" data-row="hero"><span class="row__caret"></span><span class="row__kind">Section</span><span class="row__text">Hero</span><span class="row__dots"></span></li>
+        <li class="row" role="treeitem" data-row="services" aria-selected="true"><span class="row__caret"></span><span class="row__kind">Section</span><span class="row__text">Services</span><span class="row__dots"></span></li>
+        <li class="row" role="treeitem" data-row="quotes"><span class="row__caret"></span><span class="row__kind">Section</span><span class="row__text">Testimonials</span><span class="row__dots"></span></li>
+        <li class="row" role="treeitem" data-row="footer"><span class="row__caret"></span><span class="row__kind">Footer</span><span class="row__dots"></span></li>
+      </ul>
+      <h2 class="eyebrow">Pages</h2>
+      <ul class="tree" id="pages" aria-label="Pages">
+        <li class="row" data-page="index.html" aria-current="page"><svg class="row__page-icon" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M3 1.5h5l3 3v8H3z"/><path d="M8 1.5v3h3"/></svg><span class="row__text">index.html</span><span class="row__dots"></span></li>
+        <li class="row" data-page="about.html"><svg class="row__page-icon" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M3 1.5h5l3 3v8H3z"/><path d="M8 1.5v3h3"/></svg><span class="row__text">about.html</span><span class="row__dots"></span></li>
+        <li class="row" data-page="contact.html"><svg class="row__page-icon" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M3 1.5h5l3 3v8H3z"/><path d="M8 1.5v3h3"/></svg><span class="row__text">contact.html</span><span class="row__dots"></span></li>
+      </ul>
+    </aside>
+
+    <main class="canvas">
+      <div class="site" id="site">
+        <header class="s-header" data-section="header">
+          <div class="s-logo">Fern <span>&amp;</span> Field</div>
+          <nav class="s-nav"><span>Work</span><span>Services</span><span>About</span><span>Contact</span></nav>
+        </header>
+        <section class="s-hero" data-section="hero">
+          <div>
+            <h1 id="heroTitle">We make small brands look big.</h1>
+            <p id="heroLead">A two-person design studio in Bristol. Logos, websites and packaging for cafés, makers and local shops.</p>
+            <a class="s-button" href="#services">See what we do</a>
+          </div>
+          <div class="s-art" role="img" aria-label="Rolling green hills under a pale sun"></div>
+        </section>
+        <section class="s-services" data-section="services" id="services">
+          <h2>What we do</h2>
+          <p class="s-intro" id="intro" contenteditable="true" spellcheck="false">We keep projects small and personal: one designer from first sketch to final file, and a fixed price before we start.</p>
+          <div class="s-cards">
+            <div class="s-card"><h3>Brand identity</h3><p>Logo, colours and type that work on a shop sign and a phone screen.</p></div>
+            <div class="s-card"><h3>Websites</h3><p>Fast, simple sites you can edit yourself, built to be found.</p></div>
+            <div class="s-card"><h3>Print &amp; packaging</h3><p>Labels, menus and boxes, ready for your local printer.</p></div>
+          </div>
+        </section>
+        <section class="s-quotes" data-section="quotes" id="quotes">
+          <h2>Kind words</h2>
+          <div class="s-quote-list">
+            <figure class="s-quote">
+              <blockquote>“Our bakery finally looks like the place people already loved. Bookings went up the week the new site went live.”</blockquote>
+              <figcaption><span class="s-avatar p1" aria-hidden="true">MO</span><span>Maya Okafor, Rise Bakehouse</span></figcaption>
+            </figure>
+            <figure class="s-quote">
+              <blockquote>“They listened more than they talked, and the labels sold out at the first market.”</blockquote>
+              <figcaption><span class="s-avatar p2" aria-hidden="true">TH</span><span>Tom Hale, Hale &amp; Hive Honey</span></figcaption>
+            </figure>
+          </div>
+        </section>
+        <footer class="s-footer" data-section="footer">
+          <span id="footerLine">© 2026 Fern &amp; Field Studio. All rights reserved.</span>
+          <span>hello@fernfield.studio</span>
+        </footer>
+      </div>
+    </main>
+  </div>
+</div>
+
+<div class="proto" role="region" aria-label="Prototype controls">
+  <span class="proto__tag">PROTOTYPE</span>
+  <button type="button" id="play">Play</button>
+  <button type="button" id="step">Step</button>
+  <button type="button" id="reset">Reset</button>
+  <button type="button" id="theme" aria-pressed="false">Dark</button>
+  <span class="proto__readout" id="readout" aria-live="polite"></span>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var COLOURS = ["var(--agent-1)", "var(--agent-2)", "var(--agent-3)", "var(--agent-4)"];
+  var NAMES = { hw: "Header writer", ce: "Copy editor", imf: "Image finder" };
+  var TEXT = {
+    heroTitle: ["We make small brands look big.", "Brand and web design for shops people love."],
+    heroLead: ["A two-person design studio in Bristol. Logos, websites and packaging for cafés, makers and local shops.",
+               "We are a two-person studio in Bristol. We give cafés, makers and local shops a look that feels like them."],
+    footerLine: ["© 2026 Fern & Field Studio. All rights reserved.", "Fern & Field Studio · 14 Mill Lane, Bristol · Open Tuesday to Friday"]
+  };
+  var TYPED = " Most projects start within two weeks.";
+  var INTRO = document.getElementById("intro").textContent;
+  var reduced = matchMedia("(prefers-reduced-motion: reduce)");
+
+  var S;
+  function fresh() {
+    return { connected: true, arrivals: 0, agents: {}, stopped: {}, landed: {}, typing: null };
+  }
+
+  // ---- The scripted timeline (seconds) ----
+  var EVENTS = [
+    { at: 0.6, label: "Header writer arrives, works on Hero", agent: "hw", run: function () { arrive("hw", "index.html", "hero"); } },
+    { at: 2.5, label: "Lex starts typing in Services", run: function (instant) { lexTypes(instant); } },
+    { at: 5, label: "Copy editor arrives, works on Footer", agent: "ce", run: function () { arrive("ce", "index.html", "footer"); } },
+    { at: 8, label: "Image finder arrives, works on Testimonials", agent: "imf", run: function () { arrive("imf", "index.html", "quotes"); } },
+    { at: 11, label: "Image finder asks Lex a question (chip orange)", agent: "imf", run: function () { S.agents.imf.asking = true; } },
+    { at: 13.5, label: "Header writer lands: new hero headline, outline goes", agent: "hw", run: function () { S.landed.hero = true; leave("hw"); } },
+    { at: 16, label: "Copy editor lands Footer, moves on to about.html", agent: "ce", run: function () { S.landed.footer = true; S.agents.ce.page = "about.html"; S.agents.ce.section = null; } },
+    { at: 19, label: "Lex answers Image finder (in its request pin, not drawn here)", agent: "imf", run: function () { S.agents.imf.asking = false; } },
+    { at: 22, label: "Image finder lands: portraits appear, outline goes", agent: "imf", run: function () { S.landed.portraits = true; leave("imf"); } },
+    { at: 25, label: "Copy editor lands about.html, its dot goes", agent: "ce", run: function () { leave("ce"); } }
+  ];
+  var END = 26;
+
+  function arrive(id, page, section) {
+    S.agents[id] = { id: id, name: NAMES[id], colour: COLOURS[S.arrivals++ % COLOURS.length], page: page, section: section, asking: false };
+  }
+  function leave(id) { delete S.agents[id]; }
+  function lexTypes(instant) {
+    if (instant) { appendIntro(TYPED); return; }
+    S.typing = { from: t, done: 0 };
+  }
+  function appendIntro(chunk) {
+    var p = document.getElementById("intro");
+    var sel = getSelection();
+    var caretAtEnd = document.activeElement === p && sel.rangeCount && sel.isCollapsed &&
+      sel.focusOffset === (sel.focusNode.nodeType === 3 ? sel.focusNode.length : sel.focusNode.childNodes.length) &&
+      (sel.focusNode === p.lastChild || sel.focusNode === p);
+    p.append(chunk);
+    p.normalize();
+    // Keep Lex's caret at the end of his typing; never pull focus from the menu or the strip.
+    if (caretAtEnd || document.activeElement === document.body) placeCaretAtEnd(p);
+  }
+  function placeCaretAtEnd(p) {
+    p.focus({ preventScroll: true });
+    var r = document.createRange();
+    r.selectNodeContents(p);
+    r.collapse(false);
+    var sel = getSelection();
+    sel.removeAllRanges();
+    sel.addRange(r);
+  }
+
+  // ---- Render the state into the mock editor ----
+  var site = document.getElementById("site");
+  function render() {
+    var agents = Object.keys(S.agents).map(function (k) { return S.agents[k]; });
+
+    // Outlines on the page on show (index.html).
+    site.querySelectorAll("[data-section]").forEach(function (sec) {
+      var id = sec.dataset.section;
+      var a = agents.find(function (x) { return x.page === "index.html" && x.section === id; });
+      var box = sec.querySelector(":scope > .presence:not(.is-leaving)");
+      if (a && box && box.dataset.agent !== a.id) { removeBox(box); box = null; }
+      if (a && !box) {
+        box = document.createElement("div");
+        box.className = "presence";
+        box.dataset.agent = a.id;
+        box.setAttribute("aria-hidden", "true");
+        var chip = document.createElement("span");
+        chip.className = "presence__chip";
+        chip.textContent = a.name;
+        box.append(chip);
+        sec.append(box);
+      }
+      if (a) { box.style.setProperty("--agent", a.colour); box.classList.toggle("is-asking", a.asking); }
+      if (!a && box) removeBox(box);
+    });
+
+    // Page structure row dots.
+    document.querySelectorAll("#structure [data-row]").forEach(function (row) {
+      var on = agents.filter(function (x) { return x.page === "index.html" && x.section === row.dataset.row; });
+      setDots(row, on);
+      if (on.length) row.setAttribute("aria-busy", "true"); else row.removeAttribute("aria-busy");
+    });
+    // Pages list dots: pages other than the one on show.
+    document.querySelectorAll("#pages [data-page]").forEach(function (row) {
+      setDots(row, row.dataset.page === "index.html" ? [] : agents.filter(function (x) { return x.page === row.dataset.page; }));
+    });
+
+    // MCP control and its menu.
+    var mcp = document.getElementById("mcp");
+    mcp.classList.toggle("is-connected", S.connected);
+    mcp.classList.toggle("is-asking", agents.some(function (x) { return x.asking; }));
+    var list = document.getElementById("menuAgents");
+    var want = agents.map(function (a) { return a.id; }).join(",");
+    if (list.dataset.ids !== want) {
+      list.dataset.ids = want;
+      list.replaceChildren.apply(list, agents.map(function (a) {
+        var li = document.createElement("li");
+        li.className = "agent-row";
+        li.style.setProperty("--agent", a.colour);
+        li.innerHTML = '<span class="agent-row__dot"></span><span class="agent-row__name"></span><button type="button" class="agent-row__stop">Stop</button>';
+        li.querySelector(".agent-row__name").textContent = a.name;
+        li.querySelector("button").setAttribute("aria-label", "Stop " + a.name);
+        li.querySelector("button").addEventListener("click", function () { stopAgent(a.id); });
+        return li;
+      }));
+    }
+    var action = document.getElementById("mcpAction");
+    action.textContent = S.connected ? "Disconnect MCP" : "Connect to MCP";
+    action.classList.toggle("is-connected", S.connected);
+
+    // Landed changes.
+    setText("heroTitle", S.landed.hero);
+    setText("heroLead", S.landed.hero);
+    setText("footerLine", S.landed.footer);
+    var quotes = document.getElementById("quotes");
+    if (quotes.classList.contains("has-portraits") !== !!S.landed.portraits) {
+      quotes.classList.toggle("has-portraits", !!S.landed.portraits);
+      quotes.querySelectorAll(".s-avatar").forEach(flash);
+    }
+  }
+  function setDots(row, on) {
+    var dots = row.querySelector(".row__dots");
+    var want = on.map(function (a) { return a.id; }).join(",");
+    if (dots.dataset.ids === want) return;
+    dots.dataset.ids = want;
+    dots.replaceChildren.apply(dots, on.map(function (a) {
+      var i = document.createElement("i");
+      i.style.setProperty("--agent", a.colour);
+      return i;
+    }));
+  }
+  function setText(id, landed) {
+    var el = document.getElementById(id);
+    var next = TEXT[id][landed ? 1 : 0];
+    if (el.textContent !== next) { el.textContent = next; if (landed) flash(el); }
+  }
+  function flash(el) {
+    el.classList.remove("is-fresh");
+    void el.offsetWidth;
+    el.classList.add("is-fresh");
+  }
+  function removeBox(box) {
+    if (reduced.matches) { box.remove(); return; }
+    box.classList.add("is-leaving");
+    setTimeout(function () { box.remove(); }, 300);
+  }
+
+  function stopAgent(id) {
+    S.stopped[id] = true;
+    leave(id);
+    render();
+    updateReadout();
+  }
+  document.getElementById("mcpAction").addEventListener("click", function () {
+    if (S.connected) {
+      S.connected = false;
+      Object.keys(S.agents).forEach(function (id) { S.stopped[id] = true; });
+      S.agents = {};
+    } else {
+      S.connected = true;
+    }
+    render();
+    updateReadout();
+  });
+  var menu = document.getElementById("mcpMenu");
+  menu.addEventListener("toggle", function (e) {
+    document.getElementById("mcp").setAttribute("aria-expanded", String(e.newState === "open"));
+  });
+
+  // ---- Timeline engine ----
+  var t = 0, idx = 0, playing = false, last = 0;
+  function runEvent(i, instant) {
+    var ev = EVENTS[i];
+    var skipped = (ev.agent && (S.stopped[ev.agent] || !S.connected || (ev.agent && !S.agents[ev.agent] && !/arrives/.test(ev.label))));
+    if (!skipped) ev.run(instant);
+    ev.skipped = !!skipped;
+    render();
+  }
+  function tick(now) {
+    if (!playing) return;
+    t += Math.min(0.1, (now - last) / 1000);
+    last = now;
+    while (idx < EVENTS.length && EVENTS[idx].at <= t) runEvent(idx++, false);
+    if (S.typing) {
+      var want = Math.min(TYPED.length, Math.floor((t - S.typing.from) / 0.1));
+      if (want > S.typing.done) { appendIntro(TYPED.slice(S.typing.done, want)); S.typing.done = want; }
+      if (S.typing.done >= TYPED.length) S.typing = null;
+    }
+    updateReadout();
+    if (idx >= EVENTS.length && t >= END) { pause(); return; }
+    requestAnimationFrame(tick);
+  }
+  function play() {
+    if (idx >= EVENTS.length) reset();
+    playing = true;
+    document.getElementById("play").textContent = "Pause";
+    last = performance.now();
+    requestAnimationFrame(tick);
+  }
+  function pause() {
+    playing = false;
+    document.getElementById("play").textContent = idx >= EVENTS.length ? "Play again" : "Play";
+    updateReadout();
+  }
+  function finishTyping() {
+    if (!S.typing) return;
+    appendIntro(TYPED.slice(S.typing.done));
+    S.typing = null;
+  }
+  function step() {
+    pause();
+    finishTyping();
+    if (idx >= EVENTS.length) return;
+    t = EVENTS[idx].at;
+    runEvent(idx++, true);
+    pause();
+  }
+  function reset() {
+    playing = false;
+    t = 0; idx = 0;
+    S = fresh();
+    EVENTS.forEach(function (e) { e.skipped = false; });
+    site.querySelectorAll(".presence").forEach(function (b) { b.remove(); });
+    document.getElementById("intro").textContent = INTRO;
+    render();
+    document.getElementById("play").textContent = "Play";
+    updateReadout();
+  }
+  function updateReadout() {
+    var prev = idx > 0 ? EVENTS[idx - 1] : null;
+    var next = EVENTS[idx];
+    document.getElementById("readout").textContent =
+      t.toFixed(1) + " s · " + idx + "/" + EVENTS.length +
+      (prev ? " · last: " + prev.label + (prev.skipped ? " (skipped, agent stopped)" : "") : "") +
+      (next ? " · next: " + next.label : " · end");
+  }
+
+  // Pressing a strip button with the pointer keeps Lex's caret where it is.
+  document.querySelectorAll(".proto button").forEach(function (b) {
+    b.addEventListener("pointerdown", function (e) { e.preventDefault(); });
+  });
+  document.getElementById("play").addEventListener("click", function () { playing ? pause() : play(); });
+  document.getElementById("step").addEventListener("click", step);
+  document.getElementById("reset").addEventListener("click", reset);
+
+  // ---- Light / dark ----
+  var themeBtn = document.getElementById("theme");
+  function setTheme(dark) {
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+    themeBtn.setAttribute("aria-pressed", String(dark));
+    themeBtn.textContent = dark ? "Light" : "Dark";
+  }
+  themeBtn.addEventListener("click", function () { setTheme(document.documentElement.dataset.theme !== "dark"); });
+  setTheme(matchMedia("(prefers-color-scheme: dark)").matches);
+
+  // ---- Narrow: sidebar drawer ----
+  var toggle = document.getElementById("sidebarToggle");
+  var workspace = document.getElementById("workspace");
+  toggle.addEventListener("click", function () {
+    var open = workspace.classList.toggle("is-sidebar-open");
+    toggle.setAttribute("aria-expanded", String(open));
+  });
+  document.querySelector(".canvas").addEventListener("pointerdown", function () {
+    if (workspace.classList.contains("is-sidebar-open")) { workspace.classList.remove("is-sidebar-open"); toggle.setAttribute("aria-expanded", "false"); }
+  });
+
+  // Lex's caret starts blinking in the Services text.
+  reset();
+  placeCaretAtEnd(document.getElementById("intro"));
+  window.__proto = { step: step, reset: reset, play: play, state: function () { return S; } };
+})();
+</script>
+</body>
+</html>
