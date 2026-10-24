@@ -243,7 +243,7 @@ function liveActions(live: Live, override: Partial<LivePorts> = {}): AgentSiteAc
     return "refuse" in planned ? { ok: false, reason: "refused", message: planned.refuse } : { ok: true, status: "applied" };
   };
   // Deliberate: applySiteCommand runs plans only; any other guarded-edit call fails as a TypeError, which firstRefusal rethrows.
-  const edits = { run } satisfies Pick<GuardedEdits, "run"> as GuardedEdits;
+  const edits = { run, peek: reads } satisfies Pick<GuardedEdits, "run" | "peek"> as GuardedEdits;
   const ports = { text: async (path: string) => live[path], isMounted: () => true, open: async () => true, sectionTags: () => new Set(["feature-block"]), edits,
     writeDraft: async () => undefined, moveSection: (_at, gap) => ({ status: "moved", node: [...gap.parent, gap.index] }),
     makeComponent: async request => ({ tag: request.tag, files: [], slots: [], cards: [], notes: [] }),
@@ -255,6 +255,10 @@ function liveActions(live: Live, override: Partial<LivePorts> = {}): AgentSiteAc
   return ports as AgentSiteActions;
 }
 
+/** The tab's last-line guards (src/agent-site.ts refuseProtected), which the Worker's path refusals meet on the live page too. */
+const guards = [GITHUB_CONFIG_REFUSED, MEDIA_RECORDS_REFUSED, OUTSIDE_MEDIA_REFUSED];
+const commandOf = (input: AgentEdit, prepared: Extract<PreparedEdit, { operation: unknown }>): AgentCommand => ({ id: input.id, operation: prepared.operation,
+  content: prepared.input.content ?? "", branch: "main", commit, ...prepared.input, state: "pending", createdAt: input.createdAt });
 /** The first layer that refuses the edit, and its words. */
 async function firstRefusal(r: Refusal): Promise<{ layer: Layer; message: string } | undefined> {
   const f = await fixture(), live: Live = { ...files, "about/index.html": f.context.drafts[0].content! };
@@ -263,18 +267,21 @@ async function firstRefusal(r: Refusal): Promise<{ layer: Layer; message: string
   const input = request(r.tool, await r.args(f, live) as never);
   const shape = editShapeProblem(r.tool, input.args as never);
   if (shape) {
-    // The tab never decides it again: its preparation, asked alone, does not say it.
-    const alone = await prepareAgentEdit(input, f.context, f.local()).then(() => "", (error: Error) => error.message);
-    assert.ok(!alone.includes(r.says), `${r.tool}: the tab's preparation decides "${r.says}" too`);
+    // The tab never decides it again: its preparation, asked alone, does not say it,
+    const alone = await prepareAgentEdit(input, f.context, f.local()).then(prepared => prepared, (error: Error) => error.message);
+    assert.ok(typeof alone !== "string" || !alone.includes(r.says), `${r.tool}: the tab's preparation decides "${r.says}" too`);
+    // nor the live page, given the command it prepared (only the declared guards, refuseProtected's, meet these paths there).
+    if (typeof alone !== "string" && !("unchanged" in alone) && !guards.includes(r.says)) {
+      const message = await applySiteCommand(liveActions(live, r.ports), commandOf(input, alone)).then(() => "", (error: Error) => error.message);
+      assert.ok(!message.includes(r.says), `${r.tool}: the live page decides "${r.says}" too`);
+    }
     return { layer: "Worker", message: shape };
   }
   let prepared: PreparedEdit;
   try { prepared = await prepareAgentEdit(input, f.context, f.local()); }
   catch (error) { return { layer: "preparation", message: (error as Error).message }; }
   if ("unchanged" in prepared) return undefined;
-  const command: AgentCommand = { id: input.id, operation: prepared.operation, content: prepared.input.content ?? "", branch: "main", commit,
-    ...prepared.input, state: "pending", createdAt: input.createdAt };
-  try { await applySiteCommand(liveActions(live, r.ports), command); }
+  try { await applySiteCommand(liveActions(live, r.ports), commandOf(input, prepared)); }
   catch (error) {
     // A port the fake lacks is the test's fault, not a refusal.
     if (error instanceof TypeError) throw error;
@@ -313,13 +320,42 @@ test("a section goes before or after the section named, on the live page", async
   installOutlineDocument(t);
   const live: Live = { ...files };
   // Deliberate: only where it goes is asked; the insert itself (which needs a fuller DOM) is the page builder's tests'.
-  const edits = { run: async () => ({ ok: true, status: "applied" }) } satisfies Pick<GuardedEdits, "run"> as GuardedEdits;
-  for (const [anchor, section] of [[{ before: "1.0" }, "1.0"], [{ after: "1.0" }, "1.1"], [{ before: "1.1" }, "1.1"]] as const) {
-    const command: AgentCommand = { id: "add", operation: "add_section", path: "index.html", content: "", branch: "main", commit,
-      expectedHash: await home(live), args: { component: "feature-block", ...anchor }, state: "pending", createdAt: 1 };
-    const outcome = await applySiteCommand(liveActions(live, { edits }), command);
-    assert.equal(outcome.result?.section, section, JSON.stringify(anchor));
+  const edits = { ...liveActions(live).edits, run: async () => ({ ok: true, status: "applied" }) } satisfies Pick<GuardedEdits, "run" | "peek"> as GuardedEdits;
+  const add = async (anchor: { before?: string; after?: string }) => applySiteCommand(liveActions(live, { edits }), { id: "add", operation: "add_section", path: "index.html",
+    content: "", branch: "main", commit, expectedHash: await home(live), args: { component: "feature-block", ...anchor }, state: "pending", createdAt: 1 });
+  // Named: before it, or after it. Unnamed: at the end of the page's one place (its <main>, two sections in).
+  for (const [anchor, section] of [[{ before: "1.0" }, "1.0"], [{ after: "1.0" }, "1.1"], [{ before: "1.1" }, "1.1"], [{}, "1.2"]] as const)
+    assert.equal((await add(anchor)).result?.section, section, JSON.stringify(anchor));
+  // Sections straight in <body>: the page itself is the place (container id "").
+  live["index.html"] = page("<section>A</section><section>B</section>");
+  assert.equal((await add({})).result?.section, "2");
+});
+
+test("a page change refused by the page's text never opens the page", async t => {
+  installOutlineDocument(t);
+  const f = await fixture(), live: Live = { ...files };
+  let opened = 0;
+  const open = async () => { opened++; return true; };
+  for (const [tool, args] of [
+    ["remove_section", { page: "/", section: "1.9", expectedHash: await home(live) }],
+    ["remove_section", { page: "/", section: "1.0", expectedHash: "0".repeat(64) }],
+    ["move_section", { page: "/", section: "1.0", after: "9.9", expectedHash: await home(live) }],
+    ["add_section", { page: "/", component: "site-header", expectedHash: await home(live) }],
+    ["make_component", { page: "/", element: "1.0", tag: "section-intro", expectedHash: "0".repeat(64) }],
+  ] as const) {
+    // Each tool's arguments are written beside it; TypeScript cannot pair them across the list.
+    const input = request(tool, args as never), prepared = await prepareAgentEdit(input, f.context, f.local());
+    assert.ok("operation" in prepared);
+    const before = opened;
+    await assert.rejects(applySiteCommand(liveActions(live, { open }), commandOf(input, prepared)), Error, tool);
+    assert.equal(opened, before, `${tool} ${JSON.stringify(args)}`);
   }
+  assert.equal(opened, 0);
+  // Admitted, it opens the page as before.
+  const input = request("move_section", { page: "/", section: "1.0", after: "1.1", expectedHash: await home(live) }), prepared = await prepareAgentEdit(input, f.context, f.local());
+  assert.ok("operation" in prepared);
+  await applySiteCommand(liveActions(live, { open }), commandOf(input, prepared));
+  assert.equal(opened, 1);
 });
 
 test("duplicate edit_file joins in flight and returns the receipt before re-reading a changed hash", async () => {

@@ -20,7 +20,7 @@ import { isMediaUploadWrite, OUTSIDE_MEDIA_REFUSED, AGENT_TEXT_LIMIT, INSPECTION
 import type { AgentOutlineSection, AgentPageOutline, AgentSiteContext, EditorContext } from "../shared/types";
 import { draftKey, type DraftScope, type DraftStore, type SavedDraft } from "./drafts";
 import { payloadIdentity, workspaceKey, type JsonValue } from "../shared/agent-command";
-import { changedSinceRead as CHANGED } from "../shared/agent-edit";
+import { changedSinceRead } from "../shared/agent-edit";
 import type { AgentTextCommit } from "./editor-workspace";
 import type { AgentRecords } from "./agent-records";
 import type { createAgentOwner } from "./agent-owner";
@@ -622,15 +622,24 @@ async function expectHash(actions: AgentSiteActions, path: string, expected: str
     return text;
   }
   if (text === undefined) throw new Conflict(`${path} is not there any more.`);
-  if ((await textHash(text)) !== expected) throw new Conflict(CHANGED(path));
+  if ((await textHash(text)) !== expected) throw new Conflict(changedSinceRead(path));
   return text;
 }
 
-async function openPage(actions: AgentSiteActions, path: string, expected: string | null | undefined) {
+/**
+ * Opens the page a change works on, once its text is the one read and `admit` (what the text alone decides)
+ * passes: a change refused there never moves Lex to its page. Opened, its text must still be that one.
+ */
+async function openPage(actions: AgentSiteActions, path: string, expected: string | null | undefined, admit?: (source: string) => void) {
+  const read = async () => {
+    const source = await expectHash(actions, path, expected);
+    if (source === undefined) throw new Conflict(`${path} could not be read.`);
+    return source;
+  };
+  const first = await read();
+  admit?.(first);
   if (!(await actions.open(path)) || !actions.isMounted(path)) throw new Conflict(`${path} could not be opened in the editor.`);
-  const source = await expectHash(actions, path, expected);
-  if (source === undefined) throw new Conflict(`${path} could not be read.`);
-  return source;
+  return read();
 }
 
 const hashOf = async (actions: AgentSiteActions, path: string) => {
@@ -638,6 +647,12 @@ const hashOf = async (actions: AgentSiteActions, path: string) => {
   return text === undefined ? null : await textHash(text);
 };
 
+/** Why `tag` cannot go between the sections of the site `r` reads, or nothing. */
+function sectionComponentProblem(r: Reads, tag: string) {
+  if (!Object.hasOwn(r.site()?.components ?? {}, tag)) return `No component <${tag}>. get_site lists the components.`;
+  if (!isSectionTemplate(r.template(tag)?.source ?? "")) return `<${tag}> is not a section component (its template is not one <section>), so it cannot go between sections.`;
+  return undefined;
+}
 const noSection = (id: string) => `No section ${id} on this page. get_page lists them.`;
 /** Where a section goes on the page now: before or after the section named, else at the end of its one place for sections. */
 function placement(outline: Omit<AgentPageOutline, "file" | "hash">, before?: string, after?: string) {
@@ -768,7 +783,7 @@ async function applyAdmitted(actions: AgentSiteActions, command: AgentCommand): 
         if (error) throw new Error(error);
       } else if (before !== undefined && actions.isMounted(path)) {
         const edit = minimalTextEdit(before, command.content);
-        if (edit) await guarded(actions.edits.run(r => r.source(path) !== before ? { refuse: CHANGED(path) }
+        if (edit) await guarded(actions.edits.run(r => r.source(path) !== before ? { refuse: changedSinceRead(path) }
           : { edits: new Map([[path, [edit]]]), done: `An agent changed ${path}.`, undone: `Undid the agent's change to ${path}.` }));
       } else {
         const error = await actions.writeDraft(path, command.content, before === undefined);
@@ -814,21 +829,36 @@ async function applyAdmitted(actions: AgentSiteActions, command: AgentCommand): 
     case "add_section":
     case "move_section":
     case "remove_section": {
-      const source = await openPage(actions, path, command.expectedHash);
-      const tags = actions.sectionTags();
-      const outline = pageOutline(source, tags);
+      // The page's text and the site decide these before the page opens (openPage's `admit`); its text opened is the same.
+      const tags = actions.sectionTags(), tag = String(args.component ?? "");
+      let at!: ReturnType<typeof placement>;
+      let node: number[] | undefined, section: AgentOutlineSection | undefined, range: ReturnType<typeof locateNativeElementRange>;
+      const source = await openPage(actions, path, command.expectedHash, read => {
+        const outline = pageOutline(read, tags);
+        if (command.operation !== "add_section") {
+          node = parseOutlineId(String(args.section ?? ""));
+          section = outline.sections.find((item) => item.id === args.section);
+          if (!node || !section) throw new Conflict(noSection(String(args.section ?? "")));
+        }
+        if (command.operation === "remove_section") {
+          range = locateNativeElementRange(read, node!);
+          if (!range) throw new Conflict("The section's HTML could not be located exactly.");
+        } else at = placement(outline, args.before, args.after);
+        const problem = command.operation === "add_section" ? sectionComponentProblem(actions.edits.peek, tag) : undefined;
+        if (problem) throw new Conflict(problem);
+      });
       if (command.operation === "add_section") {
-        const tag = String(args.component ?? "");
-        const { parent, index } = placement(outline, args.before, args.after);
+        const { parent, index } = at;
         const unplaced = `${componentLabel(tag)} could not be placed exactly in ${path}.`;
         let planned: SectionPlanned | undefined;
         await guarded(actions.edits.run(async r => {
-          if (!Object.hasOwn(r.site()?.components ?? {}, tag)) return { refuse: `No component <${tag}>. get_site lists the components.` };
-          if (!tags.has(tag)) return { refuse: `<${tag}> is not a section component (its template is not one <section>), so it cannot go between sections.` };
+          // Proved again in the step: the component read through `r`.
+          const problem = sectionComponentProblem(r, tag);
+          if (problem) return { refuse: problem };
           // The template is read through `r`: one changed during the loader's wait refuses the step.
           const plan = await addSectionStep(r, { path, select: [...parent, index], message: `${componentLabel(tag)} added`, loader: actions.loaderPlan,
             edit: (page, reads) => {
-              if (page !== source) return CHANGED(path);
+              if (page !== source) return changedSinceRead(path);
               const edit = nativeInsertEdit(page, parent, index, tag, reads.template(tag)?.source ?? "");
               return edit ? [edit] : unplaced;
             } });
@@ -837,26 +867,21 @@ async function applyAdmitted(actions: AgentSiteActions, command: AgentCommand): 
         }, { anchor: path }));
         return { message: `${componentLabel(tag)} added to ${path} as section ${outlineId([...parent, index])}, unsaved.${planned?.added ? ` ${planned.added}` : ""}`, result: { section: outlineId([...parent, index]), hash: await hashOf(actions, path) } };
       }
-      const node = parseOutlineId(String(args.section ?? ""));
-      const section = outline.sections.find((item) => item.id === args.section);
-      if (!node || !section) throw new Conflict(noSection(String(args.section ?? "")));
       if (command.operation === "remove_section") {
-        const range = locateNativeElementRange(source, node);
-        if (!range) throw new Conflict("The section's HTML could not be located exactly.");
-        const label = componentLabel(section.tag);
-        await guarded(actions.edits.run(r => r.source(path) !== source ? { refuse: CHANGED(path) }
-          : { edits: new Map([[path, [removeEdit(source, range)]]]), done: `${label} removed`, undone: `Undid removing the ${label}.` }, { anchor: path }));
-        return { message: `Section ${section.id} removed from ${path}, unsaved.`, result: { hash: await hashOf(actions, path) } };
+        const label = componentLabel(section!.tag), located = range!;
+        await guarded(actions.edits.run(r => r.source(path) !== source ? { refuse: changedSinceRead(path) }
+          : { edits: new Map([[path, [removeEdit(source, located)]]]), done: `${label} removed`, undone: `Undid removing the ${label}.` }, { anchor: path }));
+        return { message: `Section ${section!.id} removed from ${path}, unsaved.`, result: { hash: await hashOf(actions, path) } };
       }
       // Among its own siblings only: the Block move decides, as for a drag in the page structure.
-      const moving = actions.moveSection({ path, node, painted: source }, placement(outline, args.before, args.after));
+      const moving = actions.moveSection({ path, node: node!, painted: source }, at);
       const outcome = moving.status === "pending" ? await moving.settled : moving;
       if (outcome.status === "stale") throw new Conflict(outcome.message);
       if (outcome.status === "refused") {
         if (outcome.failed) throw new Error(outcome.message);
         throw new Conflict(outcome.message);
       }
-      const id = outlineId(outcome.status === "moved" ? outcome.node : node);
+      const id = outlineId(outcome.status === "moved" ? outcome.node : node!);
       return {
         message: outcome.status === "stayed" ? "The section is already there." : `Section moved to ${id}, unsaved.`,
         result: { section: id, hash: await hashOf(actions, path) },
