@@ -3,13 +3,9 @@ import { test, type TestContext } from "node:test";
 import { textHash, type AgentCommand } from "../shared/agent.ts";
 import { applySiteCommand, applyStructural, editorOrElsewhere, finishAgentTextElsewhere, prepareAgentText, type AgentSiteActions } from "../src/agent-site.ts";
 import { agentCommandFiles, agentCommandSignals, siteCommandPins } from "../src/agent-tools.ts";
-import type { BackgroundSitePorts } from "../src/background-site.ts";
+import { backgroundSitePorts } from "./fakes/background-site-ports.ts";
 import type { MediaPin } from "../src/controllers/media-controller.ts";
 import type { ParkedStep } from "../src/guarded-edit/parked.ts";
-import { createPagesController } from "../src/controllers/pages-controller.ts";
-import { createLazyFileOperationsController } from "../src/controllers/file-operation-checks.ts";
-import { createBlockMoves } from "../src/page-builder/block-move.ts";
-import { withPageField } from "../src/page-builder/site-head.ts";
 import type { AgentReadFiles } from "../src/agent-tools-read.ts";
 import { indexedDbAgentRecords } from "../src/agent-records.ts";
 import { DraftStore, draftDatabaseName, draftKey, indexedDbDrafts, type DraftScope } from "../src/drafts.ts";
@@ -614,29 +610,24 @@ test("an agent edit's editor path switched away at any wait before it is kept fi
 // shown again at any wait before its step is kept stops it with nothing kept, and the editor runs it
 // (undefined); shown and left again, it runs there again and lands once.
 const STRUCTURAL_ABOUT = "<html><head><title>About</title></head><body><main><section>About</section></main></body></html>";
-async function structuralElsewhere(t: TestContext, race?: AwaitRace, overrides: Partial<AgentCommand> = {}) {
+async function structuralElsewhere(t: TestContext, race?: AwaitRace, overrides: Partial<AgentCommand> = {}, opened = "index.html", extraVisits: () => number = () => 0) {
   const f = await elsewhere(t, race);
   const PAGE = "<html><head><title>Old</title></head><body><main></main></body></html>";
-  const texts: Record<string, string> = { "index.html": PAGE, "about/index.html": STRUCTURAL_ABOUT };
+  const texts: Record<string, string> = { "index.html": PAGE, "about/a/index.html": PAGE, "about/index.html": STRUCTURAL_ABOUT };
   let here = false, visits = 0, shown: DraftScope | undefined = f.shown;
   const parked: ParkedStep[] = [];
   const entry = (path: string) => Object.hasOwn(texts, path) ? { path, sha: "a".repeat(40), mode: "100644", type: "blob" as const } : undefined;
   const find = async (path: string) => entry(path);
   const pin = {
-    repo: "lex/site", scope: f.scope, identity: "1", site: { routes: { "/": "index.html", "/about/": "about/index.html" }, components: {} }, drafts: f.store, here: () => here, entry,
+    repo: "lex/site", scope: f.scope, identity: "1", site: { routes: { "/": "index.html", "/about/a/": "about/a/index.html", "/about/": "about/index.html" }, components: {} }, drafts: f.store, here: () => here, entry,
     find: race ? race.port("pin find", find) : find,
     source: (path: string) => { const draft = f.store.get(f.scope, path); return draft ? draft.deleted ? undefined : draft.content : texts[path]; },
     files: () => Object.keys(texts), list: async () => Object.keys(texts), remember: () => {},
   } satisfies MediaPin;
-  // eslint-disable-next-line no-restricted-syntax -- the background site reads only these members of the editor's live ports here.
-  const site = {
-    pages: {}, files: { readFile: async () => PAGE, readFiles: async () => ({}), draftStore: () => f.store }, components: () => ({}), actions: () => ({}),
-    store: () => f.store, forget: () => {}, prepareSources: () => ({ isCurrent: () => true, apply: () => true, undo: () => true, redo: () => true }),
-    park: (step: ParkedStep) => { parked.push(step); }, visits: () => visits,
-    factories: { createGuardedEdits, createPagesController, createLazyFileOperationsController, createBlockMoves, withPageField },
-  } as unknown as BackgroundSitePorts;
+  const site = backgroundSitePorts({ store: f.store, readFile: async () => PAGE, park: step => { parked.push(step); }, visits: () => visits + extraVisits(),
+    files: { parentOf: path => path.slice(0, Math.max(0, path.lastIndexOf("/"))), withMovedPageUrls: () => {} } });
   const command: AgentCommand = { ...f.command, operation: "set_page_details", content: "", expectedHash: undefined, args: { title: "Agent title" }, ...overrides };
-  siteCommandPins.set(command, { pin, opened: "index.html" });
+  siteCommandPins.set(command, { pin, opened });
   agentCommandFiles.set(command, { repo: { id: 1, full_name: "lex/site" }, snapshot: { branch: "main", commit: "commit", entries: [] } } as unknown as AgentReadFiles); // eslint-disable-line no-restricted-syntax -- only the repository and snapshot are read.
   let landed = 0;
   const finish = () => finishAgentTextElsewhere(command, () => shown, f.scope.account, f.store, async () => undefined, { site, landed: () => { landed++; } });
@@ -737,4 +728,43 @@ test("a page command elsewhere on a page other than the one open as it arrived w
   const f = await structuralElsewhere(t, undefined, { path: "about/index.html", args: { title: "Agent about" } });
   assert.match((await f.finish())!.message, /Page details of about\/index\.html updated/);
   assert.deepEqual(f.parked.map(step => step.page), ["about/index.html"]);
+});
+
+// Its branch opening again and never shown: the command waits at most AWAY_WAIT_MS (30 s), then refuses with nothing kept.
+test("a page command elsewhere whose branch keeps opening refuses after 30 s, keeping nothing", async t => {
+  const f = await structuralElsewhere(t);
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: Date.now() });
+  f.showLoading();
+  const pending = f.finish();
+  let settled: unknown;
+  pending.then(() => { settled = "resolved"; }, error => { settled = error; });
+  for (let waited = 0; waited <= 30_100 && settled === undefined; waited += 100) {
+    t.mock.timers.tick(100);
+    await new Promise(resolve => setImmediate(resolve));
+  }
+  t.mock.timers.reset();
+  assert.match(String(settled), /still opening main\. Nothing was changed/);
+  assert.equal(f.store.get(f.scope, "index.html"), undefined);
+  assert.deepEqual(f.parked, []);
+  assert.equal(f.landed(), 0);
+  assert.equal(await f.records.receipt(f.scope, "operation", "grant"), undefined);
+});
+
+// Shown and left again at every attempt, its drafts unchanged: at most AWAY_ATTEMPTS (5) attempts, then a refusal.
+test("a page command elsewhere switched under at every attempt stops after 5 attempts, keeping nothing", async t => {
+  let asked = 0;
+  const f = await structuralElsewhere(t, undefined, {}, "index.html", () => asked++);
+  await assert.rejects(f.finish(), /main kept being opened and left while this change ran; try it again\. Nothing was changed/);
+  assert.equal(f.store.get(f.scope, "index.html"), undefined);
+  assert.deepEqual(f.parked, []);
+  assert.equal(f.landed(), 0);
+  assert.equal(await f.records.receipt(f.scope, "operation", "grant"), undefined);
+});
+
+// A folder of pages moved: its step waits where the page open as it arrived goes, Undo bringing it back there.
+test("move_file of a folder of pages elsewhere waits on the moved page open as it arrived", async t => {
+  const f = await structuralElsewhere(t, undefined, { operation: "move_file", path: "about", args: { to: "team" } }, "about/index.html");
+  assert.match((await f.finish())!.message, /Moved about to team/);
+  assert.equal(f.store.get(f.scope, "team/index.html")?.content, STRUCTURAL_ABOUT);
+  assert.deepEqual(f.parked.map(step => [step.page, step.home]), [["team/index.html", "about/index.html"]]);
 });

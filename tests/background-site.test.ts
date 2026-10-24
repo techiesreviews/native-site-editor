@@ -4,7 +4,8 @@
 // the step stops and writes nothing.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { backgroundSite, type BackgroundSitePorts } from "../src/background-site";
+import { backgroundSite } from "../src/background-site";
+import { backgroundSitePorts } from "./fakes/background-site-ports";
 import { createGuardedEdits, type PlanResult, type Reads } from "../src/guarded-edit";
 import { createLazyFileOperationsController } from "../src/controllers/file-operation-checks";
 import type { ParkedStep } from "../src/guarded-edit/parked";
@@ -35,16 +36,11 @@ function fixture(race?: AwaitRace) {
     files: () => [...new Set([...Object.keys(branch), ...records.keys()])].filter(path => !records.get(path)?.deleted),
     list: async () => Object.keys(branch), remember: () => {},
   } satisfies MediaPin;
-  // eslint-disable-next-line no-restricted-syntax -- the background site reads only these members of the editor's live ports here.
-  const ports = {
+  const ports = backgroundSitePorts({ store, readFile: async (_repo, sha) => branch[sha.slice(4)], park: step => { parked.push(step); }, visits: () => visits,
+    forget: (_scope, path) => { forgotten.push(path); },
     // The editor's live ports read the site shown: another site's address and titles.
     pages: { routeInfo: () => ({ title: "Shown site" }), titles: () => ({}) },
-    files: { readFile: async (_repo: string, sha: string) => branch[sha.slice(4)], readFiles: async () => ({}), draftStore: () => store, origins: () => ["https://shown.example"], parentOf: (path: string) => path.slice(0, Math.max(0, path.lastIndexOf("/"))) },
-    components: () => ({}), actions: () => ({}),
-    store: () => store, forget: (_scope: DraftScope, path: string) => { forgotten.push(path); },
-    prepareSources: () => ({ isCurrent: () => true, apply: () => true, undo: () => true, redo: () => true }),
-    park: (step: ParkedStep) => { parked.push(step); }, visits: () => visits, factories: { createLazyFileOperationsController },
-  } as unknown as BackgroundSitePorts;
+    files: { origins: () => ["https://shown.example"], parentOf: path => path.slice(0, Math.max(0, path.lastIndexOf("/"))) } });
   const bg = backgroundSite(pin, ports, "index.html");
   return { bg, edits: createGuardedEdits(bg.workspace), records, parked, forgotten, show: () => { shown = true; visits++; }, showAndLeave: () => { visits++; } };
 }

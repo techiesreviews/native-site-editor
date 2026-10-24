@@ -13,7 +13,7 @@ import { forEachAwait } from "./support/await-race";
 
 // The batch body loads with Media. Without a pin a repository switch while any of its loads is held
 // refuses before staging; with one (ticket 23) the batch lands in the pin's workspace.
-function harness(options: { stage?: (host: MediaDraftHost) => Promise<void> } = {}) {
+function harness(options: { stage?: (host: MediaDraftHost) => Promise<void>; edits?: Map<string, string> } = {}) {
   let live = true, view = false, load = 0, staged = 0, listings = 0;
   const histories: string[] = [], hosts: MediaDraftHost[] = [], parked: ParkedStep[] = [];
   const appStore = { openFile: { value: "index.html" as string | undefined }, repository: { value: { full_name: "lex/site" } }, snapshot: { value: { branch: "main" } } };
@@ -46,7 +46,7 @@ function harness(options: { stage?: (host: MediaDraftHost) => Promise<void> } = 
     source: () => "pinned", files: () => ["pinned.html"], list: () => listing.promise, remember: () => {},
   } satisfies MediaPin;
   const batch: MediaWorkspaceBatch = { label: "Swap image", expectedPaths: [], expectedSources: new Map(), expectedAssets: new Map(),
-    edits: new Map([["index.html", "<img>"]]), moves: [], deletes: [], restores: [], uploads: [] };
+    edits: options.edits ?? new Map([["index.html", "<img>"]]), moves: [], deletes: [], restores: [], uploads: [] };
   const run = (pinned = false) => applyMediaBatch(ports, pin.scope satisfies DraftScope, stamp, batch, pinned ? pin : undefined);
   return { appStore, workspace, listing, modules, run, hosts, histories, parked, switchRepository: () => { live = false; }, viewVersion: () => { view = true; }, back: () => { live = true; load++; }, reload: () => { load++; }, counts: () => ({ staged, listings }) };
 }
@@ -245,5 +245,20 @@ test("a batch reports the page that took its Undo step, and none when another pa
     h.workspace.resolve(h.modules);
     h.listing.resolve([]);
     assert.deepEqual(await pending, moved ? { undoOn: undefined } : { undoOn: "index.html" }, String(moved));
+  }
+});
+
+// Asked with no page open (`opened` undefined): its Undo waits on the page it changes, else on none.
+test("a pinned batch written elsewhere with no page open as it was asked parks on the page it edits, or nowhere", async () => {
+  for (const [edits, parked] of [[new Map([[".editor/media.json", "{}"], ["index.html", "<img>"]]), ["index.html"]], [new Map([[".editor/media.json", "{}"]]), []]] as const) {
+    const h = harness({ edits: new Map(edits) });
+    h.appStore.openFile.value = undefined;
+    const pending = h.run(true);
+    h.switchRepository();
+    h.workspace.resolve(h.modules);
+    h.listing.resolve([]);
+    await pending;
+    assert.equal(h.hosts[0].history(() => true, () => true, () => {}, sides), true);
+    assert.deepEqual(h.parked.map(step => step.page), parked);
   }
 });
