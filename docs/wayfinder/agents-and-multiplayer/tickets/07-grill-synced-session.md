@@ -23,3 +23,7 @@ Lex (2026-10-24): other people join both as GitHub collaborators and without an 
   - **What a guest may do:** "yes, view only, we could use a cf temp tunnel". Follow-up in round 2: whether guests are view-only, and the tunnel idea.
   - **Whose change is whose:** yes. Changes briefly show their author's colour; the commit names everyone who took part.
   - **GitHub collaborators:** yes. They join the live pages automatically with their own sign-in and can save and use agents; who saves shared unsaved changes waits for the shared-editing ticket.
+- 2026-10-24, round 2 with Lex:
+  - "The View only option is not needed, than we just use the cloudflare tunnel as a preview mode." Then, on relay versus tunnel: "Perhaps we could change it to have some kind of cloudflare preview link with subdomains we could run for customers. What would be a cheap preview domain? And what are the pros and cons?"
+  - Showing a site to someone becomes its own ticket: [Decide the preview link for sharing a site](11-grill-preview-link.md).
+  - Still open: whether guests without an account still edit live with Lex.
