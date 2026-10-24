@@ -100,9 +100,9 @@ test("make_component reports refusals as conflicts and never calls the action fo
     content: "", expectedHash: await textHash(source), args: { element: "0.0", tag: "section-intro" },
     state: "pending", createdAt: 1,
   };
-  let calls = 0;
+  let calls = 0, opened = 0;
   const actions = {
-    open: async () => true, isMounted: () => true, text: async () => source,
+    open: async () => { opened++; return true; }, isMounted: () => true, text: async () => source,
     makeComponent: async (request: Parameters<AgentSiteActions["makeComponent"]>[0]) => {
       calls++;
       if (request.node[0] === 9) return "That element is not on the page any more. Read the page again.";
@@ -117,9 +117,11 @@ test("make_component reports refusals as conflicts and never calls the action fo
   assert.equal(calls, 1);
   await assert.rejects(applySiteCommand(actions, { ...command, args: { ...command.args, element: "9.9" } }), /not on the page/);
   assert.equal(calls, 2);
-  // An element id the Worker would have refused: a malformed command, never handed to Make component.
-  await assert.rejects(applySiteCommand(actions, { ...command, args: { ...command.args, element: "bad.id" } }), /cannot apply that change/);
+  // An element id the Worker would have refused: a malformed command, never handed to Make component, its page never opened.
+  const before = opened;
+  await assert.rejects(applySiteCommand(actions, { ...command, args: { ...command.args, element: "bad.id" } }), /is malformed/);
   assert.equal(calls, 2);
+  assert.equal(opened, before);
   await assert.rejects(applySiteCommand(actions, { ...command, expectedHash: "stale" }), /changed in the editor/);
   assert.equal(calls, 2);
 });
@@ -197,6 +199,6 @@ test("inspect_preview with an element id the Worker would have refused is malfor
   const actions = { open: async () => { opened++; return true; }, inspect: async () => assert.fail("must not inspect") } satisfies Pick<AgentSiteActions, "open" | "inspect">;
   const command: AgentCommand = { id: "inspect-1", operation: "inspect_preview", path: "index.html", branch: "dev", commit: "c", content: "",
     args: { element: "bad.id" }, state: "pending", createdAt: 1 };
-  await assert.rejects(applySiteCommand(actions as AgentSiteActions, command), /cannot apply that change/);
+  await assert.rejects(applySiteCommand(actions as AgentSiteActions, command), /is malformed/);
   assert.equal(opened, 0);
 });

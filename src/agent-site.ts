@@ -190,6 +190,7 @@ export function agentStructuralActions(workspace: EditorWorkspace, context: Agen
   const moves = createBlockMoves({ edits: scoped, editing: () => undefined, mounted: () => false, forgetOpening: () => () => {} });
   const base = ports.actions(scoped, true);
   const loader: LoaderPlanner | undefined = ports.loader ? (path, text, reads) => ports.loader!(path, text, reads, checkReads) : checked(base).loaderPlan;
+  const noFile = (path: string) => `No file or folder at ${path}.`;
   const actions: AgentSiteActions = { ...checked(base), edits: scoped,
     // Presence reads nothing the command proves (ticket 33).
     presence: base.presence,
@@ -226,7 +227,6 @@ export function agentStructuralActions(workspace: EditorWorkspace, context: Agen
     },
     deleteFile: path => { const target = fileTarget(path); return target ? files.deleteFileTarget(target, undefined, true) : Promise.resolve(noFile(path)); },
   };
-  const noFile = (path: string) => `No file or folder at ${path}.`;
   function fileTarget(path: string) {
     const now = ports.files.pathNow(path, ports.files.treeState());
     return now === "file" || now === "folder" ? { path, name: path.slice(path.lastIndexOf("/") + 1), folder: now === "folder" } : undefined;
@@ -813,9 +813,9 @@ async function applyAdmitted(actions: AgentSiteActions, command: AgentCommand): 
       return { message: `Page details of ${path} updated, unsaved.`, result: { path, hash: await hashOf(actions, path) } };
     }
     case "make_component": {
-      const source = await openPage(actions, path, command.expectedHash);
-      // The element and the name: the editor's Make component decides, on the page as it is now.
+      // A malformed id is refused before the page opens; the element and the name are the editor's Make component's, on the page as it is now.
       const node = elementOf(args.element);
+      const source = await openPage(actions, path, command.expectedHash);
       const made = await actions.makeComponent({ path, source, node, tag: args.tag ?? "", ...(args.fixed !== undefined ? { fixed: args.fixed } : {}) });
       if (typeof made === "string") throw new Conflict(made);
       return {
@@ -834,6 +834,9 @@ async function applyAdmitted(actions: AgentSiteActions, command: AgentCommand): 
       let at!: ReturnType<typeof placement>;
       let node: number[] | undefined, section: AgentOutlineSection | undefined, range: ReturnType<typeof locateNativeElementRange>;
       const source = await openPage(actions, path, command.expectedHash, read => {
+        // The component first: a wrong one is the more basic mistake, whatever place is named.
+        const problem = command.operation === "add_section" ? sectionComponentProblem(actions.edits.peek, tag) : undefined;
+        if (problem) throw new Conflict(problem);
         const outline = pageOutline(read, tags);
         if (command.operation !== "add_section") {
           node = parseOutlineId(String(args.section ?? ""));
@@ -844,8 +847,6 @@ async function applyAdmitted(actions: AgentSiteActions, command: AgentCommand): 
           range = locateNativeElementRange(read, node!);
           if (!range) throw new Conflict("The section's HTML could not be located exactly.");
         } else at = placement(outline, args.before, args.after);
-        const problem = command.operation === "add_section" ? sectionComponentProblem(actions.edits.peek, tag) : undefined;
-        if (problem) throw new Conflict(problem);
       });
       if (command.operation === "add_section") {
         const { parent, index } = at;
@@ -973,12 +974,17 @@ async function applyAdmitted(actions: AgentSiteActions, command: AgentCommand): 
   }
   // Every table operation has its case above; only the Astro-era ones, made write_file first, are left.
   command.operation satisfies "update_active_draft" | "create_file_draft";
-  return malformed();
+  throw new Error("This editor cannot apply that change. Reload it.");
 }
-/** A command the Worker's shape check would not have sent (shared/agent-edit.ts): a guard, not an agent's refusal. */
-function malformed(): never { throw new Error("This editor cannot apply that change. Reload it."); }
-/** An element id the Worker checked; a command that did not come through it is malformed. */
-const elementOf = (element: string | undefined) => parseOutlineId(element ?? "") ?? malformed();
+/**
+ * An element id the Worker checked (shared/agent-edit.ts editShapeProblem). A command that did not come
+ * through it with a bad one is malformed: a guard, not an agent's refusal.
+ */
+function elementOf(element: string | undefined) {
+  const node = parseOutlineId(element ?? "");
+  if (!node) throw new Error(`This change is malformed: ${element ?? "(none)"} is no element id. Nothing was changed.`);
+  return node;
+}
 
 /** A structural command's reply, from the drafts it commits (the same words applySiteCommand reports). */
 async function structuralOutcome(command: AgentCommand, after: Map<string, SavedDraft | undefined>,
