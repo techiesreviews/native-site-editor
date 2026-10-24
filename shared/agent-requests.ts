@@ -42,7 +42,6 @@ type RequestAction =
   | { type: "answer"; id?: string; text?: string }
   | { type: "dismiss"; id?: string };
 
-
 // A message added to a request's thread, which keeps its first message (what
 // was asked) and the latest ones, within THREAD_LIMIT and THREAD_TEXT_LIMIT.
 function addMessage(request: AgentRequest, message: AgentRequestMessage) {

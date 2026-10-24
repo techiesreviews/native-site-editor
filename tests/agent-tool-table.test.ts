@@ -16,15 +16,25 @@ import { applySiteCommand, atomicAgentCommand, type AgentSiteActions } from "../
 import { createAgentEditTools } from "../src/agent-tools-edit.ts";
 import { createAgentMediaTools } from "../src/agent-tools-media.ts";
 import { createAgentReadTools } from "../src/agent-tools-read.ts";
+import type { AgentRecords } from "../src/agent-records.ts";
+import type { AgentReadPorts } from "../src/agent-tools-read.ts";
 import { createRequestTools } from "../src/agent-watch.ts";
+import { hubOperation, type HubStorage } from "../worker/agent-store.ts";
 import { createSiteServer } from "../worker/mcp.ts";
+
+// The fakes below hold only what the code reaches before it answers or refuses (tools/list reads no
+// connection field, a probe stops at its first check); each is typed by that part, then cast whole.
+type Connection = Parameters<typeof createSiteServer>[0];
+type Env = Parameters<typeof createSiteServer>[1];
 
 const names = Object.keys(agentTools) as AgentToolName[];
 const operations = [...new Set(Object.values(agentTools).flatMap(row => "operation" in row ? [row.operation] : []))];
 
 async function toolsList() {
-  const connection = { id: "grant-1", grant: { generation: 1 }, workspace: { account: "lex", repo: "lex/starter", repoId: 1, branch: "main" }, repo: { full_name: "lex/starter" } };
-  const handler = createMcpHandler(() => createSiteServer(connection as never, {} as never), { legacy: "stateless", responseMode: "json", maxSubscriptions: 0 });
+  const connection: Pick<Connection, "id" | "workspace"> & { grant: Pick<Connection["grant"], "generation">; repo: Pick<Connection["repo"], "full_name"> } =
+    { id: "grant-1", grant: { generation: 1 }, workspace: { account: "lex", repo: "lex/starter", repoId: 1, branch: "main" }, repo: { full_name: "lex/starter" } };
+  const env: Partial<Env> = {};
+  const handler = createMcpHandler(() => createSiteServer(connection as Connection, env as Env), { legacy: "stateless", responseMode: "json", maxSubscriptions: 0 });
   const body = { jsonrpc: "2.0", id: 1, method: "tools/list" };
   const response = await handler.fetch(new Request("https://editor.example/mcp", { method: "POST", body: JSON.stringify(body),
     headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream", "MCP-Protocol-Version": "2025-11-25" } }), { parsedBody: body } as never);
@@ -54,18 +64,23 @@ test("the Worker registers exactly the table's MCP tools, in table order", async
 
 test("each route's browser registry runs exactly the table's tools of that route", async () => {
   const workspace = { account: "lex", repoId: 1, branch: "main" };
-  const ports = { files: () => undefined, stamp: () => ({ holds: () => true, changed: () => undefined }), context: async () => undefined, source: () => undefined };
-  const records = { receipt: async () => undefined, status: () => Promise.reject(new Error("no records")) };
-  const run = async () => undefined;
-  const edit = createAgentEditTools({ workspace, ports: ports as never, records: records as never, run });
-  const media = createAgentMediaTools({ workspace, ports: ports as never, records: records as never, run });
-  const read = createAgentReadTools(ports as never);
+  const portsFake: Partial<AgentReadPorts> = { files: () => undefined, stamp: () => ({ holds: () => true, changed: () => undefined }),
+    context: async () => undefined, source: () => undefined };
+  const recordsFake: Pick<AgentRecords, "receipt" | "status"> = { receipt: async () => undefined, status: () => Promise.reject(new Error("no records")) };
+  const ports = portsFake as AgentReadPorts, records = recordsFake as AgentRecords, run = async () => undefined;
+  const edit = createAgentEditTools({ workspace, ports, records, run });
+  const media = createAgentMediaTools({ workspace, ports, records, run });
+  const read = createAgentReadTools(ports);
   const requests = createRequestTools({ workspace, list: async () => [], save: async () => true });
+  // Every table tool goes to every registry, so each request names tools outside its route's type.
+  type Edit = Parameters<typeof edit.run>[0];
+  type Media = Parameters<typeof media.run>[0];
+  type Requests = Parameters<typeof requests.run>[0];
   const registries: [string[], (tool: AgentToolName) => Promise<{ ok: boolean; message?: string; value?: unknown }>][] = [
     [agentToolsOn("read"), tool => read.run(tool, {})],
-    [agentToolsOn("edit", "status"), tool => edit.run({ operation: tool === "get_command_status" ? "status" : "edit", tool, args: {}, id: "mcp-1", grantId: "grant-1", createdAt: 1 } as never, 1, () => false)],
-    [agentToolsOn("media"), tool => media.run({ operation: "media", tool, path: "", args: {}, id: "mcp-1", grantId: "grant-1", createdAt: 1 } as never, 1, () => false)],
-    [agentToolsOn("requests"), tool => requests.run({ operation: "requests", tool, args: {}, grantId: "grant-1" } as never, () => false, Date.now())],
+    [agentToolsOn("edit", "status"), tool => edit.run({ operation: tool === "get_command_status" ? "status" : "edit", tool, args: {}, id: "mcp-1", grantId: "grant-1", createdAt: 1 } as Edit, 1, () => false)],
+    [agentToolsOn("media"), tool => media.run({ operation: "media", tool, path: "", args: {}, id: "mcp-1", grantId: "grant-1", createdAt: 1 } as Media, 1, () => false)],
+    [agentToolsOn("requests"), tool => requests.run({ operation: "requests", tool, args: {}, grantId: "grant-1" } as Requests, () => false, Date.now())],
   ];
   for (const [tools, runTool] of registries) {
     for (const tool of names) {
@@ -87,6 +102,7 @@ const probeArgs: Partial<Record<AgentOperation, AgentCommandArgs>> = {
 };
 
 test("applySiteCommand has a case for every table operation, and only the table's operations are admitted", async () => {
+  // Every action throws "reached": a command that gets past its own checks reaches one in its case.
   const actions = new Proxy({}, { get: () => () => { throw new Error("reached"); } }) as AgentSiteActions;
   const command = (operation: string): AgentCommand => ({ id: "mcp-1", operation: operation as AgentOperation, path: "index.html",
     args: probeArgs[operation as AgentOperation] ?? {}, content: "", branch: "main", commit: "c".repeat(40), state: "pending", createdAt: 1 });
@@ -104,6 +120,22 @@ test("the draft/receipt transaction takes the table's atomic commands, as before
   const atomic = [...operations, "update_active_draft", "create_file_draft"].filter(isAtomicOperation);
   assert.deepEqual(atomic.sort(), ["add_section", "create_file_draft", "create_page", "delete_file", "make_component", "move_file",
     "move_section", "remove_section", "set_page_details", "update_active_draft", "write_file"]);
-  assert.equal(atomicAgentCommand({ operation: "write_file" } as AgentCommand), true);
-  assert.equal(atomicAgentCommand({ operation: "place_media" } as AgentCommand), false);
+  // atomicAgentCommand reads the operation only.
+  assert.equal(atomicAgentCommand({ operation: "write_file" } satisfies Pick<AgentCommand, "operation"> as AgentCommand), true);
+  assert.equal(atomicAgentCommand({ operation: "place_media" } satisfies Pick<AgentCommand, "operation"> as AgentCommand), false);
+});
+
+test("the hub refuses anything but a grant operation before touching storage", async () => {
+  const calls: string[] = [];
+  const storage: HubStorage = {
+    get: async () => { calls.push("get"); return undefined; },
+    put: async () => { calls.push("put"); },
+    delete: async () => { calls.push("delete"); },
+  };
+  for (const action of [null, undefined, "add-grant", 7, [], {}, { type: "queue" }, { type: "context" }, { type: { toString: () => "add-grant" } }]) {
+    const refused = await hubOperation(storage, action, async () => { calls.push("alarm"); });
+    assert.equal(refused.status, 400, JSON.stringify(action));
+    assert.deepEqual(await refused.json(), { error: "Unknown agent operation." });
+  }
+  assert.deepEqual(calls, []);
 });
