@@ -2567,7 +2567,7 @@ const pagesAndFiles = createPagesAndFilesHost({
   // Declared further down: read at call time.
   restoreFile: (...args) => restoreFile(...args), loadSnapshot: (...args) => loadSnapshot(...args), openEntry: (...args) => openEntry(...args),
   get explorerDropdown() { return explorerDropdown; }, get files() { return files; }, get pageStructure() { return pageStructure; },
-  get siteActions() { return siteActions; }, set pendingNativePageTitles(value: undefined) { pendingNativePageTitles = value; },
+  get siteActions() { return siteActions; }, clearPendingTitles: () => { pendingNativePageTitles = undefined; },
   get fileGeneration() { return fileGeneration; }, set fileGeneration(value) { fileGeneration = value; },
 });
 const { loadPagesActions, loadFileOps, pagePorts, filePorts, pagesController, savePublish, filesTreeController, mountExplorer, ensureExplorer,
