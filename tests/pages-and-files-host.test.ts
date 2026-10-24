@@ -13,16 +13,30 @@ import { nativePageRoute } from "../shared/native-routes.ts";
 import { parentProblem } from "../shared/site-rules.ts";
 import { createWorkspaceSession, type SessionStamp } from "../src/workspace-session.ts";
 import type { Snapshot } from "../shared/types.ts";
+import type { FileRowTarget } from "../src/components/file-row-actions.ts";
+import type { MenuItem } from "../src/components/row-menu.ts";
 
 // The draft store and the components behind the host read these browser globals on first use.
 const fakeGlobals = globalThis as Record<string, unknown>;
-const saved = ["window", "document", "localStorage", "addEventListener", "BroadcastChannel"].map((name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)] as const);
+const saved = ["window", "document", "localStorage", "addEventListener", "BroadcastChannel", "requestAnimationFrame", "explorerStubs"].map((name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)] as const);
 const values = new Map<string, string>();
 fakeGlobals.window = { addEventListener: () => {} };
 fakeGlobals.addEventListener = () => {};
 // No other tabs: an open channel would keep the test process alive.
 fakeGlobals.BroadcastChannel = undefined;
-fakeGlobals.document = { addEventListener: () => {}, visibilityState: "visible" };
+fakeGlobals.requestAnimationFrame = () => 0;
+// The explorer's panels by id: enough element for the host to mount its trees, dialogs and tabs into.
+class FakeElement {
+  isConnected = true; hidden = false; textContent = ""; title = ""; tabIndex = 0;
+  listeners = new Map<string, () => void>();
+  addEventListener(type: string, listener: () => void) { this.listeners.set(type, listener); }
+  append() {} replaceChildren() {} setAttribute() {} removeAttribute() {} focus() {}
+  querySelector() { return new FakeElement(); }
+  querySelectorAll() { return []; }
+}
+const elements = new Map<string, FakeElement>();
+const elementById = (id: string) => elements.get(id) ?? elements.set(id, new FakeElement()).get(id)!;
+fakeGlobals.document = { addEventListener: () => {}, visibilityState: "visible", getElementById: elementById };
 fakeGlobals.localStorage = {
   getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value); },
   removeItem: (key: string) => { values.delete(key); }, key: (index: number) => [...values.keys()][index] ?? null, get length() { return values.size; },
@@ -33,8 +47,24 @@ after(() => {
     else Reflect.deleteProperty(globalThis, name);
   }
 });
+// The explorer's components stand in as factories that keep what the host hands them (on `explorerStubs`).
+interface ExplorerStubs { rowActions: { items(target: FileRowTarget): MenuItem[]; dropProblem(source: FileRowTarget, folder: string): string | undefined }[]; pagesTrees: number }
+const stubs: ExplorerStubs = { rowActions: [], pagesTrees: 0 };
+fakeGlobals.explorerStubs = stubs;
+const stubModules: Record<string, string> = {
+  "components/create-dialog.ts": "export const createCreateDialog = () => ({ root: {}, open() {}, returnFocusTo() {} });",
+  "components/file-row-actions.ts": "export const createFileRowActions = (options) => { globalThis.explorerStubs.rowActions.push(options); return { attachRoot() {}, close() {}, rename() {} }; };",
+  "components/confirm-dialog.ts": "export const createConfirmDialog = () => ({ root: {}, close() {}, ask: async () => true, choose: async () => undefined });",
+  "components/page-picker.ts": "export const createPagePicker = () => ({ root: {} });",
+  "components/pages-tree.ts": "export const createPagesTree = () => { globalThis.explorerStubs.pagesTrees++; return { root: {}, reset() {}, busy: () => false, render() {} }; };",
+  "controllers/files-tree-controller.ts": "export const createFilesTreeController = () => ({ render() {}, shown() {}, refresh() {}, reset() {}, row() {}, openFolder() {}, listings: () => new Map() });",
+};
 registerHooks({
-  load: (url, context, next) => /\.css$|\?raw$/.test(url) ? { format: "module", source: "export default '';", shortCircuit: true } : next(url, context),
+  load: (url, context, next) => {
+    if (/\.css$|\?raw$/.test(url)) return { format: "module", source: "export default '';", shortCircuit: true };
+    const stub = Object.entries(stubModules).find(([path]) => url.endsWith(`/src/${path}`));
+    return stub ? { format: "module", source: stub[1], shortCircuit: true } : next(url, context);
+  },
 });
 const { createPagesAndFilesHost } = await import("../src/pages-and-files-host.ts");
 const { createExplorerActions } = await import("../src/pages-and-files-explorer.ts");
@@ -80,7 +110,7 @@ function setup() {
     linkedStyles: { secondaryPath: () => undefined, unlink: () => {}, openComponentLinkedStyle: async () => {}, openDefaultLinkedStyle: async () => {} },
     versions: { history: { refresh: record("history") } }, previewSelection: { recordIntent: () => {} },
     repositoryIndex: { seed: () => {} }, finishedWork: { add: () => {} },
-    element: <T extends HTMLElement>(id: string) => { if (id === "status") return status as T; throw new Error(`No #${id} here.`); },
+    element: <T extends HTMLElement>(id: string) => (id === "status" ? status : asElement<T>(elementById(id))) as T,
     lazyModule: <T>(load: () => Promise<T>) => load, loadConfirmDialog: () => import("../src/components/confirm-dialog.ts"),
     api: async <T>() => ({}) as T, status: () => {}, clearError: () => {}, errorMessage: (error: unknown) => { calls.push(`error ${String(error)}`); },
     announce: (text: string) => { calls.push(`announce ${text}`); },
@@ -211,4 +241,43 @@ test("a change's Restore, Move back and Discard of an upload each take their own
   assert.deepEqual(said, ["announce Restored notes.txt.", "announce Moved new.txt back to old.txt.", "discardUpload photo.png"]);
   assert.equal(draftStore().get(SCOPE, "new.txt"), undefined);
   assert.equal(draftStore().get(SCOPE, "old.txt")?.deleted, undefined);
+});
+
+// Lets the host's fire-and-forget actions settle.
+const settle = async () => { for (let i = 0; i < 10; i++) await new Promise<void>((resolve) => setImmediate(resolve)); };
+
+test("the explorer's row actions read the host's own state: a gone file's Restore goes through the loaded file operations", async (t) => {
+  const f = setup();
+  forget(t, "notes.txt");
+  f.open(SCOPE);
+  f.appStore.snapshot.value = SNAPSHOT;
+  draftStore().save(deletion("notes.txt"));
+  await f.host.ensureExplorer();
+  assert.ok(f.host.fileOps);
+  const actions = stubs.rowActions.at(-1)!;
+  // The host's parentOf, through ExplorerHost.
+  assert.equal(actions.dropProblem({ path: "docs/a.txt", name: "a.txt", folder: false }, "docs"), "It is already there.");
+  const [restore] = actions.items({ path: "notes.txt", name: "notes.txt", folder: false, gone: true });
+  assert.equal(restore.label, "Restore");
+  restore.run();
+  await settle();
+  assert.equal(draftStore().get(SCOPE, "notes.txt"), undefined);
+  assert.ok(f.calls.includes("announce Restored notes.txt."));
+});
+
+test("mounting the workspace again resets the explorer, and the next open builds it afresh", async () => {
+  const f = setup();
+  f.open(SCOPE);
+  f.appStore.snapshot.value = SNAPSHOT;
+  await f.host.ensureExplorer();
+  const built = stubs.rowActions.length, trees = stubs.pagesTrees;
+  assert.ok(f.host.pagesTree);
+  await f.host.ensureExplorer();
+  assert.equal(stubs.rowActions.length, built);
+  f.host.mountExplorer();
+  assert.equal(f.host.pagesTree, undefined);
+  await f.host.ensureExplorer();
+  assert.equal(stubs.rowActions.length, built + 1);
+  assert.equal(stubs.pagesTrees, trees + 1);
+  assert.ok(f.host.pagesTree);
 });
