@@ -169,6 +169,10 @@ Something the user asks connected agents to do about an element of the preview, 
 **Pin**:
 The numbered marker on the element of an agent request in the preview, showing whether it waits, is being worked on, asks the user a question (orange), or was done or answered (grey). An editor overlay, never part of the page.
 
+**Synced session**:
+A live editing session Lex opens from a project with Share live: anyone with its link joins by typing a name, with no account, and edits the pages in it with him. It lasts while his tab is open and ends when he closes the tab or stops sharing. Guests' changes become his unsaved changes; only he saves, publishes and uses agents. (Planned in the agents and multiplayer map.)
+_Avoid_: guest account, invite
+
 **External agent workflow**:
 An agent working directly on the site's repository, with its changes reconciled with the editor's drafts.
 

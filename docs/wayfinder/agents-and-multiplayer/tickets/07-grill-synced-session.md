@@ -1,7 +1,7 @@
 ---
 title: Decide what a synced session is for people without an account
 type: grilling (HITL)
-status: open
+status: closed
 assignee: Lex + claude (grilling)
 blocked_by: []
 ---
@@ -27,3 +27,19 @@ Lex (2026-10-24): other people join both as GitHub collaborators and without an 
   - "The View only option is not needed, than we just use the cloudflare tunnel as a preview mode." Then, on relay versus tunnel: "Perhaps we could change it to have some kind of cloudflare preview link with subdomains we could run for customers. What would be a cheap preview domain? And what are the pros and cons?"
   - Showing a site to someone becomes its own ticket: [Decide the preview link for sharing a site](11-grill-preview-link.md).
   - Still open: whether guests without an account still edit live with Lex.
+- 2026-10-24, round 3: guests without an account still edit live: "ok" (a synced session for editing together, the preview link for just looking).
+
+## Resolution (2026-10-24)
+
+Decided with Lex:
+
+1. **Joining and ending:**
+   - **Share live** in the project menu copies a link, and a guest types a name that shows on their cursor.
+   - The session lasts while Lex's tab is open: closing it, or Stop sharing, ends the session and kills the link.
+   - Every share makes a new link. Someone who has the page must be online for others to join (research 03), which matches this.
+2. **What a guest may do:**
+   - Edit text, pictures and sections on the pages in the session.
+   - Only Lex saves to GitHub, publishes, changes files or settings, and uses agents.
+   - No view-only link. Just looking is the [preview link](11-grill-preview-link.md).
+3. **Whose change is whose:** a guest's changes become Lex's unsaved changes and briefly show their author's colour; the commit names everyone who took part.
+4. **GitHub collaborators** join the live pages automatically with their own sign-in, and can save and use agents themselves. Who saves shared unsaved changes waits for [Decide how shared editing works and what it may cost](08-grill-shared-editing-mechanism.md).
