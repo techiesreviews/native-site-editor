@@ -287,23 +287,29 @@ test("a slow server: Connect to MCP and Wait for MCP still copy the prompt when 
   const sentinel = (text: string) => page.evaluate(value => (window as Window & { sentinel?: (text: string) => Promise<void> }).sentinel!(value), text);
   // clipboard-ready: read only inside expect.poll below.
   const clipboard = () => page.evaluate(() => navigator.clipboard.readText());
-  const held = (path: string) => page.route(url => url.pathname === path, async route => {
-    // fixed-wait: the server's answer is held past the user activation's five seconds.
-    await new Promise(resolve => setTimeout(resolve, 6_000));
-    await route.continue();
-  });
+  /** Holds every request to `path` past the user activation's five seconds; the result releases them. */
+  const held = async (path: string) => {
+    const matches = (url: URL) => url.pathname === path;
+    await page.route(matches, async route => {
+      // fixed-wait: the server's answer is held past the user activation's five seconds.
+      await new Promise(resolve => setTimeout(resolve, 6_000));
+      await route.continue();
+    });
+    return () => page.unroute(matches);
+  };
   await open(page, baseURL);
   await page.locator(".repository-menu__trigger").click();
   const action = page.locator(".agent-menu__action"), menu = page.locator(".agent-menu");
-  await held("/api/agent/connect");
+  const releaseConnect = await held("/api/agent/connect");
   const made = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST");
   await action.click();
   const { token, id } = await (await made).json() as { token: string; id: string };
   await expect(action).toHaveText("Copied");
   await expect.poll(clipboard).toContain(`Bearer ${token}`);
   await expect(action).toHaveText("Wait for MCP");
-  await page.unroute(url => url.pathname === "/api/agent/connect");
-  // Wait for MCP reads its connections first: held as long, its copy still lands.
+  await releaseConnect();
+  // Wait for MCP reads its connections first: held as long, its copy still lands. The sentinel
+  // replaces the first prompt, so only this press's copy can pass the poll.
   await sentinel("before Wait for MCP");
   await held("/api/agent/connections");
   await action.click();
@@ -311,15 +317,49 @@ test("a slow server: Connect to MCP and Wait for MCP still copy the prompt when 
   await expect(menu).not.toHaveAttribute("data-state", "failed");
   await expect.poll(clipboard).toContain(`Bearer ${token}`);
   await expect(action).toHaveText("Wait for MCP");
+  // Two quick presses during the held check: each copies with its own press, neither ends on the problem dot.
+  await action.evaluate((element, root) => {
+    const host = window as Window & { seen?: string[] };
+    host.seen = [];
+    const note = () => host.seen!.push(`${root!.dataset.state} ${element.textContent}`);
+    new MutationObserver(note).observe(element, { subtree: true, childList: true, characterData: true });
+    new MutationObserver(note).observe(root!, { attributes: true, attributeFilter: ["data-state"] });
+  }, await menu.elementHandle());
+  await sentinel("before two presses");
+  await action.click();
+  await action.click();
+  const copies = () => page.evaluate(() => (window as Window & { seen?: string[] }).seen!
+    .map(entry => entry.endsWith(" Copied")).filter((copied, index, all) => copied && !all[index - 1]).length);
+  await expect.poll(copies, { timeout: 30_000 }).toBe(2);
+  expect(await page.evaluate(() => (window as Window & { seen?: string[] }).seen!.some(entry => entry.startsWith("failed ")))).toBe(false);
+  await expect.poll(clipboard).toContain(`Bearer ${token}`);
+  await expect(action).toHaveText("Wait for MCP");
   // Its token revoked elsewhere: the held read finds it gone, and the same press makes and copies a new one.
   expect((await page.request.post(`${baseURL}/api/agent/revoke`, { headers: { Origin: baseURL! }, data: { id } })).ok()).toBe(true);
+  // Clears the last prompt, so only the new one can pass the poll.
   await sentinel("before the new prompt");
   const again = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST");
   await action.click();
   const fresh = (await (await again).json() as { token: string }).token;
   expect(fresh).not.toBe(token);
-  await expect(action).toHaveText("Copied", { timeout: 30_000 });
+  await expect(action).toHaveText("Copied");
   await expect.poll(clipboard).toContain(`Bearer ${fresh}`);
+});
+
+test("a browser that refuses the waiting copy: Connect to MCP writes the prompt once its token is known", async ({ page, context, baseURL }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator.clipboard, "write", { configurable: true, value: () => Promise.reject(new TypeError("ClipboardItem cannot wait")) });
+  });
+  await open(page, baseURL);
+  await page.locator(".repository-menu__trigger").click();
+  const action = page.locator(".agent-menu__action");
+  await page.evaluate(() => navigator.clipboard.writeText("before the press"));
+  const made = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST");
+  await action.click();
+  const { token } = await (await made).json() as { token: string };
+  await expect(action).toHaveText("Copied");
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain(`Bearer ${token}`);
 });
 
 test("a browser without ClipboardItem: Connect to MCP copies the prompt once its token is known", async ({ page, context, baseURL }) => {
@@ -402,6 +442,16 @@ test("while the site owner pauses agents the menu offers Connect to MCP; once un
     await page.locator(".repository-menu__trigger").click();
     await expect(menu).toHaveAttribute("data-state", "paused", { timeout: 15_000 });
     await onlyLabel(page, "Connect to MCP");
+    // Pressed while still paused: no prompt, and the clipboard keeps what it held.
+    await page.evaluate(() => navigator.clipboard.writeText("before the press"));
+    const read = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connections");
+    await action.click();
+    await read;
+    await expect(menu).toHaveAttribute("data-state", "paused");
+    // fixed-wait: the press's dropped copy has had time to settle; a wrong write would show by now.
+    await page.waitForTimeout(1_000);
+    // clipboard-ready: the fixed wait above.
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("before the press");
     // The dot is the problem colour, not the plain off grey.
     const paused = await dot(page);
     expect(paused.color).toBe(await danger(page));

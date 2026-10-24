@@ -939,13 +939,12 @@ function forgetWatch() {
 /** A clipboard write begun now, inside the user's press (Safari refuses one begun after an await;
  * Chrome after a few seconds), that lands once `put` gives it the text; `skip` leaves the clipboard
  * as it was. Settle matrix (each row has a spec in tests/native-save/native-mcp-menu.spec.ts):
- * - put, write lands → Copied (the slow-server spec).
- * - put, write refused or no ClipboardItem → `writeText` now: Copied, or the problem dot when it
- *   is refused too (the refused-copy and no-ClipboardItem specs).
+ * - put, write lands → Copied (the slow-server spec, two quick presses included).
+ * - put, write refused or no ClipboardItem → `writeText` now: Copied (the refusing-browser and
+ *   no-ClipboardItem specs), or the problem dot when it is refused too (the refused-copy spec).
  * - skip (token request failed, another site shown, owner paused) → the write is refused, the
- *   clipboard keeps what it held (the failed-first-prompt and site-switch specs).
- * - the press never settles: it does, as every agent API call ends by API_DEADLINE; until then
- *   the write waits. */
+ *   clipboard keeps what it held (the failed-first-prompt, site-switch and owner-pause specs).
+ * Every press reaches one of these rows: each agent API call ends by API_DEADLINE. */
 function reserveCopy() {
   let give!: (text: string) => void, refuse!: (reason?: unknown) => void;
   const text = new Promise<string>((resolve, reject) => { give = resolve; refuse = reject; });
