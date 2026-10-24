@@ -2,7 +2,7 @@
 title: Find how the editor can always show the latest files
 type: research (AFK)
 status: open
-assignee:
+assignee: claude (research subagent)
 blocked_by: []
 ---
 

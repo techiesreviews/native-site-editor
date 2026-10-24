@@ -2,7 +2,7 @@
 title: Find what an "extensive MCP" can do for working with agents
 type: research (AFK)
 status: open
-assignee:
+assignee: claude (research subagent)
 blocked_by: []
 ---
 

@@ -2,7 +2,7 @@
 title: Find the cheapest way to edit the same page live together
 type: research (AFK)
 status: open
-assignee:
+assignee: claude (research subagent)
 blocked_by: []
 ---
 
