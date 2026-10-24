@@ -492,3 +492,13 @@ test("without a user scope or row change, discardFile does nothing and says noth
   assert.deepEqual(f.log, []);
   assert.equal(f.drafts.size, 0);
 });
+
+test("without a user scope, discardFile asks nothing even when the row has a change", async () => {
+  const f = fixture();
+  f.drafts.set("a.html", draft("a.html"));
+  f.ports.scope = () => undefined;
+  await f.controller.discardFile("a.html");
+  assert.deepEqual(f.questions, []);
+  assert.deepEqual(f.log, []);
+  assert.equal(f.drafts.size, 1);
+});

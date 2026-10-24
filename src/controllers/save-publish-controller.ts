@@ -242,10 +242,10 @@ export function createSavePublishController(ports: SavePublishPorts) {
     discard(paths);
     return scope ? count - listChanges(store.list(scope)).length : 0;
   }
-  // Discard changes on one file (its row menu in Pages & files).
+  // Discard changes on one file (its row menu in Pages & files); with no user scope there is nothing to discard, so nothing is asked.
   async function discardFile(path: string) {
     const change = ports.change(path);
-    if (change && await confirmed({
+    if (change && ports.scope() && await confirmed({
       title: `Discard the changes to ${change.from ? `${change.from} → ${path}` : path}?`,
       notes: [change.kind === "A" ? "It is not on GitHub yet, so this removes it." : "It goes back to GitHub's version. This cannot be undone."],
       action: "Discard",

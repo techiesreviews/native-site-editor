@@ -21,7 +21,6 @@ import { refuse } from "./components/refusal-note";
 import type { mountSiteActions } from "./components/site-actions";
 import type * as sourceEditor from "./components/source-editor";
 import type { AnnounceAs } from "./components/toast-rules";
-import type { createCardsController } from "./controllers/cards-controller";
 import type { createLazyFileOperationsController } from "./controllers/file-operation-checks";
 import type { createFilesTreeController } from "./controllers/files-tree-controller";
 import type { createLinkedStylesController } from "./controllers/linked-styles-controller";
@@ -37,6 +36,7 @@ import type { createFinishedElsewhere } from "./finished-elsewhere";
 import type { GuardedEdits, Reads } from "./guarded-edit";
 import { setIcon } from "./icons";
 import type { createNativeSiteRuntime } from "./native-site-runtime";
+import type { Cards } from "./page-builder/cards";
 import type { RepositoryIndex } from "./repository-loading";
 import { button, node } from "./ui/dom";
 import { sweepUploads, uploadBytes } from "./uploads";
@@ -79,7 +79,7 @@ export interface PagesAndFilesPorts {
   editorModule: Pick<typeof sourceEditor, "isMounted" | "refreshDrafts" | "forgetDraftModel" | "dropDraft" | "clearHistory">;
   guardedEdits: Pick<GuardedEdits, "run" | "stamp" | "peek">;
   mediaController: Pick<ReturnType<typeof createMediaController>, "requestGalleryRefresh" | "disposeGallery" | "ensureGallery" | "galleryVisible">;
-  cardsController: Pick<ReturnType<typeof createCardsController>, "cardOffer" | "cardsLinkingTo" | "createWithCard">;
+  cards: Pick<Cards, "cardOffer" | "cardsLinkingTo" | "createWithCard">;
   linkedStyles: Pick<ReturnType<typeof createLinkedStylesController>, "secondaryPath" | "unlink" | "openComponentLinkedStyle" | "openDefaultLinkedStyle">;
   versions: { history: { refresh(): void } };
   previewSelection: Pick<PreviewSelectionController, "recordIntent">;
@@ -280,7 +280,7 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
         moveTo: (target) => void pageActions!.moveTo(target),
         dropProblem: (source, parent) => pageActions!.dropProblem(source, parent),
         drop: (source, parent) => void pageActions!.confirmMove(source, parent),
-        cardOffer: ports.cardsController.cardOffer,
+        cardOffer: ports.cards.cardOffer,
       });
       ports.element("explorer-pages").replaceChildren(pagesTree.root);
 
@@ -375,7 +375,7 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
     readRedirects: readNativeRedirects,
     withMovedPageUrls,
     pageLinks: (...args) => fileOps!.pageLinks(...args),
-    cardsLinkingTo: ports.cardsController.cardsLinkingTo,
+    cardsLinkingTo: ports.cards.cardsLinkingTo,
     confirmation: () => confirmDialog,
     picker: () => pagePicker,
     refreshMeta: () => ports.pageStructure?.refreshMeta(),
@@ -389,7 +389,7 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
     resetExplorer: () => { pagesTree?.reset(); ports.mediaController.disposeGallery(); },
     showMedia: () => { if (ports.explorerDropdown?.isOpen()) void ensureExplorer().then(() => ports.mediaController.ensureGallery()).catch(ports.errorMessage); },
     siteReadForCreate: nativeSiteReadForCreate,
-    createWithCard: ports.cardsController.createWithCard,
+    createWithCard: ports.cards.createWithCard,
     navigationTarget: ports.nativeNavigationTarget,
     restoreDeleted: file => undoFileChanges({ restore: [file] }),
     announce: ports.announce,
