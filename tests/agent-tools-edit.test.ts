@@ -1,9 +1,14 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { textHash, type AgentCommand } from "../shared/agent";
+import { OUTSIDE_MEDIA_REFUSED, textHash, type AgentCommand } from "../shared/agent";
 import { payloadIdentity, type JsonValue } from "../shared/agent-command";
 import type { AgentEdit, AgentEditArgsMap, AgentEditTool } from "../shared/agent-edit";
-import { prepareAgentEdit } from "../shared/agent-edit";
+import { editShapeProblem, prepareAgentEdit, type PreparedEdit } from "../shared/agent-edit";
+import { agentTools, agentToolsOn } from "../shared/agent-tool-table";
+import { GITHUB_CONFIG_REFUSED, MEDIA_RECORDS_REFUSED } from "../shared/protected-paths";
+import { PAGE_ADDRESS_RULE } from "../shared/site-rules";
+import { installOutlineDocument } from "./support/outline-document";
 import type { AgentReadResult } from "../shared/agent-read";
 import { SiteFiles } from "../shared/site-files";
 import type { Snapshot, TreeEntry } from "../shared/types";
@@ -12,7 +17,7 @@ import { agentCommandFiles } from "../src/agent-tools";
 import { agentFileReader, type AgentReadPorts } from "../src/agent-tools-read";
 import { AgentRecordsError, indexedDbAgentRecords } from "../src/agent-records";
 import { applySiteCommand, atomicAgentCommand, prepareAgentText, type AgentSiteActions } from "../src/agent-site";
-import { createGuardedEdits, type EditorWorkspace } from "../src/guarded-edit";
+import { createGuardedEdits, type EditorWorkspace, type GuardedEdits, type Reads } from "../src/guarded-edit";
 import type { AgentTextCommit } from "../src/editor-workspace";
 import { DraftStore, draftDatabaseName, indexedDbDrafts, draftKey } from "../src/drafts";
 import { relayObjectName, type RelaySocket } from "../worker/agent-relay";
@@ -84,20 +89,22 @@ test("every migrated tool prepares the existing command shape from the browser's
     [request("open_page", { page: "/about/" }), { operation: "open_page", input: { path: "about/index.html" } }],
     [request("inspect_preview", { selector: "h1", limit: 2 }), { operation: "inspect_preview", input: { path: "index.html", args: { selector: "h1", limit: 2 } } }],
     [request("make_component", { page: "/", element: "1.0", tag: "hero-block", fixed: ["title"], expectedHash: hash }), { operation: "make_component", input: { path: "index.html", expectedHash: hash, args: { element: "1.0", tag: "hero-block", fixed: ["title"] } } }],
-    [request("add_section", { page: "/", component: "feature-block", after: "1.0", expectedHash: hash }), { operation: "add_section", input: { path: "index.html", expectedHash: hash, args: { component: "feature-block", container: "1", index: 1 } } }],
-    [request("move_section", { page: "/", section: "1.0", after: "1.1", expectedHash: hash }), { operation: "move_section", input: { path: "index.html", expectedHash: hash, args: { section: "1.0", tag: "section", container: "1", index: 2 } } }],
-    [request("remove_section", { page: "/", section: "1.0", expectedHash: hash }), { operation: "remove_section", input: { path: "index.html", expectedHash: hash, args: { section: "1.0", tag: "section" } } }],
+    [request("add_section", { page: "/", component: "feature-block", after: "1.0", expectedHash: hash }), { operation: "add_section", input: { path: "index.html", expectedHash: hash, args: { component: "feature-block", after: "1.0" } } }],
+    [request("move_section", { page: "/", section: "1.0", after: "1.1", expectedHash: hash }), { operation: "move_section", input: { path: "index.html", expectedHash: hash, args: { section: "1.0", after: "1.1" } } }],
+    [request("remove_section", { page: "/", section: "1.0", expectedHash: hash }), { operation: "remove_section", input: { path: "index.html", expectedHash: hash, args: { section: "1.0" } } }],
   ];
   for (const [input, expected] of cases) {
     const prepared = await prepareAgentEdit(input, f.context, f.local());
     assert.partialDeepStrictEqual(prepared, expected, input.tool);
+    // The command each tool becomes is its table row's: edit_file's is write_file.
+    assert.equal("operation" in prepared && prepared.operation, agentTools[input.tool].operation, input.tool);
   }
   const draft = f.context.drafts[0];
   const prepared = await prepareAgentEdit(request("edit_file", { path: draft.path, expectedHash: draft.hash!, edits: [{ oldText: "About the studio", newText: "Browser draft" }] }), f.context, f.local());
   assert.ok("operation" in prepared && prepared.input.content?.includes("Browser draft"));
 });
 
-test("hash, unchanged, protected paths, content, folders and parent files retain their contracts", async () => {
+test("hash, unchanged, folders and parent files retain their contracts", async () => {
   const f = await fixture(), hash = f.context.site!.outlines[0].hash;
   const prepare = (input: AgentEdit) => prepareAgentEdit(input, f.context, f.local());
   for (const input of [request("edit_file", { path: "index.html", expectedHash: "0".repeat(64), edits: [{ oldText: "Welcome", newText: "Hello" }] }),
@@ -105,14 +112,13 @@ test("hash, unchanged, protected paths, content, folders and parent files retain
     await assert.rejects(prepare(input), /changed since you read it/);
   assert.partialDeepStrictEqual(await prepare(request("edit_file", { path: "index.html", expectedHash: hash, edits: [{ oldText: "Welcome", newText: "Welcome" }] })), { unchanged: { state: "unchanged", message: "The edits change nothing." } });
   assert.partialDeepStrictEqual(await prepare(request("write_file", { path: "index.html", content: files["index.html"], expectedHash: hash })), { unchanged: { message: "The file already has this text." } });
+  // Protected paths, media as text and the size limit are the Worker's (the refusals below).
   for (const path of [".github/workflows/ci.yml", ".editor/media.json", "../secret"])
     for (const tool of ["write_file", "edit_file", "move_file", "delete_file"] as const) {
-      const input = tool === "write_file" ? request(tool, { path, content: "x" }) : tool === "edit_file" ? request(tool, { path, expectedHash: hash, edits: [{ oldText: "x", newText: "y" }] })
-        : tool === "move_file" ? request(tool, { path, to: "ok.txt" }) : request(tool, { path });
-      await assert.rejects(prepare(input), /GitHub|media|path|repository/i);
+      const args = tool === "write_file" ? { path, content: "x" } : tool === "edit_file" ? { path, expectedHash: hash, edits: [{ oldText: "x", newText: "y" }] }
+        : tool === "move_file" ? { path, to: "ok.txt" } : { path };
+      assert.match(editShapeProblem(tool, args as never) ?? "", /GitHub|media|path|repository/i, `${tool} ${path}`);
     }
-  await assert.rejects(prepare(request("write_file", { path: "media/x.png", content: "x" })), /media|upload/i);
-  await assert.rejects(prepare(request("write_file", { path: "fresh.txt", content: "\0" })), /text files/);
   await assert.rejects(prepare(request("write_file", { path: "index.html/child.txt", content: "x" })), /index.html is a file/);
   f.snapshot.tree!.push({ path: "folder", type: "tree", mode: "040000", sha: "f".repeat(40) });
   await assert.rejects(prepare(request("write_file", { path: "folder", content: "x" })), /folder/);
@@ -130,32 +136,151 @@ test("write_file under a file is refused at each depth with the one wording; a m
   assert.partialDeepStrictEqual(await prepare(request("write_file", { path: "a/b.html", content: "x" })), { operation: "write_file", input: { path: "a/b.html", content: "x", expectedHash: null } });
 });
 
-test("page, section, component and placement refusals keep their messages", async () => {
-  const f = await fixture(), hash = f.context.site!.outlines[0].hash;
-  const prepare = (input: AgentEdit) => prepareAgentEdit(input, f.context, f.local());
-  const cases: [AgentEdit, RegExp][] = [
-    [request("set_page_details", { page: "/absent", title: "x" }), /No page/],
-    [request("create_page", { title: "x", parent: "/absent/" }), /No page/],
-    [request("set_page_details", { page: "/" }), /Give a title/],
-    [request("make_component", { page: "/", element: "1.0", tag: "feature-block", expectedHash: hash }), /already/],
-    [request("make_component", { page: "/", element: "1", tag: "new-block", expectedHash: hash }), /main.*cannot/],
-    [request("make_component", { page: "/", element: "1.1", tag: "new-block", expectedHash: hash }), /component already/],
-    [request("add_section", { page: "/", component: "absent-block", expectedHash: hash }), /No component/],
-    [request("add_section", { page: "/", component: "site-header", expectedHash: hash }), /not a section/],
-    [request("add_section", { page: "/", component: "feature-block", before: "1.0", after: "1.1", expectedHash: hash }), /not both/],
-    [request("add_section", { page: "/", component: "feature-block", before: "8.0", expectedHash: hash }), /No section/],
-    [request("move_section", { page: "/", section: "1.0", expectedHash: hash }), /Say before or after/],
-    [request("move_section", { page: "/", section: "1.9", before: "1.0", expectedHash: hash }), /No section/],
-    [request("remove_section", { page: "/", section: "1.9", expectedHash: hash }), /No section/],
-    [request("remove_section", { page: "/", section: "1.0", expectedHash: "0".repeat(64) }), /changed since/],
-  ];
-  for (const [input, message] of cases) await assert.rejects(prepare(input), message, input.tool);
-  f.context.site!.outlines[0].sections.push({ id: "2.0", tag: "section" });
-  await assert.rejects(prepare(request("move_section", { page: "/", section: "2.0", before: "1.0", expectedHash: hash })), /siblings only/);
-  f.context.site!.outlines[0].containers.push({ id: "2", tag: "main", children: 1 });
-  await assert.rejects(prepare(request("add_section", { page: "/", component: "feature-block", expectedHash: hash })), /several places/);
-  f.context.site!.outlines[0].containers = [];
-  await assert.rejects(prepare(request("add_section", { page: "/", component: "feature-block", expectedHash: hash })), /no place for sections/);
+// ---- Every refusal an agent edit can get, decided once (ticket 51) ----
+
+/**
+ * Where a refusal is decided: the Worker, from the edit's shape (shared/agent-edit.ts editShapeProblem); the tab's
+ * preparation (prepareAgentEdit); the live page as the command runs (src/agent-site.ts applySiteCommand); or an
+ * editor control the command runs through (Make component, New page, Block move), whose own tests hold its rules.
+ */
+type Layer = "Worker" | "preparation" | "live page" | "editor";
+type Fixture = Awaited<ReturnType<typeof fixture>>;
+/** The page texts the editor shows now, which the live page reads; they start as the fixture's. */
+type Live = Record<string, string>;
+interface Refusal {
+  tool: AgentEditTool;
+  layer: Layer;
+  /** What the agent is told, as the deciding file spells it (the whole wording, or its fixed part). */
+  says: string;
+  file: string;
+  args(f: Fixture, live: Live): Promise<object> | object;
+  setup?(f: Fixture, live: Live): void;
+}
+const refusal = <K extends AgentEditTool>(tool: K, layer: Layer, says: string, file: string,
+  args: (f: Fixture, live: Live) => Promise<AgentEditArgsMap[K]> | AgentEditArgsMap[K], setup?: Refusal["setup"]): Refusal => ({ tool, layer, says, file, args, setup });
+const home = (live: Live) => textHash(live["index.html"]);
+const homeHash = (f: Fixture) => f.context.site!.outlines[0].hash;
+const page = (body: string) => `<!doctype html><html><head></head><body>${body}</body></html>`;
+
+const refusals: Refusal[] = [
+  refusal("edit_file", "Worker", GITHUB_CONFIG_REFUSED, "shared/protected-paths.ts", f => ({ path: ".github/workflows/ci.yml", expectedHash: homeHash(f), edits: [{ oldText: "x", newText: "y" }] })),
+  refusal("edit_file", "Worker", "Invalid path. Use a repository path such as about/index.html.", "shared/site-rules.ts", f => ({ path: "../secret", expectedHash: homeHash(f), edits: [{ oldText: "x", newText: "y" }] })),
+  refusal("edit_file", "preparation", " does not exist. Use write_file to create it.", "shared/agent-edit.ts", f => ({ path: "missing.txt", expectedHash: homeHash(f), edits: [{ oldText: "x", newText: "y" }] })),
+  refusal("edit_file", "preparation", " changed since you read it (its hash is now ", "shared/agent-edit.ts", () => ({ path: "index.html", expectedHash: "0".repeat(64), edits: [{ oldText: "Welcome", newText: "Hello" }] })),
+  refusal("edit_file", "preparation", "oldText was not found", "shared/agent-replacements.ts", f => ({ path: "index.html", expectedHash: homeHash(f), edits: [{ oldText: "absent", newText: "y" }] })),
+  refusal("edit_file", "preparation", "Drafts hold text files up to ", "shared/agent-edit.ts", f => ({ path: "index.html", expectedHash: homeHash(f), edits: [{ oldText: "Welcome", newText: "\0" }] })),
+  // Typed in the editor after the tab read it: the guarded write's own proof.
+  refusal("edit_file", "live page", " changed in the editor since it was read. Read it again.", "src/agent-site.ts", f => ({ path: "index.html", expectedHash: homeHash(f), edits: [{ oldText: "Welcome", newText: "Hello" }] }),
+    (_f, live) => { live["index.html"] += "<!-- typed -->"; }),
+  refusal("write_file", "Worker", MEDIA_RECORDS_REFUSED, "shared/protected-paths.ts", () => ({ path: ".editor/media.json", content: "{}" })),
+  refusal("write_file", "Worker", OUTSIDE_MEDIA_REFUSED, "shared/agent.ts", () => ({ path: "media/x.png", content: "x" })),
+  refusal("write_file", "Worker", "Drafts hold text files up to ", "shared/agent-edit.ts", () => ({ path: "fresh.txt", content: "\0" })),
+  refusal("write_file", "preparation", " exists (hash ", "shared/agent-edit.ts", () => ({ path: "index.html", content: "x" })),
+  refusal("write_file", "preparation", " does not exist; omit expectedHash to create it.", "shared/agent-edit.ts", f => ({ path: "missing.txt", content: "x", expectedHash: homeHash(f) })),
+  refusal("write_file", "preparation", " is a file, so nothing can go in it.", "shared/site-rules.ts", () => ({ path: "index.html/child.txt", content: "x" })),
+  refusal("write_file", "live page", " exists now. Read it and edit it instead.", "src/agent-site.ts", () => ({ path: "fresh.txt", content: "x" }), (_f, live) => { live["fresh.txt"] = "made meanwhile"; }),
+  refusal("move_file", "Worker", GITHUB_CONFIG_REFUSED, "shared/protected-paths.ts", () => ({ path: "about", to: ".github/about" })),
+  refusal("move_file", "Worker", "The new path is the same.", "shared/agent-edit.ts", () => ({ path: "about", to: "about" })),
+  refusal("delete_file", "Worker", MEDIA_RECORDS_REFUSED, "shared/protected-paths.ts", () => ({ path: ".editor/media.json" })),
+  refusal("create_page", "Worker", PAGE_ADDRESS_RULE, "shared/site-rules.ts", () => ({ title: "About us", slug: "About_Us" })),
+  refusal("create_page", "preparation", "No page at ", "shared/agent-edit.ts", () => ({ title: "Team", parent: "/absent/" })),
+  refusal("create_page", "editor", " is taken by ", "src/native-pages.ts", () => ({ title: "Team", parent: "/about/", slug: "team" })),
+  refusal("set_page_details", "Worker", "Give a title, a description, or both.", "shared/agent-edit.ts", () => ({ page: "/" })),
+  refusal("set_page_details", "preparation", ". get_site lists the pages.", "shared/agent-edit.ts", () => ({ page: "/absent/", title: "x" })),
+  refusal("set_page_details", "editor", "This page has no URL in the site.", "src/agent-site.ts", () => ({ page: "/", title: "x" })),
+  refusal("open_page", "preparation", GITHUB_CONFIG_REFUSED, "shared/protected-paths.ts", () => ({ page: ".github/workflows/ci.yml" })),
+  refusal("inspect_preview", "Worker", "Give element or selector, not both.", "shared/agent-edit.ts", () => ({ element: "1.0", selector: "h1" })),
+  refusal("inspect_preview", "Worker", " is not an element id; get_page lists them.", "shared/agent-edit.ts", () => ({ element: "bad.id" })),
+  refusal("inspect_preview", "preparation", "The editor shows no page now. Give page.", "shared/agent-edit.ts", () => ({ selector: "h1" }), f => { f.context.site!.openRoute = null; }),
+  refusal("make_component", "Worker", " is not an element id; get_page lists them.", "shared/agent-edit.ts", f => ({ page: "/", element: "", tag: "section-intro", expectedHash: homeHash(f) })),
+  refusal("make_component", "Worker", "A component's name has a dash in it", "shared/site-rules.ts", f => ({ page: "/", element: "1.0", tag: "section", expectedHash: homeHash(f) })),
+  refusal("make_component", "preparation", ". get_site lists the pages.", "shared/agent-edit.ts", f => ({ page: "/absent/", element: "1.0", tag: "section-intro", expectedHash: homeHash(f) })),
+  refusal("make_component", "live page", " changed in the editor since it was read. Read it again.", "src/agent-site.ts", () => ({ page: "/", element: "1.0", tag: "section-intro", expectedHash: "0".repeat(64) })),
+  refusal("make_component", "editor", " cannot be a component.", "shared/site-rules.ts", async (_f, live) => ({ page: "/", element: "1", tag: "section-intro", expectedHash: await home(live) })),
+  refusal("make_component", "editor", "There is a component <", "shared/site-rules.ts", async (_f, live) => ({ page: "/", element: "1.0", tag: "feature-block", expectedHash: await home(live) })),
+  refusal("add_section", "Worker", "Give before or after, not both.", "shared/agent-edit.ts", f => ({ page: "/", component: "feature-block", before: "1.0", after: "1.1", expectedHash: homeHash(f) })),
+  refusal("add_section", "live page", "No component <", "src/agent-site.ts", async (_f, live) => ({ page: "/", component: "absent-block", after: "1.0", expectedHash: await home(live) })),
+  refusal("add_section", "live page", " is not a section component (its template is not one <section>)", "src/agent-site.ts", async (_f, live) => ({ page: "/", component: "site-header", after: "1.0", expectedHash: await home(live) })),
+  refusal("add_section", "live page", " on this page. get_page lists them.", "src/agent-site.ts", async (_f, live) => ({ page: "/", component: "feature-block", after: "9.9", expectedHash: await home(live) })),
+  refusal("add_section", "live page", "This page has several places for sections.", "src/agent-site.ts", async (_f, live) => ({ page: "/", component: "feature-block", expectedHash: await home(live) }),
+    (_f, live) => { live["index.html"] = page("<main><section>A</section></main><aside><section>B</section></aside>"); }),
+  refusal("add_section", "live page", "This page has no place for sections", "src/agent-site.ts", async (_f, live) => ({ page: "/", component: "feature-block", expectedHash: await home(live) }),
+    (_f, live) => { live["index.html"] = page("<div>Nothing for sections</div>"); }),
+  refusal("add_section", "live page", " changed in the editor since it was read. Read it again.", "src/agent-site.ts", () => ({ page: "/", component: "feature-block", expectedHash: "0".repeat(64) })),
+  refusal("move_section", "Worker", "Say before or after which section it goes.", "shared/agent-edit.ts", f => ({ page: "/", section: "1.0", expectedHash: homeHash(f) })),
+  refusal("move_section", "Worker", "Give before or after, not both.", "shared/agent-edit.ts", f => ({ page: "/", section: "1.0", before: "1.0", after: "1.1", expectedHash: homeHash(f) })),
+  refusal("move_section", "live page", " on this page. get_page lists them.", "src/agent-site.ts", async (_f, live) => ({ page: "/", section: "1.9", before: "1.0", expectedHash: await home(live) })),
+  refusal("move_section", "editor", "A section moves among its own siblings only.", "src/page-builder/block-move.ts", async (_f, live) => ({ page: "/", section: "0.1", before: "0.0.0", expectedHash: await home(live) }),
+    (_f, live) => { live["index.html"] = page("<main><section>A<section>Inner</section></section><section>B</section></main>"); }),
+  refusal("remove_section", "live page", " on this page. get_page lists them.", "src/agent-site.ts", async (_f, live) => ({ page: "/", section: "1.9", expectedHash: await home(live) })),
+  refusal("remove_section", "live page", " changed in the editor since it was read. Read it again.", "src/agent-site.ts", () => ({ page: "/", section: "1.0", expectedHash: "0".repeat(64) })),
+];
+
+/** The live page as applySiteCommand reads it: texts now, the fixture's components; every editor control succeeds. */
+function liveActions(live: Live): AgentSiteActions {
+  const components: Record<string, string> = { "feature-block": "components/feature-block/feature-block.html", "site-header": "components/site-header/site-header.html" };
+  const reads: Reads = { source: path => live[path], exists: path => path in live, site: () => ({ routes: { "/": "index.html", "/about/": "about/index.html" }, components }),
+    template: tag => components[tag] ? { path: components[tag], source: live[components[tag]] } : undefined };
+  const run: GuardedEdits["run"] = async plan => {
+    const planned = await plan(reads);
+    return "refuse" in planned ? { ok: false, reason: "refused", message: planned.refuse } : { ok: true, status: "applied" };
+  };
+  const edits = { run } satisfies Partial<GuardedEdits> as GuardedEdits;
+  return { text: async (path: string) => live[path], isMounted: () => true, open: async () => true, sectionTags: () => new Set(["feature-block"]), edits,
+    writeDraft: async () => undefined, moveSection: (_at, gap) => ({ status: "moved", node: [...gap.parent, gap.index] }),
+    makeComponent: async request => ({ tag: request.tag, files: [], slots: [], cards: [], notes: [] }),
+    createPage: async () => ({ file: "about/team/index.html", route: "/about/team/" }), setPageDetails: async () => undefined,
+    moveFile: async () => undefined, deleteFile: async () => undefined, inspect: async () => ({ elements: [], matched: 0 }),
+  } satisfies Partial<AgentSiteActions> as AgentSiteActions;
+}
+
+/** The first layer that refuses the edit, and its words. */
+async function firstRefusal(r: Refusal): Promise<{ layer: Layer; message: string } | undefined> {
+  const f = await fixture(), live: Live = { ...files, "about/index.html": f.context.drafts[0].content! };
+  r.setup?.(f, live);
+  const input = request(r.tool, await r.args(f, live) as never);
+  const shape = editShapeProblem(r.tool, input.args as never);
+  if (shape) {
+    // The tab never decides it again: its preparation, asked alone, does not say it.
+    const alone = await prepareAgentEdit(input, f.context, f.local()).then(() => "", (error: Error) => error.message);
+    assert.ok(!alone.includes(r.says), `${r.tool}: the tab's preparation decides "${r.says}" too`);
+    return { layer: "Worker", message: shape };
+  }
+  let prepared: PreparedEdit;
+  try { prepared = await prepareAgentEdit(input, f.context, f.local()); }
+  catch (error) { return { layer: "preparation", message: (error as Error).message }; }
+  if ("unchanged" in prepared) return undefined;
+  const command: AgentCommand = { id: input.id, operation: prepared.operation, content: prepared.input.content ?? "", branch: "main", commit,
+    ...prepared.input, state: "pending", createdAt: input.createdAt };
+  try { await applySiteCommand(liveActions(live), command); }
+  catch (error) { return { layer: "live page", message: (error as Error).message }; }
+  return undefined;
+}
+
+test("every refusal an agent edit can get is decided in one layer, by one file of the command's path", async t => {
+  const agentPath = ["worker/mcp.ts", "shared/agent-edit.ts", "shared/site-files.ts", "src/agent-tools-edit.ts", "src/agent-site.ts"];
+  const sources = new Map<string, string>();
+  // The code only: a comment may quote a refusal.
+  const code = (text: string) => text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+  const read = (file: string) => { if (!sources.has(file)) sources.set(file, code(readFileSync(new URL(`../${file}`, import.meta.url), "utf8"))); return sources.get(file)!; };
+  const count = (text: string, part: string) => text.split(part).length - 1;
+  // Every edit tool has its refusals listed.
+  assert.deepEqual([...new Set(refusals.map(r => r.tool))].sort(), [...agentToolsOn("edit")].sort());
+  installOutlineDocument(t);
+  for (const r of refusals) {
+    const name = `${r.tool} (${r.layer}): ${r.says}`;
+    // Spelled once in the file deciding it, and nowhere else on the command's path.
+    assert.equal(count(read(r.file), r.says), 1, `${name}: in ${r.file}`);
+    for (const file of agentPath.filter(file => file !== r.file)) assert.equal(count(read(file), r.says), 0, `${name}: also in ${file}`);
+    const refused = await firstRefusal(r);
+    if (r.layer === "editor") {
+      // Neither the Worker nor the tab's preparation nor the command's own checks decide an editor control's rule.
+      assert.equal(refused, undefined, `${name}: ${JSON.stringify(refused)}`);
+      continue;
+    }
+    assert.equal(refused?.layer, r.layer, `${name}: ${JSON.stringify(refused)}`);
+    assert.ok(refused.message.includes(r.says), `${name}: ${refused.message}`);
+  }
 });
 
 test("duplicate edit_file joins in flight and returns the receipt before re-reading a changed hash", async () => {

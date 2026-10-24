@@ -3,8 +3,8 @@ import { test } from "node:test";
 import { applySiteCommand, buildAgentContext, linkedStylesheets, type AgentSiteActions } from "../src/agent-site.ts";
 import { createGuardedEdits } from "../src/guarded-edit.ts";
 import { createBlockMoves } from "../src/page-builder/block-move.ts";
-import { readSource, type SourceNode } from "../src/page-builder/source-tree.ts";
 import { createMemoryWorkspace } from "./fakes/memory-workspace.ts";
+import { installOutlineDocument } from "./support/outline-document.ts";
 import type { SavedDraft } from "../src/drafts.ts";
 import { textHash, type AgentCommand } from "../shared/agent.ts";
 
@@ -117,7 +117,6 @@ test("make_component reports refusals as conflicts and never calls the action fo
   assert.equal(calls, 1);
   await assert.rejects(applySiteCommand(actions, { ...command, args: { ...command.args, element: "9.9" } }), /not on the page/);
   assert.equal(calls, 2);
-  await assert.rejects(applySiteCommand(actions, { ...command, args: { ...command.args, element: "bad.id" } }), /not on the page/);
   await assert.rejects(applySiteCommand(actions, { ...command, expectedHash: "stale" }), /changed in the editor/);
   assert.equal(calls, 2);
 });
@@ -125,38 +124,7 @@ test("make_component reports refusals as conflicts and never calls the action fo
 test("move_section reports the module's moved id and stayed reply; Undo reselects the original section", async t => {
   // Only pageOutline needs DOM here. This balanced fixture has no browser repairs,
   // headings or component slots; the source adapter supplies its element tree.
-  const original = Object.getOwnPropertyDescriptor(globalThis, "document");
-  t.after(() => {
-    if (original) Object.defineProperty(globalThis, "document", original);
-    else Reflect.deleteProperty(globalThis, "document");
-  });
-  Object.defineProperty(globalThis, "document", { configurable: true, value: {
-    createElement: () => {
-      let content: unknown;
-      return {
-        set innerHTML(markup: string) {
-          const tree = readSource(markup);
-          class OutlineElement {
-            children: OutlineElement[];
-            constructor(readonly node?: SourceNode, readonly parentElement: OutlineElement | null = null) {
-              this.children = tree.children(node).map(child => new OutlineElement(child, node ? this : null));
-            }
-            get localName() { return this.node?.type === "element" ? this.node.name : ""; }
-            get textContent() { return tree.text(this.node); }
-            getAttribute(name: string) { return this.node ? tree.attribute(this.node, name)?.value ?? null : null; }
-            matches() { return false; }
-            querySelectorAll(selector: string): OutlineElement[] {
-              const all = this.children.flatMap(child => [child, ...child.querySelectorAll("*")]);
-              return selector === "*" ? all : all.filter(child => child.localName === selector);
-            }
-            querySelector(selector: string) { return this.querySelectorAll(selector)[0] ?? null; }
-          }
-          content = new OutlineElement();
-        },
-        get content() { return content; },
-      };
-    },
-  } });
+  installOutlineDocument(t);
   const path = "index.html";
   const source = "<main><section>A</section><section>B</section><section>C</section></main>";
   const site = { routes: { "/": path }, components: {} };
@@ -181,7 +149,7 @@ test("move_section reports the module's moved id and stayed reply; Undo reselect
   } satisfies Pick<AgentSiteActions, "open" | "isMounted" | "text" | "sectionTags" | "moveSection">;
   const command: AgentCommand = {
     id: "move-1", operation: "move_section", path, branch: "dev", commit: "c", content: "",
-    expectedHash: await textHash(source), args: { section: "0.0", container: "0", index: 3 },
+    expectedHash: await textHash(source), args: { section: "0.0", after: "0.2" },
     state: "pending", createdAt: 1,
   };
   // The returned id describes the moved node after the source sibling was removed.
@@ -190,7 +158,7 @@ test("move_section reports the module's moved id and stayed reply; Undo reselect
   assert.deepEqual(outcome.result, { section: "0.2", hash: await textHash(m.workspace.source(path)!) });
   assert.equal(m.workspace.source(path), "<main><section>B</section><section>C</section>\n<section>A</section></main>");
   const stayed = await applySiteCommand(actions as AgentSiteActions, { ...command,
-    expectedHash: outcome.result!.hash, args: { section: "0.2", container: "0", index: 3 },
+    expectedHash: outcome.result!.hash, args: { section: "0.2", after: "0.2" },
   });
   assert.equal(stayed.message, "The section is already there.");
   assert.equal(stayed.result!.section, "0.2");

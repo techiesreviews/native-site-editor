@@ -23,11 +23,15 @@ test("an agent's change shows on the section it is in: the section moved or remo
   assert.deepEqual(agentPresenceTarget(command("make_component", { args: { element: "1.0.1" } }), page, tags), [1, 0]);
   assert.deepEqual(agentPresenceTarget(command("place_media", { args: { element: "1.1.1.0" } }), page, tags), [1, 1, 1]);
   assert.deepEqual(agentPresenceTarget(command("frame_image", { args: { element: "1.2.0" } }), page, tags), [1, 2]);
-  // Outside any section: the element itself; a place for sections: that place.
+  // Outside any section: the element itself; a place for sections (the named section's): that place.
   assert.deepEqual(agentPresenceTarget(command("place_media", { args: { element: "0.0.0" } }), page, tags), [0, 0, 0]);
-  assert.deepEqual(agentPresenceTarget(command("add_section", { args: { container: "1", component: "site-cards" } }), page, tags), [1]);
+  assert.deepEqual(agentPresenceTarget(command("add_section", { args: { after: "1.0", component: "site-cards" } }), page, tags), [1]);
   // A place for sections inside a section: that section; a video looped: its section.
-  assert.deepEqual(agentPresenceTarget(command("add_section", { args: { container: "1.1", component: "site-cards" } }), page, tags), [1, 1]);
+  assert.deepEqual(agentPresenceTarget(command("add_section", { args: { before: "1.1.1", component: "site-cards" } }), page, tags), [1, 1]);
+  // No section named: the page's one place for sections; with several, none.
+  const single = "<!doctype html><html><head></head><body><main><section><h1>One</h1></section></main></body></html>";
+  assert.deepEqual(agentPresenceTarget(command("add_section", { args: { component: "site-cards" } }), single, tags), [0]);
+  assert.equal(agentPresenceTarget(command("add_section", { args: { component: "site-cards" } }), page, tags), undefined);
   assert.deepEqual(agentPresenceTarget(command("loop_video", { args: { element: "1.1.1.0", looping: true } }), page, tags), [1, 1, 1]);
   // A text edit: the deepest section holding all of it.
   assert.deepEqual(agentPresenceTarget(command("write_file", { content: page.replace("Hello", "Hi there") }), page, tags), [1, 0]);
