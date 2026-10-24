@@ -20,6 +20,8 @@ Split from [Three load-sensitive tests pass on a busy machine](14-load-sensitive
 
 - Added 2026-10-24: `native-click-to-type.spec.ts:245` ("a press and drag that starts on text moves its block, also while typing in it") failed once in slice 40's full `kit pr` run; 2/2 alone.
 
+- Added 2026-10-24: `native-agent-quiet.spec.ts:30` and `native-mcp-menu.spec.ts:528` failed in slice 33's full `kit pr` run; both pass alone on dev and on the branch.
+
 ## Decided behaviour
 
 Diagnose first (`mattpocock-skills:diagnosing-bugs`). Wait for states, not times; use the page clock where a product timer is involved; do not raise timeouts and do not add entries to `tests/known-failures.json`. If the ring timing is a real product issue on slow machines, say so in Done and ask the lead before changing product behaviour.
@@ -32,6 +34,7 @@ Diagnose first (`mattpocock-skills:diagnosing-bugs`). Wait for states, not times
 - `tests/native-save/native-lazy-panels.spec.ts`
 - `tests/native-save/native-placed-media.spec.ts`
 - `tests/native-save/native-click-to-type.spec.ts`
+- `tests/native-save/native-mcp-menu.spec.ts`
 
 ## Done when
 
