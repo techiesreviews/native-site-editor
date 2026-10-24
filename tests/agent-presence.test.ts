@@ -94,10 +94,12 @@ test("presence never stops the change: a failing presence port is let go", async
 });
 
 // The presence's views as main.ts paints them, and the workspace loads it holds to.
-function presenceViews(sources: Record<string, string> = { "index.html": page, "about/index.html": page }) {
+const template = "<section class=\"cards\"><h2>Cards</h2><slot></slot></section>";
+function presenceViews(sources: Record<string, string> = { "index.html": page, "about/index.html": page, "components/site-cards.html": template, "styles/site.css": "h2 { color: red; }" }) {
   let load = 0;
   const painted: (PresenceTarget | undefined)[] = [];
   const presence = createAgentPresence({
+    pages: () => ["index.html", "about/index.html"],
     source: path => sources[path],
     begin: () => { const at = load; return { holds: () => at === load }; },
     paint: target => painted.push(target),
@@ -165,4 +167,14 @@ test("a pinned Media change shows its presence only while its own page is shown"
   shown.open = "index.html"; shown.here = false;
   run()();
   assert.deepEqual(calls, ["start index.html 1.2", "end"]);
+});
+
+test("an agent rewriting a component's template, or any file not a page, shows nothing on the page shown", () => {
+  const { presence, painted } = presenceViews();
+  // The template's own text reads as a section at its top (0): shown, it would stand on some instance, or on the page's 0.
+  const rewrite = command("write_file", { path: "components/site-cards.html", content: template.replace("Cards", "Our cards") });
+  assert.deepEqual(agentPresenceTarget(rewrite, template, tags), [0]);
+  presence.show(rewrite.path, source => agentPresenceTarget(rewrite, source, tags))();
+  presence.show("styles/site.css", () => [0])();
+  assert.deepEqual(painted, []);
 });

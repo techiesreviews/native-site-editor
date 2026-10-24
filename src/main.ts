@@ -159,7 +159,7 @@ const workspaceSession = createWorkspaceSession();
 function currentLoad() { return workspaceSession.current().load; }
 // Ticket 33 (src/agent-presence.ts): an agent at work on a section of the page shown, drawn while its workspace is.
 const agentPresence = createAgentPresence({
-  source: path => runtime.source(path), begin: () => workspaceSession.begin(),
+  pages: () => Object.values(runtime.site?.routes ?? {}), source: path => runtime.source(path), begin: () => workspaceSession.begin(),
   paint: target => { nativePreview?.agentPresence(target); pageStructure?.agentPresence(target); },
 });
 function nextLoad(scope?: WorkspaceScope) { workspaceSession.next(scope); finishedWork.loading(scope); agentPresence.refresh(); return workspaceSession.begin(); }

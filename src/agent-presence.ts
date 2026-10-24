@@ -8,6 +8,8 @@
 export interface PresenceTarget { path: string; node: number[] }
 
 export interface AgentPresencePorts {
+  /** The site's pages (the files its routes show). */
+  pages(): Iterable<string>;
   /** The page's text now, as the page shown has it; undefined when there is none. */
   source(path: string): string | undefined;
   /** The workspace load now: it holds until the next load. */
@@ -31,7 +33,10 @@ export function createAgentPresence(ports: AgentPresencePorts) {
   return {
     /** An agent at work on the page `path`: `find` names its element in the page's text now; the returned call ends it. */
     show(path: string, find: (source: string) => number[] | undefined): () => void {
-      const source = ports.source(path), node = source === undefined ? undefined : find(source);
+      // Only a page's own sections: a component's template, a stylesheet or any other file shows nothing
+      // (a template change is every instance's; the page's paths would not name its element).
+      const page = [...ports.pages()].includes(path);
+      const source = page ? ports.source(path) : undefined, node = source === undefined ? undefined : find(source);
       if (!node) return () => {};
       const entry = { path, node: [...node], at: ports.begin() };
       running.push(entry);
