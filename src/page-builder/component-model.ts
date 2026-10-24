@@ -227,7 +227,7 @@ const HTML_IN_FOREIGN = new Set(["foreignobject", "desc", "title", "mi", "mo", "
 export function takesBreaks(element: SourceElement) {
   if (/^(?:option|optgroup|select|datalist|template|plaintext|t(?:able|head|body|foot|r)|colgroup|ul|ol|dl|menu)$/.test(element.name) || RAW_TEXT.has(element.name)) return false;
   for (let at: SourceElement | undefined = element; at; at = at.parent) {
-    if (at !== element && HTML_IN_FOREIGN.has(at.name)) return true;
+    if (HTML_IN_FOREIGN.has(at.name)) return true;
     if (at.name === "svg" || at.name === "math") return false;
   }
   return true;
@@ -505,9 +505,11 @@ export interface SlotState {
 
 /**
  * Which slots show on an instance whose content (`Instance.content`) is
- * `content`, by the site's own empty-parts rule (rules/empty-parts.ts).
+ * `content`, and which template elements it hides (`hidden`, for nodes of
+ * any parse of `template`), by the site's own empty-parts rule
+ * (rules/empty-parts.ts).
  */
-function shownSlots(template: string, instance: Instance, content: readonly SourceNode[]) {
+export function shownSlots(template: string, instance: Instance, content: readonly SourceNode[]) {
   const filled = new Set(content.map((node) => fillName(instance, node)));
   const hostHasContent = content.length > 0;
   const view = sourceView(template);
