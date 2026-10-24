@@ -1058,11 +1058,14 @@ export async function editorOrElsewhere<T>(editor: () => Promise<T>, applied: ()
 }
 
 type PreparedText = Awaited<ReturnType<typeof prepareAgentText>>;
+/** The commands that finish in a background site while another workspace is shown (ticket 34). */
+const AWAY_COMMANDS = new Set(["create_page", "set_page_details", "make_component", "add_section", "move_section", "remove_section", "move_file", "delete_file"]);
 /**
  * A page or file command run through its own controllers (`scoped`, agentStructuralActions) under the
  * receipt `kept` prepared for it (prepareAgentText): the recorded reply wins, a command whose step was
  * kept answers with it even when what follows fails, and one that kept nothing says its drafts are as
- * they were. `applied`: once the receipt is kept (the page details' labels refresh there on show).
+ * they were. `applied`: once the receipt is kept, whatever fails after (the page details' labels
+ * refresh there on show; the count where it landed away).
  */
 export async function applyStructural(command: AgentCommand, kept: PreparedText, scoped: ReturnType<typeof agentStructuralActions>,
   run: (apply: () => Promise<AgentCommandOutcome>) => Promise<AgentCommandOutcome> = apply => apply(), applied: () => void = () => {}): Promise<AgentCommandOutcome> {
@@ -1076,6 +1079,8 @@ export async function applyStructural(command: AgentCommand, kept: PreparedText,
     const message = error instanceof Error ? error.message : String(error), unchanged = "Nothing was changed; your drafts are as they were.";
     if (!kept.applied) throw new Error(message.includes(unchanged) ? message : `${message} ${unchanged}`);
     await kept.recover!();
+    // Kept all the same: what follows a kept step (labels, the count where it landed) still follows.
+    applied();
     return kept.outcome!;
   } finally { scoped.dispose(); }
 }
@@ -1107,7 +1112,9 @@ export async function finishAgentTextElsewhere(command: AgentCommand, shown: () 
   const scope: DraftScope = { account, repoId: files.repo.id, repo: files.repo.full_name, branch: files.snapshot.branch }, path = command.path;
   const held = siteCommandPins.get(command);
   if (command.operation !== "write_file") {
-    if (!atomicAgentCommand(command))
+    // The page and file commands (ticket 34) run there; the open file's own writes (update_active_draft,
+    // create_file_draft) and the reads of the page shown need the editor showing it.
+    if (!AWAY_COMMANDS.has(command.operation))
       throw new Error("The editor shows another site or branch now, and this needs its page on screen. Nothing was changed; your drafts are as they were.");
     if (!away || !held)
       throw new Error("The editor shows another site or branch now, and this change was not tied to the one it was read on. Nothing was changed; your drafts are as they were.");
@@ -1145,7 +1152,7 @@ export async function finishAgentTextElsewhere(command: AgentCommand, shown: () 
  * anything else to the page open as it arrived (else the home page), as on show. Its workspace shown
  * again before its step is kept, even briefly (its loads moved), stops the attempt with nothing kept:
  * shown now, the editor runs it (undefined); left again, it runs here again, as often as it is switched
- * under (each switch needs Lex to move, so it ends once he stays). A receipt is kept only with its step,
+ * under (each switch needs Lex to move, so it ends once Lex stays). A receipt is kept only with its step,
  * so an attempt stopped before leaves none to count as a duplicate.
  */
 async function finishStructuralElsewhere(command: AgentCommand, scope: DraftScope, store: DraftStore, held: { pin: MediaPin; opened?: string }, away: AgentAwayPorts, left: () => boolean) {

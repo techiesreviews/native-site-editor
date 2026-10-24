@@ -13,9 +13,12 @@
 // shown afterwards: the step's own page, or where it came from once Undo takes that page away (a
 // page moved back, a created page gone).
 //
-// Nothing is stored: a reload forgets parked steps, as it forgets every Undo step.
+// Nothing is stored: a reload forgets parked steps, as it forgets every Undo step. A step holds the
+// upload bytes either side names (`release`) while it is parked or in a page's history, so its Undo or
+// Redo never writes back a draft whose bytes a sweep removed.
 import { draftKey, type DraftScope, type SavedDraft } from "../drafts";
 import { prepareNativeTextHistory } from "../page-builder/native-operation-history";
+import { holdUploadDrafts } from "../uploads";
 import type { EditorWorkspace } from "../guarded-edit";
 
 /** A step written away from its page, waiting for that page to open. */
@@ -33,6 +36,8 @@ export interface ParkedStep {
   afterSources: ReadonlyMap<string, string | undefined>;
   done: string;
   undone: string;
+  /** Lets go of the upload bytes either side names (`holdUploadDrafts`): once the step leaves the parked list and history. */
+  release?: () => void;
 }
 
 /**
@@ -40,45 +45,54 @@ export interface ParkedStep {
  * branch's, which the other side's draft holds as its original (none: the file is new).
  */
 export function parkedStep(scope: DraftScope, page: string, sides: Pick<ParkedStep, "before" | "after">, done: string, undone: string, home?: string): ParkedStep {
+  // Undo and Redo write either side back: the bytes of an upload on either side stay while the step lives.
+  const release = holdUploadDrafts(scope, [...sides.before.values(), ...sides.after.values()]);
   const paths = [...new Set([...sides.before.keys(), ...sides.after.keys()])].filter(path => !sameDraft(sides.before.get(path), sides.after.get(path)));
   const branch = (path: string) => { const record = sides.before.get(path) ?? sides.after.get(path); return record && record.baseSha !== null ? record.original : undefined; };
   const text = (side: ReadonlyMap<string, SavedDraft | undefined>, path: string) => side.get(path) ? textOf(side.get(path)) : branch(path);
   const pick = (side: ReadonlyMap<string, SavedDraft | undefined>) => new Map(paths.map(path => [path, side.get(path)]));
-  return { scope, page, home, before: pick(sides.before), after: pick(sides.after), done, undone,
+  return { scope, page, home, before: pick(sides.before), after: pick(sides.after), done, undone, release,
     beforeSources: new Map(paths.map(path => [path, text(sides.before, path)])), afterSources: new Map(paths.map(path => [path, text(sides.after, path)])) };
 }
 
 /** Steps parked at once, at most; the oldest goes first. */
 export const PARKED_LIMIT = 50;
 
-type Record = (undo: () => boolean, redo: () => boolean, dispose: () => void) => boolean;
+type RecordStep = (undo: () => boolean, redo: () => boolean, dispose: () => void) => boolean;
 
 /**
  * The parked steps of this tab. `open(scope, page)`: how to record a step in `page`'s history while
  * it is open in `scope` now (undefined when it is not), so a step landing on its open page goes there at once.
  */
-export function createParkedSteps(ports: { open(scope: DraftScope, page: string): Record | undefined; transitions(step: ParkedStep): { undo: () => boolean; redo: () => boolean } }, limit = PARKED_LIMIT) {
+export function createParkedSteps(ports: { open(scope: DraftScope, page: string): RecordStep | undefined; transitions(step: ParkedStep): { undo: () => boolean; redo: () => boolean } }, limit = PARKED_LIMIT) {
   let steps: ParkedStep[] = [];
   const keyOf = (step: Pick<ParkedStep, "scope" | "page">) => draftKey(step.scope, step.page);
-  function record(step: ParkedStep, into: Record) {
+  // In a page's history, the step's holds go when the history lets it go.
+  function record(step: ParkedStep, into: RecordStep) {
     const { undo, redo } = ports.transitions(step);
-    return into(undo, redo, () => {});
+    return into(undo, redo, () => step.release?.());
+  }
+  // Parked, at most `limit`: one pushed out lets go of its holds.
+  function keep(next: ParkedStep[]) {
+    const evicted = next.slice(0, Math.max(0, next.length - limit));
+    steps = next.slice(-limit);
+    for (const step of evicted) step.release?.();
   }
   return {
     park: (step: ParkedStep) => {
       const open = ports.open(step.scope, step.page);
       if (open && record(step, open)) return;
-      steps = [...steps, step].slice(-limit);
+      keep([...steps, step]);
     },
     /** `page` opened in `scope` (its history recorded by `into`): its parked steps become its newest, oldest first. */
-    adopt(scope: DraftScope, page: string, into: Record) {
+    adopt(scope: DraftScope, page: string, into: RecordStep) {
       const key = draftKey(scope, page), mine = steps.filter(step => keyOf(step) === key);
       if (!mine.length) return;
-      steps = steps.filter(step => keyOf(step) !== key);
-      for (const step of mine) if (!record(step, into)) steps.push(step);
+      const left = mine.filter(step => !record(step, into));
+      keep([...steps.filter(step => keyOf(step) !== key), ...left]);
     },
-    /** Signed out: the steps go with the drafts' owner. */
-    clear() { steps = []; },
+    /** Signed out: the steps go with the drafts' owner, and so do their holds. */
+    clear() { const gone = steps; steps = []; for (const step of gone) step.release?.(); },
     count: () => steps.length,
   };
 }
