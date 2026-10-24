@@ -20,6 +20,7 @@ import { isMediaUploadWrite, OUTSIDE_MEDIA_REFUSED, AGENT_TEXT_LIMIT, INSPECTION
 import type { AgentOutlineSection, AgentPageOutline, AgentSiteContext, EditorContext } from "../shared/types";
 import { draftKey, type DraftScope, type DraftStore, type SavedDraft } from "./drafts";
 import { payloadIdentity, workspaceKey, type JsonValue } from "../shared/agent-command";
+import { changedSinceRead as CHANGED } from "../shared/agent-edit";
 import type { AgentTextCommit } from "./editor-workspace";
 import type { AgentRecords } from "./agent-records";
 import type { createAgentOwner } from "./agent-owner";
@@ -225,7 +226,7 @@ export function agentStructuralActions(workspace: EditorWorkspace, context: Agen
     },
     deleteFile: path => { const target = fileTarget(path); return target ? files.deleteFileTarget(target, undefined, true) : Promise.resolve(noFile(path)); },
   };
-  const noFile = (path: string) => `${path} does not exist.`;
+  const noFile = (path: string) => `No file or folder at ${path}.`;
   function fileTarget(path: string) {
     const now = ports.files.pathNow(path, ports.files.treeState());
     return now === "file" || now === "folder" ? { path, name: path.slice(path.lastIndexOf("/") + 1), folder: now === "folder" } : undefined;
@@ -612,7 +613,6 @@ function fitReport(report: InspectionReport) {
   return json;
 }
 
-const CHANGED = (path: string) => `${path} changed in the editor since it was read. Read it again.`;
 /** The page or file text now must be what was read (the agent's hash for a page, the tab's own read for a file edit). */
 async function expectHash(actions: AgentSiteActions, path: string, expected: string | null | undefined) {
   const text = await actions.text(path);
@@ -702,7 +702,9 @@ export function agentPresenceTarget(command: AgentCommand, source: string, secti
     case "move_section":
     case "remove_section": return within(parseOutlineId(String(args.section ?? "")));
     case "add_section": {
-      // The place it goes: the named section's, else the page's one place for sections (pageOutline's).
+      // The place it goes: the named section's, else the page's one place for sections. A best guess for the
+      // picture only: read as the preview counts the page, it can differ from placement's (pageOutline) where
+      // the browser repairs markup, and placement alone decides.
       const anchor = parseOutlineId(String(args.before ?? args.after ?? ""));
       if (anchor) return within(anchor.slice(0, -1));
       const places = new Set(tree.elements().filter(sectionLike).map(el => outlineId(tree.path(el).slice(0, -1))));
@@ -798,7 +800,7 @@ async function applyAdmitted(actions: AgentSiteActions, command: AgentCommand): 
     case "make_component": {
       const source = await openPage(actions, path, command.expectedHash);
       // The element and the name: the editor's Make component decides, on the page as it is now.
-      const node = parseOutlineId(args.element!)!;
+      const node = elementOf(args.element);
       const made = await actions.makeComponent({ path, source, node, tag: args.tag ?? "", ...(args.fixed !== undefined ? { fixed: args.fixed } : {}) });
       if (typeof made === "string") throw new Conflict(made);
       return {
@@ -927,7 +929,7 @@ async function applyAdmitted(actions: AgentSiteActions, command: AgentCommand): 
       return { message: `Previewed ${path}.`, result: { ...await actions.previewMedia(path) } };
     }
     case "inspect_preview": {
-      const node = args.element !== undefined ? parseOutlineId(args.element)! : undefined;
+      const node = args.element !== undefined ? elementOf(args.element) : undefined;
       if (!(await actions.open(path))) throw new Conflict(`${path} could not be shown in the preview.`);
       const report = (await actions.inspect({
         path,
@@ -946,8 +948,12 @@ async function applyAdmitted(actions: AgentSiteActions, command: AgentCommand): 
   }
   // Every table operation has its case above; only the Astro-era ones, made write_file first, are left.
   command.operation satisfies "update_active_draft" | "create_file_draft";
-  throw new Error("This editor cannot apply that change. Reload it.");
+  return malformed();
 }
+/** A command the Worker's shape check would not have sent (shared/agent-edit.ts): a guard, not an agent's refusal. */
+function malformed(): never { throw new Error("This editor cannot apply that change. Reload it."); }
+/** An element id the Worker checked; a command that did not come through it is malformed. */
+const elementOf = (element: string | undefined) => parseOutlineId(element ?? "") ?? malformed();
 
 /** A structural command's reply, from the drafts it commits (the same words applySiteCommand reports). */
 async function structuralOutcome(command: AgentCommand, after: Map<string, SavedDraft | undefined>,

@@ -52,6 +52,7 @@ const oneAnchor = (before?: string, after?: string) => before && after ? "Give b
 
 /** Why the edit cannot be what an agent asks, from its arguments alone (the Worker's check, before it sends it), or nothing. */
 export function editShapeProblem<K extends AgentEditTool>(tool: K, input: AgentEditArgsMap[K]): string | undefined {
+  // A narrowing aid only: pairing the tool with its arguments lets the switch below read each tool's own.
   const { tool: name, args } = { tool, args: input } as { [T in AgentEditTool]: { tool: T; args: AgentEditArgsMap[T] } }[AgentEditTool];
   switch (name) {
     case "edit_file":
@@ -79,12 +80,10 @@ function findPage(context: Pick<EditorContext, "pages">, ref: string) {
   if (!page?.file) throw new HttpError(404, `No page ${ref}. get_site lists the pages.`);
   return page as Page & { file: string };
 }
+/** The one wording of a stale read: the agent's hash for a file here, or for a page on the live page (src/agent-site.ts). */
+export const changedSinceRead = (path: string) => `${path} changed in the editor since it was read. Read it again.`;
 function checkHash(expected: string | undefined, actual: string, what: string) {
-  if (expected !== actual)
-    throw new HttpError(
-      409,
-      `${what} changed since you read it (its hash is now ${actual}). Read it again.`,
-    );
+  if (expected !== actual) throw new HttpError(409, changedSinceRead(what));
 }
 
 /** What the tab's preparation reads of the shared context: the pages, and the page shown. */
