@@ -252,11 +252,11 @@ Ranges are approximate navigation hints, measured in this worktree; search the s
 | Login, Start your site, Setup checklist, wizard and Get started ports (src/setup-host.ts), directory summary | 2458–2539 | setup, setupScope, showDirectory |
 | Card grids; Pages & files host ports (src/pages-and-files-host.ts: trees, tabs, Create, file operations, resync, save) | 2540–2596 | cardsController, pagesAndFiles, pagesController, savePublish, afterFileChanges, treeState |
 | Source pane ports (src/controllers/source-pane-controller.ts) | 2597–2628 | sourcePane, openEntry, mountSource, nativeComponentTagForPath, updateAgentContext |
-| Agent context and command ports (src/agent-site-host.ts) | 2629–2678 | agentContext, agentSiteHost, agentCommands |
-| Fallback page; new, uploaded and deleted drafts | 2679–2754 | nativeFallbackPage, openNewDraft, showUpload, showDeletedFile |
-| Workspace boot ports (src/workspace-boot.ts) | 2755–2775 | workspaceBoot, restoreFile, loadSnapshot, chooseRepository |
-| Repository list, account switching and sign-out ports (src/repository-list.ts), storage | 2776–2801 | checkNewRepositories listeners, loadRepositories, refreshRepositoryList, disconnect, storage |
-| Draft baseline, agent/boot ports and startup | 2802–2877 | agentController, boot, renderLogin("loading"), workspaceBoot.startGuess |
+| Agent context and command ports (src/agent-site-host.ts) | 2629–2676 | agentContext, agentSiteHost, agentCommands |
+| Fallback page; new, uploaded and deleted drafts | 2677–2752 | nativeFallbackPage, openNewDraft, showUpload, showDeletedFile |
+| Workspace boot ports (src/workspace-boot.ts) | 2753–2773 | workspaceBoot, restoreFile, loadSnapshot, chooseRepository |
+| Repository list, account switching and sign-out ports (src/repository-list.ts), storage | 2774–2799 | checkNewRepositories listeners, loadRepositories, refreshRepositoryList, disconnect, storage |
+| Draft baseline, agent/boot ports and startup | 2800–2875 | agentController, boot, renderLogin("loading"), workspaceBoot.startGuess |
 
 ## Main entry points
 

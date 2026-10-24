@@ -28,6 +28,8 @@ import type { RepositoryIndex } from "./repository-loading";
 import type { createVersionView } from "./version-view";
 import type { createWorkspaceBoot } from "./workspace-boot";
 
+type PagesAndFiles = ReturnType<typeof createPagesAndFilesHost>;
+
 export interface AgentSiteHostPorts {
   stamp(): Stamp;
   files?(): AgentReadFiles | undefined;
@@ -88,31 +90,25 @@ export interface AgentCommandPorts {
   mediaPorts: MediaControllerPorts;
   blockMoves: Pick<ReturnType<typeof createBlockMoves>, "move">;
   agentPresence: Pick<ReturnType<typeof createAgentPresence>, "show">;
-  pagesAndFiles: Pick<ReturnType<typeof createPagesAndFilesHost>, "nativeResyncDone" | "pageActions">;
-  pagesController: Pick<ReturnType<typeof createPagesAndFilesHost>["pagesController"], "renderTree">;
-  filesTreeController: Pick<ReturnType<typeof createPagesAndFilesHost>["filesTreeController"], "refresh">;
+  /** The Pages & files host (src/pages-and-files-host.ts): `nativeResyncDone` and `pageActions` read at call time, the rest taken as it is made. */
+  pagesAndFiles: Pick<PagesAndFiles, "nativeResyncDone" | "pageActions" | "loadPagesActions" | "loadFileOps" | "pagePorts" | "filePorts"
+    | "branchText" | "pathNow" | "treeState" | "branchPathProblem" | "afterFileChanges"> & {
+    pagesController: Pick<PagesAndFiles["pagesController"], "renderTree">;
+    filesTreeController: Pick<PagesAndFiles["filesTreeController"], "refresh">;
+  };
   api: ReturnType<typeof createGitHubReads>["api"];
   readonly info: SessionInfo;
   readonly componentTools: Pick<ComponentTools, "makeFromAgent" | "typingTemplate"> | undefined;
   readonly pageStructure: { refreshMeta(): void } | undefined;
   readonly nativePreview: Pick<ReturnType<typeof createNativePreview>, "isActive" | "inspect"> | undefined;
   loadAgentSite: () => Promise<typeof import("./agent-site")>;
-  loadPagesActions: () => Promise<typeof import("./controllers/pages-controller")>;
-  loadFileOps: () => Promise<typeof import("./controllers/file-operation-checks")>;
   draftScope: () => DraftScope | undefined;
   shownScope: () => WorkspaceScope | undefined;
-  branchText: (path: string) => Promise<{ sha: string; text: string } | undefined>;
-  pathNow: ReturnType<typeof createPagesAndFilesHost>["pathNow"];
-  treeState: ReturnType<typeof createPagesAndFilesHost>["treeState"];
-  branchPathProblem: (path: string) => Promise<string | undefined>;
-  afterFileChanges: () => void;
   restoreFile: ReturnType<typeof createWorkspaceBoot>["restoreFile"];
   openNewDraft: (draft: SavedDraft) => Promise<void>;
   nativeComponentLoaderPlan: (path: string, nextPageText: string, r: Reads, check?: () => Promise<void>) => Promise<PreparedComponentLoader | string | undefined>;
   writeNativePageMeta: (path: string, field: PageMetaField, value: string, group?: boolean) => Promise<string | undefined>;
   nativeSectionChoices: () => { tag: string }[];
-  pagePorts: () => BackgroundSitePorts["pages"];
-  filePorts: () => BackgroundSitePorts["files"];
   componentPorts: BackgroundSitePorts["components"];
   refreshNativeRoutes: () => void;
   updateCurrentPageLabel: () => void;
@@ -122,10 +118,10 @@ export interface AgentCommandPorts {
 /** An agent's commands, applied through the editor's own actions; `acting` while one runs (src/guarded-edit/commit.ts). */
 export function createAgentCommands(ports: AgentCommandPorts) {
   const { appStore, runtime, workspaceSession, guardedEdits, editorModule, editorWorkspace, versions, finishedWork, parkedSteps, repositoryIndex,
-    mediaController, mediaPorts, blockMoves, agentPresence, pagesAndFiles, pagesController, filesTreeController, api, loadAgentSite, loadPagesActions,
-    loadFileOps, draftScope, shownScope, branchText, pathNow, treeState, branchPathProblem, afterFileChanges, restoreFile, openNewDraft,
-    nativeComponentLoaderPlan, writeNativePageMeta, nativeSectionChoices, pagePorts, filePorts, componentPorts, refreshNativeRoutes,
-    updateCurrentPageLabel, updateAgentContext } = ports;
+    mediaController, mediaPorts, blockMoves, agentPresence, pagesAndFiles, api, loadAgentSite, draftScope, shownScope, restoreFile, openNewDraft,
+    nativeComponentLoaderPlan, writeNativePageMeta, nativeSectionChoices, componentPorts, refreshNativeRoutes, updateCurrentPageLabel, updateAgentContext } = ports;
+  const { pagesController, filesTreeController, loadPagesActions, loadFileOps, pagePorts, filePorts, branchText, pathNow, treeState, branchPathProblem,
+    afterFileChanges } = pagesAndFiles;
   // Waits for a home page's resync, refusing when the user opened another
   // account's, repository's or branch's site meanwhile: the agent's command
   // was checked against the one it started on.
