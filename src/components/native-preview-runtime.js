@@ -310,12 +310,16 @@ import { domView } from "../page-builder/rules/tree.ts";
   }
 
   function syncAttrs(existing, desired) {
+    // A video or audio playing keeps Play's address and loading (a new address stops it); Stop gives
+    // it the render's.
+    var playing = mediaPlay && mediaPlay.el === existing;
+    if (playing) mediaPlay.src = desired.getAttribute("src");
+    var kept = function (name) { return (name === "contenteditable" && existing === editing) || (playing && (name === "src" || name === "preload")); };
     Array.prototype.slice.call(existing.attributes).forEach(function (a) {
-      if (a.name === "contenteditable" && existing === editing) return;
-      if (!desired.hasAttribute(a.name)) existing.removeAttribute(a.name);
+      if (!kept(a.name) && !desired.hasAttribute(a.name)) existing.removeAttribute(a.name);
     });
     Array.prototype.slice.call(desired.attributes).forEach(function (a) {
-      if (existing.getAttribute(a.name) !== a.value) existing.setAttribute(a.name, a.value);
+      if (!kept(a.name) && existing.getAttribute(a.name) !== a.value) existing.setAttribute(a.name, a.value);
     });
   }
 
@@ -607,7 +611,8 @@ import { domView } from "../page-builder/rules/tree.ts";
         var edited = editHost();
         if (edited && editContains(edited, requested)) revealEdited(requested, false);
         else if (payload.selectNode.reveal === "center") revealWithBar(requested, false);
-        else if (requested.scrollIntoView) requested.scrollIntoView({ block: "nearest" });
+        // Into view, but never while a press or drag is under way, nor back to the text just left.
+        else if (requested.scrollIntoView && !press && placeKey(requested) !== written) requested.scrollIntoView({ block: "nearest" });
       }
     }
     // A block selected in its place (an insert, a drop) is not typed into.

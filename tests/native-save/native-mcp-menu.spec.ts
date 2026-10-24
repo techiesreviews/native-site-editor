@@ -544,6 +544,34 @@ test("a failed first prompt: Connect to MCP shows the problem dot, not the plain
   await expect(action).toHaveText("Wait for MCP", { timeout: 15_000 });
 });
 
+test("a press while the failed prompt's reconnect is under way makes one prompt at once", async ({ page, context, baseURL }) => {
+  // The refused prompt is reported to the live socket, which reconnects a moment later. That
+  // reconnect is held (its socket never answers), so its attempt is under way at the next press.
+  let hold = false, held!: () => void;
+  const reconnecting = new Promise<void>(resolve => { held = resolve; });
+  await context.routeWebSocket("**/api/agent/relay?*", route => {
+    if (hold) { hold = false; held(); return; }
+    route.connectToServer();
+  });
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await open(page, baseURL);
+  await page.locator(".repository-menu__trigger").click();
+  const action = page.locator(".agent-menu__action"), menu = page.locator(".agent-menu");
+  let refuse = true, made = 0;
+  await page.route("**/api/agent/connect", route => {
+    if (!refuse) { made++; return route.continue(); }
+    hold = true;
+    return route.fulfill({ status: 500, json: { error: "Internal error" } });
+  });
+  await action.click();
+  await expect(menu).toHaveAttribute("data-state", "failed");
+  await reconnecting;
+  refuse = false;
+  await action.click();
+  await expect(action).toHaveText("Wait for MCP", { timeout: 15_000 });
+  expect(made).toBe(1);
+});
+
 const remembered = (page: Page, ...branches: string[]) => page.evaluate(keys => keys.map(key => localStorage.getItem(key)),
   branches.map(branch => `native-site-editor:agents-on:["native-demo-user",501,"${branch}"]`));
 async function featureBranch(page: Page, baseURL: string | undefined) {

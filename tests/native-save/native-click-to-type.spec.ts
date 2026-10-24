@@ -346,9 +346,8 @@ test("in a scrolled frame, a press and drag from the text being typed in moves i
   await expect.poll(() => source(page)).toBe(before);
 });
 
-// The render a press asks for brings the text typed in back into view (scrollIntoView nearest), so
-// the page jumps mid-drag: open for the lead (ticket 16). Runs once the scroll holds.
-test.fixme("typing in a text scrolled out of view, a press and drag on another block keeps the scroll until the drop", async ({ page }) => {
+// The render a press asks for writes the text typed in without bringing it back into view.
+test("typing in a text scrolled out of view, a press and drag on another block keeps the scroll until the drop", async ({ page }) => {
   const at = await afterWord(page, ".hero h1", "native");
   await page.mouse.click(at.x, at.y);
   await expect(frame(page).locator(".hero h1")).toBeFocused();
@@ -371,6 +370,9 @@ test.fixme("typing in a text scrolled out of view, a press and drag on another b
   await expect(ghost(page)).toHaveText("Paragraph");
   await page.mouse.up();
   await expect.poll(async () => { const now = (await source(page))!; return now.indexOf(`data-key="filler-2"`) > now.indexOf(`data-key="filler-3"`); }).toBe(true);
+  // Nor does the drop's render go back to the heading.
+  await expect(frame(page).locator(".hero h1")).not.toBeInViewport();
+  expect(await frameScroll(page)).toBe(scrolled);
 });
 
 test("a click on text in formatting that is no text of its own (a <del>) types in its line", async ({ page }) => {

@@ -143,27 +143,38 @@ test("an audio whose file arrives while it plays keeps its real length after Sto
   await expect.poll(() => audio.evaluate((el: HTMLAudioElement) => el.duration || 0), { timeout: 15_000 }).toBeCloseTo(41.9, 1);
 });
 
-// A render during Play (here the code editor arriving late) pauses the audio while the bar still
-// says Stop: open for the lead (ticket 16). Runs once the bar and the audio agree.
-test.fixme("a render while the audio plays leaves the bar saying what the audio does", async ({ page, baseURL }) => {
+// A render during Play (here the code editor arriving late) keeps the audio playing, and the bar on Stop.
+test("a render while the audio plays keeps it playing, the bar saying Stop", async ({ page, baseURL }) => {
   let release!: () => void;
   const editorHeld = new Promise<void>(resolve => { release = resolve; });
   await page.route(url => /monaco/.test(url.href), async route => { await editorHeld; await route.continue(); });
+  // In the canvas, ahead of the preview runtime's own listener: the renders it is sent.
+  await page.addInitScript(() => {
+    const w = window as Window & { renders?: number };
+    w.renders = 0;
+    w.addEventListener("message", (e) => { if ((e.data as { type?: string } | null)?.type === "update") w.renders! += 1; });
+  });
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await page.reload();
   await expect(page.locator("#status")).toContainText("Up to date with main");
   const audio = frame(page).locator('audio[aria-label="Tour"]');
+  const renders = () => audio.evaluate(() => (window as Window & { renders?: number }).renders!);
   await choose(page, /^Audio/);
   await bar(page).getByRole("button", { name: "Play", exact: true }).click();
   await expect(bar(page).getByRole("button", { name: "Stop", exact: true })).toBeVisible();
   await expect.poll(() => audio.evaluate((el: HTMLAudioElement) => !el.paused)).toBe(true);
+  const before = await renders();
   release();
   await editorMounted(page);
-  // Playing, the bar offers Stop; stopped, it offers Play.
-  await expect.poll(async () => {
-    const paused = await audio.evaluate((el: HTMLAudioElement) => el.paused);
-    return bar(page).getByRole("button", { name: paused ? "Play" : "Stop", exact: true }).count();
-  }).toBe(1);
+  await expect.poll(renders).toBeGreaterThan(before);
+  // Rendered again: still playing from Play's own address, and the bar offers Stop.
+  await expect.poll(() => audio.evaluate((el: HTMLAudioElement) => el.paused)).toBe(false);
+  await expect(audio).toHaveAttribute("preload", "auto");
+  await expect(bar(page).getByRole("button", { name: "Stop", exact: true })).toBeVisible();
+  await bar(page).getByRole("button", { name: "Stop", exact: true }).click();
+  await expect(bar(page).getByRole("button", { name: "Play", exact: true })).toBeVisible();
+  await expect.poll(() => audio.evaluate((el: HTMLAudioElement) => el.paused)).toBe(true);
+  await expect(audio).toHaveAttribute("preload", "metadata");
 });
 
 test("a video inside a scrolling box, chosen in Page structure, is scrolled into view in that box", async ({ page }) => {

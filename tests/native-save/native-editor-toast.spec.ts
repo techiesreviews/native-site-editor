@@ -149,8 +149,9 @@ test("a shown toast follows each layer opened over it, keeps its Undo usable, an
   await page.clock.resume();
 });
 
-// Ticket 14's product race, open for the lead (ticket 16): runs once the product keeps the toast on top.
-test.fixme("a click on the explorer button after its hover opened the explorer leaves the toast's Undo usable", async ({ page, baseURL }) => {
+// Ticket 14's race: the press on the button no longer closes the explorer its hover opened, so the
+// click does not open it again over the toast.
+test("a click on the explorer button after its hover opened the explorer leaves the toast's Undo usable", async ({ page, baseURL }) => {
   await open(page, baseURL);
   await page.clock.install();
   await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1_000));
@@ -162,7 +163,14 @@ test.fixme("a click on the explorer button after its hover opened the explorer l
   // The pointer resting on the button opens the explorer; the click then lands on the open one.
   await page.locator("#explorer-toggle").hover();
   await expect(page.locator("#explorer > .editor-toast")).toBeVisible();
+  // One open: the press neither closes nor opens it again (each would be a beforetoggle).
+  await page.locator("#explorer").evaluate(panel => {
+    const seen: string[] = (window as any).explorerToggles = [];
+    panel.addEventListener("beforetoggle", event => seen.push((event as ToggleEvent).newState));
+  });
   await page.locator("#explorer-toggle").click();
+  await expect(page.locator("#explorer")).toBeVisible();
+  expect(await page.evaluate(() => (window as any).explorerToggles)).toEqual([]);
   const undo = toast(page).getByRole("button", { name: "Undo", exact: true });
   await expect.poll(() => undo.evaluate(button => {
     const r = button.getBoundingClientRect(), top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);

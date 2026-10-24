@@ -30,8 +30,9 @@ export function mountDropdown(options: {
   let pinned = false;
   panel.classList.add("dropdown-panel");
   panel.popover = "auto";
-  // The native invoker also counts as inside for popover light dismissal.
-  if (secondaryTrigger) secondaryTrigger.popoverTargetElement = panel;
+  // Native invokers count as inside for popover light dismissal: a press on a trigger whose
+  // hover opened the panel does not close it before the click (which would open it again).
+  for (const button of triggers) button.popoverTargetElement = panel;
   anchorElement.style.setProperty("anchor-name", options.anchor);
   panel.style.setProperty("position-anchor", options.anchor);
   for (const button of triggers) {
@@ -79,9 +80,12 @@ export function mountDropdown(options: {
     if (pinned && isOpen()) close();
     else { open(false, secondaryTrigger); opener = secondaryTrigger; pinned = true; focusPanel(); }
   }, { signal });
-  trigger.addEventListener("click", () => {
+  trigger.addEventListener("click", event => {
+    // Shared behavior owns the toggle, as for the secondary trigger. A pointer click keeps an open
+    // panel open; Enter or Space (no click count) closes it.
+    event.preventDefault();
     if (options.onClick) { open(); pinned = true; options.onClick(); }
-    else if (pinned && isOpen()) close();
+    else if (pinned && isOpen() && event.detail === 0) close();
     else { open(); pinned = true; }
   }, { signal });
   // Hover opens on the mouse moving over the trigger, not on `pointerenter`
