@@ -50,3 +50,15 @@ Agents see the same tools, arguments and answers; MCP `tools/list` is byte-ident
 - Types: `applySiteCommand` must handle every table operation; `AgentRead["tool"]`, `AgentEditTool` and `MediaTool` must name the table's tools of their route, both ways. The `any` in `shared/agent-requests.ts` (request actions), `worker/agent-operations.ts` and `worker/agent-store.ts` (hub grant actions) and `pausedMcp` became types.
 - `tests/agent-tool-table.test.ts`: `tools/list` against `dev`'s names and SHA-256; the Worker registers exactly the MCP rows; each route's browser registry runs exactly its rows; `applySiteCommand` reaches a case for every operation; the atomic list is as before; registration in table order refuses a tool registered twice, a row without a registration and a registration without a row; the hub refuses a non-grant action (null, a string, an unknown type) with 400 before any storage call.
 - Left: `worker/agent-context.ts:421` (`any`, outside this slice's files); `shared/agent-media.ts` `mediaTools`, `shared/agent-read.ts` and `src/agent-tools-read.ts` keep their own lists, held to the table by types and the test.
+
+### Follow-ups
+
+- Spec (P2): ade444ad:shared/agent-tool-table.ts:20 — P2: The ticket's Shape asks for "one table … per tool its name, argument schema, read or edit, text or media, atomic or
+- Spec (P2): ade444ad:shared/agent-media.ts:3 — P2: The goal is that a tool's name is spelled in one place. `mediaTools` (shared/agent-media.ts:3) and the `AgentRead["tool"]
+- Spec (P2): ade444ad:worker/agent-context.ts:415 — P2: The Shape names `worker/agent-context.ts:421` among the `any`s to remove. It stays `const result: any` (line 422). Al
+- Spec (P3): a9bc4c76:docs/wayfinder/clean-up-before-features/build/tickets/50-agent-operation-table.md:43 — P3: runner.md "Review and close" says the Done section records "
+- Standards (P2): ade444ad:worker/agent-store.ts:18 — P2: The cited rule is CODING_STANDARDS "Test fixtures": type fakes with `satisfies` or a declared type. The problem is that 
+- Validation gaps (gap): `src/agent-transport.ts` admission now uses `isAgentOperation`, `readTools` and `mediaTools`. No test drives `createLiveTransport` itself with a command outside
+- Validation gaps (gap): `pausedMcp`'s parameter changed from `any` to `unknown` with a `(body ?? {})` cast. There's no test for non-object bodies. Add one: `pausedMcp(null)`, `pausedMc
+- Validation gaps (gap): `prepareAgentEdit` now takes its queued operation from the table. No unit test asserts that `edit_file` queues `write_file`, or that every other edit tool queue
+
