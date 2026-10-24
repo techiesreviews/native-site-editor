@@ -2841,7 +2841,7 @@ async function applyAgentSiteCommand(command: AgentCommand) {
       return applyStructural(command, kept, scoped, agentActing, () => {
         if (command.operation === "set_page_details" && current()) { pageStructure?.refreshMeta(); pagesController.renderTree(); updateCurrentPageLabel(); updateAgentContext(); }
       });
-    }, () => Boolean(prepared?.applied), left, elsewhere, onShow);
+    }, () => Boolean(prepared?.applied), left, elsewhere, () => holdsDraftScope(shownScope(), scope) ? onShow() : undefined);
   };
   return onShow();
 }

@@ -1112,15 +1112,17 @@ export function pinnedMediaActions(actions: AgentSiteActions, command: AgentComm
 /**
  * The editor path of an agent command (tickets 23 and 34): when it fails before its write was kept and
  * its branch was left meanwhile (`moved`, shown again since too), the write finishes where it was read
- * (`elsewhere`, finishAgentTextElsewhere) instead of refusing; its branch shown by then (undefined
- * there), a new attempt runs it on show (`again`, on a new stamp: the old one no longer holds), so it
- * lands once either way. Otherwise its own reason stands.
+ * (`elsewhere`, finishAgentTextElsewhere) instead of refusing; left to the editor there (undefined), a
+ * new attempt runs it on show (`again`, on a new stamp: the old one no longer holds) while its branch is
+ * the one shown, so it lands once either way. Otherwise (`again` undefined too) its own reason stands.
  */
-export async function editorOrElsewhere<T>(editor: () => Promise<T>, applied: () => boolean, moved: () => boolean, elsewhere: () => Promise<T | undefined>, again: () => Promise<T>): Promise<T> {
+export async function editorOrElsewhere<T>(editor: () => Promise<T>, applied: () => boolean, moved: () => boolean, elsewhere: () => Promise<T | undefined>, again: () => Promise<T> | undefined): Promise<T> {
   try { return await editor(); }
   catch (error) {
     if (applied() || !moved()) throw error;
-    return await elsewhere() ?? again();
+    const done = await elsewhere() ?? again();
+    if (done === undefined) throw error;
+    return done;
   }
 }
 
