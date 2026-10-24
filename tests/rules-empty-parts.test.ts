@@ -62,7 +62,7 @@ function build(html: string, nodes: readonly SourceNode[], parent: Fake | null):
     const fake = node.type === "text" ? new Fake(3, undefined, view.text(node), node) : new Fake(1, node.name, undefined, node);
     fake.parentElement = parent;
     if (node.type === "element") {
-      for (const name of ["name", "slot"]) {
+      for (const name of ["name", "slot", "data-native-css"]) {
         const value = startTagAttribute(html, node.tag, name)?.value;
         if (value !== undefined) fake.attributes.set(name, decodeEntities(value));
       }
@@ -114,10 +114,11 @@ function readings(template: string, page: string, hideEmpty = site.hideEmpty) {
   const firstSlots = new Map<string, SourceNode>();
   for (const el of elements) if (el.localName === "slot" && !firstSlots.has(el.attributes.get("name") ?? "")) firstSlots.set(el.attributes.get("name") ?? "", el.source!);
   const nameOf = (slot: SourceNode) => elements.find((el) => el.source === slot)?.attributes.get("name") ?? "";
+  const contentNames = new Set(instance.content.map((node) => [...instance.fills].find(([, nodes]) => nodes.includes(node))![0]));
   const editor = emptyParts(view, {
     section: isSectionTemplate(template),
-    hostHasContent: instance.children.length > 0,
-    filled: (slot) => firstSlots.get(nameOf(slot)) === slot && instance.fills.has(nameOf(slot)),
+    hostHasContent: instance.content.length > 0,
+    filled: (slot) => firstSlots.get(nameOf(slot)) === slot && contentNames.has(nameOf(slot)),
   });
   const editorMarks = elements.filter((el) => editor.empty(el.source!)).map(where);
 
@@ -143,7 +144,7 @@ const fixtureComponents = ["fixtures/native-starter/components", "fixtures/actua
     folder,
   })));
 
-/** Pages that use `tag`: bare, each slot filled alone, all filled, white space only, and content for no slot. */
+/** Pages that use `tag`: bare, each slot filled alone, all filled, white space only (U+00A0 too, written as a reference), and content for no slot. */
 function pagesFor(tag: string, template: string) {
   const names = [...new Set(parseSource(template).flatMap(function slots(node): string[] {
     if (node.type !== "element") return [];
@@ -156,6 +157,9 @@ function pagesFor(tag: string, template: string) {
     ...names.map((name) => `<${tag}>\n  ${fill(name)}\n</${tag}>`),
     `<${tag}>${names.map(fill).join("\n  ")}</${tag}>`,
     `<${tag}>\n  \n</${tag}>`,
+    `<${tag}>&nbsp;</${tag}>`,
+    `<${tag}>&#32;&#xA0;\u00a0</${tag}>`,
+    ...names.filter(Boolean).map((name) => `<${tag}>&nbsp;<span slot="${name}">Ours</span></${tag}>`),
     `<${tag}><span slot="no-such-slot">Ours</span></${tag}>`,
     ...names.filter(Boolean).map((name) => `<${tag}><span slot="${name}"> </span></${tag}>`),
   ];
@@ -230,4 +234,12 @@ test("an element's own text keeps it, and styles and links are never parts", () 
   assert.deepEqual(result.loaderMarks, []);
   assert.deepEqual(result.runtimeMarks, []);
   assert.deepEqual(result.editorMarks, []);
+});
+
+test("the runtime's injected styles are not there: a wrapper round an unfilled slot and one still hides", () => {
+  const template = `<p class="actions"><style data-native-css>p{}</style><slot name="link"></slot></p>`;
+  const { root, host } = render(template, `<x-c></x-c>`);
+  const runtimeView = domView<Fake>((el) => el.localName === "style" && el.attributes.has("data-native-css"));
+  const rule = emptyParts(runtimeView, { section: false, hostHasContent: host.childNodes.some((node) => isContent(node, runtimeView)), filled: filledInDom });
+  assert.deepEqual(root.querySelectorAll("*").filter(rule.empty).map((el) => el.localName), ["p"]);
 });

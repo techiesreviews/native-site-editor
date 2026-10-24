@@ -21,7 +21,7 @@ import { isPageHeaderFooter } from "./rules/page-bands";
 import { INLINE_FORMATTING, TEXT_RUN_TAGS } from "./rules/text-level";
 import { decodeHtmlEntities } from "./html-entities";
 import { hasHeadingSlot as headingSlotIn, isCardTag, isItemsSlot } from "./rules/cards";
-import { emptyParts } from "./rules/empty-parts";
+import { emptyParts, isContent } from "./rules/empty-parts";
 import type { NativeStructureItem } from "../components/native-preview";
 import { descendants, parseSource, RAW_TEXT, sourceView, type SourceElement, type SourceNode } from "./source-tree";
 
@@ -215,17 +215,21 @@ export function plainText(html: string) {
 // `<br>`: a field editing its text maps each typed line break to one, and each
 // one back to a line break. Nothing else typed ever becomes markup.
 
+// SVG and MathML elements whose content is HTML again (the parser's integration points).
+const HTML_IN_FOREIGN = new Set(["foreignobject", "desc", "title", "mi", "mo", "mn", "ms", "mtext"]);
 /**
  * Whether an element takes `<br>` among its text: any whose content is flow
  * or phrasing (p, h1-h6, a, span, li, button, div, …), not one whose children
  * are options, rows or list items, nor raw text (source-tree.ts's list, and
- * `<plaintext>`), nor SVG or MathML content (HTML inside a `<foreignObject>`
- * is HTML again).
+ * `<plaintext>`), nor SVG or MathML content (HTML inside a `<foreignObject>`,
+ * an SVG `<desc>` or a MathML `<mtext>`, `<mi>`, … is HTML again).
  */
 export function takesBreaks(element: SourceElement) {
   if (/^(?:option|optgroup|select|datalist|template|plaintext|t(?:able|head|body|foot|r)|colgroup|ul|ol|dl|menu)$/.test(element.name) || RAW_TEXT.has(element.name)) return false;
-  for (let at: SourceElement | undefined = element; at && at.name !== "foreignobject"; at = at.parent)
+  for (let at: SourceElement | undefined = element; at; at = at.parent) {
+    if (at !== element && HTML_IN_FOREIGN.has(at.name)) return true;
     if (at.name === "svg" || at.name === "math") return false;
+  }
   return true;
 }
 
@@ -472,6 +476,8 @@ export interface Instance {
   children: SourceNode[];
   /** What the page gives each slot, by slot name ("" for the unnamed one). */
   fills: Map<string, SourceNode[]>;
+  /** The children the site's loader counts as content (`isContent`: decoded text `trim()` leaves, so `&nbsp;` alone is blank), which decide its empty parts. */
+  content: SourceNode[];
   attributes: { name: string; value: string; start: number; end: number }[];
 }
 
@@ -483,7 +489,9 @@ export function readInstance(source: string, range: InstanceRange): Instance {
     const name = child.type === "element" ? attribute(source, child, "slot") ?? "" : "";
     fills.set(name, [...(fills.get(name) ?? []), child]);
   }
-  return { tag: range.tag.name, range, children, fills, attributes: startTagAttributes(source, range.tag) };
+  const view = sourceView(source);
+  const content = children.filter((child) => isContent(child, view));
+  return { tag: range.tag.name, range, children, fills, content, attributes: startTagAttributes(source, range.tag) };
 }
 
 export interface SlotState {
@@ -496,11 +504,12 @@ export interface SlotState {
 }
 
 /**
- * Which slots show on an instance that fills `filled`, by the site's own
- * empty-parts rule (rules/empty-parts.ts); `hostHasContent` is whether the instance holds
- * anything at all, which decides a section component's rule.
+ * Which slots show on an instance whose content (`Instance.content`) is
+ * `content`, by the site's own empty-parts rule (rules/empty-parts.ts).
  */
-function shownSlots(template: string, filled: ReadonlySet<string>, hostHasContent: boolean) {
+function shownSlots(template: string, instance: Instance, content: readonly SourceNode[]) {
+  const filled = new Set(content.map((node) => fillName(instance, node)));
+  const hostHasContent = content.length > 0;
   const view = sourceView(template);
   const tree = parseSource(template);
   const nameOf = (slot: SourceElement) => attribute(template, slot, "name") ?? "";
@@ -519,11 +528,10 @@ function shownSlots(template: string, filled: ReadonlySet<string>, hostHasConten
     // By place in the template: callers may pass nodes of their own parse.
     filled: (slot) => slot.type === "element" && first.get(nameOf(slot))?.start === slot.start && filled.has(nameOf(slot)),
   });
-  const hidden = (el: SourceElement) => rule.empty(el);
   const shown = new Map<string, boolean>();
   const visit = (nodes: readonly SourceNode[], hiddenAbove: boolean) => {
     for (const node of elements(nodes)) {
-      const off = hiddenAbove || hidden(node);
+      const off = hiddenAbove || rule.empty(node);
       if (node.name === "slot") {
         const name = nameOf(node);
         if (!shown.has(name)) shown.set(name, !off && rule.showsSomething(node));
@@ -532,20 +540,20 @@ function shownSlots(template: string, filled: ReadonlySet<string>, hostHasConten
     }
   };
   visit(tree, false);
-  return { shown, hidden };
+  return { shown, hidden: rule.empty };
 }
+
+/** The slot name a child of `instance` fills ("" for the unnamed slot). */
+const fillName = (instance: Instance, node: SourceNode) => [...instance.fills].find(([, nodes]) => nodes.includes(node))?.[0] ?? "";
 
 /** Each slot's state on `instance`, by name. */
 export function slotStates(template: string, instance: Instance): Map<string, SlotState> {
-  const filled = new Set(instance.fills.keys());
-  const { shown } = shownSlots(template, filled, instance.children.length > 0);
+  const { shown } = shownSlots(template, instance, instance.content);
   const out = new Map<string, SlotState>();
   for (const slot of templateSlots(template)) {
-    const others = instance.children.filter((child) => !(instance.fills.get(slot.name) ?? []).includes(child));
-    const without = new Set(filled);
-    without.delete(slot.name);
-    const empty = shownSlots(template, without, others.length > 0).shown.get(slot.name) ?? false;
-    out.set(slot.name, { filled: filled.has(slot.name), shown: shown.get(slot.name) ?? false, whenEmpty: empty ? "fallback" : "hidden" });
+    const others = instance.content.filter((child) => fillName(instance, child) !== slot.name);
+    const empty = shownSlots(template, instance, others).shown.get(slot.name) ?? false;
+    out.set(slot.name, { filled: instance.fills.has(slot.name), shown: shown.get(slot.name) ?? false, whenEmpty: empty ? "fallback" : "hidden" });
   }
   return out;
 }
@@ -990,8 +998,7 @@ const BLOCKS = new Set(["p", "div", "h1", "h2", "h3", "h4", "h5", "h6", "section
  */
 export function detachMarkup(source: string, template: string, instance: Instance): DetachResult {
   const tree = parseSource(template);
-  const filled = new Set(instance.fills.keys());
-  const { hidden } = shownSlots(template, filled, instance.children.length > 0);
+  const { hidden } = shownSlots(template, instance, instance.content);
   const roots = meaningful(template, tree);
   const root = roots.length === 1 && roots[0].type === "element" ? roots[0] : undefined;
   const hostAttributes = instance.attributes.filter((item) => item.name !== "data-key");

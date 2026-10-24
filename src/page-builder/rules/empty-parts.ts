@@ -5,7 +5,8 @@
 // parts behave exactly as the site's own loader hides them (`hideEmpty` in
 // the starter's components/components.js, a copy per ADR 0001); the parity
 // test there runs the loader's copy against this rule on every fixture
-// component, so the two cannot drift:
+// component, so the two cannot drift. It follows the starter's loader as
+// shipped (fixtures/actual-starter), not a site's own edited copy of it:
 //   - in a section component the page fills at all, a slot the page does
 //     not fill is hidden with its fallback; a bare tag shows every fallback;
 //   - an element that holds slots, has no text of its own and whose slots
