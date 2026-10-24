@@ -2,7 +2,7 @@
 title: "Last pass-throughs go; Discard asks only when it can act"
 type: task (AFK)
 status: open
-assignee:
+assignee: lead-70 (this session)
 builder: sol
 blocked_by: [60-empty-parts-rule, 31-native-site-runtime]
 ---
