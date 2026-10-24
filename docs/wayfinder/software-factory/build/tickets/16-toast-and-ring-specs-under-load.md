@@ -71,9 +71,11 @@ Spec changes only; no source file changed. Each cause was found in a failing tra
 
 **Repeat counts.** Targeted tests under load (beside a full `kit unit` each time): click-to-type drag tests 32/32, agent-quiet `:30` with mcp-menu `:528` 12/12, placed-media `:113` 16/16, lazy-panels recovery 24/24, editor-toast with the media ring test 30/30. Done-when: 5 rounds of `scripts/agents/kit specs` on all seven specs, each beside a full `scripts/agents/kit unit`; all five `RESULT: ok specs 7/7 passed` (88 tests a round), all five units `RESULT: ok unit 5343/5343`.
 
-**Commits.** 61aafc15 (build); plus the review-fix commit for round 1.
+**Commits.** 61aafc15 (build); 66776ab5 (review fixes round 1); plus the review-fix commit for round 2.
 
 **Review round 1.** agent-quiet waits for the connections read (it may be reported late) and checks for no new token at the end, over every request; the ring test finds the search box from the tile's own library and marks its in-page 600 ms wait as a fixed wait; the Edit component drag test checks its points lie clear of the scroll bands; the filler-2 typed text is matched by its end only.
+
+**Review round 2.** A new click-to-type test types in filler-2 in a scrolled frame (1500 px window) and drags it from its text below filler-3: moved with the typed text, the frame's scroll unchanged, two undo steps (10/10 beside a full `kit unit`). The ring test's in-page wait fails with a message if the tile never wears its ring.
 
 **Checks.** `scripts/agents/kit unit --affected`: `RESULT: ok unit none affected`. `scripts/agents/kit specs --affected`: `RESULT: ok specs 5/5 passed` (54 tests). `npm run lint` and `npm run check` clean.
 

@@ -481,7 +481,11 @@ test("adding a file keeps the tiles and pictures already shown; its ring goes on
   const ring = await added.evaluate(async card => {
     const shown = () => (window as typeof window & { ringShownAt?: number }).ringShownAt;
     // fixed-wait: the ring must have played 600 ms before the redraw, so a ring restarted at 0 shows.
-    while (shown() === undefined || performance.now() - shown()! < 600) await new Promise(requestAnimationFrame);
+    const asked = performance.now();
+    while (shown() === undefined || performance.now() - shown()! < 600) {
+      if (shown() === undefined && performance.now() - asked > 10_000) throw new Error("the new tile never wore its ring");
+      await new Promise(requestAnimationFrame);
+    }
     const field = card.closest(".media-library")!.querySelector<HTMLInputElement>('input[name="media-search"]')!;
     field.value = "kept-tiles";
     field.dispatchEvent(new Event("input", { bubbles: true }));

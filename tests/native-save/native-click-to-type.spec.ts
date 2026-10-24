@@ -92,7 +92,7 @@ async function drag(page: Page, from: { x: number; y: number }, to: { x: number;
   await expect(ghost(page)).toHaveCount(0);
 }
 
-/** Each point lies inside the frame, clear of the 72 px bands at its top and bottom where a drag scrolls it. */
+/** Each point lies vertically inside the frame, clear of the 72 px bands at its top and bottom where a drag scrolls it. */
 async function clearOfScrollBands(page: Page, ...points: { x: number; y: number }[]) {
   const box = (await page.locator(".native-preview-frame").boundingBox())!;
   for (const { y } of points) expect(y - box.y >= 72 && box.y + box.height - y >= 72, `y ${y} in a frame from ${box.y} to ${box.y + box.height}`).toBe(true);
@@ -312,6 +312,32 @@ test.describe("drags", () => {
     expect(await undo(page)).toBe(true);
     await expect.poll(() => source(page)).toBe(original);
   });
+});
+
+test("in a scrolled frame, a press and drag from the text being typed in moves its block, the scroll kept", async ({ page }) => {
+  // Scrolled as far as filler-2's middle allows; the drag's points stay clear of the scroll bands.
+  const scrollTop = () => frame(page).locator("body").evaluate(() => document.scrollingElement!.scrollTop);
+  await frame(page).locator(filler(2)).evaluate((el) => el.scrollIntoView({ block: "center", behavior: "instant" }));
+  const scrolled = await scrollTop();
+  expect(scrolled).toBeGreaterThan(0);
+  const before = (await source(page))!;
+  let at = await afterWord(page, filler(2), "verification");
+  await page.mouse.click(at.x, at.y);
+  await expect(frame(page).locator(filler(2))).toHaveAttribute("contenteditable", /.+/);
+  await page.keyboard.type(" typed");
+  at = await afterWord(page, filler(2), "filler");
+  const to = await below(page, filler(3));
+  await clearOfScrollBands(page, at, to);
+  await drag(page, at, to);
+  const typed = "scroll verification typed.</p>";
+  await expect.poll(async () => { const now = (await source(page))!; return now.indexOf(typed) > now.indexOf(`data-key="filler-3"`); }).toBe(true);
+  await expect(frame(page).locator("[contenteditable]")).toHaveCount(0);
+  expect(await scrollTop()).toBe(scrolled);
+  // Two undo steps: the move, then the typing.
+  expect(await undo(page)).toBe(true);
+  await expect.poll(async () => { const now = (await source(page))!; return now.indexOf(typed) >= 0 && now.indexOf(typed) < now.indexOf(`data-key="filler-3"`); }).toBe(true);
+  expect(await undo(page)).toBe(true);
+  await expect.poll(() => source(page)).toBe(before);
 });
 
 test("a click on text in formatting that is no text of its own (a <del>) types in its line", async ({ page }) => {
