@@ -54,6 +54,20 @@ test("guarded card actions on the memory workspace with the browser parser", asy
     const branch = { "index.html": cardPage, "work/index.html": oak, "work/oak/index.html": oak, "_components/card-project.html": project, "_components/card-quote.html": quote };
     const data = { branch, site: componentSite, card: { path: "index.html", node: [0, 0, 1, 0] } };
 
+    // The preview's Add card and Create page, handed over as they are, place and create nothing with no site.
+    await t.test("with no site, Add card and Create page write nothing", async () => {
+      const result = await browserPage.evaluate(async ({ page }) => {
+        const { cards, m } = cardsFixture({ "index.html": page }, undefined);
+        const card = await cards.addCard({ path: "index.html", parent: [0, 0, 1], index: -1, row: false });
+        const created = await cards.createPage({ path: "index.html", node: [0, 0, 1, 0] }, { title: "Oak", parent: "/" });
+        return { card, created, steps: m.steps(), after: m.source("index.html") };
+      }, { page });
+      assert.equal(result.card, undefined);
+      assert.equal(result.created, undefined);
+      assert.deepEqual(result.steps, []);
+      assert.equal(result.after, page);
+    });
+
     await t.test("add on a plain grid is one range step, undone to the original page", async () => {
       const result = await browserPage.evaluate(async ({ page, site }) => {
         const { cards, m } = cardsFixture({ "index.html": page }, site);

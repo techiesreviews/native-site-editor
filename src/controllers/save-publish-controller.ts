@@ -242,7 +242,8 @@ export function createSavePublishController(ports: SavePublishPorts) {
     discard(paths);
     return scope ? count - listChanges(store.list(scope)).length : 0;
   }
-  // Discard changes on one file (its row menu in Pages & files); with no user scope there is nothing to discard, so nothing is asked.
+  // Discard changes on one file (its row menu in Pages & files).
+  // With no user scope there is nothing to discard, so nothing is asked.
   async function discardFile(path: string) {
     const change = ports.change(path);
     if (change && ports.scope() && await confirmed({
