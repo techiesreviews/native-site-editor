@@ -62,10 +62,10 @@ export interface AgentCommandArgs {
   component?: string;
   /** Section ids (dot-joined element-child indexes, as in the page outline). */
   section?: string;
-  /** add_section / move_section: the containing element's id and the gap index among its element children. */
-  container?: string;
-  index?: number;
-  /** add_section: the section's tag at `section`, as the Worker saw it; make_component: the new component's tag. */
+  /** add_section / move_section: the section it goes before or after, as the agent named it; the live page places it. */
+  before?: string;
+  after?: string;
+  /** make_component: the new component's tag. */
   tag?: string;
   /** make_component: slot names to keep fixed in the template ("" for the unnamed slot). */
   fixed?: string[];

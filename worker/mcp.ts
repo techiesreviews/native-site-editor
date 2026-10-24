@@ -14,13 +14,12 @@ import type { Env } from "./app";
 import { agentMediaArgsProblem } from "../shared/agent-media-args";
 import {
   AGENT_TEXT_LIMIT,
-  isOutsideMediaAddress, isMediaUploadWrite, OUTSIDE_MEDIA_REFUSED,
+  isOutsideMediaAddress, OUTSIDE_MEDIA_REFUSED,
   isPreviewablePicture,
   picturePreviewRefusal,
   QUESTION_TEXT_LIMIT,
   REPLY_TEXT_LIMIT,
   textBytes,
-  parseOutlineId,
   type AgentCommand,
   type AgentCommandArgs,
   type AgentRequest,
@@ -32,8 +31,7 @@ import { HttpError } from "./github";
 import { writablePathProblem } from "./site-files";
 import { siteConventions, siteInstructions } from "./site-conventions";
 import { editorOrigin } from "./owner-setup";
-import { makeComponentProblem, pageAddressProblem } from "../shared/site-rules";
-import { checkContent, type AgentEdit, type AgentEditArgsMap, type AgentEditTool } from "../shared/agent-edit";
+import { editShapeProblem, type AgentEdit, type AgentEditArgsMap, type AgentEditTool } from "../shared/agent-edit";
 import { AgentRelay, relayObjectName, WAITS_PER_SITE } from "./agent-relay";
 import type { AgentRead, AgentReadResult } from "../shared/agent-read";
 import { mediaChanges, type AgentMedia } from "../shared/agent-media";
@@ -168,7 +166,10 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
       return outcome;
     } catch { return { ok: false, code: "unknown-outcome" }; }
   }
+  /** An edit's shape is checked here, once, before it is sent; the tab checks the rest (shared/agent-edit.ts). */
   async function edit<K extends AgentEditTool>(tool: K, args: AgentEditArgsMap[K], requestId?: string, _waitSeconds?: number) {
+    const problem = editShapeProblem(tool, args);
+    if (problem) return failure(problem);
     const request = { operation: "edit", tool, args, id: requestId ?? `mcp-${crypto.randomUUID()}`,
       grantId: connection.id, generation: grant.generation, createdAt: Date.now() } as AgentEdit;
     const outcome = await dispatch(request);
@@ -367,8 +368,6 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
       }),
     },
     async ({ path, expectedHash, edits, requestId, waitSeconds }) => {
-      const problem = writablePathProblem(path);
-      if (problem) return failure(problem);
       return edit("edit_file", { path, expectedHash, edits }, requestId, waitSeconds);
     },
   );
@@ -386,10 +385,6 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
       }),
     },
     async ({ path, content, expectedHash, requestId, waitSeconds }) => {
-      const problem = writablePathProblem(path);
-      if (problem) return failure(problem);
-      if (isMediaUploadWrite(path)) return failure(OUTSIDE_MEDIA_REFUSED);
-      checkContent(content);
       return edit("write_file", { path, content, expectedHash }, requestId, waitSeconds);
     },
   );
@@ -407,9 +402,6 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
       }),
     },
     async ({ path, to, keepOldUrl, requestId, waitSeconds }) => {
-      const problem = writablePathProblem(path) ?? writablePathProblem(to);
-      if (problem) return failure(problem);
-      if (path === to) return failure("The new path is the same.");
       return edit("move_file", { path, to, keepOldUrl }, requestId, waitSeconds);
     },
   );
@@ -421,8 +413,6 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
       inputSchema: z.object({ path: z.string().min(1).max(1024), requestId, waitSeconds }),
     },
     async ({ path, requestId, waitSeconds }) => {
-      const problem = writablePathProblem(path);
-      if (problem) return failure(problem);
       return edit("delete_file", { path }, requestId, waitSeconds);
     },
   );
@@ -447,8 +437,6 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
       }),
     },
     async ({ title, parent, slug, requestId, waitSeconds }) => {
-      const problem = slug === undefined ? undefined : pageAddressProblem(slug);
-      if (problem) return failure(problem);
       return edit("create_page", { title, parent, slug }, requestId, waitSeconds);
     },
   );
@@ -466,7 +454,6 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
       }),
     },
     async ({ page: ref, title, description, requestId, waitSeconds }) => {
-      if (title === undefined && description === undefined) return failure("Give a title, a description, or both.");
       return edit("set_page_details", { page: ref, title, description }, requestId, waitSeconds);
     },
   );
@@ -496,8 +483,6 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
       }),
     },
     async ({ page: ref, element, selector, limit, requestId, waitSeconds }) => {
-      if (element !== undefined && selector !== undefined) return failure("Give element or selector, not both.");
-      if (element !== undefined && !parseOutlineId(element)) return failure(`${element} is not an element id; get_page lists them.`);
       return edit("inspect_preview", { page: ref, element, selector, limit }, requestId, waitSeconds);
     },
   );
@@ -669,9 +654,6 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
       }),
     },
     async ({ page: ref, element, tag, fixed, expectedHash, requestId, waitSeconds }) => {
-      if (!parseOutlineId(element)) return failure(`${element} is not an element id; get_page lists them.`);
-      const problem = makeComponentProblem(undefined, tag, []);
-      if (problem) return failure(problem);
       return edit("make_component", { page: ref, element, tag, fixed, expectedHash }, requestId, waitSeconds);
     },
   );
@@ -710,7 +692,6 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
       }),
     },
     async ({ page: ref, section, expectedHash, before, after, requestId, waitSeconds }) => {
-      if (!before && !after) return failure("Say before or after which section it goes.");
       return edit("move_section", { page: ref, section, expectedHash, before, after }, requestId, waitSeconds);
     },
   );

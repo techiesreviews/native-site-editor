@@ -221,10 +221,11 @@ export function agentStructuralActions(workspace: EditorWorkspace, context: Agen
     moveFile: (path, to, keepOldUrl) => {
       keepAddress = keepOldUrl;
       const target = fileTarget(path);
-      return target ? files.moveFileTarget(target, to, ports.files.parentOf(path) === ports.files.parentOf(to) ? "rename" : "move", { keepOldAddress: keepOldUrl }) : Promise.resolve(`${path} does not exist.`);
+      return target ? files.moveFileTarget(target, to, ports.files.parentOf(path) === ports.files.parentOf(to) ? "rename" : "move", { keepOldAddress: keepOldUrl }) : Promise.resolve(noFile(path));
     },
-    deleteFile: path => { const target = fileTarget(path); return target ? files.deleteFileTarget(target, undefined, true) : Promise.resolve(`${path} does not exist.`); },
+    deleteFile: path => { const target = fileTarget(path); return target ? files.deleteFileTarget(target, undefined, true) : Promise.resolve(noFile(path)); },
   };
+  const noFile = (path: string) => `${path} does not exist.`;
   function fileTarget(path: string) {
     const now = ports.files.pathNow(path, ports.files.treeState());
     return now === "file" || now === "folder" ? { path, name: path.slice(path.lastIndexOf("/") + 1), folder: now === "folder" } : undefined;
@@ -611,6 +612,8 @@ function fitReport(report: InspectionReport) {
   return json;
 }
 
+const CHANGED = (path: string) => `${path} changed in the editor since it was read. Read it again.`;
+/** The page or file text now must be what was read (the agent's hash for a page, the tab's own read for a file edit). */
 async function expectHash(actions: AgentSiteActions, path: string, expected: string | null | undefined) {
   const text = await actions.text(path);
   if (expected === undefined) return text;
@@ -619,7 +622,7 @@ async function expectHash(actions: AgentSiteActions, path: string, expected: str
     return text;
   }
   if (text === undefined) throw new Conflict(`${path} is not there any more.`);
-  if ((await textHash(text)) !== expected) throw new Conflict(`${path} changed in the editor since it was read. Read it again.`);
+  if ((await textHash(text)) !== expected) throw new Conflict(CHANGED(path));
   return text;
 }
 
@@ -635,7 +638,23 @@ const hashOf = async (actions: AgentSiteActions, path: string) => {
   return text === undefined ? null : await textHash(text);
 };
 
-const CHANGED = (path: string) => `${path} changed in the editor since it was read. Read it again.`;
+const noSection = (id: string) => `No section ${id} on this page. get_page lists them.`;
+/** Where a section goes on the page now: before or after the section named, else at the end of its one place for sections. */
+function placement(outline: Omit<AgentPageOutline, "file" | "hash">, before?: string, after?: string) {
+  const anchor = before ?? after;
+  if (anchor) {
+    const node = parseOutlineId(anchor);
+    if (!node || !outline.sections.some((item) => item.id === anchor)) throw new Conflict(noSection(anchor));
+    return { parent: node.slice(0, -1), index: node[node.length - 1] + (before ? 0 : 1) };
+  }
+  if (outline.containers.length !== 1)
+    throw new Conflict(outline.containers.length
+      ? "This page has several places for sections. Say before or after which section."
+      : "This page has no place for sections (no <main> or section container).");
+  const [only] = outline.containers;
+  return { parent: only.id ? parseOutlineId(only.id)! : [], index: only.children };
+}
+
 /** A guarded edit's outcome as the agent hears it: a refusal or a stale read is a conflict. */
 async function guarded(pending: Promise<Outcome>) {
   const outcome = await pending;
@@ -646,7 +665,9 @@ async function guarded(pending: Promise<Outcome>) {
 /**
  * Last line of defence, for every write an agent queued (here and finishAgentTextElsewhere): nothing
  * may touch the workflows, as a path, a move's destination, or a folder that holds them; nor the
- * media records, nor media files as text.
+ * media records, nor media files as text. Not an agent's refusal: the Worker refuses these paths
+ * before an edit is sent (shared/agent-edit.ts `editShapeProblem`), so only a command that did not
+ * come through it meets this, as the guarded commit's own (src/guarded-edit/commit.ts).
  */
 function refuseProtected(command: AgentCommand) {
   const args = command.args ?? {}, path = command.path;
@@ -680,7 +701,15 @@ export function agentPresenceTarget(command: AgentCommand, source: string, secti
   switch (command.operation) {
     case "move_section":
     case "remove_section": return within(parseOutlineId(String(args.section ?? "")));
-    case "add_section": return args.container ? within(parseOutlineId(args.container)) : undefined;
+    case "add_section": {
+      // The place it goes: the named section's, else the page's one place for sections (pageOutline's).
+      const anchor = parseOutlineId(String(args.before ?? args.after ?? ""));
+      if (anchor) return within(anchor.slice(0, -1));
+      const places = new Set(tree.elements().filter(sectionLike).map(el => outlineId(tree.path(el).slice(0, -1))));
+      const main = tree.elements().find(el => el.type === "element" && el.name === "main");
+      if (main) places.add(outlineId(tree.path(main)));
+      return places.size === 1 ? within(parseOutlineId([...places][0])) : undefined;
+    }
     case "make_component":
     case "frame_image":
     case "place_media":
@@ -768,8 +797,8 @@ async function applyAdmitted(actions: AgentSiteActions, command: AgentCommand): 
     }
     case "make_component": {
       const source = await openPage(actions, path, command.expectedHash);
-      const node = parseOutlineId(args.element ?? "");
-      if (!node) throw new Conflict("That element is not on the page any more. Read the page again.");
+      // The element and the name: the editor's Make component decides, on the page as it is now.
+      const node = parseOutlineId(args.element!)!;
       const made = await actions.makeComponent({ path, source, node, tag: args.tag ?? "", ...(args.fixed !== undefined ? { fixed: args.fixed } : {}) });
       if (typeof made === "string") throw new Conflict(made);
       return {
@@ -788,14 +817,12 @@ async function applyAdmitted(actions: AgentSiteActions, command: AgentCommand): 
       const outline = pageOutline(source, tags);
       if (command.operation === "add_section") {
         const tag = String(args.component ?? "");
-        const parent = args.container ? parseOutlineId(args.container) : [];
-        const container = outline.containers.find((item) => item.id === (args.container ?? ""));
-        if (!parent || !container) throw new Conflict("That place for sections is not on the page any more.");
-        if (!tags.has(tag)) throw new Conflict(`<${tag}> is not a section component.`);
-        const index = Math.min(Math.max(0, args.index ?? container.children), container.children);
+        const { parent, index } = placement(outline, args.before, args.after);
         const unplaced = `${componentLabel(tag)} could not be placed exactly in ${path}.`;
         let planned: SectionPlanned | undefined;
         await guarded(actions.edits.run(async r => {
+          if (!Object.hasOwn(r.site()?.components ?? {}, tag)) return { refuse: `No component <${tag}>. get_site lists the components.` };
+          if (!tags.has(tag)) return { refuse: `<${tag}> is not a section component (its template is not one <section>), so it cannot go between sections.` };
           // The template is read through `r`: one changed during the loader's wait refuses the step.
           const plan = await addSectionStep(r, { path, select: [...parent, index], message: `${componentLabel(tag)} added`, loader: actions.loaderPlan,
             edit: (page, reads) => {
@@ -810,7 +837,7 @@ async function applyAdmitted(actions: AgentSiteActions, command: AgentCommand): 
       }
       const node = parseOutlineId(String(args.section ?? ""));
       const section = outline.sections.find((item) => item.id === args.section);
-      if (!node || !section || (args.tag && section.tag !== args.tag)) throw new Conflict("That section is not on the page any more. Read the page again.");
+      if (!node || !section) throw new Conflict(noSection(String(args.section ?? "")));
       if (command.operation === "remove_section") {
         const range = locateNativeElementRange(source, node);
         if (!range) throw new Conflict("The section's HTML could not be located exactly.");
@@ -819,9 +846,8 @@ async function applyAdmitted(actions: AgentSiteActions, command: AgentCommand): 
           : { edits: new Map([[path, [removeEdit(source, range)]]]), done: `${label} removed`, undone: `Undid removing the ${label}.` }, { anchor: path }));
         return { message: `Section ${section.id} removed from ${path}, unsaved.`, result: { hash: await hashOf(actions, path) } };
       }
-      const parent = parseOutlineId(args.container ?? "") ?? (args.container === "" ? [] : undefined);
-      if (!parent || args.index === undefined) throw new Conflict("Say where the section goes.");
-      const moving = actions.moveSection({ path, node, painted: source }, { parent, index: args.index });
+      // Among its own siblings only: the Block move decides, as for a drag in the page structure.
+      const moving = actions.moveSection({ path, node, painted: source }, placement(outline, args.before, args.after));
       const outcome = moving.status === "pending" ? await moving.settled : moving;
       if (outcome.status === "stale") throw new Conflict(outcome.message);
       if (outcome.status === "refused") {
@@ -901,8 +927,7 @@ async function applyAdmitted(actions: AgentSiteActions, command: AgentCommand): 
       return { message: `Previewed ${path}.`, result: { ...await actions.previewMedia(path) } };
     }
     case "inspect_preview": {
-      const node = args.element !== undefined ? parseOutlineId(args.element) : undefined;
-      if (args.element !== undefined && !node) throw new Conflict(`${args.element} is not an element id.`);
+      const node = args.element !== undefined ? parseOutlineId(args.element)! : undefined;
       if (!(await actions.open(path))) throw new Conflict(`${path} could not be shown in the preview.`);
       const report = (await actions.inspect({
         path,

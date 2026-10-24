@@ -408,7 +408,7 @@ test("MCP site tools read and prepare guarded changes over the runtime socket, r
     assert.equal(openCommand.operation, "open_page");
     assert.equal(payload(await call("write_file", { path: "styles/extra.css", content: "p {}\n", requestId: "new-css", waitSeconds: 0 })).state, "applied");
 
-    // Make component validates cheaply, then leaves planning to the tab.
+    // Make component's shape is the Worker's (shared/agent-edit.ts editShapeProblem); the page, the element and a taken name are the live page's.
     const makeTool = listing.find((tool) => tool.name === "make_component")!;
     assert.deepEqual(makeTool.inputSchema.required, ["page", "element", "tag", "expectedHash"]);
     assert.deepEqual(Object.keys(makeTool.inputSchema.properties!).sort(), ["element", "expectedHash", "fixed", "page", "requestId", "tag", "waitSeconds"]);
@@ -417,32 +417,18 @@ test("MCP site tools read and prepare guarded changes over the runtime socket, r
       [{ element: "bad.id" }, /not an element id/],
       [{ tag: "section" }, /has a dash in it/],
       [{ tag: "font-face" }, /font-face is reserved by HTML/],
-      [{ tag: "feature-block" }, /component.*already/],
-      [{ expectedHash: "0".repeat(64) }, /changed since you read it/],
       [{ element: "" }, /not an element id/],
     ] as const) {
       const refused = await call("make_component", { ...makeArgs, ...extra });
       assert.equal(refused.isError, true);
       assert.match(JSON.stringify(refused), reason);
     }
-    // <main> and the header and footer components are refused before dispatch.
-    const refusing = structuredClone(context);
-    refusing.site!.outlines[0].containers.push({ id: "1.5", tag: "main", children: 0 });
-    refusing.site!.outlines[0].sections.push({ id: "1.6", tag: "site-header" }, { id: "1.7", tag: "card-note" });
-    await tab.show(refusing);
-    // In the tab's words (shared/site-rules.ts), whole.
-    for (const [element, words] of [["1.5", "A <main> cannot be a component."], ["1.6", "<site-header> is the site's header component already."], ["1.7", "<card-note> is a component already."]] as const) {
-      const refused = await call("make_component", { ...makeArgs, element });
-      assert.equal(refused.isError, true);
-      assert.ok((refused as { content: { text: string }[] }).content[0].text.includes(words), `${element}: ${JSON.stringify(refused)}`);
+    // The tab's preparation judges no element, name or hash from its context: each is queued for the live page.
+    for (const [extra, id] of [[{ element: "1.8", tag: "section-box" }, "make-div"], [{ tag: "feature-block" }, "make-taken"], [{ expectedHash: "0".repeat(64) }, "make-stale"]] as const) {
+      const queued = await call("make_component", { ...makeArgs, ...extra, requestId: id });
+      assert.ok(!queued.isError, JSON.stringify(queued));
+      assert.equal((await tab.inspect()).commands.find((item: any) => item.id === id)?.operation, "make_component");
     }
-    // Any other container is the tab's to judge: a <div> with a free name is queued.
-    refusing.site!.outlines[0].containers.push({ id: "1.8", tag: "div", children: 1 });
-    await tab.show(refusing);
-    const div = await call("make_component", { ...makeArgs, element: "1.8", tag: "section-box", requestId: "make-div" });
-    assert.ok(!div.isError, JSON.stringify(div));
-    assert.equal((await tab.inspect()).commands.find((item: any) => item.id === "make-div")?.operation, "make_component");
-    await tab.show(context);
     for (const extra of [{ fixed: Array(33).fill("title") }, { fixed: ["x".repeat(101)] }, { fixed: [1] }]) {
       assert.equal((await call("make_component", { ...makeArgs, ...extra })).isError, true);
     }
@@ -454,15 +440,15 @@ test("MCP site tools read and prepare guarded changes over the runtime socket, r
     assert.equal(makeCommand.expectedHash, page.hash);
     assert.deepEqual(makeCommand.args, { element: "1.0", tag: "section-welcome", fixed: ["title"] });
 
-    // Sections: section components only, at a place the outline has, on the page hash read.
+    // Sections: the Worker refuses both anchors; the component, the place and the page hash are the live page's (src/agent-site.ts).
     const homeHash = page.hash;
-    assert.equal((await call("add_section", { page: "/", component: "site-header", expectedHash: homeHash, waitSeconds: 0 })).isError, true);
-    assert.equal((await call("add_section", { page: "/", component: "feature-block", expectedHash: "0".repeat(64), waitSeconds: 0 })).isError, true);
-    assert.equal((await call("add_section", { page: "/", component: "feature-block", expectedHash: homeHash, after: "9.9", waitSeconds: 0 })).isError, true);
+    const both = await call("add_section", { page: "/", component: "feature-block", expectedHash: homeHash, before: "1.0", after: "1.0", waitSeconds: 0 });
+    assert.equal(both.isError, true);
+    assert.match(JSON.stringify(both), /Give before or after, not both/);
     const added = await call("add_section", { page: "/", component: "feature-block", expectedHash: homeHash, after: "1.0", requestId: "add-1", waitSeconds: 0 });
     assert.equal(payload(added).state, "applied", JSON.stringify(added));
     const addCommand = (await tab.inspect()).commands.find((item: any) => item.id === "add-1");
-    assert.deepEqual(addCommand.args, { component: "feature-block", container: "1", index: 1 });
+    assert.deepEqual(addCommand.args, { component: "feature-block", after: "1.0" });
     assert.equal(addCommand.path, "index.html");
 
     tab.results.set("page-1", { file: "about/our-team/index.html", route: "/about/our-team/" });

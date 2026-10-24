@@ -6,7 +6,7 @@ import { SiteFiles } from "./site-files";
 import { fileInTheWay, foldersAbove, makeComponentProblem, pageAddressProblem, writablePathProblem } from "./site-rules";
 import { findPageRef, noHomePage } from "./agent-read";
 import { agentTools } from "./agent-tool-table";
-import type { AgentPageOutline, EditorContext } from "./types";
+import type { EditorContext } from "./types";
 type Page = NonNullable<EditorContext["pages"]>[number];
 
 export interface AgentEditArgsMap {
@@ -32,56 +32,69 @@ export type PreparedEdit = { operation: AgentOperation; input: {
   path: string; content?: string; expectedHash?: string | null; args?: AgentCommandArgs;
 } } | { unchanged: { state: "unchanged"; message: string } };
 
-  function findPage(context: EditorContext, ref: string) {
-    const pages = context.pages;
-    if (!pages) throw new HttpError(400, noHomePage);
-    const page = findPageRef(pages, ref);
-    if (!page?.file) throw new HttpError(404, `No page ${ref}. get_site lists the pages.`);
-    return page as Page & { file: string };
-  }
-  function outlineOf(context: EditorContext, file: string): AgentPageOutline {
-    const outline = context.site?.outlines.find((item) => item.file === file);
-    if (!outline)
-      throw new HttpError(409, `The editor has no outline of ${file} yet. Try again in a moment.`);
-    return outline;
-  }
-  function checkHash(expected: string | undefined, actual: string, what: string) {
-    if (expected !== actual)
-      throw new HttpError(
-        409,
-        `${what} changed since you read it (its hash is now ${actual}). Read it again.`,
-      );
-  }
+/*
+ * Every refusal an agent edit can get is decided in one place (ticket 51; tests/agent-tools-edit.test.ts lists them):
+ * - the Worker, before anything is sent: an edit's shape alone (`editShapeProblem`: paths, size, ids, which
+ *   arguments go together), besides its schema;
+ * - the tab's preparation (`prepareAgentEdit`): the names an agent gives (a page, a parent page) and the text a
+ *   file edit starts from (its hash as read, its replacements, whether it changes anything);
+ * - the live page, as the command runs (src/agent-site.ts `applySiteCommand`): its hash, its sections and
+ *   components, and the editor's own controls (Make component, New page, Block move, the Files tab).
+ */
 
-  function placement(outline: AgentPageOutline, before?: string, after?: string) {
-    if (before && after) throw new HttpError(400, "Give before or after, not both.");
-    const anchor = before ?? after;
-    if (anchor) {
-      const node = parseOutlineId(anchor);
-      const section = outline.sections.find((item) => item.id === anchor);
-      if (!node || !section) throw new HttpError(404, `No section ${anchor} on this page. get_page lists them.`);
-      const container = node.slice(0, -1).join(".");
-      return { container, index: node[node.length - 1] + (after ? 1 : 0) };
-    }
-    if (outline.containers.length !== 1)
-      throw new HttpError(
-        400,
-        outline.containers.length
-          ? "This page has several places for sections. Say before or after which section."
-          : "This page has no place for sections (no <main> or section container).",
-      );
-    const [only] = outline.containers;
-    return { container: only.id, index: only.children };
-  }
-
-export function checkContent(content: string) {
-  if (textBytes(content) > AGENT_TEXT_LIMIT || content.includes("\0"))
-    throw new HttpError(400, `Drafts hold text files up to ${AGENT_TEXT_LIMIT / 1024 / 1024} MB.`);
+/** Why `content` cannot be a draft's text, or nothing. */
+function contentProblem(content: string) {
+  return textBytes(content) > AGENT_TEXT_LIMIT || content.includes("\0") ? `Drafts hold text files up to ${AGENT_TEXT_LIMIT / 1024 / 1024} MB.` : undefined;
 }
 
+const notAnElement = (element: string) => `${element} is not an element id; get_page lists them.`;
+const oneAnchor = (before?: string, after?: string) => before && after ? "Give before or after, not both." : undefined;
 
-/** One preparation implementation for live browser execution and the temporary legacy queue. */
-export async function prepareAgentEdit(request: AgentEdit, context: EditorContext, files: SiteFiles): Promise<PreparedEdit> {
+/** Why the edit cannot be what an agent asks, from its arguments alone (the Worker's check, before it sends it), or nothing. */
+export function editShapeProblem<K extends AgentEditTool>(tool: K, input: AgentEditArgsMap[K]): string | undefined {
+  const { tool: name, args } = { tool, args: input } as { [T in AgentEditTool]: { tool: T; args: AgentEditArgsMap[T] } }[AgentEditTool];
+  switch (name) {
+    case "edit_file":
+    case "delete_file": return writablePathProblem(args.path);
+    case "write_file": return writablePathProblem(args.path) ?? (isMediaUploadWrite(args.path) ? OUTSIDE_MEDIA_REFUSED : contentProblem(args.content));
+    case "move_file": return writablePathProblem(args.path) ?? writablePathProblem(args.to) ?? (args.path === args.to ? "The new path is the same." : undefined);
+    case "create_page": return args.slug === undefined ? undefined : pageAddressProblem(args.slug);
+    case "set_page_details": return args.title === undefined && args.description === undefined ? "Give a title, a description, or both." : undefined;
+    case "inspect_preview":
+      if (args.element !== undefined && args.selector !== undefined) return "Give element or selector, not both.";
+      return args.element !== undefined && !parseOutlineId(args.element) ? notAnElement(args.element) : undefined;
+    // The name alone: whether another component has it, the editor's Make component decides.
+    case "make_component": return parseOutlineId(args.element) ? makeComponentProblem(undefined, args.tag, []) : notAnElement(args.element);
+    case "add_section": return oneAnchor(args.before, args.after);
+    case "move_section": return !args.before && !args.after ? "Say before or after which section it goes." : oneAnchor(args.before, args.after);
+    case "open_page":
+    case "remove_section": return undefined;
+  }
+}
+
+function findPage(context: Pick<EditorContext, "pages">, ref: string) {
+  const pages = context.pages;
+  if (!pages) throw new HttpError(400, noHomePage);
+  const page = findPageRef(pages, ref);
+  if (!page?.file) throw new HttpError(404, `No page ${ref}. get_site lists the pages.`);
+  return page as Page & { file: string };
+}
+function checkHash(expected: string | undefined, actual: string, what: string) {
+  if (expected !== actual)
+    throw new HttpError(
+      409,
+      `${what} changed since you read it (its hash is now ${actual}). Read it again.`,
+    );
+}
+
+/** What the tab's preparation reads of the shared context: the pages, and the page shown. */
+export type EditContext = Pick<EditorContext, "pages"> & { site?: Pick<NonNullable<EditorContext["site"]>, "openRoute"> | null };
+
+/**
+ * The command an agent's edit becomes, in the receiving tab: its page found by name, a file edit's text
+ * from what it was read as. The edit's shape was the Worker's to check; the live page is the command's.
+ */
+export async function prepareAgentEdit(request: AgentEdit, context: EditContext, files: SiteFiles): Promise<PreparedEdit> {
   const refuse = (message: string): never => { throw new HttpError(400, message); };
   const unchanged = (value: { state: "unchanged"; message: string }): PreparedEdit => ({ unchanged: value });
   // The command an edit becomes is its table row's (edit_file: write_file).
@@ -89,23 +102,18 @@ export async function prepareAgentEdit(request: AgentEdit, context: EditorContex
   switch (request.tool) {
     case "edit_file": {
       const { path, expectedHash, edits } = request.args;
-      const problem = writablePathProblem(path);
-      if (problem) return refuse(problem);
       const file = await files.read(path);
       if (!file) return refuse(`${path} does not exist. Use write_file to create it.`);
       checkHash(expectedHash, file.hash, path);
       const edited = applyReplacements(file.content, edits);
       if (!edited.ok) return refuse(edited.error);
       if (edited.text === file.content) return unchanged({ state: "unchanged", message: "The edits change nothing." });
-      checkContent(edited.text);
+      const big = contentProblem(edited.text);
+      if (big) return refuse(big);
       return queue({ path, content: edited.text, expectedHash: file.hash });
     }
     case "write_file": {
       const { path, content, expectedHash } = request.args;
-      const problem = writablePathProblem(path);
-      if (problem) return refuse(problem);
-      if (isMediaUploadWrite(path)) return refuse(OUTSIDE_MEDIA_REFUSED);
-      checkContent(content);
       const file = await files.read(path);
       if (file) {
         if (!expectedHash)
@@ -122,28 +130,19 @@ export async function prepareAgentEdit(request: AgentEdit, context: EditorContex
     }
     case "move_file": {
       const { path, to, keepOldUrl } = request.args;
-      const problem = writablePathProblem(path) ?? writablePathProblem(to);
-      if (problem) return refuse(problem);
-      if (path === to) return refuse("The new path is the same.");
       return queue({
         path,
         args: { to, ...(keepOldUrl !== undefined ? { keepOldUrl } : {}) },
       });
     }
-    case "delete_file": {
-      const { path } = request.args;
-      const problem = writablePathProblem(path);
-      if (problem) return refuse(problem);
-      return queue({ path });
-    }
+    case "delete_file":
+      return queue({ path: request.args.path });
     case "create_page": {
       const { title, parent, slug } = request.args;
       if (!context.pages) return refuse(noHomePage);
       const under = parent ? parent.replace(/^\/?/, "/").replace(/\/?$/, "/") : "/";
       if (under !== "/" && !context.pages.some((page) => page.route === under))
         return refuse(`No page at ${under}. get_site lists the pages; a page at an .html URL has no subpages.`);
-      const address = slug === undefined ? undefined : pageAddressProblem(slug);
-      if (address) return refuse(address);
       return queue({
         // The parent's folder: one new page there waits at a time.
         path: under === "/" ? "." : under.slice(1, -1),
@@ -152,7 +151,6 @@ export async function prepareAgentEdit(request: AgentEdit, context: EditorContex
     }
     case "set_page_details": {
       const { page: ref, title, description } = request.args;
-      if (title === undefined && description === undefined) return refuse("Give a title, a description, or both.");
       const page = findPage(context, ref);
       return queue({
         path: page.file,
@@ -166,19 +164,18 @@ export async function prepareAgentEdit(request: AgentEdit, context: EditorContex
       const { page: ref } = request.args;
       const page = context.pages && findPageRef(context.pages, ref);
       const path = page?.file ?? ref;
+      // Found by name here, so its path is checked here: opening may show the media records, never the workflows.
       const problem = writablePathProblem(path, { readOnly: true });
       if (problem) return refuse(problem);
       return queue({ path });
     }
     case "inspect_preview": {
       const { page: ref, element, selector, limit } = request.args;
-      if (element !== undefined && selector !== undefined) return refuse("Give element or selector, not both.");
-      if (element !== undefined && !parseOutlineId(element)) return refuse(`${element} is not an element id; get_page lists them.`);
       const route = ref ?? context.site?.openRoute;
       if (!route) return refuse("The editor shows no page now. Give page.");
       const page = findPage(context, route);
       return queue({
-        path: page.file!,
+        path: page.file,
         args: {
           ...(element !== undefined ? { element } : {}),
           ...(selector !== undefined ? { selector } : {}),
@@ -186,68 +183,22 @@ export async function prepareAgentEdit(request: AgentEdit, context: EditorContex
         },
       });
     }
+    // The page's sections, components and hash are the live page's to check (src/agent-site.ts).
     case "make_component": {
       const { page: ref, element, tag, fixed, expectedHash } = request.args;
-      if (!parseOutlineId(element)) return refuse(`${element} is not an element id; get_page lists them.`);
-      const named = makeComponentProblem(undefined, tag, []);
-      if (named) return refuse(named);
-      const page = findPage(context, ref);
-      const outline = outlineOf(context, page.file);
-      checkHash(expectedHash, outline.hash, page.file);
-      // The outline knows the tags of the containers and sections; the editor checks any other element.
-      const source = outline.containers.find((item) => item.id === element) ?? outline.sections.find((item) => item.id === element);
-      const problem = makeComponentProblem(source, tag, context.site?.components.map((item) => item.tag) ?? []);
-      if (problem) return refuse(problem);
-      return queue({
-        path: page.file,
-        expectedHash,
-        args: { element, tag, ...(fixed !== undefined ? { fixed } : {}) },
-      });
+      return queue({ path: findPage(context, ref).file, expectedHash, args: { element, tag, ...(fixed !== undefined ? { fixed } : {}) } });
     }
     case "add_section": {
       const { page: ref, component, expectedHash, before, after } = request.args;
-      const page = findPage(context, ref);
-      const outline = outlineOf(context, page.file);
-      checkHash(expectedHash, outline.hash, page.file);
-      const known = context.site?.components.find((item) => item.tag === component);
-      if (!known) return refuse(`No component <${component}>. get_site lists the components.`);
-      if (!known.section) return refuse(`<${component}> is not a section component (its template is not one <section>), so it cannot go between sections.`);
-      const at = placement(outline, before, after);
-      return queue({
-        path: page.file,
-        expectedHash,
-        args: { component, container: at.container, index: at.index },
-      });
+      return queue({ path: findPage(context, ref).file, expectedHash, args: { component, ...(before ? { before } : {}), ...(after ? { after } : {}) } });
     }
     case "move_section": {
       const { page: ref, section, expectedHash, before, after } = request.args;
-      if (!before && !after) return refuse("Say before or after which section it goes.");
-      const page = findPage(context, ref);
-      const outline = outlineOf(context, page.file);
-      checkHash(expectedHash, outline.hash, page.file);
-      const moving = outline.sections.find((item) => item.id === section);
-      if (!moving) return refuse(`No section ${section} on this page. get_page lists them.`);
-      const at = placement(outline, before, after);
-      if (section.split(".").slice(0, -1).join(".") !== at.container)
-        return refuse("A section moves among its own siblings only.");
-      return queue({
-        path: page.file,
-        expectedHash,
-        args: { section, tag: moving.tag, container: at.container, index: at.index },
-      });
+      return queue({ path: findPage(context, ref).file, expectedHash, args: { section, ...(before ? { before } : {}), ...(after ? { after } : {}) } });
     }
     case "remove_section": {
       const { page: ref, section, expectedHash } = request.args;
-      const page = findPage(context, ref);
-      const outline = outlineOf(context, page.file);
-      checkHash(expectedHash, outline.hash, page.file);
-      const removed = outline.sections.find((item) => item.id === section);
-      if (!removed) return refuse(`No section ${section} on this page. get_page lists them.`);
-      return queue({
-        path: page.file,
-        expectedHash,
-        args: { section, tag: removed.tag },
-      });
+      return queue({ path: findPage(context, ref).file, expectedHash, args: { section } });
     }
   }
 }
