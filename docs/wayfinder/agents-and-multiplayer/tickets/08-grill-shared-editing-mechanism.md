@@ -19,3 +19,7 @@ Decided with Lex. Recorded in [ADR 0003](../../../adr/0003-shared-editing-over-a
 3. **Saving shared changes:** whoever saves, saves all changes in those files and names every author: yes.
 4. **One relay for everything**, with the GitHub App webhook switched on (one manual change to Lex's App; new self-hosters get it at setup): "ok".
 5. **Cost:** stays inside Cloudflare's Free plan (the preview-link ticket).
+
+## Comments
+
+- 2026-10-24, Lex on the [typing-together demo](../prototypes/08-typing-together.html): "Looks great, in the code but also the editor it should be visible like this". Other people's carets and selections, with name chips in their colour, show in the code pane and in the visual editor. He asked whether the relay is a Durable Object (yes: `worker/agent-relay.ts`, one per site and branch) and for a proof of concept on the real stack: [Prove typing together on the real stack](12-prototype-typing-together-poc.md).

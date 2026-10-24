@@ -53,3 +53,4 @@ Built in stages: (1) several agents at once and seeing them work; (2) typing in 
 
 - **The kitchen** (agents building the editor): the [software-factory map](../software-factory/map.md).
 - **Agents that run without Lex's computer** (paid cloud agents on an API key): Lex 2026-10-24, the chat does not need to work when his computer is off. Back on the list for later.
+- **Unpushed local clones:** a coding tool editing a local copy of a GitHub site without pushing is not seen until pushed (Lex 2026-10-24, [ticket 09](tickets/09-grill-outside-changes-live.md)).

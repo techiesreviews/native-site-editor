@@ -18,3 +18,6 @@ Lex (2026-10-24): asking agents with a pin is a pain today, and pins stay (a cha
   - **Always-listening helper:** "Yes, instead of connect this computer can we use the mcp?" Follow-up in round 2.
   - **Six new agent abilities:** yes. A picture of the page, "I'm working here", the agent asks first with a question pin, undo its own change, next step in every reply, shorter first instructions.
   - **The pin takes the colour and name of the agent on it:** yes.
+- 2026-10-24, round 2:
+  - **"More changes"** means asking for a change in context. As recommended: a pin is a conversation, any pin (waiting, being worked on or done) takes a follow-up that reopens it, and one element can have several pins.
+  - **Helper:** "this should be build agent agnostic. Why was the idea for connect this computer?" Explained in chat: a web page cannot start programs on Lex's computer, so something running there must start an agent when a pin arrives. Proposal in round 3: the helper starts any coding agent through ACP and connects through the MCP connection, with no new button.
