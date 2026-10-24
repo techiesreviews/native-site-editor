@@ -74,9 +74,7 @@ import { readStyleFiles } from "./native-style-files";
 import { nativePageRoute } from "../shared/native-routes";
 import { isNewDraft } from "../shared/site-overlay";
 import { parentProblem } from "../shared/site-rules";
-
-
-
+import { workingPart } from "./working-part";
 
 
 import { descendants, parseSource } from "./page-builder/component-model";
@@ -525,6 +523,7 @@ function mountWorkspace() {
     onImageDrop: (target, files) => void mediaController.chooseImage(target, files),
     onImageEdit: (target) => void mediaController.chooseImage(target),
     onTextEdit: (edit) => void pageStructureController.applyNativeTextEdit(edit),
+    onTyping: (at, left) => left ? workingPart.left(at, pageStructureController.textEdits()) : workingPart.typed(at),
     insertChoices: nativeSectionChoices,
     insertPointFor: nativeElementAddPoint,
     insertDestinationText: point => point ? nativeAddPoints.get(point)?.description ?? positionText(point) : "Choose a section destination.",
@@ -2660,6 +2659,7 @@ const agentSiteHost = createAgentSiteHost({
         exists: (path) => pathNow(path) === "file",
         openFile: appStore.openFile.value,
         selection: appStore.selection.value && { ...appStore.selection.value, route: nativePreview?.route() },
+        working: workingPart.now(),
       },
     };
   },

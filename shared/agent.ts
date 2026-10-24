@@ -178,7 +178,26 @@ export interface AgentElement {
   component?: { tag: string; in: "instance" | "slot" | "template"; slot?: string };
 }
 
-export type AgentRequestState = "open" | "seen" | "done" | "answered" | "question" | "dismissed";
+/**
+ * Where the user is working, as agents are told it (ticket 52): the element they type in (on the page
+ * or in a Page Structure field; `element` its id in `file`, as an AgentElement's) or the lines they
+ * type in in the code pane. An agent's change to that part answers "waiting" and lands once they leave it.
+ */
+export interface AgentWorking {
+  file: string;
+  /** The page `file` is. */
+  route?: string;
+  element?: string;
+  tag?: string;
+  /** The source lines it spans in `file`, from 1. */
+  lines?: { start: number; end: number };
+  note: string;
+}
+export const WORKING_NOTE = "The user is typing here. A change to this part answers waiting and lands when they click away.";
+/** An edit's answer while the part it changes is the user's (AgentWorking). */
+export const WAITING_MESSAGE = "The user is editing this part; the change lands when they click away. get_command_status says when it applied; do not send it again.";
+
+export type AgentRequestState ="open" | "seen" | "done" | "answered" | "question" | "dismissed";
 
 /** How an agent replied: done (it changed the site), answered (nothing more is needed), or question (it needs the user's answer). */
 export type AgentReplyStatus = "done" | "answered" | "question";

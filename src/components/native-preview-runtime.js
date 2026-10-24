@@ -2944,7 +2944,7 @@ import { domView } from "../page-builder/rules/tree.ts";
     el.setAttribute("contenteditable", "plaintext-only");
     if (el.contentEditable !== "plaintext-only") el.setAttribute("contenteditable", "true");
     el.setAttribute("spellcheck", "false");
-    el.addEventListener("blur", commitEditing);
+    el.addEventListener("blur", onEditingBlur);
     // Typing can wrap the selection before the text edit is committed: its
     // box and the rectangle the edit bar keeps clear of follow.
     el.addEventListener("input", onEditingInput);
@@ -2953,7 +2953,8 @@ import { domView } from "../page-builder/rules/tree.ts";
     if (!editing) return;
     var el = editing;
     if (commit) commitEditing();
-    el.removeEventListener("blur", commitEditing);
+    leftTyping();
+    el.removeEventListener("blur", onEditingBlur);
     el.removeEventListener("input", onEditingInput);
     el.removeAttribute("contenteditable");
     el.removeAttribute("spellcheck");
@@ -2986,8 +2987,25 @@ import { domView } from "../page-builder/rules/tree.ts";
     leftTextUntil = Date.now() + WRITTEN_MS;
     emit("text-edit", edit);
   }
+  // Where typing happens, for agents (ticket 52): said at most once a second while typing goes on,
+  // and once it is left (after its text edit, so the host writes that first).
+  var typingAt = null, typingSaid = 0;
   function onEditingInput() {
     updateBoxes();
+    if (!editing || Date.now() - typingSaid < 1000) return;
+    typingSaid = Date.now();
+    typingAt = { path: ownerPath(editing), node: elementIndexPath(editing) };
+    emit("typing", { path: typingAt.path, node: typingAt.node, left: false });
+  }
+  function leftTyping() {
+    if (!typingAt) return;
+    emit("typing", { path: typingAt.path, node: typingAt.node, left: true });
+    typingAt = null;
+    typingSaid = 0;
+  }
+  function onEditingBlur() {
+    commitEditing();
+    leftTyping();
   }
   // Typing starts with the caret at a point (a click's), else at the end.
   function beginEditing(el, point) {

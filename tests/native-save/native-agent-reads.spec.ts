@@ -102,7 +102,10 @@ test("all migrated MCP reads and the site resource answer from browser drafts; a
     const edited = await client.callTool({ name: "edit_file", arguments: { path: "index.html", expectedHash: typedHash, requestId: "socket-read-then-edit", waitSeconds: 0,
       edits: [{ oldText: "still typing", newText: "still typing, then edited" }] } });
     expect(edited.isError, JSON.stringify(edited)).toBeFalsy();
-    expect(JSON.parse((edited.content as { text: string }[])[0].text)).toMatchObject({ state: "applied" });
+    // Those lines were typed in a moment ago: the edit waits for the pause in typing (ticket 52), then applies.
+    expect(JSON.parse((edited.content as { text: string }[])[0].text)).toMatchObject({ state: "waiting" });
+    await expect.poll(async () => JSON.parse(((await client.callTool({ name: "get_command_status", arguments: { requestId: "socket-read-then-edit" } })).content as { text: string }[])[0].text).state,
+      { timeout: 15_000 }).toBe("applied");
     await expect(heading).toHaveText("Unsaved socket read draft, still typing, then edited");
 
     await page.reload();

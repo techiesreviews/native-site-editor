@@ -30,6 +30,8 @@ export type FrameMessage =
   | Frame<"image-edit", { path: string; node: number[]; width: number | undefined }>
   | Frame<"patched", { id: number; ok: boolean }>
   | Frame<"text-edit", { path: string; node: number[]; before: string; after: string }>
+  // Typing in the element at `node` goes on, or (`left`) it was left.
+  | Frame<"typing", { path: string; node: number[]; left: boolean }>
   | Frame<"route", { href: string }>
   | Frame<"format", { format: "strong" | "em" | "link" }>
   | Frame<"move", { direction: "up" | "down" | "out" | "in" }>
@@ -118,7 +120,7 @@ type PressPhase = Extract<FrameMessage, { type: "press-drag" }>["phase"];
 
 // A press drag's start names a block in one render's DOM; its later steps belong to the drag.
 export const FRESHNESS: { [T in FrameMessage["type"]]: T extends "press-drag" ? Record<PressPhase, Freshness> : Freshness } = {
-  "typing-finished": "reply", "image-drop": "render", "image-edit": "action", patched: "reply", "text-edit": "action",
+  "typing-finished": "reply", "image-drop": "render", "image-edit": "action", patched: "reply", "text-edit": "action", typing: "action",
   route: "action", format: "action", move: "action", "press-drag": { start: "render", move: "action", end: "action", cancel: "action" },
   "canvas-clear": "action", "pin-rects": "whole", "drop-containers": "reply", "dismiss-context-menu": "action",
   "slot-ghosts": "render", "inspect-result": "reply", "image-measured": "reply", ack: "reply", ready: "lifecycle", error: "render", "clear-error": "render",
@@ -280,6 +282,8 @@ export function readFrameMessage(data: unknown): FrameMessage | undefined {
     case "text-edit":
       if (typeof raw.path !== "string" || typeof raw.before !== "string" || typeof raw.after !== "string" || raw.after.length > 100_000) return undefined;
       return indexes(raw.node) ? { ...base(raw.type), path: raw.path, node: raw.node, before: raw.before, after: raw.after } : undefined;
+    case "typing":
+      return typeof raw.path === "string" && indexes(raw.node) ? { ...base(raw.type), path: raw.path, node: raw.node, left: raw.left === true } : undefined;
     case "route":
       return typeof raw.href === "string" ? { ...base(raw.type), href: raw.href } : undefined;
     case "format":

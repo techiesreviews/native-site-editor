@@ -53,8 +53,9 @@ test("MCP tools/list is dev's: same tools, order, descriptions, schemas and hint
     "adding_settings", "make_component", "add_section", "move_section", "remove_section", "wait_for_requests",
     "get_selection", "reply_to_request",
   ]);
-  // The whole tools/list result as dev (3c5518e4) answered it, before the table.
-  assert.equal(createHash("sha256").update(JSON.stringify(result)).digest("hex"), "25ad006c7f818f56bd847161fab4f9eb5ccda3565ddaedc2c2d4c9650c8fc591");
+  // The whole tools/list result as dev (3c5518e4) answered it, before the table; since ticket 52,
+  // get_command_status's description names the waiting state.
+  assert.equal(createHash("sha256").update(JSON.stringify(result)).digest("hex"), "b0187cfa67b2edddfcc38409b8e885601dffdf763bf0946c69292ae427576fe7");
 });
 
 test("the Worker registers exactly the table's MCP tools, in table order", async () => {

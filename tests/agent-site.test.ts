@@ -1,12 +1,12 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { applySiteCommand, buildAgentContext, linkedStylesheets, type AgentSiteActions } from "../src/agent-site.ts";
+import { agentWorking, applySiteCommand, buildAgentContext, changesWork, linkedStylesheets, type AgentSiteActions } from "../src/agent-site.ts";
 import { createGuardedEdits } from "../src/guarded-edit.ts";
 import { createBlockMoves } from "../src/page-builder/block-move.ts";
 import { createMemoryWorkspace } from "./fakes/memory-workspace.ts";
 import { installOutlineDocument } from "./support/outline-document.ts";
 import type { SavedDraft } from "../src/drafts.ts";
-import { textHash, type AgentCommand } from "../shared/agent.ts";
+import { textHash, WORKING_NOTE, type AgentCommand } from "../shared/agent.ts";
 
 test("the agent context lists the stylesheets the pages link, home page first, each with what it imports", () => {
   const sources: Record<string, string> = {
@@ -201,4 +201,37 @@ test("inspect_preview with an element id the Worker would have refused is malfor
     args: { element: "bad.id" }, state: "pending", createdAt: 1 };
   await assert.rejects(applySiteCommand(actions as AgentSiteActions, command), /is malformed/);
   assert.equal(opened, 0);
+});
+
+test("an agent's change waits only when it changes the part the user works in (ticket 52)", async () => {
+  const source = '<!doctype html>\n<html>\n<head>\n  <title>Home</title>\n</head>\n<body>\n<main>\n  <section>\n    <h1>Welcome</h1>\n    <p>Text</p>\n  </section>\n  <section><h2>Next</h2></section>\n</main>\n</body>\n</html>\n';
+  const command = (operation: AgentCommand["operation"], extra: Partial<AgentCommand> = {}): AgentCommand =>
+    ({ id: "c", operation, path: "index.html", content: "", branch: "main", commit: "c", expectedHash: "h", state: "pending", createdAt: 1, ...extra });
+  const write = (from: string, to: string) => command("write_file", { content: source.replace(from, to) });
+  const heading = { path: "index.html", node: [0, 0, 0] };
+  const cases: [string, Parameters<typeof changesWork>[0], AgentCommand, boolean][] = [
+    ["its text", heading, write("Welcome", "Hello"), true],
+    ["typed into", heading, write("Welcome<", "Welcome!<"), true],
+    ["another element's text", heading, write("Text", "More"), false],
+    ["text just before it", heading, write("<h1>", "<p>x</p><h1>"), false],
+    ["the section holding it", heading, command("remove_section", { args: { section: "0.0" } }), true],
+    ["another section", heading, command("move_section", { args: { section: "0.1", before: "0.0" } }), false],
+    ["a section added", heading, command("add_section", { args: { component: "x", after: "0.0" } }), false],
+    ["it made a component", heading, command("make_component", { args: { element: "0.0.0", tag: "x-y" } }), true],
+    ["an element not there", heading, command("make_component", { args: { element: "9", tag: "x-y" } }), true],
+    ["the page details", heading, command("set_page_details", { args: { title: "New" } }), false],
+    ["its file moved", heading, command("move_file", { args: { to: "home.html" } }), true],
+    ["its folder removed", { path: "about/index.html", node: [0] }, command("delete_file", { path: "about" }), true],
+    ["a new file", heading, command("write_file", { expectedHash: null, content: "x" }), false],
+    ["another file", heading, { ...write("Welcome", "Hello"), path: "about.html" }, false],
+    ["read only", heading, command("inspect_preview"), false],
+    ["the code pane's lines", { path: "index.html", lines: { start: 4, end: 4 } }, command("set_page_details", { args: { title: "New" } }), true],
+    ["other lines", { path: "index.html", lines: { start: 10, end: 10 } }, write("Welcome", "Hello"), false],
+    ["those lines", { path: "index.html", lines: { start: 9, end: 9 } }, write("Welcome", "Hello"), true],
+    ["nobody typing", undefined, write("Welcome", "Hello"), false],
+  ];
+  for (const [name, part, change, waits] of cases) assert.equal(changesWork(part, change, source), waits, name);
+  const site = { routes: { "/": "index.html" }, components: {} };
+  assert.deepEqual(agentWorking(heading, site, source), { file: "index.html", route: "/", element: "0.0.0", tag: "h1", lines: { start: 9, end: 9 }, note: WORKING_NOTE });
+  assert.deepEqual(agentWorking({ path: "styles/site.css", lines: { start: 2, end: 3 } }, site, "a\nb\nc\n"), { file: "styles/site.css", lines: { start: 2, end: 3 }, note: WORKING_NOTE });
 });

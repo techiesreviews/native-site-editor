@@ -16,7 +16,8 @@ import { NATIVE_CONFIG_PATH, minimalTextEdit, nativeComponentCssPath, nativePage
 import { agentMediaArgsProblem } from "../shared/agent-media-args";
 import { mediaChanges, type MediaTool } from "../shared/agent-media";
 import { isAtomicOperation } from "../shared/agent-tool-table";
-import { isMediaUploadWrite, OUTSIDE_MEDIA_REFUSED, AGENT_TEXT_LIMIT, INSPECTION_LIMIT, isPreviewablePicture, picturePreviewRefusal, REQUEST_HTML_LIMIT, outlineId, parseOutlineId, textBytes, textHash, type AgentCommand, type AgentElement } from "../shared/agent";
+import { isMediaUploadWrite, OUTSIDE_MEDIA_REFUSED, AGENT_TEXT_LIMIT, INSPECTION_LIMIT, isPreviewablePicture, picturePreviewRefusal, REQUEST_HTML_LIMIT, WORKING_NOTE, outlineId, parseOutlineId, textBytes, textHash, type AgentCommand, type AgentElement, type AgentWorking } from "../shared/agent";
+import type { WorkingPart } from "./working-part";
 import type { AgentOutlineSection, AgentPageOutline, AgentSiteContext, EditorContext } from "../shared/types";
 import { draftKey, type DraftScope, type DraftStore, type SavedDraft } from "./drafts";
 import { payloadIdentity, workspaceKey, type JsonValue } from "../shared/agent-command";
@@ -385,6 +386,92 @@ export function agentElement(input: ElementInput, site: NativeSite, source: stri
   return element;
 }
 
+// ---- Where the user is working (ticket 52) ----
+
+type Span = { start: number; end: number };
+/** The offset where line `line` (from 1) of `source` starts; its end when `end`. */
+function lineOffset(source: string, line: number, end = false) {
+  let at = 0;
+  for (let n = 1; n < line + Number(end); n++) {
+    const next = source.indexOf("\n", at);
+    if (next < 0) return source.length;
+    at = next + 1;
+  }
+  return end ? Math.max(0, at - 1) : at;
+}
+/** The element at `node` in `source`, as the preview counts the page (as agentPresenceTarget reads it). */
+function elementAt(source: string, node: readonly number[] | undefined) {
+  const tree = readSource(source, { page: true }), el = node?.length ? tree.at(node) : undefined;
+  const range = el && tree.range(el);
+  return el?.type === "element" && range ? { tag: el.name, start: range.start, end: range.end } : undefined;
+}
+/** The stretch of `source` (the text of `part.path` now) the user works in. */
+function workSpan(part: WorkingPart, source: string): Span | undefined {
+  return "lines" in part ? { start: lineOffset(source, part.lines.start), end: lineOffset(source, part.lines.end, true) } : elementAt(source, part.node);
+}
+
+/** The part as agents are told it, read in `source`, its file's text now. */
+export function agentWorking(part: WorkingPart, site: NativeSite, source: string | undefined): AgentWorking {
+  const route = Object.entries(site.routes).find(([, file]) => file === part.path)?.[0];
+  const range = "node" in part && source !== undefined ? elementAt(source, part.node) : undefined;
+  const lines = range && source !== undefined ? { start: lineAt(source, range.start), end: lineAt(source, Math.max(range.start, range.end - 1)) }
+    : "lines" in part ? part.lines : undefined;
+  return {
+    file: part.path,
+    ...(route ? { route } : {}),
+    ...("node" in part ? { element: outlineId([...part.node]) } : {}),
+    ...(range ? { tag: range.tag } : {}),
+    ...(lines ? { lines } : {}),
+    note: WORKING_NOTE,
+  };
+}
+
+/**
+ * The stretch of `source` (the text of its file before it) a command changes: "file" for all of it
+ * (an element it names that is not there), undefined for none the user can type in (a new file or
+ * page, a section added between sections, a read). Elements are named as the page outline names them.
+ */
+function commandSpan(command: AgentCommand, source: string): Span | "file" | undefined {
+  const args = command.args ?? {};
+  const element = (id: string | undefined) => elementAt(source, parseOutlineId(id ?? "")) ?? "file";
+  switch (command.operation) {
+    case "write_file": {
+      const edit = command.expectedHash === null ? null : minimalTextEdit(source, command.content);
+      if (!edit || edit.start < edit.end) return edit ?? undefined;
+      // An insertion sits as far left as it ends as the text before it does: there, text added just
+      // before the part is not in it.
+      let at = edit.start, text = edit.text;
+      while (at > 0 && text && source[at - 1] === text[text.length - 1]) { text = source[at - 1] + text.slice(0, -1); at--; }
+      return { start: at, end: at };
+    }
+    case "set_page_details": {
+      const head = /<head\b[\s\S]*?<\/head\s*>/i.exec(source);
+      return head ? { start: head.index, end: head.index + head[0].length } : "file";
+    }
+    case "make_component": return element(args.element);
+    case "move_section":
+    case "remove_section": return element(args.section);
+  }
+  return undefined;
+}
+
+/**
+ * Whether `command` changes the part the user works in (ticket 52): the same file, and stretches of
+ * its text `source` that meet (a change that only touches the part's edge does not); a move or
+ * removal of the file or a folder above it.
+ */
+export function changesWork(part: WorkingPart | undefined, command: AgentCommand, source: string | undefined): boolean {
+  if (!part) return false;
+  // A move or removal takes the whole file, or the folder holding it.
+  if (command.operation === "move_file" || command.operation === "delete_file") return part.path === command.path || part.path.startsWith(`${command.path.replace(/\/+$/, "")}/`);
+  if (part.path !== command.path || source === undefined) return false;
+  const change = commandSpan(command, source);
+  if (change === undefined) return false;
+  const work = workSpan(part, source);
+  if (change === "file" || !work) return true;
+  return change.start < work.end && work.start < change.end;
+}
+
 // ---- The context ----
 
 export interface AgentSiteInput {
@@ -405,6 +492,8 @@ export interface AgentSiteInput {
     exists(path: string): boolean;
     openFile?: string;
     selection?: ElementInput;
+    /** Where the user is typing (src/working-part.ts). */
+    working?: WorkingPart;
   };
 }
 
@@ -515,6 +604,7 @@ export async function buildAgentContext(input: AgentSiteInput): Promise<SharedCo
     openFile: native.openFile ?? null,
     openRoute: openRoute ?? null,
     selection: (selection && agentElement(selection, site, native.source(selection.path))) ?? null,
+    working: native.working ? agentWorking(native.working, site, native.source(native.working.path)) : null,
     components,
     stylesheets: linkedStylesheets(site, (path) => native.source(path)),
     settings: native.exists(NATIVE_CONFIG_PATH) ? { file: NATIVE_CONFIG_PATH, ...clipSettings(nativeSiteSettings(native.source(NATIVE_CONFIG_PATH))) } : null,

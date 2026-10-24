@@ -331,7 +331,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     "get_command_status",
     {
       description:
-        "Look up a change in the receiving browser: its receipt means applied; a cancellation tombstone means cancelled before commit. Otherwise the outcome is unknown; never replay automatically.",
+        "Look up a change in the receiving browser: its receipt means applied; a cancellation tombstone means cancelled before commit; waiting means the user is editing that part, and it lands when they click away (conflict if they changed it meanwhile). Otherwise the outcome is unknown; never replay automatically.",
       inputSchema: z.object({ requestId: z.string().min(1).max(128) }),
     },
     async ({ requestId }) => {

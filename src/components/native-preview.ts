@@ -240,6 +240,8 @@ export interface NativePreviewHandlers {
   // ("out" of / "in" to a container) pressed inside the preview.
   onMove?: (direction: "up" | "down" | "out" | "in") => void;
   onTextEdit?: (edit: NativeTextEdit) => void;
+  // Typing goes on in the element at `at`, or (`left`) it was left.
+  onTyping?: (at: { path: string; node: number[] }, left: boolean) => void;
   onImageDrop?: (target: { path: string; node: number[]; width?: number }, files: File[]) => void;
   // A double-click on an image of the page (or of the template open for editing): choose its image.
   onImageEdit?: (target: { path: string; node: number[]; width?: number; paintedSource?: string }) => void;
@@ -739,6 +741,8 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     const edit: NativeTextEdit = { path: message.path, node: message.node, before: message.before, after: message.after };
     handlers.onTextEdit?.(edit);
   });
+  // Where typing happens (ticket 52), and when it is left: after that element's text edit above.
+  link.on("typing", (message) => { if (site && nativeSitePaths(site).includes(message.path)) handlers.onTyping?.({ path: message.path, node: message.node }, message.left); });
   // A Ctrl/⌘+click on a link inside the preview (including inside shadow
   // roots) to one of the site's pages navigates the preview only, keeping
   // the current source edits untouched.
