@@ -47,3 +47,10 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - make_component: the agent's checks (`worker/mcp.ts`, `shared/agent-edit.ts`) and the tab's (`tagNameProblem`, `makeComponentPlan`) use the same rule, so a bad name, a taken name, `<main>`/`<body>`, the site header or footer and other components get the same words everywhere ("<x> is a component already." replaces "This is a component already."; the agent's "not a valid custom-element name" becomes the tab's detailed name words).
 - Tests: new `tests/site-rules.test.ts`; `native-pages`, `native-page-moves` (strict new parts, old address kept on move, rename to strict), `mcp-runtime` (create_page slug, make_component words), `component-model`, `card-page-offer`; specs `native-create` (New page URL field) and `native-page-urls` (Change URL field) type `About_Us.v2`.
 - Follow-up (not in this slice): the Files tab's moves and the agent's `move_file` and `write_file` can still give a page file a new URL outside the rule (`about/` → `About_Us.v2/`). They work on files, through `src/controllers/file-operations-controller.ts`, outside this ticket's Files. Checking each new part with `pageAddressProblem`, new parts only as in `planPageMove`, belongs in one place for both, so the agent keeps matching the Files tab.
+
+### Follow-ups
+
+- Spec (P2): 9a7ae6f3:src/native-pages.ts:226 — P2: Ticket 05 item 4 says existing addresses stay until someone changes them. This slice makes `nativeNewTarget` strict. But 
+- Validation gaps (gap): No test covers Duplicate on an old-named page. Add to the pages-controller unit tests (or to the `native-page-urls` spec, after seeding `About_Us.v2/index.html`
+- Validation gaps (gap): Nothing pins the message order when Change URL hits a strict-rule refusal and a "taken" or "is a file" refusal at the same time; the address check in `planPageM
+
