@@ -1,4 +1,4 @@
-import { after, test } from "node:test";
+import { after, test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { registerHooks } from "node:module";
 import { createAppStore } from "../src/app-store.ts";
@@ -6,7 +6,11 @@ import { CleanSourceCache } from "../src/clean-source-cache.ts";
 import { createDraftStore } from "../src/draft-store.ts";
 import { draftStore, type DraftScope, type SavedDraft } from "../src/drafts.ts";
 import { createNativeSiteRuntime } from "../src/native-site-runtime.ts";
-import type { PagesAndFilesPorts } from "../src/pages-and-files-host.ts";
+import type { ExplorerHost, PagesAndFilesPorts } from "../src/pages-and-files-host.ts";
+import { newFilePath, newFolderPath, renamedPath } from "../src/native-create.ts";
+import { NATIVE_HOME_PAGE } from "../shared/native-project.ts";
+import { nativePageRoute } from "../shared/native-routes.ts";
+import { parentProblem } from "../shared/site-rules.ts";
 import { createWorkspaceSession, type SessionStamp } from "../src/workspace-session.ts";
 import type { Snapshot } from "../shared/types.ts";
 
@@ -33,18 +37,26 @@ registerHooks({
   load: (url, context, next) => /\.css$|\?raw$/.test(url) ? { format: "module", source: "export default '';", shortCircuit: true } : next(url, context),
 });
 const { createPagesAndFilesHost } = await import("../src/pages-and-files-host.ts");
+const { createExplorerActions } = await import("../src/pages-and-files-explorer.ts");
 
 const SCOPE = { account: "o", repoId: 1, repo: "o/site", branch: "main" } satisfies DraftScope;
 const SHA = "a".repeat(40);
 const SNAPSHOT = { repo: "o/site", branch: "main", commit: SHA, entries: [{ path: "notes.txt", type: "blob", sha: SHA }] } as Snapshot;
 const holds: SessionStamp = { load: 1, scope: undefined, holds: () => true, changed: () => undefined };
 const deletion = (path: string): SavedDraft => ({ ...SCOPE, version: 1, path, baseSha: SHA, original: "kept", content: "kept", updatedAt: 0, deleted: true });
+// Drafts live in the one real store: each test takes its own out again, whatever it asserts.
+const forget = (t: TestContext, ...paths: string[]) => t.after(() => { for (const path of paths) draftStore().remove(SCOPE, path); });
+// The one place a stand-in takes an element's type.
+// eslint-disable-next-line no-restricted-syntax -- the stand-ins implement only the members the host touches.
+const asElement = <T extends HTMLElement>(fake: object) => fake as unknown as T;
 
 // A host over fakes that record what it asked of them; `late` stands in for ports main.ts declares further down.
 function setup() {
   const calls: string[] = [];
   let scope: DraftScope | undefined;
-  const late: { restoreFile?: PagesAndFilesPorts["restoreFile"] } = {};
+  let generation = 0;
+  const late: { restoreFile?: PagesAndFilesPorts["restoreFile"]; loadSnapshot?: PagesAndFilesPorts["loadSnapshot"] } = {};
+  const status = asElement({ textContent: "" });
   const appStore = createAppStore(createDraftStore());
   const record = (name: string) => () => { calls.push(name); };
   // The real site runtime over the same drafts: no site, one file on the branch.
@@ -55,8 +67,8 @@ function setup() {
   });
   runtime.base.files = ["notes.txt"];
   const ports = {
-    app: {} as HTMLElement, explorerDropdown: undefined, files: {} as HTMLElement, pageStructure: undefined, siteActions: undefined,
-    pendingNativePageTitles: undefined, fileGeneration: 0,
+    app: asElement({}), explorerDropdown: undefined, files: asElement({ querySelectorAll: () => [] }), pageStructure: undefined, siteActions: undefined,
+    get fileGeneration() { return generation; }, set fileGeneration(value) { generation = value; },
     appStore, workspaceSession: createWorkspaceSession(),
     runtime,
     editorModule: { isMounted: () => false, refreshDrafts: record("refreshDrafts"), forgetDraftModel: () => {}, dropDraft: () => false, clearHistory: () => {} },
@@ -68,7 +80,7 @@ function setup() {
     linkedStyles: { secondaryPath: () => undefined, unlink: () => {}, openComponentLinkedStyle: async () => {}, openDefaultLinkedStyle: async () => {} },
     versions: { history: { refresh: record("history") } }, previewSelection: { recordIntent: () => {} },
     repositoryIndex: { seed: () => {} }, finishedWork: { add: () => {} },
-    element: () => { throw new Error("No DOM here."); },
+    element: <T extends HTMLElement>(id: string) => { if (id === "status") return status as T; throw new Error(`No #${id} here.`); },
     lazyModule: <T>(load: () => Promise<T>) => load, loadConfirmDialog: () => import("../src/components/confirm-dialog.ts"),
     api: async <T>() => ({}) as T, status: () => {}, clearError: () => {}, errorMessage: (error: unknown) => { calls.push(`error ${String(error)}`); },
     announce: (text: string) => { calls.push(`announce ${text}`); },
@@ -78,27 +90,28 @@ function setup() {
     nativeNavigationTarget: () => undefined, writeNativePageMeta: async () => undefined,
     refreshNativeRoutes: () => {}, forgetDraftedAssets: () => {}, loadNativeComponentStyles: async () => {},
     updateAgentContext: record("agent"), updateCurrentPageLabel: () => {}, updateNativePreviewSources: () => {}, updatePreview: () => {},
-    setCurrentPage: () => {}, showDirectory: () => { calls.push("directory"); }, openNewDraft: async () => {}, discardUpload: async () => {},
+    setCurrentPage: record("setCurrentPage"), showDirectory: () => { calls.push("directory"); }, openNewDraft: async () => {}, discardUpload: async () => {},
     uploadFilesTo: async () => [], nativeFallbackPage: () => undefined, nativeModeActive: () => false, nativeComponentTagForPath: () => undefined,
-    startNativeTextIndex: () => {}, openNativePageSettings: async () => {}, openNativeNavigation: async () => {}, flushPendingNativePageTitles: () => {},
-    restoreFile: (...args) => late.restoreFile!(...args), loadSnapshot: async () => {}, openEntry: async () => {},
+    startNativeTextIndex: () => {}, openNativePageSettings: async () => {}, openNativeNavigation: async () => {}, flushPendingNativePageTitles: () => {}, clearPendingTitles: () => {},
+    restoreFile: (...args) => late.restoreFile!(...args), loadSnapshot: (...args) => late.loadSnapshot!(...args), openEntry: async () => {},
   } satisfies PagesAndFilesPorts;
   const host = createPagesAndFilesHost(ports);
-  return { host, calls, appStore, late, open: (next: DraftScope | undefined) => { scope = next; } };
+  return { host, ports, calls, appStore, runtime, late, status, generation: () => generation, open: (next: DraftScope | undefined) => { scope = next; } };
 }
 
-test("the tree state and what is at a path follow the draft scope at call time", () => {
+test("the tree state and what is at a path follow the draft scope at call time", (t) => {
   const f = setup();
+  forget(t, "notes.txt");
   draftStore().save(deletion("notes.txt"));
   assert.equal(f.host.pathNow("notes.txt"), "file");
   f.open(SCOPE);
   assert.equal(f.host.treeState().changes.get("notes.txt")?.kind, "D");
   assert.equal(f.host.pathNow("notes.txt"), "deleted");
-  draftStore().remove(SCOPE, "notes.txt");
 });
 
-test("Restore brings a deletion back, refreshes once and says so", () => {
+test("Restore brings a deletion back, refreshes once and says so", (t) => {
   const f = setup();
+  forget(t, "notes.txt");
   f.open(SCOPE);
   draftStore().save(deletion("notes.txt"));
   f.host.undoFileChanges({ restore: ["notes.txt"] });
@@ -117,4 +130,54 @@ test("after a file goes, the page opens through a port the host reads when it ru
   f.late.restoreFile = async (path) => { opened.push(path); };
   await f.host.openAfter("notes.txt");
   assert.deepEqual(opened, ["notes.txt"]);
+});
+
+test("Restore of the open file takes the next file generation through the host's setter and leaves the page", async (t) => {
+  const f = setup();
+  forget(t, "notes.txt");
+  f.open(SCOPE);
+  f.late.restoreFile = async () => {};
+  f.appStore.openFile.value = "notes.txt";
+  draftStore().save(deletion("notes.txt"));
+  f.host.undoFileChanges({ restore: ["notes.txt"] });
+  assert.equal(f.generation(), 1);
+  assert.equal(f.calls[0], "setCurrentPage");
+});
+
+test("a home page drafted in a site-less repository opens the project again, and the wait it gives clears after", async (t) => {
+  const f = setup();
+  forget(t, NATIVE_HOME_PAGE);
+  f.open(SCOPE);
+  f.appStore.snapshot.value = SNAPSHOT;
+  let finish!: () => void;
+  const loads: (string | undefined)[] = [];
+  f.late.loadSnapshot = async (resume) => { loads.push(resume); await new Promise<void>((resolve) => { finish = resolve; }); };
+  draftStore().save({ ...SCOPE, version: 1, path: NATIVE_HOME_PAGE, baseSha: null, original: "", content: "<h1>Home</h1>", updatedAt: 0 });
+  assert.equal(f.runtime.engaged, false);
+  f.host.afterFileChanges();
+  const waiting = f.host.nativeResyncDone;
+  assert.ok(waiting instanceof Promise);
+  await Promise.resolve();
+  assert.deepEqual(loads, [undefined]);
+  finish();
+  await waiting;
+  assert.equal(f.host.nativeResyncDone, undefined);
+});
+
+test("Create refuses a name the branch has and makes a folder as its .gitkeep, a draft with no base blob", async (t) => {
+  const f = setup();
+  forget(t, "docs/.gitkeep");
+  f.open(SCOPE);
+  f.appStore.snapshot.value = SNAPSHOT;
+  const explorer = createExplorerActions(f.ports, {
+    createDialog: undefined, fileActions: undefined, fileOps: undefined, filesTreeController: f.host.filesTreeController, treeState: f.host.treeState,
+    undoFileChanges: f.host.undoFileChanges, savePublish: f.host.savePublish, branchPathProblem: f.host.branchPathProblem, resyncNativeSite: () => false,
+    nativePageRoute, parentProblem, newFilePath, newFolderPath, renamedPath,
+  } satisfies ExplorerHost);
+  assert.deepEqual(explorer.planCreation({ kind: "file", folder: "", name: "notes.txt" }), { ok: false, error: "notes.txt already exists." });
+  assert.equal(await explorer.createFromRequest({ kind: "folder", folder: "", name: "docs" }), undefined);
+  const kept = draftStore().get(SCOPE, "docs/.gitkeep");
+  assert.equal(kept?.baseSha, null);
+  assert.equal(kept?.content, "");
+  assert.equal(f.status.textContent, "Created the folder docs.");
 });
