@@ -2,7 +2,7 @@
 title: Decide what a synced session is for people without an account
 type: grilling (HITL)
 status: open
-assignee:
+assignee: Lex + claude (grilling)
 blocked_by: []
 ---
 

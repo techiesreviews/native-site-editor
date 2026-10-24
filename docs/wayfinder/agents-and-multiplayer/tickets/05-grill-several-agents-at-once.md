@@ -2,7 +2,7 @@
 title: Decide how several agents and subagents work at once
 type: grilling (HITL)
 status: open
-assignee:
+assignee: Lex + claude (grilling)
 blocked_by: []
 ---
 
