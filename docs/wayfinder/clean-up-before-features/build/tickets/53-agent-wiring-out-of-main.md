@@ -1,8 +1,8 @@
 ---
 title: "Agent wiring leaves main.ts"
 type: task (AFK)
-status: open
-assignee: lead-53 (this session)
+status: closed
+assignee: lead-53
 builder: sol
 blocked_by: [52-agents-wait-for-lex]
 ---
@@ -34,3 +34,11 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `kit unit --affected`, `kit specs --affected`, `kit size`.
 - Review: `kit review --ticket <this ticket>` (GPT-6.1 Sol, medium, read-only). Land: `kit pr --ticket <this ticket>`.
 - Report: unit and specs `RESULT:` lines, `kit size` delta, review folder and decisions, PR and merge SHA, `main.ts` lines before and after and the new ceiling.
+
+## Done (2026-10-25)
+
+- No visible change. An agent's commands, its legacy drafts and the reload after its writes run through `createAgentCommands` in `src/agent-site-host.ts`: `awaitNativeResync`, `makeAgentSiteActions`, `applyAgentSiteCommand`, `agentActing` and `applyAgentCommand` moved with their bodies, the host's `let` state (`info`, `componentTools`, `pageStructure`, `nativePreview`) read through getters, and `ports.` prefixes on those. The agent controller's `reload` moved as `reload`, unchanged inside.
+- `main.ts` hands the host its consts and hoisted functions by value, `restoreFile` as an arrow; the guarded edits ask `agentCommands.acting()`. The `buildAgentSiteContext` forwarder is gone: `agentContext` waits for the index on `agentSiteHost.context`.
+- `src/main.ts` 3109 → 2878 lines; ceiling 3110 → 2880. `kit size`: boot 353 KB (±0 KB), budget 355 KB.
+- Tests: `tests/agent-site-host.test.ts` adds two cases through the real `createAgentCommands`, its ports typed with `satisfies AgentCommandPorts`: an active-file draft checked against the session and branch shown as it runs, and the preview and Page Structure made after the host. `tests/workspace-session-guard.test.ts`'s `applyAgentCommand` entry names its new file. `docs/agents/code-map.md` names `createAgentCommands` and the new section lines.
+- Validation: `kit unit --affected` 21/21; `npm test` 5435 passed, 0 failed; `npm run check`, `npm run lint` clean; the eight `native-agent-*` specs 8/8 (`kit specs --affected` selected none).

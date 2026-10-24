@@ -39,7 +39,7 @@ Each file is followed by its declared entry symbols. Styles, fixtures, scripts a
 | Frame protocol validation and freshness | `src/components/preview-protocol.ts` — `FrameMessage`, `HostMessage`, `readFrameMessage`, `FRESHNESS`; `src/components/preview-wire.ts` — `FRAME_SOURCE`, `HOST_SOURCE` |
 | Frame message transport and request/reply | `src/components/preview-link.ts` — `createPreviewLink`, `iframeFramePort`; `src/components/preview-frame-state.ts` — `createPreviewFrameState` |
 | Edit bar controls and Page Structure | `src/controllers/page-structure-controller.ts` — `createPageStructureController`, `renderNativeEditBar`; `src/components/edit-bar.ts` — `createEditBar`, `EditBarControl`; `src/components/page-structure.ts` — `createPageStructure` |
-| Agent connection, requests and pins | `src/controllers/agent-controller.ts` — `createAgentController`; `src/agent-site-host.ts` — `createAgentSiteHost`; `src/agent-site.ts` — `buildAgentContext`, `applySiteCommand`; `src/components/agent-pins.ts` — `createAgentPins`; `src/agent-presence.ts` — `createAgentPresence` (an agent at work on a section: its outline and Page Structure dot, ticket 33), `src/agent-site.ts` `agentPresenceTarget` |
+| Agent connection, requests and pins | `src/controllers/agent-controller.ts` — `createAgentController`; `src/agent-site-host.ts` — `createAgentSiteHost`, `createAgentCommands` (an agent's commands through the editor's own actions, its legacy drafts and reload); `src/agent-site.ts` — `buildAgentContext`, `applySiteCommand`; `src/components/agent-pins.ts` — `createAgentPins`; `src/agent-presence.ts` — `createAgentPresence` (an agent at work on a section: its outline and Page Structure dot, ticket 33), `src/agent-site.ts` `agentPresenceTarget` |
 | Agent live transport, tools, records and ownership | `src/agent-transport.ts` — `createLiveTransport` (relay socket, handshake, reconnects); `src/agent-tools.ts` — `createAgentTools`; `src/agent-tools-read.ts` — `createAgentReadTools` (reads through `shared/site-files.ts` `SiteFiles`, the runtime's text now first); `src/agent-tools-edit.ts` — `createAgentEditTools`; `src/agent-tools-media.ts` — `createAgentMediaTools`; `src/agent-records.ts` — `indexedDbAgentRecords` (receipts, conversations); `src/agent-owner.ts` — `createAgentOwner` (receiving-tab generation); `src/agent-recovery.ts` — `createAgentRecovery`; `src/agent-watch.ts` — `createRequestTools` (held waits while connected) |
 
 ### Shared rules and guarded edits
@@ -251,12 +251,12 @@ Ranges are approximate navigation hints, measured in this worktree; search the s
 | Current page, GitHub reads wiring and closing the workspace before sign-in | 2315–2459 | setCurrentPage, readFile, closeWorkspace (status, errorMessage, api: src/github-reads.ts) |
 | Login, Start your site, Setup checklist, wizard and Get started ports (src/setup-host.ts), directory summary | 2460–2541 | setup, setupScope, showDirectory |
 | Card grids; Pages & files host ports (src/pages-and-files-host.ts: trees, tabs, Create, file operations, resync, save) | 2542–2599 | cardsController, pagesAndFiles, pagesController, savePublish, afterFileChanges, treeState |
-| Source pane ports (src/controllers/source-pane-controller.ts) | 2600–2632 | sourcePane, openEntry, mountSource, nativeComponentTagForPath, updateAgentContext |
-| Agent context and commands | 2633–2886 | agentContext, agentSiteActions, applyAgentSiteCommand, agentActing |
-| New, uploaded and deleted drafts | 2887–2993 | openNewDraft, showUpload, applyAgentCommand |
-| Workspace boot ports (src/workspace-boot.ts) | 2994–3018 | workspaceBoot, restoreFile, loadSnapshot, chooseRepository |
-| Repository list, account switching and sign-out ports (src/repository-list.ts), storage | 3019–3040 | checkNewRepositories listeners, loadRepositories, refreshRepositoryList, disconnect, storage |
-| Draft baseline, agent/boot ports and startup | 3041–3099 | agentController, boot, renderLogin("loading"), workspaceBoot.startGuess |
+| Source pane ports (src/controllers/source-pane-controller.ts) | 2597–2628 | sourcePane, openEntry, mountSource, nativeComponentTagForPath, updateAgentContext |
+| Agent context and command ports (src/agent-site-host.ts) | 2629–2678 | agentContext, agentSiteHost, agentCommands |
+| Fallback page; new, uploaded and deleted drafts | 2679–2754 | nativeFallbackPage, openNewDraft, showUpload, showDeletedFile |
+| Workspace boot ports (src/workspace-boot.ts) | 2755–2775 | workspaceBoot, restoreFile, loadSnapshot, chooseRepository |
+| Repository list, account switching and sign-out ports (src/repository-list.ts), storage | 2776–2801 | checkNewRepositories listeners, loadRepositories, refreshRepositoryList, disconnect, storage |
+| Draft baseline, agent/boot ports and startup | 2802–2877 | agentController, boot, renderLogin("loading"), workspaceBoot.startGuess |
 
 ## Main entry points
 
