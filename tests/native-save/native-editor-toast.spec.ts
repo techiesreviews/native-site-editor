@@ -165,12 +165,12 @@ test("a click on the explorer button after its hover opened the explorer leaves 
   await expect(page.locator("#explorer > .editor-toast")).toBeVisible();
   // One open: the press neither closes nor opens it again (each would be a beforetoggle).
   await page.locator("#explorer").evaluate(panel => {
-    const seen: string[] = (window as any).explorerToggles = [];
+    const seen: string[] = (window as Window & { explorerToggles?: string[] }).explorerToggles = [];
     panel.addEventListener("beforetoggle", event => seen.push((event as ToggleEvent).newState));
   });
   await page.locator("#explorer-toggle").click();
   await expect(page.locator("#explorer")).toBeVisible();
-  expect(await page.evaluate(() => (window as any).explorerToggles)).toEqual([]);
+  expect(await page.evaluate(() => (window as Window & { explorerToggles?: string[] }).explorerToggles)).toEqual([]);
   const undo = toast(page).getByRole("button", { name: "Undo", exact: true });
   await expect.poll(() => undo.evaluate(button => {
     const r = button.getBoundingClientRect(), top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);

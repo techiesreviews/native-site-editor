@@ -375,6 +375,33 @@ test("typing in a text scrolled out of view, a press and drag on another block k
   expect(await frameScroll(page)).toBe(scrolled);
 });
 
+test("typing in a text, scrolling it out of view and leaving the canvas: the render that writes it keeps the scroll", async ({ page }) => {
+  const at = await afterWord(page, ".hero h1", "native");
+  await page.mouse.click(at.x, at.y);
+  await expect(frame(page).locator(".hero h1")).toBeFocused();
+  await page.keyboard.type("!");
+  await frame(page).locator(filler(2)).evaluate((el) => el.scrollIntoView({ block: "center", behavior: "instant" }));
+  const scrolled = await frameScroll(page);
+  expect(scrolled).toBeGreaterThan(0);
+  const release = await holdRenders(page);
+  // Focus leaving the canvas writes the text, with no press in it.
+  await frame(page).locator(".hero h1").blur();
+  await expect.poll(() => source(page)).toContain("A native! browser");
+  await expect.poll(() => frame(page).locator("body").evaluate(() => (window as Held).heldRenders?.length ?? 0)).toBeGreaterThan(0);
+  // Settles once the released render has been handled (this listener runs after the runtime's).
+  await frame(page).locator("body").evaluate(() => {
+    (window as Held).answered = new Promise(done => addEventListener("message", function seen(e) {
+      if ((e.data as { type?: string } | null)?.type !== "update") return;
+      removeEventListener("message", seen);
+      done();
+    }));
+  });
+  expect(await release()).toBeGreaterThan(0);
+  await frame(page).locator("body").evaluate(() => (window as Held).answered);
+  await expect(frame(page).locator(".hero h1")).not.toBeInViewport();
+  expect(await frameScroll(page)).toBe(scrolled);
+});
+
 test("a click on text in formatting that is no text of its own (a <del>) types in its line", async ({ page }) => {
   await pasteSource(page, withPrice);
   const price = frame(page).locator("[data-key='price']");
@@ -461,7 +488,7 @@ test("with the browser's own line height (normal), a click between two lines sti
   await expect(para).toBeFocused();
 });
 
-type Held = typeof window & { heldRenders?: unknown[] };
+type Held = typeof window & { heldRenders?: unknown[]; answered?: Promise<void> };
 
 /** Holds the editor's renders (its `update` messages) in the preview; the function returned replays them. */
 async function holdRenders(page: Page) {

@@ -37,6 +37,25 @@ async function openMenu(page: Page) {
   await expect(repoRow(page)).toBeVisible();
 }
 
+test("a pointer click on the open repository menu's trigger keeps it open, with no close and reopen; Enter on it closes it", async ({ page }) => {
+  const trigger = page.locator(".repository-menu__trigger");
+  await openMenu(page);
+  const panel = page.locator(`#${await trigger.getAttribute("aria-controls")}`);
+  await expect(panel).toBeVisible();
+  await panel.evaluate(element => {
+    const seen: string[] = (window as Window & { menuToggles?: string[] }).menuToggles = [];
+    element.addEventListener("beforetoggle", event => seen.push((event as ToggleEvent).newState));
+  });
+  const toggles = () => page.evaluate(() => (window as Window & { menuToggles?: string[] }).menuToggles);
+  await trigger.click();
+  await expect(panel).toBeVisible();
+  expect(await toggles()).toEqual([]);
+  await trigger.focus();
+  await page.keyboard.press("Enter");
+  await expect(panel).toBeHidden();
+  expect(await toggles()).toEqual(["closed"]);
+});
+
 test("hovering the open repository's row lists its branches beside the menu, and choosing one switches to it", async ({ page }) => {
   await openMenu(page);
   // The row names the branch, and says it opens more.
