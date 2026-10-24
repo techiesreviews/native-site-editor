@@ -82,8 +82,8 @@ export function mountDropdown(options: {
   }, { signal });
   trigger.addEventListener("click", event => {
     // Shared behavior owns the toggle, as for the secondary trigger. A pointer click keeps an open
-    // panel open (as before, when light dismissal closed it and the click opened it again); Enter
-    // or Space (no click count) closes it.
+    // panel open (as before, when light dismissal closed it and the click opened it again); Enter,
+    // Space or a script's click() (no click count) closes it.
     event.preventDefault();
     if (options.onClick) { open(); pinned = true; options.onClick(); }
     else if (pinned && isOpen() && event.detail === 0) close();

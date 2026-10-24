@@ -27,6 +27,52 @@ export async function resumeAgents(ports: {
 }
 
 /**
+ * Connect to MCP with remote agents off: turns them on, reads the connections, opens the socket,
+ * and, finding a reconnect left from before the press, retries it at once rather than waiting out
+ * its backoff. Then it makes a prompt (idle), copies the waiting one again, or, still reconnecting
+ * with no recorded retry time to wait for, marks the press stuck. A turn-off, another turn-on or a
+ * site move while it waits ends it with no write.
+ */
+export async function turnOnAgents(ports: {
+  /** Turns remote agents on for the open site and returns this activation. */
+  start(): number;
+  /** Whether activation `at` still holds. */
+  live(at: number): boolean;
+  /** Whether another tab of this browser paused remote agents. */
+  paused(): boolean;
+  /** Reads the connections. */
+  read(): Promise<unknown>;
+  /** Opens the live socket. */
+  open(): Promise<void>;
+  /** The menu's state now. */
+  state(): string;
+  /** Retries the reconnect now; its failure is the recovery's to report. */
+  retry(): Promise<void>;
+  /** Whether a recorded retry time is still ahead (the button waits for it). */
+  retryWaits(): boolean;
+  /** Whether the button offers Wait for MCP in `state`. */
+  waits(state: string): boolean;
+  /** Makes a new prompt. */
+  prompt(): Promise<void>;
+  /** Copies the waiting prompt again. */
+  copyAgain(): Promise<void>;
+  /** Shows that the press found the reconnect still under way. */
+  stuck(): void;
+}) {
+  const at = ports.start();
+  await ports.read();
+  if (ports.paused() || !ports.live(at)) return;
+  await ports.open();
+  if (!ports.live(at)) return;
+  if (ports.state() === "reconnecting") await ports.retry();
+  if (!ports.live(at)) return;
+  const now = ports.state();
+  if (now === "idle") await ports.prompt();
+  else if (ports.waits(now)) await ports.copyAgain();
+  else if (now === "reconnecting" && !ports.retryWaits()) ports.stuck();
+}
+
+/**
  * One connections read at a time. A read asked while another is in flight is skipped (false),
  * unless `wait`: then it waits for every read ahead of it and makes its own, so its answer is
  * this caller's (each waiter reads in turn). A read ahead that rejects only ends the wait: the

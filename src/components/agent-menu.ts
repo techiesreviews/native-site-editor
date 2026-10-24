@@ -11,7 +11,7 @@ import type { AgentReadPorts } from "../agent-tools-read";
 import type { SharedContext } from "../agent-site";
 import type { PinRequest } from "./agent-pins";
 import { agentHistoryKey } from "../controllers/agent-controller";
-import { resumeAgents, revokeUnused, serialReads, siteFull } from "../agent-resume";
+import { resumeAgents, revokeUnused, serialReads, siteFull, turnOnAgents } from "../agent-resume";
 import { mountFlyout } from "./flyout";
 import { githubScope, same, sameBranch } from "../workspace-session";
 import "./agent-menu.css";
@@ -101,6 +101,8 @@ export function createAgentMenu(options: {
   /** The site whose last press failed with nothing to show for it: the dot shows it until the
    * next press, a turn on or off, another site shown, or an agent using a connection. */
   let failedOn: ReturnType<typeof options.repository>;
+  // A press found the reconnect still under way: the dot shows a problem until it ends or the next press.
+  let stuckOn = false;
   let disposed = false,
     changing = false,
     remote = false,
@@ -217,6 +219,7 @@ export function createAgentMenu(options: {
         // takeover updates must not be lost (a real move sets workspaceChanged and a new activation).
         if (disposed || !remote || activation !== at || workspaceChanged) return;
         transportState = next;
+        if (next.mode !== "reconnecting") stuckOn = false;
         ownerPaused = next.mode === "paused" && Boolean(next.message);
         paint();
       },
@@ -354,6 +357,7 @@ export function createAgentMenu(options: {
     if (!remote) return "off";
     if (workspaceChanged) return "workspace-changed";
     if (transportMode === "pending") return "connecting";
+    if (transportMode === "socket" && stuckOn && transportState?.mode === "reconnecting") return "failed";
     if (transportMode === "socket" && transportState && transportState.mode !== "live") return transportState.mode;
     if (usedGrants().length) return "connected";
     return waiting() ? "waiting" : "idle";
@@ -540,6 +544,7 @@ export function createAgentMenu(options: {
     // The press does what its label said when it was pressed.
     const offered = (root.dataset.offer as ReturnType<typeof offer> | undefined) || offer();
     failedOn = undefined;
+    stuckOn = false;
     const current = state();
     if (offered === "disconnect") await revoke();
     // Wait for MCP copies this tab's prompt again while its token still waits; a tab without
@@ -557,26 +562,27 @@ export function createAgentMenu(options: {
   // is used again (it may need resuming); otherwise a new prompt is made.
   async function turnOn(task?: string) {
     if (!options.repository() || changing) return;
-    startRemote();
-    // A turn-off, another turn-on or a site move while this press waits ends it.
-    const at = activation;
-    await readConnections();
-    if (ownerPaused || !live(at)) return;
-    await activateSocket();
-    if (!live(at)) return;
-    // A reconnect left from before the press (a failed request is reported to the socket too, and
-    // its attempts outlive the connection) waits out its backoff: the press tries now, as a retry.
-    // A failed retry is the recovery's to report: the dot shows it.
-    if (state() === "reconnecting") await transport?.retry().catch(() => undefined);
-    if (!live(at)) return;
-    const now = state();
-    if (now === "idle") await start(task);
-    // A token already waits (another tab's, another browser's, or this tab's own): Connect to MCP
-    // still copies a prompt, this tab's own if it still waits, otherwise a new one.
-    else if (offer(now) === "wait") await copyAgain(task);
-    // Still reconnecting (another tab of this browser holds the attempt, or it failed again): the
-    // press made no prompt, so the dot shows a problem until the next press.
-    else if (now === "reconnecting") { failedOn = options.repository(); paint(); }
+    await turnOnAgents({
+      start: () => { startRemote(); return activation; },
+      live,
+      paused: () => ownerPaused,
+      read: () => readConnections(),
+      open: activateSocket,
+      state,
+      // A reconnect left from before the press (a failed request is reported to the socket too, and
+      // its attempts outlive the connection) would wait out its backoff. A failed retry is the
+      // recovery's to report: the dot shows it.
+      retry: async () => { await transport?.retry().catch(() => undefined); },
+      retryWaits: () => (transportState?.retryAt ?? 0) > Date.now(),
+      // A token already waits (another tab's, another browser's, or this tab's own): Connect to MCP
+      // still copies a prompt, this tab's own if it still waits, otherwise a new one.
+      waits: now => offer(now as ReturnType<typeof state>) === "wait",
+      prompt: () => start(task),
+      copyAgain: () => copyAgain(task),
+      // Still reconnecting (another tab of this browser holds the attempt, or it failed again): the
+      // press made no prompt, so the dot shows a problem until the reconnect ends or the next press.
+      stuck: () => { stuckOn = true; paint(); },
+    });
   }
   const live = (at: number) => !disposed && remote && !workspaceChanged && activation === at && sameRepository(options.repository(), pinned);
   const site = (repo: { id: number; branch: string }): AgentWorkspace => ({ account: options.account, repoId: repo.id, branch: repo.branch });
@@ -596,6 +602,7 @@ export function createAgentMenu(options: {
     remote = true;
     ownerPaused = false;
     failedOn = undefined;
+    stuckOn = false;
     activation++;
     pinned = options.repository();
     remember(true);
@@ -611,6 +618,7 @@ export function createAgentMenu(options: {
   function turnOff(forget = false) {
     if (!remote) return;
     failedOn = undefined;
+    stuckOn = false;
     if (forget) remember(false);
     remote = false;
     ownerPaused = false;

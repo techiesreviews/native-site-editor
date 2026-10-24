@@ -611,10 +611,11 @@ import { domView } from "../page-builder/rules/tree.ts";
         var hold = press || placeKey(requested) === written;
         // In Edit component mode the part edited stays in view below the site's sticky header.
         var edited = editHost();
-        if (hold) { /* The page stays where it is. */ }
-        else if (edited && editContains(edited, requested)) revealEdited(requested, false);
-        else if (payload.selectNode.reveal === "center") revealWithBar(requested, false);
-        else if (requested.scrollIntoView) requested.scrollIntoView({ block: "nearest" });
+        if (!hold) {
+          if (edited && editContains(edited, requested)) revealEdited(requested, false);
+          else if (payload.selectNode.reveal === "center") revealWithBar(requested, false);
+          else if (requested.scrollIntoView) requested.scrollIntoView({ block: "nearest" });
+        }
       }
     }
     // A block selected in its place (an insert, a drop) is not typed into.

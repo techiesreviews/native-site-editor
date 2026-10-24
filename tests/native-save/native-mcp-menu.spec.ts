@@ -546,7 +546,7 @@ test("a failed first prompt: Connect to MCP shows the problem dot, not the plain
 
 /** A refused first prompt, reported to the live socket, which reconnects a moment later. That
  * reconnect is held (its socket never answers), so its attempt is under way when this returns;
- * later prompts are let through and counted. */
+ * later prompts are let through and counted, the last one's token kept. */
 async function failedPromptReconnecting(page: Page, context: BrowserContext, baseURL: string | undefined) {
   let hold = false, held!: () => void;
   const reconnecting = new Promise<void>(resolve => { held = resolve; });
@@ -558,9 +558,14 @@ async function failedPromptReconnecting(page: Page, context: BrowserContext, bas
   await open(page, baseURL);
   await page.locator(".repository-menu__trigger").click();
   const action = page.locator(".agent-menu__action"), menu = page.locator(".agent-menu");
-  let refuse = true, made = 0;
-  await page.route("**/api/agent/connect", route => {
-    if (!refuse) { made++; return route.continue(); }
+  let refuse = true, made = 0, token = "";
+  await page.route("**/api/agent/connect", async route => {
+    if (!refuse) {
+      made++;
+      const response = await route.fetch();
+      token = (await response.json() as { token: string }).token;
+      return route.fulfill({ response });
+    }
     hold = true;
     return route.fulfill({ status: 500, json: { error: "Internal error" } });
   });
@@ -568,11 +573,11 @@ async function failedPromptReconnecting(page: Page, context: BrowserContext, bas
   await expect(menu).toHaveAttribute("data-state", "failed");
   await reconnecting;
   refuse = false;
-  return { action, menu, made: () => made };
+  return { action, menu, made: () => made, token: () => token };
 }
 
 test("a press while the failed prompt's reconnect is under way makes one prompt at once", async ({ page, context, baseURL }) => {
-  const { action, made } = await failedPromptReconnecting(page, context, baseURL);
+  const { action, made, token } = await failedPromptReconnecting(page, context, baseURL);
   // Time stands still from here: a press that waited out the reconnect's backoff never prompts.
   await page.clock.install();
   await page.clock.pauseAt(await page.evaluate(() => Date.now() + 100));
@@ -580,16 +585,18 @@ test("a press while the failed prompt's reconnect is under way makes one prompt 
   // Copied stays while the clock stands still (Wait for MCP follows it).
   await expect(action).toHaveText("Copied");
   expect(made()).toBe(1);
+  // The prompt this press made, with its own new token.
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain(`Bearer ${token()}`);
 });
 
 test("a press while another tab of this browser holds the reconnect makes no prompt and shows the problem dot", async ({ page, context, baseURL }) => {
   const { action, menu, made } = await failedPromptReconnecting(page, context, baseURL);
   // Another tab's live claim on the site's reconnect: this tab's retry cannot start one.
-  await page.evaluate(() => {
-    const key = "native-site-editor:agent-recovery:native-demo-user:501";
+  const key = "native-site-editor:agent-recovery:native-demo-user:501";
+  await page.evaluate((key) => {
     const record = JSON.parse(localStorage.getItem(key) ?? "{}");
     localStorage.setItem(key, JSON.stringify({ attempts: [], ...record, lease: { tab: "another-tab", until: Date.now() + 60_000 } }));
-  });
+  }, key);
   await menu.evaluate(element => {
     const seen: string[] = (window as Window & { agentStates?: string[] }).agentStates = [];
     new MutationObserver(() => seen.push((element as HTMLElement).dataset.state ?? "")).observe(element, { attributeFilter: ["data-state"] });
@@ -600,6 +607,18 @@ test("a press while another tab of this browser holds the reconnect makes no pro
   await expect(menu).toHaveAttribute("data-state", "failed");
   await expect(action).toHaveText("Connect to MCP");
   expect(made()).toBe(0);
+  // The other tab lets go (its storage write reaches this tab): this tab reconnects, the problem
+  // dot goes with no press, and the next press makes one prompt.
+  await page.evaluate((key) => {
+    const record = JSON.parse(localStorage.getItem(key) ?? "{}");
+    delete record.lease;
+    localStorage.setItem(key, JSON.stringify(record));
+    window.dispatchEvent(new StorageEvent("storage", { key }));
+  }, key);
+  await expect(menu).toHaveAttribute("data-state", "idle", { timeout: 15_000 });
+  await action.click();
+  await expect(action).toHaveText("Copied");
+  expect(made()).toBe(1);
 });
 
 const remembered = (page: Page, ...branches: string[]) => page.evaluate(keys => keys.map(key => localStorage.getItem(key)),

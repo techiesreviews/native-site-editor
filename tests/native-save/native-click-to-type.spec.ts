@@ -395,6 +395,35 @@ test("typing in a text, scrolling it out of view and leaving the canvas: the ren
   expect(await frameScroll(page)).toBe(scrolled);
 });
 
+test("a redo while a press is under way does not scroll its block into view", async ({ page }) => {
+  // A shorter window, so the page scrolls past the fillers.
+  await page.setViewportSize({ width: 1400, height: 800 });
+  // A move to redo: filler-2 below filler-3, then undone.
+  await frame(page).locator(filler(2)).evaluate((el) => el.scrollIntoView({ block: "center", behavior: "instant" }));
+  const from = await afterWord(page, filler(2), "Paragraph"), to = await below(page, filler(3));
+  await clearOfScrollBands(page, from, to);
+  await drag(page, from, to);
+  const moved = (now: string) => now.indexOf(`data-key="filler-2"`) > now.indexOf(`data-key="filler-3"`);
+  await expect.poll(async () => moved((await source(page))!)).toBe(true);
+  expect(await undo(page)).toBe(true);
+  await expect.poll(async () => moved((await source(page))!)).toBe(false);
+  // Back at the top, the fillers below the frame; a press on whatever lies at the frame's middle.
+  await frame(page).locator("body").evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
+  await expect(frame(page).locator(filler(2))).not.toBeInViewport();
+  await expect(frame(page).locator(filler(3))).not.toBeInViewport();
+  const scrolled = await frameScroll(page);
+  const box = (await page.locator(".native-preview-frame").boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  // The redo's render selects the moved block, centred in view unless a press is under way.
+  const handled = await nextRender(page);
+  expect(await page.evaluate(async () => (await import("/src/components/code-editor.ts")).runVisualHistory("redo", "index.html"))).toBe(true);
+  await expect.poll(async () => moved((await source(page))!)).toBe(true);
+  await handled();
+  expect(await frameScroll(page)).toBe(scrolled);
+  await page.mouse.up();
+});
+
 test("in Edit component mode, typing in a part scrolled out of view, a press on another part keeps the scroll", async ({ page }) => {
   // A shorter window, and (below) a taller card body, so the card's note can sit just below the
   // frame with its title well inside it.
