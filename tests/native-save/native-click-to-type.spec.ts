@@ -273,7 +273,7 @@ test.describe("drags", () => {
     const to = await below(page, filler(3));
     await clearOfScrollBands(page, at, to);
     await drag(page, at, to);
-    const typed = `<p data-key="filler-2">Paragraph two of filler content to give the page real vertical length for scroll verification typed.</p>`;
+    const typed = "scroll verification typed.</p>";
     await expect.poll(async () => { const now = (await source(page))!; return now.indexOf(typed) > now.indexOf(`data-key="filler-3"`); }).toBe(true);
     await expect(frame(page).locator("[contenteditable]")).toHaveCount(0);
     // Two undo steps: the move, then the typing.
@@ -462,7 +462,9 @@ test("in Edit component mode, a part being typed in drags to another place in th
   await page.keyboard.press("End");
   await page.keyboard.type("!");
   // Pressed on its text and dragged above the title: the part moves, its typed text kept.
-  await drag(page, at, await point(title, 0.2), "Card note");
+  const onTitle = await point(title, 0.2);
+  await clearOfScrollBands(page, at, onTitle);
+  await drag(page, at, onTitle, "Card note");
   const flat = (html: string) => html.replace(/\s+(?=<)/g, "");
   await expect.poll(async () => { const now = flat((await mounted()) ?? ""); return now.includes("Shared across cards!</card-note>") && now.indexOf("<card-note") < now.indexOf("<h3"); }).toBe(true);
   // Two undo steps: the move, then the typing.

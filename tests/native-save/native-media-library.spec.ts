@@ -480,8 +480,9 @@ test("adding a file keeps the tiles and pictures already shown; its ring goes on
   const search = panel.getByLabel("Search media", { exact: true });
   const ring = await added.evaluate(async card => {
     const shown = () => (window as typeof window & { ringShownAt?: number }).ringShownAt;
+    // fixed-wait: the ring must have played 600 ms before the redraw, so a ring restarted at 0 shows.
     while (shown() === undefined || performance.now() - shown()! < 600) await new Promise(requestAnimationFrame);
-    const field = document.querySelector<HTMLInputElement>('input[name="media-search"]')!;
+    const field = card.closest(".media-library")!.querySelector<HTMLInputElement>('input[name="media-search"]')!;
     field.value = "kept-tiles";
     field.dispatchEvent(new Event("input", { bubbles: true }));
     field.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));

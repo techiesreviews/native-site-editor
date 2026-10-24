@@ -96,8 +96,8 @@ test("remote agents off: startup, the agent menu and idle visible or hidden tabs
     await page.locator(".repository-menu__trigger").click();
     await action.click();
     await expect(action).toHaveText("Disconnect MCP", { timeout: 15_000 });
-    expect(requests.filter((request) => request.path === "/api/agent/connect"), "no new token for a connected agent").toEqual([]);
-    expect(requests.some((request) => request.path === "/api/agent/connections")).toBe(true);
+    // Its read may be reported late too; the no-new-token check runs at the end, over every request.
+    await expect.poll(() => requests.some((request) => request.path === "/api/agent/connections")).toBe(true);
     await socketReady(1);
     const idle = requests.length;
     await idleFor(65_000);
@@ -119,6 +119,7 @@ test("remote agents off: startup, the agent menu and idle visible or hidden tabs
     await idleFor(65_000);
     expect(http(after), "idle after a reload").toEqual([]);
     expect({ sockets, ready }, "one socket after the reload, never reconnected").toEqual({ sockets: 2, ready: 2 });
+    expect(requests.filter((request) => request.path === "/api/agent/connect"), "no new token for a connected agent").toEqual([]);
     expect((await client.listTools()).tools.length).toBeGreaterThan(0);
   } finally {
     await client.close();
