@@ -1,8 +1,8 @@
 ---
 title: "Connect to MCP copies the prompt on the preview editor"
 type: task (AFK)
-status: open
-assignee: lead-37 (this session)
+status: closed
+assignee: lead-37
 builder: claude
 blocked_by: []
 ---
@@ -31,3 +31,8 @@ Lex (2026-10-24, on preview-editor.techies.tools): "the MCP connect doesn't copy
 ## Kit commands and evidence
 
 Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runner.md)). `kit bg slice-37 -- scripts/agents/kit slice --ticket <this ticket> --builder claude-opus-5-5`.
+
+## Done (2026-10-24)
+
+- Pressing **Connect to MCP** or **Wait for MCP** now starts the clipboard write inside the press (`navigator.clipboard.write` with a `ClipboardItem` whose text arrives once the token is known), so a slow token or connections check no longer loses the copy. Where that write is not supported or refused, the prompt is written with `writeText` once known; if that is refused too, the problem dot shows, as before. A press that ends with no prompt (failed token request, another site shown) leaves the clipboard as it was. Disconnect MCP starts no copy.
+- `tests/native-save/native-mcp-menu.spec.ts`: new spec holds the token request (then the Wait for MCP connections check) for 6 seconds in a browser that refuses copies begun outside the user's press; it failed on the old code (no "Copied") and passes now. The refused-copy spec now refuses both clipboard writes.

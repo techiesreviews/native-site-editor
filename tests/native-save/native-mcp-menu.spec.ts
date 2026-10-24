@@ -237,7 +237,7 @@ test("Disconnect MCP also ends an agent that connected after the menu last read 
 
 test("a refused copy: the label never reads Copied, the dot shows the problem, no toast; the next press tries again", async ({ page, baseURL }) => {
   await page.addInitScript(() => {
-    Object.defineProperty(navigator.clipboard, "writeText", { configurable: true, value: () => Promise.reject(new DOMException("Denied", "NotAllowedError")) });
+    for (const name of ["write", "writeText"]) Object.defineProperty(navigator.clipboard, name, { configurable: true, value: () => Promise.reject(new DOMException("Denied", "NotAllowedError")) });
   });
   await open(page, baseURL);
   await page.locator(".repository-menu__trigger").click();
@@ -262,6 +262,38 @@ test("a refused copy: the label never reads Copied, the dot shows the problem, n
   await expect(menu).toHaveAttribute("data-state", "failed");
   expect(await page.evaluate(() => (window as Window & { agentLabels?: string[] }).agentLabels)).not.toContain("Copied");
   await onlyLabel(page, "Connect to MCP");
+});
+
+test("a slow server: Connect to MCP and Wait for MCP still copy the prompt when their requests answer after the press stopped counting as the user's", async ({ page, context, baseURL }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  // As Safari always, and Chrome once its five seconds pass: a copy begun outside the user's press is refused.
+  await page.addInitScript(() => {
+    const clipboard = navigator.clipboard, refused = () => Promise.reject(new DOMException("Not allowed", "NotAllowedError"));
+    const write = clipboard.write.bind(clipboard), writeText = clipboard.writeText.bind(clipboard);
+    Object.defineProperty(clipboard, "write", { configurable: true, value: (items: ClipboardItems) => navigator.userActivation.isActive ? write(items) : refused() });
+    Object.defineProperty(clipboard, "writeText", { configurable: true, value: (text: string) => navigator.userActivation.isActive ? writeText(text) : refused() });
+  });
+  const held = (path: string) => page.route(url => url.pathname === path, async route => {
+    // fixed-wait: the server's answer is held past the user activation's five seconds.
+    await new Promise(resolve => setTimeout(resolve, 6_000));
+    await route.continue();
+  });
+  await open(page, baseURL);
+  await page.locator(".repository-menu__trigger").click();
+  const action = page.locator(".agent-menu__action"), menu = page.locator(".agent-menu");
+  await held("/api/agent/connect");
+  const made = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST");
+  await action.click();
+  const { token } = await (await made).json() as { token: string };
+  await expect(action).toHaveText("Copied");
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain(`Bearer ${token}`);
+  await expect(action).toHaveText("Wait for MCP");
+  // Wait for MCP reads its connections first: held as long, its copy still lands.
+  await held("/api/agent/connections");
+  await action.click();
+  await expect(action).toHaveText("Copied");
+  await expect(menu).not.toHaveAttribute("data-state", "failed");
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain(`Bearer ${token}`);
 });
 
 test("Connect to MCP from off copies a prompt even when another browser's token already waits on the site", async ({ page, baseURL }) => {

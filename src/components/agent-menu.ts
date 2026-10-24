@@ -546,16 +546,27 @@ export function createAgentMenu(options: {
     failedOn = undefined;
     stuckOn = false;
     const current = state();
-    if (offered === "disconnect") await revoke();
-    // Wait for MCP copies this tab's prompt again while its token still waits; a tab without
-    // it (another tab copied it, a reload, or it was revoked) copies a prompt of its own.
-    else if (offered === "wait") await copyAgain();
-    // Idle, or another tab receives with nothing connected: a new prompt from here.
-    else if (current === "idle" || elsewhere(current)) await start();
-    else {
-      // Off, or a problem (paused, lost, another site shown): turn on again for the open site.
-      turnOff();
-      await turnOn();
+    if (offered === "disconnect") {
+      await revoke();
+      return;
+    }
+    // The copy starts inside the press: browsers refuse one begun after the token's wait.
+    const slot = (copying = reserveCopy());
+    try {
+      // Wait for MCP copies this tab's prompt again while its token still waits; a tab without
+      // it (another tab copied it, a reload, or it was revoked) copies a prompt of its own.
+      if (offered === "wait") await copyAgain();
+      // Idle, or another tab receives with nothing connected: a new prompt from here.
+      else if (current === "idle" || elsewhere(current)) await start();
+      else {
+        // Off, or a problem (paused, lost, another site shown): turn on again for the open site.
+        turnOff();
+        await turnOn();
+      }
+    } finally {
+      // No prompt came of the press: the clipboard keeps what it held.
+      if (copying === slot) copying = undefined;
+      slot.skip();
     }
   }
   // Connect to MCP while remote agents are off: an agent connected before
@@ -715,11 +726,15 @@ export function createAgentMenu(options: {
     const ours = read && token && liveGrants().some((grant) => grant.id === tokenId && unused(grant));
     if (ours) { goal = task; await copyPrompt(); } else await start(task);
   }
+  /** The copy the current press began, waiting for its prompt. */
+  let copying: ReturnType<typeof reserveCopy> | undefined;
   async function copyPrompt() {
     const repo = options.repository();
     if (!token || !repo) return;
+    const text = connectionPrompt(`${location.origin}/mcp`, token, repo.fullName, goal), slot = copying;
+    copying = undefined;
     try {
-      await navigator.clipboard.writeText(connectionPrompt(`${location.origin}/mcp`, token, repo.fullName, goal));
+      await (slot ? slot.put(text) : navigator.clipboard.writeText(text));
       confirmOnButton("Copied");
     } catch {
       // Clipboard refused: nothing was copied, so the dot shows a problem until the next press.
@@ -926,6 +941,31 @@ function forgetWatch() {
     const keys = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index));
     for (const key of keys) if (key?.startsWith("native-site-editor:agent-watch:")) localStorage.removeItem(key);
   } catch { /* Storage blocked: nothing to forget. */ }
+}
+
+/** A clipboard write begun now, inside the user's press (Safari refuses one begun after an await;
+ * Chrome after a few seconds), that lands once `put` gives it the text; `skip` leaves the clipboard
+ * as it was. Where a ClipboardItem cannot wait for its text, `put` writes the text then. */
+function reserveCopy() {
+  let give!: (text: string) => void, refuse!: () => void;
+  const text = new Promise<string>((resolve, reject) => { give = resolve; refuse = () => reject(new Error("Nothing to copy.")); });
+  const blob = text.then(value => new Blob([value], { type: "text/plain" }));
+  blob.catch(() => undefined);
+  let written: Promise<void> | undefined;
+  try {
+    written = navigator.clipboard.write([new ClipboardItem({ "text/plain": blob })]);
+    written.catch(() => undefined);
+  } catch { /* No ClipboardItem here: `put` writes the text. */ }
+  return {
+    async put(value: string) {
+      give(value);
+      try {
+        if (!written) throw new Error("No clipboard write began.");
+        await written;
+      } catch { await navigator.clipboard.writeText(value); }
+    },
+    skip: () => refuse(),
+  };
 }
 
 // A line of at most `limit` characters, with … when cut.
