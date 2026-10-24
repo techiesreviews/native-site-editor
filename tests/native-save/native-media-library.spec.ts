@@ -474,23 +474,30 @@ test("adding a file keeps the tiles and pictures already shown; its ring goes on
   // one as they come into view: one still loading at the snapshot may show its picture since.
   expect(await page.evaluate(() => (window as typeof window & { addingBefore: { card: HTMLElement; src: string | null | undefined }[] }).addingBefore
     .filter(({ card, src }) => !card.isConnected || (src && card.querySelector("img")?.getAttribute("src") !== src)).length)).toBe(0);
-  // fixed-wait: lets the new-file ring play a while before a redraw that keeps its tile in place.
-  await page.waitForTimeout(600);
+  // Once the ring has played 600 ms, a search redraws the grid, keeping the tile in place. Typed and
+  // measured in the page in one go: the test's own steps came over 2 s late on a busy machine, past
+  // the ring's 2.4 s. Enter runs the search at once instead of after its 150 ms pause.
   const search = panel.getByLabel("Search media", { exact: true });
-  await search.fill("kept-tiles");
-  await expect(panel.locator(".media-library__card")).toHaveCount(1);
-  await page.waitForFunction(() => "ringShownAt" in window);
-  // The ring carries on where it was, not as far again ahead. The redraw sets the ring to its age
-  // since the tile first wore it (the moment recorded above), so a late first frame cancels out.
-  // That moment is on the performance clock, which shares the timeline's origin; the timeline lags
-  // it by at most a frame, so elapsed read on the timeline can only come out short.
-  const ring = await added.evaluate(card => {
-    const shownAt = (window as typeof window & { ringShownAt: number }).ringShownAt;
-    const elapsed = Number(document.timeline.currentTime) - shownAt;
+  const ring = await added.evaluate(async card => {
+    const shown = () => (window as typeof window & { ringShownAt?: number }).ringShownAt;
+    while (shown() === undefined || performance.now() - shown()! < 600) await new Promise(requestAnimationFrame);
+    const field = document.querySelector<HTMLInputElement>('input[name="media-search"]')!;
+    field.value = "kept-tiles";
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+    field.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    // The ring carries on where it was, not as far again ahead. The redraw sets the ring to its age
+    // since the tile first wore it (the moment recorded above), so a late first frame cancels out.
+    // That moment is on the performance clock, which shares the timeline's origin; the timeline lags
+    // it by at most a frame, so elapsed read on the timeline can only come out short.
+    const elapsed = Number(document.timeline.currentTime) - shown()!;
+    // Drawn at once: only the new tile is left in its grid.
+    const kept = card.isConnected && card.parentElement!.querySelectorAll(".media-library__card").length === 1;
     const animation = card.getAnimations({ subtree: true }).find(each => each instanceof CSSAnimation && each.animationName === "media-new");
-    if (!animation) return { played: undefined, elapsed };
-    return { played: Number(animation.effect!.getComputedTiming().localTime) - Number(animation.effect!.getTiming().delay), elapsed };
+    if (!animation) return { played: undefined, elapsed, kept };
+    return { played: Number(animation.effect!.getComputedTiming().localTime) - Number(animation.effect!.getTiming().delay), elapsed, kept };
   });
+  expect(ring.kept, "the search redrew the grid at once, keeping the new tile's element").toBe(true);
+  await expect(panel.locator(".media-library__card")).toHaveCount(1);
   // The ring lasts 2.4 s; a redraw after that rightly drops it. Say so rather than fail on a missing ring.
   expect(ring.played, `no ring ${Math.round(ring.elapsed)} ms after it showed: this machine was too slow for its 2.4 s`).toBeDefined();
   expect(ring.played!).toBeGreaterThanOrEqual(ring.elapsed - 50);

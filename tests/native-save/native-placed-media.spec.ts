@@ -1,6 +1,7 @@
 // Default fixture group. Slice 115: placed video, audio and download cards in the editor canvas.
 import { readFileSync } from "node:fs";
 import { test, expect, type Page } from "@playwright/test";
+import { editorMounted } from "./drafts";
 
 test.use({ viewport: { width: 1280, height: 800 } });
 
@@ -124,6 +125,8 @@ test("an audio whose file arrives while it plays keeps its real length after Sto
   await page.goto(`${baseURL}/#repo=501&branch=main&file=index.html`);
   await page.reload();
   await expect(page.locator("#status")).toContainText("Up to date with main");
+  // The code editor's late arrival renders the page again, which stops a play under way.
+  await editorMounted(page);
   const audio = frame(page).locator('audio[aria-label="Tour"]');
   await choose(page, /^Audio/);
   await bar(page).getByRole("button", { name: "Play", exact: true }).click();

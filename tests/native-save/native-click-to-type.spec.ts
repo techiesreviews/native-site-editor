@@ -92,6 +92,12 @@ async function drag(page: Page, from: { x: number; y: number }, to: { x: number;
   await expect(ghost(page)).toHaveCount(0);
 }
 
+/** Each point lies inside the frame, clear of the 72 px bands at its top and bottom where a drag scrolls it. */
+async function clearOfScrollBands(page: Page, ...points: { x: number; y: number }[]) {
+  const box = (await page.locator(".native-preview-frame").boundingBox())!;
+  for (const { y } of points) expect(y - box.y >= 72 && box.y + box.height - y >= 72, `y ${y} in a frame from ${box.y} to ${box.y + box.height}`).toBe(true);
+}
+
 /** A page point just above the element's bottom edge, across its middle: a drop there lands after it. */
 async function below(page: Page, selector: string) {
   const box = (await page.locator(".native-preview-frame").boundingBox())!;
@@ -242,59 +248,70 @@ test("a double-click selects a word, Shift+click extends, and Escape selects the
   await expect(lead).toHaveText(/^Edit plain HTML, CSS/);
 });
 
-test("a press and drag that starts on text moves its block, also while typing in it", async ({ page }) => {
-  const original = (await source(page))!;
-  await frame(page).locator(filler(1)).scrollIntoViewIfNeeded();
-  await drag(page, await afterWord(page, filler(1), "section"), await below(page, filler(2)));
-  await expect.poll(async () => (await source(page))!.indexOf(`data-key="filler-1"`) > (await source(page))!.indexOf(`data-key="filler-2"`)).toBe(true);
-  await expect(frame(page).locator("[contenteditable]")).toHaveCount(0);
-  const firstMove = (await source(page))!;
-  expect(firstMove).not.toBe(original);
-  // Typing in filler-2, a press on its text drags it below filler-3, the typed text kept.
-  let at = await afterWord(page, filler(2), "Paragraph");
-  await page.mouse.click(at.x, at.y);
-  await expect(frame(page).locator(filler(2))).toHaveAttribute("contenteditable", /.+/);
-  await page.keyboard.type(" typed");
-  at = await afterWord(page, filler(2), "filler");
-  await drag(page, at, await below(page, filler(3)));
-  const typed = `<p data-key="filler-2">Paragraph typed two of filler`;
-  await expect.poll(async () => { const now = (await source(page))!; return now.indexOf(typed) > now.indexOf(`data-key="filler-3"`); }).toBe(true);
-  await expect(frame(page).locator("[contenteditable]")).toHaveCount(0);
-  // Two undo steps: the move, then the typing.
-  expect(await undo(page)).toBe(true);
-  await expect.poll(async () => { const now = (await source(page))!; return now.indexOf(typed) >= 0 && now.indexOf(typed) < now.indexOf(`data-key="filler-3"`); }).toBe(true);
-  expect(await undo(page)).toBe(true);
-  await expect.poll(() => source(page)).toBe(firstMove);
-});
+// The whole page shows in a taller frame, so nothing scrolls under a drag: a drag held within
+// 72 px of the frame's top or bottom scrolls it every frame (a slow machine scrolled the drop
+// onto the footer), and the render a press asks for brings the text being typed in back into view.
+test.describe("drags", () => {
+  test.use({ viewport: { width: 1400, height: 2000 } });
 
-test("typing in one text, then a press and drag on another block moves that block, the typed text kept", async ({ page }) => {
-  const original = (await source(page))!;
-  const at = await afterWord(page, ".hero h1", "native");
-  await page.mouse.click(at.x, at.y);
-  await expect(frame(page).locator(".hero h1")).toBeFocused();
-  await page.keyboard.type("!");
-  // No Escape: the press on filler-2 writes the heading's text; the drag's start waits for the
-  // render that asks for (held here until the pointer has moved), then the drag runs.
-  await frame(page).locator(filler(2)).scrollIntoViewIfNeeded();
-  const from = await afterWord(page, filler(2), "Paragraph"), to = await below(page, filler(3));
-  const release = await holdRenders(page);
-  await page.mouse.move(from.x, from.y);
-  await page.mouse.down();
-  await page.mouse.move(from.x, from.y + 10, { steps: 2 });
-  await expect(ghost(page)).toHaveCount(0);
-  expect(await release()).toBeGreaterThan(0);
-  await page.mouse.move(to.x, to.y, { steps: 8 });
-  await expect(ghost(page)).toHaveText("Paragraph");
-  await page.mouse.up();
-  await expect(ghost(page)).toHaveCount(0);
-  const moved = (now: string) => now.includes("A native! browser") && now.indexOf(`data-key="filler-2"`) > now.indexOf(`data-key="filler-3"`);
-  await expect.poll(async () => moved((await source(page))!)).toBe(true);
-  await expect(frame(page).locator("[contenteditable]")).toHaveCount(0);
-  // Two undo steps: the move, then the typing.
-  expect(await undo(page)).toBe(true);
-  await expect.poll(async () => { const now = (await source(page))!; return now.includes("A native! browser") && now.indexOf(`data-key="filler-2"`) < now.indexOf(`data-key="filler-3"`); }).toBe(true);
-  expect(await undo(page)).toBe(true);
-  await expect.poll(() => source(page)).toBe(original);
+  test("a press and drag that starts on text moves its block, also while typing in it", async ({ page }) => {
+    const original = (await source(page))!;
+    const first = { from: await afterWord(page, filler(1), "section"), to: await below(page, filler(2)) };
+    await clearOfScrollBands(page, first.from, first.to);
+    await drag(page, first.from, first.to);
+    await expect.poll(async () => (await source(page))!.indexOf(`data-key="filler-1"`) > (await source(page))!.indexOf(`data-key="filler-2"`)).toBe(true);
+    await expect(frame(page).locator("[contenteditable]")).toHaveCount(0);
+    const firstMove = (await source(page))!;
+    expect(firstMove).not.toBe(original);
+    // Typing in filler-2, a press on its text drags it below filler-3, the typed text kept.
+    // Clicked at its line's end: the moved paragraph's edit bar covers the line's start.
+    let at = await afterWord(page, filler(2), "verification");
+    await page.mouse.click(at.x, at.y);
+    await expect(frame(page).locator(filler(2))).toHaveAttribute("contenteditable", /.+/);
+    await page.keyboard.type(" typed");
+    at = await afterWord(page, filler(2), "filler");
+    const to = await below(page, filler(3));
+    await clearOfScrollBands(page, at, to);
+    await drag(page, at, to);
+    const typed = `<p data-key="filler-2">Paragraph two of filler content to give the page real vertical length for scroll verification typed.</p>`;
+    await expect.poll(async () => { const now = (await source(page))!; return now.indexOf(typed) > now.indexOf(`data-key="filler-3"`); }).toBe(true);
+    await expect(frame(page).locator("[contenteditable]")).toHaveCount(0);
+    // Two undo steps: the move, then the typing.
+    expect(await undo(page)).toBe(true);
+    await expect.poll(async () => { const now = (await source(page))!; return now.indexOf(typed) >= 0 && now.indexOf(typed) < now.indexOf(`data-key="filler-3"`); }).toBe(true);
+    expect(await undo(page)).toBe(true);
+    await expect.poll(() => source(page)).toBe(firstMove);
+  });
+
+  test("typing in one text, then a press and drag on another block moves that block, the typed text kept", async ({ page }) => {
+    const original = (await source(page))!;
+    const at = await afterWord(page, ".hero h1", "native");
+    await page.mouse.click(at.x, at.y);
+    await expect(frame(page).locator(".hero h1")).toBeFocused();
+    await page.keyboard.type("!");
+    // No Escape: the press on filler-2 writes the heading's text; the drag's start waits for the
+    // render that asks for (held here until the pointer has moved), then the drag runs.
+    const from = await afterWord(page, filler(2), "Paragraph"), to = await below(page, filler(3));
+    await clearOfScrollBands(page, from, to);
+    const release = await holdRenders(page);
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    await page.mouse.move(from.x, from.y + 10, { steps: 2 });
+    await expect(ghost(page)).toHaveCount(0);
+    expect(await release()).toBeGreaterThan(0);
+    await page.mouse.move(to.x, to.y, { steps: 8 });
+    await expect(ghost(page)).toHaveText("Paragraph");
+    await page.mouse.up();
+    await expect(ghost(page)).toHaveCount(0);
+    const moved = (now: string) => now.includes("A native! browser") && now.indexOf(`data-key="filler-2"`) > now.indexOf(`data-key="filler-3"`);
+    await expect.poll(async () => moved((await source(page))!)).toBe(true);
+    await expect(frame(page).locator("[contenteditable]")).toHaveCount(0);
+    // Two undo steps: the move, then the typing.
+    expect(await undo(page)).toBe(true);
+    await expect.poll(async () => { const now = (await source(page))!; return now.includes("A native! browser") && now.indexOf(`data-key="filler-2"`) < now.indexOf(`data-key="filler-3"`); }).toBe(true);
+    expect(await undo(page)).toBe(true);
+    await expect.poll(() => source(page)).toBe(original);
+  });
 });
 
 test("a click on text in formatting that is no text of its own (a <del>) types in its line", async ({ page }) => {

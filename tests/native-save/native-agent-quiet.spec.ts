@@ -64,20 +64,9 @@ test("remote agents off: startup, the agent menu and idle visible or hidden tabs
     await page.clock.runFor(65_000);
     expect(requests, "idle visible and hidden").toEqual([]);
 
-    // Connect turns them on in this tab and finds the agent connected before.
-    await page.locator(".repository-menu__trigger").click();
-    await action.click();
-    await expect(action).toHaveText("Disconnect MCP", { timeout: 15_000 });
-    expect(requests.filter((request) => request.path === "/api/agent/connect"), "no new token for a connected agent").toEqual([]);
-    expect(requests.some((request) => request.path === "/api/agent/connections")).toBe(true);
-    const idle = requests.length;
-    await page.clock.runFor(65_000);
-    expect(requests.slice(idle), "live idle has no polling or uploads").toEqual([]);
-    expect(requests.some(request => /\/(context|drafts|claim|ack|pause)$/.test(request.path))).toBe(false);
-    // A reload keeps them on (remembered for this site): one connections read and the socket, no new token.
-    // Sockets are counted from their own events: Playwright may report a socket's opening request late.
+    // Sockets are counted from their own events: Playwright may report a socket's opening request late
+    // (on a busy machine, after the button already says Disconnect MCP).
     const http = (from: number) => requests.slice(from).filter(request => request.path !== "/api/agent/relay");
-    const reloaded = requests.length;
     let sockets = 0, ready = 0, pings = 0, pongs = 0;
     page.on("websocket", socket => {
       if (!socket.url().includes("/api/agent/relay?")) return;
@@ -88,6 +77,12 @@ test("remote agents off: startup, the agent menu and idle visible or hidden tabs
         else if (String(payload).includes('"type":"ready"')) ready++;
       });
     });
+    // The socket opens after the connections read. Its handshake needs no timers: holding the
+    // fake clock still meanwhile keeps a slow machine from tripping the 10 s handshake limit.
+    const socketReady = async (count: number) => {
+      await expect.poll(async () => { if (sockets < count) await page.clock.runFor(100); return sockets; }).toBe(count);
+      await expect.poll(() => ready, { timeout: 15_000 }).toBe(count);
+    };
     // Idle in one-second steps, holding the clock at each heartbeat ping until the relay's real
     // answer arrives (one jump past the ping and its 10 s no-answer limit would close a healthy socket).
     const idleFor = async (ms: number) => {
@@ -96,22 +91,34 @@ test("remote agents off: startup, the agent menu and idle visible or hidden tabs
         if (pongs < pings) await expect.poll(() => pongs, { timeout: 15_000 }).toBe(pings);
       }
     };
+
+    // Connect turns them on in this tab and finds the agent connected before.
+    await page.locator(".repository-menu__trigger").click();
+    await action.click();
+    await expect(action).toHaveText("Disconnect MCP", { timeout: 15_000 });
+    expect(requests.filter((request) => request.path === "/api/agent/connect"), "no new token for a connected agent").toEqual([]);
+    expect(requests.some((request) => request.path === "/api/agent/connections")).toBe(true);
+    await socketReady(1);
+    const idle = requests.length;
+    await idleFor(65_000);
+    expect(http(idle), "live idle has no polling or uploads").toEqual([]);
+    expect({ sockets, ready }, "live idle keeps its socket").toEqual({ sockets: 1, ready: 1 });
+    expect(requests.some(request => /\/(context|drafts|claim|ack|pause)$/.test(request.path))).toBe(false);
+    // A reload keeps them on (remembered for this site): one connections read and the socket, no new token.
+    const reloaded = requests.length;
     await page.reload();
     await open(page, baseURL);
     await page.locator(".repository-menu__trigger").click();
     await expect(action).toHaveText("Disconnect MCP", { timeout: 15_000 });
     await page.keyboard.press("Escape");
-    // The socket opens after the connections read. Its handshake needs no timers: holding the
-    // fake clock still meanwhile keeps a slow machine from tripping the 10 s handshake limit.
-    await expect.poll(async () => { if (!sockets) await page.clock.runFor(100); return sockets; }).toBe(1);
-    await expect.poll(() => ready, { timeout: 15_000 }).toBe(1);
+    await socketReady(2);
     expect(http(reloaded), "after a reload").toEqual([{ method: "GET", path: "/api/agent/connections" }]);
     const after = requests.length;
     await idleFor(65_000);
     await setVisibility(page, "hidden");
     await idleFor(65_000);
     expect(http(after), "idle after a reload").toEqual([]);
-    expect({ sockets, ready }, "one socket, never reconnected").toEqual({ sockets: 1, ready: 1 });
+    expect({ sockets, ready }, "one socket after the reload, never reconnected").toEqual({ sockets: 2, ready: 2 });
     expect((await client.listTools()).tools.length).toBeGreaterThan(0);
   } finally {
     await client.close();
