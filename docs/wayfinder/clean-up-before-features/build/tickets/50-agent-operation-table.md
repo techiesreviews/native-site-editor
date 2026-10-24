@@ -61,4 +61,12 @@ Agents see the same tools, arguments and answers; MCP `tools/list` is byte-ident
 - Validation gaps (gap): `src/agent-transport.ts` admission now uses `isAgentOperation`, `readTools` and `mediaTools`. No test drives `createLiveTransport` itself with a command outside
 - Validation gaps (gap): `pausedMcp`'s parameter changed from `any` to `unknown` with a `(body ?? {})` cast. There's no test for non-object bodies. Add one: `pausedMcp(null)`, `pausedMc
 - Validation gaps (gap): `prepareAgentEdit` now takes its queued operation from the table. No unit test asserts that `edit_file` queues `write_file`, or that every other edit tool queue
+- Spec (P2): 9694212a:docs/wayfinder/clean-up-before-features/build/tickets/50-agent-operation-table.md:56 — P2: All eight `### Follow-ups` lines (56–63) stop mid-sentence. 
+- Spec (P2): 9694212a:docs/wayfinder/clean-up-before-features/build/tickets/50-agent-operation-table.md:56 — P2: The follow-ups point at commits `ade444ad` and `a9bc4c76`. N
+- Spec (P2): 2394d192:shared/agent-tool-table.ts:286 — P2: The ticket's Shape says the table holds, for each tool, "its name, argument schema, read or edit, text or media, a
+- Spec (P3): 2394d192:worker/agent-context.ts:421 — P3: The Shape lists the `any` at `worker/agent-context.ts:421` among those to remove, and it is still there. The ticket's
+- Spec (P3): 9694212a:docs/wayfinder/clean-up-before-features/build/tickets/50-agent-operation-table.md:43 — P3: runner.md "Review and close" says the Done section records "
+- Validation gaps (gap): `src/agent-transport.ts:24`, `:234` and `:343`: command, read and Media admission now come from the table, but no test sends `createLiveTransport` a message fro
+- Validation gaps (gap): `shared/agent-edit.ts:88`: `queue` now takes its operation from `agentTools[request.tool].operation`. No test asserts which command each edit tool queues. Add a
+- Validation gaps (gap): `worker/mcp.ts:808`: `pausedMcp` now takes `unknown` and casts `(body ?? {})`. Add a test for `pausedMcp(null)`, `pausedMcp("x")` and `pausedMcp({ method: "tool
 
