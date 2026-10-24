@@ -11,7 +11,6 @@ import { draftStore } from "./drafts";
 import type { Checked } from "./native-create";
 import { isRenamableMedia, mediaFileName } from "./page-builder/media-names";
 import type { ExplorerHost, PagesAndFilesPorts } from "./pages-and-files-host";
-const parentOf = (path: string) => (path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "");
 import { pickFiles } from "./uploads";
 
 // What a creation in the Files tab writes: new files (drafts with no base
@@ -159,7 +158,7 @@ export function createExplorerActions(ports: PagesAndFilesPorts, host: ExplorerH
 
   // A media file's new name is tidied by the media rules (any language, its own format); a folder typed before it is checked as usual.
   function renameTarget(target: FileRowTarget, name: string): Checked<string> {
-    const parent = parentOf(target.path), at = name.lastIndexOf("/"), file = name.slice(at + 1);
+    const parent = host.parentOf(target.path), at = name.lastIndexOf("/"), file = name.slice(at + 1);
     if (target.folder || !isRenamableMedia(target.path) || !file.trim()) return host.renamedPath(parent, name, target.folder ? "folder" : "file");
     const folder = at < 0 ? { ok: true as const, value: parent } : host.renamedPath(parent, name.slice(0, at), "folder");
     return folder.ok ? { ok: true, value: `${folder.value ? `${folder.value}/` : ""}${mediaFileName(target.path, file)}` } : folder;
@@ -172,7 +171,7 @@ export function createExplorerActions(ports: PagesAndFilesPorts, host: ExplorerH
 
   function dropProblem(source: FileRowTarget, folder: string) {
     if (source.gone) return "A deleted file cannot move.";
-    if (parentOf(source.path) === folder) return "It is already there.";
+    if (host.parentOf(source.path) === folder) return "It is already there.";
     if (source.folder && (folder === source.path || folder.startsWith(`${source.path}/`))) return "A folder cannot go inside itself.";
     return host.fileOps!.moveProblem(source, folder ? `${folder}/${source.name}` : source.name, "move");
   }

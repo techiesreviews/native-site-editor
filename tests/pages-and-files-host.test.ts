@@ -43,7 +43,7 @@ const SCOPE = { account: "o", repoId: 1, repo: "o/site", branch: "main" } satisf
 const SHA = "a".repeat(40);
 const SNAPSHOT = { repo: "o/site", branch: "main", commit: SHA, entries: [{ path: "notes.txt", type: "blob", sha: SHA }] } as Snapshot;
 const holds: SessionStamp = { load: 1, scope: undefined, holds: () => true, changed: () => undefined };
-const deletion = (path: string): SavedDraft => ({ ...SCOPE, version: 1, path, baseSha: SHA, original: "kept", content: "kept", updatedAt: 0, deleted: true });
+const deletion = (path: string, fields: Partial<SavedDraft> = {}): SavedDraft => ({ ...SCOPE, version: 1, path, baseSha: SHA, original: "kept", content: "kept", updatedAt: 0, deleted: true, ...fields });
 // Drafts live in the one real store: each test takes its own out again, whatever it asserts.
 const forget = (t: TestContext, ...paths: string[]) => t.after(() => { for (const path of paths) draftStore().remove(SCOPE, path); });
 // The one place a stand-in takes an element's type.
@@ -90,7 +90,7 @@ function setup() {
     nativeNavigationTarget: () => undefined, writeNativePageMeta: async () => undefined,
     refreshNativeRoutes: () => {}, forgetDraftedAssets: () => {}, loadNativeComponentStyles: async () => {},
     updateAgentContext: record("agent"), updateCurrentPageLabel: () => {}, updateNativePreviewSources: () => {}, updatePreview: () => {},
-    setCurrentPage: record("setCurrentPage"), showDirectory: () => { calls.push("directory"); }, openNewDraft: async () => {}, discardUpload: async () => {},
+    setCurrentPage: record("setCurrentPage"), showDirectory: () => { calls.push("directory"); }, openNewDraft: async () => {}, discardUpload: async (path: string) => { calls.push(`discardUpload ${path}`); },
     uploadFilesTo: async () => [], nativeFallbackPage: () => undefined, nativeModeActive: () => false, nativeComponentTagForPath: () => undefined,
     startNativeTextIndex: () => {}, openNativePageSettings: async () => {}, openNativeNavigation: async () => {}, flushPendingNativePageTitles: () => {}, clearPendingTitles: () => {},
     restoreFile: (...args) => late.restoreFile!(...args), loadSnapshot: (...args) => late.loadSnapshot!(...args), openEntry: async () => {},
@@ -172,7 +172,7 @@ test("Create refuses a name the branch has and makes a folder as its .gitkeep, a
   const explorer = createExplorerActions(f.ports, {
     createDialog: undefined, fileActions: undefined, fileOps: undefined, filesTreeController: f.host.filesTreeController, treeState: f.host.treeState,
     undoFileChanges: f.host.undoFileChanges, savePublish: f.host.savePublish, branchPathProblem: f.host.branchPathProblem, resyncNativeSite: () => false,
-    nativePageRoute, parentProblem, newFilePath, newFolderPath, renamedPath,
+    parentOf: (path) => path.slice(0, Math.max(0, path.lastIndexOf("/"))), nativePageRoute, parentProblem, newFilePath, newFolderPath, renamedPath,
   } satisfies ExplorerHost);
   assert.deepEqual(explorer.planCreation({ kind: "file", folder: "", name: "notes.txt" }), { ok: false, error: "notes.txt already exists." });
   assert.equal(await explorer.createFromRequest({ kind: "folder", folder: "", name: "docs" }), undefined);
@@ -180,4 +180,35 @@ test("Create refuses a name the branch has and makes a folder as its .gitkeep, a
   assert.equal(kept?.baseSha, null);
   assert.equal(kept?.content, "");
   assert.equal(f.status.textContent, "Created the folder docs.");
+});
+
+test("Pages actions are read from the host after they load; a copy taken before stays empty", async () => {
+  const f = setup();
+  f.open(SCOPE);
+  const { pageActions } = f.host;
+  assert.equal(f.host.pageActions, undefined);
+  await f.host.loadPagesActions();
+  assert.ok(f.host.pageActions);
+  assert.equal(pageActions, undefined);
+});
+
+test("a change's Restore, Move back and Discard of an upload each take their own way back", async (t) => {
+  const f = setup();
+  forget(t, "notes.txt", "old.txt", "new.txt");
+  f.open(SCOPE);
+  f.late.restoreFile = async () => {};
+  draftStore().save(deletion("notes.txt"));
+  draftStore().save(deletion("old.txt", { movedTo: "new.txt" }));
+  draftStore().save({ ...SCOPE, version: 1, path: "new.txt", baseSha: null, original: "kept", content: "kept", updatedAt: 0, movedFrom: "old.txt", sourceSha: SHA });
+  const changes = f.host.treeState().changes;
+  assert.equal(changes.get("notes.txt")?.kind, "D");
+  assert.equal(changes.get("new.txt")?.kind, "R");
+  await f.host.discardFileChange(changes.get("notes.txt")!);
+  await f.host.discardFileChange(changes.get("new.txt")!);
+  const upload = { ...SCOPE, version: 1 as const, path: "photo.png", baseSha: null, original: "", content: "", updatedAt: 0, upload: { size: 3, type: "image/png" } };
+  await f.host.discardFileChange({ kind: "A", path: "photo.png", drafts: [upload] });
+  const said = f.calls.filter((call) => call.startsWith("announce ") || call.startsWith("discardUpload "));
+  assert.deepEqual(said, ["announce Restored notes.txt.", "announce Moved new.txt back to old.txt.", "discardUpload photo.png"]);
+  assert.equal(draftStore().get(SCOPE, "new.txt"), undefined);
+  assert.equal(draftStore().get(SCOPE, "old.txt")?.deleted, undefined);
 });

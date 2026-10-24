@@ -2556,6 +2556,7 @@ const cardsController = createCardsController({
 });
 
 // Pages & files: the trees and explorer tabs, Create, file operations, resync and save/publish (src/pages-and-files-host.ts).
+// By value: consts and hoisted functions declared above; `let` state goes in as getters (tests/main-ts-ceiling.test.ts).
 const pagesAndFiles = createPagesAndFilesHost({
   app, element, appStore, runtime, workspaceSession, editorModule, guardedEdits, mediaController, cardsController, linkedStyles, versions,
   previewSelection, repositoryIndex, finishedWork, lazyModule, loadConfirmDialog, api, status, clearError, errorMessage, announce,

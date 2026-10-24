@@ -50,13 +50,14 @@ export interface ExplorerHost {
   readonly createDialog: ReturnType<typeof createCreateDialog> | undefined;
   readonly fileActions: ReturnType<typeof createFileRowActions> | undefined;
   readonly fileOps: ReturnType<typeof createLazyFileOperationsController> | undefined;
-  filesTreeController: { row(path: string): HTMLElement | undefined; openFolder(path: string): void; render(): void; listings(): Map<string, Directory["entries"]> };
+  filesTreeController: { row(path: string): HTMLElement | undefined; openFolder(path: string): void; render(): void };
   treeState(): TreeState;
   undoFileChanges(what: { restore?: string[]; moveBack?: string[] }): void;
   savePublish: Pick<ReturnType<typeof createSavePublishController>, "discardFile">;
   branchPathProblem(path: string): Promise<string | undefined>;
   resyncNativeSite(): boolean;
-  /** Boot-chunk helpers (src/native-create.ts, shared/native-routes.ts, shared/site-rules.ts): imported by a lazy chunk, they split into extra boot requests. */
+  /** Boot-chunk helpers (this module, src/native-create.ts, shared/native-routes.ts, shared/site-rules.ts): imported by a lazy chunk, they split into extra boot requests. */
+  parentOf(path: string): string;
   nativePageRoute: typeof nativePageRoute;
   parentProblem: typeof parentProblem;
   newFilePath: typeof newFilePath;
@@ -141,7 +142,7 @@ interface TreeState {
   drafted: string[];
 }
 
-export const parentOf = (path: string) => (path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "");
+const parentOf = (path: string) => (path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "");
 
 export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
   let pageActions: ReturnType<typeof createPagesController> | undefined;
@@ -188,7 +189,7 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
       const { planCreation, createFromRequest, fileRowItems, renameProblem, renameFileTarget, dropProblem, dropFileTarget } = createExplorerActions(ports, {
         get createDialog() { return createDialog; }, get fileActions() { return fileActions; }, get fileOps() { return fileOps; },
         filesTreeController, treeState, undoFileChanges, savePublish, branchPathProblem, resyncNativeSite,
-        nativePageRoute, parentProblem, newFilePath, newFolderPath, renamedPath,
+        parentOf, nativePageRoute, parentProblem, newFilePath, newFolderPath, renamedPath,
       });
       createDialog = createCreateDialog({
         plan: (request) => {
