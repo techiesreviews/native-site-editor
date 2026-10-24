@@ -1,6 +1,7 @@
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { expect, test, type Frame, type Page } from "@playwright/test";
 import { openEditor, switchSiteMidUpload } from "../support/scenarios";
+import { HOST_SOURCE } from "../../src/components/preview-wire";
 import { editorMounted } from "./drafts";
 
 // Ticket 33: an agent's change on the page shown draws its presence (an outline in the agent's
@@ -124,6 +125,7 @@ test("an agent's change draws its presence on its section and row on the page sh
     expect(away).toMatchObject({ state: "applied" });
     await expect(heading).toHaveText("About this project");
     await expect(preview.locator(".prose")).toContainText("A last paragraph");
+    // Whatever was drawn stands on About's own section; that it is drawn there is the held-change test's (below).
     for (const seen of await frameSeen()) expect(seen).toMatchObject({ page: "About this project", on: ["prose"] });
     for (const row of await treeSeen()) expect(row.split("|")).toEqual(["1.1", "true", agentColour.css, "about/index.html"]);
     await expect(preview.locator('[data-native-selection-box="agent-presence"]')).toBeHidden();
@@ -236,8 +238,8 @@ test("at the very top of the page the name chip stands inside the outline's corn
   const preview = page.frameLocator(".native-preview-frame");
   await expect(preview.locator("site-header")).toBeVisible();
   // The editor's own message for the header (node 0, at the page's top), as the presence port sends it.
-  await page.evaluate(() => (document.querySelector(".native-preview-frame") as HTMLIFrameElement).contentWindow!.postMessage(
-    { source: "astro-native-preview-host", type: "agent-presence", request: { path: "index.html", node: [0] }, name: "Agent" }, "*"));
+  await page.evaluate(source => (document.querySelector(".native-preview-frame") as HTMLIFrameElement).contentWindow!.postMessage(
+    { source, type: "agent-presence", request: { path: "index.html", node: [0] }, name: "Agent" }, "*"), HOST_SOURCE);
   await expect(box(page)).toBeVisible();
   const chip = preview.locator('[data-native-selection-box="agent-presence-chip"]');
   await expect(chip).toHaveText("Agent");
