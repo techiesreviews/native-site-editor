@@ -2,7 +2,7 @@
 title: Decide what Lex sees when files change outside the editor
 type: grilling (HITL)
 status: open
-assignee:
+assignee: Lex + claude (grilling)
 blocked_by: [04-research-always-the-latest, 08-grill-shared-editing-mechanism]
 ---
 
