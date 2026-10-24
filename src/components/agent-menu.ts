@@ -566,6 +566,7 @@ export function createAgentMenu(options: {
     if (!live(at)) return;
     // A reconnect left from before the press (a failed request is reported to the socket too, and
     // its attempts outlive the connection) waits out its backoff: the press tries now, as a retry.
+    // A failed retry is the recovery's to report: the dot shows it.
     if (state() === "reconnecting") await transport?.retry().catch(() => undefined);
     if (!live(at)) return;
     const now = state();
@@ -573,6 +574,9 @@ export function createAgentMenu(options: {
     // A token already waits (another tab's, another browser's, or this tab's own): Connect to MCP
     // still copies a prompt, this tab's own if it still waits, otherwise a new one.
     else if (offer(now) === "wait") await copyAgain(task);
+    // Still reconnecting (another tab of this browser holds the attempt, or it failed again): the
+    // press made no prompt, so the dot shows a problem until the next press.
+    else if (now === "reconnecting") { failedOn = options.repository(); paint(); }
   }
   const live = (at: number) => !disposed && remote && !workspaceChanged && activation === at && sameRepository(options.repository(), pinned);
   const site = (repo: { id: number; branch: string }): AgentWorkspace => ({ account: options.account, repoId: repo.id, branch: repo.branch });

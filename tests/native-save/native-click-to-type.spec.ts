@@ -388,18 +388,57 @@ test("typing in a text, scrolling it out of view and leaving the canvas: the ren
   await frame(page).locator(".hero h1").blur();
   await expect.poll(() => source(page)).toContain("A native! browser");
   await expect.poll(() => frame(page).locator("body").evaluate(() => (window as Held).heldRenders?.length ?? 0)).toBeGreaterThan(0);
-  // Settles once the released render has been handled (this listener runs after the runtime's).
-  await frame(page).locator("body").evaluate(() => {
-    (window as Held).answered = new Promise(done => addEventListener("message", function seen(e) {
-      if ((e.data as { type?: string } | null)?.type !== "update") return;
-      removeEventListener("message", seen);
-      done();
-    }));
-  });
+  const handled = await nextRender(page);
   expect(await release()).toBeGreaterThan(0);
-  await frame(page).locator("body").evaluate(() => (window as Held).answered);
+  await handled();
   await expect(frame(page).locator(".hero h1")).not.toBeInViewport();
   expect(await frameScroll(page)).toBe(scrolled);
+});
+
+test("in Edit component mode, typing in a part scrolled out of view, a press on another part keeps the scroll", async ({ page }) => {
+  // A shorter window, and (below) a taller card body, so the card's note can sit just below the
+  // frame with its title well inside it.
+  await page.setViewportSize({ width: 1400, height: 800 });
+  const template = "components/project-card/project-card.html", styles = "components/project-card/project-card.css";
+  await frame(page).locator("project-card[data-key='card-1']").locator("card-note").click();
+  await bar(page).getByRole("button", { name: "Edit Project card component", exact: true }).click();
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", template);
+  await expect.poll(() => page.evaluate(async (path) => typeof (await import("/src/components/code-editor.ts")).getMountedSource(path), styles)).toBe("string");
+  await page.evaluate(async (path) => {
+    const editor = await import("/src/components/code-editor.ts");
+    const before = editor.getMountedSource(path)!;
+    editor.replaceActiveRange({ path, start: before.length, end: before.length, expected: "", text: "\n.project-card__body { min-height: 200px; }\n" });
+  }, styles);
+  const card = "project-card[data-key='card-1']";
+  await expect.poll(() => frame(page).locator(card).locator(".project-card__body").evaluate((el) => el.getBoundingClientRect().height)).toBeGreaterThanOrEqual(200);
+  const note = frame(page).locator(card).locator("card-note");
+  const title = frame(page).locator(card).locator("h3");
+  await note.scrollIntoViewIfNeeded();
+  const at = await afterWord(page, `${card} card-note`, "across");
+  await page.mouse.click(at.x, at.y);
+  await expect(note).toHaveAttribute("contenteditable", /plaintext-only|true/);
+  await page.keyboard.press("End");
+  await page.keyboard.type("!");
+  // The note's top just below the frame's bottom edge.
+  await note.evaluate((el) => window.scrollBy({ top: el.getBoundingClientRect().top - window.innerHeight - 4, behavior: "instant" }));
+  await expect(note).not.toBeInViewport();
+  const scrolled = await frameScroll(page);
+  const box = (await page.locator(".native-preview-frame").boundingBox())!;
+  const r = await title.evaluate((el) => { const b = el.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; });
+  const from = { x: box.x + r.x, y: box.y + r.y };
+  await clearOfScrollBands(page, from);
+  const release = await holdRenders(page);
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(from.x, from.y + 10, { steps: 2 });
+  const handled = await nextRender(page);
+  expect(await release()).toBeGreaterThan(0);
+  await handled();
+  // The released render has written the note's text, and the page has not moved to it.
+  await expect.poll(() => page.evaluate(async (path) => (await import("/src/components/code-editor.ts")).getMountedSource(path), template)).toContain("Shared across cards!");
+  expect(await frameScroll(page)).toBe(scrolled);
+  await expect(note).not.toBeInViewport();
+  await page.mouse.up();
 });
 
 test("a click on text in formatting that is no text of its own (a <del>) types in its line", async ({ page }) => {
@@ -489,6 +528,18 @@ test("with the browser's own line height (normal), a click between two lines sti
 });
 
 type Held = typeof window & { heldRenders?: unknown[]; answered?: Promise<void> };
+
+/** Resolves, once called, after the preview has handled its next render (this listener runs after the runtime's). */
+async function nextRender(page: Page) {
+  await frame(page).locator("body").evaluate(() => {
+    (window as Held).answered = new Promise(done => addEventListener("message", function seen(e) {
+      if ((e.data as { type?: string } | null)?.type !== "update") return;
+      removeEventListener("message", seen);
+      done();
+    }));
+  });
+  return () => frame(page).locator("body").evaluate(() => (window as Held).answered);
+}
 
 /** Holds the editor's renders (its `update` messages) in the preview; the function returned replays them. */
 async function holdRenders(page: Page) {
