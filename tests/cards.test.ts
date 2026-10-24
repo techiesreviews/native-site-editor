@@ -12,11 +12,12 @@ const selection = (node: number[]): NativePreviewSelection => ({ path: "index.ht
 
 // With no site, no grid lists the pages, so a Pages tab subpage gets no card.
 test("with no site, cards offer nothing and a subpage with its card is refused", async () => {
-  const { cards, edits } = cardsFixture({ "index.html": page }, undefined);
+  const { cards, edits, m } = cardsFixture({ "index.html": page }, undefined);
   assert.equal(await cards.createWithCard({ parent: "/", title: "x", slug: "x" }), "No grid lists the pages under / any more.");
   assert.deepEqual(cards.controls(selection([1, 0, 0, 1, 1]), page), []);
   assert.equal(cards.cardOffer("/"), undefined);
   assert.equal(cards.cardsLinkingTo("/", new Set(), edits.peek), undefined);
+  assert.deepEqual(m.steps(), []);
 });
 
 // Card source locations use the browser's HTML parser. Bundle the real memory
@@ -276,6 +277,35 @@ test("guarded card actions on the memory workspace with the browser parser", asy
       assert.equal(result.unlisted, undefined);
       assert.deepEqual(result.steps, []);
       assert.equal(result.source, collectionPage);
+    });
+
+    // One set of card operations serves every project a sign-in opens (mountWorkspace runs once):
+    // what they offer follows the workspace now shown. A collection comes from its cards' links, so
+    // the same page under another routes table still lists /work/ (the grid cache keeps it).
+    await t.test("one set of card operations follows each workspace it is switched to", async () => {
+      const result = await browserPage.evaluate(({ branch, site, plain }) => {
+        const listed = cardsFixture(branch, site);
+        const rerouted = cardsFixture(branch, { routes: { "/": "index.html" }, components: site.components });
+        const unlisted = cardsFixture({ ...branch, "index.html": plain }, { routes: { "/": "index.html" }, components: site.components });
+        let current = listed.ports;
+        const cards = cardsCreate(new Proxy(listed.ports, { get: [(_target: unknown, key: string) => current[key as keyof typeof current]][0]! }));
+        const card = { path: "index.html", node: [0, 0, 1, 1] };
+        // An anonymous function: a named one gets tsx's `__name` helper, which the page lacks.
+        const read = [() => {
+          const link = cards.linkPages(card);
+          return { offer: cards.cardOffer("/work/"), routes: link && Object.keys(link.routes), folder: link?.folder ?? null, inGrid: link?.inGrid };
+        }][0]!;
+        const before = read();
+        current = rerouted.ports;
+        const sameText = read();
+        current = unlisted.ports;
+        const otherText = read();
+        return { before, sameText, otherText, steps: [listed, rerouted, unlisted].flatMap(each => each.m.steps()) };
+      }, { ...collectionData, plain: page });
+      assert.deepEqual(result.before, { offer: "Add a card to “Work” on Home", routes: ["/", "/work/", "/work/oak/", "/work/pine/"], folder: "/work/", inGrid: ["/work/pine/"] });
+      assert.deepEqual(result.sameText, { offer: "Add a card to “Work” on Home", routes: ["/"], folder: "/work/", inGrid: [] });
+      assert.deepEqual(result.otherText, { offer: undefined, routes: ["/"], folder: null, inGrid: [] });
+      assert.deepEqual(result.steps, []);
     });
 
     await t.test("Pages tab creates the page and collection card in one step", async () => {
