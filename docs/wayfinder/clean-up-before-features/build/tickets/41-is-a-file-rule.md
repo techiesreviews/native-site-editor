@@ -17,7 +17,7 @@ Research 01 §3 (listed so the wording change is no surprise; ticket 05 kept it)
 
 ## Files
 
-- `shared/site-rules.ts` (from slice 40): `parentProblem(path, exists)`; `writablePathProblem` moves here from `shared/site-files.ts:233` or is re-exported
+- `shared/site-rules.ts` (from slice 40): `parentProblem(path, isFile)`; `writablePathProblem` moves here from `shared/site-files.ts:233` or is re-exported
 - Call sites: `src/main.ts` (3725, 3774, 4524 at `89ac5e0e`), `src/controllers/file-operation-checks.ts:56`, `src/native-page-moves.ts:131`, `shared/agent-edit.ts:120`, `src/setup-actions.ts:344`, `src/page-builder/media-workspace.ts` (421, 462, 545, 712), `src/page-builder/replace-everywhere.ts:154`
 - Tests: `tests/site-rules.test.ts`, affected unit tests; `tests/main-ts-ceiling.test.ts`
 
@@ -39,7 +39,7 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 ## Done (2026-10-24)
 
 - `shared/site-rules.ts` holds the one rule: `fileInTheWay(file)` is the wording, "X is a file, so nothing can go in it."; `foldersAbove(path)` lists the folders a path sits in; `parentProblem(path, isFile)` and `folderProblem(folder, isFile)` return the refusal for the first file in the way. `writablePathProblem` moved here; `shared/site-files.ts` re-exports it for the Worker.
-- 11 sites use it: `src/main.ts` (new file or folder, `branchPathProblem`, new drafts' `checkPath`), `src/controllers/file-operation-checks.ts`, `src/native-page-moves.ts`, `shared/agent-edit.ts` (write_file), `src/setup-actions.ts` (skipped starter files), `src/page-builder/media-workspace.ts` (4) and `src/page-builder/replace-everywhere.ts`.
+- 12 sites use it: `src/main.ts` (new file or folder, `branchPathProblem`, new drafts' `checkPath`), `src/controllers/file-operation-checks.ts`, `src/native-page-moves.ts`, `shared/agent-edit.ts` (write_file), `src/setup-actions.ts` (skipped starter files), `src/page-builder/media-workspace.ts` (4) and `src/page-builder/replace-everywhere.ts`.
 - Wording changes: media's "…so it cannot contain uploaded files" and "…cannot contain originals", and the starting point's "…is a file here, so…", now read "X is a file, so nothing can go in it." Nothing else changes.
 - Follow-up, left to [51](51-one-agent-command-path.md): the Goal's "path validity runs three times for an agent edit" is not answered here. `worker/mcp.ts` still runs `writablePathProblem` (and write_file's `isMediaUploadWrite` and content check) before `prepareAgentEdit` runs them again; `worker/mcp.ts` is outside this slice's Files, and 51 owns the three layers.
 - Tests: `tests/site-rules.test.ts` covers a file as the direct parent and as the grandparent, a folder that is a file or sits in one, and paths with no folder.
