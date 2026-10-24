@@ -1364,6 +1364,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       // Parks the pane and reloads its frame: the pane never leaves the host.
       if (!frameState.deactivate()) return;
       endPress();
+      // Every deactivation follows a new load (nextLoad), which has already cleared the agent's presence (src/agent-presence.ts).
       agentPresence = undefined;
       site = undefined;
       shownRoute = undefined;

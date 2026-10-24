@@ -716,13 +716,12 @@ export async function applySiteCommand(actions: AgentSiteActions, command: Agent
   for (const candidate of [args.file, args.with, ...args.files ?? []])
     if (candidate && touchesMediaRecords(candidate)) throw new Error(MEDIA_RECORDS_REFUSED);
   // Admitted: the agent is at work from here until the change lands or stops.
-  const admitted = command;
   let end = () => {};
   try {
-    const started = actions.presence?.(admitted.path, source => agentPresenceTarget(admitted, source, actions.sectionTags()));
+    const started = actions.presence?.(command.path, source => agentPresenceTarget(command, source, actions.sectionTags()));
     if (typeof started === "function") end = started;
   } catch { /* Presence is a picture of the work: it never stops it. */ }
-  try { return await applyAdmitted(actions, admitted); }
+  try { return await applyAdmitted(actions, command); }
   finally { end(); }
 }
 

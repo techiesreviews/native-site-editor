@@ -200,21 +200,55 @@ test("a held change keeps its presence on a fresh frame document, and a workspac
   } finally { await client.close(); }
 });
 
-test("a held change for another page draws nothing on the page shown while it runs", async ({ page, baseURL }) => {
+test("a held change for another page draws nothing on the page shown, and stands on its own section once that page shows", async ({ page, baseURL }) => {
   const client = await connect(page, baseURL);
   try {
     const placing = await hold(page, PLACING);
-    // About's hero heading (1.0.0): Home has a hero at 1.0 too, where a wrong presence would stand.
-    const placed = client.callTool({ name: "place_media", arguments: { path: "about/index.html", element: "1.0.0", file: "images/studio-desk.svg", requestId: "presence-about-held", waitSeconds: 0 } })
+    // About's prose paragraph (1.1.0), in its section 1.1: Home has its cards at 1.1, where a wrong presence would stand.
+    const placed = client.callTool({ name: "place_media", arguments: { path: "about/index.html", element: "1.1.0", file: "images/studio-desk.svg", requestId: "presence-about-held", waitSeconds: 0 } })
       .catch(error => ({ isError: true, content: [{ text: String(error) }] }));
     await placing.reached;
-    await expect(page.frameLocator(".native-preview-frame").locator(".hero h1")).toHaveText("A native browser preview");
+    const preview = page.frameLocator(".native-preview-frame");
+    await expect(preview.locator(".hero h1")).toHaveText("A native browser preview");
     // Drawn now if at all: the page's boxes are drawn on each message and render.
     // fixed-wait: an absence has no state to poll; a few frames let a wrong presence draw.
     await page.waitForTimeout(300);
     await expect(box(page)).toBeHidden();
     await expect(agentRows(page)).toHaveCount(0);
+    // Lex opens About while the change still runs: its presence stands round About's prose section and its row.
+    await preview.locator("site-header a", { hasText: "About" }).click({ modifiers: ["ControlOrMeta"] });
+    await expect(preview.locator(".hero h1")).toHaveText("About this project");
+    await expect(box(page)).toBeVisible();
+    const [outline, prose] = await Promise.all([box(page).boundingBox(), preview.locator(".prose").boundingBox()]);
+    for (const side of ["x", "y", "width", "height"] as const) expect(Math.abs(outline![side] - prose![side])).toBeLessThan(1);
+    const row = page.getByRole("tree", { name: "Page structure" }).locator('[data-node="1.1"]');
+    await expect(row).toHaveClass(/page-structure__row--agent/);
+    await expect(row).toHaveAttribute("aria-busy", "true");
     placing.release();
     await placed;
+    await expect(box(page)).toBeHidden();
+    await expect(agentRows(page)).toHaveCount(0);
   } finally { await client.close(); }
+});
+
+test("at the very top of the page the name chip stands inside the outline's corner", async ({ page, baseURL }) => {
+  await openEditor(page, baseURL);
+  const preview = page.frameLocator(".native-preview-frame");
+  await expect(preview.locator("site-header")).toBeVisible();
+  // The editor's own message for the header (node 0, at the page's top), as the presence port sends it.
+  await page.evaluate(() => (document.querySelector(".native-preview-frame") as HTMLIFrameElement).contentWindow!.postMessage(
+    { source: "astro-native-preview-host", type: "agent-presence", request: { path: "index.html", node: [0] }, name: "Agent" }, "*"));
+  await expect(box(page)).toBeVisible();
+  const chip = preview.locator('[data-native-selection-box="agent-presence-chip"]');
+  await expect(chip).toHaveText("Agent");
+  // Measured in the frame's own page coordinates.
+  const frame = (await (await page.locator(".native-preview-frame").elementHandle())!.contentFrame())!;
+  const { outline, header, tag } = await frame.evaluate(() => {
+    const rect = (selector: string) => { const at = document.querySelector(selector)!.getBoundingClientRect(); return { x: at.left + scrollX, y: at.top + scrollY }; };
+    return { outline: rect('[data-native-selection-box="agent-presence"]'), header: rect("site-header"), tag: rect('[data-native-selection-box="agent-presence-chip"]') };
+  });
+  expect(Math.abs(outline.y - header.y)).toBeLessThan(1);
+  expect(outline.y).toBeLessThan(16);
+  expect(tag.y).toBeGreaterThanOrEqual(outline.y - 0.5);
+  expect(Math.abs(tag.x - outline.x)).toBeLessThan(1);
 });
