@@ -235,13 +235,13 @@ test("Disconnect MCP also ends an agent that connected after the menu last read 
   } finally { await seen.client.close().catch(() => undefined); }
 });
 
-test("a refused copy: the label never reads Copied and stays Wait for MCP, with no toast", async ({ page, baseURL }) => {
+test("a refused copy: the label never reads Copied, the dot shows the problem, no toast; the next press tries again", async ({ page, baseURL }) => {
   await page.addInitScript(() => {
     Object.defineProperty(navigator.clipboard, "writeText", { configurable: true, value: () => Promise.reject(new DOMException("Denied", "NotAllowedError")) });
   });
   await open(page, baseURL);
   await page.locator(".repository-menu__trigger").click();
-  const action = page.locator(".agent-menu__action");
+  const action = page.locator(".agent-menu__action"), menu = page.locator(".agent-menu");
   // Every label the button shows from here on.
   await action.evaluate(element => {
     const host = window as Window & { agentLabels?: string[] };
@@ -249,13 +249,36 @@ test("a refused copy: the label never reads Copied and stays Wait for MCP, with 
     new MutationObserver(() => host.agentLabels!.push(element.textContent ?? "")).observe(element, { subtree: true, childList: true, characterData: true });
   });
   await action.click();
-  await expect(action).toHaveText("Wait for MCP", { timeout: 15_000 });
+  await expect(menu).toHaveAttribute("data-state", "failed", { timeout: 15_000 });
+  await onlyLabel(page, "Connect to MCP");
+  expect((await dot(page)).color).toBe(await danger(page));
+  // Pressed again, it tries to copy again (refused again): still no Copied, still the problem dot.
+  const tried = page.evaluate(() => new Promise<void>(resolve => {
+    const original = navigator.clipboard.writeText.bind(navigator.clipboard);
+    Object.defineProperty(navigator.clipboard, "writeText", { configurable: true, value: (text: string) => { resolve(); return original(text); } });
+  }));
   await action.click();
-  // fixed-wait: longer than the 2 s confirmation, so a wrong Copied would have shown and gone.
-  await page.waitForTimeout(2_500);
-  await expect(action).toHaveText("Wait for MCP");
+  await tried;
+  await expect(menu).toHaveAttribute("data-state", "failed");
   expect(await page.evaluate(() => (window as Window & { agentLabels?: string[] }).agentLabels)).not.toContain("Copied");
-  await onlyLabel(page, "Wait for MCP");
+  await onlyLabel(page, "Connect to MCP");
+});
+
+test("Connect to MCP from off copies a prompt even when another browser's token already waits on the site", async ({ page, baseURL }) => {
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  // Another browser (its own storage and tabs) of the same signed-in session: a waiting token made there.
+  await open(page, baseURL);
+  const other = await page.request.post(`${baseURL}/api/agent/connect`, { headers: { Origin: baseURL! }, data: { repo: "native-demo-user/native-demo", repoId: 501, branch: "main" } });
+  const elsewhere = (await other.json() as { token: string }).token;
+  await page.locator(".repository-menu__trigger").click();
+  const action = page.locator(".agent-menu__action");
+  await expect(page.locator(".agent-menu")).toHaveAttribute("data-state", "off");
+  const made = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST");
+  await action.click();
+  const { token } = await (await made).json() as { token: string };
+  expect(token).not.toBe(elsewhere);
+  await expect(action).toHaveText("Copied");
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain(`Bearer ${token}`);
 });
 
 test("unused tokens never fill the site's five connections: five reloads, each pressing Wait for MCP, still copy a working prompt", async ({ page, context, baseURL }) => {
@@ -397,7 +420,7 @@ test("a failed connect revokes nothing: another tab's fresh prompt keeps working
   await page.locator(".repository-menu__trigger").click();
   const made = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST");
   await page.locator(".agent-menu__action").click();
-  const first = (await (await made).json() as { token: string }).token;
+  const { token: first, id: firstId } = await (await made).json() as { token: string; id: string };
   const second = await context.newPage();
   try {
     await open(second, baseURL);
@@ -411,18 +434,24 @@ test("a failed connect revokes nothing: another tab's fresh prompt keeps working
     expect(refused).toBe(1);
     await onlyLabel(second, "Connect to MCP");
     expect((await dot(second)).color).toBe(await danger(second));
-    const response = await page.request.post(`${baseURL}/mcp`, {
-      headers: { Authorization: `Bearer ${first}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
-      data: { jsonrpc: "2.0", id: 1, method: "tools/list" },
-    });
-    expect(response.status(), "the first tab's token was not revoked").toBe(200);
-    // An agent then uses that token: the failed dot gives way to Disconnect MCP, and the press it
-    // offers never disconnected anyone before.
+    // The first tab's token is still listed, and still unused (an MCP call would count as its agent).
+    const { grants } = await (await page.request.get(`${baseURL}/api/agent/connections`)).json() as { grants: { id: string; usedAt?: number }[] };
+    expect(grants.find(grant => grant.id === firstId), "the first tab's token was not revoked").toMatchObject({ id: firstId });
+    expect(grants.find(grant => grant.id === firstId)?.usedAt).toBeUndefined();
+    // Pressed again (the server answers now), the red Connect to MCP copies a prompt of this tab's own.
+    await second.unroute("**/api/agent/connect");
+    const own = second.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST");
+    await action.click();
+    const mine = (await (await own).json() as { token: string }).token;
+    await expect.poll(() => second.evaluate(() => navigator.clipboard.readText())).toContain(`Bearer ${mine}`);
+    await expect(action).toHaveText("Wait for MCP");
+    // An agent then uses the first tab's token: returning to this tab shows Disconnect MCP, and no
+    // press before it disconnected anyone.
     const { client, call } = await agent(baseURL, first, "after-failure-agent");
     try {
       await call("get_site");
-      await expect.poll(async () => { await refresh(second); return second.locator(".agent-menu").getAttribute("data-state"); }, { timeout: 15_000 }).not.toBe("failed");
-      await expect(action).toHaveText("Disconnect MCP", { timeout: 15_000 });
+      await expect.poll(async () => { await refresh(second); return action.textContent(); }, { timeout: 15_000 }).toBe("Disconnect MCP");
+      await expect(second.locator(".agent-menu")).toHaveAttribute("data-state", /connected|other-owner/);
       expect((await client.listTools()).tools.length).toBeGreaterThan(0);
     } finally { await client.close().catch(() => undefined); }
   } finally { await second.close(); }
@@ -468,11 +497,21 @@ test("Wait for MCP after another tab reclaimed this tab's token, with the connec
     await page.bringToFront();
     await page.evaluate(() => navigator.clipboard.writeText("before the press"));
     await page.locator(".agent-menu__action").click();
-    // Unproven, the old token is not copied: the press ends without a prompt and the dot shows a problem.
-    await expect(page.locator(".agent-menu")).toHaveAttribute("data-state", /failed|reconnecting|paused/, { timeout: 30_000 });
-    await expect(page.locator(".agent-menu__action")).not.toHaveText("Copied");
-    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe("before the press");
-    expect(await page.evaluate(() => navigator.clipboard.readText())).not.toContain(first);
+    // Unproven, the old token is not copied: the press either copies a fresh prompt or ends on a problem dot.
+    await expect.poll(async () => await page.evaluate(() => navigator.clipboard.readText()) !== "before the press" ||
+      /failed|reconnecting|paused/.test(await page.locator(".agent-menu").getAttribute("data-state") ?? ""), { timeout: 30_000 }).toBe(true);
+    // clipboard-ready: the poll above waited for the press to end.
+    const clipboard = await page.evaluate(() => navigator.clipboard.readText());
+    expect(clipboard).not.toContain(first);
+    // Whatever it copied is a prompt that works (a fresh token), or nothing at all.
+    const copied = /Bearer (ase_[a-f0-9]{64})/.exec(clipboard)?.[1];
+    if (copied) {
+      const answer = await page.request.post(`${baseURL}/mcp`, {
+        headers: { Authorization: `Bearer ${copied}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
+        data: { jsonrpc: "2.0", id: 1, method: "tools/list" },
+      });
+      expect(answer.status()).toBe(200);
+    } else expect(clipboard).toBe("before the press");
   } finally { await second.close(); }
 });
 
@@ -503,4 +542,80 @@ test("a failed first prompt: Connect to MCP shows the problem dot, not the plain
   refuse = false;
   await action.click();
   await expect(action).toHaveText("Wait for MCP", { timeout: 15_000 });
+});
+
+const remembered = (page: Page, ...branches: string[]) => page.evaluate(keys => keys.map(key => localStorage.getItem(key)),
+  branches.map(branch => `native-site-editor:agents-on:["native-demo-user",501,"${branch}"]`));
+async function featureBranch(page: Page, baseURL: string | undefined) {
+  const index = await (await page.request.get(`${baseURL}/__demo/file?path=index.html`)).text();
+  await page.request.post(`${baseURL}/__demo/branch`, { data: { name: "feature", path: "index.html", content: index } });
+}
+/** Holds the first request to `path` until `release()`; `reached` settles when it arrives. */
+async function holdFirst(page: Page, path: string) {
+  let reached!: () => void, release!: () => void;
+  const arrived = new Promise<void>(resolve => { reached = resolve; }), released = new Promise<void>(resolve => { release = resolve; });
+  let first = true;
+  await page.route(url => url.pathname === path, async route => {
+    if (!first) return route.continue();
+    first = false;
+    reached();
+    await released;
+    await route.continue();
+  });
+  return { arrived, release };
+}
+
+test("Disconnect MCP while the tab switches to another site: the agents end, and the site shown is left as it is", async ({ page, context, baseURL }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await open(page, baseURL);
+  await featureBranch(page, baseURL);
+  await page.locator(".repository-menu__trigger").click();
+  const action = page.locator(".agent-menu__action");
+  const made = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST");
+  await action.click();
+  const { token } = await (await made).json() as { token: string };
+  const { client, call } = await agent(baseURL, token, "switch-agent");
+  try {
+    await call("get_site");
+    await expect.poll(async () => { await refresh(page); return action.textContent(); }, { timeout: 15_000 }).toBe("Disconnect MCP");
+    const revoke = await holdFirst(page, "/api/agent/revoke");
+    await action.click();
+    await revoke.arrived;
+    await page.keyboard.press("Escape");
+    await page.evaluate(() => { location.hash = "#repo=501&branch=feature&file=index.html"; });
+    await expect(page.locator("#status")).toContainText("Up to date with feature", { timeout: 30_000 });
+    revoke.release();
+    await expect.poll(() => client.callTool({ name: "get_site", arguments: {} }).then(() => "answered", () => "ended"), { timeout: 15_000 }).toBe("ended");
+    // The press began on main: feature, shown now, is not turned off or forgotten by it.
+    await page.locator(".repository-menu__trigger").click();
+    await expect(page.locator(".agent-menu")).toHaveAttribute("data-state", "workspace-changed");
+    expect(await remembered(page, "main", "feature")).toEqual(["1", null]);
+  } finally { await client.close().catch(() => undefined); }
+});
+
+test("Wait for MCP while the tab switches to another site: nothing is copied and no token is made", async ({ page, context, baseURL }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await open(page, baseURL);
+  await featureBranch(page, baseURL);
+  await page.locator(".repository-menu__trigger").click();
+  const action = page.locator(".agent-menu__action");
+  await action.click();
+  await expect(action).toHaveText("Wait for MCP", { timeout: 15_000 });
+  const connects: string[] = [];
+  page.on("request", request => { if (new URL(request.url()).pathname === "/api/agent/connect") connects.push(request.method()); });
+  await page.evaluate(() => navigator.clipboard.writeText("before the press"));
+  const check = await holdFirst(page, "/api/agent/connections");
+  await action.click();
+  await check.arrived;
+  await page.keyboard.press("Escape");
+  await page.evaluate(() => { location.hash = "#repo=501&branch=feature&file=index.html"; });
+  await expect(page.locator("#status")).toContainText("Up to date with feature", { timeout: 30_000 });
+  check.release();
+  await page.locator(".repository-menu__trigger").click();
+  await expect(page.locator(".agent-menu")).toHaveAttribute("data-state", "workspace-changed");
+  // fixed-wait: the released check's answer has had time to arrive; a wrong copy would show by now.
+  await page.waitForTimeout(1_000);
+  // clipboard-ready: the fixed wait above; the clipboard must still hold what was written before the press.
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("before the press");
+  expect(connects).toEqual([]);
 });
