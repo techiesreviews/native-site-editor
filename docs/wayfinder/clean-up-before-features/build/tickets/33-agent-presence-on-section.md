@@ -67,3 +67,15 @@ Review decisions:
 - Round 3, decided and pinned: an agent rewriting a component's template shows nothing (`createAgentPresence` takes only the site's pages; `tests/agent-presence.test.ts`).
 - Rounds 1 to 3, not done: the researched references (above, open item for Lex): web search and fetch were refused in every build session. Lex either waives them or a session with web access records the links.
 
+### Follow-ups
+
+- Spec (P2): 5e7e1a2d:src/agent-site.ts:709 — P2: The section for an `edit_file`/`write_file` change is found from `minimalTextEdit`, which trims the common prefix and suffi
+- Spec (P2): 120f1fcc:src/agent-presence.ts:41 — P2: The node path is worked out once, when `show()` runs, and is never worked out again. If the page's structure changes whi
+- Spec (P2): 0c093714:docs/wayfinder/clean-up-before-features/build/tickets/33-agent-presence-on-section.md:4 — P2: The ticket is marked `status: closed`, but one of its dec
+- Standards (P3): 0c093714:docs/wayfinder/clean-up-before-features/build/tickets/33-agent-presence-on-section.md:62 — P3: The ticket gives the commits as `df8d4173`, `53fbe64a` a
+- Validation gaps (gap): `tests/agent-presence.test.ts`: add a `write_file` case that inserts a new `<section>` between `hero` and `about`, and one that appends right after `</section>`
+- Validation gaps (gap): `tests/agent-presence.test.ts`: in `presenceViews`, call `show("index.html", find)` where `find` reads the current source. Change `sources["index.html"]` to rem
+- Validation gaps (gap): `tests/native-save/native-agent-presence.spec.ts`: during the held `place_media` change, have Lex delete an earlier section through Page Structure. Assert that 
+- Validation gaps (gap): `src/components/page-structure.ts:456` (re-marking a row when the tree is rebuilt): add a browser step during a held change that forces the tree to render again
+- Validation gaps (gap): The runtime's ordering: add a step that sends `agent-presence` to a fresh frame before its `theme` message. Assert that the box stays hidden until the theme arr
+
