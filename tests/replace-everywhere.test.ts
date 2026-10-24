@@ -138,6 +138,13 @@ test("taken new main or family member refuses without changing records", async (
   assert.deepEqual(records, before);
 });
 
+test("a file where the new family's folder goes refuses; a top-level picture has no folder to check", async () => {
+  await assert.rejects(plan({}, { paths: [...paths, "media"], request: { path, result: result("webp") } }), { message: "media is a file, so nothing can go in it." });
+  const top = planMediaReplace({ request: { path: "x.jpg", result: result("webp") }, paths: ["x.jpg", "x.web"], sources: {}, records: { version: 2, collections: [], files: {} },
+    versions: new Map(), site: { origins: ["https://site.test"] } });
+  assert.deepEqual(top.uploads.map(upload => upload.path), ["x.webp", "x-480.webp"]);
+});
+
 test("new kept original uses family base, previous original without counterpart is removed", async () => {
   const p = await plan({}, { request: { path, result: result(), original: { blob: new Blob(["original"]), extension: "jpg" } } });
   assert.equal(p.uploads.at(-1)?.path, "media/originals/photo.jpg");

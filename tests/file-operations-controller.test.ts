@@ -735,3 +735,14 @@ test("a move refuses an asset-reference rewrite error without changing either fi
   assert.equal(h.memory.draft("style.css"), undefined);
   assert.deepEqual(h.memory.steps(), []);
 });
+
+test("a move under a file is refused, the file named, at once and without the chunk", async () => {
+  for (const depth of ["notes.html/a.html", "notes.html/deep/a.html"]) {
+    const h = fixture(false, { "a.html": "<h1>A</h1>", "notes.html": "<h1>Notes</h1>" });
+    const source = { path: "a.html", name: "a.html", folder: false };
+    assert.equal(await h.controller.moveFileTarget(source, depth, "move"), "notes.html is a file, so nothing can go in it.");
+    const lazy = createLazyFileOperationsController(h.ports, () => { throw new Error("unexpected load"); });
+    assert.equal(await lazy.moveFileTarget(source, depth, "move"), "notes.html is a file, so nothing can go in it.");
+    assert.deepEqual(h.memory.steps(), []);
+  }
+});

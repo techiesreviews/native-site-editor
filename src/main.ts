@@ -2942,7 +2942,7 @@ function planCreation({ kind, folder, name }: CreateRequest): Checked<Creation> 
 
 // Whether the branch has `path`, or a file where a folder of it would go,
 // asked of GitHub a folder at a time; only needed without the whole-commit
-// tree, which the plan already checked.
+// tree, which the plan already checked. Its own walk, not parentProblem: each folder's listing is awaited.
 async function branchPathProblem(path: string) {
   if (!appStore.snapshot.value || appStore.snapshot.value.tree || !appStore.repository.value) return undefined;
   let entries = appStore.snapshot.value.entries;

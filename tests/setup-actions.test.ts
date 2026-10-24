@@ -83,3 +83,27 @@ test("a new load while the Starter site is fetched writes nothing and says the r
     assert.equal(drafts.size, 0);
   } finally { appStore.dispose(); }
 });
+
+for (const files of [["x/a.html"], ["x/a.html", "x/deep/b.html"]]) test(`starter files under a file are skipped with the one wording (${files.length})`, async () => {
+  const appStore = createAppStore(createDraftStore()), session = createWorkspaceSession(), drafts = new Map<string, string>(), problems: string[] = [];
+  appStore.repository.value = { id: 1, name: "my-site", full_name: "user/my-site", private: false, default_branch: "main", owner: { login: "user", type: "User" } };
+  appStore.snapshot.value = { branch: "main", commit: "commit", entries: [] };
+  const ports = {
+    begin: () => session.begin(), appStore, draftScope: () => ({ account: "user", repoId: 1, repo: "user/my-site", branch: "main" }),
+    guardedEdits: createGuardedEdits(createMemoryWorkspace({ branch: { x: "a file" } }).workspace),
+    pathNow: (path: string) => path === "x" ? "file" as const : undefined, repositoryIndex: { find: async () => undefined },
+    api: async <T>() => ({ files: [...files, "index.html"].map(path => ({ path, content: "<h1>Hi</h1>" })) }) as T, readFile: async () => "",
+    draftStore: () => ({ get: () => undefined, save: (draft: { path: string; content: string }) => { drafts.set(draft.path, draft.content); }, error: null }),
+    setupController: { start() {} }, loadSnapshot: async () => {}, announce() {}, errorMessage(error: unknown) { problems.push((error as Error).message); },
+  } satisfies Pick<Parameters<typeof createSetupActions>[0], "begin" | "appStore" | "draftScope" | "guardedEdits" | "pathNow" | "api" | "readFile" | "loadSnapshot" | "announce" | "errorMessage"> & {
+    repositoryIndex: { find: (...args: unknown[]) => Promise<{ sha: string } | undefined> };
+    draftStore: () => { get(): undefined; save(draft: { path: string; content: string }): void; error: null };
+    setupController: { start(): void };
+  };
+  try {
+    const module = await bundled;
+    assert.equal(await module.createSetupActions(ports).writeStartingPoint("starter"), undefined);
+    assert.deepEqual(problems, [`${files.join(", ")} ${files.length === 1 ? "was" : "were"} skipped: x is a file, so nothing can go in it.`]);
+    assert.deepEqual([...drafts.keys()], ["index.html"]);
+  } finally { appStore.dispose(); }
+});
