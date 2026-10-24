@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test, type TestContext } from "node:test";
 import { textHash, type AgentCommand } from "../shared/agent.ts";
-import { applySiteCommand, applyStructural, editorOrElsewhere, finishAgentTextElsewhere, holdWorkspace, prepareAgentText, type AgentSiteActions } from "../src/agent-site.ts";
+import { applySiteCommand, applyStructural, draftsProof, editorOrElsewhere, finishAgentTextElsewhere, holdWorkspace, prepareAgentText, type AgentSiteActions } from "../src/agent-site.ts";
 import { createWorkspaceSession, githubScope, same, type SessionStamp, type WorkspaceSession } from "../src/workspace-session.ts";
 import { agentCommandFiles, agentCommandSignals, siteCommandPins } from "../src/agent-tools.ts";
 import { backgroundSitePorts } from "./fakes/background-site-ports.ts";
@@ -602,7 +602,7 @@ test("an agent edit's editor path switched away at any wait before it is kept fi
       if (run.moved) throw new Error("The repository changed meanwhile. Nothing was changed; your drafts are as they were.");
       await race.port("commit", async () => { run.applied = true; })();
       return "editor";
-    }, () => run.applied, () => run.moved, async () => run.moved ? "elsewhere" : undefined, async () => assert.fail("finished elsewhere, not run again")).then(result => { run.result = result; });
+    }, () => run.applied, () => run.moved, async () => run.moved ? "elsewhere" : undefined, { shown: () => true, proof: () => {}, run: async () => assert.fail("finished elsewhere, not run again") }).then(result => { run.result = result; });
     return run;
   }, run => { run.moved = true; }, run => {
     assert.equal(run.result, run.applied ? "editor" : "elsewhere");
@@ -612,11 +612,12 @@ test("an agent edit's editor path switched away at any wait before it is kept fi
 
 // Grok on 34 (ticket 36): its branch left and shown again before its step was kept, the attempt's stamp no longer
 // holds and the away finish leaves it to the editor (undefined): a new attempt on a new stamp runs it on show, once
-// (src/main.ts applyAgentSiteCommand's shape), however often that repeats. Left and not shown again, or reloaded
-// alone, its own reason stands.
+// (src/main.ts applyAgentSiteCommand's shape), however often that repeats, while its branch's drafts are as they
+// were when it began (`proof`, draftsProof). Left and not shown again, reloaded alone, or an earlier version opened
+// and closed (not leaving it: the editor path refuses that as before, ticket 23), its own reason stands.
 const MAIN = githubScope({ account: "lex", repoId: 1, branch: "main" }), FEATURE = githubScope({ account: "lex", repoId: 1, branch: "feature" });
 const RELOADED = "The editor reloaded this branch or opened an earlier version meanwhile. Read the site again.";
-function onShowAttempts(meanwhile: (session: WorkspaceSession) => void, cycles: number, attempt: (at: SessionStamp, session: WorkspaceSession) => Promise<string>) {
+function onShowAttempts(meanwhile: (session: WorkspaceSession) => void, cycles: number, attempt: (at: SessionStamp, session: WorkspaceSession) => Promise<string>, proof = () => {}) {
   const session = createWorkspaceSession(MAIN), counts = { attempts: 0, away: 0 };
   let applied = false;
   const onShow = (): Promise<string> => {
@@ -626,7 +627,7 @@ function onShowAttempts(meanwhile: (session: WorkspaceSession) => void, cycles: 
       const done = await attempt(at, session);
       applied = true;
       return done;
-    }, () => applied, left, async () => { counts.away++; return undefined; }, () => same(session.current().scope, MAIN) ? onShow() : undefined);
+    }, () => applied, left, async () => { counts.away++; return undefined; }, { shown: () => same(session.current().scope, MAIN), proof, run: onShow });
   };
   return { counts, run: onShow };
 }
@@ -637,6 +638,7 @@ test("an agent command's editor path left and shown again before it is kept runs
     ["left for the overview and shown again", (session: WorkspaceSession) => { session.next(undefined); session.next(MAIN); }, 1, { result: "on show", attempts: 2, kept: 1, away: 1 }],
     ["left, not shown again", (session: WorkspaceSession) => { session.next(FEATURE); }, 1, { result: "refused", attempts: 1, kept: 0, away: 1 }],
     ["reloaded", (session: WorkspaceSession) => { session.next(MAIN); }, 1, { result: "refused", attempts: 1, kept: 0, away: 0 }],
+    ["an earlier version opened and closed", (session: WorkspaceSession) => { session.next({ ...MAIN, view: "a".repeat(40) }); session.next(MAIN); }, 1, { result: "refused", attempts: 1, kept: 0, away: 0 }],
   ] as const) {
     let kept = 0;
     const { counts, run } = onShowAttempts(meanwhile, cycles, async at => {
@@ -674,12 +676,33 @@ test("an agent text write's editor path left and shown again before it is kept i
       assert.equal(f.models.text(f.scope, "index.html"), "lex");
       assert.equal(await f.records.receipt(f.scope, "operation", "grant"), undefined);
     } else {
-      assert.match(outcome, /Changed index\.html|"hash"/);
+      assert.equal((JSON.parse(outcome) as { message: string }).message, "Changed index.html in the editor as an unsaved draft.");
       assert.equal(f.models.text(f.scope, "index.html"), "agent");
       assert.equal(f.history.length, 1, "written once");
       assert.ok(await f.records.receipt(f.scope, "operation", "grant"));
     }
   }
+});
+
+// Review of ticket 36: a page or file command run again on show only while its branch's drafts are as they were when
+// it began (ticket 34's away rule): Lex changing another file there meanwhile refuses it, with nothing kept, though its
+// own file is as it was (it would plan again over that change).
+test("an agent command's editor path left and shown again refuses when its branch's drafts changed meanwhile; nothing is kept", async t => {
+  const f = await setup(t);
+  const proof = draftsProof(f.store, f.scope);
+  let prepared = 0;
+  const { counts, run } = onShowAttempts(() => {}, 0, async (at, session) => JSON.stringify(await f.run(f.command, undefined, undefined, undefined, { current: () => at.holds(), prepared: async () => {
+    if (prepared++ > 0) return;
+    session.next(FEATURE);
+    assert.equal((await f.manual.run(r => { r.source("other.css"); return { edits: new Map([["other.css", "lex css"]]), done: "Manual", undone: "Undo manual", select: { historyOnly: true } }; })).ok, true);
+    session.next(MAIN);
+  } })), proof);
+  await assert.rejects(run(), { message: "main changed in the editor meanwhile. Read it again. Nothing was changed; your drafts are as they were." });
+  assert.deepEqual(counts, { attempts: 1, away: 1 });
+  assert.equal(f.models.text(f.scope, "index.html"), "before");
+  assert.equal(f.store.get(f.scope, "other.css")?.content, "lex css", "Lex's change is left as it is");
+  assert.equal(await f.records.receipt(f.scope, "operation", "grant"), undefined);
+  assert.equal(f.history.length, 1, "only Lex's step");
 });
 
 test("a workspace hold is left once another workspace or none loads, even when shown again; a reload alone is not leaving", () => {
@@ -695,6 +718,14 @@ test("a workspace hold is left once another workspace or none loads, even when s
   const back = holdWorkspace(session);
   session.next(undefined);
   assert.equal(back.left(), true, "the overview shown");
+  // An earlier version is its own workspace's (its loads count as its visits): not leaving it, so the
+  // editor path refuses it as reloaded rather than running it again (ticket 23: a version view is elsewhere).
+  session.next(main);
+  const viewed = holdWorkspace(session);
+  session.next({ ...main, view: "a".repeat(40) });
+  assert.equal(viewed.left(), false, "an earlier version shown");
+  session.next(main);
+  assert.equal(viewed.left(), false, "the latest version shown again");
 });
 
 // Ticket 34: a page command read on a branch no longer shown runs in its background site. Its branch

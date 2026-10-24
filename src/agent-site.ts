@@ -1112,18 +1112,35 @@ export function pinnedMediaActions(actions: AgentSiteActions, command: AgentComm
 /**
  * The editor path of an agent command (tickets 23 and 34): when it fails before its write was kept and
  * its branch was left meanwhile (`moved`, shown again since too), the write finishes where it was read
- * (`elsewhere`, finishAgentTextElsewhere) instead of refusing; left to the editor there (undefined), a
- * new attempt runs it on show (`again`, on a new stamp: the old one no longer holds) while its branch is
- * the one shown, so it lands once either way. Otherwise (`again` undefined too) its own reason stands.
+ * (`elsewhere`, finishAgentTextElsewhere) instead of refusing; left to the editor there (undefined) and
+ * its branch the one shown (`again.shown`), a new attempt runs it on show (`again.run`, on a new stamp:
+ * the old one no longer holds), so it lands once either way. That attempt runs only while its branch's
+ * drafts are as they were when it began (`again.proof`, draftsProof), else it refuses: it never plans
+ * again over what Lex changed there meanwhile. Otherwise its own reason stands.
  */
-export async function editorOrElsewhere<T>(editor: () => Promise<T>, applied: () => boolean, moved: () => boolean, elsewhere: () => Promise<T | undefined>, again: () => Promise<T> | undefined): Promise<T> {
+export async function editorOrElsewhere<T>(editor: () => Promise<T>, applied: () => boolean, moved: () => boolean, elsewhere: () => Promise<T | undefined>,
+  again: { shown: () => boolean; proof: () => void; run: () => Promise<T> }): Promise<T> {
   try { return await editor(); }
   catch (error) {
     if (applied() || !moved()) throw error;
-    const done = await elsewhere() ?? again();
-    if (done === undefined) throw error;
-    return done;
+    const done = await elsewhere();
+    if (done !== undefined) return done;
+    if (!again.shown()) throw error;
+    again.proof();
+    return await again.run();
   }
+}
+
+/**
+ * The proof that `scope`'s drafts are still as they were now (ticket 34), taken as a command begins,
+ * before any wait: it throws, with nothing changed, once they are not (their times aside).
+ */
+export function draftsProof(store: DraftStore, scope: DraftScope): () => void {
+  const now = () => JSON.stringify(store.list(scope).map(({ updatedAt: _, ...draft }) => draft).sort((a, b) => a.path.localeCompare(b.path)));
+  const proof = now();
+  return () => {
+    if (now() !== proof) throw new Error(`${scope.branch} changed in the editor meanwhile. Read it again. Nothing was changed; your drafts are as they were.`);
+  };
 }
 
 /**
@@ -1171,6 +1188,8 @@ export interface AgentAwayPorts {
   site: import("./background-site").BackgroundSitePorts;
   /** The command's step was kept in `scope`, not shown: the repository menu counts it there (ticket 24). */
   landed(scope: DraftScope): void;
+  /** The command's drafts proof, taken as it began (draftsProof); by default as it begins here. */
+  unchanged?: () => void;
 }
 
 /**
@@ -1234,13 +1253,12 @@ export async function finishAgentTextElsewhere(command: AgentCommand, shown: () 
  * on show. Its workspace shown again before its step is kept, even briefly (its loads moved), stops the
  * attempt with nothing kept. Shown now, the editor runs it (undefined); while that load is still opening
  * it waits for it, at most `AWAY_WAIT_MS`. Left again, it runs here again only while that workspace's
- * drafts are still as they were when it began (its proof, taken before any wait), else it refuses: it
+ * drafts are still as they were when it began (`away.unchanged`, taken before any wait), else it refuses: it
  * never plans again over what Lex changed there meanwhile. A receipt is kept only with its step, so an
  * attempt stopped before leaves none to count as a duplicate.
  */
 async function finishStructuralElsewhere(command: AgentCommand, scope: DraftScope, store: DraftStore, held: { pin: MediaPin; opened?: string }, away: AgentAwayPorts, left: () => boolean) {
-  const draftsNow = () => JSON.stringify(store.list(scope).map(({ updatedAt: _, ...draft }) => draft).sort((a, b) => a.path.localeCompare(b.path)));
-  const proof = draftsNow();
+  const unchanged = away.unchanged ?? draftsProof(store, scope);
   const { backgroundSite } = await import("./background-site");
   const pages = Object.values(held.pin.site?.routes ?? {});
   // A folder moved: the page open as it arrived when it is one of the folder's, else the folder's first.
@@ -1252,8 +1270,7 @@ async function finishStructuralElsewhere(command: AgentCommand, scope: DraftScop
     if (held.pin.here() && left() && !await until(() => !held.pin.here() || !left(), AWAY_WAIT_MS))
       throw new Error(`The editor is still opening ${scope.branch}. Nothing was changed; your drafts are as they were.`);
     if (!left()) return undefined;
-    if (draftsNow() !== proof)
-      throw new Error(`${scope.branch} changed in the editor meanwhile. Read it again. Nothing was changed; your drafts are as they were.`);
+    unchanged();
     if (attempt >= AWAY_ATTEMPTS)
       throw new Error(`${scope.branch} kept being opened and left while this change ran; try it again. Nothing was changed; your drafts are as they were.`);
     const visits = away.site.visits(scope), stays = () => !held.pin.here() && left() && away.site.visits(scope) === visits;
