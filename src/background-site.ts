@@ -15,7 +15,8 @@
 import type { DraftScope, SavedDraft, draftStore } from "./drafts";
 import { listChanges, type DraftAccess } from "./file-changes";
 import { isSectionTemplate } from "../shared/html-source";
-import { NATIVE_CONFIG_PATH, NATIVE_REDIRECTS_PATH, nativeSitePaths, nativeSitePrefix, nativeSiteSettings, type NativeSite } from "../shared/native-project";
+import { NATIVE_CONFIG_PATH, NATIVE_REDIRECTS_PATH, nativePageHead, nativeSitePaths, nativeSitePrefix, nativeSiteSettings, type NativeSite } from "../shared/native-project";
+import { mediaOwnOrigins } from "./page-builder/media-origins";
 import { newDraftPaths } from "../shared/site-overlay";
 import { backgroundKey } from "./background-page";
 import { NATIVE_HOME_UNREAD, pageOnBranchHere } from "./controllers/pages-state";
@@ -101,6 +102,8 @@ export function backgroundSite(pin: MediaPin, ports: BackgroundSitePorts, opened
   const base = (path: string) => { const draft = store.get(scope, path); return draft ? draft.baseSha === null ? undefined : draft.original : pin.source(path); };
   // Its text now: its draft there, else the branch's (none for a deleted or opaque draft).
   const read = (path: string) => pin.source(path);
+  // A page's title and description, from its head there.
+  const routeInfo = (route: string, of: NativeSite | undefined = site) => { const text = of && Object.hasOwn(of.routes, route) ? read(of.routes[route]) : undefined; return text === undefined ? {} : nativePageHead(text); };
   const exists = (path: string) => { const now = tree.pathNow(path); return now === "file" || now === "folder"; };
   async function branchText(path: string) {
     const entry = await pin.find(path);
@@ -117,6 +120,8 @@ export function backgroundSite(pin: MediaPin, ports: BackgroundSitePorts, opened
     draftScope: () => scope, engaged: () => Boolean(site), repository: () => ({ full_name: pin.repo }),
     treeState: tree.treeState, pathNow: tree.pathNow, branchFilesUnder: tree.branchFilesUnder, findEntry: path => pin.find(path),
     baseSource: base, nativeFiles: () => pin.files(), readMediaText: undefined, ensureNativeTextIndex: async () => undefined,
+    // Its own site's addresses: a picture linked by its full URL is in use there (delete, move).
+    origins: () => mediaOwnOrigins(nativeSiteSettings(read(NATIVE_CONFIG_PATH)).url, read("CNAME")),
     branchPathProblem: tree.branchPathProblem, onBranchHere: path => pageOnBranchHere(path, tree.baseFiles(), tree.drafts()),
     readNativeRedirects: readRedirects, undoFileChanges: none, afterFileChanges: none, announce: none, refuse: none, errorMessage: none,
     requestAnimationFrame: task => { setTimeout(task, 0); }, openFolder: none, fileRow: () => undefined, renderFileTree: none, filesTabOpen: () => false,
@@ -158,6 +163,7 @@ export function backgroundSite(pin: MediaPin, ports: BackgroundSitePorts, opened
     site: () => site,
     routeForPath: file => site && Object.keys(site.routes).find(route => site.routes[route] === file),
     source: read, files: () => pin.files(), baseFiles: tree.baseFiles, drafts: tree.drafts, hasDraftScope: () => true,
+    routeInfo, titles: site => Object.fromEntries(Object.keys(site.routes).map(route => [route, routeInfo(route, site).title])),
     siteUrl: () => nativeSiteSettings(read(NATIVE_CONFIG_PATH)).url,
     writeMeta: async () => "A background page has no Page block.",
     ensureIndex: async () => undefined, readRedirects,

@@ -16,7 +16,8 @@ import { forEachAwait, type AwaitRace } from "./support/await-race";
 const PAGE = "<main><h1>Home</h1></main>";
 const scope: DraftScope = { account: "lex", repoId: 1, repo: "lex/site", branch: "main" };
 const site = { routes: { "/": "index.html", "/about/": "about/index.html" }, components: {} };
-const branch: Record<string, string> = { "index.html": PAGE, "about/index.html": "<main><h1>About</h1></main>", "robots.txt": "User-agent: *" };
+const branch: Record<string, string> = { "index.html": PAGE, "about/index.html": "<html><head><title>About us</title></head><body><main><h1>About</h1><img src=\"https://pinned.example/images/a.png\"></main></body></html>",
+  "robots.txt": "User-agent: *", ".editor/config.json": JSON.stringify({ site: { url: "https://pinned.example" } }), "images/a.png": "png" };
 
 function fixture(race?: AwaitRace) {
   let shown = false, visits = 0;
@@ -36,7 +37,10 @@ function fixture(race?: AwaitRace) {
   } satisfies MediaPin;
   // eslint-disable-next-line no-restricted-syntax -- the background site reads only these members of the editor's live ports here.
   const ports = {
-    pages: {}, files: { readFile: async (_repo: string, sha: string) => branch[sha.slice(4)], readFiles: async () => ({}), draftStore: () => store }, components: () => ({}), actions: () => ({}),
+    // The editor's live ports read the site shown: another site's address and titles.
+    pages: { routeInfo: () => ({ title: "Shown site" }), titles: () => ({}) },
+    files: { readFile: async (_repo: string, sha: string) => branch[sha.slice(4)], readFiles: async () => ({}), draftStore: () => store, origins: () => ["https://shown.example"], parentOf: (path: string) => path.slice(0, Math.max(0, path.lastIndexOf("/"))) },
+    components: () => ({}), actions: () => ({}),
     store: () => store, forget: (_scope: DraftScope, path: string) => { forgotten.push(path); },
     prepareSources: () => ({ isCurrent: () => true, apply: () => true, undo: () => true, redo: () => true }),
     park: (step: ParkedStep) => { parked.push(step); }, visits: () => visits, factories: { createLazyFileOperationsController },
@@ -81,9 +85,11 @@ test("a page moved in a background site lands at its new place, with its file re
 test("its workspace shown again at any wait of a step writes nothing", async () => {
   const count = await forEachAwait(race => {
     const f = fixture(race);
-    return { f, done: f.edits.run(insertH2, { finish: true, anchor: f.bg.home }).then(outcome => { (f as { outcome?: unknown }).outcome = outcome; }) };
+    const run: { f: typeof f; outcome?: { ok: boolean }; done: Promise<void> } = { f, done: Promise.resolve() };
+    run.done = f.edits.run(insertH2, { finish: true, anchor: f.bg.home }).then(outcome => { run.outcome = outcome; });
+    return run;
   }, run => { run.f.show(); }, run => {
-    assert.equal((run.f as { outcome?: { ok: boolean } }).outcome?.ok, false);
+    assert.equal(run.outcome?.ok, false);
     assert.equal(run.f.records.size, 0);
     assert.deepEqual(run.f.parked, []);
   });
@@ -94,10 +100,29 @@ test("its workspace shown again at any wait of a step writes nothing", async () 
 test("its workspace shown and left again at any wait of a step writes nothing", async () => {
   await forEachAwait(race => {
     const f = fixture(race);
-    return { f, done: f.edits.run(insertH2, { finish: true, anchor: f.bg.home }).then(outcome => { (f as { outcome?: unknown }).outcome = outcome; }) };
+    const run: { f: typeof f; outcome?: { ok: boolean }; done: Promise<void> } = { f, done: Promise.resolve() };
+    run.done = f.edits.run(insertH2, { finish: true, anchor: f.bg.home }).then(outcome => { run.outcome = outcome; });
+    return run;
   }, run => { run.f.showAndLeave(); }, run => {
-    assert.equal((run.f as { outcome?: { ok: boolean } }).outcome?.ok, false);
+    assert.equal(run.outcome?.ok, false);
     assert.equal(run.f.records.size, 0);
     assert.deepEqual(run.f.parked, []);
   });
+});
+
+// Its own site, not the one shown: its address for a picture's full-URL links, its pages' titles.
+test("a background site reads its own site's address and page titles, not the site shown", async () => {
+  const { bg } = fixture();
+  assert.deepEqual(bg.files.origins?.(), ["https://pinned.example"]);
+  assert.deepEqual(bg.pages.routeInfo("/about/", site), { title: "About us" });
+  assert.equal(bg.pages.titles(site)["/about/"], "About us");
+});
+
+test("delete_file in a background site refuses a picture its own pages link by their site's full address", async () => {
+  const f = fixture();
+  const files = createLazyFileOperationsController({ ...f.bg.files, edits: f.edits,
+    confirmDialog: () => ({ ask: async () => true, choose: async question => ({ value: question.actions.at(-1)?.value, option: false }) }) }, () => import("../src/controllers/file-operations-controller"));
+  const refused = await files.deleteFileTarget({ path: "images/a.png", name: "a.png", folder: false }, undefined, true);
+  assert.match(String(refused), /images\/a\.png is used by about\/index\.html/);
+  assert.equal(f.records.size, 0);
 });

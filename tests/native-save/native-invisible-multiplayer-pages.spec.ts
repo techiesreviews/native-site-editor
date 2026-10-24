@@ -186,3 +186,21 @@ for (const operation of ["add_section", "remove_section", "make_component"] as c
     } finally { await client.close(); }
   });
 }
+
+// A section command on a page other than the one open as it arrived waits on its own page.
+test("remove_section on main's about page, held across a branch switch, waits for its Undo on that page", async ({ page, baseURL }) => {
+  const { client, call } = await connect(page, baseURL);
+  try {
+    const about = await call("get_page", { page: "/about/", source: false });
+    const section = (about.sections as { id: string }[]).at(-1)!;
+    await heldAcross(page, baseURL, "branch", () => call("remove_section", { page: "/about/", section: section.id, expectedHash: about.hash, requestId: "held-about-remove", waitSeconds: 0 }));
+    await expect.poll(async () => (await draftsOn(page, "main")).map(draft => draft.path), { timeout: 20_000 }).toEqual(["about/index.html"]);
+    await nothingShown(page);
+    // index.html, open as it arrived, takes nothing of it; its own page does.
+    await openMain(page);
+    await expect(undo(page)).toBeDisabled();
+    await openMain(page, "about/index.html");
+    await undo(page).click();
+    await expect.poll(async () => draftsOn(page, "main"), { timeout: 20_000 }).toEqual([]);
+  } finally { await client.close(); }
+});
