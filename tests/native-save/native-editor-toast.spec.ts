@@ -96,7 +96,10 @@ test("a shown toast follows each layer opened over it, keeps its Undo usable, an
   // The explorer opens over it: the toast moves in, and its Undo there leaves the explorer open.
   const undone = () => page.evaluate(() => (window as any).toastUndone);
   const explorerOpen = () => page.locator("#explorer").evaluate(element => element.matches(":popover-open"));
-  await page.locator("#explorer-toggle").click();
+  // Opened from the keyboard: a pointer resting on the button opens the explorer by hover, and a
+  // click landing after that toggle closes and reopens it above the toast (ticket 16, for the lead).
+  await page.locator("#explorer-toggle").focus();
+  await page.keyboard.press("Enter");
   await expect(page.locator("#explorer > .editor-toast")).toBeVisible();
   await toast(page).getByRole("button", { name: "Undo", exact: true }).click();
   expect(await undone()).toBe(1);
