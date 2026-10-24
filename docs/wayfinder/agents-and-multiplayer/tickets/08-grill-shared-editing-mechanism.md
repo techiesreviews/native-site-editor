@@ -2,7 +2,7 @@
 title: Decide how shared editing works and what it may cost
 type: grilling (HITL)
 status: open
-assignee:
+assignee: Lex + claude (grilling)
 blocked_by: [03-research-cheapest-shared-editing, 04-research-always-the-latest, 07-grill-synced-session]
 ---
 

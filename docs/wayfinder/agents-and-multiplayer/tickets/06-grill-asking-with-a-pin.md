@@ -2,7 +2,7 @@
 title: Decide how Lex asks agents to do something
 type: grilling (HITL)
 status: open
-assignee:
+assignee: Lex + claude (grilling)
 blocked_by: [01-research-agents-on-own-subscriptions, 02-research-what-an-mcp-can-do]
 ---
 
