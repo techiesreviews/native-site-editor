@@ -1207,6 +1207,8 @@ test("SVG, MathML and raw-text elements take no <br>; HTML inside a foreignObjec
   const svg = `<svg><text>Line</text><a href="/x"><text>Go</text></a><foreignObject><p>Html</p></foreignObject></svg>`;
   for (const name of ["svg", "text", "a"]) assert.equal(takesBreaks(first(svg, name)), false, `svg ${name}`);
   assert.equal(takesBreaks(first(svg, "p")), true, "HTML in a foreignObject");
+  assert.equal(takesBreaks(first(`<svg><desc><p>Html</p></desc></svg>`, "p")), true, "HTML in an SVG desc");
+  assert.equal(takesBreaks(first(`<math><mtext><span>Html</span></mtext></math>`, "span")), true, "HTML in a MathML mtext");
   const math = `<p><math><mi>x</mi><mtext>is one</mtext></math></p>`;
   for (const name of ["math", "mi", "mtext"]) assert.equal(takesBreaks(first(math, name)), false, `math ${name}`);
   // A field editing SVG text stays one line.
