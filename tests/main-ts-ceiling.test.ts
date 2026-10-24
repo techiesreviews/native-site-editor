@@ -40,7 +40,7 @@ test("larger reductions suggest the count rounded up to a multiple of 10", () =>
   }
 });
 
-// The setup host's members are consts destructured part way down main.ts, not hoisted
+// The setup and Pages & files hosts' members are consts destructured part way down main.ts, not hoisted
 // functions: above that line they may only be used inside a function that runs later, and
 // a hoisted function that reaches one may not be called there.
 function calledOnTheSpot(fn: TS.Node): boolean {
@@ -49,12 +49,12 @@ function calledOnTheSpot(fn: TS.Node): boolean {
   return ts.isCallExpression(callee.parent) && callee.parent.expression === callee;
 }
 
-function setupMembersUsedEarly(source: string): string[] {
+function hostMembersUsedEarly(source: string, host = "setup"): string[] {
   const tree = parse(source, "src/main.ts");
-  const destructures = (item: TS.VariableDeclaration) => ts.isObjectBindingPattern(item.name) && item.initializer !== undefined && ts.isIdentifier(item.initializer) && item.initializer.text === "setup";
+  const destructures = (item: TS.VariableDeclaration) => ts.isObjectBindingPattern(item.name) && item.initializer !== undefined && ts.isIdentifier(item.initializer) && item.initializer.text === host;
   const statement = tree.statements.find((at): at is TS.VariableStatement => ts.isVariableStatement(at) && at.declarationList.declarations.some(destructures));
   const binding = statement?.declarationList.declarations.find(destructures)?.name;
-  assert.ok(statement && binding && ts.isObjectBindingPattern(binding), "main.ts destructures the setup host (const { … } = setup)");
+  assert.ok(statement && binding && ts.isObjectBindingPattern(binding), `main.ts destructures the ${host} host (const { … } = ${host})`);
   const line = (node: TS.Node) => tree.getLineAndCharacterOfPosition(node.getStart(tree)).line + 1;
   const before = (node: TS.Node) => node.getStart(tree) < statement.getStart(tree);
   // A name being declared, or a property of that name, is not a use.
@@ -68,7 +68,7 @@ function setupMembersUsedEarly(source: string): string[] {
     return undefined;
   };
   // Each member, and each hoisted function that reaches one when called, by the member it reaches.
-  const reaches = new Map<string, string>([["setup", "setup"], ...binding.elements.map((element) => [element.name.getText(tree), element.name.getText(tree)] as [string, string])]);
+  const reaches = new Map<string, string>([[host, host], ...binding.elements.map((element) => [element.name.getText(tree), element.name.getText(tree)] as [string, string])]);
   const early = new Map<string, string>();
   for (let grew = true; grew;) {
     grew = false;
@@ -90,9 +90,10 @@ function setupMembersUsedEarly(source: string): string[] {
   return [...early.values()];
 }
 
-test("setup host members are used before their destructuring only inside functions", () => {
+test("setup and Pages & files host members are used before their destructuring only inside functions", () => {
   const source = readFileSync(new URL("../src/main.ts", import.meta.url), "utf8");
-  assert.deepEqual(setupMembersUsedEarly(source), []);
+  assert.deepEqual(hostMembersUsedEarly(source), []);
+  assert.deepEqual(hostMembersUsedEarly(source, "pagesAndFiles"), []);
 });
 
 test("a setup host member passed by value, called on the spot or reached through an early call above its destructuring is named", () => {
@@ -105,5 +106,5 @@ test("a setup host member passed by value, called on the spot or reached through
     "const setup = createSetupHost({});",
     "const answer = 1, { renderLogin, showGetStarted, startSitePanel, takeStartingPoint, writeStartingPoint } = setup;",
   ].join("\n");
-  assert.deepEqual(setupMembersUsedEarly(source), ["showGetStarted (line 1)", "startSitePanel (line 2)", "takeStartingPoint (line 3)", "writeStartingPoint via early() (line 4)"]);
+  assert.deepEqual(hostMembersUsedEarly(source), ["showGetStarted (line 1)", "startSitePanel (line 2)", "takeStartingPoint (line 3)", "writeStartingPoint via early() (line 4)"]);
 });
