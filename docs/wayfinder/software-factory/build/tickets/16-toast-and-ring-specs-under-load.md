@@ -18,6 +18,8 @@ Split from [Three load-sensitive tests pass on a busy machine](14-load-sensitive
 
 - Added 2026-10-23: `native-lazy-panels.spec.ts:68` ("Files works again after a failed chunk load and recovery") and `native-placed-media.spec.ts:113` ("an audio whose file arrives while it plays keeps its real length after Stop") failed once each in slice 27's full `kit pr` run under load; both pass alone.
 
+- Added 2026-10-24: `native-click-to-type.spec.ts:245` ("a press and drag that starts on text moves its block, also while typing in it") failed once in slice 40's full `kit pr` run; 2/2 alone.
+
 ## Decided behaviour
 
 Diagnose first (`mattpocock-skills:diagnosing-bugs`). Wait for states, not times; use the page clock where a product timer is involved; do not raise timeouts and do not add entries to `tests/known-failures.json`. If the ring timing is a real product issue on slow machines, say so in Done and ask the lead before changing product behaviour.
@@ -29,6 +31,7 @@ Diagnose first (`mattpocock-skills:diagnosing-bugs`). Wait for states, not times
 - `tests/native-save/native-agent-quiet.spec.ts`
 - `tests/native-save/native-lazy-panels.spec.ts`
 - `tests/native-save/native-placed-media.spec.ts`
+- `tests/native-save/native-click-to-type.spec.ts`
 
 ## Done when
 
