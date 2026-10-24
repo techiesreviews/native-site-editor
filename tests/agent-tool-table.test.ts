@@ -20,7 +20,7 @@ import type { AgentRecords } from "../src/agent-records.ts";
 import type { AgentReadPorts } from "../src/agent-tools-read.ts";
 import { createRequestTools } from "../src/agent-watch.ts";
 import { hubOperation, type HubStorage } from "../worker/agent-store.ts";
-import { createSiteServer, registerInOrder } from "../worker/mcp.ts";
+import { createSiteServer, toolRegistrations } from "../worker/mcp.ts";
 
 // The fakes below hold only what the code reaches before it answers or refuses (tools/list reads no
 // connection field, a probe stops at its first check); each is typed by that part, then cast whole.
@@ -62,13 +62,18 @@ test("the Worker registers exactly the table's MCP tools, in table order", async
   assert.deepEqual(names.filter(name => !mcpTools.includes(name as never)), ["get_request"]);
 });
 
-test("registration follows the given order and refuses a missing or an extra tool", () => {
+test("registration follows the given order and refuses a missing, an extra or a doubled tool", () => {
   const added: string[] = [];
-  const registrations = (...tools: string[]) => new Map(tools.map(tool => [tool, () => { added.push(tool); }]));
-  registerInOrder(["b", "a"], registrations("a", "b"));
+  const registrations = (...tools: string[]) => {
+    const pending = toolRegistrations<string>();
+    for (const tool of tools) pending.add(tool, () => { added.push(tool); });
+    return pending;
+  };
+  registrations("a", "b").inOrder(["b", "a"]);
   assert.deepEqual(added, ["b", "a"]);
-  assert.throws(() => registerInOrder(["a", "b"], registrations("a")), /The MCP tool b has no registration/);
-  assert.throws(() => registerInOrder(["a"], registrations("a", "c")), /MCP tools outside the tool table: c\./);
+  assert.throws(() => registrations("a").inOrder(["a", "b"]), /The MCP tool b has no registration/);
+  assert.throws(() => registrations("a", "c").inOrder(["a"]), /MCP tools outside the tool table: c\./);
+  assert.throws(() => registrations("a", "b", "a"), /The MCP tool a is registered twice/);
 });
 
 test("each route's browser registry runs exactly the table's tools of that route", async () => {
@@ -111,7 +116,8 @@ const probeArgs: Partial<Record<AgentOperation, AgentCommandArgs>> = {
 };
 
 test("applySiteCommand has a case for every table operation, and only the table's operations are admitted", async () => {
-  // Every action throws "reached": a command that gets past its own checks reaches one in its case.
+  // Every action throws "reached": a command that gets past its own checks reaches one in its case. The Proxy
+  // stands in for every member of AgentSiteActions at once, so it cannot be typed member by member.
   const actions = new Proxy({}, { get: () => () => { throw new Error("reached"); } }) as AgentSiteActions;
   const command = (operation: string): AgentCommand => ({ id: "mcp-1", operation: operation as AgentOperation, path: "index.html",
     args: probeArgs[operation as AgentOperation] ?? {}, content: "", branch: "main", commit: "c".repeat(40), state: "pending", createdAt: 1 });

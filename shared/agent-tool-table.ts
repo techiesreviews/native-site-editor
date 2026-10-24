@@ -70,7 +70,7 @@ const legacyOperations = ["update_active_draft", "create_file_draft"] as const;
 type Table = typeof agentTools;
 export type AgentToolName = keyof Table;
 export type AgentToolRoute = Table[AgentToolName]["route"];
-/** The tools a route carries, in table order. */
+/** The tools a route carries. */
 export type AgentToolOn<R extends AgentToolRoute> = { [K in AgentToolName]: Table[K]["route"] extends R ? K : never }[AgentToolName];
 export type McpToolName = { [K in AgentToolName]: Table[K] extends { mcp: false } ? never : K }[AgentToolName];
 /** What an agent can ask the open editor tab to do: the browser commands of the table's rows. */
@@ -79,6 +79,7 @@ export type AgentOperation = { [K in AgentToolName]: Table[K] extends { operatio
 
 const names = Object.keys(agentTools) as AgentToolName[];
 const rows: readonly { route: AgentToolRoute; operation?: string; atomic?: true; mcp?: false }[] = Object.values(agentTools);
+/** The tools the routes carry, in table order. */
 export const agentToolsOn = <R extends AgentToolRoute>(...routes: R[]) =>
   names.filter(name => (routes as AgentToolRoute[]).includes(agentTools[name].route)) as AgentToolOn<R>[];
 export const mcpTools = names.filter((_name, at) => rows[at].mcp !== false) as McpToolName[];
