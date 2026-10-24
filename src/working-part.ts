@@ -15,6 +15,8 @@ export type WorkingPart = { path: string; node: readonly number[] } | { path: st
 const WORK_PAUSE_MS = 5000;
 
 let part: WorkingPart | undefined;
+// Counts typing: leaving a part holds only while no typing came since (the same part typed in again stays).
+let typings = 0;
 let pause: ReturnType<typeof setTimeout> | undefined;
 const listeners = new Set<() => void>();
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
@@ -37,9 +39,10 @@ function lineOf(text: string, offset: number) {
 export const workingPart = {
   now: () => part,
   /** The user typed in `next` (on the page, an element's place again after a render moved it). */
-  typed: (next: WorkingPart) => set(next),
+  typed(next: WorkingPart) { typings++; set(next); },
   /** The user typed in the code pane: `change` (its start, and the text it put there) made `text` of `path`. */
   typedLines(path: string, text: string, change: { start: number; text: string }) {
+    typings++;
     set({ path, lines: { start: lineOf(text, change.start), end: lineOf(text, change.start + change.text.length) } });
   },
   /**
@@ -47,9 +50,9 @@ export const workingPart = {
    * pane; any part when omitted), once `settled` is: what they typed there is written by then.
    */
   left(at?: { path: string; node?: readonly number[] }, settled: Promise<unknown> = Promise.resolve()) {
-    const was = part;
+    const was = part, typed = typings;
     if (!was || at && (was.path !== at.path || !same("node" in was ? was.node : undefined, at.node))) return;
-    const leave = () => { if (part === was) set(undefined); };
+    const leave = () => { if (typings === typed) set(undefined); };
     void settled.then(leave, leave);
   },
   subscribe(listener: () => void) {

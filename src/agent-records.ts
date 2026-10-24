@@ -362,6 +362,8 @@ export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFact
                     const horizon = retain(receipts, workspaces, decided, new Set(rows.map(([key]) => key)), current.horizon);
                     for (const [draft, value] of drafts) value ? files.put(value, draft) : files.delete(draft);
                     receipts.put(committed, receiptKey);
+                    // Landed: a waiting record of it (ticket 52) no longer answers for it.
+                    workspaces.delete(waitingKey(workspace, receipt.operationId, receipt.authorizationId));
                     workspaces.put(withHorizon({ ...current, revision: committed.revision }, horizon), key);
                     done({ receipt: committed, duplicate: false });
                   });
@@ -532,8 +534,13 @@ export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFact
         read(workspaces.get(revocationKey(workspace, authorizationId)), (revoked: unknown) => {
           if (revoked) throw new AgentRecordsError("revoked", "Agent authorization has been revoked.");
           read(workspaces.get(waitingKey(workspace, operationId, authorizationId)), (fence: Fence | undefined) => {
-            done(fence && "waiting" in fence && fenceTime(fence) > now() - RECEIPT_RETENTION_MS
-              ? { identity: fence.identity, ...(fence.refused ? { refused: fence.refused } : {}) } : undefined);
+            // A receipt dropped early (its retired marker) means it landed: then its outcome is unknown, never refused.
+            read(workspaces.get(retiredKey(workspaceKey(workspace), operationId)), (retired: unknown) => {
+              read(workspaces.get(legacyRetiredKey(operationId)), (legacy: unknown) => {
+                done(!retired && !legacy && fence && "waiting" in fence && fenceTime(fence) > now() - RECEIPT_RETENTION_MS
+                  ? { identity: fence.identity, ...(fence.refused ? { refused: fence.refused } : {}) } : undefined);
+              });
+            });
           });
         });
       });

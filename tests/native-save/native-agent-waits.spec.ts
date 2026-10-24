@@ -89,7 +89,7 @@ test("an agent's edit of the heading Lex types in waits until he clicks away, th
     expect((await call("get_site")).editor.userEditing).toMatchObject(working);
     const args = { path: "index.html", expectedHash: elsewhere.result.hash, edits: [{ oldText: "A native", newText: "One agent's" }], requestId: "wait-heading", waitSeconds: 0 };
     const waiting = await call("edit_file", args);
-    expect(waiting).toMatchObject({ requestId: "wait-heading", state: "waiting", message: expect.stringMatching(/lands when they click away/) });
+    expect(waiting).toMatchObject({ requestId: "wait-heading", state: "waiting", message: expect.stringMatching(/lands once they leave it/) });
     expect(await call("get_command_status", { requestId: "wait-heading" })).toMatchObject({ state: "waiting" });
     expect(await call("edit_file", args)).toMatchObject({ state: "waiting" });
     await expect(heading).toHaveText("A native browser preview today");
@@ -155,5 +155,58 @@ test("an element an agent adds before the heading Lex types in moves where he wo
     await clickOnText(frame(page).locator(".filler h2"));
     await expect.poll(async () => (await call("get_command_status", { requestId: "wait-moved" })).state, { timeout: 15_000 }).toBe("applied");
     await expect(heading).toHaveText("Moved agent's browser preview here");
+  } finally { await client.close(); }
+});
+
+const structureRow = (page: Page, kind: string, text: string) => page.getByRole("tree", { name: "Page structure", exact: true }).locator("[role=treeitem]")
+  .filter({ has: page.locator(`:scope > .page-structure__label > .page-structure__kind[title='${kind}']`) }).filter({ hasText: text }).first();
+
+test("an agent's edit of the heading Lex types in from its Page Structure row waits until he leaves the field, then lands on his text", async ({ page, baseURL }) => {
+  const { client, call } = await connect(page, baseURL);
+  try {
+    const section = page.getByRole("tree", { name: "Page structure", exact: true }).getByRole("treeitem", { name: /^Section A native browser preview/ }).first();
+    if (await section.getAttribute("aria-expanded") === "false") await section.locator(".page-structure__toggle").click();
+    const headingRow = structureRow(page, "Heading", "A native browser preview");
+    await headingRow.locator(".page-structure__text").dblclick();
+    const field = page.getByRole("tree", { name: "Page structure", exact: true }).getByRole("textbox", { name: "Heading: Text", exact: true });
+    await expect(field).toBeFocused();
+    await field.press("End");
+    await page.keyboard.type(" field");
+    const heading = frame(page).locator(".hero h1");
+    await expect(heading).toHaveText("A native browser preview field");
+    await expect.poll(async () => (await call("get_site")).editor.userEditing).toMatchObject({ file: "index.html", element: "1.0.0", tag: "h1" });
+    // Its text is written as he types (the field writes once typing pauses): the agent reads it.
+    await expect.poll(async () => (await call("read_file", { path: "index.html" })).content).toContain(">A native browser preview field</h1>");
+    const shown = await call("get_page", { page: "/" });
+    expect(await call("edit_file", { path: "index.html", expectedHash: shown.hash, edits: [{ oldText: "A native", newText: "Field agent's" }], requestId: "wait-field", waitSeconds: 0 }))
+      .toMatchObject({ state: "waiting" });
+    await expect(field).toHaveValue("A native browser preview field");
+    await field.press("Enter");
+    await expect.poll(async () => (await call("get_command_status", { requestId: "wait-field" })).state, { timeout: 15_000 }).toBe("applied");
+    await expect(heading).toHaveText("Field agent's browser preview field");
+    expect((await call("get_site")).editor.userEditing).toBeNull();
+  } finally { await client.close(); }
+});
+
+test("the heading Lex types in, removed by another write, is left: a change waiting on it is let go and refused", async ({ page, baseURL }) => {
+  const { client, call } = await connect(page, baseURL);
+  try {
+    await typeInHeading(page, " gone");
+    const shown = await call("get_page", { page: "/" });
+    expect(shown.userEditing).toMatchObject({ element: "1.0.0" });
+    expect(await call("edit_file", { path: "index.html", expectedHash: shown.hash, edits: [{ oldText: "A native", newText: "Lost agent's" }], requestId: "wait-removed", waitSeconds: 0 }))
+      .toMatchObject({ state: "waiting" });
+    // A write the user did not make while typing (its own code pane, scripted): the hero section goes.
+    await page.evaluate(async () => {
+      const editor = await import("/src/components/code-editor.ts");
+      const source = editor.getMountedSource("index.html")!;
+      const start = source.indexOf('<section class="hero"'), end = source.indexOf("</section>", start) + "</section>".length;
+      editor.replaceActiveRange({ path: "index.html", start, end, expected: source.slice(start, end), text: "" });
+    });
+    await expect(frame(page).locator(".hero h1")).toHaveCount(0);
+    await expect.poll(async () => (await call("get_site")).editor.userEditing, { timeout: 10_000 }).toBeNull();
+    const refused = await client.callTool({ name: "get_command_status", arguments: { requestId: "wait-removed" } });
+    expect(JSON.parse((refused.content as { text: string }[])[0].text)).toMatchObject({ state: "conflict", message: expect.stringMatching(/changed index\.html where this change goes/) });
+    expect((await call("read_file", { path: "index.html" })).content).not.toContain("Lost agent's");
   } finally { await client.close(); }
 });

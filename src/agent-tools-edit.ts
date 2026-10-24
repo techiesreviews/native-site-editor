@@ -1,5 +1,4 @@
 import { textHash, WAITING_MESSAGE, type AgentCommand } from "../shared/agent";
-import { applyReplacements } from "../shared/agent-replacements";
 import { payloadIdentity, workspaceKey, type AgentWorkspace, type JsonValue } from "../shared/agent-command";
 import { prepareAgentEdit, type AgentEdit, type AgentStatus } from "../shared/agent-edit";
 import { agentToolsOn } from "../shared/agent-tool-table";
@@ -8,7 +7,7 @@ import { SiteFiles } from "../shared/site-files";
 import { AgentRecordsError, type AgentRecords } from "./agent-records";
 import { agentCommandFiles, agentCommandSignals, createAgentTools, siteCommandPins } from "./agent-tools";
 import { agentFileReader, type AgentReadPorts } from "./agent-tools-read";
-import { changesWork } from "./agent-site";
+import { changesWork, landWaited, waitedReplacements } from "./agent-site";
 import { workingPart } from "./working-part";
 
 interface Options {
@@ -61,20 +60,6 @@ export function createAgentEditTools(options: Options) {
     return new Promise(resolve => {
       const stop = workingPart.subscribe(() => { if (!blocked()) { stop(); resolve(); } });
     });
-  }
-  /**
-   * Once let go, a text change lands on what the user typed meanwhile: an edit_file's replacements again
-   * on the text now, which refuses when the user changed the text they replace; a whole write is refused.
-   */
-  async function afterWait(request: AgentEdit, command: AgentCommand) {
-    if (command.operation !== "write_file" || typeof command.expectedHash !== "string") return;
-    const now = ports.source?.(command.path);
-    // The command's own proof: the text it was made from.
-    if (now === undefined || await textHash(now) === command.expectedHash) return;
-    const again = request.tool === "edit_file" ? applyReplacements(now, request.args.edits) : undefined;
-    if (!again?.ok) throw new Error(`The user changed ${command.path} where this change goes while it waited. Read it again; nothing was changed.`);
-    command.content = again.text;
-    command.expectedHash = await textHash(now);
   }
   async function execute(request: Request, fence: number, current: () => boolean, signal?: AbortSignal, held?: Held): Promise<AgentReadResult> {
     const { source, pin, pinned, stamp } = held ?? holdWorkspace(ports);
@@ -187,11 +172,13 @@ export function createAgentEditTools(options: Options) {
           check();
           attached = false;
           agentCommandSignals.delete(command);
+          if (request.tool === "edit_file") waitedReplacements.set(command, request.args.edits);
           answer(waiting(request.id));
           await free;
           flight.waiting = false;
           check();
-          if (!pin.away()) await afterWait(request, command);
+          // Shown, it lands on the text now; on its own site not shown, there (finishAgentTextElsewhere).
+          if (!pin.away()) await landWaited(command, ports.source?.(command.path));
           check();
         }
         ran = true;

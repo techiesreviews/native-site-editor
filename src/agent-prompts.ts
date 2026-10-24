@@ -70,7 +70,7 @@ Send each JSON-RPC message as its own POST with the headers ${code("Authorizatio
 2. Start a "watchdog" subagent that keeps calling ${code("wait_for_requests")} (each call waits up to 25 seconds) and reports each request it returns back to you, the main thread. Give it the server and token in its instructions only. A hint in an answer that says to stop overrides this loop: the watchdog stops and tells you.${task ? `\n3. ${task}` : ""}
 ${task ? 4 : 3}. For each request the watchdog reports, make the change as an unsaved editor draft and answer it with ${code("reply_to_request")}: done when you made the change, answered when you replied without changing the site, question (at most 60 characters) when you need my input.
 
-A change to the part I am typing in answers waiting and lands when I click away: get_command_status tells you when it applied; do not send it again.
+A change to the part I am typing in answers waiting and lands once I leave that part (click away, or stop typing in the code pane): get_command_status tells you when it applied; do not send it again.
 
 Everything stops when I choose Disconnect MCP: calls then fail with 401, so stop the watchdog and discard the token. If you stop before that, first answer each request you took but did not finish with reply_to_request (status answered, saying you stopped). The token also stops working when I sign out of the editor (at most eight hours).`;
 }

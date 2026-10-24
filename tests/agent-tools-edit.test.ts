@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { OUTSIDE_MEDIA_REFUSED, textHash, type AgentCommand } from "../shared/agent";
-import { payloadIdentity, type JsonValue } from "../shared/agent-command";
+import { payloadIdentity, workspaceKey, type JsonValue } from "../shared/agent-command";
 import type { AgentEdit, AgentEditArgsMap, AgentEditTool } from "../shared/agent-edit";
 import { editShapeProblem, prepareAgentEdit, type PreparedEdit } from "../shared/agent-edit";
 import { agentTools, agentToolsOn } from "../shared/agent-tool-table";
@@ -769,7 +769,7 @@ test("an edit of the element the user types in waits, a duplicate joins it, and 
   const edit = await editHeading(f, "wait-1");
   const first = body(await f.run(edit));
   assert.equal(first.state, "waiting");
-  assert.match(first.message, /editing this part; the change lands when they click away/);
+  assert.match(first.message, /editing this part; the change lands once they leave it/);
   assert.equal(f.commands.length, 0);
   // A duplicate joins it and the status says so, through this connection's tools or a reconnected one's; neither runs it.
   assert.equal(body(await f.run(edit)).state, "waiting");
@@ -855,6 +855,39 @@ test("a change that was waiting in a tab since reloaded or closed is refused, ne
   assert.match(JSON.stringify(await f.run({ ...edit, args: { ...edit.args, edits: [{ oldText: "Welcome", newText: "Other" }] } } as AgentEdit)), /already used for different work/);
   assert.equal((await f.status("wait-lost", "other")).state, "unknown");
   assert.equal(f.commands.length, 0);
+});
+
+test("a waiting edit that landed is never told as lost: its waiting record goes with its commit, and an early-dropped receipt stays unknown", async t => {
+  t.after(() => workingPart.left());
+  const f = await waitsFixture();
+  workingPart.typed(heading);
+  const edit = await editHeading(f, "wait-landed");
+  assert.equal(body(await f.run(edit)).state, "waiting");
+  workingPart.left(heading);
+  await settle();
+  assert.equal((await f.status("wait-landed")).state, "applied");
+  assert.equal(await f.records.waiting(workspace, edit.id, edit.grantId), undefined);
+  // Its receipt aged out: unknown, by status and by a duplicate, never "nothing was changed".
+  await f.records.evictReceipts(workspace, Date.now() + 25 * 60 * 60 * 1000);
+  assert.equal((await f.status("wait-landed")).state, "unknown");
+  assert.equal(f.commands.length, 1);
+  // A waiting record beside a receipt dropped early (its retired marker) says nothing either.
+  const identity = await textHash(payloadIdentity(json({ tool: edit.tool, args: edit.args, branch: "main" })));
+  await f.records.wait(workspace, "dropped", "grant", identity);
+  f.fake.stores.get("workspaces")!.set(JSON.stringify(["retired", workspaceKey(workspace), "dropped"]),
+    { retired: true, workspace: workspaceKey(workspace), operationId: "dropped", issuedAt: Date.now(), createdAt: Date.now() });
+  assert.equal(await f.records.waiting(workspace, "dropped", "grant"), undefined);
+});
+
+test("leaving a part holds only while no typing came since: the same element typed in again before its text is written stays", async t => {
+  t.after(() => workingPart.left());
+  workingPart.typed(heading);
+  let written!: () => void;
+  workingPart.left(heading, new Promise<void>(resolve => { written = resolve; }));
+  workingPart.typed({ ...heading, node: [...heading.node] });
+  written();
+  await settle();
+  assert.deepEqual(workingPart.now(), heading);
 });
 
 test("a waiting edit whose connection is disconnected never lands, and its status and duplicates say so", async t => {
