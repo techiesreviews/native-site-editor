@@ -944,7 +944,10 @@ function forgetWatch() {
  *   no-ClipboardItem specs), or the problem dot when it is refused too (the refused-copy spec).
  * - skip (token request failed, another site shown, owner paused) → the write is refused, the
  *   clipboard keeps what it held (the failed-first-prompt, site-switch and owner-pause specs).
- * Every press reaches one of these rows: each agent API call ends by API_DEADLINE. */
+ * - put, write never settles (no browser seen doing so; no spec) → neither Copied nor the problem
+ *   dot, and the clipboard as the browser leaves it; the button is pressable again (`changing`
+ *   ends before the copy), so the next press tries again.
+ * The press's own agent API calls end by API_DEADLINE; the transport's module load is not bounded. */
 function reserveCopy() {
   let give!: (text: string) => void, refuse!: (reason?: unknown) => void;
   const text = new Promise<string>((resolve, reject) => { give = resolve; refuse = reject; });

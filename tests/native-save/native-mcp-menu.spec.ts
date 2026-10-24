@@ -328,6 +328,8 @@ test("a slow server: Connect to MCP and Wait for MCP still copy the prompt when 
   await sentinel("before two presses");
   await action.click();
   await action.click();
+  // Counts each change into Copied: the second press's own held read (6 s) outlasts CONFIRM_MS (2 s),
+  // so the label reads Wait for MCP between the two confirmations.
   const copies = () => page.evaluate(() => (window as Window & { seen?: string[] }).seen!
     .map(entry => entry.endsWith(" Copied")).filter((copied, index, all) => copied && !all[index - 1]).length);
   await expect.poll(copies, { timeout: 30_000 }).toBe(2);
