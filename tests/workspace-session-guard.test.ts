@@ -144,7 +144,7 @@ const allowlist: AllowlistEntry[] = [
   { file: "src/controllers/media-actions.ts", match: { rule: "scope-compare", function: "flushGalleryRefresh" }, reason: MEDIA },
   { file: "src/drafts.ts", match: { rule: "same-workspace", function: "list" }, reason: `${FOLLOW_UP} the draft store lists a scope's drafts field by field; it should ask \`holdsDraftScope\`.`, count: 3 },
   { file: "src/components/publish-menu.ts", match: { rule: "same-workspace", function: "createPublishMenu" }, reason: `${FOLLOW_UP} the publish status compares its repository by name; it should ask \`sameBranch\`.` },
-  { file: "src/main.ts", match: { rule: "same-workspace", function: "applyAgentCommand" }, reason: `${FOLLOW_UP} an agent command's branch against the open one; it should ask \`sameBranch\`.` },
+  { file: "src/agent-site-host.ts", match: { rule: "same-workspace", function: "applyAgentCommand" }, reason: `${FOLLOW_UP} an agent command's branch against the open one; it should ask \`sameBranch\`.` },
   { file: "src/main.ts", match: { rule: "same-workspace", function: "openNewDraft" }, reason: `${FOLLOW_UP} a draft's repository and branch against the open one; it should ask \`holdsDraftScope\`.`, count: 2 },
   { file: "src/workspace-boot.ts", match: { rule: "same-workspace", function: "takeBootGuess" }, reason: `${FOLLOW_UP} the link's repository and branch, and the guessed snapshot's branch, against the one opening; it should ask \`same\`.`, count: 3 },
   { file: "src/setup-actions.ts", match: { rule: "same-workspace", function: "createSite" }, reason: "Not two workspaces: whether choosing the created repository opened it, by its id (the session's repository rule; no branch is chosen yet)." },
