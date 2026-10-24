@@ -31,6 +31,7 @@ export interface AgentCommit {
 }
 interface ConversationRecord { workspace: string; conversation: Conversation }
 interface CommitResult { receipt: AgentReceipt; duplicate: boolean }
+type WaitEnded = { state: string; message: string };
 type CancellationResult = { status: "unknown" | "cancelled" } | { status: "applied"; receipt: AgentReceipt };
 
 export interface AgentRecords {
@@ -40,11 +41,12 @@ export interface AgentRecords {
   status: (workspace: AgentWorkspace, operationId: OperationId, authorizationId: string) => Promise<CancellationResult>;
   /**
    * A change that waits for the part the user types in (ticket 52), kept beside its receipt so a tab
-   * reloaded or closed meanwhile still answers for it: `identity` its work, `refused` why it did not
-   * land (a refusal let go, or the tab gone). Written while the change waits and once it is refused.
+   * reloaded or closed meanwhile still answers for it: `identity` its work, `ended` how it ended without
+   * landing (its state and message: refused, unknown, cancelled). Written while the change waits and once
+   * it ends so; the commit of its receipt removes it.
    */
-  wait: (workspace: AgentWorkspace, operationId: OperationId, authorizationId: string, identity: string, refused?: string) => Promise<void>;
-  waiting: (workspace: AgentWorkspace, operationId: OperationId, authorizationId: string) => Promise<{ identity: string; refused?: string } | undefined>;
+  wait: (workspace: AgentWorkspace, operationId: OperationId, authorizationId: string, identity: string, ended?: WaitEnded) => Promise<void>;
+  waiting: (workspace: AgentWorkspace, operationId: OperationId, authorizationId: string) => Promise<{ identity: string; ended?: WaitEnded } | undefined>;
   receipt: (workspace: AgentWorkspace, operationId: OperationId, authorizationId: string) => Promise<AgentReceipt | undefined>;
   /** With `owner`, the same transaction also proves that fence still owns the workspace unpaused. */
   reconcile: (workspace: AgentWorkspace, commands: AgentCommit[], owner?: number) => Promise<AgentOutcome[]>;
@@ -75,7 +77,7 @@ export interface AgentRecords {
  */
 type Fence = { retired: true; workspace: string; operationId: OperationId; issuedAt: number; createdAt: number } |
   { cancelled: true; workspace: string; at: number; definite?: boolean; uncertain?: boolean } | { revoked: true; workspace: string; at: number } |
-  { waiting: true; workspace: string; at: number; identity: string; refused?: string };
+  { waiting: true; workspace: string; at: number; identity: string; ended?: WaitEnded };
 
 /** Per account/repository/branch workspace: receipts are kept 24 hours, at most 1,000 of them. */
 export const RECEIPT_RETENTION_MS = 24 * 60 * 60 * 1000;
@@ -517,19 +519,19 @@ export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFact
         });
       });
     },
-    wait(workspace, operationId, authorizationId, identity, refused) {
+    wait(workspace, operationId, authorizationId, identity, ended) {
       const scope = workspaceKey(workspace);
       return run<void>([draftStores.workspaces], "readwrite", (tx, read, done) => {
         const workspaces = tx.objectStore(draftStores.workspaces);
         read(workspaces.get(revocationKey(workspace, authorizationId)), (revoked: unknown) => {
           if (revoked) throw new AgentRecordsError("revoked", "Agent authorization has been revoked.");
-          workspaces.put({ waiting: true, workspace: scope, at: now(), identity, ...(refused ? { refused } : {}) } satisfies Fence, waitingKey(workspace, operationId, authorizationId));
+          workspaces.put({ waiting: true, workspace: scope, at: now(), identity, ...(ended ? { ended } : {}) } satisfies Fence, waitingKey(workspace, operationId, authorizationId));
           done();
         });
       });
     },
     waiting(workspace, operationId, authorizationId) {
-      return run<{ identity: string; refused?: string } | undefined>([draftStores.workspaces], "readonly", (tx, read, done) => {
+      return run<{ identity: string; ended?: WaitEnded } | undefined>([draftStores.workspaces], "readonly", (tx, read, done) => {
         const workspaces = tx.objectStore(draftStores.workspaces);
         read(workspaces.get(revocationKey(workspace, authorizationId)), (revoked: unknown) => {
           if (revoked) throw new AgentRecordsError("revoked", "Agent authorization has been revoked.");
@@ -538,7 +540,7 @@ export function indexedDbAgentRecords(name = draftDatabaseName, factory: IDBFact
             read(workspaces.get(retiredKey(workspaceKey(workspace), operationId)), (retired: unknown) => {
               read(workspaces.get(legacyRetiredKey(operationId)), (legacy: unknown) => {
                 done(!retired && !legacy && fence && "waiting" in fence && fenceTime(fence) > now() - RECEIPT_RETENTION_MS
-                  ? { identity: fence.identity, ...(fence.refused ? { refused: fence.refused } : {}) } : undefined);
+                  ? { identity: fence.identity, ...(fence.ended ? { ended: fence.ended } : {}) } : undefined);
               });
             });
           });

@@ -30,7 +30,7 @@ function set(next: WorkingPart | undefined) {
 }
 
 /** The line (from 1) of `text` at `offset`. */
-function lineOf(text: string, offset: number) {
+export function lineOf(text: string, offset: number) {
   let line = 1;
   for (let at = text.indexOf("\n"); at >= 0 && at < offset; at = text.indexOf("\n", at + 1)) line++;
   return line;
