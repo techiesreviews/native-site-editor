@@ -31,6 +31,7 @@ Built in stages: (1) several agents at once and seeing them work; (2) typing in 
 ## Decisions so far
 
 <!-- one line per closed ticket: [title](tickets/file.md): gist -->
+- [Find how the editor can always show the latest files](tickets/04-research-always-the-latest.md#resolution-2026-10-24): GitHub push webhook relayed to open tabs (seconds, nearly free; webhook is off today), folder watcher in Chromium; three-way merge into drafts; unpushed local clones are the one gap
 
 ## Not yet specified
 
