@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test, type TestContext } from "node:test";
 import { textHash, type AgentCommand } from "../shared/agent.ts";
-import { applySiteCommand, applyStructural, editorOrElsewhere, finishAgentTextElsewhere, holdWorkspace, retryProof, prepareAgentText, type AgentSiteActions } from "../src/agent-site.ts";
+import { applySiteCommand, applyStructural, editorOrElsewhere, finishAgentTextElsewhere, holdWorkspace, retryProof, prepareAgentText, waitedReplacements, type AgentSiteActions } from "../src/agent-site.ts";
 import { createWorkspaceSession, githubScope, same, type SessionStamp, type WorkspaceSession } from "../src/workspace-session.ts";
 import { agentCommandFiles, agentCommandSignals, siteCommandPins } from "../src/agent-tools.ts";
 import { backgroundSitePorts } from "./fakes/background-site-ports.ts";
@@ -558,6 +558,24 @@ test("a text write elsewhere refuses when the file there changed since the agent
   await assert.rejects(f.finish(f.command), /index\.html changed in the editor meanwhile.*Nothing was changed/);
   assert.equal(f.store.get(f.scope, "index.html")?.content, "typed");
   assert.equal(await f.records.receipt(f.scope, "operation", "grant"), undefined);
+});
+
+test("a text write that waited for the user lands on its own branch on what they typed there before switching (ticket 52)", async t => {
+  const f = await elsewhere(t);
+  f.store.save({ ...f.scope, version: 1, path: "index.html", baseSha: "a".repeat(40), original: "before", content: "before, typed", updatedAt: 1 });
+  const command = { ...f.command };
+  waitedReplacements.set(command, [{ oldText: "before", newText: "agent" }]);
+  const outcome = await f.finish(command);
+  assert.equal(f.store.get(f.scope, "index.html")?.content, "agent, typed");
+  assert.equal(outcome?.result?.hash, await textHash("agent, typed"));
+  // What it replaces changed there: refused, nothing kept.
+  const g = await elsewhere(t);
+  g.store.save({ ...g.scope, version: 1, path: "index.html", baseSha: "a".repeat(40), original: "before", content: "rewritten", updatedAt: 1 });
+  const refused = { ...g.command };
+  waitedReplacements.set(refused, [{ oldText: "before", newText: "agent" }]);
+  await assert.rejects(g.finish(refused), /The user changed index\.html where this change goes while it waited/);
+  assert.equal(g.store.get(g.scope, "index.html")?.content, "rewritten");
+  assert.equal(await g.records.receipt(g.scope, "operation", "grant"), undefined);
 });
 
 test("a command read from the branch shown is left to the editor; a page or file command elsewhere holding no workspace refuses", async t => {

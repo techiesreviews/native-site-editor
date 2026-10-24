@@ -22,6 +22,7 @@ import type { AgentOutlineSection, AgentPageOutline, AgentSiteContext, EditorCon
 import { draftKey, type DraftScope, type DraftStore, type SavedDraft } from "./drafts";
 import { payloadIdentity, workspaceKey, type JsonValue } from "../shared/agent-command";
 import { changedSinceRead } from "../shared/agent-edit";
+import { applyReplacements } from "../shared/agent-replacements";
 import type { AgentTextCommit } from "./editor-workspace";
 import type { AgentRecords } from "./agent-records";
 import type { createAgentOwner } from "./agent-owner";
@@ -454,6 +455,21 @@ function commandSpan(command: AgentCommand, source: string): Span | "file" | und
     case "remove_section": return element(args.section);
   }
   return undefined;
+}
+
+/** An edit_file that waited for the user (ticket 52): its replacements, made again on the text it lands on. */
+export const waitedReplacements = new WeakMap<AgentCommand, { oldText: string; newText: string; all?: boolean }[]>();
+/**
+ * A text change that waited for the user (ticket 52), landing on `now`, its file's text there then:
+ * when the user changed that file since it was read (by the command's own hash), an edit_file's
+ * replacements are made again on it, refused when the text they replace changed; a whole write is refused.
+ */
+export async function landWaited(command: AgentCommand, now: string | undefined) {
+  if (command.operation !== "write_file" || typeof command.expectedHash !== "string" || now === undefined || await textHash(now) === command.expectedHash) return;
+  const replacements = waitedReplacements.get(command), again = replacements && applyReplacements(now, replacements);
+  if (!again?.ok) throw new Error(`The user changed ${command.path} where this change goes while it waited. Read it again; nothing was changed.`);
+  command.content = again.text;
+  command.expectedHash = await textHash(now);
 }
 
 /**
@@ -1384,6 +1400,9 @@ export async function finishAgentTextElsewhere(command: AgentCommand, shown: () 
     return finishStructuralElsewhere(command, scope, store, held, away, left);
   }
   refuseProtected(command);
+  // Waited for the user (ticket 52): it lands on what they typed here before switching (its draft now).
+  const typed = waitedReplacements.has(command) ? store.get(scope, path) : undefined;
+  if (typed && !typed.deleted && !typed.opaque) await landWaited(command, typed.content);
   const prepared = await prepareAgentText(command, scope, store, () => true, () => {});
   if (prepared.duplicate) return prepared.duplicate;
   if (!left()) return undefined;

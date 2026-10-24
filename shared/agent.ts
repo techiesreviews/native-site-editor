@@ -193,9 +193,9 @@ export interface AgentWorking {
   lines?: { start: number; end: number };
   note: string;
 }
-export const WORKING_NOTE = "The user is typing here. A change to this part answers waiting and lands when they click away.";
+export const WORKING_NOTE = "The user is typing here. A change to this part answers waiting and lands once they leave it (click away, or stop typing in the code pane).";
 /** An edit's answer while the part it changes is the user's (AgentWorking). */
-export const WAITING_MESSAGE = "The user is editing this part; the change lands when they click away. get_command_status says when it applied; do not send it again.";
+export const WAITING_MESSAGE = "The user is editing this part; the change lands once they leave it (click away, or stop typing in the code pane). get_command_status says when it applied; do not send it again.";
 
 export type AgentRequestState = "open" | "seen" | "done" | "answered" | "question" | "dismissed";
 
