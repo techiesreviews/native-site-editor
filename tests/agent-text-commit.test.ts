@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test, type TestContext } from "node:test";
 import { textHash, type AgentCommand } from "../shared/agent.ts";
-import { applySiteCommand, applyStructural, editorOrElsewhere, finishAgentTextElsewhere, prepareAgentText, type AgentSiteActions } from "../src/agent-site.ts";
+import { applySiteCommand, applyStructural, editorOrElsewhere, finishAgentTextElsewhere, holdWorkspace, prepareAgentText, type AgentSiteActions } from "../src/agent-site.ts";
+import { createWorkspaceSession, githubScope, type WorkspaceSession } from "../src/workspace-session.ts";
 import { agentCommandFiles, agentCommandSignals, siteCommandPins } from "../src/agent-tools.ts";
 import { backgroundSitePorts } from "./fakes/background-site-ports.ts";
 import type { MediaPin } from "../src/controllers/media-controller.ts";
@@ -598,12 +599,54 @@ test("an agent edit's editor path switched away at any wait before it is kept fi
       if (run.moved) throw new Error("The repository changed meanwhile. Nothing was changed; your drafts are as they were.");
       await race.port("commit", async () => { run.applied = true; })();
       return "editor";
-    }, () => run.applied, () => run.moved, async () => run.moved ? "elsewhere" : undefined).then(result => { run.result = result; });
+    }, () => run.applied, () => run.moved, async () => run.moved ? "elsewhere" : undefined, async () => assert.fail("finished elsewhere, not run again")).then(result => { run.result = result; });
     return run;
   }, run => { run.moved = true; }, run => {
     assert.equal(run.result, run.applied ? "editor" : "elsewhere");
   });
   assert.equal(count, 2);
+});
+
+// Grok on 34 (ticket 36): its branch left and shown again before its step was kept, the attempt's stamp no longer
+// holds and the away finish leaves it to the editor (undefined): a new attempt on a new stamp runs it on show, once
+// (src/main.ts applyAgentSiteCommand's shape). A reload alone still refuses.
+test("an agent command's editor path left and shown again before it is kept runs on show again, once", async () => {
+  const main = githubScope({ account: "lex", repoId: 1, branch: "main" }), feature = githubScope({ account: "lex", repoId: 1, branch: "feature" });
+  for (const [label, meanwhile, expected] of [
+    ["left and shown again", (session: WorkspaceSession) => { session.next(feature); session.next(main); }, { result: "on show", attempts: 2, kept: 1, away: 1 }],
+    ["left for the overview and shown again", (session: WorkspaceSession) => { session.next(undefined); session.next(main); }, { result: "on show", attempts: 2, kept: 1, away: 1 }],
+    ["reloaded", (session: WorkspaceSession) => { session.next(main); }, { result: "refused", attempts: 1, kept: 0, away: 0 }],
+  ] as const) {
+    const session = createWorkspaceSession(main);
+    let attempts = 0, kept = 0, away = 0;
+    const onShow = (): Promise<string> => {
+      const { at, left } = holdWorkspace(session);
+      return editorOrElsewhere(async () => {
+        if (attempts++ === 0) meanwhile(session);
+        await Promise.resolve();
+        if (!at.holds()) throw new Error("The editor reloaded this branch or opened an earlier version meanwhile. Read the site again.");
+        kept++;
+        return "on show";
+      }, () => kept > 0, left, async () => { away++; return undefined; }, onShow);
+    };
+    const result = await onShow().catch((error: Error) => { assert.match(error.message, /reloaded this branch/, label); return "refused"; });
+    assert.deepEqual({ result, attempts, kept, away }, expected, label);
+  }
+});
+
+test("a workspace hold is left once another workspace or none loads, even when shown again; a reload alone is not leaving", () => {
+  const main = githubScope({ account: "lex", repoId: 1, branch: "main" }), feature = githubScope({ account: "Lex", repoId: 1, branch: "feature" });
+  const session = createWorkspaceSession(main), hold = holdWorkspace(session);
+  assert.equal(hold.left(), false);
+  session.next(githubScope({ account: "LEX", repoId: 1, branch: "main" }));
+  assert.equal(hold.left(), false, "a reload, the account in other capitals");
+  session.next(feature);
+  assert.equal(hold.left(), true, "another branch shown");
+  session.next(main);
+  assert.equal(hold.left(), true, "shown again after another");
+  const back = holdWorkspace(session);
+  session.next(undefined);
+  assert.equal(back.left(), true, "the overview shown");
 });
 
 // Ticket 34: a page command read on a branch no longer shown runs in its background site. Its branch
@@ -694,6 +737,21 @@ test("a kept page command whose follow-up fails answers with its receipt and is 
   const command: AgentCommand = { id: "kept", grantId: "grant", operation: "set_page_details", path: "index.html", branch: "main", commit: "commit", content: "", state: "pending", createdAt: 1, args: { title: "New" } };
   assert.deepEqual(await applyStructural(command, kept, scoped, undefined, () => { applied++; }), outcome);
   assert.deepEqual([applied, recovered, disposed], [1, 1, 1]);
+});
+
+// Grok on 34 (ticket 36): what follows a kept step throwing is not the step failing: no recovery, run once, the receipt answers.
+test("a kept page command whose count or labels throw answers with its receipt, runs them once and recovers nothing", async () => {
+  const outcome = { message: "Page details of index.html updated, unsaved.", result: { path: "index.html" } };
+  const actions = { setPageDetails: async () => undefined, text: async () => "<title>New</title>" } as unknown as AgentSiteActions; // eslint-disable-line no-restricted-syntax -- set_page_details reads only these two.
+  const command: AgentCommand = { id: "kept", grantId: "grant", operation: "set_page_details", path: "index.html", branch: "main", commit: "commit", content: "", state: "pending", createdAt: 1, args: { title: "New" } };
+  for (const finishFails of [false, true]) {
+    let applied = 0, recovered = 0, disposed = 0;
+    const kept = { applied: true, outcome, finish: async () => { if (finishFails) throw new Error("The preview could not refresh."); }, recover: async () => { recovered++; } } as unknown as Parameters<typeof applyStructural>[1]; // eslint-disable-line no-restricted-syntax -- only these members of a prepared receipt are read.
+    const scoped = { actions, readDrafts: new Map(), current: () => true, dispose: () => { disposed++; } };
+    const answer = await applyStructural(command, kept, scoped, undefined, () => { if (applied++ === 0) throw new Error("The labels could not refresh."); });
+    assert.equal(answer.message, outcome.message, `finish fails: ${finishFails}`);
+    assert.deepEqual([applied, recovered, disposed], [1, finishFails ? 1 : 0, 1], `finish fails: ${finishFails}`);
+  }
 });
 
 // Its branch opening again while it runs: the command waits for that load (no attempt meanwhile), then is left to the editor.

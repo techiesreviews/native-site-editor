@@ -2798,7 +2798,7 @@ function makeAgentSiteActions(edits: GuardedEdits = guardedEdits, atomic = false
   presence: (path, find) => agentPresence.show(path, find),
 }; }
 async function applyAgentSiteCommand(command: AgentCommand) {
-  const [{ applySiteCommand, applyStructural, prepareAgentText, atomicAgentCommand, agentStructuralActions, finishAgentTextElsewhere, editorOrElsewhere, pinnedMedia, pinnedMediaActions, pinnedMediaAway }, { createPagesController }, { createLazyFileOperationsController }, { agentCommandFiles }] = await Promise.all([loadAgentSite(), loadPagesActions(), loadFileOps(), import("./agent-tools")]);
+  const [{ applySiteCommand, applyStructural, prepareAgentText, atomicAgentCommand, agentStructuralActions, finishAgentTextElsewhere, editorOrElsewhere, holdWorkspace, pinnedMedia, pinnedMediaActions, pinnedMediaAway }, { createPagesController }, { createLazyFileOperationsController }, { agentCommandFiles }] = await Promise.all([loadAgentSite(), loadPagesActions(), loadFileOps(), import("./agent-tools")]);
   const factories = { createGuardedEdits, createPagesController, createLazyFileOperationsController, createBlockMoves, withPageField };
   // Ticket 27: a Media change runs in its own workspace's background page, whatever is shown.
   // Finished while another workspace is shown, its note waits on that one (ticket 24), as an agent's text write's does.
@@ -2816,30 +2816,34 @@ async function applyAgentSiteCommand(command: AgentCommand) {
     store: draftStore, forget: (scope, path) => editorModule.forgetDraftModel(scope, path), visits: scope => workspaceSession.visits(githubScope(scope)), prepareSources: edits => editorModule.prepareHistorySources(edits, true), park: step => parkedSteps.park(step), factories } };
   const elsewhere = finishedWork.agent(landed, command, (scope, path) => draftStore().get(scope, path), () => finishAgentTextElsewhere(command, draftScope, login, draftStore(), (files, path) => repositoryIndex.find(api, files.repo, files.snapshot, path), away));
   const finished = await elsewhere(); if (finished) return finished;
-  const scope = draftScope(), at = workspaceSession.begin(), revision = appStore.snapshot.value?.commit, current = () => at.holds() && revision === appStore.snapshot.value?.commit && !versions.view;
-  if (!current() || !appStore.snapshot.value || command.branch !== appStore.snapshot.value.branch ||
-    command.repoId !== undefined && command.repoId !== scope?.repoId) throw new Error("The editor changed repository or branch.");
-  if (!atomicAgentCommand(command)) {
-    if (command.commit !== appStore.snapshot.value.commit) throw new Error(AGENT_REVISION_MOVED);
-    return agentActing(() => applySiteCommand(agentSiteActions, command));
-  }
-  if (!scope) throw new Error("Open a repository first.");
-  let prepared: Awaited<ReturnType<typeof prepareAgentText>> | undefined;
-  return editorOrElsewhere(async () => {
-    const kept = prepared = await prepareAgentText(command, scope, draftStore(), current, (scope, paths) => editorModule.flushAgentTyping(scope, paths),
-      () => { if (holdsDraftScope(shownScope(), scope)) afterFileChanges(); });
-    if (kept.duplicate) return kept.duplicate;
-    // A switch meanwhile is not refused: editorOrElsewhere finishes it where it was read (ticket 34).
-    if (command.commit !== appStore.snapshot.value?.commit) throw new Error(AGENT_REVISION_MOVED);
-    if (!current()) throw new Error(AGENT_RELOADED);
-    const scoped = agentStructuralActions(editorWorkspace, kept.context!, current, {
-      actions: makeAgentSiteActions, pages: pagePorts(), files: filePorts(), components: componentPorts, loader: nativeComponentLoaderPlan, factories,
-    });
-    // The scoped page-details step skips writeNativePageMeta: its labels refresh once it is kept.
-    return applyStructural(command, kept, scoped, agentActing, () => {
-      if (command.operation === "set_page_details" && current()) { pageStructure?.refreshMeta(); pagesController.renderTree(); updateCurrentPageLabel(); updateAgentContext(); }
-    });
-  }, () => Boolean(prepared?.applied), () => at.changed() === "scope", elsewhere);
+  // Left and shown again before its step was kept, it runs on show again, on a new stamp (editorOrElsewhere).
+  const onShow = async (): ReturnType<typeof applySiteCommand> => {
+    const scope = draftScope(), { at, left } = holdWorkspace(workspaceSession), revision = appStore.snapshot.value?.commit, current = () => at.holds() && revision === appStore.snapshot.value?.commit && !versions.view;
+    if (!current() || !appStore.snapshot.value || command.branch !== appStore.snapshot.value.branch ||
+      command.repoId !== undefined && command.repoId !== scope?.repoId) throw new Error("The editor changed repository or branch.");
+    if (!atomicAgentCommand(command)) {
+      if (command.commit !== appStore.snapshot.value.commit) throw new Error(AGENT_REVISION_MOVED);
+      return agentActing(() => applySiteCommand(agentSiteActions, command));
+    }
+    if (!scope) throw new Error("Open a repository first.");
+    let prepared: Awaited<ReturnType<typeof prepareAgentText>> | undefined;
+    return editorOrElsewhere(async () => {
+      const kept = prepared = await prepareAgentText(command, scope, draftStore(), current, (scope, paths) => editorModule.flushAgentTyping(scope, paths),
+        () => { if (holdsDraftScope(shownScope(), scope)) afterFileChanges(); });
+      if (kept.duplicate) return kept.duplicate;
+      // A switch meanwhile is not refused: editorOrElsewhere finishes it where it was read (ticket 34).
+      if (command.commit !== appStore.snapshot.value?.commit) throw new Error(AGENT_REVISION_MOVED);
+      if (!current()) throw new Error(AGENT_RELOADED);
+      const scoped = agentStructuralActions(editorWorkspace, kept.context!, current, {
+        actions: makeAgentSiteActions, pages: pagePorts(), files: filePorts(), components: componentPorts, loader: nativeComponentLoaderPlan, factories,
+      });
+      // The scoped page-details step skips writeNativePageMeta: its labels refresh once it is kept.
+      return applyStructural(command, kept, scoped, agentActing, () => {
+        if (command.operation === "set_page_details" && current()) { pageStructure?.refreshMeta(); pagesController.renderTree(); updateCurrentPageLabel(); updateAgentContext(); }
+      });
+    }, () => Boolean(prepared?.applied), left, elsewhere, onShow);
+  };
+  return onShow();
 }
 // Its branch, shown, was saved or reloaded at another commit since the command was read there.
 const AGENT_REVISION_MOVED = "This branch is at another revision now than when the change was read. Read the site again.";

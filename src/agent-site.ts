@@ -5,7 +5,7 @@
 // with Undo. main.ts supplies the editor's state and actions.
 import { agentCommandFiles, agentCommandSignals, mediaCommandPins, siteCommandPins } from "./agent-tools";
 import type { AgentReadFiles } from "./agent-tools-read";
-import { sameBranch } from "./workspace-session";
+import { sameBranch, type SessionStamp, type WorkspaceSession } from "./workspace-session";
 import { decodeHtmlEntities } from "./page-builder/html-entities";
 import type { MoveAt, MoveOutcome } from "./page-builder/block-move";
 import { expandStyleImports } from "../shared/css-imports";
@@ -1110,17 +1110,28 @@ export function pinnedMediaActions(actions: AgentSiteActions, command: AgentComm
 }
 
 /**
- * The editor path of an agent command (ticket 23): when it fails before its write was kept and another
- * workspace is shown by then, the write finishes where it was read (`elsewhere`, finishAgentTextElsewhere)
- * instead of refusing; otherwise its own reason stands.
+ * The editor path of an agent command (tickets 23 and 34): when it fails before its write was kept and
+ * its branch was left meanwhile (`moved`, shown again since too), the write finishes where it was read
+ * (`elsewhere`, finishAgentTextElsewhere) instead of refusing; its branch shown by then (undefined
+ * there), a new attempt runs it on show (`again`, on a new stamp: the old one no longer holds), so it
+ * lands once either way. Otherwise its own reason stands.
  */
-export async function editorOrElsewhere<T>(editor: () => Promise<T>, applied: () => boolean, moved: () => boolean, elsewhere: () => Promise<T | undefined>): Promise<T> {
+export async function editorOrElsewhere<T>(editor: () => Promise<T>, applied: () => boolean, moved: () => boolean, elsewhere: () => Promise<T | undefined>, again: () => Promise<T>): Promise<T> {
   try { return await editor(); }
   catch (error) {
-    const done = !applied() && moved() ? await elsewhere() : undefined;
-    if (done !== undefined) return done;
-    throw error;
+    if (applied() || !moved()) throw error;
+    return await elsewhere() ?? again();
   }
+}
+
+/**
+ * The session now, and whether its workspace was left since (`left`), even when shown again: another
+ * workspace (or none) is shown, or a load of one came between its own (`visits`). A reload of it alone
+ * is not leaving it.
+ */
+export function holdWorkspace(session: Pick<WorkspaceSession, "begin" | "current" | "visits">): { at: SessionStamp; left: () => boolean } {
+  const at = session.begin(), visits = session.visits(at.scope);
+  return { at, left: () => at.changed() === "scope" || session.current().load - at.load > session.visits(at.scope) - visits };
 }
 
 type PreparedText = Awaited<ReturnType<typeof prepareAgentText>>;
@@ -1135,20 +1146,22 @@ const AWAY_COMMANDS = new Set(["create_page", "set_page_details", "make_componen
  */
 export async function applyStructural(command: AgentCommand, kept: PreparedText, scoped: ReturnType<typeof agentStructuralActions>,
   run: (apply: () => Promise<AgentCommandOutcome>) => Promise<AgentCommandOutcome> = apply => apply(), applied: () => void = () => {}): Promise<AgentCommandOutcome> {
+  let outcome: AgentCommandOutcome;
   try {
     const detail = await run(() => applySiteCommand(scoped.actions, command));
     await kept.finish!(() => scoped.current(), scoped.readDrafts);
-    applied();
     // The recorded reply wins (a duplicate delivery gets exactly it); live-only detail adds result fields.
-    return { ...kept.outcome!, result: { ...detail.result, ...kept.outcome!.result } };
+    outcome = { ...kept.outcome!, result: { ...detail.result, ...kept.outcome!.result } };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error), unchanged = "Nothing was changed; your drafts are as they were.";
     if (!kept.applied) throw new Error(message.includes(unchanged) ? message : `${message} ${unchanged}`);
     await kept.recover!();
-    // Kept all the same: what follows a kept step (labels, the count where it landed) still follows.
-    applied();
-    return kept.outcome!;
+    outcome = kept.outcome!;
   } finally { scoped.dispose(); }
+  // Kept all the same: what follows a kept step (labels, the count where it landed) follows once, and its
+  // failing does not unsay the receipt.
+  try { applied(); } catch { /* The receipt still proves application when its follow-up fails. */ }
+  return outcome;
 }
 
 /** The shown editor's ports a page or file command borrows to run on a site not shown (ticket 34), and where it is counted. */
