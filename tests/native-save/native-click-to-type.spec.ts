@@ -98,6 +98,9 @@ async function clearOfScrollBands(page: Page, ...points: { x: number; y: number 
   for (const { y } of points) expect(y - box.y >= 72 && box.y + box.height - y >= 72, `y ${y} in a frame from ${box.y} to ${box.y + box.height}`).toBe(true);
 }
 
+/** How far the preview's page is scrolled. */
+const frameScroll = (page: Page) => frame(page).locator("body").evaluate(() => document.scrollingElement!.scrollTop);
+
 /** A page point just above the element's bottom edge, across its middle: a drop there lands after it. */
 async function below(page: Page, selector: string) {
   const box = (await page.locator(".native-preview-frame").boundingBox())!;
@@ -259,6 +262,7 @@ test.describe("drags", () => {
     const first = { from: await afterWord(page, filler(1), "section"), to: await below(page, filler(2)) };
     await clearOfScrollBands(page, first.from, first.to);
     await drag(page, first.from, first.to);
+    expect(await frameScroll(page)).toBe(0);
     await expect.poll(async () => (await source(page))!.indexOf(`data-key="filler-1"`) > (await source(page))!.indexOf(`data-key="filler-2"`)).toBe(true);
     await expect(frame(page).locator("[contenteditable]")).toHaveCount(0);
     const firstMove = (await source(page))!;
@@ -273,6 +277,7 @@ test.describe("drags", () => {
     const to = await below(page, filler(3));
     await clearOfScrollBands(page, at, to);
     await drag(page, at, to);
+    expect(await frameScroll(page)).toBe(0);
     const typed = "scroll verification typed.</p>";
     await expect.poll(async () => { const now = (await source(page))!; return now.indexOf(typed) > now.indexOf(`data-key="filler-3"`); }).toBe(true);
     await expect(frame(page).locator("[contenteditable]")).toHaveCount(0);
@@ -303,6 +308,7 @@ test.describe("drags", () => {
     await expect(ghost(page)).toHaveText("Paragraph");
     await page.mouse.up();
     await expect(ghost(page)).toHaveCount(0);
+    expect(await frameScroll(page)).toBe(0);
     const moved = (now: string) => now.includes("A native! browser") && now.indexOf(`data-key="filler-2"`) > now.indexOf(`data-key="filler-3"`);
     await expect.poll(async () => moved((await source(page))!)).toBe(true);
     await expect(frame(page).locator("[contenteditable]")).toHaveCount(0);
@@ -338,6 +344,33 @@ test("in a scrolled frame, a press and drag from the text being typed in moves i
   await expect.poll(async () => { const now = (await source(page))!; return now.indexOf(typed) >= 0 && now.indexOf(typed) < now.indexOf(`data-key="filler-3"`); }).toBe(true);
   expect(await undo(page)).toBe(true);
   await expect.poll(() => source(page)).toBe(before);
+});
+
+// The render a press asks for brings the text typed in back into view (scrollIntoView nearest), so
+// the page jumps mid-drag: open for the lead (ticket 16). Runs once the scroll holds.
+test.fixme("typing in a text scrolled out of view, a press and drag on another block keeps the scroll until the drop", async ({ page }) => {
+  const at = await afterWord(page, ".hero h1", "native");
+  await page.mouse.click(at.x, at.y);
+  await expect(frame(page).locator(".hero h1")).toBeFocused();
+  await page.keyboard.type("!");
+  await frame(page).locator(filler(2)).evaluate((el) => el.scrollIntoView({ block: "center", behavior: "instant" }));
+  const scrolled = await frameScroll(page);
+  expect(scrolled).toBeGreaterThan(0);
+  const from = await afterWord(page, filler(2), "Paragraph"), to = await below(page, filler(3));
+  await clearOfScrollBands(page, from, to);
+  const release = await holdRenders(page);
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(from.x, from.y + 10, { steps: 2 });
+  expect(await release()).toBeGreaterThan(0);
+  // The released render has written the heading's text.
+  await expect(frame(page).locator(".hero h1")).not.toHaveAttribute("contenteditable", /.+/);
+  await expect.poll(() => source(page)).toContain("A native! browser");
+  expect(await frameScroll(page)).toBe(scrolled);
+  await page.mouse.move(to.x, to.y, { steps: 8 });
+  await expect(ghost(page)).toHaveText("Paragraph");
+  await page.mouse.up();
+  await expect.poll(async () => { const now = (await source(page))!; return now.indexOf(`data-key="filler-2"`) > now.indexOf(`data-key="filler-3"`); }).toBe(true);
 });
 
 test("a click on text in formatting that is no text of its own (a <del>) types in its line", async ({ page }) => {

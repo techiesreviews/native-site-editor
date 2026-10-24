@@ -149,6 +149,30 @@ test("a shown toast follows each layer opened over it, keeps its Undo usable, an
   await page.clock.resume();
 });
 
+// Ticket 14's product race, open for the lead (ticket 16): runs once the product keeps the toast on top.
+test.fixme("a click on the explorer button after its hover opened the explorer leaves the toast's Undo usable", async ({ page, baseURL }) => {
+  await open(page, baseURL);
+  await page.clock.install();
+  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1_000));
+  await page.evaluate(async () => {
+    const { showToast } = await import("/src/components/toast.ts");
+    showToast("Moved the hero.", { label: "Undo", run: () => { (window as any).toastUndone = ((window as any).toastUndone ?? 0) + 1; } });
+  });
+  await expect(toast(page)).toBeVisible();
+  // The pointer resting on the button opens the explorer; the click then lands on the open one.
+  await page.locator("#explorer-toggle").hover();
+  await expect(page.locator("#explorer > .editor-toast")).toBeVisible();
+  await page.locator("#explorer-toggle").click();
+  const undo = toast(page).getByRole("button", { name: "Undo", exact: true });
+  await expect.poll(() => undo.evaluate(button => {
+    const r = button.getBoundingClientRect(), top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+    return Boolean(top && button.contains(top));
+  })).toBe(true);
+  await undo.click();
+  expect(await page.evaluate(() => (window as any).toastUndone)).toBe(1);
+  await page.clock.resume();
+});
+
 test("a question that opens while a toast shows is not put inside the toast, and both keep working", async ({ page, baseURL }) => {
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
