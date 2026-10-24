@@ -11,7 +11,6 @@
 // connection sees only the ones of the workspace it is pinned to.
 const inWorkspace = (request: AgentRequest, action: Workspace) =>
   request.repoId === action.repoId && request.branch !== undefined && request.branch === action.branch;
-import { agentToolsOn, type AgentToolOn } from "./agent-tool-table";
 import {
   OPEN_REQUESTS_LIMIT,
   REQUEST_TEXT_LIMIT,
@@ -19,6 +18,7 @@ import {
   type AgentRequest,
   type AgentRequestMessage,
 } from "./agent";
+import { agentToolsOn, type AgentToolOn } from "./agent-tool-table";
 import { HttpError } from "./http-error";
 
 /** The messages and text a request's thread keeps (here, out of the boot bundle's shared/agent.ts). */

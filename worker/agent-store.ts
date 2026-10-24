@@ -14,6 +14,7 @@ type Index = Record<string, number>;
 const BATCH = 100;
 const draftKey = (hash: string) => `draft:${hash}`;
 const grantOperations = new Set<unknown>(["add-grant", "use-grant", "rebind-grant", "remove-grant"] satisfies HubAction["type"][]);
+// Only the discriminant is checked: the senders are this Worker's own (worker/agent-context.ts).
 const isHubAction = (action: unknown): action is HubAction =>
   typeof action === "object" && action !== null && grantOperations.has((action as { type?: unknown }).type);
 

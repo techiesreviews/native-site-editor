@@ -20,7 +20,7 @@ import type { AgentRecords } from "../src/agent-records.ts";
 import type { AgentReadPorts } from "../src/agent-tools-read.ts";
 import { createRequestTools } from "../src/agent-watch.ts";
 import { hubOperation, type HubStorage } from "../worker/agent-store.ts";
-import { createSiteServer } from "../worker/mcp.ts";
+import { createSiteServer, registerInOrder } from "../worker/mcp.ts";
 
 // The fakes below hold only what the code reaches before it answers or refuses (tools/list reads no
 // connection field, a probe stops at its first check); each is typed by that part, then cast whole.
@@ -37,7 +37,7 @@ async function toolsList() {
   const handler = createMcpHandler(() => createSiteServer(connection as Connection, env as Env), { legacy: "stateless", responseMode: "json", maxSubscriptions: 0 });
   const body = { jsonrpc: "2.0", id: 1, method: "tools/list" };
   const response = await handler.fetch(new Request("https://editor.example/mcp", { method: "POST", body: JSON.stringify(body),
-    headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream", "MCP-Protocol-Version": "2025-11-25" } }), { parsedBody: body } as never);
+    headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream", "MCP-Protocol-Version": "2025-11-25" } }), { parsedBody: body } satisfies Parameters<typeof handler.fetch>[1]);
   const text = await response.text();
   const data = text.split("\n").find(line => line.startsWith("data: "))?.slice(6) ?? text;
   return (JSON.parse(data) as { result: { tools: { name: string }[] } }).result;
@@ -60,6 +60,15 @@ test("MCP tools/list is dev's: same tools, order, descriptions, schemas and hint
 test("the Worker registers exactly the table's MCP tools, in table order", async () => {
   assert.deepEqual((await toolsList()).tools.map(tool => tool.name), mcpTools);
   assert.deepEqual(names.filter(name => !mcpTools.includes(name as never)), ["get_request"]);
+});
+
+test("registration follows the given order and refuses a missing or an extra tool", () => {
+  const added: string[] = [];
+  const registrations = (...tools: string[]) => new Map(tools.map(tool => [tool, () => { added.push(tool); }]));
+  registerInOrder(["b", "a"], registrations("a", "b"));
+  assert.deepEqual(added, ["b", "a"]);
+  assert.throws(() => registerInOrder(["a", "b"], registrations("a")), /The MCP tool b has no registration/);
+  assert.throws(() => registerInOrder(["a"], registrations("a", "c")), /MCP tools outside the tool table: c\./);
 });
 
 test("each route's browser registry runs exactly the table's tools of that route", async () => {
