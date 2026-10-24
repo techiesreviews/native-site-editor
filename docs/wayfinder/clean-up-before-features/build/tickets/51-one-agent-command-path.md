@@ -2,7 +2,7 @@
 title: "One agent command path in the tab (N1)"
 type: task (AFK)
 status: open
-assignee:
+assignee: lead-51 (this session)
 builder: claude
 blocked_by: [50-agent-operation-table]
 ---
