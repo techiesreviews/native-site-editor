@@ -1,6 +1,9 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { agentPresenceTarget, applySiteCommand, type AgentSiteActions } from "../src/agent-site.ts";
+import { agentPresenceTarget, applySiteCommand, pinnedMediaActions, type AgentSiteActions } from "../src/agent-site.ts";
+import { createAgentPresence, type PresenceTarget } from "../src/agent-presence.ts";
+import { mediaCommandPins } from "../src/agent-tools.ts";
+import type { MediaPin } from "../src/controllers/media-controller.ts";
 import { textHash, type AgentCommand } from "../shared/agent.ts";
 
 const page = "<!doctype html><html><head><title>Home</title></head><body>" +
@@ -85,4 +88,78 @@ test("presence never stops the change: a failing presence port is let go", async
   } satisfies Pick<AgentSiteActions, "text" | "isMounted" | "atomicText" | "sectionTags" | "presence" | "writeDraft">;
   await applySiteCommand(actions as AgentSiteActions, command("write_file", { content: page.replace("Hello", "Hi"), expectedHash: await textHash(page) }));
   assert.ok(written);
+});
+
+// The presence's views as main.ts paints them, and the workspace loads it holds to.
+function presenceViews(sources: Record<string, string> = { "index.html": page, "about/index.html": page }) {
+  let load = 0;
+  const painted: (PresenceTarget | undefined)[] = [];
+  const presence = createAgentPresence({
+    source: path => sources[path],
+    begin: () => { const at = load; return { holds: () => at === load }; },
+    paint: target => painted.push(target),
+  });
+  return { presence, painted, nextLoad: () => { load++; presence.refresh(); } };
+}
+const findHero = () => [1, 0];
+
+test("a change's presence is painted on its page's element, and cleared once it ends (once)", () => {
+  const { presence, painted } = presenceViews();
+  const end = presence.show("index.html", findHero);
+  assert.deepEqual(painted, [{ path: "index.html", node: [1, 0] }]);
+  end(); end();
+  assert.deepEqual(painted, [{ path: "index.html", node: [1, 0] }, undefined]);
+  // Nothing found, or no such page: nothing painted, and its end paints nothing.
+  presence.show("index.html", () => undefined)();
+  presence.show("missing.html", findHero)();
+  assert.equal(painted.length, 2);
+});
+
+test("another workspace shown while a change runs clears its presence there, and its end paints nothing more", () => {
+  const { presence, painted, nextLoad } = presenceViews();
+  const end = presence.show("index.html", findHero);
+  // Another branch or site opens (main.ts nextLoad): its index.html, the same path, shows nothing.
+  nextLoad();
+  assert.deepEqual(painted, [{ path: "index.html", node: [1, 0] }, undefined]);
+  end();
+  assert.equal(painted.length, 2);
+  // A change begun in the workspace shown now is painted as ever.
+  presence.show("index.html", findHero)();
+  assert.deepEqual(painted.slice(2), [{ path: "index.html", node: [1, 0] }, undefined]);
+  // Loads with no agent at work paint nothing (boot).
+  nextLoad();
+  assert.equal(painted.length, 4);
+});
+
+test("overlapping changes: the latest one still running shows, the earlier one again once it ends", () => {
+  const { presence, painted } = presenceViews();
+  const first = presence.show("index.html", findHero);
+  const second = presence.show("index.html", () => [1, 1]);
+  second();
+  first();
+  assert.deepEqual(painted, [{ path: "index.html", node: [1, 0] }, { path: "index.html", node: [1, 1] }, { path: "index.html", node: [1, 0] }, undefined]);
+});
+
+test("a pinned Media change shows its presence only while its own page is shown", async () => {
+  const shown = { here: true, open: "index.html" };
+  const pin = { here: () => shown.here, source: () => page } satisfies Pick<MediaPin, "here" | "source">;
+  const placing = command("place_media", { args: { element: "1.2.0", file: "images/a.png" } });
+  mediaCommandPins.set(placing, { pin: pin as MediaPin, page, opened: "index.html" });
+  const calls: string[] = [];
+  const actions = {
+    presence: (path: string, find: (source: string) => number[] | undefined) => {
+      calls.push(`start ${path} ${find(page)?.join(".")}`);
+      return () => calls.push("end");
+    },
+  } satisfies Pick<AgentSiteActions, "presence">;
+  const run = () => pinnedMediaActions(actions as AgentSiteActions, placing, () => shown.open).presence!(placing.path, source => agentPresenceTarget(placing, source, tags));
+  // Its workspace shown, its page open: the editor's presence, started and ended once.
+  run()();
+  assert.deepEqual(calls, ["start index.html 1.2", "end"]);
+  // Another page of its own open, or another workspace shown: nothing.
+  shown.open = "about/index.html";
+  run()();
+  shown.open = "index.html"; shown.here = false;
+  run()();
+  assert.deepEqual(calls, ["start index.html 1.2", "end"]);
 });

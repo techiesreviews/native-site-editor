@@ -114,6 +114,7 @@ import { createGuardedEdits, type GuardedEdits, type Reads, type PlanResult, typ
 import { createParkedSteps, parkedTransitions } from "./guarded-edit/parked";
 import { createEditorWorkspace } from "./editor-workspace";
 import { createFinishedElsewhere, openLink } from "./finished-elsewhere";
+import { createAgentPresence } from "./agent-presence";
 import { createWorkspaceSession, draftScopeOf, githubScope, holdsDraftScope, setupKeyOf, type SessionStamp, type WorkspaceScope } from "./workspace-session";
 import type { AnnounceAs } from "./components/toast-rules";
 import type { ToastAction } from "./components/toast";
@@ -156,7 +157,12 @@ const appStore = createAppStore(editorModule.sourceStore());
 // What is open and which load of it (src/workspace-session.ts): signing out and each load below start the next.
 const workspaceSession = createWorkspaceSession();
 function currentLoad() { return workspaceSession.current().load; }
-function nextLoad(scope?: WorkspaceScope) { workspaceSession.next(scope); finishedWork.loading(scope); return workspaceSession.begin(); }
+// Ticket 33 (src/agent-presence.ts): an agent at work on a section of the page shown, drawn while its workspace is.
+const agentPresence = createAgentPresence({
+  source: path => runtime.source(path), begin: () => workspaceSession.begin(),
+  paint: target => { nativePreview?.agentPresence(target); pageStructure?.agentPresence(target); },
+});
+function nextLoad(scope?: WorkspaceScope) { workspaceSession.next(scope); finishedWork.loading(scope); agentPresence.refresh(); return workspaceSession.begin(); }
 const cleanSources = new CleanSourceCache(() => info?.user?.login);
 // The open native site's state (src/native-site-runtime.ts); its preview adapter stays here.
 const runtime = createNativeSiteRuntime({
@@ -3550,23 +3556,8 @@ function makeAgentSiteActions(edits: GuardedEdits = guardedEdits, atomic = false
     return runAgentMedia(mediaController, mediaPorts, command, page, since);
   },
   legacy: applyAgentCommand,
-  presence: showAgentPresence,
+  presence: (path, find) => agentPresence.show(path, find),
 }; }
-// Ticket 33: an agent at work on a section of the page shown draws its presence there and on its
-// Page Structure row, while the workspace it began in is shown; the latest change's wins.
-let agentPresence: { path: string; node: number[]; at: SessionStamp } | undefined;
-function showAgentPresence(path: string, find: (source: string) => number[] | undefined) {
-  const source = runtime.source(path), node = source === undefined ? undefined : find(source);
-  if (!node) return () => {};
-  const mine = agentPresence = { path, node, at: workspaceSession.begin() };
-  paintAgentPresence();
-  return () => { if (agentPresence === mine) { agentPresence = undefined; paintAgentPresence(); } };
-}
-function paintAgentPresence() {
-  const shown = agentPresence?.at.holds() ? { path: agentPresence.path, node: agentPresence.node } : undefined;
-  nativePreview?.agentPresence(shown);
-  pageStructure?.agentPresence(shown);
-}
 async function applyAgentSiteCommand(command: AgentCommand) {
   const [{ applySiteCommand, applyStructural, prepareAgentText, atomicAgentCommand, agentStructuralActions, finishAgentTextElsewhere, editorOrElsewhere, pinnedMedia, pinnedMediaActions, pinnedMediaAway }, { createPagesController }, { createLazyFileOperationsController }, { agentCommandFiles }] = await Promise.all([loadAgentSite(), loadPagesActions(), loadFileOps(), import("./agent-tools")]);
   const factories = { createGuardedEdits, createPagesController, createLazyFileOperationsController, createBlockMoves, withPageField };

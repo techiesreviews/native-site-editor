@@ -1,5 +1,6 @@
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
-import { expect, test, type Frame } from "@playwright/test";
+import { expect, test, type Frame, type Page } from "@playwright/test";
+import { openEditor, switchSiteMidUpload } from "../support/scenarios";
 import { editorMounted } from "./drafts";
 
 // Ticket 33: an agent's change on the page shown draws its presence (an outline in the agent's
@@ -43,7 +44,12 @@ test("an agent's change draws its presence on its section and row on the page sh
     };
     new MutationObserver(look).observe(document.documentElement, { subtree: true, attributes: true, attributeFilter: ["style"], childList: true });
   });
-  const frameSeen = async () => (await frame).evaluate(() => (window as Window & { presenceSeen?: Drawn[] }).presenceSeen ?? []);
+  // The record of the document it was installed in: none when the frame has loaded another since.
+  const frameSeen = async () => {
+    const seen = await (await frame).evaluate(() => (window as Window & { presenceSeen?: Drawn[] }).presenceSeen ?? null);
+    expect(seen, "the frame document the record was installed in still shows").not.toBeNull();
+    return seen!;
+  };
   // Every row the tree marks: its node, busy state, dot colour and the page shown.
   const recordTree = () => page.evaluate(() => {
     const seen: string[] = [];
@@ -122,5 +128,93 @@ test("an agent's change draws its presence on its section and row on the page sh
     for (const row of await treeSeen()) expect(row.split("|")).toEqual(["1.1", "true", agentColour.css, "about/index.html"]);
     await expect(preview.locator('[data-native-selection-box="agent-presence"]')).toBeHidden();
     await expect(tree.locator(".page-structure__row--agent")).toHaveCount(0);
+  } finally { await client.close(); }
+});
+
+/** Holds the first request for `path` (a module the change loads while it runs) until `release()`. */
+async function hold(page: Page, path: string) {
+  let held!: () => void;
+  const reached = new Promise<void>(resolve => { held = resolve; });
+  let release!: () => void;
+  const released = new Promise<void>(resolve => { release = resolve; });
+  let first = true;
+  await page.route(url => url.pathname === path, async route => {
+    if (!first) return route.continue();
+    first = false;
+    held();
+    await released;
+    await route.continue();
+  });
+  return { reached, release };
+}
+
+async function connect(page: Page, baseURL: string | undefined) {
+  const messages: string[] = [];
+  page.on("websocket", socket => {
+    if (socket.url().includes("/api/agent/relay?")) socket.on("framereceived", ({ payload }) => messages.push(String(payload)));
+  });
+  await openEditor(page, baseURL);
+  await editorMounted(page);
+  await expect(page.getByRole("tree", { name: "Page structure" }).locator('[data-node="1.0"]')).toBeVisible();
+  await page.locator(".repository-menu__trigger").click();
+  const made = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST");
+  await page.getByRole("button", { name: "Connect to MCP", exact: true }).click();
+  const { token } = await (await made).json() as { token: string };
+  await expect.poll(() => messages.some(message => message.includes('"type":"ready"'))).toBe(true);
+  await page.keyboard.press("Escape");
+  const client = new Client({ name: "presence-held-spec", version: "1" });
+  await client.connect(new StreamableHTTPClientTransport(new URL(`${baseURL}/mcp`), { requestInit: { headers: { Authorization: `Bearer ${token}` } } }));
+  return client;
+}
+
+// A placement loads its module while it runs (agent-site.ts `place_media`): held there, its presence stays on show.
+const PLACING = "/src/page-builder/media-insert.ts";
+const box = (page: Page) => page.frameLocator(".native-preview-frame").locator('[data-native-selection-box="agent-presence"]');
+const agentRows = (page: Page) => page.getByRole("tree", { name: "Page structure" }).locator(".page-structure__row--agent, [aria-busy]");
+
+test("a held change keeps its presence on a fresh frame document, and a workspace switch clears it from the tree and the frame", async ({ page, baseURL }) => {
+  const client = await connect(page, baseURL);
+  try {
+    const placing = await hold(page, PLACING);
+    const placed = client.callTool({ name: "place_media", arguments: { path: "index.html", element: "1.0.2", file: "images/studio-desk.svg", requestId: "presence-held", waitSeconds: 0 } })
+      .catch(error => ({ isError: true, content: [{ text: String(error) }] }));
+    await placing.reached;
+    await expect(box(page)).toBeVisible();
+    await expect(page.getByRole("tree", { name: "Page structure" }).locator('[data-node="1.0"]')).toHaveClass(/page-structure__row--agent/);
+    // The frame's document loads again (its `ready`): the presence is sent to the new one.
+    const frame = (await (await page.locator(".native-preview-frame").elementHandle())!.contentFrame())!;
+    await frame.evaluate(() => { (window as Window & { before?: true }).before = true; location.reload(); });
+    await expect.poll(async () => (await page.locator(".native-preview-frame").elementHandle())!.contentFrame()
+      .then(now => now!.evaluate(() => (window as Window & { before?: true }).before === undefined && Boolean(document.getElementById("page")?.children.length)))
+      .catch(() => false)).toBe(true);
+    await expect(box(page)).toBeVisible();
+    // Another branch opens while the change runs: its index.html, the same path, shows no presence.
+    await switchSiteMidUpload(page, baseURL);
+    await expect(page.getByRole("tree", { name: "Page structure" }).locator('[data-node="1.0"]')).toBeVisible();
+    await expect(box(page)).toBeHidden();
+    await expect(agentRows(page)).toHaveCount(0);
+    placing.release();
+    await placed;
+    await expect(box(page)).toBeHidden();
+    await expect(agentRows(page)).toHaveCount(0);
+  } finally { await client.close(); }
+});
+
+test("a held change for another page draws nothing on the page shown while it runs", async ({ page, baseURL }) => {
+  const client = await connect(page, baseURL);
+  try {
+    const placing = await hold(page, PLACING);
+    // About's hero heading (1.0.0): Home has a hero at 1.0 too, where a wrong presence would stand.
+    const placed = client.callTool({ name: "place_media", arguments: { path: "about/index.html", element: "1.0.0", file: "images/studio-desk.svg", requestId: "presence-about-held", waitSeconds: 0 } })
+      .catch(error => ({ isError: true, content: [{ text: String(error) }] }));
+    await placing.reached;
+    await expect(page.frameLocator(".native-preview-frame").locator(".hero h1")).toHaveText("A native browser preview");
+    // Drawn now if at all: the page's boxes are drawn on each message and render.
+    // fixed-wait: an absence has no state to poll; a few frames let a wrong presence draw.
+    await page.waitForTimeout(300);
+    await expect(box(page)).toBeHidden();
+    await expect(agentRows(page)).toHaveCount(0);
+    placing.release();
+    await placed;
   } finally { await client.close(); }
 });
