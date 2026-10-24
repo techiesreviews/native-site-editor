@@ -305,10 +305,12 @@ export function createCommit(ws: EditorWorkspace & { agentText?(): AgentTextComm
       // Its page is not shown: the drafts are its change there and nothing is said (ticket 27, Lex: no
       // toasts; the Pages tree marks the page unsaved). Its Undo waits for its own page (ticket 34): the
       // page it opens, or where its page went; a step that deleted its page waits on the home page.
-      unrecorded(); unrecorded = undefined;
       const moved = new Map(moves.map(move => [move.from, move.to])), homePage = ws.site()?.routes["/"];
       const page = op.open ?? (anchor === undefined ? undefined : moved.get(anchor) ?? (!deletes.includes(anchor) ? anchor : homePage && !deletes.includes(homePage) ? homePage : undefined));
-      if (page !== undefined) ws.park?.(parkedStep(scope, page, { before, after }, done, op.undone, anchor === undefined || deletes.includes(anchor) ? undefined : anchor));
+      // Parked before the step's own holds go: its upload bytes are held without a gap.
+      const parked = page === undefined || !ws.park ? undefined : parkedStep(scope, page, { before, after }, done, op.undone, anchor === undefined || deletes.includes(anchor) ? undefined : anchor);
+      unrecorded(); unrecorded = undefined;
+      if (parked) ws.park!(parked);
       op.recorded(); ws.afterFileChanges();
       return undefined;
     }

@@ -224,6 +224,18 @@ test("the image popup's trim, held across a branch switch as it closes, lands on
   expect(await shownSource(page)).not.toContain("quarters");
 });
 
+/** Back on index.html after work landed there while about/index.html was shown: its Undo was waiting there (ticket 34). */
+async function undoOnItsPage(page: Page) {
+  await editorMounted(page, "about/index.html");
+  await expect(page.locator(".code-editor__undo").first()).toBeDisabled();
+  await page.evaluate(() => { location.hash = "repo=501&branch=main&file=index.html"; });
+  await editorMounted(page);
+  const undo = page.locator(".code-editor__undo").first();
+  await expect(undo).toBeEnabled();
+  await undo.click();
+  await expect.poll(async () => (await draftsOn(page, "main")).filter(draft => draft.path === "index.html"), { timeout: 20_000 }).toEqual([]);
+}
+
 // Another page of main opened while the Use runs: the picture lands on the page it was chosen for,
 // as an unsaved change there, and Lex stays on the page he opened.
 test("a picture placed with the picker's Use, held while another page of main opens, lands on its own page", async ({ page, baseURL }) => {
@@ -245,6 +257,7 @@ test("a picture placed with the picker's Use, held while another page of main op
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "about/index.html");
   expect((await draftsOn(page, "main")).map(draft => draft.path)).toEqual(["index.html"]);
   await expect(finishedCount(page)).toBeHidden();
+  await undoOnItsPage(page);
 });
 
 // An agent's Media change that arrived on index.html, held while Lex opens main's about page: it
@@ -278,6 +291,7 @@ test("an agent's Media change held while another page of main opens lands on its
     await expect(finishedCount(page)).toBeHidden();
     const status = await client.callTool({ name: "get_command_status", arguments: { requestId: "page-left-place" } });
     expect(JSON.parse((status.content as { text: string }[])[0].text)).toMatchObject({ requestId: "page-left-place", state: "applied" });
+    await undoOnItsPage(page);
   } finally { await client.close(); }
 });
 

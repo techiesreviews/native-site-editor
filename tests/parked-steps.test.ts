@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { createGuardedEdits, type PlanResult, type Reads } from "../src/guarded-edit";
 import { createParkedSteps, parkedTransitions, PARKED_LIMIT, type ParkedStep } from "../src/guarded-edit/parked";
 import { createMemoryWorkspace, deferred } from "./fakes/memory-workspace";
+import { memoryUploadBytes, sweepUploads, uploadKey, uploadKeyHeld } from "../src/uploads";
 
 const PAGE = "<main><h1>Home</h1><p>Hello</p></main>";
 const ABOUT = "<main><h1>About</h1></main>";
@@ -129,6 +130,42 @@ test("a step that deleted its own page away is parked on the home page, its Undo
   assert.equal(undo(), true);
   assert.equal(s.m.draft("notes.txt"), undefined);
 });
+
+// An unsaved upload deleted away: its bytes outlive sweeps while the parked step lives, so its Undo
+// brings back a picture that is still there; the step let go (out of history, signed out), they go.
+test("a parked step holds the bytes of an upload it deleted until it is let go", async () => {
+  const s = setup(), bytes = memoryUploadBytes(), key = uploadKey(s.m.scope, "f".repeat(40));
+  await bytes.put(key, new Blob(["picture"]));
+  s.m.workspace.store.save({ ...s.m.scope, version: 1, path: "images/new.png", baseSha: null, original: "", content: "", updatedAt: 1,
+    opaque: true, sourceSha: "f".repeat(40), upload: { type: "image/png", size: 7 } });
+  const remove = (r: Reads): PlanResult => { r.source("images/new.png"); return { deletes: ["images/new.png"], done: "Deleted.", undone: "Restored." }; };
+  assert.deepEqual(await landAway(s, remove, { anchor: "index.html" }), { ok: true, status: "applied" });
+  assert.equal(s.m.draft("images/new.png"), undefined, "an unsaved upload deleted leaves no draft");
+  const steps = createParkedSteps({ open: () => undefined, transitions: step => parkedTransitions(s.workspace, step) });
+  steps.park(s.parked[0]);
+  await sweepUploads(bytes, s.m.scope, []);
+  assert.ok(await bytes.get(key), "kept while parked");
+  s.m.setRoute("/"); await s.m.workspace.open("index.html");
+  steps.adopt(s.m.scope, "index.html", (undo, redo, dispose) => s.m.workspace.recordHistory("index.html", undo, redo, dispose));
+  await sweepUploads(bytes, s.m.scope, []);
+  assert.ok(await bytes.get(key), "kept while in its page's history");
+  assert.equal(s.m.undo(), true);
+  assert.equal(s.m.draft("images/new.png")?.sourceSha, "f".repeat(40));
+  assert.ok(await bytes.get(key), "the upload is back with its bytes");
+  // Parked again and signed out: its holds go with it.
+  const other = setup();
+  await landAway(other, remove2(other));
+  const parked = createParkedSteps({ open: () => undefined, transitions: step => parkedTransitions(other.workspace, step) });
+  parked.park(other.parked[0]);
+  assert.equal(uploadKeyHeld(uploadKey(other.m.scope, "e".repeat(40))), true);
+  parked.clear();
+  assert.equal(uploadKeyHeld(uploadKey(other.m.scope, "e".repeat(40))), false);
+});
+function remove2(s: ReturnType<typeof setup>) {
+  s.m.workspace.store.save({ ...s.m.scope, version: 1, path: "images/old.png", baseSha: null, original: "", content: "", updatedAt: 1,
+    opaque: true, sourceSha: "e".repeat(40), upload: { type: "image/png", size: 7 } });
+  return (r: Reads): PlanResult => { r.source("images/old.png"); return { deletes: ["images/old.png"], done: "Deleted.", undone: "Restored." }; };
+}
 
 test("parked steps: one landing on its page open now is recorded there at once; at most PARKED_LIMIT wait", () => {
   const s = setup(), recorded: string[] = [];

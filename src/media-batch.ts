@@ -95,7 +95,7 @@ async function onShow(ports: MediaBatchPorts, modules: Modules, scope: DraftScop
     mounted: path => editor.isMounted(path), prepareSources: edits => editor.prepareHistorySources(edits),
     history: (undo, redo, dispose, sides) => {
       // Another page than the one it was asked on is shown: no Undo step there; its own page takes it (ticket 34).
-      if (!undoHere) { dispose(); park(ports, scope, batch, sides, opened); return true; }
+      if (!undoHere) { park(ports, scope, batch, sides, opened); dispose(); return true; }
       // A file that opened while the change was prepared takes it now; with none, the next one does.
       const path = historyHost && historyPath ? historyPath : ports.appStore.openFile.value;
       if (path && (path === historyPath && historyHost || editor.captureHistoryHost(path))) {
@@ -122,7 +122,7 @@ async function elsewhere(ports: MediaBatchPorts, modules: Modules, scope: DraftS
     assetVersion: path => { const record = ports.draftStore().get(scope, path); return record ? JSON.stringify(record) : pin.entry(path)?.sha; },
     entry: async path => { const entry = await pin.find(path); return entry ? { path, sha: entry.sha, mode: entry.mode, text: pin.source(path) } : undefined; },
     historyCurrent: away, mounted: () => false, prepareSources: () => nothing,
-    history: (_undo, _redo, dispose, sides) => { dispose(); park(ports, scope, batch, sides, opened); return true; },
+    history: (_undo, _redo, dispose, sides) => { park(ports, scope, batch, sides, opened); dispose(); return true; },
   }));
 }
 
@@ -142,8 +142,9 @@ function listedPaths(ports: MediaBatchPorts, scope: DraftScope, listed: string[]
 }
 
 // A step written away from its page parks for it (ticket 34): the page it was asked on, else the page it
-// changes. A step that adds files keeps none: its Redo would need their bytes again.
+// changes. Parked before the batch's own holds go (`dispose`): the step holds the upload bytes either side
+// names, the files it added among them, so its Undo and Redo write them back.
 function park(ports: MediaBatchPorts, scope: DraftScope, batch: MediaWorkspaceBatch, sides: Parameters<MediaDraftHost["history"]>[3], opened: string | undefined) {
   const page = opened ?? [...batch.edits.keys()].find(path => /\.html$/i.test(path));
-  if (page && sides && !batch.uploads.length) ports.park?.(parkedStep(scope, page, sides, batch.label, `Undid: ${batch.label}`));
+  if (page && sides && ports.park) ports.park(parkedStep(scope, page, sides, batch.label, `Undid: ${batch.label}`));
 }

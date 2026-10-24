@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test, type TestContext } from "node:test";
 import { textHash, type AgentCommand } from "../shared/agent.ts";
-import { applySiteCommand, editorOrElsewhere, finishAgentTextElsewhere, prepareAgentText, type AgentSiteActions } from "../src/agent-site.ts";
+import { applySiteCommand, applyStructural, editorOrElsewhere, finishAgentTextElsewhere, prepareAgentText, type AgentSiteActions } from "../src/agent-site.ts";
 import { agentCommandFiles, agentCommandSignals, siteCommandPins } from "../src/agent-tools.ts";
 import type { BackgroundSitePorts } from "../src/background-site.ts";
 import type { MediaPin } from "../src/controllers/media-controller.ts";
@@ -613,7 +613,7 @@ test("an agent edit's editor path switched away at any wait before it is kept fi
 // Ticket 34: a page command read on a branch no longer shown runs in its background site. Its branch
 // shown again at any wait before its step is kept stops it with nothing kept, and the editor runs it
 // (undefined); shown and left again, it runs there again and lands once.
-async function structuralElsewhere(t: TestContext, race?: AwaitRace) {
+async function structuralElsewhere(t: TestContext, race?: AwaitRace, overrides: Partial<AgentCommand> = {}) {
   const f = await elsewhere(t, race);
   const PAGE = "<html><head><title>Old</title></head><body><main></main></body></html>";
   let here = false, visits = 0, shown: DraftScope | undefined = f.shown;
@@ -633,16 +633,18 @@ async function structuralElsewhere(t: TestContext, race?: AwaitRace) {
     park: (step: ParkedStep) => { parked.push(step); }, visits: () => visits,
     factories: { createGuardedEdits, createPagesController, createLazyFileOperationsController, createBlockMoves, withPageField },
   } as unknown as BackgroundSitePorts;
-  const command: AgentCommand = { ...f.command, operation: "set_page_details", content: "", expectedHash: undefined, args: { title: "Agent title" } };
+  const command: AgentCommand = { ...f.command, operation: "set_page_details", content: "", expectedHash: undefined, args: { title: "Agent title" }, ...overrides };
   siteCommandPins.set(command, { pin, opened: "index.html" });
   agentCommandFiles.set(command, { repo: { id: 1, full_name: "lex/site" }, snapshot: { branch: "main", commit: "commit", entries: [] } } as unknown as AgentReadFiles); // eslint-disable-line no-restricted-syntax -- only the repository and snapshot are read.
-  const finish = () => finishAgentTextElsewhere(command, () => shown, f.scope.account, f.store, async () => undefined, { site, landed: () => {} });
-  return { ...f, parked, finish, show: () => { here = true; visits++; shown = f.scope; }, showAndLeave: () => { visits++; } };
+  let landed = 0;
+  const finish = () => finishAgentTextElsewhere(command, () => shown, f.scope.account, f.store, async () => undefined, { site, landed: () => { landed++; } });
+  return { ...f, parked, finish, landed: () => landed, show: () => { here = true; visits++; shown = f.scope; }, showAndLeave: () => { visits++; } };
 }
 
 test("a page command for a branch no longer shown lands there through its background site, its Undo parked", async t => {
   const f = await structuralElsewhere(t);
   const outcome = await f.finish();
+  assert.equal(f.landed(), 1, "counted where it landed");
   assert.match(outcome!.message, /Page details of index\.html updated/);
   assert.match(f.store.get(f.scope, "index.html")!.content, /<title>Agent title<\/title>/);
   assert.deepEqual(f.parked.map(step => step.page), ["index.html"]);
@@ -674,4 +676,27 @@ test("a page command elsewhere whose branch is shown and left again at any wait 
     assert.match(run.f!.store.get(run.f!.scope, "index.html")!.content, /<title>Agent title<\/title>/);
     assert.equal(run.f!.parked.length, 1);
   });
+});
+
+// Only the ticket's page and file commands run in a background site: the open file's own writes need it on screen.
+test("an open file's write (create_file_draft, update_active_draft) for a branch no longer shown refuses; nothing is kept", async t => {
+  for (const operation of ["create_file_draft", "update_active_draft"] as const) {
+    const f = await structuralElsewhere(t, undefined, { operation, path: "notes.txt", content: "agent", expectedHash: null, args: undefined });
+    await assert.rejects(f.finish(), /needs its page on screen\. Nothing was changed/, operation);
+    assert.equal(f.store.get(f.scope, "notes.txt"), undefined, operation);
+    assert.deepEqual(f.parked, [], operation);
+    assert.equal(await f.records.receipt(f.scope, "operation", "grant"), undefined, operation);
+  }
+});
+
+// A kept step whose follow-up fails answers with its recorded reply, and what follows a kept step runs once.
+test("a kept page command whose follow-up fails answers with its receipt and is counted once", async () => {
+  let applied = 0, recovered = 0, disposed = 0;
+  const outcome = { message: "Page details of index.html updated, unsaved.", result: { path: "index.html" } };
+  const kept = { applied: true, outcome, finish: async () => { throw new Error("The preview could not refresh."); }, recover: async () => { recovered++; } } as unknown as Parameters<typeof applyStructural>[1]; // eslint-disable-line no-restricted-syntax -- only these members of a prepared receipt are read.
+  const actions = { setPageDetails: async () => undefined, text: async () => "<title>New</title>" } as unknown as AgentSiteActions; // eslint-disable-line no-restricted-syntax -- set_page_details reads only these two.
+  const scoped = { actions, readDrafts: new Map(), current: () => true, dispose: () => { disposed++; } };
+  const command: AgentCommand = { id: "kept", grantId: "grant", operation: "set_page_details", path: "index.html", branch: "main", commit: "commit", content: "", state: "pending", createdAt: 1, args: { title: "New" } };
+  assert.deepEqual(await applyStructural(command, kept, scoped, undefined, () => { applied++; }), outcome);
+  assert.deepEqual([applied, recovered, disposed], [1, 1, 1]);
 });
