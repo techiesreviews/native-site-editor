@@ -561,6 +561,9 @@ export function createAgentMenu(options: {
     await readConnections();
     if (ownerPaused) return;
     await activateSocket();
+    // A reconnect left from before the press (a failed request is reported to the socket too, and
+    // its attempts outlive the connection) waits out its backoff: the press tries now, as a retry.
+    if (state() === "reconnecting") await transport?.retry().catch(() => undefined);
     const now = state();
     if (now === "idle") await start(task);
     // A token already waits (another tab's, another browser's, or this tab's own): Connect to MCP
