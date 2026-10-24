@@ -114,6 +114,18 @@ const sectionId = z
   .regex(/^\d{1,4}(?:\.\d{1,4}){0,63}$/)
   .describe('A section id from get_page\'s outline, such as "1.2".');
 
+/** Registers each tool in the table's order; a row without a registration, or a registration without a row, throws. */
+export function registerInOrder<Name extends string>(names: readonly Name[], registrations: Map<Name, () => void>) {
+  const left = new Map(registrations);
+  for (const name of names) {
+    const add = left.get(name);
+    if (!add) throw new Error(`The MCP tool ${name} has no registration.`);
+    add();
+    left.delete(name);
+  }
+  if (left.size) throw new Error(`MCP tools outside the tool table: ${[...left.keys()].join(", ")}.`);
+}
+
 export function createSiteServer(connection: Connection, env: Env, origin = "https://editor.techies.tools", exchange: Exchange = {}) {
   const { grant } = connection;
   const closed = editorClosedMessage(origin, connection.workspace);
@@ -802,13 +814,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     },
   );
 
-  for (const name of mcpTools) {
-    const add = registrations.get(name);
-    if (!add) throw new Error(`The MCP tool ${name} has no registration.`);
-    add();
-    registrations.delete(name);
-  }
-  if (registrations.size) throw new Error(`MCP tools outside the tool table: ${[...registrations.keys()].join(", ")}.`);
+  registerInOrder(mcpTools, registrations);
 
   // ---- Resources and prompts ----
 
