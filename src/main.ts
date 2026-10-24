@@ -2664,7 +2664,7 @@ const agentSiteHost = createAgentSiteHost({
   mediaPin: () => mediaPorts.pin?.(),
 });
 // The agent's commands, run through the editor's own actions (src/agent-site-host.ts).
-// By value: consts and hoisted functions declared above; `let` state goes in as getters.
+// By value: consts declared above and hoisted functions; `let` state goes in as getters (tests/main-ts-ceiling.test.ts).
 const agentCommands = createAgentCommands({
   appStore, runtime, workspaceSession, guardedEdits, editorModule, editorWorkspace, versions, finishedWork, parkedSteps, repositoryIndex,
   mediaController, mediaPorts, blockMoves, agentPresence, pagesAndFiles, pagesController, filesTreeController, api, loadAgentSite, loadPagesActions,
