@@ -22,6 +22,8 @@ Split from [Three load-sensitive tests pass on a busy machine](14-load-sensitive
 
 - Added 2026-10-24: `native-agent-quiet.spec.ts:30` and `native-mcp-menu.spec.ts:528` failed in slice 33's full `kit pr` run; both pass alone on dev and on the branch.
 
+- Added 2026-10-24: `native-click-to-type.spec.ts:270` failed in slice 33's `kit pr`. Lead: this ticket moves ahead of the remaining clean-up slices; load failures now block most landings.
+
 ## Decided behaviour
 
 Diagnose first (`mattpocock-skills:diagnosing-bugs`). Wait for states, not times; use the page clock where a product timer is involved; do not raise timeouts and do not add entries to `tests/known-failures.json`. If the ring timing is a real product issue on slow machines, say so in Done and ask the lead before changing product behaviour.
