@@ -561,7 +561,11 @@ export function createAgentMenu(options: {
     await readConnections();
     if (ownerPaused) return;
     await activateSocket();
-    if (state() === "idle") await start(task);
+    const now = state();
+    if (now === "idle") await start(task);
+    // A token already waits (another tab's, another browser's, or this tab's own): Connect to MCP
+    // still copies a prompt, this tab's own if it still waits, otherwise a new one.
+    else if (offer(now) === "wait") await copyAgain(task);
   }
   const live = (at: number) => !disposed && remote && !workspaceChanged && activation === at && sameRepository(options.repository(), pinned);
   const site = (repo: { id: number; branch: string }): AgentWorkspace => ({ account: options.account, repoId: repo.id, branch: repo.branch });
@@ -698,7 +702,11 @@ export function createAgentMenu(options: {
     try {
       await navigator.clipboard.writeText(connectionPrompt(`${location.origin}/mcp`, token, repo.fullName, goal));
       confirmOnButton("Copied");
-    } catch { /* Clipboard refused: the label does not confirm; pressing again tries again. */ }
+    } catch {
+      // Clipboard refused: nothing was copied, so the dot shows a problem until the next press.
+      failedOn = repo;
+      paint();
+    }
   }
 
   // One connections read at a time (src/agent-resume.ts).
@@ -735,7 +743,8 @@ export function createAgentMenu(options: {
   function wake() {
     // Waiting for an agent, or after a failed press with remote agents still on (another tab's
     // token waits): returning to the tab looks once whether an agent connected meanwhile.
-    if (!workspaceChanged && document.visibilityState === "visible" && ["waiting", "failed"].includes(state()) && Date.now() - lastRead >= 2000)
+    // Also in a tab where another tab receives: what the button offers (Wait for MCP) decides.
+    if (!workspaceChanged && document.visibilityState === "visible" && (offer() === "wait" || state() === "failed") && Date.now() - lastRead >= 2000)
       void readConnections();
   }
   // A connection approved in this browser turns remote agents on only for
@@ -805,11 +814,8 @@ export function createAgentMenu(options: {
      */
     async connect(task: string) {
       if (state() === "waiting" && token) await copyAgain(task);
-      else if (!remote) {
-        await turnOn(task);
-        // Another tab's token waits: this tab makes a prompt of its own.
-        if (!token && offer() === "wait") await start(task);
-      } else await start(task);
+      else if (!remote) await turnOn(task);
+      else await start(task);
       return Boolean(token);
     },
     /** Whether an agent is connected now. */
@@ -894,7 +900,8 @@ export function createAgentMenu(options: {
   };
 }
 
-/** Watch records of the removed Watch control (`native-site-editor:agent-watch:…`): nothing reads them now. */
+/** Watch records of the removed Watch control (`native-site-editor:agent-watch:…`): nothing reads
+ * them now. A one-off clean-up (ticket 29, 2026-10-23): remove it after 2027-01-31. */
 function forgetWatch() {
   try {
     const keys = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index));

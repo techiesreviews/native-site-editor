@@ -351,15 +351,17 @@ test("relay paused by owner: one explicit attempt, one manual try again with Con
   await expect(menu).toHaveAttribute("data-state", "paused");
   await expect(menu).toHaveText("Connect to MCP", { useInnerText: true });
   await page.request.post(`${baseURL}/__demo/agent-controls`, { data: { relay: true } });
-  // Unpaused, Connect to MCP finds the connection again: its token waits for an agent, kept (another
-  // tab may hold its prompt), so the button offers Wait for MCP.
+  // Unpaused, Connect to MCP copies a prompt: the waiting token is not this tab's, and is older than
+  // two minutes on this clock, so it is reclaimed and a new one made.
+  const made = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST");
   await page.getByRole("button", { name: "Connect to MCP", exact: true }).click();
+  const { id } = await (await made).json() as { id: string };
   await expect(menu).toHaveAttribute("data-state", "waiting");
-  await expect(menu).toHaveText("Wait for MCP", { useInnerText: true });
-  expect(requests.filter(request => request.path === "/api/agent/revoke")).toEqual([]);
+  expect(requests).toContainEqual({ method: "POST", path: "/api/agent/revoke" });
   const remaining = await (await page.request.get(`${baseURL}/api/agent/connections`)).json() as { grants: { id: string }[] };
-  expect(remaining.grants.some(entry => entry.id === grant.id)).toBe(true);
-  await page.request.post(`${baseURL}/api/agent/revoke`, { headers: { Origin: baseURL! }, data: { id: grant.id } });
+  expect(remaining.grants.some(entry => entry.id === grant.id), "the old unused token was reclaimed").toBe(false);
+  expect(remaining.grants.some(entry => entry.id === id)).toBe(true);
+  await page.request.post(`${baseURL}/api/agent/revoke`, { headers: { Origin: baseURL! }, data: { id } });
 });
 
 test("waiting paused by owner: waits answer at once and ask the agent to stop; the menu shows only Disconnect MCP; edits remain available", async ({ page, context, baseURL }) => {
