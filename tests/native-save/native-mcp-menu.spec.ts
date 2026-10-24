@@ -102,10 +102,19 @@ test("Connect to MCP → Wait for MCP → Disconnect MCP: the label confirms eac
     expect(answers.flatMap(answer => answer.requests.map((request: { text: string }) => request.text))).toEqual(["Shared by both agents"]);
     for (const answer of answers) expect(answer.hint ?? "").not.toMatch(/already|one at a time|Do not call/);
 
-    // Disconnect MCP ends every agent on the connection; the button and dot return to Connect to MCP.
+    // Disconnect MCP ends every agent on the connection, copying nothing; the button and dot return to Connect to MCP.
+    await page.evaluate(() => {
+      const host = window as Window & { copies?: number }, clipboard = navigator.clipboard;
+      host.copies = 0;
+      for (const name of ["write", "writeText"] as const) {
+        const original = clipboard[name].bind(clipboard) as (data: never) => Promise<void>;
+        Object.defineProperty(clipboard, name, { configurable: true, value: (data: never) => { host.copies!++; return original(data); } });
+      }
+    });
     await page.locator(".repository-menu__trigger").click();
     await action.click();
     await expect(action).toHaveText("Connect to MCP");
+    expect(await page.evaluate(() => (window as Window & { copies?: number }).copies)).toBe(0);
     await expect(menu).toHaveAttribute("data-state", "off");
     await onlyLabel(page, "Connect to MCP");
     expect(await dot(page)).toEqual(off);
@@ -272,7 +281,12 @@ test("a slow server: Connect to MCP and Wait for MCP still copy the prompt when 
     const write = clipboard.write.bind(clipboard), writeText = clipboard.writeText.bind(clipboard);
     Object.defineProperty(clipboard, "write", { configurable: true, value: (items: ClipboardItems) => navigator.userActivation.isActive ? write(items) : refused() });
     Object.defineProperty(clipboard, "writeText", { configurable: true, value: (text: string) => navigator.userActivation.isActive ? writeText(text) : refused() });
+    // The spec's own writes, outside any press.
+    (window as Window & { sentinel?: (text: string) => Promise<void> }).sentinel = writeText;
   });
+  const sentinel = (text: string) => page.evaluate(value => (window as Window & { sentinel?: (text: string) => Promise<void> }).sentinel!(value), text);
+  // clipboard-ready: read only inside expect.poll below.
+  const clipboard = () => page.evaluate(() => navigator.clipboard.readText());
   const held = (path: string) => page.route(url => url.pathname === path, async route => {
     // fixed-wait: the server's answer is held past the user activation's five seconds.
     await new Promise(resolve => setTimeout(resolve, 6_000));
@@ -284,15 +298,41 @@ test("a slow server: Connect to MCP and Wait for MCP still copy the prompt when 
   await held("/api/agent/connect");
   const made = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST");
   await action.click();
-  const { token } = await (await made).json() as { token: string };
+  const { token, id } = await (await made).json() as { token: string; id: string };
   await expect(action).toHaveText("Copied");
-  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain(`Bearer ${token}`);
+  await expect.poll(clipboard).toContain(`Bearer ${token}`);
   await expect(action).toHaveText("Wait for MCP");
+  await page.unroute(url => url.pathname === "/api/agent/connect");
   // Wait for MCP reads its connections first: held as long, its copy still lands.
+  await sentinel("before Wait for MCP");
   await held("/api/agent/connections");
   await action.click();
   await expect(action).toHaveText("Copied");
   await expect(menu).not.toHaveAttribute("data-state", "failed");
+  await expect.poll(clipboard).toContain(`Bearer ${token}`);
+  await expect(action).toHaveText("Wait for MCP");
+  // Its token revoked elsewhere: the held read finds it gone, and the same press makes and copies a new one.
+  expect((await page.request.post(`${baseURL}/api/agent/revoke`, { headers: { Origin: baseURL! }, data: { id } })).ok()).toBe(true);
+  await sentinel("before the new prompt");
+  const again = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST");
+  await action.click();
+  const fresh = (await (await again).json() as { token: string }).token;
+  expect(fresh).not.toBe(token);
+  await expect(action).toHaveText("Copied", { timeout: 30_000 });
+  await expect.poll(clipboard).toContain(`Bearer ${fresh}`);
+});
+
+test("a browser without ClipboardItem: Connect to MCP copies the prompt once its token is known", async ({ page, context, baseURL }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.addInitScript(() => { delete (window as Partial<Window & typeof globalThis>).ClipboardItem; });
+  await open(page, baseURL);
+  await page.locator(".repository-menu__trigger").click();
+  const action = page.locator(".agent-menu__action");
+  await page.evaluate(() => navigator.clipboard.writeText("before the press"));
+  const made = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST");
+  await action.click();
+  const { token } = await (await made).json() as { token: string };
+  await expect(action).toHaveText("Copied");
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain(`Bearer ${token}`);
 });
 
@@ -565,9 +605,14 @@ test("a failed first prompt: Connect to MCP shows the problem dot, not the plain
   const off = await dot(page);
   let refuse = true;
   await page.route("**/api/agent/connect", route => refuse ? route.fulfill({ status: 500, json: { error: "Internal error" } }) : route.continue());
+  await page.evaluate(() => navigator.clipboard.writeText("before the press"));
   await action.click();
   await expect(menu).toHaveAttribute("data-state", "failed");
   await onlyLabel(page, "Connect to MCP");
+  // fixed-wait: the press's dropped copy has had time to settle; a wrong write would show by now.
+  await page.waitForTimeout(1_000);
+  // clipboard-ready: the fixed wait above; the press that made no prompt left the clipboard as it was.
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("before the press");
   const failed = await dot(page);
   expect(failed.color).not.toBe(off.color);
   expect(failed.color).toBe(await danger(page));

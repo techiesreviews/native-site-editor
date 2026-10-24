@@ -550,28 +550,22 @@ export function createAgentMenu(options: {
       await revoke();
       return;
     }
-    // The copy starts inside the press: browsers refuse one begun after the token's wait.
-    const slot = (copying = reserveCopy());
-    try {
+    await pressCopy(async (slot) => {
       // Wait for MCP copies this tab's prompt again while its token still waits; a tab without
       // it (another tab copied it, a reload, or it was revoked) copies a prompt of its own.
-      if (offered === "wait") await copyAgain();
+      if (offered === "wait") await copyAgain(slot);
       // Idle, or another tab receives with nothing connected: a new prompt from here.
-      else if (current === "idle" || elsewhere(current)) await start();
+      else if (current === "idle" || elsewhere(current)) await start(slot);
       else {
         // Off, or a problem (paused, lost, another site shown): turn on again for the open site.
         turnOff();
-        await turnOn();
+        await turnOn(slot);
       }
-    } finally {
-      // No prompt came of the press: the clipboard keeps what it held.
-      if (copying === slot) copying = undefined;
-      slot.skip();
-    }
+    });
   }
   // Connect to MCP while remote agents are off: an agent connected before
   // is used again (it may need resuming); otherwise a new prompt is made.
-  async function turnOn(task?: string) {
+  async function turnOn(slot: Copy, task?: string) {
     if (!options.repository() || changing) return;
     await turnOnAgents({
       start: () => { startRemote(); return activation; },
@@ -588,8 +582,8 @@ export function createAgentMenu(options: {
       // A token already waits (another tab's, another browser's, or this tab's own): Connect to MCP
       // still copies a prompt, this tab's own if it still waits, otherwise a new one.
       waits: now => offer(now as ReturnType<typeof state>) === "wait",
-      prompt: () => start(task),
-      copyAgain: () => copyAgain(task),
+      prompt: () => start(slot, task),
+      copyAgain: () => copyAgain(slot, task),
       // Still reconnecting (another tab of this browser holds the attempt, or it failed again): the
       // press made no prompt, so the dot shows a problem until the reconnect ends or the next press.
       stuck: () => { stuckOn = true; paint(); },
@@ -647,7 +641,7 @@ export function createAgentMenu(options: {
   }
   // A task the copied prompt asks for first (Start your site's Build it with an agent).
   let goal: string | undefined;
-  async function start(task?: string) {
+  async function start(slot: Copy, task?: string) {
     const repo = options.repository(), at = activation;
     if (!repo || changing) return;
     goal = task;
@@ -685,7 +679,7 @@ export function createAgentMenu(options: {
       changing = false;
       await readConnections();
       if (!live(at)) return;
-      await copyPrompt();
+      await copyPrompt(slot);
     } catch {
       changing = false;
       // With no connection of the site at all, remote agents go off; another tab's waiting
@@ -718,23 +712,20 @@ export function createAgentMenu(options: {
   }
   /** Wait for MCP: this tab's prompt again while its token still waits (read fresh: another tab
    * may have revoked it as unused), otherwise a prompt of its own. */
-  async function copyAgain(task = goal) {
+  async function copyAgain(slot: Copy, task = goal) {
     const at = activation, repo = options.repository();
     // Unread (failed or fenced out), the old list cannot prove the token still waits: a new prompt.
     const read = await readConnections(true);
     if (!live(at) || !sameRepository(options.repository(), repo)) return;
     const ours = read && token && liveGrants().some((grant) => grant.id === tokenId && unused(grant));
-    if (ours) { goal = task; await copyPrompt(); } else await start(task);
+    if (ours) { goal = task; await copyPrompt(slot); } else await start(slot, task);
   }
-  /** The copy the current press began, waiting for its prompt. */
-  let copying: ReturnType<typeof reserveCopy> | undefined;
-  async function copyPrompt() {
+  /** Puts this tab's prompt in the copy its press began. */
+  async function copyPrompt(slot: Copy) {
     const repo = options.repository();
     if (!token || !repo) return;
-    const text = connectionPrompt(`${location.origin}/mcp`, token, repo.fullName, goal), slot = copying;
-    copying = undefined;
     try {
-      await (slot ? slot.put(text) : navigator.clipboard.writeText(text));
+      await slot.put(connectionPrompt(`${location.origin}/mcp`, token, repo.fullName, goal));
       confirmOnButton("Copied");
     } catch {
       // Clipboard refused: nothing was copied, so the dot shows a problem until the next press.
@@ -847,9 +838,11 @@ export function createAgentMenu(options: {
      * Resolves to whether the prompt was copied.
      */
     async connect(task: string) {
-      if (state() === "waiting" && token) await copyAgain(task);
-      else if (!remote) await turnOn(task);
-      else await start(task);
+      await pressCopy(async (slot) => {
+        if (state() === "waiting" && token) await copyAgain(slot, task);
+        else if (!remote) await turnOn(slot, task);
+        else await start(slot, task);
+      });
       return Boolean(token);
     },
     /** Whether an agent is connected now. */
@@ -945,10 +938,17 @@ function forgetWatch() {
 
 /** A clipboard write begun now, inside the user's press (Safari refuses one begun after an await;
  * Chrome after a few seconds), that lands once `put` gives it the text; `skip` leaves the clipboard
- * as it was. Where a ClipboardItem cannot wait for its text, `put` writes the text then. */
+ * as it was. Settle matrix (each row has a spec in tests/native-save/native-mcp-menu.spec.ts):
+ * - put, write lands → Copied (the slow-server spec).
+ * - put, write refused or no ClipboardItem → `writeText` now: Copied, or the problem dot when it
+ *   is refused too (the refused-copy and no-ClipboardItem specs).
+ * - skip (token request failed, another site shown, owner paused) → the write is refused, the
+ *   clipboard keeps what it held (the failed-first-prompt and site-switch specs).
+ * - the press never settles: it does, as every agent API call ends by API_DEADLINE; until then
+ *   the write waits. */
 function reserveCopy() {
-  let give!: (text: string) => void, refuse!: () => void;
-  const text = new Promise<string>((resolve, reject) => { give = resolve; refuse = () => reject(new Error("Nothing to copy.")); });
+  let give!: (text: string) => void, refuse!: (reason?: unknown) => void;
+  const text = new Promise<string>((resolve, reject) => { give = resolve; refuse = reject; });
   const blob = text.then(value => new Blob([value], { type: "text/plain" }));
   blob.catch(() => undefined);
   let written: Promise<void> | undefined;
@@ -966,6 +966,12 @@ function reserveCopy() {
     },
     skip: () => refuse(),
   };
+}
+type Copy = ReturnType<typeof reserveCopy>;
+/** A press that may copy a prompt: its copy begins now and is dropped when no prompt came of it. */
+async function pressCopy(run: (slot: Copy) => Promise<void>) {
+  const slot = reserveCopy();
+  try { await run(slot); } finally { slot.skip(); }
 }
 
 // A line of at most `limit` characters, with … when cut.
