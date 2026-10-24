@@ -77,3 +77,12 @@ After the rebase onto dev (clean-up slice 29's three-state MCP menu): the spec's
 Review round 5: a folder of pages moved waits where the page open as it arrived goes (else its first page); the attempt limit has its own refusal; `AGENT_REVISION_MOVED` only for another commit, `AGENT_RELOADED` for a reload or version view. Tests: `tests/agent-text-commit.test.ts`, a branch that keeps opening refuses after 30 s with nothing kept (mock timers), a command switched under at every attempt stops after 5 with nothing kept, a folder move waits on the moved page open as it arrived (fails choosing the folder's first page); `tests/media-batch.test.ts`, a batch asked with no page open parks on the page it edits, or nowhere without one; the spec checks after every Undo that feature and the other site have nothing of it; the background site's port fixtures are one typed fake (`tests/fakes/background-site-ports.ts`, `satisfies BackgroundSitePorts`). Declined in round 5: setting `status: open` until the Grok second opinion (the builder contract sets `status: closed`; the slice runs Grok before landing).
 
 Checks (review round 5): `kit specs --affected` `RESULT: ok specs 165/165 passed` (green on a full run; round 4's `native-structure-inplace.spec.ts` fake-clock failure did not recur); `kit specs native-invisible-multiplayer-pages.spec.ts` `RESULT: ok specs 1/1 passed` (10 cells); `kit unit --affected` `RESULT: ok unit 2719/2719 (166 files)`; `npm run check` and `npm run lint` clean.
+
+### Follow-ups
+
+- Standards (P2): 92a834da:src/agent-site.ts:1075 — P2: In `applyStructural`, the `applied()` follow-up runs inside the `try`. If it throws after the step was kept (on show, this
+- Standards (P3): 92a834da:src/agent-site-host.ts:36 — P3: The pinned context's `exists` is `media.files().includes(path)`, so a folder never exists. `backgroundSite`'s `exists` 
+- Validation gaps (gap): Context built away (`agent-site-host.ts`): the ticket says an agent's context built away "carries its site's pages and outlines from the pin", but `tests/agent-
+- Validation gaps (gap): `applyStructural` when `applied()` throws: no test covers this. Test to add in `tests/agent-text-commit.test.ts`: `applied` throws once. Expect the call to reso
+- Validation gaps (gap): `createParkedSteps.adopt` when the history refuses the step: `recordHistoryAction` returns false for a read-only or unmounted editor, for example in a version v
+
