@@ -2,7 +2,7 @@
 title: "Fix Grok's second-opinion findings on invisible multiplayer part 2"
 type: task (AFK)
 status: open
-assignee:
+assignee: lead-36 (this session)
 builder: claude
 blocked_by: [34-invisible-multiplayer-pages-and-undo]
 ---
