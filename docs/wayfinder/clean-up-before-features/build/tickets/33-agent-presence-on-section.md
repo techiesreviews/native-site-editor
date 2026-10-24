@@ -78,4 +78,12 @@ Review decisions:
 - Validation gaps (gap): `tests/native-save/native-agent-presence.spec.ts`: during the held `place_media` change, have Lex delete an earlier section through Page Structure. Assert that 
 - Validation gaps (gap): `src/components/page-structure.ts:456` (re-marking a row when the tree is rebuilt): add a browser step during a held change that forces the tree to render again
 - Validation gaps (gap): The runtime's ordering: add a step that sends `agent-presence` to a fresh frame before its `theme` message. Assert that the box stays hidden until the theme arr
+- Spec (P2): 71a3402f:src/agent-site.ts:688 — P2: The section for a `write_file`/`edit_file` change comes from `minimalTextEdit`, which strips the common prefix and suffix. 
+- Spec (P2): 5bb1d7ce:src/agent-presence.ts:40 — P2: The node path is worked out once in `show()` and never again. For `remove_section`/`move_section`, `applyAdmitted` write
+- Spec (P2): cafe1646:docs/wayfinder/clean-up-before-features/build/tickets/33-agent-presence-on-section.md:4 — P2: The ticket says `status: closed`, but one decided-behavio
+- Spec (P2): cafe1646:docs/wayfinder/clean-up-before-features/build/tickets/33-agent-presence-on-section.md:72 — P2: Every entry in "### Follow-ups" (lines 72–80) is cut off
+- Standards (P3): cafe1646:docs/wayfinder/clean-up-before-features/build/tickets/33-agent-presence-on-section.md:62 — P3: The "Commits:" line lists `df8d4173`, `53fbe64a`, `32e6b
+- Validation gaps (gap): `tests/agent-presence.test.ts`: add `write_file` cases that insert a new `<section class="x">X</section>` (a) between `hero` and `about`, and (b) right after th
+- Validation gaps (gap): `tests/native-save/native-agent-presence.spec.ts`: record the frame (`recordFrame`) during a real MCP `remove_section` of the hero (`section: "1.0"`). Assert ev
+- Validation gaps (gap): `tests/agent-presence.test.ts`: in `presenceViews`, call `show("index.html", find)` with a `find` that reads the current source. Then change `sources["index.htm
 
