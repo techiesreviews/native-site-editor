@@ -114,16 +114,28 @@ const sectionId = z
   .regex(/^\d{1,4}(?:\.\d{1,4}){0,63}$/)
   .describe('A section id from get_page\'s outline, such as "1.2".');
 
-/** Registers each tool in the table's order; a row without a registration, or a registration without a row, throws. */
-export function registerInOrder<Name extends string>(names: readonly Name[], registrations: Map<Name, () => void>) {
-  const left = new Map(registrations);
-  for (const name of names) {
-    const add = left.get(name);
-    if (!add) throw new Error(`The MCP tool ${name} has no registration.`);
-    add();
-    left.delete(name);
-  }
-  if (left.size) throw new Error(`MCP tools outside the tool table: ${[...left.keys()].join(", ")}.`);
+/**
+ * The MCP tools' registrations, held until `inOrder` registers them in the table's order. A tool
+ * registered twice, a row without a registration, or a registration without a row throws.
+ */
+export function toolRegistrations<Name extends string>() {
+  const pending = new Map<Name, () => void>();
+  return {
+    add(name: Name, register: () => void) {
+      if (pending.has(name)) throw new Error(`The MCP tool ${name} is registered twice.`);
+      pending.set(name, register);
+    },
+    inOrder(names: readonly Name[]) {
+      const left = new Map(pending);
+      for (const name of names) {
+        const register = left.get(name);
+        if (!register) throw new Error(`The MCP tool ${name} has no registration.`);
+        register();
+        left.delete(name);
+      }
+      if (left.size) throw new Error(`MCP tools outside the tool table: ${[...left.keys()].join(", ")}.`);
+    },
+  };
 }
 
 export function createSiteServer(connection: Connection, env: Env, origin = "https://editor.techies.tools", exchange: Exchange = {}) {
@@ -134,9 +146,9 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     { instructions: siteInstructions },
   );
   // Each tool's description, schema and handler; the tool table gives its order and hints.
-  const registrations = new Map<McpToolName, () => void>();
+  const registrations = toolRegistrations<McpToolName>();
   function register<S extends z.ZodObject>(name: McpToolName, config: { description: string; inputSchema: S }, run: ToolCallback<S>) {
-    registrations.set(name, () => server.registerTool(name, { ...config, annotations: hints(name) }, run));
+    registrations.add(name, () => server.registerTool(name, { ...config, annotations: hints(name) }, run));
   }
 
   async function dispatch(command: AgentRead | AgentEdit | AgentMedia | AgentRequests | { operation: "status"; id: string; grantId: string; generation?: number }) {
@@ -814,7 +826,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     },
   );
 
-  registerInOrder(mcpTools, registrations);
+  registrations.inOrder(mcpTools);
 
   // ---- Resources and prompts ----
 
