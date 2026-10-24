@@ -118,31 +118,37 @@ after(() => {
 });
 const SCOPE = { account: "lex", repoId: 1, repo: "lex/site", branch: "main" } satisfies DraftScope;
 
-function commandsFixture(overrides: Partial<AgentCommandPorts> = {}) {
+type PagesAndFilesPort = AgentCommandPorts["pagesAndFiles"];
+/** Overrides laid on by descriptor, not spread or Object.assign: either would read a getter once, as a copy. */
+const withPorts = <T extends object>(base: T, overrides: Partial<T>): T => Object.defineProperties(base, Object.getOwnPropertyDescriptors(overrides));
+
+function commandsFixture(overrides: Partial<AgentCommandPorts> = {}, files: Partial<PagesAndFilesPort> = {}) {
   const appStore = createAppStore(createDraftStore());
   const host = { info: signedOut as SessionInfo, pageStructure: undefined as AgentCommandPorts["pageStructure"],
     nativePreview: undefined as AgentCommandPorts["nativePreview"] };
   const calls: string[] = [];
+  const pagesAndFiles = {
+    nativeResyncDone: undefined as PagesAndFilesPort["nativeResyncDone"], pageActions: undefined,
+    pagesController: { renderTree: () => { calls.push("tree"); } }, filesTreeController: { refresh: () => { calls.push("files"); } },
+    loadPagesActions: unused, loadFileOps: unused, pagePorts: unused, filePorts: unused, branchText: unused, pathNow: unused, treeState: unused,
+    branchPathProblem: unused, afterFileChanges: () => { calls.push("after"); },
+  } satisfies PagesAndFilesPort;
   const ports = {
     appStore, runtime: unusedPort("runtime"), workspaceSession: unusedPort("workspaceSession"), guardedEdits: unusedPort("guardedEdits"),
     editorWorkspace: unusedPort("editorWorkspace"), versions: unusedPort("versions"), finishedWork: unusedPort("finishedWork"),
     parkedSteps: unusedPort("parkedSteps"), repositoryIndex: unusedPort("repositoryIndex"), mediaController: unusedPort("mediaController"),
     mediaPorts: unusedPort("mediaPorts"), blockMoves: unusedPort("blockMoves"), agentPresence: unusedPort("agentPresence"),
-    pagesAndFiles: unusedPort("pagesAndFiles"), api: unused,
+    pagesAndFiles: withPorts(pagesAndFiles, files), api: unused,
     editorModule: { isMounted: () => false, getMountedSource: unused, dropDraft: unused, forgetDraftModel: unused, prepareHistorySources: unused,
       flushAgentTyping: unused, applyAgentDraft: async command => { calls.push(`draft ${command.path}`); } },
-    pagesController: { renderTree: () => { calls.push("tree"); } }, filesTreeController: { refresh: () => { calls.push("files"); } },
     get info() { return host.info; }, componentTools: undefined,
     get pageStructure() { return host.pageStructure; }, get nativePreview() { return host.nativePreview; },
-    loadAgentSite: unused, loadPagesActions: unused, loadFileOps: unused, draftScope: () => undefined, shownScope: () => undefined,
-    branchText: unused, pathNow: unused, treeState: unused, branchPathProblem: unused, afterFileChanges: unused, restoreFile: unused,
+    loadAgentSite: unused, draftScope: () => undefined, shownScope: () => undefined, restoreFile: unused,
     openNewDraft: async draft => { calls.push(`open ${draft.account} ${draft.path}`); }, nativeComponentLoaderPlan: unused,
-    writeNativePageMeta: async () => undefined, nativeSectionChoices: () => [],
-    pagePorts: unused, filePorts: unused, componentPorts: unused, refreshNativeRoutes: () => { calls.push("routes"); },
-    updateCurrentPageLabel: () => { calls.push("label"); }, updateAgentContext: () => { calls.push("context"); },
+    writeNativePageMeta: async () => undefined, nativeSectionChoices: () => [], componentPorts: unused,
+    refreshNativeRoutes: () => { calls.push("routes"); }, updateCurrentPageLabel: () => { calls.push("label"); }, updateAgentContext: () => { calls.push("context"); },
   } satisfies AgentCommandPorts;
-  // Assigned onto the fixture, not spread: a spread would read its getters once, as copies.
-  return { commands: createAgentCommands(Object.assign(ports, overrides)), appStore, host, calls };
+  return { commands: createAgentCommands(withPorts(ports, overrides)), appStore, host, calls };
 }
 
 const command = (fields: Pick<AgentCommand, "id" | "operation" | "path" | "content"> & Partial<AgentCommand>) =>
@@ -188,14 +194,15 @@ test("an agent reads the preview and Page Structure made after its commands' hos
   assert.deepEqual(f.calls, ["meta", "tree", "label", "context"]);
 });
 
+const loaded = { loadPagesActions: () => import("../src/controllers/pages-controller"), loadFileOps: () => import("../src/controllers/file-operation-checks") } satisfies Partial<PagesAndFilesPort>;
+
 test("an agent's command is acting while it runs, and not once it resolves or rejects", async () => {
   const seen: boolean[] = [];
   let fail = false;
   const f = commandsFixture({
     loadAgentSite: async () => ({ ...agentSite, pinnedMedia: () => true, pinnedMediaActions: actions => actions, pinnedMediaAway: () => undefined,
       applySiteCommand: async () => { seen.push(f.commands.acting()); await Promise.resolve(); if (fail) throw new Error("refused"); return { message: "done" }; } }),
-    loadPagesActions: () => import("../src/controllers/pages-controller"), loadFileOps: () => import("../src/controllers/file-operation-checks"),
-  });
+  }, loaded);
   const media = command({ id: "m1", operation: "list_media", path: "index.html", content: "" });
   assert.deepEqual(await f.commands.apply(media), { message: "done" });
   assert.equal(f.commands.acting(), false);
@@ -213,7 +220,7 @@ test("a reload after an agent's write reads the open page again on the stamp it 
   const stamps: SessionStamp[] = [], restored: [string, SessionStamp][] = [];
   const f = commandsFixture({
     draftScope: () => SCOPE,
-    workspaceSession: { begin: () => { const stamp = { holds: () => holds, changed: () => undefined } satisfies SessionStamp; stamps.push(stamp); return stamp; },
+    workspaceSession: { begin: () => { const stamp = { load: 1, scope: githubScope(SCOPE), holds: () => holds, changed: () => undefined } satisfies SessionStamp; stamps.push(stamp); return stamp; },
       current: unused, visits: unused },
     editorModule: { isMounted: () => true, getMountedSource: () => "<p>Old</p>", dropDraft: unused, forgetDraftModel: unused,
       prepareHistorySources: unused, flushAgentTyping: unused, applyAgentDraft: unused },
@@ -236,9 +243,8 @@ function resyncFixture(resync: () => Promise<void>) {
   let pending: Promise<void> | undefined;
   const f = commandsFixture({
     workspaceSession: session, draftScope: () => SCOPE,
-    pagesAndFiles: { get nativeResyncDone() { return pending ??= resync(); }, pageActions: undefined },
     runtime: unusedPort<AgentCommandPorts["runtime"]>("runtime", { source: () => "<p>Home</p>" }),
-  });
+  }, { get nativeResyncDone() { return pending ??= resync(); } });
   return { ...f, switchBranch: () => session.next(githubScope({ ...SCOPE, branch: "dev" })) };
 }
 
@@ -261,6 +267,69 @@ test("an agent's read, switched to another branch at any wait of the resync, is 
     return run;
   }, run => { run.f.switchBranch(); }, run => {
     assert.equal(run.outcome, SWITCHED);
+  });
+  assert.ok(count >= 1);
+});
+
+// Ticket 23: an agent's command run on show is proved by the branch and the revision it was read on.
+test("an agent's command on show is refused once its branch or revision moved, and runs acting otherwise", async () => {
+  const seen: boolean[] = [];
+  const session = createWorkspaceSession();
+  session.next(githubScope(SCOPE));
+  const f = commandsFixture({
+    workspaceSession: session, draftScope: () => SCOPE, versions: { view: undefined },
+    // Its finishing elsewhere runs as it is: read on no other branch (no read files), it finishes nowhere else.
+    finishedWork: { add: unused, agent: (_scope, _command, _draft, run) => run },
+    loadAgentSite: async () => ({ ...agentSite, applySiteCommand: async () => { seen.push(f.commands.acting()); return { message: "done" }; } }),
+  }, { ...loaded, pagePorts: () => unusedPort("pagePorts"), filePorts: () => unusedPort("filePorts") });
+  const read = command({ id: "s1", operation: "list_media", path: "index.html", content: "" });
+  f.appStore.snapshot.value = snapshotAt("c2");
+  await assert.rejects(f.commands.apply(read), { message: "This branch is at another revision now than when the change was read. Read the site again." });
+  await assert.rejects(f.commands.apply({ ...read, branch: "dev" }), { message: "The editor changed repository or branch." });
+  f.appStore.snapshot.value = snapshotAt("c1");
+  assert.deepEqual(await f.commands.apply(read), { message: "done" });
+  assert.deepEqual(seen, [true]);
+});
+
+// An agent's first file in a repository that is not a native site yet: a new draft, all or nothing (src/new-drafts.ts).
+function preNativeFixture(checkPath: (path: string) => Promise<string | undefined>) {
+  draftStore().remove(SCOPE, "notes.txt");
+  const session = createWorkspaceSession();
+  session.next(githubScope(SCOPE));
+  const f = commandsFixture({
+    workspaceSession: session, draftScope: () => SCOPE, versions: { view: undefined },
+    runtime: unusedPort<AgentCommandPorts["runtime"]>("runtime", { site: undefined, engaged: false }),
+  }, { pathNow: () => undefined, treeState: () => unusedPort("treeState"), branchPathProblem: checkPath });
+  f.appStore.repository.value = repository;
+  f.appStore.snapshot.value = snapshotAt("c1");
+  return { ...f, switchBranch: () => session.next(githubScope({ ...SCOPE, branch: "dev" })) };
+}
+
+test("an agent's new file before the site is native is saved as a draft, refused once the branch switched while it loaded", async (t) => {
+  t.after(() => draftStore().remove(SCOPE, "notes.txt"));
+  const f = preNativeFixture(async () => undefined);
+  assert.equal(await f.commands.actions.writeDraft("notes.txt", "Hi", true), undefined);
+  assert.equal(draftStore().get(SCOPE, "notes.txt")?.content, "Hi");
+  assert.deepEqual(f.calls, ["after"]);
+  const g = preNativeFixture(async () => undefined);
+  const writing = g.commands.actions.writeDraft("notes.txt", "Hi", true);
+  g.switchBranch();
+  assert.equal(await writing, "The repository changed meanwhile. Try again.");
+  assert.equal(draftStore().get(SCOPE, "notes.txt"), undefined);
+  assert.deepEqual(g.calls, []);
+});
+
+test("an agent's new file before the site is native, switched to another branch at any wait, saves nothing", async (t) => {
+  t.after(() => draftStore().remove(SCOPE, "notes.txt"));
+  const count = await forEachAwait(race => {
+    const f = preNativeFixture(race.port("checkPath", async () => undefined));
+    const run = { f, outcome: undefined as string | undefined, done: Promise.resolve() };
+    run.done = f.commands.actions.writeDraft("notes.txt", "Hi", true).then(outcome => { run.outcome = outcome; });
+    return run;
+  }, run => { run.f.switchBranch(); }, run => {
+    assert.match(run.outcome ?? "", /^The repository (or branch )?changed( meanwhile)?\. Try again\.$/);
+    assert.equal(draftStore().get(SCOPE, "notes.txt"), undefined);
+    assert.deepEqual(run.f.calls, []);
   });
   assert.ok(count >= 1);
 });

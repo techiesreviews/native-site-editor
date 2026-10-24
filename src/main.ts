@@ -2568,7 +2568,7 @@ const pagesAndFiles = createPagesAndFilesHost({
   get siteActions() { return siteActions; }, clearPendingTitles: () => { pendingNativePageTitles = undefined; },
   get fileGeneration() { return fileGeneration; }, set fileGeneration(value) { fileGeneration = value; },
 });
-const { loadPagesActions, loadFileOps, pagePorts, filePorts, pagesController, savePublish, filesTreeController, mountExplorer, ensureExplorer,
+const { loadPagesActions, loadFileOps, pagesController, savePublish, filesTreeController, mountExplorer, ensureExplorer,
   openCreate, treeState, pathNow, nativePathExists, nativeSiteReadForCreate, branchText, branchPathProblem, discardedNewPages, afterFileChanges,
   openAfter, undoFileChanges, discardFileChange } = pagesAndFiles;
 
@@ -2667,10 +2667,8 @@ const agentSiteHost = createAgentSiteHost({
 // By value: consts declared above and hoisted functions; `let` state goes in as getters (tests/main-ts-ceiling.test.ts).
 const agentCommands = createAgentCommands({
   appStore, runtime, workspaceSession, guardedEdits, editorModule, editorWorkspace, versions, finishedWork, parkedSteps, repositoryIndex,
-  mediaController, mediaPorts, blockMoves, agentPresence, pagesAndFiles, pagesController, filesTreeController, api, loadAgentSite, loadPagesActions,
-  loadFileOps, draftScope, shownScope, branchText, pathNow, treeState, branchPathProblem, afterFileChanges, openNewDraft,
-  nativeComponentLoaderPlan, writeNativePageMeta, nativeSectionChoices, pagePorts, filePorts, componentPorts, refreshNativeRoutes,
-  updateCurrentPageLabel, updateAgentContext,
+  mediaController, mediaPorts, blockMoves, agentPresence, pagesAndFiles, api, loadAgentSite, draftScope, shownScope, openNewDraft,
+  nativeComponentLoaderPlan, writeNativePageMeta, nativeSectionChoices, componentPorts, refreshNativeRoutes, updateCurrentPageLabel, updateAgentContext,
   // Declared further down: read at call time.
   restoreFile: (...args) => restoreFile(...args),
   get info() { return info; }, get componentTools() { return componentTools; }, get pageStructure() { return pageStructure; },
