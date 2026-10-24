@@ -15,6 +15,7 @@ import { isNewDraft, newDraftPaths } from "../shared/site-overlay";
 import { NATIVE_CONFIG_PATH, minimalTextEdit, nativeComponentCssPath, nativePageStylesheets, nativeSiteSettings, type NativeSite } from "../shared/native-project";
 import { agentMediaArgsProblem } from "../shared/agent-media-args";
 import { mediaChanges, type MediaTool } from "../shared/agent-media";
+import { isAtomicOperation } from "../shared/agent-tool-table";
 import { isMediaUploadWrite, OUTSIDE_MEDIA_REFUSED, AGENT_TEXT_LIMIT, INSPECTION_LIMIT, isPreviewablePicture, picturePreviewRefusal, REQUEST_HTML_LIMIT, outlineId, parseOutlineId, textBytes, textHash, type AgentCommand, type AgentElement } from "../shared/agent";
 import type { AgentOutlineSection, AgentPageOutline, AgentSiteContext, EditorContext } from "../shared/types";
 import { draftKey, type DraftScope, type DraftStore, type SavedDraft } from "./drafts";
@@ -47,9 +48,9 @@ export interface AgentStructuralFactories {
   withPageField: typeof withPageField;
 }
 
-/** Only these commands enter the draft/receipt transaction. Media has its own admission in ticket 08. */
+/** Only the table's atomic commands enter the draft/receipt transaction. Media has its own admission in ticket 08. */
 export function atomicAgentCommand(command: AgentCommand) {
-  return ["update_active_draft", "create_file_draft", "write_file", "create_page", "set_page_details", "make_component", "add_section", "move_section", "remove_section", "move_file", "delete_file"].includes(command.operation);
+  return isAtomicOperation(command.operation);
 }
 
 // The workspace keeps one dispatcher; command listeners live only as long as their history step.
@@ -857,6 +858,8 @@ export async function applySiteCommand(actions: AgentSiteActions, command: Agent
       };
     }
   }
+  // Every table operation has its case above; only the Astro-era ones, made write_file first, are left.
+  command.operation satisfies "update_active_draft" | "create_file_draft";
   throw new Error("This editor cannot apply that change. Reload it.");
 }
 

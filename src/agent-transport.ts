@@ -1,6 +1,7 @@
 import type { AgentCommand } from "../shared/agent";
 import type { AgentEdit, AgentStatus } from "../shared/agent-edit";
-import { mediaChanges, mediaTools, type AgentMedia } from "../shared/agent-media";
+import { mediaChanges, type AgentMedia } from "../shared/agent-media";
+import { agentToolsOn, isAgentOperation } from "../shared/agent-tool-table";
 import type { AgentRead, AgentReadResult } from "../shared/agent-read";
 import { requestTools, type AgentRequests } from "../shared/agent-requests";
 import { payloadIdentity, workspaceKey, type AgentWorkspace, type JsonValue } from "../shared/agent-command";
@@ -19,7 +20,8 @@ interface State { mode: Mode; message?: string; closed?: boolean; resetAt?: numb
 interface Scope { workspace: AgentWorkspace; tabId: string; generation: number }
 interface Result { state: "applied" | "conflict" | "unknown"; message: string; result?: AgentCommand["result"]; operationId: string }
 type Socket = Pick<WebSocket, "readyState" | "send" | "close" | "addEventListener">;
-const operations = new Set(["update_active_draft", "create_file_draft", "write_file", "create_page", "set_page_details", "add_section", "make_component", "move_section", "remove_section", "move_file", "delete_file", "open_page", "inspect_preview", "list_media", "preview_media", "improve_images", "loop_video", "video_still", "write_subtitles", "frame_image", "place_media", "describe_media", "change_collection", "adding_settings", "remove_media", "keep_media", "restore_media", "replace_media"]);
+// What the tab admits, by the tool table (shared/agent-tool-table.ts): reads and Media commands by tool, commands by operation.
+const readTools: readonly string[] = agentToolsOn("read"), mediaTools: readonly string[] = agentToolsOn("media");
 type Recovery = ReturnType<typeof browserAgentRecovery>;
 interface Registry {
   read: () => { tabId: string; generation: number } | undefined;
@@ -201,7 +203,7 @@ export function createLiveTransport(options: Options) {
         const editing = read.operation === "edit" || read.operation === "status" || read.operation === "media";
         if (typeof value.id !== "string" || !value.id || !matches(value) || !valid() || (editing ? (typeof read.id !== "string" || !/^[\w.:-]{1,128}$/.test(read.id) || typeof read.grantId !== "string" || !read.grantId ||
               (read.operation === "edit" || read.operation === "media") && (!read.args || typeof read.args !== "object" || Array.isArray(read.args) || !Number.isFinite(read.createdAt))) : (!read.args || typeof read.args !== "object" || Array.isArray(read.args) ||
-            !["get_site", "list_files", "read_file", "export_site", "get_page", "get_selection"].includes(read.tool) ||
+            !readTools.includes(read.tool) ||
             (read.tool === "read_file" && (typeof read.args.path !== "string" || !read.args.path || read.args.path.length > 1024)) ||
             (read.tool === "get_page" && (typeof read.args.page !== "string" || !read.args.page || read.args.page.length > 1024)) ||
             (read.args.folder !== undefined && (typeof read.args.folder !== "string" || read.args.folder.length > 1024)) ||
@@ -230,7 +232,7 @@ export function createLiveTransport(options: Options) {
     let result: Result;
     if (!matches(value) || !present() || !handshaken || state.mode !== "live")
       result = refuse("This tab no longer receives agent changes for that workspace. Read the site again.");
-    else if (typeof value.id !== "string" || !value.id || !incoming || typeof incoming !== "object" || !operationId || typeof incoming.operation !== "string" || !operations.has(incoming.operation) ||
+    else if (typeof value.id !== "string" || !value.id || !incoming || typeof incoming !== "object" || !operationId || !isAgentOperation(incoming.operation) ||
       typeof incoming.path !== "string" || typeof incoming.content !== "string" || typeof incoming.commit !== "string" ||
       incoming.state !== "pending" || !Number.isFinite(incoming.createdAt) || typeof incoming.grantId !== "string" || !incoming.grantId ||
       !sameBranch({ repoId: incoming.repoId, branch: incoming.branch ?? "" }, workspace) ||
@@ -339,7 +341,7 @@ export function createLiveTransport(options: Options) {
           const incoming = value.command as { id?: string; grantId?: string; operation?: string; tool?: AgentMedia["tool"]; args?: AgentCommand["args"] } | undefined;
           const mutation = matches(value) && incoming && typeof incoming.id === "string" && typeof incoming.grantId === "string" &&
             (incoming.operation === "edit" || incoming.operation === "media" && mediaChanges(incoming.tool!, incoming.args ?? {}) ||
-              operations.has(incoming.operation ?? ""));
+              isAgentOperation(incoming.operation));
           const abort = () => {
             // The same IndexedDB stores serialize this tombstone against the eventual draft + receipt commit.
             if (mutation) void records.cancel(workspace, incoming.id!, incoming.grantId!, { live: true }).catch(() => undefined);

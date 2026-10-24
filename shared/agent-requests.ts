@@ -9,8 +9,9 @@
 // request waits for agents again, returned once more to every connection.
 // A request belongs to the repository and branch it was asked on: a
 // connection sees only the ones of the workspace it is pinned to.
-const inWorkspace = (request: AgentRequest, action: any) =>
+const inWorkspace = (request: AgentRequest, action: Workspace) =>
   request.repoId === action.repoId && request.branch !== undefined && request.branch === action.branch;
+import { agentToolsOn, type AgentToolOn } from "./agent-tool-table";
 import {
   OPEN_REQUESTS_LIMIT,
   REQUEST_TEXT_LIMIT,
@@ -29,6 +30,17 @@ export const THREAD_TEXT_LIMIT = 8000;
 const KEPT = 100;
 const RETURNED_TO = 20;
 export const requestIdPattern = /^req-[\w-]{1,64}$/;
+
+/** The workspace a connection's request action is pinned to. */
+interface Workspace { repoId?: number; branch?: string }
+/** What the tab does to its requests: the user asks, answers or dismisses; an agent takes, reads or replies. */
+type RequestAction =
+  | { type: "ask"; request: AgentRequest }
+  | { type: "take-requests"; grantId?: string; all?: boolean } & Workspace
+  | { type: "request"; id?: string } & Workspace
+  | { type: "reply"; id?: string; status?: string; message?: string; requestIds?: unknown } & Workspace
+  | { type: "answer"; id?: string; text?: string }
+  | { type: "dismiss"; id?: string };
 
 
 // A message added to a request's thread, which keeps its first message (what
@@ -64,10 +76,10 @@ export function requestForAgent(request: AgentRequest) {
  * One request action on the browser's list. Returns the list to store
  * (unchanged when nothing changed) and the answer.
  */
-export function requestOperation(list: AgentRequest[], action: any): { list: AgentRequest[]; changed: boolean; result: unknown } {
-  const type = action?.type;
+export function requestOperation(list: AgentRequest[], action: RequestAction): { list: AgentRequest[]; changed: boolean; result: unknown } {
+  const { type } = action;
   if (type === "ask") {
-    const request = action.request as AgentRequest;
+    const { request } = action;
     if (list.filter(waiting).length >= OPEN_REQUESTS_LIMIT)
       throw new HttpError(429, `${OPEN_REQUESTS_LIMIT} requests are waiting for an agent already. Dismiss some first.`);
     const next = [...list, request];
@@ -94,7 +106,7 @@ export function requestOperation(list: AgentRequest[], action: any): { list: Age
     }
     return { list, changed: taken.length > 0, result: { requests: taken } };
   }
-  const request = list.find((item) => item.id === action?.id);
+  const request = list.find((item) => item.id === action.id);
   if (type === "request") {
     if (!request || !inWorkspace(request, action)) throw new HttpError(404, "No such request in the site and branch this connection works on.");
     return { list, changed: false, result: request };
@@ -142,7 +154,7 @@ export function requestOperation(list: AgentRequest[], action: any): { list: Age
 
 /** The request tools as one relay command to the receiving tab. `waitMs` (wait only) is
  * how long the agent will wait (0 answers at once); the tab holds it until a request arrives. */
-export type AgentRequestTool = "wait_for_requests" | "reply_to_request" | "get_request";
+export type AgentRequestTool = AgentToolOn<"requests">;
 export interface AgentRequests {
   operation: "requests";
   tool: AgentRequestTool;
@@ -151,4 +163,4 @@ export interface AgentRequests {
   generation?: number;
   waitMs?: number;
 }
-export const requestTools: readonly AgentRequestTool[] = ["wait_for_requests", "reply_to_request", "get_request"];
+export const requestTools: readonly AgentRequestTool[] = agentToolsOn("requests");

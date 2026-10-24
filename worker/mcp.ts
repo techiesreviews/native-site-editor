@@ -6,7 +6,7 @@ import { agentControls, AGENTS_PAUSED, WATCH_PAUSED } from "./agent-controls";
 // the receiving browser, which prepares and applies them with the editor's own
 // code, so it lands as an ordinary browser draft: the preview updates live,
 // and the user can undo it, discard it, and saves it to GitHub themselves.
-import { McpServer, createMcpHandler, classifyInboundRequest } from "@modelcontextprotocol/server";
+import { McpServer, createMcpHandler, classifyInboundRequest, type ToolCallback } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { parseOnlineVideoAddress } from "../shared/online-video-address";
 import type { authenticateAgent } from "./agent-context";
@@ -37,11 +37,13 @@ import { checkContent, type AgentEdit, type AgentEditArgsMap, type AgentEditTool
 import { AgentRelay, relayObjectName, WAITS_PER_SITE } from "./agent-relay";
 import type { AgentRead, AgentReadResult } from "../shared/agent-read";
 import { mediaChanges, type AgentMedia } from "../shared/agent-media";
+import { agentTools, mcpTools, type McpToolName } from "../shared/agent-tool-table";
 
 /** A stable refusal before authentication; tool callers can show this result directly. */
-export function pausedMcp(body: any) {
-  const tool = body?.method === "tools/call";
-  return Response.json({ jsonrpc: "2.0", id: body?.id ?? null, ...(tool
+export function pausedMcp(body: unknown) {
+  const message = (body ?? {}) as { method?: unknown; id?: unknown };
+  const tool = message.method === "tools/call";
+  return Response.json({ jsonrpc: "2.0", id: message.id ?? null, ...(tool
     ? { result: { isError: true, content: [{ type: "text", text: AGENTS_PAUSED }], code: "agents-paused" } }
     : { error: { code: -32003, message: AGENTS_PAUSED, data: { code: "agents-paused" } } }) }, {
     status: tool ? 200 : 403, headers: { "Cache-Control": "no-store" },
@@ -81,6 +83,12 @@ const editing = {
   openWorldHint: false,
 };
 const removing = { ...editing, destructiveHint: true };
+/** A tool's MCP hints, from its row in the tool table. */
+function hints(name: McpToolName) {
+  const row: { effect: "read" | "edit" | "remove"; idempotent?: false } = agentTools[name];
+  const hint = row.effect === "read" ? readOnly : row.effect === "remove" ? removing : editing;
+  return row.idempotent === false ? { ...hint, idempotentHint: false } : hint;
+}
 
 const requestId = z
   .string()
@@ -113,6 +121,11 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     { name: "native-site-editor", version: "1.0.0" },
     { instructions: siteInstructions },
   );
+  // Each tool's description, schema and handler; the tool table gives its order and hints.
+  const registrations = new Map<McpToolName, () => void>();
+  function register<S extends z.ZodObject>(name: McpToolName, config: { description: string; inputSchema: S }, run: ToolCallback<S>) {
+    registrations.set(name, () => server.registerTool(name, { ...config, annotations: hints(name) }, run));
+  }
 
   async function dispatch(command: AgentRead | AgentEdit | AgentMedia | AgentRequests | { operation: "status"; id: string; grantId: string; generation?: number }) {
     if (!agentControls(env).relay) return { ok: true, result: { ok: false as const, message: AGENTS_PAUSED } };
@@ -237,17 +250,16 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
 
   // ---- Reading ----
 
-  server.registerTool(
+  register(
     "get_site",
     {
       description:
         "Start here. The site as the user's editor tab shows it: repository, branch, the open file and page, the element selected in the preview (get_selection gives all of it), how many requests the user asked in the editor wait for an agent (openRequests; wait_for_requests returns them), the site's name and address (.editor/config.json), pages as a tree by URL (file, and the title and description from each page's <head>), the not-found page (404.html), components (template, stylesheet, whether it is a section component that can go between page sections, its slots: the parts a page fills, and its variants; how components work is the Components chapter of the native-site://conventions resource), the stylesheets the pages link with the files they @import, and unsaved draft changes.",
       inputSchema: z.object({}),
-      annotations: readOnly,
     },
     async () => read({ operation: "read", tool: "get_site", args: {} }),
   );
-  server.registerTool(
+  register(
     "list_files",
     {
       description:
@@ -255,21 +267,19 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
       inputSchema: z.object({
         folder: z.string().max(1024).optional().describe('Only files under this folder, such as "components".'),
       }),
-      annotations: readOnly,
     },
     async ({ folder }) => read({ operation: "read", tool: "list_files", args: { folder } }),
   );
-  server.registerTool(
+  register(
     "read_file",
     {
       description:
         "Read a repository text file as the editor has it: the user's unsaved draft when there is one, else GitHub at the revision the editor shows. Returns its content hash, which edit_file and write_file need.",
       inputSchema: z.object({ path: z.string().min(1).max(1024) }),
-      annotations: readOnly,
     },
     async ({ path }) => read({ operation: "read", tool: "read_file", args: { path } }),
   );
-  server.registerTool(
+  register(
     "export_site",
     {
       description:
@@ -277,11 +287,10 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
       inputSchema: z.object({
         folder: z.string().max(1024).optional().describe('Only files under this folder, such as "components".'),
       }),
-      annotations: readOnly,
     },
     async ({ folder }) => read({ operation: "read", tool: "export_site", args: { folder } }),
   );
-  server.registerTool(
+  register(
     "get_page",
     {
       description:
@@ -290,17 +299,15 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
         page: pageRef,
         source: z.boolean().optional().describe("Include the page's HTML source (default true)."),
       }),
-      annotations: readOnly,
     },
     async ({ page, source }) => read({ operation: "read", tool: "get_page", args: { page, source } }),
   );
-  server.registerTool(
+  register(
     "get_command_status",
     {
       description:
         "Look up a change in the receiving browser: its receipt means applied; a cancellation tombstone means cancelled before commit. Otherwise the outcome is unknown; never replay automatically.",
       inputSchema: z.object({ requestId: z.string().min(1).max(128) }),
-      annotations: readOnly,
     },
     async ({ requestId }) => {
       const outcome = await dispatch({ operation: "status", id: requestId, grantId: connection.id, generation: grant.generation });
@@ -313,7 +320,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
 
   // ---- Files ----
 
-  server.registerTool(
+  register(
     "edit_file",
     {
       description:
@@ -334,7 +341,6 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
         requestId,
         waitSeconds,
       }),
-      annotations: editing,
     },
     async ({ path, expectedHash, edits, requestId, waitSeconds }) => {
       const problem = writablePathProblem(path);
@@ -342,7 +348,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
       return edit("edit_file", { path, expectedHash, edits }, requestId, waitSeconds);
     },
   );
-  server.registerTool(
+  register(
     "write_file",
     {
       description:
@@ -354,7 +360,6 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
         requestId,
         waitSeconds,
       }),
-      annotations: editing,
     },
     async ({ path, content, expectedHash, requestId, waitSeconds }) => {
       const problem = writablePathProblem(path);
@@ -364,7 +369,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
       return edit("write_file", { path, content, expectedHash }, requestId, waitSeconds);
     },
   );
-  server.registerTool(
+  register(
     "move_file",
     {
       description:
@@ -376,7 +381,6 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
         requestId,
         waitSeconds,
       }),
-      annotations: editing,
     },
     async ({ path, to, keepOldUrl, requestId, waitSeconds }) => {
       const problem = writablePathProblem(path) ?? writablePathProblem(to);
@@ -385,13 +389,12 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
       return edit("move_file", { path, to, keepOldUrl }, requestId, waitSeconds);
     },
   );
-  server.registerTool(
+  register(
     "delete_file",
     {
       description:
         "Delete a file or folder, as the editor's Files tab does. Media families go to Recently removed; used files are refused with their mentions, and Always keep families are never removed by agents. The deletion is an unsaved change the user can restore or save.",
       inputSchema: z.object({ path: z.string().min(1).max(1024), requestId, waitSeconds }),
-      annotations: removing,
     },
     async ({ path, requestId, waitSeconds }) => {
       const problem = writablePathProblem(path);
@@ -402,7 +405,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
 
   // ---- Pages ----
 
-  server.registerTool(
+  register(
     "create_page",
     {
       description:
@@ -418,7 +421,6 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
         requestId,
         waitSeconds,
       }),
-      annotations: editing,
     },
     async ({ title, parent, slug, requestId, waitSeconds }) => {
       const problem = slug === undefined ? undefined : pageAddressProblem(slug);
@@ -426,7 +428,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
       return edit("create_page", { title, parent, slug }, requestId, waitSeconds);
     },
   );
-  server.registerTool(
+  register(
     "set_page_details",
     {
       description:
@@ -438,26 +440,24 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
         requestId,
         waitSeconds,
       }),
-      annotations: editing,
     },
     async ({ page: ref, title, description, requestId, waitSeconds }) => {
       if (title === undefined && description === undefined) return failure("Give a title, a description, or both.");
       return edit("set_page_details", { page: ref, title, description }, requestId, waitSeconds);
     },
   );
-  server.registerTool(
+  register(
     "open_page",
     {
       description: "Show a page in the user's editor (preview and source), or open any file in the code editor.",
       inputSchema: z.object({ page: pageRef, requestId, waitSeconds }),
-      annotations: { ...editing, readOnlyHint: true },
     },
     async ({ page: ref, requestId, waitSeconds }) => {
       return edit("open_page", { page: ref }, requestId, waitSeconds);
     },
   );
 
-  server.registerTool(
+  register(
     "inspect_preview",
     {
       description:
@@ -470,7 +470,6 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
         requestId,
         waitSeconds,
       }),
-      annotations: readOnly,
     },
     async ({ page: ref, element, selector, limit, requestId, waitSeconds }) => {
       if (element !== undefined && selector !== undefined) return failure("Give element or selector, not both.");
@@ -479,24 +478,22 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     },
   );
 
-  server.registerTool(
+  register(
     "list_media",
     {
       description: "List media and recorded Online videos (title, service, address, still, uses, serviceBar) with kind, size, family (copies, originals, still, subtitles), uses (pages and other uses), description (by agent, or Decorative), collections, Always keep and Not checked yet; page with offset/limit and nextOffset. Follow the Media chapter of the native-site://conventions resource for the rules.",
       inputSchema: z.object({ folder: z.string().max(1024).optional(), offset: z.number().int().min(0).optional(), limit: z.number().int().min(1).max(200).optional(), requestId, waitSeconds }),
-      annotations: readOnly,
     },
     async ({ folder, offset, limit, requestId, waitSeconds }) => {
       if (folder && touchesGithubConfig(folder)) return failure(GITHUB_CONFIG_REFUSED);
       return media("list_media", { path: folder ?? "", args: { ...(folder !== undefined ? { folder } : {}), offset: offset ?? 0, limit: limit ?? 100 }, requestId, waitSeconds });
     },
   );
-  server.registerTool(
+  register(
     "preview_media",
     {
       description: "Return a picture preview no wider or taller than 512 px, with its dimensions and original dimensions. Follow the Media chapter of the native-site://conventions resource for the rules.",
       inputSchema: z.object({ path: z.string().min(1).max(1024), requestId, waitSeconds }),
-      annotations: readOnly,
     },
     async ({ path, requestId, waitSeconds }) => {
       if (touchesGithubConfig(path)) return failure(GITHUB_CONFIG_REFUSED);
@@ -509,7 +506,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
   const mediaPath = z.string().min(1).max(1024);
   const mediaFiles = z.array(mediaPath).min(1).max(200);
   for (const operation of ["remove_media", "keep_media", "restore_media"] as const) {
-    server.registerTool(operation, {
+    register(operation, {
       description: ({
         remove_media: "Remove unused media families into Recently removed; refuse Always keep or any mention, naming the pages and other files. Returns all removed family members.",
         keep_media: "Add Always keep to files in Media. Agents never take it off. Already-kept files do nothing.",
@@ -517,7 +514,6 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
       })[operation] + " Unsaved until the user saves. Follow the Media chapter of native-site://conventions.",
       inputSchema: z.object({ files: operation === "restore_media" ? mediaFiles.optional() : mediaFiles,
         ...(operation === "keep_media" ? { keep: z.boolean().optional() } : {}), requestId, waitSeconds }),
-      annotations: operation === "remove_media" ? removing : editing,
     }, async ({ files, keep, requestId, waitSeconds }) => {
       const args = { ...(files !== undefined ? { files } : {}), ...(typeof keep === "boolean" ? { keep } : {}) };
       const problem = agentMediaArgsProblem(operation, args) ?? files?.map(file => writablePathProblem(file)).find(Boolean);
@@ -525,10 +521,9 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
       return media(operation, { path: "", args, requestId, waitSeconds });
     });
   }
-  server.registerTool("replace_media", {
+  register("replace_media", {
     description: "Replace a picture everywhere with another picture already in Media, prepared with the site's Adding settings. Its name stays; every mention gets a new version. Never choose its own family or outside media. Returns the new main path and notices. Unsaved until the user saves. Follow the Media chapter of native-site://conventions.",
     inputSchema: z.object({ file: mediaPath, with: mediaPath, keepOldUrl: z.boolean().optional(), requestId, waitSeconds }),
-    annotations: editing,
   }, async ({ file, with: chosen, keepOldUrl, requestId, waitSeconds }) => {
     const args = { file, with: chosen, ...(keepOldUrl !== undefined ? { keepOldUrl } : {}) };
     const problem = agentMediaArgsProblem("replace_media", args) ?? writablePathProblem(file) ?? writablePathProblem(chosen);
@@ -536,7 +531,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     return media("replace_media", { path: "", args, requestId, waitSeconds });
   });
 
-  server.registerTool("frame_image", {
+  register("frame_image", {
     description: "Read an image place's shape, focus and trim, including its component's shape, or change them. Original shows the whole picture even inside a shaped component; component restores the component's shape by removing the place's own. Trim makes a copy from the site's own picture for this place; focus goes to the middle unless the copy's proportions differ from the place's shape. Give focus to set another. Unsaved until the user saves. Follow the Media chapter of native-site://conventions.",
     inputSchema: z.object({
       path: mediaPath, element: mediaPath,
@@ -549,7 +544,6 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
         flipX: z.boolean().optional(), flipY: z.boolean().optional(), straighten: z.number().min(-45).max(45).optional(),
       }).optional(), requestId, waitSeconds,
     }),
-    annotations: editing,
   }, async ({ path, element, shape, focus, trim, requestId, waitSeconds }) => {
     const args = { element, shape, focus, trim };
     const problem = writablePathProblem(path) ?? agentMediaArgsProblem("frame_image", args, path);
@@ -557,10 +551,9 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     return media("frame_image", { path, args, requestId, waitSeconds });
   });
 
-  server.registerTool("place_media", {
+  register("place_media", {
     description: "Place a picture into an existing image, or video, audio or a download where Add → Media would place it with element selected. Picture spots take silent Looping video; a spot showing one takes another video or a picture in its place, keeping the spot. YouTube/Vimeo addresses must already be recorded in Media; new addresses stay with the user. Unsaved until the user saves. Follow the Media chapter of native-site://conventions.",
     inputSchema: z.object({ path: mediaPath, element: mediaPath, file: mediaPath, requestId, waitSeconds }),
-    annotations: editing,
   }, async ({ path, element, file, requestId, waitSeconds }) => {
     const args = { element, file };
     const problem = writablePathProblem(path) ?? (parseOnlineVideoAddress(file) ? undefined : isOutsideMediaAddress(file) ? OUTSIDE_MEDIA_REFUSED : writablePathProblem(file)) ?? agentMediaArgsProblem("place_media", args, path);
@@ -568,50 +561,45 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     if (!/\.html$/i.test(path)) return failure("Give a page path ending in .html.");
     return media("place_media", { path, args, requestId, waitSeconds });
   });
-  server.registerTool("improve_images", {
+  register("improve_images", {
     description: "Improve images for one page or component template (row), or all rows when omitted. Makes lighter files, responsive copies and Looping videos, leaving outside pictures and old YouTube/Vimeo players for the user. Pictures the user left alone (on one page or everywhere) are skipped and listed as left-alone. Each row is one Undo step. Unsaved until the user saves. Follow the Media chapter of native-site://conventions.",
     inputSchema: z.object({ row: mediaPath.optional(), requestId, waitSeconds }),
-    annotations: editing,
   }, async ({ row, requestId, waitSeconds }) => {
     const args = { row };
     const problem = agentMediaArgsProblem("improve_images", args) ?? (row ? writablePathProblem(row) : undefined);
     if (problem) return failure(problem);
     return media("improve_images", { path: "", args, requestId, waitSeconds });
   });
-  server.registerTool("loop_video", {
+  register("loop_video", {
     description: "Read or change Looping video for one placed video, using the edit bar's transaction. A picture spot always loops silently. Unsaved until the user saves. Follow the Media chapter of native-site://conventions.",
     inputSchema: z.object({ path: mediaPath, element: mediaPath, looping: z.boolean().optional(), requestId, waitSeconds }),
-    annotations: editing,
   }, async ({ path, element, looping, requestId, waitSeconds }) => {
     const args = { element, looping };
     const problem = writablePathProblem(path) ?? agentMediaArgsProblem("loop_video", args, path);
     if (problem) return failure(problem);
     return media("loop_video", { path, args, requestId, waitSeconds });
   });
-  server.registerTool("video_still", {
+  register("video_still", {
     description: "Choose a video's still everywhere: exactly one of moment (seconds into the video, saved as WebP) or picture (a picture already in Media). Unsaved until the user saves. Follow the Media chapter of native-site://conventions.",
     inputSchema: z.object({ file: mediaPath, moment: z.number().finite().nonnegative().optional(), picture: mediaPath.optional(), requestId, waitSeconds }),
-    annotations: editing,
   }, async ({ file, moment, picture, requestId, waitSeconds }) => {
     const args = { file, moment, picture };
     const problem = agentMediaArgsProblem("video_still", args) ?? writablePathProblem(file) ?? (picture ? writablePathProblem(picture) : undefined);
     if (problem) return failure(problem);
     return media("video_still", { path: "", args, requestId, waitSeconds });
   });
-  server.registerTool("write_subtitles", {
+  register("write_subtitles", {
     description: "Write WebVTT or SubRip text for a video or audio file already in Media. Adds subtitles everywhere in one unsaved change, marked by agent in To check. Never uploads or fetches. Unsaved until the user saves. Follow the Media chapter of native-site://conventions.",
     inputSchema: z.object({ file: mediaPath, text: z.string().max(2 * 1024 * 1024), format: z.enum(["vtt", "srt"]).optional(), requestId, waitSeconds }),
-    annotations: editing,
   }, async ({ file, text: subtitles, format, requestId, waitSeconds }) => {
     const args = { file, text: subtitles, format };
     const problem = agentMediaArgsProblem("write_subtitles", args) ?? writablePathProblem(file);
     if (problem) return failure(problem);
     return media("write_subtitles", { path: "", args, requestId, waitSeconds });
   });
-  server.registerTool("describe_media", {
+  register("describe_media", {
     description: "Write a file description or a place's own words, or mark Decorative. Unsaved until the user saves. Follow the Media chapter of native-site://conventions.",
     inputSchema: z.object({ file: mediaPath, text: z.string().max(2000).optional(), decorative: z.boolean().optional(), page: mediaPath.optional(), element: mediaPath.optional(), requestId, waitSeconds }),
-    annotations: editing,
   }, async ({ file, text, decorative, page, element, requestId, waitSeconds }) => {
     const args = { file, text, decorative, page, element };
     const problem = (isOutsideMediaAddress(file) ? OUTSIDE_MEDIA_REFUSED : writablePathProblem(file)) ?? (page ? writablePathProblem(page) : undefined) ?? agentMediaArgsProblem("describe_media", args);
@@ -619,10 +607,9 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     if (page && !/\.html$/i.test(page)) return failure("Give a page path ending in .html.");
     return media("describe_media", { path: page ?? file, args, requestId, waitSeconds });
   });
-  server.registerTool("change_collection", {
+  register("change_collection", {
     description: "Create, add to, take out of, rename or delete a Media collection. Unsaved until the user saves. Follow the Media chapter of native-site://conventions.",
     inputSchema: z.object({ action: z.enum(["new", "add", "take-out", "rename", "delete"]), name: mediaPath, to: mediaPath.optional(), files: z.array(mediaPath).max(200).optional(), requestId, waitSeconds }),
-    annotations: editing,
   }, async ({ action, name, to, files, requestId, waitSeconds }) => {
     const args = { action, name, to, files };
     const problem = agentMediaArgsProblem("change_collection", args) ?? files?.map(file => writablePathProblem(file)).find(Boolean);
@@ -630,10 +617,9 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
     return media("change_collection", { path: "", args, requestId, waitSeconds });
   });
 
-  server.registerTool("adding_settings", {
+  register("adding_settings", {
     description: "Read or change the site's Adding settings for files the user adds later; never adds or re-prepares media. Unsaved until the user saves. Follow the Media chapter of native-site://conventions.",
     inputSchema: z.object({ image: z.enum(MEDIA_ADDING_VALUES.image).optional(), video: z.enum(MEDIA_ADDING_VALUES.video).optional(), audio: z.enum(MEDIA_ADDING_VALUES.audio).optional(), keepOriginal: z.boolean().optional(), reset: z.boolean().optional(), requestId, waitSeconds }),
-    annotations: editing,
   }, async ({ image, video, audio, keepOriginal, reset, requestId, waitSeconds }) => {
     const args = { image, video, audio, keepOriginal, reset };
     const problem = agentMediaArgsProblem("adding_settings", args);
@@ -643,7 +629,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
 
   // ---- Sections ----
 
-  server.registerTool(
+  register(
     "make_component",
     {
       description:
@@ -657,7 +643,6 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
         requestId,
         waitSeconds,
       }),
-      annotations: editing,
     },
     async ({ page: ref, element, tag, fixed, expectedHash, requestId, waitSeconds }) => {
       if (!parseOutlineId(element)) return failure(`${element} is not an element id; get_page lists them.`);
@@ -666,7 +651,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
       return edit("make_component", { page: ref, element, tag, fixed, expectedHash }, requestId, waitSeconds);
     },
   );
-  server.registerTool(
+  register(
     "add_section",
     {
       description:
@@ -680,13 +665,12 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
         requestId,
         waitSeconds,
       }),
-      annotations: editing,
     },
     async ({ page: ref, component, expectedHash, before, after, requestId, waitSeconds }) => {
       return edit("add_section", { page: ref, component, expectedHash, before, after }, requestId, waitSeconds);
     },
   );
-  server.registerTool(
+  register(
     "move_section",
     {
       description:
@@ -700,19 +684,17 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
         requestId,
         waitSeconds,
       }),
-      annotations: editing,
     },
     async ({ page: ref, section, expectedHash, before, after, requestId, waitSeconds }) => {
       if (!before && !after) return failure("Say before or after which section it goes.");
       return edit("move_section", { page: ref, section, expectedHash, before, after }, requestId, waitSeconds);
     },
   );
-  server.registerTool(
+  register(
     "remove_section",
     {
       description: "Remove a section from a page, as the edit bar's Remove does. Needs the page hash from get_page.",
       inputSchema: z.object({ page: pageRef, section: sectionId, expectedHash: hash, requestId, waitSeconds }),
-      annotations: removing,
     },
     async ({ page: ref, section, expectedHash, requestId, waitSeconds }) => {
       return edit("remove_section", { page: ref, section, expectedHash }, requestId, waitSeconds);
@@ -736,7 +718,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
       "No requests yet. Call wait_for_requests again now: the editor keeps watching while it is connected. Stop only when the connection ends (the user chose Disconnect MCP)." });
   }
 
-  server.registerTool(
+  register(
     "wait_for_requests",
     {
       description:
@@ -746,7 +728,6 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
         all: z.boolean().optional().describe("Every request still waiting for an answer, including ones returned before (default false)."),
         waitSeconds: z.number().int().min(0).max(25).optional().describe("How long to wait for a request when there is none (default and most 25)."),
       }),
-      annotations: { ...readOnly, idempotentHint: false },
     },
     async ({ all, waitSeconds: wait }) => {
       const outcome = await requestCommand("wait_for_requests", { all: Boolean(all) }, agentControls(env).watch ? (wait ?? 25) * 1000 : 0);
@@ -762,14 +743,13 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
       return waited([], `The editor did not answer this wait (${outcome.code ?? "connection lost"}). Wait about 10 seconds, then call wait_for_requests again. Requests it took come back with all: true.`);
     },
   );
-  server.registerTool(
+  register(
     "get_selection",
     {
       description:
         "The element selected in the user's preview now, or the one a request is about (request): its file, page URL, id (as get_page's outline numbers elements), tag, a CSS selector unique in the rendered page (for an element in a component's template, unique in its instance, with host the instance's own), its source HTML (clipped at 4 KB) and the lines it spans in its file, the component it belongs to (the instance itself, content slotted into one with the slot's name, or part of the template), and its text; for a request, also its text and thread. Read the file itself (read_file, get_page) before editing. " +
         requestNote,
       inputSchema: z.object({ request: request.optional() }),
-      annotations: readOnly,
     },
     async ({ request: id }) => {
       if (!id) return read({ operation: "read", tool: "get_selection", args: {} });
@@ -782,7 +762,7 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
       return failure(`The editor did not answer (${outcome.code ?? "connection lost"}). Read the request again when the editor is ready.`);
     },
   );
-  server.registerTool(
+  register(
     "reply_to_request",
     {
       description:
@@ -794,7 +774,6 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
           .describe(`What changed, or your question (at most ${QUESTION_TEXT_LIMIT} characters, shown in the pin).`),
         requestIds: z.array(z.string().regex(/^[\w.:-]{1,128}$/)).max(20).optional().describe("The requestId of each edit made for it."),
       }),
-      annotations: { ...editing, idempotentHint: false },
     },
     async ({ request: id, status, message, requestIds }) => {
       if (status === "question" && message.length > QUESTION_TEXT_LIMIT)
@@ -822,6 +801,14 @@ export function createSiteServer(connection: Connection, env: Env, origin = "htt
       });
     },
   );
+
+  for (const name of mcpTools) {
+    const add = registrations.get(name);
+    if (!add) throw new Error(`The MCP tool ${name} has no registration.`);
+    add();
+    registrations.delete(name);
+  }
+  if (registrations.size) throw new Error(`MCP tools outside the tool table: ${[...registrations.keys()].join(", ")}.`);
 
   // ---- Resources and prompts ----
 

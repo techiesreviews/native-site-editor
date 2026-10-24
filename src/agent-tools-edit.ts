@@ -1,6 +1,7 @@
 import { textHash, type AgentCommand } from "../shared/agent";
 import { payloadIdentity, type AgentWorkspace, type JsonValue } from "../shared/agent-command";
 import { prepareAgentEdit, type AgentEdit, type AgentStatus } from "../shared/agent-edit";
+import { agentToolsOn } from "../shared/agent-tool-table";
 import type { AgentReadResult } from "../shared/agent-read";
 import { SiteFiles } from "../shared/site-files";
 import { AgentRecordsError, type AgentRecords } from "./agent-records";
@@ -150,10 +151,7 @@ export function createAgentEditTools(options: Options) {
   }
   type Input = { request: Request; fence: number; current: () => boolean; signal?: AbortSignal; held?: Held };
   const executor = ({ request, fence, current, signal, held }: Input) => execute(request, fence, current, signal, held);
-  const registry = createAgentTools<Input>({ edit_file: executor, write_file: executor, move_file: executor,
-    delete_file: executor, create_page: executor, set_page_details: executor, open_page: executor,
-    inspect_preview: executor, make_component: executor, add_section: executor, move_section: executor,
-    remove_section: executor, get_command_status: executor });
+  const registry = createAgentTools<Input>(Object.fromEntries(agentToolsOn("edit", "status").map(tool => [tool, executor])));
   return {
     /** `held`: the workspace as the edit arrived, when the caller waited before this (src/components/agent-menu.ts). */
     run(request: Request, fence: number, current: () => boolean, signal?: AbortSignal, held?: Held) {
