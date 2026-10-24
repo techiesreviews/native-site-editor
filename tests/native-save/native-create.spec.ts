@@ -117,6 +117,10 @@ test("a new stylesheet is a file like any other; a new folder holds a .gitkeep; 
   await expect(dialog.locator(".create-dialog__result")).toHaveText("A name cannot be . or ..");
   await name.fill("site.css");
   await expect(dialog.locator(".create-dialog__result")).toHaveText("styles/site.css already exists.");
+  for (const under of ["site.css/x.css", "site.css/deep/x.css"]) {
+    await name.fill(under);
+    await expect(dialog.locator(".create-dialog__result")).toHaveText("styles/site.css is a file, so nothing can go in it.");
+  }
   await name.fill("print.css");
   await expect(dialog.locator(".create-dialog__result")).toHaveText("Creates the empty file styles/print.css.");
   await name.press("Enter");

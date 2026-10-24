@@ -57,7 +57,7 @@ export function fileInTheWay(file: string): string {
   return `${file} is a file, so nothing can go in it.`;
 }
 
-/** The folders `path` sits in, outermost first: `a/b/c.html` is in `a` and `a/b`. */
+/** The folders `path` sits in, outermost first: `a/b/c.html` is in `a` and `a/b`. Not normalised: a leading `/` adds no folder, `a//b` gives `a` and `a/`. */
 export function foldersAbove(path: string): string[] {
   const parts = path.split("/").slice(0, -1);
   return parts.map((_, index) => parts.slice(0, index + 1).join("/")).filter(Boolean);

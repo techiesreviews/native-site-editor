@@ -124,8 +124,10 @@ export function planPageMove(input: PageMoveInput): Checked<PageMovePlan> {
   for (const [source, destination] of moves)
     if (present.has(destination) && !moves.has(destination)) return { ok: false, error: `${destination} is already there (moving ${source}).` };
   // A file where a folder must go (`x.html` is fine; a file named `x` is not).
-  const blocked = [...moves.values()].map((path) => parentProblem(path, (folder) => present.has(folder) && !moves.has(folder))).find(Boolean);
-  if (blocked) return { ok: false, error: blocked };
+  for (const destination of moves.values()) {
+    const blocked = parentProblem(destination, (folder) => present.has(folder) && !moves.has(folder));
+    if (blocked) return { ok: false, error: blocked };
+  }
   // A new part of the URL meets the address rule; the page's own last part and folders already there stay as they are.
   const parts = routeFolder(parent).split("/").filter(Boolean);
   const fresh = parts.filter((_, index) => {
