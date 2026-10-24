@@ -2,9 +2,9 @@
 title: "Two specs still sensitive under heavy load: editor toast, media ring"
 type: task (AFK)
 status: open
-assignee:
+assignee: lead-sf16 (this session)
 builder: claude
-blocked_by: [14-load-sensitive-tests]
+blocked_by: []
 ---
 
 ## Goal
@@ -23,6 +23,8 @@ Split from [Three load-sensitive tests pass on a busy machine](14-load-sensitive
 - Added 2026-10-24: `native-agent-quiet.spec.ts:30` and `native-mcp-menu.spec.ts:528` failed in slice 33's full `kit pr` run; both pass alone on dev and on the branch.
 
 - Added 2026-10-24: `native-click-to-type.spec.ts:270` failed in slice 33's `kit pr`. Lead: this ticket moves ahead of the remaining clean-up slices; load failures now block most landings.
+
+- 2026-10-24, lead: **`native-click-to-type.spec.ts` fails 1 in 3 on dev even alone** (the drag-while-typing tests at :245 and :270): diagnose first, it may be a real race in the product (a press-and-drag while typing). Highest priority, then `native-agent-quiet.spec.ts:30`, `native-lazy-panels.spec.ts:68`, then the rest.
 
 ## Decided behaviour
 
