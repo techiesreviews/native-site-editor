@@ -2,7 +2,7 @@
 title: "Agent operation table"
 type: task (AFK)
 status: open
-assignee:
+assignee: lead-50 (this session)
 builder: claude
 blocked_by: [41-is-a-file-rule]
 ---
