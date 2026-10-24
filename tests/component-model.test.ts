@@ -1086,6 +1086,16 @@ test("detach hides what the site's loader hides: a later slot of a taken name, a
   assert.equal(detach(`<x-s>&nbsp;</x-s>`), `<section><p>First</p><div><p>Again</p></div></section>`);
 });
 
+test("slot states: a lone &nbsp; beside a real fill in a section fills the default slot as written, yet the loader hides it", () => {
+  const template = `<section><slot><p>Default</p></slot><slot name="b"><p>B</p></slot></section>`;
+  const page = `<x-s>&nbsp;<span slot="b">Ours</span></x-s>`;
+  const states = slotStates(template, readInstance(page, rangeOf(page, "x-s")));
+  // Recorded as it is; which way the slot's switch should read is a follow-up in ticket 60.
+  assert.deepEqual(states.get(""), { filled: true, shown: false, whenEmpty: "hidden" });
+  // Without its fill only the &nbsp; is left, blank to the loader: a bare tag, so b falls back.
+  assert.deepEqual(states.get("b"), { filled: true, shown: true, whenEmpty: "fallback" });
+});
+
 test("slot states: a lone &nbsp; fills the slot as written, but every fallback shows as the loader reads it", () => {
   const template = `<section><slot><p>Default</p></slot><slot name="b"><p>B</p></slot></section>`;
   const page = `<x-s>&nbsp;</x-s>`;
@@ -1224,10 +1234,13 @@ test("SVG, MathML and raw-text elements take no <br>; HTML inside a foreignObjec
   const svg = `<svg><text>Line</text><a href="/x"><text>Go</text></a><foreignObject><p>Html</p></foreignObject></svg>`;
   for (const name of ["svg", "text", "a"]) assert.equal(takesBreaks(first(svg, name)), false, `svg ${name}`);
   assert.equal(takesBreaks(first(svg, "p")), true, "HTML in a foreignObject");
+  // An integration point's own content is HTML: `<foreignObject>One<br>Two</foreignObject>` breaks the line.
+  assert.equal(takesBreaks(first(svg, "foreignobject")), true, "a foreignObject itself");
   assert.equal(takesBreaks(first(`<svg><desc><p>Html</p></desc></svg>`, "p")), true, "HTML in an SVG desc");
   assert.equal(takesBreaks(first(`<math><mtext><span>Html</span></mtext></math>`, "span")), true, "HTML in a MathML mtext");
-  const math = `<p><math><mi>x</mi><mtext>is one</mtext></math></p>`;
-  for (const name of ["math", "mi", "mtext"]) assert.equal(takesBreaks(first(math, name)), false, `math ${name}`);
+  const math = `<p><math><mi>x</mi><mtext>is one</mtext><mrow><mn>1</mn></mrow></math></p>`;
+  for (const name of ["math", "mrow"]) assert.equal(takesBreaks(first(math, name)), false, `math ${name}`);
+  for (const name of ["mi", "mtext", "mn"]) assert.equal(takesBreaks(first(math, name)), true, `math ${name}, a text integration point`);
   // A field editing SVG text stays one line.
   const source = `<svg><text>One</text></svg>`;
   assert.equal(elementText(source, first(source, "text"))?.breaks, false);

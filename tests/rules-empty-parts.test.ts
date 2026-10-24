@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { emptyParts, isContent } from "../src/page-builder/rules/empty-parts.ts";
 import { domView, type DomLikeNode } from "../src/page-builder/rules/tree.ts";
-import { decodeEntities, parseSource, readInstance, slotStates, sourceView, type SourceElement, type SourceNode } from "../src/page-builder/component-model.ts";
+import { decodeEntities, parseSource, readInstance, shownSlots, slotStates, sourceView, type SourceElement, type SourceNode } from "../src/page-builder/component-model.ts";
 import { isSectionTemplate, startTagAttribute } from "../shared/html-source.ts";
 
 // Empty optional parts behave exactly as the site's own loader hides them
@@ -108,19 +108,12 @@ function readings(template: string, page: string, hideEmpty = site.hideEmpty) {
   const runtime = emptyParts(dom, { section, hostHasContent, filled: filledInDom });
   const runtimeMarks = elements.filter(runtime.empty).map(where);
 
-  // The editor's reading: what the page fills, by slot name, goes to the first slot of that name.
+  // The editor's reading, as slot states and Detach take it, over nodes of this test's own parse (Detach parses the template again too).
   const instance = readInstance(page, { tag: hostSource.tag, start: hostSource.start, end: hostSource.end, close: hostSource.close });
-  const view = sourceView(template);
+  const { hidden } = shownSlots(template, instance, instance.content);
+  const editorMarks = elements.filter((el) => hidden(el.source as SourceElement)).map(where);
   const firstSlots = new Map<string, SourceNode>();
   for (const el of elements) if (el.localName === "slot" && !firstSlots.has(el.attributes.get("name") ?? "")) firstSlots.set(el.attributes.get("name") ?? "", el.source!);
-  const nameOf = (slot: SourceNode) => elements.find((el) => el.source === slot)?.attributes.get("name") ?? "";
-  const contentNames = new Set(instance.content.map((node) => [...instance.fills].find(([, nodes]) => nodes.includes(node))![0]));
-  const editor = emptyParts(view, {
-    section: isSectionTemplate(template),
-    hostHasContent: instance.content.length > 0,
-    filled: (slot) => firstSlots.get(nameOf(slot)) === slot && contentNames.has(nameOf(slot)),
-  });
-  const editorMarks = elements.filter((el) => editor.empty(el.source!)).map(where);
 
   // What the properties list says each slot shows: the loader's first slot of the name, unless it or an element round it is hidden.
   const loaderShown = new Map<string, boolean>();
