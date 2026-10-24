@@ -3584,7 +3584,8 @@ async function applyAgentSiteCommand(command: AgentCommand) {
       () => { if (holdsDraftScope(shownScope(), scope)) afterFileChanges(); });
     if (kept.duplicate) return kept.duplicate;
     // A switch meanwhile is not refused: editorOrElsewhere finishes it where it was read (ticket 34).
-    if (!current() || command.commit !== appStore.snapshot.value?.commit) throw new Error(AGENT_REVISION_MOVED);
+    if (command.commit !== appStore.snapshot.value?.commit) throw new Error(AGENT_REVISION_MOVED);
+    if (!current()) throw new Error(AGENT_RELOADED);
     const scoped = agentStructuralActions(editorWorkspace, kept.context!, current, {
       actions: makeAgentSiteActions, pages: pagePorts(), files: filePorts(), components: componentPorts, loader: nativeComponentLoaderPlan, factories,
     });
@@ -3596,6 +3597,8 @@ async function applyAgentSiteCommand(command: AgentCommand) {
 }
 // Its branch, shown, was saved or reloaded at another commit since the command was read there.
 const AGENT_REVISION_MOVED = "This branch is at another revision now than when the change was read. Read the site again.";
+// Shown at the same commit but reloaded, or an earlier version opened, while the command was prepared.
+const AGENT_RELOADED = "The editor reloaded this branch or opened an earlier version meanwhile. Read the site again.";
 // While an agent's command runs, its guarded edits leave .github alone (src/guarded-edit/commit.ts).
 let agentActingDepth = 0;
 async function agentActing<T>(run: () => Promise<T>): Promise<T> {

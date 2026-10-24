@@ -123,6 +123,9 @@ test("move_section held across a branch switch lands on main's page, whose Undo 
     await openMain(page);
     await undo(page).click();
     await expect.poll(async () => (await draftsOn(page, "main")).filter(draft => draft.path === "index.html"), { timeout: 20_000 }).toEqual([]);
+    // Nothing on what was shown changed: feature (or the other site) has none of it.
+    expect(await draftsOn(page, "feature")).toEqual([]);
+    expect(await draftsOn(page, "main", 540)).toEqual([]);
     await expect(page.frameLocator(".native-preview-frame").locator("main > section").first()).toHaveAttribute("data-key", "hero");
   } finally { await client.close(); }
 });
@@ -137,6 +140,9 @@ test("move_file held across a branch switch moves main's page, whose Undo at its
     await openMain(page, "team/index.html");
     await undo(page).click();
     await expect.poll(async () => (await draftsOn(page, "main")).filter(draft => draft.path === "about/index.html" || draft.path === "team/index.html"), { timeout: 20_000 }).toEqual([]);
+    // Nothing on what was shown changed: feature (or the other site) has none of it.
+    expect(await draftsOn(page, "feature")).toEqual([]);
+    expect(await draftsOn(page, "main", 540)).toEqual([]);
     await editorMounted(page, "about/index.html");
   } finally { await client.close(); }
 });
@@ -150,6 +156,9 @@ test("delete_file held across a branch switch deletes main's file, and the page 
     await openMain(page);
     await undo(page).click();
     await expect.poll(async () => draftsOn(page, "main"), { timeout: 20_000 }).toEqual([]);
+    // Nothing on what was shown changed: feature (or the other site) has none of it.
+    expect(await draftsOn(page, "feature")).toEqual([]);
+    expect(await draftsOn(page, "main", 540)).toEqual([]);
   } finally { await client.close(); }
 });
 
@@ -162,6 +171,9 @@ test("create_page held across a branch switch makes main's page, whose Undo ther
     await openMain(page, "held-page/index.html");
     await undo(page).click();
     await expect.poll(async () => draftsOn(page, "main"), { timeout: 20_000 }).toEqual([]);
+    // Nothing on what was shown changed: feature (or the other site) has none of it.
+    expect(await draftsOn(page, "feature")).toEqual([]);
+    expect(await draftsOn(page, "main", 540)).toEqual([]);
     // Undo took the page away: the page it was made on opens.
     await editorMounted(page, "index.html");
   } finally { await client.close(); }
@@ -183,6 +195,9 @@ for (const operation of ["add_section", "remove_section", "make_component"] as c
       await openMain(page);
       await undo(page).click();
       await expect.poll(async () => draftsOn(page, "main"), { timeout: 20_000 }).toEqual([]);
+      // Nothing on what was shown changed: feature (or the other site) has none of it.
+      expect(await draftsOn(page, "feature")).toEqual([]);
+      expect(await draftsOn(page, "main", 540)).toEqual([]);
     } finally { await client.close(); }
   });
 }
@@ -202,5 +217,8 @@ test("remove_section on main's about page, held across a branch switch, waits fo
     await openMain(page, "about/index.html");
     await undo(page).click();
     await expect.poll(async () => draftsOn(page, "main"), { timeout: 20_000 }).toEqual([]);
+    // Nothing on what was shown changed: feature (or the other site) has none of it.
+    expect(await draftsOn(page, "feature")).toEqual([]);
+    expect(await draftsOn(page, "main", 540)).toEqual([]);
   } finally { await client.close(); }
 });

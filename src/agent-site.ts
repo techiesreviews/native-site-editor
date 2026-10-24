@@ -1162,15 +1162,19 @@ async function finishStructuralElsewhere(command: AgentCommand, scope: DraftScop
   const proof = draftsNow();
   const { backgroundSite } = await import("./background-site");
   const pages = Object.values(held.pin.site?.routes ?? {});
-  const moved = command.operation === "move_file" ? pages.find(page => page === command.path || page.startsWith(`${command.path}/`)) : undefined;
+  // A folder moved: the page open as it arrived when it is one of the folder's, else the folder's first.
+  const under = (page: string | undefined) => page !== undefined && (page === command.path || page.startsWith(`${command.path}/`));
+  const moved = command.operation !== "move_file" ? undefined : under(held.opened) ? held.opened : pages.find(under);
   const home = command.operation === "set_page_details" ? command.path : moved ?? held.opened;
   for (let attempt = 0; ; attempt++) {
     // Shown again, its load still opening (no snapshot on show yet): a wait, not a retry.
     if (held.pin.here() && left() && !await until(() => !held.pin.here() || !left(), AWAY_WAIT_MS))
       throw new Error(`The editor is still opening ${scope.branch}. Nothing was changed; your drafts are as they were.`);
     if (!left()) return undefined;
-    if (draftsNow() !== proof || attempt >= AWAY_ATTEMPTS)
+    if (draftsNow() !== proof)
       throw new Error(`${scope.branch} changed in the editor meanwhile. Read it again. Nothing was changed; your drafts are as they were.`);
+    if (attempt >= AWAY_ATTEMPTS)
+      throw new Error(`${scope.branch} kept being opened and left while this change ran; try it again. Nothing was changed; your drafts are as they were.`);
     const visits = away.site.visits(scope), stays = () => !held.pin.here() && left() && away.site.visits(scope) === visits;
     const prepared = await prepareAgentText(command, scope, store, () => true, () => {});
     if (prepared.duplicate) return prepared.duplicate;
