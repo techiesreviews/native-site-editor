@@ -62,7 +62,7 @@ async function connect(page: Page, baseURL: string | undefined) {
   await editorMounted(page);
   await page.locator(".repository-menu__trigger").click();
   const made = page.waitForResponse(response => new URL(response.url()).pathname === "/api/agent/connect" && response.request().method() === "POST");
-  await page.getByRole("button", { name: "Connect with MCP", exact: true }).click();
+  await page.getByRole("button", { name: "Connect to MCP", exact: true }).click();
   const { token } = await (await made).json() as { token: string };
   await expect.poll(() => messages.some(message => message.includes('"type":"ready"'))).toBe(true);
   await page.keyboard.press("Escape");
