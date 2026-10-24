@@ -2,7 +2,7 @@
 title: "Agent wiring leaves main.ts"
 type: task (AFK)
 status: open
-assignee:
+assignee: lead-53 (this session)
 builder: sol
 blocked_by: [52-agents-wait-for-lex]
 ---

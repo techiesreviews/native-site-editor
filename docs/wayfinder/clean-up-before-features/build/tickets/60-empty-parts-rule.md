@@ -2,7 +2,7 @@
 title: "One empty-parts rule, in step with the site's own loader"
 type: task (AFK)
 status: open
-assignee:
+assignee: lead-60 (this session)
 builder: sol
 blocked_by: [52-agents-wait-for-lex]
 ---
