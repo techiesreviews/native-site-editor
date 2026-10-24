@@ -2,7 +2,7 @@
 title: "Show the agent working on a section, like a collaborator in Figma"
 type: task (AFK)
 status: open
-assignee:
+assignee: lead-33 (this session)
 builder: claude
 blocked_by: [27-invisible-multiplayer, 29-simple-mcp-menu]
 ---
