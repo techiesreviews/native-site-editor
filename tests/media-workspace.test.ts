@@ -179,6 +179,15 @@ test("upload families, copied metadata and reference replacement share one trans
   assert.equal(f.bytes.has("images/a-2.webp"), false); assert.equal(f.paths.has("images/a-2-480.webp"), false);
   assert.equal(await f.bytes.get("images/a.png")!.text(), "original");
 });
+test("a file where the chosen folder goes refuses the upload, the file named, at the folder and above it", async () => {
+  for (const folder of ["images/sub", "images"]) {
+    const f = fixture(); await f.host.load();
+    f.paths.add("images");
+    const request = { file: new File(["bytes"], "a.png"), result: { outputs: [{ blob: new Blob(["a"], { type: "image/webp" }), extension: "webp" }], before: 5, after: 4 }, folder };
+    await assert.rejects(f.host.import([request]), { message: "images is a file, so nothing can go in it." });
+    assert.equal(f.batches.length, 0);
+  }
+});
 test("new files join the viewed collection in the same batch; without one they only gain their date", async () => {
   const f = fixture(); await f.host.load();
   await f.host.collections({ kind: "new", name: "Studio picks" });

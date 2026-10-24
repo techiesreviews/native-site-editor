@@ -122,6 +122,14 @@ test("hash, unchanged, protected paths, content, folders and parent files retain
   await assert.rejects(prepare(request("edit_file", { path: "index.html", expectedHash: hash, edits: [{ oldText: "absent", newText: "y" }] })), /not found|does not appear/i);
 });
 
+test("write_file under a file is refused at each depth with the one wording; a missing folder is no file", async () => {
+  const f = await fixture();
+  const prepare = (input: AgentEdit) => prepareAgentEdit(input, f.context, f.local());
+  for (const path of ["index.html/a.html", "index.html/deep/a.html"])
+    await assert.rejects(prepare(request("write_file", { path, content: "x" })), { status: 400, message: "index.html is a file, so nothing can go in it." });
+  assert.partialDeepStrictEqual(await prepare(request("write_file", { path: "a/b.html", content: "x" })), { operation: "write_file", input: { path: "a/b.html", content: "x", expectedHash: null } });
+});
+
 test("page, section, component and placement refusals keep their messages", async () => {
   const f = await fixture(), hash = f.context.site!.outlines[0].hash;
   const prepare = (input: AgentEdit) => prepareAgentEdit(input, f.context, f.local());
