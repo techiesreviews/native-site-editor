@@ -414,7 +414,11 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   // The runtime draws its hover and selection boxes in the editor's color.
   let previewFocus = "";
   let componentColor = "";
-  const postTheme = () => link.send({ type: "theme", focus: previewFocus, component: componentColor });
+  let presenceColor = "";
+  const postTheme = () => link.send({ type: "theme", focus: previewFocus, component: componentColor, presence: presenceColor });
+  // An agent working on a section of the page shown (ticket 33): drawn as its presence box, sent again to a new document.
+  let agentPresence: { request: NativeNodeRequest; name: string } | undefined;
+  const postPresence = () => link.send({ type: "agent-presence", request: agentPresence?.request ?? null, name: agentPresence?.name ?? "" });
   // The component whose template is open: its instances show outlined.
   let focusTag = "";
   const postFocus = () => {
@@ -585,6 +589,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       lastAvoid = "";
       postAvoid();
       postFocus();
+      postPresence();
     },
   });
   // A structure field's text, set in the page ahead of its render (patchText):
@@ -606,6 +611,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
   const stopTheme = watchEditorTheme(({ colors }) => {
     previewFocus = colors["preview-focus"];
     componentColor = colors.component;
+    presenceColor = colors["agent-presence"];
     if (frameState.ready) postTheme();
   });
   // A load/site failure (frame hidden) outranks a transient runtime error
@@ -787,6 +793,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     lastAvoid = "";
     postAvoid();
     postFocus();
+    postPresence();
     pins?.reset();
     schedule();
   });
@@ -1196,6 +1203,14 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
     selectParent() {
       if (frameState.active) link.send({ type: "select-parent" });
     },
+    /**
+     * An agent working on the element at `request` (ticket 33): its outline in the agent's colour with
+     * the `name` chip on its corner, drawn while that page is shown; undefined ends it. Never a click target.
+     */
+    agentPresence(request: NativeNodeRequest | undefined, name = "Agent") {
+      agentPresence = request ? { request: { path: request.path, node: [...request.node] }, name } : undefined;
+      if (frameState.ready) postPresence();
+    },
     /** The next selection of this element (a block just inserted or moved) flashes. */
     flashInsert(request: NativeNodeRequest) {
       pageBuilder.flash(request);
@@ -1349,6 +1364,7 @@ export function createNativePreview(host: HTMLElement, handlers: NativePreviewHa
       // Parks the pane and reloads its frame: the pane never leaves the host.
       if (!frameState.deactivate()) return;
       endPress();
+      agentPresence = undefined;
       site = undefined;
       shownRoute = undefined;
       editableTemplatePath = undefined;

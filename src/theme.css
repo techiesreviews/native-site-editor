@@ -47,6 +47,10 @@
   --component-surface: oklch(from var(--color-component) 96% 0.03 h);
   --component-text: oklch(from var(--color-component) 42% 0.17 h);
 
+  /* An agent working on a section (ticket 33): its outline, name chip and Page Structure dot,
+     in the colour of the connected MCP dot (agent-menu.css). */
+  --agent-presence: var(--color-success);
+
   /* Request pins and cards (agent-pins.css, agent-menu.css, repository-menu.css). */
   /* A question for the user: orange, on pins light in both themes. */
   --agent-question-strong: oklch(66% 0.18 48);

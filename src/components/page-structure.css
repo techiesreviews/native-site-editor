@@ -200,6 +200,15 @@
   gap: 6px;
   min-width: 0;
 }
+/* An agent working on this element (ticket 33): the agent's dot, as on the MCP control and the canvas outline. */
+.page-structure__row--agent > .page-structure__label::after {
+  content: "";
+  flex: none;
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: 50%;
+  background: var(--agent-presence);
+}
 .page-structure__kind {
   flex: none;
   font-size: var(--type-small);
