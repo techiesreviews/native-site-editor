@@ -1,4 +1,4 @@
-import { expect, test, type Page, type WebSocketRoute } from "@playwright/test";
+import { expect, test, type BrowserContext, type Page, type WebSocketRoute } from "@playwright/test";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 
 // The MCP menu's three states (Lex, 2026-10-23): Connect to MCP, Wait for MCP, Disconnect MCP.
@@ -544,9 +544,10 @@ test("a failed first prompt: Connect to MCP shows the problem dot, not the plain
   await expect(action).toHaveText("Wait for MCP", { timeout: 15_000 });
 });
 
-test("a press while the failed prompt's reconnect is under way makes one prompt at once", async ({ page, context, baseURL }) => {
-  // The refused prompt is reported to the live socket, which reconnects a moment later. That
-  // reconnect is held (its socket never answers), so its attempt is under way at the next press.
+/** A refused first prompt, reported to the live socket, which reconnects a moment later. That
+ * reconnect is held (its socket never answers), so its attempt is under way when this returns;
+ * later prompts are let through and counted. */
+async function failedPromptReconnecting(page: Page, context: BrowserContext, baseURL: string | undefined) {
   let hold = false, held!: () => void;
   const reconnecting = new Promise<void>(resolve => { held = resolve; });
   await context.routeWebSocket("**/api/agent/relay?*", route => {
@@ -567,13 +568,38 @@ test("a press while the failed prompt's reconnect is under way makes one prompt 
   await expect(menu).toHaveAttribute("data-state", "failed");
   await reconnecting;
   refuse = false;
+  return { action, menu, made: () => made };
+}
+
+test("a press while the failed prompt's reconnect is under way makes one prompt at once", async ({ page, context, baseURL }) => {
+  const { action, made } = await failedPromptReconnecting(page, context, baseURL);
   // Time stands still from here: a press that waited out the reconnect's backoff never prompts.
   await page.clock.install();
   await page.clock.pauseAt(await page.evaluate(() => Date.now() + 100));
   await action.click();
   // Copied stays while the clock stands still (Wait for MCP follows it).
   await expect(action).toHaveText("Copied");
-  expect(made).toBe(1);
+  expect(made()).toBe(1);
+});
+
+test("a press while another tab of this browser holds the reconnect makes no prompt and shows the problem dot", async ({ page, context, baseURL }) => {
+  const { action, menu, made } = await failedPromptReconnecting(page, context, baseURL);
+  // Another tab's live claim on the site's reconnect: this tab's retry cannot start one.
+  await page.evaluate(() => {
+    const key = "native-site-editor:agent-recovery:native-demo-user:501";
+    const record = JSON.parse(localStorage.getItem(key) ?? "{}");
+    localStorage.setItem(key, JSON.stringify({ attempts: [], ...record, lease: { tab: "another-tab", until: Date.now() + 60_000 } }));
+  });
+  await menu.evaluate(element => {
+    const seen: string[] = (window as Window & { agentStates?: string[] }).agentStates = [];
+    new MutationObserver(() => seen.push((element as HTMLElement).dataset.state ?? "")).observe(element, { attributeFilter: ["data-state"] });
+  });
+  await action.click();
+  // The press turned on again and found the reconnect still under way, then said so.
+  await expect.poll(() => page.evaluate(() => (window as Window & { agentStates?: string[] }).agentStates)).toContain("reconnecting");
+  await expect(menu).toHaveAttribute("data-state", "failed");
+  await expect(action).toHaveText("Connect to MCP");
+  expect(made()).toBe(0);
 });
 
 const remembered = (page: Page, ...branches: string[]) => page.evaluate(keys => keys.map(key => localStorage.getItem(key)),
