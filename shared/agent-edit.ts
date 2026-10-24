@@ -5,6 +5,7 @@ import { HttpError } from "./http-error";
 import { SiteFiles } from "./site-files";
 import { fileInTheWay, foldersAbove, makeComponentProblem, pageAddressProblem, writablePathProblem } from "./site-rules";
 import { findPageRef, noHomePage } from "./agent-read";
+import { agentTools } from "./agent-tool-table";
 import type { AgentPageOutline, EditorContext } from "./types";
 type Page = NonNullable<EditorContext["pages"]>[number];
 
@@ -83,7 +84,8 @@ export function checkContent(content: string) {
 export async function prepareAgentEdit(request: AgentEdit, context: EditorContext, files: SiteFiles): Promise<PreparedEdit> {
   const refuse = (message: string): never => { throw new HttpError(400, message); };
   const unchanged = (value: { state: "unchanged"; message: string }): PreparedEdit => ({ unchanged: value });
-  const queue = (operation: AgentOperation, input: Extract<PreparedEdit, { operation: AgentOperation }>["input"]): PreparedEdit => ({ operation, input });
+  // The command an edit becomes is its table row's (edit_file: write_file).
+  const queue = (input: Extract<PreparedEdit, { operation: AgentOperation }>["input"]): PreparedEdit => ({ operation: agentTools[request.tool].operation, input });
   switch (request.tool) {
     case "edit_file": {
       const { path, expectedHash, edits } = request.args;
@@ -96,7 +98,7 @@ export async function prepareAgentEdit(request: AgentEdit, context: EditorContex
       if (!edited.ok) return refuse(edited.error);
       if (edited.text === file.content) return unchanged({ state: "unchanged", message: "The edits change nothing." });
       checkContent(edited.text);
-      return queue("write_file", { path, content: edited.text, expectedHash: file.hash });
+      return queue({ path, content: edited.text, expectedHash: file.hash });
     }
     case "write_file": {
       const { path, content, expectedHash } = request.args;
@@ -116,14 +118,14 @@ export async function prepareAgentEdit(request: AgentEdit, context: EditorContex
         for (const parent of foldersAbove(path))
           if (await files.read(parent).catch(() => undefined)) return refuse(fileInTheWay(parent));
       }
-      return queue("write_file", { path, content, expectedHash: file?.hash ?? null });
+      return queue({ path, content, expectedHash: file?.hash ?? null });
     }
     case "move_file": {
       const { path, to, keepOldUrl } = request.args;
       const problem = writablePathProblem(path) ?? writablePathProblem(to);
       if (problem) return refuse(problem);
       if (path === to) return refuse("The new path is the same.");
-      return queue("move_file", {
+      return queue({
         path,
         args: { to, ...(keepOldUrl !== undefined ? { keepOldUrl } : {}) },
       });
@@ -132,7 +134,7 @@ export async function prepareAgentEdit(request: AgentEdit, context: EditorContex
       const { path } = request.args;
       const problem = writablePathProblem(path);
       if (problem) return refuse(problem);
-      return queue("delete_file", { path });
+      return queue({ path });
     }
     case "create_page": {
       const { title, parent, slug } = request.args;
@@ -142,7 +144,7 @@ export async function prepareAgentEdit(request: AgentEdit, context: EditorContex
         return refuse(`No page at ${under}. get_site lists the pages; a page at an .html URL has no subpages.`);
       const address = slug === undefined ? undefined : pageAddressProblem(slug);
       if (address) return refuse(address);
-      return queue("create_page", {
+      return queue({
         // The parent's folder: one new page there waits at a time.
         path: under === "/" ? "." : under.slice(1, -1),
         args: { parent: under, title, ...(slug ? { slug } : {}) },
@@ -152,7 +154,7 @@ export async function prepareAgentEdit(request: AgentEdit, context: EditorContex
       const { page: ref, title, description } = request.args;
       if (title === undefined && description === undefined) return refuse("Give a title, a description, or both.");
       const page = findPage(context, ref);
-      return queue("set_page_details", {
+      return queue({
         path: page.file,
         args: {
           ...(title !== undefined ? { title } : {}),
@@ -166,7 +168,7 @@ export async function prepareAgentEdit(request: AgentEdit, context: EditorContex
       const path = page?.file ?? ref;
       const problem = writablePathProblem(path, { readOnly: true });
       if (problem) return refuse(problem);
-      return queue("open_page", { path });
+      return queue({ path });
     }
     case "inspect_preview": {
       const { page: ref, element, selector, limit } = request.args;
@@ -175,7 +177,7 @@ export async function prepareAgentEdit(request: AgentEdit, context: EditorContex
       const route = ref ?? context.site?.openRoute;
       if (!route) return refuse("The editor shows no page now. Give page.");
       const page = findPage(context, route);
-      return queue("inspect_preview", {
+      return queue({
         path: page.file!,
         args: {
           ...(element !== undefined ? { element } : {}),
@@ -196,7 +198,7 @@ export async function prepareAgentEdit(request: AgentEdit, context: EditorContex
       const source = outline.containers.find((item) => item.id === element) ?? outline.sections.find((item) => item.id === element);
       const problem = makeComponentProblem(source, tag, context.site?.components.map((item) => item.tag) ?? []);
       if (problem) return refuse(problem);
-      return queue("make_component", {
+      return queue({
         path: page.file,
         expectedHash,
         args: { element, tag, ...(fixed !== undefined ? { fixed } : {}) },
@@ -211,7 +213,7 @@ export async function prepareAgentEdit(request: AgentEdit, context: EditorContex
       if (!known) return refuse(`No component <${component}>. get_site lists the components.`);
       if (!known.section) return refuse(`<${component}> is not a section component (its template is not one <section>), so it cannot go between sections.`);
       const at = placement(outline, before, after);
-      return queue("add_section", {
+      return queue({
         path: page.file,
         expectedHash,
         args: { component, container: at.container, index: at.index },
@@ -228,7 +230,7 @@ export async function prepareAgentEdit(request: AgentEdit, context: EditorContex
       const at = placement(outline, before, after);
       if (section.split(".").slice(0, -1).join(".") !== at.container)
         return refuse("A section moves among its own siblings only.");
-      return queue("move_section", {
+      return queue({
         path: page.file,
         expectedHash,
         args: { section, tag: moving.tag, container: at.container, index: at.index },
@@ -241,7 +243,7 @@ export async function prepareAgentEdit(request: AgentEdit, context: EditorContex
       checkHash(expectedHash, outline.hash, page.file);
       const removed = outline.sections.find((item) => item.id === section);
       if (!removed) return refuse(`No section ${section} on this page. get_page lists them.`);
-      return queue("remove_section", {
+      return queue({
         path: page.file,
         expectedHash,
         args: { section, tag: removed.tag },

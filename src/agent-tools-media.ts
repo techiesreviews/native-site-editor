@@ -1,6 +1,7 @@
 import { textHash, textBytes, type AgentCommand } from "../shared/agent";
 import { payloadIdentity, type AgentWorkspace, type JsonValue } from "../shared/agent-command";
-import { mediaChanges, mediaTools, type AgentMedia } from "../shared/agent-media";
+import { mediaChanges, type AgentMedia } from "../shared/agent-media";
+import { agentToolsOn } from "../shared/agent-tool-table";
 import type { AgentReadResult } from "../shared/agent-read";
 import { AgentRecordsError, type AgentRecords } from "./agent-records";
 import { createAgentTools, mediaCommandPins } from "./agent-tools";
@@ -111,7 +112,7 @@ export function createAgentMediaTools(options: {
         message: unknown ? `${message} Check get_command_status; do not replay the change.` : message } };
     }
   };
-  const registry = createAgentTools<Input>(Object.fromEntries(mediaTools.map(tool => [tool, executor])));
+  const registry = createAgentTools<Input>(Object.fromEntries(agentToolsOn("media").map(tool => [tool, executor])));
   return { run: (request: AgentMedia, fence: number, current: () => boolean, deadline?: number, seen?: { page: string | undefined }, signal?: AbortSignal, held?: Held) =>
     registry.run(request.tool, { request, fence, current, deadline, seen, signal, held }) };
 }

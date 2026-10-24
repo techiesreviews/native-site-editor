@@ -18,9 +18,16 @@ function failPending(hub: AgentHub, id: string) {
   }
 }
 
+/** The grant operations the hub Durable Object takes (worker/agent-context.ts sends them). */
+export type HubAction =
+  | { type: "add-grant"; grant: HubGrant; hub?: { login?: unknown; expiresAt?: unknown }; deadline?: number }
+  | { type: "use-grant"; id: string; usedAt?: number; client?: unknown }
+  | { type: "rebind-grant"; id: string; previous: number; generation: number; repoId: number; repo: string; branch: string; deadline?: number }
+  | { type: "remove-grant"; id: string; generation?: number };
+
 /** A new hub for `add-grant` when the session has none yet. */
-export function newHub(action: any): AgentHub | undefined {
-  if (action?.type !== "add-grant") return undefined;
+export function newHub(action: HubAction): AgentHub | undefined {
+  if (action.type !== "add-grant") return undefined;
   const login = String(action.hub?.login ?? "");
   const expiresAt = Number(action.hub?.expiresAt);
   if (!login || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) return undefined;
@@ -29,14 +36,14 @@ export function newHub(action: any): AgentHub | undefined {
 
 export const lateConnection = "Saving the connection took too long. Connect the agent again.";
 /** Called inside the hub Durable Object's concurrency block. */
-export function agentOperation(hub: AgentHub, action: any) {
+export function agentOperation(hub: AgentHub, action: HubAction) {
   // A reservation's deadline: after it, reconciliation may have reclaimed the
   // reservation, so a late add or rebind must not publish uncounted metadata.
   if ((action.type === "add-grant" || action.type === "rebind-grant") && action.deadline !== undefined &&
       !(Date.now() < Number(action.deadline)))
     throw new HttpError(409, lateConnection);
   if (action.type === "add-grant") {
-    const grant = action.grant as HubGrant;
+    const { grant } = action;
     if (!hub.grants.some(item => item.id === grant.id) && hub.grants.length >= 20)
       throw new HttpError(409, "This editor session already has 20 agent connections. Disconnect one in the editor's agent menu first.");
     hub.grants = [...hub.grants.filter((item) => item.id !== grant.id), grant];

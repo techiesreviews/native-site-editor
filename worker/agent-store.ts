@@ -1,7 +1,7 @@
 // The hub persists grant metadata only. Legacy content stays untouched until migration,
 // except for the existing expiry/sign-out cleanup in clearHub.
 import type { AgentHub } from "./agent-context";
-import { agentOperation, newHub } from "./agent-operations";
+import { agentOperation, newHub, type HubAction } from "./agent-operations";
 import { HttpError } from "./github";
 
 /** The Durable Object storage calls the hub makes. */
@@ -13,7 +13,9 @@ export interface HubStorage {
 type Index = Record<string, number>;
 const BATCH = 100;
 const draftKey = (hash: string) => `draft:${hash}`;
-const grantOperations = new Set(["add-grant", "use-grant", "rebind-grant", "remove-grant"]);
+const grantOperations = new Set<unknown>(["add-grant", "use-grant", "rebind-grant", "remove-grant"] satisfies HubAction["type"][]);
+const isHubAction = (action: unknown): action is HubAction =>
+  typeof action === "object" && action !== null && grantOperations.has((action as { type?: unknown }).type);
 
 async function deleteKeys(storage: HubStorage, keys: string[]) {
   for (let at = 0; at < keys.length; at += BATCH) await storage.delete(keys.slice(at, at + BATCH));
@@ -39,8 +41,8 @@ export async function clearTemporary(storage: HubStorage) {
 }
 
 /** Grant operations only; refuse obsolete actions before any storage read or write. */
-export async function hubOperation(storage: HubStorage, action: any, setAlarm: (at: number) => Promise<void>) {
-  if (!grantOperations.has(action?.type))
+export async function hubOperation(storage: HubStorage, action: unknown, setAlarm: (at: number) => Promise<void>) {
+  if (!isHubAction(action))
     return Response.json({ error: "Unknown agent operation." }, { status: 400 });
   const stored = await storage.get<AgentHub>("session");
   let hub = stored?.kind === "agent-hub" && stored.expiresAt > Date.now() ? stored : undefined;

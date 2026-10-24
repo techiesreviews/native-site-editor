@@ -1,8 +1,8 @@
 ---
 title: "Agent operation table"
 type: task (AFK)
-status: open
-assignee: lead-50 (this session)
+status: closed
+assignee: lead-50
 builder: claude
 blocked_by: [41-is-a-file-rule]
 ---
@@ -39,3 +39,13 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `kit unit --affected`, `kit specs --affected` plus `kit specs native-mcp.spec.ts native-mcp-media.spec.ts native-agent-edits.spec.ts`.
 - Review: `kit review --ticket <this ticket>` (GPT-6.1 Sol, medium, read-only). Land: `kit pr --ticket <this ticket>`.
 - Report: lists derived (which), unit and specs `RESULT:` lines, review folder and decisions, PR and merge SHA.
+
+## Done (2026-10-24)
+
+Agents see the same tools, arguments and answers; MCP `tools/list` is byte-identical to `dev` (3c5518e4).
+
+- `shared/agent-tool-table.ts` (new): `agentTools`, one row per agent tool with its route (read, status, edit, media, requests), effect (read, edit, remove: the MCP hints), the browser operation it becomes, atomic, and the two exceptions (`idempotent: false`, `mcp: false` for `get_request`). The two Astro-era commands stay a short list beside it.
+- Derived from it: the `AgentOperation` union (`shared/agent.ts`), the tab's admission of commands, reads and Media tools (`src/agent-transport.ts`), the atomic list (`src/agent-site.ts`), the edit, status and Media registries (`src/agent-tools-edit.ts`, `src/agent-tools-media.ts`), the request tools (`shared/agent-requests.ts`), the command an edit queues (`shared/agent-edit.ts`, so `edit_file` becomes `write_file` there), and the Worker's MCP registration: `worker/mcp.ts` registers in table order with the table's hints, and refuses a row without a registration or a registration without a row.
+- Types: `applySiteCommand` must handle every table operation; `AgentRead["tool"]`, `AgentEditTool` and `MediaTool` must name the table's tools of their route, both ways. The `any` in `shared/agent-requests.ts` (request actions), `worker/agent-operations.ts` and `worker/agent-store.ts` (hub grant actions) and `pausedMcp` became types.
+- `tests/agent-tool-table.test.ts`: `tools/list` against `dev`'s names and SHA-256; the Worker registers exactly the MCP rows; each route's browser registry runs exactly its rows; `applySiteCommand` reaches a case for every operation; the atomic list is as before.
+- Left: `worker/agent-context.ts:421` (`any`, outside this slice's files); `shared/agent-media.ts` `mediaTools`, `shared/agent-read.ts` and `src/agent-tools-read.ts` keep their own lists, held to the table by types and the test.

@@ -1,45 +1,18 @@
 import { agentAudio, agentDocuments, agentImages, agentVideos, previewablePictures, subtitles } from "./media-kinds";
 import type { AgentImageTrim } from "./agent-image-frame";
 import type { AddingSettings } from "./media-records";
+import type { AgentOperation } from "./agent-tool-table";
 
 /**
- * What an agent can ask the open editor tab to do. The Worker validates and
- * relays each one; the browser applies it through the same code the
+ * What an agent can ask the open editor tab to do (shared/agent-tool-table.ts). The Worker
+ * validates and relays each one; the browser applies it through the same code the
  * editor's own controls use, so every change is an ordinary draft (Undo,
  * Discard changes, Publish by the user).
  *
  * `update_active_draft` and `create_file_draft` are the Astro-era active-file
  * operations; the code editor still applies them.
  */
-export type AgentOperation =
-  | "update_active_draft"
-  | "create_file_draft"
-  | "write_file"
-  | "create_page"
-  | "set_page_details"
-  | "add_section"
-  | "make_component"
-  | "move_section"
-  | "remove_section"
-  | "move_file"
-  | "delete_file"
-  | "open_page"
-  | "inspect_preview"
-  | "list_media"
-  | "preview_media"
-  | "improve_images"
-  | "loop_video"
-  | "video_still"
-  | "write_subtitles"
-  | "frame_image"
-  | "place_media"
-  | "describe_media"
-  | "change_collection"
-  | "adding_settings"
-  | "remove_media"
-  | "keep_media"
-  | "restore_media"
-  | "replace_media";
+export type { AgentOperation };
 
 export interface AgentCommand {
   /** Receiving tab's durable ownership proof; absent on legacy stored commands. */
