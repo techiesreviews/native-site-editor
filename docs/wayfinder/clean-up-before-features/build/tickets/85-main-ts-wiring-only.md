@@ -1,8 +1,8 @@
 ---
 title: "Workspace mount, palette, component tools and rail: main.ts is wiring"
 type: task (AFK)
-status: open
-assignee: lead-85 (this session)
+status: closed
+assignee: lead-85
 builder: claude
 blocked_by: [11-lazy-media-and-pages, 25-boot-and-snapshot, 26-github-retries-and-toast, 31-native-site-runtime, 32-one-overlay-for-agents-and-media, 41-is-a-file-rule, 53-agent-wiring-out-of-main, 70-pass-throughs-and-discard, 80-version-and-history-out-of-main, 81-code-panes-out-of-main, 82-setup-and-login-out-of-main, 83-repositories-and-account-out-of-main, 84-files-and-pages-out-of-main, 86-workspace-mount-out-of-main, 87-site-loading-out-of-main, 88-media-wiring-out-of-main, 89-page-builder-wiring-out-of-main]
 ---
@@ -43,3 +43,32 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 ## Comments
 
 - 2026-10-23, lead: moved here from slice 31 (its last P1, review lead-31/20261023T185931Z): the remaining `native*` module variables in `src/main.ts` that are screen bookkeeping rather than site data, among them `nativeHistoryAliases`, `nativeMountListener`, `nativeHistoryShares`, `nativeAddPoints`, `nativeVariantFiles`, `nativeLinkParents`, `nativeStructurePaintedSources`, `nativeStructurePaints`, `nativeComponentFieldToken`, `nativeComponentFieldSnapshot`, `nativeTextIndexGate`. Each moves to the controller or module that uses it.
+
+## Done (2026-10-25)
+
+No visible change: the preview, the toast and its Undo, new, uploaded and deleted drafts, the agent menu, setup's panels, Media and the settings dialogs behave as before.
+
+- `src/main.ts` 855 → 531 lines (−324); ceiling 860 → 540. What left it, each to a new module whose bodies moved as they were plus `ports.` prefixes:
+  - `src/site-preview.ts` (`createSitePreview`, `SitePreviewPorts`): `nativeModeActive`, `nativeRouteForPath`, `nativeRouteInfo`, `nativeTitles`, `nativeLinkedSheets`, `nativePageStyles`, `withSiteConfig`, `nativePreviewSources`, `updateNativePreview`, `updateNativePreviewSources`, `updateNativePreviewAssets`, `nativeComponentTagForPath`, `nativeFallbackPage` and the `nativePreviewBehind` flag (the text index and the workspace read and write it through `sitePreview`'s accessor). Made right after the runtime, before site loading, which takes its functions; site loading's readers go in as arrows, the preview, the version view and preview selection as getters.
+  - `src/announce.ts` (`createAnnounce`): `announce`, `showToast`, `undoAction` and the toast's lazy load; made first, so every host takes them by value.
+  - `src/draft-views.ts` (`createDraftViews`, `DraftViewsPorts`): `openNewDraft`, `showUpload`, `showDeletedFile`; made before Pages & files, which takes `openNewDraft`; `fileGeneration` goes in with a getter and setter.
+  - `src/agent-menu-host.ts` (`createAgentMenuHost`, `AgentMenuHostPorts`): `agentContext`, the agent site host and `agentController`; made right after the agent's commands, which it takes by value.
+  - `src/lazy-loaders.ts` (`createLazyLoaders`, `LazyLoadersPorts`): every `lazyModule(...)` loader and the `agentPrompts` and `onboardingCopy` state (the setup host reads them through `lazyLoaders`). Changes beyond prefixes: `guardedEdits` written out as `guardedEdits: ports.guardedEdits` in the settings' ports, and setup's actions' port object stays in `main.ts` as the `setupActions` arrow, read when they first load.
+  - `src/lazy-module.ts` (`lazyModule`), `src/browser-storage.ts` (`storage`), `src/ui/select-options.ts` (`options`): unchanged bodies.
+- What stays in `main.ts`, and why:
+  - Imports (about 55 lines): one per module the boot builds.
+  - Host handles (about 45): `app`, `element`, the GitHub reads, `editorModule`, `appStore`, `workspaceSession`, `cleanSources`, `agentPresence`, `runtime`; every host reads them.
+  - The guarded edit adapter `editorWorkspace` (about 40): its ports reach nearly every host (versions, preview, component tools, agent commands, Pages & files, linked styles, the workspace); a module would take the same names through one more port object.
+  - The host and controller constructions with their port lists (about 300): wiring, in construction order.
+  - Small hoisted functions that hosts take by value before the host consts exist (about 45): `currentLoad`, `nextLoad`, `stampOf`, `entryAt`, `findEntry`, `shownScope`, `draftScope`, `deactivateNative`, `setCurrentPage`, `imagesSignature`, `updateAgentContext`.
+  - Module `let` state shared by several hosts through accessors, each with more than one reader or writer: `componentTools`, `nativeMountListener` (set by the guarded edit adapter, read by linked styles and the workspace), `nativePreview`, `pageStructure`, `deactivatingAway`, `repositories`, `info`, `fileGeneration`. The other variables the 2026-10-23 comment names already live in `src/workspace-mount.ts`, `src/page-builder-host.ts` and `src/site-text-index.ts`.
+  - Chunk recovery, the draft baseline, the boot controller and the start-up listeners (about 60): `boot()`.
+- `tests/main-ts-ceiling.test.ts`: ceiling 540; the site preview's and lazy loaders' members are checked not to be used before their line, and `createSitePreview`, `createDraftViews` (with `fileGeneration`'s getter and setter), `createAgentMenuHost` and `createLazyLoaders` to get no `let` by value or later const by name. `tests/workspace-session-guard.test.ts`: the `openNewDraft` allowlist entry follows it to `src/draft-views.ts`. `docs/agents/code-map.md` names the new modules, redraws the `main.ts` sections and replaces `lazyModule` in Main entry points with `lazyLoaders` and `openNewDraft`. TD 01 closed with the final count.
+- Tests (real runtime, app store and drafts where used; ports typed with `satisfies`):
+  - `tests/site-preview.test.ts`: without a site, no route, component, fallback or update; a file's route and component, a page's title and description, the titles by route; the page shown after one is gone (nearest folder page, never itself, else home); the stylesheets pages link and the shown page's with their imports (the home page's when none is open); a page update with the route, the component, the editable template, the unreadable files, the version on show in place of its file and the site's settings, clearing the behind flag; a source update without a route, with the assets, loading assets, style files and shown files; updates waiting while no preview exists. The preview's stylesheet lookup is a stub (the module needs a browser).
+  - `tests/announce.test.ts`: said in #status, shown as the toast once it loads, a quiet one only said; a toast said over before it loads not shown; Undo running only while its step is the newest, else refusing.
+  - `tests/draft-views.test.ts`: a new draft of the open repository and branch mounting with the stamp, a counted file selection and its options, closing the explorer unless kept; another repository's or branch's draft, or none open, not opened; moved and copied files whose text is not held; an uploaded picture with its size, its image from the held bytes and Discard opening what is left; a non-picture upload without an image; a deleted file and Restore.
+  - `tests/agent-menu-host.test.ts`: the menu mounting for the signed-in account (none before); its connection, requests, questions, a shown request, commands and reload reaching the editor; the context waiting for the whole site's index and describing the repository, branch, commit, drafts, site, route info, sources, existing files and the page open; nothing built once its stamp no longer holds.
+  - `tests/lazy-loaders.test.ts`: setup's actions made once with their ports read on first load, the checklist and wizard waiting for them and the wizard bringing the agent prompt; the agent copy after the spotlight; the settings after Pages' actions, with the load number, page labels, setup scope and a restore through the load's stamp; the media picker reading the shown and pinned workspaces and the usage check; the agent menu with the browser's records; a failed chunk import handed to chunk recovery and retried; a refused browser store keeping nothing. The lazily loaded modules are stubs.
+  - `tests/select-options.test.ts`: a select's options replaced in order.
+- Validation: `kit unit --affected` `RESULT: ok unit 45/45 (8 files)`; the neighbouring host and guard tests (code map, component mode, guarded reads, media kinds, exports, the page-builder, workspace, media, site loading, text index and Pages & files hosts, agent text commits, editor workspace, review findings) 401/401; `npm test` 5584/5584; `npm run check` and `npm run lint` green; `kit specs --affected` `RESULT: ok specs 61/61 passed`; `kit size` `RESULT: ok size boot 358 KB (+1 KB) vs dev@da78179, budget 362 KB`.

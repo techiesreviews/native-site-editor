@@ -1,7 +1,7 @@
 # Code map
 
 Start with the concern, then read its entry symbol. Domain words: [CONTEXT.md](../../CONTEXT.md).
-Host state, transactions and DOM mounting live in main.ts; controllers receive live ports.
+main.ts holds the host's state and builds the hosts and controllers in order, then boots; they receive live ports.
 Historical searches: `applyNativeOperation` is gone; use guarded edits and native source transforms below.
 For historical src/components.ts searches, start at the Component tools row.
 
@@ -13,7 +13,7 @@ Each file is followed by its declared entry symbols. Styles, fixtures, scripts a
 
 | Concern | Files and entry symbols |
 | --- | --- |
-| Workspace mounting and lazy panels | `src/workspace-mount.ts` — `createWorkspaceMount`, `mountWorkspace`, `closeWorkspace`, `showDirectory`, `setupScope` (the workspace's markup and controls, closing it before sign-in, a folder's summary, the checklist's scope key); `src/main.ts` — `workspace`, `lazyModule`; `src/app-store.ts` — `createAppStore` |
+| Workspace mounting and lazy panels | `src/workspace-mount.ts` — `createWorkspaceMount`, `mountWorkspace`, `closeWorkspace`, `showDirectory`, `setupScope` (the workspace's markup and controls, closing it before sign-in, a folder's summary, the checklist's scope key); `src/main.ts` — `workspace`, `lazyLoaders`; `src/lazy-loaders.ts` — `createLazyLoaders` (the modules loaded on first use: the confirm dialog, History, the media picker and workspace, setup's actions and panels, the spotlight, the agent menu, the settings and the agent's site); `src/lazy-module.ts` — `lazyModule`; `src/app-store.ts` — `createAppStore` |
 | Source editor, drafts and Undo/Redo | `src/components/source-editor.ts` — `mountSourceEditor`; `src/draft-store.ts` — `createDraftStore`; `src/drafts.ts` — `draftStore` |
 | Monaco loading and code panes | `src/controllers/code-panes-controller.ts` — `createCodePanesController`; `src/workspace-mount.ts` — `openCodeEditor`, `closeEditor`, `nativeHistorySession` (the code panes' wiring, the file's source editor and its journal); `src/components/code-editor.ts` — `mountCodeEditor` |
 | Linked styles, the secondary pane and rule chips | `src/controllers/linked-styles-controller.ts` — `createLinkedStylesController`, `openSecondary`, `linkNativeStyles` |
@@ -35,14 +35,17 @@ Each file is followed by its declared entry symbols. Styles, fixtures, scripts a
 | Command palette | `src/controllers/command-palette-controller.ts` — `createCommandPaletteController` |
 | Editor colours and surfaces | `src/style.css`; `src/theme.css`; `src/utilities.css` |
 | The open site's state and effective sources | `src/native-site-runtime.ts` — `createNativeSiteRuntime` (the site, GitHub's layer, its source, text source, files, new drafts, shown paths, a save adopted and reset), `textNow` (a file's text now: the preview's source, and the text source of media text, guarded edits and agent reads), `nativeFiles`; `src/main.ts` — `runtime` |
-| Routes and preview updates | `src/page-builder-host.ts` — `refreshNativeRoutes`; `src/main.ts` — `updateNativePreviewSources` |
+| Routes and preview updates | `src/site-preview.ts` — `createSitePreview`, `SitePreviewPorts` (a file's route and component, a page's head, the stylesheets pages link, the preview's sources and updates, the page shown after one is gone); `src/page-builder-host.ts` — `refreshNativeRoutes`; `src/main.ts` — `sitePreview`, `updateNativePreviewSources` |
+| Status line and toast | `src/announce.ts` — `createAnnounce` (said in #status, the toast loaded on first use, its Undo); `src/main.ts` — `announce` |
+| New, uploaded and deleted drafts, opened | `src/draft-views.ts` — `createDraftViews`, `DraftViewsPorts`; `src/main.ts` — `openNewDraft` |
+| Browser storage and select options | `src/browser-storage.ts` — `storage`; `src/ui/select-options.ts` — `options` |
 | Preview host, selection and edit bar | `src/components/native-preview.ts` — `createNativePreview`; `src/controllers/preview-selection-controller.ts` — `createPreviewSelectionController` |
 | Canvas address mapping | `src/components/canvas-path.ts` — `canvasPath` |
 | Frame rendering, typing and host messages | `src/components/native-preview-runtime.js` — `apply`, `emit`, `renderPage` |
 | Frame protocol validation and freshness | `src/components/preview-protocol.ts` — `FrameMessage`, `HostMessage`, `readFrameMessage`, `FRESHNESS`; `src/components/preview-wire.ts` — `FRAME_SOURCE`, `HOST_SOURCE` |
 | Frame message transport and request/reply | `src/components/preview-link.ts` — `createPreviewLink`, `iframeFramePort`; `src/components/preview-frame-state.ts` — `createPreviewFrameState` |
 | Edit bar controls and Page Structure | `src/controllers/page-structure-controller.ts` — `createPageStructureController`, `renderNativeEditBar`; `src/components/edit-bar.ts` — `createEditBar`, `EditBarControl`; `src/components/page-structure.ts` — `createPageStructure` |
-| Agent connection, requests and pins | `src/controllers/agent-controller.ts` — `createAgentController`; `src/agent-site-host.ts` — `createAgentSiteHost`, `createAgentCommands` (an agent's commands through the editor's own actions, its legacy drafts and reload); `src/agent-site.ts` — `buildAgentContext`, `applySiteCommand`; `src/components/agent-pins.ts` — `createAgentPins`; `src/agent-presence.ts` — `createAgentPresence` (an agent at work on a section: its outline and Page Structure dot, ticket 33), `src/agent-site.ts` `agentPresenceTarget` |
+| Agent connection, requests and pins | `src/controllers/agent-controller.ts` — `createAgentController`; `src/agent-menu-host.ts` — `createAgentMenuHost`, `AgentMenuHostPorts` (the context agents are shown, the files they read and the menu's controller); `src/agent-site-host.ts` — `createAgentSiteHost`, `createAgentCommands` (an agent's commands through the editor's own actions, its legacy drafts and reload); `src/agent-site.ts` — `buildAgentContext`, `applySiteCommand`; `src/components/agent-pins.ts` — `createAgentPins`; `src/agent-presence.ts` — `createAgentPresence` (an agent at work on a section: its outline and Page Structure dot, ticket 33), `src/agent-site.ts` `agentPresenceTarget` |
 | Agent live transport, tools, records and ownership | `src/agent-transport.ts` — `createLiveTransport` (relay socket, handshake, reconnects); `src/agent-tools.ts` — `createAgentTools`; `src/agent-tools-read.ts` — `createAgentReadTools` (reads through `shared/site-files.ts` `SiteFiles`, the runtime's text now first); `src/agent-tools-edit.ts` — `createAgentEditTools`; `src/agent-tools-media.ts` — `createAgentMediaTools`; `src/agent-records.ts` — `indexedDbAgentRecords` (receipts, conversations); `src/agent-owner.ts` — `createAgentOwner` (receiving-tab generation); `src/agent-recovery.ts` — `createAgentRecovery`; `src/agent-watch.ts` — `createRequestTools` (held waits while connected) |
 
 ### Shared rules and guarded edits
@@ -236,24 +239,20 @@ Ranges are approximate navigation hints, measured in this worktree; search the s
 
 | Section, in source order | Approximate lines | Key functions / wiring |
 | --- | --- | --- |
-| Imports, host handles, lazy loading, the native site runtime's ports, site loading and text index ports (src/site-loading.ts, src/site-text-index.ts) | 1–223 | lazyModule, runtime, createSiteLoading, createSiteTextIndex |
-| Component tools handle, guarded edit adapter and parked steps | 224–277 | componentTools, nativeMountListener, editorWorkspace, guardedEdits, parkedSteps |
-| Page-builder host ports (src/page-builder-host.ts: palette, component tools, inserts, block moves and drags, preview selection, Variant files, CSS workspace, Page Structure controller, page meta and settings, card grids) | 278–299 | pageBuilder, paletteController, blockMoves, previewSelection, pageStructureController, cards |
-| History wiring and the version on show (src/version-view.ts) | 300–309 | versions |
-| Linked styles and secondary pane ports (src/controllers/linked-styles-controller.ts), repository index | 310–333 | linkedStyles, repositoryIndex, findEntry |
-| Native preview handle, draft scope and route info | 334–370 | nativeModeActive, draftScope, nativeRouteInfo, nativeTitles |
-| Preview sources and updates | 371–432 | nativePageStyles, updateNativePreview, updateNativePreviewSources |
-| Media host ports (src/controllers/media-host.ts: image paths, uploads, media reads, the media controller and its batches) | 433–444 | media, mediaController, mediaPorts, nativeImagePaths, uploadFilesTo, readMediaText |
-| Leaving the site and current page | 445–487 | deactivateNative, setCurrentPage (status, errorMessage, api: src/github-reads.ts) |
-| Login, Start your site, Setup checklist, wizard and Get started ports (src/setup-host.ts) | 488–510 | setup |
-| Pages & files host ports (src/pages-and-files-host.ts: trees, tabs, Create, file operations, resync, save) | 511–530 | pagesAndFiles, pagesController, savePublish, afterFileChanges, treeState |
-| Workspace host ports (src/workspace-mount.ts: the workspace's screen, code panes, source editor, folder summary, closing it); the toast | 531–581 | workspace, mountWorkspace, openCodeEditor, closeWorkspace, showDirectory, setupScope, announce |
-| Source pane ports (src/controllers/source-pane-controller.ts) | 582–611 | sourcePane, openEntry, mountSource, nativeComponentTagForPath, updateAgentContext |
-| Agent context and command ports (src/agent-site-host.ts) | 612–657 | agentContext, agentSiteHost, agentCommands |
-| Fallback page; new, uploaded and deleted drafts | 658–732 | nativeFallbackPage, openNewDraft, showUpload, showDeletedFile |
-| Workspace boot ports (src/workspace-boot.ts) | 733–757 | workspaceBoot, restoreFile, loadSnapshot, chooseRepository |
-| Repository list, account switching and sign-out ports (src/repository-list.ts), storage | 758–785 | checkNewRepositories listeners, loadRepositories, refreshRepositoryList, disconnect, storage |
-| Draft baseline, agent/boot ports and startup | 786–855 | agentController, boot, renderLogin("loading"), workspaceBoot.startGuess |
+| Imports, host handles, the status line and toast (src/announce.ts), GitHub reads, session, the native site runtime's ports | 1–100 | announce, api, workspaceSession, nextLoad, runtime |
+| Site preview ports (src/site-preview.ts), site loading and text index ports (src/site-loading.ts, src/site-text-index.ts), chunk recovery | 101–146 | sitePreview, updateNativePreviewSources, createSiteLoading, createSiteTextIndex, stampOf |
+| Lazy loader ports (src/lazy-loaders.ts) | 147–168 | lazyLoaders, loadSiteSettings, loadMedia, loadSetupActions |
+| Component tools handle, guarded edit adapter and parked steps | 169–220 | componentTools, nativeMountListener, editorWorkspace, guardedEdits, parkedSteps |
+| Page-builder host ports (src/page-builder-host.ts: palette, component tools, inserts, block moves and drags, preview selection, Variant files, CSS workspace, Page Structure controller, page meta and settings, card grids) | 221–245 | pageBuilder, paletteController, blockMoves, previewSelection, pageStructureController, cards |
+| History wiring (src/version-view.ts), linked styles (src/controllers/linked-styles-controller.ts), repository index, preview handles and draft scope | 246–283 | versions, linkedStyles, repositoryIndex, findEntry, nativePreview, draftScope |
+| Media host ports (src/controllers/media-host.ts) | 284–295 | media, mediaController, mediaPorts, nativeImagePaths, uploadFilesTo, readMediaText |
+| Leaving the site, current page and session state | 296–326 | deactivateNative, setCurrentPage, info, fileGeneration |
+| Setup host ports (src/setup-host.ts), draft views (src/draft-views.ts) | 327–355 | setup, imagesSignature, openNewDraft, showDeletedFile |
+| Pages & files and workspace host ports (src/pages-and-files-host.ts, src/workspace-mount.ts) | 356–401 | pagesAndFiles, pagesController, savePublish, workspace, mountWorkspace, setupScope |
+| Source pane ports (src/controllers/source-pane-controller.ts) | 402–422 | sourcePane, openEntry, mountSource, updateAgentContext |
+| Agent command and menu ports (src/agent-site-host.ts, src/agent-menu-host.ts) | 423–439 | agentCommands, agentController |
+| Workspace boot and repository list ports (src/workspace-boot.ts, src/repository-list.ts) | 440–477 | workspaceBoot, restoreFile, loadSnapshot, loadRepositories, disconnect |
+| Draft baseline, boot ports and startup | 478–531 | boot, renderLogin("loading"), workspaceBoot.startGuess |
 
 ## Main entry points
 
@@ -262,7 +261,7 @@ Frequently used names in src/main.ts (28): its own top-level functions and const
 | Symbol | Purpose |
 | --- | --- |
 | `appStore` | Holds reactive repository, snapshot, file and selection state. |
-| `lazyModule` | Caches lazy imports; clears failed loads for retry. |
+| `lazyLoaders` | Modules loaded on first use, retried after failures (lazy-loaders.ts). |
 | `mountWorkspace` | Mounts editor DOM and controls (`workspace`, workspace-mount.ts). |
 | `mountComponentTools` | Supplies live host ports to component tools (page-builder-host.ts). |
 | `guardedEdits` | Runs proved edits as one undoable transaction. |
@@ -270,10 +269,10 @@ Frequently used names in src/main.ts (28): its own top-level functions and const
 | `pageStructureController` | Page Structure, edit-bar models and text edits (page-builder-host.ts). |
 | `draftScope` | Identifies the current account, repository and branch. |
 | `setupScope` | Current account/repository/branch key (`workspace`, workspace-mount.ts). |
-| `nativeModeActive` | Reports whether a native site is active. |
+| `nativeModeActive` | Reports whether a native site is active (site-preview.ts). |
 | `runtime` | Owns the open site: sources, files, reset (native-site-runtime.ts). |
-| `nativePageStyles` | Lists the shown page's shared stylesheets with imports. |
-| `updateNativePreviewSources` | Updates preview sources; loads needed media, styles and templates. |
+| `nativePageStyles` | Lists the shown page's stylesheets with imports (site-preview.ts). |
+| `updateNativePreviewSources` | Updates preview sources; loads media, styles, templates (site-preview.ts). |
 | `activateNativeSite` | Resolves native conventions, starts the editing preview (site-loading.ts). |
 | `ensureNativeTextIndex` | Waits for the complete native text index (site-text-index.ts). |
 | `restoreFile` | Opens a path from drafts or the current snapshot. |
@@ -283,7 +282,8 @@ Frequently used names in src/main.ts (28): its own top-level functions and const
 | `api` | Reads a typed API response through the receipt helper. |
 | `status` | Updates the status line and remembers its last message. |
 | `errorMessage` | Converts failures into visible editor notices. |
-| `announce` | Writes an accessibility announcement. |
+| `announce` | Says it in #status and the toast (announce.ts). |
+| `openNewDraft` | Opens a new, uploaded or moved draft (draft-views.ts). |
 | `afterFileChanges` | Refreshes trees, routes, preview, agent (pages-and-files-host.ts). |
 | `updateAgentContext` | Tells the agent controller that shared context changed. |
 | `pagesController` | Page operations and explorer tabs (pages-and-files-host.ts). |
@@ -296,7 +296,7 @@ Agent script arguments and test fixture groups: [agent-scripts.md](agent-scripts
 - Frame message: `rg -n 'link\.on\("|type ===|case "' src/components/native-preview.ts src/components/native-preview-runtime.js`; validate its shape in preview-protocol.ts.
 - New edit-bar button: `rg -n 'renderNativeEditBar|kind: "button"|onPress' src/controllers/page-structure-controller.ts src/components/edit-bar.ts`; the controller builds controls, createEditBar renders them.
 - Source writes: `rg -n 'edits\.(run|now)|guardedEdits\.(run|now)' src/controllers src/page-builder src/main.ts`; follow the plan into guarded-edit.ts and guarded-edit/commit.ts.
-- Main declaration: `rg -n '^(async )?function (refreshNativeRoutes|lazyModule)\b|^const (guardedEdits|runtime)\b' src/main.ts`; read one bounded range around the hit.
+- Main declaration: `rg -n '^function (stampOf|setCurrentPage)\b|^const (guardedEdits|runtime|sitePreview|lazyLoaders)\b' src/main.ts`; read one bounded range around the hit.
 - Guard for a concern: `rg -n 'test\(|type Rule|Allowlist' tests/*-guard.test.ts`; test-running recipes live in local-testing.md.
 
 ## Staleness
