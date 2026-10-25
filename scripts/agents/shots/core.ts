@@ -162,7 +162,8 @@ function contactRows(shots: Shot[]): Row[] {
 function renderContact(rows: Row[], width: number) {
   const sections = rows.map(row => `<section><h2>${escape(row.label)}</h2><div class="row${row.paired ? " paired" : ""}">${row.tiles.map(tile => {
     // The small per-shot WebP may already have lost dimensions. Compose from the original PNG.
-    const file = tile.shot.files.find(file => file.path.endsWith(".png")) ?? tile.shot.files.find(file => file.path.endsWith(".webp"));
+    // A record strip is never the screen's picture.
+    const file = tile.shot.files.find(file => file.path.endsWith(".png")) ?? tile.shot.files.find(file => file.path.endsWith(".webp") && !file.path.endsWith("-strip.webp"));
     return `<figure style="inline-size:${tile.width}px"><figcaption>${escape(tile.label)}</figcaption>${file ? `<img style="inline-size:${tile.imageWidth}px;block-size:${tile.imageHeight}px" src="${escape(encodeURI(file.path))}" alt="${escape(tile.label)}">` : `<p style="block-size:${tile.imageHeight}px">No screenshot</p>`}</figure>`;
   }).join("")}</div></section>`).join("\n");
   return `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Kit shots</title><style>

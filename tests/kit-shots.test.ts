@@ -89,6 +89,9 @@ test("contact HTML labels single rows and orders paired before/after columns", (
   assert.match(escaped, /<h2>editor-&lt;script&gt;<\/h2>/);
   assert.match(escaped, /390px · light · &lt;script&gt; — failed/);
   assert.match(contactHtml([{ ...shot(), ok: false, files: [] }]), /No screenshot/);
+  const stripOnly = contactHtml([{ ...shot(), ok: false, files: [{ path: "editor-390-light-drop-strip.webp", bytes: 7 }] }]);
+  assert.match(stripOnly, /No screenshot/, "a record strip never stands in for the screen");
+  assert.doesNotMatch(stripOnly, /-strip\.webp/);
 });
 
 test("a failed attempt keeps the record strips it saved in index.json", () => {

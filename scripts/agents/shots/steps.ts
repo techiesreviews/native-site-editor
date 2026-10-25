@@ -61,7 +61,7 @@ export async function runStep(page: Page, source: string, record?: Recorder) {
       return;
     }
     case "expect":
-      try { await expect(page.getByText(step.text).or(page.getByRole("button", { name: step.text })).filter({ visible: true }).first()).toBeVisible({ timeout: expectTimeout }); }
+      try { await expect(page.getByText(step.text, { exact: true }).or(page.getByRole("button", { name: step.text, exact: true })).filter({ visible: true }).first()).toBeVisible({ timeout: expectTimeout }); }
       catch { throw new Error(`expect visible "${step.text}" failed: nothing visible says "${step.text}"`); }
   }
 }
