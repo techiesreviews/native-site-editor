@@ -156,8 +156,10 @@ on a usage-limit `problem:` line, tell Lex the reset time and carry on with Clau
 - **Scoreboard:** the kit records builder, time, review rounds, findings by kind, cost where known
   and landing per piece; `kit score <map>` prints it and `kit score <map> --snapshot` writes
   `build/scoreboard.json` for the lead to commit at the end of a build.
-- **Planned:** Lex's corrections per piece on the scoreboard; one visual page per build shown in chat
-  at each milestone ([factory 04](../wayfinder/software-factory/tickets/04-grill-scoreboard.md#resolution-2026-10-22)).
+- **Build page:** at each milestone and at the end, the lead runs `kit score <map> --html` and shows
+  the page it prints with T3 `html_render`: where the build is, what reviews caught, what Lex
+  corrected, the ladder and builders, in plain words
+  ([factory 04](../wayfinder/software-factory/tickets/04-grill-scoreboard.md#resolution-2026-10-22)).
 - **Done when:** `RESULT: ok preview <version> <sha>` and the note is sent.
 
 ### 11. Lex's end check
