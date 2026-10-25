@@ -2,7 +2,7 @@
 title: "kit next picks the ticket and builder by fixed rules"
 type: task (AFK)
 status: open
-assignee:
+assignee: sf-30 (this session)
 builder: claude
 blocked_by: []
 ---
