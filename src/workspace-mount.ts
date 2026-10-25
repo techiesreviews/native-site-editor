@@ -143,9 +143,9 @@ export interface WorkspaceMountPorts {
   pageStructureController: Pick<ReturnType<typeof createPageStructureController>, "nativeFormatActions" | "applyNativeTextEdit" | "textEdits"
     | "nativeElementMoveAction" | "removeRow" | "isNativeSectionTag" | "moveBlock">;
   linkedStyles: Pick<ReturnType<typeof createLinkedStylesController>, "updateBodyStyles" | "clearSources">;
-  versions: Pick<ReturnType<typeof createVersionView>, "view" | "history">;
+  versions: { readonly view: ReturnType<typeof createVersionView>["view"]; history: Pick<ReturnType<typeof createVersionView>["history"], "destroy"> };
   cards: Cards;
-  pagesAndFiles: Pick<PagesAndFiles, "pageActions" | "mountExplorer" | "loadPagesActions"> & { filesTreeController: Pick<PagesAndFiles["filesTreeController"], "refresh"> };
+  pagesAndFiles: Pick<PagesAndFiles, "pageActions" | "mountExplorer"> & { loadPagesActions(): Promise<unknown>; filesTreeController: Pick<PagesAndFiles["filesTreeController"], "refresh"> };
   setup: { setupController: Pick<SetupHost["setupController"], "mount" | "dispose">; setupEntry: Pick<SetupHost["setupEntry"], "remove">; startSitePanel: () => Promise<HTMLElement> };
   site: WorkspaceSitePorts;
   builder: WorkspaceBuilderPorts;

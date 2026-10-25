@@ -2,7 +2,9 @@ import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import { registerHooks } from "node:module";
 import { signal } from "@preact/signals-core";
+import type { SourceFile } from "../src/components/source-editor.ts";
 import { draftKey, type DraftScope } from "../src/drafts.ts";
+import type { NativeSite } from "../shared/native-project.ts";
 import type { WorkspaceMountPorts } from "../src/workspace-mount.ts";
 import type { WorkspaceScope } from "../src/workspace-session.ts";
 import type { Directory, Repository, SessionInfo, Snapshot } from "../shared/types.ts";
@@ -45,27 +47,29 @@ after(() => {
 });
 
 // The workspace's components, stubbed: each records what it was given and hands back a fake.
-interface Made { kind: string; options: unknown; calls: string[]; value: object }
+interface Made { kind: string; options: unknown; calls: string[]; args: Map<string, unknown[]>; value: object }
 const made: Made[] = [];
 function make(kind: string) {
   return (...args: unknown[]) => {
-    const record: Made = { kind, options: args.at(-1), calls: [], value: {} };
+    const record: Made = { kind, options: args.at(-1), calls: [], args: new Map(), value: {} };
     record.value = new Proxy({ root: new FakeElement(), element: new FakeElement() }, {
       get: (target, name) => name in target ? target[name as keyof typeof target]
-        : name === "then" ? undefined : () => { record.calls.push(String(name)); },
+        : name === "then" ? undefined : (...rest: unknown[]) => { record.calls.push(String(name)); record.args.set(String(name), rest); },
     });
     made.push(record);
     return record.value;
   };
 }
-const last = (kind: string) => made.findLast((record) => record.kind === kind)!;
+const last = (kind: string) => made.filter((record) => record.kind === kind).at(-1)!;
 fakeGlobals.workspaceMountStubs = {
   preview: make("preview"), structure: make("structure"), rail: make("rail"), dropdown: make("dropdown"), menu: make("menu"),
   siteActions: make("siteActions"), sidebar: make("sidebar"), rowMenu: make("rowMenu"), resize: make("resize"),
   // Set: the code editor (Monaco) chunk fails to load.
   codeEditorFails: false,
+  // What the refusal note said.
+  refused: [],
 };
-const stubGlobals = fakeGlobals.workspaceMountStubs as { codeEditorFails: boolean };
+const stubGlobals = fakeGlobals.workspaceMountStubs as { codeEditorFails: boolean; refused: string[] };
 const stub = (name: string, kind: string) => `export const ${name} = (...args) => globalThis.workspaceMountStubs.${kind}(...args);`;
 const stubs: Record<string, string> = {
   "components/native-preview.ts": stub("createNativePreview", "preview"),
@@ -78,7 +82,7 @@ const stubs: Record<string, string> = {
   "components/row-menu.ts": stub("createRowMenu", "rowMenu"),
   "components/code-resize.ts": `${stub("mountCodeResize", "resize")}\n${stub("mountCodeWidthResize", "resize")}`,
   "components/code-editor.ts": "export const monacoView = 'Monaco view';",
-  "components/refusal-note.ts": "export const dismissRefusalNote = () => {}; export const refuse = () => {};",
+  "components/refusal-note.ts": "export const dismissRefusalNote = () => {}; export const refuse = (text) => { globalThis.workspaceMountStubs.refused.push(text); };",
 };
 registerHooks({
   // A failing load is its own URL, so the next import of the chunk can succeed.
@@ -95,8 +99,10 @@ registerHooks({
 });
 const { createWorkspaceMount } = await import("../src/workspace-mount.ts");
 
-// The one place a recorder stands in for a controller the workspace only hands on.
-// eslint-disable-next-line no-restricted-syntax -- the fakes implement only the members the workspace calls.
+// The one place a stand-in skips fields: DOM elements, records the workspace only reads or hands on
+// (a repository, a snapshot, a folder, the site, the cards, the drag and insert modules), and the
+// component tools, of which the workspace calls a handful of members. Controllers it calls are typed with `satisfies`.
+// eslint-disable-next-line no-restricted-syntax -- these stand-ins carry only the fields the workspace reads.
 const fake = <T>(value: object) => value as unknown as T;
 const scope: DraftScope = { account: "lex", repoId: 7, repo: "lex/site", branch: "main" };
 // Only the fields the workspace reads.
@@ -112,6 +118,7 @@ function setup() {
     const plain = args.filter((arg) => typeof arg === "string" || typeof arg === "number");
     calls.push([name, ...plain].join(" "));
   };
+  const sayAsync = (name: string) => async (...args: unknown[]) => { say(name)(...args); };
   const elements = new Map<string, FakeElement>();
   const byId = (id: string) => { let found = elements.get(id); if (!found) { found = new FakeElement(); found.id = id; elements.set(id, found); } return found; };
   const app = new FakeElement();
@@ -122,12 +129,13 @@ function setup() {
     scope: scope as DraftScope | undefined, shown: undefined as WorkspaceScope | undefined,
     nativePreview: undefined as WorkspaceMountPorts["nativePreview"], pageStructure: undefined as WorkspaceMountPorts["pageStructure"],
     componentTools: undefined as WorkspaceMountPorts["componentTools"],
-    sources: {} as Record<string, string>, mountedPaths: new Set<string>(), sectionTags: new Set<string>(), typingLanded: true,
+    site: undefined as NativeSite | undefined, holds: true, template: undefined as { template: string; tag: string } | undefined, sources: {} as Record<string, string>, mountedPaths: new Set<string>(), sectionTags: new Set<string>(), typingLanded: true,
     startSite: undefined as ((panel: HTMLElement) => void) | undefined,
     mountListener: undefined as WorkspaceMountPorts["nativeMountListener"],
   };
-  let unmountedText: ((file: { scope: DraftScope; path: string }) => void) | undefined;
-  let viewLoader: (() => Promise<unknown>) | undefined;
+  type Editor = WorkspaceMountPorts["editorModule"];
+  let unmountedText: Parameters<Editor["onUnmountedText"]>[0] | undefined;
+  let viewLoader: Parameters<Editor["setViewLoader"]>[0] | undefined;
   let mounted: { content: unknown; file: unknown } | undefined;
   const proof = { isCurrent: () => true };
   const begin = () => ({ load: 1, scope: undefined, holds: () => true, changed: () => undefined });
@@ -136,41 +144,47 @@ function setup() {
     app: fake<HTMLElement>(app),
     element: <T extends HTMLElement>(id: string) => fake<T>(byId(id)),
     appStore: fake<WorkspaceMountPorts["appStore"]>(appStore),
-    editorModule: fake<WorkspaceMountPorts["editorModule"]>({
-      onUnmountedText: (hook: typeof unmountedText) => { unmountedText = hook; },
-      setViewLoader: (load: typeof viewLoader) => { viewLoader = load; },
-      mountSourceEditor: (content: FakeElement, file: unknown) => {
-        mounted = { content, file };
+    editorModule: {
+      onUnmountedText: (hook) => { unmountedText = hook; return () => {}; },
+      setViewLoader: (load) => { viewLoader = load; },
+      mountSourceEditor: (host: HTMLElement, file: SourceFile) => {
+        mounted = { content: host, file };
         const body = new FakeElement();
         body.className = "code-editor__body";
-        content.replaceChildren(body);
-        return say("editor disposed");
+        host.replaceChildren(fake<HTMLElement>(body));
+        return () => { calls.push("editor disposed"); };
       },
-      captureHistoryHost: () => proof, recordHistoryAction: say("recordHistoryAction"),
-      isMounted: (path: string) => state.mountedPaths.has(path), captureFileModelState: () => proof, closeActiveEditGroup: say("closeActiveEditGroup"), clearDrafts: say("clearDrafts"),
-    }),
+      captureHistoryHost: () => proof,
+      recordHistoryAction: (path: string) => { say("recordHistoryAction")(path); return true; },
+      isMounted: (path: string) => state.mountedPaths.has(path),
+      captureFileModelState: () => proof,
+      closeActiveEditGroup: say("closeActiveEditGroup"),
+      clearDrafts: say("clearDrafts"),
+    } satisfies Editor,
     workspaceSession: { begin },
-    runtime: fake<WorkspaceMountPorts["runtime"]>({ get site() { return undefined; }, get engaged() { return state.engaged; }, source: (path: string) => state.sources[path] }),
-    finishedWork: fake<WorkspaceMountPorts["finishedWork"]>({ open: say("finishedWork.open"), shown: say("finishedWork.shown") }),
-    mediaHistoryHome: fake<WorkspaceMountPorts["mediaHistoryHome"]>({ adopt: say("mediaHistoryHome.adopt"), clear: say("mediaHistoryHome.clear") }),
-    parkedSteps: fake<WorkspaceMountPorts["parkedSteps"]>({ adopt: say("parkedSteps.adopt"), clear: say("parkedSteps.clear") }),
-    guardedEdits: { stamp: () => ({ holds: () => true, changed: () => undefined }) },
-    mediaController: fake<WorkspaceMountPorts["mediaController"]>({ disposeGallery: say("disposeGallery"), mediaEnded: say("mediaEnded"), chooseImage: say("chooseImage") }),
-    paletteController: fake<WorkspaceMountPorts["paletteController"]>({ shortcut: say("shortcut"), mount: say("palette.mount"), dispose: say("palette.dispose") }),
-    previewSelection: fake<WorkspaceMountPorts["previewSelection"]>({ handlers: () => ({}) }),
-    pageStructureController: fake<WorkspaceMountPorts["pageStructureController"]>({
-      nativeFormatActions: {}, textEdits: () => [], isNativeSectionTag: (tag: string) => state.sectionTags.has(tag),
-      moveBlock: (_at: unknown, _direction: unknown, options: { stale: string }) => { calls.push(`moveBlock ${options.stale}`); },
-    }),
-    linkedStyles: fake<WorkspaceMountPorts["linkedStyles"]>({ updateBodyStyles: say("updateBodyStyles"), clearSources: say("linkedStyles.clearSources") }),
-    versions: fake<WorkspaceMountPorts["versions"]>({ view: undefined, history: { destroy: say("history.destroy") } }),
+    runtime: { get site() { return state.site; }, get engaged() { return state.engaged; }, source: (path: string) => state.sources[path] } satisfies WorkspaceMountPorts["runtime"],
+    finishedWork: { open: say("finishedWork.open"), shown: say("finishedWork.shown") } satisfies WorkspaceMountPorts["finishedWork"],
+    mediaHistoryHome: { adopt: say("mediaHistoryHome.adopt"), clear: say("mediaHistoryHome.clear") } satisfies WorkspaceMountPorts["mediaHistoryHome"],
+    parkedSteps: { adopt: say("parkedSteps.adopt"), clear: say("parkedSteps.clear") } satisfies WorkspaceMountPorts["parkedSteps"],
+    // A stamp from the repository holds while `state.holds` does.
+    guardedEdits: { stamp: (key?: string) => ({ holds: () => key !== "repository" || state.holds, changed: () => undefined }) } satisfies WorkspaceMountPorts["guardedEdits"],
+    mediaController: { disposeGallery: say("disposeGallery"), mediaEnded: say("mediaEnded"), chooseImage: sayAsync("chooseImage") } satisfies WorkspaceMountPorts["mediaController"],
+    paletteController: { shortcut: say("shortcut"), mount: say("palette.mount"), dispose: say("palette.dispose") } satisfies WorkspaceMountPorts["paletteController"],
+    previewSelection: { handlers: () => ({ onSelect: () => {}, onSelectionRect: () => {}, onTextSelection: () => {}, onItemGrids: () => {} }) } satisfies WorkspaceMountPorts["previewSelection"],
+    pageStructureController: {
+      nativeFormatActions: {}, applyNativeTextEdit: sayAsync("applyNativeTextEdit"), textEdits: async () => {}, nativeElementMoveAction: undefined,
+      removeRow: () => false, isNativeSectionTag: (tag: string) => state.sectionTags.has(tag),
+      moveBlock: (_at, _step, options) => { calls.push(`moveBlock ${options.stale}`); return "stayed" as const; },
+    } satisfies WorkspaceMountPorts["pageStructureController"],
+    linkedStyles: { updateBodyStyles: say("updateBodyStyles"), clearSources: say("linkedStyles.clearSources") } satisfies WorkspaceMountPorts["linkedStyles"],
+    versions: { view: undefined, history: { destroy: say("history.destroy") } } satisfies WorkspaceMountPorts["versions"],
     cards: fake<WorkspaceMountPorts["cards"]>({}),
     pagesAndFiles: {
       pageActions: undefined, mountExplorer: say("mountExplorer"), loadPagesActions: async () => {},
       filesTreeController: { refresh: say("filesTree.refresh") },
     },
     setup: {
-      setupController: fake<WorkspaceMountPorts["setup"]["setupController"]>({ mount: async () => { calls.push("setupController.mount"); }, dispose: say("setupController.dispose") }),
+      setupController: { mount: async () => { calls.push("setupController.mount"); }, dispose: say("setupController.dispose") } satisfies WorkspaceMountPorts["setup"]["setupController"],
       setupEntry: { remove: say("setupEntry.remove") },
       startSitePanel: () => new Promise<HTMLElement>((resolve) => { state.startSite = resolve; }),
     },
@@ -183,8 +197,8 @@ function setup() {
     get pageStructure() { return state.pageStructure; }, set pageStructure(value) { state.pageStructure = value; },
     get componentTools() { return state.componentTools; }, set componentTools(value) { state.componentTools = value; },
     get nativePreviewBehind() { return state.nativePreviewBehind; }, get nativeMountListener() { return state.mountListener; },
-    get boot() { return fake<WorkspaceMountPorts["boot"]>({ ensureList: async () => {}, reset: say("boot.reset") }); },
-    get agentController() { return fake<WorkspaceMountPorts["agentController"]>({ ensure: async () => { calls.push("agent.ensure"); }, dismiss: async () => {}, answer: async () => {}, destroy: say("agent.destroy") }); },
+    get boot() { return { ensureList: async () => {}, reset: say("boot.reset") } satisfies WorkspaceMountPorts["boot"]; },
+    get agentController() { return { ensure: async () => { calls.push("agent.ensure"); }, dismiss: async () => {}, answer: async () => {}, destroy: say("agent.destroy") } satisfies WorkspaceMountPorts["agentController"]; },
     get workspaceBoot() { return { dropGuess: say("dropGuess") }; },
     account: {
       reload: async () => { calls.push("refreshRepositoryList"); },
@@ -220,12 +234,15 @@ function setup() {
       dropTree: () => undefined,
       loadDrag: async () => fake<Awaited<ReturnType<WorkspaceMountPorts["builder"]["loadDrag"]>>>({}),
       loadInsert: async () => fake<Awaited<ReturnType<WorkspaceMountPorts["builder"]["loadInsert"]>>>({}),
-      insertPorts: fake<WorkspaceMountPorts["builder"]["insertPorts"]>({ target: () => undefined, refuse: say("refuse") }),
+      insertPorts: { target: () => undefined, refuse: say("refuse") } satisfies WorkspaceMountPorts["builder"]["insertPorts"],
       finishTyping: async () => state.typingLanded,
       menuItems: () => [{ label: "Remove", run: say("remove") }],
       fields: () => "",
       moveItems: () => () => false,
-      tools: () => { calls.push("mountComponentTools"); return fake<NonNullable<WorkspaceMountPorts["componentTools"]>>({ destroy: say("componentTools.destroy"), refresh: say("componentTools.refresh") }); },
+      tools: () => { calls.push("mountComponentTools"); return fake<NonNullable<WorkspaceMountPorts["componentTools"]>>({
+        destroy: say("componentTools.destroy"), refresh: say("componentTools.refresh"),
+        mode: { now: () => state.template, opened: () => false, sync: say("mode.sync") },
+      }); },
     },
     page: {
       meta: () => undefined,
@@ -315,7 +332,7 @@ test("closeWorkspace closes what is open and clears the host's state through its
   const { workspace, state, calls } = setup();
   workspace.mountWorkspace();
   void workspace.openCodeEditor({ key: "k", path: "index.html", source: "" });
-  workspace.activeFileContext = { path: "index.html", baseSha: null, language: "html", readOnly: false, original: "", content: "" };
+  workspace.activeFileContext = { path: "index.html", baseSha: null, language: "html", readOnly: false, original: "", content: "", selection: null, diagnostics: [] };
   const preview = last("preview"), dropdown = last("dropdown"), menu = last("menu"), sidebar = last("sidebar"), rail = last("rail"), actions = last("siteActions");
   calls.length = 0;
   workspace.closeWorkspace();
@@ -500,4 +517,43 @@ test("a Structure row keeps the bytes it was painted from: stale rows offer no a
     "moveBlock The source changed while its editor opened. Select the section again before moving it.",
     "moveBlock The source changed while its editor opened. Select the element again before moving it.",
   ]);
+});
+
+test("a page shown by following a link redraws the preview when it fell behind, read when the page shows", () => {
+  const { workspace, state, calls } = setup();
+  workspace.mountWorkspace();
+  const preview = last("preview").options as { onRouteShown(route: string): void };
+  state.site = fake<NativeSite>({ components: {} });
+  preview.onRouteShown("/");
+  assert.ok(!calls.includes("updateNativePreviewSources"));
+  state.nativePreviewBehind = true;
+  preview.onRouteShown("/");
+  assert.ok(calls.includes("updateNativePreviewSources"));
+});
+
+test("a block dropped from the rail is refused while typing has not landed, or once Edit component mode was left", async () => {
+  const { workspace, state, calls } = setup();
+  workspace.mountWorkspace();
+  const rail = last("rail").options as { drag(kind: string): Promise<unknown> };
+  const target = { container: { path: [0], kind: "flow" }, index: 0 };
+  const dropOf = () => (last("preview").args.get("blockDrag")![1] as { drop: (target: unknown, where: string, painted: string, pointer: { x: number; y: number }) => void }).drop;
+  await rail.drag("text");
+  state.typingLanded = false;
+  dropOf()(target, "after", "A", { x: 1, y: 2 });
+  await flush();
+  assert.ok(calls.includes("refuse The page is still updating. Try again in a moment."));
+  // Dragged in Edit component mode, dropped after it ended (the selection is no longer in the template).
+  stubGlobals.refused.length = 0;
+  state.template = { template: "components/card.html", tag: "x-card" };
+  await rail.drag("text");
+  dropOf()(target, "after", "A", { x: 1, y: 2 });
+  assert.deepEqual(stubGlobals.refused, ["Edit component mode was left meanwhile: nothing was added."]);
+});
+
+test("a page URL change refuses once the repository changed while page actions loaded", async () => {
+  const { workspace, state } = setup();
+  workspace.mountWorkspace();
+  const structure = last("structure").options as { applyUrl(path: string, value: string, keep: boolean): Promise<string | undefined> };
+  state.holds = false;
+  assert.equal(await structure.applyUrl("about.html", "/x", false), "The repository changed meanwhile. Try again.");
 });
