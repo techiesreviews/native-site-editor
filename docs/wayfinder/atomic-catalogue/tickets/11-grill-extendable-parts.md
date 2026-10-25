@@ -2,7 +2,7 @@
 title: Decide how parts are built to be extended
 type: grilling (HITL)
 status: open
-assignee:
+assignee: Lex + claude (grilling)
 blocked_by: [04-research-parts-inventory]
 ---
 

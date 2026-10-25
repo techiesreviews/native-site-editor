@@ -2,7 +2,7 @@
 title: Decide what replaces each kind of toast
 type: grilling (HITL)
 status: open
-assignee:
+assignee: Lex + claude (grilling)
 blocked_by: [03-research-toasts-and-explainers]
 ---
 

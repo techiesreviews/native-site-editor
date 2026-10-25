@@ -2,7 +2,7 @@
 title: Decide the editor's shared values
 type: grilling (HITL)
 status: open
-assignee:
+assignee: Lex + claude (grilling)
 blocked_by: [01-research-techies-framework]
 ---
 

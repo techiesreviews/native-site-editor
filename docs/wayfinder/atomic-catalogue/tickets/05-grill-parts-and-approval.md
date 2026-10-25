@@ -2,7 +2,7 @@
 title: Decide the parts list, its order and what approved means
 type: grilling (HITL)
 status: open
-assignee:
+assignee: Lex + claude (grilling)
 blocked_by: []
 ---
 
