@@ -41,7 +41,9 @@ const FILES = ["index.html", "about.html", "components/site-card.html", "style.c
 
 // A real runtime and session over the site above, with the index page read and what the index asked recorded.
 // `race` wraps the index's reads, so a test can disturb it at each of them (tests/support/await-race.ts).
-function setup(overrides: { unreadable?: UnreadableFile[]; busy?: () => boolean; files?: string[]; start?: boolean; race?: AwaitRace } = {}) {
+// `fails` reads that many times before GitHub answers.
+function setup(overrides: { unreadable?: UnreadableFile[]; busy?: () => boolean; files?: string[]; start?: boolean; race?: AwaitRace; fails?: number } = {}) {
+  let fails = overrides.fails ?? 0;
   const calls: string[] = [], read: string[] = [];
   const wrap = <Args extends unknown[], Value>(name: string, work: (...args: Args) => Promise<Value>) => overrides.race ? overrides.race.port(name, work) : work;
   // As main.ts: letting the site go drops the titles waiting to be drawn.
@@ -81,6 +83,7 @@ function setup(overrides: { unreadable?: UnreadableFile[]; busy?: () => boolean;
     updateAgentContext: () => { calls.push("agent"); },
     readNativeTexts: wrap("read", async (_repo: string, files: { path: string; sha: string }[]) => {
       read.push(...files.map((file) => file.path));
+      if (fails-- > 0) throw new Error("GitHub did not answer.");
       const unreadable = overrides.unreadable ?? [];
       return { texts: new Map(files.filter((file) => !unreadable.some((bad) => bad.path === file.path)).map((file) => [file.path, `<title>${file.path}</title>`])), unreadable };
     }),
@@ -259,4 +262,29 @@ test("titles wait for a press on the page to end: a mouse at once, a touch after
     t.mock.timers.tick(grace);
     assert.equal(await drawn(), 1, `${pointerType}: drawn once`);
   }
+});
+
+test("an index that failed is read again when something needs it", async () => {
+  const { index, runtime, read, calls } = setup({ fails: 1 });
+  assert.equal(await runtime.state.textIndexing, false);
+  assert.ok(calls.includes("error GitHub did not answer."));
+  const first = runtime.state.textIndexing;
+  assert.equal(await index.ensureNativeTextIndex(), undefined);
+  assert.notEqual(runtime.state.textIndexing, first, "a second index");
+  assert.deepEqual(read, ["about.html", "components/site-card.html", "style.css", "about.html", "components/site-card.html", "style.css"]);
+  assert.equal(runtime.state.textIndexed, true);
+});
+
+test("an index started for an earlier load is started again for the load now", async () => {
+  const { index, runtime, read } = setup();
+  const first = runtime.state.textIndexing;
+  // A new load of the same site before the first index read anything.
+  const request = runtime.begin();
+  assert.equal(await index.ensureNativeTextIndex(), undefined);
+  assert.notEqual(runtime.state.textIndexing, first);
+  assert.equal(await first, false, "the earlier load's index stops");
+  assert.equal(runtime.state.textIndexScope, index.nativeTextIndexScopeKey());
+  assert.ok(runtime.state.textIndexScope.endsWith(`\n${request}`));
+  assert.deepEqual(read, ["about.html", "components/site-card.html", "style.css"]);
+  assert.equal(runtime.state.textIndexed, true);
 });

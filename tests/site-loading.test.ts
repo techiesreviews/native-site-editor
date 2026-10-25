@@ -25,6 +25,7 @@ const TEXTS: Record<string, string> = {
   "style.css": "body { color: red; }",
   "components/site-card.html": "<article>Card</article>",
   "components/site-card.css": "article { margin: 0; }",
+  "theme.css": "h1 { color: blue; }",
   "fonts.css": '@font-face { font-family: Body; src: url("font.woff2"); }',
   "font.woff2": "",
 };
@@ -35,7 +36,9 @@ const snapshotOf = (paths: string[]) => ({ branch: "main", commit: SHA, entries:
 
 // A real runtime, session and file readers over the files above; GitHub, the preview and the host record what they were asked.
 // `race` (set later) wraps GitHub's reads, so a test can disturb the work at each of them (tests/support/await-race.ts).
-function setup(paths = Object.keys(TEXTS).filter((path) => !path.startsWith("font")), options: { refused?: string[] } = {}) {
+// `home` replaces the home page's text; `linked` is the stylesheets the pages link, as the host finds them.
+function setup(paths = Object.keys(TEXTS).filter((path) => !path.startsWith("font")), options: { refused?: string[]; home?: string } = {}) {
+  const texts: Record<string, string> = { ...TEXTS, ...(options.home ? { "index.html": options.home } : {}) }, linked = ["style.css"];
   const raced: { race?: AwaitRace } = {};
   const wrap = <Args extends unknown[], Value>(name: string, work: (...args: Args) => Promise<Value>) => (...args: Args) => (raced.race ? raced.race.port(name, work)(...args) : work(...args));
   const calls: string[] = [], fetched: string[][] = [], started: { request: number; deferred?: boolean }[] = [];
@@ -54,7 +57,7 @@ function setup(paths = Object.keys(TEXTS).filter((path) => !path.startsWith("fon
     const shas = action === "files" ? params!.shas.split(",") : [params!.sha];
     fetched.push(shas.map((sha) => pathOf.get(sha)!));
     if (shas.some((sha) => options.refused?.includes(pathOf.get(sha)!))) throw new ApiError(415, "This file is not UTF-8 text.");
-    const files = Object.fromEntries(shas.map((sha) => [sha, TEXTS[pathOf.get(sha)!]]));
+    const files = Object.fromEntries(shas.map((sha) => [sha, texts[pathOf.get(sha)!]]));
     return action === "files" ? { files } : { content: files[shas[0]] };
   };
   const reading = wrap("api", read);
@@ -78,7 +81,7 @@ function setup(paths = Object.keys(TEXTS).filter((path) => !path.startsWith("fon
     draftScope: () => scope,
     findEntry: wrap("find", async (path: string) => entry(path)),
     entryAt: entry,
-    nativeLinkedSheets: () => ["style.css"],
+    nativeLinkedSheets: () => linked,
     updateNativePreviewSources: () => { calls.push("sources"); },
     updateNativePreviewAssets: () => {},
     nativeModeActive: () => Boolean(runtime.site),
@@ -89,7 +92,7 @@ function setup(paths = Object.keys(TEXTS).filter((path) => !path.startsWith("fon
     startNativeTextIndex: (_repo: Repository, _site: NativeSite, _scope: unknown, _at: SessionStamp, request: number, deferred?: boolean) => { started.push({ request, deferred }); },
   } satisfies SiteLoadingPorts;
   const loading = createSiteLoading(ports);
-  return { loading, runtime, appStore, workspaceSession, snapshot, calls, fetched, started, preview, label, raced,
+  return { loading, runtime, appStore, workspaceSession, snapshot, calls, fetched, started, preview, label, raced, linked,
     setView: (path?: string) => { view = path ? { path } : undefined; }, setScope: (value?: DraftScope) => { scope = value; } };
 }
 
@@ -245,4 +248,53 @@ test("Download site has nothing to give without an open site, and the site's fil
   assert.equal(files?.repository, "o/site");
   assert.deepEqual(files?.paths, runtime.files(SCOPE));
   assert.equal(files?.held("index.html"), TEXTS["index.html"]);
+});
+
+test("the page on show's files and stylesheets read for a load that was left are not taken up, at every read", async () => {
+  for (const [what, load, path] of [["shown files", (run: ReturnType<typeof setup>) => run.loading.loadNativeShownFiles("/about.html"), "about.html"],
+    ["stylesheets", (run: ReturnType<typeof setup>) => { run.linked.push("theme.css"); return run.loading.loadNativeStyleFiles(); }, "theme.css"]] as const) {
+    await forEachAwait((race) => {
+      const run = setup();
+      const done = (async () => {
+        await run.loading.activateNativeSite(REPO, run.snapshot, run.workspaceSession.begin());
+        run.calls.length = 0;
+        run.raced.race = race;
+        await load(run);
+      })();
+      return { ...run, done };
+    }, (run) => { run.workspaceSession.next(undefined); }, (run) => {
+      assert.equal(run.runtime.base.sources.has(path), false, what);
+      assert.equal(run.calls.includes("sources"), false, what);
+    });
+  }
+});
+
+test("a font that never arrives holds the first paint back 300 ms at most, and is not kept once the load is left", async (t: TestContext) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let answer: ((response: Response) => void) | undefined;
+  const fetch = globalThis.fetch;
+  globalThis.fetch = () => new Promise<Response>((resolve) => { answer = resolve; });
+  t.after(() => { globalThis.fetch = fetch; });
+  const settle = async () => { for (let turn = 0; turn < 20; turn++) await new Promise((resolve) => setImmediate(resolve)); };
+  const home = TEXTS["index.html"].replace("/style.css", "/fonts.css");
+  const { loading, runtime, workspaceSession, snapshot, started, linked } = setup(Object.keys(TEXTS), { home });
+  // As the host finds it: the home page links fonts.css.
+  linked.splice(0, linked.length, "fonts.css");
+  let opened: boolean | undefined;
+  void loading.activateNativeSite(REPO, snapshot, workspaceSession.begin()).then((value) => { opened = value; });
+  await settle();
+  assert.ok(answer, "the font is being read");
+  assert.equal(opened, undefined, "the paint waits for the font");
+  t.mock.timers.tick(299);
+  await settle();
+  assert.equal(opened, undefined);
+  t.mock.timers.tick(1);
+  await settle();
+  assert.equal(opened, true);
+  assert.ok(runtime.site);
+  assert.deepEqual(started, [{ request: runtime.state.request, deferred: true }]);
+  workspaceSession.next(undefined);
+  answer!(new Response(new Uint8Array([1, 2, 3])));
+  await settle();
+  assert.equal(runtime.state.assets.has("font.woff2"), false);
 });
