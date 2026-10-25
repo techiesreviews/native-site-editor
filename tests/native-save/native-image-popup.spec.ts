@@ -1,5 +1,5 @@
 // The Image button and the image popup (media-manager build slice 39, ticket 09 "Entry point and
-// popup"): one Image button with a state badge; the popup's shape menu and focus dot show on the page
+// popup"): one Image button with a state badge; the popup's shape menu and focus square show on the page
 // at once and closing the popup (Close, Escape, a press outside) keeps them as one Undo step; there is
 // no Done. Replace closes the popup and places the chosen picture at once, as its own Undo step.
 // Trim, zoom and turn (slice 41) save a trimmed copy for this spot only; so do straighten and flip
@@ -16,7 +16,8 @@ const popup = (page: Page) => page.getByRole("dialog", { name: "Image", exact: t
 const picker = (page: Page) => page.getByRole("dialog", { name: /^Choose image( or video)?$/ });
 // The Media button; the place's shape is in its tooltip.
 const imageButton = (page: Page) => bar(page).locator(".edit-bar__media");
-const dot = (page: Page) => popup(page).getByRole("slider", { name: "Focus dot" });
+// The frame on the picture is the focus square (ticket 42): there is no separate dot.
+const square = (page: Page) => popup(page).getByRole("slider", { name: "Focus point" });
 const source = (page: Page) => page.evaluate(async () => (await import("/src/components/code-editor.ts")).getMountedSource("index.html")!);
 const heroTag = async (page: Page) => (await source(page)).match(/<img\b[^>]*class="hero-image"[^>]*>/)?.[0] ?? "";
 
@@ -45,7 +46,7 @@ async function chooseShape(page: Page, label: string) {
   await expect(popup(page).getByRole("button", { name: `Shape: ${label}`, exact: true })).toBeVisible();
 }
 
-test("Image → Square, move the focus dot, Close: the page has the shape and object-position; Undo restores", { tag: "@smoke" }, async ({ page, baseURL }) => {
+test("Image → Square, drag the square, Close: the page has the shape and object-position; Undo restores", { tag: "@smoke" }, async ({ page, baseURL }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await open(page, baseURL);
   const before = await source(page);
@@ -60,17 +61,24 @@ test("Image → Square, move the focus dot, Close: the page has the shape and ob
   // The page shows the shape at once; nothing is written before the popup closes.
   await expect(frame(page).locator(".hero img")).toHaveAttribute("style", /aspect-ratio: 1 \/ 1; object-fit: cover/);
   expect(await source(page)).toBe(before);
-  // Drag the dot to the left edge, half way down.
-  const box = (await popup(page).locator(".image-popup__picbox").boundingBox())!;
-  await dot(page).hover();
+  // The square is the focus: no dot. Drag it from its middle to the left, a fifth of its room along.
+  await expect(popup(page).locator(".image-popup__dot")).toHaveCount(0);
+  const box = (await popup(page).locator(".image-popup__picbox").boundingBox())!, held = (await square(page).boundingBox())!;
+  expect(held.width).toBeLessThan(box.width - 20);
+  await page.mouse.move(held.x + held.width / 2, held.y + held.height / 2);
   await page.mouse.down();
-  await page.mouse.move(box.x + box.width * 0.2, box.y + box.height * 0.5, { steps: 4 });
+  await page.mouse.move(box.x + (box.width - held.width) * 0.2 + held.width / 2, held.y + held.height / 2, { steps: 4 });
   await page.mouse.up();
-  await expect(dot(page)).toHaveAttribute("aria-valuetext", /^20% across, 50% down/);
+  // The saved object-position is the one that shows just the square: its left edge sits at (room × focus).
+  const moved = (await square(page).boundingBox())!;
+  const across = Math.round((moved.x - box.x) / (box.width - moved.width) * 100);
+  expect(Math.abs(across - 20)).toBeLessThanOrEqual(2);
+  expect(Math.abs(moved.x + moved.width / 2 - (box.x + (box.width - held.width) * 0.2 + held.width / 2))).toBeLessThanOrEqual(2);
+  await expect(square(page)).toHaveAttribute("aria-valuetext", new RegExp(`^${across}% across, 50% down`));
   await popup(page).getByRole("button", { name: "Close", exact: true }).click();
   await expect(popup(page)).toHaveCount(0);
-  await expect.poll(() => heroTag(page)).toMatch(/style="aspect-ratio: 1 \/ 1; object-fit: cover; object-position: 20% 50%"/);
-  await expect(frame(page).locator(".hero img")).toHaveCSS("object-position", "20% 50%");
+  await expect.poll(() => heroTag(page)).toContain(`style="aspect-ratio: 1 / 1; object-fit: cover; object-position: ${across}% 50%"`);
+  await expect(frame(page).locator(".hero img")).toHaveCSS("object-position", `${across}% 50%`);
   await pickPicture(page, ".hero img");
   await expect(imageButton(page)).toHaveAttribute("title", /· Square$/);
   // Closing kept it as one step.
@@ -118,7 +126,7 @@ test("selecting another element closes the popup and keeps its shape and focus a
   const before = await source(page);
   await openPopup(page);
   await chooseShape(page, "Square");
-  await dot(page).focus();
+  await square(page).focus();
   await page.keyboard.press("ArrowLeft");
   await expect(frame(page).locator(".hero img")).toHaveCSS("object-position", "48% 50%");
   // A press on another element on the page moves the bar there: the popup closes and keeps its changes.
@@ -133,30 +141,30 @@ test("selecting another element closes the popup and keeps its shape and focus a
   await expect.poll(() => source(page)).toBe(before);
 });
 
-test("arrow keys move the dot; Close keeps the change as one Undo step; Escape keeps it too", async ({ page, baseURL }) => {
+test("arrow keys move the square; Close keeps the change as one Undo step; Escape keeps it too", async ({ page, baseURL }) => {
   await open(page, baseURL);
   const before = await source(page);
   await openPopup(page);
-  // Original shows the whole picture: no dot until a shape crops it.
-  await expect(dot(page)).toBeHidden();
+  // Original shows the whole picture: the frame is no square to move until a shape crops it.
+  await expect(square(page)).toBeHidden();
   await chooseShape(page, "Tall 4:5");
-  await dot(page).focus();
+  await square(page).focus();
   await page.keyboard.press("ArrowLeft");
   await page.keyboard.press("ArrowLeft");
   await page.keyboard.press("Shift+ArrowUp");
-  await expect(dot(page)).toHaveAttribute("aria-valuetext", /^46% across, 40% down/);
+  await expect(square(page)).toHaveAttribute("aria-valuetext", /^46% across, 40% down/);
   await expect(frame(page).locator(".hero img")).toHaveCSS("object-position", "46% 40%");
   await popup(page).getByRole("button", { name: "Close", exact: true }).click();
   await expect(popup(page)).toHaveCount(0);
   await expect.poll(() => heroTag(page)).toContain("aspect-ratio: 4 / 5; object-fit: cover; object-position: 46% 40%");
   await page.locator(".code-editor__undo").first().click();
   await expect.poll(() => source(page)).toBe(before);
-  // Escape after the keys keeps them too. The hint seen last time is now only the dot's description (slice 109).
+  // Escape after the keys keeps them too. The hint seen last time is now only the square's description (slice 109).
   await openPopup(page);
   await chooseShape(page, "Tall 4:5");
   await expect(popup(page).locator(".image-popup__hint")).toHaveClass(/sr-only/);
-  await expect(dot(page)).toHaveAccessibleDescription("Drag the dot to what matters most.");
-  await dot(page).focus();
+  await expect(square(page)).toHaveAccessibleDescription("Drag the square to what matters most.");
+  await square(page).focus();
   await page.keyboard.press("ArrowRight");
   await page.keyboard.press("Escape");
   await expect(popup(page)).toHaveCount(0);
@@ -258,7 +266,7 @@ test("a phone's shape menu is whole on screen, uncovered, and Free can be presse
 
 test.describe("on a touch phone", () => {
   test.use({ hasTouch: true });
-  test("a swipe on the picture scrolls the short sheet without moving the dot; a tap moves it", async ({ page, baseURL }) => {
+  test("a swipe on the picture scrolls the short sheet without moving the square; a tap moves it", async ({ page, baseURL }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await open(page, baseURL);
     await openPopup(page);
@@ -267,36 +275,36 @@ test.describe("on a touch phone", () => {
     await page.setViewportSize({ width: 320, height: 568 });
     const rows = popup(page).locator(".image-popup__rows");
     await expect.poll(() => rows.evaluate(element => element.scrollHeight > element.clientHeight)).toBe(true);
-    const where = await dot(page).getAttribute("aria-valuetext");
-    // A finger swipes up from the picture's visible part (its lower half sits under the pinned message).
+    const where = await square(page).getAttribute("aria-valuetext");
+    // A finger swipes up from the picture's visible part, beside the square (its lower half sits under the pinned message).
     const well = (await popup(page).locator(".image-popup__picbox").boundingBox())!, shown = (await rows.boundingBox())!;
-    const x = Math.round(well.x + well.width * 0.2), y = Math.round(Math.min(well.y + well.height, shown.y + shown.height) - 12);
+    const x = Math.round(well.x + well.width * 0.1), y = Math.round(Math.min(well.y + well.height, shown.y + shown.height) - 12);
     const cdp = await page.context().newCDPSession(page);
     await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y }] });
     for (let step = 1; step <= 10; step++) await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x, y: y - step * 10 }] });
     await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
     await expect.poll(() => rows.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
-    await expect(dot(page)).toHaveAttribute("aria-valuetext", where!);
+    await expect(square(page)).toHaveAttribute("aria-valuetext", where!);
     await expect(popup(page).locator(".image-popup__message")).toBeInViewport({ ratio: 1 });
-    // A tap on the picture still puts the dot there.
+    // A tap on the picture beside the square still moves the square there.
     await rows.evaluate(element => element.scrollTo(0, 0));
     const picture = (await popup(page).locator(".image-popup__picbox").boundingBox())!;
     await page.touchscreen.tap(picture.x + picture.width * 0.1, picture.y + picture.height * 0.15);
-    await expect(dot(page)).not.toHaveAttribute("aria-valuetext", where!);
-    await expect(dot(page)).toBeFocused();
+    await expect(square(page)).not.toHaveAttribute("aria-valuetext", where!);
+    await expect(square(page)).toBeFocused();
 
-    // A phone on its side: the whole sheet scrolls; a swipe on the picture moves it, not the dot; the message stays uncovered.
+    // A phone on its side: the whole sheet scrolls; a swipe on the picture moves it, not the square; the message stays uncovered.
     await page.setViewportSize({ width: 320, height: 280 });
     const sheet = popup(page);
     await sheet.evaluate(element => element.scrollTo(0, 0));
-    const moved = await dot(page).getAttribute("aria-valuetext");
+    const moved = await square(page).getAttribute("aria-valuetext");
     const pic = (await sheet.locator(".image-popup__picbox").boundingBox())!, foot = (await sheet.locator(".image-popup__bottom").boundingBox())!;
     const sx = Math.round(pic.x + pic.width * 0.8), sy = Math.round(Math.min(pic.y + pic.height, foot.y) - 10);
     await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: sx, y: sy }] });
     for (let step = 1; step <= 6; step++) await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: sx, y: sy - step * 10 }] });
     await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
     await expect.poll(() => sheet.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
-    await expect(dot(page)).toHaveAttribute("aria-valuetext", moved!);
+    await expect(square(page)).toHaveAttribute("aria-valuetext", moved!);
     for (const target of [sheet.locator(".image-popup__message")]) {
       await expect(target).toBeInViewport({ ratio: 1 });
       const box = (await target.boundingBox())!;
@@ -580,19 +588,19 @@ test("Zoom and Turn save a trimmed copy; back at 100 % and unturned only the spo
   const zoomRow = popup(page).locator(".image-popup__row", { has: page.getByRole("slider", { name: "Zoom" }) });
   for (const name of ["Turn left", "Turn right"]) await expect(zoomRow.getByRole("button", { name, exact: true })).toBeVisible();
   await expect(popup(page).locator(".image-popup__head").getByRole("button", { name: "Open large editor", exact: true })).toBeVisible();
-  // The dot's hint is never shown; it is only the dot's description.
+  // The square's hint is never shown; it is only the square's description.
   const hint = popup(page).locator(".image-popup__hint");
-  await expect(hint).toHaveText("Drag the dot to what matters most.");
+  await expect(hint).toHaveText("Drag the square to what matters most.");
   await expect(hint).toHaveClass(/sr-only/);
-  await expect(dot(page)).toHaveAccessibleDescription("Drag the dot to what matters most.");
+  await expect(square(page)).toHaveAccessibleDescription("Drag the square to what matters most.");
   await chooseShape(page, "Original");
   const message = popup(page).locator(".image-popup__message");
   const zoom = popup(page).getByRole("slider", { name: "Zoom" });
   await zoom.fill("200");
   await expect(popup(page).locator(".image-popup__zoom output")).toHaveText("200 %");
   await expect(message).toHaveText("Saves a new picture for this spot");
-  // Zoomed in, Original shows the dot; arrow keys move what stays in view.
-  await expect(dot(page)).toBeVisible();
+  // Zoomed in, Original's frame is the square; arrow keys move what stays in view.
+  await expect(square(page)).toBeVisible();
   await zoom.fill("100");
   await expect(message).toHaveText("Only changes this spot");
   await popup(page).getByRole("button", { name: "Turn right", exact: true }).click();
@@ -731,18 +739,20 @@ test("zooming and moving step by step never shows the page's own picture between
   expect(previewed.values[0]).toBe(untrimmed);
   expect(previewed.values.slice(1)).not.toContain(untrimmed);
   expect(new Set(previewed.values.slice(1)).size).toBeGreaterThan(1);
-  // Zoomed in, the dot moves the picture to the side in several steps.
-  const box = (await popup(page).locator(".image-popup__picbox").boundingBox())!;
-  await dot(page).hover();
+  // Zoomed in, the square moves the picture to the side in several steps, each within its room.
+  const box = (await popup(page).locator(".image-popup__picbox").boundingBox())!, held = (await square(page).boundingBox())!;
+  const room = (box.width - held.width) / 2, middle = { x: held.x + held.width / 2, y: held.y + held.height / 2 };
+  expect(room).toBeGreaterThan(12);
+  await page.mouse.move(middle.x, middle.y);
   await page.mouse.down();
-  for (const x of [0.4, 0.3, 0.2]) {
+  for (const share of [0.25, 0.5, 0.75]) {
     const shown = await hero.getAttribute("src");
-    await page.mouse.move(box.x + box.width * x, box.y + box.height * 0.5, { steps: 3 });
+    await page.mouse.move(middle.x - room * share, middle.y, { steps: 3 });
     // Each move shows its own trim before the next one starts.
     await expect(hero).not.toHaveAttribute("src", shown!);
   }
   await page.mouse.up();
-  await expect(dot(page)).not.toHaveAttribute("aria-valuetext", /^50% across/);
+  await expect(square(page)).not.toHaveAttribute("aria-valuetext", /^50% across/);
   // After the first trim the page's own picture never comes back while the popup is open.
   await expectOwnNeverBack(hero, own);
   await popup(page).getByRole("button", { name: "Close", exact: true }).click();
@@ -1288,12 +1298,12 @@ test("a slotted component image opens on its shape; other choices and restoring 
   await expect(imageButton(page)).toHaveAttribute("title", /· Photo card's shape$/);
   await imageButton(page).click();
   await expect(popup(page).getByRole("button", { name: "Shape: Photo card's shape (4:3)", exact: true })).toBeVisible();
-  await expect(dot(page)).toBeVisible();
+  await expect(square(page)).toBeVisible();
   await chooseShape(page, "Square");
   await expect(popup(page).getByRole("status").filter({ hasText: "This Photo card will look different from the others." })).toBeVisible();
   await popup(page).getByRole("button", { name: "Close", exact: true }).click();
   await expect.poll(tag).toContain("aspect-ratio: 1 / 1");
-  const square = await source(page);
+  const squared = await source(page);
   await image.click();
   await imageButton(page).click();
   await chooseShape(page, "Photo card's shape (4:3)");
@@ -1302,7 +1312,7 @@ test("a slotted component image opens on its shape; other choices and restoring 
   await expect.poll(tag).not.toMatch(/aspect-ratio|object-fit/);
   await expect(image).toHaveCSS("aspect-ratio", "4 / 3");
   await page.locator(".code-editor__undo").first().click();
-  await expect.poll(() => source(page)).toBe(square);
+  await expect.poll(() => source(page)).toBe(squared);
   await page.locator(".code-editor__undo").first().click();
   await expect.poll(() => source(page)).toBe(before);
   // Original overrides the component crop and reads back as Original.

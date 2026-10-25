@@ -25,7 +25,7 @@ test("the frame left in the middle is slice 36's centre trim", () => {
   }
 });
 
-test("the dot moves the frame along the picture's spare length and Zoom trims it closer", () => {
+test("the focus moves the frame along the picture's spare length and Zoom trims it closer", () => {
   const top = socialTrim(wide, { x: 50, y: 0 }, 1), bottom = socialTrim(wide, { x: 80, y: 100 }, 1);
   const height = (2400 / (1200 / 630)) / 1600;
   near({ ...top }, { x: 0, y: 0, width: 1, height });

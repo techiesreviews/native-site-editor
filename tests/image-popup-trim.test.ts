@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  MAX_ZOOM, cutArea, dotApplies, makesNewPicture, moveFree, nudgeFree, placeShape, popupTrim, resizeFree, restoreCut, sameTrim,
+  MAX_ZOOM, cutArea, squareApplies, makesNewPicture, moveFree, nudgeFree, placeShape, popupTrim, resizeFree, restoreCut, sameTrim,
   trimmable, trimmedFocus, turnBy, turnText, turnedSize, uncut, zoomPercent, zoomTo, type PopupCut,
 } from "../src/page-builder/image-popup-trim";
 import { isTrim, validTrim } from "../src/page-builder/trim-geometry";
@@ -33,10 +33,10 @@ test("zooming in, turning, a flip or a smaller Free trim saves a new picture; a 
   assert.equal(makesNewPicture("free", uncut()), false);
   assert.equal(makesNewPicture("free", { ...uncut(), rect: { x: 0, y: 0, w: 1, h: 0.9 } }), true);
   // The dot shows where a shape crops, or Original zoomed in; Free has corners instead.
-  assert.equal(dotApplies("original", uncut()), false);
-  assert.equal(dotApplies("original", { ...uncut(), zoom: 1.5 }), true);
-  assert.equal(dotApplies("4:3", uncut()), true);
-  assert.equal(dotApplies("free", uncut()), false);
+  assert.equal(squareApplies("original", uncut()), false);
+  assert.equal(squareApplies("original", { ...uncut(), zoom: 1.5 }), true);
+  assert.equal(squareApplies("4:3", uncut()), true);
+  assert.equal(squareApplies("free", uncut()), false);
 });
 
 test("the trim Done saves: fractions of the turned picture, the turn and flips, nothing for a shape alone", () => {

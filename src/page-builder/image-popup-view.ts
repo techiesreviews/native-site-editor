@@ -1,7 +1,7 @@
 // The image popup (crop-popup.html, made shorter like Brizy's in slice 109) in the media popup
 // frame (media-popup-frame.ts): beside the picture on wide screens, a bottom sheet with 44 px
 // targets on phones, a centred layer above Settings. The picture with the shape menu on it (a dark
-// pill, its menu anchored to it) and the focus dot; a one-time hint and Replace under it; Zoom
+// pill, its menu anchored to it) and the frame, dragged as the focus square; a one-time hint and Replace under it; Zoom
 // with the two Turn buttons at its end; small previews; one quiet message line and Done. Escape
 // closes the shape menu first, then the popup. A picture that can be trimmed gets Free (four
 // corners), Zoom and Turn (slice 41), and Open large editor in the head (slice 42). Fixed to one
@@ -23,8 +23,8 @@ import type { MediaBox } from "./media-markup";
 import type { PlaceFocus } from "./place-frame";
 import type { ImagePopupHost } from "./image-popup";
 import { componentShapeNotice, type ComponentPicture } from "./component-shapes";
-import { DOT_HINT, focusAt, nudgeFocus, pictureHint, popupMessage, seenHints, shapeRatio, sheetScroll, type PopupShape } from "./image-popup-rules";
-import { MAX_ZOOM, cutArea, dotApplies, makesNewPicture, moveFree, placeShape, nudgeFree, resizeFree, shownTrim, turnText, turnedSize, zoomPercent, type PictureSize, type PopupCut, type TrimRect } from "./image-popup-trim";
+import { SQUARE_HINT, nudgeFocus, pictureHint, popupMessage, seenHints, shapeRatio, sheetScroll, squareFocus, type PopupShape } from "./image-popup-rules";
+import { MAX_ZOOM, cutArea, makesNewPicture, moveFree, placeShape, nudgeFree, resizeFree, shownTrim, squareApplies, turnText, turnedSize, zoomPercent, type PictureSize, type PopupCut, type TrimRect } from "./image-popup-trim";
 import { trimGeometry } from "./trim-geometry";
 import { markTransparency, mediaMayBeTransparent } from "./media-transparency";
 import { actionButton, mountMediaPopupFrame, phonePopup, popupRow } from "./media-popup-frame";
@@ -88,7 +88,7 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
   });
   const { root, where, notice, rows, message, foot, place } = frameView;
 
-  // The picture: the shape menu over it, the place's frame and the focus dot on it.
+  // The picture: the shape menu over it and the place's frame on it, which is the focus square.
   const shapeButton = node("button", "image-popup__shape"); shapeButton.type = "button";
   const shapeText = node("span");
   shapeButton.append(shapeText, icon("caret-down", 13));
@@ -107,16 +107,13 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
     handle.dataset.corner = corner;
     return handle;
   }));
-  const dot = node("span", "image-popup__dot");
-  dot.tabIndex = 0; dot.setAttribute("role", "slider"); dot.setAttribute("aria-roledescription", "focus dot");
-  dot.setAttribute("aria-label", "Focus dot"); dot.setAttribute("aria-valuemin", "0"); dot.setAttribute("aria-valuemax", "100");
-  const picbox = node("div", "image-popup__picbox"); picbox.append(picture, turned, shade, handles, dot);
+  const picbox = node("div", "image-popup__picbox"); picbox.append(picture, turned, shade, handles);
   // A fixed shape is named where the menu would be.
   const shapeHead = fixed ? node("span", "image-popup__shape image-popup__shape--fixed", fixed.label) : shapeButton;
   const well = node("div", "image-popup__well"); well.append(shapeHead, ...fixed ? [] : [menu], picbox);
-  // The hint shows the first time it applies (in this browser), then stays as the dot's and the trim's description.
+  // The hint shows the first time it applies (in this browser), then stays as the square's and the trim's description.
   const hint = node("p", "image-popup__hint"); hint.id = "image-popup-hint";
-  dot.setAttribute("aria-describedby", hint.id); shapeButton.setAttribute("aria-describedby", hint.id);
+  shapeButton.setAttribute("aria-describedby", hint.id);
   const seen = seenHints(readHints()), shown = new Set<string>();
   const replace = actionButton("image-popup__link", () => events.replace());
   replace.append(svg(imageIcon, 14), "Replace"); replace.title = "Choose another picture for this spot";
@@ -173,12 +170,24 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
     const area = cutArea(size(), state.shape, state.focus, state.cut);
     const at = { left: `${area.x * pw}px`, top: `${area.y * ph}px`, width: `${area.w * pw}px`, height: `${area.h * ph}px` };
     Object.assign(frame.style, at); Object.assign(handles.style, at);
-    dot.style.left = `${state.focus.x}%`; dot.style.top = `${state.focus.y}%`;
   }
   const drawPreviews = () => previews.draw(state, size());
   picture.addEventListener("load", () => { layoutPicture(); drawPreviews(); });
 
-  function draw(focusDot = false) {
+  // The frame's part: the focus square (a slider), Free's trim area, or only a picture of what the place shows.
+  const frameRoles = {
+    square: { role: "slider", "aria-label": "Focus point", "aria-valuemin": "0", "aria-valuemax": "100" },
+    free: { role: "group", "aria-roledescription": "trim area", "aria-label": "Trim area. Arrow keys move it. Alt and arrow keys change its size." },
+  };
+  const frameNames = ["tabindex", "role", "aria-roledescription", "aria-label", "aria-valuemin", "aria-valuemax", "aria-valuenow", "aria-valuetext", "aria-describedby", "aria-hidden"];
+  // Only what differs changes: dropping `tabindex` for a moment would take the keyboard focus off the square.
+  function frameAs(part: keyof typeof frameRoles | undefined) {
+    const wanted: Record<string, string> = part ? { tabindex: "0", "aria-describedby": hint.id, ...frameRoles[part] } : { "aria-hidden": "true" };
+    for (const name of frameNames) if (!(name in wanted)) frame.removeAttribute(name);
+    for (const [name, value] of Object.entries(wanted)) if (frame.getAttribute(name) !== value) frame.setAttribute(name, value);
+  }
+
+  function draw(focusSquare = false) {
     where.textContent = state.file.split("/").pop() ?? "";
     where.title = state.file;
     // Replace's note and a component's "looks different" note can both stand.
@@ -187,23 +196,18 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
     shapes.draw(state.shape, state.trimmable);
     // A see-through picture sits on 106's light checkerboard (the well is dark).
     if (state.url && picture.getAttribute("src") !== state.url) showPicture(picture, state.url, state.file);
-    const applies = dotApplies(state.shape, state.cut), free = state.shape === "free";
-    dot.hidden = !applies;
-    const across = Math.round(state.focus.x), down = Math.round(state.focus.y);
-    dot.setAttribute("aria-valuenow", String(across));
-    dot.setAttribute("aria-valuetext", `${across}% across, ${down}% down. Arrow keys move it.`);
-    // Free: the frame is the trim, moved by dragging or arrow keys, sized by its corners or Alt and arrow keys.
+    const applies = squareApplies(state.shape, state.cut), free = state.shape === "free";
+    // A shape: the frame is the focus square, dragged or moved by arrow keys. Free: the frame is the
+    // trim, moved by dragging or arrow keys, sized by its corners or Alt and arrow keys.
+    frameAs(applies ? "square" : free ? "free" : undefined);
+    if (applies) {
+      const across = Math.round(state.focus.x), down = Math.round(state.focus.y);
+      frame.setAttribute("aria-valuenow", String(across));
+      frame.setAttribute("aria-valuetext", `${across}% across, ${down}% down. Arrow keys move it.`);
+    }
+    frame.classList.toggle("image-popup__frame--square", applies);
     frame.classList.toggle("image-popup__frame--free", free);
     picbox.classList.toggle("image-popup__picbox--free", free);
-    if (free) {
-      frame.tabIndex = 0; frame.setAttribute("role", "group"); frame.setAttribute("aria-roledescription", "trim area");
-      frame.setAttribute("aria-label", "Trim area. Arrow keys move it. Alt and arrow keys change its size.");
-      frame.setAttribute("aria-describedby", hint.id);
-      frame.removeAttribute("aria-hidden");
-    } else {
-      for (const name of ["tabindex", "role", "aria-roledescription", "aria-label", "aria-describedby"]) frame.removeAttribute(name);
-      frame.setAttribute("aria-hidden", "true");
-    }
     zoomRow.hidden = largeButton.hidden = !state.trimmable;
     const percent = zoomPercent(state.shape, state.cut);
     if (Number(zoom.value) !== percent) zoom.value = String(percent);
@@ -216,8 +220,8 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
     turnLeft.title = `Turn left (now ${turnNow})`; turnRight.title = `Turn right (now ${turnNow})`;
     const said = pictureHint(state.shape, state.cut.zoom > 1.001);
     hint.textContent = said;
-    // The dot's hint is never shown, only read out as the dot's description.
-    if (!seen.has(said) && said !== DOT_HINT) shown.add(said);
+    // The square's hint is never shown, only read out as the square's description.
+    if (!seen.has(said) && said !== SQUARE_HINT) shown.add(said);
     hint.classList.toggle("sr-only", !shown.has(said));
     const line = fixed?.message ?? popupMessage({ newPicture: state.trimmable && makesNewPicture(state.shape, state.cut), recrop: state.recrop });
     message.className = `image-popup__message image-popup__message--${line.tone}`;
@@ -228,10 +232,10 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
     layoutPicture();
     drawPreviews();
     place();
-    if (focusDot) (applies ? dot : free ? frame : shapeButton).focus({ preventScroll: true });
+    if (focusSquare) (applies || free ? frame : shapeButton).focus({ preventScroll: true });
   }
 
-  // Dragging: a press on the picture puts the dot there (a finger's on release); a press on the dot keeps where it was held.
+  // Dragging: a press on the picture centres the square there (a finger's on release); a press on the square keeps where it was held.
   // Free: a corner sizes the trim, the frame moves it.
   let drag: { id: number; dx: number; dy: number; corner?: string; from?: TrimRect; x?: number; y?: number } | undefined;
   let tap: number | undefined;
@@ -249,15 +253,15 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
       frame.focus({ preventScroll: true });
       return;
     }
-    if (!dotApplies(state.shape, state.cut)) return;
-    const onDot = target.closest(".image-popup__dot");
-    // A finger on the picture (not the dot) moves the dot on release, so a swipe there scrolls the sheet (slice 94).
-    if (event.pointerType === "touch" && !onDot) { tap = event.pointerId; return; }
+    if (!squareApplies(state.shape, state.cut)) return;
+    const onSquare = target.closest(".image-popup__frame");
+    // A finger on the picture (not the square) moves the square on release, so a swipe there scrolls the sheet (slice 94).
+    if (event.pointerType === "touch" && !onSquare) { tap = event.pointerId; return; }
     event.preventDefault();
     well.setPointerCapture(event.pointerId);
-    const held = onDot ? dot.getBoundingClientRect() : undefined;
+    const held = onSquare ? frame.getBoundingClientRect() : undefined;
     drag = { id: event.pointerId, dx: held ? event.clientX - (held.left + held.width / 2) : 0, dy: held ? event.clientY - (held.top + held.height / 2) : 0 };
-    dot.focus({ preventScroll: true });
+    frame.focus({ preventScroll: true });
     follow(event);
   });
   const follow = (event: PointerEvent) => {
@@ -268,7 +272,12 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
       events.rect(drag.corner ? resizeFree(drag.from, drag.corner, dx, dy) : moveFree(drag.from, dx, dy));
       return;
     }
-    const next = focusAt({ x: event.clientX - drag.dx, y: event.clientY - drag.dy }, box);
+    centreSquare(event.clientX - drag.dx, event.clientY - drag.dy);
+  };
+  // The square centred on a point of the screen, as far as it can go on the picture.
+  const centreSquare = (x: number, y: number) => {
+    const box = picbox.getBoundingClientRect(), area = cutArea(size(), state.shape, state.focus, state.cut);
+    const next = squareFocus(area, { x: (x - box.left) / (box.width || 1), y: (y - box.top) / (box.height || 1) }, state.focus);
     if (next.x !== state.focus.x || next.y !== state.focus.y) events.focus(next);
   };
   well.addEventListener("pointermove", follow);
@@ -276,17 +285,16 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
     if (drag?.id === event.pointerId) drag = undefined;
     if (tap !== event.pointerId) return;
     tap = undefined;
-    if (event.type !== "pointerup" || !dotApplies(state.shape, state.cut)) return;
-    const next = focusAt({ x: event.clientX, y: event.clientY }, picbox.getBoundingClientRect());
-    if (next.x !== state.focus.x || next.y !== state.focus.y) events.focus(next);
-    dot.focus({ preventScroll: true });
+    if (event.type !== "pointerup" || !squareApplies(state.shape, state.cut)) return;
+    centreSquare(event.clientX, event.clientY);
+    frame.focus({ preventScroll: true });
   };
   well.addEventListener("pointerup", release);
   well.addEventListener("pointercancel", release);
 
   root.addEventListener("keydown", event => {
     if ((event.target as Element).closest(".image-popup__menu")) return;
-    if (event.target === dot) {
+    if (event.target === frame && squareApplies(state.shape, state.cut)) {
       const next = nudgeFocus(state.focus, event.key, event.shiftKey);
       if (next) { event.preventDefault(); events.focus(next); }
     }
@@ -365,7 +373,7 @@ export function mountPreviews(devices: readonly PreviewDevice[]) {
       if (url && image.getAttribute("src") !== url) showPicture(image, url, state.file);
       image.style.objectFit = box?.fit ?? (ratio ? "cover" : "fill");
       image.style.objectPosition = cut ? state.aroundFocus ? `${state.aroundFocus.x}% ${state.aroundFocus.y}%` : ""
-        : dotApplies(state.shape, state.cut) ? `${state.focus.x}% ${state.focus.y}%` : "";
+        : squareApplies(state.shape, state.cut) ? `${state.focus.x}% ${state.focus.y}%` : "";
     }
   }
   return { element, draw };

@@ -1,5 +1,5 @@
 // The Social image popup's rules (media build slice 44; ticket 09 "Components, sharing and
-// backgrounds"): the image popup fixed to the 1200 × 630 sharing shape. The focus dot moves the
+// backgrounds"): the image popup fixed to the 1200 × 630 sharing shape. The focus square moves the
 // sharing copy's frame and Zoom trims it closer; there are no other shapes, no Free, Turn or large
 // editor (the sharing copy is one plain rectangle of the picture). No DOM here.
 import type { MediaTrim } from "../../shared/media-records";
