@@ -42,7 +42,8 @@ machine (searched 2026-10-25); the parts carried over live in the build tickets 
   happened (the item, the button, the field); the screen-reader status line still announces it.
   New work adds none; today's toasts go in the atomic catalogue build.
   Why: Lex, 2026-10-23, "the interface should show what is happening" ([factory map](../wayfinder/software-factory/map.md),
-  Decisions); the "Filled from …" strip ([components 101](../wayfinder/components-and-builder/build/tickets/101-remove-fill-strip.md)).
+  Decisions); the "Filled from …" strip went while the status line kept announcing the fill
+  ([components 101](../wayfinder/components-and-builder/build/tickets/101-remove-fill-strip.md)).
   Check: `script: text` + `eye`.
 - **S5** Every control in a bar earns its place: leave out modes and toggles Lex did not ask for,
   rather than squeezing them in.
@@ -122,7 +123,8 @@ machine (searched 2026-10-25); the parts carried over live in the build tickets 
   always moves the block; a click on an image or any other element selects it (an image's popup opens
   on a double-click); Esc ends typing and selects the block; anything just added arrives selected,
   not typing.
-  Why: Lex, 2026-10-23, "click, and directly select and type" ([clean-up 28](../wayfinder/clean-up-before-features/build/tickets/28-click-to-type.md)),
+  Why: Lex, 2026-10-23, "click, and directly select and type" ([Lex's request 01](../work/lex-requests/issues/01-click-to-type.md),
+  [clean-up 28](../wayfinder/clean-up-before-features/build/tickets/28-click-to-type.md)),
   which replaced click-selects, double-click-edits ([components 79](../wayfinder/components-and-builder/build/tickets/79-click-selects-double-click-edits.md));
   new blocks arrive selected (79).
   Check: `script: spec` (`native-click-to-type.spec.ts`, `native-text.spec.ts`, `native-blocks.spec.ts`).
@@ -213,11 +215,13 @@ machine (searched 2026-10-25); the parts carried over live in the build tickets 
 - **U7** The keyboard works: focus shows with `:focus-visible` and `--focus-ring`, never `outline: none`;
   menus open with Enter, Space or ↓, close with Esc and return focus.
   Why: [components 87](../wayfinder/components-and-builder/build/tickets/87-discard-in-publish-menu.md);
-  [editor colours](../editor-colors.md); the `good-css` skill.
+  [editor colours](../editor-colors.md); "keyboard reachable: every control focusable, Esc closes"
+  ([page builder](../page-builder/README.md#feel)); the `good-css` skill.
   Check: `script: spec` (`native-discard.spec.ts`) + `eye`.
 - **U8** Motion respects the reduced-motion setting: a transition that moves or scales sits inside
   `prefers-reduced-motion: no-preference`, names its properties and never uses `ease-in`.
-  Why: the `good-css` skill, which all editor CSS follows.
+  Why: "fast and calm: motion 120–200 ms ease-out, no bounce; respect `prefers-reduced-motion`"
+  ([page builder](../page-builder/README.md#feel)); the `good-css` skill, which all editor CSS follows.
   Check: `eye`.
 
 ## Not a rule
