@@ -2,7 +2,7 @@
 title: Decide the one-way check on one-offs
 type: grilling (HITL)
 status: open
-assignee:
+assignee: Lex + claude (grilling)
 blocked_by: [04-research-parts-inventory, 06-grill-shared-values]
 ---
 
