@@ -20,6 +20,7 @@ Each file is followed by its declared entry symbols. Styles, fixtures, scripts a
 | Opening a file in the source pane | `src/controllers/source-pane-controller.ts` — `createSourcePaneController`, `openEntry`, `mountSource` |
 | Pages explorer and page operations | `src/controllers/pages-state.ts` — `createPagesState`, `pageLinkSources`, `pageOnBranchHere`; `src/controllers/pages-controller.ts` — `createPagesController`; `src/components/pages-tree.ts` — `createPagesTree`; `src/native-page-moves.ts` — `planPageMove` |
 | Pages & files host: trees, explorer tabs, file operations wiring, resync, save wiring; the explorer's lazy Create, row menu, rename and drop | `src/pages-and-files-host.ts` — `createPagesAndFilesHost`, `PagesAndFilesPorts`, `ExplorerHost`; `src/pages-and-files-explorer.ts` — `createExplorerActions` (Create, row menu, rename, drop) |
+| Page-builder host: the command palette, component tools' ports, section inserts, block moves and drags, preview selection, the Variant lookup's files, CSS code intelligence, the edit bar and Page Structure controller, a page's title and description, page and site settings and navigation, card grids | `src/page-builder-host.ts` — `createPageBuilderHost`, `PageBuilderHostPorts`, `paletteController`, `mountComponentTools`, `componentPorts`, `nativeSectionChoices`, `nativeAddPoints`, `nativeElementAddPoint`, `insertNativeComponent`, `finishRailTyping`, `blockMoves`, `blockInsertPorts`, `loadBlockDrag`, `loadBlockInsert`, `dragPageBlock`, `structureDrop`, `previewSelection`, `pageStructureController`, `nativeMoveItems`, `nativeVariantFiles`, `nativeCssWorkspace`, `nativeComponentFieldsRevision`, `elementMenuItems`; inside it: `readVariantFiles`, `nearestLink`, `wholeWrapper`, `nativeLinkParents`, `nativeInstanceContent`, `nativeNamedDescendant`, `nativePictureSources` |
 | Files explorer and file operations | `src/controllers/files-tree-controller.ts` — `createFilesTreeController`; `src/controllers/file-operations-controller.ts` — `createFileOperationsController`; `src/controllers/file-operation-checks.ts` — `createLazyFileOperationsController`; `src/file-changes.ts` — `listChanges` |
 | Save to GitHub and change status UI | `src/controllers/save-publish-controller.ts` — `createSavePublishController`; `src/deploy-status.ts` — `setDeployStatus` |
 | History and restoring saved versions | `src/version-view.ts` — `createVersionView` (History's wiring, the earlier version on show, its restore); `src/controllers/history-controller.ts` — `createHistoryController`; `src/components/commit-history.ts` — `createCommitHistory` |
@@ -34,7 +35,7 @@ Each file is followed by its declared entry symbols. Styles, fixtures, scripts a
 | Command palette | `src/controllers/command-palette-controller.ts` — `createCommandPaletteController` |
 | Editor colours and surfaces | `src/style.css`; `src/theme.css`; `src/utilities.css` |
 | The open site's state and effective sources | `src/native-site-runtime.ts` — `createNativeSiteRuntime` (the site, GitHub's layer, its source, text source, files, new drafts, shown paths, a save adopted and reset), `textNow` (a file's text now: the preview's source, and the text source of media text, guarded edits and agent reads), `nativeFiles`; `src/main.ts` — `runtime` |
-| Routes and preview updates | `src/main.ts` — `refreshNativeRoutes`, `updateNativePreviewSources` |
+| Routes and preview updates | `src/page-builder-host.ts` — `refreshNativeRoutes`; `src/main.ts` — `updateNativePreviewSources` |
 | Preview host, selection and edit bar | `src/components/native-preview.ts` — `createNativePreview`; `src/controllers/preview-selection-controller.ts` — `createPreviewSelectionController` |
 | Canvas address mapping | `src/components/canvas-path.ts` — `canvasPath` |
 | Frame rendering, typing and host messages | `src/components/native-preview-runtime.js` — `apply`, `emit`, `renderPage` |
@@ -74,9 +75,9 @@ Each file is followed by its declared entry symbols. Styles, fixtures, scripts a
 | Block move, canvas drag and tree drop | `src/page-builder/block-move.ts` — `createBlockMoves`; `src/page-builder/block-drag.ts` — `createBlockDrag`; `src/page-builder/block-drag-session.ts` — `createBlockDragSession`; `src/page-builder/tree-drop.ts` — `createStructureDrop` |
 | Component tools and Edit component mode | `src/page-builder/components.ts` — `createComponentTools`; `src/page-builder/component-mode.ts` — `createComponentMode`; `src/page-builder/edit-component-mode.ts` — `createEditComponentMode` |
 | Component slots, make, rename and removal plans | `src/page-builder/component-model.ts` — `templateSlots`, `makeComponentPlan`; `src/page-builder/component-plans.ts` — `slotChipPlan`, `makeComponentStep`, `componentRenameStep`, `templateRemovalPlan` |
-| Component loader installation | `src/page-builder/component-loader.ts` — `componentLoaderPlan`; `src/main.ts` — `nativeComponentLoaderPlan` |
-| Cards and linked pages | `src/page-builder/cards.ts` — `createCards` (`src/main.ts` — `cards`); `src/page-builder/card-source.ts` — `gridAt` |
-| Page details, site settings and navigation | `src/page-builder/site-head.ts` — `withPageField`; `src/page-builder/site-identity.ts` — `readSiteIdentity`; `src/page-builder/site-navigation.ts` — `readNavigation`, `editNavigation`; `src/main.ts` — `openNativeSiteSettings` |
+| Component loader installation | `src/page-builder/component-loader.ts` — `componentLoaderPlan`; `src/page-builder-host.ts` — `nativeComponentLoaderPlan` |
+| Cards and linked pages | `src/page-builder/cards.ts` — `createCards` (`src/page-builder-host.ts` — `cards`); `src/page-builder/card-source.ts` — `gridAt` |
+| Page details, site settings and navigation | `src/page-builder/site-head.ts` — `withPageField`; `src/page-builder/site-identity.ts` — `readSiteIdentity`; `src/page-builder/site-navigation.ts` — `readNavigation`, `editNavigation`; `src/page-builder-host.ts` — `openNativeSiteSettings`, `openNativePageSettings`, `openNativeNavigation`, `nativeNavigationTarget`, `nativePageMeta`, `writeNativePageMeta` |
 | Linked style rules and cascade | `src/styles-index.ts` — `findStyleRulesInSources`; `src/style-cascade.ts` — `resolveSelectedRules`; `src/controllers/linked-styles-controller.ts` — `linkNativeStyles` |
 | Source editor CSS and variant suggestions | `src/page-builder/css-intelligence.ts` — `cssVariableCompletion`; `src/page-builder/variant-intelligence.ts` — `variantSuggestions`; `src/page-builder/variant-fields.ts` — `variantFields` |
 | Media manager and draft batches | `src/controllers/media-controller.ts` — `createMediaController`; `src/controllers/media-actions.ts` — `createMediaActions`; `src/media-batch.ts` — `applyMediaBatch`; `src/page-builder/media-workspace.ts` — `createMediaWorkspace`; `src/page-builder/media-prepare.ts` — `prepareMediaFile`, `importPreparedMedia`; `src/page-builder/media-files-adding-runs.ts` — `createFilesAdding` (Files adding); `src/page-builder/media-adding-summary.ts` — the shared adding progress; `src/main.ts` — `applyMediaBatch` |
@@ -235,42 +236,38 @@ Ranges are approximate navigation hints, measured in this worktree; search the s
 
 | Section, in source order | Approximate lines | Key functions / wiring |
 | --- | --- | --- |
-| Imports, host handles, lazy loading, the native site runtime's ports, site loading and text index ports (src/site-loading.ts, src/site-text-index.ts) | 1–253 | lazyModule, runtime, createSiteLoading, createSiteTextIndex |
-| Command palette | 254–302 | paletteController |
-| Component tools and section insertion | 303–498 | mountComponentTools, nativeElementAddPoint, nativeComponentLoaderPlan, insertNativeComponent |
-| Guarded edit adapter, block move / drag / insert | 499–612 | guardedEdits, blockMoves, dragPageBlock, finishRailTyping |
-| History wiring and the version on show (src/version-view.ts) | 613–622 | versions |
-| Linked styles and secondary pane ports (src/controllers/linked-styles-controller.ts), repository index, preview selection | 623–701 | linkedStyles, repositoryIndex, findEntry, previewSelection |
-| Variant reads and CSS workspace | 702–778 | readVariantFiles, nativeCssWorkspace |
-| Page Structure and edit-bar controller ports | 779–882 | pageStructureController |
-| Native preview handle, draft scope and page metadata | 883–970 | nativeModeActive, draftScope, nativePageMeta, writeNativePageMeta |
-| Site, page and navigation settings | 971–1005 | openNativePageSettings, openNativeSiteSettings, openNativeNavigation |
-| Routes and preview updates | 1006–1098 | refreshNativeRoutes, nativePageStyles, updateNativePreviewSources |
-| Image paths, uploads, media reads and media manager ports | 1099–1291 | nativeImagePaths, uploadFilesTo, readMediaText, applyMediaBatch, mediaController |
-| Leaving the site and current page | 1292–1334 | deactivateNative, setCurrentPage (status, errorMessage, api: src/github-reads.ts) |
-| Login, Start your site, Setup checklist, wizard and Get started ports (src/setup-host.ts) | 1335–1358 | setup |
-| Card grids; Pages & files host ports (src/pages-and-files-host.ts: trees, tabs, Create, file operations, resync, save) | 1359–1391 | cards, pagesAndFiles, pagesController, savePublish, afterFileChanges, treeState |
-| Workspace host ports (src/workspace-mount.ts: the workspace's screen, code panes, source editor, folder summary, closing it); the toast | 1392–1442 | workspace, mountWorkspace, openCodeEditor, closeWorkspace, showDirectory, setupScope, announce |
-| Source pane ports (src/controllers/source-pane-controller.ts) | 1443–1472 | sourcePane, openEntry, mountSource, nativeComponentTagForPath, updateAgentContext |
-| Agent context and command ports (src/agent-site-host.ts) | 1473–1518 | agentContext, agentSiteHost, agentCommands |
-| Fallback page; new, uploaded and deleted drafts | 1519–1593 | nativeFallbackPage, openNewDraft, showUpload, showDeletedFile |
-| Workspace boot ports (src/workspace-boot.ts) | 1594–1618 | workspaceBoot, restoreFile, loadSnapshot, chooseRepository |
-| Repository list, account switching and sign-out ports (src/repository-list.ts), storage | 1619–1646 | checkNewRepositories listeners, loadRepositories, refreshRepositoryList, disconnect, storage |
-| Draft baseline, agent/boot ports and startup | 1647–1716 | agentController, boot, renderLogin("loading"), workspaceBoot.startGuess |
+| Imports, host handles, lazy loading, the native site runtime's ports, site loading and text index ports (src/site-loading.ts, src/site-text-index.ts) | 1–226 | lazyModule, runtime, createSiteLoading, createSiteTextIndex |
+| Component tools handle, guarded edit adapter and parked steps | 227–281 | componentTools, nativeMountListener, editorWorkspace, guardedEdits, parkedSteps |
+| Page-builder host ports (src/page-builder-host.ts: palette, component tools, inserts, block moves and drags, preview selection, Variant files, CSS workspace, Page Structure controller, page meta and settings, card grids) | 282–303 | pageBuilder, paletteController, blockMoves, previewSelection, pageStructureController, cards |
+| History wiring and the version on show (src/version-view.ts) | 304–313 | versions |
+| Linked styles and secondary pane ports (src/controllers/linked-styles-controller.ts), repository index | 314–334 | linkedStyles, repositoryIndex, findEntry |
+| Native preview handle, draft scope and route info | 335–364 | nativeModeActive, draftScope, nativeRouteInfo, nativeTitles |
+| Preview sources and updates | 365–435 | nativePageStyles, updateNativePreview, updateNativePreviewSources |
+| Image paths, uploads, media reads and media manager ports | 436–627 | nativeImagePaths, uploadFilesTo, readMediaText, applyMediaBatch, mediaController |
+| Leaving the site and current page | 628–671 | deactivateNative, setCurrentPage (status, errorMessage, api: src/github-reads.ts) |
+| Login, Start your site, Setup checklist, wizard and Get started ports (src/setup-host.ts) | 672–694 | setup |
+| Pages & files host ports (src/pages-and-files-host.ts: trees, tabs, Create, file operations, resync, save) | 695–714 | pagesAndFiles, pagesController, savePublish, afterFileChanges, treeState |
+| Workspace host ports (src/workspace-mount.ts: the workspace's screen, code panes, source editor, folder summary, closing it); the toast | 715–765 | workspace, mountWorkspace, openCodeEditor, closeWorkspace, showDirectory, setupScope, announce |
+| Source pane ports (src/controllers/source-pane-controller.ts) | 766–795 | sourcePane, openEntry, mountSource, nativeComponentTagForPath, updateAgentContext |
+| Agent context and command ports (src/agent-site-host.ts) | 796–841 | agentContext, agentSiteHost, agentCommands |
+| Fallback page; new, uploaded and deleted drafts | 842–916 | nativeFallbackPage, openNewDraft, showUpload, showDeletedFile |
+| Workspace boot ports (src/workspace-boot.ts) | 917–937 | workspaceBoot, restoreFile, loadSnapshot, chooseRepository |
+| Repository list, account switching and sign-out ports (src/repository-list.ts), storage | 938–963 | checkNewRepositories listeners, loadRepositories, refreshRepositoryList, disconnect, storage |
+| Draft baseline, agent/boot ports and startup | 964–1039 | agentController, boot, renderLogin("loading"), workspaceBoot.startGuess |
 
 ## Main entry points
 
-Frequently used top-level functions and constants in src/main.ts (28). Descriptions stay within ten words.
+Frequently used names in src/main.ts (28): its own top-level functions and constants, and the host members it destructures (the host's file in brackets). Descriptions stay within ten words.
 
 | Symbol | Purpose |
 | --- | --- |
 | `appStore` | Holds reactive repository, snapshot, file and selection state. |
 | `lazyModule` | Caches lazy imports; clears failed loads for retry. |
 | `mountWorkspace` | Mounts editor DOM and controls (`workspace`, workspace-mount.ts). |
-| `mountComponentTools` | Supplies live host ports to component tools. |
+| `mountComponentTools` | Supplies live host ports to component tools (page-builder-host.ts). |
 | `guardedEdits` | Runs proved edits as one undoable transaction. |
-| `blockMoves` | Coordinates guarded block moves across pages and templates. |
-| `pageStructureController` | Owns Page Structure, edit-bar models and text edits. |
+| `blockMoves` | Guarded block moves across pages and templates (page-builder-host.ts). |
+| `pageStructureController` | Page Structure, edit-bar models and text edits (page-builder-host.ts). |
 | `draftScope` | Identifies the current account, repository and branch. |
 | `setupScope` | Current account/repository/branch key (`workspace`, workspace-mount.ts). |
 | `nativeModeActive` | Reports whether a native site is active. |
