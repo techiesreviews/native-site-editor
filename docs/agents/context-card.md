@@ -39,7 +39,7 @@ that carry their own copy, so this repo does not show the card twice. Until the 
 Claude, `~/.claude/settings.json` (merge into any existing `hooks`):
 
 ```json
-{"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "test -f \"$(git rev-parse --show-toplevel 2>/dev/null)/scripts/agents/context-card.mjs\" || node /home/ubulex/Projects/native-site-editor-dev/scripts/agents/context-card.mjs --hook"}]}]}}
+{"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "test -f \"$(git rev-parse --show-toplevel 2>/dev/null)/scripts/agents/context-card.mjs\" || timeout 1 node /home/ubulex/Projects/native-site-editor-dev/scripts/agents/context-card.mjs --hook 2>/dev/null || true"}]}]}}
 ```
 
 Codex, `~/.codex/hooks.json`: the same JSON. Interactive Codex asks once to approve the new hook.
