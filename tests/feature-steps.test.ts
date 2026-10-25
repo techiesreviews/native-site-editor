@@ -45,7 +45,16 @@ for (const file of files) {
     // A name may add the bug the try would have caught (slice 45): F-media-18-bug-popup-flicker.
     assert.ok(scenario.name === id || scenario.name?.startsWith(`${id}-`), `name ${scenario.name} starts with ${id}`);
     // A try ends on evidence: a visible result to expect or wait for, or a recorded strip to look at.
-    const last = parseStep(scenario.steps.at(-1) ?? "").kind;
-    assert.ok(evidence.has(last), `${file} ends on an expect, wait or record step, not ${last}`);
+    const steps = scenario.steps.map(parseStep);
+    const last = steps.at(-1)!;
+    assert.ok(evidence.has(last.kind), `${file} ends on an expect, wait or record step, not ${last.kind}`);
+    // A closing check that repeats one made before the last action proves nothing about that action,
+    // unless a record after the earlier check, or another check after the action, shows what happened.
+    if (last.kind === "expect" || last.kind === "wait") {
+      const action = steps.findLastIndex(step => !evidence.has(step.kind));
+      const earlier = steps.findIndex((step, index) => index < action && (step.kind === "expect" || step.kind === "wait") && step.text === last.text);
+      const shown = earlier >= 0 && (steps.slice(earlier + 1).some(step => step.kind === "record") || steps.slice(action + 1, -1).length > 0);
+      assert.ok(earlier < 0 || shown, `${file}: the closing check "${last.text}" repeats step ${earlier + 1} from before the last action`);
+    }
   });
 }
