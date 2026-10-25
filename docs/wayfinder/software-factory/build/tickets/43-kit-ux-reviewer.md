@@ -1,8 +1,8 @@
 ---
 title: "kit ux, reviewer half; visible slices run it"
 type: task (AFK)
-status: open
-assignee: sf-43 (this session)
+status: closed
+assignee: sf-43
 builder: claude
 blocked_by: [42-kit-ux-scripted, 21-kit-records-every-piece]
 ---
@@ -39,3 +39,43 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 
 - `scripts/agents/kit doctor`; `ASE_REVIEW_MODEL=claude-opus-5-5 scripts/agents/kit bg slice-sf43 -- scripts/agents/kit slice --ticket docs/wayfinder/software-factory/build/tickets/43-kit-ux-reviewer.md --builder claude-opus-5-5`; `scripts/agents/kit wait job slice-sf43 --timeout 2h`.
 - Report: unit `RESULT:` lines, the real `kit ux` report lines and token use, review decisions, PR and merge SHA.
+
+## Done (2026-10-25)
+
+- `kit ux` now ends with the reviewer step: `scripts/agents/ux-brief.mjs` writes the brief (touched feature ids,
+  the first line of every rulebook rule, the mock-up link; judge the bundle alone, against the rulebook and the
+  mock-up; "looks off" needs a rule id or a mock-up difference; no new text, hints or badges) and parses the
+  answer. The reviewer (`ASE_UX_MODEL`, default `claude-opus-5-5`, effort `medium`) runs through `agent.sh review`
+  on a copy of the bundle inside the worktree's `.scratch/agent/ux-review-*`, removed afterwards; with nothing
+  committed past the base, `--commit HEAD` stands in as the diff scope `agent.sh review` needs.
+- Saved beside `bundle.md`: `ux.md`, `ux.json` and the reviewer's `run.log`; the scoreboard record gets
+  `ux: { fine, off, broken, rules }` (rule ids) and the review's cost. A failed try is broken whatever the reviewer
+  says; a broken verdict fails `kit ux` with `broken: <feature,…>`; an answer missing a feature or giving one two
+  verdicts fails with `review unreadable: no verdict for <feature> (<dir>/ux.md)`. `--no-review` skips the reviewer.
+- `kit slice` has a `ux` phase after the code review gate and before `kit pr`: nothing touched skips with one line;
+  broken or looks off gets one `kit fix --note <bundle>/ux.md` round, then `kit ux` again; still broken stops with
+  `decide: ux broken <feature>`; looks off lands and its lines go under `### UX follow-ups` at the end of the
+  ticket in one ticket-only commit. The fix loop and the UX round share one `fixRound` helper.
+- Tests: `tests/kit-ux.test.ts` (parser: fine, looks off, broken, rules, unreadable answers; brief; a fake reviewer
+  through `kit ux`: files, counts and cost on the scoreboard, broken, unreadable and failed reviewer, `--no-review`)
+  and `tests/kit-slice.test.ts` (skip, broken twice stops, broken fixed lands, looks off lands with follow-ups).
+- Docs: `kit ux` and `kit slice` in agent-scripts.md, runner.md Screenshots, kitchen stations 7, 8 and 11.
+- Review round 1: the UX fix round's own review now gets the usual fix rounds before anything stops the slice;
+  UX follow-up lines name the full image path; an answer's last part is the image only when it looks like one
+  (`.webp`, `.png`, `.jpg`) or says none; the brief tells the reviewer not to open the diff files `agent.sh review`
+  names. New tests: the review after the UX round, a resumed UX round, follow-ups under an existing heading,
+  the `--base` scope, and a run through the real `agent.sh review` with a fake `claude` that reads the bundle copy.
+- Review round 2: a review round after the UX round that failed half-way resumes before `kit ux` runs again;
+  `kit ux` and the follow-ups commit both hold to the HEAD the check started on (and a clean tree before the
+  ticket is written); UX follow-ups go in the ticket's last `## Done` section (made when missing), are matched
+  by feature and note, and name images from the main root; only rulebook ids count as broken rules; a verdict
+  line after the rules list is still read. New tests: the resumed review round, findings left after the UX
+  round's fix rounds, a `kit ux` failure without a report, follow-ups in the last Done, made-up rule ids.
+- Review round 3: a failed reviewer's RESULT names `run.log` beside the bundle, not the removed run folder;
+  `kit ux` skips the scoreboard when HEAD or the branch moved during its run, and skips the paid review when a
+  screens run failed with no broken try; `kit slice` saves the final UX report before the follow-ups commit and
+  reuses it on a rerun, and matches follow-ups by feature id. New tests for each, plus a slice stop on a report
+  with no broken feature.
+- **Lead step, still open (Done when item 2):** run `scripts/agents/kit ux --features <two features from slice 42>`
+  with the real reviewer and paste the per-feature lines, the reviewer's model from `run.log` and its token use.
+  The builder brief forbids agent runs, so the builder could not do it.

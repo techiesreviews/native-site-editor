@@ -116,11 +116,10 @@ on a usage-limit `problem:` line, tell Lex the reset time and carry on with Clau
 
 - **Use:** `kit unit --affected`, `npm run check` when types move, `kit specs --affected`, `kit size`
   when boot code moves, `kit shots` for every visible change ([local-testing.md](local-testing.md)).
-  T3 `preview_*` tools to try a change by hand.
-- **Planned:** one kit tool that acts like a user: scripted checks first, then the Opus UX reviewer
-  tries the touched features from the [feature list](features.md) and reports fine / looks off / broken with
-  screenshots ([factory 03](../wayfinder/software-factory/tickets/03-grill-checking-skill.md#resolution-2026-10-22)).
-  A visible change adds or updates its entries in [features.md](features.md).
+  T3 `preview_*` tools to try a change by hand. `kit ux` acts like a user: it tries the touched features
+  from the [feature list](features.md), runs scripted checks and has the Opus UX reviewer report fine / looks off /
+  broken per feature with screenshots ([factory 03](../wayfinder/software-factory/tickets/03-grill-checking-skill.md#resolution-2026-10-22));
+  `kit slice` runs it on every visible change. A visible change adds or updates its entries in [features.md](features.md).
 - **Done when:** every check's `RESULT:` line is ok and quoted in the report; a visible change has
   its contact sheet.
 
@@ -128,8 +127,9 @@ on a usage-limit `problem:` line, tell Lex the reset time and carry on with Clau
 
 - **Use:** `kit review` (inside `kit slice` and `kit pr`), Claude on every change, up to 3 `kit fix`
   rounds; severities and blocking: [runner.md](runner.md#review-and-close). Second opinions per the
-  pins above. A visible change also gets the Opus UX review of its contact sheet against the
-  [UX rulebook](ux-rulebook.md); **planned** as a kit command
+  pins above. A visible change also gets the Opus UX review (`kit ux`, the gate after the code review
+  in `kit slice`) against the [UX rulebook](ux-rulebook.md) and the approved mock-up: broken gets one
+  fix round and stops the slice only if still broken, looks off gets one fix round and then lands with UX follow-ups in the ticket
   ([factory 02](../wayfinder/software-factory/tickets/02-grill-ux-confidence-ladder.md#resolution-2026-10-22)).
 - **Decides:** the lead weighs each finding; a rejected finding is written down with its reason.
 - **Evidence:** the main root's `.scratch/reviews/<owner>/<time>/`, with `findings.json` listing each
@@ -165,8 +165,8 @@ on a usage-limit `problem:` line, tell Lex the reset time and carry on with Clau
 ### 11. Lex's end check
 
 - **Use:** when the build's frontier is empty, the lead tells Lex the preview is ready, with a plain
-  what-to-test list (what a user could notice, where to look, what to try on his iPhone).
-  **Planned:** the checking tool runs the whole feature list first (factory 03).
+  what-to-test list (what a user could notice, where to look, what to try on his iPhone). First the
+  lead runs `kit ux --all` on `dev` and sends its summary (the per-feature lines) with that list (factory 03).
 - **Decides:** Lex. Each correction becomes a ticket in the build (station 4) and one feedback log
   line (`kit feedback <map> --kind K --fix <ticket> "<text>"`, committed with the ticket); the
   log is what the ladder counts. A problem he finds on production adds `--after-release`.
