@@ -26,7 +26,7 @@ No visible change. Boot order, first paint and the boot-memory specs stay as the
 
 - A moved function keeps its body (CODING_STANDARDS "Controllers"); ports are live (getters for `let` state) and typed with `satisfies` in tests; "Module order holds".
 - `tests/main-ts-ceiling.test.ts` set to the new count rounded up to 10; `docs/agents/code-map.md` names the new module and the moved functions.
-- `kit size` at or under 355 KB (report the delta); `npm run check`, `npm test`, `kit specs --affected` green.
+- `kit size` at or under 362 KB (Lex, 2026-10-25; [TD 12](../../../../work/tech-debt/issues/12-boot-back-under-355-kb.md)) (report the delta); `npm run check`, `npm test`, `kit specs --affected` green.
 - `native-boot-memory.spec.ts`, `native-lazy-panels.spec.ts` and the text-search specs green.
 
 ## Kit commands and evidence

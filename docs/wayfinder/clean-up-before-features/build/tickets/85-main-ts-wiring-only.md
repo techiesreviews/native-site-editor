@@ -29,7 +29,7 @@ Before starting, the lead re-reads `main.ts` and the earlier slices' Done notes;
 
 - `src/main.ts` at about 500 lines (at most 600; if more is left, the Done section lists each remaining block and why it stays).
 - A moved function keeps its body; ports are live; "Module order holds" (CODING_STANDARDS).
-- `kit size` at or under 355 KB (report the delta); `npm run check`, `npm test`, `kit specs --affected` green; land with `kit pr --full`.
+- `kit size` at or under 362 KB (Lex, 2026-10-25; [TD 12](../../../../work/tech-debt/issues/12-boot-back-under-355-kb.md)) (report the delta); `npm run check`, `npm test`, `kit specs --affected` green; land with `kit pr --full`.
 
 ## Kit commands and evidence
 
