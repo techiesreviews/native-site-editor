@@ -78,7 +78,8 @@ test("setup's actions are made once, with their ports read when they first load,
   assert.equal(late.setupPorts, 1);
   assert.deepEqual(stubs.made, [["setup-actions", { marker: "setup" }]]);
   // The wizard brought the agent prompt with it.
-  assert.equal(loaders.agentPrompts?.setupPrompt({} as never), "prompt");
+  const choice = { editor: "https://editor.example", name: "site", private: false } satisfies Parameters<typeof import("../src/agent-prompts.ts").setupPrompt>[0];
+  assert.equal(loaders.agentPrompts?.setupPrompt(choice), "prompt");
 });
 
 test("the agent copy is there once the spotlight has loaded", async () => {
@@ -115,8 +116,9 @@ test("the media picker reads the shown workspace, a pinned one and the usage che
 test("the agent menu is made with the browser's agent records", async () => {
   const { loaders } = setup();
   const { createAgentMenu } = await loaders.loadAgentMenu();
-  createAgentMenu({ account: "o" } as never);
-  assert.deepEqual(stubs.made, [["agent-menu", { account: "o", records: "records" }]]);
+  const options = { account: "o", repository: () => undefined, context: async () => undefined, onCommand: async () => {} } satisfies Parameters<typeof createAgentMenu>[0];
+  createAgentMenu(options);
+  assert.deepEqual(stubs.made, [["agent-menu", { ...options, records: "records" }]]);
 });
 
 test("a failed import is handed to chunk recovery and tried again on the next call", async () => {
