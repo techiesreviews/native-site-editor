@@ -67,13 +67,11 @@ on a usage-limit `problem:` line, tell Lex the reset time and carry on with Clau
 ### 3. Mock-up (before any visible build)
 
 - **Use today:** a clickable mock-up (`prototype` skill: `prototype/<slug>` branch or `?proto=`, or
-  an HTML page shown with T3 `html_render`); `kit shots` for today's screens.
+  an HTML page shown with T3 `html_render`); `kit shots` for today's screens. Visible tickets and
+  mock-ups follow the rulebook: [ux-rulebook.md](ux-rulebook.md).
 - **Planned:** mock-ups assembled from approved parts of the atomic catalogue, an interactive
   canvas of every editor part ([factory 09](../wayfinder/software-factory/tickets/09-grill-atomic-catalogue.md#resolution-2026-10-22);
-  its own build after the clean-up). A UX rulebook seeded from Lex's past corrections
-  ([factory 02](../wayfinder/software-factory/tickets/02-grill-ux-confidence-ladder.md#resolution-2026-10-22)).
-  Until it exists, visible tickets stay minimal: no explainer lines, hints, counts or badges unless
-  Lex asked for them.
+  its own build after the clean-up).
 - **Decides:** Lex clicks through and approves.
 - **Done when:** Lex approved it and the ticket links it. Changes with nothing visible skip this station.
 
@@ -121,8 +119,9 @@ on a usage-limit `problem:` line, tell Lex the reset time and carry on with Clau
 
 - **Use:** `kit review` (inside `kit slice` and `kit pr`), Claude on every change, up to 3 `kit fix`
   rounds; severities and blocking: [runner.md](runner.md#review-and-close). Second opinions per the
-  pins above. A visible change also gets the Opus UX review of its contact sheet; **planned** as a
-  kit command ([factory 02](../wayfinder/software-factory/tickets/02-grill-ux-confidence-ladder.md#resolution-2026-10-22)).
+  pins above. A visible change also gets the Opus UX review of its contact sheet against the
+  [UX rulebook](ux-rulebook.md); **planned** as a kit command
+  ([factory 02](../wayfinder/software-factory/tickets/02-grill-ux-confidence-ladder.md#resolution-2026-10-22)).
 - **Decides:** the lead weighs each finding; a rejected finding is written down with its reason.
 - **Evidence:** the main root's `.scratch/reviews/<owner>/<time>/`; decisions in the ticket's Done.
   **Planned:** findings recorded by kind (real fault, mismatch with the ticket, timing/race, style)

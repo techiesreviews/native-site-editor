@@ -1,8 +1,8 @@
 ---
 title: The UX rulebook, seeded from Lex's 35 corrections
 type: task (AFK)
-status: open
-assignee: sf-40 (this session)
+status: closed
+assignee: sf-40
 builder: claude
 blocked_by: []
 ---
@@ -36,3 +36,51 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 
 - `scripts/agents/kit doctor`; `ASE_REVIEW_MODEL=claude-opus-5-5 scripts/agents/kit bg slice-sf40 -- scripts/agents/kit slice --ticket docs/wayfinder/software-factory/build/tickets/40-ux-rulebook.md --builder claude-opus-5-5 --no-pr`; `scripts/agents/kit wait job slice-sf40 --timeout 2h`; Lex's look; the same command without `--no-pr` lands it.
 - Report: rule count by section, coverage table summary (35 of 35 placed), Lex's changes, review decisions, PR and merge SHA.
+
+## Done (2026-10-25)
+
+`docs/agents/ux-rulebook.md` holds 40 rules: Say less 7 (S1–S7), Looks 12 (L1–L12), Behaviour 13 (B1–B13), Bugs a user sees 8 (U1–U8). Each has a why with its source link and a check tag: `script: layout` (`kit shots` layout findings), `script: colours` (`scripts/check-colours.mjs`), `script: spec` (a browser spec pins it), the planned `script: text` / `frames` / `drag` from slice 42, or `eye`. Extra sources beyond research 01: `docs/editor-colors.md`, the media audit, the factory map's no-toasts decision (Lex, 2026-10-23) and the `good-css` skill. The Astro interaction contract is no longer on this machine (no `interaction-contract.md` anywhere under `/`), so no rule cites it; the rulebook says so. Kitchen station 3 replaces the stopgap sentence with "follow the rulebook", station 8's UX review points to it, and `AGENTS.md` has the UX line under Review.
+
+Coverage, 35 of 35 placed (A8, not reproducible, left out):
+
+| Item | Source | Rule |
+| --- | --- | --- |
+| A1 Duplicate/Remove/move on the template root | components 92 | B5 |
+| A2 Section grip on the template root | components 41, `c27d560c` | Not a rule (grip removed by 36) |
+| A3 Drop within 8 px of an edge refused | components 33 | U2 |
+| A4 Press inside selection, image in Div, lagging boxes | components 36 | U1 |
+| A5 iPhone upload "disappears" | media 103 | B12, U4 |
+| A6 4 px gap under the search bar | media 122 item 4 | L5 |
+| A7 Image popup flicker | clean-up 93 | U3 |
+| B1 Locked-part hint | components 90 | S1 |
+| B2 Drag label explanation line | components 91 | S1 (B3 keeps refusal reasons) |
+| B3 Show toggle in Edit component mode | components 89 | S5 |
+| B4 "Filled from" strip | components 101 | S4 |
+| B5 Group headings in "Link to a page…" | components 101 | S6 |
+| B6 Media tab count | media 122 item 1 | S2 |
+| B7 Page button's blue dot | media 122 item 2 | S2 |
+| B8 Media keyboard-hint footer | `39925ac8` | S1 |
+| B9 Empty Clean up note | `39925ac8` | S3 |
+| C1 Page Structure rings, two attempts | `a5c4fe72`, `1f080f39` | L11 |
+| C2 Tile details only on hover | media 122 item 3 | L7 |
+| C3 Filter label | media 122 item 5 | L6 |
+| C4 Selection bar too thick | media 122 item 6 | L4, L10 |
+| C5 File details | media 123 | L1, L8 |
+| C6 Files tab | media 124 | L1, L3, L9, S7 |
+| C7 Pages tab | media 125 | L1, L3, L9 |
+| C8 Discard into the Publish menu | components 87 | L10 |
+| D1 Click selects, double-click edits | components 79 | B1 |
+| D2 Delete key, no row delete | components 81 | B2, B10 |
+| D3 Move any element | components 82 | B3 |
+| D4 Make component on containers only | components 80 | B5, B4 |
+| D5 Make component on page header/footer | components 104 | B5, B4 |
+| D6 Text editing in Page Structure | components 102 | B4 |
+| D7 Auto-add the component loader | components 103 | B6, B10 |
+| D8 Plain cards fill text and image | components 99 | B8 |
+| D9 Starter follows the visitor's scheme | components 75 | B13 |
+| D10 Rename renames the CSS | components 76 | B9, B10 |
+| D11 Image placeholder first | components 105 | B7, B6 |
+
+Rules sourced only outside the 35 (agent-found or house rules): L2, L12, U5–U8, and S7's audit half. Lead PRs #90, #109 and #110 (requester not recorded) are cited as supporting, never as the only source.
+
+Tests: docs only. Every relative link and anchor in `ux-rulebook.md` (71) and `kitchen.md` (22) resolves (checked with a one-off node script); the three commit links resolve on GitHub. `node scripts/agents/tickets.mjs check` passes (521 tickets); `kit unit --affected`: none affected; the docs guard tests (`agent-scripts`, `code-map`, `mcp-runtime`) pass 74 of 74; `npm run lint` passes.

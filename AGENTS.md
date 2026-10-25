@@ -28,3 +28,4 @@ Running tests or timing: read `docs/agents/local-testing.md`. Automated checks a
 The repo's review and model-routing rules in docs/agents/ take priority over global skills.
 Running a review: `scripts/agents/kit review` (see `docs/agents/agent-scripts.md#kit`).
 Reviewing a diff: apply `CODING_STANDARDS.md`.
+UX: `docs/agents/ux-rulebook.md`.
