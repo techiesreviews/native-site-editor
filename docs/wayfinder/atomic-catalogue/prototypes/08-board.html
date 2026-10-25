@@ -1,0 +1,1875 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE (throwaway) · 08 Catalogue board</title>
+<!--
+  THROWAWAY PROTOTYPE, planning only. Not product code.
+  Question (docs/wayfinder/atomic-catalogue, ticket 08): does the board decided in ticket 07 feel right?
+  A Paper-like endless canvas with areas left to right (shared values, atoms, molecules, organisms,
+  mock-ups); each part a frame with options in rows, states in columns, light and dark side by side;
+  outline left (click flies there, ticks for approved parts); options and Approve / Needs change right.
+  Tokens copied from src/theme.css (and prototype 10-asking-agents.html); part looks from src/style.css,
+  src/ui/inline-field.css, src/components/agent-menu.css and agent-pins.css. Class names follow ticket 11:
+  one class per part, variants as data attributes.
+  Prototype calls: marks live in localStorage (the real board saves src/catalogue/approvals.json);
+  spacing labels and motion names are proposals; the live preview is the full-width first cell of a frame.
+-->
+<style>
+/* ---------- Editor tokens (src/theme.css). The theme classes carry every alias so a light and a
+   dark half can sit side by side; --color-primary lives on the board so one hue recolours all. ---------- */
+.board { --color-primary: oklch(54.6% 0.215 262.9); }
+.t-light, .t-dark {
+  --color-primary-lightest: oklch(from var(--color-primary) 98.9% calc(c * 0.01395349) calc(h + 12.9));
+  --color-primary-lighter: oklch(from var(--color-primary) 95.4% calc(c * 0.08837209) calc(h + 12.6));
+  --color-primary-light: oklch(from var(--color-primary) 88.3% calc(c * 0.22325581) calc(h + 11.8));
+  --color-primary-dark: oklch(from var(--color-primary) 40.4% calc(c * 0.73488372) h);
+  --color-primary-darker: oklch(from var(--color-primary) 27.3% calc(c * 0.49767442) h);
+  --color-primary-darkest: oklch(from var(--color-primary) 15.3% calc(c * 0.27906977) h);
+
+  --semantic-action: oklch(from var(--color-primary) min(l, 0.5) min(c, 0.18) h);
+  --semantic-action-hover: oklch(from var(--semantic-action) calc(l * 0.85) c h);
+  --semantic-on-action: var(--color-primary-lightest);
+  --semantic-surface: var(--color-primary-lightest);
+  --semantic-background: oklch(from var(--color-primary-lighter) 97% c h);
+  --semantic-surface-subtle: var(--color-primary-lighter);
+  --semantic-surface-raised: var(--color-primary-light);
+  --semantic-surface-input: var(--color-primary-lightest);
+  --semantic-text: var(--color-primary-darkest);
+  --semantic-text-muted: oklch(from var(--color-primary-dark) l min(c, 0.045) h);
+  --semantic-link: var(--color-primary-dark);
+  --semantic-border: var(--color-primary-light);
+  --semantic-focus: var(--semantic-action);
+  --semantic-shadow: oklch(from var(--color-primary-darkest) l c h / 0.18);
+
+  --color-warning: oklch(75% 0.14 75);
+  --color-success: oklch(60% 0.13 145);
+  --semantic-warning-surface: oklch(from var(--color-warning) 96% 0.03 h);
+  --semantic-warning-text: oklch(from var(--color-warning) 38% 0.07 h);
+  --semantic-success-surface: oklch(from var(--color-success) 96% 0.03 h);
+  --semantic-success-text: oklch(from var(--color-success) 38% 0.07 h);
+  --color-component: oklch(55% 0.2 300);
+  --component: var(--color-component);
+  --file-video: oklch(62% 0.17 340);
+  --file-data: oklch(64% 0.11 190);
+
+  --agent-presence: var(--color-success);
+  --agent-question-strong: oklch(66% 0.18 48);
+  --agent-question-pin: oklch(94.5% 0.05 62);
+  --agent-question-ink: oklch(46% 0.14 45);
+  --agent-done-pin: oklch(from var(--color-primary) 90.5% 0.006 h);
+  --agent-done-line: oklch(from var(--color-primary) 70% 0.012 h);
+  --agent-done-ink: oklch(from var(--color-primary) 36% 0.015 h);
+  --agent-question-surface: oklch(96% 0.04 62);
+  --agent-question-text: oklch(42% 0.13 45);
+  /* Prototype: agent colours in order of arrival (agents map). */
+  --agent-1: var(--agent-presence);
+  --agent-2: var(--color-component);
+  --agent-3: var(--file-video);
+  --agent-4: var(--file-data);
+
+  --on-media: oklch(100% 0 none);
+  --on-accent: var(--on-media);
+  --preview-paper: var(--on-media);
+  --media-scrim: oklch(18.23% 0.0315 261.1);
+  --media-control-ink: oklch(20% 0.03 262);
+
+  --surface: var(--semantic-surface);
+  --background: var(--semantic-background);
+  --surface-subtle: var(--semantic-surface-subtle);
+  --surface-raised: var(--semantic-surface-raised);
+  --surface-input: var(--semantic-surface-input);
+  --text: var(--semantic-text);
+  --line: var(--semantic-border);
+  --muted: var(--semantic-text-muted);
+  --primary: var(--semantic-action);
+  --primary-hover: var(--semantic-action-hover);
+  --on-primary: var(--semantic-on-action);
+  --focus: var(--semantic-focus);
+  --link: var(--semantic-link);
+  --warning-bg: var(--semantic-warning-surface);
+  --warning-fg: var(--semantic-warning-text);
+  --success-bg: var(--semantic-success-surface);
+  --success-fg: var(--semantic-success-text);
+  --danger-bg: oklch(from var(--success-bg) l c 25);
+  --danger-fg: oklch(from var(--success-fg) l c 25);
+  --danger: oklch(from var(--color-success) l c 25);
+  --danger-hover: oklch(from var(--danger) calc(l * 0.86) c h);
+  --shadow: 0 12px 32px var(--semantic-shadow);
+  --shadow-small: 0 2px 6px var(--semantic-shadow);
+  --hover: color-mix(in oklch, var(--text) 9%, transparent);
+  --current: color-mix(in oklch, var(--primary) 16%, transparent);
+  --pressed: var(--primary);
+  --on-pressed: var(--on-primary);
+  --control-line: color-mix(in oklch, var(--text) 16%, transparent);
+  --focus-ring: 2px solid var(--focus);
+  --panel-surface: var(--surface-raised);
+
+  --type-badge: 11px;
+  --type-small: 12px;
+  --type-base: 13px;
+  --type-title: 15px;
+  --type-heading: 20px;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --radius-small: 4px;
+  --radius: 6px;
+  --radius-panel: 8px;
+  --radius-dialog: 12px;
+  --size-icon: 24px;
+  --size-compact: 28px;
+  --size-control: 32px;
+  --size-tap: 0px;
+  --panel-padding: 6px;
+
+  /* Proposed motion tokens (ticket 06: editor tokens for now). */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.645, 0.045, 0.355, 1);
+  --ease-sheet: cubic-bezier(0.32, 0.72, 0, 1);
+
+  /* Board chrome only. */
+  --canvas: oklch(from var(--color-primary) 95.2% 0.004 h);
+  --canvas-dot: oklch(from var(--color-primary) 78% 0.012 h);
+  --sel: oklch(from var(--color-primary) 58% 0.2 h);
+  --frame-edge: oklch(0% 0 none / 0.08);
+
+  color-scheme: light;
+  color: var(--text);
+}
+.t-dark {
+  --semantic-surface: oklch(from var(--color-primary-darkest) 22% min(c, 0.02) h);
+  --semantic-background: var(--color-primary-darkest);
+  --semantic-surface-subtle: oklch(from var(--color-primary-darkest) 18% min(c, 0.02) h);
+  --semantic-surface-raised: oklch(from var(--color-primary-darker) 32% min(c, 0.035) h);
+  --semantic-surface-input: oklch(from var(--color-primary-darkest) 20% min(c, 0.02) h);
+  --semantic-text: var(--color-primary-lighter);
+  --semantic-text-muted: oklch(from var(--color-primary-light) 80% min(c, 0.035) h);
+  --semantic-link: oklch(from var(--color-primary) 80% min(c, 0.12) h);
+  --semantic-border: oklch(from var(--color-primary-darker) 36% min(c, 0.04) h);
+  --semantic-focus: var(--color-primary-light);
+  --semantic-shadow: oklch(from var(--color-primary-darkest) 5% c h / 0.35);
+  --semantic-warning-surface: oklch(from var(--color-warning) 28% 0.03 h);
+  --semantic-warning-text: oklch(from var(--color-warning) 87% 0.08 h);
+  --semantic-success-surface: oklch(from var(--color-success) 28% 0.03 h);
+  --semantic-success-text: oklch(from var(--color-success) 87% 0.08 h);
+  --component: oklch(from var(--color-component) 72% 0.16 h);
+  --agent-question-surface: oklch(31% 0.06 50);
+  --agent-question-text: oklch(88% 0.08 62);
+  --pressed: var(--color-primary-light);
+  --on-pressed: var(--color-primary-darkest);
+
+  --canvas: oklch(from var(--color-primary) 17% 0.008 h);
+  --canvas-dot: oklch(from var(--color-primary) 33% 0.014 h);
+  --sel: oklch(from var(--color-primary) 66% 0.17 h);
+  --frame-edge: oklch(100% 0 none / 0.08);
+  color-scheme: dark;
+}
+@media (hover: none), (pointer: coarse) {
+  .t-light, .t-dark { --size-tap: 44px; }
+}
+
+/* ---------- Base ---------- */
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+[hidden] { display: none !important; }
+.i { display: block; flex: none; }
+
+/* ---------- Board shell: a fixed 780px block, full width ---------- */
+.board {
+  container: board / inline-size;
+  position: relative;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  inline-size: 100%;
+  block-size: 780px;
+  overflow: clip;
+  background: var(--surface);
+  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: var(--type-base);
+  line-height: 1.5;
+  font-synthesis: none;
+}
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-block-size: 48px;
+  padding-block: 6px;
+  padding-inline: 12px;
+  background: var(--surface);
+  border-block-end: 1px solid var(--line);
+}
+.brand { display: flex; align-items: center; gap: 8px; min-inline-size: 0; margin-inline-end: auto; font-size: var(--type-title); font-weight: 600; }
+.brand__mark {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  inline-size: 22px;
+  block-size: 22px;
+  padding: 4px;
+  border-radius: var(--radius);
+  background: var(--primary);
+}
+.brand__mark i { border-radius: 1.5px; background: var(--on-primary); }
+.brand__mark i:nth-child(2), .brand__mark i:nth-child(3) { opacity: 0.55; }
+.brand__name { overflow: clip; text-overflow: ellipsis; white-space: nowrap; }
+.shell {
+  position: relative;
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr) 288px;
+  min-block-size: 0;
+}
+.panel { background: var(--surface); overflow: auto; overscroll-behavior: contain; }
+.outline { border-inline-end: 1px solid var(--line); padding: 8px; }
+.inspector { border-inline-start: 1px solid var(--line); display: flex; flex-direction: column; }
+.topbar .sheet-toggle { display: none; }
+
+/* Medium (a chat column, a tablet): the canvas takes the full width; the outline and the options
+   float over it, one at a time, opened by two small buttons in the top bar. */
+@container board (width < 1040px) {
+  .shell { grid-template-columns: minmax(0, 1fr); }
+  .topbar .sheet-toggle { display: inline-grid; }
+  .outline, .inspector {
+    position: absolute;
+    z-index: 5;
+    inset-block: 8px;
+    border: 0;
+    border-radius: var(--radius-dialog);
+    box-shadow: var(--shadow), 0 0 0 1px var(--frame-edge);
+    visibility: hidden;
+    opacity: 0;
+  }
+  .outline { inset-inline-start: 8px; inline-size: 240px; transform: translateX(-8px); }
+  .inspector { inset-inline-end: 8px; inline-size: 272px; transform: translateX(8px); }
+  .board[data-sheet="outline"] .outline,
+  .board[data-sheet="options"] .inspector { visibility: visible; opacity: 1; transform: none; }
+  @media (prefers-reduced-motion: no-preference) {
+    .outline, .inspector { transition: opacity 180ms ease-out, transform 200ms var(--ease-out), visibility 0s 200ms; }
+    .board[data-sheet="outline"] .outline,
+    .board[data-sheet="options"] .inspector { transition: opacity 180ms ease-out, transform 200ms var(--ease-out), visibility 0s; }
+  }
+}
+/* Phone: both panels are bottom sheets. */
+@container board (width < 600px) {
+  .segmented--chrome .segmented__text { display: none; }
+  .outline, .inspector {
+    display: flex;
+    flex-direction: column;
+    z-index: 6;
+    inset-block: auto 0;
+    inset-inline: 0;
+    inline-size: auto;
+    max-block-size: 62%;
+    border-radius: var(--radius-dialog) var(--radius-dialog) 0 0;
+    box-shadow: 0 -8px 32px var(--semantic-shadow), 0 0 0 1px var(--frame-edge);
+    opacity: 1;
+    transform: translateY(100%);
+  }
+  .outline { padding: 0 8px 12px; }
+  .panel::before {
+    content: "";
+    flex: none;
+    align-self: center;
+    inline-size: 36px;
+    block-size: 4px;
+    margin-block: 8px 4px;
+    border-radius: 2px;
+    background: var(--control-line);
+  }
+  .board[data-sheet="outline"] .outline,
+  .board[data-sheet="options"] .inspector { transform: none; }
+  @media (prefers-reduced-motion: no-preference) {
+    .outline, .inspector { transition: transform 300ms var(--ease-sheet), visibility 0s 300ms; }
+    .board[data-sheet="outline"] .outline,
+    .board[data-sheet="options"] .inspector { transition: transform 300ms var(--ease-sheet), visibility 0s; }
+  }
+}
+
+/* ---------- Canvas ---------- */
+.viewport {
+  position: relative;
+  overflow: clip;
+  min-inline-size: 0;
+  background: var(--canvas);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  outline-offset: -2px;
+}
+.viewport:focus-visible { outline: var(--focus-ring); }
+.board.is-space .viewport { cursor: grab; }
+.board.is-panning .viewport { cursor: grabbing; }
+.dots {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: radial-gradient(circle at 1px 1px, var(--canvas-dot) 1px, transparent 1.5px);
+}
+.world {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 200px;
+  inline-size: max-content;
+  padding: 260px;
+  transform-origin: 0 0;
+}
+.area {
+  position: relative;
+  padding-block: 160px 110px;
+  padding-inline: 110px;
+  border-radius: 48px;
+  background: color-mix(in oklch, var(--text) 3.5%, transparent);
+}
+.area__label {
+  position: absolute;
+  inset-block-end: calc(100% + 28px);
+  inset-inline-start: 24px;
+  margin: 0;
+  font-size: 40px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--muted);
+  transform-origin: left bottom;
+  cursor: pointer;
+}
+.area__frames {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 150px 120px;
+}
+.frame {
+  position: relative;
+  flex: none;
+  box-shadow: 0 0 0 1px var(--frame-edge), 0 6px 20px -8px oklch(0% 0 none / 0.18);
+}
+.frame__title {
+  position: absolute;
+  inset-block-end: 100%;
+  inset-inline-start: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding-block-end: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  color: var(--muted);
+  transform-origin: left bottom;
+}
+.frame.is-selected .frame__title { color: var(--sel); }
+@media (hover: hover) and (pointer: fine) {
+  .board:not(.is-panning) .frame:hover .frame__title { color: var(--text); }
+  .board:not(.is-panning) .frame.is-selected:hover .frame__title { color: var(--sel); }
+}
+.frame__body { display: grid; }
+.frame__halves { display: flex; }
+.half, .frame__live { padding-block: 18px 24px; padding-inline: 24px; background: var(--stage, var(--panel-surface)); }
+.half { flex: 1 0 auto; }
+[data-stage="panel"] { --stage: var(--panel-surface); }
+[data-stage="page"] { --stage: var(--background); }
+[data-stage="paper"] { --stage: var(--preview-paper); --site-ink: oklch(24% 0.01 260); }
+.t-dark[data-stage="paper"] { --stage: oklch(from var(--color-primary) 20% 0.012 h); --site-ink: oklch(94% 0.005 260); }
+.half__label {
+  display: block;
+  margin-block-end: 14px;
+  font-size: var(--type-small);
+  font-weight: 600;
+  color: var(--muted);
+}
+.frame__live { display: grid; border-block-end: 1px solid var(--frame-edge); }
+.live__stage { display: flex; align-items: center; justify-content: center; min-block-size: 96px; padding: 12px; }
+.grid { display: grid; align-items: center; gap: 14px 22px; }
+.grid__head, .grid__row { font-size: var(--type-small); font-weight: 500; color: var(--muted); white-space: nowrap; }
+.grid__row { padding-inline-end: 4px; }
+.cell { display: flex; align-items: center; min-block-size: 36px; }
+.plain { display: flex; justify-content: center; padding-block: 8px; }
+
+/* Selection, drawn in screen space so it stays 1.5px at every zoom (Paper). */
+.sel {
+  position: absolute;
+  z-index: 2;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  border: 1.5px solid var(--sel);
+  pointer-events: none;
+}
+.sel i { position: absolute; inline-size: 7px; block-size: 7px; border: 1.5px solid var(--sel); background: var(--surface); }
+.sel i:nth-child(1) { inset-block-start: -4px; inset-inline-start: -4px; }
+.sel i:nth-child(2) { inset-block-start: -4px; inset-inline-end: -4px; }
+.sel i:nth-child(3) { inset-block-end: -4px; inset-inline-start: -4px; }
+.sel i:nth-child(4) { inset-block-end: -4px; inset-inline-end: -4px; }
+
+.zoombar {
+  position: absolute;
+  z-index: 3;
+  inset-block-end: 12px;
+  inset-inline: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  inline-size: max-content;
+  margin-inline: auto;
+  padding: 4px;
+  border-radius: var(--radius-panel);
+  background: var(--surface);
+  box-shadow: var(--shadow-small), 0 0 0 1px var(--frame-edge);
+}
+.zoombar__pct { min-inline-size: 46px; font-variant-numeric: tabular-nums; text-align: center; font-size: var(--type-small); font-weight: 600; }
+.zoombar__sep { inline-size: 1px; block-size: 18px; margin-inline: 4px; background: var(--control-line); }
+
+.search {
+  position: absolute;
+  z-index: 4;
+  inset-block-start: 12px;
+  inset-inline: 0;
+  inline-size: min(360px, calc(100% - 24px));
+  margin-inline: auto;
+  padding: var(--panel-padding);
+  border-radius: var(--radius-panel);
+  background: var(--surface);
+  box-shadow: var(--shadow), 0 0 0 1px var(--frame-edge);
+}
+.search__box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-inline: 8px 4px;
+  border-radius: var(--radius);
+  color: var(--muted);
+}
+.search__box:focus-within { outline: var(--focus-ring); outline-offset: -2px; }
+.search__input {
+  flex: 1;
+  min-inline-size: 0;
+  min-block-size: 36px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--type-base);
+  outline: 2px solid transparent;
+}
+.search__list { display: grid; gap: 2px; margin: 4px 0 0; padding: 0; list-style: none; max-block-size: 280px; overflow: auto; }
+.search__list:empty { display: none; }
+.search__area { color: var(--muted); font-size: var(--type-small); font-weight: 400; }
+
+/* ---------- Chrome controls ---------- */
+.segmented { display: inline-flex; gap: 2px; padding: 2px; border-radius: var(--radius); background: var(--hover); }
+.segmented button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-block-size: 28px;
+  padding-block: 0;
+  padding-inline: 10px;
+  border: 0;
+  border-radius: var(--radius-small);
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--type-base);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.segmented button[aria-pressed="true"] { background: var(--surface); color: var(--text); box-shadow: var(--shadow-small); }
+.segmented button:active { color: var(--text); }
+.segmented button:focus-visible { outline: var(--focus-ring); outline-offset: 0; }
+@media (hover: hover) and (pointer: fine) {
+  .segmented button:hover { color: var(--text); }
+}
+
+.outline__area {
+  display: flex;
+  align-items: center;
+  inline-size: 100%;
+  min-block-size: max(28px, var(--size-tap));
+  margin-block-start: 10px;
+  padding-inline: 8px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--type-small);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-align: start;
+  text-transform: uppercase;
+}
+.outline__list { display: grid; gap: 1px; margin: 0; padding: 0; list-style: none; }
+.outline__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  inline-size: 100%;
+  min-block-size: max(30px, var(--size-tap));
+  padding-inline: 8px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--type-base);
+  text-align: start;
+}
+.outline__item > .i { color: var(--muted); }
+.outline__name { flex: 1; min-inline-size: 0; overflow: clip; text-overflow: ellipsis; white-space: nowrap; }
+.outline__item[aria-current="true"] { background: var(--current); font-weight: 600; }
+.outline__area:active, .outline__item:active { background: var(--hover); }
+.outline__area:focus-visible, .outline__item:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+@media (hover: hover) and (pointer: fine) {
+  .outline__area:hover, .outline__item:hover { background: var(--hover); }
+  .outline__item[aria-current="true"]:hover { background: linear-gradient(var(--hover) 0 0), var(--current); }
+}
+.mark { display: inline-grid; place-items: center; flex: none; inline-size: 16px; block-size: 16px; }
+.mark[data-mark="approved"] { color: var(--color-success); }
+.mark[data-mark="needs"]::before { content: ""; inline-size: 8px; block-size: 8px; border-radius: 50%; background: var(--agent-question-strong); }
+.frame__title .mark:not([data-mark]) { display: none; }
+
+.insp__head { display: flex; align-items: flex-start; gap: 8px; padding-block: 14px 12px; padding-inline: 16px 10px; border-block-end: 1px solid var(--line); }
+.insp__heads { flex: 1; min-inline-size: 0; }
+.insp__title { margin: 0; font-size: var(--type-title); font-weight: 600; line-height: 1.3; }
+.insp__area { font-size: var(--type-small); color: var(--muted); }
+.insp__section { display: grid; gap: 12px; padding-block: 14px; padding-inline: 16px; border-block-end: 1px solid var(--line); }
+.insp__section:last-child { border-block-end: 0; }
+.insp__heading { margin: 0; font-size: var(--type-small); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+.insp__empty { display: grid; place-items: center; flex: 1; min-block-size: 120px; padding: 24px; color: var(--muted); }
+.ctl { display: grid; gap: 6px; }
+.ctl--row { grid-template-columns: 1fr auto; align-items: center; }
+.ctl__label { font-size: var(--type-small); font-weight: 500; color: var(--muted); }
+.ctl__label output { color: var(--text); font-variant-numeric: tabular-nums; }
+.ctl .segmented { display: flex; }
+.ctl .segmented button { flex: 1; }
+.ctl .field { inline-size: 100%; }
+.ctl > .button { justify-self: start; }
+.range { inline-size: 100%; margin: 0; accent-color: var(--primary); }
+.select-wrap { position: relative; display: grid; }
+.select {
+  appearance: none;
+  inline-size: 100%;
+  min-block-size: var(--size-control);
+  padding-block: 0;
+  padding-inline: 10px 30px;
+  border: 1px solid var(--control-line);
+  border-radius: var(--radius);
+  background: var(--surface-input);
+  font-size: var(--type-base);
+}
+.select:focus-visible { outline: var(--focus-ring); outline-offset: -1px; }
+.select-wrap > .i { position: absolute; inset-block: 0; inset-inline-end: 10px; margin-block: auto; pointer-events: none; color: var(--muted); }
+.review { display: flex; gap: 8px; }
+.review .button { flex: 1; }
+.inspector .button[data-tone="secondary"] { box-shadow: inset 0 0 0 1px var(--control-line); }
+.review .button[aria-pressed="true"] { box-shadow: none; }
+.review .button[aria-pressed="true"][data-mark="approved"] { --btn-bg: var(--success-bg); --btn-bg-hover: var(--success-bg); --btn-fg: var(--success-fg); }
+.review .button[aria-pressed="true"][data-mark="needs"] { --btn-bg: var(--agent-question-surface); --btn-bg-hover: var(--agent-question-surface); --btn-fg: var(--agent-question-text); }
+textarea.field { min-block-size: 72px; padding-block: 8px; resize: vertical; line-height: 1.45; }
+
+/* ---------- Parts (one class each, variants as data attributes, ticket 11) ---------- */
+.spinner {
+  display: block;
+  inline-size: 14px;
+  block-size: 14px;
+  border: 2px solid currentColor;
+  border-inline-end-color: transparent;
+  border-radius: 50%;
+}
+@media (prefers-reduced-motion: no-preference) { .spinner { animation: spin 0.7s linear infinite; } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation: breathe 1.4s ease-in-out infinite; } }
+@keyframes spin { to { rotate: 1turn; } }
+@keyframes breathe { 50% { opacity: 0.35; } }
+
+/* Button */
+.button {
+  --btn-bg: var(--primary);
+  --btn-bg-hover: var(--primary-hover);
+  --btn-fg: var(--on-primary);
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-block-size: var(--size-control);
+  margin: 0;
+  padding-block: 0;
+  padding-inline: 14px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--btn-bg);
+  color: var(--btn-fg);
+  font-size: var(--type-base);
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+.button[data-size="compact"] { min-block-size: var(--size-compact); padding-inline: 10px; }
+.button[data-icon="before"] { padding-inline-start: 10px; }
+.button[data-icon="after"] { padding-inline-end: 10px; }
+.button[data-size="compact"][data-icon="before"] { padding-inline-start: 8px; }
+.button[data-size="compact"][data-icon="after"] { padding-inline-end: 8px; }
+.button[data-icon="only"] { inline-size: var(--size-control); padding-inline: 0; }
+.button[data-icon="only"][data-size="compact"] { inline-size: var(--size-compact); }
+.button[data-tone="secondary"] { --btn-bg: var(--surface); --btn-bg-hover: linear-gradient(var(--hover) 0 0), var(--surface); --btn-fg: var(--text); }
+.button[data-tone="quiet"] { --btn-bg: transparent; --btn-bg-hover: var(--hover); --btn-fg: var(--text); }
+.button[data-tone="danger"] { --btn-bg: var(--danger); --btn-bg-hover: var(--danger-hover); --btn-fg: var(--on-accent); }
+.button:disabled { --btn-bg: var(--surface-subtle); --btn-fg: var(--muted); cursor: default; }
+.button[data-tone="quiet"]:disabled { --btn-bg: transparent; opacity: 0.5; }
+.button:is(.is-hover, .is-pressed, :active):not(:disabled) { background: var(--btn-bg-hover); }
+.button:is(.is-pressed, :active):not(:disabled) { scale: 0.97; }
+.button:is(.is-focus, :focus-visible) { outline: var(--focus-ring); outline-offset: 2px; }
+.button.is-busy { cursor: progress; }
+.button.is-busy > :not(.spinner) { visibility: hidden; }
+.button > .spinner { position: absolute; inset: 0; margin: auto; }
+@media (hover: hover) and (pointer: fine) {
+  .button:hover:not(:disabled) { background: var(--btn-bg-hover); }
+}
+
+/* Icon button and close button */
+.icon-button, .close-button {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  inline-size: var(--size-control);
+  block-size: var(--size-control);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--muted);
+}
+:is(.icon-button, .close-button)[data-size="compact"] { inline-size: var(--size-compact); block-size: var(--size-compact); }
+:is(.icon-button, .close-button):is(.is-hover, .is-pressed, :active):not(:disabled) { background: var(--hover); color: var(--text); }
+:is(.icon-button, .close-button):is(.is-pressed, :active):not(:disabled) { scale: 0.94; }
+:is(.icon-button, .close-button):is(.is-focus, :focus-visible) { outline: var(--focus-ring); outline-offset: 2px; }
+:is(.icon-button, .close-button):disabled { opacity: 0.5; cursor: default; }
+.icon-button[aria-pressed="true"] { background: var(--pressed); color: var(--on-pressed); }
+.icon-button[aria-pressed="true"]:is(.is-hover, .is-pressed, :active):not(:disabled) { background: color-mix(in oklch, var(--pressed), var(--text) 14%); color: var(--on-pressed); }
+.close-button[data-place="picture"] { border-radius: 50%; background: oklch(from var(--media-scrim) l c h / 0.6); color: var(--on-media); }
+.close-button[data-place="picture"]:is(.is-hover, .is-pressed, :active):not(:disabled) { background: oklch(from var(--media-scrim) l c h / 0.85); color: var(--on-media); }
+:is(.icon-button, .close-button).is-busy > .i { visibility: hidden; }
+:is(.icon-button, .close-button) > .spinner { position: absolute; inset: 0; margin: auto; }
+@media (hover: hover) and (pointer: fine) {
+  :is(.icon-button, .close-button):hover:not(:disabled) { background: var(--hover); color: var(--text); }
+  .icon-button[aria-pressed="true"]:hover:not(:disabled) { background: color-mix(in oklch, var(--pressed), var(--text) 14%); color: var(--on-pressed); }
+  .close-button[data-place="picture"]:hover:not(:disabled) { background: oklch(from var(--media-scrim) l c h / 0.85); color: var(--on-media); }
+}
+.picture {
+  display: inline-grid;
+  place-items: start end;
+  inline-size: 92px;
+  block-size: 60px;
+  padding: 6px;
+  border-radius: var(--radius);
+  background: linear-gradient(135deg, oklch(78% 0.09 70), oklch(62% 0.12 30) 55%, oklch(42% 0.08 280));
+}
+
+/* Text field: inline (src/ui/inline-field.css) and boxed */
+.field-wrap { display: inline-grid; gap: 4px; }
+.field-box { position: relative; display: grid; }
+.field {
+  inline-size: 180px;
+  min-block-size: var(--size-control);
+  margin: 0;
+  padding-block: 0;
+  padding-inline: 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-small);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--type-base);
+  caret-color: var(--primary);
+  outline: 2px solid transparent;
+}
+.field[data-look="inline"] { box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--control-line) 45%, transparent); }
+.field[data-look="inline"]:is(.is-hover):not(:disabled, :focus, .is-focus) { background: var(--hover); box-shadow: inset 0 -1px 0 var(--control-line); }
+.field[data-look="inline"]:is(.is-focus, :focus) { background: color-mix(in srgb, var(--primary) 7%, var(--surface-input)); box-shadow: inset 0 -2px 0 var(--primary); }
+.field[data-look="inline"][aria-invalid="true"] { box-shadow: inset 0 -2px 0 var(--danger); }
+.field[data-look="inline"]:disabled { box-shadow: none; }
+.field[data-look="boxed"] { padding-inline: 10px; border-color: var(--control-line); border-radius: var(--radius); background: var(--surface-input); }
+.field[data-look="boxed"].is-hover:not(:disabled, :focus) { border-color: color-mix(in oklch, var(--text) 32%, transparent); }
+.field[data-look="boxed"]:is(.is-focus, :focus) { outline: var(--focus-ring); outline-offset: -1px; }
+.field[data-look="boxed"][aria-invalid="true"] { border-color: var(--danger); }
+.field[data-look="boxed"][aria-invalid="true"]:is(.is-focus, :focus) { outline-color: var(--danger); }
+.field:disabled { opacity: 0.5; }
+.field-box > .spinner { position: absolute; inset-block: 0; inset-inline-end: 8px; margin-block: auto; inline-size: 12px; block-size: 12px; color: var(--muted); }
+.field__error { font-size: var(--type-small); color: var(--danger-fg); }
+@media (hover: hover) and (pointer: fine) {
+  .field[data-look="inline"]:hover:not(:disabled, :focus, .is-focus) { background: var(--hover); box-shadow: inset 0 -1px 0 var(--control-line); }
+  .field[data-look="boxed"]:hover:not(:disabled, :focus) { border-color: color-mix(in oklch, var(--text) 32%, transparent); }
+}
+
+/* Switch */
+.switch-row { display: inline-flex; align-items: center; gap: 10px; }
+.switch {
+  position: relative;
+  flex: none;
+  inline-size: 32px;
+  block-size: 18px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--text) 22%, transparent);
+}
+.switch__thumb {
+  position: absolute;
+  inset-block-start: 2px;
+  inset-inline-start: 2px;
+  display: grid;
+  place-items: center;
+  inline-size: 14px;
+  block-size: 14px;
+  border-radius: 999px;
+  background: var(--on-media);
+  color: var(--muted);
+  box-shadow: 0 1px 2px oklch(0% 0 none / 0.3);
+}
+.switch[aria-checked="true"] { background: var(--primary); }
+.switch[aria-checked="true"] .switch__thumb { translate: 14px 0; }
+.switch:is(.is-hover, .is-pressed, :active):not(:disabled) { background: color-mix(in oklch, var(--text) 32%, transparent); }
+.switch[aria-checked="true"]:is(.is-hover, .is-pressed, :active):not(:disabled) { background: var(--primary-hover); }
+.switch:is(.is-pressed, :active):not(:disabled) .switch__thumb { inline-size: 17px; }
+.switch[aria-checked="true"]:is(.is-pressed, :active):not(:disabled) .switch__thumb { translate: 11px 0; }
+.switch:is(.is-focus, :focus-visible) { outline: var(--focus-ring); outline-offset: 2px; }
+.switch:disabled { opacity: 0.5; cursor: default; }
+.switch .spinner { inline-size: 9px; block-size: 9px; border-width: 1.5px; }
+@media (hover: hover) and (pointer: fine) {
+  .switch:hover:not(:disabled) { background: color-mix(in oklch, var(--text) 32%, transparent); }
+  .switch[aria-checked="true"]:hover:not(:disabled) { background: var(--primary-hover); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .switch { transition: background-color 150ms ease; }
+  .switch__thumb { transition: translate 200ms var(--ease-out), inline-size 150ms var(--ease-out); }
+  .button { transition: background-color 150ms ease, scale 150ms var(--ease-out); }
+  .icon-button, .close-button { transition: background-color 120ms ease, color 120ms ease, scale 150ms var(--ease-out); }
+}
+
+/* Badge */
+.badge {
+  --b-strong: var(--muted);
+  --b-on: var(--on-accent);
+  --b-surface: var(--hover);
+  --b-text: var(--text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-inline-size: 18px;
+  block-size: 18px;
+  padding-inline: 5px;
+  border-radius: 999px;
+  background: var(--b-strong);
+  color: var(--b-on);
+  font-size: var(--type-badge);
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+.badge[data-kind="status"] { block-size: 20px; padding-inline: 6px 8px; background: var(--b-surface); color: var(--b-text); font-weight: 600; }
+.badge[data-kind="status"]::before { content: ""; inline-size: 6px; block-size: 6px; border-radius: 50%; background: var(--b-strong); }
+.badge[data-kind="dot"] { inline-size: 8px; min-inline-size: 0; block-size: 8px; padding: 0; }
+.badge[data-tone="primary"] { --b-strong: var(--primary); --b-on: var(--on-primary); --b-surface: var(--current); --b-text: var(--link); }
+.badge[data-tone="question"] { --b-strong: var(--agent-question-strong); --b-surface: var(--agent-question-surface); --b-text: var(--agent-question-text); }
+.badge[data-tone="success"] { --b-strong: var(--color-success); --b-surface: var(--success-bg); --b-text: var(--success-fg); }
+.badge[data-tone="warning"] { --b-strong: var(--color-warning); --b-on: var(--media-control-ink); --b-surface: var(--warning-bg); --b-text: var(--warning-fg); }
+.badge[data-tone="danger"] { --b-strong: var(--danger); --b-surface: var(--danger-bg); --b-text: var(--danger-fg); }
+
+/* Keyboard key */
+.kbd {
+  display: inline-grid;
+  place-items: center;
+  min-inline-size: 18px;
+  block-size: 18px;
+  padding-inline: 4px;
+  border-radius: var(--radius-small);
+  box-shadow: inset 0 0 0 1px var(--control-line);
+  color: var(--muted);
+  font: 500 11px/1 var(--font-mono);
+}
+
+/* Menu item and menu (flyout.css, agent-menu.css) */
+.menu-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  inline-size: 180px;
+  min-block-size: var(--size-control);
+  margin: 0;
+  padding-block: 4px;
+  padding-inline: 8px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--type-base);
+  text-align: start;
+}
+.menu-item > .i { color: var(--muted); }
+.menu-item__label { flex: 1; min-inline-size: 0; overflow: clip; text-overflow: ellipsis; white-space: nowrap; }
+.menu-item[data-current] { background: var(--current); font-weight: 600; }
+.menu-item[data-tone="danger"], .menu-item[data-tone="danger"] > .i { color: var(--danger-fg); }
+.menu-item:is(.is-hover, .is-pressed, .is-focus, :active, :focus-visible):not(:disabled) { background: var(--hover); }
+.menu-item[data-current]:is(.is-hover, .is-pressed, .is-focus, :active, :focus-visible):not(:disabled) { background: linear-gradient(var(--hover) 0 0), var(--current); }
+.menu-item:is(.is-focus, :focus-visible) { outline: var(--focus-ring); outline-offset: -2px; }
+.menu-item:disabled { opacity: 0.5; cursor: default; }
+.menu-item > .spinner { inline-size: 12px; block-size: 12px; color: var(--muted); }
+@media (hover: hover) and (pointer: fine) {
+  .menu-item:hover:not(:disabled) { background: var(--hover); }
+  .menu-item[data-current]:hover:not(:disabled) { background: linear-gradient(var(--hover) 0 0), var(--current); }
+}
+.menu {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  inline-size: 230px;
+  padding: var(--panel-padding);
+  border-radius: var(--radius-panel);
+  background: var(--panel-surface);
+  box-shadow: var(--shadow);
+}
+.menu .menu-item { inline-size: 100%; }
+.menu__heading {
+  display: flex;
+  align-items: center;
+  min-block-size: 24px;
+  padding-block: 4px;
+  padding-inline: 8px 4px;
+  font-size: var(--type-small);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.menu__divider { block-size: 1px; margin-block: 4px; margin-inline: 8px; background: var(--control-line); }
+
+/* Dialog */
+.dialog {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  inline-size: 300px;
+  padding: 20px;
+  border-radius: var(--radius-dialog);
+  background: var(--panel-surface);
+  color: var(--text);
+  box-shadow: var(--shadow);
+  text-align: start;
+}
+.dialog__title { margin: 0; padding-inline-end: 32px; font-size: var(--type-title); font-weight: 600; line-height: 1.3; }
+.dialog__body { margin: 0; color: var(--muted); }
+.dialog .field { inline-size: 100%; }
+.dialog__actions { display: flex; justify-content: flex-end; gap: 8px; margin-block-start: 12px; }
+.dialog > .close-button { position: absolute; inset-block-start: 12px; inset-inline-end: 12px; }
+
+/* Tooltip */
+.tip-demo { display: inline-flex; flex-direction: column; align-items: center; gap: 8px; }
+.tooltip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding-block: 4px;
+  padding-inline: 8px;
+  border-radius: var(--radius-small);
+  background: var(--text);
+  color: var(--surface);
+  font-size: var(--type-small);
+  font-weight: 500;
+  white-space: nowrap;
+  box-shadow: var(--shadow-small);
+}
+.tooltip::after { content: ""; position: absolute; inset-inline-start: 50%; translate: -50% 0; border: 5px solid transparent; }
+.tooltip[data-side="above"]::after { inset-block-start: 100%; border-block-start-color: var(--text); }
+.tooltip[data-side="below"]::after { inset-block-end: 100%; border-block-end-color: var(--text); }
+.tooltip .kbd { color: color-mix(in oklch, var(--surface) 72%, transparent); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--surface) 30%, transparent); }
+
+/* Empty state */
+.empty { display: grid; justify-items: center; gap: 4px; inline-size: 240px; padding-block: 20px; padding-inline: 16px; text-align: center; }
+.empty__icon { display: grid; place-items: center; inline-size: 40px; block-size: 40px; margin-block-end: 6px; border-radius: 50%; background: var(--hover); color: var(--muted); }
+.empty__title { font-weight: 600; }
+.empty .button { margin-block-start: 10px; }
+
+/* In-place notice */
+.notice {
+  --n-surface: var(--current);
+  --n-text: var(--text);
+  --n-icon: var(--link);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  inline-size: 290px;
+  padding-block: 8px;
+  padding-inline: 10px;
+  border-radius: var(--radius);
+  background: var(--n-surface);
+  color: var(--n-text);
+}
+.notice > .i { color: var(--n-icon); }
+.notice__text { flex: 1; min-inline-size: 0; }
+.notice__action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-block: -4px;
+  padding-block: 4px;
+  padding-inline: 6px;
+  border: 0;
+  border-radius: var(--radius-small);
+  background: transparent;
+  color: inherit;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.notice__action:active { background: var(--hover); }
+.notice__action:focus-visible { outline: var(--focus-ring); outline-offset: 0; }
+.notice__action .spinner { inline-size: 12px; block-size: 12px; }
+@media (hover: hover) and (pointer: fine) { .notice__action:hover { background: var(--hover); } }
+.notice[data-tone="warning"] { --n-surface: var(--warning-bg); --n-text: var(--warning-fg); --n-icon: var(--warning-fg); }
+.notice[data-tone="success"] { --n-surface: var(--success-bg); --n-text: var(--success-fg); --n-icon: var(--success-fg); }
+.notice[data-tone="danger"] { --n-surface: var(--danger-bg); --n-text: var(--danger-fg); --n-icon: var(--danger-fg); }
+
+/* Request pin (agent-pins.css, prototype 10) */
+.pin {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-inline-size: 22px;
+  block-size: 22px;
+  margin: 0;
+  padding-block: 0;
+  padding-inline: 6px;
+  border: 2px solid var(--primary);
+  border-radius: 8px 8px 8px 2px;
+  background: var(--color-primary-lighter);
+  color: var(--primary);
+  font-size: var(--type-small);
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow: var(--shadow-small);
+  transform-origin: left bottom;
+}
+.pin__who { font: 600 11px/16px system-ui, -apple-system, "Segoe UI", sans-serif; }
+.pin__who:empty { display: none; }
+.pin[data-pin="working"] { border-color: var(--agent); background: var(--agent); color: var(--on-accent); }
+.pin[data-pin="question"] { border-color: var(--agent-question-strong); background: var(--agent-question-strong); color: var(--on-accent); }
+.pin[data-pin="done"] { border-color: var(--agent-done-line); background: var(--agent-done-pin); color: var(--agent-done-ink); }
+.pin:is(.is-hover, [aria-expanded="true"]) { outline: 2px solid color-mix(in oklch, currentColor 35%, transparent); outline-offset: 1px; }
+.pin[data-pin="working"]:is(.is-hover, [aria-expanded="true"]) { outline-color: color-mix(in oklch, var(--agent) 40%, transparent); }
+.pin[data-pin="question"]:is(.is-hover, [aria-expanded="true"]) { outline-color: color-mix(in oklch, var(--agent-question-strong) 40%, transparent); }
+.pin:is(.is-pressed, :active) { scale: 0.96; }
+.pin:is(.is-focus, :focus-visible) { outline: var(--focus-ring); outline-offset: 2px; }
+@media (hover: hover) and (pointer: fine) {
+  .pin:hover { outline: 2px solid color-mix(in oklch, currentColor 35%, transparent); outline-offset: 1px; }
+  .pin[data-pin="working"]:hover { outline-color: color-mix(in oklch, var(--agent) 40%, transparent); }
+  .pin[data-pin="question"]:hover { outline-color: color-mix(in oklch, var(--agent-question-strong) 40%, transparent); }
+}
+
+/* Name chip on an agent's outline */
+.name-chip {
+  display: inline-block;
+  max-inline-size: 120px;
+  padding-inline: 6px;
+  border-radius: 3px 3px 3px 0;
+  overflow: clip;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: var(--agent);
+  color: var(--on-accent);
+  font: 600 11px/16px system-ui, -apple-system, "Segoe UI", sans-serif;
+  vertical-align: middle;
+}
+.presence-demo {
+  position: relative;
+  display: block;
+  inline-size: 150px;
+  block-size: 50px;
+  margin-block-start: 18px;
+  border: 2px solid var(--agent);
+  background: color-mix(in oklch, var(--site-ink, var(--text)) 5%, transparent);
+}
+.presence-demo > .name-chip { position: absolute; inset-block-start: -18px; inset-inline-start: -2px; }
+.presence-demo[data-edge="top"] { margin-block-start: 0; }
+.presence-demo[data-edge="top"] > .name-chip { inset-block-start: -2px; border-radius: 0 0 3px 0; }
+
+/* Caret with a first-letter circle (agents map ticket 12) */
+.caret-line { font: 500 17px/1.4 Georgia, "Times New Roman", serif; color: var(--site-ink, var(--text)); white-space: nowrap; padding-block-start: 18px; }
+.caret {
+  position: relative;
+  display: inline-block;
+  inline-size: 2px;
+  block-size: 1.25em;
+  margin-inline: 1px;
+  vertical-align: -0.25em;
+  border-radius: 1px;
+  background: var(--agent);
+}
+.caret::before { content: ""; position: absolute; inset-block: -18px 0; inset-inline: -6px; }
+.caret__flag {
+  position: absolute;
+  inset-block-end: calc(100% - 1px);
+  inset-inline-start: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-inline-size: 15px;
+  block-size: 15px;
+  padding-inline: 3px;
+  border-radius: 8px 8px 8px 1px;
+  background: var(--agent);
+  color: var(--on-accent);
+  font: 700 9.5px/1 system-ui, -apple-system, "Segoe UI", sans-serif;
+  white-space: nowrap;
+}
+.caret__name { display: none; font-size: 11px; font-weight: 600; padding-inline-end: 2px; }
+.caret.is-hover .caret__name { display: inline; }
+.caret.is-hover .caret__flag { padding-inline: 4px; }
+@media (hover: hover) and (pointer: fine) {
+  .caret:hover .caret__name { display: inline; }
+  .caret:hover .caret__flag { padding-inline: 4px; }
+}
+
+/* Edit bar organism (edit-bar.css), built from icon buttons, a quiet button and a close button */
+.eb { display: grid; justify-items: start; padding: 4px; }
+.edit-bar { display: grid; justify-items: start; color: var(--text); }
+.edit-bar__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  block-size: 24px;
+  padding-inline: 8px 4px;
+  border-radius: var(--radius) var(--radius) 0 0;
+  background: var(--panel-surface);
+  font-size: var(--type-small);
+  font-weight: 600;
+}
+.edit-bar__label .i { color: var(--muted); }
+.edit-bar__panel {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 0 var(--radius-panel) var(--radius-panel) var(--radius-panel);
+  background: var(--panel-surface);
+  box-shadow: var(--shadow-small);
+}
+.edit-bar__sep { inline-size: 1px; block-size: 18px; margin-inline: 4px; background: var(--control-line); }
+.eb__heading {
+  margin-block: 10px 0;
+  padding-block: 2px;
+  padding-inline: 4px;
+  border-radius: 2px;
+  outline: 2px solid var(--primary);
+  background: color-mix(in oklch, var(--primary) 10%, transparent);
+  color: var(--site-ink, var(--text));
+  font: 600 24px/1.2 Georgia, "Times New Roman", serif;
+}
+
+/* Mock-up: Media, empty */
+.mock { display: grid; inline-size: 340px; border-radius: var(--radius-dialog); background: var(--panel-surface); color: var(--text); box-shadow: var(--shadow); overflow: clip; text-align: start; }
+.mock__head { display: flex; align-items: center; gap: 6px; padding-block: 12px 8px; padding-inline: 16px 10px; }
+.mock__title { flex: 1; font-size: var(--type-title); font-weight: 600; }
+.mock__search { padding-block: 0 10px; padding-inline: 16px; }
+.mock__search .field { inline-size: 100%; }
+.mock__body { display: grid; place-items: center; min-block-size: 180px; margin-inline: 12px; border-radius: var(--radius-panel); background: var(--surface); }
+.mock__foot { padding: 12px; }
+.mock__foot .notice { inline-size: 100%; }
+
+/* Shared values */
+.swatches { display: grid; grid-template-columns: repeat(6, 74px); gap: 16px 12px; }
+.swatches--shades { grid-template-columns: repeat(7, 74px); margin-block-end: 22px; }
+.swatch { display: grid; gap: 5px; align-content: start; }
+.swatch__chip { block-size: 42px; border-radius: var(--radius); background: var(--c); box-shadow: inset 0 0 0 1px var(--control-line); }
+.swatch__name { font-size: var(--type-small); font-weight: 500; line-height: 1.25; }
+.swatch__token { font: 10.5px/1.2 var(--font-mono); color: var(--muted); overflow-wrap: anywhere; }
+.vrows { display: grid; gap: 16px; }
+.vrow { display: grid; grid-template-columns: 64px auto; align-items: center; gap: 20px; }
+.vrow__label { font-size: var(--type-small); font-weight: 500; color: var(--muted); white-space: nowrap; }
+.vrow__label b { display: block; color: var(--text); font-weight: 600; }
+.gap-demo { display: flex; align-items: center; }
+.gap-demo i { inline-size: 28px; block-size: 28px; border-radius: var(--radius-small); background: var(--surface-raised); }
+.gap-demo b { block-size: 28px; background: oklch(70% 0.19 0 / 0.35); box-shadow: inset 0 0 0 0.5px oklch(62% 0.22 0); }
+.ruler { display: inline-flex; align-items: flex-end; block-size: 18px; margin-inline-start: 18px; border-block-end: 1px solid var(--muted); }
+.type__sample { font-weight: 500; white-space: nowrap; }
+.corners { display: flex; gap: 22px; }
+.corner { display: grid; gap: 8px; justify-items: center; font-size: var(--type-small); color: var(--muted); }
+.corner i { inline-size: 72px; block-size: 50px; background: var(--surface-raised); border: 1.5px solid var(--primary); }
+.shadows { display: flex; gap: 28px; padding: 8px; }
+.shadow-card { display: grid; place-items: center; inline-size: 120px; block-size: 76px; border-radius: var(--radius-panel); background: var(--panel-surface); font-size: var(--type-small); color: var(--muted); text-align: center; }
+.motion { display: grid; gap: 10px; inline-size: 560px; }
+.motion__head { display: flex; align-items: center; justify-content: space-between; }
+.motion__head .half__label { margin: 0; }
+.motion__row { display: grid; grid-template-columns: 150px 1fr auto; align-items: center; gap: 14px; padding-block: 6px; padding-inline: 8px; border-radius: var(--radius); }
+.motion__row[data-try] { background: var(--current); }
+.motion__name { display: grid; font-weight: 600; line-height: 1.3; }
+.motion__name small { font: 400 11px/1.3 var(--font-mono); color: var(--muted); }
+.track { position: relative; block-size: 20px; border-radius: 999px; background: var(--hover); }
+.ball { position: absolute; inset-block-start: 2px; inset-inline-start: 2px; inline-size: 16px; block-size: 16px; border-radius: 50%; background: var(--primary); box-shadow: var(--shadow-small); }
+</style>
+</head>
+<body>
+<div class="board t-light" id="board">
+  <header class="topbar">
+    <span class="brand"><span class="brand__mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span class="brand__name">Catalogue</span></span>
+    <button type="button" class="icon-button" id="searchBtn" aria-label="Search parts" title="Search  /"></button>
+    <div class="segmented segmented--chrome" role="group" aria-label="Board colours">
+      <button type="button" data-chrome="light" aria-pressed="true" aria-label="Light"></button>
+      <button type="button" data-chrome="dark" aria-pressed="false" aria-label="Dark"></button>
+    </div>
+    <button type="button" class="icon-button sheet-toggle" data-sheet="outline" aria-pressed="false" aria-label="Outline"></button>
+    <button type="button" class="icon-button sheet-toggle" data-sheet="options" aria-pressed="false" aria-label="Options"></button>
+  </header>
+  <div class="shell">
+    <nav class="outline panel" id="outline" aria-label="Outline"></nav>
+    <div class="viewport" id="viewport" tabindex="0" role="region" aria-label="Canvas">
+      <div class="dots" id="dots"></div>
+      <div class="world" id="world"></div>
+      <div class="sel" id="sel" hidden><i></i><i></i><i></i><i></i></div>
+      <div class="zoombar" role="toolbar" aria-label="Zoom">
+        <button type="button" class="icon-button" data-size="compact" id="zoomOut" aria-label="Zoom out"></button>
+        <output class="zoombar__pct" id="zoomPct">100%</output>
+        <button type="button" class="icon-button" data-size="compact" id="zoomIn" aria-label="Zoom in"></button>
+        <span class="zoombar__sep"></span>
+        <button type="button" class="button" data-tone="quiet" data-size="compact" id="zoomFit">Fit</button>
+        <button type="button" class="button" data-tone="quiet" data-size="compact" id="zoom100">100%</button>
+      </div>
+      <div class="search" id="search" hidden>
+        <div class="search__box"><span id="searchIcon"></span><input class="search__input" id="searchInput" placeholder="Jump to a part" aria-label="Jump to a part" autocomplete="off" spellcheck="false"><kbd class="kbd">Esc</kbd></div>
+        <ul class="search__list" id="searchList" role="listbox" aria-label="Parts"></ul>
+      </div>
+    </div>
+    <aside class="inspector panel" id="inspector" aria-label="Options"></aside>
+  </div>
+</div>
+
+<script>
+(() => {
+"use strict";
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const clamp = (v, a, b) => Math.min(Math.max(v, a), b);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const reduced = matchMedia("(prefers-reduced-motion: reduce)");
+
+/* ---------- Icons (Phosphor-like strokes) ---------- */
+const P = {
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  minus: '<path d="M5 12h14"/>',
+  x: '<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>',
+  check: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
+  arrow: '<path d="M5 12h14M13 6l6 6-6 6"/>',
+  search: '<circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/>',
+  list: '<path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/>',
+  sliders: '<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4"/>',
+  moon: '<path d="M19.5 14.5A8 8 0 0 1 9.5 4.5a8 8 0 1 0 10 10z"/>',
+  frame: '<path d="M8 3v18M16 3v18M3 8h18M3 16h18"/>',
+  trash: '<path d="M4 7h16M9.5 7V4.5h5V7M6.5 7l1 13h9l1-13"/>',
+  image: '<rect x="3.5" y="5" width="17" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="m4 17.5 5-5 4 4 2.5-2.5 4.5 4.5"/>',
+  sparkle: '<path d="M12 3.5c.6 4.4 2.1 5.9 6.5 6.5-4.4.6-5.9 2.1-6.5 6.5-.6-4.4-2.1-5.9-6.5-6.5 4.4-.6 5.9-2.1 6.5-6.5zM18.5 15.5c.3 1.8.9 2.4 2.5 2.5-1.6.3-2.2.9-2.5 2.5-.3-1.6-.9-2.2-2.5-2.5 1.6-.1 2.2-.7 2.5-2.5z"/>',
+  bold: '<path d="M7 5h6a3.5 3.5 0 0 1 0 7H7zM7 12h7.5a3.5 3.5 0 0 1 0 7H7z"/>',
+  italic: '<path d="M10 5h8M6 19h8M14.5 5l-5 14"/>',
+  link: '<path d="M10.5 13.5a3.8 3.8 0 0 0 5.4 0l3-3a3.8 3.8 0 0 0-5.4-5.4l-1 1M13.5 10.5a3.8 3.8 0 0 0-5.4 0l-3 3a3.8 3.8 0 0 0 5.4 5.4l1-1"/>',
+  copy: '<rect x="8.5" y="8.5" width="11" height="11" rx="2"/><path d="M15.5 8.5v-2a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h2"/>',
+  pencil: '<path d="M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4"/>',
+  folder: '<path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/>',
+  chat: '<path d="M5 18.5V6.5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H8z"/>',
+  upload: '<path d="M12 15.5V4.5M7.5 9 12 4.5 16.5 9M5 19.5h14"/>',
+  caretDown: '<path d="m7 10 5 5 5-5"/>',
+  play: '<path d="M8 5.5v13l10.5-6.5z"/>',
+  info: '<circle cx="12" cy="12" r="8.5"/><path d="M12 11v5M12 8h.01"/>',
+  warn: '<path d="M12 4.5 3 19.5h18z"/><path d="M12 10v4M12 16.8h.01"/>',
+  ok: '<circle cx="12" cy="12" r="8.5"/><path d="m8.5 12.3 2.4 2.4 4.6-4.9"/>',
+  cloud: '<path d="M7 18.5a4.5 4.5 0 0 1-.6-9 6 6 0 0 1 11.4 1.6A3.8 3.8 0 0 1 17.5 18.5z"/><path d="M12 11.5v3M12 17h.01"/>'
+};
+const icon = (n, s = 16) => `<svg class="i" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[n] || ""}</svg>`;
+const MODEL = '<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" aria-hidden="true"><path d="M12 3v18M4.2 7.5l15.6 9M4.2 16.5l15.6-9"/></svg>';
+const SPIN = '<span class="spinner" aria-hidden="true"></span>';
+
+/* ---------- Part renderers: options in, one HTML element out ---------- */
+const stOf = (s) => ({
+  cls: { hover: " is-hover", pressed: " is-pressed", focus: " is-focus", busy: " is-busy" }[s] || "",
+  attr: s === "disabled" ? " disabled" : s === "busy" ? ' aria-busy="true"' : ""
+});
+const AGENTS = { 1: "Claude Code", 2: "Codex", 3: "Sol", 4: "Grok" };
+const agentVar = (a) => `--agent: var(--agent-${a})`;
+
+function rButton(o, s = "normal") {
+  const k = stOf(s), only = o.icon === "only";
+  const label = `<span class="button__label">${esc(o.label)}</span>`;
+  const inner = only ? icon(o.glyph || "plus") : (o.icon === "before" ? icon(o.glyph || "plus") : "") + label + (o.icon === "after" ? icon("arrow") : "");
+  return `<button type="button" tabindex="-1" class="button${k.cls}" data-tone="${o.tone}" data-size="${o.size}" data-icon="${o.icon || "none"}"${only ? ` aria-label="${esc(o.label)}"` : ""}${k.attr}>${inner}${s === "busy" ? SPIN : ""}</button>`;
+}
+function rIconButton(o, s = "normal") {
+  const k = stOf(s);
+  return `<button type="button" tabindex="-1" class="icon-button${k.cls}" data-size="${o.size}" aria-pressed="${!!o.toggled}" aria-label="${esc(o.glyph)}"${k.attr}>${icon(o.glyph)}${s === "busy" ? SPIN : ""}</button>`;
+}
+function rClose(o, s = "normal") {
+  const k = stOf(s);
+  const b = `<button type="button" tabindex="-1" class="close-button${k.cls}" data-size="${o.size}" data-place="${o.place}" aria-label="Close"${k.attr}>${icon("x", o.size === "compact" ? 15 : 16)}${s === "busy" ? SPIN : ""}</button>`;
+  return o.place === "picture" ? `<span class="picture">${b}</span>` : b;
+}
+function rField(o, s = "normal") {
+  const k = stOf(s);
+  return `<span class="field-wrap"><span class="field-box"><input class="field${k.cls}" tabindex="-1" data-look="${o.look}" value="${esc(o.value)}" aria-label="Page title"${o.invalid ? ' aria-invalid="true"' : ""}${s === "disabled" ? " disabled" : ""}>${s === "busy" ? SPIN : ""}</span>${o.invalid ? '<span class="field__error">Use letters, numbers and dashes</span>' : ""}</span>`;
+}
+function rSwitch(o, s = "normal") {
+  const k = stOf(s);
+  const sw = `<button type="button" tabindex="-1" class="switch${k.cls}" role="switch" aria-checked="${!!o.on}" aria-label="${esc(o.label || "Switch")}"${k.attr}><span class="switch__thumb">${s === "busy" ? SPIN : ""}</span></button>`;
+  return o.label ? `<span class="switch-row">${sw}<span>${esc(o.label)}</span></span>` : sw;
+}
+function rBadge(o) {
+  const t = o.kind === "count" ? (o.text || "3") : (o.statusText || o.text || "Live");
+  return `<span class="badge" data-kind="${o.kind}" data-tone="${o.tone}">${o.kind === "dot" ? "" : esc(t)}</span>`;
+}
+function rMenuItem(o, s = "normal") {
+  const k = stOf(s);
+  return `<button type="button" tabindex="-1" class="menu-item${k.cls}"${o.current ? " data-current" : ""}${o.danger ? ' data-tone="danger"' : ""}${k.attr}>${o.icon ? icon(o.glyph || "copy") : ""}<span class="menu-item__label">${esc(o.label)}</span>${s === "busy" ? SPIN : o.badge ? '<span class="badge" data-kind="count" data-tone="question">2</span>' : o.kbd ? '<kbd class="kbd">/</kbd>' : ""}</button>`;
+}
+function rMenu(o) {
+  const f = o.focusIndex;
+  const items = [
+    { label: "Rename", glyph: "pencil" }, { label: "Duplicate", glyph: "copy", kbd: true }, { label: "Move to folder", glyph: "folder" }
+  ].map((m, i) => rMenuItem({ icon: true, ...m, kbd: false }, f === i ? "focus" : "normal")).join("");
+  return `<div class="menu" role="menu">${o.heading ? '<div class="menu__heading">Page</div>' : ""}${rMenuItem({ icon: true, glyph: "chat", label: "Ask agent", current: true })}${items}<div class="menu__divider"></div>${rMenuItem({ icon: true, glyph: "trash", label: "Delete", danger: true })}</div>`;
+}
+function rDialog(o) {
+  const danger = o.tone === "danger";
+  const body = danger ? '<p class="dialog__body">The page and its address go.</p>' : rField({ look: "boxed", value: "About us" });
+  return `<div class="dialog" role="dialog" aria-label="${esc(o.title)}">${rClose({ size: "compact", place: "dialog" })}<h4 class="dialog__title">${esc(o.title)}</h4>${body}<div class="dialog__actions">${rButton({ tone: "secondary", size: "control", label: "Cancel" }, o.busy ? "disabled" : "normal")}${rButton({ tone: danger ? "danger" : "primary", size: "control", label: danger ? "Delete" : "Save" }, o.busy ? "busy" : "normal")}</div></div>`;
+}
+function rTooltip(o) {
+  const tip = `<span class="tooltip" role="tooltip" data-side="${o.side}">${esc(o.text)}${o.key ? '<kbd class="kbd">/</kbd>' : ""}</span>`;
+  const trigger = rIconButton({ size: "control", glyph: "search" }, "hover");
+  return `<span class="tip-demo">${o.side === "above" ? tip + trigger : trigger + tip}</span>`;
+}
+function rEmpty(o) {
+  return `<div class="empty"><span class="empty__icon">${icon("image", 20)}</span><span class="empty__title">${esc(o.title)}</span>${o.action ? rButton({ tone: "primary", size: "control", icon: "before", glyph: "upload", label: "Upload" }) : ""}</div>`;
+}
+const NOTICE = { info: ["info", "Saved in this browser only"], warning: ["cloud", "GitHub didn’t answer"], success: ["ok", "Published"], danger: ["warn", "Couldn’t save the picture"] };
+function rNotice(o, s = "normal") {
+  const [g, t] = NOTICE[o.tone];
+  const act = o.action ? `<button type="button" tabindex="-1" class="notice__action"${s === "busy" ? ' aria-busy="true"' : ""}>${s === "busy" ? SPIN + "Trying" : "Try again"}</button>` : "";
+  return `<div class="notice" data-tone="${o.tone}">${icon(g)}<span class="notice__text">${esc(o.text || t)}</span>${act}</div>`;
+}
+function rPin(o, s = "normal") {
+  const k = stOf(s);
+  const who = o.pin === "working" || o.pin === "question" ? AGENTS[o.agent] : "";
+  return `<button type="button" tabindex="-1" class="pin${k.cls}" data-pin="${o.pin}" style="${agentVar(o.agent)}" aria-expanded="${s === "open"}"><span class="pin__num">${esc(o.num)}${o.pin === "question" ? " ?" : ""}</span><span class="pin__who">${esc(who)}</span></button>`;
+}
+function rChip(o) {
+  const name = o.v === "long" ? "Claude Code, second window" : (o.name || AGENTS[o.agent]);
+  const chip = `<span class="name-chip">${esc(name)}</span>`;
+  if (o.v === "outline" || o.v === "top") return `<span class="presence-demo" style="${agentVar(o.agent)}"${o.v === "top" ? ' data-edge="top"' : ""}>${chip}</span>`;
+  return `<span style="${agentVar(o.agent)}">${chip}</span>`;
+}
+function rCaret(o, s = "normal") {
+  const name = o.name || AGENTS[o.agent];
+  const mark = o.who === "agent" && o.model ? MODEL : esc(name.trim().charAt(0).toUpperCase());
+  return `<span class="caret-line">Fresh bread<span class="caret${s === "hover" ? " is-hover" : ""}" style="${agentVar(o.agent)}" title="${esc(name)}"><span class="caret__flag">${mark}<span class="caret__name">${esc(name)}</span></span></span> every day</span>`;
+}
+function rEditBar(o) {
+  return `<div class="eb"><div class="edit-bar"><span class="edit-bar__label">${esc(o.label)}${icon("caretDown", 14)}</span><div class="edit-bar__panel">${rIconButton({ size: "compact", glyph: "bold", toggled: true })}${rIconButton({ size: "compact", glyph: "italic" })}${rIconButton({ size: "compact", glyph: "link" })}${o.ask ? '<span class="edit-bar__sep"></span>' + rButton({ tone: "quiet", size: "compact", icon: "before", glyph: "sparkle", label: "Ask agent" }) : ""}<span class="edit-bar__sep"></span>${rClose({ size: "compact", place: "panel" })}</div></div><div class="eb__heading">Fresh bread every morning</div></div>`;
+}
+function rMock(o) {
+  return `<div class="mock"><div class="mock__head"><span class="mock__title">Media</span>${rButton({ tone: "primary", size: "compact", icon: "before", glyph: "upload", label: "Upload" })}${rClose({ size: "compact", place: "panel" })}</div><div class="mock__search">${rField({ look: "boxed", value: "" }).replace('aria-label="Page title"', 'aria-label="Search pictures" placeholder="Search pictures"')}</div><div class="mock__body">${rEmpty({ action: false, title: "No pictures yet" })}</div>${o.notice ? `<div class="mock__foot">${rNotice({ tone: "warning", action: true })}</div>` : '<div class="mock__foot"></div>'}</div>`;
+}
+
+/* ---------- Shared values bodies ---------- */
+const SHADES = [["lightest", "Lightest"], ["lighter", "Lighter"], ["light", "Light"], ["", "Primary"], ["dark", "Dark"], ["darker", "Darker"], ["darkest", "Darkest"]];
+const ROLES = [
+  ["--background", "Background"], ["--surface", "Surface"], ["--surface-subtle", "Subtle"], ["--panel-surface", "Panel"], ["--text", "Text"], ["--muted", "Muted"],
+  ["--primary", "Action"], ["--on-primary", "On action"], ["--control-line", "Control line"], ["--hover", "Hover"], ["--current", "Current"], ["--focus", "Focus"],
+  ["--color-success", "Success"], ["--color-warning", "Warning"], ["--danger", "Danger"], ["--agent-question-strong", "Question"], ["--component", "Component"], ["--link", "Link"]
+];
+const swatch = (v, name) => `<span class="swatch"><span class="swatch__chip" style="--c: var(${v})"></span><span class="swatch__name">${name}</span><span class="swatch__token">${v}</span></span>`;
+function vColours() {
+  const shades = `<div class="swatches swatches--shades">${SHADES.map(([k, n]) => swatch("--color-primary" + (k ? "-" + k : ""), n)).join("")}</div>`;
+  const roles = `<div class="swatches">${ROLES.map(([v, n]) => swatch(v, n)).join("")}</div>`;
+  return `<div class="frame__halves"><div class="half t-light" data-stage="page"><span class="half__label">Light</span>${shades}${roles}</div><div class="half t-dark" data-stage="page"><span class="half__label">Dark</span>${shades}${roles}</div></div>`;
+}
+function vSpacing() {
+  const rows = [2, 4, 6, 8, 12, 16, 24].map((n) => `<div class="vrow"><span class="vrow__label"><b>${n} px</b></span><span class="gap-demo"><i></i><b style="inline-size:${n}px"></b><i></i><span class="ruler" style="inline-size:${n}px"></span></span></div>`).join("");
+  return `<div class="half t-light" data-stage="page"><span class="half__label">Spacing</span><div class="vrows">${rows}</div></div>`;
+}
+const TYPE = [[11, "Badge", "3 new"], [12, "Small", "Hints and section headings"], [13, "Base", "Rows, menu items and buttons"], [15, "Title", "Panel and dialog titles"], [20, "Heading", "Get started"]];
+function vType() {
+  const rows = TYPE.map(([n, l, t]) => `<div class="vrow"><span class="vrow__label"><b>${n} px</b>${l}</span><span class="type__sample" data-default="${esc(t)}" style="font-size:${n}px;${n >= 15 ? "font-weight:600" : ""}">${esc(t)}</span></div>`).join("");
+  return `<div class="frame__halves"><div class="half t-light" data-stage="panel"><span class="half__label">Light</span><div class="vrows">${rows}</div></div><div class="half t-dark" data-stage="panel"><span class="half__label">Dark</span><div class="vrows">${rows}</div></div></div>`;
+}
+function vCorners() {
+  const c = [["4", "4 px", "Badge"], ["6", "6 px", "Control"], ["8", "8 px", "Panel"], ["12", "12 px", "Dialog"], ["999", "Pill", "Chip"]];
+  return `<div class="half t-light" data-stage="page"><span class="half__label">Corners</span><div class="corners">${c.map(([r, a, b]) => `<span class="corner"><i style="border-radius:${r}px"></i><span><b style="color:var(--text)">${a}</b> ${b}</span></span>`).join("")}</div></div>`;
+}
+function vShadows() {
+  const cards = `<div class="shadows"><span class="shadow-card" style="box-shadow:var(--shadow-small)">Small<br>pin, round button</span><span class="shadow-card" style="box-shadow:var(--shadow)">Panel<br>menu, dialog</span></div>`;
+  return `<div class="frame__halves"><div class="half t-light" data-stage="page"><span class="half__label">Light</span>${cards}</div><div class="half t-dark" data-stage="page"><span class="half__label">Dark</span>${cards}</div></div>`;
+}
+const EASES = { "ease-out": "cubic-bezier(0.23, 1, 0.32, 1)", "ease-in-out": "cubic-bezier(0.645, 0.045, 0.355, 1)", sheet: "cubic-bezier(0.32, 0.72, 0, 1)", ease: "ease", linear: "linear" };
+const MOTION = [["Press", 150, "ease-out"], ["Hover", 120, "ease"], ["Tooltip", 180, "ease-out"], ["Menu", 200, "ease-out"], ["Sheet", 300, "sheet"], ["Fly to a part", 600, "ease-in-out"]];
+const motionRow = (name, dur, ease, tryRow) => `<div class="motion__row"${tryRow ? " data-try" : ""} data-dur="${dur}" data-ease="${ease}"><span class="motion__name">${name}<small>${dur} ms · ${ease}</small></span><span class="track"><span class="ball"></span></span><button type="button" tabindex="-1" class="icon-button motion__play" data-size="compact" aria-label="Play ${name}">${icon("play")}</button></div>`;
+function vMotion() {
+  return `<div class="half t-light" data-stage="page"><div class="motion"><div class="motion__head"><span class="half__label">Timings</span><button type="button" tabindex="-1" class="button motion__play" data-all data-tone="secondary" data-size="compact" data-icon="before">${icon("play")}<span>Play all</span></button></div>${MOTION.map(([n, d, e]) => motionRow(n, d, e)).join("")}${motionRow("Try", 300, "ease-out", true)}</div></div>`;
+}
+
+/* ---------- The parts list ---------- */
+const AREAS = [
+  { id: "values", name: "Shared values", max: 1700 },
+  { id: "atoms", name: "Atoms", max: 3300 },
+  { id: "molecules", name: "Molecules", max: 2600 },
+  { id: "organisms", name: "Organisms", max: 1200 },
+  { id: "mockups", name: "Mock-ups", max: 1200 }
+];
+const S6 = ["normal", "hover", "pressed", "focus", "disabled", "busy"];
+const SL = { normal: "Normal", hover: "Hover", pressed: "Pressed", focus: "Focus", disabled: "Disabled", busy: "Busy", open: "Open" };
+const cols = (list) => list.map((s) => ({ l: SL[s], st: s }));
+const opt = (list) => list.map((v) => (Array.isArray(v) ? v : [v, v.charAt(0).toUpperCase() + v.slice(1)]));
+const C = {
+  seg: (k, l, v) => ({ t: "seg", k, l, v: opt(v) }),
+  sel: (k, l, v) => ({ t: "sel", k, l, v: opt(v) }),
+  txt: (k, l) => ({ t: "txt", k, l }),
+  tog: (k, l) => ({ t: "tog", k, l }),
+  rng: (k, l, min, max, step, u) => ({ t: "rng", k, l, min, max, step, u }),
+  act: (k, l) => ({ t: "act", k, l })
+};
+const AGENT_OPTS = [["1", "Claude Code"], ["2", "Codex"], ["3", "Sol"], ["4", "Grok"]];
+const PARTS = [
+  { id: "colours", area: "values", name: "Colours", values: vColours, defaults: { hue: 262.9 }, controls: [C.rng("hue", "Primary hue", 0, 360, 1, "°")] },
+  { id: "spacing", area: "values", name: "Spacing", values: vSpacing },
+  { id: "type", area: "values", name: "Type sizes", values: vType, defaults: { sample: "" }, controls: [C.txt("sample", "Sample")] },
+  { id: "corners", area: "values", name: "Corners", values: vCorners },
+  { id: "shadows", area: "values", name: "Shadows", values: vShadows },
+  { id: "motion", area: "values", name: "Motion", values: vMotion, defaults: { dur: 300, ease: "ease-out" }, controls: [C.rng("dur", "Duration", 80, 1200, 10, " ms"), C.sel("ease", "Easing", ["ease-out", "ease-in-out", "sheet", "ease", "linear"]), C.act("play", "Play")] },
+
+  { id: "button", area: "atoms", name: "Button", r: rButton, zoom: 2,
+    defaults: { tone: "primary", size: "control", icon: "none", label: "Save" },
+    controls: [C.sel("tone", "Tone", ["primary", "secondary", "quiet", "danger"]), C.seg("size", "Size", ["compact", "control"]), C.sel("icon", "Icon", [["none", "None"], ["before", "Before"], ["after", "After"], ["only", "Only"]]), C.txt("label", "Label")],
+    states: S6, cols: cols(S6),
+    rows: [
+      { l: "Primary", o: { tone: "primary" } }, { l: "Secondary", o: { tone: "secondary" } }, { l: "Quiet", o: { tone: "quiet" } }, { l: "Danger", o: { tone: "danger", label: "Delete" } },
+      { l: "Compact", o: { tone: "primary", size: "compact" } }, { l: "Icon before", o: { tone: "secondary", icon: "before", label: "Add" } },
+      { l: "Icon after", o: { tone: "secondary", icon: "after", label: "Next" } }, { l: "Icon only", o: { tone: "secondary", icon: "only", label: "Add" } }
+    ] },
+  { id: "iconbutton", area: "atoms", name: "Icon button", r: rIconButton, zoom: 2.4,
+    defaults: { size: "control", glyph: "sliders", toggled: false },
+    controls: [C.seg("size", "Size", ["compact", "control"]), C.sel("glyph", "Icon", [["sliders", "Settings"], ["bold", "Bold"], ["link", "Link"], ["trash", "Delete"], ["image", "Picture"]]), C.tog("toggled", "Toggled on")],
+    states: S6, cols: cols(S6),
+    rows: [{ l: "Control", o: {} }, { l: "Compact", o: { size: "compact" } }, { l: "Toggled on", o: { toggled: true, glyph: "bold" } }] },
+  { id: "close", area: "atoms", name: "Close button", r: rClose, zoom: 2.2,
+    defaults: { size: "compact", place: "panel" },
+    controls: [C.seg("size", "Size", ["compact", "control"]), C.seg("place", "Where", [["panel", "Panel"], ["dialog", "Dialog"], ["picture", "Picture"]])],
+    states: ["normal", "hover", "pressed", "focus", "disabled"], cols: cols(["normal", "hover", "pressed", "focus", "disabled"]),
+    rows: [{ l: "Panel", o: { place: "panel", size: "compact" } }, { l: "Dialog", o: { place: "dialog", size: "control" } }, { l: "On a picture", o: { place: "picture", size: "compact" } }] },
+  { id: "field", area: "atoms", name: "Text field", r: rField, zoom: 1.6,
+    defaults: { look: "inline", invalid: false, value: "About us" },
+    controls: [C.seg("look", "Look", ["inline", "boxed"]), C.tog("invalid", "Invalid"), C.txt("value", "Value")],
+    states: ["normal", "hover", "focus", "disabled", "busy"], cols: cols(["normal", "hover", "focus", "disabled", "busy"]),
+    rows: [{ l: "Inline", o: { look: "inline" } }, { l: "Boxed", o: { look: "boxed" } }, { l: "Inline, invalid", o: { look: "inline", invalid: true, value: "about us!" } }, { l: "Boxed, invalid", o: { look: "boxed", invalid: true, value: "about us!" } }] },
+  { id: "switch", area: "atoms", name: "Switch", r: rSwitch, zoom: 2,
+    defaults: { on: true, label: "Show on phones" },
+    controls: [C.tog("on", "On"), C.txt("label", "Label")],
+    states: S6, cols: cols(S6),
+    rows: [{ l: "Off", o: { on: false, label: "" } }, { l: "On", o: { on: true, label: "" } }, { l: "With label", o: { on: true, label: "Phones" } }] },
+  { id: "badge", area: "atoms", name: "Badge", r: rBadge, zoom: 2.4,
+    defaults: { kind: "count", tone: "question", text: "3" },
+    controls: [C.seg("kind", "Kind", ["count", "status", "dot"]), C.sel("tone", "Tone", ["neutral", "primary", "question", "success", "warning", "danger"]), C.txt("text", "Text")],
+    cols: [{ l: "Count", o: { kind: "count" } }, { l: "Status", o: { kind: "status" } }, { l: "Dot", o: { kind: "dot" } }],
+    rows: [["neutral", "Draft"], ["primary", "New"], ["question", "Asks"], ["success", "Live"], ["warning", "Unsaved"], ["danger", "Failed"]].map(([t, s]) => ({ l: t.charAt(0).toUpperCase() + t.slice(1), o: { tone: t, statusText: s } })) },
+  { id: "pin", area: "atoms", name: "Pin", r: rPin, zoom: 2, stage: "paper",
+    defaults: { pin: "question", agent: "1", num: "2" },
+    controls: [C.sel("pin", "Pin", [["waiting", "Waiting"], ["working", "Agent working"], ["question", "Question"], ["done", "Done"]]), C.sel("agent", "Agent", AGENT_OPTS), C.txt("num", "Number")],
+    states: ["normal", "hover", "pressed", "focus", "open"], cols: cols(["normal", "hover", "pressed", "focus", "open"]),
+    rows: [{ l: "Waiting", o: { pin: "waiting", num: "1" } }, { l: "Working", o: { pin: "working", agent: "1", num: "2" } }, { l: "Working, 2nd", o: { pin: "working", agent: "2", num: "3" } }, { l: "Question", o: { pin: "question", agent: "1", num: "4" } }, { l: "Done", o: { pin: "done", num: "5" } }] },
+  { id: "chip", area: "atoms", name: "Name chip", r: rChip, zoom: 2, stage: "paper",
+    defaults: { agent: "1", name: "", v: "outline" },
+    controls: [C.sel("agent", "Agent", AGENT_OPTS), C.seg("v", "Show", [["chip", "Chip"], ["outline", "Outline"], ["top", "Top edge"]]), C.txt("name", "Name")],
+    cols: [{ l: "Chip", o: { v: "chip" } }, { l: "On outline", o: { v: "outline" } }, { l: "At top edge", o: { v: "top" } }, { l: "Long name", o: { v: "long" } }],
+    rows: AGENT_OPTS.map(([a, n]) => ({ l: n, o: { agent: a } })) },
+  { id: "caret", area: "atoms", name: "Caret", r: rCaret, zoom: 2.2, stage: "paper",
+    defaults: { who: "agent", name: "", agent: "1", model: true },
+    controls: [C.seg("who", "Who", [["person", "Person"], ["agent", "Agent"]]), C.sel("agent", "Colour", [["1", "Green"], ["2", "Violet"], ["3", "Pink"], ["4", "Teal"]]), C.tog("model", "Model icon"), C.txt("name", "Name")],
+    states: ["normal", "hover"], cols: [{ l: "Normal", st: "normal" }, { l: "Hover, name", st: "hover" }],
+    rows: [{ l: "Person", o: { who: "person", name: "Mia", agent: "3" } }, { l: "Agent, letter", o: { who: "agent", name: "Codex", agent: "2", model: false } }, { l: "Agent, model", o: { who: "agent", name: "Claude Code", agent: "1", model: true } }] },
+
+  { id: "menuitem", area: "molecules", name: "Menu item", r: rMenuItem, zoom: 1.6,
+    defaults: { icon: true, kbd: false, current: false, danger: false, badge: false, label: "Duplicate", glyph: "copy" },
+    controls: [C.tog("icon", "Icon"), C.tog("kbd", "Key"), C.tog("current", "Current"), C.tog("danger", "Danger"), C.txt("label", "Label")],
+    states: S6, cols: cols(S6),
+    rows: [{ l: "Plain", o: { icon: false, label: "Rename" } }, { l: "Icon", o: {} }, { l: "Key", o: { glyph: "search", label: "Search", kbd: true } }, { l: "Current", o: { glyph: "chat", label: "Ask agent", current: true } }, { l: "Count", o: { glyph: "chat", label: "Questions", badge: true } }, { l: "Danger", o: { glyph: "trash", label: "Delete", danger: true } }] },
+  { id: "menu", area: "molecules", name: "Menu", r: rMenu, zoom: 1.2, stage: "page",
+    defaults: { heading: true },
+    controls: [C.tog("heading", "Heading")],
+    cols: [{ l: "Normal", o: {} }, { l: "Keyboard", o: { focusIndex: 1 } }],
+    rows: [{ l: "Plain", o: { heading: false } }, { l: "Heading", o: { heading: true } }] },
+  { id: "dialog", area: "molecules", name: "Dialog", r: rDialog, zoom: 1, stage: "page",
+    defaults: { tone: "danger", title: "Delete “About us”?", busy: false },
+    controls: [C.seg("tone", "Tone", ["primary", "danger"]), C.txt("title", "Title"), C.tog("busy", "Busy")],
+    cols: [{ l: "Normal", o: {} }, { l: "Busy", o: { busy: true } }],
+    rows: [{ l: "Rename", o: { tone: "primary", title: "Rename page" } }, { l: "Delete", o: { tone: "danger" } }] },
+  { id: "tooltip", area: "molecules", name: "Tooltip", r: rTooltip, zoom: 1.8, stage: "page",
+    defaults: { side: "above", key: true, text: "Search" },
+    controls: [C.seg("side", "Side", ["above", "below"]), C.tog("key", "Key"), C.txt("text", "Text")],
+    cols: [{ l: "Label", o: { key: false } }, { l: "With key", o: { key: true } }],
+    rows: [{ l: "Above", o: { side: "above" } }, { l: "Below", o: { side: "below" } }] },
+  { id: "empty", area: "molecules", name: "Empty state", r: rEmpty, zoom: 1.2,
+    defaults: { action: true, title: "No pictures yet" },
+    controls: [C.tog("action", "Action"), C.txt("title", "Title")],
+    cols: [{ l: "Normal", o: {} }],
+    rows: [{ l: "With action", o: { action: true } }, { l: "Title only", o: { action: false } }] },
+  { id: "notice", area: "molecules", name: "In-place notice", r: rNotice, zoom: 1.4,
+    defaults: { tone: "warning", action: true, text: "" },
+    controls: [C.sel("tone", "Tone", ["info", "warning", "success", "danger"]), C.tog("action", "Try again"), C.txt("text", "Text")],
+    states: ["normal", "busy"],
+    cols: [{ l: "Text", o: { action: false } }, { l: "With action", o: { action: true } }, { l: "Busy", o: { action: true }, st: "busy" }],
+    rows: ["info", "warning", "success", "danger"].map((t) => ({ l: t.charAt(0).toUpperCase() + t.slice(1), o: { tone: t } })) },
+
+  { id: "editbar", area: "organisms", name: "Edit bar", r: rEditBar, zoom: 1.4, stage: "paper", plain: true,
+    defaults: { label: "Heading", ask: true },
+    controls: [C.sel("label", "Element", ["Heading", "Text", "Picture", "Button"]), C.tog("ask", "Ask agent")] },
+  { id: "media", area: "mockups", name: "Media, empty", r: rMock, zoom: 1, stage: "page", plain: true,
+    defaults: { notice: true },
+    controls: [C.tog("notice", "Notice")] }
+];
+const byId = Object.fromEntries(PARTS.map((p) => [p.id, p]));
+for (const p of PARTS) p.o = { ...(p.defaults || {}), st: "normal", theme: "light" };
+
+/* ---------- Approvals (prototype: localStorage; real build: src/catalogue/approvals.json) ---------- */
+const KEY = "proto-08-board-approvals";
+let marks = {};
+try { marks = JSON.parse(localStorage.getItem(KEY) || "{}") || {}; } catch { marks = {}; }
+const saveMarks = () => { try { localStorage.setItem(KEY, JSON.stringify(marks)); } catch { /* sandboxed: memory only */ } };
+
+/* ---------- Build the world ---------- */
+const board = $("#board"), viewport = $("#viewport"), world = $("#world"), dots = $("#dots"), selBox = $("#sel");
+const outline = $("#outline"), inspector = $("#inspector");
+
+function cellOpts(p, row, col) { return { ...p.defaults, ...(row.o || {}), ...(col.o || {}) }; }
+function halfHTML(p, theme) {
+  if (p.plain) return `<div class="half t-${theme}" data-stage="${p.stage || "panel"}"><span class="half__label">${theme === "light" ? "Light" : "Dark"}</span><div class="plain">${p.r(p.defaults, "normal")}</div></div>`;
+  let g = `<div class="grid" style="grid-template-columns: auto repeat(${p.cols.length}, auto)"><span></span>${p.cols.map((c) => `<span class="grid__head">${c.l}</span>`).join("")}`;
+  for (const row of p.rows) {
+    g += `<span class="grid__row">${row.l}</span>` + p.cols.map((c) => `<div class="cell">${p.r(cellOpts(p, row, c), c.st || "normal")}</div>`).join("");
+  }
+  return `<div class="half t-${theme}" data-stage="${p.stage || "panel"}"><span class="half__label">${theme === "light" ? "Light" : "Dark"}</span>${g}</div></div>`;
+}
+function liveHTML(p) {
+  return `<div class="frame__live t-${p.o.theme}" data-stage="${p.stage || "panel"}"><span class="half__label">Live</span><div class="live__stage" style="zoom:${p.zoom || 1}">${p.r(p.o, p.o.st)}</div></div>`;
+}
+function frameHTML(p) {
+  const body = p.values ? p.values() : liveHTML(p) + `<div class="frame__halves">${halfHTML(p, "light")}${halfHTML(p, "dark")}</div>`;
+  return `<article class="frame" id="f-${p.id}" data-id="${p.id}"><h3 class="frame__title"><span>${esc(p.name)}</span><span class="mark"></span></h3><div class="frame__body">${body}</div></article>`;
+}
+world.innerHTML = AREAS.map((a) => `<section class="area" id="a-${a.id}" data-area="${a.id}"><h2 class="area__label" data-area="${a.id}">${a.name}</h2><div class="area__frames" style="max-inline-size:${a.max}px">${PARTS.filter((p) => p.area === a.id).map(frameHTML).join("")}</div></section>`).join("");
+const titles = $$(".frame__title", world), areaLabels = $$(".area__label", world);
+
+outline.innerHTML = AREAS.map((a) => `<button type="button" class="outline__area" data-area="${a.id}">${a.name}</button><ul class="outline__list">${PARTS.filter((p) => p.area === a.id).map((p) => `<li><button type="button" class="outline__item" data-id="${p.id}" aria-current="false">${icon("frame", 14)}<span class="outline__name">${esc(p.name)}</span><span class="mark"></span></button></li>`).join("")}</ul>`).join("");
+
+// Chrome icons.
+$("#searchBtn").innerHTML = icon("search");
+$("#searchIcon").outerHTML = icon("search");
+$('[data-chrome="light"]').innerHTML = icon("sun", 15) + '<span class="segmented__text">Light</span>';
+$('[data-chrome="dark"]').innerHTML = icon("moon", 15) + '<span class="segmented__text">Dark</span>';
+$('.sheet-toggle[data-sheet="outline"]').innerHTML = icon("list");
+$('.sheet-toggle[data-sheet="options"]').innerHTML = icon("sliders");
+$("#zoomOut").innerHTML = icon("minus");
+$("#zoomIn").innerHTML = icon("plus");
+
+function paintMarks() {
+  for (const p of PARTS) {
+    const m = marks[p.id]?.mark;
+    for (const el of $$(`.outline__item[data-id="${p.id}"] .mark, #f-${p.id} .frame__title .mark`)) {
+      if (m) el.dataset.mark = m; else delete el.dataset.mark;
+      el.innerHTML = m === "approved" ? icon("check", 14) : "";
+      el.setAttribute("aria-label", m === "approved" ? "Approved" : m === "needs" ? "Needs change" : "");
+    }
+  }
+}
+
+/* ---------- Camera: screen = world * z + (x, y) ---------- */
+const cam = { x: 0, y: 0, z: 1 };
+const MINZ = 0.03, MAXZ = 4;
+let gestureTimer = 0, fly = 0;
+const zoomPct = $("#zoomPct");
+
+function rectOf(el) {
+  let x = 0, y = 0, n = el;
+  while (n && n !== world) { x += n.offsetLeft; y += n.offsetTop; n = n.offsetParent; }
+  return { x, y, w: el.offsetWidth, h: el.offsetHeight };
+}
+function apply() {
+  world.style.transform = `translate(${cam.x}px, ${cam.y}px) scale(${cam.z})`;
+  const g = 20 * cam.z;
+  dots.style.backgroundSize = `${g}px ${g}px`;
+  dots.style.backgroundPosition = `${cam.x}px ${cam.y}px`;
+  dots.style.opacity = clamp((g - 6) / 8, 0, 1);
+  zoomPct.textContent = Math.round(cam.z * 100) + "%";
+  placeSel();
+}
+function placeSel() {
+  if (!S.sel) { selBox.hidden = true; return; }
+  const r = rectOf($("#f-" + S.sel));
+  selBox.hidden = false;
+  selBox.style.transform = `translate(${r.x * cam.z + cam.x}px, ${r.y * cam.z + cam.y}px)`;
+  selBox.style.inlineSize = r.w * cam.z + "px";
+  selBox.style.blockSize = r.h * cam.z + "px";
+}
+// Crisp text: will-change only while moving; at rest the browser repaints at the final scale.
+function startGesture() { world.style.willChange = "transform"; clearTimeout(gestureTimer); }
+function settle() {
+  clearTimeout(gestureTimer);
+  world.style.willChange = "auto";
+  cam.x = Math.round(cam.x); cam.y = Math.round(cam.y);
+  apply();
+  const s = clamp(1 / cam.z, 1, 6);
+  for (const t of titles) t.style.scale = s;
+  const sa = clamp(16 / (40 * cam.z), 1, 9);
+  for (const a of areaLabels) a.style.scale = sa;
+}
+const settleSoon = () => { clearTimeout(gestureTimer); gestureTimer = setTimeout(settle, 160); };
+function zoomAt(sx, sy, f) {
+  const nz = clamp(cam.z * f, MINZ, MAXZ), k = nz / cam.z;
+  cam.x = sx - (sx - cam.x) * k; cam.y = sy - (sy - cam.y) * k; cam.z = nz;
+  apply();
+}
+const mode = () => { const w = board.clientWidth; return w < 600 ? "phone" : w < 1040 ? "medium" : "wide"; };
+function camFor(r, maxZ, pad = 48) {
+  const w = viewport.clientWidth, h = viewport.clientHeight;
+  const m = mode(), sheet = board.dataset.sheet;
+  const left = m === "medium" && sheet === "outline" ? 256 : 0, right = m === "medium" && sheet === "options" ? 288 : 0, bottom = 52;
+  const aw = Math.max(w - left - right - pad * 2, 60), ah = Math.max(h - bottom - pad * 2, 60);
+  const z = clamp(Math.min(aw / r.w, ah / r.h), MINZ, maxZ);
+  return { z, x: left + (w - left - right) / 2 - (r.x + r.w / 2) * z, y: (h - bottom) / 2 - (r.y + r.h / 2) * z };
+}
+const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+function stopFly() { if (fly) { cancelAnimationFrame(fly); fly = 0; } }
+function flyTo(to, fixedDur) {
+  stopFly();
+  if (reduced.matches) { Object.assign(cam, to); settle(); return; }
+  const w = viewport.clientWidth, h = viewport.clientHeight;
+  const from = { ...cam };
+  const c0 = { x: (w / 2 - from.x) / from.z, y: (h / 2 - from.y) / from.z };
+  const c1 = { x: (w / 2 - to.x) / to.z, y: (h / 2 - to.y) / to.z };
+  const span = (Math.hypot(c1.x - c0.x, c1.y - c0.y) * Math.min(from.z, to.z)) / w;
+  const dip = span > 1 ? Math.min(Math.log(span) * 0.7, 2.2) : 0; // zoom out a little on long trips
+  const dur = fixedDur || clamp(420 + 160 * Math.log2(1 + span), 420, 950);
+  const lz0 = Math.log(from.z), lz1 = Math.log(to.z), t0 = performance.now();
+  startGesture();
+  const step = (now) => {
+    const t = clamp((now - t0) / dur, 0, 1), e = ease(t);
+    const z = Math.exp(lz0 + (lz1 - lz0) * e - dip * Math.sin(Math.PI * e));
+    const cx = c0.x + (c1.x - c0.x) * e, cy = c0.y + (c1.y - c0.y) * e;
+    cam.z = z; cam.x = w / 2 - cx * z; cam.y = h / 2 - cy * z;
+    apply();
+    if (t < 1) fly = requestAnimationFrame(step);
+    else { fly = 0; Object.assign(cam, to); settle(); }
+  };
+  fly = requestAnimationFrame(step);
+}
+function frameRect(id) { const r = rectOf($("#f-" + id)); return { x: r.x, y: r.y - 30, w: r.w, h: r.h + 30 }; }
+const flyToFrame = (id, maxZ = 1.25) => flyTo(camFor(frameRect(id), maxZ));
+function areaRect(id) { const r = rectOf($("#a-" + id)); return { x: r.x, y: r.y - 100, w: r.w, h: r.h + 100 }; }
+const flyToArea = (id) => flyTo(camFor(areaRect(id), 1, 32));
+const fitAll = () => flyTo(camFor({ x: 0, y: 0, w: world.offsetWidth, h: world.offsetHeight }, 1, 24));
+function zoomCentre(f) {
+  const w = viewport.clientWidth, h = viewport.clientHeight, nz = clamp(cam.z * f, MINZ, MAXZ), k = nz / cam.z;
+  flyTo({ z: nz, x: w / 2 - (w / 2 - cam.x) * k, y: h / 2 - (h / 2 - cam.y) * k }, 200);
+}
+
+/* ---------- Selection and inspector ---------- */
+const S = { sel: null };
+function select(id) {
+  S.sel = id || null;
+  if (S.sel) board.dataset.selected = S.sel; else delete board.dataset.selected;
+  for (const f of $$(".frame", world)) f.classList.toggle("is-selected", f.dataset.id === S.sel);
+  for (const b of $$(".outline__item", outline)) b.setAttribute("aria-current", String(b.dataset.id === S.sel));
+  renderInspector();
+  placeSel();
+  if (mode() === "medium") { if (S.sel) setSheet("options"); else if (board.dataset.sheet === "options") setSheet(""); }
+}
+function ctlHTML(p, c) {
+  const v = p.o[c.k];
+  if (c.t === "seg") return `<div class="ctl"><span class="ctl__label">${c.l}</span><div class="segmented" role="group" aria-label="${c.l}">${c.v.map(([val, lab]) => `<button type="button" data-k="${c.k}" data-v="${val}" aria-pressed="${String(v) === String(val)}">${lab}</button>`).join("")}</div></div>`;
+  if (c.t === "sel") return `<label class="ctl"><span class="ctl__label">${c.l}</span><span class="select-wrap"><select class="select" data-k="${c.k}">${c.v.map(([val, lab]) => `<option value="${val}"${String(v) === String(val) ? " selected" : ""}>${lab}</option>`).join("")}</select>${icon("caretDown", 14)}</span></label>`;
+  if (c.t === "txt") return `<label class="ctl"><span class="ctl__label">${c.l}</span><input class="field" data-look="boxed" data-k="${c.k}" value="${esc(v)}" spellcheck="false"></label>`;
+  if (c.t === "tog") return `<div class="ctl ctl--row"><span class="ctl__label" id="l-${p.id}-${c.k}">${c.l}</span><button type="button" class="switch" role="switch" data-k="${c.k}" aria-checked="${!!v}" aria-labelledby="l-${p.id}-${c.k}"><span class="switch__thumb"></span></button></div>`;
+  if (c.t === "rng") return `<label class="ctl"><span class="ctl__label">${c.l} <output>${Math.round(v)}${c.u || ""}</output></span><input type="range" class="range" data-k="${c.k}" min="${c.min}" max="${c.max}" step="${c.step}" value="${v}"></label>`;
+  if (c.t === "act") return `<div class="ctl">${rButton({ tone: "secondary", size: "control", icon: "before", glyph: "play", label: c.l }).replace('tabindex="-1" ', "").replace("<button", `<button data-act="${c.k}"`)}</div>`;
+  return "";
+}
+function renderInspector() {
+  const p = byId[S.sel];
+  if (!p) {
+    const n = PARTS.filter((q) => marks[q.id]?.mark === "approved").length;
+    inspector.innerHTML = `<div class="insp__empty">Approved ${n} of ${PARTS.length}</div>`;
+    return;
+  }
+  const area = AREAS.find((a) => a.id === p.area).name;
+  const controls = [...(p.controls || [])];
+  if (p.states && p.states.length > 1) controls.push(C.sel("st", "State", p.states.map((s) => [s, SL[s]])));
+  if (p.r) controls.push(C.seg("theme", "Colours", ["light", "dark"]));
+  const m = marks[p.id] || {};
+  inspector.innerHTML = `
+    <div class="insp__head"><div class="insp__heads"><h2 class="insp__title">${esc(p.name)}</h2><span class="insp__area">${area}</span></div>${rClose({ size: "compact", place: "panel" }).replace('tabindex="-1" ', 'data-close ')}</div>
+    ${controls.length ? `<section class="insp__section" aria-label="Options"><h3 class="insp__heading">Options</h3>${controls.map((c) => ctlHTML(p, c)).join("")}</section>` : ""}
+    <section class="insp__section" aria-label="Review"><h3 class="insp__heading">Review</h3>
+      <div class="review">
+        <button type="button" class="button" data-tone="secondary" data-icon="before" data-mark="approved" aria-pressed="${m.mark === "approved"}">${icon("check")}<span>${m.mark === "approved" ? "Approved" : "Approve"}</span></button>
+        <button type="button" class="button" data-tone="secondary" data-mark="needs" aria-pressed="${m.mark === "needs"}"><span>Needs change</span></button>
+      </div>
+      <label class="ctl"><span class="ctl__label">Note</span><textarea class="field" data-look="boxed" id="note" rows="3" spellcheck="true">${esc(m.note || "")}</textarea></label>
+    </section>`;
+}
+function updateLive(p) {
+  if (p.id === "colours") { board.style.setProperty("--color-primary", `oklch(54.6% 0.215 ${p.o.hue})`); return; }
+  if (p.id === "type") { for (const el of $$("#f-type .type__sample")) el.textContent = p.o.sample || el.dataset.default; placeSel(); return; }
+  if (p.id === "motion") {
+    const row = $("#f-motion [data-try]");
+    row.dataset.dur = p.o.dur; row.dataset.ease = p.o.ease;
+    row.querySelector("small").textContent = `${Math.round(p.o.dur)} ms · ${p.o.ease}`;
+    clearTimeout(updateLive.t); updateLive.t = setTimeout(() => playRow(row), 260);
+    return;
+  }
+  if (!p.r) return;
+  const live = $(`#f-${p.id} .frame__live`);
+  live.className = "frame__live t-" + p.o.theme;
+  live.querySelector(".live__stage").innerHTML = p.r(p.o, p.o.st);
+  placeSel();
+}
+function setOpt(k, v) {
+  const p = byId[S.sel];
+  if (!p) return;
+  p.o[k] = v;
+  updateLive(p);
+}
+inspector.addEventListener("click", (e) => {
+  const p = byId[S.sel];
+  const seg = e.target.closest(".segmented [data-k]");
+  if (seg) { for (const b of seg.parentElement.children) b.setAttribute("aria-pressed", String(b === seg)); setOpt(seg.dataset.k, seg.dataset.v); return; }
+  const sw = e.target.closest(".switch[data-k]");
+  if (sw) { const on = sw.getAttribute("aria-checked") !== "true"; sw.setAttribute("aria-checked", String(on)); setOpt(sw.dataset.k, on); return; }
+  if (e.target.closest("[data-act]")) { playRow($("#f-motion [data-try]")); return; }
+  if (e.target.closest("[data-close]")) { select(null); setSheet(""); return; }
+  const mk = e.target.closest("[data-mark]");
+  if (mk && p) {
+    const want = mk.dataset.mark, cur = marks[p.id] || {};
+    const next = cur.mark === want ? null : want;
+    marks[p.id] = { ...cur, mark: next, at: new Date().toISOString() };
+    if (!next && !cur.note) delete marks[p.id];
+    saveMarks(); paintMarks();
+    for (const b of $$(".review [data-mark]", inspector)) b.setAttribute("aria-pressed", String(b.dataset.mark === next));
+    $('.review [data-mark="approved"] span', inspector).textContent = next === "approved" ? "Approved" : "Approve";
+  }
+});
+inspector.addEventListener("input", (e) => {
+  const t = e.target;
+  if (t.id === "note") { const p = byId[S.sel]; marks[p.id] = { ...(marks[p.id] || {}), note: t.value }; saveMarks(); return; }
+  if (!t.dataset.k) return;
+  if (t.type === "range") { const out = t.closest(".ctl").querySelector("output"); const c = byId[S.sel].controls.find((c) => c.k === t.dataset.k); out.textContent = Math.round(+t.value) + (c.u || ""); setOpt(t.dataset.k, +t.value); return; }
+  setOpt(t.dataset.k, t.value);
+});
+
+/* ---------- Motion demo ---------- */
+function playRow(row) {
+  const ball = row.querySelector(".ball"), track = row.querySelector(".track");
+  const d = track.clientWidth - ball.offsetWidth - 4, back = row.dataset.at === "1";
+  row.dataset.at = back ? "0" : "1";
+  const from = back ? d : 0, to = back ? 0 : d, dur = +row.dataset.dur;
+  if (reduced.matches) {
+    ball.animate([{ opacity: 1, transform: `translateX(${from}px)` }, { opacity: 0, offset: 0.5, transform: `translateX(${from}px)` }, { opacity: 0, offset: 0.5, transform: `translateX(${to}px)` }, { opacity: 1, transform: `translateX(${to}px)` }], { duration: Math.min(dur, 300), fill: "forwards" });
+    return;
+  }
+  ball.animate([{ transform: `translateX(${from}px)` }, { transform: `translateX(${to}px)` }], { duration: dur, easing: EASES[row.dataset.ease] || "ease", fill: "forwards" });
+}
+world.addEventListener("click", (e) => {
+  const b = e.target.closest(".motion__play");
+  if (!b) return;
+  if (b.hasAttribute("data-all")) $$("#f-motion .motion__row").forEach(playRow);
+  else playRow(b.closest(".motion__row"));
+});
+
+/* ---------- Outline, chrome, sheets ---------- */
+function setSheet(name) {
+  if (name) board.dataset.sheet = name; else delete board.dataset.sheet;
+  for (const b of $$(".sheet-toggle")) b.setAttribute("aria-pressed", String(b.dataset.sheet === name));
+}
+for (const b of $$(".sheet-toggle")) b.addEventListener("click", () => setSheet(board.dataset.sheet === b.dataset.sheet ? "" : b.dataset.sheet));
+outline.addEventListener("click", (e) => {
+  const item = e.target.closest(".outline__item"), area = e.target.closest(".outline__area");
+  if (mode() !== "wide" && (item || area)) setSheet("");
+  if (item) { select(item.dataset.id); flyToFrame(item.dataset.id); }
+  else if (area) flyToArea(area.dataset.area);
+});
+for (const b of $$("[data-chrome]")) b.addEventListener("click", () => {
+  const dark = b.dataset.chrome === "dark";
+  board.classList.toggle("t-dark", dark); board.classList.toggle("t-light", !dark);
+  for (const x of $$("[data-chrome]")) x.setAttribute("aria-pressed", String(x === b));
+});
+$("#zoomIn").addEventListener("click", () => zoomCentre(1.25));
+$("#zoomOut").addEventListener("click", () => zoomCentre(0.8));
+$("#zoomFit").addEventListener("click", () => (S.sel ? flyToFrame(S.sel, 2) : fitAll()));
+$("#zoom100").addEventListener("click", () => {
+  if (S.sel) { const c = camFor(frameRect(S.sel), 1); const w = viewport.clientWidth, h = viewport.clientHeight; const cx = (w / 2 - c.x) / c.z, cy = (h / 2 - c.y) / c.z; flyTo({ z: 1, x: w / 2 - cx, y: h / 2 - cy }, 260); }
+  else zoomCentre(1 / cam.z);
+});
+
+/* ---------- Search ("/") ---------- */
+const search = $("#search"), sInput = $("#searchInput"), sList = $("#searchList");
+let sActive = 0, sItems = [];
+function renderResults() {
+  const q = sInput.value.trim().toLowerCase();
+  sItems = PARTS.filter((p) => !q || p.name.toLowerCase().includes(q) || AREAS.find((a) => a.id === p.area).name.toLowerCase().includes(q)).slice(0, 8);
+  sActive = clamp(sActive, 0, Math.max(sItems.length - 1, 0));
+  sList.innerHTML = sItems.map((p, i) => `<li role="option" aria-selected="${i === sActive}"><button type="button" tabindex="-1" class="menu-item" style="inline-size:100%" data-id="${p.id}"${i === sActive ? " data-current" : ""}>${icon("frame", 14)}<span class="menu-item__label">${esc(p.name)}</span><span class="search__area">${AREAS.find((a) => a.id === p.area).name}</span></button></li>`).join("");
+}
+function openSearch() { search.hidden = false; sInput.value = ""; sActive = 0; renderResults(); sInput.focus(); }
+function closeSearch() { if (search.hidden) return; search.hidden = true; viewport.focus({ preventScroll: true }); }
+function goSearch(id) { if (!id) return; closeSearch(); select(id); flyToFrame(id); }
+sInput.addEventListener("input", () => { sActive = 0; renderResults(); });
+sInput.addEventListener("keydown", (e) => {
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); sActive = clamp(sActive + (e.key === "ArrowDown" ? 1 : -1), 0, sItems.length - 1); renderResults(); }
+  else if (e.key === "Enter") { e.preventDefault(); goSearch(sItems[sActive]?.id); }
+  else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeSearch(); }
+});
+sList.addEventListener("click", (e) => { const b = e.target.closest("[data-id]"); if (b) goSearch(b.dataset.id); });
+$("#searchBtn").addEventListener("click", openSearch);
+document.addEventListener("pointerdown", (e) => { if (!search.hidden && !e.target.closest("#search, #searchBtn")) closeSearch(); }, true);
+
+/* ---------- Keys ---------- */
+let spaceHeld = false;
+const typing = (el) => el && (el.matches?.("input, textarea, select") || el.isContentEditable);
+document.addEventListener("keydown", (e) => {
+  if (typing(e.target)) { if (e.key === "Escape" && e.target.id !== "searchInput") e.target.blur(); return; }
+  if (e.key === "/" && !e.metaKey && !e.ctrlKey) { e.preventDefault(); openSearch(); return; }
+  if (e.key === "Escape") { if (board.dataset.sheet) setSheet(""); else select(null); return; }
+  if (e.code === "Space" && (e.target === document.body || viewport.contains(e.target))) { e.preventDefault(); if (!spaceHeld) { spaceHeld = true; board.classList.add("is-space"); } return; }
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === "+" || e.key === "=") zoomCentre(1.25);
+  else if (e.key === "-") zoomCentre(0.8);
+  else if (e.key === "!" || (e.shiftKey && e.code === "Digit1")) fitAll();
+});
+document.addEventListener("keyup", (e) => { if (e.code === "Space") { spaceHeld = false; board.classList.remove("is-space"); } });
+
+/* ---------- Wheel: mouse wheel and pinch zoom round the pointer, trackpad scroll pans ---------- */
+viewport.addEventListener("wheel", (e) => {
+  if (e.target.closest(".search")) return;
+  e.preventDefault();
+  stopFly(); startGesture();
+  const r = viewport.getBoundingClientRect(), sx = e.clientX - r.left, sy = e.clientY - r.top;
+  const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 100 : 1;
+  const dx = e.deltaX * unit, dy = e.deltaY * unit;
+  const mouseWheel = e.deltaMode !== 0 || (dx === 0 && Number.isInteger(dy) && Math.abs(dy) >= 50);
+  if (e.ctrlKey || e.metaKey) zoomAt(sx, sy, Math.exp(-dy * 0.01));
+  else if (mouseWheel && !e.shiftKey) zoomAt(sx, sy, Math.exp(-dy * 0.0016));
+  else { cam.x -= e.shiftKey && dx === 0 ? dy : dx; cam.y -= e.shiftKey && dx === 0 ? 0 : dy; apply(); }
+  settleSoon();
+}, { passive: false });
+for (const t of ["gesturestart", "gesturechange"]) viewport.addEventListener(t, (e) => e.preventDefault());
+
+/* ---------- Pointers: drag to pan, two fingers to pinch, tap to select, double tap to fit ---------- */
+const pts = new Map();
+let drag = null, pinch = null, lastTap = { t: 0, id: null };
+const vpPoint = (x, y) => { const r = viewport.getBoundingClientRect(); return { x: x - r.left, y: y - r.top }; };
+function pinchState() {
+  const [a, b] = [...pts.values()];
+  return { mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, d: Math.hypot(a.x - b.x, a.y - b.y) || 1 };
+}
+viewport.addEventListener("pointerdown", (e) => {
+  if (e.target.closest(".zoombar, .search")) return;
+  if (e.pointerType === "mouse" && e.button !== 0 && e.button !== 1) return;
+  stopFly();
+  pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pts.size === 1) {
+    drag = { id: e.pointerId, sx: e.clientX, sy: e.clientY, lx: e.clientX, ly: e.clientY, moved: false, target: e.target };
+    if (spaceHeld || e.button === 1) { e.preventDefault(); beginPan(e.pointerId); }
+  } else if (pts.size === 2) {
+    if (drag) drag.moved = true;
+    pinch = pinchState();
+    startGesture();
+    for (const id of pts.keys()) { try { viewport.setPointerCapture(id); } catch { /* gone */ } }
+  }
+});
+function beginPan(id) {
+  drag.moved = true;
+  try { viewport.setPointerCapture(id); } catch { /* gone */ }
+  startGesture();
+  board.classList.add("is-panning");
+}
+viewport.addEventListener("pointermove", (e) => {
+  if (!pts.has(e.pointerId)) return;
+  pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pinch && pts.size >= 2) {
+    const n = pinchState();
+    cam.x += n.mx - pinch.mx; cam.y += n.my - pinch.my;
+    const p = vpPoint(n.mx, n.my);
+    zoomAt(p.x, p.y, n.d / pinch.d);
+    pinch = n;
+    return;
+  }
+  if (!drag || drag.id !== e.pointerId) return;
+  if (!drag.moved && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > 4) beginPan(e.pointerId);
+  if (drag.moved) { cam.x += e.clientX - drag.lx; cam.y += e.clientY - drag.ly; apply(); }
+  drag.lx = e.clientX; drag.ly = e.clientY;
+});
+function endPointer(e) {
+  if (!pts.has(e.pointerId)) return;
+  pts.delete(e.pointerId);
+  if (pinch && pts.size < 2) {
+    pinch = null;
+    const rest = [...pts.entries()][0];
+    drag = rest ? { id: rest[0], sx: rest[1].x, sy: rest[1].y, lx: rest[1].x, ly: rest[1].y, moved: true } : null;
+    if (!rest) { board.classList.remove("is-panning"); settleSoon(); }
+    return;
+  }
+  if (drag && drag.id === e.pointerId) {
+    if (!drag.moved && e.type === "pointerup") tap(drag.target);
+    drag = null;
+    board.classList.remove("is-panning");
+    settleSoon();
+  }
+}
+viewport.addEventListener("pointerup", endPointer);
+viewport.addEventListener("pointercancel", endPointer);
+function tap(target) {
+  const now = performance.now();
+  const frame = target.closest(".frame"), label = target.closest(".area__label");
+  if (mode() !== "wide" && board.dataset.sheet === "outline") setSheet("");
+  if (frame) {
+    const id = frame.dataset.id;
+    const quick = lastTap.id === id && now - lastTap.t < 340 && !target.closest(".motion__play, input, textarea, select");
+    if (quick) { lastTap = { t: 0, id: null }; flyToFrame(id, 2); return; }
+    lastTap = { t: now, id };
+    if (S.sel !== id) select(id);
+    return;
+  }
+  lastTap = { t: 0, id: null };
+  if (label) { flyToArea(label.dataset.area); return; }
+  if (mode() !== "wide") setSheet("");
+  select(null);
+}
+
+/* ---------- Start ---------- */
+paintMarks();
+renderInspector();
+let last = null;
+new ResizeObserver(() => {
+  const w = viewport.clientWidth, h = viewport.clientHeight;
+  if (!w || !h) return;
+  if (!last) { if (mode() === "medium") setSheet("outline"); Object.assign(cam, camFor(areaRect("values"), 1, 24)); settle(); }
+  else { cam.x += (w - last.w) / 2; cam.y += (h - last.h) / 2; apply(); }
+  last = { w, h };
+}).observe(viewport);
+})();
+</script>
+</body>
+</html>
