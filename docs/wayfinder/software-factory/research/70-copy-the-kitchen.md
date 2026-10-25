@@ -44,13 +44,15 @@ Helpers outside `kit.d` follow the same split. Neutral: `kit-lib.sh`, `kit-lib.m
 
 ### Values a shared kit would read from a project settings file
 
-The same handful repeat across commands, so one small file per project covers them:
+The same handful repeat across commands, so one small file per project covers them. This list summarises the table; the settings-file sketch in ticket 04 reads the table too.
 
 - main folder and the clean "dev" checkout (`kit-lib.sh` `kit_main_root`, `kit-lib.mjs` `kitMainRoot`, `next`/`heartbeat` `KIT_DEV_ROOT`, `worktree.sh`, the protected paths in `worktrees.mjs`);
 - the branch work lands on (`dev` here; most other projects only have `main`);
-- the check, unit and lint commands, and where unit tests live;
+- the check, unit and lint commands, and where unit tests live; extra `pr` checks (`npm run test:kit-clean`, the docs-guard tests in `pr-tier.mjs`);
 - which paths count as docs, tests, CSS and visible (`pr-tier.mjs`);
-- the preview address, if any (`status`);
+- the preview address, if any (`status`), and the CI branch `wait ci` watches by default;
+- the one file two slices may share, if any (`src/main.ts` in `next`; `sweep` counts its lines);
+- the feature list (`docs/agents/features.md` in `slice`, `ux`, `pr-tier.mjs`) and the tech-debt folder (`docs/work/tech-debt/issues` in `sweep`);
 - the shared `node_modules`, if any (`deps`, `doctor`, `worktree.sh`);
 - the slug in Lex's chat memory (`learn`, `card`), which `context-card.mjs` can already work out from the folder.
 
