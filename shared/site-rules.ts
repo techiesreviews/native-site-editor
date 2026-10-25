@@ -16,6 +16,45 @@ export function pageAddressProblem(slug: string): string | undefined {
   return PAGE_ADDRESS.test(slug) ? undefined : PAGE_ADDRESS_RULE;
 }
 
+/**
+ * `text` made a page address the rule takes: lowercase, accents dropped,
+ * every run of anything but letters and digits one `-`, none at the start
+ * or end, at most 80. "About Us!" is "about-us"; "!!!" is "". While
+ * `typing`, a space, dash, dot or underscore at the end stays one dash, so
+ * the next word joins it.
+ */
+export function toPageAddress(text: string, { typing = false }: { typing?: boolean } = {}): string {
+  const address = text
+    .normalize("NFKD")
+    .replace(/\p{M}+/gu, "")
+    .toLowerCase()
+    .replace(/ß/g, "ss")
+    .replace(/æ/g, "ae")
+    .replace(/ø/g, "o")
+    .replace(/œ/g, "oe")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+/, "")
+    .slice(0, 80);
+  return typing && /[\s._\p{Pd}]$/u.test(text) ? address : address.replace(/-+$/, "");
+}
+
+/**
+ * A typed page URL made to meet the rule part by part: `/Notes/About Us/` is
+ * `/notes/about-us/`. Parts in `kept` (the page's URL now) stay as they are,
+ * and so does a `.html` at the end; while `typing`, so does a dash at the
+ * end of a part, or the start of `.html` at the end of the last.
+ */
+export function toPageRoute(text: string, { kept = [], typing = false }: { kept?: Iterable<string>; typing?: boolean } = {}): string {
+  const stays = new Set(kept);
+  const parts = text.split("/");
+  return parts.map((part, index) => {
+    if (!part || stays.has(part)) return part;
+    const last = index === parts.length - 1;
+    const suffix = last ? ((typing ? /\.(?:h(?:t(?:ml?)?)?)?$/i : /\.html$/i).exec(part)?.[0] ?? "") : "";
+    return toPageAddress(part.slice(0, part.length - suffix.length), { typing }) + suffix.toLowerCase();
+  }).join("/");
+}
+
 /** The element Make component would turn into a component, as far as the caller knows it. */
 export interface ComponentSource {
   /** Its tag name, lowercase. */

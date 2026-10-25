@@ -122,14 +122,14 @@ test("Page settings URL changes a page's URL: links in pages and the header nav 
   const message = settingsDialog(page).locator(".url-change__message");
   const keep = settingsDialog(page).getByRole("checkbox", { name: /^Keep the old URL working/ });
 
-  // Checked as typed.
+  // Checked as typed; what is typed becomes an address, not a refusal.
   await url.fill("/notes/Bad URL/");
-  await expect(message).toHaveText("Use lowercase letters, digits and dashes in the URL, at most 80, starting with a letter or digit.");
-  await expect(url).toHaveAttribute("aria-invalid", "true");
-  // A new address is strict, with the Pages tab's and the agent's words.
+  await expect(url).toHaveValue("/notes/bad-url/");
+  await expect(message).toHaveText("Moves notes/first-note/index.html to notes/bad-url/index.html; updates 2 links in 2 files.");
   await url.fill("/notes/About_Us.v2/");
-  await expect(message).toHaveText("Use lowercase letters, digits and dashes in the URL, at most 80, starting with a letter or digit.");
+  await expect(url).toHaveValue("/notes/about-us-v2/");
   await url.fill("/");
+  await expect(url).toHaveAttribute("aria-invalid", "true");
   await expect(message).toHaveText("/ is the home page's URL.");
   await url.fill("/404.html");
   await expect(message).toContainText("/404.html is the page shown for addresses the site does not have.");

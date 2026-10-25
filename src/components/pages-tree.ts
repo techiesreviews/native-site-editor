@@ -2,12 +2,13 @@ import { refuse } from "./refusal-note";
 import { button, node } from "../ui/dom";
 import { reported } from "../ui/report-failure";
 import { setIcon, type IconName } from "../icons";
-import { nativeSubpageCount, nativeTreePages, slugify, type NativePageNode, type NativeSiteTree } from "../native-pages";
+import { nativeSubpageCount, nativeTreePages, type NativePageNode, type NativeSiteTree } from "../native-pages";
+import { toPageAddress } from "../../shared/site-rules";
 import type { Checked } from "../native-create";
 import { parentRoute } from "../native-page-moves";
 import { isFolderRoute, nativePageRoute } from "../../shared/native-routes";
 import { createRowMenu, type MenuItem } from "./row-menu";
-import { createUrlChange, type UrlPlan } from "./url-change";
+import { convertAsTyped, createUrlChange, type UrlPlan } from "./url-change";
 import "./pages-tree.css";
 import { rowActions } from "./row-actions";
 import { sharedTitleEnding, withoutTitleEnding } from "./page-title-ending";
@@ -196,7 +197,7 @@ export function createPagesTree(options: {
     const request = (): NativeNewRequest => ({ parent, title: input.value.trim(), slug, ...(offer ? { addCard: card.checked } : {}), ...(addNavigation.checked ? { addToNavigation: true } : {}) });
     // The URL follows the title until it is edited by hand; a problem shows once there is something to check.
     const check = (showEmpty = false) => {
-      if (!slugEdited) slug = slugify(input.value);
+      if (!slugEdited) slug = toPageAddress(input.value);
       urlButton.replaceChildren(node("span", "pages-edit__prefix", prefix), node("span", "pages-edit__slug-text", slug || "…"), node("span", "pages-edit__prefix", "/"));
       urlButton.setAttribute("aria-label", `URL ${prefix}${slug ? `${slug}/` : ""}, change it`);
       const planned = options.plan(request());
@@ -216,11 +217,14 @@ export function createPagesTree(options: {
       slugInput.focus();
       slugInput.select();
     });
-    slugInput.addEventListener("input", () => {
+    // What is typed becomes an address as typed; a dash at the end waits for the next word.
+    slugInput.addEventListener("input", (event) => {
       slugEdited = true;
-      slug = slugInput.value.trim();
+      convertAsTyped(slugInput, (text) => toPageAddress(text, { typing: true }), event);
+      slug = toPageAddress(slugInput.value);
       check();
     });
+    slugInput.addEventListener("change", () => { slugInput.value = slug; });
     form.addEventListener("keydown", (event) => {
       // With two fields and no submit button the browser does not submit on Enter.
       if (event.key === "Enter" && !event.isComposing && event.target instanceof HTMLInputElement) {
@@ -237,6 +241,7 @@ export function createPagesTree(options: {
     form.addEventListener("submit", reported(async (event) => {
       event.preventDefault();
       if (pending) return;
+      if (slugEdited) slugInput.value = slug;
       const planned = check(true);
       if (!planned.ok) {
         (slugInput.hidden ? input : slugInput).focus();

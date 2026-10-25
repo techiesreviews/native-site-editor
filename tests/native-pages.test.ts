@@ -6,7 +6,6 @@ import {
   nativeLinkSuggestions,
   nativeNewTarget,
   nativePageLabel,
-  slugify,
   nativeSubpageCount,
   nativeTreePages,
   type NativePageNode,
@@ -115,16 +114,6 @@ test("a page's label on its own is the Pages tab's: title, else first heading, e
   const tree = buildNativePagesTree({ routes, heading });
   const about = tree.children.find((node) => node.file === "about/index.html");
   assert.equal(about?.label, label("about/index.html"));
-});
-
-test("slugify: lowercase, diacritics stripped, anything else one dash", () => {
-  assert.equal(slugify("My first video"), "my-first-video");
-  assert.equal(slugify("  Crème brûlée — 2026!  "), "creme-brulee-2026");
-  assert.equal(slugify("Fern & Kettle"), "fern-kettle");
-  assert.equal(slugify("Straße Ærø"), "strasse-aero");
-  assert.equal(slugify("日本語"), "");
-  assert.equal(slugify("---"), "");
-  assert.equal(slugify("a".repeat(100)).length, 80);
 });
 
 test("a new page is <parent>/<slug>/index.html, under any folder page; a single-file page has no subpages", () => {

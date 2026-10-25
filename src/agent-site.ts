@@ -28,7 +28,8 @@ import type { AgentRecords } from "./agent-records";
 import type { createAgentOwner } from "./agent-owner";
 import { listChanges } from "./file-changes";
 import { componentLabel, isSectionTemplate, nativeInsertEdit } from "./native-insert";
-import { buildNativePagesTree, firstHeadingText, nativeTreePages, slugify, type NativePageNode } from "./native-pages";
+import { buildNativePagesTree, firstHeadingText, nativeTreePages, type NativePageNode } from "./native-pages";
+import { toPageAddress } from "../shared/site-rules";
 import { startTagAttribute, locateNativeElement, locateNativeElementRange, parseMarked } from "./native-source-location";
 import { removeEdit } from "./native-structure";
 import type { createGuardedEdits, EditorWorkspace, GuardedEdits, NodeRef, Outcome, Reads } from "./guarded-edit";
@@ -898,7 +899,7 @@ async function applyAdmitted(actions: AgentSiteActions, command: AgentCommand): 
     }
     case "create_page": {
       const title = String(args.title ?? "").trim();
-      const made = await actions.createPage({ parent: String(args.parent ?? "/"), title, slug: args.slug ?? slugify(title) });
+      const made = await actions.createPage({ parent: String(args.parent ?? "/"), title, slug: args.slug ?? toPageAddress(title) });
       if (typeof made === "string") throw new Error(made);
       return { message: `Created the page ${title} at ${made.route} (${made.file}), unsaved.`, result: { file: made.file, route: made.route, hash: await hashOf(actions, made.file) } };
     }

@@ -1,8 +1,8 @@
 ---
 title: "A typed page URL is turned into a valid one, not refused"
 type: task (AFK)
-status: open
-assignee: lead-39 (this session)
+status: closed
+assignee: lead-39
 builder: claude
 blocked_by: []
 ---
@@ -35,3 +35,11 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `kit doctor`; `kit bg slice-39 -- scripts/agents/kit slice --ticket docs/wayfinder/clean-up-before-features/build/tickets/39-typed-url-is-converted.md --builder claude-opus-5-5`; `kit wait job slice-39 --timeout 2h`.
 - `kit unit --affected`, `kit specs --affected`, `kit size` (at or under 362 KB), `kit ux --ticket <this ticket>` for the visible change.
 - Review: `ASE_REVIEW_MODEL=claude-opus-5-5`. Land: `kit pr --ticket <this ticket>`.
+
+## Done (2026-10-25)
+
+- One converter beside the check in `shared/site-rules.ts`: `toPageAddress` (lowercase, accents dropped, every run of other characters one dash, none at either end, at most 80) and `toPageRoute` for a whole URL, part by part, keeping the parts of the page's URL now and a final `.html`. `slugify` in `src/native-pages.ts` is gone; its callers (title → address in the Pages tab, cards, page choices, the agent's default slug from a title) use `toPageAddress`.
+- The New page / New subpage URL field and every Change URL field (Pages tab, Page settings, the sidebar's Page block) show the converted address as typed, the caret kept after the text before it; not mid-composition. A space, dash, dot or underscore typed at the end waits as one dash for the next word; it is never saved, and the field drops it on Enter (the New page field also on leaving it). Change URL also keeps a half-typed `.html`. Whatever converts to nothing leaves the field empty and Create refused as before. Agent tools still refuse invalid addresses with the rule's words.
+- Unit: `tests/site-rules.test.ts` covers the ticket's cases ("About Us!", "Café Menü", "  --Hello__World--  ", 100 letters, "!!!"), the typing mode and `toPageRoute`; the old `slugify` cases moved there from `tests/native-pages.test.ts`.
+- Specs: `native-create.spec.ts` types "About Us" as a new page's title and gets `/about-us/` (`about-us/index.html`), and types "About_Us.v2" / "Second Take!" into the URL field and sees `about-us-v2` / `second-take`; `native-page-urls.spec.ts` sees `/notes/Bad URL/` become `/notes/bad-url/` with its move plan instead of a refusal.
+- Feature list: F-pages-03 and F-pages-05 updated.

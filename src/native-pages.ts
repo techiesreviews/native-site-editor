@@ -153,26 +153,6 @@ export function firstHeadingText(html: string | undefined): string | undefined {
   return text || undefined;
 }
 
-/**
- * A URL part from a title: lowercase, diacritics stripped, every run of
- * anything but letters and digits one `-`. "My first vídeo!" is
- * "my-first-video".
- */
-export function slugify(title: string): string {
-  return title
-    .normalize("NFKD")
-    .replace(/\p{M}+/gu, "")
-    .toLowerCase()
-    .replace(/ß/g, "ss")
-    .replace(/æ/g, "ae")
-    .replace(/ø/g, "o")
-    .replace(/œ/g, "oe")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 80)
-    .replace(/-+$/, "");
-}
-
 export interface NativeNewTarget {
   /** The URL the new page has. */
   route: string;
