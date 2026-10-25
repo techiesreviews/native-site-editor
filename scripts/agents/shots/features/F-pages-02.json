@@ -1,1 +1,1 @@
-{"screen":"pages","name":"F-pages-02","steps":["press Tab","press Tab","press Tab","press ArrowDown","press Enter","record open 1200","expect visible \"About · Larkspur Studio\""]}
+{"screen":"pages","name":"F-pages-02","steps":["expect visible \"Page not found\"","press Tab","press Tab","press Tab","press ArrowDown","press Enter","record open 1200","expect visible \"About · Larkspur Studio\""]}

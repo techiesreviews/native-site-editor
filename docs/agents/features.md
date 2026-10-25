@@ -297,7 +297,7 @@ its number unused.
 - Files: `src/components/sidebar-resize.ts`, `src/components/resize-handle.ts`
 - Phone: no
 - Spec: `tests/native-save/native-resize-toggle.spec.ts`
-- Steps: `scripts/agents/shots/features/F-pages-16.json`
+- Steps: none yet (needs a drag or a click on the resize handle, which steps cannot grab)
 
 ## Page editing on the canvas
 
@@ -355,7 +355,7 @@ its number unused.
 - Files: `src/page-builder/remove.ts`, `src/controllers/page-structure-controller.ts`
 - Phone: no
 - Spec: `tests/native-save/native-delete-key.spec.ts`
-- Steps: none yet (needs a click, key or drag inside the page frame)
+- Steps: `scripts/agents/shots/features/F-canvas-07.json`
 
 ### F-canvas-08 Add panel
 - Try: Press Add (or a + between sections) and click or drag a section or component.
@@ -453,7 +453,7 @@ its number unused.
 - Files: `src/page-builder/block-fields.ts`, `src/page-builder/variant-fields.ts`, `shared/variants.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-block-bars.spec.ts`
-- Steps: `scripts/agents/shots/features/F-bar-05.json`
+- Steps: none yet (the starter defines no button variants or sizes)
 
 ### F-bar-06 Div Layout
 - Try: Select a Div and pick another Layout.
@@ -609,7 +609,7 @@ its number unused.
 - Files: `src/page-builder/component-rename.ts`, `src/page-builder/component-names.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-rename-component-actual.spec.ts`
-- Steps: `scripts/agents/shots/features/F-component-05.json`
+- Steps: none yet (renaming needs F2 on the component's name in its bar, which steps cannot focus)
 
 ### F-component-06 Nested components
 - Try: In Edit component mode open a card component inside the section.
@@ -649,7 +649,7 @@ its number unused.
 - Files: `src/page-builder/edit-component-mode.ts`, `src/page-builder/block-insert.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-edit-component-blocks-actual.spec.ts`
-- Steps: `scripts/agents/shots/features/F-component-10.json`
+- Steps: none yet (in Edit component mode a rail block's name also matches Page structure row buttons, and rail drags onto rows land by the pointer's x)
 
 ## Media and the image popup
 
@@ -715,7 +715,7 @@ its number unused.
 - Files: `src/page-builder/media-library-replace.ts`, `src/page-builder/media-replace-rules.ts`, `src/page-builder/replace-everywhere.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-media-rename.spec.ts`
-- Steps: `scripts/agents/shots/features/F-media-08.json`
+- Steps: none yet (the starter has one PNG, so Replace everywhere offers nothing else to choose)
 
 ### F-media-09 Collections
 - Try: Select two files, make a New collection, view it and take one out.
@@ -943,7 +943,7 @@ its number unused.
 - Files: `src/version-view.ts`, `src/controllers/history-controller.ts`, `src/components/commit-history.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-history.spec.ts`
-- Steps: `scripts/agents/shots/features/F-history-02.json`
+- Steps: none yet (the starter has one commit, so there is no other version to show)
 
 ### F-history-03 Restore this version
 - Try: In History press Restore this version.
@@ -1143,7 +1143,7 @@ its number unused.
 - Files: `src/components/phone-sheet.ts`, `src/components/phone-sheet.css`, `src/components/phone-sheet-rules.ts`, `src/components/phone-sheet-handle.css`
 - Phone: yes
 - Spec: `tests/native-save/native-phone-sheet.spec.ts`
-- Steps: `scripts/agents/shots/features/F-phone-01.json`
+- Steps: none yet (the try also runs at 1280, where there is no phone sheet)
 
 ### F-phone-02 Selection stays clear of the bar
 - Try: On a phone select a picture low on the page.
@@ -1159,7 +1159,7 @@ its number unused.
 - Files: `src/workspace-mount.ts`, `src/style.css`
 - Phone: yes
 - Spec: `tests/native-save/native-explorer-size.spec.ts`
-- Steps: `scripts/agents/shots/features/F-phone-03.json`
+- Steps: none yet (the try also runs at 1280, where there is no phone top bar)
 
 ### F-phone-04 Touch without sticky hover
 - Try: Tap rows, tiles and menu items on a touch screen.

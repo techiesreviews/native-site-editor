@@ -1,1 +1,0 @@
-{"screen":"add-panel","name":"F-component-10","steps":["press Escape","press Tab","press ArrowDown","press ArrowDown","press ArrowDown","press Tab","press Tab","press Enter","click \"Paragraph\"","record add 600","expect visible \"Done\""]}

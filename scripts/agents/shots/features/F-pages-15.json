@@ -1,1 +1,1 @@
-{"screen":"pages","name":"F-pages-15","steps":["press Tab","press Tab","press Tab","press ArrowDown","press Shift+F10","click \"Navigation…\"","type \"Our work\" in Link 1 label","click \"Move About up\"","click \"Apply navigation\"","record apply 800"]}
+{"screen":"pages","name":"F-pages-15","steps":["expect visible \"Page not found\"","press Tab","press Tab","press Tab","press ArrowDown","press Shift+F10","expect visible \"Change URL…\"","click \"Navigation…\"","type \"Our work\" in Link 1 label","click \"Move About up\"","click \"Apply navigation\"","record apply 800"]}

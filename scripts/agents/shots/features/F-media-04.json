@@ -1,1 +1,1 @@
-{"screen":"media-gallery","name":"F-media-04","steps":["press Tab","press Tab","press Tab","press Tab","press Tab","press Enter","click \"Adding settings\""]}
+{"screen":"media-gallery","name":"F-media-04","steps":["press Tab","press Tab","press Tab","press Tab","press Tab","press Enter","click \"Adding settings\"","expect visible \"Adding settings\""]}
