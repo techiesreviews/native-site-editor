@@ -43,6 +43,7 @@ The rules are kept up to date as the specs change.
 ## Decisions so far
 
 <!-- one line per closed ticket: [title](tickets/file.md): gist -->
+- [Find what actually gets a site found and quoted by AI search](tickets/02-research-geo.md#resolution-2026-10-25): GEO is still SEO; proven: let AI search crawlers in, words in the HTML, honest sitemap; llms.txt has no evidence; starter blocks AI quoting and hides its menu behind a script
 
 ## Not yet specified
 
