@@ -5,6 +5,8 @@ import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { chromium, type Page } from "@playwright/test";
+import { frameStrip, runStep } from "../scripts/agents/shots/steps";
 import { contactHtml, contactSheets, initialEncoding, expandMatrix, makeIndex, nextEncoding, parseArgs, parseStep, parseSteps, screens, type Encoding, type Shot } from "../scripts/agents/shots/core";
 
 test("steps parse every grammar form and name unknown instructions", () => {
@@ -17,7 +19,11 @@ test("steps parse every grammar form and name unknown instructions", () => {
   assert.deepEqual(parseStep("scroll down"), { kind: "scroll", direction: "down" });
   assert.deepEqual(parseStep("scroll up"), { kind: "scroll", direction: "up" });
   assert.deepEqual(parseStep('wait for "Ready"'), { kind: "wait", text: "Ready" });
-  for (const source of ["explode logo", "hover nth 0 tile", "scroll sideways", "wait 300"]) assert.throws(() => parseStep(source), { message: `Unknown step: ${source}` });
+  assert.deepEqual(parseStep('drag "Recent work" to "Section feature"'), { kind: "drag", name: "Recent work", target: "Section feature" });
+  assert.deepEqual(parseStep('drag "Card" to "Drop zone" edge top'), { kind: "drag", name: "Card", target: "Drop zone", edge: "top" });
+  assert.deepEqual(parseStep("record upload-1 800"), { kind: "record", name: "upload-1", ms: 800 });
+  assert.deepEqual(parseStep('expect visible "1 selected"'), { kind: "expect", text: "1 selected" });
+  for (const source of ["explode logo", "hover nth 0 tile", "scroll sideways", "wait 300", 'drag "a" to "b" edge middle', "record ../x 800", "record flicker 50", "record flicker 10000", "expect visible Filter"]) assert.throws(() => parseStep(source), { message: `Unknown step: ${source}` });
 });
 
 test("JSON and documented YAML subset yield the same validated scenario", () => {
@@ -110,9 +116,11 @@ test("kit shots help and invalid arguments finish without starting a server", ()
   assert.equal(missing.status, 1);
   assert.match(missing.stderr, /Choose a screen: editor, media-gallery/);
   assert.equal(missing.stdout.split("\n").filter(line => line.startsWith("RESULT:")).length, 1);
-  const outside = run(["--steps", "package.json"]);
-  assert.equal(outside.status, 1);
-  assert.match(outside.stderr, /Scenario file must live under .scratch/);
+  for (const file of ["package.json", "scripts/agents/shots/core.ts", "scripts/agents/shots/features/../core.ts"]) {
+    const outside = run(["--steps", file]);
+    assert.equal(outside.status, 1, file);
+    assert.match(outside.stderr, /Scenario file must live under .scratch\/ or scripts\/agents\/shots\/features\//);
+  }
 });
 
 
@@ -196,6 +204,14 @@ console.log("capture diagnostic");
   const port = join(root, "scripts/agents/port.sh");
   await writeFile(port, '#!/bin/sh\nexec "$KIT_NODE" "$TEST_CAPTURE" "$@"\n');
   await chmod(port, 0o755);
+  // A committed feature try is accepted from this checkout's features folder.
+  await mkdir(join(root, "scripts/agents/shots/features"), { recursive: true });
+  await writeFile(join(root, "scripts/agents/shots/features/F-media-01.json"), JSON.stringify({ screen: "media-gallery", steps: ["record flicker 800"] }));
+  const feature = spawnSync(process.execPath, ["--import", "tsx", resolve("scripts/agents/shots/cli.ts"), "--steps", join(root, "scripts/agents/shots/features/F-media-01.json"), "--width", "1280", "--theme", "light", "--out", join(root, "out-feature")], {
+    env: { ...process.env, KIT_ROOT: root, KIT_MAIN_ROOT: root, ASE_NATIVE_SAVE_FIXTURE: join(root, "fixture"), TEST_CAPTURE: capture, TEST_SHOTS_CORE: pathToFileURL(resolve("scripts/agents/shots/core.ts")).href }, encoding: "utf8", timeout: 15_000,
+  });
+  assert.equal(feature.status, 0, feature.stderr);
+  assert.match(feature.stdout, /RESULT: ok shots/);
   for (const many of [false, true]) for (const files of [false, true]) {
     const out = join(root, `out-${many}-${files}`);
     const args = [...(many ? screens : ["editor"]), "--width", "390,768,1280", "--theme", "light", "--out", out, ...(files ? ["--files"] : [])];
@@ -221,4 +237,48 @@ console.log("capture diagnostic");
     }
     assert.equal(lines.filter(line => line.startsWith("RESULT:")).length, 1);
   }
+});
+
+test("drag, record and expect steps act like a user in Chromium", async t => {
+  const temporary = await mkdtemp(join(tmpdir(), "kit-shots-steps-"));
+  t.after(() => rm(temporary, { recursive: true, force: true }));
+  const browser = await chromium.launch({ headless: true, env: { ...process.env, TMPDIR: temporary, TMP: temporary, TEMP: temporary } });
+  t.after(() => browser.close());
+  const page = await browser.newPage({ viewport: { width: 600, height: 400 } });
+  const drop = async (edge: string) => {
+    // The page reports where a pointer drag of Card ended: which element, and how far inside it.
+    // setContent keeps the window, so start from a blank document for fresh listeners.
+    await page.goto("about:blank");
+    await page.setContent(`<style>body{margin:0}div{position:absolute;inline-size:200px;block-size:100px}#card{inset:10px auto auto 10px}#zone{inset:200px auto auto 300px}</style>
+      <div id="card">Card</div><div id="zone">Drop zone</div>
+      <script>let dragging=false;card.onpointerdown=()=>{dragging=true};
+      addEventListener("pointerup",event=>{if(!dragging)return;const box=zone.getBoundingClientRect();
+      window.dropped={on:document.elementFromPoint(event.clientX,event.clientY)?.id,top:event.clientY-box.top,bottom:box.bottom-event.clientY,left:event.clientX-box.left,right:box.right-event.clientX}})</script>`);
+    await runStep(page, `drag "Card" to "Drop zone" edge ${edge}`);
+    return page.evaluate(() => Reflect.get(window, "dropped") as Record<string, number | string>);
+  };
+  for (const edge of ["top", "bottom", "left", "right"]) {
+    const dropped = await drop(edge);
+    assert.equal(dropped.on, "zone", edge);
+    assert.ok(Number(dropped[edge]) >= 0 && Number(dropped[edge]) <= 3, `${edge}: ${JSON.stringify(dropped)}`);
+  }
+
+  // A page that flickers between two colours yields frames that differ, packed as one small strip.
+  await page.goto("about:blank");
+  await page.setContent(`<body style="margin:0"><script>let on=false;setInterval(()=>{on=!on;document.body.style.background=on?"black":"white"},40)</script>`);
+  let recorded: { name: string; frames: Buffer[] } | undefined;
+  const started = Date.now();
+  await runStep(page, "record flicker 700", async (name, frames) => { recorded = { name, frames }; });
+  assert.ok(Date.now() - started >= 700);
+  assert.equal(recorded?.name, "flicker");
+  assert.equal(recorded?.frames.length, 8);
+  assert.ok(new Set(recorded!.frames.map(frame => frame.toString("base64"))).size > 1, "frames differ");
+  const strip = await frameStrip(page as Page, recorded!.frames);
+  assert.equal(strip.subarray(8, 12).toString(), "WEBP");
+  assert.ok(strip.length <= 300_000);
+
+  await page.setContent("<p>Here</p>");
+  await runStep(page, 'expect visible "Here"');
+  await assert.rejects(runStep(page, 'expect visible "Nowhere"'), { message: 'expect visible "Nowhere" failed: nothing visible says "Nowhere"' });
+  await assert.rejects(runStep(page, 'drag "Nowhere" to "Here"'), { message: 'drag failed: nothing visible named "Nowhere"' });
 });

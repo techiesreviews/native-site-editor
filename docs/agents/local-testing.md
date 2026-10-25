@@ -33,6 +33,7 @@ run timing through `timing.sh`. Stop only processes you started.
   and the same with `test:browser:actual`. A tagged spec run in the default
   group shows as skipped, not as passed.
 - Smoke: `port.sh npm run test:browser:smoke -- --workers=1`.
+- Visible changes: `scripts/agents/kit ux` tries the features a diff touches on the real starter (their `kit shots --steps` files) and packs the scripted UX findings into a small bundle.
 - CI fonts (DejaVu Sans, wider than the local Noto Sans): put
   `FONTCONFIG_FILE=$PWD/scripts/agents/ci-fonts.conf` (run from the worktree root) in front of the
   `port.sh` command; specs must pass with both fonts.

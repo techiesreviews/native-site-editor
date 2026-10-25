@@ -1,8 +1,8 @@
 ---
 title: "kit ux, scripted half: touched features, tries, checks, bundle"
 type: task (AFK)
-status: open
-assignee: sf-42 (this session)
+status: closed
+assignee: sf-42
 builder: claude
 blocked_by: [41-feature-list]
 ---
@@ -41,3 +41,13 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 
 - `scripts/agents/kit doctor`; `ASE_REVIEW_MODEL=claude-opus-5-5 scripts/agents/kit bg slice-sf42 -- scripts/agents/kit slice --ticket docs/wayfinder/software-factory/build/tickets/42-kit-ux-scripted.md --builder claude-opus-5-5`; `scripts/agents/kit wait job slice-sf42 --timeout 2h`.
 - Report: unit and specs `RESULT:` lines, the real `kit ux` RESULT and bundle size, contact sheet path, review decisions, PR and merge SHA.
+
+## Done (2026-10-25)
+
+- `scripts/agents/kit ux` matches the diff (merge-base with `origin/dev`, plus uncommitted and untracked files) against each feature's `Files` globs; `--features` and `--all` override, and nothing touched is `RESULT: ok ux nothing visible touched`. Each touched feature's steps file runs through `kit shots --steps` at 1280 px (and 390 px for `Phone: yes`), light and dark; a feature without one gets the named screens its files map to and is marked untried. Scripted checks: layout findings, tap targets under 44 px at 390, raw colours in changed CSS, new visible text over 60 characters and new hint, tip, count or badge classes, and raw px spacing and timings counted against the base. The bundle (`bundle.md` under 60 KB, at most 12 images of at most 300 KB) trims the lowest-value items first and names the trims; a failed try ends in `broken: <feature>`. `--ticket` names the ticket for its mock-up link; otherwise the ticket the branch name ends with is used. `--no-review` is accepted and changes nothing yet.
+- `kit shots` steps gain `drag "<name>" to "<target>" [edge …]` (pointer 3 px inside that edge), `record <name> <ms>` (8 frames saved as one `-strip.webp`, at most 300 KB) and `expect visible "<text>"` (fails with `expect visible "<text>" failed: nothing visible says "<text>"`). `--steps` also accepts `scripts/agents/shots/features/`. The parser lives in `core.ts`, and `capture.spec.ts` saves the strips, so both changed with `steps.ts`.
+- Steps files for 15 features the named screens cover: F-media-01, 02 (with `record`), 05, 10, 12, 13, 16, 17; F-pages-01, 08, 14; F-canvas-08; F-structure-01, 03 (a drag to a row's top edge, then `record`); F-publish-01. All 15 passed at 1280 light.
+- Tests: `tests/kit-ux.test.ts` covers feature matching, flags, text and class findings on a fixture diff, CSS counts, bundle and image limits with trims, the ticket guess, and CLI runs on a fake `kit shots`. `tests/kit-shots.test.ts` covers the new grammar, a Chromium drag to each edge, a flickering page giving differing frames and a WebP strip, a missing element's failure line, refusal outside `.scratch/` and the features folder, and acceptance from the features folder.
+- Real run on this branch: `scripts/agents/kit ux --features F-media-02,F-media-10` printed `RESULT: ok ux 2 features tried, 0 scripted findings, bundle /home/ubulex/Projects/native-site-editor/.scratch/ux/sf-42/20261025-120006`. The bundle is 312,438 bytes in total: `bundle.md` is 3,222 bytes, plus 6 images (2 contact sheets and 4 `record` strips).
+- Checks: `kit unit --affected` gave `RESULT: ok unit 38/38 (3 files)`, `kit unit tests/features-list.test.ts` gave 9/9, and `kit specs --affected` gave `RESULT: ok specs none affected`. `npm run check` and `npm run lint` are clean.
+
