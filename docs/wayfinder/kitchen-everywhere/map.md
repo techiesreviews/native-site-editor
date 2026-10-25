@@ -26,7 +26,7 @@ A decided and ticketed plan for running every one of Lex's code projects the way
 
 - Whether the scoreboard and feedback logs stay per project or also roll up into one view across projects (asked in [ticket 05](tickets/05-grill-rollout.md)).
 - Whether Lex's static sites (`native-site-editor-starter`, `lexvd-site`, `dogsfitandfun`, `techies-reviews`) want the full kitchen or only `review`, `pr` and the hooks (asked in [ticket 05](tickets/05-grill-rollout.md)).
-- How the `lex-coding` skill's kit section changes once the shared kit exists (today it points agents at this repo's `origin/dev`).
+- How the `lex-coding` skill's kit section changes once the shared kit exists (today it points agents at this repo's `origin/dev`; asked in [ticket 05](tickets/05-grill-rollout.md)).
 
 ## Out of scope
 

@@ -14,7 +14,7 @@ Research for [ticket 70](../build/tickets/70-copy-the-kitchen-plan.md), 2026-10-
 
 | Command | Kind | What it assumes today |
 | --- | --- | --- |
-| `bg` | neutral | job records under `.scratch/kit-jobs/` of the current folder; Node ≥ 24 |
+| `bg` | neutral | job records under `.scratch/kit-jobs/` of the current folder; Node ≥ 24, which the `kit` front door requires for every command (`kit_node` in `kit-lib.sh`) |
 | `wait` | neutral | `gh` signed in for `wait ci`; CI branch defaults to `dev` |
 | `version` | neutral | none beyond git and Node |
 | `doctor` | neutral, with project checks | refuses the main and `dev` checkouts; base `origin/dev`; hooks in `.claude/settings.json` and `.codex/hooks.json`; `node_modules` from `native-site-editor-dev`; Grok login check (optional) |
