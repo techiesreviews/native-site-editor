@@ -2,7 +2,7 @@
 title: "Page-builder wiring leaves main.ts"
 type: task (AFK)
 status: open
-assignee:
+assignee: lead-89 (this session)
 builder: claude
 blocked_by: [87-site-loading-out-of-main]
 ---
