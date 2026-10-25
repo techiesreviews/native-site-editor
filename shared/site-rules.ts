@@ -40,21 +40,34 @@ export function toPageAddress(text: string, { typing = false }: { typing?: boole
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+/, "")
     .slice(0, 80);
-  return typing ? address : address.replace(/-+$/, "");
+  // Full, a dash at the end would only stop the next letter.
+  return typing && address.length < 80 ? address : address.replace(/-+$/, "");
+}
+
+export interface TypedRouteSite {
+  /** Whether some file of the site has a path starting with `start` (`Blog_Posts/` a folder there, `Blog_P` the start of a name). */
+  starts(start: string): boolean;
+  /** The last part of the page's URL now (`first-note`, `notes.html`). */
+  own?: string;
 }
 
 /**
- * A typed page URL made to meet the rule part by part: `/Notes/About Us/` is
- * `/notes/about-us/`. A part equal to the one at its place in `kept` (the
- * page's URL now, split at `/`) stays as it is, and so does a `.html` at the
- * end; while `typing`, so does a dash at the end of a part, or the start of
- * `.html` at the end of the last.
+ * A typed page URL made to meet the rule part by part, as the move planner
+ * checks it: `/Notes/About Us/` is `/notes/about-us/`. A folder the site has
+ * stays as it is (`/Old_Folder/x/`), and so does the page's own last part
+ * and a `.html` at the end. While `typing`, a dash at the end of a part
+ * stays, and so do the start of `.html` and a last part that begins a name
+ * the site has, so `Old_Folder` can be typed out.
  */
-export function toPageRoute(text: string, { kept = [], typing = false }: { kept?: readonly string[]; typing?: boolean } = {}): string {
+export function toPageRoute(text: string, site: TypedRouteSite, { typing = false }: { typing?: boolean } = {}): string {
   const parts = text.split("/");
+  // The page's own name: the last part, before a closing `/` for a folder URL.
+  const named = parts.length - 1 - [...parts].reverse().findIndex(Boolean);
   return parts.map((part, index) => {
-    if (!part || kept[index] === part) return part;
+    if (!part) return part;
     const last = index === parts.length - 1;
+    const path = parts.slice(0, index + 1).join("/").replace(/^\/+/, "");
+    if (index === named ? part === site.own || (typing && site.starts(path)) : site.starts(`${path}/`)) return part;
     const suffix = last ? ((typing ? /\.(?:h(?:t(?:ml?)?)?)?$/i : /\.html$/i).exec(part)?.[0] ?? "") : "";
     return toPageAddress(part.slice(0, part.length - suffix.length), { typing }) + suffix.toLowerCase();
   }).join("/");

@@ -131,6 +131,15 @@ test("Page settings URL changes a page's URL: links in pages and the header nav 
   await url.fill("/");
   await expect(url).toHaveAttribute("aria-invalid", "true");
   await expect(message).toHaveText("/ is the home page's URL.");
+  // Parts that convert to nothing leave no move to make.
+  await url.fill("/!!!/");
+  await expect(url).toHaveValue("//");
+  await expect(url).toHaveAttribute("aria-invalid", "true");
+  await expect(message).toHaveText("/ is the home page's URL.");
+  await url.fill("/./x/");
+  await expect(url).toHaveValue("//x/");
+  await expect(url).toHaveAttribute("aria-invalid", "true");
+  await expect(message).toHaveText("Leave no empty part between slashes.");
   await url.fill("/404.html");
   await expect(message).toContainText("/404.html is the page shown for addresses the site does not have.");
   // Escape cancels.

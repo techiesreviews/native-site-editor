@@ -3,6 +3,7 @@ import type { Reads, Stamp, PlanResult, Outcome } from "../guarded-edit";
 import { nativeNewTarget, firstHeadingText, buildNativePagesTree, nativePageLabel, type NativeNewTarget, type NativePageNode } from "../native-pages";
 import { nativePageTemplate, normalizeRoute, routeHeading, type Checked } from "../native-create";
 import { editNavigation, readNavigation } from "../page-builder/site-navigation";
+import { toPageRoute } from "../../shared/site-rules";
 import { parentRoute, routeSlug, routeFolder, isRouteWithin, movedRoute, planPageMove, rewriteRouteLinks, editNativeRedirects } from "../native-page-moves";
 import { isFolderRoute, nativeRouteFile } from "../../shared/native-routes";
 import { NATIVE_REDIRECTS_PATH, nativePageUrl, nativePageWithUrl, nativePageWithDetail, nativePageHead, nativeSiteSettings, NATIVE_CONFIG_PATH, nativeSitePrefix } from "../../shared/native-project";
@@ -208,6 +209,14 @@ export function createPagesController(ports: PagesPorts, state = createPagesStat
       ? `updates ${least}${count} ${count === 1 ? "link" : "links"} in ${change.links.length} ${change.links.length === 1 ? "file" : "files"}`
       : change.complete ? "no links to update" : "no links found in the files read");
     return `${parts.join("; ")}.`;
+  }
+
+  // The URL typed for the page `file` as its field shows it: made to meet the
+  // address rule where the move planner checks it, folders the site has kept.
+  function nativeUrlTyped(file: string, text: string, typing: boolean): string {
+    const files = [...ports.files()];
+    const from = ports.routeForPath(file);
+    return toPageRoute(text, { starts: (start) => files.some((path) => path.startsWith(start)), own: from && routeSlug(from) }, { typing });
   }
 
   function nativeUrlPlan(file: string, value: string): UrlPlan {
@@ -430,7 +439,7 @@ export function createPagesController(ports: PagesPorts, state = createPagesStat
   }
 
   return { retitle: retitleNativePage, duplicate: duplicateNativePage, remove: removeNativePagesTarget,
-    urlPlan: nativeUrlPlan, changeUrl: changeNativeUrl, moveChoices: nativeMoveChoices,
+    urlPlan: nativeUrlPlan, urlTyped: nativeUrlTyped, changeUrl: changeNativeUrl, moveChoices: nativeMoveChoices,
     dropProblem: nativeDropProblem, confirmMove: confirmNativeMove, moveTo: moveNativePageTo,
     linkSources: nativeLinkSources, onBranchHere,
     ...state,

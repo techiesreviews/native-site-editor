@@ -205,7 +205,7 @@ its number unused.
 
 ### F-pages-05 Change URL
 - Try: Choose Change URL from a page's ⋯ and type a new address, such as `/notes/Bad URL/`.
-- Good: The field shows it converted as typed (`/notes/bad-url/`), keeping the parts of the URL now; the page, its subpages and every link to them move; the confirmation names the new URL and offers a redirect from the old one; one Undo (B9, B10).
+- Good: The field shows it converted as typed (`/notes/bad-url/`), keeping folders the site already has, even ones named against the rule; the page, its subpages and every link to them move; the confirmation names the new URL and offers a redirect from the old one; one Undo (B9, B10).
 - Files: `src/components/url-change.ts`, `src/native-page-moves.ts`, `shared/site-rules.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-page-urls.spec.ts`

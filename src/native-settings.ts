@@ -27,6 +27,7 @@ interface SettingsPorts {
   nativePageLabelOf: (path: string) => string;
   setupScope: () => string;
   nativeUrlPlan: (path: string, value: string) => UrlPlan;
+  nativeUrlTyped: (path: string, text: string, typing: boolean) => string;
   changeNativeUrl: (path: string, value: string, keep: boolean, since?: Stamp, baseline?: Map<string, string | undefined>) => Promise<string | undefined>;
   restoreFile: (path: string, epoch: number) => Promise<void>;
   nativeSiteReadForCreate: () => Promise<string | undefined>;
@@ -124,6 +125,7 @@ export function createNativeSettings(ports: SettingsPorts) {
         }, { since }));
       },
       planUrl: (path, value) => stale() || sourcesChanged() ? { ok: false, error: changed } : ports.nativeUrlPlan(path, value),
+      typedUrl: (path, text, typing) => ports.nativeUrlTyped(path, text, typing),
       async applyUrl(path, value, keep) {
         const error = await ports.changeNativeUrl(path, value, keep, since, baseline);
         if (!error) {
