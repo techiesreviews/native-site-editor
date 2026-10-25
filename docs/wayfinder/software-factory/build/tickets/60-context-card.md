@@ -49,3 +49,11 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Commits: 600ef405 (the card, `kit card`, hooks, docs, tests), 041852cf (most specific row on ties, 1 s hook limit, local 14-day window, `kit card` failure RESULT, tests). This round: a heading left without items by the 30-line cut is dropped, the user-level hook gets the same 1 s limit and silence, and tests cover the 1 s limit, a read error giving the no-notes line (plain and through the hook) and a symlinked working folder.
 - 313ed4f7 dropped a heading left empty by the 30-line cut. This round: a folder inside a workspace counts only up to its own repository, so an unmapped repo under a catch-all row (`~/Projects`, `/home/ubulex`) prints the no-notes line; the empty-heading rule uses the headings' positions, so a content line ending in `:` stays; `--cwd` without a folder or an unknown argument exits 2 with a usage line. Tests cover the unmapped repo under a catch-all row, a folder inside a mapped repo, the colon line at the cut, and the documented user-level hook command run with `bash -c` (silent in a repo with its own copy, the card elsewhere).
 - Real `kit card` in this worktree printed the native-site-editor card (14 lines, updated 2026-10-22, corrections 10, repeated 2).
+
+### Follow-ups
+
+- Spec (P2): 06f9196a:scripts/agents/context-card.mjs:237 — P2: The round-3 repository bound stops a git worktree nested inside the workspace from matching. `.gitignore:14` 
+- Spec (P3): 06f9196a:docs/wayfinder/software-factory/build/tickets/60-context-card.md:49 — P3: The Done section does not match the runner's Done rule (docs/agents/runner.md
+- Validation gaps (gap): No test covers a nested in-repo worktree (`.claude/worktrees/<name>` with a `.git` file) in `tests/kit-card.test.ts`. Add the case described in the first Spec d
+- Validation gaps (gap): Done-when item 2 asks for the real `kit card` output to be pasted. The ticket only summarises it at line 51 ("14 lines, updated 2026-10-22, corrections 10, repe
+
