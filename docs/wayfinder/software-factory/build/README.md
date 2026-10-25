@@ -118,3 +118,10 @@ The frontier decides; this is one order that keeps to the rules (at most 5 at on
 ## Lex decisions (2026-10-22)
 
 Lex accepted all six lead decisions above ("yes to all"): scoreboard details stay local with a committed snapshot per build and a committed feedback log; correction kinds reuse the chat project's names; user-like checks follow scripted steps and the model only judges; chat learning on even ISO weeks; the context card's settings change waits for his yes when built; kit defaults switch to Claude. **Slices 10–13 start now**, beside the clean-up build, on the free OpenCode worker.
+
+## Follow-ups seen at the end of the build
+
+- 2026-10-25, first real `kit ux` (bundle `.scratch/ux/lead-ux/20261025-164328-5ir5NZ`): the reviewer marks a feature **fine** when nothing was tried for it ("fine — not shown"); an untried feature should read **not tried**, never fine. F-canvas-01, F-agent-05 and F-repo-08 have no named screen to try; F-agent-02's steps never reach a connected agent, so Disconnect MCP is never shown. Add those tries (an agent-connected fixture for F-agent-02 and F-agent-05).
+- `kit ux` run from the dev or main checkout fails its reviewer at `kit doctor` ("place"); say so up front, or run the reviewer from a temporary worktree. Committing in the same checkout during a run skips the scoreboard ("HEAD moved").
+- `kit pr` reuses an earlier review when only docs changed, and leaves a ticket open when the builder kept it open; `kit fix` writes follow-ups cut off at a fixed length and refuses a fix in which the builder rebased (seen on clean-up 86, 88, 89).
+- A CI-only flake: `tests/kit-fix.test.ts` "kit fix refuses a HEAD change while its builder is held" failed once under "Kit tests leave no trace" (PR #184); 3/3 locally.
