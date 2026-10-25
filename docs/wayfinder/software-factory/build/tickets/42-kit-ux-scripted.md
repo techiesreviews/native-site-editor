@@ -82,3 +82,16 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
     - the screen list matching `kit shots`;
     - `parseArgs` error messages.
 
+### Follow-ups
+
+- Spec (P2): cd895f4e:scripts/agents/shots/features/F-structure-03.json:1 — P2 ticket: the ticket asks for this try because drag-at-edges bugs don't show in still screenshot
+- Spec (P2): cd895f4e:scripts/agents/kit.d/ux:426 — P2 fault: images rank as failed try 0, any `record` strip 1, first contact sheet 2. Each `record` step makes one strip pe
+- Spec (P3): cd895f4e:scripts/agents/kit.d/ux:379 — P3 fault: the shared screens run adds 390 px when any untried feature is `Phone: yes`. Screens that only `Phone: no` feat
+- Validation gaps (gap): Fix round 3 says "`record` without a recorder fails instead of dropping its frames", but no test shows it. Add to `tests/kit-shots.test.ts`: `await assert.rejec
+- Validation gaps (gap): Fix round 3 says a signal that arrives after the last try, or that kills a git step, still ends in `fail ux interrupted by <signal>`. Nothing tests either case.
+- Validation gaps (gap): Fix round 3 also claims non-ASCII paths stay unquoted and the diff summary stays plain under colour settings; neither is tested. Add `fixture(t, [["color.ui", "
+- Validation gaps (gap): The steps files are only shown passing at 1280 light (Done notes), but `kit ux` runs them at 390 and 1280, light and dark. Add evidence, or a test or run, of `k
+- Validation gaps (gap): `frameStrip` staying ≤300 KB is only tested on a 600×400 page. Add a case with 8 frames from a noisy 1280×800 page (random-colour canvas) and assert `strip.leng
+- Validation gaps (gap): The 12-image cap is only unit-tested through `pickImages`. Add a CLI run whose fake `kit shots` writes 14 or more strips and contact sheets. Assert the bundle f
+- Validation gaps (gap): `--ticket` override and an unreadable ticket are untested in the CLI. Add `run(["--features", "F-media-02", "--ticket", "docs/missing.md"])`: assert the stderr 
+
