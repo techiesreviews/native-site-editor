@@ -55,7 +55,7 @@ function parsedSource(html: string) {
   parsed.tags.forEach(Object.freeze);
   if (html.length <= MAX_CACHED_SOURCE_BYTES && new TextEncoder().encode(html).length <= MAX_CACHED_SOURCE_BYTES) {
     parsedSources.set(html, parsed);
-    if (parsedSources.size > 2) parsedSources.delete(parsedSources.keys().next().value!);
+    if (parsedSources.size > 8) parsedSources.delete(parsedSources.keys().next().value!);
   }
   return parsed;
 }

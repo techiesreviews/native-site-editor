@@ -318,19 +318,33 @@ export function createComponentTools(deps: ComponentDeps) {
 
   // ---- Finding the instance. ----
 
+  // Every Structure row, the bar and the menus ask after each change, over the same bytes (ticket 38):
+  // an instance read once per site, page and template source.
+  const instances = new Map<string, { site: ReturnType<typeof site>; source: string; found: Omit<Located, "within"> | undefined }>();
   /** The instance written at `node` in `path`, read from the current source. */
   function instanceAt(path: string, nodePath: number[], within?: string): Located | undefined {
-    const source = deps.sources()[path];
+    const sources = deps.sources(), source = sources[path];
     if (source === undefined || !nodePath.length) return undefined;
+    const key = `${path}\n${nodePath.join()}`, known = instances.get(key);
+    let found = known && known.site === site() && known.source === source && (!known.found || (sources[known.found.templatePath] ?? "") === known.found.template)
+      ? known.found : readInstanceAt(path, source, nodePath);
+    if (found !== known?.found) {
+      if (instances.size > 2000) instances.clear();
+      instances.set(key, { site: site(), source, found });
+    }
+    if (!found) return undefined;
+    found = { ...found, node: [...nodePath] };
+    return within !== undefined ? { ...found, within } : found;
+  }
+  function readInstanceAt(path: string, source: string, nodePath: number[]): Omit<Located, "within"> | undefined {
     const range = locateNativeElementRange(source, nodePath);
     if (!range?.close || !isComponent(range.tag.name)) return undefined;
     const template = templateOf(range.tag.name)!;
     const instance = readInstance(source, range);
     return {
-      path, source, node: nodePath, range, tag: range.tag.name,
+      path, source, node: [...nodePath], range, tag: range.tag.name,
       templatePath: template.path, template: template.source,
       instance, slots: templateSlots(template.source), states: slotStates(template.source, instance),
-      ...(within !== undefined ? { within } : {}),
     };
   }
 
@@ -540,9 +554,11 @@ export function createComponentTools(deps: ComponentDeps) {
 
   function slotMenu(target: ElementMenuTarget): MenuItem[] {
     const moded = mode.now();
+    // Outside Edit component mode (every Structure row of a page) there is nothing to read.
+    if (!moded || target.path !== moded.template) return [];
     const source = deps.sources()[target.path], stamp = deps.edits.stamp();
     // The node path must have been read against the template's current bytes.
-    if (!moded || target.path !== moded.template || !target.node?.length || source === undefined || target.paintedSource !== source) return [];
+    if (!target.node?.length || source === undefined || target.paintedSource !== source) return [];
     const state = templateChip(target.node);
     return slotMenuItems(state).map(label => ({ label, run: () => {
       // The mode's opening, the repository and the page shown are the menu's (the stamp), and so are the template's bytes.
@@ -1851,6 +1867,7 @@ export function createComponentTools(deps: ComponentDeps) {
     const stamp = deps.edits.stamp();
     const hostProof = editor.captureHistoryHost(path);
     if (!hostProof) return;
+    let images: ReturnType<typeof componentImageChoices> | undefined, links: ReturnType<typeof deps.links> | undefined;
     const read = (expectedSource = initial.source, proof?: { isCurrent(): boolean }, staleMessage = "The instance changed; reopen its field before editing.") => {
       const at = instanceAt(path, [...initial.node]);
       if (!at || !hostProof.isCurrent() || proof && !proof.isCurrent() || !stamp.holds() || deps.editor() !== editor || !editable(path)
@@ -1936,8 +1953,9 @@ export function createComponentTools(deps: ComponentDeps) {
         if (!at || !attributeSourceSafe(at) || at.instance.attributes.filter(item => item.name === name).length !== 1) return false;
         return change(path, [attributeEdit(at.source, at.range.tag, name, undefined)], `${name} removed`, at.node);
       },
-      images: componentImageChoices(deps.images(), deps.prefix()),
-      links: deps.links(),
+      // Read when a field asks, not for every Structure row (ticket 38).
+      get images() { return images ??= componentImageChoices(deps.images(), deps.prefix()); },
+      get links() { return links ??= deps.links(); },
       openImageChoice(name) {
         const at = read(), slot = at?.slots.find(item => item.name === name);
         if (!at || !slot || slotValue(at.source, at.template, at.instance, slot).kind !== "image") return;

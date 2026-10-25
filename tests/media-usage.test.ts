@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mediaUsageFor, mediaUsageRecords, mediaUsageState } from "../src/page-builder/media-usage";
+import { mediaUsageCache, mediaUsageFor, mediaUsageRecords, mediaUsageState } from "../src/page-builder/media-usage";
 import { mediaResolvePath, mediaUsageIndex } from "../src/page-builder/media-references";
 
 test("distinct pages count repeated mentions and responsive members once, in input order", () => {
@@ -249,4 +249,33 @@ test("folder checks preserve media ownership rules including empty origins", () 
     assert.deepEqual(mediaUsageFor(records, "media/a.webp").otherUses, [{ file: "inside.md", kind: "notes" }]);
   }
   assert.equal(mediaResolvePath("https://user.github.io/my-site/media/a.webp", "index.html", undefined, "/my-site"), undefined);
+});
+
+test("a kept check reads again only the files whose text changed, and finds what a fresh check finds (ticket 38)", () => {
+  const input = (index: string, site = { origins: ["https://example.com"], prefix: "" }) => ({
+    media: ["images/a.jpg", "images/b.jpg", "images/c photo.jpg"],
+    sources: {
+      "index.html": index,
+      "about.html": '<link rel="stylesheet" href="/styles/site.css"><card-x></card-x><p>See https://example.com/images/c%20photo.jpg</p>',
+      "components/card-x/card-x.html": '<img src="/images/b.jpg" alt="">',
+      "styles/site.css": ".hero{background:url(/images/a.jpg)}",
+      "notes.md": "images/b.jpg",
+    },
+    pages: ["index.html", "about.html"],
+    components: { "card-x": "components/card-x/card-x.html" },
+    site,
+  });
+  const cache = mediaUsageCache();
+  const first = '<img src="/images/a.jpg" alt="A">';
+  assert.deepEqual(mediaUsageRecords({ ...input(first), cache }), mediaUsageRecords(input(first)));
+  const kept = new Map([...cache.references].map(([file, entry]) => [file, entry.refs]));
+  const keptMentions = new Map([...cache.mentions].map(([file, entry]) => [file, entry.uses]));
+  const changed = '<img src="/images/b.jpg" alt="B"> <card-x></card-x>';
+  assert.deepEqual(mediaUsageRecords({ ...input(changed), cache }), mediaUsageRecords(input(changed)));
+  for (const [file, refs] of kept) assert.equal(cache.references.get(file)!.refs === refs, file !== "index.html", file);
+  for (const [file, uses] of keptMentions) assert.equal(cache.mentions.get(file)!.uses === uses, file !== "index.html", file);
+  // Another site address reads every file again.
+  const moved = { origins: ["https://example.org"], prefix: "/site" };
+  assert.deepEqual(mediaUsageRecords({ ...input(changed, moved), cache }), mediaUsageRecords(input(changed, moved)));
+  for (const [file, refs] of kept) assert.notEqual(cache.references.get(file)!.refs, refs, file);
 });

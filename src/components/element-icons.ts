@@ -38,12 +38,19 @@ const byTag: Record<string, string> = {
   slot: brackets,
 };
 
+const parsedIcons = new Map<string, SVGSVGElement>();
 /** The icon for an element's tag (a heading's for h1–h6, code brackets for anything unnamed), hidden from assistive technology. */
 export function elementIcon(tag: string, size = 14) {
   const raw = /^h[1-6]$/.test(tag) ? textH : byTag[tag] ?? code;
-  const template = document.createElement("template");
-  template.innerHTML = raw.replace("<svg ", `<svg class="icon element-icon" width="${size}" height="${size}" aria-hidden="true" focusable="false" `);
-  return template.content.firstElementChild as SVGSVGElement;
+  // Parsed once each: every Structure row draws its icon again after a change (ticket 38).
+  const key = `${raw} ${size}`;
+  let parsed = parsedIcons.get(key);
+  if (!parsed) {
+    const template = document.createElement("template");
+    template.innerHTML = raw.replace("<svg ", `<svg class="icon element-icon" width="${size}" height="${size}" aria-hidden="true" focusable="false" `);
+    parsedIcons.set(key, parsed = template.content.firstElementChild as SVGSVGElement);
+  }
+  return parsed.cloneNode(true) as SVGSVGElement;
 }
 
 /** The same icon and size in Structure rows and the floating drag label. */

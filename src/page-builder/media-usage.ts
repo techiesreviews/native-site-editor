@@ -1,4 +1,4 @@
-import { isMediaTextFile, mediaMentions, type MediaSite } from "./media-mentions";
+import { isMediaTextFile, mediaMentions, type MediaMentionsCache, type MediaSite } from "./media-mentions";
 import { mediaFamilies, familyMembers } from "./media-families";
 import { scanMediaReferences, walkMediaReferencePages } from "./media-references";
 import type { MediaReference } from "./media-references";
@@ -16,6 +16,10 @@ export interface MediaUsageRecords {
   families: MediaUsageRecord[];
 }
 
+/** What a check read from each file, kept for the next check while the file's text is the same (ticket 38). */
+export interface MediaUsageCache { references: Map<string, { source: string; site: string; refs: MediaReference[] }>; mentions: MediaMentionsCache }
+export const mediaUsageCache = (): MediaUsageCache => ({ references: new Map(), mentions: new Map() });
+
 export function mediaUsageRecords(input: {
   media: string[];
   files?: string[];
@@ -23,6 +27,7 @@ export function mediaUsageRecords(input: {
   sources: Record<string, string | undefined>;
   pages: string[];
   components?: Record<string, string>;
+  cache?: MediaUsageCache;
 }): MediaUsageRecords {
   // A page or component template the scan never read is as incomplete as one that failed to read.
   const required = [...input.pages, ...Object.values(input.components ?? {})];
@@ -51,8 +56,11 @@ export function mediaUsageRecords(input: {
   const components = input.components ?? {};
   const templates = new Set(Object.values(components));
   const references = new Map<string, MediaReference[]>();
+  const siteKey = `${input.site?.prefix ?? ""}\n${input.site?.origins.join(" ") ?? ""}`;
   for (const [file, source] of Object.entries(sources)) {
-    const refs = scanMediaReferences(file, source ?? "", input.site);
+    const known = input.cache?.references.get(file), text = source ?? "";
+    const refs = known?.source === text && known.site === siteKey ? known.refs : scanMediaReferences(file, text, input.site);
+    if (input.cache && refs !== known?.refs) input.cache.references.set(file, { source: text, site: siteKey, refs });
     references.set(file, refs.filter(ref => ref.attribute !== "content"));
     for (const ref of refs) {
       const family = byMember.get(ref.path);
@@ -68,7 +76,7 @@ export function mediaUsageRecords(input: {
     const family = byMember.get(ref.path);
     if (family && !family.pages.includes(page)) family.pages.push(page);
   }, input.site?.prefix ?? "");
-  for (const [path, uses] of mediaMentions({ media: input.media, sources: input.sources, site: input.site })) {
+  for (const [path, uses] of mediaMentions({ media: input.media, sources: input.sources, site: input.site, cache: input.cache?.mentions })) {
     const family = byMember.get(path);
     if (!family) continue;
     for (const use of uses) {

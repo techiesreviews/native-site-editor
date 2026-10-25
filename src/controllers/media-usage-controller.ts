@@ -1,6 +1,6 @@
 import { sitePathPrefix } from "../../shared/site-path-prefix";
 import { isMediaFile, isMediaTextFile, mediaOwnOrigins } from "../page-builder/media-mentions";
-import { mediaUsageRecords, type MediaUsageRecords } from "../page-builder/media-usage";
+import { mediaUsageCache, mediaUsageRecords, type MediaUsageRecords } from "../page-builder/media-usage";
 
 export interface MediaUsageCheckPorts {
   key(): string;
@@ -21,6 +21,8 @@ export function createMediaUsageController(ports: MediaUsageCheckPorts) {
   let checks = 0, scheduled = false, disposed = false;
   let records: MediaUsageRecords | undefined;
   let lastKey = "";
+  // Each file is read again only once its text changed: an edit rescans its own page, not the site.
+  let cache = mediaUsageCache();
   const listeners = new Set<(records: MediaUsageRecords | undefined) => void>();
   const publish = (value: MediaUsageRecords | undefined) => {
     records = value; ports.changed(value);
@@ -31,7 +33,7 @@ export function createMediaUsageController(ports: MediaUsageCheckPorts) {
     const live = () => !disposed && started === checks && key === ports.key();
     if (!key) { publish(undefined); return; }
     // Old records stay on show while the same site is checked again; another site starts empty.
-    if (key !== lastKey) { lastKey = key; if (records) publish(undefined); }
+    if (key !== lastKey) { lastKey = key; cache = mediaUsageCache(); if (records) publish(undefined); }
     try { await ports.settled(); } catch { if (live()) publish(undefined); return; }
     if (!live()) return;
     const files = ports.files(), text = files.filter(isMediaTextFile);
@@ -43,7 +45,7 @@ export function createMediaUsageController(ports: MediaUsageCheckPorts) {
       if (source !== undefined) sources[file] = source;
     }
     const emit = () => publish(mediaUsageRecords({ media: ports.media?.() ?? files.filter(isMediaFile), files: text, sources,
-      pages: ports.pages(), components: ports.components(), site: { prefix: sitePathPrefix(ports.url()), origins: mediaOwnOrigins(ports.url(), sources.CNAME) } }));
+      pages: ports.pages(), components: ports.components(), cache, site: { prefix: sitePathPrefix(ports.url()), origins: mediaOwnOrigins(ports.url(), sources.CNAME) } }));
     emit();
     const pending = text.filter(file => !Object.hasOwn(sources, file));
     for (let index = 0; index < pending.length; index += 12) {

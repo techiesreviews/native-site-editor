@@ -42,11 +42,13 @@ export function createMediaCleanUpController(ports: MediaCleanUpPorts) {
   const known = new Map<string, { width?: number; height?: number }>();
   /** Widths this controller read, by the bytes they were read from: each check reads only new bytes. */
   const readSizes = new Map<string, { version: string; size: { width?: number; height?: number } }>();
+  /** Each file's parse and scans for the count, read again only once its text changed. */
+  let planCache: import("../page-builder/improve-images").ImprovePlanCache | undefined;
   /** Read the same missing facts as the screen, after Clean up has published. */
   async function improveRows(records: MediaRecords | null, holds: () => boolean): Promise<string[] | undefined> {
     const pages = ports.pages?.(), components = ports.components?.();
     if (!pages || !components || !records) return undefined;
-    const [{ improveImagesPlan }, { isMediaFile, isMediaTextFile }, { mediaOwnOrigins }, { planWithPictureSizes }, { decodeImage }] = await Promise.all([
+    const [{ improveImagesPlan, improvePlanCache }, { isMediaFile, isMediaTextFile }, { mediaOwnOrigins }, { planWithPictureSizes }, { decodeImage }] = await Promise.all([
       import("../page-builder/improve-images"), import("../page-builder/media-mentions"), import("../page-builder/media-origins"), import("../page-builder/improve-images-facts"), import("../page-builder/media-byte-cache")]);
     const files = ports.files(), sources: Record<string, string | undefined> = {};
     for (const path of files) if (isMediaTextFile(path)) sources[path] = ports.source(path);
@@ -58,7 +60,8 @@ export function createMediaCleanUpController(ports: MediaCleanUpPorts) {
     })) : Object.fromEntries(known);
     const plan = await planWithPictureSizes({ plan: async widths => {
       const facts = Object.fromEntries(files.filter(isMediaFile).map(path => [path, { size: ports.size?.(path), ...ports.blob ? {} : { width: 0 }, ...widths[path] }]));
-      return improveImagesPlan({ sources, pages, components, files: facts, records, site: { prefix: sitePathPrefix(ports.url?.()), origins: mediaOwnOrigins(ports.url?.()) } });
+      planCache ??= improvePlanCache();
+      return improveImagesPlan({ sources, pages, components, files: facts, records, cache: planCache, site: { prefix: sitePathPrefix(ports.url?.()), origins: mediaOwnOrigins(ports.url?.()) } });
     } }, sizes, async path => {
       if (!ports.blob) return {};
       const version = ports.version?.(path), blob = await ports.blob(path), url = URL.createObjectURL(blob);
@@ -82,7 +85,7 @@ export function createMediaCleanUpController(ports: MediaCleanUpPorts) {
   async function update(usage: MediaUsageRecords | undefined) {
     if (disposed) return;
     const request = ++epoch, place = ports.place();
-    if (place !== current.place) { known.clear(); readSizes.clear(); }
+    if (place !== current.place) { known.clear(); readSizes.clear(); planCache = undefined; }
     const read = usage && await records();
     const suggestions = usage ? mediaCleanUpSuggestions({ usage, records: read ?? null }) : notChecked();
     if (disposed || request !== epoch || place !== ports.place()) return;

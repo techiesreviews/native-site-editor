@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
-import { improveImagesPlan, IMPROVE_HEAVY_BYTES, leavePictureAlone, pictureLeftAlone } from "../src/page-builder/improve-images";
+import { improveImagesPlan, improvePlanCache, IMPROVE_HEAVY_BYTES, leavePictureAlone, pictureLeftAlone } from "../src/page-builder/improve-images";
 import { parseMediaRecords } from "../shared/media-records";
 import { gifLoopingVideo } from "../src/page-builder/looping-video";
 import { descendants, parseSource } from "../src/page-builder/source-tree";
@@ -276,4 +276,14 @@ test("sub-folder Improve images resolves local pictures and keeps route labels u
   assert.equal(plan.rows[0].label, "/about/");
   assert.equal(plan.rows[0].pictures[0].path, "media/a.webp");
   assert.ok(plan.rows[0].pictures[0].changes.includes("lighten"));
+});
+
+test("a kept plan cache finds what a fresh plan finds after a page changes, and rereads only that page (ticket 38)", () => {
+  const input = fixture(), cache = improvePlanCache();
+  assert.deepEqual(improveImagesPlan({ ...input, cache }), improveImagesPlan(input));
+  const kept = new Map([...cache].map(([key, entry]) => [key, entry.value]));
+  const changed = { ...input, sources: { ...input.sources, "index.html": input.sources["index.html"]!.replace("</site-shell>", '<img src="/images/new.png"></site-shell>') } };
+  assert.notEqual(changed.sources["index.html"], input.sources["index.html"]);
+  assert.deepEqual(improveImagesPlan({ ...changed, cache }), improveImagesPlan(changed));
+  for (const [key, value] of kept) assert.equal(cache.get(key)!.value === value, !key.endsWith(":index.html"), key);
 });
