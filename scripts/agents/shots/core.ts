@@ -109,6 +109,11 @@ export function nextEncoding(current: Encoding): Encoding | null {
 }
 
 export type Shot = { screen: Screen; name?: string; width: number; height?: number; theme: Theme; files: { path: string; bytes: number }[]; attempts: number; failures: { attempt: number; step: string; error: string }[]; layout: unknown[]; ok: boolean };
+/** A failed attempt keeps the strips its `record` steps already saved: flicker before a failure is evidence. */
+export function failShot(shot: Shot, failure: Shot["failures"][number], strips: Shot["files"]) {
+  shot.failures.push(failure);
+  shot.files = [...strips];
+}
 export function makeIndex(shots: Shot[]) {
   return { version: 1, screens: shots, files: shots.flatMap(shot => shot.files), failures: shots.flatMap(shot => shot.failures.map(failure => ({ screen: shot.screen, name: shot.name, width: shot.width, theme: shot.theme, ...failure }))), outputFailures: [] as { step: string; error: string }[], layoutFindings: shots.flatMap(shot => shot.layout.map(finding => ({ screen: shot.screen, width: shot.width, theme: shot.theme, finding }))) };
 }

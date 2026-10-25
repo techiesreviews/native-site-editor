@@ -35,14 +35,15 @@ export async function runStep(page: Page, source: string, record?: Recorder) {
     }
     case "wait": await expect(page.getByText(step.text, { exact: true }).first()).toBeVisible(); return;
     case "drag": {
-      // Rows and plain text can be dragged as well as named controls.
-      const draggable = (name: string) => named(name).or(page.getByRole("treeitem", { name, exact: true })).or(page.getByText(name, { exact: true })).first();
-      const from = await point(draggable(step.name), step.name);
-      const to = await point(draggable(step.target), step.target, step.edge);
+      // Rows and plain text can be dragged as well as named controls; hidden matches never count.
+      const draggable = (name: string) => named(name).or(page.getByRole("treeitem", { name, exact: true })).or(page.getByText(name, { exact: true })).filter({ visible: true }).first();
+      // Read each box just before the pointer uses it: scrolling to the target may move the source.
+      const from = await point(page, draggable(step.name), step.name);
       await page.mouse.move(from.x, from.y);
       await page.mouse.down();
       // Small moves first so drag thresholds start the drag before the pointer travels.
       await page.mouse.move(from.x + 4, from.y + 4, { steps: 2 });
+      const to = await point(page, draggable(step.target), step.target, step.edge);
       await page.mouse.move(to.x, to.y, { steps: 12 });
       await page.mouse.up();
       return;
@@ -52,6 +53,7 @@ export async function runStep(page: Page, source: string, record?: Recorder) {
       const start = Date.now();
       for (let frame = 0; frame < stripFrames; frame++) {
         const wait = start + frame * step.ms / (stripFrames - 1) - Date.now();
+        // A deliberate fixed wait: frames are spaced evenly over the requested time.
         if (wait > 0) await page.waitForTimeout(wait);
         frames.push(await page.screenshot({ animations: "allow", scale: "css" }));
       }
@@ -59,24 +61,27 @@ export async function runStep(page: Page, source: string, record?: Recorder) {
       return;
     }
     case "expect":
-      try { await expect(page.getByText(step.text).or(page.getByRole("button", { name: step.text })).first()).toBeVisible({ timeout: expectTimeout }); }
+      try { await expect(page.getByText(step.text).or(page.getByRole("button", { name: step.text })).filter({ visible: true }).first()).toBeVisible({ timeout: expectTimeout }); }
       catch { throw new Error(`expect visible "${step.text}" failed: nothing visible says "${step.text}"`); }
   }
 }
 
-/** A point 3 px inside the named edge, or the centre. */
-async function point(target: Locator, name: string, edge?: Edge) {
+/** Scroll the target into view and return a point 3 px inside the named edge, or the centre. */
+async function point(page: Page, target: Locator, name: string, edge?: Edge) {
   try { await target.scrollIntoViewIfNeeded({ timeout: expectTimeout }); }
   catch { throw new Error(`drag failed: nothing visible named "${name}"`); }
   const box = await target.boundingBox();
   if (!box) throw new Error(`drag failed: "${name}" has no box`);
   const x = box.x + box.width / 2, y = box.y + box.height / 2;
   const inset = (size: number) => Math.min(3, size / 4);
-  if (edge === "top") return { x, y: box.y + inset(box.height) };
-  if (edge === "bottom") return { x, y: box.y + box.height - inset(box.height) };
-  if (edge === "left") return { x: box.x + inset(box.width), y };
-  if (edge === "right") return { x: box.x + box.width - inset(box.width), y };
-  return { x, y };
+  const spot = edge === "top" ? { x, y: box.y + inset(box.height) }
+    : edge === "bottom" ? { x, y: box.y + box.height - inset(box.height) }
+    : edge === "left" ? { x: box.x + inset(box.width), y }
+    : edge === "right" ? { x: box.x + box.width - inset(box.width), y }
+    : { x, y };
+  const viewport = page.viewportSize();
+  if (viewport && (spot.x < 0 || spot.y < 0 || spot.x >= viewport.width || spot.y >= viewport.height)) throw new Error(`drag failed: "${name}" is outside the window`);
+  return spot;
 }
 
 /** Lay recorded frames out four to a row, numbered, as one WebP of at most 300 KB. */

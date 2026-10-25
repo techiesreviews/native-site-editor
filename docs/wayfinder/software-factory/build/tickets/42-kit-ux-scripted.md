@@ -50,4 +50,12 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Tests: `tests/kit-ux.test.ts` covers feature matching, flags, text and class findings on a fixture diff, CSS counts, bundle and image limits with trims, the ticket guess, and CLI runs on a fake `kit shots`. `tests/kit-shots.test.ts` covers the new grammar, a Chromium drag to each edge, a flickering page giving differing frames and a WebP strip, a missing element's failure line, refusal outside `.scratch/` and the features folder, and acceptance from the features folder.
 - Real run on this branch: `scripts/agents/kit ux --features F-media-02,F-media-10` printed `RESULT: ok ux 2 features tried, 0 scripted findings, bundle /home/ubulex/Projects/native-site-editor/.scratch/ux/sf-42/20261025-120006`. The bundle is 312,438 bytes in total: `bundle.md` is 3,222 bytes, plus 6 images (2 contact sheets and 4 `record` strips).
 - Checks: `kit unit --affected` gave `RESULT: ok unit 38/38 (3 files)`, `kit unit tests/features-list.test.ts` gave 9/9, and `kit specs --affected` gave `RESULT: ok specs none affected`. `npm run check` and `npm run lint` are clean.
-
+- Fix round 1:
+  - A screens run that exits non-zero but names no failing screen now breaks every feature in it.
+  - A signal stops `kit ux` with `RESULT: fail ux interrupted by <signal>`, and no further try starts.
+  - A failed attempt keeps its `record` strips in `index.json`.
+  - A drag presses on the source first, then scrolls to the target and reads its box just before moving there; both points must be inside the window.
+  - `expect visible` and drag names match only visible elements.
+  - Raw CSS findings always name a line, including values on a continuation line.
+  - New tests cover each fix.
+  - A rerun of `kit ux --features F-media-02,F-structure-03` printed `RESULT: ok ux 2 features tried, 0 scripted findings, bundle …/20261025-120827`; `bundle.md` was 3,831 bytes, plus 8 images.
