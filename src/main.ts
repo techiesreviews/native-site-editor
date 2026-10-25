@@ -1,12 +1,9 @@
-import { rootRoute, siteAddress } from "../shared/site-path-prefix";
-import { MEDIA_RECORDS_PATH } from "../shared/media-records-path";
-import { mediaOwnOrigins } from "./page-builder/media-origins";
+import { rootRoute } from "../shared/site-path-prefix";
 import { refuse } from "./components/refusal-note";
 import "./components/refusal-note.css";
-import { createMediaController, type MediaPin } from "./controllers/media-controller";
-import { pinMedia } from "./controllers/media-pin";
+import { createMediaHost } from "./controllers/media-host";
 import { createBootController } from "./controllers/boot-controller";
-import { batch, effect } from "@preact/signals-core";
+import { batch } from "@preact/signals-core";
 import { createAppStore } from "./app-store";
 import { handleChunkLoadFailure, hasEditableRecoveryState, installChunkRecovery } from "./chunk-recovery";
 import "./utilities.css";
@@ -23,8 +20,8 @@ import { createRepositoryList } from "./repository-list";
 import { createAgentController } from "./controllers/agent-controller";
 import { createVersionView } from "./version-view";
 import type { SharedContext } from "./agent-site";
-import { draftStore, type DraftScope, type SavedDraft } from "./drafts";
-import { nativeShownFiles, withSiteIndexed } from "./native-boot";
+import { draftStore, type SavedDraft } from "./drafts";
+import { withSiteIndexed } from "./native-boot";
 import { draftKey } from "./drafts";
 import { createNativePreview, routeStylesheets } from "./components/native-preview";
 import { createPageStructure } from "./components/page-structure";
@@ -34,15 +31,14 @@ import "./components/files-tree.css";
 import { createWorkspaceBoot } from "./workspace-boot";
 import { createWorkspaceMount } from "./workspace-mount";
 
-import { formatBytes, uploadBytes, uploadDataUrl, uploadKey } from "./uploads";
+import { formatBytes, uploadBytes, uploadDataUrl } from "./uploads";
 import { isImagePath } from "./native-structure";
 import * as sourceEditor from "./components/source-editor";
 import { createMediaHistoryHome } from "./page-builder/media-history-home";
-import type { MediaWorkspaceBatch } from "./page-builder/media-workspace";
 import { expandStyleImports } from "../shared/css-imports";
 import { workingPart } from "./working-part";
 
-import { NATIVE_CONFIG_PATH, nativeDefaultRoute, nativePageHead, nativePageStylesheets, nativeSiteSettings, type NativeSite, nativeSitePrefix } from "../shared/native-project";
+import { NATIVE_CONFIG_PATH, nativeDefaultRoute, nativePageHead, nativePageStylesheets, type NativeSite } from "../shared/native-project";
 import { createGitHubReads } from "./github-reads";
 import { RepositoryIndex } from "./repository-loading";
 import { CleanSourceCache } from "./clean-source-cache";
@@ -55,7 +51,7 @@ import { createPagesAndFilesHost } from "./pages-and-files-host";
 import { createPageBuilderHost } from "./page-builder-host";
 import { createSiteLoading } from "./site-loading";
 import { createSiteTextIndex, isNativeTextFile } from "./site-text-index";
-import { createGuardedEdits, type Stamp } from "./guarded-edit";
+import { createGuardedEdits } from "./guarded-edit";
 import { createParkedSteps, parkedTransitions } from "./guarded-edit/parked";
 import { createEditorWorkspace } from "./editor-workspace";
 import { createFinishedElsewhere, openLink } from "./finished-elsewhere";
@@ -282,7 +278,7 @@ const parkedSteps = createParkedSteps({ transitions: step => parkedTransitions(e
 const pageBuilder = createPageBuilderHost({
   app, appStore, runtime, workspaceSession, editorModule, guardedEdits, element, lazyModule, loadSiteSettings, errorMessage, announce,
   currentLoad, draftScope, stampOf, nativeRouteInfo, nativeRouteForPath, nativeComponentTagForPath,
-  nativePageStyles, nativeImagePaths, ensureNativeTextIndex, wantNativeTextIndex, showNativeWarnings, updateCurrentPageLabel,
+  nativePageStyles, nativeImagePaths: (...args) => nativeImagePaths(...args), ensureNativeTextIndex, wantNativeTextIndex, showNativeWarnings, updateCurrentPageLabel,
   updateNativePreviewSources, updateAgentContext,
   get workspace() { return workspace; }, get codePanes() { return codePanes; }, get nativeHistoryShares() { return nativeHistoryShares; },
   get nativePreview() { return nativePreview; },
@@ -432,197 +428,17 @@ function updateNativePreviewAssets() {
   nativePreview.setAssets(Object.fromEntries(runtime.state.assets));
 }
 
-// Images an image's Address suggests: the branch's and the drafted ones, not deleted ones.
-function nativeImagePaths() {
-  const scope = draftScope();
-  const drafts = scope ? draftStore().list(scope) : [];
-  const gone = new Set(drafts.filter((draft) => draft.deleted).map((draft) => draft.path));
-  return [...new Set([
-    ...(appStore.snapshot.value?.tree ?? []).filter((entry) => entry.type === "blob" && isImagePath(entry.path)).map((entry) => entry.path),
-    ...runtime.newDraftPaths({ kind: isImagePath }, scope),
-  ])].filter((path) => !gone.has(path)).sort();
-}
-
-// Files from the computer as new-file drafts in `folder` (src/uploads.ts), never over something
-// that is there, with the shared adding progress at the foot of Files; resolves to the paths added.
-// They land in the drop's repository and branch even once another is shown (ticket 23).
-async function uploadFilesTo(folder: string, files: File[]): Promise<string[]> {
-  const pin = mediaPorts.pin?.();
-  if (!pin || !files.length) return [];
-  try {
-    const { addFilesTo } = await import("./page-builder/media-files-adding");
-    return await addFilesTo(element("explorer-files"), folder, files, { error: errorMessage,
-      // Finished on a workspace not shown, nothing is said: the menu counts it there (ticket 27, Lex: no toasts).
-      announce: text => { if (pin.here()) announce(text); }, context: () => mediaController.workspaceContext(undefined, pin),
-      // Pictures not added yet go to Media's Optimise sheet, still bound for this folder (on show only).
-      review: element("explorer-tabs").hidden ? undefined : (images, into, reasons) => {
-        if (!pin.here()) return;
-        workspace.explorerDropdown?.open(); pagesController.selectTab("media");
-        void mediaController.reviewInGallery(images, into, reasons).catch(errorMessage);
-      } }).then((paths) => { if (!pin.here()) finishedWork.add(pin.scope, "added", { count: paths.length }); return paths; });
-  } catch (error) { errorMessage(error); return []; }
-}
-
-// An upload and its per-file records leave together, through the lazy media rules.
-async function discardUpload(path: string) {
-  const scope = draftScope(), since = guardedEdits.stamp();
-  if (!scope || !draftStore().get(scope, path)?.upload) return;
-  const draft = draftStore().get(scope, path), records = draftStore().get(scope, ".editor/media.json");
-  const { discardUploadDraft } = await import("./page-builder/media-upload-discard");
-  if (!since.holds() || draftStore().get(scope, path) !== draft || draftStore().get(scope, ".editor/media.json") !== records) return;
-  try {
-    let discarded = false;
-    batch(() => { discarded = discardUploadDraft(draftStore(), scope, path); });
-    if (discarded) { afterFileChanges(); announce(`Discarded ${path}.`); }
-  } catch (error) { errorMessage(error); }
-}
-
-async function readMediaText(path: string) {
-  const key = nativeTextIndexScopeKey(), repo = appStore.repository.value;
-  const held = runtime.textSource(path);
-  if (held !== undefined) return held;
-  if (!repo || !key) return undefined;
-  const scope = draftScope(), draft = scope ? draftStore().get(scope, path) : undefined;
-  if (draft?.deleted) return undefined;
-  // An uploaded or moved file (an SVG, say) holds no text in its draft: read its bytes.
-  if (scope && draft?.opaque && draft.sourceSha) {
-    const text = draft.upload ? await (await uploadBytes().get(uploadKey(scope, draft.sourceSha)))?.text() : await readFile(repo.full_name, draft.sourceSha);
-    if (key !== nativeTextIndexScopeKey() || draftStore().get(scope, path) !== draft) return undefined;
-    if (text !== undefined) runtime.state.opaqueText.set(draftKey(scope, path), { sha: draft.sourceSha, text });
-    return text;
-  }
-  const entry = await findEntry(path);
-  if (key !== nativeTextIndexScopeKey() || !entry) return undefined;
-  const source = await readFile(repo.full_name, entry.sha);
-  if (key !== nativeTextIndexScopeKey()) return undefined;
-  cleanSources.put("", key, path, source);
-  return source;
-}
-function mediaOrigins() {
-  return mediaOwnOrigins(nativeSiteSettings(runtime.textSource(NATIVE_CONFIG_PATH)).url, runtime.textSource("CNAME"));
-}
-
-// Background pages of workspaces not shown (src/background-page.ts), made with the first.
-let backgroundPages: ReturnType<typeof import("./background-page").createBackgroundPages<import("./background-page").BackgroundFrame>> | undefined;
-// Media context and UI lifecycle use live getters; binary/Undo writes stay here.
-const mediaPorts: import("./controllers/media-controller").MediaControllerPorts = {
-  measureImage: (path, node, image, slot, style) => nativePreview && runtime.site?.routes[nativePreview.shownRoute() ?? ""] === path
-    ? nativePreview.measureImage({ path, node, slot, style, ...(image.width && image.height ? { image: { width: image.width, height: image.height } } : {}) }) : Promise.resolve(undefined),
-  finishedAway: (scope) => finishedWork.add(scope, "media"),
-  // Work whose workspace is not shown measures in a background page of its site and page (ticket 27).
-  measureAway: async (pin, path, node, image, slot, style) => {
-    const site = pin.site, module = await import("./background-page");
-    if (!site) return undefined;
-    backgroundPages ??= module.createBackgroundPages();
-    // This work's own texts: a page shared with other work is drawn from them as it measures.
-    const own = { site, page: path, files: () => new Set(pin.files()),
-      text: async (file: string) => pin.source(file) ?? await pin.find(file).then((entry) => entry && readFile(pin.repo, entry.sha)),
-      shown: (source: (file: string) => string | undefined, isFile: (file: string) => boolean) => nativeShownFiles(site, [path], source, isFile, nativeSitePrefix(pin.source(NATIVE_CONFIG_PATH))) };
-    return backgroundPages.use(module.backgroundKey(pin.scope, path), () => module.openBackgroundFrame(own, (host) => createNativePreview(host)),
-      (frame) => frame.measure({ path, node, slot, style, ...(image.width && image.height ? { image: { width: image.width, height: image.height } } : {}) }, own));
-  },
-  origins: mediaOrigins,
-  usage: {
-    key: () => runtime.state.textIndexScope === nativeTextIndexScopeKey() ? nativeTextIndexScopeKey() : "", files: () => runtime.files(),
-    pages: () => Object.values(runtime.site?.routes ?? {}), components: () => runtime.site?.components ?? {},
-    source: path => runtime.textSource(path), read: readMediaText,
-    url: () => nativeSiteSettings(runtime.textSource(NATIVE_CONFIG_PATH)).url,
-    settled: () => runtime.state.textIndexing ?? Promise.resolve(), changed: () => {},
-  },
-  cleanUp: { place: () => setupScope() },
-  // Improve images opens each page so its pictures are measured; the canvas draws it a moment later (at most 5 s).
-  showPage: async path => {
-    if (appStore.openFile.value !== path) await openAfter(path, true, true);
-    for (let wait = 0; wait < 50 && runtime.site?.routes[nativePreview?.shownRoute() ?? ""] !== path; wait++) await new Promise(done => setTimeout(done, 100));
-  },
-  workspace: () => {
-    const repo = appStore.repository.value, scope = draftScope();
-    if (!repo || !scope || !appStore.snapshot.value) return undefined;
-    return { repo: repo.full_name, repoSize: repo.size, scope, identity: mediaIdentity(), site: runtime.site,
-      nativePaths: runtime.site ? runtime.files(scope) : undefined, drafts: draftStore() };
-  },
-  // The workspace shown, for work to finish in (ticket 23): the editor's reads while it is on show,
-  // then its snapshot's, the branch texts read so far and its drafts.
-  pin: () => pinMedia({ shown: () => { const repo = appStore.repository.value, scope = draftScope(), snapshot = appStore.snapshot.value; return repo && scope && snapshot && { repo, scope, snapshot, site: runtime.site }; },
-    begin: () => workspaceSession.begin(), base: () => ({ files: runtime.base.files, texts: runtime.base.sources, key: nativeTextIndexScopeKey() }), identity: mediaIdentity, drafts: draftStore,
-    live: { entry: entryAt, find: findEntry, source: (path, scope) => runtime.textSource(path, scope), files: scope => runtime.files(scope), remember: (path, text) => mediaPorts.rememberSource(path, text) },
-    // Seeded first: a switch clears the index, and the pinned snapshot's files must read the same before and after (ticket 27).
-    entry: (repo, snapshot, path) => { repositoryIndex.seed(repo, snapshot); return repositoryIndex.entry(repo, snapshot, path); }, find: (repo, snapshot, path) => repositoryIndex.find(api, repo, snapshot, path),
-    files: (scope, base) => runtime.files(scope, base), list: listRepositoryFiles, peek: (repo, revision, path) => cleanSources.peek(repo, revision, path) }),
-  identity: mediaIdentity,
-  stamp: () => guardedEdits.stamp("repository"),
-  generation: currentLoad,
-  selected: (path, node) => appStore.selection.value?.path === path && appStore.selection.value.node?.join(".") === node.join("."),
-  source: (path, scope) => runtime.textSource(path, scope),
-  listPaths: async () => { const repo = appStore.repository.value, snapshot = appStore.snapshot.value; if (!repo || !snapshot) throw new Error("Choose a repository before opening Media."); return listRepositoryFiles(repo, snapshot); },
-  findEntry,
-  entry: entryAt,
-  readText: readFile,
-  rememberSource: (path, source) => {
-    // Native preview sources stay separate from the wider text index; without a site nothing keeps either current.
-    if (!runtime.site) return;
-    if (/\.(?:html|css)$/i.test(path) || path === MEDIA_RECORDS_PATH) runtime.base.sources.set(path, source);
-    else cleanSources.put("", nativeTextIndexScopeKey(), path, source);
-  },
-  uploadedBlob: (scope, sha) => uploadBytes().get(uploadKey(scope, sha)),
-  readBlob,
-  applyBatch: applyMediaBatch,
-  refreshDescriptions: () => { if (appStore.selection.value) pageStructureController.renderEditBar(appStore.selection.value); },
-  placeLabel: (file) => pagesController.pageLabel(file),
-  select: (path, node) => { nativePreview?.selectAfterUpdate({ path, node }); nativePreview?.flashInsert({ path, node }); },
-  imagePopup: {
-    image: () => nativePreview?.selectionBox(),
-    bar: () => document.querySelector<HTMLElement>(".edit-bar"),
-    frame: () => element("main").querySelector(".native-preview-frame")?.getBoundingClientRect(),
-    look: (target, look) => nativePreview?.imageLook(target, look),
-    scroll: dy => nativePreview?.scrollBy(dy),
-    // Read as the canvas reads its images, so the page can show a replacement too.
-    picture: async path => {
-      if (!runtime.state.assets.has(path)) await loadNativeAssets({ [appStore.openFile.value ?? "index.html"]: `<img src="${siteAddress(path, runtime.prefix()).replace(/&/g, "&amp;")}">` });
-      return runtime.state.assets.get(path);
-    },
-  },
-  mediaPlay: {
-    send: (id, request, blob) => nativePreview?.playMedia(id, request, blob),
-    box: () => nativePreview?.selectionBox() ?? undefined,
-    frame: () => element("main").querySelector(".native-preview-frame")?.getBoundingClientRect(),
-    watch: (listener) => appStore.selection.subscribe(listener),
-  },
-  openPage: (...args) => openAfter(...args),
-  load: loadMedia,
-  openFile: () => appStore.openFile.value,
-  viewingVersion: () => Boolean(versions.view),
-  restoreFile: (path, epoch) => restoreFile(path, stampOf(epoch), { linkDefaultStyle: false }),
-  change: (...args) => pageStructureController.editOpenPage(...args),
-  galleryHost: () => { const host = element("explorer-media"); host.querySelector(":scope > .sidebar-hint")?.remove(); return host; },
-  galleryVisible: () => !element("explorer-media").hidden && element("explorer").matches(":popover-open"),
-  mediaSelected: () => pagesController.explorerTab() === "media",
-  gallerySignature: imagesSignature,
-  announce,
-  undoAction,
-  error: errorMessage,
-};
-const mediaController = createMediaController(mediaPorts, lazyModule(() => import("./controllers/media-actions")));
-// Typing changes drafts often; the usage check waits for a pause.
-let mediaUsageTimer: ReturnType<typeof setTimeout> | undefined;
-effect(() => {
-  appStore.repository.value; appStore.snapshot.value; appStore.drafts.revision.value;
-  mediaController.invalidateUsage();
-  clearTimeout(mediaUsageTimer);
-  mediaUsageTimer = setTimeout(() => mediaController.refreshUsage(), 400);
+// Media's wiring: image paths, uploads, media text, the media controller and its batches (src/controllers/media-host.ts).
+// Made before Pages & files and the workspace, which take its functions: later consts and `let` state go in as getters, later functions as arrows.
+const media = createMediaHost({
+  runtime, appStore, workspaceSession, editorModule, mediaHistoryHome, guardedEdits, parkedSteps, finishedWork, pageStructureController,
+  repositoryIndex, versions, cleanSources, api, element, lazyModule, loadMediaWorkspace, loadMedia, draftScope, currentLoad, stampOf,
+  nativeTextIndexScopeKey, entryAt, findEntry, readFile, readBlob, listRepositoryFiles, loadNativeAssets, updateNativePreviewSources,
+  imagesSignature, announce, undoAction, errorMessage,
+  get nativePreview() { return nativePreview; }, get pagesController() { return pagesController; }, get workspace() { return workspace; },
+  setupScope: () => setupScope(), afterFileChanges: () => afterFileChanges(), openAfter: (...args) => openAfter(...args), restoreFile: (...args) => restoreFile(...args),
 });
-function mediaIdentity() { return `${currentLoad()}:${setupScope()}`; }
-
-// Undo goes to the page open as the step commits; a pinned batch finishes where it started (src/media-batch.ts).
-const loadMediaBatch = lazyModule(() => import("./media-batch"));
-async function applyMediaBatch(scope: DraftScope, stamp: Stamp, batch: MediaWorkspaceBatch, pin?: MediaPin, asked?: string) {
-  const opened = asked ?? appStore.openFile.value, module = await loadMediaBatch();
-  return module.applyMediaBatch({
-    appStore, editor: editorModule, mediaHistoryHome, site: () => runtime.site, load: loadMediaWorkspace, stamp: () => guardedEdits.stamp("repository"),
-    listRepositoryFiles, nativeFiles: scope => runtime.files(scope), draftStore, bytes: uploadBytes, mediaTextSource: (path, scope) => runtime.textSource(path, scope), entryAt, findEntry, announce, park: step => parkedSteps.park(step),
-    refresh: () => { afterFileChanges(); updateNativePreviewSources(); if (appStore.selection.value) pageStructureController.renderEditBar(appStore.selection.value); },
-  }, scope, stamp, batch, pin, opened);
-}
+const { mediaPorts, mediaController, nativeImagePaths, uploadFilesTo, discardUpload, readMediaText, mediaOrigins } = media;
 
 // `away`: another workspace is opening, so a picker's Use under way still lands in its own (ticket 27); closing the workspace cancels it.
 let deactivatingAway = false;
