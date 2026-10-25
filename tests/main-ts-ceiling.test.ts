@@ -49,17 +49,21 @@ function calledOnTheSpot(fn: TS.Node): boolean {
   return ts.isCallExpression(callee.parent) && callee.parent.expression === callee;
 }
 
+// `host` names a host (`const { … } = setup`) or a factory whose call is destructured at once (`const { … } = createDraftViews(…)`).
 function hostMembersUsedEarly(source: string, host = "setup"): string[] {
   const tree = parse(source, "src/main.ts");
-  const destructures = (item: TS.VariableDeclaration) => ts.isObjectBindingPattern(item.name) && item.initializer !== undefined && ts.isIdentifier(item.initializer) && item.initializer.text === host;
+  const named = (node: TS.Expression) => ts.isIdentifier(node) && node.text === host;
+  const destructures = (item: TS.VariableDeclaration) => ts.isObjectBindingPattern(item.name) && item.initializer !== undefined
+    && (named(item.initializer) || (ts.isCallExpression(item.initializer) && named(item.initializer.expression)));
   const statement = tree.statements.find((at): at is TS.VariableStatement => ts.isVariableStatement(at) && at.declarationList.declarations.some(destructures));
   const binding = statement?.declarationList.declarations.find(destructures)?.name;
   assert.ok(statement && binding && ts.isObjectBindingPattern(binding), `main.ts destructures the ${host} host (const { … } = ${host})`);
   const line = (node: TS.Node) => tree.getLineAndCharacterOfPosition(node.getStart(tree)).line + 1;
   const before = (node: TS.Node) => node.getStart(tree) < statement.getStart(tree);
-  // A name being declared, or a property of that name, is not a use.
+  // A name being declared or imported, or a property of that name, is not a use.
   const declared = (node: TS.Identifier) => {
     const parent = node.parent;
+    if (ts.isImportSpecifier(parent) || ts.isImportClause(parent)) return true;
     return (ts.isVariableDeclaration(parent) || ts.isFunctionDeclaration(parent) || ts.isPropertyAccessExpression(parent) || ts.isPropertyAssignment(parent) || ts.isMethodDeclaration(parent)) && parent.name === node;
   };
   // The function a use waits in: a function runs later, unless it is called on the spot (`(() => …)()`).
@@ -90,7 +94,7 @@ function hostMembersUsedEarly(source: string, host = "setup"): string[] {
   return [...early.values()];
 }
 
-test("setup, media, Pages & files, workspace, page-builder, site preview and lazy loader members are used before their destructuring only inside functions", () => {
+test("setup, media, Pages & files, workspace, page-builder, site preview, lazy loader and destructured factory members are used before their destructuring only inside functions", () => {
   const source = readFileSync(new URL("../src/main.ts", import.meta.url), "utf8");
   assert.deepEqual(hostMembersUsedEarly(source), []);
   assert.deepEqual(hostMembersUsedEarly(source, "media"), []);
@@ -99,6 +103,9 @@ test("setup, media, Pages & files, workspace, page-builder, site preview and laz
   assert.deepEqual(hostMembersUsedEarly(source, "pageBuilder"), []);
   assert.deepEqual(hostMembersUsedEarly(source, "sitePreview"), []);
   assert.deepEqual(hostMembersUsedEarly(source, "lazyLoaders"), []);
+  // Destructured straight from their factory's call.
+  for (const factory of ["createAnnounce", "createDraftViews", "createAgentMenuHost", "createSiteLoading", "createSiteTextIndex", "createRepositoryList"])
+    assert.deepEqual(hostMembersUsedEarly(source, factory), [], factory);
 });
 
 test("a setup host member passed by value, called on the spot or reached through an early call above its destructuring is named", () => {
@@ -112,6 +119,16 @@ test("a setup host member passed by value, called on the spot or reached through
     "const answer = 1, { renderLogin, showGetStarted, startSitePanel, takeStartingPoint, writeStartingPoint } = setup;",
   ].join("\n");
   assert.deepEqual(hostMembersUsedEarly(source), ["showGetStarted (line 1)", "startSitePanel (line 2)", "takeStartingPoint (line 3)", "writeStartingPoint via early() (line 4)"]);
+});
+
+test("a member destructured straight from a factory's call, reached through an early hoisted call, is named", () => {
+  const source = [
+    "function early() { openNewDraft(d); }",
+    "early();",
+    "const later = () => showDeletedFile(path);",
+    "const { openNewDraft, showDeletedFile } = createDraftViews({ get workspace() { return workspace; } });",
+  ].join("\n");
+  assert.deepEqual(hostMembersUsedEarly(source, "createDraftViews"), ["openNewDraft via early() (line 2)"]);
 });
 
 // The media, Pages & files, workspace, page-builder and agent menu hosts, the agent's commands, site loading, the text index, the site preview,
