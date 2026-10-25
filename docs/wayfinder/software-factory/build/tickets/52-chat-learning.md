@@ -50,3 +50,14 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
   - Round 3 accepted: wait for the sweep's file merged on `origin/dev`, falling back to its branch marked not yet reviewed; keep a group with a line on or after the last learning file's date that the file does not list; the four test gaps. Rejected: none.
   - Round 4 (lead note) accepted: a same-kind `repeats:` link needs one shared key word; this Commits line and these decisions; the `nothing recorded yet (k malformed)` test. Also fixed from the review: the `ss` stemming check on the partly stemmed word and the visible `\uFEFF` escape. Not taken this round, at the lead's call: exporting `realDate`, reporting a feedback log without its heading, and the other test gaps.
 - Feature list: no change (agent tooling and docs only).
+
+### Follow-ups
+
+- Spec (P2): a97e43164:docs/agents/routines/learning.md:39 — P2 ticket: Step 3 only stops the learning part on `RESULT: ok learn nothing recorded yet`. `kit learn` also succ
+- Standards (P3): a97e43164:docs/agents/routines/learning.md:31 — P3 race: the sweep-wait loop's last `git fetch` can come just before 13:00, and the sweep's PR can merge after t
+- Standards (P3): a97e43164:tests/kit-learn.test.ts:262 — P3 race: the test works out `daysAgo(14)` and `daysAgo(15)` in the test process, while the spawned `kit learn` reads its
+- Validation gaps (gap): When several lines share the `repeats:` date, which one gets linked is never tested. The real corrections file has this shape: three `felt-wrong` lines on 2026-
+- Validation gaps (gap): The zero-repeated result has no test. Add a CLI test with two unrelated in-window lines given once. Assert `RESULT: ok learn 0 repeated of 2 groups, bundle …` a
+- Validation gaps (gap): The `CHAT_MEMORY_DIR` fallback and its precedence are untested. Add a run with only `CHAT_MEMORY_DIR` set to a fixture copy, and assert the bundle names that fi
+- Validation gaps (gap): `~/` expansion in the project map's Workspace cell is untested. Add a `projectMap` case with `` `~/w/site` `` and assert `workspace === join(homedir(), "w/site"
+
