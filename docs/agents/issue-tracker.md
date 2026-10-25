@@ -37,7 +37,7 @@ Used by `/wayfinder`. A map is a directory: `docs/wayfinder/<effort>/`.
 
 A build (the lead running a map's tickets as `kit slice` jobs) keeps its README and three more files next to its map:
 
-- `docs/wayfinder/<map>/build/README.md`: the build's plan. Two lines are read by `kit next`: `prefix: sf` names the owner prefix (owners `sf-NN`, jobs `slice-sfNN`; without it the map name), and a line starting `**Not started:**` near the top keeps every build ticket from being handed out until the lead removes it.
+- `docs/wayfinder/<map>/build/README.md`: the build's plan. Two lines are read by `kit next`: `prefix: sf` names the owner prefix (owners `sf-NN`, jobs `slice-sfNN`; without it the map name), and a line starting `**Not started:**` above the first `##` heading keeps every build ticket from being handed out until the lead removes it.
 
 - `docs/wayfinder/<map>/build/feedback.md`: Lex's feedback, the only place it is recorded. One line per correction, newest first under `## Feedback`:
   `- 2026-10-23 · felt-wrong · "Lex's words" or short summary · after release: no · fix: [24](tickets/24-….md) | PR #n | open`.
