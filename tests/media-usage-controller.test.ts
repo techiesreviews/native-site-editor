@@ -110,3 +110,29 @@ test("usage controller reads the live site address for prefixed references", asy
   assert.deepEqual(f.updates.at(-1)?.families[0].pages, ["index.html"]);
   controller.dispose();
 });
+
+test("another site's same-named file is read for its own text, and the first site's again on return (ticket 38)", async () => {
+  const f = fixture();
+  f.ports.read = async () => "no pictures";
+  const controller = createMediaUsageController(f.ports);
+  const pages = () => controller.usageRecords()?.families.find(family => family.main === "images/a.png")?.pages;
+  f.gate.resolve();
+  f.sources["index.html"] = '<img src="/images/a.png">';
+  controller.refresh(); await turn();
+  assert.deepEqual(pages(), ["index.html"]);
+  // Another site whose index.html shows no picture.
+  f.setKey("other:main:commit");
+  f.sources["index.html"] = "<p>No picture here</p>";
+  controller.refresh(); await turn();
+  assert.deepEqual(pages(), []);
+  // Back to the first site and its picture.
+  f.setKey("repo:main:commit");
+  f.sources["index.html"] = '<img src="/images/a.png">';
+  controller.refresh(); await turn();
+  assert.deepEqual(pages(), ["index.html"]);
+  // The same site, its text edited: the edit is read.
+  f.sources["index.html"] = "<p>Picture removed</p>";
+  controller.refresh(); await turn();
+  assert.deepEqual(pages(), []);
+  controller.dispose();
+});

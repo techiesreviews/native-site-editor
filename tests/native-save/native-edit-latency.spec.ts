@@ -4,7 +4,8 @@ import { editorMounted } from "./drafts";
 
 // Edits feel instant (clean-up ticket 38): after typing, finishing a text, a
 // block move, a drop, a Page Structure move, Undo and Redo, a keystroke at any
-// moment of the 1.5 s that follow runs within 100 ms, and no main-thread task
+// moment of the 1.5 s that follow runs within 100 ms (and a click on a Page
+// Structure row right after a move shows it selected within 100 ms), and no main-thread task
 // runs over 50 ms, on the real starter with the CPU slowed 2×. Each
 // action counts its better of two rounds, each in a fresh session, so another
 // suite's load spike does not fail it.
@@ -29,7 +30,7 @@ const FEATURE_UP = ["section-feature", "section-hero", "section", "section-conta
 
 // The editor notes its long tasks (the preview's among them: same origin, same thread) and, for
 // the report, which scripts ran in each long frame.
-type Notes = { long: { start: number; duration: number }[]; frames: string[] };
+type Notes = { long: { start: number; duration: number }[]; frames: string[]; selected?: number };
 declare global { interface Window { __latency: Notes } }
 interface LongFrame extends PerformanceEntry { scripts: { duration: number; invoker: string; sourceFunctionName: string; sourceURL: string }[] }
 const recorder = () => {
@@ -53,12 +54,13 @@ type Result = { action: string; nextInput: number; longest: number; long: string
  * come at any moment: the longest any press took to be handled (the browser's answer to the test
  * included; a slowed CPU stamps a keystroke only once it runs), and the long tasks meanwhile.
  */
-async function measure(page: Page, results: Result[], action: string, change: () => Promise<void>, settled: () => Promise<void>) {
+async function measure(page: Page, results: Result[], action: string, change: () => Promise<void>, settled: () => Promise<void>, click?: () => Promise<number>) {
   const cdp = profiles ? await page.context().newCDPSession(page) : undefined;
   if (cdp) { await cdp.send("Profiler.enable"); await cdp.send("Profiler.start"); }
   const start = await clock(page), until = Date.now() + WATCH_MS;
   await change();
-  let nextInput = 0;
+  // A click as the next input, when given: how long until it shows; the keystrokes follow it.
+  let nextInput = click ? await click() : 0;
   while (Date.now() < until) {
     const pressed = Date.now();
     await page.keyboard.press("Shift");
@@ -85,6 +87,29 @@ async function pointIn(page: Page, selector: string, fx: number, fy: number) {
   const box = (await page.locator(".native-preview-frame").boundingBox())!;
   const r = await frame(page).locator(selector).first().evaluate((el) => { const b = el.getBoundingClientRect(); return { left: b.left, top: b.top, width: b.width, height: b.height }; });
   return { x: box.x + r.left + r.width * fx, y: box.y + r.top + r.height * fy };
+}
+
+/**
+ * Clicks `row`'s label at once and resolves to the ms from the click until the row shows
+ * selected (`aria-selected`, Page Structure redraws its rows, so the tree is watched).
+ */
+async function clickRow(page: Page, name: RegExp) {
+  const label = tree(page).getByRole("treeitem", { name }).first().locator(".page-structure__label");
+  const box = (await label.boundingBox())!;
+  await tree(page).evaluate((root, source) => {
+    const named = new RegExp(source);
+    const selected = () => [...root.querySelectorAll("[role='treeitem'][aria-selected='true']")].some((row) => named.test(row.textContent ?? ""));
+    window.__latency.selected = undefined;
+    new MutationObserver((_, observer) => {
+      if (!selected()) return;
+      window.__latency.selected = performance.timeOrigin + performance.now();
+      observer.disconnect();
+    }).observe(root, { subtree: true, childList: true, attributes: true, attributeFilter: ["aria-selected"] });
+  }, name.source);
+  const clicked = await clock(page);
+  await page.mouse.click(box.x + 12, box.y + box.height / 2);
+  await expect.poll(() => page.evaluate(() => window.__latency.selected)).toBeDefined();
+  return Math.round((await page.evaluate(() => window.__latency.selected))! - clicked);
 }
 
 /** One round in a fresh session (its own copy of the fake repository and its own drafts). */
@@ -124,6 +149,10 @@ async function round(browser: Browser, baseURL: string): Promise<Result[]> {
 
     await tree(page).getByRole("treeitem", { name: /^Section feature/ }).first().locator(".page-structure__label").click();
     await measure(page, results, "Page Structure move (Alt+Up)", () => page.keyboard.press("Alt+ArrowUp"), () => expect.poll(() => order(page)).toEqual(FEATURE_UP));
+    // The next input a click: another row, selected at once after the move back.
+    await tree(page).getByRole("treeitem", { name: /^Section feature/ }).first().focus();
+    await measure(page, results, "Page Structure move, then a click on a row", () => page.keyboard.press("Alt+ArrowDown"),
+      () => expect.poll(() => order(page)).toEqual(SECTIONS), () => clickRow(page, /^Section contact/));
 
     const before = await cards(page);
     await frame(page).locator("#work .cards").scrollIntoViewIfNeeded();
