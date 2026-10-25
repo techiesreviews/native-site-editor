@@ -91,8 +91,8 @@ export function createUrlChange(options: {
   keepLabel.hidden = true;
   const keepHint = node("p", "url-change__hint");
   keepHint.hidden = true;
+  // Enter applies and Escape cancels, as in any field: no tip says so.
   const actions = node("div", "url-change__actions");
-  actions.append(node("span", "url-change__hint", "Enter to change, Esc to cancel"));
   if (options.buttons) {
     const cancel = node("button", "pages-edit__action", "Cancel");
     cancel.type = "button";
@@ -101,7 +101,7 @@ export function createUrlChange(options: {
     submit.type = "submit";
     actions.append(cancel, submit);
   }
-  details.append(message, keepLabel, keepHint, actions);
+  details.append(message, keepLabel, keepHint, ...(options.buttons ? [actions] : []));
   form.append(field, details);
 
   let initial = options.initial;
