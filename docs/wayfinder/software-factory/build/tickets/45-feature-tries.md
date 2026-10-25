@@ -82,3 +82,14 @@ New `tests/feature-steps.test.ts` reads every steps file. It checks that the fil
 - F-bar-01 shows the bar on a heading and on Main through the breadcrumb, not on a section or a component part.
 - F-bar-02 makes a whole new heading bold and italic from the bar and changes its level; it selects no word and presses no Ctrl+I.
 - F-canvas-03 clicks Paragraph, Heading, Div and Button, not Section or Media (Section's name also matches Page structure rows).
+
+### Follow-ups
+
+- Spec (P3): bb55bd35d:docs/agents/features.md:1102 — P3 ticket: F-phone-02 is counted among the 82 "tried" features, but its try never exercises the feature. The Try line s
+- Spec (P3): bb55bd35d:docs/agents/features.md:666 — P3 ticket: F-media-07's Try is "Rename a used picture in File details with Keep the old address working ticked". `F-medi
+- Spec (P3): bb55bd35d:tests/feature-steps.test.ts:1 — P3 ticket: ticket 45's Files section allows only `scripts/agents/shots/features/` and `docs/agents/features.md` (Steps
+- Standards (P2): bb55bd35d:tests/feature-steps.test.ts:36 — P2 fault: this test now fails any feature whose Steps is a bare `none yet`. The documented contract still allows it: 
+- Validation gaps (gap): The "closing check repeats an earlier one" guard at `tests/feature-steps.test.ts:1721-1726` only runs against the committed files, and all of them pass. Nothing
+- Validation gaps (gap): The `stepsByFeature` parser in `feature-steps.test.ts` has no case for a `- Steps:` line inside the fenced template block in `features.md`. Add a case built fro
+- Validation gaps (gap): F-bar-09 ends on `expect visible "Move up"` after `click "Remove"`. "Move up" is still visible whatever ends up selected, so nothing checks that Remove worked. 
+
