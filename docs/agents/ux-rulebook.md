@@ -9,7 +9,9 @@ Each rule has a **why** naming the correction it comes from, and a **check**:
 
 - `script: layout`: `kit shots` layout findings (clipped, overlap, tap-target, contrast, overflow).
 - `script: colours`: `scripts/check-colours.mjs` (raw colours), in `kit pr`'s css tier.
-- `script: spec`: a browser spec in `tests/native-save/` pins the behaviour; a change keeps it passing.
+- `script: spec`: the named browser specs in `tests/native-save/` pin today's cases; a change keeps
+  them passing. A new case (a new action, a new insert path) needs its own spec case, and until it
+  has one the reviewer checks it by eye.
 - `script: text`, `script: frames`, `script: drag`: **planned** in `kit ux`
   ([factory slice 42](../wayfinder/software-factory/build/tickets/42-kit-ux-scripted.md)): new visible
   strings over 60 characters or new hint, tip, count or badge classes; frame strips that show flicker;
@@ -25,11 +27,12 @@ machine (searched 2026-10-25); the parts carried over live in the build tickets 
 - **S1** No explainer lines, hints or keyboard tips beside controls: a control shows its name or icon.
   Why: Lex removed the locked-part hint ([components 90](../wayfinder/components-and-builder/build/tickets/90-no-locked-hint.md)),
   the drag label's "Into Div (stack) › after Image" line ([components 91](../wayfinder/components-and-builder/build/tickets/91-drag-label-name-only.md))
-  and Media's "Enter opens details · Arrow keys browse" footer ([39925ac8](https://github.com/techiesreviews/native-site-editor/commit/39925ac8)).
+  and Media's "Enter opens details · Arrow keys browse" footer ([39925ac8](https://github.com/techiesreviews/native-site-editor/commit/39925ac8));
+  the MCP menu is three actions, "no explainer or what soever needed" ([Lex's request 02](../work/lex-requests/issues/02-simple-mcp-menu.md)).
   Check: `script: text`.
 - **S2** No counts, badges or dots on tabs, buttons or the page button; a count lives inside the menu
   that acts on it ("Clean up (2)" in More).
-  Why: Lex removed the Media tab's number and the page button's blue dot, reversing four slices
+  Why: Lex removed the Media tab's number and the page button's blue dot, reversing map ticket 11 and slices 49, 74 and 121
   ([media 122](../wayfinder/media-manager/build/tickets/122-gallery-polish.md) items 1–2).
   Check: `script: text` (count and badge classes).
 - **S3** A disabled or empty choice says nothing; the screen it opens says why.
@@ -68,7 +71,7 @@ machine (searched 2026-10-25); the parts carried over live in the build tickets 
   Why: [editor colours](../editor-colors.md) ("one look across the chrome"); "theme tokens and shared
   components reused (DRY)" ([media 125](../wayfinder/media-manager/build/tickets/125-pages-tab.md)).
   Check: `script: colours`.
-- **L3** One list look everywhere: 32 px rows (`--size-control`), 44 px on touch, 2 px apart; grey
+- **L3** One list look everywhere: 32 px rows (`--size-control`), 44 px on touch (`--size-touch`), 2 px apart; grey
   `--hover`, the `--current` tint and 600 weight for what is open, `--pressed` for a pressed toggle;
   Files and Pages share their row and tree rules.
   Why: [editor colours](../editor-colors.md); [media 124](../wayfinder/media-manager/build/tickets/124-files-tab.md), [125](../wayfinder/media-manager/build/tickets/125-pages-tab.md).
@@ -104,7 +107,7 @@ machine (searched 2026-10-25); the parts carried over live in the build tickets 
   Why: Discard changes moved into the Publish menu ([components 87](../wayfinder/components-and-builder/build/tickets/87-discard-in-publish-menu.md));
   Remove files last in the selection bar ([media 122](../wayfinder/media-manager/build/tickets/122-gallery-polish.md) item 6).
   Check: `eye`.
-- **L11** A look Lex approved stays until he approves a new mock-up; when he prefers the old one,
+- **L11** A look Lex approved stays until Lex approves a new mock-up; when Lex prefers the old one,
   restore it rather than trying a third design.
   Why: the Page Structure rings ([a5c4fe72](https://github.com/techiesreviews/native-site-editor/commit/a5c4fe72)),
   restored to the earlier look at Lex's choice ([1f080f39](https://github.com/techiesreviews/native-site-editor/commit/1f080f39)).
@@ -115,60 +118,64 @@ machine (searched 2026-10-25); the parts carried over live in the build tickets 
 
 ## Behaviour
 
-- **B1** A click selects; a double-click or Enter edits; Esc leaves editing and keeps the selection;
-  anything just added arrives selected, not editing.
-  Why: [components 79](../wayfinder/components-and-builder/build/tickets/79-click-selects-double-click-edits.md).
-  Check: `script: spec`.
+- **B1** One click on text types there at once, the caret where it was clicked; a press and drag
+  always moves the block; a click on an image or any other element selects it (an image's popup opens
+  on a double-click); Esc ends typing and selects the block; anything just added arrives selected,
+  not typing.
+  Why: Lex, 2026-10-23, "click, and directly select and type" ([clean-up 28](../wayfinder/clean-up-before-features/build/tickets/28-click-to-type.md)),
+  which replaced click-selects, double-click-edits ([components 79](../wayfinder/components-and-builder/build/tickets/79-click-selects-double-click-edits.md));
+  new blocks arrive selected (79).
+  Check: `script: spec` (`native-click-to-type.spec.ts`, `native-text.spec.ts`, `native-blocks.spec.ts`).
 - **B2** Delete or Backspace removes the selected element and the selection moves to the next
   sibling, else the previous, else the parent; rows carry no delete icons.
   Why: [components 81](../wayfinder/components-and-builder/build/tickets/81-delete-key-and-no-row-delete.md).
-  Check: `script: spec`.
+  Check: `script: spec` (`native-delete-key.spec.ts`).
 - **B3** Anything moves anywhere valid HTML allows; sections snap between bands. A refusal is the one
   place for words: it says why, by the pointer, and only for invalid HTML, a component's insides or a
   named slot.
   Why: [components 82](../wayfinder/components-and-builder/build/tickets/82-move-any-element.md);
   refusals keep their reason ([components 91](../wayfinder/components-and-builder/build/tickets/91-drag-label-name-only.md)).
-  Check: `script: spec`.
+  Check: `script: spec` (`native-move-anywhere.spec.ts`, `native-move-anywhere-actual.spec.ts`; refusals in `native-blocks.spec.ts`).
 - **B4** An action works the same everywhere its thing appears: the page, Page Structure (row, ⋯ and
   right-click), Edit component mode and the agent's MCP tool.
   Why: text editing in Page Structure as on slot rows ([components 102](../wayfinder/components-and-builder/build/tickets/102-structure-text-editing.md));
   Make component in every place ([80](../wayfinder/components-and-builder/build/tickets/80-make-component-containers-only.md), [104](../wayfinder/components-and-builder/build/tickets/104-make-component-page-header-footer.md)).
-  Check: `script: spec`.
+  Check: `script: spec` (`native-structure-text.spec.ts`, `native-make-component-menus.spec.ts`, `native-mcp.spec.ts`).
 - **B5** Offer an action only where it makes sense, and hide it elsewhere: Make component on
   containers and the page's own header and footer; no Duplicate, Remove, move or Delete on a
   template's root.
   Why: [components 80](../wayfinder/components-and-builder/build/tickets/80-make-component-containers-only.md),
   [104](../wayfinder/components-and-builder/build/tickets/104-make-component-page-header-footer.md),
   [92](../wayfinder/components-and-builder/build/tickets/92-template-root-actions.md).
-  Check: `script: spec`.
+  Check: `script: spec` (`native-make-component-menus.spec.ts`, `native-make-component-bands.spec.ts`, `native-edit-component-mode-actual.spec.ts`).
 - **B6** Do the work, don't explain it: when an action needs something the site lacks (the component
   loader, the placeholder file), add it in the same step instead of showing a note.
   Why: [components 103](../wayfinder/components-and-builder/build/tickets/103-auto-add-component-loader.md), [105](../wayfinder/components-and-builder/build/tickets/105-image-placeholder-first.md).
-  Check: `script: spec`.
+  Check: `script: spec` (`native-component-loader.spec.ts`, `native-blocks.spec.ts`).
 - **B7** Every added image or media starts as the placeholder; Replace picks the real file afterwards.
   Why: "always first use placeholders. Even on new projects." ([components 105](../wayfinder/components-and-builder/build/tickets/105-image-placeholder-first.md)).
-  Check: `script: spec`.
+  Check: `script: spec` (`native-blocks.spec.ts`, `native-media-video.spec.ts`).
 - **B8** Fill what can be filled: a card linked to a page takes its title, text and image, plain
   cards as well as components.
   Why: [components 99](../wayfinder/components-and-builder/build/tickets/99-plain-card-fill-and-fixes.md).
-  Check: `script: spec`.
+  Check: `script: spec` (`native-add-card.spec.ts`, `native-cards.spec.ts`).
 - **B9** A rename follows everywhere the name is used: files, CSS and every page's instances.
   Why: renaming a component renames its CSS too ([components 76](../wayfinder/components-and-builder/build/tickets/76-rename-component-in-edit-mode.md)).
-  Check: `script: spec`.
+  Check: `script: spec` (`native-rename-component-actual.spec.ts`).
 - **B10** One user action is one Undo step, and Undo restores all of it.
   Why: asked in each of [components 76](../wayfinder/components-and-builder/build/tickets/76-rename-component-in-edit-mode.md),
   [81](../wayfinder/components-and-builder/build/tickets/81-delete-key-and-no-row-delete.md),
   [103](../wayfinder/components-and-builder/build/tickets/103-auto-add-component-loader.md) and
   [105](../wayfinder/components-and-builder/build/tickets/105-image-placeholder-first.md).
-  Check: `script: spec`.
+  Check: `script: spec` (the specs named under B2, B6, B7 and B9).
 - **B11** Changes apply as they are made; Done only leaves, with no Save or Apply step for a live edit.
   Why: Edit component mode ([components 41](../wayfinder/components-and-builder/build/tickets/41-edit-mode-shell.md));
   the Image popup applies at once and closing writes one Undo step ([clean-up 93](../wayfinder/clean-up-before-features/build/tickets/93-image-popup-flicker.md), lead PR #110).
-  Check: `script: spec`.
+  Check: `script: spec` (`native-image-popup.spec.ts`).
 - **B12** After adding, the new thing is in view: newest first by default, scrolled to and briefly
-  marked; a filter that would hide it is cleared or offers Show.
+  marked; a filter that would hide it is cleared (no "Added to … – Show" line, per S4).
   Why: on Lex's iPhone an uploaded picture "appears to disappear" ([media 103](../wayfinder/media-manager/build/tickets/103-newest-first.md)).
-  Check: `script: spec` (at 390 px).
+  Check: `script: spec` (`native-media-newest.spec.ts`, at 390 px).
 - **B13** Sites follow the visitor's light or dark setting, unless a band sets its own tone.
   Why: [components 75](../wayfinder/components-and-builder/build/tickets/75-starter-follows-visitor-scheme.md).
   Check: `eye`.
@@ -179,10 +186,11 @@ machine (searched 2026-10-25); the parts carried over live in the build tickets 
   inner element, any child (an image in a Div) drags by itself, and selection boxes follow layout
   changes at once.
   Why: [components 36](../wayfinder/components-and-builder/build/tickets/36-drag-existing-blocks.md) (fix-lex-2).
-  Check: `script: spec`, then `script: drag`.
-- **U2** A drop near a container's edge lands: within about 8 px it steps up to the parent, never refused.
+  Check: `script: spec` (`native-plain-section-drops-actual.spec.ts`, `native-block-move.spec.ts`), then `script: drag`.
+- **U2** A drop near a container's edge lands: within about 8 px it steps up to the nearest parent
+  that takes it; it is refused only for the reasons B3 lists.
   Why: [components 33](../wayfinder/components-and-builder/build/tickets/33-drop-target-model.md) (fix-lex-2).
-  Check: `script: spec`, then `script: drag`.
+  Check: `script: spec` (`native-plain-section-drops-actual.spec.ts`), then `script: drag`.
 - **U3** Zooming, moving and dragging draw smoothly: no blank frame, no picture reload, no jump.
   Why: the Image popup flickers while zooming or moving ([clean-up 93](../wayfinder/clean-up-before-features/build/tickets/93-image-popup-flicker.md), found on production).
   Check: `script: frames` + `eye`.
@@ -206,7 +214,7 @@ machine (searched 2026-10-25); the parts carried over live in the build tickets 
   menus open with Enter, Space or ↓, close with Esc and return focus.
   Why: [components 87](../wayfinder/components-and-builder/build/tickets/87-discard-in-publish-menu.md);
   [editor colours](../editor-colors.md); the `good-css` skill.
-  Check: `script: spec` + `eye`.
+  Check: `script: spec` (`native-discard.spec.ts`) + `eye`.
 - **U8** Motion respects the reduced-motion setting: a transition that moves or scales sits inside
   `prefers-reduced-motion: no-preference`, names its properties and never uses `ease-in`.
   Why: the `good-css` skill, which all editor CSS follows.
@@ -216,8 +224,8 @@ machine (searched 2026-10-25); the parts carried over live in the build tickets 
 
 - The section grip on a template's root in Edit component mode
   ([components 41](../wayfinder/components-and-builder/build/tickets/41-edit-mode-shell.md)): a one-off
-  leak, pinned by regression test `c27d560c`, and the ⠿ grip itself is gone
-  ([components 36](../wayfinder/components-and-builder/build/tickets/36-drag-existing-blocks.md)), so it cannot come back.
+  leak; the ⠿ grip itself is gone ([components 36](../wayfinder/components-and-builder/build/tickets/36-drag-existing-blocks.md)),
+  and the regression test from `c27d560c` in `native-make-component.spec.ts` keeps it from coming back.
 
 ## How rules are added
 
@@ -228,4 +236,4 @@ machine (searched 2026-10-25); the parts carried over live in the build tickets 
   may cover several corrections; extend a rule rather than adding a near-copy.
 - A `script` rule names the kit check that enforces it once that check is built; until then it says
   which check is planned and the reviewer looks by eye.
-- When Lex reverses a rule, change or remove it with the date and his words in the why.
+- When Lex reverses a rule, change or remove it with the date and Lex's words in the why.
