@@ -60,4 +60,9 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Validation gaps (gap): The zero-repeated result has no test. Add a CLI test with two unrelated in-window lines given once. Assert `RESULT: ok learn 0 repeated of 2 groups, bundle …` a
 - Validation gaps (gap): The `CHAT_MEMORY_DIR` fallback and its precedence are untested. Add a run with only `CHAT_MEMORY_DIR` set to a fixture copy, and assert the bundle names that fi
 - Validation gaps (gap): `~/` expansion in the project map's Workspace cell is untested. Add a `projectMap` case with `` `~/w/site` `` and assert `workspace === join(homedir(), "w/site"
+- Spec (P2): eadcfa676:docs/wayfinder/software-factory/build/tickets/52-chat-learning.md:56 — P2 ticket: every line under `### Follow-ups` (56–62) stops mid-word ("`kit lear
+- Spec (P3): 9abe14d52:docs/wayfinder/software-factory/build/tickets/52-chat-learning.md:56 — P3 ticket: the first follow-up (Step 3 stops only on `nothing recorded yet`) is
+- Standards (P3): af056a58f:scripts/agents/kit.d/learn:379 — P3 fault: a `repeats:` date gets pushed to `item.outside` when its only line that day is of another kind and shares j
+- Validation gaps (gap): The double count above is untested. Add a `groupCorrections` case: A (2026-10-20, too-much, "Toolbar hint text crowds heading", repeats 2026-10-10); B (2026-10-
+- Validation gaps (gap): A `repeats:` date equal to the line's own date is untested. The real list has this shape: `corrections/native-site-editor.md:15` is a 2026-10-21 line with `repe
 
