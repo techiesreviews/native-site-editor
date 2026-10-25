@@ -8,7 +8,7 @@ import type { Checked } from "../native-create";
 import { parentRoute } from "../native-page-moves";
 import { isFolderRoute, nativePageRoute } from "../../shared/native-routes";
 import { createRowMenu, type MenuItem } from "./row-menu";
-import { convertAsTyped, createUrlChange, type UrlPlan } from "./url-change";
+import { convertWhileTyping, createUrlChange, type UrlPlan } from "./url-change";
 import "./pages-tree.css";
 import { rowActions } from "./row-actions";
 import { sharedTitleEnding, withoutTitleEnding } from "./page-title-ending";
@@ -218,9 +218,8 @@ export function createPagesTree(options: {
       slugInput.select();
     });
     // What is typed becomes an address as typed; a dash at the end waits for the next word.
-    slugInput.addEventListener("input", (event) => {
+    convertWhileTyping(slugInput, (text) => toPageAddress(text, { typing: true }), () => {
       slugEdited = true;
-      convertAsTyped(slugInput, (text) => toPageAddress(text, { typing: true }), event);
       slug = toPageAddress(slugInput.value);
       check();
     });

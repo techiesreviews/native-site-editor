@@ -20,6 +20,9 @@ test("a typed address is converted to the rule, not refused", () => {
   assert.equal(toPageAddress("Straße Ærø"), "strasse-aero");
   assert.equal(toPageAddress("日本語"), "");
   assert.equal(toPageAddress("About_Us.v2"), "about-us-v2");
+  // Separators become a dash; other marks inside a word are dropped.
+  assert.equal(toPageAddress("Don't Stop"), "dont-stop");
+  assert.equal(toPageAddress("Q&A, notes/2026"), "q-a-notes-2026");
   // Whatever it gives meets the rule.
   for (const text of ["About Us!", "Café Menü", "a".repeat(100), "x".repeat(79) + " y"]) assert.equal(pageAddressProblem(toPageAddress(text)), undefined, text);
   // While typing, a separator at the end waits as a dash for the next word; none at the start.
@@ -28,6 +31,13 @@ test("a typed address is converted to the rule, not refused", () => {
   assert.equal(toPageAddress("-", { typing: true }), "");
   assert.equal(toPageAddress("!!!", { typing: true }), "");
   assert.equal(toPageAddress("About!", { typing: true }), "about");
+  assert.equal(toPageAddress("ab-!", { typing: true }), "ab-");
+  // The caret goes after what the text before it became, so that is where the whole text's conversion has it.
+  for (const [text, caret] of [["ab cd", 3], ["ab-!cd", 4], ["ab !cd", 4], ["ab!cd", 3], ["Ab_C d", 4]] as const) {
+    const before = toPageAddress(text.slice(0, caret), { typing: true });
+    assert.ok(toPageAddress(text, { typing: true }).startsWith(before), `${text} at ${caret}`);
+  }
+  assert.equal(toPageAddress("ab-!cd", { typing: true }).slice(toPageAddress("ab-!", { typing: true }).length), "cd");
 });
 
 test("a typed URL is converted part by part; the parts of the URL now stay", () => {
@@ -38,11 +48,13 @@ test("a typed URL is converted part by part; the parts of the URL now stay", () 
   assert.equal(toPageRoute("/!!!/"), "//");
   // A folder already named against the rule is not renamed by typing under it.
   assert.equal(toPageRoute("/Old_Folder/New Page/", { kept: "/Old_Folder/page/".split("/") }), "/Old_Folder/new-page/");
+  // Only at its own place: the same name elsewhere is converted.
+  assert.equal(toPageRoute("/Notes/Notes/", { kept: "/Notes/page/".split("/") }), "/Notes/notes/");
   // While typing: a dash at the end of a part, and the start of .html at the end.
   assert.equal(toPageRoute("/notes/about ", { typing: true }), "/notes/about-");
   assert.equal(toPageRoute("/notes -/x", { typing: true }), "/notes-/x");
   for (const end of [".", ".h", ".ht", ".htm", ".html"]) assert.equal(toPageRoute(`/notes${end}`, { typing: true }), `/notes${end}`);
-  assert.equal(toPageRoute("/notes.", {}), "/notes");
+  assert.equal(toPageRoute("/notes."), "/notes");
 });
 
 test("make component checks the name, then the element, with one wording each", () => {
