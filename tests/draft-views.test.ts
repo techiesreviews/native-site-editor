@@ -29,7 +29,7 @@ after(() => { if (saved) Object.defineProperty(globalThis, "document", saved); e
 // The upload bytes live in IndexedDB in the browser: the test holds them.
 const bytes = new Map<string, Blob>();
 fakeGlobals.draftViewsBytes = { get: async (key: string) => bytes.get(key) };
-// src/ui/dom.ts draws icons: their stylesheet and SVG imports load as empty modules here.
+// The uploads module with the bytes the test holds; src/ui/dom.ts draws icons: their stylesheet and SVG imports load as empty modules here.
 registerHooks({ load: (url, context, next) => (url.endsWith("/src/uploads.ts")
   ? { format: "module", source: `export * from "${url}?real"; export const uploadBytes = () => globalThis.draftViewsBytes;`, shortCircuit: true }
   : /\.css$|\?raw$/.test(url) ? { format: "module", source: "export default '';", shortCircuit: true } : next(url, context)) });

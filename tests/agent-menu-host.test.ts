@@ -45,7 +45,7 @@ const PIN = {} as MediaPin; // eslint-disable-line no-restricted-syntax -- hande
 // The host over the real runtime, app store and drafts; the menu, the agent's site and the other ports record what they were asked.
 function setup(options: { draftScope?: () => DraftScope | undefined } = {}) {
   const calls: string[] = [], inputs: AgentSiteInput[] = [], menus: MenuOptions[] = [];
-  const late: { info?: SessionInfo; requests?: unknown; indexed: boolean; holds: boolean } = { info: { user: { login: "o" } } as SessionInfo, indexed: true, holds: true }; // eslint-disable-line no-restricted-syntax -- only the login is read.
+  const late: { info?: SessionInfo; requests?: unknown; indexed: boolean; holds: boolean; preview: boolean } = { info: { user: { login: "o" } } as SessionInfo, indexed: true, holds: true, preview: true }; // eslint-disable-line no-restricted-syntax -- only the login is read.
   const stamp: Stamp = { holds: () => late.holds, changed: () => (late.holds ? undefined : "scope") } as unknown as Stamp; // eslint-disable-line no-restricted-syntax -- the site host asks only holds and changed.
   const cleanSources = new CleanSourceCache(() => "o");
   const runtime = createNativeSiteRuntime({
@@ -66,7 +66,7 @@ function setup(options: { draftScope?: () => DraftScope | undefined } = {}) {
     workspace: { activeFileContext: null, repositoryMenu: { setQuestions: record("questions"), close: record("close menu") } },
     nativeTextIndexGate: { key: () => "k", indexed: () => late.indexed, settled: async () => true, ensure: async () => { calls.push("index"); late.indexed = true; return undefined; } },
     get info() { return late.info; },
-    get nativePreview() { return { route: () => "/", setRequests: record("requests"), showRequest: record("show") }; },
+    get nativePreview() { return late.preview ? { route: () => "/", setRequests: record("requests"), showRequest: record("show") } : undefined; },
     api: (async () => { throw new Error("no reads"); }) as unknown as AgentMenuHostPorts["api"], // eslint-disable-line no-restricted-syntax -- the menu never reads GitHub here.
     readFile: async () => "", readFiles: async () => ({}),
     loadAgentSite: async () => ({ buildAgentContext: async (input: AgentSiteInput) => { inputs.push(input); return { input } as unknown as SharedContext; } }), // eslint-disable-line no-restricted-syntax -- the stand-in context only carries the input back.
@@ -158,4 +158,20 @@ test("work pinned for Media carries the pin the media ports give", async () => {
   await host.agentController.ensure();
   assert.equal(menus.at(-1)!.tools!.pin?.()?.media, PIN);
   assert.deepEqual(pins, ["pin"]);
+});
+
+test("before the preview exists, requests and a shown request wait, and the selection carries no route", async () => {
+  const { host, calls, inputs, menus, late, runtime, appStore } = setup();
+  late.preview = false;
+  await host.agentController.ensure();
+  const options = menus.at(-1)!;
+  options.onRequests?.([]);
+  options.onShowRequest?.("r1");
+  assert.deepEqual(calls, ["close menu"]);
+  const resolved = resolveNativeProject(["index.html"]);
+  assert.ok(resolved.ok);
+  runtime.site = resolved.site;
+  appStore.selection.value = SELECTION;
+  assert.ok(await options.context());
+  assert.deepEqual([inputs[0].native?.selection?.path, inputs[0].native?.selection?.route], ["index.html", undefined]);
 });
