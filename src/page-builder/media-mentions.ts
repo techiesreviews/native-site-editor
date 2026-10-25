@@ -20,9 +20,12 @@ function kindFor(file: string): MediaOtherUseKind {
   if (/\.css$/i.test(file)) return "stylesheet";
   return "file";
 }
+/** A file's mentions kept by its text and the media and site they were read against (ticket 38). */
+export type MediaMentionsCache = Map<string, { source: string; context: string; uses: { path: string; kind: MediaOtherUseKind }[] }>;
 /** Raw mentions deliberately include comments, examples and unexecuted code. */
-export function mediaMentions(input: { media: readonly string[]; sources: Readonly<Record<string, string | undefined>>; site?: MediaSite }): Map<string, { file: string; kind: MediaOtherUseKind }[]> {
+export function mediaMentions(input: { media: readonly string[]; sources: Readonly<Record<string, string | undefined>>; site?: MediaSite; cache?: MediaMentionsCache }): Map<string, { file: string; kind: MediaOtherUseKind }[]> {
   const result = new Map<string, { file: string; kind: MediaOtherUseKind }[]>();
+  const context = `${input.site?.prefix ?? ""}\n${input.site?.origins.join(" ") ?? ""}\n${input.media.join("\n")}`;
   const names = new Map<string, string[]>();
   for (const path of input.media) {
     const name = path.split("/").at(-1)!;
@@ -36,6 +39,19 @@ export function mediaMentions(input: { media: readonly string[]; sources: Readon
   const restore = (value: string) => aliases.reduce((text, { name, alias }) => text.replaceAll(alias, name), value);
   for (const [file, source] of Object.entries(input.sources)) {
     if (source === undefined || !isMediaTextFile(file)) continue;
+    const known = input.cache?.get(file);
+    const uses = known?.source === source && known.context === context ? known.uses : fileMentions(file, source);
+    if (input.cache && uses !== known?.uses) input.cache.set(file, { source, context, uses });
+    for (const { path, kind } of uses) {
+      const found = result.get(path) ?? [];
+      if (!found.some(use => use.file === file && use.kind === kind)) found.push({ file, kind });
+      result.set(path, found);
+    }
+  }
+  return result;
+
+  function fileMentions(file: string, source: string) {
+    const uses: { path: string; kind: MediaOtherUseKind }[] = [];
     let text = source.replace(/\\\//g, "/");
     // Markup (HTML, XML sitemaps and feeds, SVG) may spell addresses with entities such as &amp;.
     if (/\.(?:html?|xml|rss|atom|svg)$/i.test(file)) text = decodeHtmlEntities(text);
@@ -75,11 +91,9 @@ export function mediaMentions(input: { media: readonly string[]; sources: Readon
       for (const path of names.get(name) ?? []) {
         if (value !== name && path !== value && !path.endsWith("/" + value)) continue;
         const kind = regions.find(region => match.index! >= region.start && match.index! < region.end)?.kind ?? kindFor(file);
-        const uses = result.get(path) ?? [];
-        if (!uses.some(use => use.file === file && use.kind === kind)) uses.push({ file, kind });
-        result.set(path, uses);
+        if (!uses.some(use => use.path === path && use.kind === kind)) uses.push({ path, kind });
       }
     }
+    return uses;
   }
-  return result;
 }

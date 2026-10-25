@@ -37,11 +37,18 @@ const marks = {
 
 export type ComponentMark = keyof typeof marks;
 
+const parsedMarks = new Map<string, SVGSVGElement>();
 /** One of the page builder's component marks as an element, hidden from assistive technology. */
 export function mark(name: ComponentMark, size = 14, className = "") {
-  const template = document.createElement("template");
-  template.innerHTML = marks[name].replace("<svg ", `<svg class="${`icon ${className}`.trim()}" width="${size}" height="${size}" aria-hidden="true" focusable="false" `);
-  return template.content.firstElementChild as SVGSVGElement;
+  // Parsed once each: every Structure row draws its marks again after a change (ticket 38).
+  const key = `${name} ${size} ${className}`;
+  let parsed = parsedMarks.get(key);
+  if (!parsed) {
+    const template = document.createElement("template");
+    template.innerHTML = marks[name].replace("<svg ", `<svg class="${`icon ${className}`.trim()}" width="${size}" height="${size}" aria-hidden="true" focusable="false" `);
+    parsedMarks.set(key, parsed = template.content.firstElementChild as SVGSVGElement);
+  }
+  return parsed.cloneNode(true) as SVGSVGElement;
 }
 
 /** The component mark (four diamonds), in the component accent. */

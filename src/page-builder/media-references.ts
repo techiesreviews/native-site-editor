@@ -202,6 +202,13 @@ export function walkMediaReferencePages(
   prefix = "",
 ): void {
   const templates = new Set(Object.values(components));
+  // Each file's components, read once for every page that reaches it.
+  const shown = new Map<string, string[]>();
+  const componentsIn = (file: string) => {
+    let tags = shown.get(file);
+    if (!tags) shown.set(file, tags = startTags(sources[file] ?? "").map(tag => tag.name).filter(name => Object.hasOwn(components, name) && components[name]));
+    return tags;
+  };
   for (const page of pages) {
     const visited = new Set<string>();
     const visit = (file: string) => {
@@ -214,9 +221,9 @@ export function walkMediaReferencePages(
       });
       for (const ref of refs) visitReference(page, ref);
       for (const ref of refs) if ((ref.attribute === undefined || ref.attribute === "style" || (ref.tag === "link" && ref.attribute === "href")) && /\.css$/i.test(ref.path) && Object.hasOwn(sources, ref.path)) visit(ref.path);
-      if (/\.html$/i.test(file)) for (const tag of startTags(sources[file] ?? "")) if (components[tag.name]) {
-        visit(components[tag.name]);
-        const sheet = components[tag.name].replace(/\.html$/i, ".css");
+      if (/\.html$/i.test(file)) for (const name of componentsIn(file)) {
+        visit(components[name]);
+        const sheet = components[name].replace(/\.html$/i, ".css");
         if (Object.hasOwn(sources, sheet)) visit(sheet);
       }
     };

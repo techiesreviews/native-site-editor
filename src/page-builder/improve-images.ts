@@ -53,6 +53,18 @@ interface Input {
   records: MediaRecords; site?: MediaSite;
   /** The site's path prefix; `site` alone decides which full addresses are its own. */
   prefix?: string;
+  /** Kept between plans: each file is parsed and scanned again only once its text changed (ticket 38). */
+  cache?: ImprovePlanCache;
+}
+export type ImprovePlanCache = Map<string, { source: string; key: string; value: unknown }>;
+export const improvePlanCache = (): ImprovePlanCache => new Map();
+/** `read` of `file`'s `source`, kept in `cache` under `kind` while the source and `key` are the same. */
+function kept<T>(cache: ImprovePlanCache | undefined, kind: string, file: string, source: string, key: string, read: () => T): T {
+  const known = cache?.get(`${kind}:${file}`);
+  if (known?.source === source && known.key === key) return known.value as T;
+  const value = read();
+  cache?.set(`${kind}:${file}`, { source, key, value });
+  return value;
 }
 const counts = (): Counts => ({ "bring-in": 0, lighten: 0, copies: 0, size: 0, sizes: 0, loading: 0, loop: 0, "first-frame": 0, player: 0 });
 const inert = new Set(["pre", "code", "samp", "kbd", "xmp", "textarea", "template", "noscript"]);
@@ -106,7 +118,9 @@ export function improveImagesPlan(input: Input): ImproveImagesPlan {
   const prefix = input.prefix ?? site?.prefix ?? "";
   const paths = Object.keys(files), families = mediaFamilies(paths);
   const maxWidth = mediaImageRecipe(mediaAddingSettings(records.adding).image).maxWidth;
-  const parsed = new Map(Object.entries(sources).filter(([file]) => /\.html$/i.test(file)).map(([file, source]) => [file, elements(parseSource(source ?? ""))]));
+  const { cache } = input, siteKey = `${prefix}\n${site?.origins.join(" ") ?? ""}`;
+  const parsed = new Map(Object.entries(sources).filter(([file]) => /\.html$/i.test(file))
+    .map(([file, source]) => [file, kept(cache, "parsed", file, source ?? "", "", () => elements(parseSource(source ?? "")))]));
   const reach = new Map<string, string[]>();
   for (const page of input.pages) {
     const seen = new Set<string>();
@@ -118,7 +132,7 @@ export function improveImagesPlan(input: Input): ImproveImagesPlan {
     };
     visit(page);
   }
-  const references = new Map(Object.entries(sources).map(([file, source]) => [file, scanMediaReferences(file, source ?? "", site, prefix)]));
+  const references = new Map(Object.entries(sources).map(([file, source]) => [file, kept(cache, "references", file, source ?? "", siteKey, () => scanMediaReferences(file, source ?? "", site, prefix))]));
   const resolved = new Map<string, Set<string>>();
   walkMediaReferencePages({ ...sources }, references, [...input.pages], { ...components }, (page, ref) => {
     if (reach.has(ref.file) && !reach.get(ref.file)!.includes(page)) return;
@@ -145,7 +159,7 @@ export function improveImagesPlan(input: Input): ImproveImagesPlan {
     const protect = (node: SourceElement) => (protectedRanges[file] ??= []).push({ start: node.start, end: node.end });
     for (const node of nodes) if (inert.has(node.name) || component && node.name === "slot") protect(node);
     const scripts = [pageScripts(file), ...pages.map(pageScripts)].join("\n");
-    const tokens = scanMediaUrlTokens(file, source);
+    const tokens = kept(cache, "tokens", file, source, "", () => scanMediaUrlTokens(file, source));
     const leave = (address: string, reason: LeftReason) => row.leftAlone.push({ address, reason });
     for (const node of nodes) {
       if (node.name === "script" && attribute(source, node, "type") === "application/ld+json" && !ancestry(node).some(n => inert.has(n.name))) {
