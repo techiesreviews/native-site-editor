@@ -79,3 +79,12 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - **Lead step, still open (Done when item 2):** run `scripts/agents/kit ux --features <two features from slice 42>`
   with the real reviewer and paste the per-feature lines, the reviewer's model from `run.log` and its token use.
   The builder brief forbids agent runs, so the builder could not do it.
+
+### Follow-ups
+
+- Spec (P2): 4b4a24e70:docs/wayfinder/software-factory/build/tickets/43-kit-ux-reviewer.md:4 — P2 ticket: the front matter is changed to `status: closed`, but the ticket's o
+- Spec (P2): 4b4a24e70:scripts/agents/ux-brief.mjs:13 — P2 ticket: the Goal and factory 02/03 item 4 ask the reviewer to compare the screenshots with the approved mock-up. T
+- Validation gaps (gap): `uxFollowups` inserts at `list.index + list[0].trimEnd().length` (scripts/agents/kit.d/slice:196). When the ticket's last Done has a `### UX follow-ups` heading
+- Validation gaps (gap): No slice-level test covers HEAD moving while `kit ux` runs (the `assertHead(head)` after `execute` at slice:329). Make the fake kit's `ux` phase commit an empty
+- Validation gaps (gap): No test covers the re-check after the UX fix round returning `RESULT: ok ux nothing visible touched`. For example, the fix removed the visible change: the slice
+
