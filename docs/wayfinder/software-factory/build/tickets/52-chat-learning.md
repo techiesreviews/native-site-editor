@@ -2,7 +2,7 @@
 title: Chat learning every other Monday, from the central corrections list
 type: task (AFK)
 status: open
-assignee:
+assignee: sf-52 (this session)
 builder: claude
 blocked_by: [51-weekly-sweep, 40-ux-rulebook]
 ---
