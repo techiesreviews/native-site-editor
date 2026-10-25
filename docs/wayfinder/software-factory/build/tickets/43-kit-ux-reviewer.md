@@ -2,7 +2,7 @@
 title: "kit ux, reviewer half; visible slices run it"
 type: task (AFK)
 status: open
-assignee:
+assignee: sf-43 (this session)
 builder: claude
 blocked_by: [42-kit-ux-scripted, 21-kit-records-every-piece]
 ---
