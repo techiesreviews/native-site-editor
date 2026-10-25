@@ -24,7 +24,7 @@ Read the file at the path you were given. The user normally passes the path or t
 Used by `/wayfinder`. A map is a directory: `docs/wayfinder/<effort>/`.
 
 - **Map**: `docs/wayfinder/<effort>/map.md`. Its frontmatter holds `label: wayfinder:map`, `title`, `charted` and `tracker`. Its body holds Destination, Notes, Decisions so far, Not yet specified and Out of scope.
-- **Child ticket**: `docs/wayfinder/<effort>/tickets/NN-<slug>.md`, numbered from `01`. Frontmatter: `title`, `type` (`research (AFK)`, `prototype (HITL)`, `grilling (HITL)` or `task (AFK|HITL)`), `status: open|closed`, `assignee`, `blocked_by: [NN-slug, …]`. Body: `## Question`.
+- **Child ticket**: `docs/wayfinder/<effort>/tickets/NN-<slug>.md`, numbered from `01`. Frontmatter: `title`, `type` (`research (AFK)`, `prototype (HITL)`, `grilling (HITL)` or `task (AFK|HITL)`), `status: open|closed`, `assignee`, `blocked_by: [NN-slug, …]`, optional `runs_alone: true|false` (true: `kit next` starts it only when no other slice of its map runs, and starts none beside it). Body: `## Question`.
 - **Blocking**: the `blocked_by` list. A ticket is unblocked when every ticket it lists has `status: closed`.
 - **Frontier**: `scripts/agents/tickets.mjs frontier [map]` lists tickets with `status: open` and all blockers closed, including builder and title, lowest number first within each map. Check `assignee:` before claiming. `scripts/agents/tickets.mjs check` validates statuses and blocker slugs across each map's `tickets/` and `build/tickets/`.
 - **Claim**: fill in `assignee:` (for example `Lex + claude (grilling)` or `claude (research subagent)`), then commit and push on `dev` before doing any work.
@@ -35,7 +35,9 @@ Used by `/wayfinder`. A map is a directory: `docs/wayfinder/<effort>/`.
 
 ## Build files
 
-A build (the lead running a map's tickets as `kit slice` jobs) keeps three files next to its map:
+A build (the lead running a map's tickets as `kit slice` jobs) keeps its README and three more files next to its map:
+
+- `docs/wayfinder/<map>/build/README.md`: the build's plan. Two lines are read by `kit next`: `prefix: sf` names the owner prefix (owners `sf-NN`, jobs `slice-sfNN`; without it the map name), and a line starting `**Not started:**` near the top keeps every build ticket from being handed out until the lead removes it.
 
 - `docs/wayfinder/<map>/build/feedback.md`: Lex's feedback, the only place it is recorded. One line per correction, newest first under `## Feedback`:
   `- 2026-10-23 · felt-wrong · "Lex's words" or short summary · after release: no · fix: [24](tickets/24-….md) | PR #n | open`.
