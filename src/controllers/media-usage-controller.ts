@@ -42,7 +42,7 @@ export function createMediaUsageController(ports: MediaUsageCheckPorts) {
       const source = ports.source(file);
       // The text is read from the ports on every check (an uploaded or moved file read again);
       // only the scans worked out from it are kept, by those exact bytes, so a replaced file is
-      // never judged by its old bytes.
+      // never judged by its old bytes. A kept text is only compared with the ports' read, never served.
       if (source !== undefined) sources[file] = source;
     }
     const emit = () => publish(mediaUsageRecords({ media: ports.media?.() ?? files.filter(isMediaFile), files: text, sources,

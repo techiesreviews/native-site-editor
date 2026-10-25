@@ -1,14 +1,15 @@
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { clickOnText } from "./click-text";
 import { editorMounted } from "./drafts";
+import { bestRound } from "./latency-budget";
 
 // Edits feel instant (clean-up ticket 38): after typing, finishing a text, a
 // block move, a drop, a Page Structure move, Undo and Redo, a keystroke at any
 // moment of the 1.5 s that follow runs within 100 ms (and a click on a Page
 // Structure row right after a move shows it selected within 100 ms), and no main-thread task
-// runs over 50 ms, on the real starter with the CPU slowed 2×. Each
-// action counts its better of two rounds, each in a fresh session, so another
-// suite's load spike does not fail it.
+// runs over 50 ms, on the real starter with the CPU slowed 2×. An action
+// passes when one of its two rounds, each in a fresh session, meets both
+// budgets (latency-budget.ts), so another suite's load spike does not fail it.
 // ASE_LATENCY_REPORT=1 prints each action's numbers and the scripts of its long
 // frames instead of failing on them; ASE_LATENCY_PROFILE=<dir> also writes each
 // action's CPU profile there (open in DevTools); ASE_LATENCY_SLOWDOWN=<n>
@@ -185,7 +186,7 @@ test("each edit and Undo takes the next input at once, with no long task after i
   for (const [index, { action }] of rounds[0].entries()) {
     const tries = rounds.map((results) => results[index]);
     const said = tries.map((result) => `next input ${result.nextInput} ms, tasks [${result.long.join(", ")}]`).join(" / ");
-    expect.soft(Math.min(...tries.map((result) => result.nextInput)), `${action}: the next keystroke waits (${said})`).toBeLessThanOrEqual(NEXT_INPUT_MS);
-    expect.soft(Math.min(...tries.map((result) => result.longest)), `${action}: a main-thread task after it (${said})`).toBeLessThanOrEqual(LONG_TASK_MS);
+    const { passed, round: closest } = bestRound(tries, { nextInput: NEXT_INPUT_MS, longest: LONG_TASK_MS });
+    expect.soft(passed, `${action}: no round met both budgets (keystroke ${NEXT_INPUT_MS} ms, task ${LONG_TASK_MS} ms); closest: next input ${closest.nextInput} ms, longest task ${closest.longest} ms (rounds: ${said})`).toBe(true);
   }
 });
