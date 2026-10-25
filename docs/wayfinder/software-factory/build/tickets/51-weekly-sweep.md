@@ -2,7 +2,7 @@
 title: "The weekly sweep, Mondays 09:00"
 type: task (AFK)
 status: open
-assignee:
+assignee: sf-51 (this session)
 builder: claude
 blocked_by: [21-kit-records-every-piece, 22-one-feedback-log]
 ---
