@@ -1,1 +1,1 @@
-{"screen":"image-popup","name":"F-media-18-bug-popup-flicker","steps":["click \"Shape: Original\"","click \"Square\"","press Tab","press ArrowRight","record move 800","press ArrowRight","press ArrowRight"]}
+{"screen":"image-popup","name":"F-media-18-bug-popup-flicker","steps":["click \"Shape: Original\"","click \"Square\"","press Tab","press ArrowRight","record move 800","press ArrowRight","press ArrowRight","record moves 800"]}
