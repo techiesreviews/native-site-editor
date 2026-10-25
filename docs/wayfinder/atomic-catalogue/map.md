@@ -39,6 +39,8 @@ A finished build plan, with a board mock-up Lex has approved, for the atomic des
 ## Decisions so far
 
 <!-- one line per closed ticket: [title](tickets/file.md): gist -->
+- [Decide how the board looks and how Lex uses it](tickets/07-grill-board-look-and-use.md#resolution-2026-10-25): Paper-like endless canvas, values to atoms to molecules to organisms to mock-ups; part frames with options by states, light and dark; outline left, live options and Approve right; `/catalogue.html`; `light-dark()` first; mock-ups live on the canvas
+- [Decide the one-way check on one-offs](tickets/10-grill-one-way-check.md#resolution-2026-10-25): seven raw-value kinds per CSS file in one committed count file; `kit pr` css tier blocks a rise unless waived, lowers rewrite the file
 - [Decide the parts list, its order and what approved means](tickets/05-grill-parts-and-approval.md#resolution-2026-10-25): 24 parts (14 atoms, 10 molecules) plus the agents map's pin, chip, caret and outline; values, atoms, molecules, then organisms one by one; Approve or Needs change on the board, saved to `src/catalogue/approvals.json`
 - [Decide the editor's shared values](tickets/06-grill-shared-values.md#resolution-2026-10-25): a separate editor Framework set, exported and committed, generating theme.css's shared values with a kit drift check; motion, layers and shadows as editor tokens for now
 - [Decide what replaces each kind of toast](tickets/09-grill-toast-replacements.md#resolution-2026-10-25): one switch silences all 95 toasts after Try again and Media Replace's Undo move; errors stay on the control; Undo in the top bar; 37 explainers and 5 counts go

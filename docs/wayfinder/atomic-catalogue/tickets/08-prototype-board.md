@@ -2,7 +2,7 @@
 title: Mock up the catalogue board
 type: prototype (HITL)
 status: open
-assignee:
+assignee: Lex + claude (prototype)
 blocked_by: [07-grill-board-look-and-use]
 ---
 
