@@ -139,11 +139,16 @@ function letsHandedByValue(source: string, factory = "createPagesAndFilesHost"):
     const accessors = (kind: TS.SyntaxKind) => new Set(ports.properties.filter((item) => item.kind === kind).map((item) => item.name?.getText(tree)));
     const written = WRITTEN[factory];
     if (written && (!accessors(ts.SyntaxKind.GetAccessor).has(written) || !accessors(ts.SyntaxKind.SetAccessor).has(written))) found.push(`${written} (no getter and setter)`);
-    for (const item of ports.properties) {
-      const value = ts.isShorthandPropertyAssignment(item) ? item.name : ts.isPropertyAssignment(item) ? item.initializer : undefined;
-      if (value && ts.isIdentifier(value) && lets.has(value.text)) found.push(`${item.name!.getText(tree)} (by value)`);
-      if (value && ts.isIdentifier(value) && (consts.get(value.text) ?? -1) > node.getStart(tree)) found.push(`${item.name!.getText(tree)} (declared after)`);
-    }
+    // A group of ports (the workspace host's `site`, `builder`, …) is checked as the ports are.
+    const check = (properties: TS.NodeArray<TS.ObjectLiteralElementLike>) => {
+      for (const item of properties) {
+        const value = ts.isShorthandPropertyAssignment(item) ? item.name : ts.isPropertyAssignment(item) ? item.initializer : undefined;
+        if (value && ts.isObjectLiteralExpression(value)) check(value.properties);
+        if (value && ts.isIdentifier(value) && lets.has(value.text)) found.push(`${item.name!.getText(tree)} (by value)`);
+        if (value && ts.isIdentifier(value) && (consts.get(value.text) ?? -1) > node.getStart(tree)) found.push(`${item.name!.getText(tree)} (declared after)`);
+      }
+    };
+    check(ports.properties);
   });
   assert.ok(called, `main.ts calls ${factory}`);
   return found;
@@ -162,6 +167,16 @@ test("a const handed to the agent's commands by name before it is declared is na
     "const { restoreFile, openEntry } = boot;",
   ].join("\n");
   assert.deepEqual(letsHandedByValue(source, "createAgentCommands"), ["restoreFile (declared after)", "open (declared after)"]);
+});
+
+test("a let or a later const handed by name inside a group of the workspace host's ports is named", () => {
+  const source = [
+    "let later;",
+    "const workspace = createWorkspaceMount({ builder: { tools: later, drag: dragPageBlock, choose: () => after() }, site: { update: after } });",
+    "function dragPageBlock() {}",
+    "const after = () => {};",
+  ].join("\n");
+  assert.deepEqual(letsHandedByValue(source, "createWorkspaceMount"), ["tools (by value)", "update (declared after)"]);
 });
 
 test("a let handed to the agent's commands by value is named", () => {
