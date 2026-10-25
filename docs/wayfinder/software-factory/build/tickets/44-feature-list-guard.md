@@ -2,7 +2,7 @@
 title: A visible change cannot land without a feature-list update
 type: task (AFK)
 status: open
-assignee:
+assignee: sf-44 (this session)
 builder: claude
 blocked_by: [41-feature-list, 21-kit-records-every-piece]
 ---

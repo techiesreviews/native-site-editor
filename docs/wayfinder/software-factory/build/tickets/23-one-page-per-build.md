@@ -2,7 +2,7 @@
 title: One visual page per build
 type: task (AFK)
 status: open
-assignee:
+assignee: sf-23 (this session)
 builder: claude
 blocked_by: [21-kit-records-every-piece, 22-one-feedback-log]
 ---
