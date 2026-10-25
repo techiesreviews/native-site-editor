@@ -64,3 +64,17 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 
   The software-factory build README has no `prefix:` line yet, so new owners would be `software-factory-NN`. The lead adds `prefix: sf` (outside this slice's Files).
 
+### Follow-ups
+
+- Spec (P2): 7ea45758:scripts/agents/kit.d/next:160 — P2 fault: a delegated pick goes into `active` only for the run that picks it. On the next run it has no `kit bg` job. L
+- Spec (P2): 7ea45758:scripts/agents/kit.d/next:198 — P2 race: the plan is worked out once, before any claim. Per ticket, `claim()` fast-forwards and then rechecks only `ass
+- Spec (P2): 7ea45758:scripts/agents/tickets.mjs:137 — P2 fault: `parseFiles` only matches a heading that is exactly `## Files`. The repo already has `## Files (expected; co
+- Spec (P3): 7ea45758:scripts/agents/tickets.mjs:70 — P3 ticket: the ticket's Files entry says `tickets.mjs` gets "no behaviour change". `check` now flags a duplicate `type:
+- Spec (P3): 7ea45758:docs/wayfinder/software-factory/build/tickets/30-kit-next.md:47 — P3 ticket: "Kit commands and evidence" asks the report for the unit `RESULT:` lines, 
+- Standards (P3): 7ea45758:scripts/agents/kit.d/next:189 — P3 race (CODING_STANDARDS "Async writers", proofs survive the gap): `claim()` writes the ticket using the plan's candid
+- Standards (P3): 7ea45758:scripts/agents/kit.d/next:269 — P3 fault: when a later ticket fails, the run returns with only `RESULT: fail next start <ticket>: …`. Slices this run a
+- Validation gaps (gap): No test that a delegated ticket claimed in an earlier run still holds its Files. Add one: in run 1, `--start` claims `opencode/…` ticket A with `a/x.ts`. In run
+- Validation gaps (gap): No test for a ticket whose heading is `## Files (expected…)` or that has no Files section. Add a `kit next` case and assert the chosen behaviour: a wait or prob
+- Validation gaps (gap): No test for a claim made after `dev` moved under the plan. Add one: `FAKE_BG_HOOK` pushes a commit that adds `blocked_by: [01-x]` to the second ticket, or start
+- Validation gaps (gap): No test that a failure on the second `--start` item still reports the first as started. Add a case with `FAKE_BG_FAIL` set only for the second job name, and ass
+
