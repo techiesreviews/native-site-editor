@@ -45,6 +45,10 @@ test("arrow keys move the focus 2 %, Shift 10 %, within the picture; other keys 
   assert.deepEqual(nudgeFocus({ x: 1, y: 99 }, "ArrowLeft"), { x: 0, y: 99 });
   assert.deepEqual(nudgeFocus({ x: 50, y: 95 }, "ArrowDown", true), { x: 50, y: 100 });
   assert.equal(nudgeFocus({ x: 50, y: 50 }, "Enter"), undefined);
+  // A square as tall as the picture moves only across, as a drag does; one filling both ways stays.
+  assert.deepEqual(nudgeFocus({ x: 50, y: 50 }, "ArrowUp", true, { w: 0.45, h: 1 }), { x: 50, y: 50 });
+  assert.deepEqual(nudgeFocus({ x: 50, y: 50 }, "ArrowLeft", false, { w: 0.45, h: 1 }), { x: 48, y: 50 });
+  assert.deepEqual(nudgeFocus({ x: 37, y: 61 }, "ArrowRight", false, { w: 1, h: 1 }), { x: 37, y: 61 });
 });
 
 test("the square centred on a point gives the object-position that shows it, in whole percentages kept on the picture", () => {

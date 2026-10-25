@@ -1,9 +1,9 @@
 // The image popup (crop-popup.html, made shorter like Brizy's in slice 109) in the media popup
 // frame (media-popup-frame.ts): beside the picture on wide screens, a bottom sheet with 44 px
 // targets on phones, a centred layer above Settings. The picture with the shape menu on it (a dark
-// pill, its menu anchored to it) and the frame, dragged as the focus square; a one-time hint and Replace under it; Zoom
-// with the two Turn buttons at its end; small previews; one quiet message line and Done. Escape
-// closes the shape menu first, then the popup. A picture that can be trimmed gets Free (four
+// pill, its menu anchored to it) and the frame, dragged as the focus square; a one-time hint and
+// Replace under it; Zoom with the two Turn buttons at its end; small previews; one quiet message
+// line and Done. Escape closes the shape menu first, then the popup. A picture that can be trimmed gets Free (four
 // corners), Zoom and Turn (slice 41), and Open large editor in the head (slice 42). Fixed to one
 // shape (Settings' Social image, slice 44): its label instead of the shape menu, Zoom only, and a
 // link card for the preview.
@@ -171,7 +171,7 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
     const at = { left: `${area.x * pw}px`, top: `${area.y * ph}px`, width: `${area.w * pw}px`, height: `${area.h * ph}px` };
     Object.assign(frame.style, at); Object.assign(handles.style, at);
     // A square as tall as the picture cannot move up or down: a vertical swipe on it scrolls the sheet (slice 94).
-    frame.classList.toggle("image-popup__frame--full-height", area.h >= 1 - 1e-6);
+    frame.classList.toggle("image-popup__frame--full-height", squareApplies(state.shape, state.cut) && area.h >= 1 - 1e-6);
   }
   const drawPreviews = () => previews.draw(state, size());
   picture.addEventListener("load", () => { layoutPicture(); drawPreviews(); });
@@ -295,7 +295,7 @@ export function mountImagePopupView(state: ImagePopupState, host: ImagePopupHost
   root.addEventListener("keydown", event => {
     if ((event.target as Element).closest(".image-popup__menu")) return;
     if (event.target === frame && squareApplies(state.shape, state.cut)) {
-      const next = nudgeFocus(state.focus, event.key, event.shiftKey);
+      const next = nudgeFocus(state.focus, event.key, event.shiftKey, cutArea(size(), state.shape, state.focus, state.cut));
       if (next) { event.preventDefault(); events.focus(next); }
     }
     if (event.target === frame && state.shape === "free") {

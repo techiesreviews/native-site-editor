@@ -38,12 +38,14 @@ export function frameBadge(frame: { shape: PopupShape; trimmed: boolean }) {
 export const focusApplies = (shape: PopupShape) => shapeRatio(shape) !== undefined;
 const clamp = (value: number, low = 0, high = 1) => Math.min(high, Math.max(low, value));
 
-/** Arrow keys move the focus 2 % (Shift: 10 %), kept on the picture; other keys do nothing. */
-export function nudgeFocus(focus: PlaceFocus, key: string, shift = false): PlaceFocus | undefined {
+/** Arrow keys move the focus 2 % (Shift: 10 %), kept on the picture; other keys do nothing. As a drag
+ *  does, an axis the square (`area`, in shares of the picture) fills keeps its focus: the square cannot move along it. */
+export function nudgeFocus(focus: PlaceFocus, key: string, shift = false, area = { w: 0, h: 0 }): PlaceFocus | undefined {
   const step = shift ? 10 : 2;
   const move: Record<string, [number, number]> = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] };
   const by = move[key];
-  return by && { x: Math.round(clamp(focus.x + by[0], 0, 100)), y: Math.round(clamp(focus.y + by[1], 0, 100)) };
+  const at = (value: number, change: number, size: number) => size < 1 - 1e-6 ? Math.round(clamp(value + change, 0, 100)) : value;
+  return by && { x: at(focus.x, by[0], area.w), y: at(focus.y, by[1], area.h) };
 }
 
 /**

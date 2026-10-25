@@ -122,7 +122,8 @@
   height: 152px;
   border-radius: var(--radius);
   background: var(--image-popup-well);
-  /* A vertical swipe on the picture scrolls the sheet; the focus square, the Free frame and its corners take the finger. */
+  /* A vertical swipe on the picture scrolls the sheet; the focus square (except up and down on one as tall
+     as the picture), the Free frame and its corners take the finger. */
   touch-action: pan-y;
   user-select: none;
   -webkit-user-select: none;

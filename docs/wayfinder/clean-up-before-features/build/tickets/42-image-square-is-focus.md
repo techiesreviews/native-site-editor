@@ -45,7 +45,8 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Shots: `kit shots --steps .scratch/shots-42-square.json --compare dev --width 390,1280` (light and dark): the dot is gone and the popup layout is unchanged, with no layout findings.
 - A square as tall as the picture lets a vertical swipe on it scroll the phone sheet (`touch-action: pan-y`), because it can't move up or down anyway; a square that can move both ways takes the finger.
 - More tests: a desktop press beside the square centres the square there; a phone tap at a tenth across moves it to the left edge (`0% across`); a swipe up on a full-height square scrolls the sheet without moving it; a unit case for a square filling both axes. The slider's value attributes are no longer removed and re-added on every redraw.
-- Commit: 3c8a462de (first build).
+- Arrow keys follow the drag's rule: an axis the square fills keeps its focus, so on a full-height square Up and Down neither move it nor change the value read out or the `object-position` written. Specs check this on Tall 4:5, that the square keeps keyboard focus between moves, that the frame changes part (slider, Free's trim area, slider, hidden under Original) without stray value attributes, and that a zoomed drag keeps the focus matching where the square sits.
+- Commits: 3c8a462de (first build), 9c3a1610d (review fixes round 1).
 - `kit size`: `RESULT: ok size boot 358 KB (±0 KB) vs dev@56a2e6e, budget 362 KB`.
 - `kit ux --features F-media-17 --no-review`: `RESULT: ok ux 1 features tried, 2 scripted findings`. The try passed (its steps now choose Square). One finding is the "Only changes this spot" tooltip, which was already this long and now says "square" (90 characters); the other matched a line of code. The reviewer's F-media-17 verdict runs through agent.sh, so it is left to the slice.
 - Feature list: F-media-17 updated (Try, Good, Files, Steps).
