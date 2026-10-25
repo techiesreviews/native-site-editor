@@ -2,7 +2,7 @@
 title: Hand off the atomic catalogue build plan
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (lead)
 blocked_by: [06-grill-shared-values, 08-prototype-board, 09-grill-toast-replacements, 10-grill-one-way-check, 11-grill-extendable-parts]
 ---
 

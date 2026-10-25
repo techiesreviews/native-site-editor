@@ -26,3 +26,7 @@ Decided with Lex (all "yes"):
    - he marks **Approve** or **Needs change** with a note on the board;
    - the board saves the mark to `src/catalogue/approvals.json` through the editor's own Save to GitHub;
    - screens using old copies keep working until their organism's turn.
+
+## Comments (after resolution)
+
+- 2026-10-25, Lex on the board prototype: only **Approve**, with no Needs change and no note. Approving moves the part into the editor: it starts that part's replacement slice. This replaces item 3's "Approve or Needs change with a note"; see [ticket 08](08-prototype-board.md#resolution-2026-10-25).
