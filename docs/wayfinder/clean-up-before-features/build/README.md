@@ -118,7 +118,11 @@ Not candidates: no gate, but the two-at-once `main.ts` rule holds. Estimates are
 | [82 Login, setup checklist, wizard and Get started](tickets/82-setup-and-login-out-of-main.md) | M | sol | 25 | −395 |
 | [83 Repository list, account and sign-out](tickets/83-repositories-and-account-out-of-main.md) | M | sol | 82, 26 | −270 |
 | [84 Files and Pages actions](tickets/84-files-and-pages-out-of-main.md) | M | sol | 11, 41 | −650 |
-| [85 Workspace mount, palette, component tools and rail: `main.ts` is wiring](tickets/85-main-ts-wiring-only.md) | M | claude | 11, 25, 26, 31, 32, 41, 53, 70, 80, 81, 82, 83, 84 | −700 → about 500 |
+| [86 Workspace mount and close](tickets/86-workspace-mount-out-of-main.md) | M | claude | 70 | −480 |
+| [87 Site loading and the text index](tickets/87-site-loading-out-of-main.md) | L | claude | 70 | −730 |
+| [88 Media wiring](tickets/88-media-wiring-out-of-main.md) | S | claude | 86 | −200 |
+| [89 Page-builder wiring](tickets/89-page-builder-wiring-out-of-main.md) | L | claude | 87 | −950 |
+| [85 Workspace mount, palette, component tools and rail: `main.ts` is wiring](tickets/85-main-ts-wiring-only.md) | S | claude | 86–89 and all earlier `main.ts` slices | rest → about 500 |
 
 The estimates add up to about 4,975 lines, leaving about 675 before 85 also moves module state and the lazy-module loaders; 85 must land at about 500 (at most 600, with every remaining block named). If a slice lands well short of its estimate, the lead re-plans 85 before it starts (it may split) and tells Lex in the two-line note.
 
@@ -146,7 +150,7 @@ The frontier decides; this is one order that keeps to the rules.
 7. 32; 82 and 83 as `main.ts` room allows.
 8. 40, 41; then 84.
 9. 50, 51, 52; then 53 and 60 together.
-10. 70; last 85, alone in `main.ts`. Then the lead tells Lex the preview is ready for his end check.
+10. 70; then 86 beside 87, 88 after 86, 89 after 87 (at most two in `main.ts`); last 85, alone in `main.ts`. (Re-planned 2026-10-25: `main.ts` was 2,863 lines after 70, so 85 was split into 86–89.) Then the lead tells Lex the preview is ready for his end check.
 
 ## Lead decisions (technical, made in planning; check with Lex where marked)
 

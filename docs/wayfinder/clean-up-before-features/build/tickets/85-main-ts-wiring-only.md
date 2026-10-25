@@ -4,12 +4,14 @@ type: task (AFK)
 status: open
 assignee:
 builder: claude
-blocked_by: [11-lazy-media-and-pages, 25-boot-and-snapshot, 26-github-retries-and-toast, 31-native-site-runtime, 32-one-overlay-for-agents-and-media, 41-is-a-file-rule, 53-agent-wiring-out-of-main, 70-pass-throughs-and-discard, 80-version-and-history-out-of-main, 81-code-panes-out-of-main, 82-setup-and-login-out-of-main, 83-repositories-and-account-out-of-main, 84-files-and-pages-out-of-main]
+blocked_by: [11-lazy-media-and-pages, 25-boot-and-snapshot, 26-github-retries-and-toast, 31-native-site-runtime, 32-one-overlay-for-agents-and-media, 41-is-a-file-rule, 53-agent-wiring-out-of-main, 70-pass-throughs-and-discard, 80-version-and-history-out-of-main, 81-code-panes-out-of-main, 82-setup-and-login-out-of-main, 83-repositories-and-account-out-of-main, 84-files-and-pages-out-of-main, 86-workspace-mount-out-of-main, 87-site-loading-out-of-main, 88-media-wiring-out-of-main, 89-page-builder-wiring-out-of-main]
 ---
 
 ## Goal
 
 The last `main.ts` slice: Lex's **about 500 lines** ([ticket 05, item 1](../../tickets/05-grill-architecture-choices.md#resolution-2026-10-22); [TD 01](../../../../work/tech-debt/issues/01-main-ts-size.md)). What is left besides wiring: `mountWorkspace` (about 330 lines), the palette, component tools, rail typing and block moves (about 400), preview selection, variants, the CSS workspace and the Page Structure controller wiring (about 250), and module state and lazy-module loaders. They move into modules that own their state; `main.ts` keeps imports, construction in order, and `boot()`.
+
+**Re-planned 2026-10-25** (lead): after slice 70 `src/main.ts` was 2,863 lines, not about 1,350. The big moves are split out: 86 workspace mount, 87 site loading and the text index, 88 media wiring, 89 page-builder wiring (together about −2,360). This slice keeps what is left: the lazy-module loaders (`lazyModule`, about line 186), the remaining module state, and `main.ts` as imports, construction in order and `boot()`. It sets the final ceiling, closes TD 01 and lands with `kit pr --full`.
 
 ## Decided behaviour
 
