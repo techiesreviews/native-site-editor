@@ -110,9 +110,12 @@ test("a setup host member passed by value, called on the spot or reached through
 });
 
 // The Pages & files host, the agent's commands, site loading and the text index read main.ts's `let` state when they run: such a value goes in
-// as a getter (and a setter where the host writes it, as the Pages & files host's `fileGeneration`), never as a
+// as a getter (and a setter where the host writes it, as the Pages & files host's `fileGeneration` and the text index's
+// `nativePreviewBehind`: a getter alone still type-checks, then throws on the first write), never as a
 // copy taken when the host is made. A `const` declared after the call is not there yet when the host is made
 // (CODING_STANDARDS "Module order holds"): it goes in as an arrow, never by name.
+// The `let` state each factory writes through its ports, so needs a getter and a setter.
+const WRITTEN: Record<string, string> = { createPagesAndFilesHost: "fileGeneration", createSiteTextIndex: "nativePreviewBehind" };
 function letsHandedByValue(source: string, factory = "createPagesAndFilesHost"): string[] {
   const tree = parse(source, "src/main.ts");
   const lets = new Set<string>(), consts = new Map<string, number>();
@@ -133,7 +136,8 @@ function letsHandedByValue(source: string, factory = "createPagesAndFilesHost"):
     const ports = node.arguments[0];
     assert.ok(ports && ts.isObjectLiteralExpression(ports), `main.ts hands ${factory} an object of ports`);
     const accessors = (kind: TS.SyntaxKind) => new Set(ports.properties.filter((item) => item.kind === kind).map((item) => item.name?.getText(tree)));
-    if (factory === "createPagesAndFilesHost" && (!accessors(ts.SyntaxKind.GetAccessor).has("fileGeneration") || !accessors(ts.SyntaxKind.SetAccessor).has("fileGeneration"))) found.push("fileGeneration (no getter and setter)");
+    const written = WRITTEN[factory];
+    if (written && (!accessors(ts.SyntaxKind.GetAccessor).has(written) || !accessors(ts.SyntaxKind.SetAccessor).has(written))) found.push(`${written} (no getter and setter)`);
     for (const item of ports.properties) {
       const value = ts.isShorthandPropertyAssignment(item) ? item.name : ts.isPropertyAssignment(item) ? item.initializer : undefined;
       if (value && ts.isIdentifier(value) && lets.has(value.text)) found.push(`${item.name!.getText(tree)} (by value)`);
@@ -173,4 +177,14 @@ test("a let handed to the Pages & files host by value, or fileGeneration without
     "const host = createPagesAndFilesHost({ fileGeneration, dropdown: explorerDropdown, get files() { return files; } });",
   ].join("\n");
   assert.deepEqual(letsHandedByValue(source), ["fileGeneration (no getter and setter)", "fileGeneration (by value)", "dropdown (by value)"]);
+});
+
+test("nativePreviewBehind handed to the text index with a getter and no setter is named", () => {
+  const source = [
+    "let nativePreviewBehind = false;",
+    "const index = createSiteTextIndex({ get nativePreviewBehind() { return nativePreviewBehind; } });",
+  ].join("\n");
+  assert.deepEqual(letsHandedByValue(source, "createSiteTextIndex"), ["nativePreviewBehind (no getter and setter)"]);
+  const both = source.replace("} });", "}, set nativePreviewBehind(value) { nativePreviewBehind = value; } });");
+  assert.deepEqual(letsHandedByValue(both, "createSiteTextIndex"), []);
 });
