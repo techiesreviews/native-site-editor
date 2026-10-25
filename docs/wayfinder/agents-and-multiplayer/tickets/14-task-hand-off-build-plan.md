@@ -2,7 +2,7 @@
 title: Hand off the agents and multiplayer build plan
 type: task (AFK)
 status: open
-assignee:
+assignee: claude (lead)
 blocked_by: [13-grill-undo-with-several-editors]
 ---
 
