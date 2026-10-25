@@ -1,8 +1,8 @@
 ---
 title: "One feedback log per build; kit feedback"
 type: task (AFK)
-status: open
-assignee: sf-22 (this session)
+status: closed
+assignee: sf-22
 builder: claude
 blocked_by: []
 ---
@@ -37,3 +37,10 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 
 - `scripts/agents/kit doctor`; `ASE_REVIEW_MODEL=claude-opus-5-5 scripts/agents/kit bg slice-sf22 -- scripts/agents/kit slice --ticket docs/wayfinder/software-factory/build/tickets/22-one-feedback-log.md --builder claude-opus-5-5`; `scripts/agents/kit wait job slice-sf22 --timeout 2h`.
 - Report: unit and tickets check `RESULT:` lines, a sample line, review decisions, PR and merge SHA.
+
+## Done (2026-10-25)
+
+- `scripts/agents/kit feedback <map> --kind K [--after-release] [--fix <ticket|PR>] "<text>"` adds one line under `## Feedback` in `docs/wayfinder/<map>/build/feedback.md`, newest first, creating the file with a `# Feedback: <map>` title, a one-line legend and the heading. It prints `file:line: <line>`, for example `docs/wayfinder/software-factory/build/feedback.md:7: - 2026-10-25 · felt-wrong · "too many buttons" · after release: no · fix: open`, and never commits. `--fix-for <line-number> <ticket|PR>` replaces that entry's fix. A ticket number (`24`, `24-slug`, `24-slug.md`) resolves in the map's `build/tickets/` (link `tickets/…`) or `tickets/` (link `../tickets/…`); `#12` or `PR 12` becomes `PR #12`. A bad kind, unknown map or ticket, text with a newline or ` · `, or `--fix-for` on a non-entry line exits 2 with usage and leaves the log alone; a log without `## Feedback` exits 1.
+- `tickets.mjs` exports the shared format (`feedbackKinds`, `feedbackLegend`, `feedbackLine`, `parseFeedback`, `loadFeedback`). `tickets.mjs check` (also with `--ref`) validates every entry in each map's `build/feedback.md`: a real calendar date, a known kind, `after release: yes|no`, and a fix of `open`, `PR #n` or a link whose target exists; each problem names `file:line`. It prints `Feedback lines checked: N` after the ticket count when any log exists. `frontier` ignores the logs.
+- Docs: `kit feedback` line in agent-scripts.md; issue-tracker.md's Build files names the log as the one place for Lex's feedback, with the line shape and kinds; kitchen.md stations 10 and 11 add the feedback line per correction.
+- Tests: `tests/kit-feedback.test.ts` (creation with heading and legend, newest first, fix forms, `--fix-for`, exit 2 for bad input, missing heading) and a new `tests/agent-tickets.test.ts` case (a good log passes `check` from the working tree and `--ref`; a bad date, kind, flag, fix shape, missing link and malformed line each name `file:line`).

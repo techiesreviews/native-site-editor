@@ -140,10 +140,13 @@ on a usage-limit `problem:` line, tell Lex the reset time and carry on with Clau
 
 - **Use:** the lead runs `kit preview` after each merge (CI cannot until Lex adds the Cloudflare
   token). Then a two-line plain note to Lex: what was done, and whether he would notice anything;
-  a `kit shots` contact sheet through `html_render` only when something visible changed.
+  a `kit shots` contact sheet through `html_render` only when something visible changed. Every
+  correction from Lex gets one line in the build's feedback log: `kit feedback <map> --kind K
+  "<text>"` ([issue-tracker.md](issue-tracker.md#build-files)); fill its fix with `--fix-for` once
+  the ticket or PR exists.
 - **Planned:** the kit records builder, time, review rounds, findings and Lex's corrections per
-  piece; one visual page per build shown in chat at each milestone; one feedback log line per
-  correction from Lex ([factory 04](../wayfinder/software-factory/tickets/04-grill-scoreboard.md#resolution-2026-10-22)).
+  piece; one visual page per build shown in chat at each milestone
+  ([factory 04](../wayfinder/software-factory/tickets/04-grill-scoreboard.md#resolution-2026-10-22)).
 - **Done when:** `RESULT: ok preview <version> <sha>` and the note is sent.
 
 ### 11. Lex's end check
@@ -151,7 +154,9 @@ on a usage-limit `problem:` line, tell Lex the reset time and carry on with Clau
 - **Use:** when the build's frontier is empty, the lead tells Lex the preview is ready, with a plain
   what-to-test list (what a user could notice, where to look, what to try on his iPhone).
   **Planned:** the checking tool runs the whole feature list first (factory 03).
-- **Decides:** Lex. Each correction becomes a ticket in the build (station 4) and counts on the ladder.
+- **Decides:** Lex. Each correction becomes a ticket in the build (station 4) and one feedback log
+  line (`kit feedback <map> --kind K --fix <ticket> "<text>"`, committed with the ticket); the
+  log is what the ladder counts. A problem he finds on production adds `--after-release`.
 - **Done when:** Lex says "ship it".
 
 ### 12. Release
