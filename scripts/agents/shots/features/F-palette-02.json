@@ -1,1 +1,1 @@
-{"screen":"editor","name":"F-palette-02","steps":["press Tab","press Tab","press Tab","press Tab","press Enter","press Control+k","type \"Duplicate\" in Search commands","record typed 600","press Enter","expect visible \"Section duplicated\""]}
+{"screen":"editor","name":"F-palette-02","steps":["press Tab","press Tab","press Tab","press Tab","press Enter","expect visible \"No heading or label\"","press Control+k","type \"Duplicate\" in Search commands","record typed 600","press Enter","expect visible \"Section duplicated\""]}

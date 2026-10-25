@@ -1,1 +1,1 @@
-{"screen":"pages","name":"F-pages-13","steps":["press Tab","press Tab","press Tab","press ArrowDown","press Shift+F10","click \"Page settings…\"","click \"Social\"","expect visible \"Share card\""]}
+{"screen":"pages","name":"F-pages-13","steps":["expect visible \"Page not found\"","press Tab","press Tab","press Tab","press ArrowDown","press Shift+F10","expect visible \"Change URL…\"","click \"Page settings…\"","expect visible \"This page · /about/\"","click \"Social\"","expect visible \"Share card\""]}

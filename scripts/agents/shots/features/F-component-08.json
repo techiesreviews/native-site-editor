@@ -1,1 +1,1 @@
-{"screen":"add-panel","name":"F-component-08","steps":["press Escape","press Tab","press ArrowDown","press ArrowDown","press ArrowDown","press Tab","press Tab","press Tab","press Enter","expect visible \"Cancel\"","click \"Detach\"","record detach 600"]}
+{"screen":"add-panel","name":"F-component-08","steps":["press Escape","press Tab","press ArrowDown","press ArrowDown","press ArrowDown","press Tab","press Tab","press Tab","press Enter","expect visible \"Detach this Section hero?\"","click \"Detach\"","record detach 600"]}

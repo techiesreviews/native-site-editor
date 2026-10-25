@@ -1,1 +1,1 @@
-{"screen":"files","name":"F-pages-10","steps":["press Tab","press Tab","press Tab","press F2"]}
+{"screen":"files","name":"F-pages-10","steps":["press Tab","press Tab","press Tab","expect visible \".editor\"","press F2","type \"editor-notes\" in New name for .editor","press Enter","record renamed 600","press Shift+F10","click \"Delete\"","expect visible \"Delete the folder editor-notes and its 1 file?\"","click \"Delete\"","record deleted 600","drag \"robots.txt\" to \"styles\"","record moved 800"]}

@@ -1,1 +1,1 @@
-{"screen":"editor","name":"F-bar-09","steps":["press Tab","press Tab","press Tab","press Tab","press Enter","click \"Move up\"","click \"Duplicate\"","record duplicate 600","click \"Remove\"","expect visible \"Move up\""]}
+{"screen":"editor","name":"F-bar-09","steps":["press Tab","press Tab","press Tab","press Tab","press Enter","expect visible \"No heading or label\"","click \"Move up\"","click \"Duplicate\"","record duplicate 600","click \"Remove\"","expect visible \"Move up\""]}
