@@ -76,3 +76,9 @@ done: 11 slices since tracking started: slice-sf20 merged (PR #172), slice-sf21 
 running/next: 3 building (slice-sf23, slice-sf43, slice-sf45), 1 claimed with no job (31-heartbeat); the lead looks at it, 1 waiting on other work
 RESULT: ok heartbeat continue
 ```
+
+### Follow-ups (lead, after round 4)
+
+- P2 fault, `scripts/agents/kit.d/heartbeat` `saveState`: finished jobs are marked reported before `kit next` runs and before the next-timeout check; if anything throws after the save, those finished lines are lost. Save after `kit next`.
+- P2 race, `kit.d/heartbeat` next timeout: SIGTERM to `kit next --start` inside `claim()` skips its clean-up (`checkout`, `reset --keep origin/dev`). Let `next` handle SIGTERM and clean up, or time out with a signal it traps.
+- P3 fault, `kit.d/heartbeat` launching jobs: a `died` job with no `pid` and unknown age counts as launching forever (a launcher killed between `kit bg`'s record writes). Give launching a time limit.
