@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { componentSourceProblem, fileInTheWay, folderProblem, foldersAbove, makeComponentProblem, pageAddressProblem, parentProblem, toPageAddress, toPageRoute } from "../shared/site-rules.ts";
+import { componentSourceProblem, fileInTheWay, folderProblem, foldersAbove, makeComponentProblem, pageAddressProblem, parentProblem, toPageAddress, toPageRoute, type TypedRouteSite } from "../shared/site-rules.ts";
 
 const ADDRESS = "Use lowercase letters, digits and dashes in the URL, at most 80, starting with a letter or digit.";
 
@@ -44,8 +44,7 @@ test("a typed address is converted to the rule, not refused", () => {
 
 test("a typed URL is converted part by part; folders the site has stay", () => {
   // A site with an `Old_Folder/` and `notes/first-note/`, and a page at `Notes.html`.
-  const files = ["index.html", "Old_Folder/index.html", "notes/first-note/index.html", "Notes.html"];
-  const site = { starts: (start: string) => files.some((path) => path.startsWith(start)) };
+  const site = { files: ["index.html", "Old_Folder/index.html", "notes/first-note/index.html", "notes/Old_Sub/index.html", "Notes.html"] } satisfies TypedRouteSite;
   assert.equal(toPageRoute("/Notes/About Us/", site), "/notes/about-us/");
   assert.equal(toPageRoute("/notes/About_Us.v2/", site), "/notes/about-us-v2/");
   assert.equal(toPageRoute("/Old Notes.HTML", site), "/old-notes.html");
@@ -54,6 +53,8 @@ test("a typed URL is converted part by part; folders the site has stay", () => {
   // A folder the site has stays, as the move planner takes it; a new one meets the rule.
   assert.equal(toPageRoute("/Old_Folder/New Page/", site), "/Old_Folder/new-page/");
   assert.equal(toPageRoute("/Old_Folder/Sub_Folder/x/", site), "/Old_Folder/sub-folder/x/");
+  // Pasted whole, a folder is looked for under what the parts above it became.
+  assert.equal(toPageRoute("/Notes/Old_Sub/x/", site), "/notes/Old_Sub/x/");
   // Only as a folder: a page named like it (`Notes.html`) is no folder `Notes/`.
   assert.equal(toPageRoute("/Notes/x/", site), "/notes/x/");
   // The page's own last part stays wherever it goes; another last part meets the rule.
@@ -65,6 +66,9 @@ test("a typed URL is converted part by part; folders the site has stay", () => {
   assert.equal(toPageRoute("/notes -/x", site, typing), "/notes-/x");
   for (const end of [".", ".h", ".ht", ".htm", ".html"]) assert.equal(toPageRoute(`/notes${end}`, site, typing), `/notes${end}`);
   for (const start of ["O", "Old_", "Old_Folder"]) assert.equal(toPageRoute(`/${start}`, site, typing), `/${start}`);
+  // Only the start of a folder's name: `Notes.html` is a file, so `/N` is converted.
+  assert.equal(toPageRoute("/N", { files: ["Notes.html"] }, typing), "/n");
+  assert.equal(toPageRoute("/Notes/Old_", site, typing), "/notes/Old_");
   assert.equal(toPageRoute("/Old_Folder/", site, typing), "/Old_Folder/");
   assert.equal(toPageRoute("/Ol d", site, typing), "/ol-d");
   assert.equal(toPageRoute("/notes.", site), "/notes");

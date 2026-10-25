@@ -337,8 +337,12 @@ test("a page, a subpage under it and another are made in place as folders of the
     field.dispatchEvent(new InputEvent("input", { isComposing: true }));
   });
   await expect(slug).toHaveValue("Cafe\u0301");
+  await expect(slug).toHaveAttribute("aria-invalid", "true");
   await slug.evaluate((field) => field.dispatchEvent(new CompositionEvent("compositionend")));
   await expect(slug).toHaveValue("cafe");
+  // The URL is checked again once composed.
+  await expect(slug).toHaveAttribute("aria-invalid", "false");
+  await expect(editRow(page).locator(".pages-edit__message")).toBeEmpty();
   await slug.fill("second-take");
   await title.fill("Another title");
   await expect(editRow(page).locator(".pages-edit__message")).toBeEmpty();

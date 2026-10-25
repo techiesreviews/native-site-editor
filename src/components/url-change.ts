@@ -64,7 +64,7 @@ export function createUrlChange(options: {
   /** Shows Cancel and Change URL buttons under the message (the Pages tab). */
   buttons?: boolean;
   /** The typed text made to meet the address rule (`typing`: more is coming); without it, only the folders of the URL now are known. */
-  convert?: (text: string, typing: boolean) => string;
+  typedUrl?: (text: string, typing: boolean) => string;
 }) {
   const id = `url-change-${++serial}`;
   const form = node("form", "url-change");
@@ -110,8 +110,8 @@ export function createUrlChange(options: {
   keep.addEventListener("change", () => { keepTouched = true; });
 
   // The URL typed, made to meet the address rule; folders the site has stay as they are.
-  const convert = (text: string, typing = false) => options.convert?.(text, typing)
-    ?? toPageRoute(text, { starts: (start) => initial.slice(1).startsWith(start), own: initial.split("/").filter(Boolean).at(-1) }, { typing });
+  const convert = (text: string, typing = false) => options.typedUrl?.(text, typing)
+    ?? toPageRoute(text, { files: [initial.slice(1)], own: initial.split("/").filter(Boolean).at(-1) }, { typing });
 
   function check() {
     const planned = options.plan(convert(input.value));

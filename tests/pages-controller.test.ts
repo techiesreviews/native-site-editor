@@ -39,18 +39,27 @@ test("URL planning preserves unchanged, occupied and link summary messages", () 
 
 test("a typed URL keeps a folder the site has, named against the rule, and the plan moves the page into it", () => {
   const h = fixture({ "Old_Folder/index.html": "<html><head><title>Old</title></head><body><h1>Old</h1></body></html>" });
-  assert.equal(h.controller.urlTyped(target.file, "/Old_Folder/Moved Page/", false), "/Old_Folder/moved-page/");
+  assert.equal(h.controller.typedUrl(target.file, "/Old_Folder/Moved Page/", false), "/Old_Folder/moved-page/");
   // Typed letter by letter, the folder's name stays while it starts one the site has.
   let typed = "";
-  for (const key of "/Old_Folder/moved") typed = h.controller.urlTyped(target.file, typed + key, true);
+  for (const key of "/Old_Folder/moved") typed = h.controller.typedUrl(target.file, typed + key, true);
   assert.equal(typed, "/Old_Folder/moved");
   const plan = h.controller.urlPlan(target.file, "/Old_Folder/moved/");
   assert.ok(plan.ok, plan.ok ? "" : plan.error);
   assert.equal(plan.route, "/Old_Folder/moved/");
   assert.match(plan.message, /^Moves about\/index\.html to Old_Folder\/moved\/index\.html/);
   // The page's own last part stays where it goes; a new folder meets the rule.
-  assert.equal(h.controller.urlTyped(target.file, "/Old_Folder/about/", false), "/Old_Folder/about/");
-  assert.equal(h.controller.urlTyped(target.file, "/New_Folder/x/", false), "/new-folder/x/");
+  assert.equal(h.controller.typedUrl(target.file, "/Old_Folder/about/", false), "/Old_Folder/about/");
+  assert.equal(h.controller.typedUrl(target.file, "/New_Folder/x/", false), "/new-folder/x/");
+});
+
+test("a pasted URL finds a folder the site has under the parts converted above it", () => {
+  const h = fixture({ "notes/Old_Sub/index.html": "<html><head><title>Old</title></head><body><h1>Old</h1></body></html>" });
+  const typed = h.controller.typedUrl(target.file, "/Notes/Old_Sub/x/", false);
+  assert.equal(typed, "/notes/Old_Sub/x/");
+  const plan = h.controller.urlPlan(target.file, typed);
+  assert.ok(plan.ok, plan.ok ? "" : plan.error);
+  assert.match(plan.message, /^Moves about\/index\.html to notes\/Old_Sub\/x\/index\.html/);
 });
 
 for (const action of ["move", "url", "delete", "create", "folder", "duplicate"] as const) {

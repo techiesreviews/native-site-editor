@@ -213,10 +213,9 @@ export function createPagesController(ports: PagesPorts, state = createPagesStat
 
   // The URL typed for the page `file` as its field shows it: made to meet the
   // address rule where the move planner checks it, folders the site has kept.
-  function nativeUrlTyped(file: string, text: string, typing: boolean): string {
-    const files = [...ports.files()];
+  function typedUrl(file: string, text: string, typing: boolean): string {
     const from = ports.routeForPath(file);
-    return toPageRoute(text, { starts: (start) => files.some((path) => path.startsWith(start)), own: from && routeSlug(from) }, { typing });
+    return toPageRoute(text, { files: ports.files(), own: from && routeSlug(from) }, { typing });
   }
 
   function nativeUrlPlan(file: string, value: string): UrlPlan {
@@ -439,7 +438,7 @@ export function createPagesController(ports: PagesPorts, state = createPagesStat
   }
 
   return { retitle: retitleNativePage, duplicate: duplicateNativePage, remove: removeNativePagesTarget,
-    urlPlan: nativeUrlPlan, urlTyped: nativeUrlTyped, changeUrl: changeNativeUrl, moveChoices: nativeMoveChoices,
+    urlPlan: nativeUrlPlan, typedUrl, changeUrl: changeNativeUrl, moveChoices: nativeMoveChoices,
     dropProblem: nativeDropProblem, confirmMove: confirmNativeMove, moveTo: moveNativePageTo,
     linkSources: nativeLinkSources, onBranchHere,
     ...state,
