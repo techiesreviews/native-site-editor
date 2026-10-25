@@ -1343,7 +1343,7 @@ const setup = createSetupHost({
   status, errorMessage, refuse,
 });
 const {
-  renderLogin, startSitePanel, setupController, setupEntry, showGetStarted, checkNewRepositories,
+  renderLogin, setupController, setupEntry, showGetStarted, checkNewRepositories,
   rememberRepositories, knownRepositories, rememberStartingPoint, takeStartingPoint,
   rememberPartialStart, readPartialStart, forgetPartialStart, offerFinishStarter, removeFinishStarter, writeStartingPoint,
 } = setup;
@@ -1383,21 +1383,22 @@ const pagesAndFiles = createPagesAndFilesHost({
   get siteActions() { return workspace.siteActions; }, clearPendingTitles,
   get fileGeneration() { return fileGeneration; }, set fileGeneration(value) { fileGeneration = value; },
 });
-const { loadPagesActions, loadFileOps, pagesController, savePublish, filesTreeController, mountExplorer, ensureExplorer,
+const { loadPagesActions, loadFileOps, pagesController, savePublish, filesTreeController, ensureExplorer,
   openCreate, treeState, pathNow, nativePathExists, nativeSiteReadForCreate, branchText, branchPathProblem, discardedNewPages, afterFileChanges,
   openAfter, undoFileChanges, discardFileChange } = pagesAndFiles;
 
 // The workspace's screen, the code panes and the source editor, a folder's summary, and closing it all (src/workspace-mount.ts).
 // By value: consts declared above and hoisted functions; `let` state goes in as accessors (tests/main-ts-ceiling.test.ts).
 const workspace = createWorkspaceMount({
-  app, element, appStore, editorModule, workspaceSession, runtime, finishedWork, mediaHistoryHome, parkedSteps, guardedEdits, blockInsertPorts,
-  mediaController, paletteController, previewSelection, pageStructureController, linkedStyles, versions, cards, pagesAndFiles, setupController,
-  setupEntry, repositoryIndex, cleanSources, filesTreeController, nativeAddPoints,
-  draftScope, shownScope, nativeModeActive, nextLoad, setCurrentPage, deactivateNative, updateNativePreviewSources, errorMessage, announce,
-  openNativeSiteSettings, nativeSiteFiles, finishRailTyping, loadBlockInsert, loadBlockDrag, structureDrop, dragPageBlock, mountExplorer,
-  elementMenuItems, nativeRouteShownSources, loadNativeAssets, loadNativeShownFiles, loadNativeComponentStyles, noteNativePainted,
-  nativeSectionChoices, nativeElementAddPoint, insertNativeComponent, nativeComponentFieldsRevision, nativePageMeta, openNativePageSettings,
-  openNativeNavigation, writeNativePageMeta, nativeRouteForPath, loadPagesActions, nativeMoveItems, mountComponentTools, startSitePanel,
+  app, element, appStore, editorModule, workspaceSession, runtime, finishedWork, mediaHistoryHome, parkedSteps, guardedEdits, mediaController,
+  paletteController, previewSelection, pageStructureController, linkedStyles, versions, cards, pagesAndFiles, setup, repositoryIndex, cleanSources,
+  draftScope, shownScope, nextLoad, setCurrentPage, errorMessage, announce,
+  site: { active: nativeModeActive, deactivate: deactivateNative, update: updateNativePreviewSources, painted: noteNativePainted, assets: loadNativeAssets,
+    shown: loadNativeShownFiles, routeSources: nativeRouteShownSources, styles: loadNativeComponentStyles, files: nativeSiteFiles, route: nativeRouteForPath },
+  builder: { choices: nativeSectionChoices, addPoint: nativeElementAddPoint, addPoints: nativeAddPoints, insert: insertNativeComponent, drag: dragPageBlock,
+    dropTree: structureDrop, loadDrag: loadBlockDrag, loadInsert: loadBlockInsert, insertPorts: blockInsertPorts, finishTyping: finishRailTyping,
+    menuItems: elementMenuItems, fields: nativeComponentFieldsRevision, moveItems: nativeMoveItems, tools: mountComponentTools },
+  page: { meta: nativePageMeta, writeMeta: writeNativePageMeta, settings: openNativePageSettings, navigation: openNativeNavigation, siteSettings: openNativeSiteSettings },
   get info() { return info; }, get repositories() { return repositories; }, set repositories(value) { repositories = value; },
   get fileGeneration() { return fileGeneration; }, set fileGeneration(value) { fileGeneration = value; },
   get nativePreview() { return nativePreview; }, set nativePreview(value) { nativePreview = value; },
@@ -1406,8 +1407,8 @@ const workspace = createWorkspaceMount({
   get nativePreviewBehind() { return nativePreviewBehind; }, get nativeMountListener() { return nativeMountListener; },
   // Declared further down: read at call time.
   get boot() { return boot; }, get agentController() { return agentController; }, get workspaceBoot() { return workspaceBoot; },
-  refreshRepositoryList: () => refreshRepositoryList(), switchAccount: (login) => switchAccount(login), disconnect: () => disconnect(),
-  chooseRepository: () => chooseRepository(), loadSnapshot: () => loadSnapshot(),
+  account: { reload: () => refreshRepositoryList(), switchTo: (login) => switchAccount(login), signOut: () => disconnect(),
+    choose: () => chooseRepository(), load: () => loadSnapshot() },
 });
 const { codePanes, nativeHistoryAliases, nativeHistoryShares, nativeHistorySession, closeEditor, openCodeEditor, mountWorkspace, closeWorkspace,
   setupScope, showDirectory } = workspace;
