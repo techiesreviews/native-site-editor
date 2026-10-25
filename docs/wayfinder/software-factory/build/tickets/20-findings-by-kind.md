@@ -1,8 +1,8 @@
 ---
 title: Review findings carry a kind
 type: task (AFK)
-status: open
-assignee: sf-20 (this session)
+status: closed
+assignee: sf-20
 builder: claude
 blocked_by: [10-review-findings-severity]
 ---
@@ -41,3 +41,12 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 
 - `scripts/agents/kit doctor`; `ASE_REVIEW_MODEL=claude-opus-5-5 scripts/agents/kit bg slice-sf20 -- scripts/agents/kit slice --ticket docs/wayfinder/software-factory/build/tickets/20-findings-by-kind.md --builder claude-opus-5-5`; `scripts/agents/kit wait job slice-sf20 --timeout 2h`.
 - Report: unit `RESULT:` lines, the smoke review's RESULT line and counts, review decisions, PR and merge SHA.
+
+## Done (2026-10-25)
+
+- The review brief (`reviewFormat` in `scripts/agents/review-brief.mjs`) asks for `commit:path:line — P1 fault: …` and states the four kinds (fault, ticket, race, style) with one line and an example each.
+- `openFindings` returns `kind` for every finding: the word right after the severity, read in plain, bold and backtick forms (`P2 fault:`, `**P2 fault:**`, `` `P2 race` ``, `` `P2` `race` ``), case-insensitive. A missing or unknown kind is `unsorted`; validation gaps carry `kind: null` like their `severity: null`. Blocking still goes by severity only.
+- `kit review` writes `findings.json` beside `result.md`: `{ model, effort, scope, head, findings: [{ group, severity, kind, text }], counts: { kind, severity } }`, or `{ model, effort, scope, head, unreadable: true }` when the report does not parse, and prints a `findings N: <kind counts>; <severity counts>` line before its RESULT.
+- `kit fix` asks the builder for `- <finding> — reason: <why>` under `Declined:`, writes the declined list with reasons at the end of its `round-N.md`, and appends `declined: [{ text, reason }]` to the fixed review's `findings.json` (rewritten idempotently on a retried builder phase; reviews saved before `findings.json` existed are left alone).
+- Docs: `kit review` line in agent-scripts.md, one sentence on kinds in runner.md Review and close, station 8's evidence line in kitchen.md (no longer planned).
+- Tests: `tests/review-findings.test.ts` (kinds in every variant, unsorted blocks as before, record and counts, unreadable), `tests/kit-review.test.ts` (fake review writes `findings.json` with counts; unreadable report; brief names the kinds; evidence now five files), `tests/kit-fix.test.ts` (declined finding lands in the round file and `declined` with its reason). `scripts/agents/kit unit --affected`: 271/271.
