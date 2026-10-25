@@ -44,3 +44,16 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `tickets.mjs` exports the shared format (`feedbackKinds`, `feedbackLegend`, `feedbackLine`, `parseFeedback`, `loadFeedback`). `tickets.mjs check` (also with `--ref`) validates every entry in each map's `build/feedback.md` (blank lines and `###` subheadings may group entries): a real calendar date, a known kind, `after release: yes|no`, and a fix of `open`, `PR #n` or a link whose target exists; each problem names `file:line`. It prints `Feedback lines checked: N` after the ticket count when any log exists. `frontier` ignores the logs.
 - Docs: `kit feedback` line in agent-scripts.md; issue-tracker.md's Build files names the log as the one place for Lex's feedback, with the line shape and kinds; kitchen.md stations 10 and 11 add the feedback line per correction.
 - Tests: `tests/kit-feedback.test.ts` (creation with heading and legend, newest first, fix forms, `--fix-for`, exit 2 for bad input, missing heading) and a new `tests/agent-tickets.test.ts` case (a good log passes `check` from the working tree and `--ref`; a bad date, kind, flag, fix shape, missing link and malformed line each name `file:line`).
+
+### Follow-ups
+
+- Spec (P2): 24487dde:docs/wayfinder/software-factory/build/tickets/22-one-feedback-log.md:41 — P2 ticket: runner.md "Review and close" (line 67) says the `## Done (YYYY-MM-
+- Spec (P2): 24487dde:scripts/agents/kit.d/feedback:114 — P2 race: `--fix-for <line-number>` uses a line number that goes stale. `add()` puts every new entry at the top (lin
+- Spec (P3): 24487dde:scripts/agents/kit.d/feedback:82 — P3 fault: new lines are always inserted straight after `## Feedback` and its blank line. In a log grouped by month, 
+- Spec (P3): 24487dde:scripts/agents/kit.d/feedback:141 — P3 fault: the `RESULT: fail` line includes raw user input through `error.message`, for example `invalid fix: ${valu
+- Spec (P3): 24487dde:scripts/agents/tickets.mjs:233 — P3 fault: with `--ref`, the check counts a fix link as present only if git tracks it under the scanned `docs/wayfinder
+- Validation gaps (gap): `tests/kit-feedback.test.ts`: no test for a stale line number. Add one: add entry A (it prints line 7), add entry B, then run `--fix-for 7 24` and assert the gu
+- Validation gaps (gap): `tests/kit-feedback.test.ts`: no test for adding to a log grouped with `###`. Write `## Feedback\n\n### October\n\n- …entry…\n`, run `kit feedback`, and assert 
+- Validation gaps (gap): `tests/agent-tickets.test.ts`: no test where a fix link exists in the working tree but not in the ref. Create `build/tickets/25-new.md` without committing it, c
+- Validation gaps (gap): `tests/kit-feedback.test.ts`: no test for a newline in a `--fix` value. Run `--fix $'24\nx'` and assert exit 2 with exactly one `RESULT:` line on stdout.
+
