@@ -65,13 +65,16 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
   or no; every `Files` glob under `src/`, `shared/` or `worker/` and matching a repository file; every
   `Spec` a `tests/native-save/` or `tests/native-preview/` spec in the repository, or `none`; every
   `Steps` the feature's own steps file in the repository, or `none yet` with an optional reason; and
-  every rule id in Good against `docs/agents/ux-rulebook.md`. Repository files are git's committed,
-  staged and new files, never ignored ones such as `.scratch/`. Unit cases cover malformed entries,
-  duplicate and out-of-order numbers, a prefix in another area, and wrong or missing paths.
+  every rule id in Good against `docs/agents/ux-rulebook.md`. Repository files, for `Files`, `Spec`
+  and `Steps` alike, are git's committed, staged and new files, never ignored ones such as
+  `.scratch/`: this is wider than the Files line's "tracked file", so a builder's new, unstaged source
+  or steps file passes before the runner commits it, and one never committed fails in CI. Unit cases
+  cover malformed entries, duplicate and out-of-order numbers, a prefix in another area, wrong or
+  missing paths, an unknown rule id and a rulebook without rules.
 - Kitchen station 7 points to the list and asks a visible change to keep its entries current; the
   code map's header names where features are listed.
-- Commits: 56d398de (the feature list), 6286fbbc (review fixes round 1); round 2's fixes follow on
-  the slice branch.
+- Commits: 56d398de (the feature list), 6286fbbc (review fixes round 1), a27a3a8b (round 2); round
+  3's fixes follow on the slice branch.
 - Review decisions. Round 1: browser specs moved to their own `Spec` field and `Steps` kept for
   slices 42 and 45; F-publish-07 Hosting setup removed (worker endpoints only, no editor UI); Steps,
   Spec and Files path checks tightened. Declined: checking Steps against committed files only (slice
@@ -80,7 +83,10 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
   Round 2: F-repo-09 Download site removed (hidden from the project menu); F-publish-03 uses the
   button's words (Saved, Deploying…, Published); F-repo-02 says the search shows with six or more
   repositories; heading checks moved into `headingProblems` with their own unit case. Nothing
-  declined.
-- Evidence (round 2): `kit unit tests/features-list.test.ts tests/code-map.test.ts` → `RESULT: ok unit
-  11/11 (2 files)`; `kit unit --affected` → `RESULT: ok unit 8/8 (1 files)`; `npm run check` and
+  declined. Round 3: F-agent-01 and F-agent-02 say the project menu, where the MCP actions live (no
+  separate agents menu); the rule-id check moved into `ruleProblems` with its own unit case; the wider
+  repository-file rule for `Files` and `Spec` is recorded above rather than narrowed to committed
+  files, which would fail a builder's unstaged new source file.
+- Evidence (round 3): `kit unit tests/features-list.test.ts tests/code-map.test.ts` → `RESULT: ok unit
+  12/12 (2 files)`; `kit unit --affected` → `RESULT: ok unit 9/9 (1 files)`; `npm run check` and
   `npm run lint` pass.

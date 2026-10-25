@@ -1030,7 +1030,7 @@ its number unused.
 ## Agents menu and agent connection
 
 ### F-agent-01 Connect to MCP
-- Try: Open the agents menu and press Connect to MCP, then paste the prompt into an agent.
+- Try: Open the project menu and press Connect to MCP, then paste the prompt into an agent.
 - Good: Three actions only (Connect to MCP, Wait for MCP, Disconnect MCP); the label confirms the copy and the dot shows the state, with no toast or explainer (S1, S4).
 - Files: `src/components/agent-menu.ts`, `src/components/agent-menu.css`, `src/agent-menu-host.ts`, `src/controllers/agent-controller.ts`
 - Phone: yes
@@ -1038,7 +1038,7 @@ its number unused.
 - Steps: none yet
 
 ### F-agent-02 Wait for MCP and Disconnect MCP
-- Try: With an agent connected press Wait for MCP; later Disconnect MCP.
+- Try: With an agent connected, open the project menu and press Wait for MCP; later Disconnect MCP.
 - Good: The agent waits for requests; Disconnect ends every agent on the connection at once.
 - Files: `src/components/agent-menu.ts`, `src/agent-watch.ts`
 - Phone: yes
