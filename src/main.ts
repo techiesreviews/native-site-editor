@@ -36,7 +36,7 @@ import type { SharedContext } from "./agent-site";
 import { draftStore, type DraftScope, type SavedDraft } from "./drafts";
 import { nativeShownFiles, withSiteIndexed } from "./native-boot";
 import { draftKey } from "./drafts";
-import { createNativePreview, routeStylesheets, type NativeStructureItem, type PressedBlock } from "./components/native-preview";
+import { createNativePreview, routeStylesheets, type PressedBlock } from "./components/native-preview";
 import { trackDrag, type DragPress } from "./page-builder/insert-drag";
 import type { DraggedBlock } from "./page-builder/drop-target";
 import { createPageStructure, type PageMetaField } from "./components/page-structure";
