@@ -49,3 +49,13 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - Validation: `RESULT: ok unit 6/6 (1 files)` (`kit unit --affected`); `RESULT: ok unit 67/67 (3 files)` (kit-doctor, kit-deps, kit-ux); `npm run lint` and `npm run check` pass.
 - Feature list: no change (kit and docs only).
 - Commits: b5df6cff1 (the sweep), dea5076f9 (kit scripts counted, flip limits stated, corrections without repeats, routine clean-up), 4b4747468 (corrections by commit, one Monday message, strict `--since` dates), and this round (TAP unit logs, live worktrees only, step 7 waits for learning.md only once it exists).
+
+### Follow-ups
+
+- Spec (P2): b5df6cff1:scripts/agents/kit.d/sweep:149 — P2 fault: The flipped-test counts are too high whenever a test has subtests. `unitOutcomes` reads every `✔`/`✖` line 
+- Spec (P3): b5df6cff1:scripts/agents/kit.d/sweep:260 — P3 fault: `correctionsSection` parses porcelain `git diff` output but does not pin its format against user config. Wi
+- Validation gaps (gap): No test covers a test with subtests. Add to `tests/kit-sweep.test.ts`: a `flippedTests` case with run 1 `"  ✖ child (1ms)\n✖ parent (2ms)\n"` and run 2 `"  ✔ ch
+- Validation gaps (gap): No test covers a `specs.log` that names a missing or malformed `.json` report (the `catch` at `sweep:207`). Add a `kit pr` run whose report file is `"{"`. Asser
+- Validation gaps (gap): No test covers the fallback when `unit.log` names a full log (`log: .scratch/unit/x.log`) that has since been deleted. Assert that the outcomes come from the su
+- Validation gaps (gap): No test checks that the corrections section survives user git config. Run the end-to-end fixture with `GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=diff.noprefix GIT_CON
+
