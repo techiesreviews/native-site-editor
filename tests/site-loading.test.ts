@@ -1,13 +1,15 @@
-import { test } from "node:test";
+import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { registerHooks } from "node:module";
 import { signal } from "@preact/signals-core";
 import { CleanSourceCache } from "../src/clean-source-cache.ts";
+import type { DraftScope } from "../src/drafts.ts";
 import { createNativeSiteRuntime } from "../src/native-site-runtime.ts";
 import type { SiteLoadingPorts } from "../src/site-loading.ts";
 import { createWorkspaceSession, type SessionStamp } from "../src/workspace-session.ts";
 import type { NativeSite } from "../shared/native-project.ts";
 import type { Repository, Snapshot, TreeEntry } from "../shared/types.ts";
+import { forEachAwait, type AwaitRace } from "./support/await-race.ts";
 
 // The GitHub reads behind site loading import the editor's icons (a stylesheet and raw SVGs).
 registerHooks({ load: (url, context, next) => (/\.css$|\?raw$/.test(url) ? { format: "module", source: "export default '';", shortCircuit: true } : next(url, context)) });
@@ -15,13 +17,16 @@ const { ApiError } = await import("../src/github-reads.ts");
 const { createSiteLoading } = await import("../src/site-loading.ts");
 
 const SHA = "a".repeat(40);
-const REPO = { full_name: "o/site" } as Repository;
+const REPO = { id: 1, name: "site", full_name: "o/site", private: false, default_branch: "main", owner: { login: "o", type: "User" } } satisfies Repository;
+const SCOPE = { account: "o", repoId: 1, repo: "o/site", branch: "main" } satisfies DraftScope;
 const TEXTS: Record<string, string> = {
   "index.html": '<html><head><title>Welcome</title><link rel="stylesheet" href="/style.css"></head><body><h1>Home</h1></body></html>',
   "about.html": "<html><head><title>About us</title></head><body><h1>About</h1></body></html>",
   "style.css": "body { color: red; }",
   "components/site-card.html": "<article>Card</article>",
   "components/site-card.css": "article { margin: 0; }",
+  "fonts.css": '@font-face { font-family: Body; src: url("font.woff2"); }',
+  "font.woff2": "",
 };
 const shaOf = (path: string) => `${path}-sha`;
 const pathOf = new Map(Object.keys(TEXTS).map((path) => [shaOf(path), path]));
@@ -29,7 +34,10 @@ const entryOf = (path: string) => ({ path, mode: "100644", type: "blob", sha: sh
 const snapshotOf = (paths: string[]) => ({ branch: "main", commit: SHA, entries: paths.map(entryOf) }) satisfies Snapshot;
 
 // A real runtime, session and file readers over the files above; GitHub, the preview and the host record what they were asked.
-function setup(paths = Object.keys(TEXTS), options: { refused?: string[] } = {}) {
+// `race` (set later) wraps GitHub's reads, so a test can disturb the work at each of them (tests/support/await-race.ts).
+function setup(paths = Object.keys(TEXTS).filter((path) => !path.startsWith("font")), options: { refused?: string[] } = {}) {
+  const raced: { race?: AwaitRace } = {};
+  const wrap = <Args extends unknown[], Value>(name: string, work: (...args: Args) => Promise<Value>) => (...args: Args) => (raced.race ? raced.race.port(name, work)(...args) : work(...args));
   const calls: string[] = [], fetched: string[][] = [], started: { request: number; deferred?: boolean }[] = [];
   const preview: { warnings?: unknown[]; unreadable?: ReadonlyMap<string, string>; activated?: NativeSite; error?: string; updated?: Record<string, string> } = {};
   const runtime = createNativeSiteRuntime({
@@ -40,19 +48,22 @@ function setup(paths = Object.keys(TEXTS), options: { refused?: string[] } = {})
   const snapshot = snapshotOf(paths);
   const appStore = { repository: signal<Repository | undefined>(REPO), snapshot: signal<Snapshot | undefined>(snapshot), openFile: signal<string | undefined>(undefined) };
   const workspaceSession = createWorkspaceSession();
-  let view: { path: string } | undefined;
+  let view: { path: string } | undefined, scope: DraftScope | undefined;
   const label = { textContent: "", dataset: {} as Record<string, string> };
-  const api = async <T,>(action: string, params?: Record<string, string>): Promise<T> => {
+  const read = async (action: string, params?: Record<string, string>): Promise<unknown> => {
     const shas = action === "files" ? params!.shas.split(",") : [params!.sha];
     fetched.push(shas.map((sha) => pathOf.get(sha)!));
     if (shas.some((sha) => options.refused?.includes(pathOf.get(sha)!))) throw new ApiError(415, "This file is not UTF-8 text.");
     const files = Object.fromEntries(shas.map((sha) => [sha, TEXTS[pathOf.get(sha)!]]));
-    return (action === "files" ? { files } : { content: files[shas[0]] }) as T;
+    return action === "files" ? { files } : { content: files[shas[0]] };
   };
+  const reading = wrap("api", read);
+  // eslint-disable-next-line no-restricted-syntax -- the stand-in answers both reads site loading makes; each caller names its own type.
+  const api = <T,>(action: string, params?: Record<string, string>) => reading(action, params) as Promise<T>;
   const entry = (path: string): TreeEntry | undefined => (paths.includes(path) ? entryOf(path) : undefined);
   const ports = {
     runtime, appStore, workspaceSession, api, cleanSources: new CleanSourceCache(() => "o"),
-    repositoryIndex: { listRepositoryFiles: async () => paths },
+    repositoryIndex: { listRepositoryFiles: wrap("list", async () => paths) },
     nativePreview: {
       preload: () => {}, activate: (site: NativeSite) => { preview.activated = site; }, update: (update: { sources: Record<string, string> }) => { preview.updated = update.sources; },
       setAssets: () => {}, setError: (message: string | undefined) => { preview.error = message; }, setWarnings: (warnings: unknown[]) => { preview.warnings = warnings; },
@@ -64,8 +75,8 @@ function setup(paths = Object.keys(TEXTS), options: { refused?: string[] } = {})
     // The top bar's page label, the only element site loading writes.
     // eslint-disable-next-line no-restricted-syntax -- the stand-in implements only what the label writes.
     element: <T extends HTMLElement>() => label as unknown as T,
-    draftScope: () => undefined,
-    findEntry: async (path: string) => entry(path),
+    draftScope: () => scope,
+    findEntry: wrap("find", async (path: string) => entry(path)),
     entryAt: entry,
     nativeLinkedSheets: () => ["style.css"],
     updateNativePreviewSources: () => { calls.push("sources"); },
@@ -78,7 +89,8 @@ function setup(paths = Object.keys(TEXTS), options: { refused?: string[] } = {})
     startNativeTextIndex: (_repo: Repository, _site: NativeSite, _scope: unknown, _at: SessionStamp, request: number, deferred?: boolean) => { started.push({ request, deferred }); },
   } satisfies SiteLoadingPorts;
   const loading = createSiteLoading(ports);
-  return { loading, runtime, appStore, workspaceSession, snapshot, calls, fetched, started, preview, label, setView: (path?: string) => { view = path ? { path } : undefined; } };
+  return { loading, runtime, appStore, workspaceSession, snapshot, calls, fetched, started, preview, label, raced,
+    setView: (path?: string) => { view = path ? { path } : undefined; }, setScope: (value?: DraftScope) => { scope = value; } };
 }
 
 test("a repository without a home page does not open as a site", async () => {
@@ -157,4 +169,80 @@ test("a blob read twice is fetched once", async () => {
   assert.equal(await loading.readFile("o/site", shaOf("about.html")), TEXTS["about.html"]);
   assert.equal(await loading.readFile("o/site", shaOf("about.html")), TEXTS["about.html"]);
   assert.deepEqual(fetched, [["about.html"]]);
+});
+
+test("opening a site writes nothing once another load takes over, at every read", async () => {
+  const points = await forEachAwait((race) => {
+    const run = setup();
+    run.raced.race = race;
+    return { ...run, done: run.loading.activateNativeSite(REPO, run.snapshot, run.workspaceSession.begin()) };
+  }, (run) => { run.workspaceSession.next(undefined); }, (run) => {
+    assert.equal(run.runtime.site, undefined);
+    assert.equal(run.preview.updated, undefined);
+    assert.deepEqual(run.started, []);
+    assert.equal(run.calls.includes("agent"), false);
+  });
+  assert.ok(points >= 3, `${points} reads`);
+});
+
+test("component styles read for a load that was left are not taken up, at every read", async () => {
+  await forEachAwait((race) => {
+    const run = setup();
+    const before = { styles: new Map<string, string>(), sources: new Map<string, string>() };
+    const done = (async () => {
+      await run.loading.activateNativeSite(REPO, run.snapshot, run.workspaceSession.begin());
+      before.styles = new Map(run.runtime.state.componentStyles);
+      before.sources = new Map(run.runtime.base.sources);
+      run.calls.length = 0;
+      run.raced.race = race;
+      await run.loading.loadNativeComponentStyles(["site-card"]);
+    })();
+    return { ...run, before, done };
+  }, (run) => { run.workspaceSession.next(undefined); }, (run) => {
+    assert.deepEqual(run.runtime.state.componentStyles, run.before.styles);
+    // GitHub's layer is the clean cache's own Map: compared by its entries.
+    assert.deepEqual(new Map(run.runtime.base.sources), run.before.sources);
+    assert.equal(run.calls.includes("sources"), false);
+  });
+});
+
+test("before the first paint only the page's fonts are read, each once from /api/blob", async (t: TestContext) => {
+  const fetches: string[] = [];
+  const fetch = globalThis.fetch;
+  globalThis.fetch = async (url) => { fetches.push(String(url)); return new Response(new Uint8Array([1, 2, 3])); };
+  t.after(() => { globalThis.fetch = fetch; });
+  const { loading, runtime } = setup([...Object.keys(TEXTS)]);
+  const shown: string[] = [];
+  await loading.loadNativeAssets({ "fonts.css": TEXTS["fonts.css"] }, () => { shown.push("assets"); }, () => true, true);
+  assert.deepEqual(fetches, [`/api/blob?repo=o%2Fsite&sha=${shaOf("font.woff2")}&type=woff2`]);
+  assert.match(runtime.state.assets.get("font.woff2") ?? "", /^data:font\/woff2;base64,/);
+  assert.ok(shown.length > 0);
+  await loading.loadNativeAssets({ "fonts.css": TEXTS["fonts.css"] }, () => {}, () => true, true);
+  assert.equal(fetches.length, 1, "a read font is not read again");
+});
+
+test("drafted images are forgotten after files change, and the preview takes the sources once", async () => {
+  const { loading, runtime, workspaceSession, snapshot, calls } = setup();
+  await loading.activateNativeSite(REPO, snapshot, workspaceSession.begin());
+  runtime.state.assets.set("logo.png", "data:image/png;base64,AA").set("photo.jpg", "data:image/jpeg;base64,AA");
+  runtime.state.draftAssets.add("logo.png");
+  calls.length = 0;
+  loading.forgetDraftedAssets();
+  assert.deepEqual([...runtime.state.assets.keys()], ["photo.jpg"]);
+  assert.equal(runtime.state.draftAssets.size, 0);
+  assert.deepEqual(calls, ["sources"]);
+});
+
+test("Download site has nothing to give without an open site, and the site's files with one", async () => {
+  const { loading, runtime, workspaceSession, snapshot, setScope } = setup();
+  // The draft scope follows the open: the home page check reads the real draft store with one.
+  setScope(SCOPE);
+  assert.equal(await loading.nativeSiteFiles(), undefined);
+  setScope(undefined);
+  await loading.activateNativeSite(REPO, snapshot, workspaceSession.begin());
+  setScope(SCOPE);
+  const files = await loading.nativeSiteFiles();
+  assert.equal(files?.repository, "o/site");
+  assert.deepEqual(files?.paths, runtime.files(SCOPE));
+  assert.equal(files?.held("index.html"), TEXTS["index.html"]);
 });
