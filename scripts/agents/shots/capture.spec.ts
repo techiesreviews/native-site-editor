@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { expandMatrix, makeIndex, type Options, type Scenario, type Shot } from "./core";
+import { expandMatrix, failShot, makeIndex, type Options, type Scenario, type Shot } from "./core";
 import { runScenario } from "./scenarios";
 import { frameStrip, runStep } from "./steps";
 import { checkLayout } from "./layout-check";
@@ -52,7 +52,7 @@ test("named screens on the real starter", { tag: "@actual" }, async ({ browser, 
           shot.ok = true;
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
-          shot.failures.push({ attempt, step: failingStep, error: message });
+          failShot(shot, { attempt, step: failingStep, error: message }, strips);
           console.error(`${scenario.screen} ${width} ${theme}: step ${failingStep} failed (attempt ${attempt}/2)`);
         } finally {
           await context.close();

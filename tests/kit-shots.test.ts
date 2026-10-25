@@ -5,9 +5,9 @@ import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { chromium, type Page } from "@playwright/test";
+import { chromium } from "@playwright/test";
 import { frameStrip, runStep } from "../scripts/agents/shots/steps";
-import { contactHtml, contactSheets, initialEncoding, expandMatrix, makeIndex, nextEncoding, parseArgs, parseStep, parseSteps, screens, type Encoding, type Shot } from "../scripts/agents/shots/core";
+import { contactHtml, contactSheets, initialEncoding, expandMatrix, failShot, makeIndex, nextEncoding, parseArgs, parseStep, parseSteps, screens, type Encoding, type Shot } from "../scripts/agents/shots/core";
 
 test("steps parse every grammar form and name unknown instructions", () => {
   assert.deepEqual(parseStep('click "Filter"'), { kind: "click", name: "Filter" });
@@ -89,6 +89,14 @@ test("contact HTML labels single rows and orders paired before/after columns", (
   assert.match(escaped, /<h2>editor-&lt;script&gt;<\/h2>/);
   assert.match(escaped, /390px · light · &lt;script&gt; — failed/);
   assert.match(contactHtml([{ ...shot(), ok: false, files: [] }]), /No screenshot/);
+});
+
+test("a failed attempt keeps the record strips it saved in index.json", () => {
+  const failed = { ...shot(), ok: false, files: [] };
+  failShot(failed, { attempt: 1, step: 'expect visible "Dropped"', error: "nothing visible" }, [{ path: "editor-390-light-drop-strip.webp", bytes: 7 }]);
+  const index = makeIndex([failed]);
+  assert.deepEqual(index.files, [{ path: "editor-390-light-drop-strip.webp", bytes: 7 }]);
+  assert.equal(index.failures[0].step, 'expect visible "Dropped"');
 });
 
 test("index retains dimensions, files, sizes, failed attempts and layout findings", () => {
@@ -245,15 +253,15 @@ test("drag, record and expect steps act like a user in Chromium", async t => {
   const browser = await chromium.launch({ headless: true, env: { ...process.env, TMPDIR: temporary, TMP: temporary, TEMP: temporary } });
   t.after(() => browser.close());
   const page = await browser.newPage({ viewport: { width: 600, height: 400 } });
-  const drop = async (edge: string) => {
+  const drop = async (edge: string, zoneTop = 200) => {
     // The page reports where a pointer drag of Card ended: which element, and how far inside it.
     // setContent keeps the window, so start from a blank document for fresh listeners.
     await page.goto("about:blank");
-    await page.setContent(`<style>body{margin:0}div{position:absolute;inline-size:200px;block-size:100px}#card{inset:10px auto auto 10px}#zone{inset:200px auto auto 300px}</style>
+    await page.setContent(`<style>body{margin:0}div{position:absolute;inline-size:200px;block-size:100px}#card{inset:10px auto auto 10px}#zone{inset:${zoneTop}px auto auto 300px}</style>
       <div id="card">Card</div><div id="zone">Drop zone</div>
-      <script>let dragging=false;card.onpointerdown=()=>{dragging=true};
+      <script>let dragging=false;card.onpointerdown=event=>{dragging=true;window.pressed=event.target.id};
       addEventListener("pointerup",event=>{if(!dragging)return;const box=zone.getBoundingClientRect();
-      window.dropped={on:document.elementFromPoint(event.clientX,event.clientY)?.id,top:event.clientY-box.top,bottom:box.bottom-event.clientY,left:event.clientX-box.left,right:box.right-event.clientX}})</script>`);
+      window.dropped={pressed:window.pressed,on:document.elementFromPoint(event.clientX,event.clientY)?.id,top:event.clientY-box.top,bottom:box.bottom-event.clientY,left:event.clientX-box.left,right:box.right-event.clientX}})</script>`);
     await runStep(page, `drag "Card" to "Drop zone" edge ${edge}`);
     return page.evaluate(() => Reflect.get(window, "dropped") as Record<string, number | string>);
   };
@@ -262,6 +270,10 @@ test("drag, record and expect steps act like a user in Chromium", async t => {
     assert.equal(dropped.on, "zone", edge);
     assert.ok(Number(dropped[edge]) >= 0 && Number(dropped[edge]) <= 3, `${edge}: ${JSON.stringify(dropped)}`);
   }
+  // A target below the fold: the press lands on Card, then the target scrolls into view before the pointer moves to it.
+  const below = await drop("top", 1200);
+  assert.equal(below.pressed, "card");
+  assert.equal(below.on, "zone", JSON.stringify(below));
 
   // A page that flickers between two colours yields frames that differ, packed as one small strip.
   await page.goto("about:blank");
@@ -273,11 +285,11 @@ test("drag, record and expect steps act like a user in Chromium", async t => {
   assert.equal(recorded?.name, "flicker");
   assert.equal(recorded?.frames.length, 8);
   assert.ok(new Set(recorded!.frames.map(frame => frame.toString("base64"))).size > 1, "frames differ");
-  const strip = await frameStrip(page as Page, recorded!.frames);
+  const strip = await frameStrip(page, recorded!.frames);
   assert.equal(strip.subarray(8, 12).toString(), "WEBP");
   assert.ok(strip.length <= 300_000);
 
-  await page.setContent("<p>Here</p>");
+  await page.setContent("<p hidden>Here</p><p>Here</p>");
   await runStep(page, 'expect visible "Here"');
   await assert.rejects(runStep(page, 'expect visible "Nowhere"'), { message: 'expect visible "Nowhere" failed: nothing visible says "Nowhere"' });
   await assert.rejects(runStep(page, 'drag "Nowhere" to "Here"'), { message: 'drag failed: nothing visible named "Nowhere"' });
