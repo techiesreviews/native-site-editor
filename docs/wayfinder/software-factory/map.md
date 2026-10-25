@@ -38,7 +38,7 @@ One written recipe (the kitchen rulebook) that every session and every model fol
 
 ## Not yet specified
 
-- How the recipe is copied to other projects (template repo, shared skill, or kit command), once it is proven here.
+- How the recipe is copied to other projects: researched in [Copying the kitchen](research/70-copy-the-kitchen.md) (recommended: one shared kit every project pulls); Lex's choices and the build plan continue on the [kitchen-everywhere map](../kitchen-everywhere/map.md).
 - Whether the scoreboard file lives in the repo, in T3, or both (the page is shown in chat).
 - What the rungs above "Lex approves production" look like in practice (which kinds of change, which evidence).
 

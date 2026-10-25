@@ -1,8 +1,8 @@
 ---
 title: Plan copying the kitchen to Lex's other projects
 type: task (AFK)
-status: open
-assignee: sf-70 (this session)
+status: closed
+assignee: sf-70
 builder: claude
 blocked_by: [23-one-page-per-build, 31-heartbeat, 43-kit-ux-reviewer, 52-chat-learning, 60-context-card]
 ---
@@ -35,3 +35,12 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 
 - `scripts/agents/kit doctor`; `ASE_REVIEW_MODEL=claude-opus-5-5 scripts/agents/kit bg slice-sf70 -- scripts/agents/kit slice --ticket docs/wayfinder/software-factory/build/tickets/70-copy-the-kitchen-plan.md --builder claude-opus-5-5`; `scripts/agents/kit wait job slice-sf70 --timeout 2h`.
 - Report: the recommendation in one line, the new map's frontier output, review decisions, PR and merge SHA.
+
+## Done (2026-10-25)
+
+- Research in `docs/wayfinder/software-factory/research/70-copy-the-kitchen.md`: all 23 kit commands, `tickets.mjs` and the hooks named neutral (18 commands) or the editor's own (`shots`, `specs`, `size`, `preview`, `ux` tries), each with its assumptions; the values a shared kit would read from a project settings file; Lex's projects today, including the three hand copies from about 2026-10-17 (`chat`, `techies-playground`, `techies-reviews`) that missed 127 kit commits; template repo, shared kit and copying `kit init` compared.
+- Recommendation: one shared kit that every project pulls, version pinned per project, with `kit init` only for setup.
+- New map `docs/wayfinder/kitchen-everywhere/map.md` with five tickets: two grillings for Lex (how the kitchen is copied; rollout order and branch rules) and three research tickets (what each project needs, what the old copies changed, how a project pulls the shared kit). No build tickets.
+- The software-factory map's Not yet specified line for copying points to the research and the new map.
+- Checks: `node scripts/agents/tickets.mjs check`; `node scripts/agents/tickets.mjs frontier kitchen-everywhere` lists 01, 02 and 03.
+- Feature list: no change (docs only, nothing a user sees).
