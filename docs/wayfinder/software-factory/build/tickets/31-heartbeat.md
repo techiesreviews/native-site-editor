@@ -2,7 +2,7 @@
 title: "The 30-minute heartbeat: kit heartbeat and the T3 recipe"
 type: task (AFK)
 status: open
-assignee:
+assignee: sf-31 (this session)
 builder: claude
 blocked_by: [30-kit-next]
 ---

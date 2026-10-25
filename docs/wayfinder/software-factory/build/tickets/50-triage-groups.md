@@ -2,7 +2,7 @@
 title: "Triage groups: one builder takes a whole group"
 type: task (AFK)
 status: open
-assignee:
+assignee: sf-50 (this session)
 builder: claude
 blocked_by: [30-kit-next]
 ---
