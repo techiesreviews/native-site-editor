@@ -1,0 +1,1 @@
+{"screen":"editor","name":"F-repo-05","steps":["click \"repository actions\"","click \"⑂ main\"","expect visible \"Branches\"","record branches 600"]}

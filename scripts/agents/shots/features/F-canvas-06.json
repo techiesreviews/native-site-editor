@@ -1,0 +1,1 @@
+{"screen":"editor","name":"F-canvas-06","steps":["press Tab","press Tab","press Tab","press Tab","press Enter","click \"Move up\"","press Alt+ArrowUp","record keys 600","press Alt+ArrowDown","expect visible \"Move down\""]}

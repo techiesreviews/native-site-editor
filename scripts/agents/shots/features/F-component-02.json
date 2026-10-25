@@ -1,0 +1,1 @@
+{"screen":"add-panel","name":"F-component-02","steps":["click \"+ New component\"","type \"Price list\" in Component name","click \"Create\"","expect visible \"Done\""]}

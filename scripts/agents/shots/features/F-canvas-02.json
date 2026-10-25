@@ -1,0 +1,1 @@
+{"screen":"image-popup","name":"F-canvas-02","steps":["press Escape","expect visible \"Alt text\"","click \"main.page\"","record climb 600"]}

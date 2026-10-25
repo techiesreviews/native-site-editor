@@ -1,0 +1,1 @@
+{"screen":"editor","name":"F-bar-01","steps":["click \"Heading\"","expect visible \"Bold\"","click \"main.page\"","record bar 600"]}

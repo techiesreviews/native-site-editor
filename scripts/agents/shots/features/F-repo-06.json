@@ -1,0 +1,1 @@
+{"screen":"editor","name":"F-repo-06","steps":["click \"repository actions\"","click \"⑂ main\"","click \"Refresh from GitHub\"","record refresh 1200","expect visible \"Publish\""]}
