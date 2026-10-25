@@ -53,3 +53,7 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - `kit ux --features F-media-17 --no-review`: `RESULT: ok ux 1 features tried, 2 scripted findings`. The try passed (its steps now choose Square). One finding is the "Only changes this spot" tooltip, which was already this long and now says "square" (90 characters); the other matched a line of code. The reviewer's F-media-17 verdict runs through agent.sh, so it is left to the slice.
 - Feature list: F-media-17 updated (Try, Good, Files, Steps).
 
+### UX follow-ups
+
+- UX (looks off): F-media-17 at 390 px the popup opens as a bottom sheet and the blue square is the only focus mark, with no separate dot, but a line under the controls reads "Only changes this spot", which explains the edit (S1) (.scratch/ux/lead-42/20261025-222625-HZR5pv/image-popup-F-media-18-bug-popup-flicker-390-light-move-strip.webp)
+- UX (looks off): F-media-18 the page never shows through while the square moves, but the Preview thumbnail jumps in size between frames: it is large in frame 1 and tiny from frame 2 on in the light strip, and frame 2 is bigger than the rest in the dark strip, so moving does not draw smoothly (U3). Free, zoom and turn are not shown (.scratch/ux/lead-42/20261025-222625-HZR5pv/image-popup-F-media-18-bug-popup-flicker-390-light-move-strip.webp)
