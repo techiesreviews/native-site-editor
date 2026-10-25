@@ -27,7 +27,8 @@ Steps: click "<name>"; type "<text>" in <label>; hover first|last|nth N tile;
 hover "<name>"; press <key>; scroll down|up; wait for "<text>";
 drag "<name>" to "<target>" [edge top|bottom|left|right] (pointer to 3 px inside that edge);
 record <name> <ms> (8 frames over 100-9999 ms, saved as <shot>-<name>-strip.webp);
-expect visible "<text>" (fails the try: expect visible "<text>" failed: nothing visible says "<text>").
+expect visible "<text>" (a visible element whose whole text, or a button whose name, is exactly
+<text>; otherwise fails the try: expect visible "<text>" failed: nothing visible says "<text>").
 nth is 1-based. 'search' means the searchbox. Button names can match a substring.
 Before/after: use name "before" and "after" with the same screen, width, theme
 and --out across runs; contact sheet includes both. Each screen retries at most once.

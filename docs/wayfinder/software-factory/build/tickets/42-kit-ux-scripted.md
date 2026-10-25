@@ -46,12 +46,12 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 
 - `scripts/agents/kit ux` matches the diff (merge-base with `origin/dev`, plus uncommitted and untracked files) against each feature's `Files` globs; `--features` and `--all` override, and nothing touched is `RESULT: ok ux nothing visible touched`. Each touched feature's steps file runs through `kit shots --steps` at 1280 px (and 390 px for `Phone: yes`), light and dark; a feature without one gets the named screens its files map to and is marked untried. Scripted checks: layout findings, tap targets under 44 px at 390, raw colours in changed CSS, new visible text over 60 characters and new hint, tip, count or badge classes, and raw px spacing and timings counted against the base. The bundle (`bundle.md` under 60 KB, at most 12 images of at most 300 KB) trims the lowest-value items first and names the trims; a failed try ends in `broken: <feature>`. `--ticket` names the ticket for its mock-up link; otherwise the ticket the branch name ends with is used. `--no-review` is accepted and changes nothing yet.
 - `kit shots` steps gain `drag "<name>" to "<target>" [edge …]` (pointer 3 px inside that edge), `record <name> <ms>` (8 frames saved as one `-strip.webp`, at most 300 KB) and `expect visible "<text>"` (fails with `expect visible "<text>" failed: nothing visible says "<text>"`). `--steps` also accepts `scripts/agents/shots/features/`. The parser lives in `core.ts`, and `capture.spec.ts` saves the strips, so both changed with `steps.ts`.
-- Steps files for 15 features the named screens cover: F-media-01, 02 (with `record`), 05, 10, 12, 13, 16, 17; F-pages-01, 08, 14; F-canvas-08; F-structure-01, 03 (a drag to a row's top edge, then `record`); F-publish-01. All 15 passed at 1280 light.
+- Steps files for 15 features the named screens cover: F-media-01, 02 (with `record`), 05, 10, 12, 13, 16, 17; F-pages-01, 08, 14; F-canvas-08; F-structure-01, 03 (a drag to a row's top edge, then `record`); F-publish-01. All 15 passed at 1280 light. The rule: each named screen gets the one feature it opens on, plus a second Media feature to carry `record` and a Structure drag. A feature that the screen's files only touch in passing keeps `Steps: none yet` and is left for slice 45. Those features are F-pages-04, 06 and 10, F-structure-02, 04 and 05, F-canvas-02 and 12, F-setup-09, and F-repo-01 to 06.
 - Tests: `tests/kit-ux.test.ts` covers feature matching, flags, text and class findings on a fixture diff, CSS counts, bundle and image limits with trims, the ticket guess, and CLI runs on a fake `kit shots`. `tests/kit-shots.test.ts` covers the new grammar, a Chromium drag to each edge, a flickering page giving differing frames and a WebP strip, a missing element's failure line, refusal outside `.scratch/` and the features folder, and acceptance from the features folder.
 - Real run on this branch: `scripts/agents/kit ux --features F-media-02,F-media-10` printed `RESULT: ok ux 2 features tried, 0 scripted findings, bundle /home/ubulex/Projects/native-site-editor/.scratch/ux/sf-42/20261025-120006`. The bundle is 312,438 bytes in total: `bundle.md` is 3,222 bytes, plus 6 images (2 contact sheets and 4 `record` strips).
 - Checks: `kit unit --affected` gave `RESULT: ok unit 38/38 (3 files)`, `kit unit tests/features-list.test.ts` gave 9/9, and `kit specs --affected` gave `RESULT: ok specs none affected`. `npm run check` and `npm run lint` are clean.
 - Fix round 1:
-  - A screens run that exits non-zero but names no failing screen now breaks every feature in it.
+  - A screens run that exits non-zero but names no failing screen now fails the run.
   - A signal stops `kit ux` with `RESULT: fail ux interrupted by <signal>`, and no further try starts.
   - A failed attempt keeps its `record` strips in `index.json`.
   - A drag presses on the source first, then scrolls to the target and reads its box just before moving there; both points must be inside the window.
@@ -59,3 +59,11 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
   - Raw CSS findings always name a line, including values on a continuation line.
   - New tests cover each fix.
   - A rerun of `kit ux --features F-media-02,F-structure-03` printed `RESULT: ok ux 2 features tried, 0 scripted findings, bundle …/20261025-120827`; `bundle.md` was 3,831 bytes, plus 8 images.
+- Fix round 2:
+  - A failed screens run ends in `screens failed: <screen,…>`, with all of the run's screens when no failure line names one. Its features stay untried and are not called broken; `broken:` names only features whose steps try failed.
+  - `expect visible` matches whole text or an exact button name, so the F-media-12 and F-pages-01 steps now check exact phrases.
+  - Contact sheets never show a `record` strip as a screen's picture, and layout findings link the shot's PNG.
+  - The diff for text checks pins `a/` and `b/` prefixes and unquoted paths, whatever the user's diff settings.
+  - Class checks take only class assignments in scripts, and in CSS only selectors that the base file lacks.
+  - Each run gets its own bundle folder, with a random suffix after the time.
+  - Tests are typed against a declared shape of the `kit ux` module.
