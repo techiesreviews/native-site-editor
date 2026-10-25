@@ -279,3 +279,17 @@ test("a kept check reads again only the files whose text changed, and finds what
   assert.deepEqual(mediaUsageRecords({ ...input(changed, moved), cache }), mediaUsageRecords(input(changed, moved)));
   for (const [file, refs] of kept) assert.notEqual(cache.references.get(file)!.refs, refs, file);
 });
+
+test("a kept check finds a mention of a newly added media file in text that did not change (ticket 38)", () => {
+  const sources = { "index.html": "<p>Home</p>", "notes.md": "See images/d.jpg" };
+  const input = (media: string[]) => ({ media, files: Object.keys(sources), sources, pages: ["index.html"] });
+  const cache = mediaUsageCache();
+  assert.deepEqual(mediaUsageRecords({ ...input(["images/a.jpg"]), cache }), mediaUsageRecords(input(["images/a.jpg"])));
+  const before = cache.mentions.get("notes.md")!.uses;
+  assert.deepEqual(before, []);
+  const added = ["images/a.jpg", "images/d.jpg"];
+  const records = mediaUsageRecords({ ...input(added), cache });
+  assert.deepEqual(records, mediaUsageRecords(input(added)));
+  assert.notEqual(cache.mentions.get("notes.md")!.uses, before);
+  assert.deepEqual(mediaUsageFor(records, "images/d.jpg").otherUses, [{ file: "notes.md", kind: "notes" }]);
+});

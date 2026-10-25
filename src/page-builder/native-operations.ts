@@ -67,7 +67,6 @@ function startTagTail(text: string): { selfClosing: boolean } | undefined {
   }
   return { selfClosing: false };
 }
-/** A strict tokenizer uses quoted start-tag bounds; comments never become nodes. */
 // A selection, a move and the edit bar each read the page's tree several times over the
 // same bytes (ticket 38): the last few are kept. Callers only read the nodes.
 const trees = new Map<string, SourceNode | undefined>();
@@ -78,6 +77,7 @@ function tree(source: string): SourceNode | undefined {
   if (trees.size > 4) trees.delete(trees.keys().next().value!);
   return root;
 }
+/** A strict tokenizer uses quoted start-tag bounds; comments never become nodes. */
 function readTree(source: string): SourceNode | undefined {
   const root: SourceNode = { name: "", start: 0, openEnd: 0, closeStart: source.length, end: source.length, children: [] };
   const stack = [root];

@@ -17,7 +17,7 @@ declare global {
   var instanceCacheWorkspace: typeof createMemoryWorkspace;
 }
 
-test("a kept instance is read again once its template, the site or its page changes", async () => {
+test("a kept instance is read again once its template, the site or its page changes; its link and image lists only when read", async () => {
   const bundle = await build({
     stdin: { contents: `
       import { createComponentTools } from './src/page-builder/components';
@@ -44,19 +44,27 @@ test("a kept instance is read again once its template, the site or its page chan
       const m = instanceCacheWorkspace({ branch: { ...sources }, open: path, site });
       // Only the editor ports a structure read reaches.
       const editor = { isMounted: () => true, captureHistoryHost: () => ({ isCurrent: () => true }) } satisfies Partial<SourceEditor>;
+      // A Structure read builds neither list; a field reads each once (ticket 38).
+      const calls = { links: 0, images: 0 };
       const panelHost = document.createElement("div"), codeTitle = document.createElement("div");
       document.body.append(panelHost, codeTitle);
       const tools = instanceCacheTools({ site: () => site, edits: instanceCacheEdits(m.workspace), sources: () => sources,
         editor: () => editor as SourceEditor, // The one cast: a structure read reaches only the ports above.
         currentPath: () => path, selection: () => undefined, previewPage: () => path,
         preview: () => ({ selectAfterUpdate() {}, selectNode() {} }),
-        openFile: async () => true, announce() {}, error(error) { throw error; }, images: () => [], prefix: () => "",
-        chooseImage: async () => undefined, links: () => [], pageLabel: file => file, panelHost, codeTitle, canvasComponent() {}, refreshBar() {},
+        openFile: async () => true, announce() {}, error(error) { throw error; }, images: () => { calls.images++; return ["images/a.jpg"]; }, prefix: () => "",
+        chooseImage: async () => undefined, links: () => { calls.links++; return [{ label: "Home", value: "/" }]; }, pageLabel: file => file, panelHost, codeTitle, canvasComponent() {}, refreshBar() {},
         variantFiles: { site: () => undefined, read: () => undefined },
       });
       const slots = (node: number[]) => tools.structure(path, node)?.slots.map(slot => slot.name);
       const attributes = (node: number[]) => tools.structure(path, node)?.attributes.map(item => `${item.name}=${item.value}`);
       const out: Record<string, unknown> = {};
+      const model = tools.structure(path, [0, 0])!;
+      out.listsUnread = { ...calls };
+      out.lists = [model.links.map(link => link.value), [...model.images]];
+      out.listsRead = { ...calls };
+      out.listsAgain = [model.links.length, model.images.length];
+      out.listsReadOnce = { ...calls };
       out.first = slots([0, 0]);
       out.again = slots([0, 0]);
       // The template alone changes: its new slot shows.
@@ -76,6 +84,7 @@ test("a kept instance is read again once its template, the site or its page chan
       return out;
     });
     assert.deepEqual(result, {
+      listsUnread: { links: 0, images: 0 }, lists: [["/"], ["/images/a.jpg"]], listsRead: { links: 1, images: 1 }, listsAgain: [1, 1], listsReadOnce: { links: 1, images: 1 },
       first: [""], again: [""], templateChanged: ["", "x"], notComponent: undefined,
       movedAway: undefined, movedTo: ["data-tone=dark"], host: [0, 1], attributeChanged: ["data-tone=light"],
     });
