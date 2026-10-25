@@ -1,0 +1,2076 @@
+{
+  "map": "software-factory",
+  "pieces": [
+    {
+      "piece": "21-kit-records-every-piece",
+      "ticket": "docs/wayfinder/software-factory/build/tickets/21-kit-records-every-piece.md",
+      "title": "The kit records every piece; kit score",
+      "kind": "task (AFK) M–L",
+      "builder": {
+        "model": "claude-opus-5-5",
+        "effort": "high",
+        "previousModels": []
+      },
+      "phases": [],
+      "rounds": 3,
+      "reviews": [
+        {
+          "dir": ".scratch/reviews/sf-21/20261025T111713Z",
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "counts": {
+            "kind": {
+              "fault": 2,
+              "ticket": 1,
+              "race": 1,
+              "style": 1,
+              "unsorted": 0,
+              "gap": 4
+            },
+            "severity": {
+              "P0": 0,
+              "P1": 1,
+              "P2": 2,
+              "P3": 2,
+              "none": 0,
+              "gap": 4
+            }
+          },
+          "declined": [
+            {
+              "text": "Spec: `21-kit-records-every-piece.md:4` P3 ticket — `status: closed` is set while Done holds only a placeholder for the `kit score software-factory` output",
+              "reason": "the builder brief requires `status: closed` and forbids claiming a landing result, so the lead adds the output after this slice's `kit pr` merges.",
+              "round": 1
+            }
+          ]
+        },
+        {
+          "dir": ".scratch/reviews/sf-21/20261025T112550Z",
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "counts": {
+            "kind": {
+              "fault": 3,
+              "ticket": 1,
+              "race": 1,
+              "style": 1,
+              "unsorted": 1,
+              "gap": 4
+            },
+            "severity": {
+              "P0": 0,
+              "P1": 0,
+              "P2": 3,
+              "P3": 4,
+              "none": 0,
+              "gap": 4
+            }
+          },
+          "declined": []
+        },
+        {
+          "dir": ".scratch/reviews/sf-21/20261025T113623Z",
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "counts": {
+            "kind": {
+              "fault": 2,
+              "ticket": 2,
+              "race": 1,
+              "style": 0,
+              "unsorted": 0,
+              "gap": 3
+            },
+            "severity": {
+              "P0": 0,
+              "P1": 0,
+              "P2": 1,
+              "P3": 4,
+              "none": 0,
+              "gap": 3
+            }
+          },
+          "declined": [
+            {
+              "text": "Spec: `21-kit-records-every-piece.md:49` P2 ticket — `status: closed` is set while the `kit score software-factory` output is still missing",
+              "reason": "the builder brief requires `status: closed` and forbids claiming a landing result. Done now marks the item plainly as pending, for the lead to add after merge.",
+              "round": 3
+            }
+          ]
+        },
+        {
+          "dir": ".scratch/reviews/sf-21/20261025T114600Z",
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "counts": {
+            "kind": {
+              "fault": 2,
+              "ticket": 0,
+              "race": 1,
+              "style": 0,
+              "unsorted": 1,
+              "gap": 3
+            },
+            "severity": {
+              "P0": 0,
+              "P1": 0,
+              "P2": 2,
+              "P3": 1,
+              "none": 1,
+              "gap": 3
+            }
+          },
+          "declined": []
+        },
+        {
+          "dir": ".scratch/reviews/sf-21/20261025T115457Z",
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "counts": {
+            "kind": {
+              "fault": 2,
+              "ticket": 2,
+              "race": 1,
+              "style": 1,
+              "unsorted": 0,
+              "gap": 5
+            },
+            "severity": {
+              "P0": 0,
+              "P1": 0,
+              "P2": 3,
+              "P3": 3,
+              "none": 0,
+              "gap": 5
+            }
+          },
+          "declined": []
+        }
+      ],
+      "cost": {
+        "build": {
+          "usd": 23.4791184,
+          "tokens": 46727259
+        },
+        "review": {
+          "usd": 3.0627947,
+          "tokens": 1751451
+        }
+      },
+      "landed": {
+        "pr": 176,
+        "tier": "full",
+        "ci": "pass",
+        "sha": "07d11af401ffb581ebcf4e8cb93b74feb9840668",
+        "at": "2026-10-25T12:10:11.401Z",
+        "waived": null
+      },
+      "minutes": null,
+      "findings": {
+        "fault": 11,
+        "ticket": 6,
+        "race": 5,
+        "style": 3,
+        "gap": 19,
+        "unsorted": 2
+      }
+    },
+    {
+      "piece": "23-one-page-per-build",
+      "ticket": "docs/wayfinder/software-factory/build/tickets/23-one-page-per-build.md",
+      "title": "One visual page per build",
+      "kind": "task (AFK) M",
+      "builder": {
+        "model": "claude-opus-5-5",
+        "effort": "high",
+        "previousModels": [],
+        "built": "claude-opus-5-5"
+      },
+      "phases": [
+        {
+          "name": "brief",
+          "start": "2026-10-25T12:10:26.620Z",
+          "end": "2026-10-25T12:10:26.622Z",
+          "exit": 0
+        },
+        {
+          "name": "build",
+          "start": "2026-10-25T12:10:26.624Z",
+          "end": "2026-10-25T12:24:23.432Z",
+          "exit": 0
+        },
+        {
+          "name": "commit",
+          "start": "2026-10-25T12:24:23.434Z",
+          "end": "2026-10-25T12:24:23.555Z",
+          "exit": 0
+        },
+        {
+          "name": "review",
+          "start": "2026-10-25T12:24:23.555Z",
+          "end": "2026-10-25T12:26:19.365Z",
+          "exit": 0
+        },
+        {
+          "name": "fix",
+          "start": "2026-10-25T12:26:19.369Z",
+          "end": "2026-10-25T12:47:28.638Z",
+          "exit": 0
+        },
+        {
+          "name": "pr",
+          "start": "2026-10-25T12:47:28.639Z",
+          "end": "2026-10-25T13:06:15.892Z",
+          "exit": 0
+        }
+      ],
+      "rounds": 3,
+      "reviews": [
+        {
+          "dir": ".scratch/reviews/sf-23/20261025T122619Z",
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "counts": {
+            "kind": {
+              "fault": 4,
+              "ticket": 3,
+              "race": 0,
+              "style": 1,
+              "unsorted": 0,
+              "gap": 5
+            },
+            "severity": {
+              "P0": 0,
+              "P1": 0,
+              "P2": 4,
+              "P3": 4,
+              "none": 0,
+              "gap": 5
+            }
+          },
+          "declined": [
+            {
+              "text": "Fix shown as a link (P3)",
+              "reason": "a link would break \"no network\" and the page wouldn't be one self-contained file; the fix stays as text, and Done and the test comment now say so.",
+              "round": 1
+            }
+          ]
+        },
+        {
+          "dir": ".scratch/reviews/sf-23/20261025T123315Z",
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "counts": {
+            "kind": {
+              "fault": 3,
+              "ticket": 0,
+              "race": 0,
+              "style": 1,
+              "unsorted": 0,
+              "gap": 4
+            },
+            "severity": {
+              "P0": 0,
+              "P1": 0,
+              "P2": 1,
+              "P3": 3,
+              "none": 0,
+              "gap": 4
+            }
+          },
+          "declined": []
+        },
+        {
+          "dir": ".scratch/reviews/sf-23/20261025T124134Z",
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "counts": {
+            "kind": {
+              "fault": 1,
+              "ticket": 2,
+              "race": 0,
+              "style": 0,
+              "unsorted": 0,
+              "gap": 2
+            },
+            "severity": {
+              "P0": 0,
+              "P1": 0,
+              "P2": 1,
+              "P3": 2,
+              "none": 0,
+              "gap": 2
+            }
+          },
+          "declined": [
+            {
+              "text": "Use \"cosmetic\" instead of \"style\" for the lowest level of problem (optional nit)",
+              "reason": "the ticket asks for the words \"serious / minor / style\" for these levels.",
+              "round": 3
+            }
+          ]
+        },
+        {
+          "dir": ".scratch/reviews/sf-23/20261025T124728Z",
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "counts": {
+            "kind": {
+              "fault": 2,
+              "ticket": 0,
+              "race": 0,
+              "style": 0,
+              "unsorted": 0,
+              "gap": 3
+            },
+            "severity": {
+              "P0": 0,
+              "P1": 0,
+              "P2": 1,
+              "P3": 1,
+              "none": 0,
+              "gap": 3
+            }
+          },
+          "declined": []
+        },
+        {
+          "dir": ".scratch/reviews/sf-23/20261025T125319Z",
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "counts": {
+            "kind": {
+              "fault": 2,
+              "ticket": 2,
+              "race": 0,
+              "style": 0,
+              "unsorted": 0,
+              "gap": 3
+            },
+            "severity": {
+              "P0": 0,
+              "P1": 0,
+              "P2": 0,
+              "P3": 4,
+              "none": 0,
+              "gap": 3
+            }
+          },
+          "declined": []
+        }
+      ],
+      "cost": {
+        "build": {
+          "usd": 19.552598599999996,
+          "tokens": 38744539
+        },
+        "review": {
+          "usd": 4.081425,
+          "tokens": 2602421
+        }
+      },
+      "landed": {
+        "pr": 181,
+        "tier": "full",
+        "ci": "pass",
+        "sha": "2aec98d988db540600e5c77c738f81bfa0e214b1",
+        "at": "2026-10-25T13:06:15.878Z",
+        "waived": null
+      },
+      "minutes": 55.8,
+      "findings": {
+        "fault": 12,
+        "ticket": 7,
+        "style": 2,
+        "gap": 17
+      }
+    },
+    {
+      "piece": "31-heartbeat",
+      "ticket": "docs/wayfinder/software-factory/build/tickets/31-heartbeat.md",
+      "title": "The 30-minute heartbeat: kit heartbeat and the T3 recipe",
+      "kind": "task (AFK) S–M",
+      "builder": {
+        "model": "claude-opus-5-5",
+        "effort": "high",
+        "previousModels": [],
+        "built": null
+      },
+      "phases": [],
+      "rounds": 5,
+      "reviews": [
+        {
+          "dir": ".scratch/reviews/sf-31/20261025T124247Z",
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "counts": {
+            "kind": {
+              "fault": 1,
+              "ticket": 1,
+              "race": 0,
+              "style": 0,
+              "unsorted": 0,
+              "gap": 3
+            },
+            "severity": {
+              "P0": 0,
+              "P1": 1,
+              "P2": 1,
+              "P3": 0,
+              "none": 0,
+              "gap": 3
+            }
+          },
+          "declined": []
+        },
+        {
+          "dir": ".scratch/reviews/sf-31/20261025T130533Z",
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "counts": {
+            "kind": {
+              "fault": 2,
+              "ticket": 0,
+              "race": 1,
+              "style": 0,
+              "unsorted": 0,
+              "gap": 3
+            },
+            "severity": {
+              "P0": 0,
+              "P1": 0,
+              "P2": 2,
+              "P3": 1,
+              "none": 0,
+              "gap": 3
+            }
+          },
+          "declined": []
+        },
+        {
+          "dir": ".scratch/reviews/sf-31/20261025T131226Z",
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "counts": {
+            "kind": {
+              "fault": 2,
+              "ticket": 1,
+              "race": 0,
+              "style": 0,
+              "unsorted": 0,
+              "gap": 2
+            },
+            "severity": {
+              "P0": 0,
+              "P1": 1,
+              "P2": 2,
+              "P3": 0,
+              "none": 0,
+              "gap": 2
+            }
+          },
+          "declined": []
+        },
+        {
+          "dir": ".scratch/reviews/sf-31/20261025T132155Z",
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "counts": {
+            "kind": {
+              "fault": 1,
+              "ticket": 0,
+              "race": 1,
+              "style": 0,
+              "unsorted": 0,
+              "gap": 2
+            },
+            "severity": {
+              "P0": 0,
+              "P1": 0,
+              "P2": 1,
+              "P3": 1,
+              "none": 0,
+              "gap": 2
+            }
+          },
+          "declined": []
+        },
+        {
+          "dir": ".scratch/reviews/sf-31/20261025T132848Z",
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "counts": {
+            "kind": {
+              "fault": 1,
+              "ticket": 0,
+              "race": 0,
+              "style": 0,
+              "unsorted": 0,
+              "gap": 4
+            },
+            "severity": {
+              "P0": 0,
+              "P1": 0,
+              "P2": 1,
+              "P3": 0,
+              "none": 0,
+              "gap": 4
+            }
+          },
+          "declined": []
+        }
+      ],
+      "cost": {
+        "build": {
+          "usd": 21.126890599999996,
+          "tokens": 37724726
+        },
+        "review": {
+          "usd": 4.6026172,
+          "tokens": 3996086
+        }
+      },
+      "landed": {
+        "pr": 179,
+        "tier": "full",
+        "ci": "pass",
+        "sha": "09b89eceef87e772a5c064fa72942965d40550fc",
+        "at": "2026-10-25T13:41:50.328Z",
+        "waived": null
+      },
+      "minutes": null,
+      "findings": {
+        "fault": 7,
+        "ticket": 2,
+        "gap": 14,
+        "race": 2
+      }
+    },
+    {
+      "piece": "42-kit-ux-scripted",
+      "ticket": "docs/wayfinder/software-factory/build/tickets/42-kit-ux-scripted.md",
+      "title": "kit ux, scripted half: touched features, tries, checks, bundle",
+      "kind": "task (AFK) L",
+      "builder": null,
+      "phases": [],
+      "rounds": 0,
+      "reviews": [
+        {
+          "dir": ".scratch/reviews/sf-42/20261025T123244Z",
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "counts": {
+            "kind": {
+              "fault": 2,
+              "ticket": 1,
+              "race": 0,
+              "style": 0,
+              "unsorted": 0,
+              "gap": 7
+            },
+            "severity": {
+              "P0": 0,
+              "P1": 0,
+              "P2": 2,
+              "P3": 1,
+              "none": 0,
+              "gap": 7
+            }
+          },
+          "declined": []
+        }
+      ],
+      "cost": {
+        "build": null,
+        "review": {
+          "usd": 0.9793647000000002,
+          "tokens": 602876
+        }
+      },
+      "landed": null,
+      "minutes": null,
+      "findings": {
+        "fault": 2,
+        "ticket": 1,
+        "gap": 7
+      }
+    },
+    {
+      "piece": "43-kit-ux-reviewer",
+      "ticket": "docs/wayfinder/software-factory/build/tickets/43-kit-ux-reviewer.md",
+      "title": "kit ux, reviewer half; visible slices run it",
+      "kind": "task (AFK) M",
+      "builder": {
+        "model": "claude-opus-5-5",
+        "effort": "high",
+        "previousModels": [],
+        "built": "claude-opus-5-5"
+      },
+      "phases": [
+        {
+          "name": "brief",
+          "start": "2026-10-25T12:47:07.780Z",
+          "end": "2026-10-25T12:47:07.786Z",
+          "exit": 0
+        },
+        {
+          "name": "build",
+          "start": "2026-10-25T12:47:07.788Z",
+          "end": "2026-10-25T13:09:12.215Z",
+          "exit": 0
+        },
+        {
+          "name": "commit",
+          "start": "2026-10-25T13:09:12.215Z",
+          "end": "2026-10-25T13:09:12.293Z",
+          "exit": 0
+        },
+        {
+          "name": "review",
+          "start": "2026-10-25T13:09:12.293Z",
+          "end": "2026-10-25T13:11:23.091Z",
+          "exit": 0
+        },
+        {
+          "name": "fix",
+          "start": "2026-10-25T13:11:23.092Z",
+          "end": "2026-10-25T13:38:53.816Z",
+          "exit": 0
+        },
+        {
+          "name": "pr",
+          "start": "2026-10-25T13:38:53.817Z",
+          "end": "2026-10-25T13:38:54.718Z",
+          "exit": 1
+        }
+      ],
+      "rounds": 3,
+      "reviews": [
+        {
+          "dir": ".scratch/reviews/sf-43/20261025T131123Z",
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "counts": {
+            "kind": {
+              "fault": 3,
+              "ticket": 2,
+              "race": 0,
+              "style": 0,
+              "unsorted": 0,
+              "gap": 6
+            },
+            "severity": {
+              "P0": 0,
+              "P1": 0,
+              "P2": 3,
+              "P3": 2,
+              "none": 0,
+              "gap": 6
+            }
+          },
+          "declined": [
+            {
+              "text": "Ticket `status: closed` while \"Done when\" item 2 is open",
+              "reason": "the builder contract requires closing; the Done section now marks the real run as an open lead step with the exact command and what to paste.",
+              "round": 1
+            },
+            {
+              "text": "A scope-less mode in `agent.sh review` (`--no-scope`), dropping the `--commit HEAD` stand-in",
+              "reason": "it needs `scripts/agents/agent-run.mjs`, which is outside the ticket's Files; partly handled by the brief now telling the reviewer not to open the diff, commit log or refs files, and pinned by the fake-`claude` test.",
+              "round": 1
+            }
+          ]
+        },
+        {
+          "dir": ".scratch/reviews/sf-43/20261025T132037Z",
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "counts": {
+            "kind": {
+              "fault": 2,
+              "ticket": 1,
+              "race": 1,
+              "style": 0,
+              "unsorted": 0,
+              "gap": 3
+            },
+            "severity": {
+              "P0": 0,
+              "P1": 1,
+              "P2": 1,
+              "P3": 2,
+              "none": 0,
+              "gap": 3
+            }
+          },
+          "declined": []
+        },
+        {
+          "dir": ".scratch/reviews/sf-43/20261025T133022Z",
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "counts": {
+            "kind": {
+              "fault": 2,
+              "ticket": 2,
+              "race": 2,
+              "style": 0,
+              "unsorted": 0,
+              "gap": 3
+            },
+            "severity": {
+              "P0": 0,
+              "P1": 0,
+              "P2": 2,
+              "P3": 4,
+              "none": 0,
+              "gap": 3
+            }
+          },
+          "declined": [
+            {
+              "text": "Ticket `status: closed` while \"Done when\" item 2 is open",
+              "reason": "the builder contract says to set `status: closed`, and the real reviewer run is an agent run the builder may not start; the Done section marks it as an open lead step with the exact command, to do before landing.",
+              "round": 3
+            }
+          ]
+        },
+        {
+          "dir": ".scratch/reviews/sf-43/20261025T133853Z",
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "counts": {
+            "kind": {
+              "fault": 1,
+              "ticket": 1,
+              "race": 0,
+              "style": 0,
+              "unsorted": 0,
+              "gap": 2
+            },
+            "severity": {
+              "P0": 0,
+              "P1": 0,
+              "P2": 1,
+              "P3": 1,
+              "none": 0,
+              "gap": 2
+            }
+          },
+          "declined": []
+        },
+        {
+          "dir": ".scratch/reviews/sf-43/20261025T134647Z",
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "counts": {
+            "kind": {
+              "fault": 0,
+              "ticket": 2,
+              "race": 0,
+              "style": 0,
+              "unsorted": 0,
+              "gap": 3
+            },
+            "severity": {
+              "P0": 0,
+              "P1": 0,
+              "P2": 2,
+              "P3": 0,
+              "none": 0,
+              "gap": 3
+            }
+          },
+          "declined": []
+        }
+      ],
+      "cost": {
+        "build": {
+          "usd": 23.745486200000006,
+          "tokens": 52013602
+        },
+        "review": {
+          "usd": 5.016475699999999,
+          "tokens": 3327072
+        }
+      },
+      "landed": {
+        "pr": 183,
+        "tier": "full",
+        "ci": "pass",
+        "sha": "feb693cb27de3bcbf481ad114ccf9384656aa0ca",
+        "at": "2026-10-25T14:01:23.637Z",
+        "waived": null
+      },
+      "minutes": 51.8,
+      "findings": {
+        "fault": 8,
+        "ticket": 8,
+        "gap": 17,
+        "race": 3
+      }
+    },
+    {
+      "piece": "44-feature-list-guard",
+      "ticket": "docs/wayfinder/software-factory/build/tickets/44-feature-list-guard.md",
+      "title": "A visible change cannot land without a feature-list update",
+      "kind": "task (AFK) S–M",
+      "builder": {
+        "model": "claude-opus-5-5",
+        "effort": "high",
+        "previousModels": [],
+        "built": "claude-opus-5-5"
+      },
+      "phases": [
+        {
+          "name": "brief",
+          "start": "2026-10-25T12:10:28.061Z",
+          "end": "2026-10-25T12:10:28.064Z",
+          "exit": 0
+        },
+        {
+          "name": "build",
+          "start": "2026-10-25T12:10:28.066Z",
+          "end": "2026-10-25T12:23:40.276Z",
+          "exit": 0
+        },
+        {
+          "name": "commit",
+          "start": "2026-10-25T12:23:40.278Z",
+          "end": "2026-10-25T12:23:40.449Z",
+          "exit": 0
+        },
+        {
+          "name": "review",
+          "start": "2026-10-25T12:23:40.449Z",
+          "end": "2026-10-25T12:24:35.168Z",
+          "exit": 0
+        },
+        {
+          "name": "fix",
+          "start": "2026-10-25T12:24:35.168Z",
+          "end": "2026-10-25T12:42:15.867Z",
+          "exit": 0
+        },
+        {
+          "name": "pr",
+          "start": "2026-10-25T12:42:15.868Z",
+          "end": "2026-10-25T13:02:41.139Z",
+          "exit": 0
+        }
+      ],
+      "rounds": 3,
+      "reviews": [
+        {
+          "dir": ".scratch/reviews/sf-44/20261025T122435Z",
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "counts": {
+            "kind": {
+              "fault": 2,
+              "ticket": 0,
+              "race": 0,
+              "style": 0,
+              "unsorted": 0,
+              "gap": 2
+            },
+            "severity": {
+              "P0": 0,
+              "P1": 0,
+              "P2": 1,
+              "P3": 1,
+              "none": 0,
+              "gap": 2
+            }
+          },
+          "declined": []
+        },
+        {
+          "dir": ".scratch/reviews/sf-44/20261025T123057Z",
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "counts": {
+            "kind": {
+              "fault": 0,
+              "ticket": 0,
+              "race": 0,
+              "style": 1,
+              "unsorted": 0,
+              "gap": 2
+            },
+            "severity": {
+              "P0": 0,
+              "P1": 0,
+              "P2": 0,
+              "P3": 1,
+              "none": 0,
+              "gap": 2
+            }
+          },
+          "declined": []
+        },
+        {
+          "dir": ".scratch/reviews/sf-44/20261025T123605Z",
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "counts": {
+            "kind": {
+              "fault": 0,
+              "ticket": 1,
+              "race": 0,
+              "style": 0,
+              "unsorted": 0,
+              "gap": 3
+            },
+            "severity": {
+              "P0": 0,
+              "P1": 0,
+              "P2": 1,
+              "P3": 0,
+              "none": 0,
+              "gap": 3
+            }
+          },
+          "declined": [
+            {
+              "text": "Add a test in `tests/kit-slice.test.ts` for the builder brief line",
+              "reason": "that file is outside the ticket's Files (only `tests/kit-pr.test.ts` is listed); it can be added on a follow-up ticket that covers `kit-slice.test.ts`.",
+              "round": 3
+            }
+          ]
+        },
+        {
+          "dir": ".scratch/reviews/sf-44/20261025T124215Z",
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "counts": {
+            "kind": {
+              "fault": 0,
+              "ticket": 0,
+              "race": 0,
+              "style": 0,
+              "unsorted": 0,
+              "gap": 3
+            },
+            "severity": {
+              "P0": 0,
+              "P1": 0,
+              "P2": 0,
+              "P3": 0,
+              "none": 0,
+              "gap": 3
+            }
+          },
+          "declined": []
+        }
+      ],
+      "cost": {
+        "build": {
+          "usd": 6.372063000000001,
+          "tokens": 10343469
+        },
+        "review": {
+          "usd": 1.8877785000000002,
+          "tokens": 902973
+        }
+      },
+      "landed": {
+        "pr": 180,
+        "tier": "full",
+        "ci": "pass",
+        "sha": "ffff883d134e0102e8a70b5f47de5346eebe1452",
+        "at": "2026-10-25T13:02:41.123Z",
+        "waived": null
+      },
+      "minutes": 52.2,
+      "findings": {
+        "fault": 2,
+        "gap": 10,
+        "style": 1,
+        "ticket": 1
+      }
+    },
+    {
+      "piece": "45-feature-tries",
+      "ticket": "docs/wayfinder/software-factory/build/tickets/45-feature-tries.md",
+      "title": "Scripted tries for the rest of the feature list",
+      "kind": "task (AFK) L (may split by area)",
+      "builder": {
+        "model": "claude-opus-5-5",
+        "effort": "high",
+        "previousModels": [],
+        "built": "claude-opus-5-5"
+      },
+      "phases": [
+        {
+          "name": "brief",
+          "start": "2026-10-25T12:58:16.702Z",
+          "end": "2026-10-25T12:58:16.706Z",
+          "exit": 0
+        },
+        {
+          "name": "build",
+          "start": "2026-10-25T12:58:16.708Z",
+          "end": "2026-10-25T14:18:29.572Z",
+          "exit": 0
+        },
+        {
+          "name": "commit",
+          "start": "2026-10-25T14:18:29.573Z",
+          "end": "2026-10-25T14:18:29.758Z",
+          "exit": 0
+        },
+        {
+          "name": "review",
+          "start": "2026-10-25T14:18:29.759Z",
+          "end": "2026-10-25T14:20:22.998Z",
+          "exit": 0
+        },
+        {
+          "name": "fix",
+          "start": "2026-10-25T14:20:23.000Z",
+          "end": "2026-10-25T16:19:49.121Z",
+          "exit": 0
+        },
+        {
+          "name": "pr",
+          "start": "2026-10-25T16:19:49.121Z",
+          "end": "2026-10-25T16:41:49.023Z",
+          "exit": 0
+        }
+      ],
+      "rounds": 3,
+      "reviews": [
+        {
+          "dir": ".scratch/reviews/sf-45/20261025T142022Z",
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "counts": {
+            "kind": {
+              "fault": 0,
+              "ticket": 8,
+              "race": 0,
+              "style": 0,
+              "unsorted": 1,
+              "gap": 2
+            },
+            "severity": {
+              "P0": 0,
+              "P1": 0,
+              "P2": 6,
+              "P3": 2,
+              "none": 1,
+              "gap": 2
+            }
+          },
+          "declined": [
+            {
+              "text": "Add an `expect visible` after every Tab/Arrow run",
+              "reason": "done where a visible, unique name exists. Focus inside the Pages tree, the Files list and Media's More button has no visible text the steps can check, so a later menu item or click confirms the target there instead.",
+              "round": 1
+            },
+            {
+              "text": "Optional nit: type the rename and URL with `type … in <label>`",
+              "reason": "those field names change between widths and runs (\"URL of About\" or \"URL of About · Larkspur Studio\"), so key presses are steadier.",
+              "round": 1
+            },
+            {
+              "text": "Optional nit: commit SHAs and review decisions in Done",
+              "reason": "the builder contract leaves those to the slice.",
+              "round": 1
+            },
+            {
+              "text": "decide: should a follow-up add steps for the page frame and for files, e.g. `click frame \"<text>\"`, `drag \"<name>\" to frame \"<text>\" [edge …]` and `add files <fixture>`? These are needed to try the three research-01 bugs that have no try yet (the band-edge drop, the drag inside a selection, the 390 px upload). They would also open about 15 untried features.",
+              "reason": "",
+              "round": 1
+            }
+          ]
+        },
+        {
+          "dir": ".scratch/reviews/sf-45/20261025T154253Z",
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "counts": {
+            "kind": {
+              "fault": 1,
+              "ticket": 4,
+              "race": 0,
+              "style": 0,
+              "unsorted": 0,
+              "gap": 3
+            },
+            "severity": {
+              "P0": 0,
+              "P1": 0,
+              "P2": 2,
+              "P3": 3,
+              "none": 0,
+              "gap": 3
+            }
+          },
+          "declined": [
+            {
+              "text": "Optional nit: change F-media-20's check from \"Not described yet\" to the placeholder's edit-bar label or a record",
+              "reason": "the gallery isn't open on that screen, so \"Not described yet\" can only come from the new placeholder's bar.",
+              "round": 2
+            },
+            {
+              "text": "decide: same as last round. Should a follow-up add steps aimed inside the page frame and for adding files, to cover the three research-01 bugs that still have no try?",
+              "reason": "",
+              "round": 2
+            }
+          ]
+        },
+        {
+          "dir": ".scratch/reviews/sf-45/20261025T154910Z",
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "counts": {
+            "kind": {
+              "fault": 1,
+              "ticket": 0,
+              "race": 0,
+              "style": 0,
+              "unsorted": 0,
+              "gap": 2
+            },
+            "severity": {
+              "P0": 0,
+              "P1": 0,
+              "P2": 1,
+              "P3": 0,
+              "none": 0,
+              "gap": 2
+            }
+          },
+          "declined": [
+            {
+              "text": "decide: none new.",
+              "reason": "",
+              "round": 3
+            }
+          ]
+        },
+        {
+          "dir": ".scratch/reviews/sf-45/20261025T161949Z",
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "counts": {
+            "kind": {
+              "fault": 2,
+              "ticket": 2,
+              "race": 0,
+              "style": 0,
+              "unsorted": 0,
+              "gap": 2
+            },
+            "severity": {
+              "P0": 0,
+              "P1": 0,
+              "P2": 2,
+              "P3": 2,
+              "none": 0,
+              "gap": 2
+            }
+          },
+          "declined": []
+        },
+        {
+          "dir": ".scratch/reviews/sf-45/20261025T162554Z",
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "counts": {
+            "kind": {
+              "fault": 1,
+              "ticket": 3,
+              "race": 0,
+              "style": 0,
+              "unsorted": 0,
+              "gap": 3
+            },
+            "severity": {
+              "P0": 0,
+              "P1": 0,
+              "P2": 1,
+              "P3": 3,
+              "none": 0,
+              "gap": 3
+            }
+          },
+          "declined": []
+        }
+      ],
+      "cost": {
+        "build": {
+          "usd": 48.385616399999996,
+          "tokens": 139476102
+        },
+        "review": {
+          "usd": 4.544730400000001,
+          "tokens": 3866967
+        }
+      },
+      "landed": {
+        "pr": 186,
+        "tier": "full",
+        "ci": "pass",
+        "sha": "d6cd8ebed8504c18be0b923a7bd4196ed9795ffe",
+        "at": "2026-10-25T16:41:48.999Z",
+        "waived": null
+      },
+      "minutes": 223.5,
+      "findings": {
+        "ticket": 17,
+        "unsorted": 1,
+        "gap": 12,
+        "fault": 5
+      }
+    },
+    {
+      "piece": "50-triage-groups",
+      "ticket": "docs/wayfinder/software-factory/build/tickets/50-triage-groups.md",
+      "title": "Triage groups: one builder takes a whole group",
+      "kind": "task (AFK) S–M",
+      "builder": null,
+      "phases": [],
+      "rounds": 0,
+      "reviews": [
+        {
+          "dir": ".scratch/reviews/sf-50/20261025T124232Z",
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "counts": {
+            "kind": {
+              "fault": 3,
+              "ticket": 2,
+              "race": 0,
+              "style": 0,
+              "unsorted": 0,
+              "gap": 4
+            },
+            "severity": {
+              "P0": 0,
+              "P1": 0,
+              "P2": 1,
+              "P3": 4,
+              "none": 0,
+              "gap": 4
+            }
+          },
+          "declined": []
+        }
+      ],
+      "cost": {
+        "build": null,
+        "review": {
+          "usd": 0.8471972,
+          "tokens": 590887
+        }
+      },
+      "landed": null,
+      "minutes": null,
+      "findings": {
+        "fault": 3,
+        "ticket": 2,
+        "gap": 4
+      }
+    },
+    {
+      "piece": "51-weekly-sweep",
+      "ticket": "docs/wayfinder/software-factory/build/tickets/51-weekly-sweep.md",
+      "title": "The weekly sweep, Mondays 09:00",
+      "kind": "task (AFK) M",
+      "builder": {
+        "model": "claude-opus-5-5",
+        "effort": "high",
+        "previousModels": [],
+        "built": "claude-opus-5-5"
+      },
+      "phases": [
+        {
+          "name": "brief",
+          "start": "2026-10-25T13:07:00.534Z",
+          "end": "2026-10-25T13:07:00.540Z",
+          "exit": 0
+        },
+        {
+          "name": "build",
+          "start": "2026-10-25T13:07:00.542Z",
+          "end": "2026-10-25T13:16:09.058Z",
+          "exit": 0
+        },
+        {
+          "name": "commit",
+          "start": "2026-10-25T13:16:09.059Z",
+          "end": "2026-10-25T13:16:09.138Z",
+          "exit": 0
+        },
+        {
+          "name": "review",
+          "start": "2026-10-25T13:16:09.138Z",
+          "end": "2026-10-25T13:18:59.210Z",
+          "exit": 0
+        },
+        {
+          "name": "fix",
+          "start": "2026-10-25T13:18:59.211Z",
+          "end": "2026-10-25T13:37:51.581Z",
+          "exit": 0
+        },
+        {
+          "name": "pr",
+          "start": "2026-10-25T13:37:51.582Z",
+          "end": "2026-10-25T13:54:13.630Z",
+          "exit": 0
+        }
+      ],
+      "rounds": 3,
+      "reviews": [
+        {
+          "dir": ".scratch/reviews/sf-51/20261025T131859Z",
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "counts": {
+            "kind": {
+              "fault": 1,
+              "ticket": 3,
+              "race": 0,
+              "style": 0,
+              "unsorted": 1,
+              "gap": 4
+            },
+            "severity": {
+              "P0": 0,
+              "P1": 0,
+              "P2": 2,
+              "P3": 2,
+              "none": 1,
+              "gap": 4
+            }
+          },
+          "declined": [
+            {
+              "text": "Have `kit pr` copy its logs into the main checkout",
+              "reason": "`scripts/agents/kit.d/pr` is outside this ticket's Files, so I did the alternative the reviewer offered (the warning in the docs and the bundle) and recorded the copy as a follow-up.",
+              "round": 1
+            }
+          ]
+        },
+        {
+          "dir": ".scratch/reviews/sf-51/20261025T132534Z",
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "counts": {
+            "kind": {
+              "fault": 1,
+              "ticket": 1,
+              "race": 1,
+              "style": 0,
+              "unsorted": 0,
+              "gap": 4
+            },
+            "severity": {
+              "P0": 0,
+              "P1": 0,
+              "P2": 2,
+              "P3": 1,
+              "none": 0,
+              "gap": 4
+            }
+          },
+          "declined": []
+        },
+        {
+          "dir": ".scratch/reviews/sf-51/20261025T133204Z",
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "counts": {
+            "kind": {
+              "fault": 1,
+              "ticket": 2,
+              "race": 0,
+              "style": 0,
+              "unsorted": 0,
+              "gap": 2
+            },
+            "severity": {
+              "P0": 0,
+              "P1": 0,
+              "P2": 2,
+              "P3": 1,
+              "none": 0,
+              "gap": 2
+            }
+          },
+          "declined": [
+            {
+              "text": "Add each review round's decisions to the Done section",
+              "reason": "the builder contract says Done describes \"only behaviour, tests and commits; the slice records review decisions\", so I added the commits but not the decisions.",
+              "round": 3
+            },
+            {
+              "text": "(optional) Export `realDate` from `tickets.mjs` and reuse it",
+              "reason": "`scripts/agents/tickets.mjs` is outside this ticket's Files.",
+              "round": 3
+            },
+            {
+              "text": "(optional) Tell Playwright projects apart in spec names",
+              "reason": "real reports use a single project (`native-save`), so it would only make the names longer.",
+              "round": 3
+            }
+          ]
+        },
+        {
+          "dir": ".scratch/reviews/sf-51/20261025T133751Z",
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "counts": {
+            "kind": {
+              "fault": 2,
+              "ticket": 0,
+              "race": 0,
+              "style": 0,
+              "unsorted": 0,
+              "gap": 4
+            },
+            "severity": {
+              "P0": 0,
+              "P1": 0,
+              "P2": 1,
+              "P3": 1,
+              "none": 0,
+              "gap": 4
+            }
+          },
+          "declined": []
+        }
+      ],
+      "cost": {
+        "build": {
+          "usd": 15.992997199999994,
+          "tokens": 29712155
+        },
+        "review": {
+          "usd": 4.897160200000001,
+          "tokens": 5663852
+        }
+      },
+      "landed": {
+        "pr": 182,
+        "tier": "full",
+        "ci": "pass",
+        "sha": "fb105d5228ca8ea3422b826599009643dff6ff1c",
+        "at": "2026-10-25T13:54:13.613Z",
+        "waived": null
+      },
+      "minutes": 47.2,
+      "findings": {
+        "fault": 5,
+        "ticket": 6,
+        "unsorted": 1,
+        "gap": 14,
+        "race": 1
+      }
+    },
+    {
+      "piece": "52-chat-learning",
+      "ticket": "docs/wayfinder/software-factory/build/tickets/52-chat-learning.md",
+      "title": "Chat learning every other Monday, from the central corrections list",
+      "kind": "task (AFK) M",
+      "builder": {
+        "model": "claude-opus-5-5",
+        "effort": "high",
+        "previousModels": [],
+        "built": "claude-opus-5-5"
+      },
+      "phases": [
+        {
+          "name": "brief",
+          "start": "2026-10-25T13:54:31.586Z",
+          "end": "2026-10-25T13:54:31.588Z",
+          "exit": 0
+        },
+        {
+          "name": "build",
+          "start": "2026-10-25T13:54:31.590Z",
+          "end": "2026-10-25T14:00:58.790Z",
+          "exit": 0
+        },
+        {
+          "name": "commit",
+          "start": "2026-10-25T14:00:58.791Z",
+          "end": "2026-10-25T14:00:58.877Z",
+          "exit": 0
+        },
+        {
+          "name": "review",
+          "start": "2026-10-25T14:00:58.877Z",
+          "end": "2026-10-25T14:03:13.316Z",
+          "exit": 0
+        },
+        {
+          "name": "fix",
+          "start": "2026-10-25T14:03:13.317Z",
+          "end": "2026-10-25T14:25:49.951Z",
+          "exit": 1
+        }
+      ],
+      "rounds": 4,
+      "reviews": [
+        {
+          "dir": ".scratch/reviews/sf-52/20261025T140313Z",
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "counts": {
+            "kind": {
+              "fault": 4,
+              "ticket": 1,
+              "race": 1,
+              "style": 0,
+              "unsorted": 1,
+              "gap": 7
+            },
+            "severity": {
+              "P0": 0,
+              "P1": 0,
+              "P2": 4,
+              "P3": 2,
+              "none": 1,
+              "gap": 7
+            }
+          },
+          "declined": []
+        },
+        {
+          "dir": ".scratch/reviews/sf-52/20261025T140845Z",
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "counts": {
+            "kind": {
+              "fault": 1,
+              "ticket": 1,
+              "race": 1,
+              "style": 1,
+              "unsorted": 1,
+              "gap": 3
+            },
+            "severity": {
+              "P0": 0,
+              "P1": 0,
+              "P2": 2,
+              "P3": 2,
+              "none": 1,
+              "gap": 3
+            }
+          },
+          "declined": [
+            {
+              "text": "Export `realDate` from `tickets.mjs` and reuse it",
+              "reason": "`tickets.mjs` is outside the ticket's Files, and `kit sweep` already keeps the same local copy.",
+              "round": 2
+            }
+          ]
+        },
+        {
+          "dir": ".scratch/reviews/sf-52/20261025T141510Z",
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "counts": {
+            "kind": {
+              "fault": 1,
+              "ticket": 0,
+              "race": 1,
+              "style": 0,
+              "unsorted": 0,
+              "gap": 4
+            },
+            "severity": {
+              "P0": 0,
+              "P1": 0,
+              "P2": 1,
+              "P3": 1,
+              "none": 0,
+              "gap": 4
+            }
+          },
+          "declined": []
+        },
+        {
+          "dir": ".scratch/reviews/sf-52/20261025T141923Z",
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "counts": {
+            "kind": {
+              "fault": 2,
+              "ticket": 2,
+              "race": 0,
+              "style": 0,
+              "unsorted": 1,
+              "gap": 4
+            },
+            "severity": {
+              "P0": 0,
+              "P1": 0,
+              "P2": 0,
+              "P3": 4,
+              "none": 1,
+              "gap": 4
+            }
+          },
+          "declined": []
+        },
+        {
+          "dir": ".scratch/reviews/sf-52/20261025T142549Z",
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "counts": {
+            "kind": {
+              "fault": 3,
+              "ticket": 1,
+              "race": 0,
+              "style": 2,
+              "unsorted": 1,
+              "gap": 3
+            },
+            "severity": {
+              "P0": 0,
+              "P1": 0,
+              "P2": 2,
+              "P3": 4,
+              "none": 1,
+              "gap": 3
+            }
+          },
+          "declined": []
+        },
+        {
+          "dir": ".scratch/reviews/sf-52/20261025T143505Z",
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "counts": {
+            "kind": {
+              "fault": 0,
+              "ticket": 1,
+              "race": 2,
+              "style": 0,
+              "unsorted": 0,
+              "gap": 4
+            },
+            "severity": {
+              "P0": 0,
+              "P1": 0,
+              "P2": 1,
+              "P3": 2,
+              "none": 0,
+              "gap": 4
+            }
+          },
+          "declined": []
+        },
+        {
+          "dir": ".scratch/reviews/sf-52/20261025T145656Z",
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "counts": {
+            "kind": {
+              "fault": 1,
+              "ticket": 2,
+              "race": 0,
+              "style": 0,
+              "unsorted": 0,
+              "gap": 2
+            },
+            "severity": {
+              "P0": 0,
+              "P1": 0,
+              "P2": 1,
+              "P3": 2,
+              "none": 0,
+              "gap": 2
+            }
+          },
+          "declined": []
+        }
+      ],
+      "cost": {
+        "build": {
+          "usd": 15.084475100000002,
+          "tokens": 21462779
+        },
+        "review": {
+          "usd": 5.708779,
+          "tokens": 3571868
+        }
+      },
+      "landed": {
+        "pr": 184,
+        "tier": "full",
+        "ci": "pass",
+        "sha": "a3d9bd8873bb947de4f237fc2c5c85d6db2192f5",
+        "at": "2026-10-25T15:12:05.407Z",
+        "waived": null
+      },
+      "minutes": 31.3,
+      "findings": {
+        "fault": 12,
+        "ticket": 8,
+        "race": 5,
+        "unsorted": 4,
+        "gap": 27,
+        "style": 3
+      }
+    },
+    {
+      "piece": "70-copy-the-kitchen-plan",
+      "ticket": "docs/wayfinder/software-factory/build/tickets/70-copy-the-kitchen-plan.md",
+      "title": "Plan copying the kitchen to Lex's other projects",
+      "kind": "task (AFK) M (planning, docs only)",
+      "builder": {
+        "model": "claude-opus-5-5",
+        "effort": "high",
+        "previousModels": [],
+        "built": "claude-opus-5-5"
+      },
+      "phases": [
+        {
+          "name": "brief",
+          "start": "2026-10-25T15:12:20.873Z",
+          "end": "2026-10-25T15:12:20.875Z",
+          "exit": 0
+        },
+        {
+          "name": "build",
+          "start": "2026-10-25T15:12:20.877Z",
+          "end": "2026-10-25T15:17:37.625Z",
+          "exit": 0
+        },
+        {
+          "name": "commit",
+          "start": "2026-10-25T15:17:37.626Z",
+          "end": "2026-10-25T15:17:37.708Z",
+          "exit": 0
+        },
+        {
+          "name": "review",
+          "start": "2026-10-25T15:17:37.708Z",
+          "end": "2026-10-25T15:18:35.614Z",
+          "exit": 0
+        },
+        {
+          "name": "fix",
+          "start": "2026-10-25T15:18:35.615Z",
+          "end": "2026-10-25T15:25:38.587Z",
+          "exit": 1
+        }
+      ],
+      "rounds": 3,
+      "reviews": [
+        {
+          "dir": ".scratch/reviews/sf-70/20261025T151835Z",
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "counts": {
+            "kind": {
+              "fault": 0,
+              "ticket": 2,
+              "race": 0,
+              "style": 0,
+              "unsorted": 1,
+              "gap": 0
+            },
+            "severity": {
+              "P0": 0,
+              "P1": 0,
+              "P2": 0,
+              "P3": 2,
+              "none": 1,
+              "gap": 0
+            }
+          },
+          "declined": []
+        },
+        {
+          "dir": ".scratch/reviews/sf-70/20261025T152051Z",
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "counts": {
+            "kind": {
+              "fault": 1,
+              "ticket": 2,
+              "race": 0,
+              "style": 0,
+              "unsorted": 0,
+              "gap": 0
+            },
+            "severity": {
+              "P0": 0,
+              "P1": 0,
+              "P2": 2,
+              "P3": 1,
+              "none": 0,
+              "gap": 0
+            }
+          },
+          "declined": [
+            {
+              "text": "Add the round-1 review decisions to ticket 70's Done section",
+              "reason": "the build brief says Done records only behaviour, tests and commits, and that the slice records review decisions.",
+              "round": 2
+            }
+          ]
+        },
+        {
+          "dir": ".scratch/reviews/sf-70/20261025T152320Z",
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "counts": {
+            "kind": {
+              "fault": 0,
+              "ticket": 1,
+              "race": 0,
+              "style": 0,
+              "unsorted": 0,
+              "gap": 0
+            },
+            "severity": {
+              "P0": 0,
+              "P1": 0,
+              "P2": 0,
+              "P3": 1,
+              "none": 0,
+              "gap": 0
+            }
+          },
+          "declined": [
+            {
+              "text": "Two other small notes needed no change. Ticket 70 can't list the round-2 commit because a commit can't name itself, and the landing report covers it. The note about `docs/agents/runner.md` is outside this ticket's files.",
+              "reason": "",
+              "round": 3
+            }
+          ]
+        },
+        {
+          "dir": ".scratch/reviews/sf-70/20261025T152524Z",
+          "model": "claude-opus-5-5",
+          "effort": "medium",
+          "counts": {
+            "kind": {
+              "fault": 0,
+              "ticket": 1,
+              "race": 0,
+              "style": 0,
+              "unsorted": 1,
+              "gap": 0
+            },
+            "severity": {
+              "P0": 0,
+              "P1": 0,
+              "P2": 0,
+              "P3": 1,
+              "none": 1,
+              "gap": 0
+            }
+          },
+          "declined": []
+        }
+      ],
+      "cost": {
+        "build": {
+          "usd": 7.8612552,
+          "tokens": 10862453
+        },
+        "review": {
+          "usd": 1.6912129999999999,
+          "tokens": 1045668
+        }
+      },
+      "landed": {
+        "pr": 185,
+        "tier": "docs",
+        "ci": "pass",
+        "sha": "477b5d73d4b6ecf129c109a289fbc1a4f54ee79a",
+        "at": "2026-10-25T15:38:16.563Z",
+        "waived": null
+      },
+      "minutes": 13.3,
+      "findings": {
+        "ticket": 6,
+        "unsorted": 2,
+        "fault": 1
+      }
+    }
+  ],
+  "totals": {
+    "builders": {
+      "claude-opus-5-5": {
+        "pieces": 9,
+        "minutes": 475.1,
+        "rounds": 30,
+        "findings": {
+          "fault": 63,
+          "ticket": 61,
+          "race": 16,
+          "style": 9,
+          "gap": 130,
+          "unsorted": 10
+        },
+        "cost": {
+          "build": {
+            "usd": 181.60050069999997,
+            "tokens": 387067084
+          },
+          "review": {
+            "usd": 35.4929737,
+            "tokens": 26728358
+          }
+        }
+      },
+      "unknown": {
+        "pieces": 2,
+        "minutes": 0,
+        "rounds": 0,
+        "findings": {
+          "fault": 5,
+          "ticket": 3,
+          "gap": 11
+        },
+        "cost": {
+          "build": null,
+          "review": {
+            "usd": 1.8265619000000002,
+            "tokens": 1193763
+          }
+        }
+      }
+    },
+    "kinds": {
+      "task (AFK) L": {
+        "pieces": 1,
+        "minutes": 0,
+        "rounds": 0,
+        "findings": {
+          "fault": 2,
+          "ticket": 1,
+          "gap": 7
+        },
+        "cost": {
+          "build": null,
+          "review": {
+            "usd": 0.9793647000000002,
+            "tokens": 602876
+          }
+        }
+      },
+      "task (AFK) L (may split by area)": {
+        "pieces": 1,
+        "minutes": 223.5,
+        "rounds": 3,
+        "findings": {
+          "ticket": 17,
+          "unsorted": 1,
+          "gap": 12,
+          "fault": 5
+        },
+        "cost": {
+          "build": {
+            "usd": 48.385616399999996,
+            "tokens": 139476102
+          },
+          "review": {
+            "usd": 4.544730400000001,
+            "tokens": 3866967
+          }
+        }
+      },
+      "task (AFK) M": {
+        "pieces": 4,
+        "minutes": 186.1,
+        "rounds": 13,
+        "findings": {
+          "fault": 37,
+          "ticket": 29,
+          "style": 5,
+          "gap": 75,
+          "race": 9,
+          "unsorted": 5
+        },
+        "cost": {
+          "build": {
+            "usd": 74.3755571,
+            "tokens": 141933075
+          },
+          "review": {
+            "usd": 19.703839900000002,
+            "tokens": 15165213
+          }
+        }
+      },
+      "task (AFK) M (planning, docs only)": {
+        "pieces": 1,
+        "minutes": 13.3,
+        "rounds": 3,
+        "findings": {
+          "ticket": 6,
+          "unsorted": 2,
+          "fault": 1
+        },
+        "cost": {
+          "build": {
+            "usd": 7.8612552,
+            "tokens": 10862453
+          },
+          "review": {
+            "usd": 1.6912129999999999,
+            "tokens": 1045668
+          }
+        }
+      },
+      "task (AFK) M–L": {
+        "pieces": 1,
+        "minutes": 0,
+        "rounds": 3,
+        "findings": {
+          "fault": 11,
+          "ticket": 6,
+          "race": 5,
+          "style": 3,
+          "gap": 19,
+          "unsorted": 2
+        },
+        "cost": {
+          "build": {
+            "usd": 23.4791184,
+            "tokens": 46727259
+          },
+          "review": {
+            "usd": 3.0627947,
+            "tokens": 1751451
+          }
+        }
+      },
+      "task (AFK) S–M": {
+        "pieces": 3,
+        "minutes": 52.2,
+        "rounds": 8,
+        "findings": {
+          "fault": 12,
+          "ticket": 5,
+          "gap": 28,
+          "race": 2,
+          "style": 1
+        },
+        "cost": {
+          "build": {
+            "usd": 27.498953599999997,
+            "tokens": 48068195
+          },
+          "review": {
+            "usd": 7.337592900000001,
+            "tokens": 5489946
+          }
+        }
+      }
+    }
+  },
+  "feedback": null
+}
