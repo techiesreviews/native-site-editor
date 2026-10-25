@@ -280,7 +280,7 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
         moveTo: (target) => void pageActions!.moveTo(target),
         dropProblem: (source, parent) => pageActions!.dropProblem(source, parent),
         drop: (source, parent) => void pageActions!.confirmMove(source, parent),
-        cardOffer: ports.cards.cardOffer,
+        cardOffer: (parent) => ports.cards.cardOffer(parent),
       });
       ports.element("explorer-pages").replaceChildren(pagesTree.root);
 
@@ -375,7 +375,7 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
     readRedirects: readNativeRedirects,
     withMovedPageUrls,
     pageLinks: (...args) => fileOps!.pageLinks(...args),
-    cardsLinkingTo: ports.cards.cardsLinkingTo,
+    cardsLinkingTo: (...args) => ports.cards.cardsLinkingTo(...args),
     confirmation: () => confirmDialog,
     picker: () => pagePicker,
     refreshMeta: () => ports.pageStructure?.refreshMeta(),
@@ -389,7 +389,7 @@ export function createPagesAndFilesHost(ports: PagesAndFilesPorts) {
     resetExplorer: () => { pagesTree?.reset(); ports.mediaController.disposeGallery(); },
     showMedia: () => { if (ports.explorerDropdown?.isOpen()) void ensureExplorer().then(() => ports.mediaController.ensureGallery()).catch(ports.errorMessage); },
     siteReadForCreate: nativeSiteReadForCreate,
-    createWithCard: ports.cards.createWithCard,
+    createWithCard: (request) => ports.cards.createWithCard(request),
     navigationTarget: ports.nativeNavigationTarget,
     restoreDeleted: file => undoFileChanges({ restore: [file] }),
     announce: ports.announce,
