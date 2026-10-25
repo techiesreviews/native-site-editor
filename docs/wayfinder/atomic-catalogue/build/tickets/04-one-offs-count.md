@@ -18,6 +18,8 @@ Count hand-typed values per CSS file and let the count only go down ([ticket 10]
 - A rise is blocked unless the lead waives it with a written reason (`kit pr --waive`); a fall rewrites the file.
 - Values that use a token never count.
 
+- **Trace check** (Lex, 2026-10-25, ticket 07's comment): a molecule or organism may use only catalogue parts and shared values. The count also reports, per part, what does not trace to a part, so the board can show it.
+
 ## Files
 
 Expected: `scripts/agents/one-offs.mjs` and `scripts/agents/one-offs.json` (new), `scripts/agents/pr-tier.mjs`, the kit's `pr` command, `docs/agents/guardrails.md`, `docs/agents/agent-scripts.md`, tests (`tests/one-offs.test.ts`).

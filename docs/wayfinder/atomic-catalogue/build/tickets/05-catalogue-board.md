@@ -21,6 +21,11 @@ Build the Paper-like board inside the editor, on the preview editor only ([ticke
 - The Shared values area shows colours, spacing, type, corners, shadows and playable motion from slices 02 and 03.
 - iPhone: pinch and drag, panels as sheets.
 
+- **Where it lives and what it's made of** (Lex, 2026-10-25; [ticket 07's comment](../../tickets/07-grill-board-look-and-use.md#comments-after-resolution)):
+  - the right panel shows the selected part's files in one quiet line (for example `src/ui/button.ts · src/ui/button.css`);
+  - every molecule and organism frame lists the parts it is made of, each a link that flies to that part;
+  - anything it uses that does not trace to a part (a raw value or a home-made copy) shows in that list as untraced.
+
 ## Files
 
 Expected: `catalogue.html` (new), `src/catalogue/main.ts`, `board.ts`, `parts.ts`, `frame.ts`, `force-states.ts`, `mockups.ts`, `approvals.ts`, `approvals.json`, `board.css` (all new), `vite.config.ts` (entry only with `CATALOGUE=1`), `wrangler.preview.jsonc` (build with `CATALOGUE=1`), `docs/agents/code-map.md`, tests (unit for the registry and approvals; a spec `tests/native-save/native-catalogue-board.spec.ts`).
@@ -30,6 +35,8 @@ Expected: `catalogue.html` (new), `src/catalogue/main.ts`, `board.ts`, `parts.ts
 - `kit size` with and without `CATALOGUE=1` shows the editor's boot at ±0 KB; production builds contain no catalogue page.
 - A spec opens the board, flies to a part from the outline, changes an option, presses Approve and sees the tick; the approval reaches `approvals.json` through the save path (fake GitHub server).
 - Light and dark sit side by side in Chrome and WebKit.
+
+- A spec selects a molecule and sees its file line and its "made of" list, and a link in the list flies to the atom.
 
 ## Kit commands and evidence
 
