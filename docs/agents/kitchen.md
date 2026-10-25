@@ -141,7 +141,8 @@ on a usage-limit `problem:` line, tell Lex the reset time and carry on with Clau
 ### 9. Land
 
 - **Use:** `kit pr --ticket <t>` (`kit slice` does it); a lead's own change runs `kit pr` too. T3
-  `link_pull_request` for every PR. Lead-only `--waive "<reason>"`.
+  `link_pull_request` for every PR. Lead-only `--waive "<reason>"`. A visible change stops unless it
+  updated [features.md](features.md) or its Done says `Feature list: no change (<reason>)`.
 - **Done when:** the PR is merged into `dev` and its number is in the ticket's `landed:`.
 
 ### 10. Preview, note, scoreboard
