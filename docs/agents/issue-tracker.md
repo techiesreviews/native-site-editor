@@ -37,8 +37,7 @@ Used by `/wayfinder`. A map is a directory: `docs/wayfinder/<effort>/`.
 
 A build (the lead running a map's tickets as `kit slice` jobs) keeps its README and three more files next to its map:
 
-- `docs/wayfinder/<map>/build/README.md`: the build's plan. Two lines are read by `kit next`: `prefix: sf` names the owner prefix (owners `sf-NN`, jobs `slice-sfNN`; without it the map name), and a line starting `**Not started:**` above the first `##` heading keeps every build ticket from being handed out until the lead removes it.
-
+- `docs/wayfinder/<map>/build/README.md`: the build's plan. Two lines are read by `kit next`: `prefix: sf` names the owner prefix (owners `sf-NN`, jobs `slice-sfNN`, and `sf-mNN` / `slice-sfmNN` for the map's own `tickets/`; without it the map name), and a line starting `**Not started:**` above the first `##` heading keeps every ticket of the map from being handed out until the lead removes it.
 - `docs/wayfinder/<map>/build/feedback.md`: Lex's feedback, the only place it is recorded. One line per correction, newest first under `## Feedback`:
   `- 2026-10-23 · felt-wrong · "Lex's words" or short summary · after release: no · fix: [24](tickets/24-….md) | PR #n | open`.
   Kinds: `too-much` (too much text or decoration), `below-bar` (looks below the bar), `felt-wrong` (felt wrong once used), `fault` (a real fault), `workflow` (how agents worked). `after release: yes` marks a UX problem Lex found on production. Add lines with `scripts/agents/kit feedback <map> …` and fill a fix later with `--fix-for <line-number>` ([agent-scripts.md](agent-scripts.md#kit)); commit the line with the ticket it opens, which still starts "Lex (YYYY-MM-DD): …". `tickets.mjs check` validates every line; `###` subheadings may group them. The same shape as the chat project's corrections list, so both count alike.
