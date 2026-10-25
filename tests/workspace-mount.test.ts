@@ -23,15 +23,19 @@ class FakeElement {
   dispatch(type: string) { for (const listener of this.listeners.get(type) ?? []) void listener(); }
   focus() { focused = this; }
   matches() { return this.open; }
-  querySelector() { return null; }
+  querySelector(selector: string): FakeElement | null {
+    return this.children.find((child) => `.${child.className}` === selector) ?? this.children.map((child) => child.querySelector(selector)).find(Boolean) ?? null;
+  }
   text(): string { return [this.textContent, ...this.children.map((child) => child.text())].join(" "); }
 }
 let focused: FakeElement | undefined;
 const fakeGlobals = globalThis as Record<string, unknown>;
-const saved = ["document", "matchMedia", "window"].map((name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)] as const);
+const saved = ["document", "matchMedia", "window", "requestAnimationFrame"].map((name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)] as const);
 fakeGlobals.document = { createElement: (tag: string) => new FakeElement(tag), getElementById: () => null };
 fakeGlobals.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
 const windowListeners = new Map<string, (() => void)[]>();
+// The code panes wait a frame after the first paint; the tests never run it.
+fakeGlobals.requestAnimationFrame = () => 0;
 fakeGlobals.window = { addEventListener: (type: string, listener: () => void) => windowListeners.set(type, [...windowListeners.get(type) ?? [], listener]) };
 after(() => {
   for (const [name, descriptor] of saved) {
@@ -58,7 +62,10 @@ const last = (kind: string) => made.findLast((record) => record.kind === kind)!;
 fakeGlobals.workspaceMountStubs = {
   preview: make("preview"), structure: make("structure"), rail: make("rail"), dropdown: make("dropdown"), menu: make("menu"),
   siteActions: make("siteActions"), sidebar: make("sidebar"), rowMenu: make("rowMenu"), resize: make("resize"),
+  // Set: the code editor (Monaco) chunk fails to load.
+  codeEditorFails: false,
 };
+const stubGlobals = fakeGlobals.workspaceMountStubs as { codeEditorFails: boolean };
 const stub = (name: string, kind: string) => `export const ${name} = (...args) => globalThis.workspaceMountStubs.${kind}(...args);`;
 const stubs: Record<string, string> = {
   "components/native-preview.ts": stub("createNativePreview", "preview"),
@@ -74,7 +81,13 @@ const stubs: Record<string, string> = {
   "components/refusal-note.ts": "export const dismissRefusalNote = () => {}; export const refuse = () => {};",
 };
 registerHooks({
+  // A failing load is its own URL, so the next import of the chunk can succeed.
+  resolve: (specifier, context, next) => {
+    const resolved = next(specifier, context);
+    return stubGlobals.codeEditorFails && resolved.url.endsWith("/src/components/code-editor.ts") ? { ...resolved, url: `${resolved.url}?fail` } : resolved;
+  },
   load: (url, context, next) => {
+    if (url.endsWith("/code-editor.ts?fail")) return { format: "module", source: "throw new Error('The code editor chunk failed.');", shortCircuit: true };
     const source = Object.entries(stubs).find(([tail]) => url.endsWith(`/src/${tail}`))?.[1];
     if (source) return { format: "module", source, shortCircuit: true };
     return /\.css$|\?raw$/.test(url) ? { format: "module", source: "export default '';", shortCircuit: true } : next(url, context);
@@ -91,6 +104,7 @@ const snapshot = { branch: "main", commit: "0123456789abcdef" } as Snapshot;
 
 function setup() {
   made.length = 0;
+  windowListeners.clear();
   const calls: string[] = [];
   // Records the call by name, with its plain (string or number) arguments.
   const say = (name: string) => (...args: unknown[]) => {
@@ -106,6 +120,7 @@ function setup() {
     scope: scope as DraftScope | undefined, shown: undefined as WorkspaceScope | undefined,
     nativePreview: undefined as WorkspaceMountPorts["nativePreview"], pageStructure: undefined as WorkspaceMountPorts["pageStructure"],
     componentTools: undefined as WorkspaceMountPorts["componentTools"],
+    sources: {} as Record<string, string>, mountedPaths: new Set<string>(), sectionTags: new Set<string>(), typingLanded: true,
     startSite: undefined as ((panel: HTMLElement) => void) | undefined,
     mountListener: undefined as WorkspaceMountPorts["nativeMountListener"],
   };
@@ -113,6 +128,7 @@ function setup() {
   let viewLoader: (() => Promise<unknown>) | undefined;
   let mounted: { content: unknown; file: unknown } | undefined;
   const proof = { isCurrent: () => true };
+  const begin = () => ({ load: 1, scope: undefined, holds: () => true, changed: () => undefined });
   const appStore = { openFile: signal<string | undefined>(undefined), branch: signal<string | undefined>(undefined), repository: signal<Repository | undefined>(undefined), snapshot: signal<Snapshot | undefined>(undefined), reset: say("appStore.reset") };
   const ports = {
     app: fake<HTMLElement>(app),
@@ -121,31 +137,43 @@ function setup() {
     editorModule: fake<WorkspaceMountPorts["editorModule"]>({
       onUnmountedText: (hook: typeof unmountedText) => { unmountedText = hook; },
       setViewLoader: (load: typeof viewLoader) => { viewLoader = load; },
-      mountSourceEditor: (content: unknown, file: unknown) => { mounted = { content, file }; return say("editor disposed"); },
+      mountSourceEditor: (content: FakeElement, file: unknown) => {
+        mounted = { content, file };
+        const body = new FakeElement();
+        body.className = "code-editor__body";
+        content.replaceChildren(body);
+        return say("editor disposed");
+      },
       captureHistoryHost: () => proof, recordHistoryAction: say("recordHistoryAction"),
-      isMounted: () => false, captureFileModelState: () => proof, closeActiveEditGroup: say("closeActiveEditGroup"), clearDrafts: say("clearDrafts"),
+      isMounted: (path: string) => state.mountedPaths.has(path), captureFileModelState: () => proof, closeActiveEditGroup: say("closeActiveEditGroup"), clearDrafts: say("clearDrafts"),
     }),
-    workspaceSession: { begin: () => ({ load: 1, scope: undefined, holds: () => true, changed: () => undefined }) },
-    runtime: fake<WorkspaceMountPorts["runtime"]>({ get site() { return undefined; }, get engaged() { return state.engaged; }, source: () => undefined }),
+    workspaceSession: { begin },
+    runtime: fake<WorkspaceMountPorts["runtime"]>({ get site() { return undefined; }, get engaged() { return state.engaged; }, source: (path: string) => state.sources[path] }),
     finishedWork: fake<WorkspaceMountPorts["finishedWork"]>({ open: say("finishedWork.open"), shown: say("finishedWork.shown") }),
     mediaHistoryHome: fake<WorkspaceMountPorts["mediaHistoryHome"]>({ adopt: say("mediaHistoryHome.adopt"), clear: say("mediaHistoryHome.clear") }),
     parkedSteps: fake<WorkspaceMountPorts["parkedSteps"]>({ adopt: say("parkedSteps.adopt"), clear: say("parkedSteps.clear") }),
     guardedEdits: { stamp: () => ({ holds: () => true, changed: () => undefined }) },
-    blockInsertPorts: fake<WorkspaceMountPorts["blockInsertPorts"]>({ target: () => undefined, refuse: say("refuse") }),
     mediaController: fake<WorkspaceMountPorts["mediaController"]>({ disposeGallery: say("disposeGallery"), mediaEnded: say("mediaEnded"), chooseImage: say("chooseImage") }),
     paletteController: fake<WorkspaceMountPorts["paletteController"]>({ shortcut: say("shortcut"), mount: say("palette.mount"), dispose: say("palette.dispose") }),
     previewSelection: fake<WorkspaceMountPorts["previewSelection"]>({ handlers: () => ({}) }),
-    pageStructureController: fake<WorkspaceMountPorts["pageStructureController"]>({ nativeFormatActions: {}, textEdits: () => [] }),
+    pageStructureController: fake<WorkspaceMountPorts["pageStructureController"]>({
+      nativeFormatActions: {}, textEdits: () => [], isNativeSectionTag: (tag: string) => state.sectionTags.has(tag),
+      moveBlock: (_at: unknown, _direction: unknown, options: { stale: string }) => { calls.push(`moveBlock ${options.stale}`); },
+    }),
     linkedStyles: fake<WorkspaceMountPorts["linkedStyles"]>({ updateBodyStyles: say("updateBodyStyles"), clearSources: say("linkedStyles.clearSources") }),
     versions: fake<WorkspaceMountPorts["versions"]>({ view: undefined, history: { destroy: say("history.destroy") } }),
     cards: fake<WorkspaceMountPorts["cards"]>({}),
-    pagesAndFiles: { pageActions: undefined },
-    setupController: fake<WorkspaceMountPorts["setupController"]>({ mount: async () => {}, dispose: say("setupController.dispose") }),
-    setupEntry: { remove: say("setupEntry.remove") },
+    pagesAndFiles: {
+      pageActions: undefined, mountExplorer: say("mountExplorer"), loadPagesActions: async () => {},
+      filesTreeController: { refresh: say("filesTree.refresh") },
+    },
+    setup: {
+      setupController: fake<WorkspaceMountPorts["setup"]["setupController"]>({ mount: async () => {}, dispose: say("setupController.dispose") }),
+      setupEntry: { remove: say("setupEntry.remove") },
+      startSitePanel: () => new Promise<HTMLElement>((resolve) => { state.startSite = resolve; }),
+    },
     repositoryIndex: { clear: say("repositoryIndex.clear") },
     cleanSources: { clear: say("cleanSources.clear") },
-    filesTreeController: { refresh: say("filesTree.refresh") },
-    nativeAddPoints: new WeakMap(),
     get info() { return state.info; },
     get repositories() { return state.repositories; }, set repositories(value) { state.repositories = value; },
     get fileGeneration() { return state.fileGeneration; }, set fileGeneration(value) { state.fileGeneration = value; },
@@ -156,47 +184,54 @@ function setup() {
     get boot() { return fake<WorkspaceMountPorts["boot"]>({ ensureList: async () => {}, reset: say("boot.reset") }); },
     get agentController() { return fake<WorkspaceMountPorts["agentController"]>({ ensure: async () => {}, dismiss: async () => {}, answer: async () => {}, destroy: say("agent.destroy") }); },
     get workspaceBoot() { return { dropGuess: say("dropGuess") }; },
-    refreshRepositoryList: async () => { calls.push("refreshRepositoryList"); },
-    switchAccount: async (login: string) => { calls.push(`switchAccount ${login}`); },
-    disconnect: async () => { calls.push("disconnect"); },
-    chooseRepository: async () => { calls.push("chooseRepository"); },
-    loadSnapshot: async () => { calls.push(`loadSnapshot ${appStore.branch.value}`); },
+    account: {
+      reload: async () => { calls.push("refreshRepositoryList"); },
+      switchTo: async (login: string) => { calls.push(`switchAccount ${login}`); },
+      signOut: async () => { calls.push("disconnect"); },
+      choose: async () => { calls.push("chooseRepository"); },
+      load: async () => { calls.push(`loadSnapshot ${appStore.branch.value}`); },
+    },
     draftScope: () => state.scope,
     shownScope: () => state.shown,
-    nativeModeActive: () => state.native,
-    nextLoad: () => { calls.push("nextLoad"); return ports.workspaceSession.begin(); },
+    nextLoad: () => { calls.push("nextLoad"); return begin(); },
     setCurrentPage: say("setCurrentPage"),
-    deactivateNative: say("deactivateNative"),
-    updateNativePreviewSources: say("updateNativePreviewSources"),
-    errorMessage: (error: unknown) => { calls.push(`error ${String(error)}`); },
+    errorMessage: (error: unknown) => { calls.push(`error ${error instanceof Error ? error.message : String(error)}`); },
     announce: say("announce"),
-    openNativeSiteSettings: async () => {},
-    nativeSiteFiles: async () => undefined,
-    finishRailTyping: async () => true,
-    loadBlockInsert: async () => fake<Awaited<ReturnType<WorkspaceMountPorts["loadBlockInsert"]>>>({}),
-    loadBlockDrag: async () => fake<Awaited<ReturnType<WorkspaceMountPorts["loadBlockDrag"]>>>({}),
-    structureDrop: () => undefined,
-    dragPageBlock: () => undefined,
-    mountExplorer: say("mountExplorer"),
-    elementMenuItems: () => [],
-    nativeRouteShownSources: () => ({}),
-    loadNativeAssets: async () => {},
-    loadNativeShownFiles: async () => {},
-    loadNativeComponentStyles: async () => {},
-    noteNativePainted: say("noteNativePainted"),
-    nativeSectionChoices: () => [],
-    nativeElementAddPoint: () => undefined,
-    insertNativeComponent: async () => {},
-    nativeComponentFieldsRevision: () => "",
-    nativePageMeta: () => undefined,
-    openNativePageSettings: async () => {},
-    openNativeNavigation: async () => {},
-    writeNativePageMeta: async () => undefined,
-    nativeRouteForPath: () => undefined,
-    loadPagesActions: async () => {},
-    nativeMoveItems: () => () => false,
-    mountComponentTools: () => { calls.push("mountComponentTools"); return fake<NonNullable<WorkspaceMountPorts["componentTools"]>>({ destroy: say("componentTools.destroy"), refresh: say("componentTools.refresh") }); },
-    startSitePanel: () => new Promise<HTMLElement>((resolve) => { state.startSite = resolve; }),
+    site: {
+      active: () => state.native,
+      deactivate: say("deactivateNative"),
+      update: say("updateNativePreviewSources"),
+      painted: say("noteNativePainted"),
+      assets: async () => {},
+      shown: async () => {},
+      routeSources: () => ({}),
+      styles: async () => {},
+      files: async () => undefined,
+      route: () => undefined,
+    },
+    builder: {
+      choices: () => [],
+      addPoint: () => undefined,
+      addPoints: new WeakMap(),
+      insert: async () => {},
+      drag: () => undefined,
+      dropTree: () => undefined,
+      loadDrag: async () => fake<Awaited<ReturnType<WorkspaceMountPorts["builder"]["loadDrag"]>>>({}),
+      loadInsert: async () => fake<Awaited<ReturnType<WorkspaceMountPorts["builder"]["loadInsert"]>>>({}),
+      insertPorts: fake<WorkspaceMountPorts["builder"]["insertPorts"]>({ target: () => undefined, refuse: say("refuse") }),
+      finishTyping: async () => state.typingLanded,
+      menuItems: () => [{ label: "Remove", run: say("remove") }],
+      fields: () => "",
+      moveItems: () => () => false,
+      tools: () => { calls.push("mountComponentTools"); return fake<NonNullable<WorkspaceMountPorts["componentTools"]>>({ destroy: say("componentTools.destroy"), refresh: say("componentTools.refresh") }); },
+    },
+    page: {
+      meta: () => undefined,
+      writeMeta: async () => undefined,
+      settings: async () => {},
+      navigation: async () => {},
+      siteSettings: async () => {},
+    },
   } satisfies WorkspaceMountPorts;
   const workspace = createWorkspaceMount(ports);
   return { workspace, ports, state, calls, appStore, byId, proof, unmounted: () => unmountedText, viewLoader: () => viewLoader, mounted: () => mounted };
@@ -368,4 +403,81 @@ test("setupScope is the checklist's account, repository and branch shown when it
   assert.equal(workspace.setupScope(), "");
   state.shown = { kind: "github", account: "lex", repoId: 7, repo: "lex/site", branch: "main" };
   assert.notEqual(workspace.setupScope(), "");
+});
+
+test("Refresh reloads the snapshot and hands over to the explorer", async () => {
+  const { workspace, calls, byId } = setup();
+  workspace.mountWorkspace();
+  byId("refresh").dispatch("click");
+  await flush();
+  assert.ok(calls.includes("loadSnapshot undefined"));
+  assert.ok(last("menu").calls.includes("close"));
+  assert.ok(last("dropdown").calls.includes("open"));
+  assert.equal(focused, byId("explorer-toggle"));
+});
+
+test("an Add rail pick while the page's typing has not landed is refused as still updating", async () => {
+  const { workspace, state, calls } = setup();
+  workspace.mountWorkspace();
+  state.typingLanded = false;
+  (last("rail").options as { onPick(kind: string): void }).onPick("text");
+  await flush();
+  assert.ok(calls.includes("refuse The page is still updating. Try again in a moment."));
+});
+
+test("openCodeEditor shows nothing of a source that changed while its editor opened", async () => {
+  const { workspace, byId, mounted } = setup();
+  workspace.mountWorkspace();
+  await workspace.openCodeEditor({ key: "k", path: "index.html", source: "" }, () => false);
+  assert.equal(mounted(), undefined);
+  assert.match(byId("content").text(), /The source changed while its editor opened\. Select it again\./);
+});
+
+test("a code editor that fails to load offers Retry for the editor open now, and says nothing for one replaced or closed", async (t) => {
+  const { workspace, calls, byId } = setup();
+  workspace.mountWorkspace();
+  stubGlobals.codeEditorFails = true;
+  t.after(() => { stubGlobals.codeEditorFails = false; });
+  void workspace.openCodeEditor({ key: "a", path: "a.html", source: "" });
+  void workspace.openCodeEditor({ key: "b", path: "b.html", source: "" });
+  await flush();
+  assert.deepEqual(calls.filter((call) => call.startsWith("error")), ["error The code editor chunk failed."]);
+  assert.match(byId("content").text(), /The code editor could not load\..*Retry editor/);
+  calls.length = 0;
+  void workspace.openCodeEditor({ key: "c", path: "c.html", source: "" });
+  workspace.closeEditor();
+  await flush();
+  assert.deepEqual(calls.filter((call) => call.startsWith("error")), []);
+});
+
+test("a Structure row keeps the bytes it was painted from: stale rows offer no actions, and a move says why it is stale", () => {
+  const { workspace, state, calls, appStore } = setup();
+  workspace.mountWorkspace();
+  const item = { node: [0], tag: "section", className: "hero", children: [] };
+  const preview = last("preview").options as { onStructure(structure: unknown): void };
+  const structure = last("structure").options as {
+    menuItems(path: string, item: unknown, opening?: boolean): { label: string }[];
+    onMove(path: string, item: unknown, direction: string): unknown;
+  };
+  state.sources["index.html"] = "A";
+  preview.onStructure({ path: "index.html", paintedSource: "A", items: [item] });
+  assert.deepEqual(structure.menuItems("index.html", item, true).map((entry) => entry.label), ["Remove"]);
+  state.sources["index.html"] = "B";
+  assert.deepEqual(structure.menuItems("index.html", item, true), []);
+  assert.ok(calls.includes("announce The source changed. Wait for the preview before using this action."));
+  // The page open and mounted: its row moves now, or waits for the preview.
+  state.mountedPaths.add("index.html");
+  appStore.openFile.value = "index.html";
+  structure.onMove("index.html", item, "up");
+  // Not open: the page opens first, a section or another element.
+  appStore.openFile.value = "about.html";
+  state.sectionTags.add("section");
+  structure.onMove("index.html", item, "up");
+  state.sectionTags.clear();
+  structure.onMove("index.html", item, "up");
+  assert.deepEqual(calls.filter((call) => call.startsWith("moveBlock")), [
+    "moveBlock The source changed. Wait for the preview before moving this element.",
+    "moveBlock The source changed while its editor opened. Select the section again before moving it.",
+    "moveBlock The source changed while its editor opened. Select the element again before moving it.",
+  ]);
 });
