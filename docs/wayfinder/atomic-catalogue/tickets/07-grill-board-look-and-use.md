@@ -39,3 +39,9 @@ Decided with Lex ("I think so", all as recommended):
 4. **Address:** `preview-editor.techies.tools/catalogue.html`, a separate page with 0 boot bytes.
 5. **First step:** dark mode moves to `light-dark()` in `src/theme.css` and three other CSS files, with no visible change.
 6. **Mock-ups for future features** live in the canvas's Mock-ups area, made from approved parts and approved the same way. They replace separate HTML mock-ups (kitchen station 3).
+
+## Comments (after resolution)
+
+- 2026-10-25, Lex: the right panel shows where each part lives, in one quiet line under its options (for example `src/ui/button.ts · src/ui/button.css`), for hand edits: "yes". He added: "if this is done correctly, each organism traces back to something used before in the atoms etc." Decided from that:
+  - **The board shows what each molecule and organism is made of:** a "made of" list of the parts it uses, each a link that flies to that part.
+  - **The kit checks the trace:** a molecule or organism may use only catalogue parts and shared values. A raw value or a home-made copy counts as a one-off (ticket 10) and shows on the board as a part it does not trace to.
