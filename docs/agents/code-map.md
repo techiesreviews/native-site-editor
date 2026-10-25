@@ -4,6 +4,7 @@ Start with the concern, then read its entry symbol. Domain words: [CONTEXT.md](.
 main.ts holds the host's state and builds the hosts and controllers in order, then boots; they receive live ports.
 Historical searches: `applyNativeOperation` is gone; use guarded edits and native source transforms below.
 For historical src/components.ts searches, start at the Component tools row.
+Features a user can notice, with how to try each and the files that make it: [features.md](features.md).
 
 ## Where things live
 
