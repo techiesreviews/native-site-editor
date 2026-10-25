@@ -39,6 +39,7 @@ A finished build plan, with a board mock-up Lex has approved, for the atomic des
 ## Decisions so far
 
 <!-- one line per closed ticket: [title](tickets/file.md): gist -->
+- [Find how the techies.tools Framework becomes the editor's shared values](tickets/01-research-techies-framework.md#resolution-2026-10-25): colours already match; Framework has spacing and pill radius but no motion, layers or shadows; manual-mode spacing fits; 14 vs 16 px root trap; commit its export and generate theme.css's shared values with a kit check
 
 ## Not yet specified
 
