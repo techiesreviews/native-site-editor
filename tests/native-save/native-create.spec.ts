@@ -310,10 +310,13 @@ test("a page, a subpage under it and another are made in place as folders of the
   await editRow(page).getByRole("button", { name: "URL /videos/my-first-video/, change it" }).click();
   const slug = explorer(page).getByRole("textbox", { name: "URL of the new page, after /videos/" });
   await expect(slug).toBeFocused();
-  // The agent and Change URL refuse it with the same words.
+  // What is typed becomes an address as typed, not a refusal.
   await slug.fill("About_Us.v2");
-  await expect(editRow(page).locator(".pages-edit__message")).toHaveText("Use lowercase letters, digits and dashes in the URL, at most 80, starting with a letter or digit.");
-  await slug.fill("second-take");
+  await expect(slug).toHaveValue("about-us-v2");
+  await expect(editRow(page).locator(".pages-edit__message")).toBeEmpty();
+  await slug.fill("");
+  await slug.pressSequentially("Second Take!");
+  await expect(slug).toHaveValue("second-take");
   await expect(editRow(page).locator(".pages-edit__message")).toBeEmpty();
   await title.fill("Another title");
   await expect(editRow(page).locator(".pages-edit__message")).toBeEmpty();
@@ -334,6 +337,15 @@ test("a page, a subpage under it and another are made in place as folders of the
   await expect(editRow(page).locator(".pages-edit__url-button")).toHaveText("/videos/tutorials/");
   await page.keyboard.press("Enter");
   await expect(page.locator("#current-page")).toHaveAttribute("data-path", "videos/tutorials/index.html");
+
+  // A title with capitals and a space gives the page its address.
+  await openPages(page);
+  await explorer(page).getByRole("button", { name: "+ New page" }).click();
+  await explorer(page).getByRole("textbox", { name: "New page title" }).pressSequentially("About Us");
+  await expect(editRow(page).locator(".pages-edit__url-button")).toHaveText("/about-us/");
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#status")).toHaveText("Created the page About Us at /about-us/.");
+  await expect(page.locator("#current-page")).toHaveAttribute("data-path", "about-us/index.html");
 
   // The page is a route of the site: clicking it in the tree shows it.
   await openPages(page);

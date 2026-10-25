@@ -17,7 +17,8 @@ import type { EditBarControl } from "../components/edit-bar";
 import type { CardFilled, CardLinkPages, CardPageRequest, CardSwapped, GridDescription, ItemGridReport, NewCard } from "../components/card-grid-controls";
 import { NATIVE_CONFIG_PATH, nativeSiteSettings, nativePageBody, nativePageHead, nativePageMovedUrl, nativePageWithDetails, nativeSitePrefix } from "../../shared/native-project";
 import { nativeNewPageTitle, nativePageTemplate, normalizeRoute, withoutStructuredData, type Checked } from "../native-create";
-import { nativeNewTarget, slugify } from "../native-pages";
+import { nativeNewTarget } from "../native-pages";
+import { toPageAddress } from "../../shared/site-rules";
 import { duplicateEdit, removeEdit } from "../native-structure";
 import { aOr, insertAfterEdit, itemCopy, itemNoun, itemTitle, titleLeaf, leafSummary, pageBodyCopy, slotFallbacks, fallbackFor } from "./card-grid";
 import { gridAt, gridOfItem, instanceLabel, itemAround, linkRoute, mainRange, pageGrids, type GridContext, type SourceGrid } from "./card-source";
@@ -117,7 +118,7 @@ export function cardPrefixRequest(title: string, prefix: string, folders: string
 /** Where a new page titled `request.title` goes in `request.parent` (in a new folder there, with `newFolder`), or why it cannot. */
 export function planCardPage(input: { routes: Record<string, string>; exists(path: string): boolean; folders: string[] }, request: CardPageRequest): Checked<{ route: string; file: string }> {
   const title = request.title.trim();
-  const slug = request.slug ?? slugify(title);
+  const slug = request.slug ?? toPageAddress(title);
   if (!title) return { ok: false, error: "Enter the page's title." };
   if (!slug) return { ok: false, error: "The title gives no URL: add letters or digits." };
   // Only a URL a page could have, never one that leaves the site's folders.

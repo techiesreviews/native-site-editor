@@ -1,12 +1,48 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { componentSourceProblem, fileInTheWay, folderProblem, foldersAbove, makeComponentProblem, pageAddressProblem, parentProblem } from "../shared/site-rules.ts";
+import { componentSourceProblem, fileInTheWay, folderProblem, foldersAbove, makeComponentProblem, pageAddressProblem, parentProblem, toPageAddress, toPageRoute } from "../shared/site-rules.ts";
 
 const ADDRESS = "Use lowercase letters, digits and dashes in the URL, at most 80, starting with a letter or digit.";
 
 test("a new page address is lowercase letters, digits and dashes, at most 80, starting with a letter or digit", () => {
   for (const slug of ["about", "my-first-video", "2026", "a", "x-", "a".repeat(80)]) assert.equal(pageAddressProblem(slug), undefined, slug);
   for (const slug of ["", "About_Us.v2", "About", "about_us", "a.b", "-x", "a b", "a/b", "é", "a".repeat(81)]) assert.equal(pageAddressProblem(slug), ADDRESS, slug);
+});
+
+test("a typed address is converted to the rule, not refused", () => {
+  assert.equal(toPageAddress("About Us!"), "about-us");
+  assert.equal(toPageAddress("Café Menü"), "cafe-menu");
+  assert.equal(toPageAddress("  --Hello__World--  "), "hello-world");
+  assert.equal(toPageAddress("a".repeat(100)), "a".repeat(80));
+  assert.equal(toPageAddress("!!!"), "");
+  assert.equal(toPageAddress("  Crème brûlée — 2026!  "), "creme-brulee-2026");
+  assert.equal(toPageAddress("Fern & Kettle"), "fern-kettle");
+  assert.equal(toPageAddress("Straße Ærø"), "strasse-aero");
+  assert.equal(toPageAddress("日本語"), "");
+  assert.equal(toPageAddress("About_Us.v2"), "about-us-v2");
+  // Whatever it gives meets the rule.
+  for (const text of ["About Us!", "Café Menü", "a".repeat(100), "x".repeat(79) + " y"]) assert.equal(pageAddressProblem(toPageAddress(text)), undefined, text);
+  // While typing, a separator at the end waits as a dash for the next word; none at the start.
+  assert.equal(toPageAddress("About ", { typing: true }), "about-");
+  assert.equal(toPageAddress("About  -_", { typing: true }), "about-");
+  assert.equal(toPageAddress("-", { typing: true }), "");
+  assert.equal(toPageAddress("!!!", { typing: true }), "");
+  assert.equal(toPageAddress("About!", { typing: true }), "about");
+});
+
+test("a typed URL is converted part by part; the parts of the URL now stay", () => {
+  assert.equal(toPageRoute("/Notes/About Us/"), "/notes/about-us/");
+  assert.equal(toPageRoute("/notes/About_Us.v2/"), "/notes/about-us-v2/");
+  assert.equal(toPageRoute("/Old Notes.HTML"), "/old-notes.html");
+  assert.equal(toPageRoute("/notes/hello-/"), "/notes/hello/");
+  assert.equal(toPageRoute("/!!!/"), "//");
+  // A folder already named against the rule is not renamed by typing under it.
+  assert.equal(toPageRoute("/Old_Folder/New Page/", { kept: "/Old_Folder/page/".split("/") }), "/Old_Folder/new-page/");
+  // While typing: a dash at the end of a part, and the start of .html at the end.
+  assert.equal(toPageRoute("/notes/about ", { typing: true }), "/notes/about-");
+  assert.equal(toPageRoute("/notes -/x", { typing: true }), "/notes-/x");
+  for (const end of [".", ".h", ".ht", ".htm", ".html"]) assert.equal(toPageRoute(`/notes${end}`, { typing: true }), `/notes${end}`);
+  assert.equal(toPageRoute("/notes.", {}), "/notes");
 });
 
 test("make component checks the name, then the element, with one wording each", () => {

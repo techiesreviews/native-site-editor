@@ -1,5 +1,6 @@
 import { node } from "../ui/dom";
 import { reported } from "../ui/report-failure";
+import { toPageRoute } from "../../shared/site-rules";
 import "./url-change.css";
 
 /** What changing a page's URL to a typed value would do, or why it cannot. */
@@ -24,6 +25,20 @@ export type UrlPlan =
     };
 
 let serial = 0;
+
+/**
+ * Shows in `input` what `convert` makes of its text, the caret where the text
+ * before it went. Not while composing (an accent or a character is being
+ * built); the next input after it converts.
+ */
+export function convertAsTyped(input: HTMLInputElement, convert: (text: string) => string, event?: Event) {
+  if (event instanceof InputEvent && event.isComposing) return;
+  const value = convert(input.value);
+  if (value === input.value) return;
+  const caret = Math.min(convert(input.value.slice(0, input.selectionStart ?? input.value.length)).length, value.length);
+  input.value = value;
+  input.setSelectionRange(caret, caret);
+}
 
 /**
  * A page's URL, editable: the field, what the typed URL would do (checked as
@@ -87,8 +102,11 @@ export function createUrlChange(options: {
   let pending = false;
   keep.addEventListener("change", () => { keepTouched = true; });
 
+  // The URL typed, made to meet the address rule; the page's URL now stays as it is.
+  const convert = (text: string, typing = false) => toPageRoute(text, { kept: initial.split("/"), typing });
+
   function check() {
-    const planned = options.plan(input.value);
+    const planned = options.plan(convert(input.value));
     const unchanged = !planned.ok && planned.unchanged;
     const invalid = !planned.ok && !unchanged && !planned.pending;
     details.hidden = Boolean(unchanged) && !options.buttons;
@@ -117,7 +135,10 @@ export function createUrlChange(options: {
     options.cancel();
   }
 
-  input.addEventListener("input", () => check());
+  input.addEventListener("input", (event) => {
+    convertAsTyped(input, (text) => convert(text, true), event);
+    check();
+  });
   form.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
     event.preventDefault();
@@ -129,6 +150,8 @@ export function createUrlChange(options: {
   form.addEventListener("submit", reported(async (event) => {
     event.preventDefault();
     if (pending) return;
+    // What is saved is what the field shows: no dash left at the end.
+    input.value = convert(input.value);
     const planned = check();
     if (!planned.ok) {
       if (planned.unchanged) finishCancel();

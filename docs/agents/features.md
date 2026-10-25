@@ -188,9 +188,9 @@ its number unused.
 - Steps: `scripts/agents/shots/features/F-pages-02.json`
 
 ### F-pages-03 New page and subpage
-- Try: Press + New in Pages for a page, then Add subpage from a page's ⋯.
-- Good: Each is made in place as a folder of its own, routes at once, and one Undo takes it back.
-- Files: `src/native-create.ts`, `src/native-pages.ts`, `src/pages-and-files-explorer.ts`
+- Try: Press + New in Pages for a page, then Add subpage from a page's ⋯; type "About Us" as a title, or capitals and symbols in its URL.
+- Good: Each is made in place as a folder of its own, routes at once, and one Undo takes it back; the URL field turns what is typed into a valid address as you type ("About Us" is `about-us`), never refusing it.
+- Files: `src/native-create.ts`, `src/native-pages.ts`, `src/pages-and-files-explorer.ts`, `src/components/pages-tree.ts`, `shared/site-rules.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-create.spec.ts`
 - Steps: `scripts/agents/shots/features/F-pages-03.json`
@@ -204,8 +204,8 @@ its number unused.
 - Steps: `scripts/agents/shots/features/F-pages-04.json`
 
 ### F-pages-05 Change URL
-- Try: Choose Change URL from a page's ⋯ and type a new address.
-- Good: The page, its subpages and every link to them move; the confirmation names the new URL and offers a redirect from the old one; one Undo (B9, B10).
+- Try: Choose Change URL from a page's ⋯ and type a new address, such as `/notes/Bad URL/`.
+- Good: The field shows it converted as typed (`/notes/bad-url/`), keeping the parts of the URL now; the page, its subpages and every link to them move; the confirmation names the new URL and offers a redirect from the old one; one Undo (B9, B10).
 - Files: `src/components/url-change.ts`, `src/native-page-moves.ts`, `shared/site-rules.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-page-urls.spec.ts`

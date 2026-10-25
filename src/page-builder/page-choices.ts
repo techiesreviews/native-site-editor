@@ -7,7 +7,7 @@
 // "Link to a page…" combobox (src/components/card-link-picker.ts) shows it.
 
 import { cardPrefixRequest, planCardPage } from "./cards";
-import { slugify } from "../native-pages";
+import { toPageAddress } from "../../shared/site-rules";
 import type { CardPageRequest } from "../components/card-grid-controls";
 import { NATIVE_NOT_FOUND_PAGE, NATIVE_NOT_FOUND_ROUTE } from "../../shared/native-routes";
 
@@ -46,7 +46,7 @@ export function pageChoices(input: { pages: readonly SitePage[]; own: string; in
   const folder = cardFolder(input.inGrid);
   const typed = input.query?.trim().toLowerCase() ?? "";
   const query = typed.startsWith("/") ? typed.replace(/\/+$/, "") : typed;
-  const planned = typed && !typed.startsWith("/") ? `${folder ?? input.folder ?? "/"}${slugify(typed)}/` : undefined;
+  const planned = typed && !typed.startsWith("/") ? `${folder ?? input.folder ?? "/"}${toPageAddress(typed)}/` : undefined;
   const pages = input.pages
     .filter((page) => page.file !== input.own && page.file !== NATIVE_NOT_FOUND_PAGE && page.route !== NATIVE_NOT_FOUND_ROUTE)
     .filter((page) => !query || page.title.toLowerCase().includes(query) || page.route.toLowerCase().includes(query) || page.route.toLowerCase() === planned)
@@ -89,7 +89,7 @@ export function createPageOffer(input: {
     const words = slug.replace(/[-_]+/g, " ");
     title = words.charAt(0).toUpperCase() + words.slice(1);
   }
-  const route = `${parent}${slug ?? (slugify(title) || "…")}/`;
+  const route = `${parent}${slug ?? (toPageAddress(title) || "…")}/`;
   if (Object.keys(input.routes).some(known => address(known) === address(route))) return undefined;
   const parsed = cardPrefixRequest(title, parent, input.folders, true);
   const request: CardPageRequest = { ...(parsed.ok ? parsed.value : { title, parent }), ...(slug === undefined ? {} : { slug }) };
