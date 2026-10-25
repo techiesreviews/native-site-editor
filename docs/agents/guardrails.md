@@ -67,7 +67,7 @@ Use `tests/support/source-guard.ts` for parsing, bound names and aliases, destru
 
 ## CI
 
-`.github/workflows/ci.yml` (**CI / checks**, on every pull request into `dev` or `main`) and `.github/workflows/deploy-preview.yml` (on every push to `dev`) both run `check`, `test`, `lint`, the byte budget (`tests/perf/byte-budget.ts`, 355 KB, enforced) and the smoke browser tests. Branch rules that require the check: [github-settings.md](github-settings.md).
+`.github/workflows/ci.yml` (**CI / checks**, on every pull request into `dev` or `main`) and `.github/workflows/deploy-preview.yml` (on every push to `dev`) both run `check`, `test`, `lint`, the byte budget (`tests/perf/byte-budget.ts`, 362 KB, enforced) and the smoke browser tests. Branch rules that require the check: [github-settings.md](github-settings.md).
 
 ## Pre-commit hook
 

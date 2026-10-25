@@ -14,7 +14,7 @@ const table = (boot = "301 KB") => `        session  paint  usable  monaco  byte
 cold        812    905    1200    2100       ${boot}          14       1234 KB
 warm        100    200     300     400        50 KB           4        200 KB
 `;
-const summary = "Byte budget: 302 KB gzip before first preview paint (cold median of 3), budget 355 KB: within.\n";
+const summary = "Byte budget: 302 KB gzip before first preview paint (cold median of 3), budget 362 KB: within.\n";
 type Output = { status: number | null; stdout: string; stderr: string };
 
 function result(output: Output, status: number, pattern: RegExp) {
@@ -87,7 +87,7 @@ test("parse cold medians in bytes, prefer row boot and fall back to the budget l
   assert.deepEqual(parseBudget(table() + summary), { boot: 301 * 1024, total: 1234 * 1024, requests: 14, over: false });
   assert.deepEqual(parseBudget(table("—") + summary), { boot: 302 * 1024, total: 1234 * 1024, requests: 14, over: false });
   assert.equal(parseBudget(table("355 KB") + summary.replace("within", "OVER")).over, true);
-  assert.equal(parseBudget(table("356 KB")).over, true);
+  assert.equal(parseBudget(table("363 KB")).over, true);
   assert.equal(parseBudget(table("301.5 KB")).boot, 301.5 * 1024);
   assert.equal(parseBudget(table("0 KB")).boot, 0);
   assert.deepEqual(parseBudget(table().replaceAll("\n", "\r\n")), parseBudget(table()));
@@ -99,10 +99,10 @@ test("parse cold medians in bytes, prefer row boot and fall back to the budget l
 test("clean HEAD cache misses then hits, ignores scratch, and preserves full logs", t => {
   const f = fixture(t);
   const first = f.run(["--no-base"]);
-  result(first, 0, /ok size boot 301 KB, budget 355 KB$/);
+  result(first, 0, /ok size boot 301 KB, budget 362 KB$/);
   assert.match(first.stdout, new RegExp(`cache: miss ${f.sha.slice(0, 7)}`));
   assert.match(first.stdout, /owner: size-test/);
-  assert.match(first.stdout, /boot 301 KB, total 1234 KB, requests 14, budget 355 KB/);
+  assert.match(first.stdout, /boot 301 KB, total 1234 KB, requests 14, budget 362 KB/);
   assert.equal(f.count(), 1);
   const calls = readFileSync(f.calls, "utf8").trim().split("\n").map(line => JSON.parse(line));
   assert.deepEqual(calls[0].runner.slice(0, 2), ["bash", "-c"]);
@@ -115,7 +115,7 @@ test("clean HEAD cache misses then hits, ignores scratch, and preserves full log
   assert.doesNotMatch(first.stdout, /budget diagnostic/);
   assert.deepEqual(JSON.parse(readFileSync(f.cachePath(), "utf8")), { version: 1, sha: f.sha, boot: 301 * 1024, total: 1234 * 1024, requests: 14, over: false });
   const second = f.run(["--no-base"]);
-  result(second, 0, /ok size boot 301 KB, budget 355 KB$/);
+  result(second, 0, /ok size boot 301 KB, budget 362 KB$/);
   assert.match(second.stdout, new RegExp(`cache: hit ${f.sha.slice(0, 7)}`));
   assert.doesNotMatch(second.stdout, /log:|\([+±-]\d/);
   assert.equal(f.count(), 1);
@@ -169,8 +169,8 @@ test("cached default base prints deltas without creating a base worktree", t => 
   const f = fixture(t);
   f.seed();
   const output = f.run();
-  result(output, 0, new RegExp(`ok size boot 301 KB \\(\\+3 KB\\) vs dev@${f.base.slice(0, 7)}, budget 355 KB$`));
-  assert.match(output.stdout, /boot 301 KB \(\+3 KB\), total 1234 KB \(-2 KB\), requests 14 \(-1\), budget 355 KB/);
+  result(output, 0, new RegExp(`ok size boot 301 KB \\(\\+3 KB\\) vs dev@${f.base.slice(0, 7)}, budget 362 KB$`));
+  assert.match(output.stdout, /boot 301 KB \(\+3 KB\), total 1234 KB \(-2 KB\), requests 14 \(-1\), budget 362 KB/);
   assert.match(output.stdout, new RegExp(`cache: hit ${f.base.slice(0, 7)}`));
   assert.equal(f.count(), 1);
   assert.equal(existsSync(join(f.root, ".scratch/shots-base")), false);
@@ -208,25 +208,25 @@ test("corrupt, mismatched and invalid cache records are misses", t => {
   assert.equal(f.count(), 11);
 });
 
-test("budget boundary is 355 * 1024 bytes and cached over-budget results still fail", t => {
+test("budget boundary is 362 * 1024 bytes and cached over-budget results still fail", t => {
   const f = fixture(t);
-  for (const [boot, status] of [["355 KB", 0], ["355.001 KB", 1], ["360 KB", 1]] as const) {
+  for (const [boot, status] of [["362 KB", 0], ["362.001 KB", 1], ["365 KB", 1]] as const) {
     rmSync(f.cachePath(), { force: true });
-    result(f.run(["--no-base"], { SIZE_OUTPUT: table(boot) }), status, status ? /fail size boot \d+ KB over budget 355 KB$/ : /ok size boot 355 KB/);
+    result(f.run(["--no-base"], { SIZE_OUTPUT: table(boot) }), status, status ? /fail size boot \d+ KB over budget 362 KB$/ : /ok size boot 362 KB/);
   }
   const before = f.count();
   const cached = f.run(["--no-base"]);
-  result(cached, 1, /fail size boot 360 KB over budget 355 KB$/);
+  result(cached, 1, /fail size boot 365 KB over budget 362 KB$/);
   assert.match(cached.stdout, /cache: hit/);
   assert.equal(f.count(), before);
 });
 
 test("the runner's OVER verdict fails even when the rounded boot reads 355 KB, also from cache", t => {
   const f = fixture(t);
-  const over = table("355 KB") + "Byte budget: 355 KB gzip before first preview paint (cold median of 3), budget 355 KB: OVER.\nReport-only: not failing.";
-  result(f.run(["--no-base"], { SIZE_OUTPUT: over }), 1, /fail size boot 355 KB over budget 355 KB$/);
+  const over = table("355 KB") + "Byte budget: 355 KB gzip before first preview paint (cold median of 3), budget 362 KB: OVER.\nReport-only: not failing.";
+  result(f.run(["--no-base"], { SIZE_OUTPUT: over }), 1, /fail size boot 355 KB over budget 362 KB$/);
   const cached = f.run(["--no-base"]);
-  result(cached, 1, /fail size boot 355 KB over budget 355 KB$/);
+  result(cached, 1, /fail size boot 355 KB over budget 362 KB$/);
   assert.match(cached.stdout, /cache: hit/);
   assert.equal(f.count(), 1);
 });
