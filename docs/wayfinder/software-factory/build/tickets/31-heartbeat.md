@@ -82,3 +82,12 @@ RESULT: ok heartbeat continue
 - P2 fault, `scripts/agents/kit.d/heartbeat` `saveState`: finished jobs are marked reported before `kit next` runs and before the next-timeout check; if anything throws after the save, those finished lines are lost. Save after `kit next`.
 - P2 race, `kit.d/heartbeat` next timeout: SIGTERM to `kit next --start` inside `claim()` skips its clean-up (`checkout`, `reset --keep origin/dev`). Let `next` handle SIGTERM and clean up, or time out with a signal it traps.
 - P3 fault, `kit.d/heartbeat` launching jobs: a `died` job with no `pid` and unknown age counts as launching forever (a launcher killed between `kit bg`'s record writes). Give launching a time limit.
+
+### Follow-ups
+
+- Spec (P2): a116186b3:scripts/agents/kit.d/heartbeat:253 — P2 fault: a wait that can never clear on its own counts as "waiting on other work" and keeps the heartbeat going 
+- Validation gaps (gap): The full output order the ticket asks for (finished, running, stuck, `kit next`, `done:`, `running/next:`) is never checked in a single run. Add a test with one
+- Validation gaps (gap): Nothing proves that `KIT_HEARTBEAT_LOCKED` is removed before `kit next` and the jobs it starts (line 188). Make the fake kit append `locked=${KIT_HEARTBEAT_LOCK
+- Validation gaps (gap): No test covers the permanent waits above with nothing running. Add `nextSays("waits: group fonts tickets=01-a,02-b blocked_by cycle in 01-a, 02-b", "RESULT: ok 
+- Validation gaps (gap): No test covers a bad `KIT_HEARTBEAT_NEXT_TIMEOUT` (for example `"0"` or `"abc"`). Assert exit 1, both Lex lines, and `RESULT: fail heartbeat KIT_HEARTBEAT_NEXT_
+
