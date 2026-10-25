@@ -2,7 +2,7 @@
 title: Plan copying the kitchen to Lex's other projects
 type: task (AFK)
 status: open
-assignee:
+assignee: sf-70 (this session)
 builder: claude
 blocked_by: [23-one-page-per-build, 31-heartbeat, 43-kit-ux-reviewer, 52-chat-learning, 60-context-card]
 ---
