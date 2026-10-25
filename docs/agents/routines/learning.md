@@ -37,7 +37,8 @@ this time and why.
    Run `scripts/agents/kit learn --since <its date>` (inclusive, so a correction from that Monday after
    its run is seen now); with no earlier learning file,
    plain `scripts/agents/kit learn` (default `--since 14d`). `RESULT: ok learn nothing recorded yet`
-   ends the learning part: no file, no PR; go to step 8. Otherwise read its bundle,
+   or `RESULT: ok learn 0 repeated of N groups` ends the learning part: no file, no PR; go to step 8,
+   which says in one line why there is no learning list (nothing recorded, or nothing asked twice). Otherwise read its bundle,
    `.scratch/learn/<date>/bundle.md` in the main root: groups given more than once with their count,
    kinds, dates, sources and `covered?`, then lines given once and malformed lines.
 4. **Judge.** Apply the `retro` skill (`~/.codex/skills/retro/SKILL.md`) to the bundle instead of a
