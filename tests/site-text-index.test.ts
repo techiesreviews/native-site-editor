@@ -288,3 +288,15 @@ test("an index started for an earlier load is started again for the load now", a
   assert.deepEqual(read, ["about.html", "components/site-card.html", "style.css"]);
   assert.equal(runtime.state.textIndexed, true);
 });
+
+test("an index started for an earlier load is not started again once the repository is gone", async () => {
+  const { index, runtime, appStore, read } = setup();
+  const first = runtime.state.textIndexing;
+  runtime.begin();
+  appStore.repository.value = undefined;
+  assert.equal(await index.ensureNativeTextIndex(), "The repository changed meanwhile. Try again.");
+  assert.equal(runtime.state.textIndexing, first, "no second index");
+  assert.equal(await first, false);
+  assert.deepEqual(read, []);
+  assert.equal(runtime.state.textIndexed, false);
+});
