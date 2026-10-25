@@ -2,7 +2,7 @@
 title: The feature list
 type: task (AFK)
 status: open
-assignee:
+assignee: sf-41 (this session)
 builder: claude
 blocked_by: [40-ux-rulebook]
 ---

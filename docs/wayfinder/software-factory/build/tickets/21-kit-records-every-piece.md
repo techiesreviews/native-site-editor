@@ -2,7 +2,7 @@
 title: "The kit records every piece; kit score"
 type: task (AFK)
 status: open
-assignee:
+assignee: sf-21 (this session)
 builder: claude
 blocked_by: [20-findings-by-kind, 13-kit-defaults-follow-pins]
 ---
