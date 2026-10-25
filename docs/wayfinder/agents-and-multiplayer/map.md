@@ -47,9 +47,7 @@ Built in stages: (1) several agents at once and seeing them work; (2) typing in 
 ## Not yet specified
 
 - **Rights and roles beyond a synced session:** whether guests ever get lasting access, and what a collaborator may do that a guest may not. The synced session (ticket 07) gives guests edit rights for the session only.
-- **Undo and history with several editors:** whose Undo undoes what when Lex, agents and people edit one page; per-person history. Shared editing is Yjs (ADR 0003), which has per-person undo; who undoes what is still open.
 - **Self-host setup for shared editing:** what a self-hoster must switch on (services, keys, limits) and how the Deploy button covers it. ADR 0003 says nothing new beyond the GitHub App webhook; confirm in the build.
-- **Stage hand-off:** the build folder (README with rules, gates and waves; slices), once the decisions above are closed.
 
 ## Out of scope
 
