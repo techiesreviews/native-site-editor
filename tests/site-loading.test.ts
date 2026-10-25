@@ -1,19 +1,38 @@
-import { test, type TestContext } from "node:test";
+import { after, test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { registerHooks } from "node:module";
 import { signal } from "@preact/signals-core";
 import { CleanSourceCache } from "../src/clean-source-cache.ts";
-import type { DraftScope } from "../src/drafts.ts";
+import { draftStore, type DraftScope, type SavedDraft } from "../src/drafts.ts";
 import { createNativeSiteRuntime } from "../src/native-site-runtime.ts";
 import type { SiteLoadingPorts } from "../src/site-loading.ts";
 import { createWorkspaceSession, type SessionStamp } from "../src/workspace-session.ts";
-import type { NativeSite } from "../shared/native-project.ts";
+import { resolveNativeProject, type NativeSite } from "../shared/native-project.ts";
 import type { Repository, Snapshot, TreeEntry } from "../shared/types.ts";
 import { forEachAwait, type AwaitRace } from "./support/await-race.ts";
 
+// The draft store reads these browser globals on first use; no other tabs, so no channel keeps the process alive.
+const fakeGlobals = globalThis as Record<string, unknown>;
+const saved = ["window", "document", "localStorage", "addEventListener", "BroadcastChannel"].map((name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)] as const);
+const stored = new Map<string, string>();
+fakeGlobals.window = { addEventListener: () => {} };
+fakeGlobals.document = { addEventListener: () => {}, visibilityState: "visible" };
+fakeGlobals.addEventListener = () => {};
+fakeGlobals.BroadcastChannel = undefined;
+fakeGlobals.localStorage = {
+  getItem: (key: string) => stored.get(key) ?? null, setItem: (key: string, value: string) => { stored.set(key, value); },
+  removeItem: (key: string) => { stored.delete(key); }, key: (index: number) => [...stored.keys()][index] ?? null, get length() { return stored.size; },
+};
+after(() => {
+  for (const [name, descriptor] of saved) {
+    if (descriptor) Object.defineProperty(globalThis, name, descriptor);
+    else Reflect.deleteProperty(globalThis, name);
+  }
+});
 // The GitHub reads behind site loading import the editor's icons (a stylesheet and raw SVGs).
 registerHooks({ load: (url, context, next) => (/\.css$|\?raw$/.test(url) ? { format: "module", source: "export default '';", shortCircuit: true } : next(url, context)) });
 const { ApiError } = await import("../src/github-reads.ts");
+const { ReadUnansweredError } = await import("../src/read-retry.ts");
 const { createSiteLoading } = await import("../src/site-loading.ts");
 
 const SHA = "a".repeat(40);
@@ -37,7 +56,7 @@ const snapshotOf = (paths: string[]) => ({ branch: "main", commit: SHA, entries:
 // A real runtime, session and file readers over the files above; GitHub, the preview and the host record what they were asked.
 // `race` (set later) wraps GitHub's reads, so a test can disturb the work at each of them (tests/support/await-race.ts).
 // `home` replaces the home page's text; `linked` is the stylesheets the pages link, as the host finds them.
-function setup(paths = Object.keys(TEXTS).filter((path) => !path.startsWith("font")), options: { refused?: string[]; home?: string } = {}) {
+function setup(paths = Object.keys(TEXTS).filter((path) => !path.startsWith("font")), options: { refused?: string[]; home?: string; list?: () => Promise<string[]> } = {}) {
   const texts: Record<string, string> = { ...TEXTS, ...(options.home ? { "index.html": options.home } : {}) }, linked = ["style.css"];
   const raced: { race?: AwaitRace } = {};
   const wrap = <Args extends unknown[], Value>(name: string, work: (...args: Args) => Promise<Value>) => (...args: Args) => (raced.race ? raced.race.port(name, work)(...args) : work(...args));
@@ -66,7 +85,7 @@ function setup(paths = Object.keys(TEXTS).filter((path) => !path.startsWith("fon
   const entry = (path: string): TreeEntry | undefined => (paths.includes(path) ? entryOf(path) : undefined);
   const ports = {
     runtime, appStore, workspaceSession, api, cleanSources: new CleanSourceCache(() => "o"),
-    repositoryIndex: { listRepositoryFiles: wrap("list", async () => paths) },
+    repositoryIndex: { listRepositoryFiles: wrap("list", options.list ?? (async () => paths)) },
     nativePreview: {
       preload: () => {}, activate: (site: NativeSite) => { preview.activated = site; }, update: (update: { sources: Record<string, string> }) => { preview.updated = update.sources; },
       setAssets: () => {}, setError: (message: string | undefined) => { preview.error = message; }, setWarnings: (warnings: unknown[]) => { preview.warnings = warnings; },
@@ -297,4 +316,57 @@ test("a font that never arrives holds the first paint back 300 ms at most, and i
   answer!(new Response(new Uint8Array([1, 2, 3])));
   await settle();
   assert.equal(runtime.state.assets.has("font.woff2"), false);
+});
+
+test("a site whose files cannot be listed shows the error on a placeholder home page; a read GitHub never answered fails the open", async () => {
+  const placeholder = { routes: { "/": "index.html" }, components: {} };
+  const failing = setup(undefined, { list: () => Promise.reject(new ApiError(500, "Boom")) });
+  assert.equal(await failing.loading.activateNativeSite(REPO, failing.snapshot, failing.workspaceSession.begin()), true);
+  assert.deepEqual(failing.preview.activated, placeholder);
+  assert.equal(failing.preview.error, "Boom");
+  assert.deepEqual(failing.started, []);
+  assert.equal(failing.runtime.site, undefined);
+  // The snapshot load's failed state with Try again takes it from here.
+  const unanswered = setup(undefined, { list: () => Promise.reject(new ReadUnansweredError(new Error("offline"))) });
+  await assert.rejects(unanswered.loading.activateNativeSite(REPO, unanswered.snapshot, unanswered.workspaceSession.begin()), ReadUnansweredError);
+  assert.equal(unanswered.preview.activated, undefined);
+});
+
+test("a site whose files make no project shows why on a placeholder home page", async () => {
+  // The branch has index.html, but the listing has no page that routes to the home page.
+  const { loading, workspaceSession, snapshot, preview, started, runtime } = setup(undefined, { list: async () => ["about/index.css"] });
+  const parsed = resolveNativeProject(["about/index.css"]);
+  assert.equal(parsed.ok, false);
+  assert.equal(await loading.activateNativeSite(REPO, snapshot, workspaceSession.begin()), true);
+  assert.deepEqual(preview.activated, { routes: { "/": "index.html" }, components: {} });
+  assert.deepEqual(preview.warnings, []);
+  assert.equal(preview.error, parsed.ok ? undefined : parsed.error);
+  assert.deepEqual(started, []);
+  assert.equal(runtime.site, undefined);
+});
+
+test("a blob GitHub refuses is an ApiError with its status and message, or a plain one without", async (t: TestContext) => {
+  const fetch = globalThis.fetch;
+  let body = JSON.stringify({ error: "Gone" });
+  globalThis.fetch = async () => new Response(body, { status: 404 });
+  t.after(() => { globalThis.fetch = fetch; });
+  const { loading } = setup();
+  await assert.rejects(loading.readBlob("o/site", SHA), (error) => error instanceof ApiError && error.status === 404 && error.message === "Gone");
+  body = "";
+  await assert.rejects(loading.readBlob("o/site", SHA), (error) => error instanceof ApiError && error.status === 404 && error.message === "Could not load the file.");
+});
+
+test("Download site takes a deleted file as gone, a moved or uploaded one by its blob, and the rest from the branch", async (t: TestContext) => {
+  const draft = (path: string, fields: Partial<SavedDraft>): SavedDraft => ({ ...SCOPE, version: 1, path, baseSha: shaOf(path), original: "", content: "", updatedAt: 0, ...fields });
+  const moved = "c".repeat(40);
+  draftStore().save(draft("about.html", { deleted: true }));
+  draftStore().save(draft("logo.svg", { baseSha: null, opaque: true, sourceSha: moved }));
+  t.after(() => { for (const path of ["about.html", "logo.svg"]) draftStore().remove(SCOPE, path); });
+  const { loading, workspaceSession, snapshot, setScope } = setup();
+  await loading.activateNativeSite(REPO, snapshot, workspaceSession.begin());
+  setScope(SCOPE);
+  const files = await loading.nativeSiteFiles();
+  assert.equal(await files?.blob("about.html"), undefined);
+  assert.equal(await files?.blob("logo.svg"), moved);
+  assert.equal(await files?.blob("style.css"), shaOf("style.css"));
 });
