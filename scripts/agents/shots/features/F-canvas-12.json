@@ -1,0 +1,1 @@
+{"screen":"editor","name":"F-canvas-12","steps":["click \"Tablet, 768 px\"","record tablet 600","click \"Mobile, 390 px\"","type \"600\" in Frame width in pixels","press Enter","record width 600"]}

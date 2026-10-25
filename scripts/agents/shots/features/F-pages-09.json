@@ -1,0 +1,1 @@
+{"screen":"files","name":"F-pages-09","steps":["click \"New file or folder\"","type \"styles/notes.css\" in File name","click \"Create\"","expect visible \"styles/notes.css\""]}

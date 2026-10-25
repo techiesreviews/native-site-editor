@@ -37,7 +37,7 @@ its number unused.
 - Files: `src/setup-host.ts`, `src/auto-signin.ts`, `src/components/onboarding.css`
 - Phone: yes
 - Spec: `tests/native-save/native-onboarding.spec.ts`
-- Steps: none yet
+- Steps: none yet (the fake GitHub server is always signed in)
 
 ### F-setup-02 Setup wizard for a new account
 - Try: Sign in with an account that has no repositories and follow Connect GitHub, Create your site and Your site is ready.
@@ -45,7 +45,7 @@ its number unused.
 - Files: `src/components/setup-wizard.ts`, `src/setup-wizard.ts`, `src/components/github-trip.ts`, `src/components/confetti.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-setup-wizard.spec.ts`
-- Steps: none yet
+- Steps: none yet (needs an account with no repositories)
 
 ### F-setup-03 Create a site from the Starter site or a Blank page
 - Try: In Get started or the wizard, name a new site and pick the Starter site; then try a Blank page in an empty repository.
@@ -53,7 +53,7 @@ its number unused.
 - Files: `src/components/start-site.ts`, `src/setup-actions.ts`, `shared/starting-point.ts`, `worker/starter.ts`, `worker/first-commit.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-static-starter-create.spec.ts`
-- Steps: none yet
+- Steps: none yet (needs Get started or the wizard on an account with no site)
 
 ### F-setup-04 Get started screen
 - Try: Leave setup on a signed-in account with no site.
@@ -61,7 +61,7 @@ its number unused.
 - Files: `src/components/get-started.ts`, `src/controllers/setup-entry-controller.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-setup-wizard.spec.ts`
-- Steps: none yet
+- Steps: none yet (needs an account with no site)
 
 ### F-setup-05 Build it with an agent
 - Try: On Get started press Build it with an agent and paste the copied prompt into an agent.
@@ -69,7 +69,7 @@ its number unused.
 - Files: `src/agent-prompts.ts`, `src/components/get-started.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-onboarding.spec.ts`
-- Steps: none yet
+- Steps: none yet (needs Get started on an account with no site)
 
 ### F-setup-06 Setup checklist
 - Try: Start a site in an empty repository and follow Start your site, Save to GitHub, Name your site and Connect an agent.
@@ -77,7 +77,7 @@ its number unused.
 - Files: `src/components/setup-checklist.ts`, `src/controllers/setup-checklist-controller.ts`, `src/setup-checklist.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-setup-checklist.spec.ts`
-- Steps: none yet
+- Steps: none yet (needs a site started in an empty repository)
 
 ### F-setup-07 Connect an agent spotlight
 - Try: In the checklist press Connect an agent, then Show me.
@@ -85,7 +85,7 @@ its number unused.
 - Files: `src/components/spotlight.ts`, `src/components/spotlight-layout.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-setup-checklist.spec.ts`
-- Steps: none yet
+- Steps: none yet (opens from the setup checklist, which needs an empty repository)
 
 ### F-setup-08 Organisation repositories
 - Try: With an account in an organisation, create a site and pick the organisation as owner.
@@ -93,7 +93,7 @@ its number unused.
 - Files: `src/components/repository-name-field.ts`, `src/repository-list.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-org-repositories.spec.ts`
-- Steps: none yet
+- Steps: none yet (the fake account has no organisation)
 
 ### F-setup-09 Sign out
 - Try: Open the project menu and press Sign out.
@@ -101,7 +101,7 @@ its number unused.
 - Files: `src/components/repository-menu.ts`, `src/repository-list.ts`, `src/boot-memory.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-boot-memory.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-setup-09.json`
 
 ## Repositories and branches
 
@@ -111,7 +111,7 @@ its number unused.
 - Files: `src/components/repository-menu.ts`, `src/workspace-boot.ts`, `src/controllers/boot-controller.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-onboarding.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-repo-01.json`
 
 ### F-repo-02 Find a repository
 - Try: With six or more repositories, type part of a name in Find a repository in the project menu.
@@ -119,7 +119,7 @@ its number unused.
 - Files: `src/components/repository-menu.ts`
 - Phone: yes
 - Spec: none
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-repo-02.json`
 
 ### F-repo-03 Add repositories on GitHub
 - Try: Press Add repositories in the project menu, choose repositories on GitHub's access page and come back.
@@ -127,7 +127,7 @@ its number unused.
 - Files: `src/components/repository-menu.ts`, `src/repository-list.ts`
 - Phone: yes
 - Spec: none
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-repo-03.json`
 
 ### F-repo-04 Switch GitHub account
 - Try: Hover GitHub accounts in the project menu and press Switch on another account.
@@ -135,7 +135,7 @@ its number unused.
 - Files: `src/components/repository-menu.ts`, `src/repository-list.ts`
 - Phone: yes
 - Spec: none
-- Steps: none yet
+- Steps: none yet (the fake GitHub server has one account, so there is no Switch)
 
 ### F-repo-05 Switch branch
 - Try: Open the project menu, open Branches and pick another branch, by pointer or keyboard.
@@ -143,7 +143,7 @@ its number unused.
 - Files: `src/components/repository-menu.ts`, `src/components/flyout.ts`, `src/workspace-session.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-branch-menu.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-repo-05.json`
 
 ### F-repo-06 Refresh from GitHub
 - Try: In Branches press Refresh from GitHub after a commit made on GitHub.
@@ -151,7 +151,7 @@ its number unused.
 - Files: `src/components/repository-menu.ts`, `src/github-reads.ts`, `src/read-retry.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-github-silent.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-repo-06.json`
 
 ### F-repo-07 Fast reopen
 - Try: Reload the editor on a site you had open.
@@ -159,7 +159,7 @@ its number unused.
 - Files: `src/boot-memory.ts`, `src/boot-reads.ts`, `src/native-boot.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-boot-memory.spec.ts`
-- Steps: none yet
+- Steps: none yet (needs a reload)
 
 ### F-repo-08 Work held across a switch
 - Try: Start a save or drop files, then switch branch or repository before it ends.
@@ -167,7 +167,7 @@ its number unused.
 - Files: `src/finished-elsewhere.ts`, `src/background-page.ts`, `src/background-site.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-switch-mid-work.spec.ts`
-- Steps: none yet
+- Steps: none yet (needs work in flight and a second branch)
 
 ## Pages and files
 
@@ -185,7 +185,7 @@ its number unused.
 - Files: `src/site-preview.ts`, `src/site-loading.ts`, `src/components/page-picker.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-routing.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-pages-02.json`
 
 ### F-pages-03 New page and subpage
 - Try: Press + New in Pages for a page, then Add subpage from a page's ⋯.
@@ -193,7 +193,7 @@ its number unused.
 - Files: `src/native-create.ts`, `src/native-pages.ts`, `src/pages-and-files-explorer.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-create.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-pages-03.json`
 
 ### F-pages-04 Rename and duplicate a page
 - Try: Rename a page's title in its row, then Duplicate it from ⋯.
@@ -201,7 +201,7 @@ its number unused.
 - Files: `src/components/pages-tree.ts`, `src/controllers/file-operations-controller.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-file-ops.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-pages-04.json`
 
 ### F-pages-05 Change URL
 - Try: Choose Change URL from a page's ⋯ and type a new address.
@@ -209,7 +209,7 @@ its number unused.
 - Files: `src/components/url-change.ts`, `src/native-page-moves.ts`, `shared/site-rules.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-page-urls.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-pages-05.json`
 
 ### F-pages-06 Move a page under another
 - Try: Drag a page onto another, or use Move to… from the keyboard.
@@ -217,7 +217,7 @@ its number unused.
 - Files: `src/components/pages-tree.ts`, `src/native-page-moves.ts`
 - Phone: no
 - Spec: `tests/native-save/native-page-urls.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-pages-06.json`
 
 ### F-pages-07 Delete a page
 - Try: Delete a page that has subpages and a card linking to it.
@@ -225,7 +225,7 @@ its number unused.
 - Files: `src/controllers/file-operations-controller.ts`, `src/components/confirm-dialog.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-delete-card-race.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-pages-07.json`
 
 ### F-pages-08 Files tab
 - Try: Open the explorer on Files.
@@ -241,7 +241,7 @@ its number unused.
 - Files: `src/components/create-dialog.ts`, `src/native-create.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-create.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-pages-09.json`
 
 ### F-pages-10 Rename, move and delete files
 - Try: F2 on a file row, drag a file onto a folder, delete one from ⋯ and Restore it.
@@ -249,7 +249,7 @@ its number unused.
 - Files: `src/controllers/file-operations-controller.ts`, `src/controllers/file-operation-checks.ts`, `src/components/file-row-actions.ts`, `src/page-builder/asset-references.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-file-ops.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-pages-10.json`
 
 ### F-pages-11 Upload files into a folder
 - Try: Choose Upload files… on a folder, or drop files onto it.
@@ -257,7 +257,7 @@ its number unused.
 - Files: `src/page-builder/media-files-adding.ts`, `src/page-builder/media-files-adding-runs.ts`, `src/uploads.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-upload.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-pages-11.json`
 
 ### F-pages-12 Page settings
 - Try: Open Page settings and type a title and a description.
@@ -265,7 +265,7 @@ its number unused.
 - Files: `src/native-settings.ts`, `src/page-builder/site-head.ts`, `src/components/site-settings.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-page-details.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-pages-12.json`
 
 ### F-pages-13 Sharing preview and social image
 - Try: In Page settings look at the share card, choose a social image and move its frame.
@@ -273,7 +273,7 @@ its number unused.
 - Files: `src/page-builder/social-sharing.ts`, `src/page-builder/social-image.ts`, `src/page-builder/social-image-popup.ts`, `src/components/settings-preview.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-social-image.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-pages-13.json`
 
 ### F-pages-14 Site settings
 - Try: Press the gear and set the site's name, address, favicon and default social image; open the 404 page.
@@ -289,7 +289,7 @@ its number unused.
 - Files: `src/page-builder/site-navigation.ts`, `src/native-settings.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-site-settings.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-pages-15.json`
 
 ### F-pages-16 Resize and hide the explorer
 - Try: Drag the sidebar handle, click it to hide and show, and reload.
@@ -297,7 +297,7 @@ its number unused.
 - Files: `src/components/sidebar-resize.ts`, `src/components/resize-handle.ts`
 - Phone: no
 - Spec: `tests/native-save/native-resize-toggle.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-pages-16.json`
 
 ## Page editing on the canvas
 
@@ -307,7 +307,7 @@ its number unused.
 - Files: `src/components/native-preview-runtime.js`, `src/components/click-timing.ts`, `src/page-builder/rules/canvas-gesture.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-click-to-type.spec.ts`
-- Steps: none yet
+- Steps: none yet (needs a click, key or drag inside the page frame)
 
 ### F-canvas-02 Select an element
 - Try: Click an image or the edge of a block; press Ctrl+Up to climb.
@@ -315,7 +315,7 @@ its number unused.
 - Files: `src/controllers/preview-selection-controller.ts`, `src/components/canvas-bar.ts`, `src/components/canvas-path.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-canvas.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-canvas-02.json`
 
 ### F-canvas-03 Block rail
 - Try: Click Section, Div, Heading, Paragraph, Image or Button in the rail beside Page structure.
@@ -323,7 +323,7 @@ its number unused.
 - Files: `src/components/block-rail.ts`, `src/components/block-rail.css`, `src/controllers/block-insert-controller.ts`, `src/page-builder/block-insert.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-blocks.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-canvas-03.json`
 
 ### F-canvas-04 Drag a block in from the rail
 - Try: Drag a Paragraph from the rail into a card of a grid; hold Alt to step up a level; Escape to cancel.
@@ -331,7 +331,7 @@ its number unused.
 - Files: `src/page-builder/block-drag.ts`, `src/page-builder/block-drag-session.ts`, `src/page-builder/insert-drag.ts`, `src/page-builder/drop-target.ts`
 - Phone: no
 - Spec: `tests/native-save/native-block-drag.spec.ts`
-- Steps: none yet
+- Steps: none yet (needs a click, key or drag inside the page frame)
 
 ### F-canvas-05 Move anything by dragging
 - Try: Press and drag a heading out of its section, a card sideways, an image out of a Div.
@@ -339,7 +339,7 @@ its number unused.
 - Files: `src/page-builder/block-move.ts`, `src/page-builder/block-move-rules.ts`, `src/page-builder/rules/movable.ts`, `src/page-builder/drop-indicator.ts`
 - Phone: no
 - Spec: `tests/native-save/native-move-anywhere.spec.ts`
-- Steps: none yet
+- Steps: none yet (needs a click, key or drag inside the page frame)
 
 ### F-canvas-06 Move with the keyboard
 - Try: Select a section and press Alt+Up and Alt+Down; a card with Alt+Left and Alt+Right.
@@ -347,7 +347,7 @@ its number unused.
 - Files: `src/page-builder/block-move.ts`, `src/page-builder/section-snap.ts`
 - Phone: no
 - Spec: `tests/native-save/native-move-keys.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-canvas-06.json`
 
 ### F-canvas-07 Delete the selected element
 - Try: Select a paragraph and press Delete.
@@ -355,7 +355,7 @@ its number unused.
 - Files: `src/page-builder/remove.ts`, `src/controllers/page-structure-controller.ts`
 - Phone: no
 - Spec: `tests/native-save/native-delete-key.spec.ts`
-- Steps: none yet
+- Steps: none yet (needs a click, key or drag inside the page frame)
 
 ### F-canvas-08 Add panel
 - Try: Press Add (or a + between sections) and click or drag a section or component.
@@ -371,7 +371,7 @@ its number unused.
 - Files: `src/page-builder/cards.ts`, `src/components/card-grid-controls.ts`, `src/components/card-ghost-view.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-cards.spec.ts`
-- Steps: none yet
+- Steps: none yet (needs a click, key or drag inside the page frame)
 
 ### F-canvas-10 Link a card to a page
 - Try: Add card, then pick a page in Link to a page…, or type a new address to create one.
@@ -379,7 +379,7 @@ its number unused.
 - Files: `src/components/card-link-picker.ts`, `src/page-builder/card-fill.ts`, `src/page-builder/card-slot.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-add-card.spec.ts`
-- Steps: none yet
+- Steps: none yet (needs Add card, shown on a hovered grid inside the page frame)
 
 ### F-canvas-11 Card looks
 - Try: Open Add card ▾ and pick another look for a blank card.
@@ -387,7 +387,7 @@ its number unused.
 - Files: `src/components/card-look-gallery.ts`, `src/page-builder/card-looks.ts`, `src/page-builder/card-swap.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-add-card.spec.ts`
-- Steps: none yet
+- Steps: none yet (needs Add card, shown on a hovered grid inside the page frame)
 
 ### F-canvas-12 Frame width and breakpoints
 - Try: Press the desktop, tablet and phone buttons above the page, drag the frame's side, type a width.
@@ -395,7 +395,7 @@ its number unused.
 - Files: `src/components/canvas-bar.ts`, `src/page-builder/breakpoints.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-canvas.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-canvas-12.json`
 
 ### F-canvas-13 Follow links in the preview
 - Try: Ctrl/⌘+click a link in the page.
@@ -403,7 +403,7 @@ its number unused.
 - Files: `src/components/native-preview.ts`, `src/site-preview.ts`
 - Phone: no
 - Spec: `tests/native-save/native-preview-links.spec.ts`
-- Steps: none yet
+- Steps: none yet (needs a click, key or drag inside the page frame)
 
 ### F-canvas-14 Live preview of every change
 - Try: Edit text, CSS in the code pane and a component template.
@@ -411,7 +411,7 @@ its number unused.
 - Files: `src/components/native-preview.ts`, `src/components/native-preview-runtime.js`, `src/components/preview-link.ts`
 - Phone: yes
 - Spec: `tests/native-preview/native-preview.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-canvas-14.json`
 
 ## Edit bar
 
@@ -421,7 +421,7 @@ its number unused.
 - Files: `src/components/edit-bar.ts`, `src/components/edit-bar.css`, `src/components/edit-bar-placement.ts`, `src/controllers/page-structure-controller.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-edit-bar.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-bar-01.json`
 
 ### F-bar-02 Heading level, Bold and Italic
 - Try: Select a heading and change its level; select a word and press B, then Ctrl+I.
@@ -429,7 +429,7 @@ its number unused.
 - Files: `src/controllers/page-structure-controller.ts`, `src/components/edit-bar.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-edit-bar.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-bar-02.json`
 
 ### F-bar-03 Text size
 - Try: Select text and open Text size.
@@ -437,7 +437,7 @@ its number unused.
 - Files: `src/native-text-size.ts`, `src/controllers/page-structure-controller.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-text-size.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-bar-03.json`
 
 ### F-bar-04 Link and Address
 - Try: Select a word, press Link (or Ctrl+K), type an address or pick a page; open Open in new tab.
@@ -445,7 +445,7 @@ its number unused.
 - Files: `src/components/field-suggestions.ts`, `src/page-builder/page-choices.ts`, `src/controllers/page-structure-controller.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-link.spec.ts`
-- Steps: none yet
+- Steps: none yet (needs text selected inside the page frame)
 
 ### F-bar-05 Button variant and size
 - Try: Select a button and pick a Variant and a Size.
@@ -453,7 +453,7 @@ its number unused.
 - Files: `src/page-builder/block-fields.ts`, `src/page-builder/variant-fields.ts`, `shared/variants.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-block-bars.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-bar-05.json`
 
 ### F-bar-06 Div Layout
 - Try: Select a Div and pick another Layout.
@@ -461,7 +461,7 @@ its number unused.
 - Files: `src/page-builder/block-fields.ts`, `src/controllers/page-structure-controller.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-block-bars.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-bar-06.json`
 
 ### F-bar-07 Tone
 - Try: Select a band (a section, the header or the footer) and pick Brand, Light or No tone.
@@ -469,7 +469,7 @@ its number unused.
 - Files: `shared/tone.ts`, `src/page-builder/variant-fields.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-tone.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-bar-07.json`
 
 ### F-bar-08 Component variants
 - Try: Select a component instance with variants and open Variants.
@@ -477,7 +477,7 @@ its number unused.
 - Files: `src/page-builder/variant-fields.ts`, `shared/variant-lookup.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-variants.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-bar-08.json`
 
 ### F-bar-09 Duplicate, move and remove from the bar
 - Try: Select a section and use Move up, Move down, Duplicate and Remove; drag it by its name.
@@ -485,7 +485,7 @@ its number unused.
 - Files: `src/controllers/page-structure-controller.ts`, `src/page-builder/block-move.ts`, `src/page-builder/remove.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-section-drag.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-bar-09.json`
 
 ### F-bar-10 Native fields for forms and embeds
 - Try: Select a form, an input and an embed.
@@ -493,7 +493,7 @@ its number unused.
 - Files: `src/page-builder/native-element-fields.ts`, `src/page-builder/native-elements.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-fields-host.spec.ts`
-- Steps: none yet
+- Steps: none yet (the starter has no form or embed)
 
 ### F-bar-11 Right-click element menu
 - Try: Right-click a section in the page.
@@ -501,7 +501,7 @@ its number unused.
 - Files: `src/components/element-menu.ts`, `src/page-builder-host.ts`
 - Phone: no
 - Spec: `tests/native-save/native-make-component-menus.spec.ts`
-- Steps: none yet
+- Steps: none yet (needs a right-click inside the page frame)
 
 ## Page Structure
 
@@ -519,7 +519,7 @@ its number unused.
 - Files: `src/components/structure-editing.ts`, `src/components/page-structure.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-structure-inplace.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-structure-02.json`
 
 ### F-structure-03 Drag rows
 - Try: Drag a row to a new depth; drag a Section between bands; hold a rail block over a folded row.
@@ -535,7 +535,7 @@ its number unused.
 - Files: `src/components/row-menu.ts`, `src/components/row-actions.ts`, `src/components/page-structure.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-move-host.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-structure-04.json`
 
 ### F-structure-05 One-press accessibility fixes
 - Try: Open a page with a skipped heading level or an unlabelled section.
@@ -543,7 +543,7 @@ its number unused.
 - Files: `src/components/page-structure.ts`, `src/controllers/page-structure-controller.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-structure.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-structure-05.json`
 
 ### F-structure-06 Slot fields
 - Try: Select a component instance and edit its slots in Page structure: text, a link, an image, an optional part.
@@ -551,7 +551,7 @@ its number unused.
 - Files: `src/components/structure-editing.ts`, `src/components/slot-ghosts.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-structure-slots.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-structure-06.json`
 
 ### F-structure-07 Attributes
 - Try: Open Attributes on a row and edit, add and remove one.
@@ -559,7 +559,7 @@ its number unused.
 - Files: `src/components/structure-editing.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-structure-compact.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-structure-07.json`
 
 ### F-structure-08 Resize and fold Page structure
 - Try: Drag the Page structure edge, fold it and reload.
@@ -567,7 +567,7 @@ its number unused.
 - Files: `src/page-builder/component-panel-resize.ts`, `src/components/resize-handle.ts`
 - Phone: no
 - Spec: `tests/native-save/native-component-resize.spec.ts`
-- Steps: none yet
+- Steps: none yet (needs a drag on the resize handle, which steps cannot grab)
 
 ## Components and Edit component mode
 
@@ -577,7 +577,7 @@ its number unused.
 - Files: `src/page-builder/component-model.ts`, `src/page-builder/component-plans.ts`, `src/page-builder/component-css.ts`, `src/page-builder/component-loader.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-make-component.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-component-01.json`
 
 ### F-component-02 New component
 - Try: In the Add panel choose New component and type a name.
@@ -585,7 +585,7 @@ its number unused.
 - Files: `src/page-builder/blank-component.ts`, `src/page-builder/component-names.ts`, `src/page-builder/add-panel.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-new-component.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-component-02.json`
 
 ### F-component-03 Edit component mode
 - Try: Select an instance and press its pencil (or Edit component).
@@ -593,7 +593,7 @@ its number unused.
 - Files: `src/page-builder/edit-component-mode.ts`, `src/page-builder/edit-component-mode.css`, `src/page-builder/component-mode.ts`, `src/page-builder/edit-mode-bar-fit.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-edit-component-mode-actual.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-component-03.json`
 
 ### F-component-04 Slot chip
 - Try: In Edit component mode toggle a part's slot chip and double-click it to rename the slot.
@@ -601,7 +601,7 @@ its number unused.
 - Files: `src/components/slot-chip.ts`, `src/page-builder/slot-menu.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-slot-chip-apply-actual.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-component-04.json`
 
 ### F-component-05 Rename a component
 - Try: In Edit component mode rename the component from its bar and press Done.
@@ -609,7 +609,7 @@ its number unused.
 - Files: `src/page-builder/component-rename.ts`, `src/page-builder/component-names.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-rename-component-actual.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-component-05.json`
 
 ### F-component-06 Nested components
 - Try: In Edit component mode open a card component inside the section.
@@ -617,7 +617,7 @@ its number unused.
 - Files: `src/page-builder/edit-component-mode.ts`, `src/page-builder/native-component-selection.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-edit-component-drill-actual.spec.ts`
-- Steps: none yet
+- Steps: none yet (the starter has no component inside another component)
 
 ### F-component-07 Fixed parts
 - Try: Click a fixed (non-slot) part of an instance on a page.
@@ -625,7 +625,7 @@ its number unused.
 - Files: `src/page-builder/components.ts`, `src/page-builder/rules/movable.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-locked-fixed-parts-actual.spec.ts`
-- Steps: none yet
+- Steps: none yet (needs a click, key or drag inside the page frame)
 
 ### F-component-08 Detach and Used on
 - Try: On an instance use Detach; on a nested one use Used on.
@@ -633,7 +633,7 @@ its number unused.
 - Files: `src/page-builder/components.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-components.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-component-08.json`
 
 ### F-component-09 Component loader added when needed
 - Try: Make a component on a Blank page site.
@@ -641,7 +641,7 @@ its number unused.
 - Files: `src/page-builder/component-loader.ts`, `src/page-builder/starter-loader.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-component-loader.spec.ts`
-- Steps: none yet
+- Steps: none yet (needs a Blank page site; the starter already loads components)
 
 ### F-component-10 Build inside the template
 - Try: In Edit component mode click a Paragraph from the rail into the items slot and drag a Heading in.
@@ -649,7 +649,7 @@ its number unused.
 - Files: `src/page-builder/edit-component-mode.ts`, `src/page-builder/block-insert.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-edit-component-blocks-actual.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-component-10.json`
 
 ## Media and the image popup
 
@@ -675,7 +675,7 @@ its number unused.
 - Files: `src/page-builder/media-library-adding.ts`, `src/page-builder/media-prepare.ts`, `src/page-builder/media-adding-rules.ts`, `src/page-builder/media-adding-summary.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-media-newest.spec.ts`
-- Steps: none yet
+- Steps: none yet (needs files chosen or dropped from the computer)
 
 ### F-media-04 Adding settings
 - Try: Open Adding settings from More and pick Smaller files and Keep original.
@@ -683,7 +683,7 @@ its number unused.
 - Files: `src/page-builder/media-adding-settings.ts`, `src/page-builder/media-settings.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-media-adding.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-media-04.json`
 
 ### F-media-05 File details
 - Try: Open a picture's details and edit its name, description and tags.
@@ -699,7 +699,7 @@ its number unused.
 - Files: `src/page-builder/media-library-usage.ts`, `src/page-builder/media-usage.ts`, `src/page-builder/media-usage-text.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-media-screen.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-media-06.json`
 
 ### F-media-07 Rename a media file
 - Try: Rename a used picture in File details with Keep the old address working ticked.
@@ -707,7 +707,7 @@ its number unused.
 - Files: `src/page-builder/media-rename.ts`, `src/page-builder/media-names.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-media-rename.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-media-07.json`
 
 ### F-media-08 Replace everywhere
 - Try: In File details choose Replace everywhere and pick another picture.
@@ -715,7 +715,7 @@ its number unused.
 - Files: `src/page-builder/media-library-replace.ts`, `src/page-builder/media-replace-rules.ts`, `src/page-builder/replace-everywhere.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-media-rename.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-media-08.json`
 
 ### F-media-09 Collections
 - Try: Select two files, make a New collection, view it and take one out.
@@ -723,7 +723,7 @@ its number unused.
 - Files: `src/page-builder/media-library-collections.ts`, `src/page-builder/media-collections.ts`, `src/page-builder/media-collection-choices.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-media-collections.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-media-09.json`
 
 ### F-media-10 Selection bar
 - Try: Select several tiles.
@@ -739,7 +739,7 @@ its number unused.
 - Files: `src/page-builder/media-library-delete.ts`, `src/page-builder/media-library-recently-removed.ts`, `src/page-builder/media-recently-removed.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-media-cleanup.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-media-11.json`
 
 ### F-media-12 Clean up
 - Try: Open More and choose Clean up (n).
@@ -763,7 +763,7 @@ its number unused.
 - Files: `src/page-builder/media-library-optimise.ts`, `src/page-builder/media-library-optimise-rules.ts`, `src/page-builder/media-optimise.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-media-library.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-media-14.json`
 
 ### F-media-15 To check
 - Try: After an agent describes a picture, open To check.
@@ -771,7 +771,7 @@ its number unused.
 - Files: `src/page-builder/media-library-to-check.ts`, `src/page-builder/media-descriptions.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-media-screen.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-media-15.json`
 
 ### F-media-16 Media picker
 - Try: Double-click a placeholder image, search, choose a picture and press Use.
@@ -795,7 +795,7 @@ its number unused.
 - Files: `src/page-builder/image-popup-trim.ts`, `src/page-builder/image-large-editor.ts`, `src/page-builder/trimmed-copies.ts`, `src/page-builder/place-trim.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-image-popup.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-media-18.json`
 
 ### F-media-19 Image popup: Replace
 - Try: In the popup press Replace and choose another picture.
@@ -803,7 +803,7 @@ its number unused.
 - Files: `src/page-builder/image-popup.ts`, `src/page-builder/media-place-swap.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-image-popup.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-media-19.json`
 
 ### F-media-20 Image placeholder first
 - Try: Click Image in the rail.
@@ -811,7 +811,7 @@ its number unused.
 - Files: `src/page-builder/block-insert.ts`, `src/page-builder/media-insert.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-blocks.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-media-20.json`
 
 ### F-media-21 Add a video, audio or PDF to a page
 - Try: In Add → Media place a video, an audio file and a PDF.
@@ -819,7 +819,7 @@ its number unused.
 - Files: `src/page-builder/media-insert.ts`, `src/page-builder/player-markup.ts`, `src/page-builder/pdf-preview.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-media-video.spec.ts`
-- Steps: none yet
+- Steps: none yet (the starter has no video, audio or PDF)
 
 ### F-media-22 Online video
 - Try: Paste a YouTube or Vimeo address in Add → Media.
@@ -827,7 +827,7 @@ its number unused.
 - Files: `src/page-builder/online-video.ts`, `src/page-builder/online-video-add.ts`, `src/page-builder/online-video-place.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-media-video.spec.ts`
-- Steps: none yet
+- Steps: none yet (needs an address pasted into Add, Media, which steps cannot reach)
 
 ### F-media-23 Play on the canvas
 - Try: Select a video or audio and press Play in the edit bar, then Stop.
@@ -835,7 +835,7 @@ its number unused.
 - Files: `src/page-builder/media-play.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-placed-media.spec.ts`
-- Steps: none yet
+- Steps: none yet (the starter has no video or audio to play)
 
 ### F-media-24 Looping and background video
 - Try: Put a video in a picture spot; pick a section background from Media.
@@ -843,7 +843,7 @@ its number unused.
 - Files: `src/page-builder/media-video-place.ts`, `src/page-builder/looping-video.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-media-video.spec.ts`
-- Steps: none yet
+- Steps: none yet (the starter has no video)
 
 ### F-media-25 Video details: still and subtitles
 - Try: In a video's details pick a moment as its still and add an .srt file.
@@ -851,7 +851,7 @@ its number unused.
 - Files: `src/page-builder/media-library-video.ts`, `src/page-builder/video-details.ts`, `src/page-builder/video-moment.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-media-video.spec.ts`
-- Steps: none yet
+- Steps: none yet (the starter has no video)
 
 ### F-media-26 Media popup for audio, downloads and online video
 - Try: Select an audio, a download card or an online video and press Media in the bar.
@@ -859,7 +859,7 @@ its number unused.
 - Files: `src/page-builder/media-spot-popup.ts`, `src/page-builder/media-popup-frame.ts`, `src/page-builder/media-spot-rules.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-media-button.spec.ts`
-- Steps: none yet
+- Steps: none yet (the starter has no audio, download or online video)
 
 ### F-media-27 Descriptions and Decorative
 - Try: Place a picture with no description, then give it one in File details; mark another Decorative.
@@ -867,7 +867,7 @@ its number unused.
 - Files: `src/page-builder/media-descriptions.ts`, `src/page-builder/media-metadata.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-image-alt-refusal.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-media-27.json`
 
 ## Code panes
 
@@ -877,7 +877,7 @@ its number unused.
 - Files: `src/components/code-editor.ts`, `src/components/monaco.ts`, `src/controllers/code-panes-controller.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-editor-features.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-code-01.json`
 
 ### F-code-02 Linked styles pane
 - Try: Select a heading and look at the second pane.
@@ -885,7 +885,7 @@ its number unused.
 - Files: `src/controllers/linked-styles-controller.ts`, `src/style-cascade.ts`, `src/styles-index.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-selector.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-code-02.json`
 
 ### F-code-03 CSS help
 - Try: Type a bare value in CSS and hover a variable.
@@ -893,7 +893,7 @@ its number unused.
 - Files: `src/page-builder/css-intelligence.ts`
 - Phone: no
 - Spec: `tests/native-save/native-css-intelligence.spec.ts`
-- Steps: none yet
+- Steps: none yet (needs typing and hovering inside the code editor)
 
 ### F-code-04 Variant suggestions in HTML
 - Try: Type a component's tag attributes in the HTML pane.
@@ -901,7 +901,7 @@ its number unused.
 - Files: `src/page-builder/variant-intelligence.ts`
 - Phone: no
 - Spec: `tests/native-save/native-code-variants.spec.ts`
-- Steps: none yet
+- Steps: none yet (needs typing inside the code editor)
 
 ### F-code-05 Hide and resize code
 - Try: Drag the code edge down to hide it, press its grip to restore; use Hide code from the palette.
@@ -909,7 +909,7 @@ its number unused.
 - Files: `src/components/code-resize.ts`, `src/components/resize-handle.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-code-visible.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-code-05.json`
 
 ### F-code-06 Drop a file path into code
 - Try: Drag a Files row into the code pane.
@@ -917,7 +917,7 @@ its number unused.
 - Files: `src/monaco-drop-adapter.ts`
 - Phone: no
 - Spec: `tests/native-save/native-monaco-features.spec.ts`
-- Steps: none yet
+- Steps: none yet (needs a drop inside the code editor)
 
 ### F-code-07 Fast first paint before code loads
 - Try: Open a site and type in the page before the code editor has loaded.
@@ -925,7 +925,7 @@ its number unused.
 - Files: `src/lazy-loaders.ts`, `src/lazy-module.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-monaco-deferred.spec.ts`
-- Steps: none yet
+- Steps: none yet (needs typing in the page before the code editor loads)
 
 ## Versions and history
 
@@ -935,7 +935,7 @@ its number unused.
 - Files: `src/draft-store.ts`, `src/guarded-edit/commit.ts`, `src/editor-workspace.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-guarded-history.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-history-01.json`
 
 ### F-history-02 History panel
 - Try: Press History and choose a commit.
@@ -943,7 +943,7 @@ its number unused.
 - Files: `src/version-view.ts`, `src/controllers/history-controller.ts`, `src/components/commit-history.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-history.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-history-02.json`
 
 ### F-history-03 Restore this version
 - Try: In History press Restore this version.
@@ -951,7 +951,7 @@ its number unused.
 - Files: `src/version-view.ts`, `worker/history.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-history.spec.ts`
-- Steps: none yet
+- Steps: none yet (the starter has one commit, so there is no older version)
 
 ### F-history-04 Whole-site history
 - Try: In History choose Whole site and unfold a commit.
@@ -959,7 +959,7 @@ its number unused.
 - Files: `src/components/commit-history.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-history.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-history-04.json`
 
 ### F-history-05 Drafts survive a reload
 - Try: Edit, reload the tab.
@@ -967,7 +967,7 @@ its number unused.
 - Files: `src/drafts.ts`, `src/draft-store.ts`, `src/browser-storage.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-draft-storage.spec.ts`
-- Steps: none yet
+- Steps: none yet (needs a reload)
 
 ### F-history-06 Undo for work on another page
 - Try: Let an agent or a held upload finish on a page not shown, then open that page.
@@ -975,7 +975,7 @@ its number unused.
 - Files: `src/guarded-edit/parked.ts`, `src/background-page.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-invisible-multiplayer.spec.ts`
-- Steps: none yet
+- Steps: none yet (needs an agent or a held upload on another page)
 
 ## Publish and discard
 
@@ -993,7 +993,7 @@ its number unused.
 - Files: `src/controllers/save-publish-controller.ts`, `worker/publish.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-save.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-publish-02.json`
 
 ### F-publish-03 Change status
 - Try: Publish on a site with a deploy workflow.
@@ -1001,7 +1001,7 @@ its number unused.
 - Files: `src/deploy-status.ts`, `src/components/site-actions.ts`, `worker/change-status.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-change-status.spec.ts`
-- Steps: none yet
+- Steps: none yet (the fake GitHub server runs no deploy workflow)
 
 ### F-publish-04 Conflicts with GitHub
 - Try: Change a file on GitHub that has a draft here, then Publish.
@@ -1009,7 +1009,7 @@ its number unused.
 - Files: `src/controllers/save-publish-controller.ts`, `src/file-changes.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-deleted-upstream.spec.ts`
-- Steps: none yet
+- Steps: none yet (needs a change made on GitHub during the try)
 
 ### F-publish-05 Discard changes
 - Try: In the Publish menu choose Discard changes.
@@ -1017,7 +1017,7 @@ its number unused.
 - Files: `src/components/publish-menu.ts`, `src/components/confirm-dialog.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-discard.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-publish-05.json`
 
 ### F-publish-06 Discard one file
 - Try: In the Publish menu discard one file's change, or Move back a moved one.
@@ -1025,7 +1025,7 @@ its number unused.
 - Files: `src/components/publish-menu.ts`, `src/draft-store.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-discard.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-publish-06.json`
 
 ## Agents menu and agent connection
 
@@ -1035,7 +1035,7 @@ its number unused.
 - Files: `src/components/agent-menu.ts`, `src/components/agent-menu.css`, `src/agent-menu-host.ts`, `src/controllers/agent-controller.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-mcp-menu.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-agent-01.json`
 
 ### F-agent-02 Wait for MCP and Disconnect MCP
 - Try: With an agent connected, open the project menu and press Wait for MCP; later Disconnect MCP.
@@ -1043,7 +1043,7 @@ its number unused.
 - Files: `src/components/agent-menu.ts`, `src/agent-watch.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-mcp-menu.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-agent-02.json`
 
 ### F-agent-03 Agent edits as drafts
 - Try: Ask a connected agent to edit a page, add a section and create a page.
@@ -1051,7 +1051,7 @@ its number unused.
 - Files: `src/agent-tools.ts`, `src/agent-tools-edit.ts`, `src/agent-site.ts`, `src/agent-site-host.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-mcp.spec.ts`
-- Steps: none yet
+- Steps: none yet (needs a connected agent)
 
 ### F-agent-04 Ask agent and pins
 - Try: Select an element, press Ask agent and type a request; answer its question on the pin.
@@ -1059,7 +1059,7 @@ its number unused.
 - Files: `src/components/agent-pins.ts`, `src/components/agent-pins.css`, `src/components/agent-pin-geometry.ts`, `src/agent-records.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-mcp.spec.ts`
-- Steps: none yet
+- Steps: none yet (needs a connected agent)
 
 ### F-agent-05 Agent presence
 - Try: Watch while an agent works on a section.
@@ -1067,7 +1067,7 @@ its number unused.
 - Files: `src/agent-presence.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-agent-presence.spec.ts`
-- Steps: none yet
+- Steps: none yet (needs a connected agent)
 
 ### F-agent-06 Agents stay on across tabs and reloads
 - Try: Reload, open a second tab, close the first.
@@ -1075,7 +1075,7 @@ its number unused.
 - Files: `src/agent-owner.ts`, `src/agent-resume.ts`, `src/agent-transport.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-agent-lifecycle.spec.ts`
-- Steps: none yet
+- Steps: none yet (needs a reload and a second tab)
 
 ### F-agent-07 Agent media work
 - Try: Ask an agent to place, describe and trim a picture and add subtitles to a video.
@@ -1083,7 +1083,7 @@ its number unused.
 - Files: `src/agent-tools-media.ts`, `src/agent-media-actions.ts`, `src/agent-media.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-mcp-media.spec.ts`
-- Steps: none yet
+- Steps: none yet (needs a connected agent)
 
 ### F-agent-08 Agent edits held while you type
 - Try: Type in a heading while an agent edits near it.
@@ -1091,7 +1091,7 @@ its number unused.
 - Files: `src/agent-site.ts`, `src/working-part.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-agent-waits.spec.ts`
-- Steps: none yet
+- Steps: none yet (needs a connected agent)
 
 ### F-agent-09 Download unsaved changes when storage fails
 - Try: Fill the browser's storage while an agent edits.
@@ -1099,7 +1099,7 @@ its number unused.
 - Files: `src/agent-recovery.ts`, `src/agent-recovery-export.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-agent-recovery.spec.ts`
-- Steps: none yet
+- Steps: none yet (needs a connected agent and full browser storage)
 
 ## Command palette
 
@@ -1109,7 +1109,7 @@ its number unused.
 - Files: `src/components/command-palette.ts`, `src/controllers/command-palette-controller.ts`, `src/page-builder/palette-search.ts`
 - Phone: no
 - Spec: `tests/native-save/native-palette.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-palette-01.json`
 
 ### F-palette-02 Actions on the selection
 - Try: Select a section, open the palette and run Duplicate or add a component.
@@ -1117,7 +1117,7 @@ its number unused.
 - Files: `src/page-builder/palette.ts`, `src/page-builder/palette-catalog.ts`, `src/page-builder/commands.ts`
 - Phone: no
 - Spec: `tests/native-save/native-palette-elements.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-palette-02.json`
 
 ### F-palette-03 New page from the palette
 - Try: Run New page from the palette.
@@ -1125,7 +1125,7 @@ its number unused.
 - Files: `src/page-builder/palette-catalog.ts`
 - Phone: no
 - Spec: `tests/native-save/native-palette.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-palette-03.json`
 
 ### F-palette-04 Keyboard shortcuts sheet
 - Try: Press ? outside a text field.
@@ -1133,7 +1133,7 @@ its number unused.
 - Files: `src/components/shortcut-sheet.ts`
 - Phone: no
 - Spec: `tests/native-save/native-palette.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-palette-04.json`
 
 ## Phone layout
 
@@ -1143,7 +1143,7 @@ its number unused.
 - Files: `src/components/phone-sheet.ts`, `src/components/phone-sheet.css`, `src/components/phone-sheet-rules.ts`, `src/components/phone-sheet-handle.css`
 - Phone: yes
 - Spec: `tests/native-save/native-phone-sheet.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-phone-01.json`
 
 ### F-phone-02 Selection stays clear of the bar
 - Try: On a phone select a picture low on the page.
@@ -1151,7 +1151,7 @@ its number unused.
 - Files: `src/components/edit-bar-placement.ts`, `src/components/phone-sheet.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-phone-sheet.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-phone-02.json`
 
 ### F-phone-03 Phone top bar and explorer
 - Try: On a phone open the explorer from the top bar.
@@ -1159,7 +1159,7 @@ its number unused.
 - Files: `src/workspace-mount.ts`, `src/style.css`
 - Phone: yes
 - Spec: `tests/native-save/native-explorer-size.spec.ts`
-- Steps: none yet
+- Steps: `scripts/agents/shots/features/F-phone-03.json`
 
 ### F-phone-04 Touch without sticky hover
 - Try: Tap rows, tiles and menu items on a touch screen.
@@ -1167,7 +1167,7 @@ its number unused.
 - Files: `src/theme.css`, `src/components/row-action-overlay.css`
 - Phone: yes
 - Spec: `tests/native-save/native-media-touch-contrast.spec.ts`
-- Steps: none yet
+- Steps: none yet (needs a touch screen; tries use a mouse)
 
 ### F-phone-05 Phone on its side
 - Try: Turn a phone to landscape.
@@ -1175,4 +1175,4 @@ its number unused.
 - Files: `src/components/phone-sheet-rules.ts`, `src/components/code-resize.ts`
 - Phone: yes
 - Spec: `tests/native-save/native-phone-sheet.spec.ts`
-- Steps: none yet
+- Steps: none yet (needs a phone held on its side; tries use 900 px tall windows)

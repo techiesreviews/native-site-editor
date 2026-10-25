@@ -1,0 +1,1 @@
+{"screen":"editor","name":"F-palette-03","steps":["press Control+k","type \"New page\" in Search commands","press Enter","type \"Studio notes\" in New page title","press Enter","expect visible \"Studio notes · Larkspur Studio\""]}

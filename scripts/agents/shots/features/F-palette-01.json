@@ -1,0 +1,1 @@
+{"screen":"editor","name":"F-palette-01","steps":["press Control+k","type \"About\" in Search commands","press Enter","expect visible \"About · Larkspur Studio\"","press Control+p"]}

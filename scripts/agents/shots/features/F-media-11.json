@@ -1,0 +1,1 @@
+{"screen":"file-details","name":"F-media-11","steps":["click \"More for this file\"","click \"Remove…\"","expect visible \"Home\"","click \"Remove file\"","record removed 600"]}

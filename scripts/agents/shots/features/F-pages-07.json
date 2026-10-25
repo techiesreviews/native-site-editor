@@ -1,0 +1,1 @@
+{"screen":"pages","name":"F-pages-07","steps":["press Tab","press Tab","press Tab","press ArrowDown","press Shift+F10","click \"Delete\"","expect visible \"Cancel\"","click \"Delete\"","record delete 800"]}

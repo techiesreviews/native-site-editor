@@ -1,0 +1,1 @@
+{"screen":"pages","name":"F-pages-03","steps":["click \"+ New page\"","type \"Studio notes\" in New page title","press Enter","expect visible \"Start with a section\"","expect visible \"Studio notes · Larkspur Studio\""]}

@@ -1,0 +1,1 @@
+{"screen":"add-panel","name":"F-canvas-14","steps":["press Escape","press Tab","press ArrowDown","press ArrowDown","press ArrowDown","press ArrowDown","press ArrowDown","press ArrowRight","press ArrowDown","press Enter","type \"Our recent work\" in Heading: Text","record live 1000","press Enter","expect visible \"Our recent work\""]}

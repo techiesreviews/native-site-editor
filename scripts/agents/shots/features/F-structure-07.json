@@ -1,0 +1,1 @@
+{"screen":"add-panel","name":"F-structure-07","steps":["press Escape","press Tab","press ArrowDown","press Tab","press Enter","type \"data-note\" in New attribute name","type \"kit\" in New attribute value","click \"Add attribute\"","expect visible \"data-note\""]}

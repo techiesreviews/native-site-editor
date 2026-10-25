@@ -1,0 +1,1 @@
+{"screen":"editor","name":"F-canvas-03","steps":["click \"Paragraph\"","expect visible \"Bold\"","click \"Heading\"","click \"Div\"","click \"Button\"","record added 600"]}
