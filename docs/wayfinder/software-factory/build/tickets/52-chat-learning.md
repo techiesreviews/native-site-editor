@@ -1,8 +1,8 @@
 ---
 title: Chat learning every other Monday, from the central corrections list
 type: task (AFK)
-status: open
-assignee: sf-52 (this session)
+status: closed
+assignee: sf-52
 builder: claude
 blocked_by: [51-weekly-sweep, 40-ux-rulebook]
 ---
@@ -36,3 +36,11 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 
 - `scripts/agents/kit doctor`; `ASE_REVIEW_MODEL=claude-opus-5-5 scripts/agents/kit bg slice-sf52 -- scripts/agents/kit slice --ticket docs/wayfinder/software-factory/build/tickets/52-chat-learning.md --builder claude-opus-5-5`; `scripts/agents/kit wait job slice-sf52 --timeout 2h`.
 - Report: unit `RESULT:` lines, the real `kit learn` RESULT, review decisions, PR and merge SHA.
+
+## Done (2026-10-25)
+
+- `scripts/agents/kit learn [--since 14d] [--project <slug>]` reads `corrections/<slug>.md` from the chat memory (`KIT_CHAT_MEMORY`, else `~/Projects/chat/memory`; slug from the project map by this checkout's workspace or a `<workspace>-*` sibling, default `native-site-editor`) and `docs/wayfinder/*/build/feedback.md`, and writes nothing outside the main root `.scratch/learn/<date>/bundle.md`. It groups repeats by a `repeats:` date (a line of that day in the same file, same kind first; another kind needs two shared key words; a date in another project or not in the list counts as one earlier time) and by same kind with at least half the key words shared. Each group shows count, kinds, dates, sources and `covered?` (the ux-rulebook or guardrails block sharing the most key words, at least 3). Malformed lines and unknown kinds are printed and listed, not fatal; nothing in the window gives `RESULT: ok learn nothing recorded yet`.
+- `docs/agents/routines/learning.md` (even ISO weeks after the sweep: `kit learn`, `retro`, one proposal per repeated correction, `docs/work/learning/YYYY-MM-DD.md` through `kit pr`, added to the sweep's single message, nothing added before Lex picks) and `docs/work/learning/README.md`; kitchen Weekly routines drops the planned mark; agent-scripts lists `kit learn`.
+- Tests: `tests/kit-learn.test.ts` with fixtures in `tests/fixtures/kit-learn/` covers parsing and malformed lines, both grouping rules, `covered?` against a fixture rulebook and guardrails file, slug lookup, arguments, missing and empty files, and that `KIT_CHAT_MEMORY` is read but never written (and `HOME` stays empty). `RESULT: ok unit 8/8 (1 files)` from `kit unit --affected`; `npm run lint` and `tsc --noEmit` clean.
+- Real run: `RESULT: ok learn 2 repeated of 9 groups, bundle /home/ubulex/Projects/native-site-editor/.scratch/learn/2026-10-25/bundle.md` (the MCP-menu explainers, with its earlier time outside the list, and instant saving in the image edit bar).
+- Feature list: no change (agent tooling and docs only).
