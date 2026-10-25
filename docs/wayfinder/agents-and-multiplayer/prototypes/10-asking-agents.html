@@ -1,0 +1,1587 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE (throwaway) · 10 Asking agents while Lex works</title>
+<!--
+  THROWAWAY PROTOTYPE, planning only. Not product code.
+  Question (docs/wayfinder/agents-and-multiplayer, ticket 10): stage 1 as Lex would use it. He asks
+  agents with pins on elements, agents start by themselves, show who is on each pin, ask him first
+  with an orange pin, and a pin is a conversation he can add to (decisions 05 and 06, 2026-10-24).
+  Starts from the approved 05-agents-at-once.html: same tokens, layout, outlines, name chips, row
+  and Pages dots, MCP menu with Stop. Pin, note and card looks from agent-pins.css and edit-bar.css.
+  Agent colours, in order of arrival: --agent-presence (MCP green), --color-component (violet),
+  --file-video (pink), --file-data (teal). Orange is a question; blue is Lex's own (selection,
+  his note, a pin no agent has taken yet). Grey is done.
+  Prototype call: an element with a pin being worked on gets the agent's outline without a chip;
+  the pin carries the name chip, so no name shows twice.
+-->
+<style>
+/* ---------- Editor tokens (subset of src/theme.css), as in prototype 05 ---------- */
+:root {
+  --color-primary: oklch(54.6% 0.215 262.9);
+  --color-primary-lightest: oklch(from var(--color-primary) 98.9% calc(c * 0.01395349) calc(h + 12.9));
+  --color-primary-lighter: oklch(from var(--color-primary) 95.4% calc(c * 0.08837209) calc(h + 12.6));
+  --color-primary-light: oklch(from var(--color-primary) 88.3% calc(c * 0.22325581) calc(h + 11.8));
+  --color-primary-dark: oklch(from var(--color-primary) 40.4% calc(c * 0.73488372) h);
+  --color-primary-darker: oklch(from var(--color-primary) 27.3% calc(c * 0.49767442) h);
+  --color-primary-darkest: oklch(from var(--color-primary) 15.3% calc(c * 0.27906977) h);
+
+  --semantic-action: oklch(from var(--color-primary) min(l, 0.5) min(c, 0.18) h);
+  --semantic-on-action: var(--color-primary-lightest);
+  --semantic-surface: var(--color-primary-lightest);
+  --semantic-background: oklch(from var(--color-primary-lighter) 97% c h);
+  --semantic-surface-subtle: var(--color-primary-lighter);
+  --semantic-surface-raised: var(--color-primary-light);
+  --semantic-surface-input: var(--color-primary-lightest);
+  --semantic-text: var(--color-primary-darkest);
+  --semantic-text-muted: oklch(from var(--color-primary-dark) l min(c, 0.045) h);
+  --semantic-border: var(--color-primary-light);
+  --semantic-focus: var(--semantic-action);
+  --semantic-shadow: oklch(from var(--color-primary-darkest) l c h / 0.18);
+
+  --color-warning: oklch(75% 0.14 75);
+  --color-success: oklch(60% 0.13 145);
+  --color-component: oklch(55% 0.2 300);
+  --file-page: oklch(66% 0.17 45);
+  --file-video: oklch(62% 0.17 340);
+  --file-data: oklch(64% 0.11 190);
+
+  --agent-presence: var(--color-success);
+  --on-accent: oklch(100% 0 none);
+
+  /* Request pins and cards (theme.css). Pins are light in both themes. */
+  --agent-question-strong: oklch(66% 0.18 48);
+  --agent-question-pin: oklch(94.5% 0.05 62);
+  --agent-question-ink: oklch(46% 0.14 45);
+  --agent-done-pin: oklch(from var(--color-primary) 90.5% 0.006 h);
+  --agent-done-line: oklch(from var(--color-primary) 70% 0.012 h);
+  --agent-done-ink: oklch(from var(--color-primary) 36% 0.015 h);
+  --agent-question-surface: oklch(96% 0.04 62);
+  --agent-question-text: oklch(42% 0.13 45);
+  --agent-done-surface: oklch(from var(--color-primary) 92.5% 0.005 h);
+  --agent-done-bubble: oklch(from var(--color-primary) 84% 0.008 h);
+  --agent-done-bubble-ink: oklch(from var(--color-primary) 27% 0.015 h);
+
+  /* Prototype: the fixed set of agent colours, handed out in order of arrival. */
+  --agent-1: var(--agent-presence);
+  --agent-2: var(--color-component);
+  --agent-3: var(--file-video);
+  --agent-4: var(--file-data);
+
+  --surface: var(--semantic-surface);
+  --background: var(--semantic-background);
+  --surface-subtle: var(--semantic-surface-subtle);
+  --surface-input: var(--semantic-surface-input);
+  --text: var(--semantic-text);
+  --line: var(--semantic-border);
+  --muted: var(--semantic-text-muted);
+  --primary: var(--semantic-action);
+  --on-primary: var(--semantic-on-action);
+  --focus: var(--semantic-focus);
+  --preview-focus: var(--semantic-action);
+  --pressed: var(--primary);
+  --on-pressed: var(--on-primary);
+  --shadow: 0 12px 32px var(--semantic-shadow);
+  --shadow-small: 0 2px 6px var(--semantic-shadow);
+  --hover: color-mix(in oklch, var(--text) 9%, transparent);
+  --current: color-mix(in oklch, var(--primary) 16%, transparent);
+  --control-line: color-mix(in oklch, var(--text) 16%, transparent);
+  --focus-ring: 2px solid var(--focus);
+  --panel-surface: var(--semantic-surface-raised);
+
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --type-badge: 11px;
+  --type-small: 12px;
+  --type-base: 13px;
+  --type-title: 15px;
+  --radius-small: 4px;
+  --radius: 6px;
+  --radius-panel: 8px;
+  --size-compact: 28px;
+  --size-control: 32px;
+  --panel-padding: 6px;
+  --panel-padding-roomy: 12px;
+
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --semantic-surface: oklch(from var(--color-primary-darkest) 22% min(c, 0.02) h);
+  --semantic-background: var(--color-primary-darkest);
+  --semantic-surface-subtle: oklch(from var(--color-primary-darkest) 18% min(c, 0.02) h);
+  --semantic-surface-raised: oklch(from var(--color-primary-darker) 32% min(c, 0.035) h);
+  --semantic-surface-input: oklch(from var(--color-primary-darkest) 20% min(c, 0.02) h);
+  --semantic-text: var(--color-primary-lighter);
+  --semantic-text-muted: oklch(from var(--color-primary-light) 80% min(c, 0.035) h);
+  --semantic-border: oklch(from var(--color-primary-darker) 36% min(c, 0.04) h);
+  --semantic-focus: var(--color-primary-light);
+  --semantic-shadow: oklch(from var(--color-primary-darkest) 5% c h / 0.35);
+  --agent-question-surface: oklch(31% 0.06 50);
+  --agent-question-text: oklch(88% 0.08 62);
+  --agent-done-surface: oklch(from var(--color-primary) 29% 0.006 h);
+  --agent-done-bubble: oklch(from var(--color-primary) 40% 0.01 h);
+  --agent-done-bubble-ink: oklch(from var(--color-primary) 92% 0.008 h);
+  --pressed: var(--color-primary-light);
+  --on-pressed: var(--color-primary-darkest);
+}
+
+/* ---------- Page: the mock editor at a fixed height, the prototype strip under it ---------- */
+*, *::before, *::after { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: var(--type-base);
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--background);
+}
+button, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+button:focus-visible, select:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+[hidden] { display: none !important; }
+
+.editor {
+  container: editor / inline-size;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  block-size: 780px;
+  overflow: clip;
+}
+
+/* ---------- Top bar ---------- */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-block-size: 56px;
+  padding-block: 8px;
+  padding-inline: 16px;
+  background: var(--surface);
+  border-block-end: 1px solid var(--line);
+}
+.icon-button {
+  display: none;
+  place-items: center;
+  inline-size: var(--size-control);
+  block-size: var(--size-control);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--muted);
+}
+.project {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-inline-size: 0;
+  padding-block: 7px;
+  padding-inline: 8px 10px;
+  border: 0;
+  border-radius: var(--radius-panel);
+  background: transparent;
+  font-size: var(--type-title);
+  font-weight: 600;
+}
+.project__initial {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  inline-size: 28px;
+  block-size: 28px;
+  border-radius: var(--radius);
+  background: oklch(from var(--primary) 0.58 0.12 150);
+  color: var(--on-accent);
+  font-size: 13px;
+}
+.project__name { overflow: clip; text-overflow: ellipsis; white-space: nowrap; }
+.project svg, .mcp svg { flex: none; color: var(--muted); }
+.mcp {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-inline-start: auto;
+  min-block-size: var(--size-control);
+  padding-block: 4px;
+  padding-inline: 10px 8px;
+  border: 1px solid var(--control-line);
+  border-radius: var(--radius);
+  background: transparent;
+  font-weight: 600;
+}
+.mcp::before, .agent-row__dot, .menu-action::before {
+  content: "";
+  flex: none;
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+  opacity: 0.5;
+}
+.mcp.is-connected::before, .menu-action.is-connected::before { background: var(--color-success); opacity: 1; }
+.mcp.is-waiting::before, .menu-action.is-waiting::before { background: var(--color-warning); opacity: 1; }
+/* An agent's question waiting: the MCP dot turns orange (agent-menu rule). */
+.mcp.is-asking::before { background: var(--agent-question-strong); opacity: 1; }
+@media (prefers-reduced-motion: no-preference) {
+  .mcp.is-waiting::before, .menu-action.is-waiting::before { animation: pulse 1.4s ease-in-out infinite; }
+}
+@keyframes pulse { 50% { opacity: 0.35; } }
+@media (hover: hover) and (pointer: fine) {
+  .project:hover, .mcp:hover, .icon-button:hover { background: var(--hover); }
+}
+.project:active, .mcp:active, .icon-button:active { background: var(--hover); }
+.mcp[aria-expanded="true"] { background: var(--hover); }
+
+/* ---------- MCP menu (agent-menu.css look, in a flyout panel) ---------- */
+.menu {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  inline-size: min(280px, calc(100vw - 24px));
+  padding: var(--panel-padding);
+  border: 0;
+  border-radius: var(--radius-panel);
+  background: var(--panel-surface);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+.menu-choice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-block-size: var(--size-control);
+  padding-inline: 8px 2px;
+}
+.menu-choice__label { flex: 1; min-inline-size: 0; color: var(--muted); font-size: var(--type-small); font-weight: 600; }
+.select {
+  min-inline-size: 0;
+  block-size: var(--size-compact);
+  margin: 0;
+  padding-block: 0;
+  padding-inline: 6px;
+  border: 1px solid var(--control-line);
+  border-radius: var(--radius);
+  background: var(--panel-surface);
+  font-size: var(--type-base);
+  font-weight: 600;
+}
+@supports (appearance: base-select) {
+  .select, .select::picker(select) { appearance: base-select; }
+  .select { display: inline-flex; align-items: center; gap: 4px; }
+  .select::picker-icon { color: var(--muted); }
+  .select::picker(select) {
+    margin-block: 4px;
+    padding: var(--panel-padding);
+    border: 0;
+    border-radius: var(--radius-panel);
+    background: var(--panel-surface);
+    color: var(--text);
+    box-shadow: var(--shadow);
+  }
+  .select option { min-block-size: 30px; padding-inline: 8px; border-radius: var(--radius); }
+  .select option:checked { background: var(--current); font-weight: 600; }
+  .select option::checkmark { display: none; }
+}
+@media (hover: hover) and (pointer: fine) {
+  .select:hover { background: color-mix(in oklch, var(--text) 9%, var(--panel-surface)); }
+  @supports (appearance: base-select) { .select option:hover { background: var(--hover); } }
+}
+.menu__agents { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.menu__agents:empty { display: none; }
+.menu__divider { block-size: 1px; margin-block: 6px; margin-inline: 4px; background: var(--control-line); }
+.agent-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-block-size: var(--size-control);
+  padding-block: 2px;
+  padding-inline: 8px 4px;
+  border-radius: var(--radius);
+}
+.agent-row__dot { background: var(--agent); opacity: 1; }
+.agent-row.is-asking .agent-row__dot { background: var(--agent-question-strong); }
+.agent-row__name { flex: 1; min-inline-size: 0; overflow: clip; text-overflow: ellipsis; white-space: nowrap; }
+.agent-row__stop {
+  flex: none;
+  min-block-size: 26px;
+  padding-block: 0;
+  padding-inline: 10px;
+  border: 1px solid var(--control-line);
+  border-radius: var(--radius);
+  background: transparent;
+  font-size: var(--type-small);
+  font-weight: 600;
+}
+.menu-action {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  inline-size: 100%;
+  min-block-size: var(--size-control);
+  padding-block: 4px;
+  padding-inline: 8px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  text-align: start;
+}
+@media (hover: hover) and (pointer: fine) {
+  .menu-action:hover, .agent-row__stop:hover { background: var(--hover); }
+}
+.menu-action:active, .agent-row__stop:active { background: var(--hover); }
+.menu-action:focus-visible, .agent-row__stop:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+
+/* ---------- Workspace: sidebar + canvas ---------- */
+.workspace {
+  position: relative;
+  display: grid;
+  grid-template-columns: clamp(190px, 28cqi, 260px) minmax(0, 1fr);
+  min-block-size: 0;
+}
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-inline-size: 0;
+  padding-block: 4px 16px;
+  padding-inline: 10px;
+  overflow: auto;
+  background: var(--surface-subtle);
+}
+.eyebrow {
+  display: flex;
+  align-items: center;
+  min-block-size: 36px;
+  margin: 0;
+  padding-inline: 10px;
+  font-size: var(--type-small);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.eyebrow:not(:first-child) { margin-block-start: 10px; border-block-start: 1px solid var(--line); padding-block-start: 10px; min-block-size: 46px; }
+.tree { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-block-size: var(--size-control);
+  padding-inline: 8px;
+  border-radius: var(--radius);
+  line-height: 1.3;
+  user-select: none;
+  cursor: default;
+}
+.row[aria-selected="true"], .row[aria-current="page"] { background: var(--current); font-weight: 600; }
+@media (hover: hover) and (pointer: fine) {
+  .row:not([aria-selected="true"], [aria-current="page"]):hover { background: var(--hover); }
+}
+.row:active { background: var(--current); }
+.row__caret { flex: none; inline-size: 14px; color: var(--muted); }
+.row__kind { flex: none; font-size: var(--type-small); font-weight: 600; color: var(--muted); }
+.row[aria-selected="true"] .row__kind { color: var(--text); }
+.row__text { min-inline-size: 0; overflow: clip; text-overflow: ellipsis; white-space: nowrap; }
+.row__page-icon { flex: none; color: var(--file-page); }
+/* The agents' dots after the row's name (one per agent). */
+.row__dots { display: inline-flex; gap: 3px; flex: none; }
+.row__dots > i { inline-size: 8px; block-size: 8px; border-radius: 50%; background: var(--agent); }
+@media (prefers-reduced-motion: no-preference) {
+  .row__dots > i { animation: dot-in 220ms var(--ease-out); }
+}
+@keyframes dot-in { from { transform: scale(0.3); opacity: 0; } }
+
+.canvas {
+  min-inline-size: 0;
+  min-block-size: 0;
+  overflow: auto;
+  padding: 12px;
+  background: var(--background);
+}
+
+/* ---------- Over the preview: selection, outlines, pins, edit bar, note, card ---------- */
+.overlay { position: absolute; inset: 0; z-index: 5; pointer-events: none; font-family: Inter, ui-sans-serif, -apple-system, "Segoe UI", sans-serif; font-size: var(--type-base); line-height: 1.5; color: var(--text); }
+.overlay > * { position: absolute; }
+/* Lex's selection: the editor's own box (2px focus colour, 10% tint). */
+.sel-box {
+  z-index: 2;
+  border-radius: 2px;
+  outline: 2px solid var(--preview-focus);
+  background: color-mix(in oklch, var(--preview-focus) 10%, transparent);
+}
+/* An agent on an element (drawPresence): an outline in its colour, a name chip when no pin carries it. */
+.presence { z-index: 1; border: 2px solid var(--agent); }
+.presence__chip {
+  position: absolute;
+  inset-block-start: -18px;
+  inset-inline-start: -2px;
+  max-inline-size: 60cqi;
+  padding-inline: 6px;
+  border-radius: 3px 3px 3px 0;
+  overflow: clip;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: var(--agent);
+  color: var(--on-accent);
+  font: 600 11px/16px system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+.presence.is-top > .presence__chip { inset-block-start: -2px; border-radius: 0 0 3px 0; }
+@media (prefers-reduced-motion: no-preference) {
+  .presence { transition: opacity 260ms var(--ease-out); }
+  @starting-style { .presence { opacity: 0; } }
+  .presence.is-leaving { opacity: 0; }
+  .is-fresh { animation: fresh 520ms var(--ease-out); }
+}
+@keyframes fresh { from { opacity: 0; filter: blur(3px); } }
+
+/* Pins on one element stand in a row above its top-left corner, the next one (or Ask agent's note) after them. */
+.pin-group { z-index: 3; display: flex; align-items: flex-end; gap: 4px; }
+.pin-group.is-below { align-items: flex-start; }
+.pin {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-inline-size: 22px;
+  block-size: 22px;
+  margin: 0;
+  padding-block: 0;
+  padding-inline: 6px;
+  border: 2px solid var(--primary);
+  border-radius: 8px 8px 8px 2px;
+  background: var(--color-primary-lighter);
+  color: var(--primary);
+  font-size: var(--type-small);
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow: var(--shadow-small);
+  transform-origin: left bottom;
+}
+.is-below > .pin { border-radius: 2px 8px 8px 8px; transform-origin: left top; }
+.pin__who { font: 600 11px/16px system-ui, -apple-system, "Segoe UI", sans-serif; }
+.pin__who:empty { display: none; }
+/* An agent on it: the pin in its colour, with its name. */
+.pin[data-state="working"] { border-color: var(--agent); background: var(--agent); color: var(--on-accent); }
+/* The agent asks first: orange. */
+.pin[data-state="question"] { border-color: var(--agent-question-strong); background: var(--agent-question-strong); color: var(--on-accent); }
+/* Done: grey, so it recedes. */
+.pin[data-state="done"] { border-color: var(--agent-done-line); background: var(--agent-done-pin); color: var(--agent-done-ink); }
+.pin[aria-expanded="true"] { outline: 2px solid color-mix(in oklch, currentColor 35%, transparent); outline-offset: 1px; }
+.pin[data-state="working"][aria-expanded="true"] { outline-color: color-mix(in oklch, var(--agent) 40%, transparent); }
+.pin[data-state="question"][aria-expanded="true"] { outline-color: color-mix(in oklch, var(--agent-question-strong) 40%, transparent); }
+.pin:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+@media (hover: hover) and (pointer: fine) {
+  .pin:hover { outline: 2px solid color-mix(in oklch, currentColor 35%, transparent); outline-offset: 1px; }
+  .pin[data-state="working"]:hover { outline-color: color-mix(in oklch, var(--agent) 40%, transparent); }
+  .pin[data-state="question"]:hover { outline-color: color-mix(in oklch, var(--agent-question-strong) 40%, transparent); }
+}
+.pin:active { scale: 0.96; }
+@media (prefers-reduced-motion: no-preference) {
+  .pin { transition: background-color 200ms var(--ease-out), border-color 200ms var(--ease-out), color 200ms var(--ease-out); }
+  .pin.is-popping { animation: pin-pop 0.6s cubic-bezier(0.34, 1.56, 0.64, 1); }
+}
+@keyframes pin-pop { 0% { transform: scale(0.85); } 60% { transform: scale(1.08); } 100% { transform: scale(1); } }
+
+/* Ask agent's note (edit-bar.css): in the action colour, where the pin will stand. */
+.note {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  border-radius: 8px 8px 8px 2px;
+  padding-block: 3.5px 4.5px;
+  padding-inline: 8px;
+  background: var(--primary);
+  color: var(--on-primary);
+  font: var(--type-small)/14px var(--font-mono);
+  box-shadow: var(--shadow-small);
+  transform-origin: left bottom;
+}
+.is-below > .note { border-radius: 2px 8px 8px 8px; }
+.note:focus-within { box-shadow: 0 0 0 3px color-mix(in oklch, var(--primary) 28%, transparent), var(--shadow-small); }
+.note__number { flex: none; white-space: pre; font-weight: 700; }
+.note__number::after { content: " "; }
+.note__input {
+  display: block;
+  inline-size: 220px;
+  min-inline-size: 0;
+  max-inline-size: min(290px, 70cqi);
+  max-block-size: 84px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  caret-color: currentColor;
+  font: inherit;
+  resize: none;
+  overflow-y: auto;
+  outline: 2px solid transparent;
+}
+@supports (field-sizing: content) {
+  .note__input { field-sizing: content; inline-size: auto; min-inline-size: 150px; }
+}
+.note__input::placeholder { color: inherit; opacity: 0.65; }
+@media (prefers-reduced-motion: no-preference) {
+  .note { animation: note-in 140ms ease-out; }
+}
+@keyframes note-in { from { opacity: 0; transform: translateY(2px); } }
+
+/* The edit bar (edit-bar.css): the selection's label on top, its controls under it. */
+.edit-bar { z-index: 4; display: flex; flex-direction: column; align-items: flex-start; inline-size: max-content; max-inline-size: 100%; }
+.edit-bar > * { pointer-events: auto; }
+.edit-bar__label {
+  display: inline-flex;
+  align-items: center;
+  block-size: 24px;
+  padding-inline: 8px;
+  border-radius: var(--radius) var(--radius) var(--radius) 0;
+  background: var(--panel-surface);
+  box-shadow: var(--shadow-small);
+  font-size: var(--type-small);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.edit-bar__controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 0 var(--radius-panel) var(--radius-panel) var(--radius-panel);
+  background: var(--panel-surface);
+  box-shadow: var(--shadow);
+}
+.edit-bar__button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-block-size: var(--size-compact);
+  padding-block: 0;
+  padding-inline: 8px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+@media (hover: hover) and (pointer: fine) { .edit-bar__button:hover { background: var(--hover); } }
+.edit-bar__button:active { background: var(--hover); }
+.edit-bar__button[aria-expanded="true"] { background: var(--pressed); color: var(--on-pressed); }
+
+/* A pin's card (agent-pins.css): a short conversation, Lex's in the action colour, the agent's on the surface. */
+.card {
+  pointer-events: auto;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  inline-size: 300px;
+  max-inline-size: calc(100% - 16px);
+  max-block-size: 380px;
+  overflow: auto;
+  padding: var(--panel-padding-roomy);
+  border-radius: var(--radius-panel);
+  background: var(--panel-surface);
+  box-shadow: var(--shadow);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .card { transition: opacity 120ms ease-out, background-color 200ms var(--ease-out); }
+  @starting-style { .card { opacity: 0; } }
+}
+.card[data-state="done"] { background: var(--agent-done-surface); }
+.card__head { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: var(--type-small); }
+.card__num {
+  display: inline-grid;
+  place-items: center;
+  min-inline-size: 18px;
+  block-size: 18px;
+  padding-inline: 5px;
+  border-radius: 6px 6px 6px 2px;
+  background: var(--agent, var(--primary));
+  color: var(--on-accent);
+  font-weight: 700;
+  font-size: var(--type-badge);
+}
+.card[data-state="waiting"] .card__num { background: var(--primary); color: var(--on-primary); }
+.card[data-state="question"] .card__num { background: var(--agent-question-strong); }
+.card[data-state="done"] .card__num { background: var(--agent-done-line); }
+.card__where { min-inline-size: 0; overflow: clip; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); }
+.card__thread { display: flex; flex-direction: column; gap: 6px; }
+.msg { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+.msg[data-from="agent"] { align-items: flex-end; }
+.msg__from { padding-inline: 2px; color: var(--muted); font-size: var(--type-small); font-weight: 600; }
+.msg__bubble {
+  max-inline-size: 88%;
+  margin: 0;
+  padding-block: 4px 5px;
+  padding-inline: 8px;
+  border: 1px solid transparent;
+  border-radius: 8px 8px 8px 2px;
+  background: var(--primary);
+  color: var(--on-primary);
+  font: var(--type-small)/15px var(--font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.msg[data-from="agent"] > .msg__bubble { border-color: var(--line); border-radius: 8px 8px 2px 8px; background: var(--surface); color: var(--text); }
+.msg.is-question > .msg__bubble { border-color: var(--agent-question-strong); background: var(--agent-question-surface); color: var(--agent-question-text); }
+.msg.is-question > .msg__from { color: var(--agent-question-text); }
+.card[data-state="done"] .msg[data-from="lex"] > .msg__bubble { background: var(--agent-done-bubble); color: var(--agent-done-bubble-ink); }
+.card[data-state="done"] .msg[data-from="agent"] > .msg__bubble { border-color: var(--agent-done-bubble); background: transparent; }
+.card__reply { display: flex; align-items: flex-end; gap: 6px; }
+.card__input {
+  display: block;
+  flex: 1;
+  min-inline-size: 0;
+  max-block-size: 84px;
+  margin: 0;
+  padding-block: 4px 5px;
+  padding-inline: 8px;
+  border: 1.5px solid var(--primary);
+  border-radius: 8px 8px 8px 2px;
+  background: var(--surface-input);
+  font: var(--type-small)/15px var(--font-mono);
+  resize: none;
+  overflow-y: auto;
+  outline: 2px solid transparent;
+}
+:root[data-theme="dark"] .card__input { border-color: var(--focus); }
+@supports (field-sizing: content) { .card__input { field-sizing: content; min-block-size: 26px; } }
+.card__input::placeholder { color: var(--muted); }
+.card__input:focus-visible { box-shadow: 0 0 0 3px color-mix(in oklch, var(--primary) 28%, transparent); }
+.card__send {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  inline-size: 28px;
+  block-size: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--primary);
+  color: var(--on-primary);
+}
+@media (hover: hover) and (pointer: fine) { .card__send:hover { background: color-mix(in oklch, var(--primary) 85%, var(--text)); } }
+.card__send:active { scale: 0.94; }
+
+/* ---------- The site on show (its own look, always light, like the real preview) ---------- */
+.site {
+  --s-ink: oklch(22% 0.01 70);
+  --s-soft: oklch(45% 0.015 70);
+  --s-paper: oklch(98.5% 0.008 85);
+  --s-sand: oklch(93% 0.025 80);
+  --s-clay: oklch(70% 0.07 50);
+  --s-moss: oklch(62% 0.05 130);
+  position: relative;
+  container-type: inline-size;
+  max-inline-size: 1040px;
+  margin-inline: auto;
+  background: var(--s-paper);
+  color: var(--s-ink);
+  font: 16px/1.6 ui-sans-serif, -apple-system, "Segoe UI", sans-serif;
+  border-radius: var(--radius-small);
+  box-shadow: var(--shadow-small);
+  color-scheme: light;
+}
+.site [data-el] { cursor: default; }
+.site [data-el]:focus-visible { outline: 2px dashed var(--preview-focus); outline-offset: 2px; }
+.site h1, .site h2, .site h3 { font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif; font-weight: 600; line-height: 1.15; margin: 0; text-wrap: balance; }
+.site p { margin: 0; text-wrap: pretty; }
+.s-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding-block: 18px;
+  padding-inline: clamp(18px, 5cqi + 8px, 48px);
+}
+.s-logo { font-family: "Iowan Old Style", Georgia, serif; font-size: 20px; font-weight: 600; }
+.s-logo span { color: var(--s-clay); }
+.s-nav { display: flex; gap: clamp(12px, 3cqi, 28px); font-size: 14px; color: var(--s-soft); }
+.s-hero {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  align-items: center;
+  gap: clamp(20px, 4cqi, 48px);
+  padding-block: clamp(30px, 4cqi, 44px);
+  padding-inline: clamp(18px, 5cqi + 8px, 48px);
+}
+.s-hero h1 { font-size: clamp(30px, 4.2cqi + 12px, 52px); }
+.s-hero p { margin-block-start: 16px; color: var(--s-soft); font-size: 17px; max-inline-size: 46ch; }
+.s-button { display: inline-block; margin-block-start: 24px; padding-block: 10px; padding-inline: 18px; border-radius: 999px; background: var(--s-ink); color: var(--s-paper); font-size: 14px; font-weight: 600; text-decoration: none; }
+.s-art {
+  aspect-ratio: 3 / 2;
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at 70% 30%, oklch(88% 0.06 85) 0 18%, transparent 19%),
+    radial-gradient(ellipse at 30% 100%, var(--s-moss) 0 38%, transparent 39%),
+    radial-gradient(ellipse at 85% 110%, oklch(55% 0.05 140) 0 42%, transparent 43%),
+    linear-gradient(oklch(86% 0.04 60), var(--s-clay));
+}
+/* The warm photo and the cool one the Image finder asks about. */
+.s-art.is-warm {
+  background:
+    radial-gradient(circle at 30% 62%, oklch(90% 0.12 80) 0 13%, transparent 14%),
+    radial-gradient(ellipse at 70% 100%, oklch(48% 0.09 40) 0 42%, transparent 43%),
+    radial-gradient(ellipse at 15% 108%, oklch(40% 0.07 35) 0 40%, transparent 41%),
+    linear-gradient(oklch(80% 0.11 60), oklch(66% 0.16 35));
+}
+.s-art.is-cool {
+  background:
+    radial-gradient(circle at 75% 25%, oklch(96% 0.02 230) 0 12%, transparent 13%),
+    radial-gradient(ellipse at 25% 100%, oklch(50% 0.06 220) 0 40%, transparent 41%),
+    radial-gradient(ellipse at 85% 110%, oklch(42% 0.06 240) 0 42%, transparent 43%),
+    linear-gradient(oklch(88% 0.04 230), oklch(70% 0.07 235));
+}
+.s-services { padding-block: clamp(28px, 5cqi, 56px); padding-inline: clamp(18px, 5cqi + 8px, 48px); background: var(--s-sand); }
+.s-services h2, .s-quotes h2 { font-size: clamp(24px, 2cqi + 16px, 32px); }
+.s-intro { margin-block-start: 10px !important; max-inline-size: 60ch; color: var(--s-soft); }
+.s-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 16px; margin-block-start: 24px; }
+.s-card { padding: 20px; border-radius: 12px; background: var(--s-paper); }
+.s-card h3 { font-size: 19px; }
+.s-card p { margin-block-start: 6px; font-size: 14px; color: var(--s-soft); }
+.s-quotes { padding-block: clamp(32px, 5cqi, 56px); padding-inline: clamp(18px, 5cqi + 8px, 48px); }
+.s-quote-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 24px; margin-block-start: 24px; }
+.s-quote { margin: 0; }
+.s-quote blockquote { margin: 0; font-family: "Iowan Old Style", Georgia, serif; font-size: 18px; line-height: 1.45; }
+.s-quote figcaption { display: flex; align-items: center; gap: 12px; margin-block-start: 14px; font-size: 14px; color: var(--s-soft); }
+.s-avatar {
+  display: grid;
+  place-items: center;
+  flex: none;
+  inline-size: 44px;
+  block-size: 44px;
+  border-radius: 50%;
+  background: oklch(88% 0 none);
+  color: oklch(50% 0 none);
+  font-size: 13px;
+  font-weight: 700;
+}
+.s-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px 24px;
+  padding-block: 22px;
+  padding-inline: clamp(18px, 5cqi + 8px, 48px);
+  border-block-start: 1px solid oklch(88% 0.015 80);
+  font-size: 14px;
+  color: var(--s-soft);
+}
+
+/* ---------- Narrow (under about 560px): the sidebar collapses behind a button ---------- */
+@container editor (width <= 560px) {
+  .icon-button { display: inline-grid; }
+  .topbar { gap: 6px; padding-inline: 10px; }
+  .workspace { grid-template-columns: minmax(0, 1fr); }
+  .sidebar {
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: 0;
+    z-index: 20;
+    inline-size: min(280px, 86%);
+    box-shadow: var(--shadow);
+    translate: -105% 0;
+    visibility: hidden;
+  }
+  .workspace.is-sidebar-open .sidebar { translate: 0 0; visibility: visible; }
+  .canvas { padding: 6px; }
+  .mcp { padding-inline: 8px; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  @container editor (width <= 560px) {
+    .sidebar { transition: translate 240ms var(--ease-out), visibility 240ms; }
+  }
+}
+
+/* ---------- Prototype strip (outside the mock editor) ---------- */
+.proto {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  padding-block: 8px;
+  padding-inline: 12px;
+  background: oklch(24% 0 none);
+  color: oklch(92% 0 none);
+  border-block-start: 3px dashed oklch(80% 0.15 95);
+  font: 12px/1.4 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+.proto__tag { padding-block: 2px; padding-inline: 6px; border-radius: 3px; background: oklch(80% 0.15 95); color: oklch(20% 0 none); font-weight: 700; letter-spacing: 0.06em; }
+.proto button {
+  min-block-size: 30px;
+  padding-block: 0;
+  padding-inline: 12px;
+  border: 1px solid oklch(50% 0 none);
+  border-radius: 4px;
+  background: oklch(32% 0 none);
+  font: inherit;
+}
+@media (hover: hover) and (pointer: fine) { .proto button:hover { background: oklch(40% 0 none); } }
+.proto button:active { background: oklch(46% 0 none); }
+.proto button:focus-visible { outline: 2px solid oklch(80% 0.15 95); outline-offset: 2px; }
+.proto__readout { flex: 1 1 260px; min-inline-size: 0; color: oklch(78% 0 none); overflow-wrap: anywhere; }
+</style>
+</head>
+<body>
+
+<div class="editor" id="editor">
+  <header class="topbar">
+    <button class="icon-button" id="sidebarToggle" type="button" aria-label="Page structure" aria-expanded="false" aria-controls="sidebar">
+      <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2.5" y="3" width="13" height="12" rx="2"/><path d="M7 3v12"/></svg>
+    </button>
+    <button class="project" type="button" aria-haspopup="menu">
+      <span class="project__initial" aria-hidden="true">F</span>
+      <span class="project__name">fern-field-studio</span>
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="m3 4.5 3 3 3-3"/></svg>
+    </button>
+    <button class="mcp is-connected" id="mcp" type="button" popovertarget="mcpMenu" aria-expanded="false">
+      MCP
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="m3 4.5 3 3 3-3"/></svg>
+    </button>
+    <div class="menu" id="mcpMenu" popover>
+      <label class="menu-choice">
+        <span class="menu-choice__label">Pins go to</span>
+        <select class="select" id="pinsGoTo">
+          <option>Claude Code</option>
+          <option>Codex</option>
+          <option>Gemini CLI</option>
+        </select>
+      </label>
+      <div class="menu__divider"></div>
+      <ul class="menu__agents" id="menuAgents"></ul>
+      <div class="menu__divider" id="agentsDivider"></div>
+      <button class="menu-action is-connected" id="mcpAction" type="button">Disconnect MCP</button>
+    </div>
+  </header>
+
+  <div class="workspace" id="workspace">
+    <aside class="sidebar" id="sidebar">
+      <h2 class="eyebrow">Page structure</h2>
+      <ul class="tree" id="structure" role="tree" aria-label="Page structure">
+        <li class="row" role="treeitem" data-row="header"><span class="row__caret"></span><span class="row__kind">Header</span><span class="row__dots"></span></li>
+        <li class="row" role="treeitem" data-row="hero"><span class="row__caret"></span><span class="row__kind">Section</span><span class="row__text">Hero</span><span class="row__dots"></span></li>
+        <li class="row" role="treeitem" data-row="services"><span class="row__caret"></span><span class="row__kind">Section</span><span class="row__text">Services</span><span class="row__dots"></span></li>
+        <li class="row" role="treeitem" data-row="quotes"><span class="row__caret"></span><span class="row__kind">Section</span><span class="row__text">Testimonials</span><span class="row__dots"></span></li>
+        <li class="row" role="treeitem" data-row="footer"><span class="row__caret"></span><span class="row__kind">Footer</span><span class="row__dots"></span></li>
+      </ul>
+      <h2 class="eyebrow">Pages</h2>
+      <ul class="tree" id="pages" aria-label="Pages">
+        <li class="row" data-page="index.html" aria-current="page"><svg class="row__page-icon" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M3 1.5h5l3 3v8H3z"/><path d="M8 1.5v3h3"/></svg><span class="row__text">index.html</span><span class="row__dots"></span></li>
+        <li class="row" data-page="about.html"><svg class="row__page-icon" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M3 1.5h5l3 3v8H3z"/><path d="M8 1.5v3h3"/></svg><span class="row__text">about.html</span><span class="row__dots"></span></li>
+        <li class="row" data-page="contact.html"><svg class="row__page-icon" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M3 1.5h5l3 3v8H3z"/><path d="M8 1.5v3h3"/></svg><span class="row__text">contact.html</span><span class="row__dots"></span></li>
+      </ul>
+    </aside>
+
+    <main class="canvas" id="canvas">
+      <div class="site" id="site">
+        <header class="s-header" data-section="header" data-el="header" data-label="Header" data-task="Header writer" tabindex="0">
+          <div class="s-logo">Fern <span>&amp;</span> Field</div>
+          <nav class="s-nav"><span>Work</span><span>Services</span><span>About</span><span>Contact</span></nav>
+        </header>
+        <section class="s-hero" data-section="hero" data-el="hero" data-label="Hero" data-task="Hero writer" tabindex="0">
+          <div>
+            <h1 id="heroTitle" data-el="heroTitle" data-label="Heading" data-task="Hero writer" tabindex="0">We make small brands look big.</h1>
+            <p data-el="heroLead" data-label="Text" data-task="Hero writer" tabindex="0">A two-person design studio in Bristol. Logos, websites and packaging for cafés, makers and local shops.</p>
+            <a class="s-button" href="#services" data-el="heroButton" data-label="Button" data-task="Button writer" tabindex="0">See what we do</a>
+          </div>
+          <div class="s-art" id="art" role="img" aria-label="Rolling green hills under a pale sun" data-el="art" data-label="Image" data-task="Image finder" tabindex="0"></div>
+        </section>
+        <section class="s-services" data-section="services" data-el="services" data-label="Services" data-task="Services writer" tabindex="0">
+          <h2 data-el="servicesTitle" data-label="Heading" data-task="Services writer" tabindex="0">What we do</h2>
+          <p class="s-intro" data-el="intro" data-label="Text" data-task="Services writer" tabindex="0">We keep projects small and personal: one designer from first sketch to final file, and a fixed price before we start.</p>
+          <div class="s-cards">
+            <div class="s-card" data-el="card1" data-label="Card" data-task="Card writer" tabindex="0"><h3>Brand identity</h3><p>Logo, colours and type that work on a shop sign and a phone screen.</p></div>
+            <div class="s-card" data-el="card2" data-label="Card" data-task="Card writer" tabindex="0"><h3>Websites</h3><p>Fast, simple sites you can edit yourself, built to be found.</p></div>
+            <div class="s-card" data-el="card3" data-label="Card" data-task="Card writer" tabindex="0"><h3>Print &amp; packaging</h3><p>Labels, menus and boxes, ready for your local printer.</p></div>
+          </div>
+        </section>
+        <section class="s-quotes" data-section="quotes" data-el="quotes" data-label="Testimonials" data-task="Quote editor" tabindex="0">
+          <h2>Kind words</h2>
+          <div class="s-quote-list" id="quoteList"></div>
+        </section>
+        <footer class="s-footer" data-section="footer" data-el="footer" data-label="Footer" data-task="Footer writer" tabindex="0">
+          <span>© 2026 Fern &amp; Field Studio. All rights reserved.</span>
+          <span>hello@fernfield.studio</span>
+        </footer>
+        <div class="overlay" id="overlay"></div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<div class="proto" role="region" aria-label="Prototype controls">
+  <span class="proto__tag">PROTOTYPE</span>
+  <button type="button" id="play">Play</button>
+  <button type="button" id="step">Step</button>
+  <button type="button" id="reset">Reset</button>
+  <button type="button" id="theme" aria-pressed="false">Dark</button>
+  <span class="proto__readout" id="readout" aria-live="polite"></span>
+</div>
+
+<script>
+(() => {
+  "use strict";
+  const $ = (s, root = document) => root.querySelector(s);
+  const COLOURS = ["var(--agent-1)", "var(--agent-2)", "var(--agent-3)", "var(--agent-4)"];
+  const SPARKLE = '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 1.2l1.55 4.25L13.8 7 9.55 8.55 8 12.8 6.45 8.55 2.2 7l4.25-1.55z"/><path d="M13 10.6l.6 1.6 1.6.6-1.6.6-.6 1.6-.6-1.6-1.6-.6 1.6-.6z"/></svg>';
+  const SEND = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 12V2.5M3 6.5 7 2.5l4 4"/></svg>';
+  const reduced = matchMedia("(prefers-reduced-motion: reduce)");
+  const site = $("#site"), overlay = $("#overlay"), canvas = $("#canvas");
+
+  // The elements Lex can select, with the name a helper-started agent takes for its task.
+  const ELS = {};
+  site.querySelectorAll("[data-el]").forEach((node) => {
+    ELS[node.dataset.el] = { key: node.dataset.el, node, label: node.dataset.label, task: node.dataset.task, section: node.closest("[data-section]").dataset.section };
+  });
+
+  const QUOTES = {
+    long: [
+      ["“Our bakery finally looks like the place people already loved. Bookings went up the week the new site went live.”", "MO", "Maya Okafor, Rise Bakehouse"],
+      ["“They listened more than they talked, and the labels sold out at the first market.”", "TH", "Tom Hale, Hale &amp; Hive Honey"]
+    ],
+    short: [
+      ["“Our bakery finally looks like the place people loved.”", "MO", "Maya Okafor, Rise Bakehouse"],
+      ["“The labels sold out at the first market.”", "TH", "Tom Hale, Hale &amp; Hive Honey"]
+    ],
+    third: ["“A menu people actually read.”", "AR", "Ana Ruiz, Loaf &amp; Ladle"]
+  };
+  const HERO = ["We make small brands look big.", "Brand and web design for shops people love."];
+
+  // ---------- State ----------
+  let S, timers = [];
+  function fresh() {
+    return {
+      mcp: "disconnect",            // what the one button offers: connect | wait | disconnect
+      pinsGoTo: "Claude Code",
+      colourOf: {}, nextColour: 0,
+      agents: {},                   // by name: { name, colour, program, section, page }
+      pins: [], nextNum: 1,
+      landed: { hero: false, short: false, third: false, photo: null },
+      selected: null, note: null, card: null, typing: null, refs: {}
+    };
+  }
+  const connected = () => S.mcp === "disconnect";
+  const pinById = (id) => S.pins.find((p) => p.id === id);
+  function later(ms, fn) {
+    const id = setTimeout(() => { timers = timers.filter((x) => x !== id); fn(); update(); }, ms);
+    timers.push(id);
+  }
+
+  function ensureAgent(name) {
+    let a = S.agents[name];
+    if (!a) {
+      if (!(name in S.colourOf)) S.colourOf[name] = COLOURS[S.nextColour++ % COLOURS.length];
+      a = S.agents[name] = { name, colour: S.colourOf[name], program: S.pinsGoTo, section: null, page: "index.html" };
+    }
+    return a;
+  }
+  const activePins = (name) => S.pins.filter((p) => p.agent === name && (p.state === "working" || p.state === "question"));
+  function tidyAgents() {
+    Object.keys(S.agents).forEach((n) => {
+      const a = S.agents[n];
+      if (!a.section && a.page === "index.html" && !activePins(n).length) delete S.agents[n];
+    });
+  }
+  function freshName(el) {
+    const base = ELS[el].task;
+    let name = base, i = 2;
+    while (S.agents[name]) name = base + " " + i++;
+    return name;
+  }
+
+  // ---------- Pins ----------
+  function newPin(el, text, scripted) {
+    const p = { id: "p" + S.nextNum, num: S.nextNum++, el, state: "waiting", agent: null, last: null, program: null, thread: [{ from: "lex", text }], scripted: !!scripted, pop: true };
+    S.pins.push(p);
+    return p;
+  }
+  // The helper starts an agent for a pin by itself, about 2 s after it arrives.
+  function schedulePickup(p) {
+    if (p.scripted || !connected()) return;
+    later(2000, () => { if (p.state === "waiting" && connected()) pickUp(p, p.last || freshName(p.el)); });
+  }
+  function pickUp(p, name) {
+    const a = ensureAgent(name);
+    p.agent = name; p.last = name; p.program = a.program; p.state = "working"; p.pop = true;
+    if (!p.scripted) later(3800 + Math.random() * 1500, () => { if (p.state === "working" && p.agent === name && !p.scripted) finish(p); });
+  }
+  function finish(p) {
+    const text = land(p);
+    p.thread.push({ from: "agent", name: p.agent, program: p.program, text });
+    p.state = "done"; p.agent = null; p.pop = true;
+    tidyAgents();
+  }
+  function lastLex(p) { for (let i = p.thread.length - 1; i >= 0; i--) if (p.thread[i].from === "lex") return p.thread[i].text; return ""; }
+  function land(p) {
+    const ask = lastLex(p), L = S.landed;
+    if (p.el === "quotes") {
+      if (/third|add|another|more/i.test(ask) && !L.third) { L.third = true; return "Added a third, from Ana Ruiz at Loaf & Ladle."; }
+      if (!L.short) { L.short = true; return "Cut both quotes to one line each."; }
+    }
+    if (p.el === "art") { L.photo = /cool/i.test(ask) ? "cool" : "warm"; return "Put the " + L.photo + " photo in."; }
+    if ((p.el === "heroTitle" || p.el === "hero") && !L.hero) { L.hero = true; return "New headline is in."; }
+    flash(ELS[p.el].node);
+    return "Done, have a look.";
+  }
+  function agentAsks(el, name, question) {
+    const a = ensureAgent(name);
+    const p = { id: "p" + S.nextNum, num: S.nextNum++, el, state: "question", agent: name, last: name, program: a.program, thread: [{ from: "agent", name, program: a.program, text: question, question: true }], scripted: true, pop: true };
+    S.pins.push(p);
+    return p;
+  }
+  // Lex adds to a pin: an answer, or a follow-up. A done pin reopens with the same agent.
+  function reply(p, text, byScript) {
+    p.thread.push({ from: "lex", text });
+    if (!byScript) p.scripted = false;
+    if (p.state === "question") {
+      if (p.agent && S.agents[p.agent] && connected()) {
+        p.state = "working"; p.pop = true;
+        if (!p.scripted) later(3500, () => { if (p.state === "working" && !p.scripted) finish(p); });
+      } else { p.state = "waiting"; p.agent = null; p.pop = true; schedulePickup(p); }
+    } else if (p.state === "done") {
+      if (connected()) pickUp(p, p.last || freshName(p.el));
+      else { p.state = "waiting"; p.pop = true; }
+    } else if (p.state === "waiting") {
+      schedulePickup(p);
+    }
+  }
+  function stopAgent(name) {
+    S.pins.forEach((p) => {
+      if (p.agent !== name) return;
+      if (p.state === "working") { p.state = "waiting"; p.pop = true; }
+      p.agent = null;
+    });
+    delete S.agents[name];
+  }
+
+  // ---------- Lex's actions ----------
+  function select(el) {
+    S.selected = el; S.card = null;
+    if (S.note && S.note.el !== el) { if (noteText()) S.note.el = el; else S.note = null; }
+  }
+  function deselect() { S.selected = null; if (S.note && !noteText()) S.note = null; }
+  function openNote() { if (S.selected) S.note = { el: S.selected }; }
+  function noteText() { const i = $(".note__input", overlay); return i ? i.value.trim() : ""; }
+  function sendNote(byScript) {
+    const text = noteText();
+    if (!S.note || !text) return null;
+    const p = newPin(S.note.el, text, byScript);
+    S.note = null;
+    schedulePickup(p);
+    return p;
+  }
+  function sendCard(byScript) {
+    const p = pinById(S.card), input = $(".card__input", overlay);
+    if (!p || !input || !input.value.trim()) return;
+    const text = input.value.trim();
+    input.value = "";
+    reply(p, text, byScript);
+  }
+
+  // ---------- Render ----------
+  const els = { sel: null, bar: null, note: null, card: null, groups: {}, presence: {} };
+
+  function update() { render(); updateReadout(); }
+  function render() {
+    renderSite();
+    renderMcp();
+    renderSidebar();
+    renderOverlay();
+    layout();
+  }
+
+  function renderSite() {
+    const L = S.landed;
+    const title = $("#heroTitle");
+    const next = HERO[L.hero ? 1 : 0];
+    if (title.textContent !== next) { title.textContent = next; if (L.hero) flash(title); }
+    const art = $("#art");
+    const photo = L.photo || "";
+    if (art.dataset.photo !== photo) {
+      art.dataset.photo = photo;
+      art.classList.toggle("is-warm", photo === "warm");
+      art.classList.toggle("is-cool", photo === "cool");
+      art.setAttribute("aria-label", photo === "warm" ? "Hills at sunset in warm light" : photo === "cool" ? "Hills on a cool blue morning" : "Rolling green hills under a pale sun");
+      if (photo) flash(art);
+    }
+    const list = $("#quoteList");
+    const sig = (L.short ? "s" : "l") + (L.third ? "3" : "");
+    if (list.dataset.sig !== sig) {
+      const first = list.dataset.sig !== undefined;
+      list.dataset.sig = sig;
+      const rows = (L.short ? QUOTES.short : QUOTES.long).concat(L.third ? [QUOTES.third] : []);
+      list.innerHTML = rows.map((q) => '<figure class="s-quote"><blockquote>' + q[0] + '</blockquote><figcaption><span class="s-avatar" aria-hidden="true">' + q[1] + "</span><span>" + q[2] + "</span></figcaption></figure>").join("");
+      if (first) flash(list);
+    }
+  }
+
+  function renderMcp() {
+    const mcp = $("#mcp");
+    mcp.classList.toggle("is-connected", S.mcp === "disconnect");
+    mcp.classList.toggle("is-waiting", S.mcp === "wait");
+    mcp.classList.toggle("is-asking", S.pins.some((p) => p.state === "question"));
+    const select = $("#pinsGoTo");
+    if (select.value !== S.pinsGoTo) select.value = S.pinsGoTo;
+    const agents = Object.values(S.agents);
+    const list = $("#menuAgents");
+    const want = agents.map((a) => a.name + (asking(a.name) ? "?" : "")).join(",");
+    if (list.dataset.ids !== want) {
+      list.dataset.ids = want;
+      list.replaceChildren(...agents.map((a) => {
+        const li = document.createElement("li");
+        li.className = "agent-row" + (asking(a.name) ? " is-asking" : "");
+        li.style.setProperty("--agent", a.colour);
+        li.innerHTML = '<span class="agent-row__dot"></span><span class="agent-row__name"></span><button type="button" class="agent-row__stop">Stop</button>';
+        li.querySelector(".agent-row__name").textContent = a.name;
+        const stop = li.querySelector("button");
+        stop.setAttribute("aria-label", "Stop " + a.name);
+        stop.addEventListener("click", () => { stopAgent(a.name); update(); });
+        return li;
+      }));
+    }
+    $("#agentsDivider").hidden = !agents.length;
+    const action = $("#mcpAction");
+    action.textContent = S.mcp === "disconnect" ? "Disconnect MCP" : S.mcp === "wait" ? "Wait for MCP" : "Connect to MCP";
+    action.classList.toggle("is-connected", S.mcp === "disconnect");
+    action.classList.toggle("is-waiting", S.mcp === "wait");
+  }
+  const asking = (name) => S.pins.some((p) => p.agent === name && p.state === "question");
+
+  // Which sections and pages each agent is on, for the Page structure and Pages dots.
+  function renderSidebar() {
+    const agents = Object.values(S.agents);
+    document.querySelectorAll("#structure [data-row]").forEach((row) => {
+      const key = row.dataset.row;
+      const on = agents.filter((a) => (a.page === "index.html" && a.section && ELS[a.section].section === key) || activePins(a.name).some((p) => ELS[p.el].section === key));
+      setDots(row, on);
+      row.setAttribute("aria-selected", String(!!S.selected && S.selected === key));
+    });
+    document.querySelectorAll("#pages [data-page]").forEach((row) => {
+      setDots(row, row.dataset.page === "index.html" ? [] : agents.filter((a) => a.page === row.dataset.page));
+    });
+  }
+  function setDots(row, on) {
+    const dots = row.querySelector(".row__dots");
+    const want = on.map((a) => a.name).join(",");
+    if (dots.dataset.ids === want) return;
+    dots.dataset.ids = want;
+    dots.replaceChildren(...on.map((a) => { const i = document.createElement("i"); i.style.setProperty("--agent", a.colour); return i; }));
+  }
+
+  function node(tag, cls, html) { const n = document.createElement(tag); if (cls) n.className = cls; if (html) n.innerHTML = html; return n; }
+
+  function renderOverlay() {
+    // Lex's selection.
+    if (S.selected && !els.sel) { els.sel = node("div", "sel-box"); overlay.append(els.sel); }
+    if (!S.selected && els.sel) { els.sel.remove(); els.sel = null; }
+
+    // Agents' outlines: a section an agent works on (with its name chip), an element whose pin it works on (the pin has the chip).
+    const want = {};
+    Object.values(S.agents).forEach((a) => { if (a.section && a.page === "index.html") want[a.name + "|" + a.section] = { el: a.section, colour: a.colour, chip: a.name }; });
+    S.pins.forEach((p) => {
+      if (!p.agent || !(p.state === "working" || p.state === "question") || !S.agents[p.agent]) return;
+      const k = p.agent + "|" + p.el;
+      if (!want[k]) want[k] = { el: p.el, colour: S.agents[p.agent].colour, chip: null };
+    });
+    Object.keys(els.presence).forEach((k) => { if (!want[k]) { removeBox(els.presence[k]); delete els.presence[k]; } });
+    Object.keys(want).forEach((k) => {
+      let box = els.presence[k];
+      if (!box) {
+        box = els.presence[k] = node("div", "presence");
+        box.dataset.el = want[k].el;
+        box.setAttribute("aria-hidden", "true");
+        overlay.prepend(box);
+      }
+      box.style.setProperty("--agent", want[k].colour);
+      const chipText = want[k].chip || "";
+      let chip = box.querySelector(".presence__chip");
+      if (chipText && !chip) { chip = node("span", "presence__chip"); chip.textContent = chipText; box.append(chip); }
+      if (!chipText && chip) chip.remove();
+    });
+
+    // Pins, grouped by element.
+    const byEl = {};
+    S.pins.forEach((p) => { (byEl[p.el] = byEl[p.el] || []).push(p); });
+    if (S.note) byEl[S.note.el] = byEl[S.note.el] || [];
+    Object.keys(els.groups).forEach((el) => { if (!byEl[el]) { els.groups[el].remove(); delete els.groups[el]; } });
+    Object.keys(byEl).forEach((el) => {
+      let g = els.groups[el];
+      if (!g) { g = els.groups[el] = node("div", "pin-group"); g.dataset.el = el; overlay.append(g); }
+      byEl[el].forEach((p) => {
+        let b = g.querySelector('[data-pin="' + p.id + '"]');
+        if (!b) {
+          b = node("button", "pin", '<span class="pin__num"></span><span class="pin__who"></span>');
+          b.type = "button";
+          b.dataset.pin = p.id;
+          b.setAttribute("aria-haspopup", "dialog");
+          b.addEventListener("click", () => {
+            if (S.card === p.id) S.card = null; else openCard(p.id);
+            update();
+            if (S.card) $(".card__input", overlay).focus({ preventScroll: true });
+          });
+          b.addEventListener("animationend", () => b.classList.remove("is-popping"));
+          g.append(b);
+        }
+        b.dataset.state = p.state;
+        b.querySelector(".pin__num").textContent = p.num + (p.state === "question" ? " ?" : "");
+        const who = p.state === "working" ? p.agent : p.state === "question" ? p.last : "";
+        b.querySelector(".pin__who").textContent = who || "";
+        if (p.state === "working" && S.agents[p.agent]) b.style.setProperty("--agent", S.agents[p.agent].colour); else b.style.removeProperty("--agent");
+        b.setAttribute("aria-label", "Request " + p.num + (who ? ", " + who : "") + ", " + p.state);
+        b.setAttribute("aria-expanded", String(S.card === p.id));
+        if (p.pop) { p.pop = false; if (!reduced.matches) { b.classList.remove("is-popping"); void b.offsetWidth; b.classList.add("is-popping"); } }
+      });
+      // The note goes after the pins.
+      if (S.note && S.note.el === el) { const n = ensureNote(); if (g.lastElementChild !== n) g.append(n); }
+    });
+    if (!S.note && els.note) { els.note.remove(); els.note = null; }
+    if (els.note) els.note.querySelector(".note__number").textContent = S.nextNum;
+
+    // The edit bar on the selection.
+    if (S.selected) {
+      if (!els.bar) {
+        els.bar = node("div", "edit-bar", '<span class="edit-bar__label"></span><div class="edit-bar__controls"><button type="button" class="edit-bar__button" id="askAgent" aria-haspopup="dialog" title="Ask agent">' + SPARKLE + "<span>Ask agent</span></button></div>");
+        els.bar.querySelector("#askAgent").addEventListener("click", () => {
+          if (S.note && S.note.el === S.selected) S.note = null; else openNote();
+          update();
+          if (S.note) $(".note__input", overlay).focus({ preventScroll: true });
+        });
+        overlay.append(els.bar);
+      }
+      els.bar.querySelector(".edit-bar__label").textContent = ELS[S.selected].label;
+      els.bar.querySelector("#askAgent").setAttribute("aria-expanded", String(!!S.note && S.note.el === S.selected));
+    } else if (els.bar) { els.bar.remove(); els.bar = null; }
+
+    renderCard();
+  }
+
+  function ensureNote() {
+    if (els.note) return els.note;
+    const n = els.note = node("div", "note", '<span class="note__number" aria-hidden="true"></span><textarea class="note__input" rows="1" aria-label="Ask agent" placeholder="Ask the agent…"></textarea>');
+    n.setAttribute("role", "dialog");
+    n.setAttribute("aria-label", "Ask agent");
+    const input = n.querySelector("textarea");
+    input.addEventListener("input", () => layout());
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); S.note = null; update(); return; }
+      if (e.key !== "Enter" || e.shiftKey || e.isComposing) return;
+      e.preventDefault();
+      sendNote(false);
+      update();
+    });
+    return n;
+  }
+
+  function renderCard() {
+    const p = S.card ? pinById(S.card) : null;
+    if (!p) { if (els.card) { els.card.remove(); els.card = null; } return; }
+    if (!els.card || els.card.dataset.pin !== p.id) {
+      if (els.card) els.card.remove();
+      const c = els.card = node("div", "card", '<div class="card__head"><span class="card__num"></span><span class="card__where"></span></div><div class="card__thread"></div><div class="card__reply"><textarea class="card__input" rows="1" aria-label="Add to this request"></textarea><button type="button" class="card__send" aria-label="Send">' + SEND + "</button></div>");
+      c.dataset.pin = p.id;
+      c.setAttribute("role", "dialog");
+      c.setAttribute("aria-label", "Request " + p.num);
+      const input = c.querySelector(".card__input");
+      input.addEventListener("input", () => layout());
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); S.card = null; update(); return; }
+        if (e.key !== "Enter" || e.shiftKey || e.isComposing) return;
+        e.preventDefault();
+        sendCard(false);
+        update();
+      });
+      c.querySelector(".card__send").addEventListener("click", () => { sendCard(false); update(); input.focus({ preventScroll: true }); });
+      overlay.append(c);
+    }
+    const c = els.card;
+    const sig = p.state + "|" + p.thread.length;
+    c.dataset.state = p.state;
+    if (p.state === "working" && S.agents[p.agent]) c.style.setProperty("--agent", S.agents[p.agent].colour); else c.style.removeProperty("--agent");
+    c.querySelector(".card__num").textContent = p.num;
+    c.querySelector(".card__where").textContent = ELS[p.el].label;
+    const input = c.querySelector(".card__input");
+    input.placeholder = p.state === "question" ? "Answer…" : "Add to this…";
+    if (c.dataset.sig === sig) return;
+    c.dataset.sig = sig;
+    const thread = c.querySelector(".card__thread");
+    thread.replaceChildren(...p.thread.map((m) => {
+      const row = node("div", "msg" + (m.question ? " is-question" : ""));
+      row.dataset.from = m.from;
+      const from = node("span", "msg__from");
+      from.textContent = m.from === "lex" ? "You" : m.name + " · " + m.program;
+      const bubble = node("p", "msg__bubble");
+      bubble.textContent = m.text;
+      row.append(from, bubble);
+      return row;
+    }));
+    c.scrollTop = c.scrollHeight;
+  }
+
+  function openCard(id) { S.card = id; S.note = null; }
+
+  // ---------- Layout: place everything over its element ----------
+  function rel(n) {
+    const r = n.getBoundingClientRect(), s = site.getBoundingClientRect();
+    return { x: r.left - s.left, y: r.top - s.top, w: r.width, h: r.height };
+  }
+  function place(n, x, y, w, h) {
+    n.style.insetInlineStart = x + "px";
+    n.style.insetBlockStart = y + "px";
+    if (w !== undefined) { n.style.inlineSize = w + "px"; n.style.blockSize = h + "px"; }
+  }
+  function layout() {
+    const siteW = site.clientWidth, siteH = site.clientHeight;
+    if (els.sel && S.selected) { const r = rel(ELS[S.selected].node); place(els.sel, r.x, r.y, r.w, r.h); }
+    Object.values(els.presence).forEach((box) => {
+      if (box.classList.contains("is-leaving")) return;
+      const r = rel(ELS[box.dataset.el].node);
+      place(box, r.x, r.y, r.w, r.h);
+      box.classList.toggle("is-top", r.y < 18);
+    });
+    Object.keys(els.groups).forEach((el) => {
+      const g = els.groups[el], r = rel(ELS[el].node);
+      const below = r.y < 26;
+      g.classList.toggle("is-below", below);
+      g.style.insetInlineStart = Math.max(0, Math.min(r.x, siteW - g.offsetWidth)) + "px";
+      if (below) { g.style.insetBlockStart = (r.y + 3) + "px"; g.style.insetBlockEnd = "auto"; }
+      else { g.style.insetBlockStart = "auto"; g.style.insetBlockEnd = (siteH - r.y + 3) + "px"; }
+    });
+    if (els.bar && S.selected) {
+      const r = rel(ELS[S.selected].node), g = els.groups[S.selected];
+      const bw = els.bar.offsetWidth, bh = els.bar.offsetHeight;
+      let top = (g && !g.classList.contains("is-below") ? rel(g).y : r.y) - 6 - bh;
+      if (top < 0) top = r.y + r.h + 6;
+      if (top + bh > siteH) top = Math.max(0, r.y + 30);
+      place(els.bar, Math.max(0, Math.min(r.x, siteW - bw)), top);
+    }
+    if (els.card) {
+      const b = overlay.querySelector('[data-pin="' + els.card.dataset.pin + '"]');
+      if (b) {
+        const r = rel(b), cw = els.card.offsetWidth, ch = els.card.offsetHeight;
+        let top = r.y - 6 - ch;
+        if (top < 0) top = r.y + r.h + 6;
+        place(els.card, Math.max(8, Math.min(r.x, siteW - cw - 8)), top);
+      }
+    }
+  }
+  let layoutQueued = false;
+  function queueLayout() { if (layoutQueued) return; layoutQueued = true; requestAnimationFrame(() => { layoutQueued = false; layout(); }); }
+  new ResizeObserver(queueLayout).observe(site);
+
+  // Bring a piece of the overlay into view inside the preview (never scrolls the page around the prototype).
+  function reveal(n, margin = 16, also) {
+    if (!n) return;
+    const r = n.getBoundingClientRect(), c = canvas.getBoundingClientRect();
+    const a = also ? also.getBoundingClientRect() : r;
+    const top = Math.min(r.top, a.top), bottom = Math.max(r.bottom, a.bottom);
+    let dy = 0;
+    if (top < c.top + margin) dy = top - c.top - margin;
+    else if (bottom > c.bottom - margin) dy = Math.min(bottom - c.bottom + margin, top - c.top - margin);
+    if (dy) canvas.scrollBy({ top: dy, behavior: reduced.matches ? "auto" : "smooth" });
+  }
+  function revealEl(key) { reveal(ELS[key].node, 90); }
+
+  function flash(el) { if (reduced.matches) return; el.classList.remove("is-fresh"); void el.offsetWidth; el.classList.add("is-fresh"); }
+  function removeBox(box) {
+    if (reduced.matches) { box.remove(); return; }
+    box.classList.add("is-leaving");
+    setTimeout(() => box.remove(), 300);
+  }
+
+  // ---------- Pointer and keys in the preview ----------
+  site.addEventListener("click", (e) => {
+    if (e.target.closest(".overlay")) return;
+    e.preventDefault();
+    const hit = e.target.closest("[data-el]");
+    if (hit) select(hit.dataset.el); else deselect();
+    update();
+  });
+  site.addEventListener("keydown", (e) => {
+    if (e.target.closest(".overlay") || (e.key !== "Enter" && e.key !== " ")) return;
+    const hit = e.target.closest("[data-el]");
+    if (!hit) return;
+    e.preventDefault();
+    select(hit.dataset.el);
+    update();
+  });
+  canvas.addEventListener("click", (e) => { if (e.target === canvas) { deselect(); S.card = null; update(); } });
+  // A click outside a card closes it.
+  document.addEventListener("pointerdown", (e) => {
+    if (S.card && !e.target.closest(".card, .pin, .proto")) { S.card = null; update(); }
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    if (S.card) S.card = null; else if (S.note) S.note = null; else if (S.selected) S.selected = null; else return;
+    update();
+  });
+  document.querySelectorAll("#structure [data-row]").forEach((row) => row.addEventListener("click", () => {
+    select(row.dataset.row); update(); revealEl(row.dataset.row);
+  }));
+
+  // ---------- MCP menu ----------
+  const menu = $("#mcpMenu"), mcpBtn = $("#mcp");
+  function placeMenu() {
+    const r = mcpBtn.getBoundingClientRect();
+    menu.style.insetBlockStart = (r.bottom + 4) + "px";
+    menu.style.insetInlineEnd = Math.max(12, document.documentElement.clientWidth - r.right) + "px";
+  }
+  menu.addEventListener("beforetoggle", (e) => { if (e.newState === "open") placeMenu(); });
+  menu.addEventListener("toggle", (e) => mcpBtn.setAttribute("aria-expanded", String(e.newState === "open")));
+  addEventListener("scroll", () => { if (menu.matches(":popover-open")) placeMenu(); }, { passive: true });
+  addEventListener("resize", () => { if (menu.matches(":popover-open")) placeMenu(); });
+  $("#pinsGoTo").addEventListener("change", (e) => { S.pinsGoTo = e.target.value; update(); });
+  $("#mcpAction").addEventListener("click", () => {
+    if (S.mcp === "disconnect") {
+      Object.keys(S.agents).forEach(stopAgent);
+      S.mcp = "connect";
+    } else if (S.mcp === "connect") {
+      // Connect copies the prompt; the helper on Lex's computer connects a moment later.
+      S.mcp = "wait";
+      later(2500, () => {
+        if (S.mcp !== "wait") return;
+        S.mcp = "disconnect";
+        S.pins.filter((p) => p.state === "waiting").forEach((p) => { p.scripted = false; schedulePickup(p); });
+      });
+    }
+    update();
+  });
+
+  // ---------- Sidebar drawer when narrow ----------
+  const toggle = $("#sidebarToggle"), workspace = $("#workspace");
+  toggle.addEventListener("click", () => {
+    const open = workspace.classList.toggle("is-sidebar-open");
+    toggle.setAttribute("aria-expanded", String(open));
+  });
+  canvas.addEventListener("pointerdown", () => {
+    if (workspace.classList.contains("is-sidebar-open")) { workspace.classList.remove("is-sidebar-open"); toggle.setAttribute("aria-expanded", "false"); }
+  });
+
+  // ---------- The scripted timeline (seconds); each step checks it still makes sense ----------
+  const R = () => S.refs;
+  const EVENTS = [
+    { at: 0.5, label: "Header writer starts on Hero", run: () => { if (!connected()) return false; ensureAgent("Header writer").section = "hero"; } },
+    { at: 2, label: "Lex selects Testimonials", run: () => { select("quotes"); S.card = null; return "quotes"; } },
+    { at: 3, label: "Lex presses Ask agent", run: () => { if (S.selected !== "quotes") return false; openNote(); } },
+    { at: 3.4, label: "Lex types his request", run: (instant) => type("note", "Make the testimonials shorter", instant) },
+    { at: 6, label: "Lex sends: pin 1 waits, blue", run: () => { const p = sendNote(true); if (!p) return false; R().p1 = p; } },
+    { at: 6.8, label: "Lex clicks away", run: () => { if (S.note) return false; S.selected = null; } },
+    { at: 8, label: "Helper starts Quote editor: pin 1 in its colour", run: () => { const p = R().p1; if (!p || p.state !== "waiting" || !connected()) return false; pickUp(p, "Quote editor"); } },
+    { at: 10, label: "Header writer lands Hero, moves to about.html", run: () => { const a = S.agents["Header writer"]; if (!a) return false; S.landed.hero = true; a.section = null; a.page = "about.html"; } },
+    { at: 11.5, label: "Image finder asks on the hero picture: orange pin 2", run: () => { if (!connected()) return false; R().p2 = agentAsks("art", "Image finder", "Use the warm or the cool photo here?"); } },
+    { at: 13.5, label: "Quote editor lands shorter quotes: pin 1 grey", run: () => { const p = R().p1; if (!p || p.state !== "working" || !p.scripted) return false; finish(p); } },
+    { at: 15, label: "Lex opens pin 2", run: () => { const p = R().p2; if (!p) return false; S.selected = null; openCard(p.id); return "card"; } },
+    { at: 15.6, label: "Lex types his answer", run: (instant) => { if (!S.card || S.card !== R().p2?.id) return false; return type("card", "The warm one", instant); } },
+    { at: 17.2, label: "Lex sends: pin 2 in Image finder's colour", run: () => { const p = R().p2; if (!p || p.state !== "question" || S.card !== p.id) return false; sendCard(true); } },
+    { at: 20, label: "Image finder lands the warm photo: pin 2 grey", run: () => { const p = R().p2; if (!p || p.state !== "working" || !p.scripted) return false; finish(p); } },
+    { at: 21.5, label: "Lex opens done pin 1", run: () => { const p = R().p1; if (!p || p.state !== "done") return false; openCard(p.id); return "card"; } },
+    { at: 22.2, label: "Lex types a follow-up", run: (instant) => { if (!S.card || S.card !== R().p1?.id) return false; return type("card", "And add a third one", instant); } },
+    { at: 24.2, label: "Lex sends: pin 1 reopens in Quote editor's colour", run: () => { const p = R().p1; if (!p || p.state !== "done" || S.card !== p.id || !connected()) return false; sendCard(true); } },
+    { at: 27.5, label: "Quote editor lands a third quote: pin 1 grey", run: () => { const p = R().p1; if (!p || p.state !== "working" || !p.scripted) return false; finish(p); } },
+    { at: 28.6, label: "Lex closes the card", run: () => { if (!S.card) return false; S.card = null; return "quotes"; } },
+    { at: 29.2, label: "Header writer finishes about.html", run: () => { if (!S.agents["Header writer"]) return false; delete S.agents["Header writer"]; } }
+  ];
+  const END = 30;
+
+  function type(kind, text, instant) {
+    const input = $(kind === "note" ? ".note__input" : ".card__input", overlay);
+    if (!input) return false;
+    if (instant) { input.value = text; return; }
+    input.value = "";
+    S.typing = { input, text, from: t, done: 0 };
+  }
+  function finishTyping() {
+    if (!S.typing) return;
+    S.typing.input.value = S.typing.text;
+    S.typing = null;
+    layout();
+  }
+
+  let t = 0, idx = 0, playing = false, last = 0;
+  function runEvent(i, instant) {
+    const ev = EVENTS[i];
+    const out = ev.run(instant);
+    ev.skipped = out === false;
+    render();
+    if (out === "quotes") revealEl("quotes");
+    if (out === "card" && els.card) reveal(els.card, 16, overlay.querySelector('[data-pin="' + els.card.dataset.pin + '"]'));
+  }
+  function tick(now) {
+    if (!playing) return;
+    t += Math.min(0.1, (now - last) / 1000);
+    last = now;
+    while (idx < EVENTS.length && EVENTS[idx].at <= t) { finishTyping(); runEvent(idx++, false); }
+    if (S.typing) {
+      const want = Math.min(S.typing.text.length, Math.floor((t - S.typing.from) / 0.07));
+      if (want > S.typing.done) { S.typing.done = want; S.typing.input.value = S.typing.text.slice(0, want); layout(); }
+      if (S.typing.done >= S.typing.text.length) S.typing = null;
+    }
+    updateReadout();
+    if (idx >= EVENTS.length && t >= END) { pause(); return; }
+    requestAnimationFrame(tick);
+  }
+  function play() {
+    if (idx >= EVENTS.length) reset();
+    playing = true;
+    $("#play").textContent = "Pause";
+    last = performance.now();
+    requestAnimationFrame(tick);
+  }
+  function pause() {
+    playing = false;
+    $("#play").textContent = idx >= EVENTS.length ? "Play again" : "Play";
+    updateReadout();
+  }
+  function step() {
+    pause();
+    finishTyping();
+    if (idx >= EVENTS.length) return;
+    t = EVENTS[idx].at;
+    runEvent(idx++, true);
+    pause();
+  }
+  function reset() {
+    playing = false;
+    timers.forEach(clearTimeout); timers = [];
+    t = 0; idx = 0;
+    S = fresh();
+    EVENTS.forEach((e) => { e.skipped = false; });
+    overlay.replaceChildren();
+    els.sel = els.bar = els.note = els.card = null; els.groups = {}; els.presence = {};
+    canvas.scrollTop = 0;
+    render();
+    $("#play").textContent = "Play";
+    updateReadout();
+  }
+  function updateReadout() {
+    const prev = idx > 0 ? EVENTS[idx - 1] : null, next = EVENTS[idx];
+    $("#readout").textContent = t.toFixed(1) + " s · " + idx + "/" + EVENTS.length +
+      (prev ? " · last: " + prev.label + (prev.skipped ? " (skipped)" : "") : "") +
+      (next ? " · next: " + next.label : " · end");
+  }
+  document.querySelectorAll(".proto button").forEach((b) => b.addEventListener("pointerdown", (e) => e.preventDefault()));
+  $("#play").addEventListener("click", () => (playing ? pause() : play()));
+  $("#step").addEventListener("click", step);
+  $("#reset").addEventListener("click", reset);
+
+  // ---------- Light / dark ----------
+  const themeBtn = $("#theme");
+  function setTheme(dark) {
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+    themeBtn.setAttribute("aria-pressed", String(dark));
+    themeBtn.textContent = dark ? "Light" : "Dark";
+  }
+  themeBtn.addEventListener("click", () => setTheme(document.documentElement.dataset.theme !== "dark"));
+  setTheme(matchMedia("(prefers-color-scheme: dark)").matches);
+
+  reset();
+  window.__proto = { step, reset, play, state: () => S };
+})();
+</script>
+</body>
+</html>
