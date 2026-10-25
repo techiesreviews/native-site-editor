@@ -105,9 +105,9 @@ The frontier decides; this is one order that keeps to the rules.
   - A synced-session link carries the key after `#`.
   - Signed-in tabs and agents of the same workspace get the room key from the receiving tab over the existing relay handshake. Ticket 20 confirms the exchange in `decide`.
 - **The helper (16)** lives in this repository under `helper/`, as its own small Node package. It is an MCP client of the editor's `/mcp`, signing in through the same OAuth as any agent. It starts agents through ACP.
-  - *Check with Lex:* how it is installed. Recommended: one `npx` command copied by Connect to MCP, published to npm as `@techiesreviews/editor-helper` (publishing is outward-facing, so Lex approves the first publish). Alternative: run from a clone.
-  - *Check with Lex:* the default agent for "Pins go to" (recommended: Claude Code).
-- **Preview domain (35):** *Check with Lex: buy the domain* (about $5–7 a year, ticket 11's list, avoiding spam-prone endings). Until bought, slice 35 builds and tests on the hosted Worker's own `workers.dev` address.
+  - **Installed (Lex, 2026-10-25: "ok"):** one `npx` command copied by Connect to MCP, published to npm as `@techiesreviews/editor-helper`. The first publish still waits for Lex's OK at build time, because publishing is outward-facing.
+  - **Default agent for "Pins go to":** Claude Code (Lex, 2026-10-25).
+- **Preview address (35), Lex 2026-10-25:** "keep it at workers.dev for as long as we can and skip a custom domain for now". The preview runs on a separate small preview Worker with its own `workers.dev` address, so site scripts never share an origin with the editor; each site gets a path (`/<site>/`), not a subdomain. Sites share one origin with each other, which is accepted while this is for internal use. A custom domain returns only if a real need shows up.
 - **Local folders (34)** need the local-folders build (`docs/wayfinder/local-folders/`), which is unbuilt. Slice 34 waits for it; the lead re-plans 34 if that build has not shipped when stage 3 starts.
 - **Cloudflare plan:** stays on Free (ticket 11). The lead tells Lex if a slice's numbers show the daily allowance at risk.
 

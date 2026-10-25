@@ -20,7 +20,7 @@ A pin never waits for nobody: a small helper on Lex's computer listens all the t
 - Agents run with limited permissions (a short allowed-tools list) and work through the MCP tools.
 - Questions and approvals come back to the pin.
 - It reports the agent's program, so carets and chips can show its icon (stage 2).
-- **Check with Lex:** installation and publishing (README, lead decisions).
+- **Installation (Lex, 2026-10-25):** an `npx` package, `@techiesreviews/editor-helper`. Lex approves the first publish. Claude Code is the default for "Pins go to".
 
 ## Files
 

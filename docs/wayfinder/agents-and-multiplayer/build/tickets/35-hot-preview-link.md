@@ -20,7 +20,7 @@ Show a site to a customer as it is being edited.
 - Anyone with the link can open it; search engines are told to stay out; it lasts until turned off or 30 days.
 - Site scripts run on the preview domain, never the editor's.
 - Self-hosters use their own `workers.dev` address or domain.
-- **Check with Lex: buy the domain** (README); until then build on the hosted Worker's `workers.dev` address.
+- **No custom domain (Lex, 2026-10-25):** a separate preview Worker on its own `workers.dev` address, with a path per site (README, lead decisions).
 
 ## Files
 

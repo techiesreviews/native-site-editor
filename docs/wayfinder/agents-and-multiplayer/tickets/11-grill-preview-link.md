@@ -58,3 +58,7 @@ Decided with Lex:
 5. **Cloudflare plan:** stay on Free. Lex: the daily limit alone doesn't justify $5 a month. Revisit when:
    - the editor first hits the daily cut-off (95,517 of 100,000 on 2026-10-15);
    - or a server feature needs more than Free's 10 ms of computer time per request (for example making preview pictures for agents on the server).
+
+## Comments (after resolution)
+
+- 2026-10-25, Lex: "let's keep it at workers.dev for as long as we can and skip a custom domain for now". This replaces item 1's separate cheap domain: a separate preview Worker on its own `workers.dev` address, with a path per site. Nothing to buy.
