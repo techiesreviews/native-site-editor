@@ -15,7 +15,7 @@ A decided and ticketed plan for running every one of Lex's code projects the way
 - **Recommended way:** one shared kit that every project pulls, with a small `kit init` to set a project up; a version pinned per project and updated on purpose. Ticket 01 asks Lex.
 - **Why now:** `chat`, `techies-playground` and `techies-reviews` already run hand copies from about 2026-10-17 that missed 127 kit commits; none has the hooks, `slice`, `pr`, `next` or the rulebook.
 - **Planning only.** No build tickets until Lex has answered the grilling tickets; the build plan is handed off at the end, like [the factory's](../software-factory/tickets/08-handoff-plan.md).
-- **Lex is the head chef:** ask in plain words with file pointers and a recommended answer. `lex-coding` and Agent Kit (`scripts/agents/kit`) apply to every coding step; this repo stays the kit's first user, so the editor's own commands (`shots`, `specs`, `size`, `preview`, `ux` tries) keep working unchanged.
+- **Lex is the head chef:** ask in plain words with file pointers and a recommended answer. `lex-coding` and Agent Kit (`scripts/agents/kit`) apply to every coding step; this repo stays the kit's first user, so the editor's own commands (`shots`, `specs`, `size`, `preview`, `ux` tries) keep working the same.
 - **To find takeable tickets:** `node scripts/agents/tickets.mjs frontier kitchen-everywhere`. Claim by filling in `assignee:` and pushing before work.
 
 ## Decisions so far
@@ -24,7 +24,7 @@ A decided and ticketed plan for running every one of Lex's code projects the way
 
 ## Not yet specified
 
-- Whether the scoreboard and feedback logs stay per project or also roll up into one view across projects.
+- Whether the scoreboard and feedback logs stay per project or also roll up into one view across projects (asked in [ticket 05](tickets/05-grill-rollout.md)).
 - Whether Lex's static sites (`native-site-editor-starter`, `lexvd-site`, `dogsfitandfun`, `techies-reviews`) want the full kitchen or only `review`, `pr` and the hooks.
 - How the `lex-coding` skill's kit section changes once the shared kit exists (today it points agents at this repo's `origin/dev`).
 

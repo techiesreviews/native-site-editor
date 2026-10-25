@@ -25,7 +25,7 @@ Ask Lex one at a time, each with the recommended answer:
    - A: every project always runs the newest kit.
    - B: each project stays on a pinned version; `kit doctor` says "N versions behind" and one command updates; the weekly sweep lists projects that are behind.
    - **Recommended: B.** A bad kit change then breaks one project at a time, not all at once.
-4. **The review budget for Sol.** Today each project would count Sol reviews on its own, but Lex's $20 OpenAI limit is one per account.
+4. **The review budget for Sol.** Today each project would count Sol reviews on its own, but Lex's $20 OpenAI limit is one per account (the count lives in each main folder's `.scratch/review-budget.json`, `scripts/agents/kit.d/review`).
    - A: one count for the whole machine.
    - B: one count per project.
    - **Recommended: A.**

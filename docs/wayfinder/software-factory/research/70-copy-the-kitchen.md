@@ -40,13 +40,13 @@ Research for [ticket 70](../build/tickets/70-copy-the-kitchen-plan.md), 2026-10-
 | `preview` | own | `wrangler` deploy of `origin/dev` to `preview-editor.techies.tools` |
 | `ux` | own tries, neutral frame | the frame (feature list, scripted checks, one reviewer, small bundle) fits any visible project; the tries and checks name editor files (`src/page-builder/*`, `src/theme.css`) |
 
-Helpers outside `kit.d` follow the same split. Neutral: `kit-lib.sh`, `kit-lib.mjs`, `agent-run.mjs`/`agent.sh`, `review-findings.mjs`, `review-brief.mjs`, `score-page.mjs`, `worktrees.mjs`, `reap.sh`, `ci-status.sh`, `ci-summary.mjs`, `sol.sh`. Own: `worktree.sh` (names worktrees `native-site-editor-<branch>`, links the editor's preview cache), `land.sh`, `full-suite.sh`, `specs-digest.mjs`, `durable-*.mjs`, `deploy-preview.sh`, `shots.sh`, `port*.sh`. Env names start with `ASE_` (from the old Astro site editor); harmless, but they read as editor-only.
+Helpers outside `kit.d` follow the same split. Neutral: `kit-lib.sh`, `kit-lib.mjs`, `agent-run.mjs`/`agent.sh`, `review-findings.mjs`, `review-brief.mjs`, `score-page.mjs`, `worktrees.mjs` (protects the `native-site-editor-dev` checkout by path), `reap.sh`, `ci-status.sh`, `ci-summary.mjs`, `sol.sh`. Own: `worktree.sh` (names worktrees `native-site-editor-<branch>`, links the editor's preview cache), `land.sh`, `full-suite.sh`, `specs-digest.mjs`, `durable-*.mjs`, `deploy-preview.sh`, `shots.sh`, `port*.sh`. Env names start with `ASE_` (from the old Astro site editor); harmless, but they read as editor-only.
 
 ### Values a shared kit would read from a project settings file
 
 The same handful repeat across commands, so one small file per project covers them:
 
-- main folder and the clean "dev" checkout (`kit-lib.sh` `kit_main_root`, `kit-lib.mjs` `kitMainRoot`, `next`/`heartbeat` `KIT_DEV_ROOT`, `worktree.sh`);
+- main folder and the clean "dev" checkout (`kit-lib.sh` `kit_main_root`, `kit-lib.mjs` `kitMainRoot`, `next`/`heartbeat` `KIT_DEV_ROOT`, `worktree.sh`, the protected paths in `worktrees.mjs`);
 - the branch work lands on (`dev` here; most other projects only have `main`);
 - the check, unit and lint commands, and where unit tests live;
 - which paths count as docs, tests, CSS and visible (`pr-tier.mjs`);
