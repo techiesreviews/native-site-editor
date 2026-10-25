@@ -2,7 +2,7 @@
 title: A context card at every session start
 type: task (AFK)
 status: open
-assignee:
+assignee: sf-60 (this session)
 builder: claude
 blocked_by: []
 ---

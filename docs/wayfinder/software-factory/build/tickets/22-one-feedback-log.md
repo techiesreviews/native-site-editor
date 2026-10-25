@@ -2,7 +2,7 @@
 title: "One feedback log per build; kit feedback"
 type: task (AFK)
 status: open
-assignee:
+assignee: sf-22 (this session)
 builder: claude
 blocked_by: []
 ---

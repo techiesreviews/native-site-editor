@@ -1,7 +1,7 @@
 ---
 title: Three load-sensitive tests pass on a busy machine
 type: task (AFK)
-status: open
+status: closed
 assignee: lead-sf14
 builder: claude
 blocked_by: []

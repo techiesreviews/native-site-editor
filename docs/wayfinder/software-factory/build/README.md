@@ -12,7 +12,6 @@ Tickets live in [tickets/](tickets/), one slice each, numbered by group: 10s kit
 
 ## When it starts
 
-**Not started:** waits for the clean-up build (below). The lead removes this line when the build starts; `kit next` (slice 30) reads it.
 
 **After the clean-up build lands:** its last slice (clean-up 85) is merged into `dev` and `node scripts/agents/tickets.mjs frontier clean-up-before-features` is empty. Lex's end check of the clean-up may run at the same time; this build changes nothing he sees in the editor. **Exception, the lead's choice:** the tiny kit-only follow-ups 10, 11, 12 and 13 may run earlier, beside clean-up slices, within the five-helper cap. Slice 14 waits for the clean-up (its tests sit in code the clean-up moves).
 

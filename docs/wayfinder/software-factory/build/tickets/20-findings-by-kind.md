@@ -2,7 +2,7 @@
 title: Review findings carry a kind
 type: task (AFK)
 status: open
-assignee:
+assignee: sf-20 (this session)
 builder: claude
 blocked_by: [10-review-findings-severity]
 ---

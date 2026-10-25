@@ -2,7 +2,7 @@
 title: The UX rulebook, seeded from Lex's 35 corrections
 type: task (AFK)
 status: open
-assignee:
+assignee: sf-40 (this session)
 builder: claude
 blocked_by: []
 ---
