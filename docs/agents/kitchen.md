@@ -98,8 +98,16 @@ on a usage-limit `problem:` line, tell Lex the reset time and carry on with Clau
   `kit slice` under `kit bg`; the lead then runs the printed `kit wait job` lines in the
   background. Delegated (`opencode/…`) tickets are only claimed; the lead sends them with T3
   `delegate_task`. No runner subagents; a helper agent only for a slice that is stuck and needs
-  judgment. While a build runs, a T3 `schedule_task` heartbeat every 30 minutes, deleted when the
-  build ends.
+  judgment.
+- **Heartbeat** (while a build runs): the lead creates a T3 `schedule_task` every 30 minutes, bound
+  to the lead's thread, with this prompt: "In the dev worktree run
+  `scripts/agents/kit heartbeat <map> --start` and post its `done:` and `running/next:` lines to
+  Lex. On a `stuck:` line read that job's log tail and decide: `kit fix --note`, a helper agent, or
+  tell Lex. On `claimed with no job` read that slice's log and rerun it or tell Lex; a delegated
+  (`opencode/…`) ticket has no slice log, so check its T3 `delegate_task` instead. After a
+  `merged:` line run `kit preview`, and the scoreboard page at milestones. On `RESULT: … stop`
+  delete this schedule (`delete_scheduled_task`) and tell Lex." After an app restart:
+  `kit bg --list`, then `kit heartbeat <map>`. The heartbeat never deploys.
 - **Limits** (`kit next` applies them): at most 5 slices at once, at most 2 in `src/main.ts`, no
   shared file, `runs_alone: true` tickets alone in their map, nothing from a build whose README
   still says `**Not started:**`; the build's other rules stay with the lead.

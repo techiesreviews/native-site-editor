@@ -36,7 +36,7 @@ and each `--help`. A build's own `runner-extras.md` (next to its map) wins where
   Codex runs them in the foreground or its background terminal. Timeout 124 means still running; wait again.
 - `kit bg --list` shows state and log paths; `kit bg --stop <name>` stops only that group. Other owned processes, logs or CI: `scripts/agents/kit wait pid|output|ci`.
   Never look up pids with `ps | grep`; never write `until … sleep` or `pgrep -f` loops.
-- **After an app restart**, reconnect with `kit bg --list` and `kit wait job <name>` first; `scripts/agents/kit status [map]` shows landed work and open PRs.
+- **After an app restart**, reconnect with `kit bg --list` and `kit wait job <name>` first (the lead then runs `kit heartbeat <map>`, its 30-minute check-in: [kitchen.md station 5](kitchen.md#5-hand-out)); `scripts/agents/kit status [map]` shows landed work and open PRs.
   `scripts/agents/agent.sh --resume <out-dir>` continues a builder; rerunning `kit pr --ticket <ticket>` reuses the open PR and saved review.
 
 ## Build and tests
