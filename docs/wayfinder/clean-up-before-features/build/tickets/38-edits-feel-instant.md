@@ -54,6 +54,7 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
   | Redo the text | 64/65, 63/64 | 52/54, 64/68 | 0/26, 0/30 |
   | Page Structure move (Alt+Up) | 69/81, 54/63 | 60/68, 86/88 | 0/39, 0/42 |
   | drop a block | 52/60, 58/68 | 68/76, 81/91 | 0/54, 0/44 |
+  | Page Structure move, then a click on a row¹ | 81/62, 64/57 | 77/71, 63/50 | 0/31, 0/26 |
 
   | CPU 4× slower | main | dev | after the fix |
   |---|---|---|---|
@@ -65,6 +66,9 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
   | Redo the text | 122/124, 147/159 | 225/230, 116/127 | 70/82, 0/60 |
   | Page Structure move (Alt+Up) | 146/161, 144/166 | 232/252, 150/174 | 77/98, 59/73 |
   | drop a block | 0/9, 118/141 | 160/186, 140/142 | 126/137, 112/115 |
+  | Page Structure move, then a click on a row¹ | 174/64, 139/44 | 195/131, 170/66 | 106/67, 58/39 |
+
+  ¹ Added in review and measured in a later sitting (machine load 9–14), the same way, alternating main, dev and the branch; its second number is the slowest of the click (until the row shows selected) and the keystrokes after it. The click alone showed in 24–36 ms on main, 20–131 ms on dev and 26–67 ms on the branch. In that sitting the branch's other actions at 2× had at most one task of 52–58 ms in a round (a block move, a drop), never in both rounds.
 
 - **Did the clean-up make it slower?** No: main and dev are alike (within run-to-run noise). The pause was already in production. No action sends a network request in the 1.5 s after it (no save, session check or reload), and Undo waits on nothing; the pause is the editor's own work on the main thread after each change.
 - **Causes and fixes** (the share each took at 4× in CPU profiles):
@@ -77,5 +81,8 @@ Agent Kit is required (`scripts/agents/kit`; [runner.md](../../../../agents/runn
 - **Spec.** Two rounds, each in a fresh browser session (its own copy of the fake repository and drafts); each action counts its better round, so another suite's load spike does not fail it. Budgets: slowest keystroke 100 ms, longest task 50 ms.
 - **Tests.** `tests/media-usage.test.ts`: a kept usage check finds what a fresh one finds and reads again only the changed file (and every file for another site address). `tests/improve-images.test.ts`: a kept plan cache finds what a fresh plan finds after a page changes and rereads only that page. `kit unit --affected` 2741/2741; full `kit unit` (the `npm test` set) 5874/5874; `npm run check` and `npm run lint` clean; `kit size` 358 KB (±0, budget 362 KB). `kit specs --affected` 163/163 passed (`native-edit-latency.spec.ts` among them); the latency spec also passed three more times on the branch and failed on dev for all eight actions.
 - After review: a read that finds no instance (most Page Structure rows) is kept too. The spec also times a click as the next input: right after a Page Structure move, a click on another row shows it selected within the same 100 ms budget (18 ms on the branch at 2×). New tests: `tests/component-instance-cache.test.ts` (a kept instance is read again once its template, the site or its page changes), `tests/native-operations.test.ts` (operations on one source share its kept tree and leave it as they found it), `tests/icon-clones.test.ts` (each icon and mark call is a fresh copy), `tests/media-usage-controller.test.ts` (another site's same-named file is read for its own text). `kit unit --affected` 2745/2745; `kit specs native-edit-latency.spec.ts` 1/1.
+- Commits: `be8d9c73c` "Editing feels instant again: no pause after a change or on Undo"; `5e825224a` "Review fixes round 1"; this round's review fixes follow it.
+- Review decisions: round 1 declined clearing the image caches of deleted files after each check — a check briefly holds only some files, so clearing would throw away and rescan files it is about to read again, and the caches are emptied on a site switch; and declined a setting that raises the 100 ms and 50 ms limits — the better-of-two-rounds rule already absorbs load spikes, and it can be added if a slower test machine fails. Round 2 fixed the click step (it read a row's place while Page Structure redrew its rows; it now reads it before the change), measured the click action on main and dev, and corrected the usage controller's comment: the text is still read from the ports on every check and only the scans worked out from it are kept, by those exact bytes. It also took both optional nits: the tree tokenizer's comment sits on `readTree` again, and the instance store drops its oldest entry at 2000 instead of clearing.
+- Round 2 tests: `tests/media-usage.test.ts` (a newly added media file is found in text that did not change), `tests/improve-images.test.ts` (another site address rereads references and keeps parses and tokens), `tests/component-instance-cache.test.ts` (a Structure read builds neither the link nor the image list; reading each builds it once), `tests/media-clean-up-controller.test.ts` (another place's same-named page is planned from its own text).
 - Feature list: no change (speed only; nothing a user sees changes).
 

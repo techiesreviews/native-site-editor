@@ -60,7 +60,8 @@ async function measure(page: Page, results: Result[], action: string, change: ()
   const start = await clock(page), until = Date.now() + WATCH_MS;
   await change();
   // A click as the next input, when given: how long until it shows; the keystrokes follow it.
-  let nextInput = click ? await click() : 0;
+  const clicked = click ? await click() : undefined;
+  let nextInput = clicked ?? 0;
   while (Date.now() < until) {
     const pressed = Date.now();
     await page.keyboard.press("Shift");
@@ -79,7 +80,7 @@ async function measure(page: Page, results: Result[], action: string, change: ()
   const result = { action, nextInput, longest: Math.round(Math.max(0, ...long.map((task) => task.duration))), long: long.map((task) => `${Math.round(task.start - start)}+${Math.round(task.duration)}`) };
   results.push(result);
   if (!report) return;
-  console.log(`${action}: next input ${result.nextInput} ms, longest task ${result.longest} ms [${result.long.join(", ")}]`);
+  console.log(`${action}:${clicked === undefined ? "" : ` click shown in ${clicked} ms,`} next input ${result.nextInput} ms, longest task ${result.longest} ms [${result.long.join(", ")}]`);
   for (const line of seen.frames) if (within(Number(line.split("+")[0]))) console.log(`  frame ${Math.round(Number(line.split("+")[0]) - start)}${line.slice(line.indexOf("+"))}`);
 }
 
@@ -90,12 +91,12 @@ async function pointIn(page: Page, selector: string, fx: number, fy: number) {
 }
 
 /**
- * Clicks `row`'s label at once and resolves to the ms from the click until the row shows
- * selected (`aria-selected`, Page Structure redraws its rows, so the tree is watched).
+ * Readies a click on `name`'s row, read before the change (Page Structure redraws its rows
+ * after it, and this row keeps its place): the click then resolves to the ms from the click
+ * until the row shows selected (`aria-selected`; the tree is watched, its rows being redrawn).
  */
-async function clickRow(page: Page, name: RegExp) {
-  const label = tree(page).getByRole("treeitem", { name }).first().locator(".page-structure__label");
-  const box = (await label.boundingBox())!;
+async function rowClick(page: Page, name: RegExp) {
+  const box = (await tree(page).getByRole("treeitem", { name }).first().locator(".page-structure__label").boundingBox())!;
   await tree(page).evaluate((root, source) => {
     const named = new RegExp(source);
     const selected = () => [...root.querySelectorAll("[role='treeitem'][aria-selected='true']")].some((row) => named.test(row.textContent ?? ""));
@@ -106,10 +107,12 @@ async function clickRow(page: Page, name: RegExp) {
       observer.disconnect();
     }).observe(root, { subtree: true, childList: true, attributes: true, attributeFilter: ["aria-selected"] });
   }, name.source);
-  const clicked = await clock(page);
-  await page.mouse.click(box.x + 12, box.y + box.height / 2);
-  await expect.poll(() => page.evaluate(() => window.__latency.selected)).toBeDefined();
-  return Math.round((await page.evaluate(() => window.__latency.selected))! - clicked);
+  return async () => {
+    const clicked = await clock(page);
+    await page.mouse.click(box.x + 12, box.y + box.height / 2);
+    await expect.poll(() => page.evaluate(() => window.__latency.selected)).toBeDefined();
+    return Math.round((await page.evaluate(() => window.__latency.selected))! - clicked);
+  };
 }
 
 /** One round in a fresh session (its own copy of the fake repository and its own drafts). */
@@ -150,9 +153,10 @@ async function round(browser: Browser, baseURL: string): Promise<Result[]> {
     await tree(page).getByRole("treeitem", { name: /^Section feature/ }).first().locator(".page-structure__label").click();
     await measure(page, results, "Page Structure move (Alt+Up)", () => page.keyboard.press("Alt+ArrowUp"), () => expect.poll(() => order(page)).toEqual(FEATURE_UP));
     // The next input a click: another row, selected at once after the move back.
+    const click = await rowClick(page, /^Section contact/);
     await tree(page).getByRole("treeitem", { name: /^Section feature/ }).first().focus();
     await measure(page, results, "Page Structure move, then a click on a row", () => page.keyboard.press("Alt+ArrowDown"),
-      () => expect.poll(() => order(page)).toEqual(SECTIONS), () => clickRow(page, /^Section contact/));
+      () => expect.poll(() => order(page)).toEqual(SECTIONS), click);
 
     const before = await cards(page);
     await frame(page).locator("#work .cards").scrollIntoViewIfNeeded();

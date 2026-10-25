@@ -330,8 +330,9 @@ export function createComponentTools(deps: ComponentDeps) {
     let found = fresh ? known.found : readInstanceAt(path, source, nodePath);
     // A read that found no instance (most rows) is kept too.
     if (!fresh) {
-      if (instances.size > 2000) instances.clear();
+      instances.delete(key);
       instances.set(key, { site: site(), source, found });
+      if (instances.size > 2000) instances.delete(instances.keys().next().value!);
     }
     if (!found) return undefined;
     found = { ...found, node: [...nodePath] };

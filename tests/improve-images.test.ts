@@ -287,3 +287,13 @@ test("a kept plan cache finds what a fresh plan finds after a page changes, and 
   assert.deepEqual(improveImagesPlan({ ...changed, cache }), improveImagesPlan(changed));
   for (const [key, value] of kept) assert.equal(cache.get(key)!.value === value, !key.endsWith(":index.html"), key);
 });
+
+test("a kept plan cache reads every file's references again for another site address, keeping parses and tokens (ticket 38)", () => {
+  const input = fixture(), cache = improvePlanCache();
+  improveImagesPlan({ ...input, cache });
+  const kept = new Map([...cache].map(([key, entry]) => [key, entry.value]));
+  const moved = { ...input, site: { prefix: "/sub", origins: ["https://example.org"] } };
+  assert.deepEqual(improveImagesPlan({ ...moved, cache }), improveImagesPlan(moved));
+  assert.ok([...kept.keys()].some(key => key.startsWith("references:")) && [...kept.keys()].some(key => key.startsWith("parsed:")) && [...kept.keys()].some(key => key.startsWith("tokens:")));
+  for (const [key, value] of kept) assert.equal(cache.get(key)!.value === value, !key.startsWith("references:"), key);
+});

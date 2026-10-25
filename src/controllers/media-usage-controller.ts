@@ -40,8 +40,9 @@ export function createMediaUsageController(ports: MediaUsageCheckPorts) {
     const sources: Record<string, string | undefined> = {};
     for (const file of text) {
       const source = ports.source(file);
-      // No private cache: the host holds unchanged text, and an uploaded or moved file is read
-      // again on every check, so a replaced one is never judged by its old bytes.
+      // The text is read from the ports on every check (an uploaded or moved file read again);
+      // only the scans worked out from it are kept, by those exact bytes, so a replaced file is
+      // never judged by its old bytes.
       if (source !== undefined) sources[file] = source;
     }
     const emit = () => publish(mediaUsageRecords({ media: ports.media?.() ?? files.filter(isMediaFile), files: text, sources,

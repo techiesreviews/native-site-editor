@@ -144,6 +144,28 @@ test("pages with pictures to improve get their own count; read widths sharpen it
 });
 
 
+test("another place's same-named page is planned from its own text (ticket 38)", async () => {
+  const f = fixture();
+  f.setFiles(["index.html", "about/index.html", "images/a.png"]);
+  const pages = ["index.html", "about/index.html"];
+  const ports = { ...f.ports, pages: () => pages, components: () => ({}), url: () => "https://own.example/", size: () => 1000 } satisfies MediaCleanUpPorts;
+  const controller = createMediaCleanUpController(ports);
+  const usage = () => mediaUsageRecords({ media: ["images/a.png"], sources: { "index.html": f.sources["index.html"]!, "about/index.html": f.sources["about/index.html"]! }, pages });
+  const fresh = () => improveImagesPlan({ sources: { ...f.sources }, pages, components: {}, files: { "images/a.png": { size: 1000 } }, records: parseMediaRecords(undefined),
+    site: { prefix: "", origins: ["https://own.example"] } }).rows.filter(row => row.count).map(row => row.file);
+  f.sources["index.html"] = '<img src="/images/a.png">';
+  f.sources["about/index.html"] = "<p>About</p>";
+  await controller.update(usage());
+  assert.deepEqual(controller.state().improve, ["index.html"]);
+  assert.deepEqual(controller.state().improve, fresh());
+  // Another repository: its index.html has no picture, its about page has one.
+  f.setPlace("lex:2:main");
+  f.sources["index.html"] = "<p>Home</p>";
+  f.sources["about/index.html"] = '<img src="/images/a.png">';
+  await controller.update(usage());
+  assert.deepEqual(controller.state().improve, ["about/index.html"]);
+  assert.deepEqual(controller.state().improve, fresh());
+});
 test("More reads widths before the screen opens, matching its rows after Fix and Undo", async t => {
   const image = Object.getOwnPropertyDescriptor(globalThis, "Image");
   let width = 4000;
